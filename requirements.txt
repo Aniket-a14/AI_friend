@@ -1,0 +1,8 @@
+pvporcupine
+pyaudio
+google-genai
+elevenlabs
+python-dotenv
+webrtcvad-wheels
+faster-whisper
+numpy
