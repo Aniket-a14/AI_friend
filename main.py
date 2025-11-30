@@ -58,7 +58,7 @@ class AIBackend:
                         self.state_manager.wake_detected()
                         self.last_speech_time = time.time()
                         logger.info("Wake word detected! Starting Session...")
-                        self.stt.start()
+                        await self.handle_wake_greeting()
 
                 elif current_state == AppState.ACTIVE_SESSION:
                     # Feed audio to Whisper STT
@@ -97,6 +97,25 @@ class AIBackend:
         self.llm.clear_memory()
         logger.info("Session ended. IDLE.")
 
+    async def handle_wake_greeting(self):
+        """Generates and plays a greeting on wake word detection"""
+        logger.info("Generating greeting...")
+        greeting_text = await self.llm.generate_greeting()
+        logger.info(f"AI Greeting: {greeting_text}")
+        self.llm.add_to_memory("assistant", greeting_text)
+
+        # TTS & Playback
+        self.state_manager.start_speaking()
+        self.stt.stop() # Ensure STT is stopped while speaking
+        
+        audio_stream = self.tts.stream_audio(greeting_text)
+        if audio_stream:
+            await asyncio.to_thread(self.audio_player.play_stream, audio_stream)
+        
+        self.state_manager.finish_speaking()
+        self.stt.start() # Start listening for user response
+        self.last_speech_time = time.time()
+
     async def process_user_input(self, text):
         """Called when STT returns final text"""
         logger.info(f"User said: {text}")
@@ -105,8 +124,8 @@ class AIBackend:
             return
 
         # Check stop commands
-        if text.lower().strip() in ["bye", "stop", "goodnight", "you can rest now"]:
-            await self.handle_stop_command()
+        if text.lower().strip() in ["bye", "stop", "goodnight", "you can rest now", "end", "shutdown"]:
+            await self.handle_stop_command(text)
             return
 
         self.llm.add_to_memory("user", text)
@@ -129,8 +148,10 @@ class AIBackend:
         self.stt.start() # Resume listening
         self.last_speech_time = time.time() # Reset silence timer
 
-    async def handle_stop_command(self):
-        response_text = "Goodbye!"
+    async def handle_stop_command(self, text):
+        logger.info("Generating farewell...")
+        response_text = await self.llm.generate_farewell(text)
+        logger.info(f"AI Farewell: {response_text}")
         self.state_manager.start_speaking()
         self.stt.stop()
         audio_stream = self.tts.stream_audio(response_text)
