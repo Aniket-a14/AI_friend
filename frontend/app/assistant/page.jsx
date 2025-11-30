@@ -1,6 +1,6 @@
 'use client';
 
-import PankudiCircle from '../../components/PankudiCircle';
+import AssistantCircle from '../../components/AssistantCircle';
 import { useBackendState } from '../../hooks/useBackendState';
 
 export default function AssistantPage() {
@@ -9,7 +9,7 @@ export default function AssistantPage() {
     return (
         <main className="flex min-h-screen flex-col items-center justify-center bg-black overflow-hidden">
             <div className="relative flex items-center justify-center w-full h-full">
-                <PankudiCircle state={state} />
+                <AssistantCircle state={state} />
             </div>
         </main>
     );

@@ -44,7 +44,7 @@ export default function StartButton() {
         ${isStarting ? 'opacity-0 scale-90' : 'opacity-100 scale-100'}
       `}
         >
-            Start Pankudi
+            Start Assistant
         </button>
     );
 }

@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-export default function PankudiCircle({ state }) {
+export default function AssistantCircle({ state }) {
     // Base circle classes
     const baseClasses = "relative flex items-center justify-center rounded-full transition-all duration-700 ease-in-out";
 
