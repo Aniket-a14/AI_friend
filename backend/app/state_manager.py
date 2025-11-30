@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 class AppState(Enum):
     IDLE = "IDLE"
     ACTIVE_SESSION = "ACTIVE_SESSION"
+    THINKING = "THINKING"
     SPEAKING = "SPEAKING"
 
 class StateManager:
@@ -42,8 +43,13 @@ class StateManager:
         """Called when returning to listening mode from speaking"""
         self._set_state(AppState.ACTIVE_SESSION)
 
-    def start_speaking(self):
+    def start_thinking(self):
         if self._state == AppState.ACTIVE_SESSION:
+            self._set_state(AppState.THINKING)
+
+    def start_speaking(self):
+        # Can start speaking from ACTIVE_SESSION (greeting) or THINKING (response)
+        if self._state in [AppState.ACTIVE_SESSION, AppState.THINKING]:
             self._set_state(AppState.SPEAKING)
 
     def finish_speaking(self):

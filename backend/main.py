@@ -2,6 +2,11 @@ import asyncio
 import logging
 import time
 import sys
+import uvicorn
+from fastapi import FastAPI, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+
 from app.config import Config
 from app.audio import AudioStream, AudioPlayer
 from app.wake_word import WakeWordDetector
@@ -34,11 +39,11 @@ class AIBackend:
         self.tts = TTSService()
         
         self.last_speech_time = time.time()
-        self.silence_timeout = 5.0 # seconds
+        self.silence_timeout = 30.0 # seconds (increased for web interaction)
         self.running = True
 
     async def run(self):
-        logger.info("Starting AI Friend Backend...")
+        logger.info("Starting AI Friend Backend Loop...")
         self.audio_stream.start()
         
         try:
@@ -78,16 +83,20 @@ class AIBackend:
                         await self.end_session()
                         continue
 
+                elif current_state == AppState.THINKING:
+                    # Just wait, processing is happening in background
+                    pass
+
                 elif current_state == AppState.SPEAKING:
                     # While speaking, we pause STT or just ignore input
                     pass
 
                 await asyncio.sleep(0.001)
 
-        except KeyboardInterrupt:
-            logger.info("Stopping...")
+        except Exception as e:
+            logger.error(f"Error in backend loop: {e}")
         finally:
-            self.running = False
+            logger.info("Backend loop stopped.")
             await self.cleanup()
 
     async def end_session(self):
@@ -130,6 +139,9 @@ class AIBackend:
 
         self.llm.add_to_memory("user", text)
         
+        # Set state to THINKING
+        self.state_manager.start_thinking()
+
         # Generate Response
         response_text = await self.llm.generate_response(text)
         logger.info(f"AI says: {response_text}")
@@ -150,8 +162,10 @@ class AIBackend:
 
     async def handle_stop_command(self, text):
         logger.info("Generating farewell...")
+        self.state_manager.start_thinking()
         response_text = await self.llm.generate_farewell(text)
         logger.info(f"AI Farewell: {response_text}")
+        
         self.state_manager.start_speaking()
         self.stt.stop()
         audio_stream = self.tts.stream_audio(response_text)
@@ -165,9 +179,60 @@ class AIBackend:
         self.wake_word.delete()
         self.stt.stop()
 
+    def start_manual_session(self):
+        """Manually starts a session (e.g. from API)"""
+        if self.state_manager.state == AppState.IDLE:
+            self.state_manager.wake_detected()
+            self.last_speech_time = time.time()
+            # We need to schedule the greeting, but we can't await here easily if called from sync context
+            # But since this will be called from async API handler, we can return a coroutine or just let the loop handle it?
+            # Actually, handle_wake_greeting is async.
+            # Better approach: Just set state, and let the loop or a separate task handle the greeting.
+            # But handle_wake_greeting is not called in the loop for ACTIVE_SESSION.
+            # So we should return the coroutine to be awaited by the caller.
+            return self.handle_wake_greeting()
+        return None
+
+# Global backend instance
+backend = AIBackend()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    loop_task = asyncio.create_task(backend.run())
+    yield
+    # Shutdown
+    backend.running = False
+    await loop_task
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Allow all for dev
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/status")
+async def get_status():
+    # Map AppState to frontend expected strings
+    state_map = {
+        AppState.IDLE: "idle",
+        AppState.ACTIVE_SESSION: "listening",
+        AppState.THINKING: "thinking",
+        AppState.SPEAKING: "speaking"
+    }
+    return {"state": state_map.get(backend.state_manager.state, "idle")}
+
+@app.post("/start-session")
+async def start_session(background_tasks: BackgroundTasks):
+    if backend.state_manager.state == AppState.IDLE:
+        # Trigger greeting in background
+        background_tasks.add_task(backend.start_manual_session)
+        return {"status": "started"}
+    return {"status": "already_active"}
+
 if __name__ == "__main__":
-    backend = AIBackend()
-    try:
-        asyncio.run(backend.run())
-    except KeyboardInterrupt:
-        pass
+    uvicorn.run(app, host="0.0.0.0", port=8000)

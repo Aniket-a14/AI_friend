@@ -7,3 +7,5 @@ webrtcvad-wheels
 faster-whisper
 numpy
 asyncpg
+fastapi
+uvicorn
