@@ -58,3 +58,44 @@ USER: {user_text}
         except Exception as e:
             logger.error(f"LLM generation error: {e}")
             return "I'm sorry, I'm having trouble thinking right now."
+
+    async def generate_greeting(self):
+        prompt = f"""
+SYSTEM: {self.personality}
+
+TASK: Generate a short, friendly, natural greeting (1 short sentence max) to start a conversation after being woken up. 
+Examples: "Hi there, how can I help?", "Hello! What's on your mind?", "Hey! I'm listening."
+Do not include any other text, just the greeting.
+"""
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.model_name,
+                contents=prompt
+            )
+            return response.text.strip()
+        except Exception as e:
+            logger.error(f"LLM greeting generation error: {e}")
+            return "Hello! How can I help you?"
+
+    async def generate_farewell(self, user_text):
+        prompt = f"""
+SYSTEM: {self.personality}
+
+TASK: The user said "{user_text}" to end the session. Generate a short, friendly, natural farewell (1 short sentence max) relevant to what they said.
+Examples: 
+User: "Goodnight" -> "Sleep well!"
+User: "Bye" -> "See you later!"
+User: "Stop" -> "Stopping now."
+Do not include any other text, just the farewell.
+"""
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.model_name,
+                contents=prompt
+            )
+            return response.text.strip()
+        except Exception as e:
+            logger.error(f"LLM farewell generation error: {e}")
+            return "Goodbye!"
