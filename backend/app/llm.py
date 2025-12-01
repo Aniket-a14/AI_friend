@@ -25,6 +25,16 @@ class LLMService:
             logger.error(f"Failed to load personality.json: {e}")
             self.personality = "You are a helpful AI assistant."
 
+        # Load history
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            history_path = os.path.join(current_dir, "history.json")
+            with open(history_path, "r", encoding="utf-8") as f:
+                self.history = json.dumps(json.load(f), indent=2)
+        except Exception as e:
+            logger.error(f"Failed to load history.json: {e}")
+            self.history = ""
+
     def add_to_memory(self, role, content):
         self.memory.append({"role": role, "content": content})
 
@@ -40,6 +50,8 @@ class LLMService:
 
         prompt = f"""
 SYSTEM: {self.personality}
+
+HISTORY & BACKGROUND: {self.history}
 
 CONTEXT:
 {history_text}
@@ -63,8 +75,11 @@ USER: {user_text}
         prompt = f"""
 SYSTEM: {self.personality}
 
-TASK: Generate a short, friendly, natural greeting (1 short sentence max) to start a conversation after being woken up. 
-Examples: "Hi there, how can I help?", "Hello! What's on your mind?", "Hey! I'm listening."
+HISTORY & BACKGROUND: {self.history}
+
+TASK: You have just been woken up by your friend (the user). Generate a warm, natural, and casual greeting (1 short sentence max).
+Avoid generic AI phrases like "How can I help?". Instead, sound like a close friend who is happy to see them.
+Examples: "Hey! I was just thinking about you.", "Hi! What are we up to today?", "Hello! Good to see you again.", "Hey there! Ready to hang out?"
 Do not include any other text, just the greeting.
 """
         try:
@@ -76,7 +91,7 @@ Do not include any other text, just the greeting.
             return response.text.strip()
         except Exception as e:
             logger.error(f"LLM greeting generation error: {e}")
-            return "Hello! How can I help you?"
+            return "Hey! Good to see you."
 
     async def generate_farewell(self, user_text):
         prompt = f"""

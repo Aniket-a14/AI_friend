@@ -13,5 +13,6 @@ ENV/
 
 # Project Specific
 app/personality.json
+app/history.json
 wake_up_file/
 *.ppn

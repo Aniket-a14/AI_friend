@@ -37,7 +37,9 @@ class AudioStream:
 
     def get_frame(self):
         try:
-            return self.queue.get(timeout=0.1)
+            data = self.queue.get(timeout=0.1)
+            # logger.debug(f"AudioStream: Got frame of size {len(data)}")
+            return data
         except queue.Empty:
             return None
 

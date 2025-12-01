@@ -14,6 +14,8 @@ class WakeWordDetector:
                 keyword_paths=[Config.WAKE_WORD_PATH]
             )
             logger.info(f"Porcupine initialized. Version: {self.porcupine.version}")
+            logger.info(f"Porcupine Frame Length: {self.porcupine.frame_length}")
+            logger.info(f"Porcupine Sample Rate: {self.porcupine.sample_rate}")
         except Exception as e:
             logger.error(f"Failed to initialize Porcupine: {e}")
             raise
@@ -41,6 +43,7 @@ class WakeWordDetector:
             # We should probably handle buffering here or in AudioStream.
             # Let's just return False and log warning if size mismatch for now.
             # logger.warning(f"WakeWord process: size mismatch {len(pcm_data)} vs {expected_length}")
+            logger.warning(f"WakeWord process: size mismatch {len(pcm_data)} vs {expected_length}")
             return False
 
         pcm = struct.unpack_from("h" * self.porcupine.frame_length, pcm_data)

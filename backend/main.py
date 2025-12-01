@@ -179,7 +179,7 @@ class AIBackend:
         self.wake_word.delete()
         self.stt.stop()
 
-    def start_manual_session(self):
+    async def start_manual_session(self):
         """Manually starts a session (e.g. from API)"""
         if self.state_manager.state == AppState.IDLE:
             self.state_manager.wake_detected()
@@ -190,7 +190,7 @@ class AIBackend:
             # Better approach: Just set state, and let the loop or a separate task handle the greeting.
             # But handle_wake_greeting is not called in the loop for ACTIVE_SESSION.
             # So we should return the coroutine to be awaited by the caller.
-            return self.handle_wake_greeting()
+            await self.handle_wake_greeting()
         return None
 
 # Global backend instance

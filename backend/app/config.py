@@ -14,7 +14,9 @@ class Config:
     FRAME_LENGTH_MS = 20  # ms
     
     # Paths
-    WAKE_WORD_PATH = "wake_up_file/Hello-love_en_windows_v3_0_0.ppn"
+    # Paths
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    WAKE_WORD_PATH = os.path.join(BASE_DIR, "..", "wake_up_file", "Hello-love_en_windows_v3_0_0.ppn")
 
     @staticmethod
     def validate():
