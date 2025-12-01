@@ -42,7 +42,7 @@ The visual face of the assistant:
 
 ### Prerequisites
 
-- **Node.js** (v18+ recommended)
+- **Node.js** (v20+ recommended)
 - **Python** (v3.10+)
 - API Keys for **Gemini**, **ElevenLabs**, and **Picovoice (Porcupine)**.
 
