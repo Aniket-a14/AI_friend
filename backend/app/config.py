@@ -19,7 +19,29 @@ class Config:
     
     # Paths
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    WAKE_WORD_PATH = os.path.join(BASE_DIR, "..", "wake_up_file", "Hello-love_en_windows_v3_0_0.ppn")
+    
+    @classmethod
+    @property
+    def WAKE_WORD_PATH(cls):
+        """Find the correct .ppn file for the current platform."""
+        folder = os.path.join(cls.BASE_DIR, "..", "wake_up_file")
+        if not os.path.exists(folder):
+            return None
+        
+        # Look for .ppn files
+        files = [f for f in os.listdir(folder) if f.endswith(".ppn")]
+        platform_suffix = "windows" if os.name == "nt" else "linux"
+        
+        # Priority 1: Match the platform exactly
+        for f in files:
+            if platform_suffix in f.lower():
+                return os.path.join(folder, f)
+        
+        # Priority 2: Return the first .ppn found (risky but better than nothing)
+        if files:
+            return os.path.join(folder, files[0])
+            
+        return None
 
     @staticmethod
     def validate():
