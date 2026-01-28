@@ -23,7 +23,8 @@ class ConversationHistoryStore:
             if not self.dsn:
                 raise ValueError("DATABASE_URL is not set.")
             
-            self.pool = await asyncpg.create_pool(dsn=self.dsn)
+            # Use statement_cache_size=0 for pgbouncer compatibility
+            self.pool = await asyncpg.create_pool(dsn=self.dsn, statement_cache_size=0)
             
             # We don't create tables here anymore since Prisma handles schema management
             # and we pushed it in the frontend step.

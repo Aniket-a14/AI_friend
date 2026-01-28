@@ -20,11 +20,10 @@ class Config:
     # Paths
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     
-    @classmethod
-    @property
-    def WAKE_WORD_PATH(cls):
+    @staticmethod
+    def get_wake_word_path():
         """Find the correct .ppn file for the current platform."""
-        folder = os.path.join(cls.BASE_DIR, "..", "wake_up_file")
+        folder = os.path.join(Config.BASE_DIR, "..", "wake_up_file")
         if not os.path.exists(folder):
             return None
         
@@ -37,7 +36,7 @@ class Config:
             if platform_suffix in f.lower():
                 return os.path.join(folder, f)
         
-        # Priority 2: Return the first .ppn found (risky but better than nothing)
+        # Priority 2: Return the first .ppn found
         if files:
             return os.path.join(folder, files[0])
             

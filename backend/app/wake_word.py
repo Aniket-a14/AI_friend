@@ -11,7 +11,7 @@ class WakeWordDetector:
         self.porcupine = None
         self.buffer = bytearray()
         try:
-            path = Config.WAKE_WORD_PATH
+            path = Config.get_wake_word_path()
             if path and os.path.exists(path):
                 logger.info(f"Initializing Porcupine with custom file: {os.path.basename(path)}")
                 self.porcupine = pvporcupine.create(
@@ -28,8 +28,8 @@ class WakeWordDetector:
             self.frame_bytes = self.porcupine.frame_length * 2 
             logger.info(f"Porcupine initialized. Frame Length: {self.porcupine.frame_length} samples ({self.frame_bytes} bytes)")
         except Exception as e:
-            logger.error(f"Failed to initialize Porcupine: {e}")
-            raise
+            logger.error(f"Failed to initialize Porcupine (Wake Word will be disabled): {e}")
+            self.porcupine = None
 
     def process(self, pcm_chunk: bytes):
         """
