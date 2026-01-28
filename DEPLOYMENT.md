@@ -1,39 +1,65 @@
 # Deployment Guide 🚀🚢
 
-This guide provides a roadmap for deploying Pankudi AI to a production environment (VPS, AWS, etc.).
+Pankudi AI can be deployed in two main ways: **Split** (Recommended for ease) or **Combined** (Best for control).
 
-## 🛡️ Production Checklist
+---
 
-1. **Environment Variables**: Ensure all API keys in `.env` are secure and not committed to Git.
-2. **Database**: Use a production-grade Supabase project (transaction pooling recommended).
-3. **SSL/HTTPS**: **CRITICAL**. Modern browsers strictly require HTTPS to allow microphone access.
+## 🛡️ Production Checklist (Do this First)
 
-## 🐳 Option 1: Docker (Recommended)
+1. **SSL/HTTPS**: **NON-NEGOTIABLE**. Modern browsers will block the microphone on any site without a valid SSL certificate.
+2. **Environment Safety**: Ensure `.env` files are in your `.gitignore`.
+3. **Database**: Use a production-grade Supabase connection string.
 
-The easiest way to go live. Ensure Docker and Docker Compose are installed on your server.
+---
 
-1. **Clone & Config**:
-   ```bash
-   git clone <your-repo>
-   cd Pankudi_ai
-   # Build the production images
-   docker-compose up --build -d
-   ```
+## ☁️ Strategy 1: Split Deployment (Highly Recommended)
+*Best for: Speed, auto-scaling, and easy management.*
 
-2. **Reverse Proxy**: Use Nginx or Traefik to handle SSL termination and proxy requests to `localhost:3000` (Frontend) and `localhost:8000` (Backend).
+### 1. Frontend -> [Vercel](https://vercel.com)
+Vercel is built for Next.js.
+- **Connect**: Link your GitHub repo.
+- **Configure**: Set "Root Directory" to `frontend`.
+- **Environment**: Add `NEXT_PUBLIC_WS_URL` pointing to your Railway backend.
 
-## 🔒 Security Hardening
+### 2. Backend -> [Railway.app](https://railway.app)
+Vercel's serverless functions can't handle long-running WebSockets.
+- **How**: Point Railway to your `backend` folder. It will use the `Dockerfile` automatically.
+- **Benefit**: Supports persistent WebSocket connections for real-time audio.
 
-- **CORS**: Set `ALLOWED_ORIGINS` in your backend `.env` to your production domain (e.g., `https://pankudi.yoursite.com`).
-- **Secrets**: Use a secret manager or encrypted environment variables in your CI/CD pipeline.
+---
 
-## 🎙️ Microphone Access (Important)
+## 🐳 Strategy 2: Combined Monolith (Total Control)
+*Best for: Hardcore developers, minimizing costs, or hosting on your own server (DigitalOcean, AWS EC2, Linode).*
 
-If you deploy to a server without HTTPS:
-- **Chrome**: You can bypass this for testing by going to `chrome://flags/#unsafely-treat-insecure-origin-as-secure` and adding your IP.
-- **Production**: You **MUST** use a valid SSL certificate (Let's Encrypt is perfect).
+This uses the included `docker-compose.yml` to run everything together.
 
-## 🌍 Infrastructure Recommendations
+### 1. Setup your Server (VPS)
+- Install **Docker** and **Docker Compose**.
+- Point your domain's A-record to the server IP.
 
-- **Server**: At least 2GB RAM (Whisper/Gemini processing can be memory-intensive).
-- **Network**: Low-latency connection to OpenAI/ElevenLabs/Google endpoints.
+### 2. Deploy the Stack
+```bash
+git clone <your-repo-url>
+cd Pankudi_ai
+# Build and run everything in the background
+docker-compose up --build -d
+```
+
+### 3. Setup SSL (Reverse Proxy)
+Use **Nginx Proxy Manager** or **Caddy** to:
+- Map `your-domain.com` -> `localhost:3000` (Frontend).
+- Map `your-domain.com/ws` -> `localhost:8000` (Backend WebSocket).
+- Automatically generate **Let's Encrypt** SSL certificates.
+
+---
+
+## �️ Testing Microphones without SSL
+If you are testing on a server before setting up HTTPS, you must tell Chrome to trust your IP:
+1. Open Chrome and go to `chrome://flags/#unsafely-treat-insecure-origin-as-secure`.
+2. Add your server's IP (e.g., `http://123.45.67.89:3000`).
+3. Enable and Restart.
+
+---
+
+## 🌍 Where is my code actually?
+In both cases, **GitHub** is your bridge. You push your code there, and your server (Vercel/Railway or your VPS) pulls it to build the final app.

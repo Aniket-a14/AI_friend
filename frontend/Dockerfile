@@ -1,5 +1,5 @@
 # Frontend Dockerfile
-FROM node:18-slim AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY . .
 RUN npm run build
 
 # Production runner
-FROM node:18-slim AS runner
+FROM node:22-slim AS runner
 WORKDIR /app
 
 COPY --from=builder /app/.next ./.next
