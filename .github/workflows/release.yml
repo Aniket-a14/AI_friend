@@ -1,5 +1,5 @@
 name: Release
-+
+
 on:
   push:
     tags:
@@ -19,14 +19,14 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          name: Pankudi AI v${{ github.ref_name }}
+          name: AI Friend v${{ github.ref_name }}
           draft: false
           prerelease: false
           generate_release_notes: true
           body: |
             ## AI Friend Version 2.0.0 - "The Humanized Era"
             
-            This release marks the major milestone of transforming Pankudi into a truly human-like AI companion.
+            This release marks the major milestone of transforming AI Friend into a truly human-like AI companion.
             
             ### 🌟 Key Features:
             - **Imperfect Memory (Memory v2)**: Short-term, Blurry, and Core memory layers.
