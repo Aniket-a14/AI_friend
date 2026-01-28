@@ -13,22 +13,27 @@ class WakeWordDetector:
         try:
             path = Config.get_wake_word_path()
             if path and os.path.exists(path):
-                logger.info(f"Initializing Porcupine with custom file: {os.path.basename(path)}")
-                self.porcupine = pvporcupine.create(
-                    access_key=Config.PORCUPINE_ACCESS_KEY,
-                    keyword_paths=[path]
-                )
-            else:
-                logger.warning("No platform-matching .ppn file found. Falling back to built-in 'porcupine' keyword.")
+                try:
+                    logger.info(f"Attempting to initialize Porcupine with custom file: {os.path.basename(path)}")
+                    self.porcupine = pvporcupine.create(
+                        access_key=Config.PORCUPINE_ACCESS_KEY,
+                        keyword_paths=[path]
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to load custom wake word file: {e}. Falling back to default.")
+                    self.porcupine = None
+
+            if self.porcupine is None:
+                logger.info("Initializing Porcupine with built-in 'porcupine' keyword.")
                 self.porcupine = pvporcupine.create(
                     access_key=Config.PORCUPINE_ACCESS_KEY,
                     keywords=["porcupine"]
                 )
             
             self.frame_bytes = self.porcupine.frame_length * 2 
-            logger.info(f"Porcupine initialized. Frame Length: {self.porcupine.frame_length} samples ({self.frame_bytes} bytes)")
+            logger.info(f"Porcupine initialized. Frame Length: {self.porcupine.frame_length} samples")
         except Exception as e:
-            logger.error(f"Failed to initialize Porcupine (Wake Word will be disabled): {e}")
+            logger.error(f"Failed to initialize Porcupine. Please check if your PORCUPINE_ACCESS_KEY is valid or expired: {e}")
             self.porcupine = None
 
     def process(self, pcm_chunk: bytes):
