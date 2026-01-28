@@ -20,7 +20,7 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          name: AI Friend v${{ github.ref_name }}
+          name: AI Friend ${{ github.ref_name }}
           draft: false
           prerelease: false
           generate_release_notes: true
