@@ -1,3 +1,4 @@
+import os
 import pvporcupine
 import struct
 import logging
@@ -10,11 +11,21 @@ class WakeWordDetector:
         self.porcupine = None
         self.buffer = bytearray()
         try:
-            self.porcupine = pvporcupine.create(
-                access_key=Config.PORCUPINE_ACCESS_KEY,
-                keyword_paths=[Config.WAKE_WORD_PATH]
-            )
-            self.frame_bytes = self.porcupine.frame_length * 2 # 16-bit PCM (2 bytes per sample)
+            path = Config.WAKE_WORD_PATH
+            if path and os.path.exists(path):
+                logger.info(f"Initializing Porcupine with custom file: {os.path.basename(path)}")
+                self.porcupine = pvporcupine.create(
+                    access_key=Config.PORCUPINE_ACCESS_KEY,
+                    keyword_paths=[path]
+                )
+            else:
+                logger.warning("No platform-matching .ppn file found. Falling back to built-in 'porcupine' keyword.")
+                self.porcupine = pvporcupine.create(
+                    access_key=Config.PORCUPINE_ACCESS_KEY,
+                    keywords=["porcupine"]
+                )
+            
+            self.frame_bytes = self.porcupine.frame_length * 2 
             logger.info(f"Porcupine initialized. Frame Length: {self.porcupine.frame_length} samples ({self.frame_bytes} bytes)")
         except Exception as e:
             logger.error(f"Failed to initialize Porcupine: {e}")
