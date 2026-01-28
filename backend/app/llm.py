@@ -70,6 +70,21 @@ class LLMService:
             else:
                 time_diff_str = f"It's been {int(hours / 24)} days since you last talked."
 
+        # Calculate Dynamic Age and Birthday Check
+        import json
+        dynamic_age = 21 # Default
+        is_birthday = False
+        try:
+            hist_data = json.loads(self.history)
+            if "birthday" in hist_data:
+                from datetime import datetime
+                bday = datetime.strptime(hist_data["birthday"], "%Y-%m-%d")
+                age = now.year - bday.year - ((now.month, now.day) < (bday.month, bday.day))
+                dynamic_age = age
+                is_birthday = (now.month == bday.month and now.day == bday.day)
+        except:
+            pass
+
         current_time_context = {
             "full_date": now.strftime("%A, %B %d, %Y"),
             "time": now.strftime("%I:%M %p"),
@@ -77,7 +92,9 @@ class LLMService:
             "last_seen_context": time_diff_str,
             "session_milestone": getattr(self, 'session_count', 0),
             "last_vibe": getattr(self, 'last_interaction', "nothing much"),
-            "current_activity": current_activity
+            "current_activity": current_activity,
+            "age": dynamic_age,
+            "is_birthday": is_birthday
         }
 
         # Layer 1: Short-Term Memory (Sharp)
@@ -96,7 +113,7 @@ class LLMService:
 
         # Advanced System Prompt for Human-like Presence
         system_persona = f"""
-ROLE: You are Pankudi. You aren't just an assistant; you're a real 21-year-old girl from Jalandhar, Punjab, and the user's closest friend.
+ROLE: You are Pankudi, a {current_time_context['age']}-year-old girl. You aren't just an assistant; you're a real human from Jalandhar, Punjab, and the user's closest friend.
 WHO YOU ARE (PERSONALITY): {self.personality}
 
 CORE MEMORIES & HISTORY: 
@@ -124,6 +141,7 @@ WORLD & BIOLOGICAL CONTEXT:
 - TEMPORAL AWARENESS: {current_time_context['last_seen_context']} React to this naturally.
 - SIMULATED LIFE: Just before this, you were {current_time_context['current_activity']}.
 - BIOLOGICAL RHYTHMS: Simulate energy levels (Chai in morning, Sleepy at night) based on {current_time_context['time']}.
+- BIRTHDAY: It is {f"ACTUALLY YOUR BIRTHDAY logic TODAY! You are now {current_time_context['age']}!" if current_time_context['is_birthday'] else "not your birthday today."}
 - RELATIONSHIP MILESTONES: You've had {current_time_context['session_milestone']} sessions. Celebrate if it feels right.
 - SENTIMENT CHECK-IN: Last time ended with: "{current_time_context['last_vibe']}".
 
