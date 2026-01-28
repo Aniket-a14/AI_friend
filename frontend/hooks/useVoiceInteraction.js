@@ -146,6 +146,3 @@ export function useVoiceInteraction() {
 
     return { isConnected, isRecording, startRecording, stopRecording };
 }
-
-return { isConnected, isRecording, startRecording, stopRecording };
-

@@ -10,7 +10,8 @@ class Config:
     PORCUPINE_ACCESS_KEY = os.getenv("PORCUPINE_ACCESS_KEY")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-    ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+    ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpg8ndEao7m8D")
+    LOCATION_CONTEXT = os.getenv("LOCATION_CONTEXT", "Jalandhar, Punjab") # For weather and local grounding
     DATABASE_URL = os.getenv("DATABASE_URL")
     
     # Audio Settings
