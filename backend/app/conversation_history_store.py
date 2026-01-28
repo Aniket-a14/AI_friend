@@ -65,33 +65,48 @@ class ConversationHistoryStore:
 
                     await conn.execute(
                         """
-                        INSERT INTO agent_configs (id, personality, background_history, updated_at)
-                        VALUES (1, $1, $2, NOW())
+                        INSERT INTO agent_configs (id, personality, background_history, evolved_learnings, updated_at)
+                        VALUES (1, $1, $2, '', NOW())
                         """,
                         personality,
                         history
                     )
-                    logger.info("AgentConfig seeded successfully.")
+                    logger.info("AgentConfig seeded with empty Evolved Learnings.")
         except Exception as e:
             logger.error(f"Failed to ensure AgentConfig exists: {e}")
 
     async def get_agent_config(self) -> Dict[str, str]:
-        """Fetch personality and history from AgentConfig."""
+        """Fetch personality, history, and evolved learnings from AgentConfig."""
         if not self.pool:
-            return {"personality": "{}", "history": "{}"}
+            return {"personality": "{}", "history": "{}", "evolved_learnings": ""}
         
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow("SELECT personality, background_history FROM agent_configs WHERE id = 1")
+                row = await conn.fetchrow("SELECT * FROM agent_configs WHERE id = 1")
                 if row:
+                    # Defensive check in case migration is still propagating
+                    data = dict(row)
                     return {
-                        "personality": row["personality"],
-                        "history": row["background_history"]
+                        "personality": data.get("personality", "{}"),
+                        "history": data.get("background_history", "{}"),
+                        "evolved_learnings": data.get("evolved_learnings", "") or ""
                     }
         except Exception as e:
             logger.error(f"Failed to fetch AgentConfig: {e}")
         
-        return {"personality": "{}", "history": "{}"}
+        return {"personality": "{}", "history": "{}", "evolved_learnings": ""}
+
+    async def update_evolved_learnings(self, content: str):
+        """Update the growing memory of the AI."""
+        if not self.pool: return
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE agent_configs SET evolved_learnings = $1, updated_at = NOW() WHERE id = 1",
+                    content
+                )
+        except Exception as e:
+            logger.error(f"Failed to update evolved learnings: {e}")
 
     async def start_session(self) -> uuid.UUID:
         """Start a new session and return its ID."""
@@ -131,6 +146,84 @@ class ConversationHistoryStore:
                 )
         except Exception as e:
             logger.error(f"Failed to log message: {e}")
+
+    async def get_recent_sessions_gist(self, limit: int = 3) -> List[Dict[str, Any]]:
+        """Fetch a 'blurry' view of the last few sessions (just first/last messages)."""
+        if not self.pool:
+            return []
+        
+        try:
+            async with self.pool.acquire() as conn:
+                # Get last N sessions (excluding current if active)
+                exclude_clause = f"WHERE id != '{self.current_session_id}'" if self.current_session_id else ""
+                sessions = await conn.fetch(
+                    f"SELECT id, started_at FROM sessions {exclude_clause} ORDER BY started_at DESC LIMIT $1",
+                    limit
+                )
+                
+                gists = []
+                for sess in sessions:
+                    # Fetch first and last message to get the "gist"
+                    messages = await conn.fetch(
+                        """
+                        (SELECT role, content, timestamp FROM messages WHERE session_id = $1 ORDER BY timestamp ASC LIMIT 1)
+                        UNION ALL
+                        (SELECT role, content, timestamp FROM messages WHERE session_id = $1 ORDER BY timestamp DESC LIMIT 1)
+                        ORDER BY timestamp ASC
+                        """,
+                        sess["id"]
+                    )
+                    if messages:
+                        gists.append({
+                            "date": sess["started_at"].strftime("%Y-%m-%d"),
+                            "interaction": [dict(m) for m in messages]
+                        })
+                return gists
+        except Exception as e:
+            logger.error(f"Failed to fetch session gists: {e}")
+            return []
+
+    async def get_last_session_time(self) -> Optional[datetime]:
+        """Fetch the ended_at time of the most recent completed session."""
+        if not self.pool:
+            return None
+        
+        try:
+            async with self.pool.acquire() as conn:
+                exclude_clause = f"WHERE id != '{self.current_session_id}'" if self.current_session_id else ""
+                row = await conn.fetchrow(
+                    f"SELECT ended_at FROM sessions {exclude_clause} AND ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1"
+                )
+                return row["ended_at"] if row else None
+        except Exception as e:
+            logger.error(f"Failed to fetch last session time: {e}")
+            return None
+
+    async def get_total_sessions_count(self) -> int:
+        """Count total historical sessions for milestone tracking."""
+        if not self.pool:
+            return 0
+        try:
+            async with self.pool.acquire() as conn:
+                count = await conn.fetchval("SELECT COUNT(*) FROM sessions")
+                return count or 0
+        except Exception as e:
+            logger.error(f"Failed to fetch session count: {e}")
+            return 0
+
+    async def get_last_interaction_brief(self) -> Optional[str]:
+        """Fetch the very last assistant message content to gauge sentiment."""
+        if not self.pool:
+            return None
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT content FROM messages WHERE role = 'assistant' ORDER BY timestamp DESC LIMIT 1"
+                )
+                return row["content"] if row else None
+        except Exception as e:
+            logger.error(f"Failed to fetch last interaction: {e}")
+            return None
 
     async def end_session(self):
         """End the current session."""

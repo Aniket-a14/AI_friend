@@ -123,12 +123,16 @@ class AIBackend:
             await self.cleanup()
 
     async def end_session(self):
-        """Ends the current session, stops STT, and resets state."""
+        """Ends the current session, reflects on growth, and resets state."""
+        # 1. Reflect and learn from this session (Human Growth)
+        await self.llm.reflect_on_session(self.db)
+        
+        # 2. Cleanup session
         self.stt.stop()
         self.state_manager.session_end()
         self.llm.clear_memory()
         await self.db.end_session()
-        logger.info("Session ended. IDLE.")
+        logger.info("Session ended. Pankudi has evolved and is now IDLE.")
 
     async def handle_wake_greeting(self):
         """Generates and plays a greeting on wake word detection"""
