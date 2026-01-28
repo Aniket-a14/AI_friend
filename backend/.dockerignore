@@ -1,0 +1,17 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+venv
+bin
+lib
+include
+.git
+.dockerignore
+Dockerfile
+.env
+.vscode
+.idea
