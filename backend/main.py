@@ -15,6 +15,8 @@ from app.whisper_stt_service import WhisperSTTService
 from app.llm import LLMService
 from app.tts import TTSService
 from app.state_manager import StateManager, AppState
+from app.conversation_history_store import ConversationHistoryStore
+from fastapi import WebSocket, WebSocketDisconnect
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -37,22 +39,34 @@ class AIBackend:
         self.stt = WhisperSTTService()
         self.llm = LLMService()
         self.tts = TTSService()
+        self.db = ConversationHistoryStore()
         
         self.last_speech_time = time.time()
         self.silence_timeout = 30.0 # seconds (increased for web interaction)
         self.running = True
+        self.active_websocket: Optional[WebSocket] = None
 
     async def run(self):
         logger.info("Starting AI Friend Backend Loop...")
+        
+        # Initialize Database
+        try:
+            await self.db.initialize()
+            await self.llm.reload_context(self.db)
+        except Exception as e:
+            logger.error(f"Failed to initialize database or LLM context: {e}")
+            # Continue anyway, with fallback personality
+        
+        # Update AudioStream with the current running loop
+        self.audio_stream.loop = asyncio.get_running_loop()
         self.audio_stream.start()
         
         try:
             while self.running:
-                # 1. Read Audio
-                frame = self.audio_stream.get_frame()
+                # 1. Read Audio (Now Async)
+                frame = await self.audio_stream.get_frame()
                 if not frame:
-                    await asyncio.sleep(0.01)
-                    continue
+                    continue # asyncio.Queue.get() will block anyway, so no need for sleep here
 
                 current_state = self.state_manager.state
 
@@ -63,6 +77,7 @@ class AIBackend:
                         self.state_manager.wake_detected()
                         self.last_speech_time = time.time()
                         logger.info("Wake word detected! Starting Session...")
+                        await self.db.start_session()
                         await self.handle_wake_greeting()
 
                 elif current_state == AppState.ACTIVE_SESSION:
@@ -104,14 +119,19 @@ class AIBackend:
         self.stt.stop()
         self.state_manager.session_end()
         self.llm.clear_memory()
+        await self.db.end_session()
         logger.info("Session ended. IDLE.")
 
     async def handle_wake_greeting(self):
         """Generates and plays a greeting on wake word detection"""
         logger.info("Generating greeting...")
-        greeting_text = await self.llm.generate_greeting()
+        raw_greeting = await self.llm.generate_greeting()
+        # Strip hidden reasoning
+        greeting_text = raw_greeting.split("</emotion_thought>")[-1].strip()
+        
         logger.info(f"AI Greeting: {greeting_text}")
         self.llm.add_to_memory("assistant", greeting_text)
+        await self.db.log_message("assistant", greeting_text)
 
         # TTS & Playback
         self.state_manager.start_speaking()
@@ -119,14 +139,21 @@ class AIBackend:
         
         audio_stream = self.tts.stream_audio(greeting_text)
         if audio_stream:
-            await asyncio.to_thread(self.audio_player.play_stream, audio_stream)
+            if self.active_websocket:
+                # Stream to WebSocket (Web/Mobile)
+                for chunk in audio_stream:
+                    if chunk:
+                        await self.active_websocket.send_bytes(chunk)
+            else:
+                # Play locally (Desktop only if PyAudio available)
+                await asyncio.to_thread(self.audio_player.play_stream, audio_stream)
         
         self.state_manager.finish_speaking()
         self.stt.start() # Start listening for user response
         self.last_speech_time = time.time()
 
     async def process_user_input(self, text):
-        """Called when STT returns final text"""
+        """Called when STT returns final text. Uses streaming for low latency."""
         logger.info(f"User said: {text}")
         
         if not text.strip():
@@ -138,42 +165,108 @@ class AIBackend:
             return
 
         self.llm.add_to_memory("user", text)
+        await self.db.log_message("user", text)
         
         # Set state to THINKING
         self.state_manager.start_thinking()
 
-        # Generate Response
-        response_text = await self.llm.generate_response(text)
-        logger.info(f"AI says: {response_text}")
-        self.llm.add_to_memory("assistant", response_text)
+        full_response = ""
+        sentence_buffer = ""
+        sentence_end_chars = [".", "?", "!", "\n"]
+        in_reasoning = False
 
-        # TTS & Playback
-        self.state_manager.start_speaking()
-        self.stt.stop() # Stop listening while speaking
-        
-        # We run playback in a separate thread to avoid blocking the asyncio loop completely
-        audio_stream = self.tts.stream_audio(response_text)
+        try:
+            # 1. Stream from LLM
+            async for token in self.llm.generate_response_stream(text):
+                full_response += token
+                
+                # Check for reasoning block tags
+                if "<emotion_thought>" in full_response and not in_reasoning:
+                    in_reasoning = True
+                    continue
+                
+                if "</emotion_thought>" in full_response and in_reasoning:
+                    in_reasoning = False
+                    # Extract only the content AFTER the reasoning block
+                    full_response = full_response.split("</emotion_thought>")[-1]
+                    sentence_buffer = full_response
+                    continue
+
+                if in_reasoning:
+                    continue
+
+                sentence_buffer += token
+
+                # 2. If we have a complete sentence, stream it to TTS
+                if any(char in sentence_buffer for char in sentence_end_chars) and len(sentence_buffer.strip()) > 5:
+                    if self.state_manager.state == AppState.THINKING:
+                        self.state_manager.start_speaking()
+                        self.stt.stop()
+
+                    await self._stream_sentence_to_voice(sentence_buffer.strip())
+                    sentence_buffer = ""
+
+            # 3. Stream any remaining text
+            if sentence_buffer.strip() and not in_reasoning:
+                if self.state_manager.state == AppState.THINKING:
+                    self.state_manager.start_speaking()
+                    self.stt.stop()
+                await self._stream_sentence_to_voice(sentence_buffer.strip())
+
+            # Log final response (cleaned)
+            final_clean = full_response.split("</emotion_thought>")[-1].strip()
+            self.llm.add_to_memory("assistant", final_clean)
+            await self.db.log_message("assistant", final_clean)
+            logger.info(f"AI full response: {final_clean}")
+
+        except Exception as e:
+            logger.error(f"Error in streaming response: {e}")
+        finally:
+            self.state_manager.finish_speaking()
+            self.stt.start() # Resume listening
+            self.last_speech_time = time.time() # Reset silence timer
+
+    async def _stream_sentence_to_voice(self, sentence):
+        """Helper to stream a single sentence to the active output."""
+        # Extra safety: strip any lingering tags if the logic missed them
+        clean_sentence = sentence.split("</emotion_thought>")[-1].strip()
+        if not clean_sentence:
+            return
+
+        logger.debug(f"Pipelining sentence to TTS: {clean_sentence}")
+        audio_stream = self.tts.stream_audio(clean_sentence)
         if audio_stream:
-            await asyncio.to_thread(self.audio_player.play_stream, audio_stream)
-        
-        self.state_manager.finish_speaking()
-        self.stt.start() # Resume listening
-        self.last_speech_time = time.time() # Reset silence timer
+            if self.active_websocket:
+                for chunk in audio_stream:
+                    if chunk:
+                        await self.active_websocket.send_bytes(chunk)
+            else:
+                await asyncio.to_thread(self.audio_player.play_stream, audio_stream)
 
     async def handle_stop_command(self, text):
         logger.info("Generating farewell...")
         self.state_manager.start_thinking()
-        response_text = await self.llm.generate_farewell(text)
+        raw_farewell = await self.llm.generate_farewell(text)
+        # Strip hidden reasoning
+        response_text = raw_farewell.split("</emotion_thought>")[-1].strip()
+        
         logger.info(f"AI Farewell: {response_text}")
+        await self.db.log_message("assistant", response_text)
         
         self.state_manager.start_speaking()
         self.stt.stop()
         audio_stream = self.tts.stream_audio(response_text)
         if audio_stream:
-            await asyncio.to_thread(self.audio_player.play_stream, audio_stream)
+            if self.active_websocket:
+                for chunk in audio_stream:
+                    if chunk:
+                        await self.active_websocket.send_bytes(chunk)
+            else:
+                await asyncio.to_thread(self.audio_player.play_stream, audio_stream)
         await self.end_session()
 
     async def cleanup(self):
+        await self.db.close()
         self.audio_stream.close()
         self.audio_player.close()
         self.wake_word.delete()
@@ -199,21 +292,33 @@ backend = AIBackend()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    await backend.db.initialize() # Explicit init
     loop_task = asyncio.create_task(backend.run())
     yield
     # Shutdown
     backend.running = False
+    await backend.db.close()
     await loop_task
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(title="Pankudi AI Backend", lifespan=lifespan)
 
+# CORS Setup - Hardened for Production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all for dev
+    allow_origins=Config.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 @app.get("/status")
 async def get_status():
@@ -233,6 +338,26 @@ async def start_session(background_tasks: BackgroundTasks):
         background_tasks.add_task(backend.start_manual_session)
         return {"status": "started"}
     return {"status": "already_active"}
+
+@app.websocket("/ws/audio")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    logger.info("Client connected via WebSocket.")
+    backend.active_websocket = websocket
+    
+    try:
+        while True:
+            # Receive binary audio data (PCM 16k mono)
+            data = await websocket.receive_bytes()
+            if data:
+                # Inject frame into the AI logic
+                await backend.audio_stream.put_frame(data)
+    except WebSocketDisconnect:
+        logger.info("Client disconnected from WebSocket.")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        backend.active_websocket = None
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,18 +1,28 @@
-import pyaudio
-import queue
+try:
+    import pyaudio
+except ImportError:
+    pyaudio = None
+
+import asyncio
 import logging
 from .config import Config
 
 logger = logging.getLogger(__name__)
 
 class AudioStream:
-    def __init__(self):
-        self.pa = pyaudio.PyAudio()
+    def __init__(self, loop=None):
+        self.pa = pyaudio.PyAudio() if pyaudio else None
         self.stream = None
-        self.queue = queue.Queue()
+        self.loop = loop or asyncio.get_event_loop()
+        self.queue = asyncio.Queue()
         self.running = False
 
     def start(self):
+        if not self.pa:
+            logger.warning("PyAudio not available. AudioStream will only accept manual frames (e.g. via WebSocket).")
+            self.running = True
+            return
+
         if self.running:
             return
 
@@ -26,21 +36,26 @@ class AudioStream:
                 stream_callback=self._callback
             )
             self.running = True
-            logger.info("Audio stream started")
+            logger.info("Local Audio stream started")
         except Exception as e:
-            logger.error(f"Failed to start audio stream: {e}")
-            raise
+            logger.error(f"Failed to start local audio stream: {e}")
+            self.running = True # Still set running to True so queue works for external frames
 
     def _callback(self, in_data, frame_count, time_info, status):
-        self.queue.put(in_data)
+        # Callback runs in a separate thread, so use call_soon_threadsafe
+        self.loop.call_soon_threadsafe(self.queue.put_nowait, in_data)
         return None, pyaudio.paContinue
 
-    def get_frame(self):
+    async def put_frame(self, frame: bytes):
+        """Manually put a frame into the queue (e.g. from WebSocket)."""
+        await self.queue.put(frame)
+
+    async def get_frame(self):
         try:
-            data = self.queue.get(timeout=0.1)
-            # logger.debug(f"AudioStream: Got frame of size {len(data)}")
-            return data
-        except queue.Empty:
+            # Non-blocking retrieval from asyncio.Queue
+            return await self.queue.get()
+        except Exception as e:
+            logger.error(f"Error getting frame: {e}")
             return None
 
     def stop(self):
@@ -55,14 +70,17 @@ class AudioStream:
 
     def close(self):
         self.stop()
-        self.pa.terminate()
+        if self.pa:
+            self.pa.terminate()
 
 class AudioPlayer:
     def __init__(self):
-        self.pa = pyaudio.PyAudio()
+        self.pa = pyaudio.PyAudio() if pyaudio else None
         self.stream = None
 
     def create_output_stream(self):
+        if not self.pa:
+            return None
         return self.pa.open(
             rate=24000,
             channels=1,
@@ -74,6 +92,10 @@ class AudioPlayer:
         """
         Plays audio from a generator/iterator of bytes.
         """
+        if not self.pa:
+            logger.debug("PyAudio not available. play_stream call ignored (use WebSocket streaming).")
+            return
+
         if not self.stream:
             self.stream = self.create_output_stream()
         
@@ -84,14 +106,11 @@ class AudioPlayer:
         except Exception as e:
             logger.error(f"Error playing audio stream: {e}")
         finally:
-            # Keep stream open for next utterance or close?
-            # Usually better to keep open if latency matters, 
-            # but for cleanliness we can close or just stop.
-            # Let's keep it open but maybe flush?
             pass
 
     def close(self):
         if self.stream:
             self.stream.stop_stream()
             self.stream.close()
-        self.pa.terminate()
+        if self.pa:
+            self.pa.terminate()

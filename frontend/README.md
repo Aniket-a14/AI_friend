@@ -1,66 +1,37 @@
-# AI Assistant Frontend
+# Pankudi AI Frontend 🎨🎙️
 
-The modern, reactive web interface for the AI Assistant, built with **Next.js 14** and **Tailwind CSS**. This frontend serves as the visual counterpart to the Python backend, providing users with real-time feedback on the AI's current status and activity.
+A modern, high-performance web interface for the Pankudi AI assistant. Built with **Next.js 14** and optimized for real-time voice streaming.
 
-## ✨ Features
+## 🌟 Voice UX Features
 
-- **Dynamic State Visualization**: The core of the UI is the `AssistantCircle` component, which morphs and animates to reflect the AI's state:
-    - **Idle**: A gentle, breathing pulse.
-    - **Listening**: An active, flickering glow indicating audio capture.
-    - **Thinking**: A spinning animation representing processing.
-    - **Speaking**: A rhythmic pulse synchronized with audio output.
-- **Minimalist Design**: A clean, dark-themed interface that focuses attention on the interaction.
-- **Real-Time Synchronization**: Polls or connects to the backend to stay perfectly in sync with the voice assistant's lifecycle.
-- **Responsive**: Fully responsive layout that works seamlessly on desktop and mobile devices.
+- **Bi-Directional Streaming**: Uses Web Audio API to capture 16kHz mono audio and play back high-quality 24kHz streams directly over WebSockets.
+- **Smart Visualizer**: The `AssistantCircle` morphs its animation pattern based on direct state signals from the backend:
+    - **Listening**: Flickering energy glow.
+    - **Thinking**: Orbiting data particles.
+    - **Speaking**: Pulsing audio-reactive heartbeats.
+- **Auto-Healing Connection**: Integrated exponential backoff system that automatically restores WebSocket connections during network drops.
+- **Mobile First**: Fully responsive layout designed for a "Phone-as-a-Microphone" experience.
 
-## 🚀 Getting Started
+## 🛠️ Tech Stack
+- **Next.js 14**: App Router for fast, optimized delivery.
+- **Tailwind CSS**: Glassmorphic UI with custom animations.
+- **Framer Motion**: Smooth, organic transitions for the assistant's "soul."
+- **Web Audio API**: Low-level audio processing without external plugins.
 
-### Prerequisites
+## ⚙️ Environment Configuration
 
-- Node.js 18.17 or later.
-
-### Installation
-
-1.  Navigate to the frontend directory:
-    ```bash
-    cd frontend
-    ```
-
-2.  Install dependencies:
-    ```bash
-    npm install
-    # or
-    yarn install
-    ```
-
-### Development
-
-Run the development server:
-
-```bash
-npm run dev
+Create a `frontend/.env` file:
+```env
+NEXT_PUBLIC_WS_URL=ws://your-backend:8000/ws/audio
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🐳 Docker Deployment
+```bash
+docker build -t pankudi-frontend .
+docker run -p 3000:3000 --env-file .env pankudi-frontend
+```
 
 ## 📂 Project Structure
-
-- **`app/`**: The App Router directory containing pages and layouts.
-    - `page.js`: The landing page with the start button.
-    - `assistant/page.jsx`: The main assistant interface featuring the visualizer.
-    - `layout.js`: Global layout and font configurations.
-- **`components/`**: Reusable UI components.
-    - `AssistantCircle.jsx`: The main visual component that handles state animations.
-    - `StartButton.jsx`: A styled button to initiate the session.
-- **`hooks/`**: Custom React hooks.
-    - `useBackendState.js`: Manages the connection to the backend and state synchronization.
-
-## 🎨 Styling
-
-The project uses **Tailwind CSS** for styling.
-- **Animations**: Custom keyframe animations (like `breathe`, `flicker`, `pulse-slow`) are defined in `tailwind.config.js` or global CSS to create organic, fluid movements.
-- **Glassmorphism**: Usage of backdrops, blurs, and translucent colors to create a modern, high-tech feel.
-
-## 🔧 Configuration
-
-The frontend is configured to communicate with the backend (defaulting to `localhost:8000`). Ensure your backend is running and accessible. You can modify the API endpoints in the `hooks/useBackendState.js` or `components/StartButton.jsx` files if your backend runs on a different port or host.
+- `app/assistant/page.jsx`: Main interaction hub.
+- `hooks/useVoiceInteraction.js`: The "Ear & Mouth" of the app; handles WebSocket streaming.
+- `components/AssistantCircle.jsx`: The visual representation of Pankudi's life-state.

@@ -1,0 +1,39 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Session {
+  id        String    @id @default(uuid()) @db.Uuid
+  startedAt DateTime  @default(now()) @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  messages  Message[]
+
+  @@map("sessions")
+}
+
+model Message {
+  id        String   @id @default(uuid()) @db.Uuid
+  sessionId String   @map("session_id") @db.Uuid
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  timestamp DateTime @default(now())
+  role      String
+  content   String
+
+  @@map("messages")
+}
+
+model AgentConfig {
+  id                Int      @id @default(1)
+  personality       String   @db.Text
+  backgroundHistory String   @map("background_history") @db.Text
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("agent_configs")
+}
