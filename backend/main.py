@@ -25,38 +25,45 @@ logger = logging.getLogger(__name__)
 
 class AIBackend:
     def __init__(self):
-        try:
-            Config.validate()
-        except ValueError as e:
-            logger.error(e)
-            sys.exit(1)
-
         self.state_manager = StateManager()
         self.audio_stream = AudioStream()
         self.audio_player = AudioPlayer()
         self.wake_word = WakeWordDetector()
-        self.vad = VAD() 
+        self.vad = VAD()
         
+        # Defer heavy loading
         self.stt = WhisperSTTService()
         self.llm = LLMService()
         self.tts = TTSService()
         self.db = ConversationHistoryStore()
         
         self.last_speech_time = time.time()
-        self.silence_timeout = 30.0 # seconds (increased for web interaction)
+        self.silence_timeout = 30.0
         self.running = True
         self.active_websocket: Optional[WebSocket] = None
+        self.is_ready = False
 
-    async def run(self):
-        logger.info("Starting AI Friend Backend Loop...")
-        
-        # Initialize Database
+    async def initialize(self):
+        """Asynchronous initialization of services."""
+        logger.info("Initializing AI Backend services...")
+        try:
+            Config.validate()
+        except ValueError as e:
+            logger.error(e)
+            sys.exit(1)
+
         try:
             await self.db.initialize()
             await self.llm.reload_context(self.db)
+            # Start model loading in the background so the server is "up" quickly
+            asyncio.create_task(self.stt.load_model())
+            self.is_ready = True
+            logger.info("AI Backend services initialized (STT loading in background).")
         except Exception as e:
-            logger.error(f"Failed to initialize database or LLM context: {e}")
-            # Continue anyway, with fallback personality
+            logger.error(f"Failed to initialize AI Backend: {e}")
+
+    async def run(self):
+        logger.info("Starting AI Friend Backend Loop...")
         
         # Update AudioStream with the current running loop
         self.audio_stream.loop = asyncio.get_running_loop()
@@ -293,12 +300,12 @@ backend = AIBackend()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await backend.db.initialize() # Explicit init
+    await backend.initialize()
     loop_task = asyncio.create_task(backend.run())
     yield
     # Shutdown
     backend.running = False
-    await backend.db.close()
+    await backend.cleanup() # Using cleanup method
     await loop_task
 
 app = FastAPI(title="Pankudi AI Backend", lifespan=lifespan)
@@ -323,6 +330,9 @@ async def add_security_headers(request, call_next):
 
 @app.get("/status")
 async def get_status():
+    if not backend.is_ready or backend.stt.is_loading:
+        return {"state": "loading"}
+    
     # Map AppState to frontend expected strings
     state_map = {
         AppState.IDLE: "idle",
@@ -334,6 +344,9 @@ async def get_status():
 
 @app.post("/start-session")
 async def start_session(background_tasks: BackgroundTasks):
+    if not backend.is_ready or backend.stt.is_loading:
+        return {"status": "loading_models", "message": "Please wait, AI is still waking up..."}
+
     if backend.state_manager.state == AppState.IDLE:
         # Trigger greeting in background
         background_tasks.add_task(backend.start_manual_session)

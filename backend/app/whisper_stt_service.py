@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import numpy as np
 import webrtcvad
 import collections
@@ -11,15 +12,15 @@ logger = logging.getLogger(__name__)
 class WhisperSTTService:
     def __init__(self, model_size="small", device="cpu", compute_type="int8"):
         """
-        Initializes Whisper model and VAD.
+        Initializes STT buffers and VAD. Model loading is deferred.
         """
-        logger.info(f"Loading Whisper model: {model_size} on {device}...")
-        try:
-            self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
-            logger.info("Whisper model loaded successfully.")
-        except Exception as e:
-            logger.error(f"Failed to load Whisper model: {e}")
-            raise
+        self.model_size = model_size
+        self.device = device
+        self.compute_type = compute_type
+        self.model = None
+        self.is_loading = False
+
+        # VAD Setup
 
         # VAD Setup
         self.vad = webrtcvad.Vad(3) # Aggressiveness 3 (High)
@@ -35,6 +36,27 @@ class WhisperSTTService:
         self.silence_threshold = 0.7 # seconds of silence to trigger transcription
         
         self.active = False # Controls if we are listening
+
+    async def load_model(self):
+        """Heavy lifting for model loading, run in a separate thread."""
+        if self.model or self.is_loading:
+            return
+        
+        self.is_loading = True
+        logger.info(f"Loading Whisper model: {self.model_size} on {self.device}...")
+        try:
+            # WhisperModel initialization is CPU intensive/blocking
+            self.model = await asyncio.to_thread(
+                WhisperModel, 
+                self.model_size, 
+                device=self.device, 
+                compute_type=self.compute_type
+            )
+            logger.info("Whisper model loaded successfully.")
+        except Exception as e:
+            logger.error(f"Failed to load Whisper model: {e}")
+        finally:
+            self.is_loading = False
 
     def start(self):
         self.active = True
@@ -57,7 +79,7 @@ class WhisperSTTService:
         Process a chunk of PCM audio.
         Returns: (text, True) if a complete utterance is transcribed, else None.
         """
-        if not self.active:
+        if not self.active or not self.model:
             return None
 
         # Buffer incoming data to match VAD frame size
@@ -104,7 +126,7 @@ class WhisperSTTService:
         return None
 
     def transcribe(self):
-        if not self.audio_buffer:
+        if not self.audio_buffer or not self.model:
             return None
 
         # Combine frames
