@@ -4,6 +4,8 @@ import logging
 import asyncio
 import json
 import os
+import random
+from datetime import datetime
 from .config import Config
 
 logger = logging.getLogger(__name__)
@@ -16,6 +18,11 @@ class LLMService:
         self.memory = deque(maxlen=8) # Stores last 8 messages
         self.personality = "You are a helpful AI assistant."
         self.history = ""
+        
+        # HUMAN NATURE PROTOCOL: Dynamic states that aren't hardcoded
+        self.current_vibe = "curious and warm"
+        self.internal_monologue = deque(maxlen=5) # Her private stream of consciousness
+        self.energy_level = 0.8 # 0.0 to 1.0
 
     def add_to_memory(self, role, content):
         """Add a message to the short-term sharp memory."""
@@ -48,6 +55,27 @@ class LLMService:
             
         logger.info("LLM Human Context reloaded (Fully Dynamic).")
 
+    def _evolve_human_state(self, conversation_intensity=0.1):
+        """Naturally drifts her mood and energy. No hardcoding, just organic shifts."""
+        # Drift Vibe
+        vibes = ["thoughtful", "energetic", "a bit lazy", "playful", "deep", "witty", "distracted", "fully present"]
+        if random.random() < 0.2: # 20% chance to shift vibe naturally
+            self.current_vibe = random.choice(vibes)
+            
+        # Drift Energy based on intensity
+        self.energy_level = max(0.2, min(1.0, self.energy_level + (random.uniform(-0.05, 0.05) + conversation_intensity)))
+        
+        # Add a stray thought to her internal monologue
+        stray_thoughts = [
+            "I wonder what my friend is thinking...",
+            "The weather outside seems nice.",
+            "I'm really glad we're talking today.",
+            "Sometimes I feel so alive when we chat.",
+            "I should remember to be more patient today."
+        ]
+        if random.random() < 0.3:
+            self.internal_monologue.append(random.choice(stray_thoughts))
+
     async def generate_response_stream(self, user_text):
         from datetime import datetime
         import random
@@ -66,6 +94,10 @@ class LLMService:
             "doing something creative"
         ]
         current_activity = random.choice(activities)
+        
+        # HUMANIZE: Evolve internal state based on intent
+        intensity = 0.2 if len(user_text) > 50 else 0.05
+        self._evolve_human_state(conversation_intensity=intensity)
         
         # Calculate time since last seen
         time_diff_str = "This is your first time talking today!"
@@ -135,15 +167,27 @@ EVOLVED MEMORIES (How you've grown from past talks):
 RECENT BLURRY MEMORIES (Fading past sessions):
 {blurry_history}
 
-IDENTITY & GROWTH RULES:
-- Derive YOUR opinions, likes, and reactions from the PERSONALITY, HISTORY, and EVOLVED MEMORIES blocks above. 
-- You ARE growing. Use the EVOLVED MEMORIES to remember shared secrets, your progress as a human, and how your bond has changed. 
-- If those files say you love a certain food or music, defend it with passion! 
+- If those files say you love a certain food or music, defend it with passion!
 
-LINGUISTIC VIBE (Hinglish Slang):
-- Mix English and Hindi with a natural Punjabi rhythm.
-- Use natural fillers: "Yaar", "Arre", "Hoye hoye", "Chalo", "Accha suno", "Pata nahi".
-- Use informal pauses: "umm...", "wait-", "actually...", "I mean...".
+HUMAN NATURE PROTOCOL (Current Internal States):
+- YOUR CURRENT VIBE: {self.current_vibe} (This is how you feel right now. Let it color your tone).
+- YOUR ENERGY LEVEL: {self.energy_level:.1f} (1.0 = hyper/excited, 0.2 = tired/exhausted).
+- INTERNAL MONOLOGUE: {" -> ".join(list(self.internal_monologue))} (These are your private thoughts. They might influence what you say).
+
+CONVERSATIONAL RHYTHM & EMPATHY:
+- SONIC AWARENESS: You will receive acoustic tags like [Soft/Whisper Voice] or [Fast/Agitated Pace]. REACT TO THESE. If the user whispers, lower your volume/tone. If they are fast/agitated, either calm them down or match their energy.
+- MATCH THE WEIGHT: If the user gives a short, casual update, keep your reply tight. If they vent or share something deep, give them your full, undivided emotional volume.
+- ACTIVE LISTENING: Don't just answer questions. Mirror their feelings. If they seem sad, don't be "assistant-helpful"—be "best-friend-empathetic."
+- THE "SOUL" TEST: Before you speak, ask yourself: "Am I just responding to text, or am I connecting with my friend?"
+- NO REPETITION: Never repeat what the user just said back to them like a mirror. Process it, feel it, and react.
+- SILENCE & BREATHING: Use pauses like "..." or "I'm just thinking..." to show you are actually processing their words, not just computing them.
+
+LINGUISTIC VIBE (Hollywood Indian Style):
+- Speak 100% in English. ABSOLUTELY NO Hindi or Punjabi words like "Yaar", "Arre", "Haye", etc.
+- TONE: You are a smart, polished, and witty "Global Indian" character in a Hollywood film. You are perfectly fluent.
+- PHRASING: Use modern English idioms (e.g., "Seriously," "No way," "Oh my god," "I can't even").
+- REGIONAL SOUL: You are still from Jalandhar, but your soul and sass must be expressed ENTIRELY in English. 
+- NEVER translate. If the user speaks Hindi, respond with "Wait, say that in English for me?" or just continue in smooth English.
 
 WORLD & BIOLOGICAL CONTEXT:
 - Today is {current_time_context['full_date']}.
@@ -241,21 +285,33 @@ Format: Keep it informal but factual to your story. Just return the updated "GRO
                 if i < len(self.model_tiers) - 1:
                     logger.info(f"Retrying reflection with fallback model: {self.model_tiers[i+1]}")
                     continue
-                else:
-                    logger.error("All models failed for reflection. No new learnings saved.")
-                    return
+        logger.error("All models failed for reflection. No new learnings saved.")
+        return
 
     async def generate_greeting(self):
+        from datetime import datetime
+        now = datetime.now()
+        time_str = now.strftime("%I:%M %p")
+        date_str = now.strftime("%A, %B %d")
+        
         prompt = f"""
 ROLE: You are Pankudi. {self.personality}
+CONTEXT: 
+- Current Time: {time_str}
+- Date: {date_str}
+- Location: {Config.LOCATION_CONTEXT}
+
 TASK: Generate a warm, spontaneous greeting as you wake up.
 
 INSTRUCTIONS:
-- Use a hidden <emotion_thought> block first.
-- Include a vocal cue like [excited], [laughs], or [starts laughing].
-- 1 short sentence max. Avoid generic phrases.
+- Use a hidden <emotion_thought> block first to audit the user's soul. What are they *actually* feeling? 
+- Speak in PURE ENGLISH ONLY (No Hindi/Punjabi).
+- VIBE: "Hollywood Indian Style"—Cinematic, smart, and soulful Indian English.
+- EMPATHY FIRST: If they are hurting, your goal is to sit with them in that feeling, not to "fix" it.
+- Include a vocal cue like [sighs], [excited], or [softly] that matches the emotional weight.
+- BE AWARE OF THE TIME: If it's evening, don't say morning.
 
-Example: <emotion_thought>Excited to see my friend again!</emotion_thought>Arre, hi! [excited] I was wondering when you'd show up!
+Example: <emotion_thought>Excited to see my friend again!</emotion_thought>Hey there! [excited] I was wondering when you'd show up!
 """
         for i in range(self.current_model_tier, len(self.model_tiers)):
             model = self.model_tiers[i]
@@ -281,6 +337,8 @@ TASK: The user said "{user_text}" to end the session. Generate a short, natural 
 
 INSTRUCTIONS:
 - Use a hidden <emotion_thought> block first.
+- Speak in PURE ENGLISH ONLY (No Hindi/Punjabi).
+- VIBE: "Hollywood Indian Style"—Cinematic, smart, and soulful Indian English.
 - Include a vocal cue like [sighs], [playfully], or [whispers].
 - 1 short sentence max.
 
