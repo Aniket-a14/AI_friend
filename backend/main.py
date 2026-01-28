@@ -3,6 +3,7 @@ from typing import Optional
 import logging
 import time
 import sys
+import random
 import uvicorn
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +43,7 @@ class AIBackend:
         self.running = True
         self.active_websocket: Optional[WebSocket] = None
         self.is_ready = False
+        self.active_response_task: Optional[asyncio.Task] = None
 
     async def initialize(self):
         """Asynchronous initialization of services."""
@@ -78,7 +80,31 @@ class AIBackend:
 
                 current_state = self.state_manager.state
 
-                # 2. State Machine
+                # 2. Global STT & Interruption logic (whenever awake)
+                if current_state != AppState.IDLE:
+                    result = self.stt.process_frame(frame)
+                    if result:
+                        text, is_final = result
+                        if is_final:
+                            self.last_speech_time = time.time()
+                            # If we were already thinking or speaking, this is a barge-in/interruption
+                            if self.active_response_task and not self.active_response_task.done():
+                                logger.info("Barge-in detected! Canceling current response.")
+                                self.active_response_task.cancel()
+                                if self.active_websocket:
+                                    await self.active_websocket.send_json({"type": "stop"})
+                            
+                            # Start new response as a background task
+                            self.active_response_task = asyncio.create_task(self.process_user_input(text))
+                    
+                    # Session Timeout Check (prevent timeout during AI speech)
+                    if not self.stt.is_speaking and current_state != AppState.SPEAKING and current_state != AppState.THINKING:
+                        if time.time() - self.last_speech_time > self.silence_timeout:
+                            logger.info("Silence timeout. Ending session.")
+                            await self.end_session()
+                            continue
+
+                # 3. State-Specific logic
                 if current_state == AppState.IDLE:
                     # Wake Word Detection
                     if self.wake_word.process(frame):
@@ -89,29 +115,12 @@ class AIBackend:
                         await self.handle_wake_greeting()
 
                 elif current_state == AppState.ACTIVE_SESSION:
-                    # Feed audio to Whisper STT
-                    # It handles VAD and buffering internally
-                    result = self.stt.process_frame(frame)
-                    
-                    if result:
-                        text, is_final = result
-                        if is_final:
-                            self.last_speech_time = time.time()
-                            await self.process_user_input(text)
-                    
-                    # Check overall session silence timeout
-                    # We can check if STT is speaking (buffering)
-                    if not self.stt.is_speaking and (time.time() - self.last_speech_time > self.silence_timeout):
-                        logger.info("Silence timeout. Ending session.")
-                        await self.end_session()
-                        continue
+                    pass
 
                 elif current_state == AppState.THINKING:
-                    # Just wait, processing is happening in background
                     pass
 
                 elif current_state == AppState.SPEAKING:
-                    # While speaking, we pause STT or just ignore input
                     pass
 
                 await asyncio.sleep(0.001)
@@ -147,7 +156,7 @@ class AIBackend:
 
         # TTS & Playback
         self.state_manager.start_speaking()
-        self.stt.stop() # Ensure STT is stopped while speaking
+        # self.stt.stop() # REMOVED: Keep STT active for Barge-in support
         
         audio_stream = self.tts.stream_audio(greeting_text)
         if audio_stream:
@@ -181,6 +190,14 @@ class AIBackend:
         
         # Set state to THINKING
         self.state_manager.start_thinking()
+        
+        # HUMAN NATURE: Simulated Thinking Latency
+        # Humans take longer to process deep/long thoughts
+        base_delay = 0.4 # Minimum human reaction
+        complexity_delay = min(2.5, len(text) / 50.0) # More text = more "thought"
+        total_delay = base_delay + (complexity_delay * random.uniform(0.5, 1.5))
+        logger.debug(f"Simulating human thought delay: {total_delay:.2f}s")
+        await asyncio.sleep(total_delay)
 
         full_response = ""
         sentence_buffer = ""
@@ -210,10 +227,9 @@ class AIBackend:
                 sentence_buffer += token
 
                 # 2. If we have a complete sentence, stream it to TTS
-                if any(char in sentence_buffer for char in sentence_end_chars) and len(sentence_buffer.strip()) > 5:
+                if any(char in sentence_buffer for char in sentence_end_chars) and len(sentence_buffer.strip()) > 30:
                     if self.state_manager.state == AppState.THINKING:
                         self.state_manager.start_speaking()
-                        self.stt.stop()
 
                     await self._stream_sentence_to_voice(sentence_buffer.strip())
                     sentence_buffer = ""
@@ -222,7 +238,7 @@ class AIBackend:
             if sentence_buffer.strip() and not in_reasoning:
                 if self.state_manager.state == AppState.THINKING:
                     self.state_manager.start_speaking()
-                    self.stt.stop()
+                    # self.stt.stop() # REMOVED: Keep STT active for Barge-in support
                 await self._stream_sentence_to_voice(sentence_buffer.strip())
 
             # Log final response (cleaned)
@@ -231,6 +247,9 @@ class AIBackend:
             await self.db.log_message("assistant", final_clean)
             logger.info(f"AI full response: {final_clean}")
 
+        except asyncio.CancelledError:
+            logger.info("Response task cancelled (Barge-in).")
+            raise # Re-raise to let the task system handle it
         except Exception as e:
             logger.error(f"Error in streaming response: {e}")
         finally:

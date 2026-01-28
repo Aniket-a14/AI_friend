@@ -23,7 +23,7 @@ class WhisperSTTService:
         # VAD Setup
 
         # VAD Setup
-        self.vad = webrtcvad.Vad(3) # Aggressiveness 3 (High)
+        self.vad = webrtcvad.Vad(3) # Aggressiveness 3 (Strict) to avoid noise hallucinations
         self.sample_rate = 16000
         self.frame_duration_ms = 30
         self.frame_size = int(self.sample_rate * self.frame_duration_ms / 1000) # 480 samples
@@ -33,7 +33,9 @@ class WhisperSTTService:
         self.audio_buffer = collections.deque() # Stores valid speech frames
         self.is_speaking = False
         self.silence_start_time = None
-        self.silence_threshold = 0.7 # seconds of silence to trigger transcription
+        self.speech_start_time = None # Track start of utterance
+        self.silence_threshold = 2.0 
+        self.max_utterance_duration = 15.0 # Force transcription every 15s to avoid hallucinations
         
         self.active = False # Controls if we are listening
 
@@ -73,6 +75,7 @@ class WhisperSTTService:
         self.audio_buffer.clear()
         self.is_speaking = False
         self.silence_start_time = None
+        self.speech_start_time = None
 
     def process_frame(self, pcm_data):
         """
@@ -102,8 +105,16 @@ class WhisperSTTService:
                 if not self.is_speaking:
                     logger.debug("Speech started")
                     self.is_speaking = True
+                    self.speech_start_time = time.time()
                 self.silence_start_time = None
                 self.audio_buffer.append(frame)
+                
+                # Force transcription if duration is too long
+                if self.speech_start_time and (time.time() - self.speech_start_time > self.max_utterance_duration):
+                    logger.info("Max utterance duration reached. Forcing transcription...")
+                    result = self.transcribe()
+                    self.reset()
+                    return result
             else:
                 if self.is_speaking:
                     # We were speaking, now silence
@@ -136,11 +147,59 @@ class WhisperSTTService:
         # 16-bit PCM -> float32 normalized to [-1, 1]
         audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
-        try:
-            segments, info = self.model.transcribe(audio_np, beam_size=5, language="en")
-            text = " ".join([segment.text for segment in segments]).strip()
+        # --- SONIC EMPATHY ANALYSIS ---
+        # Calculate RMS energy (volume)
+        rms = np.sqrt(np.mean(audio_np**2))
+        
+        # Determine acoustic cues
+        # threshold 0.01 is very soft (whisper), 0.1 is normal, 0.3+ is loud/intense
+        sonic_tag = "[Normal Volume]"
+        if rms < 0.03:
+            sonic_tag = "[Soft/Whisper Voice]"
+        elif rms > 0.25:
+            sonic_tag = "[Loud/Intense Voice]"
             
-            if text:
+        # Optional: Duration/Pace check
+        duration = len(audio_np) / self.sample_rate
+        words_estimate = len(audio_data) / 2000 # Very rough words estimate
+        pace_tag = ""
+        if duration > 1.0:
+            words_per_sec = words_estimate / duration
+            if words_per_sec > 4:
+                pace_tag = "[Fast/Agitated Pace]"
+            elif words_per_sec < 1.5:
+                pace_tag = "[Slow/Heavy Pace]"
+        
+        sonic_cues = f"{sonic_tag} {pace_tag}".strip()
+        # ------------------------------
+
+        try:
+            # beam_size=1 is faster and often avoids repetitive hallucinations better than high beams
+            # condition_on_previous_text=False prevents "ghosting" from past errors
+            segments, info = self.model.transcribe(
+                audio_np, 
+                beam_size=1, 
+                language="en", 
+                condition_on_previous_text=False,
+                initial_prompt="A natural conversation between two friends."
+            )
+            raw_text = " ".join([segment.text for segment in segments]).strip()
+            # Prefix with acoustic cues so the LLM "hears" the volume and speed
+            text = f"{sonic_cues} {raw_text}".strip()
+            
+            # Post-processing: Deduplicate stuttering hallucinations (e.g., "what, what, what" -> "what")
+            words = text.split()
+            clean_words = []
+            for i, word in enumerate(words):
+                normalized_word = word.lower().strip(".,?!")
+                if i > 0:
+                    prev_normalized = words[i-1].lower().strip(".,?!")
+                    if normalized_word == prev_normalized:
+                        continue
+                clean_words.append(word)
+            text = " ".join(clean_words)
+            
+            if text and len(text.strip()) > 2: # Avoid tiny hallucinated sounds
                 logger.info(f"Whisper Transcribed: {text}")
                 return text, True
         except Exception as e:

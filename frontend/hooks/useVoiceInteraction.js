@@ -115,6 +115,20 @@ export function useVoiceInteraction() {
             socket.onmessage = (event) => {
                 if (event.data instanceof ArrayBuffer) {
                     playChunk(event.data);
+                } else {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'stop') {
+                            console.log("Stopping audio playback (Barge-in)");
+                            if (playbackAudioContextRef.current) {
+                                playbackAudioContextRef.current.close().catch(() => { });
+                                playbackAudioContextRef.current = null;
+                            }
+                            nextStartTimeRef.current = 0;
+                        }
+                    } catch (e) {
+                        // Not JSON, ignore
+                    }
                 }
             };
 
