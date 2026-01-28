@@ -1,5 +1,4 @@
 pvporcupine
-pyaudio
 google-genai
 elevenlabs
 python-dotenv
