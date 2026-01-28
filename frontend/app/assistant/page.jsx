@@ -7,7 +7,7 @@ import { useVoiceInteraction } from '../../hooks/useVoiceInteraction';
 
 export default function AssistantPage() {
     const state = useBackendState();
-    const { isConnected, isRecording, startRecording } = useVoiceInteraction();
+    const { isConnected, isConnecting, isRecording, startRecording } = useVoiceInteraction();
 
     // Automatically start recording once we arrive at this page and socket is connected.
     // The user has already given explicit interaction via the "Start" button on the previous page.
@@ -19,10 +19,13 @@ export default function AssistantPage() {
 
     return (
         <main className="flex min-h-screen flex-col items-center justify-center bg-black overflow-hidden relative">
-            <div className={`absolute top-4 left-4 flex items-center gap-2 transition-opacity duration-500 ${isConnected ? 'opacity-100' : 'opacity-50'}`}>
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
+            <div className={`absolute top-4 left-4 flex items-center gap-2 transition-opacity duration-500 ${isConnected || isConnecting ? 'opacity-100' : 'opacity-50'}`}>
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' :
+                        isConnecting ? 'bg-amber-500' :
+                            'bg-red-500'
+                    } animate-pulse`} />
                 <span className="text-xs text-white/40 font-mono tracking-widest uppercase">
-                    {isConnected ? 'Stream Active' : 'Connecting...'}
+                    {isConnected ? 'Stream Active' : isConnecting ? 'Initializing...' : 'Disconnected'}
                 </span>
             </div>
 

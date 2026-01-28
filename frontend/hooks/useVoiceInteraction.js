@@ -6,6 +6,7 @@ const WS_URL = 'ws://localhost:8000/ws/audio';
 
 export function useVoiceInteraction() {
     const [isConnected, setIsConnected] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const wsRef = useRef(null);
     const audioContextRef = useRef(null);
@@ -102,6 +103,7 @@ export function useVoiceInteraction() {
         const MAX_RECONNECT_ATTEMPTS = 5;
 
         const connect = () => {
+            setIsConnecting(true);
             socket = new WebSocket(WS_URL);
             socket.binaryType = 'arraybuffer';
             wsRef.current = socket;
@@ -109,6 +111,7 @@ export function useVoiceInteraction() {
             socket.onopen = () => {
                 console.log("WebSocket Connected to AI Backend");
                 setIsConnected(true);
+                setIsConnecting(false);
                 reconnectAttempts = 0;
             };
 
@@ -134,7 +137,11 @@ export function useVoiceInteraction() {
 
             socket.onclose = (event) => {
                 setIsConnected(false);
-                console.log("WebSocket closed", event.code, event.reason);
+                setIsConnecting(false);
+                // Only log if it's not a normal closure or if we've already connected before
+                if (reconnectAttempts > 0 || !event.wasClean) {
+                    console.log("WebSocket closed", event.code, event.reason);
+                }
 
                 if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
@@ -146,7 +153,11 @@ export function useVoiceInteraction() {
             };
 
             socket.onerror = (error) => {
-                console.error("WebSocket error:", error);
+                setIsConnecting(false);
+                // Suppress "error" logs for the first attempt as it might just be the backend waking up
+                if (reconnectAttempts > 0) {
+                    console.error("WebSocket error:", error);
+                }
             };
         };
 
@@ -161,5 +172,5 @@ export function useVoiceInteraction() {
         };
     }, [playChunk, stopRecording]);
 
-    return { isConnected, isRecording, startRecording, stopRecording };
+    return { isConnected, isConnecting, isRecording, startRecording, stopRecording };
 }
