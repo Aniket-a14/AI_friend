@@ -1,0 +1,26 @@
+name: "✨ Feature Request"
+description: "Suggest a new idea or enhancement for AI Friend"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a great idea for AI Friend? Let's hear it!
+  - type: textarea
+    id: feature-description
+    attributes:
+      label: "Describe your idea"
+      description: "A clear and concise description of what you want to happen."
+      placeholder: "e.g., I want her to recognize my voice tone..."
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: "Why is this needed?"
+      description: "How would this improve the user experience or the human-like bond?"
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives considered"
+      description: "Any alternative solutions or features you've considered."
