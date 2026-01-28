@@ -11,11 +11,20 @@ logger = logging.getLogger(__name__)
 class LLMService:
     def __init__(self):
         self.client = genai.Client(api_key=Config.GEMINI_API_KEY)
-        self.model_tiers = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+        self.model_tiers = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
         self.current_model_tier = 0
         self.memory = deque(maxlen=8) # Stores last 8 messages
         self.personality = "You are a helpful AI assistant."
         self.history = ""
+
+    def add_to_memory(self, role, content):
+        """Add a message to the short-term sharp memory."""
+        self.memory.append({"role": role, "content": content})
+
+    def clear_memory(self):
+        """Reset short-term memory and model fallback tier."""
+        self.memory.clear()
+        self.current_model_tier = 0
 
     async def reload_context(self, db_store):
         """Fetch personality, core background, recent session gists, and last seen time."""
@@ -98,8 +107,9 @@ class LLMService:
         }
 
         # Layer 1: Short-Term Memory (Sharp)
+        # Filter out empty messages and only include recent context
         short_term_text = ""
-        for msg in self.memory:
+        for msg in list(self.memory)[:-1]: # Exclude the current user_text which is handled at the end
             role = "User" if msg["role"] == "user" else "Assistant"
             short_term_text += f"{role}: {msg['content']}\n"
 
@@ -211,19 +221,29 @@ TASK:
 
 Format: Keep it informal but factual to your story. Just return the updated "GROWING MEMORY" text block. No bullet points.
 """
-        try:
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
-                model=self.model_tiers[self.current_model_tier],
-                contents=prompt
-            )
-            new_growth = response.text.strip()
-            if new_growth:
-                self.evolved_learnings = new_growth
-                await db_store.update_evolved_learnings(new_growth)
-                logger.info("Pankudi has evolved her memory based on this session.")
-        except Exception as e:
-            logger.error(f"Failed to reflect on session: {e}")
+        for i in range(self.current_model_tier, len(self.model_tiers)):
+            model = self.model_tiers[i]
+            try:
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=model,
+                    contents=prompt
+                )
+                new_growth = response.text.strip()
+                if new_growth:
+                    self.evolved_learnings = new_growth
+                    await db_store.update_evolved_learnings(new_growth)
+                    logger.info("Pankudi has evolved her memory based on this session.")
+                self.current_model_tier = i
+                return # Success
+            except Exception as e:
+                logger.error(f"Failed to reflect on session with {model}: {e}")
+                if i < len(self.model_tiers) - 1:
+                    logger.info(f"Retrying reflection with fallback model: {self.model_tiers[i+1]}")
+                    continue
+                else:
+                    logger.error("All models failed for reflection. No new learnings saved.")
+                    return
 
     async def generate_greeting(self):
         prompt = f"""

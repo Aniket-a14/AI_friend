@@ -28,7 +28,10 @@ export function useVoiceInteraction() {
             nextStartTimeRef.current = ctx.currentTime;
         }
 
-        const bufferSize = chunk.byteLength / 2;
+        const bufferSize = Math.floor(chunk.byteLength / 2);
+
+        if (bufferSize < 1) return; // Prevent "NotSupportedError" for empty or single-byte chunks
+
         const buffer = ctx.createBuffer(1, bufferSize, 24000);
         const channelData = buffer.getChannelData(0);
         const int16Array = new Int16Array(chunk);
