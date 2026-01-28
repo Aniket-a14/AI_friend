@@ -28,3 +28,29 @@ jobs:
       
     - name: Build
       run: npm run build
+
+  backend-validation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+      
+    - name: Validate Imports
+      run: |
+        # Simple check to ensure all dependencies are correctly listed and can be imported
+        python -c "import app.audio; import app.llm; import app.tts; print('Imports validated successfully')"
+

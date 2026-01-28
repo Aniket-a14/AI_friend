@@ -8,52 +8,52 @@ logger = logging.getLogger(__name__)
 class WakeWordDetector:
     def __init__(self):
         self.porcupine = None
+        self.buffer = bytearray()
         try:
             self.porcupine = pvporcupine.create(
                 access_key=Config.PORCUPINE_ACCESS_KEY,
                 keyword_paths=[Config.WAKE_WORD_PATH]
             )
-            logger.info(f"Porcupine initialized. Version: {self.porcupine.version}")
-            logger.info(f"Porcupine Frame Length: {self.porcupine.frame_length}")
-            logger.info(f"Porcupine Sample Rate: {self.porcupine.sample_rate}")
+            self.frame_bytes = self.porcupine.frame_length * 2 # 16-bit PCM (2 bytes per sample)
+            logger.info(f"Porcupine initialized. Frame Length: {self.porcupine.frame_length} samples ({self.frame_bytes} bytes)")
         except Exception as e:
             logger.error(f"Failed to initialize Porcupine: {e}")
             raise
 
-    def process(self, pcm_data):
+    def process(self, pcm_chunk: bytes):
         """
-        Process a chunk of PCM audio.
-        pcm_data: bytes
+        Process incoming audio chunks. Handles buffering for browser-based streams.
         Returns: True if wake word detected, False otherwise.
         """
         if not self.porcupine:
             return False
 
-        # Porcupine expects a list of shorts (int16)
-        # We need to ensure the frame length matches what Porcupine expects
-        # Porcupine.frame_length is typically 512
-        
-        expected_length = self.porcupine.frame_length * 2 # 2 bytes per sample
-        
-        if len(pcm_data) != expected_length:
-            # If we get a different chunk size, we might need to buffer.
-            # For now, let's assume the AudioStream provides correct chunk sizes 
-            # or we handle it outside.
-            # But actually, AudioStream might give whatever OS gives.
-            # We should probably handle buffering here or in AudioStream.
-            # Let's just return False and log warning if size mismatch for now.
-            # logger.warning(f"WakeWord process: size mismatch {len(pcm_data)} vs {expected_length}")
-            logger.warning(f"WakeWord process: size mismatch {len(pcm_data)} vs {expected_length}")
-            return False
+        # Add new chunk to the sliding buffer
+        self.buffer.extend(pcm_chunk)
 
-        pcm = struct.unpack_from("h" * self.porcupine.frame_length, pcm_data)
-        result = self.porcupine.process(pcm)
-        
-        if result >= 0:
-            logger.info("Wake word detected!")
-            return True
-        return False
+        detected = False
+        # Process all full frames currently in the buffer
+        while len(self.buffer) >= self.frame_bytes:
+            # Extract exactly one frame
+            frame_data = self.buffer[:self.frame_bytes]
+            # Remove that frame from the buffer (sliding window)
+            self.buffer = self.buffer[self.frame_bytes:]
+
+            # Unpack and process
+            pcm = struct.unpack_from("h" * self.porcupine.frame_length, frame_data)
+            result = self.porcupine.process(pcm)
+            
+            if result >= 0:
+                logger.info("Wake word detected!")
+                detected = True
+                # Clear buffer on detection to prevent duplicate triggers
+                self.buffer.clear()
+                break # Return immediately on detection
+                
+        return detected
 
     def delete(self):
         if self.porcupine:
             self.porcupine.delete()
+            self.porcupine = None
+            self.buffer.clear()

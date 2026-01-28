@@ -1,76 +1,50 @@
-# AI Assistant
+# AI Assistant - Human-like Voice Companion 🎙️✨
 
-A sophisticated, voice-enabled AI assistant application that combines a modern Next.js frontend with a powerful Python backend. This project demonstrates a seamless integration of real-time voice processing, advanced Large Language Models (LLMs), and reactive user interfaces.
+AI Assistant is a sophisticated, real-time voice-interactive AI assistant designed to feel like a natural companion rather than a robotic utility. It features **near-instantaneous responses**, **expressive vocal cues**, and **cross-platform support** for both desktop and mobile.
 
-## 🚀 Overview
+## 🌟 Key Features
 
-The AI Assistant is designed to provide a natural, conversational experience. It listens for a wake word, transcribes user speech in real-time, processes the intent using Google's Gemini LLM, and responds with an expressive voice powered by ElevenLabs. The frontend provides immediate visual feedback, mirroring the AI's internal state (Listening, Thinking, Speaking) to create an engaging user interaction.
+- **⚡ Near-Instant Response**: Full streaming pipeline (Gemini tokens -> Sentence buffering -> ElevenLabs voice chunks) ensures negligible latency.
+- **🎭 Human-like Soul**: Powered by a dynamic persona engine that "thinks" internally before speaking, using emotional context and vocal tags like `[laughs]`, `[sighs]`, and `[whispers]`.
+- **📱 Mobile & Web Ready**: Decoupled from local hardware; audio is captured and played directly in the browser via Web Audio API and WebSockets.
+- **☁️ Cloud Persistence**: Syncs personality, memory, and history with Supabase (PostgreSQL) for a persistent "soul" across sessions.
+- **🐳 Production Ready**: Fully containerized with Docker and hardened with security best practices (CORS, HSTS).
 
 ## 🏗️ Architecture
 
-The project is divided into two main components:
+### 1. Backend (Python/FastAPI)
+The core logic engine:
+- **Intelligence**: Google Gemini 2.5 Pro with internal emotional monologue.
+- **Voice**: ElevenLabs v3 for ultra-realistic speech synthesis.
+- **STT**: Faster Whisper for low-latency speech transcription.
+- **Store**: Supabase (via asyncpg) for low-latency session and context management.
 
-### 1. Backend (Python)
-The brain of the operation, handling all logic and processing:
-- **Wake Word Detection**: Uses **Porcupine** for low-latency, offline wake word detection.
-- **Speech-to-Text (STT)**: Implements **Faster Whisper** for accurate, local real-time transcription.
-- **Intelligence**: Integrated with **Google Gemini 2.5 Pro** to generate context-aware and personality-driven responses.
-- **Text-to-Speech (TTS)**: Utilizes **ElevenLabs** for high-quality, lifelike voice synthesis.
-- **State Management**: A robust state machine manages transitions between `IDLE`, `LISTENING`, `THINKING`, and `SPEAKING` states.
-
-### 2. Frontend (Next.js)
-The visual face of the assistant:
-- **Reactive UI**: Built with **React** and **Next.js 14** (App Router).
-- **State Visualization**: A dynamic "Assistant Circle" component that changes color, animation, and size based on the backend's real-time state.
-- **Modern Styling**: Styled with **Tailwind CSS** for a sleek, dark-themed aesthetic with smooth animations.
-
-## 🔄 How It Works
-
-1.  **Activation**: The backend listens for the specific wake word.
-2.  **Listening**: Once activated, the system records user audio and transcribes it using Whisper. The frontend displays a "Listening" animation.
-3.  **Thinking**: The transcribed text is sent to the Gemini LLM. The frontend shows a "Thinking" state.
-4.  **Speaking**: The LLM's response is converted to audio via ElevenLabs and played back. The frontend pulses in the "Speaking" state.
-5.  **Loop**: The system returns to a listening or idle state, ready for the next interaction.
-
-## 🛠️ Tech Stack
-
-- **Frontend**: Next.js, React, Tailwind CSS, Framer Motion (animations).
-- **Backend**: Python, FastAPI (optional for API), Porcupine (Wake Word), Faster Whisper (STT), Google Gemini (LLM), ElevenLabs (TTS).
-- **Communication**: HTTP/WebSocket (for state synchronization).
+### 2. Frontend (Next.js/React)
+A sleek, reactive interface:
+- **Audio Engine**: Real-time 16bit PCM capture (16kHz) and playback (24kHz) via WebSockets.
+- **Visualizer**: A dynamic "Assistant Circle" that pulses and morphs based on AI heartbeats (Idle, Thinking, Speaking).
+- **Resilience**: Adaptive reconnect logic with exponential backoff for stable mobile usage.
 
 ## 🏁 Getting Started
 
-### Prerequisites
+### The Quick Way (Docker)
+Ensure you have Docker and Docker Compose installed:
+1. Populate your `.env` files in `backend/` and `frontend/`.
+2. Run:
+```bash
+docker-compose up --build
+```
+Access the assistant at `http://localhost:3000`.
 
-- **Node.js** (v20+ recommended)
-- **Python** (v3.10+)
-- API Keys for **Gemini**, **ElevenLabs**, and **Picovoice (Porcupine)**.
+### The Manual Way
+See the detailed setup guides in each subdirectory:
+- [Backend Setup](./backend/README.md)
+- [Frontend Setup](./frontend/README.md)
 
-### Installation
-
-1.  **Backend Setup**:
-    Navigate to the `backend` directory and follow the detailed instructions in `backend/README.md` to set up the virtual environment and install dependencies.
-
-2.  **Frontend Setup**:
-    Navigate to the `frontend` directory:
-    ```bash
-    cd frontend
-    npm install
-    ```
-
-### Running the Application
-
-1.  **Start the Backend**:
-    Follow the usage instructions in `backend/README.md`.
-
-2.  **Start the Frontend**:
-    ```bash
-    cd frontend
-    npm run dev
-    ```
-3.  **Access the UI**:
-    Open [http://localhost:3000](http://localhost:3000) in your browser.
+## 📄 Documentation
+- [Deployment Guide](./DEPLOYMENT.md) - How to go live.
+- [API Specification](./API_SPEC.md) - WebSocket & REST reference.
 
 ## 📄 License
+MIT License. Feel free to build, remix, and share.
 
-This project is open-source and available under the MIT License.

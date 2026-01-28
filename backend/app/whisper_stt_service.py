@@ -32,7 +32,7 @@ class WhisperSTTService:
         self.audio_buffer = collections.deque() # Stores valid speech frames
         self.is_speaking = False
         self.silence_start_time = None
-        self.silence_threshold = 1.0 # seconds of silence to trigger transcription
+        self.silence_threshold = 0.7 # seconds of silence to trigger transcription
         
         self.active = False # Controls if we are listening
 
