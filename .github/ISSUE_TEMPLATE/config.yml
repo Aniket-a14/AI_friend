@@ -1,0 +1,7 @@
+# Issue Templates Config
+
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/Aniket-a14/AI_friend/discussions
+    about: Please use discussions for general questions or chat.
