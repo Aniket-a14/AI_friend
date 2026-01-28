@@ -1,14 +1,14 @@
-# AI Assistant - Human-like Voice Companion 🎙️✨
+# AI Friend v2.0.0 - Human-like Voice Companion 🎙️✨
 
-AI Assistant is a sophisticated, real-time voice-interactive AI assistant designed to feel like a natural companion rather than a robotic utility. It features **near-instantaneous responses**, **expressive vocal cues**, and **cross-platform support** for both desktop and mobile.
+AI Friend is a sophisticated, real-time voice-interactive AI assistant designed to feel like a natural companion rather than a robotic utility. It features **near-instantaneous responses**, **expressive vocal cues**, and a **human-like "soul"** with local roots in Jalandhar, Punjab.
 
-## 🌟 Key Features
+## 🌟 Key Features (The Humanized Era)
 
-- **⚡ Near-Instant Response**: Full streaming pipeline (Gemini tokens -> Sentence buffering -> ElevenLabs voice chunks) ensures negligible latency.
-- **🎭 Human-like Soul**: Powered by a dynamic persona engine that "thinks" internally before speaking, using emotional context and vocal tags like `[laughs]`, `[sighs]`, and `[whispers]`.
-- **📱 Mobile & Web Ready**: Decoupled from local hardware; audio is captured and played directly in the browser via Web Audio API and WebSockets.
-- **☁️ Cloud Persistence**: Syncs personality, memory, and history with Supabase (PostgreSQL) for a persistent "soul" across sessions.
-- **🐳 Production Ready**: Fully containerized with Docker and hardened with security best practices (CORS, HSTS).
+- **⚡ Memory v2 (Imperfect Memory)**: Features Short-term, Blurry, and Core memory layers for human-like recall.
+- **⏰ Biological Clock**: Awareness of time passage, absences, and simulated day/night energy cycles.
+- **🌱 Human Growth Engine**: Learns and evolves her personality based on past conversations.
+- **🎭 Expressive Voice**: Uses emotional context and vocal tags like `[laughs]`, `[sighs]`, and `[whispers]` via ElevenLabs v3.
+- **☁️ Persistent Soul**: Syncs personality and growth with Supabase (PostgreSQL) for a continuous friendship.
 
 ## 🏗️ Architecture
 

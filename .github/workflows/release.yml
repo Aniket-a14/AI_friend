@@ -1,0 +1,40 @@
+name: Release
++
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Pankudi AI v${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## AI Friend Version 2.0.0 - "The Humanized Era"
+            
+            This release marks the major milestone of transforming Pankudi into a truly human-like AI companion.
+            
+            ### 🌟 Key Features:
+            - **Imperfect Memory (Memory v2)**: Short-term, Blurry, and Core memory layers.
+            - **Biological Clock**: Temporal awareness and simulated biological rhythms.
+            - **Dynamic Identity**: Personality and history derived purely from JSON configurations.
+            - **Human Growth Engine**: Session reflection and persistent learning.
+            - **Jalandhar Local Integration**: Deep localized personality and linguistic vibe.
+            
+            ### ⚙️ Automation:
+            - Integrated GitHub Action for CI (Testing/Validation).
+            - Automated Release generation on Tag push.
