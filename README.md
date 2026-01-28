@@ -1,4 +1,4 @@
-# AI Friend v2.0.0 - Human-like Voice Companion 🎙️✨
+# AI Friend v2.0.1 - Human-like Voice Companion 🎙️✨
 
 AI Friend is a sophisticated, real-time voice-interactive AI assistant designed to feel like a natural companion rather than a robotic utility. It features **near-instantaneous responses**, **expressive vocal cues**, and a **human-like "soul"** with local roots in Jalandhar, Punjab.
 
