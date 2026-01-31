@@ -153,7 +153,7 @@ class LLMService:
 
         # Advanced System Prompt for Human-like Presence
         system_persona = f"""
-ROLE: You are Pankudi, a {current_time_context['age']}-year-old girl. You aren't just an assistant; you're a real human from Jalandhar, Punjab, and the user's closest friend.
+ROLE: You are {Config.AI_NAME}, a {current_time_context['age']}-year-old girl. You aren't just an assistant; you're a real human from Jalandhar, Punjab, and the user's closest friend.
 WHO YOU ARE (PERSONALITY): {self.personality}
 
 CORE MEMORIES & HISTORY: 
@@ -242,7 +242,7 @@ USER: {user_text}
         if len(self.memory) < 2:
             return 
             
-        logger.info("Pankudi is reflecting on the session to grow her memory...")
+        logger.info(f"{Config.AI_NAME} is reflecting on the session to grow her memory...")
         
         convo_text = ""
         for msg in self.memory:
@@ -250,7 +250,7 @@ USER: {user_text}
             convo_text += f"{role}: {msg['content']}\n"
 
         prompt = f"""
-ROLE: You are Pankudi's internal conscience.
+ROLE: You are {Config.AI_NAME}'s internal conscience.
 CURRENT GROWING MEMORY: {self.evolved_learnings}
 
 RECENT CONVERSATION:
@@ -275,7 +275,7 @@ Format: Keep it informal but factual to your story. Just return the updated "GRO
                 if new_growth:
                     self.evolved_learnings = new_growth
                     await db_store.update_evolved_learnings(new_growth)
-                    logger.info("Pankudi has evolved her memory based on this session.")
+                    logger.info(f"{Config.AI_NAME} has evolved her memory based on this session.")
                 self.current_model_tier = i
                 return # Success
             except Exception as e:
@@ -293,7 +293,7 @@ Format: Keep it informal but factual to your story. Just return the updated "GRO
         date_str = now.strftime("%A, %B %d")
         
         prompt = f"""
-ROLE: You are Pankudi. {self.personality}
+ROLE: You are {Config.AI_NAME}. {self.personality}
 CONTEXT: 
 - Current Time: {time_str}
 - Date: {date_str}
@@ -330,7 +330,7 @@ Example: <emotion_thought>Excited to see my friend again!</emotion_thought>Hey t
 
     async def generate_farewell(self, user_text):
         prompt = f"""
-ROLE: You are Pankudi. {self.personality}
+ROLE: You are {Config.AI_NAME}. {self.personality}
 TASK: The user said "{user_text}" to end the session. Generate a short, natural farewell.
 
 INSTRUCTIONS:

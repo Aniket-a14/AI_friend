@@ -1,6 +1,6 @@
 # API Specification 📖🔌
 
-This document details the technical interfaces for the Pankudi AI assistant.
+This document details the technical interfaces for the AI Friend assistant.
 
 ## 📡 WebSocket Audio Protocol
 **Endpoint**: `/ws/audio`  
@@ -23,13 +23,24 @@ The WebSocket provides bi-directional, real-time audio streaming.
 ### Get Current Status
 **GET** `/status`
 
-Returns the current lifecycle state of the AI.
+Returns the current lifecycle state of the AI Friend.
 
 **Response**:
 ```json
 {
-  "state": "IDLE" | "LISTENING" | "THINKING" | "SPEAKING",
-  "reasoning": "Optional hidden monologue snippet"
+  "state": "idle" | "listening" | "thinking" | "speaking"
+}
+```
+
+### Manual Start Session
+**POST** `/start-session`
+
+Manually triggers the wake word sequence (Greetings -> Listening). Useful for UI buttons.
+
+**Response**:
+```json
+{
+  "status": "started" | "already_active" | "loading_models"
 }
 ```
 

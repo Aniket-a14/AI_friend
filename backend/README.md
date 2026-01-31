@@ -1,6 +1,6 @@
-# AI Assistant Backend 🧠🔊
+# AI Friend Backend 🧠🔊
 
-The high-performance core of the Pankudi AI assistant. Built with FastAPI and optimized for real-time streaming voice interaction.
+The high-performance core of the AI Friend assistant. Built with FastAPI and optimized for real-time streaming voice interaction.
 
 ## 🚀 Performance Features
 
@@ -29,6 +29,9 @@ ELEVENLABS_VOICE_ID=your_id
 # Database
 DATABASE_URL=your_supabase_connection_string
 
+# Identity
+AI_NAME=AI Friend (or whatever you want!)
+
 # Production Settings
 DEBUG=False
 ALLOWED_ORIGINS=http://your-domain.com,http://localhost:3000
@@ -36,8 +39,8 @@ ALLOWED_ORIGINS=http://your-domain.com,http://localhost:3000
 
 ## 🐳 Docker Deployment
 ```bash
-docker build -t pankudi-backend .
-docker run -p 8000:8000 --env-file .env pankudi-backend
+docker build -t ai-friend-backend .
+docker run -p 8000:8000 --env-file .env ai-friend-backend
 ```
 
 ## 📂 Internal Modules

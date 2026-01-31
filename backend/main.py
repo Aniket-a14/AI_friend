@@ -141,7 +141,7 @@ class AIBackend:
         self.state_manager.session_end()
         self.llm.clear_memory()
         await self.db.end_session()
-        logger.info("Session ended. Pankudi has evolved and is now IDLE.")
+        logger.info(f"Session ended. {Config.AI_NAME} has evolved and is now IDLE.")
 
     async def handle_wake_greeting(self):
         """Generates and plays a greeting on wake word detection"""
@@ -150,7 +150,7 @@ class AIBackend:
         # Strip hidden reasoning
         greeting_text = raw_greeting.split("</emotion_thought>")[-1].strip()
         
-        logger.info(f"AI Greeting: {greeting_text}")
+        logger.info(f"{Config.AI_NAME} Greeting: {greeting_text}")
         self.llm.add_to_memory("assistant", greeting_text)
         await self.db.log_message("assistant", greeting_text)
 
@@ -179,7 +179,7 @@ class AIBackend:
         
         if not text.strip():
             return
-
+        
         # Check stop commands
         if text.lower().strip() in ["bye", "stop", "goodnight", "you can rest now", "end", "shutdown"]:
             await self.handle_stop_command(text)
@@ -331,7 +331,7 @@ async def lifespan(app: FastAPI):
     await backend.cleanup() # Using cleanup method
     await loop_task
 
-app = FastAPI(title="Pankudi AI Backend", lifespan=lifespan)
+app = FastAPI(title=f"{Config.AI_NAME} Backend", lifespan=lifespan)
 
 # CORS Setup - Hardened for Production
 app.add_middleware(

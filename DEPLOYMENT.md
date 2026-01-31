@@ -1,6 +1,6 @@
 # Deployment Guide 🚀🚢
 
-Pankudi AI can be deployed in two main ways: **Split** (Recommended for ease) or **Combined** (Best for control).
+AI Friend can be deployed in two main ways: **Split** (Recommended for ease) or **Combined** (Best for control).
 
 ---
 
@@ -40,7 +40,7 @@ This uses the included `docker-compose.yml` to run everything together.
 ### 2. Deploy the Stack
 ```bash
 git clone <your-repo-url>
-cd Pankudi_ai
+cd Ai_friend
 # Build and run everything in the background
 docker-compose up --build -d
 ```

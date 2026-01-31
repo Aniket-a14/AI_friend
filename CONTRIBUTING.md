@@ -8,24 +8,51 @@ The following is a set of guidelines for contributing to AI Friend. These are mo
 
 Please refer to the [README.md](README.md) for instructions on how to set up the project locally.
 
-## Project Structure
+## 🗺️ Codebase Walkthrough
 
-The project is divided into two main components:
+Understanding where things live will help you move faster.
 
-*   **`backend/`**: Python-based backend using FastAPI (optional), Porcupine, Faster Whisper, Google Gemini, and ElevenLabs.
-*   **`frontend/`**: Next.js 14 application using React and Tailwind CSS.
+### 🧠 Backend (`/backend`)
+The brain of the operation, built with **FastAPI**.
+*   **`main.py`**: The entry point. Handles WebSocket connections (`/ws/audio`), state management loop (`AIBackend.run`), and CORS.
+*   **`app/state_manager.py`**: Manages the AI's heartbeat (IDLE, IGNORING, LISTENING, THINKING, SPEAKING).
+*   **`app/llm.py`**: The interface to **Google Gemini 2.5 Pro**. Handles the "Inner Monologue" mechanism (`<emotion_thought>`) and memory management.
+*   **`app/audio.py`**: Handles raw PCM audio streams. Contains `AudioStream` (input buffer) and `AudioPlayer` (local playback).
+*   **`app/wake_word.py`**: **Porcupine** integration for Wake Word detection.
+*   **`app/vad.py`**: Voice Activity Detection to know when the user stops speaking.
+
+### 🎨 Frontend (`/frontend`)
+The face of the operation, built with **Next.js 14** (App Router).
+*   **`app/page.tsx`**: The main dashboard.
+*   **`components/AssistantCircle.jsx`**: The core visualizer. It subscribes to the WebSocket state and morphs the UI (pulsing when listening, spinning when thinking).
+*   **`components/StartButton.jsx`**: Simple UI trigger to start the session manually.
+
 
 ## Development Workflow
 
 1.  **Fork the repository** and clone it locally.
 2.  **Create a branch** for your edits.
     *   Use a descriptive name, e.g., `feature/new-voice-command` or `fix/websocket-connection`.
-3.  **Make your changes**.
-    *   Ensure you follow the coding standards (see below).
-    *   Test your changes thoroughly.
-4.  **Commit your changes**.
-    *   Write clear and concise commit messages.
-5.  **Push to your fork** and submit a **Pull Request**.
+3.  **Setup Environment**:
+    *   **Backend**:
+        ```bash
+        cd backend
+        python -m venv .venv
+        source .venv/bin/activate  # Windows: .venv\Scripts\activate
+        pip install -r requirements.txt
+        ```
+    *   **Frontend**:
+        ```bash
+        cd frontend
+        npm install
+        ```
+4.  **Make your changes**.
+    *   Ensure you follow the coding standards.
+    *   Use **Conventional Commits** for your messages (e.g., `feat: add voice`, `fix: webrtc crash`).
+5.  **Test your changes**:
+    *   **Backend**: `flake8 .` and `pytest`
+    *   **Frontend**: `npm run lint` and `npm run build`
+6.  **Push to your fork** and submit a **Pull Request**.
 
 ## Pull Request Process
 

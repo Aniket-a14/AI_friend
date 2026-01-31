@@ -1,6 +1,6 @@
-# Pankudi AI Frontend 🎨🎙️
+# AI Friend Frontend 🎨🎙️
 
-A modern, high-performance web interface for the Pankudi AI assistant. Built with **Next.js 14** and optimized for real-time voice streaming.
+A modern, high-performance web interface for the AI Friend assistant. Built with **Next.js 14** and optimized for real-time voice streaming.
 
 ## 🌟 Voice UX Features
 
@@ -27,11 +27,11 @@ NEXT_PUBLIC_WS_URL=ws://your-backend:8000/ws/audio
 
 ## 🐳 Docker Deployment
 ```bash
-docker build -t pankudi-frontend .
-docker run -p 3000:3000 --env-file .env pankudi-frontend
+docker build -t ai-friend-frontend .
+docker run -p 3000:3000 --env-file .env ai-friend-frontend
 ```
 
 ## 📂 Project Structure
 - `app/assistant/page.jsx`: Main interaction hub.
 - `hooks/useVoiceInteraction.js`: The "Ear & Mouth" of the app; handles WebSocket streaming.
-- `components/AssistantCircle.jsx`: The visual representation of Pankudi's life-state.
+- `components/AssistantCircle.jsx`: The visual representation of the AI's life-state.
