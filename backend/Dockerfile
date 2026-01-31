@@ -51,7 +51,7 @@ COPY --chown=appuser:appgroup . .
 # Metadata and labels
 LABEL org.opencontainers.image.source="https://github.com/Aniket-a14/Ai_friend"
 LABEL org.opencontainers.image.description="Pankudi AI Backend - Human-like Voice AI"
-LABEL org.opencontainers.image.version="2.1.10"
+LABEL org.opencontainers.image.version="2.1.11"
 
 EXPOSE 8000
 
