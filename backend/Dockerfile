@@ -19,6 +19,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools
 RUN pip install --no-cache-dir -r requirements.txt
 # Force reinstall critical security patches AFTER requirements to prevent downgrades
@@ -50,7 +51,7 @@ COPY --chown=appuser:appgroup . .
 # Metadata and labels
 LABEL org.opencontainers.image.source="https://github.com/Aniket-a14/Ai_friend"
 LABEL org.opencontainers.image.description="Pankudi AI Backend - Human-like Voice AI"
-LABEL org.opencontainers.image.version="2.1.9"
+LABEL org.opencontainers.image.version="2.1.10"
 
 EXPOSE 8000
 
