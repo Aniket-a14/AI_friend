@@ -2,10 +2,14 @@
 
 AI Friend is a sophisticated, real-time voice-interactive AI assistant designed to feel like a natural companion rather than a robotic utility. It features **near-instantaneous responses**, **expressive vocal cues**, and a **human-like "soul"** with local roots in Jalandhar, Punjab.
 
-[![CI](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml)
 
+[![CI](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml)
 [![Link Checker](https://github.com/Aniket-a14/Ai_friend/actions/workflows/links.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/links.yml)
 [![Release](https://github.com/Aniket-a14/Ai_friend/actions/workflows/release.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/release.yml)
+![License](https://img.shields.io/github/license/Aniket-a14/Ai_friend)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![node](https://img.shields.io/badge/node-22%2B-green)
+![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)
 
 ## 🌟 Key Features (The Humanized Era)
 
