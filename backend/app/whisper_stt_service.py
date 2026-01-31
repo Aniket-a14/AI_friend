@@ -21,8 +21,6 @@ class WhisperSTTService:
         self.is_loading = False
 
         # VAD Setup
-
-        # VAD Setup
         self.vad = webrtcvad.Vad(3) # Aggressiveness 3 (Strict) to avoid noise hallucinations
         self.sample_rate = 16000
         self.frame_duration_ms = 30

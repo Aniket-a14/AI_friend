@@ -1,0 +1,25 @@
+# Backend
+backend:
+- changed-files:
+  - any-glob-to-any-file: 'backend/**'
+
+# Frontend
+frontend:
+- changed-files:
+  - any-glob-to-any-file: 'frontend/**'
+
+# Docker / DevOps
+devops:
+- changed-files:
+  - any-glob-to-any-file:
+    - '.github/**'
+    - 'backend/Dockerfile'
+    - 'frontend/Dockerfile'
+    - 'docker-compose.yml'
+
+# Documentation
+documentation:
+- changed-files:
+  - any-glob-to-any-file:
+    - '*.md'
+    - 'docs/**'
