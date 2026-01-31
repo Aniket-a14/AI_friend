@@ -26,7 +26,7 @@ jobs:
           prerelease: false
           generate_release_notes: true
           body: |
-            ## AI Friend Version 2.1.9 - "The Humanized Era"
+            ## AI Friend Version 2.1.10 - "The Humanized Era"
             
             This release marks the major milestone of transforming AI Friend into a truly human-like AI companion.
             

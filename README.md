@@ -1,9 +1,9 @@
-# AI Friend v2.1.9 - Human-like Voice Companion 🎙️✨
+# AI Friend v2.1.10 - Human-like Voice Companion 🎙️✨
 
 AI Friend is a sophisticated, real-time voice-interactive AI assistant designed to feel like a natural companion rather than a robotic utility. It features **near-instantaneous responses**, **expressive vocal cues**, and a **human-like "soul"** with local roots in Jalandhar, Punjab.
 
 [![CI](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml)
-[![Container Security](https://github.com/Aniket-a14/Ai_friend/actions/workflows/trivy-analysis.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/trivy-analysis.yml)
+
 [![Link Checker](https://github.com/Aniket-a14/Ai_friend/actions/workflows/links.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/links.yml)
 [![Release](https://github.com/Aniket-a14/Ai_friend/actions/workflows/release.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/release.yml)
 
