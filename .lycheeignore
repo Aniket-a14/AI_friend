@@ -1,0 +1,44 @@
+# Local links
+localhost
+127.0.0.1
+http://localhost:3000
+http://localhost:8000
+http://0.0.0.0:8000
+http://0.0.0.0:3000
+
+# Example domains / Placeholders
+example.com
+example.org
+your-domain.com
+https://github.com/\[user\]/\[repo\]/*
+
+# Private IP ranges
+192.168.*
+10.*
+
+# GitHub Actions badges (often 429 too many requests)
+https://github.com/Aniket-a14/Ai_friend/actions/workflows/*
+https://img.shields.io/*
+
+# Social Media (often require auth or rate limited)
+https://twitter.com/*
+https://linkedin.com/*
+https://www.linkedin.com/*
+
+# File User Interface schemes
+file:///*
+
+# Internal/Resource Directories
+.gemini/**
+.github/**
+.agent/**
+.agents/**
+.claude/**
+node_modules/**
+venv/**
+__pycache__/**
+.next/**
+out/**
+build/**
+dist/**
+coverage/**
