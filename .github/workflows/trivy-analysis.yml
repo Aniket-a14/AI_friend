@@ -17,14 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Build Backend Image
         run: |
           docker build -t pankudi-backend:latest ./backend
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.16.1
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: 'pankudi-backend:latest'
           format: 'table'
@@ -38,14 +38,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Build Frontend Image
         run: |
           docker build -t pankudi-frontend:latest ./frontend
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.16.1
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: 'pankudi-frontend:latest'
           format: 'table'
