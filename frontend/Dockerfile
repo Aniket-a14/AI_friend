@@ -1,27 +1,47 @@
-# Frontend Dockerfile
-FROM node:22-slim AS builder
+# Frontend Dockerfile - Optimized for Production
+# STAGE 1: Builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies first for caching
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
-# Copy application code
+# Copy code and build
 COPY . .
-
-# Build the application
 RUN npm run build
 
-# Production runner
-FROM node:22-slim AS runner
+# STAGE 2: Runtime
+FROM node:22-alpine AS runner
+
 WORKDIR /app
 
-COPY --from=builder /app/.next ./.next
+ENV NODE_ENV=production
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
+# Copy only necessary artifacts from builder
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+# Note: standalone mode requires specific Next.js config
+# If standalone is not enabled, we copy package.json and node_modules
+# But standalone is best practice for Docker.
+
+USER nextjs
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+# Metadata
+LABEL org.opencontainers.image.source="https://github.com/Aniket-a14/Ai_friend"
+LABEL org.opencontainers.image.description="AI Friend Frontend - Real-time Voice Interface"
+LABEL org.opencontainers.image.version="2.1.1"
+
+CMD ["node", "server.js"]

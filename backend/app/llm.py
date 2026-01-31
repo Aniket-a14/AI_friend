@@ -6,6 +6,7 @@ import json
 import os
 import random
 from datetime import datetime
+import json
 from .config import Config
 
 logger = logging.getLogger(__name__)
@@ -77,8 +78,6 @@ class LLMService:
             self.internal_monologue.append(random.choice(stray_thoughts))
 
     async def generate_response_stream(self, user_text):
-        from datetime import datetime
-        import random
         now = datetime.now()
         
         # Phase 4: Background Life Simulation
@@ -112,7 +111,6 @@ class LLMService:
                 time_diff_str = f"It's been {int(hours / 24)} days since you last talked."
 
         # Calculate Dynamic Age and Birthday Check
-        import json
         dynamic_age = 21 # Default
         is_birthday = False
         try:

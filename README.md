@@ -1,6 +1,11 @@
-# AI Friend v2.0.1 - Human-like Voice Companion 🎙️✨
+# AI Friend v2.1.2 - Human-like Voice Companion 🎙️✨
 
 AI Friend is a sophisticated, real-time voice-interactive AI assistant designed to feel like a natural companion rather than a robotic utility. It features **near-instantaneous responses**, **expressive vocal cues**, and a **human-like "soul"** with local roots in Jalandhar, Punjab.
+
+[![CI](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml)
+[![Container Security](https://github.com/Aniket-a14/Ai_friend/actions/workflows/trivy-analysis.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/trivy-analysis.yml)
+[![Link Checker](https://github.com/Aniket-a14/Ai_friend/actions/workflows/links.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/links.yml)
+[![Release](https://github.com/Aniket-a14/Ai_friend/actions/workflows/release.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/release.yml)
 
 ## 🌟 Key Features (The Humanized Era)
 
@@ -40,6 +45,15 @@ Access the assistant at `http://localhost:3000`.
 See the detailed setup guides in each subdirectory:
 - [Backend Setup](./backend/README.md)
 - [Frontend Setup](./frontend/README.md)
+
+## ⚙️ Production Workflows
+
+This project uses advanced GitHub Actions for production readiness:
+
+- **🛡️ Security**: Weekly container vulnerability scans (Trivy) and code security analysis (CodeQL).
+- **📦 Release Automation**: Automated Docker builds and GHCR publishing on every `v*` tag.
+- **🧹 Maintenance**: Dependabot for dependency updates and Stale Bot for issue management.
+- **✅ Quality Assurance**: Automated linting (ESLint/Flake8) and documentation link checking.
 
 ## 📄 Documentation
 - [Deployment Guide](./DEPLOYMENT.md) - How to go live.

@@ -9,9 +9,12 @@ from app.conversation_history_store import ConversationHistoryStore
 load_dotenv()
 
 # Configure logging
+import pytest
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+@pytest.mark.asyncio
 async def test_history_store():
     # Ensure environment variables are set or use defaults
     # You might need to set these manually if not in .env
