@@ -5,7 +5,8 @@ AI Friend is a sophisticated, real-time voice-interactive AI assistant designed 
 
 [![CI](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml)
 [![Link Checker](https://github.com/Aniket-a14/Ai_friend/actions/workflows/links.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/links.yml)
-[![Release](https://github.com/Aniket-a14/Ai_friend/actions/workflows/release.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/release.yml)
+[![Release Status](https://img.shields.io/github/actions/workflow/status/Aniket-a14/Ai_friend/release.yml?logo=github&label=Release)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/release.yml)
+[![Latest Version](https://img.shields.io/github/v/release/Aniket-a14/Ai_friend?logo=tag&label=Version)](https://github.com/Aniket-a14/Ai_friend/releases)
 ![License](https://img.shields.io/github/license/Aniket-a14/Ai_friend)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![node](https://img.shields.io/badge/node-22%2B-green)
