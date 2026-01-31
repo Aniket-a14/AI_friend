@@ -1,6 +1,6 @@
 # Backend Dockerfile - Optimized for Production
 # STAGE 1: Builder
-FROM python:3.10-slim AS builder
+FROM python:3.10-slim-bookworm AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -20,11 +20,11 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip wheel setuptools jaraco.context>=6.1.0
+RUN pip install --no-cache-dir --upgrade pip setuptools
 RUN pip install --no-cache-dir -r requirements.txt
 
 # STAGE 2: Runtime
-FROM python:3.10-slim AS runtime
+FROM python:3.10-slim-bookworm AS runtime
 
 WORKDIR /app
 
@@ -49,7 +49,7 @@ COPY --chown=appuser:appgroup . .
 # Metadata and labels
 LABEL org.opencontainers.image.source="https://github.com/Aniket-a14/Ai_friend"
 LABEL org.opencontainers.image.description="Pankudi AI Backend - Human-like Voice AI"
-LABEL org.opencontainers.image.version="2.1.4"
+LABEL org.opencontainers.image.version="2.1.6"
 
 EXPOSE 8000
 
