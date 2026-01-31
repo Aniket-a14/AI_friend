@@ -13,6 +13,7 @@ class Config:
     ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpg8ndEao7m8D")
     LOCATION_CONTEXT = os.getenv("LOCATION_CONTEXT", "Jalandhar, Punjab") # For weather and local grounding
     DATABASE_URL = os.getenv("DATABASE_URL")
+    AI_NAME = os.getenv("AI_NAME", "AI Friend")
     
     # Audio Settings
     SAMPLE_RATE = 16000
