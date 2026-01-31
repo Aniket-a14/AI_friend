@@ -7,8 +7,8 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
+# Install build dependencies and upgrade OS packages to fix vulnerabilities
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     build-essential \
     curl \
     portaudio19-dev \
@@ -20,6 +20,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip wheel setuptools jaraco.context>=6.1.0
 RUN pip install --no-cache-dir -r requirements.txt
 
 # STAGE 2: Runtime
@@ -27,8 +28,8 @@ FROM python:3.10-slim AS runtime
 
 WORKDIR /app
 
-# Install runtime dependencies (minimal)
-RUN apt-get update && apt-get install -y \
+# Install runtime dependencies (minimal) and upgrade OS packages
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     libportaudio2 \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -48,7 +49,7 @@ COPY --chown=appuser:appgroup . .
 # Metadata and labels
 LABEL org.opencontainers.image.source="https://github.com/Aniket-a14/Ai_friend"
 LABEL org.opencontainers.image.description="Pankudi AI Backend - Human-like Voice AI"
-LABEL org.opencontainers.image.version="2.1.2"
+LABEL org.opencontainers.image.version="2.1.3"
 
 EXPOSE 8000
 
