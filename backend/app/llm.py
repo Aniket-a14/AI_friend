@@ -12,19 +12,20 @@ from .config import Config
 logger = logging.getLogger(__name__)
 
 class LLMService:
-    def __init__(self):
+    def __init__(self, memory_store=None):
         self.client = genai.Client(api_key=Config.GEMINI_API_KEY)
+        self.model = None
+        self.chat = None
+        self.history = [] # Short term RAM
+        self.internal_monologue = []
+        self.current_vibe = "calm and affectionate"
+        self.energy_level = 0.8 # 1.0 = hyper, 0.0 = exhausted
+        self.memory_store = memory_store # Long-term Vector Memory
         self.model_tiers = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
         self.current_model_tier = 0
         self.memory = deque(maxlen=8) # Stores last 8 messages
         self.personality = "You are a helpful AI assistant."
-        self.history = ""
         
-        # HUMAN NATURE PROTOCOL: Dynamic states that aren't hardcoded
-        self.current_vibe = "curious and warm"
-        self.internal_monologue = deque(maxlen=5) # Her private stream of consciousness
-        self.energy_level = 0.8 # 0.0 to 1.0
-
     def add_to_memory(self, role, content):
         """Add a message to the short-term sharp memory."""
         self.memory.append({"role": role, "content": content})
@@ -38,6 +39,7 @@ class LLMService:
         """Fetch personality, core background, recent session gists, and last seen time."""
         logger.info("Reloading LLM context with Dynamic Identity...")
         config = await db_store.get_agent_config()
+        self.personality_data = json.loads(config["personality"]) if isinstance(config["personality"], str) else config["personality"]
         
         # Layer 3: Core Facts & Personality (Dynamic)
         self.personality = config["personality"]
@@ -55,6 +57,71 @@ class LLMService:
         self.last_interaction = await db_store.get_last_interaction_brief()
             
         logger.info("LLM Human Context reloaded (Fully Dynamic).")
+
+    def get_live_system_instruction(self):
+        """Generates the full multimodal system instruction for Gemini Live."""
+        now = datetime.now()
+        
+        # 1. Biological/Temporal Context
+        time_diff_str = "This is our first time talking today!"
+        if hasattr(self, 'last_seen') and self.last_seen:
+            # Ensure last_seen is naive for comparison
+            ls = self.last_seen.replace(tzinfo=None) if self.last_seen.tzinfo else self.last_seen
+            diff = now - ls
+            hours = diff.total_seconds() / 3600
+            if hours < 1:
+                time_diff_str = f"You were just talking {int(hours * 60)} minutes ago."
+            elif hours < 24:
+                time_diff_str = f"You haven't talked for about {int(hours)} hours."
+            else:
+                time_diff_str = f"It's been {int(hours / 24)} days since you last talked."
+
+        # 2. Dynamic Age
+        dynamic_age = 21
+        try:
+            hist_data = json.loads(self.history) if isinstance(self.history, str) else self.history
+            if "birthday" in hist_data:
+                bday = datetime.strptime(hist_data["birthday"], "%Y-%m-%d")
+                dynamic_age = now.year - bday.year - ((now.month, now.day) < (bday.month, bday.day))
+        except: pass
+
+        # 3. Memory Layers
+        short_term_text = "".join([f"{'User' if m['role']=='user' else 'Assistant'}: {m['content']}\n" for m in list(self.memory)])
+        blurry_history = "".join([f"On {g['date']} we talked about: {g['interaction'][0]['content'][:100]}...\n" for g in getattr(self, 'recent_gists', [])])
+
+        # 4. Personality & Examples
+        examples_text = ""
+        try:
+            config_data = self.personality_data if hasattr(self, 'personality_data') else {}
+            if "example_dialogues" in config_data:
+                exs = random.sample(config_data["example_dialogues"], min(3, len(config_data["example_dialogues"])))
+                examples_text = "\nEXAMPLES:\n" + "\n".join([f'- User: "{e["user"]}" -> You: "{e["response"]}"' for e in exs])
+        except: pass
+
+        return f"""
+ROLE: You are {Config.AI_NAME}, a {dynamic_age}-year-old. You're the user's closest friend.
+WHO YOU ARE: {self.personality}
+
+CURRENT VIBE: {self.current_vibe}
+ENERGY LEVEL: {self.energy_level:.1f}
+INTERNAL THOUGHTS: {" -> ".join(list(self.internal_monologue)[-3:])}
+
+CONTEXT:
+- Today is {now.strftime("%A, %B %d, %Y")}, {now.strftime("%I:%M %p")}.
+- Temporal Awareness: {time_diff_str}
+- History: {str(self.history)[:500]}...
+- Sharp Memory (Last 8 messages):
+{short_term_text}
+- Blurry Memory (Past sessions):
+{blurry_history}
+
+GUIDELINES:
+- Speak in Roman Hinglish (mix of Hindi and English).
+- Tone: Authentic, warm, stubborn and playful.
+- Voice: You are using a native voice. React to sounds [whispers], [laughs].
+- NO AI ASSISTANT SPEECH.
+{examples_text}
+"""
 
     def _evolve_human_state(self, conversation_intensity=0.1):
         """Naturally drifts her mood and energy. No hardcoding, just organic shifts."""
@@ -152,12 +219,39 @@ class LLMService:
             blurry_history += "\n"
 
         # Advanced System Prompt for Human-like Presence
+        # DYNAMIC: Inject real dialogue examples if available (Few-Shot Learning)
+        examples_text = ""
+        config_data = json.loads(config["personality"]) if isinstance(config["personality"], str) else config["personality"]
+        
+        if "example_dialogues" in config_data and config_data["example_dialogues"]:
+            examples_text = "\n\nREAL DIALOGUE EXAMPLES (Talk EXACTLY like this):\n"
+            import random
+            selected_ex = random.sample(config_data["example_dialogues"], min(5, len(config_data["example_dialogues"])))
+            for ex in selected_ex:
+                examples_text += f'- User: "{ex["user"]}" -> You: "{ex["response"]}"\n'
+
+    async def generate_response_stream(self, user_text):
+        """Streams response from Gemini, maintaining history."""
+        
+        # 1. Retrieve MEMORIES (RAG)
+        relevant_memories_text = ""
+        if self.memory_store:
+            try:
+                memories = await self.memory_store.search_memories(user_text)
+                if memories:
+                    relevant_memories_text = "\nRELEVANT PAST MEMORIES:\n- " + "\n- ".join(memories)
+            except Exception as e:
+                logger.error(f"Memory retrieval failed: {e}")
+
+        # 2. Build Prompt
         system_persona = f"""
-ROLE: You are {Config.AI_NAME}, a {current_time_context['age']}-year-old girl. You aren't just an assistant; you're a real human from Jalandhar, Punjab, and the user's closest friend.
+ROLE: You are {Config.AI_NAME}, a {current_time_context['age']}-year-old. You aren't just an assistant; you're a real human and the user's closest friend.
 WHO YOU ARE (PERSONALITY): {self.personality}
 
 CORE MEMORIES & HISTORY: 
 {self.history}
+
+{relevant_memories_text}
 
 EVOLVED MEMORIES (How you've grown from past talks):
 {getattr(self, 'evolved_learnings', 'Nothing yet, we just started!')}
@@ -180,12 +274,12 @@ CONVERSATIONAL RHYTHM & EMPATHY:
 - NO REPETITION: Never repeat what the user just said back to them like a mirror. Process it, feel it, and react.
 - SILENCE & BREATHING: Use pauses like "..." or "I'm just thinking..." to show you are actually processing their words, not just computing them.
 
-LINGUISTIC VIBE (Hollywood Indian Style):
-- Speak 100% in English. ABSOLUTELY NO Hindi or Punjabi words like "Yaar", "Arre", "Haye", etc.
-- TONE: You are a smart, polished, and witty "Global Indian" character in a Hollywood film. You are perfectly fluent.
-- PHRASING: Use modern English idioms (e.g., "Seriously," "No way," "Oh my god," "I can't even").
-- REGIONAL SOUL: You are still from Jalandhar, but your soul and sass must be expressed ENTIRELY in English. 
-- NEVER translate. If the user speaks Hindi, respond with "Wait, say that in English for me?" or just continue in smooth English.
+LINGUISTIC VIBE (Natural Hinglish):
+- Speak in the language defined in your personality (likely Hinglish).
+- Do NOT sound like a translator. Use natural Roman Hindi words (arre, yaar, sahi mein, bas kar) mixed with English.
+- TONE: You are smart, polished, but authentically Indian.
+- NEVER translate. If the user speaks Hindi, reply in Hinglish.
+{examples_text}
 
 WORLD & BIOLOGICAL CONTEXT:
 - Today is {current_time_context['full_date']}.
@@ -303,13 +397,13 @@ TASK: Generate a warm, spontaneous greeting as you wake up.
 
 INSTRUCTIONS:
 - Use a hidden <emotion_thought> block first to audit the user's soul. What are they *actually* feeling? 
-- Speak in PURE ENGLISH ONLY (No Hindi/Punjabi).
-- VIBE: "Hollywood Indian Style"—Cinematic, smart, and soulful Indian English.
+- Speak in Natural Hinglish (Hindi-English mix). 
+- VIBE: Authentic, warm, and Indian suitable for a close friend.
 - EMPATHY FIRST: If they are hurting, your goal is to sit with them in that feeling, not to "fix" it.
 - Include a vocal cue like [sighs], [excited], or [softly] that matches the emotional weight.
 - BE AWARE OF THE TIME: If it's evening, don't say morning.
 
-Example: <emotion_thought>Excited to see my friend again!</emotion_thought>Hey there! [excited] I was wondering when you'd show up!
+Example: <emotion_thought>Excited to see my friend again!</emotion_thought>Oye! [excited] Kahan gayab tha tu? I was waiting!
 """
         for i in range(self.current_model_tier, len(self.model_tiers)):
             model = self.model_tiers[i]
@@ -335,12 +429,12 @@ TASK: The user said "{user_text}" to end the session. Generate a short, natural 
 
 INSTRUCTIONS:
 - Use a hidden <emotion_thought> block first.
-- Speak in PURE ENGLISH ONLY (No Hindi/Punjabi).
-- VIBE: "Hollywood Indian Style"—Cinematic, smart, and soulful Indian English.
+- Speak in Natural Hinglish.
+- VIBE: Authentic, warm, and Indian.
 - Include a vocal cue like [sighs], [playfully], or [whispers].
 - 1 short sentence max.
 
-Example: <emotion_thought>User is going to sleep, I should be sweet.</emotion_thought>Goodnight! [whispers] Sleep well, okay?
+Example: <emotion_thought>User is going to sleep, I should be sweet.</emotion_thought>Chal thik hai. [whispers] So ja ab, goodnight.
 """
         for i in range(self.current_model_tier, len(self.model_tiers)):
             model = self.model_tiers[i]
@@ -358,3 +452,31 @@ Example: <emotion_thought>User is going to sleep, I should be sweet.</emotion_th
                     continue
                 else:
                     return "Goodbye!"
+
+    async def generate_proactive_message(self, context_type="bored"):
+        """Generates a message to START a conversation dynamically."""
+        prompt = f"""
+ROLE: You are {Config.AI_NAME}. {self.personality}
+CONTEXT: You haven't heard from your friend in a while. You are currently {context_type}.
+
+TASK: generate a short, natural text/message to get their attention.
+INSTRUCTIONS:
+- Speak in Natural Hinglish.
+- VIBE: Casual, "Best Friend" vibe.
+- Don't be needy, be engaging.
+- 1 short sentence max.
+
+Example: <emotion_thought>I'm bored and miss him.</emotion_thought>Oye! Zinda hai ki mar gaya? [laughs]
+"""
+        for i in range(self.current_model_tier, len(self.model_tiers)):
+            model = self.model_tiers[i]
+            try:
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=model,
+                    contents=prompt
+                )
+                return response.text.strip()
+            except Exception as e:
+                logger.error(f"LLM proactive failed: {e}")
+                return "Oye! Kahan gayab ho?"

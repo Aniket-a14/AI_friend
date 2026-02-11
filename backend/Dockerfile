@@ -12,6 +12,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     build-essential \
     curl \
     portaudio19-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
     git \
     && rm -rf /var/lib/apt/lists/*
 
@@ -33,6 +35,8 @@ WORKDIR /app
 # Install runtime dependencies (minimal) and upgrade OS packages
 RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     libportaudio2 \
+    libgl1 \
+    libglib2.0-0 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -51,7 +55,7 @@ COPY --chown=appuser:appgroup . .
 # Metadata and labels
 LABEL org.opencontainers.image.source="https://github.com/Aniket-a14/Ai_friend"
 LABEL org.opencontainers.image.description="AI Friend Backend - Human-like Voice AI"
-LABEL org.opencontainers.image.version="2.1.11"
+LABEL org.opencontainers.image.version="2.2.0"
 
 EXPOSE 8000
 

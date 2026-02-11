@@ -88,25 +88,16 @@ class AudioPlayer:
             output=True
         )
 
-    def play_stream(self, audio_stream):
-        """
-        Plays audio from a generator/iterator of bytes.
-        """
-        if not self.pa:
-            logger.debug("PyAudio not available. play_stream call ignored (use WebSocket streaming).")
+    async def play_chunk(self, chunk: bytes):
+        """Non-blocking play using thread offloading."""
+        if not self.pa or not chunk:
             return
-
+            
         if not self.stream:
             self.stream = self.create_output_stream()
-        
-        try:
-            for chunk in audio_stream:
-                if chunk:
-                    self.stream.write(chunk)
-        except Exception as e:
-            logger.error(f"Error playing audio stream: {e}")
-        finally:
-            pass
+            
+        if self.stream:
+            await asyncio.to_thread(self.stream.write, chunk)
 
     def close(self):
         if self.stream:

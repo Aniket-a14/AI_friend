@@ -1,5 +1,5 @@
 pvporcupine
-google-genai
+google-genai>=0.3.0
 elevenlabs
 python-dotenv
 webrtcvad-wheels
@@ -8,6 +8,12 @@ numpy
 asyncpg
 fastapi
 uvicorn
+websockets
+mss
+opencv-python
+pillow
+pyautogui
 # Security patches
 jaraco.context>=6.1.0
 wheel>=0.46.2
+APScheduler==3.10.4
