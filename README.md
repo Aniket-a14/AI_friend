@@ -50,7 +50,7 @@ The system is designed to bridge the gap between robotic utilities and human-lik
 ```
 
 > **Important**  
-> v3.0 infrastructure (NATS + Neo4j) is deployed and operational. See [V3_INFRASTRUCTURE.md](./V3_INFRASTRUCTURE.md) and [v3_roadmap.md](./.gemini/antigravity/brain/98596c69-4693-4011-8405-4bb6b844a387/v3_roadmap.md) for implementation details.
+> v3.0 infrastructure (NATS + Neo4j) is deployed and operational. See [V3_INFRASTRUCTURE.md](./V3_INFRASTRUCTURE.md) and [v3_roadmap.md](./V3_ROADMAP.md) for implementation details.
 
 ---
 
