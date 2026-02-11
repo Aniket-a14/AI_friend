@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  nats:
+    image: nats:latest
+    container_name: nats_mesh
+    ports:
+      - "4222:4222" # Client port
+      - "8222:8222" # HTTP Monitoring
+    command: [ "-js" ] # Enable JetStream
+    restart: always
+
+  neo4j:
+    image: neo4j:latest
+    container_name: brain_graph
+    ports:
+      - "7474:7474" # Browser UI
+      - "7687:7687" # Bolt (Binary)
+    environment:
+      - NEO4J_AUTH=neo4j/password123
+      - NEO4J_PLUGINS=["apoc"]
+    restart: always
+
+networks:
+  default:
+    name: ai_mesh_network
