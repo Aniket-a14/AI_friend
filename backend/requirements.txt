@@ -17,3 +17,5 @@ pyautogui
 jaraco.context>=6.1.0
 wheel>=0.46.2
 APScheduler==3.10.4
+nats-py
+neo4j
