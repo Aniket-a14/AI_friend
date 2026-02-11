@@ -10,6 +10,8 @@ services:
     environment:
       - DEBUG=False
       - ALLOWED_ORIGINS=http://localhost:3000
+      - AI_NAME=AI Friend
+      - LOCATION_CONTEXT=Global
     deploy:
       resources:
         limits:

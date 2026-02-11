@@ -7,31 +7,49 @@ const WS_URL = 'ws://localhost:8000/ws/audio';
 export function useVoiceInteraction() {
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
-    const [isRecording, setIsRecording] = useState(false);
+    const [interactionState, setInteractionState] = useState('idle'); // idle | listening | speaking
+
     const wsRef = useRef(null);
     const audioContextRef = useRef(null);
     const playbackAudioContextRef = useRef(null);
     const nextStartTimeRef = useRef(0);
     const processorRef = useRef(null);
-    const isPlayingRef = useRef(false);
+    const playbackTimeoutRef = useRef(null);
 
-    // handleNextChunk scheduling for seamless playback
+    const stopRecording = useCallback(() => {
+        if (processorRef.current) {
+            processorRef.current.disconnect();
+            processorRef.current = null;
+        }
+        if (audioContextRef.current) {
+            if (audioContextRef.current.state !== 'closed') {
+                audioContextRef.current.close();
+            }
+            audioContextRef.current = null;
+        }
+        setInteractionState('idle');
+        console.log('Recording stopped');
+    }, []);
+
     const playChunk = useCallback(async (chunk) => {
+        setInteractionState('speaking');
+
+        if (playbackTimeoutRef.current) {
+            clearTimeout(playbackTimeoutRef.current);
+        }
+
         if (!playbackAudioContextRef.current) {
             playbackAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             nextStartTimeRef.current = playbackAudioContextRef.current.currentTime;
         }
 
         const ctx = playbackAudioContextRef.current;
-
-        // If we haven't played anything for a while, reset the timeline to "now"
         if (ctx.currentTime > nextStartTimeRef.current) {
             nextStartTimeRef.current = ctx.currentTime;
         }
 
         const bufferSize = Math.floor(chunk.byteLength / 2);
-
-        if (bufferSize < 1) return; // Prevent "NotSupportedError" for empty or single-byte chunks
+        if (bufferSize < 1) return;
 
         const buffer = ctx.createBuffer(1, bufferSize, 24000);
         const channelData = buffer.getChannelData(0);
@@ -45,57 +63,47 @@ export function useVoiceInteraction() {
         source.buffer = buffer;
         source.connect(ctx.destination);
 
-        // Schedule accurately
         const startTime = nextStartTimeRef.current;
         source.start(startTime);
-
-        // Advance the clock for the next chunk
         nextStartTimeRef.current += buffer.duration;
+
+        // Set timeout to return to listening after the buffer finishes
+        const delayMs = (nextStartTimeRef.current - ctx.currentTime) * 1000;
+        playbackTimeoutRef.current = setTimeout(() => {
+            setInteractionState('listening');
+        }, delayMs + 100);
     }, []);
 
-    // Initialize Audio Context for Input (16kHz Mono)
     const startRecording = useCallback(async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+
+            // Load AudioWorklet
+            await audioContextRef.current.audioWorklet.addModule('/audio-processor.js');
+
             const source = audioContextRef.current.createMediaStreamSource(stream);
+            const workletNode = new AudioWorkletNode(audioContextRef.current, 'audio-processor');
+            processorRef.current = workletNode;
 
-            processorRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
-
-            processorRef.current.onaudioprocess = (e) => {
+            workletNode.port.onmessage = (event) => {
                 if (wsRef.current?.readyState === WebSocket.OPEN) {
-                    const inputData = e.inputBuffer.getChannelData(0);
-                    const pcmData = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
-                    }
-                    wsRef.current.send(pcmData.buffer);
+                    wsRef.current.send(event.data);
                 }
             };
 
-            source.connect(processorRef.current);
-            processorRef.current.connect(audioContextRef.current.destination);
-            setIsRecording(true);
-            console.log('Recording started at 16kHz');
+            source.connect(workletNode);
+            workletNode.connect(audioContextRef.current.destination);
+
+            setInteractionState('listening');
+            console.log('Recording started (AudioWorklet) at 16kHz');
         } catch (err) {
             console.error('Error starting audio capture:', err);
         }
     }, []);
 
-    const stopRecording = useCallback(() => {
-        if (processorRef.current) {
-            processorRef.current.disconnect();
-            processorRef.current = null;
-        }
-        if (audioContextRef.current) {
-            audioContextRef.current.close();
-            audioContextRef.current = null;
-        }
-        setIsRecording(false);
-        console.log('Recording stopped');
-    }, []);
+    const isConnectingRef = useRef(false);
 
-    // WebSocket Setup
     useEffect(() => {
         let socket;
         let reconnectTimeout;
@@ -103,15 +111,22 @@ export function useVoiceInteraction() {
         const MAX_RECONNECT_ATTEMPTS = 5;
 
         const connect = () => {
+            if (isConnectingRef.current || (wsRef.current && wsRef.current.readyState === WebSocket.OPEN)) {
+                return;
+            }
+
+            isConnectingRef.current = true;
             setIsConnecting(true);
+
             socket = new WebSocket(WS_URL);
             socket.binaryType = 'arraybuffer';
             wsRef.current = socket;
 
             socket.onopen = () => {
-                console.log("WebSocket Connected to AI Backend");
+                console.log("WebSocket Connected");
                 setIsConnected(true);
                 setIsConnecting(false);
+                isConnectingRef.current = false;
                 reconnectAttempts = 0;
             };
 
@@ -122,55 +137,59 @@ export function useVoiceInteraction() {
                     try {
                         const msg = JSON.parse(event.data);
                         if (msg.type === 'stop') {
-                            console.log("Stopping audio playback (Barge-in)");
                             if (playbackAudioContextRef.current) {
                                 playbackAudioContextRef.current.close().catch(() => { });
                                 playbackAudioContextRef.current = null;
                             }
                             nextStartTimeRef.current = 0;
+                            setInteractionState('listening');
                         }
-                    } catch (e) {
-                        // Not JSON, ignore
-                    }
+                    } catch (e) { }
                 }
             };
 
-            socket.onclose = (event) => {
+            socket.onclose = () => {
                 setIsConnected(false);
                 setIsConnecting(false);
-                // Only log if it's not a normal closure or if we've already connected before
-                if (reconnectAttempts > 0 || !event.wasClean) {
-                    console.log("WebSocket closed", event.code, event.reason);
-                }
-
+                isConnectingRef.current = false;
                 if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
                     reconnectTimeout = setTimeout(() => {
                         reconnectAttempts++;
                         connect();
-                    }, delay);
+                    }, 2000);
                 }
             };
 
-            socket.onerror = (error) => {
+            socket.onerror = () => {
                 setIsConnecting(false);
-                // Suppress "error" logs for the first attempt as it might just be the backend waking up
-                if (reconnectAttempts > 0) {
-                    console.error("WebSocket error:", error);
-                }
+                isConnectingRef.current = false;
             };
         };
 
         connect();
 
         return () => {
-            wsRef.current?.close();
+            if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+                wsRef.current.close();
+            }
             stopRecording();
             if (playbackAudioContextRef.current) {
-                playbackAudioContextRef.current.close();
+                playbackAudioContextRef.current.close().catch(() => { });
+            }
+            if (playbackTimeoutRef.current) {
+                clearTimeout(playbackTimeoutRef.current);
+            }
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
             }
         };
     }, [playChunk, stopRecording]);
 
-    return { isConnected, isConnecting, isRecording, startRecording, stopRecording };
+    return {
+        isConnected,
+        isConnecting,
+        state: interactionState,
+        startRecording,
+        stopRecording
+    };
 }
