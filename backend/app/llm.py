@@ -221,18 +221,19 @@ GUIDELINES:
         # Advanced System Prompt for Human-like Presence
         # DYNAMIC: Inject real dialogue examples if available (Few-Shot Learning)
         examples_text = ""
-        config_data = json.loads(config["personality"]) if isinstance(config["personality"], str) else config["personality"]
+        config_data = getattr(self, 'personality_data', {})
+        if not isinstance(config_data, dict):
+            try:
+                config_data = json.loads(config_data)
+            except:
+                config_data = {}
         
-        if "example_dialogues" in config_data and config_data["example_dialogues"]:
+        if config_data.get("example_dialogues"):
             examples_text = "\n\nREAL DIALOGUE EXAMPLES (Talk EXACTLY like this):\n"
-            import random
             selected_ex = random.sample(config_data["example_dialogues"], min(5, len(config_data["example_dialogues"])))
             for ex in selected_ex:
                 examples_text += f'- User: "{ex["user"]}" -> You: "{ex["response"]}"\n'
 
-    async def generate_response_stream(self, user_text):
-        """Streams response from Gemini, maintaining history."""
-        
         # 1. Retrieve MEMORIES (RAG)
         relevant_memories_text = ""
         if self.memory_store:
