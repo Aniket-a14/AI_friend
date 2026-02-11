@@ -440,40 +440,15 @@ AI_Friend/
 
 ---
 
-## 📜 License
-
-Released under the **MIT License**. See [LICENSE](./LICENSE) for details.
-
-**Enterprise Ready.** Remix and build at scale.
-
----
-
-## About
-
-Enterprise-grade real-time multimodal AI companion platform. Achieves sub-300ms latency through native multimodal processing, with visual awareness, persistent memory, and character-agnostic design. Built with FastAPI, Next.js, and Gemini 2.5 Live API.
-
-### Topics
-
-`ai` `voice-assistant` `multimodal` `real-time` `fastapi` `nextjs` `gemini` `websockets` `rag` `docker` `enterprise` `low-latency` `graphrag` `nats` `neo4j`
-
 ### Resources
 
 - [Documentation](./ARCHITECTURE.md)
 - [API Reference](./API_SPEC.md)
 - [Deployment Guide](./DEPLOYMENT.md)
 
-### License
+## 📜 License
 
-[MIT License](./LICENSE)
+Released under the **MIT License**. See [LICENSE](./LICENSE) for details.
 
-### Code of conduct
+**Enterprise Ready.** Remix and build at scale.
 
-[Code of Conduct](./CODE_OF_CONDUCT.md)
-
-### Contributing
-
-[Contributing Guidelines](./CONTRIBUTING.md)
-
-### Security policy
-
-[Security Policy](./SECURITY.md)
