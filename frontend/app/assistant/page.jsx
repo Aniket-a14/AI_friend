@@ -2,13 +2,13 @@
 
 import { useEffect, useState, useRef } from 'react';
 import AssistantCircle from '../../components/AssistantCircle';
-import { useVoiceInteraction } from '../../hooks/useVoiceInteraction';
+import { useWebRTCVoice } from '../../hooks/useWebRTCVoice';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const BACKEND_URL = 'http://localhost:8000';
 
 export default function AssistantPage() {
-    const { isConnected, isConnecting, state, startRecording } = useVoiceInteraction();
+    const { isConnected, isConnecting, state, startRecording } = useWebRTCVoice();
     const [visionSource, setVisionSource] = useState('screen'); // screen | camera
     const videoRef = useRef(null);
 
@@ -59,76 +59,87 @@ export default function AssistantPage() {
 
     return (
         <main className="flex min-h-screen flex-col items-center justify-center bg-black overflow-hidden relative font-sans">
+            {/* Atmospheric Layers */}
+            <div className="atmosphere" />
+            <div className="noise-overlay" />
+
             {/* Status Bar */}
-            <div className={`absolute top-4 left-4 flex items-center gap-2 transition-opacity duration-500 ${isConnected || isConnecting ? 'opacity-100' : 'opacity-50'}`}>
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' :
+            <div className={`absolute top-6 left-6 flex items-center gap-3 z-50 transition-opacity duration-500 ${isConnected || isConnecting ? 'opacity-100' : 'opacity-30'}`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-cyan-500 shadow-[0_0_10px_rgba(0,245,255,0.5)]' :
                     isConnecting ? 'bg-amber-500' :
                         'bg-red-500'
                     } animate-pulse`} />
-                <span className="text-[10px] text-white/40 font-mono tracking-widest uppercase">
-                    {isConnected ? 'Stream Active' : isConnecting ? 'Initializing...' : 'Disconnected'}
+                <span className="text-[9px] text-white/50 font-mono tracking-[0.3em] uppercase">
+                    {isConnected ? 'Neural Bridge Active' : isConnecting ? 'Initializing Link...' : 'Signal Lost'}
                 </span>
             </div>
 
             {/* Vision Controls */}
-            <div className="absolute top-4 right-4 flex gap-2 z-50">
+            <div className="absolute top-6 right-6 flex gap-3 z-50">
                 <button
                     onClick={() => toggleVision('screen')}
-                    className={`px-3 py-1 text-[10px] uppercase tracking-tighter rounded-full border transition-all ${visionSource === 'screen' ? 'bg-white text-black border-white' : 'bg-transparent text-white/40 border-white/10 hover:border-white/30'}`}
+                    className={`glass-pill ${visionSource === 'screen' ? 'active-pill' : ''}`}
                 >
-                    Desktop
+                    Observer 1
                 </button>
                 <button
                     onClick={() => toggleVision('camera')}
-                    className={`px-3 py-1 text-[10px] uppercase tracking-tighter rounded-full border transition-all ${visionSource === 'camera' ? 'bg-white text-black border-white' : 'bg-transparent text-white/40 border-white/10 hover:border-white/30'}`}
+                    className={`glass-pill ${visionSource === 'camera' ? 'active-pill' : ''}`}
                 >
-                    Webcam
+                    Observer 2
                 </button>
             </div>
 
-            {/* Webcam Preview (Small/Floating) */}
+            {/* Webcam Preview (Holographic) */}
             <AnimatePresence>
                 {visionSource === 'camera' && (
                     <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        className="absolute bottom-20 right-8 w-48 h-32 rounded-2xl border border-white/10 overflow-hidden bg-black/50 backdrop-blur-md z-40"
+                        initial={{ opacity: 0, x: 50, filter: 'blur(20px)' }}
+                        animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
+                        className="absolute bottom-12 right-12 w-64 h-40 rounded-3xl border border-white/5 overflow-hidden bg-white/5 backdrop-blur-2xl z-40 shadow-2xl"
                     >
                         <video
                             ref={videoRef}
                             autoPlay
                             playsInline
                             muted
-                            className="w-full h-full object-cover grayscale opacity-60"
+                            className="w-full h-full object-cover grayscale opacity-40 hover:opacity-60 transition-opacity duration-700"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
-                        <div className="absolute bottom-2 left-3 text-[8px] text-white/40 uppercase tracking-widest">Live Feed</div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                        <div className="absolute bottom-3 left-4 text-[7px] text-white/30 uppercase tracking-[0.4em]">Visual Stream :: Cam</div>
+
+                        {/* Scanning Line Effect */}
+                        <motion.div
+                            animate={{ top: ['0%', '100%', '0%'] }}
+                            transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                            className="absolute left-0 w-full h-px bg-cyan-500/20 shadow-[0_0_15px_rgba(0,245,255,0.3)] pointer-events-none"
+                        />
                     </motion.div>
                 )}
             </AnimatePresence>
 
             {/* Main Interaction Circle */}
-            <div className="relative flex items-center justify-center w-full h-full">
+            <div className="relative flex items-center justify-center w-full h-full z-10">
                 <AssistantCircle state={state} />
             </div>
 
-            {/* Subtitles / Feedback Placeholder */}
-            <div className="absolute bottom-24 text-center max-w-lg px-8">
+            {/* Subtitles / Feedback */}
+            <div className="absolute bottom-20 text-center max-w-lg px-8 z-20">
                 <motion.p
-                    animate={state === 'listening' ? { opacity: [0.3, 0.6, 0.3] } : { opacity: 0.8 }}
+                    animate={state === 'listening' ? { opacity: [0.4, 0.8, 0.4] } : { opacity: 0.6 }}
                     transition={{ duration: 2, repeat: Infinity }}
-                    className="text-white/60 text-sm font-light tracking-wide leading-relaxed italic"
+                    className="text-white/40 text-[11px] font-light tracking-[0.2em] leading-relaxed uppercase"
                 >
-                    {state === 'speaking' ? "Assistant is speaking..." :
-                        state === 'thinking' ? "Assistant is thinking..." :
-                            state === 'listening' ? "Listening for your voice..." : "Connecting..."}
+                    {state === 'speaking' ? "Sourcing Neural Response..." :
+                        state === 'thinking' ? "Processing Context..." :
+                            state === 'listening' ? "Awaiting Vocal Signature..." : "Synching Data..."}
                 </motion.p>
             </div>
 
-            {/* Mobile/Web Info */}
-            <div className="absolute bottom-8 text-white/10 text-[8px] uppercase tracking-[0.3em] font-light">
-                Multimodal Neural Interface v2.5
+            {/* System Info */}
+            <div className="absolute bottom-8 text-white/5 text-[7px] uppercase tracking-[0.6em] font-light">
+                Sovereign Intelligence Mesh :: v3.0.42
             </div>
         </main>
     );

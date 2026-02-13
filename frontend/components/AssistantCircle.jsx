@@ -4,115 +4,118 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function AssistantCircle({ state = 'idle' }) {
-    // Variants for the main container
-    const containerVariants = {
+    // Variants for the core atmosphere
+    const auraVariants = {
         idle: {
             scale: 1,
-            backgroundColor: "rgba(88, 28, 135, 0.1)",
-            borderColor: "rgba(139, 92, 246, 0.3)",
-            boxShadow: "0 0 40px rgba(139, 92, 246, 0.2)",
-            transition: { duration: 1.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }
+            opacity: 0.4,
+            transition: { duration: 3, repeat: Infinity, repeatType: "reverse" }
         },
         listening: {
-            scale: 1.1,
-            backgroundColor: "rgba(88, 28, 135, 0.3)",
-            borderColor: "rgba(139, 92, 246, 0.8)",
-            boxShadow: "0 0 60px rgba(139, 92, 246, 0.5)",
-            transition: { type: "spring", stiffness: 300, damping: 20 }
+            scale: 1.25,
+            opacity: 0.8,
+            transition: { type: "spring", stiffness: 200, damping: 15 }
         },
         thinking: {
-            scale: 0.95,
-            backgroundColor: "rgba(15, 15, 15, 0.4)",
-            borderColor: "rgba(255, 255, 255, 0.2)",
-            boxShadow: "0 0 30px rgba(255, 255, 255, 0.1)",
+            scale: 0.9,
+            opacity: 0.3,
+            transition: { duration: 2, repeat: Infinity, repeatType: "reverse" }
         },
         speaking: {
-            scale: [1, 1.15, 1],
-            backgroundColor: "rgba(219, 39, 119, 0.2)",
-            borderColor: "rgba(236, 72, 153, 0.6)",
-            boxShadow: "0 0 80px rgba(236, 72, 153, 0.6)",
-            transition: { duration: 0.5, repeat: Infinity, ease: "easeInOut" }
+            scale: [1, 1.3, 1],
+            opacity: 1,
+            transition: { duration: 0.6, repeat: Infinity }
         }
     };
 
     return (
-        <div className="relative flex items-center justify-center">
-            {/* Background Glow */}
-            <AnimatePresence mode="wait">
-                <motion.div
-                    key={state}
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 1.2 }}
-                    className="absolute w-[120%] h-[120%] rounded-full bg-gradient-to-br from-purple-500/10 to-pink-500/10 blur-3xl"
-                />
+        <div className="relative flex items-center justify-center w-full h-full">
+            {/* SVG Filters for Spectral Look */}
+            <svg className="absolute w-0 h-0">
+                <defs>
+                    <filter id="spectral-blur">
+                        <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur" />
+                        <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="spectral" />
+                    </filter>
+                </defs>
+            </svg>
+
+            {/* Inbound Resonance (Speaking) */}
+            <AnimatePresence>
+                {state === 'speaking' && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1.5 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 1, repeat: Infinity }}
+                        className="absolute w-[400px] h-[400px] rounded-full border border-pink-500/10 blur-sm"
+                    />
+                )}
             </AnimatePresence>
 
-            {/* Main Circle */}
+            {/* Core Neural Atmosphere */}
             <motion.div
-                variants={containerVariants}
+                variants={auraVariants}
                 animate={state}
-                className="relative w-64 h-64 rounded-full border-2 flex items-center justify-center z-10 overflow-hidden backdrop-blur-md"
-            >
-                {/* Inner Ambient Glow */}
-                <motion.div 
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-                    className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent w-full h-full"
-                />
-
-                {/* State Specific Content */}
-                {state === 'thinking' && (
-                    <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="absolute inset-0 flex items-center justify-center"
-                    >
-                        {[0, 1, 2].map((i) => (
-                            <motion.div
-                                key={i}
-                                className="absolute w-4 h-4 bg-white rounded-full shadow-[0_0_15px_white]"
-                                animate={{
-                                    rotate: 360,
-                                    scale: [1, 1.2, 1],
-                                }}
-                                transition={{
-                                    rotate: { duration: 3, repeat: Infinity, ease: "linear", delay: i * 1 },
-                                    scale: { duration: 2, repeat: Infinity, ease: "easeInOut" }
-                                }}
-                                style={{
-                                    transformOrigin: `center 80px`,
-                                    top: 'calc(50% - 40px)'
-                                }}
-                            />
-                        ))}
-                    </motion.div>
-                )}
-
-                {/* Central Core */}
-                <motion.div
-                    animate={state === 'speaking' ? { scale: [1, 1.3, 1] } : { scale: 1 }}
-                    transition={{ duration: 0.4, repeat: state === 'speaking' ? Infinity : 0 }}
-                    className={`w-24 h-24 rounded-full blur-xl z-20 ${
-                        state === 'speaking' ? 'bg-pink-400/40' : 
-                        state === 'listening' ? 'bg-purple-400/40' : 
-                        'bg-white/10'
+                style={{ filter: 'url(#spectral-blur)' }}
+                className={`relative w-72 h-72 rounded-full transition-colors duration-1000 ${state === 'speaking' ? 'bg-pink-500/20' :
+                        state === 'listening' ? 'bg-cyan-500/20' :
+                            state === 'thinking' ? 'bg-indigo-500/10' : 'bg-white/5'
                     }`}
-                />
+            >
+                {/* Central Singularity */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <motion.div
+                        animate={state === 'speaking' ? { scale: [1, 1.4, 1] } : { scale: 1 }}
+                        className={`w-36 h-36 rounded-full blur-2xl ${state === 'speaking' ? 'bg-pink-400/40' :
+                                state === 'listening' ? 'bg-cyan-400/40' :
+                                    'bg-white/10'
+                            }`}
+                    />
+                </div>
+
+                {/* Orbital Paths (Listening/Thinking) */}
+                <AnimatePresence>
+                    {(state === 'listening' || state === 'thinking') && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0"
+                        >
+                            {[0, 1, 2].map((i) => (
+                                <motion.div
+                                    key={i}
+                                    className={`absolute left-1/2 top-1/2 w-2 h-2 rounded-full blur-[1px] ${state === 'listening' ? 'bg-cyan-400' : 'bg-white'
+                                        }`}
+                                    animate={{
+                                        rotate: 360,
+                                        x: 100 * Math.cos(i * 120 * (Math.PI / 180)),
+                                        y: 100 * Math.sin(i * 120 * (Math.PI / 180)),
+                                    }}
+                                    transition={{
+                                        rotate: { duration: 4, repeat: Infinity, ease: "linear", delay: i * 0.5 },
+                                    }}
+                                />
+                            ))}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </motion.div>
 
-            {/* Speaking Ripples */}
-            {state === 'speaking' && (
-                [1, 2].map((i) => (
-                    <motion.div
-                        key={i}
-                        initial={{ opacity: 0.5, scale: 1 }}
-                        animate={{ opacity: 0, scale: 2 }}
-                        transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.5 }}
-                        className="absolute w-64 h-64 rounded-full border border-pink-500/30 z-0"
-                    />
-                ))
-            )}
+            {/* Interaction States */}
+            <div className="absolute flex items-center justify-center font-mono text-[8px] tracking-[0.4em] uppercase text-white/20 select-none">
+                <AnimatePresence mode="wait">
+                    <motion.span
+                        key={state}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                    >
+                        {state}
+                    </motion.span>
+                </AnimatePresence>
+            </div>
         </div>
     );
 }

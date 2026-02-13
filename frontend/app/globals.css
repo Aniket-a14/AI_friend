@@ -1,42 +1,66 @@
 @import "tailwindcss";
 
 :root {
-  --background: #000000;
+  --background: #050505;
   --foreground: #ffffff;
+  --aura-cyan: #00f5ff;
+  --aura-purple: #8b5cf6;
+  --aura-pink: #ec4899;
+  --obsidian-glass: rgba(15, 15, 15, 0.4);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  overflow: hidden; /* Prevent scrolling for a clean app-like feel */
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
 }
 
-@keyframes breathe {
-  0% { transform: scale(0.98); opacity: 0.8; }
-  50% { transform: scale(1.02); opacity: 1; }
-  100% { transform: scale(0.98); opacity: 0.8; }
+/* Atmosphere & Depth */
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(0, 245, 255, 0.05), transparent 50%),
+    radial-gradient(circle at -10% 50%, rgba(139, 92, 246, 0.05), transparent 40%),
+    radial-gradient(circle at 110% 80%, rgba(236, 72, 153, 0.05), transparent 40%);
+  z-index: 0;
 }
 
-@keyframes flicker {
-  0%, 100% { box-shadow: 0 0 20px rgba(150, 100, 255, 0.4); }
-  50% { box-shadow: 0 0 35px rgba(150, 100, 255, 0.7); }
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url('https://grainy-gradients.vercel.app/noise.svg');
+  filter: contrast(120%) brightness(100%);
+  z-index: 1;
 }
 
-@keyframes pulse {
-  0% { transform: scale(1); box-shadow: 0 0 20px rgba(255,120,160,0.4); }
-  50% { transform: scale(1.1); box-shadow: 0 0 45px rgba(255,140,180,0.8); }
-  100% { transform: scale(1); box-shadow: 0 0 20px rgba(255,120,160,0.4); }
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: var(--obsidian-glass);
+  backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
 }
 
-/* Utility classes for animations if needed, though we can use arbitrary values in Tailwind or style props */
-.animate-breathe {
-  animation: breathe 4s infinite ease-in-out;
+.glass-pill {
+  background: var(--obsidian-glass);
+  backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+  @apply px-4 py-1.5 rounded-full text-[10px] uppercase tracking-widest transition-all duration-300;
 }
 
-.animate-flicker {
-  animation: flicker 0.2s infinite alternate;
+.glass-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
-.animate-pulse-slow {
-  animation: pulse 2s infinite ease-in-out;
+.active-pill {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
 }

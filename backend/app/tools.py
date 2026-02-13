@@ -3,81 +3,88 @@ import webbrowser
 import datetime
 import logging
 import asyncio
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
 class ToolRegistry:
+    """
+    Registry for OS-level and knowledge-based tools.
+    Provides generic schemas for universal LLM tool-calling.
+    """
     def __init__(self):
-        # Definitions for Gemini
-        self.definitions = [
+        # Generic Tool Definitions
+        self.tools = [
             {
-                "function_declarations": [
-                    {
-                        "name": "spotify_control",
-                        "description": "Control music playback on the user's PC (Spotify/Media Keys).",
-                        "parameters": {
-                            "type": "OBJECT",
-                            "properties": {
-                                "action": {
-                                    "type": "STRING",
-                                    "description": "Action to perform: 'play', 'pause', 'next', 'previous', 'volume_up', 'volume_down'."
-                                }
-                            },
-                            "required": ["action"]
+                "name": "spotify_control",
+                "description": "Control music playback on the user's PC (Spotify/Media Keys).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["play", "pause", "next", "previous", "volume_up", "volume_down"],
+                            "description": "The media control action to perform."
                         }
                     },
-                    {
-                        "name": "search_web",
-                        "description": "Open a URL or search query in the default web browser.",
-                        "parameters": {
-                            "type": "OBJECT",
-                            "properties": {
-                                "query": {
-                                    "type": "STRING",
-                                    "description": "The search query or URL to open."
-                                }
-                            },
-                            "required": ["query"]
+                    "required": ["action"]
+                }
+            },
+            {
+                "name": "search_web",
+                "description": "Open a URL or search query in the default web browser.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query or URL to open."
                         }
                     },
-                    {
-                        "name": "get_time",
-                        "description": "Get the current local time.",
-                    },
-                    {
-                        "name": "recall_memory",
-                        "description": "Search long-term memory for specific details about the user or past conversations.",
-                        "parameters": {
-                            "type": "OBJECT",
-                            "properties": {
-                                "query": {
-                                    "type": "STRING",
-                                    "description": "The search query to find relevant memories."
-                                }
-                            },
-                            "required": ["query"]
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "get_time",
+                "description": "Get the current local time.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            },
+            {
+                "name": "recall_memory",
+                "description": "Search long-term memory for specific details about the user or past conversations.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query to find relevant memories."
                         }
-                    }
-                ]
+                    },
+                    "required": ["query"]
+                }
             }
         ]
         
-        # We need access to the DB/MemoryStore. 
-        # Ideally, this is injected or we pass the store instance to execute().
         self.memory_store = None
 
     def set_memory_store(self, memory_store):
         self.memory_store = memory_store
 
-    async def execute(self, name, args):
-        """Executes a tool by name with arguments."""
-        logger.info(f"🛠️ Tool Call: {name} ({args})")
+    def get_definitions(self) -> List[Dict[str, Any]]:
+        """Returns the list of tool definitions for LLM context."""
+        return self.tools
+
+    async def execute(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Executes a tool by name with provided arguments."""
+        logger.info(f"🛠️ Mesh Tool Call: {name} | Args: {args}")
         
         try:
             if name == "spotify_control":
-                # ... (keep existing) ...
                 action = args.get("action")
-                if action == "play" or action == "pause":
+                if action in ["play", "pause"]:
                     pyautogui.press("playpause")
                 elif action == "next":
                     pyautogui.press("nexttrack")
@@ -115,4 +122,4 @@ class ToolRegistry:
             logger.error(f"Tool execution failed: {e}")
             return {"error": str(e)}
             
-        return {"error": "Tool not found"}
+        return {"error": f"Tool '{name}' not found"}

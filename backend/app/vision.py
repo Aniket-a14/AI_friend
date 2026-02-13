@@ -1,12 +1,13 @@
 import mss
 import numpy as np
 import cv2
-import asyncio
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 class ScreenLink:
+    """High-performance primary monitor capture."""
     def __init__(self):
         self.sct = mss.mss()
         try:
@@ -14,19 +15,21 @@ class ScreenLink:
         except IndexError:
             self.monitor = self.sct.monitors[0]
             
-    def _compress_frame(self, frame):
+    def _compress_frame(self, frame: np.ndarray) -> Optional[bytes]:
         if frame is None: return None
         height, width = frame.shape[:2]
-        target_width = 512 # Lowered for stability in 2026
+        target_width = 512 
         if width > target_width:
             scale = target_width / width
             new_height = int(height * scale)
             frame = cv2.resize(frame, (target_width, new_height))
         
+        # 50% Quality JPEG for low-latency transport
         _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
         return buffer.tobytes()
 
-    def capture_frame(self):
+    def capture_frame(self) -> Optional[bytes]:
+        """Captures and returns a compressed JPEG frame of the screen."""
         try:
             sct_img = self.sct.grab(self.monitor)
             img = np.array(sct_img)
@@ -37,10 +40,11 @@ class ScreenLink:
             return None
 
 class CameraLink:
+    """Local camera capture for visual grounding."""
     def __init__(self):
         self.cap = None
     
-    def _compress_frame(self, frame):
+    def _compress_frame(self, frame: np.ndarray) -> Optional[bytes]:
         if frame is None: return None
         height, width = frame.shape[:2]
         target_width = 512
@@ -49,6 +53,7 @@ class CameraLink:
             new_height = int(height * scale)
             frame = cv2.resize(frame, (target_width, new_height))
             
+        # 50% Quality JPEG for low-latency transport
         _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
         return buffer.tobytes()
 
@@ -56,7 +61,8 @@ class CameraLink:
         if self.cap is None or not self.cap.isOpened():
             self.cap = cv2.VideoCapture(0)
             
-    def capture_frame(self):
+    def capture_frame(self) -> Optional[bytes]:
+        """Captures and returns a compressed JPEG frame from the camera."""
         try:
             self._ensure_cap()
             ret, frame = self.cap.read()
@@ -68,6 +74,7 @@ class CameraLink:
             return None
 
     def close(self):
+        """Release camera resources."""
         if self.cap:
             self.cap.release()
             self.cap = None

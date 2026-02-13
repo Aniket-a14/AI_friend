@@ -12,6 +12,27 @@ include
 .git
 .dockerignore
 Dockerfile
-.env
+.env*
 .vscode
 .idea
+
+# Data & Samples (Sensitive/Heavy)
+voice_samples/
+wake_up_file/
+tests/
+scripts/
+models/
+checkpoint*/
+*.wav
+*.mp3
+*.mp4
+*.ppn
+history.json
+personality.json
+
+# Local persistence & Caches
+database/
+chroma_db/
+.cache/
+.huggingface/
+.pytest_cache/
