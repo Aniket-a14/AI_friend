@@ -1,0 +1,15 @@
+google-genai>=0.3.0
+python-dotenv
+numpy
+asyncpg
+fastapi
+uvicorn
+websockets
+jaraco.context>=6.1.0
+wheel>=0.46.2
+APScheduler==3.10.4
+nats-py
+neo4j
+requests
+soxr
+livekit-api

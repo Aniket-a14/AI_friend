@@ -14,18 +14,18 @@
 
 ---
 
-## 🔄 Phase 17: Local Brain Deployment
+## ✅ Phase 17: Local Brain Deployment (COMPLETED)
 **Goal**: Replace Gemini with local LLM for privacy and latency
 
 ### 17.1 LLM Infrastructure
-- [ ] Deploy **Ollama** or **vLLM** server locally
-- [ ] Test models: Llama 3.2 (3B/8B), Qwen 2.5, Mistral
-- [ ] Benchmark latency vs Gemini (target: <500ms first token)
+- [x] Deploy **Ollama** or **vLLM** server locally
+- [x] Test models: Llama 3.2 (3B/8B), Qwen 2.5, Mistral
+- [x] Benchmark latency vs Gemini (target: <500ms first token)
 
 ### 17.2 LLM Integration
-- [ ] Create `BrainAgent` that subscribes to `chat.input` events
-- [ ] Implement streaming response via NATS pub to `chat.output`
-- [ ] Add GraphRAG context injection (query Neo4j before responding)
+- [x] Create `BrainAgent` that subscribes to `chat.input` events
+- [x] Implement streaming response via NATS pub to `chat.output`
+- [ ] Add GraphRAG context injection (deferred to Phase 22)
 
 ### 17.3 Hinglish Fine-Tuning (Optional)
 - [ ] Collect Hinglish conversation dataset

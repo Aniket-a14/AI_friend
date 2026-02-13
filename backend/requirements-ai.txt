@@ -1,0 +1,9 @@
+-r requirements-base.txt
+webrtcvad-wheels
+faster-whisper
+mss
+opencv-python
+pillow
+pyautogui
+# torch is handled by transitive deps of faster-whisper (usually)
+# Use torch-cpu in requirements-slim if ever needed.

@@ -1,0 +1,73 @@
+"""
+Sovereign Mesh v3.0 Test Suite
+Tests for the decentralized micro-agent architecture.
+"""
+import pytest
+import asyncio
+from app.agents.base import BaseAgent
+from app.config import Config
+
+class TestBaseAgent:
+    """Test the foundational BaseAgent lifecycle."""
+    
+    @pytest.mark.asyncio
+    async def test_agent_connection(self):
+        """Verify agent can connect to NATS mesh."""
+        agent = BaseAgent(name="test_agent", nats_url="nats://localhost:4222")
+        
+        try:
+            await agent.connect()
+            assert agent.nc is not None, "NATS connection should be established"
+            assert agent.js is not None, "JetStream should be initialized"
+        finally:
+            await agent.stop()
+    
+    @pytest.mark.asyncio
+    async def test_agent_publish(self):
+        """Verify agent can publish to the mesh."""
+        agent = BaseAgent(name="test_publisher")
+        
+        try:
+            await agent.connect()
+            # Publish a test message
+            await agent.publish("test.subject", {"message": "hello"})
+            # If no exception, publish succeeded
+            assert True
+        finally:
+            await agent.stop()
+    
+    @pytest.mark.asyncio
+    async def test_agent_state_broadcast(self):
+        """Verify agent can broadcast state updates."""
+        agent = BaseAgent(name="test_state_agent")
+        
+        try:
+            await agent.connect()
+            await agent.set_state("thinking")
+            # State broadcast should not raise exceptions
+            assert True
+        finally:
+            await agent.stop()
+
+
+class TestConfiguration:
+    """Test environment-aware configuration."""
+    
+    def test_config_defaults(self):
+        """Verify default configuration values."""
+        assert Config.NATS_URL is not None
+        assert Config.SAMPLE_RATE == 16000
+        assert Config.STT_MODEL_SIZE in ["tiny", "base", "small", "medium", "large"]
+    
+    def test_config_environment_override(self, monkeypatch):
+        """Verify environment variables override defaults."""
+        monkeypatch.setenv("NATS_URL", "nats://custom:4222")
+        # Re-import to pick up new env var
+        from importlib import reload
+        from app import config
+        reload(config)
+        assert config.Config.NATS_URL == "nats://custom:4222"
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

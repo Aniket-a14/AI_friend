@@ -71,23 +71,36 @@ jobs:
         cd frontend
         npm run build
 
-  backend-validation:
+  backend-test:
     needs: [lint]
     runs-on: ubuntu-latest
+    services:
+      nats:
+        image: nats:latest
+        ports:
+          - 4222:4222
+        options: >-
+          --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:8222/healthz || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
     - uses: actions/checkout@v6
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.11'
+        python-version: '3.13'
         cache: 'pip'
     - name: Install dependencies
       run: |
         cd backend
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    - name: Validate Imports
+        pip install pytest pytest-asyncio
+    - name: Run Test Suite
+      env:
+        NATS_URL: nats://localhost:4222
       run: |
         cd backend
-        python -c "import app.audio; import app.llm; import app.tts; print('Imports validated successfully')"
+        pytest -v --tb=short
 

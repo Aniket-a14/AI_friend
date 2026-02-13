@@ -1,29 +1,103 @@
 services:
-  backend:
+  # 1. Signaling Server (FastAPI)
+  signaling:
     build:
       context: ./backend
-      target: runtime
+      target: slim
     ports:
       - "8000:8000"
     env_file:
       - ./backend/.env
     environment:
+      - NATS_URL=nats://nats:4222
       - DEBUG=False
-      - ALLOWED_ORIGINS=http://localhost:3000
-      - AI_NAME=AI Friend
-      - LOCATION_CONTEXT=Global
+    networks:
+      - ai-mesh
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/status" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # 2. Transport Agent (WebRTC Bridge)
+  transport-agent:
+    build:
+      context: ./backend
+      target: slim
+    command: [ "python", "-m", "app.agents.transport_agent" ]
+    env_file:
+      - ./backend/.env
+    environment:
+      - NATS_URL=nats://nats:4222
+    depends_on:
+      signaling:
+        condition: service_healthy
+    networks:
+      - ai-mesh
+    restart: unless-stopped
+
+  # 3. STT Agent (Whisper)
+  stt-agent:
+    build:
+      context: ./backend
+      target: full
+    command: [ "python", "-m", "app.agents.stt_agent" ]
+    env_file:
+      - ./backend/.env
+    environment:
+      - NATS_URL=nats://nats:4222
+    networks:
+      - ai-mesh
     deploy:
       resources:
         limits:
-          memory: 512M
-          cpus: '0.5'
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/status" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+          memory: 2G
     restart: unless-stopped
 
+  # 4. Brain Agent (Reasoning)
+  brain-agent:
+    build:
+      context: ./backend
+      target: slim
+    command: [ "python", "-m", "app.agents.brain_agent" ]
+    env_file:
+      - ./backend/.env
+    environment:
+      - NATS_URL=nats://nats:4222
+    networks:
+      - ai-mesh
+    restart: unless-stopped
+
+  # 5. Voice Agent (TTS)
+  voice-agent:
+    build:
+      context: ./backend
+      target: slim
+    command: [ "python", "-m", "app.agents.voice_agent" ]
+    env_file:
+      - ./backend/.env
+    environment:
+      - NATS_URL=nats://nats:4222
+    networks:
+      - ai-mesh
+    restart: unless-stopped
+
+  # 6. Vision Agent (Visual Context)
+  vision-agent:
+    build:
+      context: ./backend
+      target: full
+    command: [ "python", "-m", "app.agents.vision_agent" ]
+    env_file:
+      - ./backend/.env
+    environment:
+      - NATS_URL=nats://nats:4222
+    networks:
+      - ai-mesh
+    restart: unless-stopped
+
+  # 7. Frontend (Next.js)
   frontend:
     build:
       context: ./frontend
@@ -32,12 +106,21 @@ services:
       - "3000:3000"
     env_file:
       - ./frontend/.env
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
     depends_on:
-      backend:
+      signaling:
         condition: service_healthy
+    networks:
+      - ai-mesh
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
           cpus: '0.5'
     restart: unless-stopped
+
+networks:
+  ai-mesh:
+    external: true
+    name: ai-mesh

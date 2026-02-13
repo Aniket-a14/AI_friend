@@ -1,26 +1,205 @@
 version: '3.8'
 
 services:
+  # 1. Event Bus (NATS JetStream)
   nats:
     image: nats:latest
     container_name: nats_mesh
+    entrypoint: [ "/nats-server" ]
+    command: [ "-js" ]
     ports:
-      - "4222:4222" # Client port
-      - "8222:8222" # HTTP Monitoring
-    command: [ "-js" ] # Enable JetStream
+      - "4222:4222" # Client connections
+      - "8222:8222" # HTTP monitoring
+    working_dir: /
+    networks:
+      - ai_mesh_network
     restart: always
 
+  # 2. PostgreSQL with PGVector (RAG + Conversation History)
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: ai_friend
+      POSTGRES_PASSWORD: dev_password_change_in_prod
+      POSTGRES_DB: ai_friend_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ai_mesh_network
+    restart: always
+
+  # 3. Neo4j (Knowledge Graph)
   neo4j:
     image: neo4j:latest
     container_name: brain_graph
-    ports:
-      - "7474:7474" # Browser UI
-      - "7687:7687" # Bolt (Binary)
+    entrypoint: [ "tini", "-g", "--", "/startup/docker-entrypoint.sh" ]
+    command: [ "neo4j" ]
     environment:
-      - NEO4J_AUTH=neo4j/password123
-      - NEO4J_PLUGINS=["apoc"]
+      NEO4J_AUTH: neo4j/password123
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474" # HTTP
+      - "7687:7687" # Bolt
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    working_dir: /var/lib/neo4j
+    networks:
+      - ai_mesh_network
+    restart: always
+
+  # 4. Redis (Caching + LiveKit Signaling)
+  redis:
+    image: redis:7-alpine
+    container_name: brain_cache
+    entrypoint: [ "docker-entrypoint.sh" ]
+    command: [ "redis-server", "--appendonly", "yes" ]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    working_dir: /data
+    networks:
+      - ai_mesh_network
+    restart: always
+
+  # 5. LiveKit (WebRTC SFU)
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: local_sfu
+    entrypoint: [ "/livekit-server" ]
+    command: [ "--config", "/etc/livekit.yaml" ]
+    ports:
+      - "7880:7880" # HTTP API
+      - "7881:7881" # TURN/STUN TCP
+      - "7882:7882" # Additional TCP
+      - "3478:3478/udp" # STUN/TURN UDP
+      - "50000:50000/udp"
+      - "50001:50001/udp"
+      - "50002:50002/udp"
+      - "50003:50003/udp"
+      - "50004:50004/udp"
+      - "50005:50005/udp"
+      - "50006:50006/udp"
+      - "50007:50007/udp"
+      - "50008:50008/udp"
+      - "50009:50009/udp"
+      - "50010:50010/udp"
+      - "50011:50011/udp"
+      - "50012:50012/udp"
+      - "50013:50013/udp"
+      - "50014:50014/udp"
+      - "50015:50015/udp"
+      - "50016:50016/udp"
+      - "50017:50017/udp"
+      - "50018:50018/udp"
+      - "50019:50019/udp"
+      - "50020:50020/udp"
+      - "50021:50021/udp"
+      - "50022:50022/udp"
+      - "50023:50023/udp"
+      - "50024:50024/udp"
+      - "50025:50025/udp"
+      - "50026:50026/udp"
+      - "50027:50027/udp"
+      - "50028:50028/udp"
+      - "50029:50029/udp"
+      - "50030:50030/udp"
+      - "50031:50031/udp"
+      - "50032:50032/udp"
+      - "50033:50033/udp"
+      - "50034:50034/udp"
+      - "50035:50035/udp"
+      - "50036:50036/udp"
+      - "50037:50037/udp"
+      - "50038:50038/udp"
+      - "50039:50039/udp"
+      - "50040:50040/udp"
+      - "50041:50041/udp"
+      - "50042:50042/udp"
+      - "50043:50043/udp"
+      - "50044:50044/udp"
+      - "50045:50045/udp"
+      - "50046:50046/udp"
+      - "50047:50047/udp"
+      - "50048:50048/udp"
+      - "50049:50049/udp"
+      - "50050:50050/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    environment:
+      - LIVEKIT_KEYS=devkey: secretsecretsecret
+    networks:
+      - ai_mesh_network
+    depends_on:
+      - redis
+    restart: always
+
+  # 6. Ollama (Local LLM)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: local_brain
+    entrypoint: [ "/bin/ollama" ]
+    command: [ "serve" ]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    networks:
+      - ai_mesh_network
+    restart: always
+
+  # 7. GPT-SoVITS (Local TTS)
+  gpt-sovits:
+    image: xxxxrt666/gpt-sovits:latest
+    container_name: local_voice
+    entrypoint: null
+    command:
+      - bash
+      - -c
+      - |
+        pip install torch==2.10.0+cpu torchaudio==2.10.0+cpu --index-url https://download.pytorch.org/whl/cpu &&
+        pip uninstall -y torchcodec &&
+        python -c 'import os; p="/workspace/GPT-SoVITS/GPT_SoVITS/TTS_infer_pack/TTS.py"; c=open(p).read(); n=c.replace("torchaudio.load(ref_audio_path)", "(lambda f: (lambda s,d: (torch.from_numpy(d).float().unsqueeze(0)/32768.0, s))(*__import__(\"scipy.io.wavfile\").io.wavfile.read(f)))(ref_audio_path)"); open(p,"w").write(n)' &&
+        rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models &&
+        ln -s /workspace/models/pretrained_models /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models &&
+        cd /workspace/GPT-SoVITS &&
+        export LD_PRELOAD=/root/conda/lib/libstdc++.so.6 &&
+        python api_v2.py -a 0.0.0.0 -p 9871
+    ports:
+      - "9880:9880" # WebUI
+      - "9871:9871" # API
+    volumes:
+      - voice_models:/workspace/models/pretrained_models
+      - ./backend/voice_samples:/workspace/GPT-SoVITS/output
+    environment:
+      - is_half=false
+      - CUDA_VISIBLE_DEVICES=-1
+      - LITE=true
+      - WORKFLOW=true
+      - PYTHONPATH=/workspace/GPT-SoVITS
+    working_dir: /workspace/GPT-SoVITS
+    shm_size: 16gb
+    networks:
+      - ai_mesh_network
     restart: always
 
 networks:
-  default:
+  ai_mesh_network:
     name: ai_mesh_network
+    driver: bridge
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  redis_data:
+  ollama_models:
+  voice_models:

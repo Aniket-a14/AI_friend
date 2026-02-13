@@ -1,0 +1,51 @@
+# General
+.DS_Store
+Thumbs.db
+*.log
+tmp/
+temp/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Project Specific (Personal Data)
+**/personality.json
+**/history.json
+**/voice_samples/
+**/wake_up_file/
+**/*.ppn
+personal/
+private/
+secrets/
+*.pem
+*.key
+
+# Media (Prevent leakage of personal audio/video)
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.ogg
+*.flac
+*.webm

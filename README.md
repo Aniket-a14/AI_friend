@@ -21,112 +21,73 @@
 
 ## 🌟 Overview
 
-AI Friend is a sophisticated, enterprise-grade, real-time voice-interactive AI platform that transcends traditional chatbot limitations. Unlike conventional "STT → Text → TTS" pipelines that introduce 1.5s+ latency, this platform leverages **Native Multimodal Intelligence** via **Gemini 2.5 Live API**, achieving **sub-300ms** response times with authentic visual-vocal situational awareness.
+AI Friend is a sophisticated, enterprise-grade, real-time voice-interactive AI platform. Built on the **Sovereign Mesh** pattern, it transcends traditional chatbot limitations by using a decentralized ecosystem of specialized micro-agents coordinated via a high-performance NATS event bus.
 
-The system is designed to bridge the gap between robotic utilities and human-like digital companions, enabling businesses and developers to deploy agents that don't just "process" but truly "interact" with emotional intelligence, temporal awareness, and persistent personality growth.
-
----
-
-## 🔄 Evolution (v2.2.0 → v3.0)
-
-### Current State (v2.2.0 - Production Ready)
-```
-✅ Gemini 2.5 Live API Integration
-✅ Sub-300ms Native Multimodal Processing
-✅ Real-time Vision (Screen/Camera) at 1 FPS
-✅ Multi-Layer RAG Memory (PostgreSQL/Supabase)
-✅ Enterprise CI/CD & Security Hardening
-✅ Docker-Based Deployment
-```
-
-### Future Vision (v3.0 - Infrastructure Deployed)
-```
-🚧 Local Brain: Llama 3.2 / Qwen 2.5 via Ollama/vLLM
-🚧 Local Voice: Coqui XTTS v2 / GPT-SoVITS (Voice Cloning)
-🚧 GraphRAG Memory: Neo4j Knowledge Graph
-🚧 Event-Driven Mesh: NATS JetStream Micro-Agents
-🚧 WebRTC Transport: Ultra-Low Latency (<150ms)
-🚧 Full-Duplex Audio: Moshi/Ultravox Integration
-```
-
-> **Important**  
-> v3.0 infrastructure (NATS + Neo4j) is deployed and operational. See [V3_INFRASTRUCTURE.md](./V3_INFRASTRUCTURE.md) and [v3_roadmap.md](./V3_ROADMAP.md) for implementation details.
+The system achieves **sub-300ms** response times through native multimodal intelligence and optimized audio pipelines (`soxr`), enabling authentic visual-vocal situational awareness.
 
 ---
 
-## 🚀 Key Features
+## 🏗️ Architecture: v3.0 Sovereign Mesh
 
-- **⚡ Ultra-Low Latency (Sub-300ms)**: Achieved through native multimodal processing, binary WebSockets, and AudioWorklet capture
-- **👁️ Visual Grounding**: Real-time 1 FPS vision stream (screen capture/webcam) integrated directly into LLM context
-- **🔐 Industrial-Strength Stability**: Session locking, silent handoff, and high-concurrency handshake guards
-- **📚 Multi-Layer Memory (RAG)**: Short-term (exact), Blurry (session), and Core (long-term) memory layers
-- **🎭 Expressive Communication**: Native vocal cues (`[laughs]`, `[whispers]`), barge-in support, and Hinglish fluency
-- **🌍 Character Agnostic**: Fully configurable identity via `AI_NAME` environment variable
-- **🧠 Advanced Cognition**:
-  - Native Multimodal: Eliminates STT/TTS conversion lag
-  - Visual Context: Screen/camera awareness in real-time
-  - Persistent Memory: Relationship building across sessions
-  - Tool Calling: Spotify, web search, and custom integrations
+The current version (v3.0) has shifted from a monolithic backend to a **distributed agent mesh**.
+
+### Key Innovations:
+- **Decentralized Agents**: Specialized actors for STT, Vision, Reasoning (Brain), and Voice (TTS) running as independent containers.
+- **NATS JetStream Backbone**: A microsecond-latency event bus replaces direct function calls for agent choreography.
+- **Dual-Stack Docker**: Infrastructure (backbone) and Application (agents) separated for modular scaling.
+- **Privacy-First**: Optimized to run with local LLMs (Ollama) and local TTS (GPT-SoVITS).
 
 ---
 
-## 🛠️ Technology Stack
+## 🚀 Active Features
 
-> **Note**  
-> Model Evolution Status (February 2026):
-> - **v2.2.0 Brain**: Production-ready with Gemini 2.5 Live API
-> - **v3.0 Brain**: Infrastructure deployed (NATS + Neo4j). Local LLM integration in progress.
-> - **Current Action**: The system is fully functional with Gemini. v3.0 components are being incrementally integrated.
+- **⚡ Ultra-Low Latency**: Sub-300ms response loop using raw PCM streams and `soxr` resampling.
+- **👁️ Visual Context**: Real-time screen/webcam awareness synced via the `vision.frames` stream.
+- **🧠 Distributed Reasoning**: Brain Agent manages high-level logic, tool calling, and relationship-based memory.
+- **🎭 Multi-Format Audio**: High-fidelity synthesis with support for Hinglish and emotional cues.
+- **🔐 Enterprise Stability**: Docker health checks, automatic service discovery, and circuit breakers.
 
-### v2.2.0 (Current Production)
+---
+
+## ⚙️ Technology Stack (v3.0 Mesh)
 
 | Component | Technology | Purpose |
 |:----------|:-----------|:--------|
-| **Intelligence** | Google Gemini 2.5 Live | Native multimodal speech-to-speech processing |
-| **Backend** | Python 3.10+ / FastAPI | High-concurrency async I/O with WebSocket support |
-| **Frontend** | Next.js 14 / React | Server-side rendering with AudioWorklet capture |
-| **Real-time** | WebSockets (Binary) | Raw PCM audio streaming (16-bit, 16kHz/24kHz) |
-| **Database** | Supabase (PostgreSQL) | Persistent memory with vector embeddings |
-| **Voice** | ElevenLabs v3 | Premium vocal synthesis (optional) |
-| **Vision** | Gemini 1.5 Flash | Screen/camera understanding |
-
-### v3.0 (Infrastructure Deployed)
-
-| Component | Technology | Purpose |
-|:----------|:-----------|:--------|
-| **Event Bus** | NATS JetStream | Microsecond-latency agent communication |
-| **Knowledge Graph** | Neo4j | Relationship-based persistent memory |
-| **Local LLM** | Ollama / vLLM | Privacy-first local inference (planned) |
-| **Voice Synthesis** | Coqui XTTS v2 | Local voice cloning (planned) |
-| **Transport** | WebRTC (LiveKit) | Sub-150ms audio/video streaming (planned) |
+| **Event Bus** | NATS JetStream | Microsecond-latency internal communication |
+| **Orchestration** | Docker Compose | Dual-stack (Infra + Agents) management |
+| **Intelligence** | Gemini / Ollama | Reasoner and Tool-Caller |
+| **Speech-to-Text** | Faster Whisper | High-accuracy audio transcription |
+| **Text-to-Speech** | GPT-SoVITS / Eleven | Expressive vocal synthesis |
+| **Audio Optimization** | SoX-Resampler (`soxr`) | Low-CPU audio format conversion |
+| **Visual Context** | ScreenLink / CameraLink | Real-time situational awareness |
 
 ---
 
-## ⚙️ Configuration
+## ⚙️ Advanced Configuration (Env Var Dictionary)
 
-The application is configured via Environment Variables. Create `.env` files in the `backend/` and `frontend/` directories:
+| Variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `AI_NAME` | `AI Friend` | The primary identity of the reasoning engine. |
+| `DEBUG` | `False` | Toggles verbose logging across all mesh agents. |
+| `NATS_URL` | `nats://nats:4222` | Internal event bus address. |
+| `OLLAMA_URL` | `http://ollama:11434` | Endpoint for the Reasoning LLM. |
+| `STT_MODEL_SIZE` | `small` | Whisper model speed (`tiny` to `large`). |
+| `STT_DEVICE` | `cpu` | Target hardware (`cpu` or `cuda`). |
+| `GEMINI_API_KEY` | `Required` | API Key for native multimodal fallback. |
+| `DATABASE_URL` | `Required` | Postgres connection string for RAG & History. |
 
-### Backend Configuration (`backend/.env`)
+---
 
-```bash
-# === Core Settings ===
-AI_NAME=AI Friend                    # Name of your AI companion
-LOCATION_CONTEXT=Global              # Regional context (e.g., "Mumbai, India")
-DEBUG=False                          # Enable debug logging
+## 🧩 Agent Capability Matrix
 
-# === API Keys (Required) ===
-GEMINI_API_KEY=your_gemini_key_here  # Google Gemini API
-SUPABASE_URL=your_supabase_url       # PostgreSQL database URL
-SUPABASE_KEY=your_supabase_key       # Supabase service key
-
-# === API Keys (Optional) ===
-ELEVENLABS_API_KEY=your_key_here     # Premium voice synthesis
-
-# === Advanced Settings ===
-ALLOWED_ORIGINS=http://localhost:3000  # CORS allowed origins
-MAX_MEMORY_ITEMS=100                   # Maximum memory entries
-VISION_FPS=1                           # Vision capture frame rate (0.5-2)
-```
+| Feature | Agent Responsible | Protocol |
+| :--- | :--- | :--- |
+| **User Voice Capture** | Signaling Server | WebRTC / WS |
+| **Voice Activity Detection** | STT Agent | RMS/Silero VAD |
+| **Interruption Logic** | STT Agent -> Voice | `audio.stop` Signal |
+| **Tool Calling** | Brain Agent | Python ToolRegistry |
+| **RAG Retrieval** | Brain Agent | Vector Search |
+| **Voice Synthesis** | Voice Agent | GPT-SoVITS / Eleven |
 
 ### Frontend Configuration (`frontend/.env`)
 
@@ -136,86 +97,65 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:8000  # Backend API endpoint
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture: Sovereign Mesh Pattern
 
 ```mermaid
 graph TB
-    subgraph Client [Client Layer - Next.js]
+    subgraph Client [Client - Next.js]
         UI[Glassmorphic UI]
         AW[AudioWorklet]
-        WS[WebSocket Client]
     end
     
-    subgraph Backend [Service Mesh - FastAPI]
-        API[Async Engine]
-        Session[Session Manager]
-        Memory[Memory Manager]
+    subgraph Mesh [Sovereign Mesh - NATS JetStream]
+        NATS((Event Bus))
+        EAR[Ear Agent]
+        BRAIN[Brain Agent]
+        STT[STT Agent]
+        VOICE[Voice Agent]
+        VISION[Vision Agent]
     end
     
-    subgraph Intelligence [Intelligence Fabric]
-        Gemini[Gemini 2.5 Live]
-        DB[(Supabase)]
-    end
-    
-    subgraph V3 [v3.0 Infrastructure]
-        NATS[NATS JetStream]
-        Neo4j[(Neo4j Graph)]
+    subgraph Intelligence [Intelligence Tier]
+        Gemini[Gemini Live]
+        Ollama[Ollama / Local LLM]
     end
     
     UI <--> AW
-    AW <--> WS
-    WS <--> API
-    API <--> Session
-    API <--> Memory
-    API <--> Gemini
-    Memory <--> DB
-    API -.-> NATS
-    API -.-> Neo4j
+    AW <--> EAR
+    EAR <--> NATS
+    NATS <--> BRAIN
+    NATS <--> STT
+    NATS <--> VOICE
+    NATS <--> VISION
+    BRAIN <--> Gemini
+    BRAIN <--> Ollama
 ```
 
-**For detailed architecture documentation, component breakdowns, data flow diagrams, and design decisions, see [ARCHITECTURE.md](./ARCHITECTURE.md)**
+**For detailed architecture documentation, component breakdowns, and design decisions, see [ARCHITECTURE.md](./ARCHITECTURE.md)**
 
 ---
 
-## ⚡ Getting Started
+### ⚡ Getting Started
 
-### Prerequisites
+#### Prerequisites
+- **Docker & Docker Compose**
+- **NATS CLI** (Optional, for monitoring)
+- **API Keys**: Google Gemini (Required), Supabase/Postgres (For Memory)
 
-- **Docker & Docker Compose** (Recommended for fastest setup)
-- **Node.js 22+** (For manual frontend development)
-- **Python 3.10+** (For manual backend development)
-- **API Keys**:
-  - [Google Gemini API Key](https://aistudio.google.com/app/apikey) (Required)
-  - [Supabase Account](https://supabase.com/) (Required for memory)
-  - [ElevenLabs API Key](https://elevenlabs.io/) (Optional for premium voice)
+#### One-Click Initialization (Recommended)
+We provide automation scripts to set up your network and environment templates:
 
-### Method 1: Docker (Recommended - Fast & Production-Ready)
+- **Windows**: `.\setup_mesh.ps1`
+- **Linux/macOS**: `chmod +x setup_mesh.sh && ./setup_mesh.sh`
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/Aniket-a14/AI_friend.git
-cd AI_friend
-
-# 2. Configure Environment Variables
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-
-# Edit backend/.env with your API keys:
-# - GEMINI_API_KEY=your_gemini_key_here
-# - SUPABASE_URL=your_supabase_url
-# - SUPABASE_KEY=your_supabase_key
-
-# Edit frontend/.env with backend URL:
-# - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
-
-# 3. Start Services
-docker-compose up --build
-```
+#### Launch the Mesh
+1. **Backbone**: `docker-compose -f docker-compose.infra.yml up -d`
+2. **AI Agents**: `docker-compose up -d --build`
 
 **Access Points**:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+- **Frontend**: http://localhost:3000
+- **Signaling Server**: http://localhost:8000
+- **Infrastructure Dash**: http://localhost:8222 (NATS Monitoring)
 
 ### Method 2: Manual Development (For Contributors)
 

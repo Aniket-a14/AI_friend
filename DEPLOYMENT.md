@@ -131,13 +131,34 @@ Deploy both frontend and backend together using Docker Compose.
 git clone https://github.com/yourusername/AI_friend.git
 cd AI_friend
 
-# 2. Configure environment
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-# Edit .env files with production values
+### Quick Start for New Users
 
-# 3. Build and start services
-docker-compose up --build -d
+If you are setting up the project for the first time, use the provided automation scripts to handle network and environment configuration.
+
+#### Windows (PowerShell)
+```powershell
+.\setup_mesh.ps1
+```
+
+#### Linux / macOS (Bash)
+```bash
+chmod +x setup_mesh.sh
+./setup_mesh.sh
+```
+
+---
+
+# 2. Configure environment
+Edit the generated `.env` files with your actual credentials:
+- `backend/.env`: Add `GEMINI_API_KEY`.
+- `frontend/.env`: (Optional) Change `NEXT_PUBLIC_BACKEND_URL` if not on localhost.
+
+# 3. Build and start services (Dual-File)
+# Launch Infrastructure first
+docker-compose -f docker-compose.infra.yml up -d
+
+# Launch Agent Mesh
+docker-compose up -d --build
 
 # 4. Verify services are running
 docker ps
