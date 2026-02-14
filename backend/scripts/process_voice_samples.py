@@ -3,7 +3,6 @@ Voice Sample Processor & Manager
 Helps organize multiple voice files for GPT-SoVITS cloning.
 """
 import os
-import sys
 
 # Move to the project root for relative paths to work correctly
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -50,7 +49,7 @@ def main():
     print("2. [Quality] Fine-Tuning: Use all clips (3-5 mins total) for a custom model (Requires WebUI)")
     
     # Check for transcripts
-    for s in samples:
+    for s in wavs:
         txt_file = s.replace(".wav", ".txt")
         if not os.path.exists(os.path.join(SAMPLES_DIR, txt_file)):
             print(f"\n⚠️  Missing transcript for: {s}")
