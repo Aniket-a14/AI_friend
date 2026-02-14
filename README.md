@@ -137,14 +137,31 @@ We provide automation scripts to set up your network and environment templates:
 - **Windows**: `.\setup_mesh.ps1`
 - **Linux/macOS**: `chmod +x setup_mesh.sh && ./setup_mesh.sh`
 
-#### Launch the Mesh
-1. **Backbone**: `docker-compose -f docker-compose.infra.yml up -d`
-2. **AI Agents**: `docker-compose up -d --build`
+### ⚡ Getting Started (Production Ready)
 
-**Access Points**:
-- **Frontend**: http://localhost:3000
-- **Signaling Server**: http://localhost:8000
-- **Infrastructure Dash**: http://localhost:8222 (NATS Monitoring)
+#### 1. Prerequisites
+- **Docker Desktop**
+- **Supabase Account** (For `DATABASE_URL`)
+- **API Keys**: Google Gemini (Required)
+
+#### 2. Environment Configuration
+Create a `.env` file in the root directory. Copy from [.env.example](.env.example) and fill in your credentials.
+
+#### 3. One-Click Launch (Recommended)
+We provide a production-hardened orchestrator for Windows:
+
+```powershell
+./scripts/start_prod.ps1
+```
+
+#### 4. Manual Launch (Cross-Platform)
+```bash
+# Start Infrastructure (NATS, LiveKit, Ollama, SoVITS, Neo4j)
+docker compose -f docker-compose.infra.yml up -d
+
+# Build/Start AI Agents
+docker compose -f docker-compose.prod.yml up -d --build
+```
 
 ### Method 2: Manual Development (For Contributors)
 

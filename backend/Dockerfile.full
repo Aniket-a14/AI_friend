@@ -1,0 +1,23 @@
+# AI Friend - Advanced/Full Image
+# Version: 1.0.0
+# Contains: Base + Heavy AI libraries (Whisper, OpenCV, Torch)
+
+FROM ai-friend/base:v1
+
+WORKDIR /app
+
+# 1. Install System Deps for Vision/Audio (e.g. OpenCV runtime)
+# libgl1 is already in base, but ensuring robust support for cv2
+USER root
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+USER appuser
+
+# 2. Install AI Dependencies
+COPY requirements-ai.txt .
+RUN pip install --no-cache-dir -r requirements-ai.txt
