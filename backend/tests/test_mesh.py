@@ -31,7 +31,7 @@ class TestBaseAgent:
         try:
             await agent.connect()
             # Publish a test message
-            await agent.publish("test.subject", {"message": "hello"})
+            await agent.publish("chat.test", {"message": "hello"})
             # If no exception, publish succeeded
             assert True
         finally:
