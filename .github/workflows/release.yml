@@ -81,7 +81,7 @@ jobs:
         with:
           images: ghcr.io/${{ steps.repo.outputs.owner }}/${{ matrix.image_name }}
           tags: |
-            type=semver,pattern={{version}}
+            type=ref,event=tag
             type=sha,format=long
             type=raw,value=latest
 
@@ -124,7 +124,7 @@ jobs:
         with:
           images: ghcr.io/${{ steps.repo.outputs.owner }}/ai-friend-full
           tags: |
-            type=semver,pattern={{version}}
+            type=ref,event=tag
             type=sha,format=long
             type=raw,value=latest
 
