@@ -7,8 +7,8 @@
 ## Table of Contents
 
 1. [System Overview](#system-overview)
-2. [v2.2.0 Architecture (Current)](#v220-architecture-current)
-3. [v3.0 Architecture (Future)](#v30-architecture-future)
+2. [v3.0 Architecture (Current)](#v30-architecture-current)
+3. [Legacy v2.x Monolith](#v2x-monolith-legacy)
 4. [Component Details](#component-details)
 5. [Data Flow](#data-flow)
 6. [Design Decisions](#design-decisions)
@@ -28,7 +28,7 @@ This architecture enables:
 
 ---
 
-## 🏗️ v3.0 Architecture (Sovereign Mesh)
+## 🏗️ v3.0 Architecture (Sovereign Mesh - Current)
 
 ### Component Lifecycles
 

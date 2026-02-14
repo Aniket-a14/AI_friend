@@ -16,6 +16,7 @@
 [![GitHub forks](https://img.shields.io/github/forks/Aniket-a14/Ai_friend?style=social)](https://github.com/Aniket-a14/Ai_friend/network/members)
 [![GitHub issues](https://img.shields.io/github/issues/Aniket-a14/Ai_friend)](https://github.com/Aniket-a14/Ai_friend/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/Aniket-a14/Ai_friend)](https://github.com/Aniket-a14/Ai_friend/pulls)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 ---
 
@@ -46,6 +47,7 @@ The current version (v3.0) has shifted from a monolithic backend to a **distribu
 - **🧠 Distributed Reasoning**: Brain Agent manages high-level logic, tool calling, and relationship-based memory.
 - **🎭 Multi-Format Audio**: High-fidelity synthesis with support for Hinglish and emotional cues.
 - **🔐 Enterprise Stability**: Docker health checks, automatic service discovery, and circuit breakers.
+- **✨ 100% Lint Clean**: Backend codebase is fully compliant with `ruff` and `flake8` standards (Phase 27 Audit complete).
 
 ---
 
@@ -293,7 +295,7 @@ Health check endpoint
 ```json
 {
   "status": "healthy",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "uptime": 3600
 }
 ```
