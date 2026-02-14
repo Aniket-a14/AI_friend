@@ -18,6 +18,8 @@ Dockerfile
 
 # Data & Samples (Sensitive/Heavy)
 voice_samples/
+custom_voice/
+recordings/
 wake_up_file/
 tests/
 scripts/
@@ -26,9 +28,19 @@ checkpoint*/
 *.wav
 *.mp3
 *.mp4
+*.m4a
 *.ppn
+*.json
+!package.json
+!tsconfig.json
+# re-include specific config jsons if needed, but exclude personal ones
+!app/agents/personality.json 
+# history.json is personal, keep ignored.
+
 history.json
 personality.json
+backups/
+_archive/
 
 # Local persistence & Caches
 database/

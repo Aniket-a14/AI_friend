@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # INFRASTRUCTURE (From docker-compose.infra.yml - re-declared for linking)
+  # ---------------------------------------------------------------------------
+  # In production, these might be external managed services.
+  # For now, we assume they are running in the same network 'ai_mesh_network'
+
+  # ---------------------------------------------------------------------------
+  # AGENT MICROSERVICES
+  # ---------------------------------------------------------------------------
+
+  # 1. BRAIN AGENT (Logic, RAG, Ollama Client)
+  brain_agent:
+    image: ai-friend/base:v1
+    container_name: brain_agent
+    command: [ "python", "-m", "app.agents.brain_agent" ]
+    volumes:
+      - ./backend:/app # Development mount (remove in prod build)
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+      - OLLAMA_URL=http://local_brain:11434
+      - DATABASE_URL=${DATABASE_URL}
+      - LOG_LEVEL=INFO
+    networks:
+      - ai_mesh_network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    restart: always
+
+  # 2. VOICE AGENT (TTS, connects to GPT-SoVITS)
+  voice_agent:
+    image: ai-friend/base:v1
+    container_name: voice_agent
+    command: [ "python", "-m", "app.agents.voice_agent" ]
+    volumes:
+      - ./backend:/app
+      - ./backend/voice_samples:/app/output # For saving/reading WAVs
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+      - SOVITS_URL=http://local_voice:9871
+    networks:
+      - ai_mesh_network
+    depends_on:
+      - brain_agent
+    restart: always
+
+  # 3. TRANSPORT AGENT (WebRTC Bridge)
+  transport_agent:
+    image: ai-friend/base:v1
+    container_name: transport_agent
+    command: [ "python", "-m", "app.agents.transport_agent" ]
+    volumes:
+      - ./backend:/app
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+      - LIVEKIT_URL=http://local_sfu:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+    networks:
+      - ai_mesh_network
+    depends_on:
+      - brain_agent
+    restart: always
+
+# Use the existing network created by infra
+networks:
+  ai_mesh_network:
+    external: true

@@ -13,9 +13,10 @@ devops:
 - changed-files:
   - any-glob-to-any-file:
     - '.github/**'
-    - 'backend/Dockerfile'
+    - 'backend/Dockerfile*'
     - 'frontend/Dockerfile'
-    - 'docker-compose.yml'
+    - 'docker-compose*.yml'
+    - 'scripts/**'
 
 # Documentation
 documentation:

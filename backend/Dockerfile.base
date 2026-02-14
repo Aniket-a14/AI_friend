@@ -1,0 +1,34 @@
+# AI Friend - Production Base Image
+# Version: 1.0.0
+# Contains: NATS, LiveKit, FastAPI, NumPy, Postgres/Neo4j drivers
+
+FROM python:3.10-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+WORKDIR /app
+
+# 1. OS Dependencies
+# libportaudio2: Audio I/O
+# build-essential: Compiling C extensions
+RUN apt-get update && apt-get install -y \
+    curl \
+    libportaudio2 \
+    libgl1 \
+    libglib2.0-0 \
+    build-essential \
+    portaudio19-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Python Environment
+RUN pip install --no-cache-dir --upgrade pip uv
+
+# 3. Base Dependencies
+COPY requirements-base.txt .
+RUN pip install --no-cache-dir -r requirements-base.txt
+
+# 4. Security: Non-root user
+RUN groupadd -g 1001 appgroup && useradd -m -u 1001 -g appgroup appuser
+USER appuser
+
+# Healthcheck helper (curl is installed)
