@@ -4,6 +4,7 @@ Provides OpenAI-compatible interface for Llama 3.2
 """
 import json
 import logging
+import requests
 import aiohttp
 from typing import AsyncGenerator, Dict, Any
 
