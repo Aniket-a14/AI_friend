@@ -21,7 +21,7 @@ jobs:
         context: ./backend
         file: ./backend/Dockerfile.base
         push: false
-        tags: ai-friend/base:latest
+        tags: ai-friend/base:v1
         cache-from: type=gha
         cache-to: type=gha,mode=max
         

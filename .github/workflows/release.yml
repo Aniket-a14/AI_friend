@@ -42,7 +42,7 @@ jobs:
             - Automated Release generation on Tag push.
             - **New**: Automated Docker image publishing to GHCR.
 
-  docker-release:
+  docker-release-primary:
     needs: [release]
     runs-on: ubuntu-latest
     strategy:
@@ -52,10 +52,6 @@ jobs:
             context: ./backend
             file: ./backend/Dockerfile.base
             image_name: ai-friend-base
-          - component: full
-            context: ./backend
-            file: ./backend/Dockerfile.full
-            image_name: ai-friend-full
           - component: frontend
             context: ./frontend
             file: ./frontend/Dockerfile
@@ -92,5 +88,45 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  docker-release-advanced:
+    needs: [docker-release-primary]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/ai-friend-full
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Build and Push Advanced Image (Full)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.full
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BASE_IMAGE=ghcr.io/${{ github.repository_owner }}/ai-friend-base:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -2,7 +2,8 @@
 # Version: 1.0.0
 # Contains: Base + Heavy AI libraries (Whisper, OpenCV, Torch)
 
-FROM ai-friend/base:v1
+ARG BASE_IMAGE=ai-friend/base:v1
+FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
