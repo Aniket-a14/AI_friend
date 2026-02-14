@@ -40,13 +40,58 @@ class VoiceAgent(BaseAgent):
             deliver_policy="new",
         )
 
-        # Subscribe to interruption signals (Ephemeral, no durable)
-        # FIXME: Adding this caused timeouts. Disabling for now to stabilize startup.
-        # await self.subscribe("audio.stop", self._handle_interruption, deliver_policy="new")
+        # Subscribe to state updates for latency masking
+        await self.subscribe(
+            "state.update",
+            self._handle_state_update,
+            deliver_policy="new",
+        )
 
         logger.info(
-            f"🎙️ {self.name} started and listening to chat.output and audio.stop"
+            f"🎙️ {self.name} started and listening to chat.output, state.update"
         )
+
+    async def _handle_state_update(self, message: Dict[str, Any]):
+        """Handle state updates to trigger latency masking fillers"""
+        agent_name = message.get("agent")
+        state = message.get("state")
+
+        # If brain is thinking, play a filler sound to mask latency
+        if agent_name == "brain_agent" and state == "thinking":
+            await self._play_filler()
+
+    async def _play_filler(self):
+        """Play a random pre-generated filler sound"""
+        import random
+        import os
+
+        filler_dir = "app/assets/fillers"
+        if not os.path.exists(filler_dir):
+            return
+
+        fillers = [f for f in os.listdir(filler_dir) if f.endswith(".wav")]
+        if not fillers:
+            return
+
+        # Don't play filler if we just played one very recently (optional throttle)
+        # For now, just pick one
+        chosen = random.choice(fillers)
+        filepath = os.path.join(filler_dir, chosen)
+
+        logger.info(f"🤔 Brain is thinking... playing filler: {chosen}")
+        
+        try:
+            with open(filepath, "rb") as f:
+                audio_data = f.read()
+                audio_b64 = base64.b64encode(audio_data).decode("utf-8")
+                
+                # Stream the filler directly
+                await self.publish(
+                    "audio.stream",
+                    {"audio": audio_b64, "format": "wav", "sample_rate": 22050},
+                )
+        except Exception as e:
+            logger.error(f"Failed to play filler {chosen}: {e}")
 
     async def _handle_interruption(self, message: Dict[str, Any]):
         """Handle 'audio.stop' signal from STT agent"""
@@ -63,18 +108,34 @@ class VoiceAgent(BaseAgent):
         if not message.get("done"):
             return
 
-        text = message.get("full_response", "")
-        if not text or not self.ref_audio_path:
+        raw_text = message.get("full_response", "")
+        if not raw_text or not self.ref_audio_path:
             return
 
-        logger.info(f"🎙️ Synthesizing: {text[:50]}...")
+        # Parse emotion and strip tags
+        text, emotion = self._parse_emotion(raw_text)
+        
+        # Select reference audio based on emotion
+        # Paths are relative to the GPT-SoVITS container's mounted volume
+        emotion_map = {
+            "neutral": "output/sample_en_gold.wav",
+            "happy": "output/ref_happy.wav",
+            "excited": "output/ref_happy.wav",
+            "warm": "output/ref_happy.wav",
+            "sad": "output/ref_sad.wav",
+            "serious": "output/sample_en_gold.wav", # Fallback to neutral/gold for now
+        }
+        
+        current_ref_audio = emotion_map.get(emotion, self.ref_audio_path)
+        logger.info(f"🎙️ Synthesizing ({emotion}): {text[:50]}...")
+        
         text_lang = self._detect_language(text)
 
         # Stream audio synthesis from local provider
         async for audio_chunk in self.sovits.synthesize_stream(
             text=text,
-            ref_audio_path=self.ref_audio_path,
-            ref_text=self.ref_text,
+            ref_audio_path=current_ref_audio,
+            ref_text=self.ref_text, # We might need to update ref_text too if we have transcripts for happy/sad
             text_lang=text_lang,
             ref_lang="en",
         ):
@@ -91,6 +152,23 @@ class VoiceAgent(BaseAgent):
         # Signal end of stream
         await self.publish("audio.stream", {"audio": "", "done": True})
         logger.info("✅ Voice synthesis complete")
+
+    def _parse_emotion(self, text: str) -> tuple[str, str]:
+        """Extract <emotion type='...'> tag and return (clean_text, emotion)"""
+        import re
+        match = re.search(r'<emotion type=["\'](.*?)["\']>(.*?)</emotion>', text, re.DOTALL)
+        if match:
+            emotion = match.group(1).lower()
+            clean_text = match.group(2).strip()
+            return clean_text, emotion
+        # Also handle prefix style just in case: <emotion type="happy"> Text
+        match_prefix = re.search(r'<emotion type=["\'](.*?)["\']>(.*)', text, re.DOTALL)
+        if match_prefix:
+             emotion = match_prefix.group(1).lower()
+             clean_text = match_prefix.group(2).strip()
+             return clean_text, emotion
+             
+        return text, "neutral"
 
     def _detect_language(self, text: str) -> str:
         """Simple language detection for Hinglish"""

@@ -100,6 +100,31 @@ export function useWebRTCVoice() {
         };
     }, []); // Empty dependency array ensures this runs only once on mount
 
+    // Autoplay Policy Fix: Resume AudioContext on first user interaction
+    useEffect(() => {
+        const handleInteraction = async () => {
+            if (roomRef.current) {
+                try {
+                    await roomRef.current.startAudio();
+                    console.log('🔊 AudioContext resumed by user interaction');
+                    // Remove listener once successful
+                    window.removeEventListener('click', handleInteraction);
+                    window.removeEventListener('keydown', handleInteraction);
+                } catch (err) {
+                    console.warn('Could not resume audio context:', err);
+                }
+            }
+        };
+
+        window.addEventListener('click', handleInteraction);
+        window.addEventListener('keydown', handleInteraction);
+
+        return () => {
+            window.removeEventListener('click', handleInteraction);
+            window.removeEventListener('keydown', handleInteraction);
+        };
+    }, []);
+
     return {
         isConnected,
         isConnecting,
