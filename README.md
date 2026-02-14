@@ -3,7 +3,7 @@
 **Enterprise-Grade Real-Time Multimodal AI Companion**
 
 [![CI](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/Aniket-a14/Ai_friend/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 ---
@@ -145,7 +145,7 @@ We provide automation scripts to set up your network and environment templates:
 - **API Keys**: Google Gemini (Required)
 
 #### 2. Environment Configuration
-Create a `.env` file in the root directory. Copy from [.env.example](.env.example) and fill in your credentials.
+Create a `.env` file in the root directory. Copy from [backend/.env.example](backend/.env.example) and fill in your credentials.
 
 #### 3. One-Click Launch (Recommended)
 We provide a production-hardened orchestrator for Windows:
