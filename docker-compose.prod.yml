@@ -66,6 +66,43 @@ services:
       - brain_agent
     restart: always
 
+  # 4. STT AGENT (Whisper, VAD) - Heavy
+  stt_agent:
+    image: ai-friend/full:v1
+    container_name: stt_agent
+    command: [ "python", "-m", "app.agents.stt_agent" ]
+    volumes:
+      - ./backend:/app
+      - ./backend/models:/app/models # Persist models
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+      - STT_MODEL_SIZE=small
+      - STT_DEVICE=cpu
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    networks:
+      - ai_mesh_network
+    depends_on:
+      - brain_agent
+    restart: always
+
+  # 5. VISION AGENT (OpenCV, Screen/Cam) - Heavy
+  vision_agent:
+    image: ai-friend/full:v1
+    container_name: vision_agent
+    command: [ "python", "-m", "app.agents.vision_agent" ]
+    volumes:
+      - ./backend:/app
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+    networks:
+      - ai_mesh_network
+    depends_on:
+      - brain_agent
+    restart: always
+
 # Use the existing network created by infra
 networks:
   ai_mesh_network:

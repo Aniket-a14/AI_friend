@@ -112,10 +112,70 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ---
 
-### Strategy 2: Combined Deployment (Docker Compose)
+### Quick Start for New Users (Sovereign Mesh v3.1)
 
-**Best for**: Self-hosted servers, VPS, total control
+If you are setting up AI Friend for the first time, follow this streamlined workflow optimized for local production.
 
+#### 1. Prerequisites
+- **Docker Desktop** (with Compose)
+- **NVIDIA GPU Drivers** (Optional, for local Ollama/SoVITS acceleration)
+- **Supabase Account** (For the cloud database)
+
+#### 2. Environment Setup
+Create a `.env` file in the project root:
+```bash
+# 1. Database
+DATABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres
+
+# 2. LiveKit (SFU)
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secretsecretsecret
+LIVEKIT_KEYS=devkey: secretsecretsecret
+
+# 3. AI Services
+GEMINI_API_KEY=your_key_here
+NEO4J_AUTH=neo4j/your_secure_password
+```
+
+#### 3. Launch the Stack
+We use a two-tier deployment to isolate core infrastructure from AI agents.
+
+**Windows (PowerShell):**
+```powershell
+./scripts/start_prod.ps1
+```
+
+**Manual (Cross-Platform):**
+```bash
+# Start backbone (NATS, LiveKit, Ollama, SoVITS, Neo4j)
+docker compose -f docker-compose.infra.yml up -d
+
+# Build/Start Agents (Brain, Voice, Transport, STT, Vision)
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+#### 4. Accessing the UI
+Once the containers are healthy:
+- **Frontend**: [http://localhost:3000](http://localhost:3000)
+- **API Status**: [http://localhost:8000/status](http://localhost:8000/status)
+
+---
+
+### Strategy 2: Production Hardening (Docker Compose)
+**Best for**: Self-hosted servers, workstations, total control.
+
+This strategy uses the **Tiered Image Architecture** (Phase 30).
+1. **ai-friend/base**: Shared core dependencies (Fast, light).
+2. **ai-friend/full**: Advanced AI capabilities (Whisper STT, Vision).
+
+**Build Command (for Developers):**
+```bash
+# Build the base layer first
+docker build -t ai-friend/base:v1 -f backend/Dockerfile.base backend/
+
+# Build the heavy AI layer
+docker build -t ai-friend/full:v1 -f backend/Dockerfile.full backend/
+```
 Deploy both frontend and backend together using Docker Compose.
 
 #### Prerequisites
