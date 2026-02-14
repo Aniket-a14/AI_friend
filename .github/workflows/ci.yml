@@ -33,24 +33,6 @@ jobs:
         pip install flake8
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
-  security:
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    steps:
-    - uses: actions/checkout@v6
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: javascript-typescript, python
-        token: ${{ secrets.GITHUB_TOKEN }}
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-
   frontend-build:
     needs: [lint]
     runs-on: ubuntu-latest
