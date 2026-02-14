@@ -123,8 +123,7 @@ graph TB
     end
     
     UI <--> AW
-    AW <--> EAR
-    EAR <--> NATS
+    AW <--> NATS
     NATS <--> BRAIN
     NATS <--> STT
     NATS <--> VOICE
@@ -261,35 +260,23 @@ docker compose -f docker-compose.infra.yml restart
 
 ---
 
+---
+
 ## 🔌 API Reference
 
-The backend exposes a RESTful and WebSocket API. Full Swagger documentation available at `/docs`.
+The backend exposes a RESTful API for session management. Full Swagger documentation available at `/docs`.
 
-### WebSocket Endpoint
+### Primary Endpoints
 
-**`/ws`** - Main Voice Interface  
-**Protocol**: Binary WebSocket  
-**Audio Format**: PCM 16-bit, 16kHz mono
+#### `GET /token`
+Generates a LiveKit access token for real-time WebRTC sessions.
+- **Query Param**: `participant` (default: `user`)
 
-```javascript
-// Client Example
-const ws = new WebSocket('ws://localhost:8000/ws');
-ws.binaryType = 'arraybuffer';
-
-// Send audio
-ws.send(pcmAudioBuffer);
-
-// Receive audio
-ws.onmessage = (event) => {
-  const audioData = new Int16Array(event.data);
-  playAudio(audioData);
-};
-```
-
-### REST Endpoints
+#### `POST /start-session`
+Initializes a new mesh session and returns a token.
 
 #### `GET /status`
-Health check endpoint
+Health check and mesh readiness status.
 
 **Response**:
 ```json
@@ -324,14 +311,14 @@ This project demonstrates progressive engineering practices across three discipl
 - **Temporal Decay**: Relevance scoring based on recency
 
 ### 2. Senior Backend Engineer
-- **Async I/O**: Non-blocking WebSocket handling for high concurrency
+- **Async I/O**: Non-blocking NATS message handling for high concurrency
 - **Session Management**: State locking and silent handoff for zero-downtime
 - **Event-Driven Architecture**: NATS-based micro-agent choreography (v3.0)
 - **Security**: TLS, CORS, rate limiting, and secret management
 
 ### 3. Senior Frontend Engineer
 - **AudioWorklet**: High-performance audio capture (~10ms latency)
-- **Binary WebSockets**: Raw PCM streaming without codec overhead
+- **WebRTC Transport**: Raw PCM streaming via LiveKit for sub-300ms latency
 - **React Optimization**: Server components and lazy loading
 - **Glassmorphism**: Modern UI with framer-motion animations
 
