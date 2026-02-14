@@ -74,18 +74,22 @@ jobs:
   backend-test:
     needs: [lint]
     runs-on: ubuntu-latest
-    services:
-      nats:
-        image: nats:latest
-        ports:
-          - 4222:4222
-        options: >-
-          --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:8222/healthz || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
     - uses: actions/checkout@v6
+    - name: Start NATS Service
+      run: |
+        docker run -d --name nats -p 4222:4222 -p 8222:8222 nats:latest -js -m 8222
+        # Wait for NATS to be ready
+        for i in {1..10}; do
+          if wget --no-verbose --tries=1 --spider http://localhost:8222/healthz; then
+            echo "NATS is ready!"
+            exit 0
+          fi
+          echo "Waiting for NATS..."
+          sleep 2
+        done
+        echo "NATS failed to start"
+        exit 1
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
@@ -103,4 +107,3 @@ jobs:
       run: |
         cd backend
         pytest -v --tb=short
-
