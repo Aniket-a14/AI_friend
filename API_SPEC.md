@@ -33,22 +33,6 @@ Generates a LiveKit access token for WebRTC sessions.
 
 ---
 
-### 2. WebSocket Endpoint
-
-#### `WS /ws`
-The high-speed binary interface for real-time audio and vision.
-
-**Inbound (Client -> Server):**
-- **Type**: Binary (Int16Array)
-- **Format**: Raw PCM, 16-bit, 48kHz (default)
-- **Logic**: Streamed directly to `audio.inbound` on NATS.
-
-**Outbound (Server -> Client):**
-- **Type**: Binary / JSON
-- **Content**: Dispatched from `audio.stream` and `chat.output`.
-
----
-
 ## 🌊 Internal Messaging (NATS JetStream)
 
 The "Sovereign Mesh" communicates via a decentralized event bus.
