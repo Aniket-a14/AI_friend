@@ -1,17 +1,16 @@
 import logging
-import asyncpg
-import json
 import asyncio
 from google import genai
 from .config import Config
 
 logger = logging.getLogger(__name__)
 
+
 class MemoryStore:
     def __init__(self, pool):
         self.pool = pool
         self.client = genai.Client(api_key=Config.GEMINI_API_KEY)
-        
+
     async def get_embedding(self, text):
         """Generates vector embedding for text using Gemini."""
         try:
@@ -19,7 +18,7 @@ class MemoryStore:
             result = await asyncio.to_thread(
                 self.client.models.embed_content,
                 model="models/text-embedding-004",
-                contents=text
+                contents=text,
             )
             return result.embeddings[0].values
         except Exception as e:
@@ -32,17 +31,19 @@ class MemoryStore:
             vector = await self.get_embedding(content)
             if not vector:
                 return False
-            
+
             # Format vector for pgvector (string representation '[0.1, 0.2, ...]')
             vector_str = str(vector)
-            
+
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     """
                     INSERT INTO memories (content, embedding, metadata)
                     VALUES ($1, $2, $3)
                     """,
-                    content, vector_str, metadata or {}
+                    content,
+                    vector_str,
+                    metadata or {},
                 )
             logger.info(f"🧠 Remembered: {content[:50]}...")
             return True
@@ -57,7 +58,7 @@ class MemoryStore:
             vector_result = await asyncio.to_thread(
                 self.client.models.embed_content,
                 model="models/text-embedding-004",
-                contents=query_text
+                contents=query_text,
             )
             query_vector = vector_result.embeddings[0].values
             vector_str = str(query_vector)
@@ -73,13 +74,17 @@ class MemoryStore:
                     ORDER BY embedding <=> $1
                     LIMIT $3
                     """,
-                    vector_str, threshold, limit
+                    vector_str,
+                    threshold,
+                    limit,
                 )
                 for row in rows:
-                    results.append(row['content'])
-            
+                    results.append(row["content"])
+
             if results:
-                logger.info(f"🧠 Recalled {len(results)} memories for: '{query_text[:30]}...'")
+                logger.info(
+                    f"🧠 Recalled {len(results)} memories for: '{query_text[:30]}...'"
+                )
             return results
 
         except Exception as e:

@@ -1,19 +1,19 @@
 import sys
 import os
-import asyncio
-import logging
 
 # Add backend to path (assuming running from backend root)
 sys.path.append(os.getcwd())
+
 
 def test_soxr_import():
     print("1. Testing 'soxr' import...", end=" ")
     try:
         import soxr
         import numpy as np
+
         # Quick Functional Test
         data = np.zeros(100, dtype=np.float32)
-        resampled = soxr.resample(data, 48000, 16000)
+        soxr.resample(data, 48000, 16000)
         print("✅ Success (Function working)")
     except ImportError:
         print("❌ Failed (ImportError)")
@@ -22,15 +22,16 @@ def test_soxr_import():
         print(f"❌ Failed ({e})")
         sys.exit(1)
 
+
 def test_brain_wiring():
     print("2. Testing 'BrainAgent' wiring...", end=" ")
     try:
         from app.agents.brain_agent import BrainAgent
         from app.conversation_history_store import ConversationHistoryStore
-        
+
         history = ConversationHistoryStore()
         agent = BrainAgent(conversation_store=history)
-        
+
         if agent.conversation_store == history:
             print("✅ Success (Wiring correct)")
         else:
@@ -38,6 +39,7 @@ def test_brain_wiring():
     except Exception as e:
         print(f"❌ Failed to instantiate BrainAgent: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     print("🔍 Verifying Phase 25 Changes:\n")

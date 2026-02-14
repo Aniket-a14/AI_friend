@@ -2,16 +2,17 @@ import pyautogui
 import webbrowser
 import datetime
 import logging
-import asyncio
 from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
+
 
 class ToolRegistry:
     """
     Registry for OS-level and knowledge-based tools.
     Provides generic schemas for universal LLM tool-calling.
     """
+
     def __init__(self):
         # Generic Tool Definitions
         self.tools = [
@@ -23,12 +24,19 @@ class ToolRegistry:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["play", "pause", "next", "previous", "volume_up", "volume_down"],
-                            "description": "The media control action to perform."
+                            "enum": [
+                                "play",
+                                "pause",
+                                "next",
+                                "previous",
+                                "volume_up",
+                                "volume_down",
+                            ],
+                            "description": "The media control action to perform.",
                         }
                     },
-                    "required": ["action"]
-                }
+                    "required": ["action"],
+                },
             },
             {
                 "name": "search_web",
@@ -38,19 +46,16 @@ class ToolRegistry:
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query or URL to open."
+                            "description": "The search query or URL to open.",
                         }
                     },
-                    "required": ["query"]
-                }
+                    "required": ["query"],
+                },
             },
             {
                 "name": "get_time",
                 "description": "Get the current local time.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {}
-                }
+                "parameters": {"type": "object", "properties": {}},
             },
             {
                 "name": "recall_memory",
@@ -60,14 +65,14 @@ class ToolRegistry:
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query to find relevant memories."
+                            "description": "The search query to find relevant memories.",
                         }
                     },
-                    "required": ["query"]
-                }
-            }
+                    "required": ["query"],
+                },
+            },
         ]
-        
+
         self.memory_store = None
 
     def set_memory_store(self, memory_store):
@@ -80,7 +85,7 @@ class ToolRegistry:
     async def execute(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Executes a tool by name with provided arguments."""
         logger.info(f"🛠️ Mesh Tool Call: {name} | Args: {args}")
-        
+
         try:
             if name == "spotify_control":
                 action = args.get("action")
@@ -95,7 +100,7 @@ class ToolRegistry:
                 elif action == "volume_down":
                     pyautogui.press("volumedown")
                 return {"result": f"Executed {action}"}
-                
+
             elif name == "search_web":
                 query = args.get("query")
                 if query.startswith("http"):
@@ -103,7 +108,7 @@ class ToolRegistry:
                 else:
                     webbrowser.open(f"https://www.google.com/search?q={query}")
                 return {"result": f"Opened browser for: {query}"}
-                
+
             elif name == "get_time":
                 now = datetime.datetime.now().strftime("%I:%M %p")
                 return {"result": f"Current time is {now}"}
@@ -111,15 +116,15 @@ class ToolRegistry:
             elif name == "recall_memory":
                 if not self.memory_store:
                     return {"error": "Memory store not available."}
-                
+
                 query = args.get("query")
                 results = await self.memory_store.search_memories(query)
                 if not results:
                     return {"result": "No relevant memories found."}
                 return {"result": f"Found memories: {', '.join(results)}"}
-                
+
         except Exception as e:
             logger.error(f"Tool execution failed: {e}")
             return {"error": str(e)}
-            
+
         return {"error": f"Tool '{name}' not found"}
