@@ -1,9 +1,6 @@
 import logging
 import json
-import asyncio
-import random
 import uvicorn
-from typing import Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -14,18 +11,19 @@ from app.config import Config
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("ai_friend_backend")
+
 
 class AIBackend:
     """
     Sovereign signaling server for the AI Friend Voice Mesh.
     Manages WebRTC tokens and broadcasts control signals via NATS.
     """
+
     def __init__(self):
-        self.vision_source = "screen" # screen | camera
+        self.vision_source = "screen"  # screen | camera
         self.is_ready = False
         self.nc = None
 
@@ -40,7 +38,7 @@ class AIBackend:
         except Exception as e:
             logger.error(f"Failed to connect to NATS during init: {e}")
             # We don't crash here, but is_ready will stay False
-        
+
         logger.info("Signaling server ready.")
 
     async def get_livekit_token(self, participant_name: str):
@@ -71,7 +69,9 @@ class AIBackend:
             await self.nc.close()
             logger.info("NATS connection closed.")
 
+
 backend = AIBackend()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -81,10 +81,11 @@ async def lifespan(app: FastAPI):
     # Shutdown
     await backend.cleanup()
 
+
 app = FastAPI(
     title="AI Friend Sovereign Mesh",
     description="Signaling and Control Hub for the Agentic Voice Mesh",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS Middleware (Sovereign Local Access)
@@ -96,18 +97,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 async def root():
     return {
         "status": "online",
         "identity": "Sovereign Mesh Bridge",
-        "ready": backend.is_ready
+        "ready": backend.is_ready,
     }
+
 
 @app.get("/status")
 async def get_status():
     """Health check endpoint for Docker/K8s"""
     return {"status": "ok", "ready": backend.is_ready}
+
 
 @app.get("/token")
 async def get_token(participant: str = "user"):
@@ -119,6 +123,7 @@ async def get_token(participant: str = "user"):
         logger.error(f"Token generation failed: {e}")
         raise HTTPException(status_code=500, detail="Token generation failed")
 
+
 @app.post("/start-session")
 async def start_session(participant: str = "user"):
     """Alias for token generation to support legacy frontend calls."""
@@ -129,6 +134,7 @@ async def start_session(participant: str = "user"):
         logger.error(f"Session start failed: {e}")
         raise HTTPException(status_code=500, detail="Session start failed")
 
+
 @app.post("/vision/toggle")
 async def toggle_vision(source: str):
     """Vision Control Endpoint"""
@@ -136,9 +142,11 @@ async def toggle_vision(source: str):
         raise HTTPException(status_code=400, detail="Invalid vision source")
     return await backend.toggle_vision_source(source)
 
+
 @app.get("/health")
 async def health():
     return {"status": "healthy", "nats": backend.is_ready}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,20 +1,21 @@
 """
 Setup NATS JetStream streams for AI Friend
 """
+
 import asyncio
 import nats
-from nats.js.errors import BadRequestError
+
 
 async def setup_streams():
     print("🚀 Connecting to NATS...")
     nc = await nats.connect("nats://localhost:4222")
     js = nc.jetstream()
-    
+
     streams = [
         {"name": "CHAT", "subjects": ["chat.>"], "retention": "limits"},
         {"name": "AUDIO", "subjects": ["audio.>"], "retention": "interest"},
         {"name": "VISION", "subjects": ["vision.>"], "retention": "limits"},
-        {"name": "STATE", "subjects": ["state.>"], "retention": "limits"}
+        {"name": "STATE", "subjects": ["state.>"], "retention": "limits"},
     ]
 
     for stream in streams:
@@ -23,7 +24,7 @@ async def setup_streams():
             subjects=stream["subjects"],
             retention=stream["retention"],
             max_msgs=5000,
-            max_bytes=100_000_000
+            max_bytes=100_000_000,
         )
         try:
             await js.add_stream(config)
@@ -42,11 +43,12 @@ async def setup_streams():
     try:
         current_streams = await js.streams_info()
         print(f"📊 Active Streams: {[s.config.name for s in current_streams]}")
-    except:
+    except Exception:
         pass
 
     await nc.close()
     print("✨ NATS mesh infrastructure ready!")
+
 
 if __name__ == "__main__":
     asyncio.run(setup_streams())

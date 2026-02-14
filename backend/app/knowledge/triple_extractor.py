@@ -1,16 +1,18 @@
 import logging
 import json
 import re
-from typing import List, Tuple
+from typing import List
 from .graph_db import GraphDB
 
 logger = logging.getLogger(__name__)
+
 
 class TripleExtractor:
     """
     Service to extract (Subject, Relation, Object) triples from text.
     In v3.0, this uses an LLM to parse conversation semantics.
     """
+
     def __init__(self, llm_service=None, graph_db: GraphDB = None):
         self.llm_service = llm_service  # This would be an instance of LLMService
         self.graph_db = graph_db
@@ -26,12 +28,12 @@ class TripleExtractor:
         Text: "{text}"
         Example Output: [["{user_id}", "LIVES_IN", "Berlin"], ["{user_id}", "HAS_BROTHER", "Rahul"]]
         """
-        
+
         try:
             # For now, we'll use a fallback or the provided LLM service
             if self.llm_service:
                 response = await self.llm_service.generate_response_stream(prompt)
-                # Note: This is simplified. In a real scenario, we'd use a non-streaming 
+                # Note: This is simplified. In a real scenario, we'd use a non-streaming
                 # call or collect the stream.
                 triples = self._parse_json_from_text(response)
             else:
@@ -39,12 +41,13 @@ class TripleExtractor:
                 triples = []
                 if "live in" in text.lower():
                     match = re.search(r"live in (\w+)", text, re.I)
-                    if match: triples.append([user_id, "LIVES_IN", match.group(1)])
+                    if match:
+                        triples.append([user_id, "LIVES_IN", match.group(1)])
 
             if triples and self.graph_db:
                 for sub, rel, obj in triples:
                     await self.graph_db.create_relationship(sub, rel, obj)
-            
+
             return triples
         except Exception as e:
             logger.error(f"Triple extraction failed: {e}")
@@ -57,5 +60,5 @@ class TripleExtractor:
             if match:
                 return json.loads(match.group(0))
             return []
-        except:
+        except Exception:
             return []

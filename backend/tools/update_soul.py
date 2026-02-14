@@ -7,7 +7,7 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from app.conversation_history_store import ConversationHistoryStore
-from app.config import Config
+
 
 async def update_soul():
     print("🔮 Connecting to Database...")
@@ -19,7 +19,7 @@ async def update_soul():
     h_path = os.path.join(base_dir, "history.json")
 
     print(f"📖 Reading files from {base_dir}...")
-    
+
     personality_content = "{}"
     if os.path.exists(p_path):
         with open(p_path, "r", encoding="utf-8") as f:
@@ -49,7 +49,7 @@ async def update_soul():
         print("⚠️ Warning: history.json not found.")
 
     print("✨ Updating Agent Soul in Database...")
-    
+
     # We use raw SQL here to force update the row where id=1
     async with db.pool.acquire() as conn:
         await conn.execute(
@@ -63,11 +63,12 @@ async def update_soul():
                 updated_at = NOW();
             """,
             personality_content,
-            history_content
+            history_content,
         )
 
     print("✅ Soul Update Complete! The AI has been re-imprinted.")
     await db.close()
+
 
 if __name__ == "__main__":
     asyncio.run(update_soul())

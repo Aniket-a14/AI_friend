@@ -2,6 +2,7 @@
 Pytest configuration for AI Friend Sovereign Mesh tests.
 Configures Python path and test fixtures.
 """
+
 import sys
 import os
 

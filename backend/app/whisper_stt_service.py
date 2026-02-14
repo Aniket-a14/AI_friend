@@ -5,15 +5,16 @@ import webrtcvad
 import collections
 import time
 from faster_whisper import WhisperModel
-from .config import Config
 
 logger = logging.getLogger(__name__)
+
 
 class WhisperSTTService:
     """
     Optimized STT Service with VAD and Sonic Empathy Analysis.
     Targeted for <500ms latency mesh architecture.
     """
+
     def __init__(self, model_size="small", device="cpu", compute_type="int8"):
         self.model_size = model_size
         self.device = device
@@ -22,34 +23,34 @@ class WhisperSTTService:
         self.is_loading = False
 
         # VAD Setup (Strict mode to filter environment noise)
-        self.vad = webrtcvad.Vad(3) 
+        self.vad = webrtcvad.Vad(3)
         self.sample_rate = 16000
-        self.frame_duration_ms = 30 # standard for webrtcvad
-        self.frame_size = int(self.sample_rate * self.frame_duration_ms / 1000) 
-        
+        self.frame_duration_ms = 30  # standard for webrtcvad
+        self.frame_size = int(self.sample_rate * self.frame_duration_ms / 1000)
+
         # Buffers & State
         self.buffer = b""
-        self.audio_buffer = collections.deque() 
+        self.audio_buffer = collections.deque()
         self.is_speaking = False
         self.silence_start_time = None
-        self.speech_start_time = None 
+        self.speech_start_time = None
         self.silence_threshold = 0.8  # Aggressive cut-off for fast conversation
-        self.max_utterance_duration = 12.0 # Safety break
-        self.active = False 
+        self.max_utterance_duration = 12.0  # Safety break
+        self.active = False
 
     async def load_model(self):
         """Thread-safe model loading"""
         if self.model or self.is_loading:
             return
-        
+
         self.is_loading = True
         logger.info(f"🎙️ Loading Whisper ({self.model_size}) on {self.device}...")
         try:
             self.model = await asyncio.to_thread(
-                WhisperModel, 
-                self.model_size, 
-                device=self.device, 
-                compute_type=self.compute_type
+                WhisperModel,
+                self.model_size,
+                device=self.device,
+                compute_type=self.compute_type,
             )
             logger.info("✅ Whisper engine ready.")
         except Exception as e:
@@ -80,12 +81,12 @@ class WhisperSTTService:
             return None
 
         self.buffer += pcm_data
-        frame_byte_size = self.frame_size * 2 
-        
+        frame_byte_size = self.frame_size * 2
+
         while len(self.buffer) >= frame_byte_size:
             frame = self.buffer[:frame_byte_size]
             self.buffer = self.buffer[frame_byte_size:]
-            
+
             is_speech = self.vad.is_speech(frame, self.sample_rate)
 
             if is_speech:
@@ -94,37 +95,42 @@ class WhisperSTTService:
                     self.speech_start_time = time.time()
                 self.silence_start_time = None
                 self.audio_buffer.append(frame)
-                
+
                 # Check for forced break
-                if self.speech_start_time and (time.time() - self.speech_start_time > self.max_utterance_duration):
+                if self.speech_start_time and (
+                    time.time() - self.speech_start_time > self.max_utterance_duration
+                ):
                     return self.transcribe()
             else:
                 if self.is_speaking:
                     if self.silence_start_time is None:
                         self.silence_start_time = time.time()
-                    
+
                     self.audio_buffer.append(frame)
-                    
+
                     # Cut-off logic
                     if time.time() - self.silence_start_time > self.silence_threshold:
                         return self.transcribe()
-        
+
         return None
 
     def _analyze_sonic_cues(self, audio_np: np.ndarray) -> str:
         """Analyze volume and pace for empathy tags."""
         rms = np.sqrt(np.mean(audio_np**2))
         volume = "Normal"
-        if rms < 0.03: volume = "Soft"
-        elif rms > 0.25: volume = "Loud"
-        
+        if rms < 0.03:
+            volume = "Soft"
+        elif rms > 0.25:
+            volume = "Loud"
+
         duration = len(audio_np) / self.sample_rate
         pace = ""
         if duration > 1.5:
             # Rough estimate: higher volume variance can imply agitation
             variance = np.var(audio_np)
-            if variance > 0.05: pace = "Agitated"
-            
+            if variance > 0.05:
+                pace = "Agitated"
+
         return f"[{volume} Volume {pace}]".replace("  ", " ").strip()
 
     def transcribe(self):
@@ -133,36 +139,38 @@ class WhisperSTTService:
             return None
 
         audio_data = b"".join(self.audio_buffer)
-        audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-        
+        audio_np = (
+            np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+        )
+
         sonic_label = self._analyze_sonic_cues(audio_np)
-        self.reset() # Immediate reset for next capture
+        self.reset()  # Immediate reset for next capture
 
         try:
             segments, _ = self.model.transcribe(
-                audio_np, 
-                beam_size=1, 
-                language="en", 
+                audio_np,
+                beam_size=1,
+                language="en",
                 condition_on_previous_text=False,
-                initial_prompt="A natural conversation between two friends."
+                initial_prompt="A natural conversation between two friends.",
             )
-            
+
             raw_text = " ".join([s.text for s in segments]).strip()
             if not raw_text or len(raw_text) < 2:
                 return None
-                
+
             # Clean stuttering/hallucinations
             words = raw_text.split()
             unique_words = []
             for i, word in enumerate(words):
-                if i > 0 and word.lower() == words[i-1].lower(): 
-                   continue
+                if i > 0 and word.lower() == words[i - 1].lower():
+                    continue
                 unique_words.append(word)
-            
+
             final_text = f"{sonic_label} {' '.join(unique_words)}".strip()
             logger.info(f"🎙️ User: {final_text}")
             return final_text, True
-            
+
         except Exception as e:
             logger.error(f"Transcription failed: {e}")
             return None

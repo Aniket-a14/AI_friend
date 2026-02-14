@@ -1,11 +1,13 @@
 from neo4j import GraphDatabase
 import logging
-import os
 
 logger = logging.getLogger(__name__)
 
+
 class GraphDB:
-    def __init__(self, uri="bolt://localhost:7687", user="neo4j", password="password123"):
+    def __init__(
+        self, uri="bolt://localhost:7687", user="neo4j", password="password123"
+    ):
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
 
     def close(self):
@@ -29,4 +31,6 @@ class GraphDB:
             "RETURN s, r, t"
         )
         await self.execute_query(query, {"sub": subject, "tar": target})
-        logger.info(f"Graph Store: Recorded relationship {subject} -[{relation}]-> {target}")
+        logger.info(
+            f"Graph Store: Recorded relationship {subject} -[{relation}]-> {target}"
+        )
