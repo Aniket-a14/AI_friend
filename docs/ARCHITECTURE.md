@@ -117,6 +117,6 @@ AI Friend maintains a persistent persona through a dedicated identity layer:
 ---
 
 **For implementation details, see:**
-- [README.md](./README.md) - Getting started guide
+- [README.md](../README.md) - Getting started guide
 - [API_SPEC.md](./API_SPEC.md) - API documentation
 - [DEPLOYMENT.md](./DEPLOYMENT.md) - Production deployment
