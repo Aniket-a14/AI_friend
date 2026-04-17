@@ -25,9 +25,9 @@ class STTAgent(BaseAgent):
         
         # CVS-1.0 Phase 2: Temporal Intent Model
         from collections import deque
-        self.intent_window = deque(maxlen=5) # 5 frames (~1sec max)
-        self.interrupt_intent_threshold = 0.75
-        self.stability_required = 3 # Consecutive high-intent frames
+        self.intent_window = deque(maxlen=5) 
+        self.interrupt_intent_threshold = getattr(Config, "INTENT_THRESHOLD", 0.75)
+        self.stability_required = getattr(Config, "INTENT_STABILITY", 3)
         
         self.intent_patterns = {
             "stop": ["stop", "quiet", "shut", "silence"],

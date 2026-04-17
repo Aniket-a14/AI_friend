@@ -40,8 +40,15 @@ class Config:
     # Audio Settings
     SAMPLE_RATE = 32000
     BINARY_SUBJECTS = ["audio.inbound", "audio.stream"]
-    FEEDBACK_ALPHA = 0.70 # Smoothing for CVS-1.0
-    MAX_VOICE_QUEUE_SIZE = 10 # Backpressure threshold
+    # Phase 2 Calibration (Hardening Watchpoints)
+    FEEDBACK_ALPHA = 0.70  # Conversational smooth filter (BrainAgent)
+    MAX_VOICE_QUEUE_SIZE = 10  # Backpressure guard (VoiceAgent)
+    VOICE_SYNTH_CONCURRENCY = 1  # GPU safety semaphore (VoiceAgent)
+    
+    INTENT_THRESHOLD = 0.75  # Temporal intent sensitivity (STTAgent)
+    INTENT_STABILITY = 3     # Consecutive frames required for intent (STTAgent)
+    
+    GRAPH_CACHE_TTL = 300    # Belief freshness timeout in seconds (GraphDB)
 
     @staticmethod
     def validate():

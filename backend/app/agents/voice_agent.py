@@ -217,8 +217,8 @@ class VoiceAgent(BaseAgent):
 
     async def _synthesis_loop(self):
         """Worker: Pops from ingestion queue with Concurrency Guard (Semaphore)."""
-        # Ensure only one synthesis happens at a time to preserve GPU health
-        sem = asyncio.Semaphore(1)
+        limit = getattr(Config, "VOICE_SYNTH_CONCURRENCY", 1)
+        sem = asyncio.Semaphore(limit)
         
         while True:
             try:
