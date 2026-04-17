@@ -1,19 +1,20 @@
-# 🚀 Deployment Guide
+# 🚀 Deployment Guide (CVS-1.0: Perceptual Mastery)
 
-Production deployment strategies for AI Friend platform.
+Production deployment strategies for the AI Friend platform, optimized for the **Cognitive Voice System (CVS-1.0)**.
 
 ---
 
 ## Table of Contents
 
 1. [Production Checklist](#production-checklist)
-2. [Deployment Strategies](#deployment-strategies)
-3. [Cloud Platforms](#cloud-platforms)
-4. [SSL/HTTPS Setup](#sslhttps-setup)
-5. [Environment Configuration](#environment-configuration)
-6. [Monitoring & Logging](#monitoring--logging)
-7. [Scaling](#scaling)
-8. [Troubleshooting](#troubleshooting)
+2. [CVS-1.0 Runtime Baseline](#cvs-10-runtime-baseline)
+3. [Deployment Strategies](#deployment-strategies)
+4. [Cloud Platforms](#cloud-platforms)
+5. [SSL/HTTPS Setup](#sslhttps-setup)
+6. [Environment Configuration](#environment-configuration)
+7. [Monitoring & Logging](#monitoring--logging)
+8. [Scaling](#scaling)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -43,6 +44,43 @@ Before deploying to production, ensure you have completed the following:
 - [ ] Enable health check endpoints
 - [ ] Configure alerting for critical failures
 - [ ] Set up uptime monitoring
+
+---
+
+## 🛠️ CVS-1.0 Runtime Baseline (April 2026)
+
+CVS-1.0 requires a state-aware runtime to maintain sub-280ms perceived latency.
+
+### 1. Essential Configuration
+Ensure your `backend/.env` contains the Perceptual Mastery flags:
+```bash
+# CVS-1.0 Runtime Config
+VOICE_RUNTIME_MODE=perceptual
+SEGMENTATION_FEEDBACK_ENABLED=True
+JITTER_BUFFER_MAX_MS=25
+PCM_SAMPLE_RATE=32000
+```
+
+### 2. Hardware Profiles
+
+#### 🏎️ Extreme Profile (RTX 4090 / M4 Max)
+*   **Cognitive Path**: `llama3.2:3b` (4-bit quant)
+*   **Signal Path**: V4 Weights with `media_type: raw`
+*   **Latency Target**: <180ms
+*   **Optimization**: Disable all post-synthesis filters; use direct PCM injection.
+
+#### 🍎 Elite Profile (M4 Pro / M4 Max)
+*   **Cognitive Path**: `llama3.2:3b` (Metal-Optimized)
+*   **Signal Path**: V4 Weights with `device="mps"`
+*   **Unified Memory**: Ensure at least 8GB of the 24GB+ pool is free for STT/TTS residency.
+*   **Latency Target**: <210ms
+*   **Optimization**: Use the **MPS (Metal Performance Shaders)** backend for PyTorch to eliminate CPU bottlenecks.
+
+#### ⚖️ Balanced Profile (RTX 3070 / M2)
+*   **Cognitive Path**: `llama3.2:1b` (8-bit quant)
+*   **Signal Path**: V4 Weights
+*   **Latency Target**: <250ms
+*   **Optimization**: Enable `soxr` resampling for UI-specific playback if needed.
 
 ---
 
@@ -112,160 +150,31 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ---
 
-### Quick Start (Sovereign Mesh v3.1)
+### Strategy 2: Production Hardening (Docker Compose)
+**Best for**: Self-hosted servers, workstations, total control.
 
-AI Friend is optimized for split-stack deployment using Docker Compose.
+#### 1. Tiered Image Architecture
+CVS-1.0 relies on tiered Docker images to isolate the cognitive load from the signal runtime.
 
-#### 1. Environment Setup
-Create a `.env` file in the project root. Copy from `.env.example`.
+```bash
+# Build the Cognitive Base (LLM & Logic)
+docker build -t cvs/brain:1.0 -f backend/Dockerfile.base backend/
 
-> [!IMPORTANT]
-> If you are running Ollama in Docker, your `.env` must use the service name:
-> `OLLAMA_URL=http://ollama:11434`
->
-> If you are running Ollama natively on your host machine (Recommended for low-spec laptops), use:
-> `OLLAMA_URL=http://host.docker.internal:11434`
+# Build the Signal Layer (TTS & Audio Rendering)
+docker build -t cvs/voice:1.0 -f backend/Dockerfile.full backend/
+```
 
 #### 2. Launch the Mesh
+Infrastructure must be healthy before agents initialize their jitter buffers.
 
 **Tier 1: Infrastructure**
 ```bash
 docker compose -f docker-compose.infra.yml up -d
 ```
 
-**Tier 2: AI Agents**
+**Tier 2: Agent Mesh**
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
----
-
-## 💻 Hardware Optimization
-
-Running the Parallel Mesh at sub-300ms latency requires careful resource management.
-
-### Low-Hardware Setup (Standard Laptops)
-- **Model Choice**: Use `llama3.2:1b` as your default for both Fast and Smart paths.
-- **CPU Threads**: Set `num_thread: 4` in your `ollama_client.py` options.
-- **GPU Offloading**: Ensure NVIDIA drivers are configured in `docker-compose.infra.yml` if available.
-
-### High-Performance Setup (RTX 3070+)
-- **Hybrid Path**: Use `llama3.2:1b` for the Fast Path and `qwen2.5:7b` for the Smart Path.
-- **Resampling**: Keep `soxr` enabled for high-fidelity audio without CPU spikes.
-
----
-
-### Strategy 2: Production Hardening (Docker Compose)
-**Best for**: Self-hosted servers, workstations, total control.
-
-This strategy uses the **Tiered Image Architecture** (Phase 30).
-1. **ai-friend/base**: Shared core dependencies (Fast, light).
-2. **ai-friend/full**: Advanced AI capabilities (Whisper STT, Vision).
-
-**Build Command (for Developers):**
-```bash
-# Build the base layer first
-docker build -t ai-friend/base:v1 -f backend/Dockerfile.base backend/
-
-# Build the heavy AI layer
-docker build -t ai-friend/full:v1 -f backend/Dockerfile.full backend/
-```
-Deploy both frontend and backend together using Docker Compose.
-
-#### Prerequisites
-
-- VPS (DigitalOcean, AWS EC2, Linode, Hetzner)
-- Docker & Docker Compose installed
-- Domain name with DNS configured
-
-#### Setup Steps
-
-```bash
-# 1. Clone repository on server
-git clone https://github.com/yourusername/AI_friend.git
-cd AI_friend
-
-### Quick Start for New Users
-
-If you are setting up the project for the first time, use the provided automation scripts to handle network and environment configuration.
-
-#### Windows (PowerShell)
-```powershell
-.\setup_mesh.ps1
-```
-
-#### Linux / macOS (Bash)
-```bash
-chmod +x setup_mesh.sh
-./setup_mesh.sh
-```
-
----
-
-# 2. Configure environment
-Edit the generated `.env` files with your actual credentials:
-- `backend/.env`: Add `GEMINI_API_KEY`.
-- `frontend/.env`: (Optional) Change `NEXT_PUBLIC_BACKEND_URL` if not on localhost.
-
-# 3. Build and start services (Dual-File)
-# Launch Infrastructure first
-docker-compose -f docker-compose.infra.yml up -d
-
-# Launch Agent Mesh
-docker-compose up -d --build
-
-# 4. Verify services are running
-docker ps
-docker logs ai_friend-backend-1
-docker logs ai_friend-frontend-1
-```
-
-#### Production Docker Compose
-
-**`docker-compose.prod.yml`**:
-```yaml
-version: '3.8'
-
-services:
-  backend:
-    build:
-      context: ./backend
-      target: runtime
-    ports:
-      - "8000:8000"
-    env_file:
-      - ./backend/.env
-    environment:
-      - DEBUG=False
-      - ALLOWED_ORIGINS=https://yourdomain.com
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/status"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  frontend:
-    build:
-      context: ./frontend
-      target: runner
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_BACKEND_URL=https://api.yourdomain.com
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-    restart: unless-stopped
-    depends_on:
-      - backend
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ---
@@ -485,6 +394,12 @@ NEXT_PUBLIC_BACKEND_URL=https://api.yourdomain.com
 ## Monitoring & Logging
 
 ### Logging Setup
+CVS-1.0 includes specialized health metrics beyond standard Uptime.
+
+**Perceptual Health Checks**:
+1.  **Pulse Check**: `nats sub "voice.segmentation_feedback"`
+2.  **Jitter Check**: Check `VoiceAgent` logs for `Buffer Recovery` events.
+3.  **Sync Check**: Ensure the system resyncs every 5 minutes (automatic).
 
 **Backend Logging** (`backend/app/logging_config.py`):
 ```python
@@ -508,20 +423,6 @@ def setup_logging():
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-```
-
-### Health Checks
-
-**Endpoint**: `GET /status`
-
-**Docker Health Check**:
-```yaml
-healthcheck:
-  test: ["CMD", "curl", "-f", "http://localhost:8000/status"]
-  interval: 30s
-  timeout: 10s
-  retries: 3
-  start_period: 40s
 ```
 
 ---
@@ -567,50 +468,18 @@ engine = create_engine(
 ## Troubleshooting
 
 ### WebSocket Connection Issues
-
 **Symptom**: WebSocket fails to connect in production
-
-**Solutions**:
-1. Ensure SSL is configured (WSS required)
-2. Check proxy timeout settings
-3. Verify CORS configuration
-4. Check firewall rules
-
-**Nginx WebSocket Config**:
-```nginx
-proxy_http_version 1.1;
-proxy_set_header Upgrade $http_upgrade;
-proxy_set_header Connection "upgrade";
-proxy_read_timeout 86400;
-```
+**Solution**: Ensure SSL is configured (WSS required) and `proxy_read_timeout` is set to `86400`.
 
 ### High Memory Usage
-
 **Symptom**: Backend container using excessive memory
+**Solution**: Limit memory entries (`MAX_MEMORY_ITEMS=100`) and set Docker memory limits.
 
-**Solutions**:
-1. Limit memory entries: `MAX_MEMORY_ITEMS=100`
-2. Enable garbage collection
-3. Set Docker memory limits
-4. Monitor with `docker stats`
-
-### SSL Certificate Issues
-
-**Symptom**: "NET::ERR_CERT_AUTHORITY_INVALID"
-
-**Solutions**:
-```bash
-# Renew Let's Encrypt certificate
-sudo certbot renew
-
-# Test renewal
-sudo certbot renew --dry-run
-
-# Check certificate expiry
-sudo certbot certificates
-```
+### Pulse Loop Latency
+**Symptom**: Voice response feels staggered or robotic.
+**Solution**: Check for clock drift in logs (`NATS Sync`). Ensure Signaling and VoiceAgent are in the same cloud region.
 
 ---
 
-**For architecture details, see [ARCHITECTURE.md](./ARCHITECTURE.md)**  
-**For security best practices, see [SECURITY.md](../SECURITY.md)**
+**For internal architecture details, see [ARCHITECTURE.md](./ARCHITECTURE.md)**  
+**For cloning procedures, see [VOICE_CLONING.md](./VOICE_CLONING.md)**

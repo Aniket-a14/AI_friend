@@ -1,100 +1,62 @@
-# GPT-SoVITS Installation Guide for Windows
+# GPT-SoVITS Installation Guide (CVS-1.0 Optimized)
 
-## Recommended Method: Direct Installation (No Docker)
-
-### Step 1: Download Integrated Package
-
-1. Go to the official GPT-SoVITS releases page:
-   https://github.com/RVC-Boss/GPT-SoVITS/releases
-
-2. Download the latest **Windows integrated package** (prezip file)
-   - Look for files like `GPT-SoVITS-windows-package-v*.zip`
-   - Size: ~2-3GB
-
-### Step 2: Extract Package
-
-1. Extract the downloaded ZIP file using WinRAR or 7-Zip
-2. Extract to a location with no spaces in path (e.g., `C:\GPT-SoVITS`)
-
-### Step 3: Verify FFmpeg
-
-1. Check if `ffmpeg.exe` and `ffprobe.exe` are in the extracted folder
-2. If missing, download from: https://ffmpeg.org/download.html
-3. Place both files in the GPT-SoVITS root directory
-
-### Step 4: Launch WebUI
-
-1. Navigate to the extracted folder
-2. Double-click `go-webui.bat`
-3. Wait for the web interface to open (usually at http://localhost:9880)
-
-### Step 5: Change Language (if needed)
-
-If the UI appears in Chinese:
-1. Right-click `go-webui.bat` → Edit with Notepad
-2. Find the line with language setting
-3. Change to `_.US` for English
-4. Save and restart
-
-### Step 6: Verify Installation
-
-1. WebUI should open in your browser
-2. You should see tabs for training, inference, etc.
-3. Test by uploading a short audio file
+This guide covers the local installation of GPT-SoVITS, hardened for **CVS-1.0 (April 2026)** requirements.
 
 ---
 
-## Alternative: Manual Python Installation
+## 💻 Recommended Method: Windows Integrated Package
 
-If the integrated package doesn't work:
+### Step 1: Download V4 Base
+1. Go to the [Official Releases](https://github.com/RVC-Boss/GPT-SoVITS/releases).
+2. Download the **V4 Integrated Package** (`GPT-SoVITS-v4.zip`).
+
+### Step 2: CVS-1.0 Hardening (Required)
+Before launching, ensure your local Python environment won't crash due to 2026 dependency shifts:
+1.  **FFmpeg**: Ensure `ffmpeg.exe` and `ffprobe.exe` are in the root folder.
+2.  **Audio Fix**: Install `libsox` to your system (on Windows, this is usually bundled in the prezip).
+
+### Step 3: Launch
+Double-click `go-webui.bat`. The UI will launch at `http://localhost:9874`.
+
+---
+
+## 🐧 Alternative: Manual Linux/WSL2 Installation
+
+If using manual `pip` installation, you **must** use the CVS-1.0 hardened pins:
 
 ```bash
-# Clone repository
-git clone https://github.com/RVC-Boss/GPT-SoVITS.git
-cd GPT-SoVITS
+# 1. System Dependencies
+sudo apt-get install -y ffmpeg libsox-dev cmake
 
-# Install dependencies
+# 2. Hardened Python Pins (April 2026 Standard)
+pip install "numpy<2.0" numba librosa==0.10.2
+pip install --no-binary=opencc opencc-python-reimplemented
 pip install -r requirements.txt
 
-# Download pretrained models
-python download_models.py
-
-# Launch WebUI
-python webui.py
+# 3. Model Download (V4)
+python download_models.py --v4
 ```
 
 ---
 
-## Next Steps After Installation
+## 🔌 Integration with CVS-1.0
 
-1. **Collect Voice Samples**: Record 1-5 minutes of target voice
-2. **Upload to WebUI**: Use the training tab
-3. **Generate Speaker Embedding**: Follow WebUI instructions
-4. **Test Synthesis**: Try generating speech from text
+Once the WebUI is running, the **Voice Agent** communicates via the local API.
 
----
-
-## Troubleshooting
-
-### Issue: WebUI won't start
-- Check if port 9880 is already in use
-- Try running as Administrator
-
-### Issue: Missing dependencies
-- Install Visual C++ Redistributable
-- Update Python to 3.9 or 3.10
-
-### Issue: CUDA errors (GPU)
-- Install CUDA Toolkit 11.8 or 12.x
-- Update NVIDIA drivers
+1.  **API Port**: Default is `9871`.
+2.  **Format**: Ensure the WebUI is configured for **32kHz Raw PCM** for maximum fidelity.
+3.  **Local Sync**: Put your trained models in the `backend/models/` directory using the renaming convention from the [Cheatsheet](./COLAB_PATHS_CHEATSHEET.md).
 
 ---
 
-## Integration with AI Friend
+## 🛠️ Troubleshooting (2026 Edition)
 
-Once GPT-SoVITS is running:
-1. API will be available at `http://localhost:9871`
-2. We'll create VoiceAgent to connect to this API
-3. Voice synthesis will happen locally via NATS
+### Issue: `ImportError: cannot import name 'soft_unicode'`
+- **Fix**: `pip install markupsafe==2.0.1`
 
-Let me know when you've completed the installation!
+### Issue: `ModuleNotFoundError: No module named 'opencc'`
+- **Fix**: Reinstall with the `--no-binary` flag as shown in the manual install section.
+
+---
+
+**For training workflows, see [TRAINING_GUIDE.md](./TRAINING_GUIDE.md)**

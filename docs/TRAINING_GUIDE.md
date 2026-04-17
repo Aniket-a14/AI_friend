@@ -1,6 +1,6 @@
 # GPT-SoVITS Training Guide: AI Friend Custom Voice
 
-This guide provides step-by-step instructions for fine-tuning a dedicated **V4 (48kHz)** model for your AI Friend. Unlike zero-shot cloning (which analyzes a WAV file every time you speak), fine-tuning "bakes" your voice into the model weights, providing the fastest and most consistent performance—often referred to as "ElevenLabs-style" permanence.
+This guide provides step-by-step instructions for fine-tuning a dedicated **V4 (32kHz)** model for your AI Friend. Unlike zero-shot cloning, fine-tuning "bakes" your voice into the model weights, providing the fastest performance and native compatibility with the **CVS-1.0** temporal engine.
 
 ---
 

@@ -14,3 +14,4 @@ requests
 soxr
 livekit-api
 livekit
+aiohttp
