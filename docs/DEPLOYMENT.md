@@ -28,7 +28,7 @@ Before deploying to production, ensure you have completed the following:
 - [ ] Rotate API keys and use environment variables
 - [ ] Enable rate limiting
 - [ ] Configure database backups
-- [ ] Review [SECURITY.md](./SECURITY.md)
+- [ ] Review [SECURITY.md](../SECURITY.md)
 
 ### Performance
 - [ ] Test with production-scale traffic
@@ -613,4 +613,4 @@ sudo certbot certificates
 ---
 
 **For architecture details, see [ARCHITECTURE.md](./ARCHITECTURE.md)**  
-**For security best practices, see [SECURITY.md](./SECURITY.md)**
+**For security best practices, see [SECURITY.md](../SECURITY.md)**
