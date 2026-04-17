@@ -20,25 +20,32 @@
 
 AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus.
 
-In **CVS-1.0 Hardened**, we have eliminated the JSON/Base64 transport layer in favor of a **Direct Binary Path**, reducing serialization overhead by 15-20% and enabling sub-250ms perceptual latency.
+In **CVS-1.0 Hardened**, we have achieved **Identity Continuity**. The system is no longer a reactive "Think-Speak" pipeline; it is now a **State-Driven Identity Mesh** coached by a continuous NATS heartbeat. It anticipates context through memory surfacing and expresses emotion through deterministic temporal markers.
 
 ---
 
 ## 🏗️ CVS-1.0 Hardened Architecture
 
-### 🧠 1. Cognitive Layer (Brain & Memory)
-The BrainAgent generates **Behavioral Payloads** stabilized by alpha-damped feedback.
-- **Neo4j TTL Cache**: High-speed belief caching (300s TTL) reduces context lookup latency.
-- **Alpha-Damped Smoothing (α=0.7)**: Prevents segmenter jitter during rapid turn-taking.
+### 🧠 1. Cognitive Layer (Identity & State)
+The BrainAgent orchestrates a **State-Driven Identity**.
+- **Neo4j State Persistence**: Mood, energy, trust, and attachment are persistent and evolve via mesh heartbeats.
+- **Identity Heartbeat (`system.tick`)**: A 60s NATS pulse ensures the agent's internal state matures even when user interaction is idle.
+- **Hybrid Identity Model**: Separates an **Immutable Core** (base tone, values) from **Adaptive Variables** (habits, relationship status).
+
+### 📖 2. Proactive Memory Surfacing
+The system anticipates conversational context through an asynchronous recall layer.
+- **`SurfacingAgent`**: Background process that evaluates shared history vs. current intent.
+- **Active Influence**: Surfaces relevant past moments as mesh events to color the agent's tone and recall accuracy.
 
 ### ⏱️ 2. Perceptual Intelligence (STT Agent)
 Interruption is now handled as a **Temporal Intent Problem**.
 - **Temporal Intent Model**: Evaluates intent stability over a rolling 250ms window.
 - **Stability Gating**: Only consistent "Stop/Wait" intent (score > 0.75) triggers an interrupt signal.
 
-### 🔊 3. Signal Rendering (Voice Agent)
-A persistent synthesis runtime with direct binary transport.
-- **Direct Binary Bus**: Publishes raw PCM 32kHz bytes via NATS Headers (Phase 2).
+### 🔊 4. Signal Rendering (Voice Agent)
+A persistent synthesis runtime with direct binary transport and expressive behavior.
+- **Expressive Temporal Layer**: Interprets `<pause>` and `<hesitate>` tags by injecting silent PCM buffers directly into the 32kHz stream.
+- **Direct Binary Bus**: Publishes raw PCM bytes via NATS Headers (Phase 2).
 - **Backpressure Guard**: Bounded queue and synthesis semaphore protect GPU health.
 
 ---
@@ -52,29 +59,28 @@ graph TB
         PCM_PLAYER["PCM Stream Player"]
     end
 
-    subgraph CVS_Mesh ["CVS-1.0 - Cognitive Voice System"]
-        STT["STT Agent<br/>Faster Whisper"]
+    subgraph CVS_Mesh ["CVS-1.0 - Identity Mesh"]
+        STT["STT Agent<br/>Temporal Intent"]
         
-        subgraph Brain_Core ["Brain Agent"]
-            HYBRID_SEGMENTER["Hybrid Segmenter<br/>30ms Formation Buffer"]
-            DECISION["Cognitive Service<br/>BDI Mesh"]
+        subgraph Brain_Core ["State & Identity"]
+            SYSTEM_TICK["System Agent<br/>Mesh Heartbeat"]
+            SURFACING["Surfacing Agent<br/>Active Memory"]
+            DECISION["Cognitive Service<br/>State-Driven BDI"]
         end
 
-        subgraph Voice_Core ["Voice Agent"]
-            VOICE_CONTROLLER["Voice Controller<br/>State Machine"]
+        subgraph Voice_Core ["Signal Rendering"]
+            VOICE_CONTROLLER["Voice Agent<br/>Temporal Injection"]
             AUDIO_ENGINE["Audio Engine<br/>Adaptive Normalizer"]
-            SYTHESIZER["Synthesis Runtime<br/>GPT-SoVITS V4"]
         end
     end
 
     MIC -->|audio.captured| STT
     STT -->|chat.input| DECISION
-    DECISION --> HYBRID_SEGMENTER
-    HYBRID_SEGMENTER -->|chat.output| VOICE_CONTROLLER
+    SYSTEM_TICK -->|system.tick| DECISION
+    SURFACING -->|memory.surfaced| DECISION
+    DECISION -->|chat.output| VOICE_CONTROLLER
     VOICE_CONTROLLER --> AUDIO_ENGINE
     AUDIO_ENGINE -->|audio.stream| PCM_PLAYER
-    
-    VOICE_CONTROLLER -.->|voice.segmentation_feedback| HYBRID_SEGMENTER
 ```
 
 ---
