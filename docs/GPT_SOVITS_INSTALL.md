@@ -90,7 +90,7 @@ python webui.py
 
 ---
 
-## Integration with Pankudi AI
+## Integration with AI Friend
 
 Once GPT-SoVITS is running:
 1. API will be available at `http://localhost:9871`

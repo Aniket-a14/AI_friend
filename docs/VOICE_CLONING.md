@@ -30,9 +30,9 @@ By pre-loading the cloned voice and using a streaming TTS backend, the system **
 
 **Sources:** LocalAI TTS features (voice cloning, streaming)【13†L249-L257】【24†L361-L370】【22†L47-L56】; LiveKit audio caching guides【18†L111-L119】【25†L104-L112】. These describe voice-clone TTS APIs and caching strategies applicable to the AI Friend system.
 
-## Professional Fine-Tuning (Pankudi Voice)
+## Professional Fine-Tuning (AI Friend Custom Voice)
 
-For the highest quality and lowest latency, it is recommended to **fine-tune** a dedicated model rather than using zero-shot cloning. This process "bakes" your voice into the model weights, removing the need to provide a reference WAV for every response.
+For the highest quality and lowest latency, it is recommended to **fine-tune** a dedicated **V4 model** rather than using zero-shot cloning. This process "bakes" your voice into the model weights, removing the need to provide a reference WAV for every response.
 
-*   **Benefits**: Sub-300ms latency, zero "cloning overhead," and superior emotional range.
-*   **Guide**: See [TRAINING_GUIDE.md](./TRAINING_GUIDE.md) for full instructions on how to train your own weights and install them in the `models/` folder.
+*   **Benefits**: Sub-300ms latency, **48kHz studio quality**, zero "cloning overhead," and superior emotional range.
+*   **Guide**: See [TRAINING_GUIDE.md](./TRAINING_GUIDE.md) for full instructions on how to use our one-click Colab notebook to generate your own V4 weights.

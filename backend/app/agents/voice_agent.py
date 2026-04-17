@@ -36,7 +36,7 @@ class VoiceAgent(BaseAgent):
                 self.sovits.set_gpt_weights(Config.CUSTOM_GPT_PATH)
             if Config.CUSTOM_SOVITS_PATH:
                 self.sovits.set_sovits_weights(Config.CUSTOM_SOVITS_PATH)
-            logger.info("✅ Persistent voice profile 'pankudi_voice' initialized.")
+            logger.info("✅ Persistent voice profile 'ai_friend_voice' initialized.")
 
         await self.subscribe(
             "chat.output",

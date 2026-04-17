@@ -31,8 +31,8 @@ class Config:
     
     # Custom Voice Models (Fine-tuned)
     # These paths are relative to the GPT-SoVITS workspace inside the container
-    CUSTOM_GPT_PATH = os.getenv("CUSTOM_GPT_PATH", "GPT_weights/pankudi_voice.ckpt")
-    CUSTOM_SOVITS_PATH = os.getenv("CUSTOM_SOVITS_PATH", "SoVITS_weights/pankudi_voice.pth")
+    CUSTOM_GPT_PATH = os.getenv("CUSTOM_GPT_PATH", "GPT_weights/ai_friend_voice.ckpt")
+    CUSTOM_SOVITS_PATH = os.getenv("CUSTOM_SOVITS_PATH", "SoVITS_weights/ai_friend_voice.pth")
     
     STT_MODEL_SIZE = os.getenv("STT_MODEL_SIZE", "small")
     STT_DEVICE = os.getenv("STT_DEVICE", "cpu")

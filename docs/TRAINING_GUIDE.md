@@ -1,6 +1,6 @@
-# GPT-SoVITS Training Guide: Pankudi Voice
+# GPT-SoVITS Training Guide: AI Friend Custom Voice
 
-This guide provides step-by-step instructions for fine-tuning a dedicated model for your voice. Unlike zero-shot cloning (which analyzes a WAV file every time you speak), fine-tuning "bakes" your voice into the model weights, providing the fastest and most consistent performance—often referred to as "ElevenLabs-style" permanence.
+This guide provides step-by-step instructions for fine-tuning a dedicated **V4 (48kHz)** model for your AI Friend. Unlike zero-shot cloning (which analyzes a WAV file every time you speak), fine-tuning "bakes" your voice into the model weights, providing the fastest and most consistent performance—often referred to as "ElevenLabs-style" permanence.
 
 ---
 
@@ -11,7 +11,7 @@ This guide provides step-by-step instructions for fine-tuning a dedicated model 
 *   **Storage**: ~10GB for training data and checkpoints.
 *   **System RAM**: 16GB+.
 
-### Data (The "Pankudi" Dataset)
+### Data (The "AI-Friend" Dataset)
 *   **Duration**: 10–30 minutes of high-quality audio.
 *   **Format**: `.wav` files (monophonic, 44.1kHz or 48kHz).
 *   **Quality**: Use a clean microphone. No background noise, music, or echoes.
@@ -19,16 +19,18 @@ This guide provides step-by-step instructions for fine-tuning a dedicated model 
 
 ---
 
-## 2. Option A: Cloud Training (Google Colab)
+## 2. Option A: Cloud Training (Recommended: One-Click Colab)
 
-If you do not have an NVIDIA GPU with 12GB+ VRAM, use Google Colab.
+If you do not have an NVIDIA GPU with 12GB+ VRAM, use our optimized **AI Friend V4 Notebook**.
 
-1.  **Open the Notebook**: Search for "GPT-SoVITS Colab" (or use the official [RVC-Boss Repository](https://github.com/RVC-Boss/GPT-SoVITS) which has a Colab link).
-2.  **Mount Google Drive**: Ensure you mount your drive to save your results.
-3.  **Upload Audio**: Upload your `.wav` files to the `/workspace/audio` folder in Colab.
-4.  **Run Preprocessing**: Launch the WebUI and run "ASR" (Automatic Speech Recognition) to generate transcripts.
-5.  **Train SoVITS**: Use the "One-click" training or manually run the SoVITS training tab.
-6.  **Train GPT**: Run the GPT training tab.
+1.  **Open the Notebook**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb)
+2.  **Run Launcher**: Execute the first cell. Wait for the Gradio public link to appear.
+3.  **Upload Audio**: In the WebUI, go to the **Data Processing** tab and upload your `.wav` files.
+4.  **ASR Automation**: Run "ASR" to automatically transcribe your audio.
+5.  **Train V4**: 
+    *   Switch to the **Training** tab.
+    *   Ensure **V4** is selected in the model version.
+    *   Click "One-click Training" or manually run SoVITS and then GPT.
 
 ---
 
@@ -46,15 +48,17 @@ If you do not have an NVIDIA GPU with 12GB+ VRAM, use Google Colab.
 
 ## 4. Exporting to AI Friend
 
-Once training is complete, you need to find **two specific files** in your training directory:
+Once training is complete, you need to find **three specific files** from your session:
 
-1.  **GPT Weight**: Look in `GPT_weights/` for a `.ckpt` file (e.g., `pankudi_voice-e50.ckpt`).
-2.  **SoVITS Weight**: Look in `SoVITS_weights/` for a `.pth` file (e.g., `pankudi_voice_e100_s2000.pth`).
+1.  **GPT Weight**: A `.ckpt` file (e.g., `ai-friend-v4-e50.ckpt`).
+2.  **SoVITS Weight**: A `.pth` file (e.g., `ai-friend-v4-s2-e100.pth`).
+3.  **Vocoder**: The `vocoder.pth` file (included in the V4 pretrained set).
 
 ### Installation Path
 Copy these files into your AI Friend project directory:
-*   `GPT Weight` -> `models/GPT_weights/pankudi_voice.ckpt`
-*   `SoVITS Weight` -> `models/SoVITS_weights/pankudi_voice.pth`
+*   `GPT Weight` -> `models/GPT_weights/ai_friend_voice.ckpt`
+*   `SoVITS Weight` -> `models/SoVITS_weights/ai_friend_voice.pth`
+*   `Vocoder` -> `models/SoVITS_weights/vocoder.pth`
 
 ---
 

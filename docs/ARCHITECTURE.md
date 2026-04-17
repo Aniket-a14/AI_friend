@@ -57,7 +57,7 @@ To achieve sub-300ms latency without sacrificing depth, we use a two-tier infere
 
 We have eliminated the "WAV Header Tax" in v3.1.
 - **Legacy**: WAV headers required client parsing and buffering.
-- **V3.1 (PCM)**: Raw 16-bit, 22.05kHz PCM buffers are streamed. This reduces Voice Agent overhead by **~80ms** and enables instant playback.
+- **V3.1 (PCM)**: Raw 16-bit, **48kHz** PCM buffers are streamed. This reduces Voice Agent overhead by **~80ms** and enables high-fidelity, studio-quality playback without header parsing delays.
 
 ---
 
@@ -111,7 +111,7 @@ AI Friend maintains a persistent persona through a dedicated identity layer:
 | :--- | :--- | :--- | :--- | :--- |
 | **Brain Agent** | `slim`| 0.5 Cores | 1.0 GiB | High RAM if local embeddings used. |
 | **STT Agent** | `full` | 2.0 Cores | 2.0 GiB | Heavy Whisper inference. |
-| **Voice Agent** | `full` | 1.0 Cores | 4.0 GiB | Peak RAM during synthesis. |
+| **Voice Agent** | `full` | 1.0 Cores | 4.0 GiB | High-fidelity V4 synthesis (48kHz). |
 | **Vision Agent** | `full` | 1.0 Cores | 1.0 GiB | Synchronizes screen/camera frames. |
 
 ---
