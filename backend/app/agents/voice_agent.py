@@ -233,27 +233,53 @@ class VoiceAgent(BaseAgent):
                         self.ingestion_queue.task_done()
                         continue
 
-                    # Synthesis (Async SoVITS)
-                    await self._set_playback_state(VoicePlaybackState.BUFFERING)
-                    start_synth = time.time()
-                    full_pcm = b""
+                    # CVS-1.0: Expressive Temporal Marker Parsing
+                    import re
+                    # Example: "I thinking... <pause=500ms> but anyway."
+                    # We split into text and silence commands
+                    parts = re.split(r'(<pause=\d+ms>|<hesitate>)', text)
                     
-                    async for chunk in self.sovits.synthesize_stream(
-                        text=text,
-                        ref_audio_path=self.ref_audio_path,
-                        ref_text=self.ref_text,
-                        media_type="raw"
-                    ):
-                        if chunk:
-                            full_pcm += chunk
-                    
-                    if full_pcm:
-                        clean_pcm = self.normalizer.process(full_pcm, speaking_rate=item["rate"])
-                        self.cache.set(text, item["emotion"], item["rate"], clean_pcm)
-                        await self.playback_queue.put((clean_pcm, item["metadata"]))
+                    for part in parts:
+                        if not part:
+                            continue
+                            
+                        # Case 1: Silence Tags
+                        if part.startswith("<pause="):
+                            ms = int(re.search(r'\d+', part).group())
+                            silence_pcm = b'\x00' * (ms * 64) # 32000Hz * 2bytes / 1000ms = 64 bytes/ms
+                            await self.playback_queue.put((silence_pcm, item["metadata"]))
+                            logger.info(f"⏳ Injected Pause: {ms}ms")
+                            continue
+                        elif part == "<hesitate>":
+                            import random
+                            ms = random.randint(250, 450)
+                            silence_pcm = b'\x00' * (ms * 64)
+                            await self.playback_queue.put((silence_pcm, item["metadata"]))
+                            logger.info(f"⏳ Injected Hesitation: {ms}ms")
+                            continue
                         
-                        elapsed = (time.time() - start_synth) * 1000
-                        logger.info(f"🔊 Synth Done | '{text[:15]}' | Time: {elapsed:.2f}ms")
+                        # Case 2: Natural Speech Text
+                        # Synthesis (Async SoVITS)
+                        await self._set_playback_state(VoicePlaybackState.BUFFERING)
+                        start_synth = time.time()
+                        full_pcm = b""
+                        
+                        async for chunk in self.sovits.synthesize_stream(
+                            text=part,
+                            ref_audio_path=self.ref_audio_path,
+                            ref_text=self.ref_text,
+                            media_type="raw"
+                        ):
+                            if chunk:
+                                full_pcm += chunk
+                        
+                        if full_pcm:
+                            clean_pcm = self.normalizer.process(full_pcm, speaking_rate=item["rate"])
+                            self.cache.set(part, item["emotion"], item["rate"], clean_pcm)
+                            await self.playback_queue.put((clean_pcm, item["metadata"]))
+                            
+                            elapsed = (time.time() - start_synth) * 1000
+                            logger.info(f"🔊 Synth Done | '{part[:15]}' | Time: {elapsed:.2f}ms")
                 
                 self.ingestion_queue.task_done()
             except Exception as e:

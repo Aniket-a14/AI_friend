@@ -75,7 +75,7 @@ class BrainAgent(BaseAgent):
         self.formation_buffer_ms = 0.030 # 30ms
 
     async def start(self):
-        await self.cognitive_core.initialize()
+        await self.cognitive_core.initialize(agent=self)
 
         if self.conversation_store:
             await self.conversation_store.initialize()
@@ -88,8 +88,6 @@ class BrainAgent(BaseAgent):
         await self.subscribe("vision.frames", self._on_vision_frame, deliver_policy="last")
         await self.subscribe("voice.segmentation_feedback", self._on_voice_feedback)
         
-        # Start Autonomy Loop
-        asyncio.create_task(self._autonomy_loop())
         logger.info(f"🧠 {self.name} Online | CVS-1.0 Cognitive Mesh Active.")
 
     async def _on_voice_feedback(self, data: Dict[str, Any]):
@@ -197,23 +195,6 @@ class BrainAgent(BaseAgent):
         }
         await self.publish("chat.output", payload)
 
-    async def _autonomy_loop(self):
-        SILENCE_TICK_SECONDS = 60.0
-        while True:
-            await asyncio.sleep(SILENCE_TICK_SECONDS)
-            now = datetime.now()
-            idle_seconds = (now - self.last_interaction_time).total_seconds()
-            await self.cognitive_core.state.evolve_idle(dt_hours=idle_seconds / 3600.0)
-            
-            if idle_seconds > 300.0:
-                raw_event = {
-                    "id": str(uuid.uuid4()),
-                    "type": "SYSTEM_TICK",
-                    "content": "Deep reflection requested.",
-                    "metadata": {}
-                }
-                async for _ in self.cognitive_core.process_event(raw_event):
-                    pass
 
     async def stop(self):
         await super().stop()

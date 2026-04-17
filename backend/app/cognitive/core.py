@@ -32,11 +32,35 @@ class CognitiveService:
             pg_vector=memory_store
         )
         self.identity = IdentityManager()
+        self.surfaced_memories = [] # Buffer for active memory influence
 
-    async def initialize(self):
-        """Load identity and hydrate states."""
+    async def initialize(self, agent: Any = None):
+        """Load identity and hydrate states. Subscribes to Mesh heartbeats."""
         await self.state.hydrate_state()
-        logger.info("[CognitiveService] BDI Mesh Fully Initialized.")
+        
+        # Subscribe to Mesh Heartbeat (system.tick)
+        if agent:
+             await agent.subscribe("system.tick", self._on_system_tick)
+             await agent.subscribe("memory.surfaced", self._on_memory_surfaced)
+             
+        logger.info("[CognitiveService] Hardened Identity Mesh Fully Initialized.")
+
+    async def _on_system_tick(self, data: Dict[str, Any]):
+        """Mesh-driven idle evolution."""
+        await self.state.handle_system_tick(data)
+
+    async def _on_memory_surfaced(self, data: Dict[str, Any]):
+        """Proactive memory recall (Active influence)."""
+        memory_text = data.get("content", "")
+        if memory_text:
+            self.surfaced_memories.append({
+                "content": memory_text,
+                "timestamp": data.get("timestamp", 0),
+                "relevance": data.get("relevance", 1.0)
+            })
+            # Keep only last 5 surfaced memories
+            self.surfaced_memories = self.surfaced_memories[-5:]
+            logger.debug(f"[Cognitive] Active Memory Influence: Surfaced '{memory_text[:30]}...'")
 
     async def process_event(self, raw_event: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -56,12 +80,17 @@ class CognitiveService:
         
         # 3. Decision (BT Based)
         state_snapshot = self.state.get_context_snapshot()
+        state_directive = self.state.get_behavioral_directive()
+        
+        # Add surfaced memories to event context for 'Active Influence'
+        if self.surfaced_memories:
+            event.metadata["surfaced_memories"] = self.surfaced_memories
+            
         plan = await self.decision.decide(event, state_snapshot)
         
         # 4. Action Execution with Identity Validation
-        # We pass the IdentityManager to ActionService or handle it here.
-        # For 'drift-at-source', we inject identity prompt.
-        plan.payload["identity_prompt"] = self.identity.get_persona_prompt()
+        # Condition behavior on Evolving State + Immutable Core
+        plan.payload["identity_prompt"] = self.identity.get_persona_prompt(state_directive)
         
         full_response = ""
         async for chunk in self.action.execute(plan):
