@@ -111,3 +111,29 @@ class SoVITSClient:
             return response.status_code == 200
         except Exception:
             return False
+
+    def set_gpt_weights(self, weights_path: str) -> bool:
+        """Set GPT weights file path"""
+        try:
+            url = f"{self.base_url}/set_gpt_weights"
+            params = {"weights_path": weights_path}
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            logger.info(f"GPT weights set to: {weights_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set GPT weights: {e}")
+            return False
+
+    def set_sovits_weights(self, weights_path: str) -> bool:
+        """Set SoVITS weights file path"""
+        try:
+            url = f"{self.base_url}/set_sovits_weights"
+            params = {"weights_path": weights_path}
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            logger.info(f"SoVITS weights set to: {weights_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set SoVITS weights: {e}")
+            return False

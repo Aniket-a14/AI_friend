@@ -28,29 +28,39 @@ class VoiceAgent(BaseAgent):
 
     async def start(self):
         await self.connect()
+        
+        # ElevenLabs-style Permanence: Load Fine-tuned Models at Startup
+        if Config.CUSTOM_GPT_PATH or Config.CUSTOM_SOVITS_PATH:
+            logger.info("⚡ Initializing persistent voice mode (ElevenLabs-style)...")
+            if Config.CUSTOM_GPT_PATH:
+                self.sovits.set_gpt_weights(Config.CUSTOM_GPT_PATH)
+            if Config.CUSTOM_SOVITS_PATH:
+                self.sovits.set_sovits_weights(Config.CUSTOM_SOVITS_PATH)
+            logger.info("✅ Persistent voice profile 'pankudi_voice' initialized.")
+
         await self.subscribe(
             "chat.output",
             self._handle_text_input,
             durable=self.durable_name,
             deliver_policy="new",
         )
-        logger.info(f"🎙️ {self.name} online with State-Aware prosody.")
+        logger.info(f"🎙️ {self.name} online with Persistent Voice support.")
 
     async def _handle_text_input(self, message: Dict[str, Any]):
         """Handle incoming text with internal state metadata."""
-        # removed blocking done check for streaming latency
-
-        raw_text = message.get("content", "") or message.get("full_response", "") # Handle streamed chunks or final response
+        raw_text = message.get("content", "") or message.get("full_response", "")
         state = message.get("state", {})
         energy = state.get("energy", 0.8)
         mood = state.get("mood", 0.0)
         
-        if not raw_text or len(raw_text.strip()) < 2: # Ignore tiny fragments
+        if not raw_text or len(raw_text.strip()) < 2:
             return
 
         text, emotion = self._parse_emotion(raw_text)
         
-        # Decide reference audio based on energy and mood
+        # Decide reference audio (Mood strategy)
+        # In persistent mode, we still use reference WAVs for prosody/stabilization,
+        # but the heavy cloning lifting is already done by the custom weights.
         ref_audio = self.ref_audio_path
         if energy < 0.4:
             ref_audio = "output/ref_tired.wav"
@@ -59,7 +69,7 @@ class VoiceAgent(BaseAgent):
         elif mood < -0.6:
             ref_audio = "output/ref_sad.wav"
         
-        logger.info(f"🎙️ Voice Synthesis [Mood: {mood:.2f}, Energy: {energy:.2f}] -> {ref_audio}")
+        logger.info(f"🎙️ Persistent Synth [Emotion: {emotion}] -> {ref_audio}")
         
         text_lang = self._detect_language(text)
 
