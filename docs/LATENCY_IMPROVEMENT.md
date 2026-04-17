@@ -21,10 +21,12 @@ By eliminating Base64 transcoding, we have significantly reduced CPU overhead an
 ### 2. Perceptual Intent & Timing
 - **Temporal Intent Model**: Replaced keyword matching with a stability-gated intent scorer (rolling 250ms window). Reduces false-positive interruptions while maintaining high responsiveness.
 - **Neo4j TTL Cache**: Reduces the "Thinking Phase" by caching frequent belief lookups (300s TTL).
+- **Identity Heartbeat (`system.tick`)**: Periodically recalibrates mesh-wide timestamps to prevent drift across decentralized agents.
 
-### 3. Stability & Smoothing
-- **Alpha-Damped Smoothing (α=0.7)**: Stabilizes conversational chunking.
-- **Backpressure Sensing**: Bounded ingestion queues and synthesis semaphores prevent GPU saturation during high load.
+### 3. Temporal Expression Layer (Behavioral Timing)
+We have added intentional cognitive delays to the pipeline to improve conversational believability.
+- **Semantic Pausing**: The BrainAgent injects `<pause=ms>` and `<hesitate>` tags based on the current emotional state and cognitive complexity.
+- **PCM Silence Injection**: Instead of synthesis delays, the VoiceAgent injects pure silent PCM buffers into the 32kHz stream, ensuring timing is physically tied to the audio signal.
 
 ---
 
@@ -37,6 +39,7 @@ By eliminating Base64 transcoding, we have significantly reduced CPU overhead an
 | **Segmenter** | Hybrid Heuristic | 30ms | Formation Buffer |
 | **Synthesis** | GPT-SoVITS V4 (Raw PCM) | 120-180ms | Synthesis phase |
 | **Controller** | Priority Scheduler | 5-15ms | Adaptive Jitter |
+| **Cognitive Timing**| `<pause>` / `<hesitate>` | **(Variable)** | **Believability Layer** |
 | **Total (Raw)** | Pipeline Sum | **275-415ms** | Theoretical |
 | **User Perceived** | **Silence-to-Audio** | **< 280ms** | **Elite-Level** |
 

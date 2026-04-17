@@ -1,6 +1,6 @@
 # 🎙️ AI Friend: Cognitive Voice System (CVS-1.0)
 
-**A High-Fidelity, Perception-Aligned Cognitive Identity Emulator.**
+**A High-Fidelity, State-Driven Cognitive Identity Emulator.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/license/MIT)
 [![Latency: Perceived <250ms](https://img.shields.io/badge/Latency-Perceived%20%3C250ms-green.svg)](#performance-perceived-slos)
@@ -17,9 +17,7 @@ The system is built for **Sovereign Privacy**, ensuring that identity evolution,
 
 ---
 
-## 🏗️ Architecture: CVS-1.0 Hardened
-
-AI Friend uses a **Hardened Sovereign Mesh (Phase 2)**. This architecture eliminates serialization overhead by utilizing a **Direct Binary Path** for all audio signals, achieving sub-250ms perceived latency.
+AI Friend uses a **Hardened Sovereign Mesh**. In version **CVS-1.0**, the architecture transitioned from a reactive "Think-Speak" pipeline to a persistent **Identity Mesh**. This ensures that the agent's internal state (mood, trust, energy) evolves continuously via a mesh heartbeat, even during idle periods.
 
 ### 1. System Topology
 The platform is orchestrated as a **Parallel Agent Mesh** communicating over NATS JetStream.
@@ -35,6 +33,8 @@ graph TD
         Bus <--> Brain[Brain Agent: BDI Cognition]
         Bus <--> Voice[Voice Agent: CVS Runtime]
         Bus <--> Vision[Vision Agent: CV2/Llava]
+        Bus <--> Pulse[System Agent: Heartbeat]
+        Bus <--> Recall[Surfacing Agent: Memory]
     end
     
     subgraph Infrastructure
@@ -65,19 +65,17 @@ sequenceDiagram
 
 ---
 
-## 🚀 Phase 2 Hardened Innovations
+### 🤖 Identity Continuity (State Heartbeat)
+Implemented a mesh-wide `system.tick`. State variables (Mood, Energy, Trust) are persistent in Neo4j and evolve incrementally during interactions and idle time.
 
-### ⚡ Direct Binary Transport (Signal Acceleration)
-Eliminated Base64/JSON transcoding. Audio is transported as raw PCM 32kHz bytes over the mesh, reducing end-to-end latency by 15-20%.
+### 🎭 Hybrid Identity Model
+Introduced an **Immutable Core** (base values, boundaries) paired with **Adaptive Variables** (habits, style), preventing personality drift while allowing natural behavioral growth.
 
-### 👁️ Temporal Intent Detection
-Replaced keyword matching with a stability-gated **Temporal Intent Model**. It evaluates conversational intent over a rolling 250ms window to prevent false-positive interruptions.
+### ⏳ Expressive Temporal Phrasing
+Voice synthesis now executes cognitive timing. The system parses `<pause>` and `<hesitate>` tags, injecting deterministic silent PCM buffers into the 32kHz stream for human-like cognitive cues.
 
-### 🧠 Cognitive Belief Caching
-Integrated a high-speed **Neo4j TTL Cache** (300s TTL). This reduces "Thinking Phase" latency by caching frequent identity and belief lookups.
-
-### 🔊 Adaptive Vocal Smoothing
-Implemented **Alpha-Damped Feedback** (α=0.7) to stabilize conversational rhythm and prevent stutter during rapid turn-taking.
+### 🐚 Active Memory Surfacing
+Asynchronous background agent evaluates shared history vs. current intent to "surface" relevant past moments, allowing memory to color the current response without adding latency.
 
 ---
 
@@ -146,7 +144,7 @@ Refer to the **[Installation Guide](docs/GPT_SOVITS_INSTALL.md)** for deep envir
 
 ## 🗺️ Roadmap: The Path to CVS-1.1
 
-- [ ] **Dynamic Identity Evolution**: Real-time weights adjustment based on long-term relationships.
+- [x] **Dynamic Identity Evolution**: State-driven personality system with NATS heartbeat.
 - [ ] **Emotion-Matched Interjection**: Soft-pause logic for more human-like interruptions.
 - [ ] **M4 CoreML Integration**: Native NPU support for zero-GPU voice synthesis.
 
