@@ -1,7 +1,7 @@
 import base64
 import logging
 import asyncio
-from livekit import rtc
+import livekit.rtc as rtc
 from livekit.api import AccessToken, VideoGrants
 from .base import BaseAgent
 
@@ -144,4 +144,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())

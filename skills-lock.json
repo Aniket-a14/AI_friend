@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-memory-systems": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "computedHash": "91f028c661de0ddabc234fcaf365ab0f63e45f3cfbf89c11f751468290676410"
+    },
+    "cognitive-memory": {
+      "source": "cjhfff/cjh-skills",
+      "sourceType": "github",
+      "computedHash": "453c215084b8e4785e330ec55c3ffe8cbaf6a5d46d212dccbae818acea5cf1e1"
+    },
+    "neo4j-data-models": {
+      "source": "michaelkeevildown/claude-agents-skills",
+      "sourceType": "github",
+      "computedHash": "5ff7042b6384691d8b7a738b3119cc84a34f12fc12eae450de004173b58850d0"
+    },
+    "python-design-modularity": {
+      "source": "ahgraber/skills",
+      "sourceType": "github",
+      "computedHash": "e417830b6f4c79ef986db14907fe899d108fb65051b946f1ead70385f42eab36"
+    },
+    "python-design-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "8646a52fb34f1b88954aa84c86d5de04fbda1f415e509045c7f3ffff5886ded4"
+    }
+  }
+}

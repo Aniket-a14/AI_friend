@@ -213,25 +213,26 @@ async def process_audio(
     pass
 ```
 
-#### Linting
+#### Linting & Quality Control
+
+We use **Ruff** for linting and **Black** for formatting. Your code must pass all checks before a PR will be considered.
 
 ```bash
 # Install linting tools
-pip install flake8 black mypy
+pip install ruff black mypy
 
-# Run linters
-flake8 app/
+# Run ruff (Lints + Fixes common issues)
+ruff check app/ --fix
+
+# Run black (Formatting)
 black app/ --check
+
+# Run mypy (Type checking)
 mypy app/
 ```
 
-**Configuration** (`.flake8`):
-```ini
-[flake8]
-max-line-length = 100
-exclude = .venv,__pycache__
-ignore = E203,W503
-```
+**Configuration** (`pyproject.toml`):
+We emphasize strict architectural boundaries and microsecond-latency async patterns.
 
 ### TypeScript/JavaScript (Frontend)
 
