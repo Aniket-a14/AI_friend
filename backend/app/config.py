@@ -41,6 +41,7 @@ class Config:
     SAMPLE_RATE = 32000
     BINARY_SUBJECTS = ["audio.inbound", "audio.stream"]
     # Phase 2 Calibration (Hardening Watchpoints)
+    SYSTEM_TICK_INTERVAL = int(os.getenv("SYSTEM_TICK_INTERVAL", 60)) # Heartbeat frequency
     FEEDBACK_ALPHA = 0.70  # Conversational smooth filter (BrainAgent)
     MAX_VOICE_QUEUE_SIZE = 10  # Backpressure guard (VoiceAgent)
     VOICE_SYNTH_CONCURRENCY = 1  # GPU safety semaphore (VoiceAgent)

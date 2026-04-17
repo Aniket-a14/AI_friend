@@ -1,5 +1,6 @@
 import logging
 import math
+import time
 from dataclasses import dataclass, field
 from typing import Dict, Any, List
 from datetime import datetime
@@ -22,8 +23,9 @@ class StateService:
         self.graph = graph_store
         self.current_state = AgentState()
         
-        self.alpha_mood = 0.1      # Mood decay rate
-        self.gamma_energy = 0.05   # Energy decay rate
+        self.alpha_mood = 0.05      # Slower mood decay for idle
+        self.gamma_energy = 0.02   # Slower energy decay
+        self.trust_baseline = 0.5  # Neutral trust target
 
     async def hydrate_state(self, agent_name: str = "my friend"):
         """Loads state from Neo4j."""
@@ -81,13 +83,29 @@ class StateService:
         # 2. Persist
         await self.persist_state()
 
-    async def evolve_idle(self, dt_hours: float):
-        """Self-evolution and persistence."""
-        self.current_state.mood *= math.exp(-self.alpha_mood * dt_hours)
-        self.current_state.energy = min(1.0, self.current_state.energy + (0.1 * dt_hours))
+    async def handle_system_tick(self, tick_metadata: Dict[str, Any]):
+        """
+        Idle evolution triggered by NATS system.tick.
+        Metadata: {timestamp, uptime, interval}
+        """
+        now = tick_metadata.get("timestamp", time.time())
+        dt_hours = tick_metadata.get("interval", 60) / 3600.0
         
+        # 1. Self-evolution (Incremental Decay)
+        # Mood drifts towards 0, Energy towards 1.0 (Recovery), Trust towards 0.5
+        self.current_state.mood *= math.exp(-self.alpha_mood * dt_hours)
+        self.current_state.energy = min(1.0, self.current_state.energy + (self.gamma_energy * dt_hours))
+        
+        # Trust drift (slowly normalization)
+        trust_drift = (self.trust_baseline - self.current_state.trust) * 0.01
+        self.current_state.trust += trust_drift
+        
+        self.current_state.last_update = datetime.fromtimestamp(now)
         self._enforce_bounds()
+        
+        # 2. Persist to Neo4j for observability
         await self.persist_state()
+        logger.debug(f"[State Heartbeat] Mood: {self.current_state.mood:.3f} | Trust: {self.current_state.trust:.3f}")
 
     def _enforce_bounds(self):
         self.current_state.mood = max(-1.0, min(1.0, self.current_state.mood))
@@ -104,6 +122,31 @@ class StateService:
             "attachment": self.current_state.attachment,
             "active_goals": self.current_state.active_goals
         }
+
+    def get_behavioral_directive(self) -> str:
+        """Translates internal state into a natural language directive for the LLM."""
+        mood = self.current_state.mood
+        energy = self.current_state.energy
+        trust = self.current_state.trust
+        
+        if mood < -0.6:
+            direct = "You are feeling deeply melancholic and reserved."
+        elif mood > 0.6:
+            direct = "You are in a vibrant, optimistic state."
+        else:
+            direct = "You are grounded and emotionally stable."
+            
+        if energy < 0.3:
+            direct += " Your energy is low; keep replies brief and pacing slow."
+        elif energy > 0.8:
+            direct += " You are high-energy; use expressive, dynamic language."
+            
+        if trust < 0.3:
+            direct += " You are feeling skeptical and maintaining boundaries."
+        elif trust > 0.8:
+            direct += " You feel a deep, familiar bond with the user."
+            
+        return direct
 
     def get_emotion_label(self) -> str:
         mood = self.current_state.mood

@@ -41,24 +41,16 @@ async def test_persona_evolution_immediate(sample_personality, sample_history):
             assert manager.history["relationship"] == "Closer Friend"
 
 @pytest.mark.asyncio
-async def test_persona_evolution_buffered(sample_personality, sample_history):
-    # Test core trait buffering
+async def test_persona_evolution_adaptive(sample_personality, sample_history):
+    # Test adaptive style update (Speaking Style)
     with patch("builtins.open", mock_open()):
         with patch("os.path.exists", return_value=True):
             manager = IdentityManager(base_path="/fake/path")
             manager.personality = sample_personality
+            manager.history = sample_history
             
-            # Suggest a new trait 3 times (threshold is 5)
-            for _ in range(3):
-                await manager.evolve_persona({"new_traits": ["Sarcastic"]})
-            
-            assert "Sarcastic" not in manager.personality["core_personality"]["traits"]
-            
-            # Suggest 2 more times (Total 5)
-            for _ in range(2):
-                await manager.evolve_persona({"new_traits": ["Sarcastic"]})
-                
-            assert "Sarcastic" in manager.personality["core_personality"]["traits"]
+            await manager.evolve_persona({"speaking_style": "More sarcastic and witty"})
+            assert "sarcastic" in manager.personality["speaking_style"]["style_description"].lower()
 
 def test_persona_prompt_generation(sample_personality, sample_history):
     with patch("builtins.open", mock_open()):

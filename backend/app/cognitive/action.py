@@ -28,6 +28,13 @@ class ActionService:
             
             model = plan.payload.get("model")
             
+            # Contextual Enrichments
+            surfaced = plan.payload.get("surfaced_memories", [])
+            shared_history = ""
+            if surfaced:
+                shared_history = "\nSHARED HISTORY / RECENT CONTEXT (Active Influence):\n" + \
+                                 "\n".join([f"- {m['content']}" for m in surfaced])
+            
             # Construct the final prompt with structural guidance
             full_prompt = f"""
             {identity_prompt}
@@ -35,11 +42,13 @@ class ActionService:
             Current Context: 
             - Goal: {plan.goal}
             - Current Emotion: {emotion}
+            {shared_history}
             
             Guideline:
             - Maintain your identity rules at all times.
             - Wrap your response in <emotion type="..." intensity="..." rate="...">...</emotion> tags.
             - Focus on short, natural conversational phrases.
+            - CRITICAL: Inject <pause=300ms> or <hesitate> naturally if the topics are deep or you are recalling memories.
             
             User: {msg}
             Assistant: """.strip()

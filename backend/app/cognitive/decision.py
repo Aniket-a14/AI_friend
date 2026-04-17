@@ -119,7 +119,8 @@ class DecisionService:
             payload={
                 "message": event.raw_content,
                 "emotion_state": blackboard["state"]["emotion"],
-                "model": event.metadata.get("preferred_model")
+                "model": event.metadata.get("preferred_model"),
+                "surfaced_memories": event.metadata.get("surfaced_memories", [])
             },
             priority=1
         )

@@ -38,8 +38,9 @@ async def test_idle_decay(state_service):
     state_service.current_state.mood = 0.8
     state_service.current_state.energy = 0.2
     
-    # Evolve 10 hours
-    await state_service.evolve_idle(dt_hours=10.0)
+    # Evolve via system tick (10 hours gap)
+    tick = {"timestamp": 123456789.0, "interval": 36000} # 10h
+    await state_service.handle_system_tick(tick)
     
     # Mood should decay toward 0
     assert state_service.current_state.mood < 0.8

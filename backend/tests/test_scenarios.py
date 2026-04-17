@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+import time
 from unittest.mock import AsyncMock, patch
 from app.cognitive.core import CognitiveService
 
@@ -44,10 +45,12 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
         # Wait for background reflection to finish in each cycle
         await asyncio.sleep(0.1) 
     
-    # 3. Verify Traits
-    # After 5 suggests, 'Reserved' should move from buffer to core traits
-    traits = cognitive_service.identity.personality["core_personality"]["traits"]
-    assert "Reserved" in traits
+    # 3. Verify Evolutionary adaptive variables
+    # Core Traits (Immutable) should NOT contain 'Reserved'
+    core_traits = cognitive_service.identity.personality["core_personality"].get("traits", [])
+    assert "Reserved" not in core_traits
+    
+    # Relationship (Adaptive) should have evolved
     assert cognitive_service.identity.history["relationship"] == "Strained"
 
 @pytest.mark.asyncio
@@ -64,8 +67,9 @@ async def test_scenario_energy_exhaustion_rest(cognitive_service):
     exhausted_energy = cognitive_service.state.current_state.energy
     assert exhausted_energy < initial_energy
     
-    # 2. Simulate 24 hours of rest
-    await cognitive_service.state.evolve_idle(dt_hours=24.0)
+    # 2. Simulate 24 hours of rest via mesh heartbeat
+    tick = {"timestamp": time.time(), "interval": 86400} # 24h
+    await cognitive_service.state.handle_system_tick(tick)
     
     rested_energy = cognitive_service.state.current_state.energy
     assert rested_energy > exhausted_energy
