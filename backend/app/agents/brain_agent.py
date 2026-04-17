@@ -1,8 +1,10 @@
 import asyncio
 import logging
 import uuid
+import time
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, AsyncGenerator, List
+import re
 
 from .base import BaseAgent
 from ..llm.ollama_client import OllamaClient
@@ -14,10 +16,37 @@ from ..cognitive import CognitiveService
 
 logger = logging.getLogger(__name__)
 
+class HybridSegmenter:
+    """
+    CVS-1.0 Semantic Chunking Engine.
+    Uses scoring-based heuristics to identify optimal speech boundaries.
+    """
+    def __init__(self, target_size: int = 8):
+        self.target_size = target_size
+        self.conjunctions = {"and", "but", "so", "because", "although", "while"}
+        
+    def score_split_point(self, word: str, chunk_len: int) -> float:
+        score = 0.0
+        # Punctuation (Primary)
+        if any(p in word for p in [".", "?", "!", ";"]):
+            score += 1.0
+        elif "," in word:
+            score += 0.6
+        
+        # Conjunctions (Secondary)
+        if word.lower().strip() in self.conjunctions:
+            score += 0.4
+            
+        # Proximity to target size
+        size_factor = abs(chunk_len - self.target_size) / self.target_size
+        score -= size_factor * 0.2
+        
+        return score
+
 class BrainAgent(BaseAgent):
     """
-    The Brain Agent - The Orchestrator of Identity and Goal-Driven Reasoning.
-    Processes user input through a BDI Cognitive Loop and maintains a persistent identity.
+    The Brain Agent (CVS-1.0 Edition).
+    Orchestrator of Identity and Temporal Cognitive Flow.
     """
     def __init__(
         self,
@@ -41,9 +70,12 @@ class BrainAgent(BaseAgent):
 
         self.last_interaction_time = datetime.now()
         self.last_visual_context = "No visual data available."
+        
+        # CVS-1.0 Segmentation Config
+        self.segmenter = HybridSegmenter(target_size=8)
+        self.formation_buffer_ms = 0.030 # 30ms
 
     async def start(self):
-        """Initialize the Cognitive Core and start the Identity Autonomy Loop."""
         await self.cognitive_core.initialize()
 
         if self.conversation_store:
@@ -55,19 +87,24 @@ class BrainAgent(BaseAgent):
         # Subscribe to I/O streams
         await self.subscribe("chat.input", self._on_chat_input)
         await self.subscribe("vision.frames", self._on_vision_frame, deliver_policy="last")
+        await self.subscribe("voice.segmentation_feedback", self._on_voice_feedback)
         
-        # Start Autonomy Loop (Idle Reflection & State Evolution)
+        # Start Autonomy Loop
         asyncio.create_task(self._autonomy_loop())
+        logger.info(f"🧠 {self.name} Online | CVS-1.0 Cognitive Mesh Active.")
 
-        logger.info(f"🧠 {self.name} is online. Identity Simulator Active.")
+    async def _on_voice_feedback(self, data: Dict[str, Any]):
+        """Adaptive Tuning Loop (CVS-1.0 closed loop)."""
+        target = data.get("target_chunk_size", 8)
+        if target != self.segmenter.target_size:
+            logger.info(f"📈 Tuning Segmentation Strategy | Target Size: {target}")
+            self.segmenter.target_size = target
 
     async def _on_vision_frame(self, data: Dict[str, Any]):
-        """Update visual context buffer."""
         source = data.get("source", "unknown")
         self.last_visual_context = f"I am seeing the user's {source}."
 
     async def _on_chat_input(self, message: Dict[str, Any]):
-        """Primary Cognitive Lifecycle trigger."""
         now = datetime.now()
         self.last_interaction_time = now
         
@@ -82,61 +119,80 @@ class BrainAgent(BaseAgent):
             "metadata": {"visuals": self.last_visual_context}
         }
 
-        # History logging
         if self.conversation_store:
             asyncio.create_task(self.conversation_store.log_message("user", user_text))
 
         await self.set_state("thinking")
         
-        # PROCESS: Push through Cognitive Loop
         full_response = ""
-        sentence_buffer = ""
+        current_chunk_words = []
+        
         try:
             async for output in self.cognitive_core.process_event(raw_event):
                 if output["type"] == "content":
                     await self.set_state("speaking")
-                    chunk = output["data"]
-                    full_response += chunk
-                    sentence_buffer += chunk
+                    chunk_text = output["data"]
+                    full_response += chunk_text
                     
-                    # If sentence is complete, publish to trigger TTS early
-                    if any(p in chunk for p in [".", "?", "!"]):
-                        await self.publish("chat.output", {
-                            "content": sentence_buffer.strip(), 
-                            "done": False,
-                            "state": self.cognitive_core.state.get_context_snapshot()
-                        })
-                        sentence_buffer = ""
+                    # Tokenize by whitespace
+                    words = chunk_text.split()
+                    for word in words:
+                        current_chunk_words.append(word)
+                        
+                        # 1. Formation Buffer (Brief wait for better splitting)
+                        await asyncio.sleep(self.formation_buffer_ms)
+                        
+                        # 2. Heuristic Scoring
+                        score = self.segmenter.score_split_point(word, len(current_chunk_words))
+                        
+                        # 3. Decision (Safe Split)
+                        if score > 0.7 or len(current_chunk_words) > 12:
+                            await self._publish_speech_chunk(current_chunk_words)
+                            current_chunk_words = []
                 
                 elif output["type"] == "done":
-                    # Send any remaining text and then final signal
-                    if sentence_buffer.strip():
-                        await self.publish("chat.output", {
-                            "content": sentence_buffer.strip(),
-                            "done": False,
-                            "state": self.cognitive_core.state.get_context_snapshot()
-                        })
+                    # Emit residue
+                    if current_chunk_words:
+                        await self._publish_speech_chunk(current_chunk_words)
                     
-                    state = self.cognitive_core.state.get_context_snapshot()
+                    state_snap = self.cognitive_core.state.get_context_snapshot()
                     await self.publish("chat.output", {
                         "content": "", 
                         "done": True, 
                         "full_response": full_response,
-                        "state": state,
-                        "emotion": state.get("emotion", "neutral")
+                        "emotion": state_snap.get("emotion", "neutral")
                     })
 
         except Exception as e:
             logger.error(f"Cognitive Loop error: {e}")
-            await self.publish("chat.output", {"chunk": "I encountered an internal error.", "done": True})
+            await self.publish("chat.output", {"content": "I encountered an internal error.", "done": True})
 
         if self.conversation_store and full_response:
             asyncio.create_task(self.conversation_store.log_message("assistant", full_response))
 
         await self.set_state("idle")
 
+    async def _publish_speech_chunk(self, words: List[str]):
+        """Publishes a semantically coherent chunk with CVS-1.0 metadata."""
+        text = " ".join(words).strip()
+        if not text:
+            return
+            
+        state_snap = self.cognitive_core.state.get_context_snapshot()
+        
+        # CVS-1.0 Metadata Propagation
+        payload = {
+            "content": text,
+            "done": False,
+            "emotion": state_snap.get("emotion", "neutral"),
+            "emotional_intensity": state_snap.get("emotional_intensity", 0.6),
+            "confidence": 0.9, # To be dynamically computed in future versions
+            "speaking_rate": 1.0,
+            "timestamp": time.time()
+        }
+        await self.publish("chat.output", payload)
+
     async def _autonomy_loop(self):
-        """Heartbeat of the Identity."""
         SILENCE_TICK_SECONDS = 60.0
         while True:
             await asyncio.sleep(SILENCE_TICK_SECONDS)
@@ -145,7 +201,6 @@ class BrainAgent(BaseAgent):
             await self.cognitive_core.state.evolve_idle(dt_hours=idle_seconds / 3600.0)
             
             if idle_seconds > 300.0:
-                logger.info("[Brain] Triggering background reflection loop.")
                 raw_event = {
                     "id": str(uuid.uuid4()),
                     "type": "SYSTEM_TICK",
@@ -157,7 +212,7 @@ class BrainAgent(BaseAgent):
 
     async def stop(self):
         await super().stop()
-        logger.info(f"🧠 {self.name} offline.")
+        logger.info(f"🧠 {self.name} Offline.")
 
 async def main():
     agent = BrainAgent()

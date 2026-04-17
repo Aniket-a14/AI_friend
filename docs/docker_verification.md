@@ -1,6 +1,6 @@
-# 🐳 Sovereign Mesh: Docker Verification Guide
+# 🐳 Sovereign Mesh: Docker Verification Guide (CVS-1.0)
 
-This guide provides the technical procedures for verifying that the **AI Friend Sovereign Mesh** is correctly orchestrated, healthy, and communicating with sub-300ms performance.
+This guide provides the technical procedures for verifying that the **AI Friend Sovereign Mesh** and **CVS-1.0 runtime** are correctly orchestrated, healthy, and communicating with sub-280ms performance.
 
 ---
 
@@ -18,19 +18,21 @@ docker compose ps
 Before the agents can think, the backbone must be ready.
 
 ### A. NATS JetStream (Central Nervous System)
-Check if NATS is accepting connections and monitoring is active:
+Check if NATS is accepting connections and Monitoring is active:
 ```bash
 # Check monitoring endpoint
 curl http://localhost:8222/varz
+
+# Check if JetStream is active on audio subjects (CVS Requirement)
+docker exec -it nats_mesh nats stream info audio
 ```
-*Look for `"jetstream": { ... }` in the JSON response.*
 
 ### B. Ollama (The Brain's Processor)
 Ensure models are loaded and accessible:
 ```bash
 docker exec -it local_brain ollama list
 ```
-*Expected: `qwen2.5:7b` and `llama3.2:1b` should be in the list.*
+*Expected: `llama3.2:1b` and `llama3.2:3b` should be in the list.*
 
 ### C. Neo4j (Memory Graph)
 Check if the Bolt port is active:
@@ -49,28 +51,27 @@ Watch for the "Connected to mesh" and "Subscribed to" log entries:
 # Tail Brain Agent
 docker logs -f brain_agent
 
-# Tail STT Agent
-docker logs -f stt_agent
+# Tail Voice Agent (Check for NATS Sync)
+docker logs -f voice_agent | grep "NATS Sync"
 ```
 
 ---
 
 ## 4. Signal Mesh Monitoring (Deep-Dive)
-To go beyond "Is it running?" and see "Is it talking?", use the NATS CLI inside the mesh.
 
 ### Watch Conversation Signals
 ```bash
 # Watch transcription inputs arriving from the mic
 docker exec -it nats_mesh nats sub "chat.input"
 
-# Watch the brain's reasoning output
+# Watch the brain's reasoning output (CVS Metadata)
 docker exec -it nats_mesh nats sub "chat.output"
 ```
 
-### Watch Audio Stream Buffers
+### Watch Pulse Telemetry (CVS-1.0 Closed-Loop)
 ```bash
-# Watch generated PCM chunks flowing to the speaker
-docker exec -it nats_mesh nats sub "audio.stream"
+# Watch the BrainAgent adjusting to VoiceAgent feedback
+docker exec -it nats_mesh nats sub "voice.segmentation_feedback"
 ```
 
 ---
@@ -79,19 +80,20 @@ docker exec -it nats_mesh nats sub "audio.stream"
 Run the latency benchmark script *inside* the Docker context to measure genuine production performance.
 
 ```bash
-docker exec -it brain_agent python scripts/bench_latency.py
+docker exec -it brain_agent python scripts/bench_latency_perceptual.py
 ```
 **Success Criteria**:
-- `✅ BENCHMARK COMPLETE` message.
-- `Total Latency: <300ms`.
+- `✅ BENCHMARK COMPLETE`
+- `Total Perceived Latency: <280ms`.
+- `Jitter Recovery Rate: 100%`.
 
 ---
 
-## 🌍 Networking Note
-If agents are failing to connect, verify your `.env` variables:
-- `NATS_URL` should be `nats://nats_mesh:4222` within the docker network.
-- `OLLAMA_URL` should be `http://local_brain:11434` or `http://host.docker.internal:11434` depending on your setup.
+## 🍏 Apple Silicon (Mac) Note
+If running on an M-series Mac via Docker Desktop:
+1.  **Memory**: Go to **Settings > Resources** and ensure at least **12GB RAM** is allocated.
+2.  **Metal**: Verify that "Use Rosetta" is disabled for maximum native ARM64 performance in STT/TTS containers.
 
 ---
 
-**Designed for Visibility. Built for Stability.**
+**Designed for Perceptual Mastery.**

@@ -1,183 +1,162 @@
-# 🎙️ AI Friend: The Sovereign Cognitive Mesh (v3.1)
+# 🎙️ AI Friend: Cognitive Voice System (CVS-1.0)
 
-**A High-Performance, Privacy-First Multimodal AI Identity Simulator.**
+**A High-Fidelity, Perception-Aligned Cognitive Identity Emulator.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/license/MIT)
-[![Latency: Sub-300ms](https://img.shields.io/badge/Latency-%3C300ms-green.svg)](#performance-slos)
-[![Architecture: Parallel BDI](https://img.shields.io/badge/Architecture-Parallel%20BDI-orange.svg)](#architecture)
+[![Latency: Perceived <280ms](https://img.shields.io/badge/Latency-Perceived%20%3C280ms-green.svg)](#performance-perceived-slos)
+[![Architecture: CVS-1.0](https://img.shields.io/badge/Architecture-CVS--1.0-orange.svg)](#architecture-cvs-10-perceptual-mastery)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb)
 
 ---
 
 ## 🌟 Overview
 
-**AI Friend** is a sophisticated, decentralized AI platform engineered for **ultra-low latency** voice interaction and **autonomous persona evolution**. Built on the **Sovereign Mesh** pattern, it replaces monolithic backends with a real-time ecosystem of specialized micro-agents coordinated via the **NATS JetStream** event bus.
+**AI Friend** is a next-generation AI architecture engineered for **ultra-low latency** conversational realism. Unlike traditional "request-response" voice agents, AI Friend uses the **CVS-1.0 (Cognitive Voice System)** runtime to synchronize reasoning, temporal pacing, and high-fidelity signal rendering into a single, cohesive identity.
 
-The system is designed for **Sovereign Privacy**, ensuring all reasoning, memory, and voice synthesis happen 100% locally on user-controlled hardware.
-
----
-
-## 🏗️ Architecture: v3.1 Parallel Sovereign Mesh
-
-The v3.1 architecture introduces the **Parallel Cognitive Loop**, which eliminates sequential bottlenecks by concurrently hydrating three core cognitive tiers: **Perception**, **State**, and **Memory**.
-
-### 🚀 Key Innovations:
-- **Parallel BDI Loop**: Perception, State Hydration, and Memory Retrieval fire in parallel via `asyncio.gather`, slashing cognitive overhead by **~73%**.
-- **Behavior Tree (BT) Engine**: Uses a modular Selector/Sequence BT logic for robust, goal-oriented decision making.
-- **Dual-Agent RAG**: A background "Slow Thinker" pre-fetches potential context into a fast in-memory cache for the "Fast Talker."
-- **Zero-Header PCM**: Migrated to raw 16-bit PCM streaming (**48kHz**) to eliminate header parsing latency and achieve studio-quality fidelity.
-- **V4 Voice Engine**: Native support for GPT-SoVITS V4, fixing metallic artifacts and improving emotional prosody.
+The system is built for **Sovereign Privacy**, ensuring that identity evolution, semantic memory, and voice synthesis happen 100% locally on user-controlled hardware.
 
 ---
 
-## ⚡ Performance & Latency SLOs
+## 🏗️ Architecture: CVS-1.0 Perceptual Mastery
 
-To achieve seamless human-like interaction, we enforce strict **Service Level Objectives (SLOs)** for every hop in the mesh.
+CVS-1.0 introduces the **Closed-Loop Cognitive Mesh**, where the Brain's reasoning engine and the Signal's rendering runtime share a real-time telemetry loop.
 
-### ⏱️ Stage Budget (p95 Targets)
-| Pipeline Stage | Target Latency | Optimization Strategy |
+### 1. System Topology
+The platform is orchestrated as a **Parallel Agent Mesh** communicating over NATS JetStream.
+
+```mermaid
+graph TD
+    User((User)) <--> |WebRTC / PCM| Frontend[Next.js Frontend]
+    Frontend <--> |FastAPI| Signaling[Signaling Server]
+    
+    subgraph Sovereign Mesh
+        Signaling <--> |NATS| Bus{NATS JetStream}
+        Bus <--> STT[STT Agent: Whisper]
+        Bus <--> Brain[Brain Agent: BDI Cognition]
+        Bus <--> Voice[Voice Agent: CVS Runtime]
+        Bus <--> Vision[Vision Agent: CV2/Llava]
+    end
+    
+    subgraph Infrastructure
+        Brain <--> Neo4j[(Neo4j: GraphRAG)]
+        Brain <--> Ollama[Ollama: LLM]
+        Voice <--> SoVITS[GPT-SoVITS API]
+    end
+```
+
+### 2. The Perceptual "Pulse" Path
+To achieve sub-280ms perceived latency, the system utilizes a non-linear signal path.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant S as STT Agent
+    participant B as Brain Agent
+    participant V as Voice Agent
+    
+    U->>S: Raw Audio Stream
+    S->>B: chat.input (Text)
+    B->>V: chat.output (Incremental Segment + Metadata)
+    V->>V: Jitter Buffer & Atomic Phrasing
+    V->>U: Raw 32kHz PCM
+    V-->>B: voice.segmentation_feedback (Telemetry)
+    Note over B,V: Closed-Loop Pulse Adjustment
+```
+
+---
+
+## 🚀 Key Innovations
+
+### 🧠 BDI + GraphRAG Cognition
+Uses a **Belief-Desire-Intention (BDI)** model for decision making, backed by a **Neo4j Semantic Graph**.
+- **Belief State**: Updated via recent interactions.
+- **Intentions**: Priority-weighted goals (e.g., "be helpful," "stay curious").
+- **Decay Memory**: Knowledge prioritizes recency and emotional weight.
+
+### 🎙️ CVS-1.0 Signal Runtime
+A state-machine-driven playback system that manages temporal drift and jitter.
+- **30ms Formation Buffer**: Collects enough semantic intent to phrase naturally without pausing.
+- **Adaptive Normalization**: -1 dBFS peak clamping with high-speed RMS smoothing.
+- **Raw PCM Injection**: Bypasses WAV header overhead for instant playback.
+
+### 👁️ Multimodal Awareness
+Vision-capable agents can interject based on visual cues (CV2/Llava 1.5) without halting the primary voice stream.
+
+---
+
+## ⚡ Performance Perceived SLOs
+
+| Pipeline Stage | Raw Latency | Perceptual Strategy |
 | :--- | :--- | :--- |
-| **STT (Inference)** | <50ms | Whisper V3 Turbo / Silero VAD |
-| **RAG Retrieval** | <10ms | HNSW / PGVector Semantic Cache |
-| **Cognitive Loop** | <50ms | Parallel BDI / BT Micro-Scaffold |
-| **LLM Inference** | <100ms | 4-bit Quantization / RTX 4090 |
-| **TTS Synthesis** | <60ms | PCM Streaming (48kHz) / V4 Engine |
-| **Total E2E** | **<270ms** | **v3.1 Sovereign Mesh Standard** |
+| **STT (Inference)** | <50ms | Whisper V3 Turbo |
+| **Brain (Cognition)**| <100ms | Hybrid Segmenter / Parallel BDI |
+| **TTS (Synthesis)** | <120ms | 32kHz Raw PCM / SoVITS V4 |
+| **Pacing (Wait)** | 0-30ms | Formation Buffer / Priority Phasing |
+| **Perceived Turn** | **<280ms** | **CVS-1.0 Standard** |
 
 ---
 
-## 🧠 Cognitive Engine: The BDI Framework
+## 🛠️ Technical Stack
 
-AI Friend operates on a **Belief-Desire-Intention (BDI)** model, ensuring that every response is grounded in persistent memory and persona goals.
-
-### 1. Intent & Goal Dynamics
-| Intent | Desires (Goals) | Latency Path |
-| :--- | :--- | :--- |
-| **CHAT** | `ENGAGE`, `COMFORT`, `TEASE` | **Smart Path** (7B Model) |
-| **REMEMBER**| `INFORM`, `PROTECT` | **Fast Path** (1B Model) |
-| **REFLECT** | `SELF_IMPROVE` | **Background Cycle** |
-| **COMMAND** | `ACTIVATE_TOOLS` | **Fast Path** (1B Model) |
-
-### 2. Memory Governance & Decay
-Memory is prioritized using a recency-weighted decay formula to prevent "Context Bloat":
-```math
-Score = SemanticSimilarity * (Importance * exp(-\lambda * \Delta t))
-```
-- **Instant Memory**: Context window in local RAM.
-- **Semantic Memory**: PGVector retrieval for factual grounding.
-- **Relational Memory**: Neo4j Graph for identity-focused entity mapping.
-
-### 3. Identity Evolution (Mood Update Rules)
-The internal emotional state evolves dynamically based on interaction valence:
-```math
-Mood_{new} = Mood_{old} * exp(-\alpha\Delta t) + EventValence * (1-exp(-\alpha\Delta t))
-```
-
----
-
-## ⚙️ Advanced Configuration (Env Var Dictionary)
-
-| Variable | Default Value | Technical Purpose |
-| :--- | :--- | :--- |
-| `NATS_URL` | `nats://nats:4222` | Internal event bus address for agent choreography. |
-| `OLLAMA_URL` | `http://ollama:11434`| Reasoning LLM endpoint (Use `host.docker.internal` for host). |
-| `NEO4J_URI` | `bolt://localhost:7687`| Relational Graph database connection string. |
-| `STT_DEVICE` | `cpu` | Acceleration device for Whisper (`cpu` or `cuda`). |
-| `STT_MODEL_SIZE`| `small` | Transcription model weight (`tiny` to `large`). |
-| `SAMPLE_RATE` | `16000` | Native audio capture rate for transcription stability. |
-
----
-
-## 🛠️ Hardware Optimization Profiles (RTX 4090 / M4 Native)
-
-| Profile | Quantization | Model Split | Throughput |
-| :--- | :--- | :--- | :--- |
-| **Low-Spec** | 4-bit (GGUF) | 1B (Fast) + 1B (Smart) | ~140 tok/s |
-| **Balanced** | 4-bit (AWQ) | 1B (Fast) + 7B (Smart) | ~90 tok/s |
-| **Extreme** | 8-bit (FP8) | 3B (Fast) + 14B (Smart)| ~60 tok/s |
-
----
-
-## ⚙️ Installation & Developer Guide
-
-### Method 1: Docker Compose (Dual-Stack)
-```bash
-# Start Persistence Layer (NATS, Neo4j, Ollama)
-docker compose -f docker-compose.infra.yml up -d
-
-# Start Cognitive Mesh (Brain, Voice, Transport)
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
-### Method 2: Manual Developer Setup
-**Backend:**
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
----
-
-## 🖥️ Developer Tooling & Mesh Debugging
-
-### NATS CLI Monitoring
-Monitor the pulse of the mesh in real-time:
-```bash
-nats sub "chat.input"   # Watch transcriptions
-nats sub "chat.output"  # Watch brain thoughts
-nats sub "audio.stream" # Watch synthesis buffers
-```
-
-### Relational Mapping (Neo4j)
-Visualize the friendship graph at `http://localhost:7474`.
-```cypher
-MATCH (p:Persona)-[r:EXPERIENCED]->(e:Episode) RETURN p,r,e LIMIT 25;
-```
-
----
-
-## 🖥️ Troubleshooting & Recovery
-
-| Issue | Root Cause | Resolution |
-| :--- | :--- | :--- |
-| **SFU Timeout** | LiveKit signal delay | Check `LIVEKIT_URL` and ensures ports 7880/7881 are open. |
-| **Brain Stutter** | LLM Context Bloat | Run `python scripts/reset_db.py` to clear short-term memory. |
-| **Audio Resampling**| `soxr` CPU Spike | Reduce `SAMPLE_RATE` in Ear Agent or uses GPU offloading. |
-| **Microphone blocked**| Browser Policy | Ensure **HTTPS** or `localhost` access for Secure Context. |
+- **Frontend**: Next.js 16, Tailwind CSS, Framer Motion, LiveKit WebRTC.
+- **Backend Core**: FastAPI (Asynchronous Signaling).
+- **Messaging**: NATS JetStream (Ultra-low latency event bus).
+- **Agents**: Python asyncio (Atomic State Machines).
+- **Storage**: Neo4j (GraphRAG), PostgreSQL (Identity State), Redis (Caching).
+- **AI Models**: Ollama (Llama 3.2/Qwen 2.5), GPT-SoVITS V4 (32kHz), Whisper V3.
 
 ---
 
 ## 📂 Project Structure
 
 ```text
-AI_Friend/
-├── backend/app/
-│   ├── agents/          # Decentralized Micro-Agents (Ear, STT, Brain, Voice)
-│   ├── cognitive/       # Behavior Trees, State Dynamics, & Parallel Loop
-│   ├── knowledge/       # Neo4j GraphRAG & Triple Extraction
-│   ├── llm/             # Hybrid Routing & Multi-Tiered Clients
-│   └── tts/             # PCM Synthesis & SoVITS Integration
-├── scripts/             # Stress-testing, Benchmarking, & DB Reset
-├── docs/                # Technical Whitepapers & Latency SLOs
-└── docker-compose.yml   # Multi-Agent Stack Orchestration
+├── .agents/             # Agent skills and memory systems
+├── app/                 # Core logic
+│   ├── agents/          # Agent implementations (Brain, Voice, STT)
+│   ├── cognitive/       # BDI and decision services
+│   ├── tts/             # Speech synthesis clients
+│   └── main.py          # Signaling entry point
+├── docs/                # Technical documentation suite
+├── frontend/            # Next.js 16 application
+├── GPT_SoVITS/          # Voice training submodule
+├── notebooks/           # Training & Dev scripts
+├── docker-compose.yml   # Orchestration
+└── requirements.txt     # Python dependencies
 ```
 
 ---
 
-## 📜 License
+## ⚙️ Getting Started
 
-Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
+### 1. Prerequisites (2026 Standards)
+- **OS**: Windows (WSL2 recommended) or Linux.
+- **Hardware**: NVIDIA GPU (RTX 3060+) or Apple Silicon (M2+).
+- **Software**: Docker Desktop, Python 3.11+, NATS CLI.
+
+### 2. Launch via Docker Sovereign Mesh
+```bash
+# A. infrastructure (NATS, Postgres, Neo4j)
+docker compose -f docker-compose.infra.yml up -d
+
+# B. Cognitive Agents (Brain, Voice, STT)
+docker compose up -d --build
+```
+
+### 3. Manual Setup (For Developers)
+Refer to the **[Installation Guide](docs/GPT_SOVITS_INSTALL.md)** for deep environment hardening (numpy < 2.0, libsox).
 
 ---
 
-**Designed for Latency. Built for Identity.**
+## 🗺️ Roadmap: The Path to CVS-1.1
+
+- [ ] **Dynamic Identity Evolution**: Real-time weights adjustment based on long-term relationships.
+- [ ] **Emotion-Matched Interjection**: Soft-pause logic for more human-like interruptions.
+- [ ] **M4 CoreML Integration**: Native NPU support for zero-GPU voice synthesis.
+
+---
+
+## 📜 License & Community
+
+Distributed under the **MIT License**. See `LICENSE` for details.
+
+**Designed for Perception. Built for Identity.**

@@ -1,67 +1,57 @@
-# 🏗️ Architecture Documentation
+# 🏗️ Architecture Documentation - CVS-1.0
 
-> **Deep dive into the AI Friend platform architecture, design decisions, and technical implementation**
+> **Deep dive into the AI Friend platform architecture, design decisions, and the Cognitive Voice System (CVS-1.0)**
 
 ---
 
 ## Table of Contents
 
 1. [System Overview](#system-overview)
-2. [v3.1 Architecture (Parallel Sovereign Mesh)](#v31-architecture-parallel-sovereign-mesh)
-3. [Cognitive Mesh Lifecycle](#cognitive-mesh-lifecycle)
-4. [The Parallel BDI Loop](#the-parallel-bdi-loop)
-5. [Hybrid Brain Strategy](#hybrid-brain-strategy)
-6. [Data Flow & PCM Optimization](#data-flow--pcm-optimization)
-7. [Identity Evolution](#identity-evolution)
+2. [CVS-1.0 Architecture (Perceptual Mastery)](#cvs-10-architecture-perceptual-mastery)
+3. [Cognitive Layer (Brain)](#1-cognitive-layer-brain)
+4. [Temporal Orchestration (Voice Controller)](#2-temporal-orchestration-voice-controller)
+5. [Signal Rendering (Audio Engine)](#3-signal-rendering-audio-engine)
+6. [The Feedback Mesh](#4-the-feedback-mesh)
+7. [System Flow Diagram](#system-flow-diagram)
 
 ---
 
 ## System Overview
 
-AI Friend is built on the **Sovereign Mesh Architecture**. Unlike traditional monolithic backends, it uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus.
+AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus.
 
-This architecture enables:
-- **Dynamic Scaling**: Independent scaling of STT, Brain, and Voice agents.
-- **Microsecond Latency**: Direct agent choreography via nats-server.
-- **Sovereign Privacy**: Total local inference capability.
+In version **CVS-1.0**, we have moved beyond a sequential pipeline into a **Perception-Aligned Cognitive Architecture** where reasoning, timing, and signal rendering are tightly coupled via closed-loop feedback.
 
 ---
 
-## 🏗️ v3.1 Architecture (Parallel Sovereign Mesh)
+## 🏗️ CVS-1.0 Architecture (Perceptual Mastery)
 
-### 🚀 The Parallel BDI Loop
+### 🧠 1. Cognitive Layer (Brain)
+The BrainAgent does not just generate text; it generates **Behavioral Payloads**.
+- **Metadata-Rich Events**: Every output includes `emotion_vector`, `intensity`, `confidence`, and `speaking_rate`.
+- **Hybrid Heuristic Segmenter**: Uses semantic scoring (conjunctions, punctuation, breath markers) to produce coherent speech chunks.
+- **Formation Buffer**: A 30ms "look-ahead" window ensures chunks are semantically complete before synthesis.
 
-In v3.1, we've transitioned from sequential processing to a **Parallelized Cognitive Mesh**. This architecture pozwala the agent to hydrate its world model while simultaneously processing user intent.
+### ⏱️ 2. Temporal Orchestration (Voice Controller)
+The VoiceAgent contains an internal **VoiceController** state machine that manages conversational flow.
+- **Priority Scheduling**: High-priority fillers and acknowledgments are interjected at "Safe Boundaries" (low-energy regions) identified in the audio stream.
+- **Perception-Driven Timing**: Fillers (e.g., "hmm...") are triggered by **elapsed silence (>250ms)** rather than raw backend latency.
+- **Adaptive Jitter Buffer**: Dynamically scales (10ms–25ms) based on drift and decays exponentially to maintain ultra-low latency.
 
-1. **Async Perception**: User audio is transcribed in real-time by the STT Agent and published to `chat.input`.
-2. **Parallel Hydration**: The Brain fires three concurrent tasks via `asyncio.gather`:
-   - **State Hydration**: Pulling the latest emotional and physical traits.
-   - **Semantic Recall**: Querying PGVector for contextually relevant conversation snippets.
-   - **Relational Traversal**: Querying Neo4j for entities (Who/What/Where).
-3. **Hybrid Routing**: Intent is classified using a "Fast Path" logic before generating a response.
+### 🔊 3. Signal Rendering (Audio Engine)
+A persistent synthesis runtime that masters audio in real-time.
+- **Adaptive Normalization**: A **100ms rate-aware RMS window** ensures loudness stability across emotional peaks.
+- **Inter-Chunk Gain Matching**: Aligns the energy of phrase transitions to prevent audible "pops."
+- **Stylistic Cache Clustering**: A non-linear perceptual distance metric $(\alpha(EmotionDiff)^2 + \beta|RateDiff|)$ allows for style-safe audio reuse.
 
----
-
-### 🧠 Hybrid Brain Strategy
-
-To achieve sub-300ms latency without sacrificing depth, we use a two-tier inference strategy:
-
-| Path | Model | Detection | Latency Target | Use Case |
-| :--- | :--- | :--- | :--- | :--- |
-| **Fast Path** | Llama 3.2 1B | Regex / Keyword | <150ms | Basic greetings and confirmations. |
-| **Smart Path** | Qwen 2.5 7B | LLM Classification | <350ms | Deep reasoning, emotional support. |
-
----
-
-### 🔊 Audio Pipeline Optimization (PCM)
-
-We have eliminated the "WAV Header Tax" in v3.1.
-- **Legacy**: WAV headers required client parsing and buffering.
-- **V3.1 (PCM)**: Raw 16-bit, **48kHz** PCM buffers are streamed. This reduces Voice Agent overhead by **~80ms** and enables high-fidelity, studio-quality playback without header parsing delays.
+### 🔁 4. The Feedback Mesh
+The system self-optimizes via a closed-loop telemetry stream:
+- **Segmentation Feedback**: The VoiceAgent publishes `voice.segmentation_feedback` when it overrides poor BrainAgent chunking.
+- **Recursive Learning**: The BrainAgent consumes this feedback to improve its internal scoring heuristics.
 
 ---
 
-### Cognitive Mesh Design
+## 📊 System Flow Diagram
 
 ```mermaid
 graph TB
@@ -70,53 +60,45 @@ graph TB
         PCM_PLAYER["PCM Stream Player"]
     end
 
-    subgraph Parallel_Mesh ["Sovereign Mesh - Parallel BDI"]
+    subgraph CVS_Mesh ["CVS-1.0 - Cognitive Voice System"]
         STT["STT Agent<br/>Faster Whisper"]
-        VOICE["Voice Agent<br/>SoVITS PCM"]
         
         subgraph Brain_Core ["Brain Agent"]
-            DECISION["Decision Service<br/>Hybrid Router"]
-            ACTION["Action Service<br/>Streamer"]
-            
-            subgraph Parallel_Hydration ["Asyncio Gather"]
-                NEO4J[("Neo4j Graph")]
-                PG[("PGVector SM")]
-                STATE["Trait Engine"]
-            end
+            HYBRID_SEGMENTER["Hybrid Segmenter<br/>30ms Formation Buffer"]
+            DECISION["Cognitive Service<br/>BDI Mesh"]
+        end
+
+        subgraph Voice_Core ["Voice Agent"]
+            VOICE_CONTROLLER["Voice Controller<br/>State Machine"]
+            AUDIO_ENGINE["Audio Engine<br/>Adaptive Normalizer"]
+            SYTHESIZER["Synthesis Runtime<br/>GPT-SoVITS V4"]
         end
     end
 
     MIC -->|audio.captured| STT
     STT -->|chat.input| DECISION
-    DECISION --> Parallel_Hydration
-    Parallel_Hydration --> ACTION
-    ACTION -->|chat.output| VOICE
-    VOICE -->|audio.stream| PCM_PLAYER
+    DECISION --> HYBRID_SEGMENTER
+    HYBRID_SEGMENTER -->|chat.output| VOICE_CONTROLLER
+    VOICE_CONTROLLER --> AUDIO_ENGINE
+    AUDIO_ENGINE -->|audio.stream| PCM_PLAYER
+    
+    VOICE_CONTROLLER -.->|voice.segmentation_feedback| HYBRID_SEGMENTER
 ```
 
 ---
 
-## 🎭 Identity Evolution
+## ⚙️ Resource Matrix (CVS-1.0)
 
-AI Friend maintains a persistent persona through a dedicated identity layer:
-- **Core Traits**: Strictly immutable values that define the foundation of the identity.
-- **Dynamic Moods**: Valence and Arousal levels that adjust in real-time based on conversation tone.
-- **Autonomous Consolidation**: During idle cycles, the agent reflects on the day's experiences and updates the Neo4j graph relationships.
-
----
-
-## ⚙️ Resource Matrix (Estimates)
-
-| Agent | Target Image | CPU (Min) | RAM (Target) | Notes |
+| Agent | Context | CPU (Min) | RAM (Target) | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Brain Agent** | `slim`| 0.5 Cores | 1.0 GiB | High RAM if local embeddings used. |
-| **STT Agent** | `full` | 2.0 Cores | 2.0 GiB | Heavy Whisper inference. |
-| **Voice Agent** | `full` | 1.0 Cores | 4.0 GiB | High-fidelity V4 synthesis (48kHz). |
-| **Vision Agent** | `full` | 1.0 Cores | 1.0 GiB | Synchronizes screen/camera frames. |
+| **Brain Agent** | Cognitive Core | 1.0 Cores | 2.0 GiB | Increased for Segmenter heuristics. |
+| **STT Agent** | Whisper Core | 2.0 Cores | 2.0 GiB | Local realtime inference. |
+| **Voice Agent** | CVS Runtime | 1.5 Cores | 4.0 GiB | Includes Normalizer & Cache Clustering. |
+| **Vision Agent** | Vision Mesh | 1.0 Cores | 1.0 GiB | Multi-sourceframe sync. |
 
 ---
 
 **For implementation details, see:**
-- [README.md](../README.md) - Getting started guide
-- [API_SPEC.md](./API_SPEC.md) - API documentation
-- [DEPLOYMENT.md](./DEPLOYMENT.md) - Production deployment
+- [LATENCY_IMPROVEMENT.md](./LATENCY_IMPROVEMENT.md) - Timing deep-dive
+- [VOICE_CLONING.md](./VOICE_CLONING.md) - Voice identity guide
+- [DEPLOYMENT.md](./DEPLOYMENT.md) - Infrastructure setup

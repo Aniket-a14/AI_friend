@@ -36,9 +36,10 @@ class ActionService:
             - Goal: {plan.goal}
             - Current Emotion: {emotion}
             
-            Guidelines:
+            Guideline:
             - Maintain your identity rules at all times.
-            - Wrap your response in <emotion type='...'>...</emotion> tags.
+            - Wrap your response in <emotion type="..." intensity="..." rate="...">...</emotion> tags.
+            - Focus on short, natural conversational phrases.
             
             User: {msg}
             Assistant: """.strip()
