@@ -146,13 +146,23 @@ class VoiceAgent(BaseAgent):
     async def start(self):
         await self.connect()
         
-        # 1. Warm-start Identity
+        # 1. Warm-start Identity (with Retry Logic for Docker startup)
         if Config.CUSTOM_GPT_PATH or Config.CUSTOM_SOVITS_PATH:
-            if Config.CUSTOM_GPT_PATH:
-                await self.sovits.set_gpt_weights(Config.CUSTOM_GPT_PATH)
-            if Config.CUSTOM_SOVITS_PATH:
-                await self.sovits.set_sovits_weights(Config.CUSTOM_SOVITS_PATH)
-            logger.info("✅ Persistent Voice Identity 'ai_friend_voice' loaded.")
+            retries = 5
+            for i in range(retries):
+                try:
+                    if Config.CUSTOM_GPT_PATH:
+                        await self.sovits.set_gpt_weights(Config.CUSTOM_GPT_PATH)
+                    if Config.CUSTOM_SOVITS_PATH:
+                        await self.sovits.set_sovits_weights(Config.CUSTOM_SOVITS_PATH)
+                    logger.info("✅ Persistent Voice Identity 'ai_friend_voice' loaded.")
+                    break
+                except Exception as e:
+                    if i < retries - 1:
+                        logger.warning(f"⏳ SoVITS API not ready (Attempt {i+1}/{retries}). Retrying in 10s...")
+                        await asyncio.sleep(10)
+                    else:
+                        logger.error(f"❌ Failed to load Voice Identity after {retries} attempts: {e}")
 
         # 2. Start CVS Runtime Loops
         self.active_tasks.append(asyncio.create_task(self._synthesis_loop()))

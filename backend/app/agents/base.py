@@ -34,7 +34,7 @@ class BaseAgent:
     async def _bootstrap_mesh(self):
         """Ensure core streams exist on the mesh."""
         core_streams = {
-            "AI_MESSAGES": ["chat.*", "vision.*", "state.*", "cmd.*"],
+            "AI_MESSAGES": ["chat.*", "vision.*", "state.*", "cmd.*", "voice.*"],
             "AI_AUDIO": ["audio.*"]
         }
         
@@ -51,8 +51,20 @@ class BaseAgent:
                 await jsm.add_stream(name=stream_name, subjects=subjects)
                 logger.info(f"Created NATS Stream: {stream_name} {subjects}")
             except nats.js.errors.BadRequestError:
-                # Stream likely already exists
-                pass
+                # Stream likely already exists, verify subjects
+                try:
+                    info = await jsm.stream_info(stream_name)
+                    current_subjects = set(info.config.subjects or [])
+                    required_subjects = set(subjects)
+                    
+                    if not required_subjects.issubset(current_subjects):
+                        logger.info(f"Updating NATS Stream '{stream_name}' with additional subjects...")
+                        config = info.config
+                        config.subjects = list(current_subjects.union(required_subjects))
+                        await jsm.update_stream(config)
+                        logger.info(f"✅ Stream '{stream_name}' synchronized successfully.")
+                except Exception as update_err:
+                    logger.debug(f"Stream update note: {update_err}")
             except Exception as e:
                 logger.debug(f"Stream bootstrap note: {e}")
 

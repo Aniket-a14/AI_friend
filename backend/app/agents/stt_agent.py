@@ -19,7 +19,8 @@ class STTAgent(BaseAgent):
     def __init__(self, model_size=Config.STT_MODEL_SIZE, device=Config.STT_DEVICE):
         super().__init__(name="stt_agent")
         self.stt_service = WhisperSTTService(model_size=model_size, device=device)
-        self.target_sample_rate = Config.SAMPLE_RATE
+        # STT pipeline (VAD/Whisper) strictly requires 16kHz
+        self.target_sample_rate = self.stt_service.sample_rate
 
     async def start(self):
         """Standard startup sequence for Micro-Agents"""
