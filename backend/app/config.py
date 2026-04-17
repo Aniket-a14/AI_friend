@@ -39,6 +39,9 @@ class Config:
 
     # Audio Settings
     SAMPLE_RATE = 32000
+    BINARY_SUBJECTS = ["audio.inbound", "audio.stream"]
+    FEEDBACK_ALPHA = 0.70 # Smoothing for CVS-1.0
+    MAX_VOICE_QUEUE_SIZE = 10 # Backpressure threshold
 
     @staticmethod
     def validate():

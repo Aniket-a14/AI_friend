@@ -1,6 +1,8 @@
 from neo4j import GraphDatabase
 import logging
 import os
+import time
+import json
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -13,21 +15,42 @@ class GraphDB:
         user = user or os.getenv("NEO4J_USER", "neo4j")
         password = password or os.getenv("NEO4J_PASSWORD", "password123")
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        
+        # CVS-1.0 Phase 2: Perceptual Belief Cache
+        self._belief_cache = {} 
+        self._cache_ttl = 300 # 5 minutes
 
     def close(self):
         self.driver.close()
 
-    async def execute_query(self, query, parameters=None):
-        """Generic query execution."""
-        # Note: Using synchronous session for compatibility with legacy pattern in this env.
+    def _invalidate_cache(self, affected_entity: str = None):
+        """Flush cache to prevent stale context."""
+        self._belief_cache.clear()
+        if affected_entity:
+            logger.debug(f"Graph Store: Cache flushed due to update in '{affected_entity}'")
+
+    async def execute_query(self, query, parameters=None, use_cache=False):
+        """Generic query execution with TTL caching."""
+        cache_key = (query, json.dumps(parameters) if parameters else None)
+        
+        if use_cache and cache_key in self._belief_cache:
+            ts, result = self._belief_cache[cache_key]
+            if time.time() - ts < self._cache_ttl:
+                return result
+        
         with self.driver.session() as session:
             result = session.run(query, parameters)
-            return [record for record in result]
+            records = [record for record in result]
+            
+            if use_cache:
+                self._belief_cache[cache_key] = (time.time(), records)
+            return records
 
     async def create_entity(self, label: str, name: str, properties: Dict[str, Any] = None):
         """
         Creates/Updates a node with metadata: certainty, source, version.
         """
+        self._invalidate_cache(name)
         props = properties or {}
         props['name'] = name
         props.setdefault('certainty', 1.0)
@@ -52,6 +75,7 @@ class GraphDB:
         Creates a relationship with properties (e.g., TrustLevel, weight).
         Adheres to UPPER_SNAKE_CASE for relationships.
         """
+        self._invalidate_cache(subject_name)
         rel_type = relation.upper().replace(" ", "_")
         s_label = subject_label[0].upper() + subject_label[1:]
         t_label = target_label[0].upper() + target_label[1:]

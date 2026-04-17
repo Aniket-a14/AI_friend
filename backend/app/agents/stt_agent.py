@@ -5,6 +5,8 @@ import asyncio
 from .base import BaseAgent
 from ..whisper_stt_service import WhisperSTTService
 import soxr
+import time
+from typing import Any
 from ..config import Config
 
 logger = logging.getLogger("stt_agent")
@@ -19,66 +21,112 @@ class STTAgent(BaseAgent):
     def __init__(self, model_size=Config.STT_MODEL_SIZE, device=Config.STT_DEVICE):
         super().__init__(name="stt_agent")
         self.stt_service = WhisperSTTService(model_size=model_size, device=device)
-        # STT pipeline (VAD/Whisper) strictly requires 16kHz
         self.target_sample_rate = self.stt_service.sample_rate
+        
+        # CVS-1.0 Phase 2: Temporal Intent Model
+        from collections import deque
+        self.intent_window = deque(maxlen=5) # 5 frames (~1sec max)
+        self.interrupt_intent_threshold = 0.75
+        self.stability_required = 3 # Consecutive high-intent frames
+        
+        self.intent_patterns = {
+            "stop": ["stop", "quiet", "shut", "silence"],
+            "wait": ["wait", "hold", "just", "hang"],
+            "negation": ["no", "nah", "wrong", "nope"],
+            "hey": ["hey", "listen", "alex", "friend"] # Personality triggers
+        }
 
     async def start(self):
         """Standard startup sequence for Micro-Agents"""
         await self.connect()
-
-        # Load the model
         await self.stt_service.load_model()
         self.stt_service.start()
-
-        # Subscribe to inbound audio from TransportAgent
+        
         await self.subscribe(
             "audio.inbound", self._on_audio_inbound, deliver_policy="new"
         )
-        logger.info(f"🎙️ {self.name} started and listening to audio.inbound")
+        logger.info(f"🎙️ {self.name} online | Temporal Intent Detection (Stability-Gated) Active.")
 
-    async def _on_audio_inbound(self, data: dict):
-        """Process real-time PCM frames from the mesh"""
+    async def _on_audio_inbound(self, data: Any, metadata: dict = None):
+        """Process real-time PCM frames (supports binary & json fallback)."""
         try:
-            audio_b64 = data.get("audio")
-            source_sr = data.get("sample_rate", 48000)
+            if isinstance(data, bytes):
+                audio_bytes = data
+                source_sr = metadata.get("sample_rate", 48000) if metadata else 48000
+            else:
+                audio_bytes = base64.b64decode(data.get("audio", ""))
+                source_sr = data.get("sample_rate", 48000)
 
-            if not audio_b64:
+            if not audio_bytes:
                 return
 
-            # 1. Decode and normalize
-            audio_bytes = base64.b64decode(audio_b64)
-            audio_np = (
-                np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-            )
-
-            # 2. Resample if necessary (Whisper expects 16kHz)
-            # 2. Resample if necessary (Whisper expects 16kHz)
+            audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
             if source_sr != self.target_sample_rate:
                 audio_np = soxr.resample(audio_np, source_sr, self.target_sample_rate)
-
-            # 3. Convert back to 16-bit PCM for VAD
+            
             pcm_16 = (audio_np * 32767).astype(np.int16).tobytes()
 
-            # 4. Process through VAD/Whisper
-            result = self.stt_service.process_frame(pcm_16)
+            res = self.stt_service.process_frame(pcm_16)
+            if not res:
+                return
 
-            # 5. Handle Interruption
-            # If the service detects the user is speaking, signal the VoiceAgent to stop
-            if (
-                self.stt_service.is_speaking
-                and self.stt_service.silence_start_time is None
-            ):
-                await self.publish("audio.stop", {"interrupt": True})
+            text, is_final, is_partial = res
+            result_data, confidence = text if isinstance(text, tuple) else (text, 0.9)
 
-            if result:
-                text, is_final = result
-                if is_final:
-                    logger.info(f"User said: {text}")
-                    # 6. Trigger Brain for reasoning
-                    await self.publish("chat.input", {"text": text})
+            # --- CVS-1.0 TEMPORAL INTENT PIPELINE ---
+            if is_partial:
+                await self._evaluate_temporal_intent(result_data, confidence)
+                return
+
+            if is_final:
+                logger.info(f"User: {result_data}")
+                self.intent_window.clear() # Reset window on turn completion
+                await self.publish("chat.input", {"text": result_data, "latency_metadata": metadata})
 
         except Exception as e:
-            logger.error(f"Error processing inbound audio: {e}")
+            logger.error(f"STT Inbound Error: {e}")
+
+    async def _evaluate_temporal_intent(self, text: str, confidence: float):
+        """
+        Treats interruption as a temporal intent detection problem.
+        Stability-Gating: Intent score must be consistent across a rolling window.
+        """
+        try:
+            now = time.time()
+            words = text.lower().replace("[", "").replace("]", "").split()
+            
+            # 1. Intent Classification (Score calculation)
+            intent_score = 0.0
+            matched_count = 0
+            for category, patterns in self.intent_patterns.items():
+                matches = [w for w in words if w in patterns]
+                if matches:
+                    matched_count += len(matches)
+            
+            # Weighted Intent Score: (Matches * Confidence) / Semantic Ratio
+            if words:
+                intent_score = (matched_count * confidence) / (len(words) ** 0.5)
+            
+            # Clamp intent_score
+            intent_score = min(1.0, intent_score)
+            
+            # 2. Add to Rolling Window
+            self.intent_window.append((now, intent_score))
+            
+            # 3. Stability Condition Check
+            # Only consider the last 250ms of windows
+            recent_frames = [f for f in self.intent_window if now - f[0] < 0.250]
+            
+            if len(recent_frames) >= self.stability_required:
+                avg_intent = sum(f[1] for f in recent_frames) / len(recent_frames)
+                
+                if avg_intent > self.interrupt_intent_threshold:
+                    logger.warning(f"🛑 [TEMPORAL INTENT] Confirmed Stability ({avg_intent:.2f}) over {len(recent_frames)} frames. Triggering Interrupt.")
+                    self.intent_window.clear() # Fire once
+                    await self.publish("audio.stop", {"interrupt": True, "intent_score": avg_intent})
+                    
+        except Exception as e:
+            logger.error(f"Error in temporal intent detection: {e}")
 
 
 async def main():
