@@ -49,3 +49,11 @@ secrets/
 *.ogg
 *.flac
 *.webm
+
+# Models (Large Files & Personal Data)
+models/
+**/*.pth
+**/*.ckpt
+**/*.bin
+**/*.onnx
+**/*.safe_tensors

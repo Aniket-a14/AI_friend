@@ -179,6 +179,8 @@ services:
     volumes:
       - voice_models:/workspace/models/pretrained_models
       - ./backend/voice_samples:/workspace/GPT-SoVITS/output
+      - ./models/GPT_weights:/workspace/GPT-SoVITS/GPT_weights
+      - ./models/SoVITS_weights:/workspace/GPT-SoVITS/SoVITS_weights
     environment:
       - is_half=false
       - CUDA_VISIBLE_DEVICES=-1
