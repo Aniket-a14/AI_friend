@@ -38,7 +38,7 @@ class Config:
     STT_DEVICE = os.getenv("STT_DEVICE", "cpu")
 
     # Audio Settings
-    SAMPLE_RATE = 16000
+    SAMPLE_RATE = 32000
 
     @staticmethod
     def validate():

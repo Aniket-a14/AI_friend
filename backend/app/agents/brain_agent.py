@@ -3,8 +3,7 @@ import logging
 import uuid
 import time
 from datetime import datetime
-from typing import Dict, Any, AsyncGenerator, List
-import re
+from typing import Dict, Any, List
 
 from .base import BaseAgent
 from ..llm.ollama_client import OllamaClient

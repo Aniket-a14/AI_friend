@@ -22,7 +22,8 @@ class BaseAgent:
     async def connect(self):
         """Connect to the NATS Mesh and bootstrap streams."""
         try:
-            self.nc = await nats.connect(self.nats_url)
+            # Add timeout to prevent indefinite hangs if NATS is down
+            self.nc = await nats.connect(self.nats_url, connect_timeout=10)
             self.js = self.nc.jetstream()
             await self._bootstrap_mesh()
             logger.info(f"Agent '{self.name}' connected to mesh at {self.nats_url}")
