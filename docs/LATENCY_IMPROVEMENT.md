@@ -80,11 +80,11 @@ The rest of this report details our findings: profiling methods, component optim
 sequenceDiagram
     participant U as User
     participant MIC as AudioInput
-    participant STT as STT Model
+    participant STT as "STT Model"
     participant Brain as AI Brain
-    participant Mem as Memory/ANN Index
-    participant LLM as Local LLM
-    participant TTS as TTS Model
+    participant Mem as "Memory/ANN Index"
+    participant LLM as "Local LLM"
+    participant TTS as "TTS Model"
     participant SPK as Speaker
 
     U->>MIC: "speak()"
@@ -104,12 +104,12 @@ sequenceDiagram
 sequenceDiagram
     participant U as User
     participant MIC as AudioInput
-    participant STT as STT Model
+    participant STT as "STT Model"
     participant Brain as AI Brain
-    participant Cache as Local Cache
-    participant LLM_L as Local LLM
-    participant LLM_R as Remote LLM (API)
-    participant TTS as TTS Model
+    participant Cache as "Local Cache"
+    participant LLM_L as "Local LLM"
+    participant LLM_R as "Remote LLM (API)"
+    participant TTS as "TTS Model"
     participant SPK as Speaker
 
     U->>MIC: "speak()"

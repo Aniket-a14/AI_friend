@@ -65,23 +65,23 @@ We have eliminated the "WAV Header Tax" in v3.1.
 
 ```mermaid
 graph TB
-    subgraph Client [User Client]
-        MIC[Audio Capture]
-        PCM_PLAYER[PCM Stream Player]
+    subgraph Client ["User Client"]
+        MIC["Audio Capture"]
+        PCM_PLAYER["PCM Stream Player"]
     end
 
-    subgraph Parallel_Mesh [Sovereign Mesh - Parallel BDI]
+    subgraph Parallel_Mesh ["Sovereign Mesh - Parallel BDI"]
         STT["STT Agent<br/>Faster Whisper"]
         VOICE["Voice Agent<br/>SoVITS PCM"]
         
-        subgraph Brain_Core [Brain Agent]
+        subgraph Brain_Core ["Brain Agent"]
             DECISION["Decision Service<br/>Hybrid Router"]
             ACTION["Action Service<br/>Streamer"]
             
-            subgraph Parallel_Hydration [Asyncio Gather]
+            subgraph Parallel_Hydration ["Asyncio Gather"]
                 NEO4J[("Neo4j Graph")]
-                PG[(PGVector SM)]
-                STATE[Trait Engine]
+                PG[("PGVector SM")]
+                STATE["Trait Engine"]
             end
         end
     end
