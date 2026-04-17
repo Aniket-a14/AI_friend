@@ -197,10 +197,10 @@ Finally, we include two mermaid diagrams to illustrate the system:
 ```mermaid
 flowchart TB
   subgraph Agents
-    Ear((Ear Agent)) 
-    Brain((Brain Agent)) 
-    Voice((Voice Agent))
-    Percep((Perception Agent))
+    Ear(("Ear Agent")) 
+    Brain(("Brain Agent")) 
+    Voice(("Voice Agent"))
+    Percep(("Perception Agent"))
   end
   subgraph Memory
     Vec[(Vector DB)]
@@ -208,7 +208,7 @@ flowchart TB
     STM[("Short-Term Memory in RAM")]
   end
   User-->|"Hi (audio)"| Ear
-  Ear--> NATSJet(NATS JetStream)
+  Ear--> NATSJet("NATS JetStream")
   Percep--> NATSJet
   Brain--> NATSJet
   NATSJet --> Ear
@@ -223,15 +223,15 @@ flowchart TB
 ```mermaid
 flowchart TD
   subgraph DecisionFlow
-    U[User Utterance] --> Pre{Preprocessing}
-    Pre --> Intent[Intent Classifier]
-    Intent --> GoalSel[Goal Selection]
-    GoalSel --> Plan[Behavior Tree / Planner]
-    Plan --> Gen[Generate Response (LLM)]
+    U["User Utterance"] --> Pre{Preprocessing}
+    Pre --> Intent["Intent Classifier"]
+    Intent --> GoalSel["Goal Selection"]
+    GoalSel["Goal Selection"] --> Plan["Behavior Tree / Planner"]
+    Plan --> Gen["Generate Response (LLM)"]
     Gen --> Score{Score Candidates}
-    Score --> Select[Select Best Response]
+    Score --> Select["Select Best Response"]
     Select --> Valid{Persona Check}
-    Valid -->|Pass| Speak[Voice Output]
-    Valid -->|Fail| Regenerate[Regenerate Response]
+    Valid -->|Pass| Speak["Voice Output"]
+    Valid -->|Fail| Regenerate["Regenerate Response"]
   end
 ```
