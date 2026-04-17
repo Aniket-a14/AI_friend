@@ -87,16 +87,16 @@ sequenceDiagram
     participant TTS as TTS Model
     participant SPK as Speaker
 
-    U->>MIC: speak()
+    U->>MIC: "speak()"
     MIC->>STT: audioFrames
     STT-->>Brain: transcript
-    Brain->>Mem: search(context)
+    Brain->>Mem: "search(context)"
     Mem-->>Brain: relevantContext
-    Brain->>LLM: prompt(text+context)
+    Brain->>LLM: "prompt(text+context)"
     LLM-->>Brain: responseText
-    Brain->>TTS: synthesize(responseText)
+    Brain->>TTS: "synthesize(responseText)"
     TTS-->>SPK: audioOutput
-    SPK->>U: speak(response)
+    SPK->>U: "speak(response)"
 ```
 *Figure 1: Local inference pipeline. The user speaks; audio is captured and fed to a streaming STT. The Brain component retrieves memory, calls the local LLM, then runs TTS on the reply. All processing is on-device for <300 ms latency.*  
 
@@ -112,28 +112,28 @@ sequenceDiagram
     participant TTS as TTS Model
     participant SPK as Speaker
 
-    U->>MIC: speak()
+    U->>MIC: "speak()"
     MIC->>STT: audioFrames
     STT-->>Brain: transcript
-    Brain->>Cache: lookup(query)
+    Brain->>Cache: "lookup(query)"
     alt Cache hit
       Cache-->>Brain: cachedResponse
-      Brain->>TTS: synthesize(cachedResponse)
+      Brain->>TTS: "synthesize(cachedResponse)"
     else Cache miss
-      Brain->>LLM_L: prompt(query)
+      Brain->>LLM_L: "prompt(query)"
       LLM_L-->>Brain: responseLocal
       alt responseLocal confident
-        Brain->>Cache: store(query, responseLocal)
-        Brain->>TTS: synthesize(responseLocal)
+        Brain->>Cache: "store(query, responseLocal)"
+        Brain->>TTS: "synthesize(responseLocal)"
       else 
-        Brain->>LLM_R: API(query)
+        Brain->>LLM_R: "API(query)"
         LLM_R-->>Brain: responseRemote
-        Brain->>Cache: store(query, responseRemote)
-        Brain->>TTS: synthesize(responseRemote)
+        Brain->>Cache: "store(query, responseRemote)"
+        Brain->>TTS: "synthesize(responseRemote)"
       end
     end
     TTS-->>SPK: audioOutput
-    SPK->>U: speak(response)
+    SPK->>U: "speak(response)"
 ```
 *Figure 2: Hybrid pipeline with local cache. The agent first checks a local response cache; if not found, it queries a local LLM. If confidence is low, it falls back to a remote API. Responses are cached and then sent to TTS.*  
 

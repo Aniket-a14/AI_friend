@@ -205,9 +205,9 @@ flowchart TB
   subgraph Memory
     Vec[(Vector DB)]
     Graph[(Graph DB)]
-    STM[(Short-Term Memory in RAM)]
+    STM[("Short-Term Memory in RAM")]
   end
-  User-->|“Hi” (audio)| Ear
+  User-->|"Hi (audio)"| Ear
   Ear--> NATSJet(NATS JetStream)
   Percep--> NATSJet
   Brain--> NATSJet
@@ -217,7 +217,7 @@ flowchart TB
   Brain --> Graph
   Brain --> STM
   Brain --> Voice
-  Voice --> AudioOut([Speaker])
+  Voice --> AudioOut(["Speaker"])
 ```
 
 ```mermaid
