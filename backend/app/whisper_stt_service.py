@@ -76,7 +76,7 @@ class WhisperSTTService:
         self.speech_start_time = None
 
     def process_frame(self, pcm_data: bytes):
-        """Processes real-time PCM data; returns (text, is_final) if complete."""
+        """Processes real-time PCM data; returns (text, is_final, is_partial) if complete/partial."""
         if not self.active or not self.model:
             return None
 
@@ -93,14 +93,22 @@ class WhisperSTTService:
                 if not self.is_speaking:
                     self.is_speaking = True
                     self.speech_start_time = time.time()
+                    self.last_partial_time = time.time()
                 self.silence_start_time = None
                 self.audio_buffer.append(frame)
 
-                # Check for forced break
+                # 1. Early Intent Trigger (Partial lookahead every 800ms)
+                if time.time() - getattr(self, "last_partial_time", 0) > 0.8:
+                    self.last_partial_time = time.time()
+                    text = self.transcribe(is_partial=True)
+                    if text:
+                        return text, False, True
+
+                # 2. Check for forced break
                 if self.speech_start_time and (
                     time.time() - self.speech_start_time > self.max_utterance_duration
                 ):
-                    return self.transcribe()
+                    return self.transcribe(), True, False
             else:
                 if self.is_speaking:
                     if self.silence_start_time is None:
@@ -108,9 +116,9 @@ class WhisperSTTService:
 
                     self.audio_buffer.append(frame)
 
-                    # Cut-off logic
+                    # Cut-off logic (Final)
                     if time.time() - self.silence_start_time > self.silence_threshold:
-                        return self.transcribe()
+                        return self.transcribe(), True, False
 
         return None
 
@@ -133,8 +141,8 @@ class WhisperSTTService:
 
         return f"[{volume} Volume {pace}]".replace("  ", " ").strip()
 
-    def transcribe(self):
-        """Execute Whisper transcription on buffered audio."""
+    def transcribe(self, is_partial=False):
+        """Execute Whisper transcription on buffered audio (supports partial lookahead)."""
         if not self.audio_buffer or not self.model:
             return None
 
@@ -144,7 +152,10 @@ class WhisperSTTService:
         )
 
         sonic_label = self._analyze_sonic_cues(audio_np)
-        self.reset()  # Immediate reset for next capture
+        
+        # Only reset on final transcription
+        if not is_partial:
+            self.reset()
 
         try:
             segments, _ = self.model.transcribe(
@@ -155,7 +166,16 @@ class WhisperSTTService:
                 initial_prompt="A natural conversation between two friends.",
             )
 
-            raw_text = " ".join([s.text for s in segments]).strip()
+            segments_list = list(segments)
+            if not segments_list:
+                return None
+
+            raw_text = " ".join([s.text for s in segments_list]).strip()
+            # Calculate average probability as confidence
+            confidence = sum([s.avg_logprob for s in segments_list]) / len(segments_list)
+            # Convert logprob to 0.0-1.0 roughly (Exp approximation)
+            confidence = min(1.0, max(0.0, np.exp(confidence)))
+
             if not raw_text or len(raw_text) < 2:
                 return None
 
@@ -168,8 +188,8 @@ class WhisperSTTService:
                 unique_words.append(word)
 
             final_text = f"{sonic_label} {' '.join(unique_words)}".strip()
-            logger.info(f"🎙️ User: {final_text}")
-            return final_text, True
+            logger.info(f"🎙️ STT ({'Partial' if is_partial else 'Final'}): {final_text} [Conf: {confidence:.2f}]")
+            return final_text, confidence
 
         except Exception as e:
             logger.error(f"Transcription failed: {e}")

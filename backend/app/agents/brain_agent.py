@@ -93,11 +93,17 @@ class BrainAgent(BaseAgent):
         logger.info(f"🧠 {self.name} Online | CVS-1.0 Cognitive Mesh Active.")
 
     async def _on_voice_feedback(self, data: Dict[str, Any]):
-        """Adaptive Tuning Loop (CVS-1.0 closed loop)."""
+        """Adaptive Tuning Loop (CVS-1.0 alpha-damped loop)."""
         target = data.get("target_chunk_size", 8)
-        if target != self.segmenter.target_size:
-            logger.info(f"📈 Tuning Segmentation Strategy | Target Size: {target}")
-            self.segmenter.target_size = target
+        alpha = getattr(Config, "FEEDBACK_ALPHA", 0.7)
+        
+        # Alpha-damped damping to prevent jittery speech fragmentation
+        smoothed_size = (alpha * self.segmenter.target_size) + ((1 - alpha) * target)
+        new_size = int(round(smoothed_size))
+        
+        if new_size != self.segmenter.target_size:
+            logger.info(f"📈 Tuning Segmentation | Target: {target} -> Smoothed: {new_size}")
+            self.segmenter.target_size = new_size
 
     async def _on_vision_frame(self, data: Dict[str, Any]):
         source = data.get("source", "unknown")

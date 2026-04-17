@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import base64
 import time
 import numpy as np
 from enum import Enum
@@ -182,83 +181,79 @@ class VoiceAgent(BaseAgent):
                 self.state = new_state
                 await self.set_state(new_state.value.lower())
 
-    async def _handle_input(self, data: Dict[str, Any]):
-        """Ingest chunked text with CVS metadata."""
+    async def _handle_input(self, data: Dict[str, Any], metadata: dict = None):
+        """Ingest chunked text with backpressure awareness."""
         text = data.get("content", "").strip()
         if not text and not data.get("done"):
             return
 
-        # 1. Metadata Validation & Clamping
+        # 1. Backpressure Guard (Phase 2 Hardening)
+        current_load = self.ingestion_queue.qsize()
+        max_load = getattr(Config, "MAX_VOICE_QUEUE_SIZE", 10)
+        
+        if current_load >= max_load:
+            logger.warning(f"🚨 Backpressure: Voice Queue Saturated ({current_load}/{max_load}). Dropping low-priority segment.")
+            if len(text.split()) > 5: # Drop long non-filler segments
+                return
+
+        # 2. Metadata Validation & Clamping
         intensity = max(0.0, min(1.0, data.get("emotional_intensity", 0.5)))
         rate = max(0.5, min(2.0, data.get("speaking_rate", 1.0)))
-        confidence = max(0.0, min(1.0, data.get("confidence", 0.9)))
         emotion = data.get("emotion", "neutral")
         
-        # 2. Priority Assignment
-        # High: short fillers/acknowledgments
-        priority = 2 # Medium
-        if len(text.split()) < 3 and "hmm" in text.lower() or "oh" in text.lower():
-            priority = 1 # High
-        elif len(text.split()) > 10:
-            priority = 3 # Low
-
-        # 3. Emergency Segmenter Override
-        if len(text.split()) > 15:
-            self.override_count += 1
-            logger.warning(f"⚠️ Segmenter Override ({self.override_count}) | Chunk too large.")
-            parts = self._force_split(text)
-            for part in parts:
-                await self.ingestion_queue.put((priority, {
-                    "text": part, "emotion": emotion, "intensity": intensity, 
-                    "rate": rate, "confidence": confidence, "timestamp": time.time()
-                }))
-        else:
-            await self.ingestion_queue.put((priority, {
-                "text": text, "emotion": emotion, "intensity": intensity, 
-                "rate": rate, "confidence": confidence, "timestamp": time.time()
-            }))
+        # 3. Priority Assignment
+        priority = 2 
+        if len(text.split()) < 3 and ("hmm" in text.lower() or "oh" in text.lower()):
+            priority = 1 # Urgent Filler
+            
+        await self.ingestion_queue.put((priority, {
+            "text": text, "emotion": emotion, "intensity": intensity, 
+            "rate": rate, "timestamp": time.time(), "metadata": metadata
+        }))
 
     def _force_split(self, text: str) -> List[str]:
         words = text.split()
         return [" ".join(words[i:i+8]) for i in range(0, len(words), 8)]
 
     async def _synthesis_loop(self):
-        """Worker: Pops from ingestion queue, synthesizes, and normalizes."""
+        """Worker: Pops from ingestion queue with Concurrency Guard (Semaphore)."""
+        # Ensure only one synthesis happens at a time to preserve GPU health
+        sem = asyncio.Semaphore(1)
+        
         while True:
             try:
                 priority, item = await self.ingestion_queue.get()
                 text = item["text"]
                 
-                # Check Cache
-                cached_audio = self.cache.get(text, item["emotion"], item["rate"])
-                if cached_audio:
-                    await self.playback_queue.put(cached_audio)
-                    continue
+                async with sem:
+                    # Check Cache
+                    cached_audio = self.cache.get(text, item["emotion"], item["rate"])
+                    if cached_audio:
+                        await self.playback_queue.put((cached_audio, item["metadata"]))
+                        self.ingestion_queue.task_done()
+                        continue
 
-                # Synthesis (Async SoVITS)
-                await self._set_playback_state(VoicePlaybackState.BUFFERING)
-                
-                # Performance Milestone: SYNTH_START
-                start_synth = time.time()
-                full_pcm = b""
-                
-                async for chunk in self.sovits.synthesize_stream(
-                    text=text,
-                    ref_audio_path=self.ref_audio_path,
-                    ref_text=self.ref_text,
-                    media_type="raw"
-                ):
-                    if chunk:
-                        full_pcm += chunk
-                
-                if full_pcm:
-                    # Signal Rendering: Adaptive Normalization
-                    clean_pcm = self.normalizer.process(full_pcm, speaking_rate=item["rate"])
-                    self.cache.set(text, item["emotion"], item["rate"], clean_pcm)
-                    await self.playback_queue.put(clean_pcm)
+                    # Synthesis (Async SoVITS)
+                    await self._set_playback_state(VoicePlaybackState.BUFFERING)
+                    start_synth = time.time()
+                    full_pcm = b""
                     
-                    elapsed = (time.time() - start_synth) * 1000
-                    logger.info(f"🔊 Synth Done | '{text[:20]}...' | Time: {elapsed:.2f}ms")
+                    async for chunk in self.sovits.synthesize_stream(
+                        text=text,
+                        ref_audio_path=self.ref_audio_path,
+                        ref_text=self.ref_text,
+                        media_type="raw"
+                    ):
+                        if chunk:
+                            full_pcm += chunk
+                    
+                    if full_pcm:
+                        clean_pcm = self.normalizer.process(full_pcm, speaking_rate=item["rate"])
+                        self.cache.set(text, item["emotion"], item["rate"], clean_pcm)
+                        await self.playback_queue.put((clean_pcm, item["metadata"]))
+                        
+                        elapsed = (time.time() - start_synth) * 1000
+                        logger.info(f"🔊 Synth Done | '{text[:15]}' | Time: {elapsed:.2f}ms")
                 
                 self.ingestion_queue.task_done()
             except Exception as e:
@@ -266,23 +261,25 @@ class VoiceAgent(BaseAgent):
                 await asyncio.sleep(0.1)
 
     async def _playback_loop(self):
-        """Worker: Publishes PCM chunks to 'audio.stream' sequentially."""
+        """Worker: Publishes BINARY PCM chunks to 'audio.stream'."""
         while True:
             try:
-                pcm_data = await self.playback_queue.get()
+                pcm_data, meta = await self.playback_queue.get()
                 await self._set_playback_state(VoicePlaybackState.PLAYING)
                 
-                # Timestamp-based Scheduling (Baseline Jitter Buffer)
+                # Jitter Buffer Stabilization
                 await asyncio.sleep(self.jitter_buffer)
                 
-                # Publish Chunk
-                audio_b64 = base64.b64encode(pcm_data).decode("utf-8")
-                await self.publish("audio.stream", {
-                    "audio": audio_b64, 
-                    "format": "pcm", 
-                    "sample_rate": self.sample_rate,
-                    "timestamp": time.time()
-                })
+                # Direct Binary Transport (Phase 2)
+                # We use BaseAgent.publish which now handles binary + headers
+                await self.publish("audio.stream", pcm_data)
+                
+                self.last_audio_time = time.time()
+                self.playback_queue.task_done()
+                
+                if self.playback_queue.empty() and self.ingestion_queue.empty():
+                    await asyncio.sleep(0.2)
+                    await self._set_playback_state(VoicePlaybackState.IDLE)
                 
                 self.last_audio_time = time.time()
                 self.playback_queue.task_done()

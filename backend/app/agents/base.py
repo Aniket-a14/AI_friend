@@ -3,6 +3,7 @@ import logging
 import time
 import os
 import nats
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -68,34 +69,62 @@ class BaseAgent:
             except Exception as e:
                 logger.debug(f"Stream bootstrap note: {e}")
 
-    async def publish(self, subject: str, data: dict):
-        """Publish an event to the mesh with latency tracking."""
+    async def publish(self, subject: str, data: Any):
+        """Publish an event to the mesh with latency tracking and binary support."""
         if not self.js:
             await self.connect()
 
-        # Inject or propagate latency metadata
-        if "latency_metadata" not in data:
-            data["latency_metadata"] = {
-                "start_time": time.time(),
-                "hops": []
-            }
+        from ..config import Config
+
+        # 1. Prepare Metadata
+        meta = {
+            "start_time": time.time(),
+            "hops": [],
+            "source": self.name
+        }
         
-        data["latency_metadata"]["hops"].append({
+        # Propagate existing meta if present in dict data
+        if isinstance(data, dict) and "latency_metadata" in data:
+            meta = data["latency_metadata"]
+        
+        meta["hops"].append({
             "agent": self.name,
             "subject": subject,
             "timestamp": time.time()
         })
 
-        payload = json.dumps(data).encode()
-        await self.js.publish(subject, payload)
-        logger.debug(f"Agent '{self.name}' published to {subject}")
+        # 2. Determine Transport Mode
+        is_binary = subject in getattr(Config, "BINARY_SUBJECTS", [])
+        
+        try:
+            if is_binary and isinstance(data, (bytes, bytearray)):
+                # Direct Binary Transport with Headers
+                headers = {
+                    "X-Latency-Meta": json.dumps(meta),
+                    "X-Payload-Format": "binary/raw-pcm"
+                }
+                await self.js.publish(subject, data, headers=headers)
+            else:
+                # Standard JSON Transport
+                if isinstance(data, dict):
+                    data["latency_metadata"] = meta
+                payload = json.dumps(data).encode()
+                await self.js.publish(subject, payload)
+            
+            logger.debug(f"Agent '{self.name}' published to {subject} ({'binary' if is_binary else 'json'})")
+        except Exception as e:
+            logger.error(f"Failed to publish to {subject}: {e}")
 
-    def log_latency(self, data: dict, stage_name: str):
+    def log_latency(self, data: Any, stage_name: str):
         """Utility to log current latency relative to start_time."""
-        meta = data.get("latency_metadata")
+        meta = None
+        if isinstance(data, dict):
+            meta = data.get("latency_metadata")
+        
         if meta and "start_time" in meta:
             elapsed = (time.time() - meta["start_time"]) * 1000
-            logger.info(f"⏱️ [LATENCY] Stage '{stage_name}' | Total: {elapsed:.2f}ms")
+            # Track drift trends (Observability Hook)
+            logger.info(f"⏱️ [LATENCY] Stage '{stage_name}' | Total: {elapsed:.2f}ms | Hops: {len(meta['hops'])}")
             return elapsed
         return 0
 
@@ -103,16 +132,36 @@ class BaseAgent:
         self, subject: str, callback, durable: str = None, deliver_policy: str = "all"
     ):
         """
-        Subscribe to events on the mesh.
-        deliver_policy: "all" (start from beginning), "new" (start from now), etc.
+        Subscribe to events on the mesh with header validation and fallback.
         """
         if not self.js:
             await self.connect()
 
         async def _handler(msg):
-            data = json.loads(msg.data.decode())
-            await callback(data)
-            await msg.ack()
+            try:
+                # 1. Check for Binary Payload + Headers
+                if msg.headers and "X-Latency-Meta" in msg.headers:
+                    try:
+                        meta = json.loads(msg.headers["X-Latency-Meta"])
+                        # Return binary data as-is if it's the target format
+                        # or wrap it if the agent expects a dict with meta
+                        await callback(msg.data, metadata=meta)
+                    except Exception as he:
+                        logger.warning(f"Header validation failed on {subject}: {he}. Using fallback.")
+                        await callback(msg.data)
+                else:
+                    # 2. Standard JSON Fallback
+                    data = json.loads(msg.data.decode())
+                    await callback(data)
+                
+                await msg.ack()
+            except Exception as e:
+                logger.error(f"Subscription handler error on {subject}: {e}")
+                # Don't ack so it can be redelivered/investigated if necessary
+                # but in high-speed audio, we usually just drop and move on
+                await msg.ack()
+
+        # Generate a unique durable name... (keep rest of logic)
 
         # Generate a unique durable name based on the subject if not provided
         if not durable:
