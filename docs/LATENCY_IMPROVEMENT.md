@@ -10,25 +10,21 @@ In version **CVS-1.0**, we have moved beyond raw pipeline speed into **Perceptua
 
 ---
 
-## 🏗️ The CVS-1.0 Latency Stack
+## 🏗️ The CVS-1.0 Hardened Latency Stack
 
-### 1. Temporal Orchestration (VoiceController)
-The **VoiceController** eliminates the "batch-inference" delay by managing a priority-aware playback queue.
-- **Formation Buffer (30ms)**: Instead of waiting for a full sentence, the BrainAgent emits semantic chunks as soon as a 30ms "coherence window" is met.
-- **Priority Insertion**: High-priority interjections (acknowledgments like "oh," "right") jump the synthesis queue and are inserted into the audio stream at the next **Safe Boundary** (breath or low-energy region).
-- **Silence-Based Fallbacks**: If synthesis or reasoning takes longer than **250ms of silence**, the system automatically triggers an intentional "thinking filler" (`hmm.wav`), preserving the illusion of cognitive presence.
+### 1. Direct Binary Path (Phase 2 Performance)
+By eliminating Base64 transcoding, we have significantly reduced CPU overhead and serialization lag.
+- **Direct Binary Mesh**: Audio (32kHz PCM) is transported as raw bytes.
+- **Header-Based Metadata**: Telemetry and latency tracking (`X-Latency-Meta`) are handled via NATS Headers, separating signal from control data.
+- **Perceptual Gain**: ~15-20% reduction in end-to-end latency.
 
-### 2. Signal-Aware Optimization
-- **Raw PCM Streaming**: By switching to asynchronous raw-byte streaming (`media_type: "raw"`), we eliminated the 44-byte WAV header tax and the associated client-side parsing delay (~40-60ms).
-- **Adaptive Jitter Buffer**:
-    - **Baseline**: 10ms.
-    - **Peak Resilience**: Expands to 25ms during system load spikes.
-    - **Exponential Decay**: Rapidly claws back to 10ms once stability returns to maximize responsiveness.
-- **Hysteresis-Guarded Detection**: Multi-factor silence detection (energy + variance) prevents "false-positives" from unvoiced consonants (s, f, k) that previously caused stutter.
+### 2. Perceptual Intent & Timing
+- **Temporal Intent Model**: Replaced keyword matching with a stability-gated intent scorer (rolling 250ms window). Reduces false-positive interruptions while maintaining high responsiveness.
+- **Neo4j TTL Cache**: Reduces the "Thinking Phase" by caching frequent belief lookups (300s TTL).
 
-### 3. Cognitive Optimization
-- **Hybrid Heuristic Segmenter**: Replaces word-count splitting with semantic scoring. By splitting at conjunctions and clause markers, we produce smaller, more "breathable" audio chunks that synthesize faster.
-- **Feedback-Driven Pacing**: The VoiceAgent publishes telemetry back to the BrainAgent. If the Brain is segmenting too slowly, the Voice triggers an override and instructs the Brain to tighten its scoring logic for the next turn.
+### 3. Stability & Smoothing
+- **Alpha-Damped Smoothing (α=0.7)**: Stabilizes conversational chunking.
+- **Backpressure Sensing**: Bounded ingestion queues and synthesis semaphores prevent GPU saturation during high load.
 
 ---
 

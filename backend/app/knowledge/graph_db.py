@@ -4,6 +4,7 @@ import os
 import time
 import json
 from typing import Dict, Any
+from ..config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class GraphDB:
         
         # CVS-1.0 Phase 2: Perceptual Belief Cache
         self._belief_cache = {} 
-        self._cache_ttl = 300 # 5 minutes
+        self._cache_ttl = getattr(Config, "GRAPH_CACHE_TTL", 300)
 
     def close(self):
         self.driver.close()
