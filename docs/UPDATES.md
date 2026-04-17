@@ -157,7 +157,7 @@ Also implement *self-consistency passes*: after generating a reply, verify it us
 - **Monitoring Dashboards:** Set up real-time metrics for: response latency, memory hit rate (how often relevant memory was used), trust/mood values, and API error counts. Plot these in dashboards for ongoing observation.  
 
 ## 10. Migration Plan  
-**Stage 1 – Local Knowledge Integration:** Swap out cloud APIs where easy. For memory/context, migrate from Supabase to local stores (Neo4j + PGVector). For persona, load existing “AI Friend” data into Neo4j nodes.  
+**Stage 1 – Local Knowledge Integration:** Swap out cloud APIs where easy. For memory/context, migrate from Supabase to local stores (Neo4j + PGVector). For persona, load existing identity data into Neo4j nodes.
 **Stage 2 – Local LLMs:** Replace Gemini 2.5 / OpenAI with open models. Start with moderate-size: e.g. Meta LLaMA-3 7B or Mistral-7B for chat – these run on a single 24GB GPU. Evaluate quality; perhaps use Dolly/Cerebras/GPT4All variants for specific skills (like code or math).  
 **Stage 3 – Local TTS/STT:** Deploy Whisper (with small model) on-device. Train the voice clone with GPT-SoVITS or Coqui; switch audio to local engine. For fallback, keep ElevenLabs API but as last resort.  
 **Stage 4 – Optimize & Scale:** If needed, move to larger open LLMs (LLaMA-3 70B on multiple GPUs, or distributed inference) for better language, as hardware allows. Consider quantized 4-bit models (e.g. LLaMA-3-70B 4-bit) to fit GPUs.  

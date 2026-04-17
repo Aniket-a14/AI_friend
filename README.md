@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/license/MIT)
 [![Latency: Sub-300ms](https://img.shields.io/badge/Latency-%3C300ms-green.svg)](#performance-slos)
 [![Architecture: Parallel BDI](https://img.shields.io/badge/Architecture-Parallel%20BDI-orange.svg)](#architecture)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb)
 
 ---
 
@@ -24,7 +25,8 @@ The v3.1 architecture introduces the **Parallel Cognitive Loop**, which eliminat
 - **Parallel BDI Loop**: Perception, State Hydration, and Memory Retrieval fire in parallel via `asyncio.gather`, slashing cognitive overhead by **~73%**.
 - **Behavior Tree (BT) Engine**: Uses a modular Selector/Sequence BT logic for robust, goal-oriented decision making.
 - **Dual-Agent RAG**: A background "Slow Thinker" pre-fetches potential context into a fast in-memory cache for the "Fast Talker."
-- **Zero-Header PCM**: Migrated to raw 16-bit PCM streaming (22.05kHz) to eliminate header parsing latency.
+- **Zero-Header PCM**: Migrated to raw 16-bit PCM streaming (**48kHz**) to eliminate header parsing latency and achieve studio-quality fidelity.
+- **V4 Voice Engine**: Native support for GPT-SoVITS V4, fixing metallic artifacts and improving emotional prosody.
 
 ---
 
@@ -39,7 +41,7 @@ To achieve seamless human-like interaction, we enforce strict **Service Level Ob
 | **RAG Retrieval** | <10ms | HNSW / PGVector Semantic Cache |
 | **Cognitive Loop** | <50ms | Parallel BDI / BT Micro-Scaffold |
 | **LLM Inference** | <100ms | 4-bit Quantization / RTX 4090 |
-| **TTS Synthesis** | <60ms | PCM Streaming / Dia2-Turbo |
+| **TTS Synthesis** | <60ms | PCM Streaming (48kHz) / V4 Engine |
 | **Total E2E** | **<270ms** | **v3.1 Sovereign Mesh Standard** |
 
 ---
