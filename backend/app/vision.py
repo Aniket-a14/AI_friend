@@ -11,11 +11,18 @@ class ScreenLink:
     """High-performance primary monitor capture."""
 
     def __init__(self):
-        self.sct = mss.mss()
         try:
-            self.monitor = self.sct.monitors[1]
-        except IndexError:
-            self.monitor = self.sct.monitors[0]
+            self.sct = mss.mss()
+            try:
+                self.monitor = self.sct.monitors[1]
+            except IndexError:
+                self.monitor = self.sct.monitors[0]
+            self.headless = False
+        except Exception as e:
+            logger.warning(f"[Vision] Running in headless mode (No Display): {e}")
+            self.sct = None
+            self.monitor = None
+            self.headless = True
 
     def _compress_frame(self, frame: np.ndarray) -> Optional[bytes]:
         if frame is None:
@@ -33,6 +40,9 @@ class ScreenLink:
 
     def capture_frame(self) -> Optional[bytes]:
         """Captures and returns a compressed JPEG frame of the screen."""
+        if self.headless:
+            return None
+            
         try:
             sct_img = self.sct.grab(self.monitor)
             img = np.array(sct_img)

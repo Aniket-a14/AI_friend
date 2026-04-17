@@ -5,11 +5,16 @@
 Use this section to tell people about which versions of your project are
 currently being supported with security updates.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 2.1.x+ | :white_check_mark: |
-| 2.0.x   | :x:                |
+| 3.1.x+ | :white_check_mark: |
+| 2.x.x   | :x:                |
 | < 2.0   | :x:                |
+
+## Privacy-First Security
+
+AI Friend is designed with **Sovereign Privacy** as a core architectural requirement:
+- **Local Inference**: Default configurations use Ollama and local TTS to ensure no voice or reasoning data leaves your network.
+- **Air-Gapped Ready**: The system is designed to function without external internet access once models are cached.
+- **No Data Harvesting**: We do not collect telemetry or conversation logs.
 
 ## Reporting a Vulnerability
 

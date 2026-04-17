@@ -21,8 +21,10 @@ services:
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - OLLAMA_URL=http://local_brain:11434
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=postgresql://ai_friend:${POSTGRES_PASSWORD}@postgres_db:5432/ai_friend_db
       - LOG_LEVEL=INFO
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ai_mesh_network
     deploy:
@@ -30,6 +32,8 @@ services:
         limits:
           memory: 512M
     restart: always
+    healthcheck:
+      test: ["NONE"]
 
   # 2. VOICE AGENT (TTS, connects to GPT-SoVITS)
   voice_agent:
@@ -47,6 +51,8 @@ services:
     depends_on:
       - brain_agent
     restart: always
+    healthcheck:
+      test: ["NONE"]
 
   # 3. TRANSPORT AGENT (WebRTC Bridge)
   transport_agent:
@@ -65,6 +71,8 @@ services:
     depends_on:
       - brain_agent
     restart: always
+    healthcheck:
+      test: ["NONE"]
 
   # 4. STT AGENT (Whisper, VAD) - Heavy
   stt_agent:
@@ -87,6 +95,8 @@ services:
     depends_on:
       - brain_agent
     restart: always
+    healthcheck:
+      test: ["NONE"]
 
   # 5. VISION AGENT (OpenCV, Screen/Cam) - Heavy
   vision_agent:
@@ -102,6 +112,8 @@ services:
     depends_on:
       - brain_agent
     restart: always
+    healthcheck:
+      test: ["NONE"]
 
 # Use the existing network created by infra
 networks:

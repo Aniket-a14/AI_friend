@@ -13,14 +13,18 @@ class Config:
 
     # LiveKit Configuration (Sovereign Mesh)
     LIVEKIT_URL = os.getenv("LIVEKIT_URL", "http://localhost:7880")
-    LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "devkey")
-    LIVEKIT_API_SECRET = os.getenv(
-        "LIVEKIT_API_SECRET", "devsecret-at-least-thirty-two-characters-long"
-    )
+    LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
+    LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 
     # Memory & Personality
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # Still used for embeddings
     DATABASE_URL = os.getenv("DATABASE_URL")
+    
+    # Neo4j Graph Configuration
+    NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+    NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+    NEO4J_AUTH = os.getenv("NEO4J_AUTH") # user/pass format compatible with Docker
+    
     AI_NAME = os.getenv("AI_NAME", "AI Friend")
     OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
     SOVITS_URL = os.getenv("SOVITS_URL", "http://localhost:9871")
@@ -33,12 +37,12 @@ class Config:
     @staticmethod
     def validate():
         missing = []
-        if not Config.GEMINI_API_KEY:
-            missing.append("GEMINI_API_KEY")
         if not Config.DATABASE_URL:
             missing.append("DATABASE_URL")
         if not Config.LIVEKIT_API_KEY:
             missing.append("LIVEKIT_API_KEY")
+        if not Config.LIVEKIT_API_SECRET:
+            missing.append("LIVEKIT_API_SECRET")
 
         if missing:
             raise ValueError(f"Missing environment variables: {', '.join(missing)}")

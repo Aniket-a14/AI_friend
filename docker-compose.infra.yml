@@ -7,29 +7,29 @@ services:
     container_name: nats_mesh
     entrypoint: [ "/nats-server" ]
     command: [ "-js" ]
-    # ports:
-    #   - "4222:4222" # Client connections (Internal Mesh Only)
-    #   - "8222:8222" # HTTP monitoring
+    ports:
+      - "4222:4222" # Client connections
+      - "8222:8222" # HTTP monitoring
     working_dir: /
     networks:
       - ai_mesh_network
     restart: always
 
   # 2. PostgreSQL with PGVector (RAG + Conversation History)
-  # postgres:
-  #   image: pgvector/pgvector:pg16
-  #   container_name: postgres_db
-  #   environment:
-  #     POSTGRES_USER: ai_friend
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-  #     POSTGRES_DB: ai_friend_db
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   networks:
-  #     - ai_mesh_network
-  #   restart: always
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: ai_friend
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ai_friend_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ai_mesh_network
+    restart: always
 
   # 3. Neo4j (Knowledge Graph)
   neo4j:

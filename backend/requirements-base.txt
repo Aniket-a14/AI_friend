@@ -13,3 +13,4 @@ neo4j
 requests
 soxr
 livekit-api
+livekit

@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 
 class OllamaClient:
     def __init__(
-        self, base_url: str = "http://localhost:11434", model: str = "llama3.2:3b"
+        self, base_url: str = "http://localhost:11434", model: str = "qwen2.5:7b"
     ):
         self.base_url = base_url
         self.model = model
 
     async def generate_stream(
-        self, prompt: str, system: str = None
+        self, prompt: str, system: str = None, model: str = None
     ) -> AsyncGenerator[str, None]:
         """
         Stream responses from Ollama (non-blocking)
@@ -31,10 +31,15 @@ class OllamaClient:
             full_prompt = f"{system}\n\nUser: {prompt}\nAssistant:"
 
         payload = {
-            "model": self.model,
+            "model": model or self.model,
             "prompt": full_prompt,
             "stream": True,
-            "options": {"temperature": 0.8, "top_p": 0.9, "num_predict": 512},
+            "options": {
+                "temperature": 0.7, 
+                "top_p": 0.9, 
+                "num_predict": 256,
+                "num_thread": 8  # Optimize for high-end CPU cores
+            },
         }
 
         try:
@@ -58,7 +63,7 @@ class OllamaClient:
             logger.error(f"Ollama streaming failed: {e}")
             yield "I'm having trouble thinking right now..."
 
-    async def generate(self, prompt: str, system: str = None) -> str:
+    async def generate(self, prompt: str, system: str = None, model: str = None) -> str:
         """
         Non-streaming generation (non-blocking)
         """
@@ -67,10 +72,10 @@ class OllamaClient:
             full_prompt = f"{system}\n\nUser: {prompt}\nAssistant:"
 
         payload = {
-            "model": self.model,
+            "model": model or self.model,
             "prompt": full_prompt,
             "stream": False,
-            "options": {"temperature": 0.8, "top_p": 0.9, "num_predict": 512},
+            "options": {"temperature": 0.7, "top_p": 0.9, "num_predict": 128},
         }
 
         try:

@@ -49,7 +49,7 @@ class SoVITSClient:
                 "text_split_method": "cut5",  # Split by punctuation
                 "batch_size": 1,
                 "media_type": "wav",
-                "streaming_mode": False,
+                "streaming_mode": 0,
             }
 
             response = requests.post(self.api_url, json=payload, timeout=30)
@@ -84,7 +84,7 @@ class SoVITSClient:
                 "text_split_method": "cut5",
                 "batch_size": 1,
                 "media_type": "wav",
-                "streaming_mode": True,
+                "streaming_mode": 2,
             }
 
             response = requests.post(
@@ -98,7 +98,10 @@ class SoVITSClient:
                     yield chunk
 
         except Exception as e:
-            logger.error(f"SoVITS streaming failed: {e}")
+            if 'response' in locals() and hasattr(response, 'text'):
+                logger.error(f"SoVITS streaming failed: {e} | Response: {response.text}")
+            else:
+                logger.error(f"SoVITS streaming failed: {e}")
             yield b""
 
     def check_health(self) -> bool:
