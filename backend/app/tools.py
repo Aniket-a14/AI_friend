@@ -121,7 +121,8 @@ class ToolRegistry:
                 results = await self.memory_store.search_memories(query)
                 if not results:
                     return {"result": "No relevant memories found."}
-                return {"result": f"Found memories: {', '.join(results)}"}
+                contents = [item["content"] for item in results if item.get("content")]
+                return {"result": f"Found memories: {', '.join(contents)}"}
 
         except Exception as e:
             logger.error(f"Tool execution failed: {e}")

@@ -27,11 +27,16 @@ class TransportAgent(BaseAgent):
         self.lk_url = lk_url
         self.lk_api_key = lk_api_key
         self.lk_api_secret = lk_api_secret
+        self.output_sample_rate = Config.SAMPLE_RATE
+        self.output_channels = 1
 
         self.room = rtc.Room()
 
-        # Audio Source for WebRTC (GPT-SoVITS output usually: 22050Hz, 1 channel)
-        self.audio_source = rtc.AudioSource(22050, 1)
+        # Match the voice agent's PCM output contract.
+        self.audio_source = rtc.AudioSource(
+            self.output_sample_rate,
+            self.output_channels,
+        )
         self.audio_track = rtc.LocalAudioTrack.create_audio_track(
             "ai-voice", self.audio_source
         )
@@ -96,15 +101,31 @@ class TransportAgent(BaseAgent):
             # Publish to mesh
             await self.publish("audio.inbound", payload)
 
-    async def _on_nats_audio(self, data: dict):
-        """Convert NATS audio events to WebRTC frames for User"""
+    async def _on_nats_audio(self, data, metadata: dict = None):
+        """Convert NATS audio events to WebRTC frames for User."""
         try:
-            audio_b64 = data.get("audio", "")
-            is_done = data.get("done", False)
+            audio_bytes = b""
+            sample_rate = self.output_sample_rate
+            num_channels = self.output_channels
+            is_done = False
 
-            if audio_b64:
-                audio_bytes = base64.b64decode(audio_b64)
+            if isinstance(data, (bytes, bytearray)):
+                audio_bytes = bytes(data)
+            elif isinstance(data, dict):
+                audio_b64 = data.get("audio", "")
+                is_done = data.get("done", False)
+                sample_rate = data.get("sample_rate", sample_rate)
+                num_channels = data.get("channels", num_channels)
+                if audio_b64:
+                    audio_bytes = base64.b64decode(audio_b64)
+            else:
+                logger.warning(
+                    "Unsupported audio payload type from NATS: %s",
+                    type(data).__name__,
+                )
+                return
 
+            if audio_bytes:
                 # Strip WAV header if present (44 bytes)
                 if audio_bytes.startswith(b"RIFF"):
                     pcm_data = audio_bytes[44:]
@@ -112,12 +133,12 @@ class TransportAgent(BaseAgent):
                     pcm_data = audio_bytes
 
                 if pcm_data:
-                    num_samples = len(pcm_data) // 2
+                    samples_per_channel = len(pcm_data) // (2 * num_channels)
                     frame = rtc.AudioFrame(
                         data=pcm_data,
-                        sample_rate=22050,
-                        num_channels=1,
-                        samples_per_channel=num_samples,
+                        sample_rate=sample_rate,
+                        num_channels=num_channels,
+                        samples_per_channel=samples_per_channel,
                     )
                     await self.audio_source.capture_frame(frame)
 

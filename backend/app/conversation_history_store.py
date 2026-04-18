@@ -211,14 +211,27 @@ class ConversationHistoryStore:
 
         try:
             async with self.pool.acquire() as conn:
-                exclude_clause = (
-                    f"WHERE id != '{self.current_session_id}'"
-                    if self.current_session_id
-                    else ""
-                )
-                row = await conn.fetchrow(
-                    f"SELECT ended_at FROM sessions {exclude_clause} AND ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1"
-                )
+                if self.current_session_id:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT ended_at
+                        FROM sessions
+                        WHERE id != $1 AND ended_at IS NOT NULL
+                        ORDER BY ended_at DESC
+                        LIMIT 1
+                        """,
+                        self.current_session_id,
+                    )
+                else:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT ended_at
+                        FROM sessions
+                        WHERE ended_at IS NOT NULL
+                        ORDER BY ended_at DESC
+                        LIMIT 1
+                        """
+                    )
                 return row["ended_at"] if row else None
         except Exception as e:
             logger.error(f"Failed to fetch last session time: {e}")

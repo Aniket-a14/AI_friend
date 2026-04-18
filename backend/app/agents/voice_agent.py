@@ -328,15 +328,16 @@ class VoiceAgent(BaseAgent):
     async def _playback_loop(self):
         """Worker: Publishes BINARY PCM chunks to 'audio.stream'."""
         while True:
+            queue_item_claimed = False
             try:
                 pcm_data, meta = await self.playback_queue.get()
+                queue_item_claimed = True
                 
                 # CVS-1.0: Speculative State Gating
                 while self.state == VoicePlaybackState.SPECULATIVE_PAUSE:
                     await asyncio.sleep(0.01) # Yield until resume or final stop
                 
                 if self.state == VoicePlaybackState.IDLE:
-                    self.playback_queue.task_done()
                     self.speculative_buffer = None
                     continue
                     
@@ -359,23 +360,17 @@ class VoiceAgent(BaseAgent):
                 await self.publish("audio.stream", pcm_data)
                 
                 self.last_audio_time = time.time()
-                self.playback_queue.task_done()
                 
                 if self.playback_queue.empty() and self.ingestion_queue.empty():
                     await asyncio.sleep(0.2)
-                    await self._set_playback_state(VoicePlaybackState.IDLE)
-                
-                self.last_audio_time = time.time()
-                self.playback_queue.task_done()
-                
-                # Check if more in queue, else transition to IDLE after cooldown
-                if self.playback_queue.empty() and self.ingestion_queue.empty():
-                    await asyncio.sleep(0.2) # Cooldown
                     await self._set_playback_state(VoicePlaybackState.IDLE)
                     
             except Exception as e:
                 logger.error(f"Playback Loop error: {e}")
                 await asyncio.sleep(0.1)
+            finally:
+                if queue_item_claimed:
+                    self.playback_queue.task_done()
 
     async def _resilience_loop(self):
         """Monitors perceived silence and triggers fillers or feedback."""

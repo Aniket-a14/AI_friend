@@ -19,6 +19,7 @@ async def init_db():
         # 1. Enable pgvector
         logger.info("Enabling pgvector extension...")
         await conn.execute('CREATE EXTENSION IF NOT EXISTS vector;')
+        await conn.execute('CREATE EXTENSION IF NOT EXISTS pgcrypto;')
         
         # 2. DROP EVERYTHING FIRST (FOR RE-INIT)
         logger.info("Dropping old tables for clean init...")
@@ -31,10 +32,15 @@ async def init_db():
         logger.info("Creating memories table...")
         await conn.execute('''
             CREATE TABLE memories (
-                id SERIAL PRIMARY KEY,
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 content TEXT NOT NULL,
                 embedding vector(768),
                 metadata JSONB,
+                importance_score DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+                emotional_weight DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                certainty DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+                source TEXT NOT NULL DEFAULT 'user',
+                last_recalled_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         ''')

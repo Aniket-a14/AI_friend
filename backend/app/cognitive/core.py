@@ -81,7 +81,8 @@ class CognitiveService:
         """
         # 1. Conflict Resolution (Turn-Taking Stability)
         # If we just received a final transcript, check if it contradicts a recent speculative stop.
-        if raw_event.get("event_type") == "USER_MESSAGE" and not raw_event.get("is_partial"):
+        raw_event_type = raw_event.get("event_type") or raw_event.get("type")
+        if raw_event_type == "USER_MESSAGE" and not raw_event.get("is_partial"):
             final_text = raw_event.get("content", "")
             if self.state.last_speculative_intent:
                 confirmed = self.decision.is_speculative_stop_confirmed(final_text)
