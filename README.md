@@ -24,24 +24,24 @@ The platform is orchestrated as a **Solid State Agent Mesh** communicating over 
 
 ```mermaid
 graph TD
-    User((User)) <--> |WebRTC / PCM| Frontend[Next.js Frontend]
-    Frontend <--> |FastAPI| Signaling[Signaling Server]
+    User((User)) <--> |"WebRTC / PCM"| Frontend["Next.js Frontend"]
+    Frontend <--> |"FastAPI"| Signaling["Signaling Server"]
     
-    subgraph Sovereign Mesh [Solid State Mesh (9 Subjects)]
-        Signaling <--> |NATS| Bus{NATS JetStream}
-        Bus <--> STT[STT Agent: Whisper/SenseVoice]
-        Bus <--> Brain[Brain Agent: BDI Cognition]
-        Bus <--> Voice[Voice Agent: CVS Runtime]
-        Bus <--> Vision[Vision Agent: CV2/Llava]
-        Bus <--> Pulse[System Agent: Heartbeat]
-        Bus <--> Recall[Surfacing Agent: Memory]
+    subgraph "Sovereign Mesh [Solid State Mesh (9 Subjects)]"
+        Signaling <--> |"NATS"| Bus{"NATS JetStream"}
+        Bus <--> STT["STT Agent: Whisper/SenseVoice"]
+        Bus <--> Brain["Brain Agent: BDI Cognition"]
+        Bus <--> Voice["Voice Agent: CVS Runtime"]
+        Bus <--> Vision["Vision Agent: CV2/Llava"]
+        Bus <--> Pulse["System Agent: Heartbeat"]
+        Bus <--> Recall["Surfacing Agent: Memory"]
     end
     
-    subgraph Infrastructure
-        Brain <--> Neo4j[(Neo4j: GraphRAG)]
-        Brain <--> Postgres[(Postgres: Relational Identity)]
-        Brain <--> Ollama[Ollama: LLM]
-        Voice <--> SoVITS[GPT-SoVITS API]
+    subgraph "Infrastructure"
+        Brain <--> Neo4j[("(Neo4j: GraphRAG)")]
+        Brain <--> Postgres[("(Postgres: Relational Identity)")]
+        Brain <--> Ollama["Ollama: LLM"]
+        Voice <--> SoVITS["GPT-SoVITS API"]
     end
 ```
 
@@ -51,16 +51,16 @@ To achieve sub-280ms perceived latency, the system utilizes a non-linear signal 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant S as STT Agent (SenseVoice)
+    participant S as "STT Agent (SenseVoice)"
     participant B as Brain Agent
     participant V as Voice Agent
     
     U->>S: Raw Audio Stream
-    S->>B: chat.input (Hinglish/Text)
-    B->>V: chat.output (Incremental Segment + Metadata)
-    V->>V: Jitter Buffer & Atomic Phrasing
+    S->>B: "chat.input (Hinglish/Text)"
+    B->>V: "chat.output (Incremental Segment + Metadata)"
+    V->>V: "Jitter Buffer & Atomic Phrasing"
     V->>U: Raw 32kHz PCM
-    V-->>B: voice.segmentation_feedback (Telemetry)
+    V-->>B: "voice.segmentation_feedback (Telemetry)"
     Note over B,V: Closed-Loop Pulse Adjustment
 ```
 
