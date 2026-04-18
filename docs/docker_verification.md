@@ -5,12 +5,19 @@ This guide provides the technical procedures for verifying that the **AI Friend 
 ---
 
 ## 1. The Orchestration Pulse
-The first step is ensuring all containers are running and healthy.
+The first step is ensuring all **12 services** (5 Agents + 7 Infra) are running and healthy.
 
 ```bash
-docker compose ps
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
-**Expected Output**: You should see ~10 containers (NATS, Postgres, Neo4j, Redis, LiveKit, Ollama, SoVITS, and all Agents) with a status of `Up` or `Healthy`.
+**Expected Output**: You should see 12 containers with a status of `Up` or `Healthy`.
+
+### 🛡️ Solid State Hardening Audit
+Verify that the mesh is working in "Solid State" (no hardcoded credentials):
+```bash
+# Check if Neo4j rejected the default password (Expected: Log should NOT show Auth Failure)
+docker logs brain_graph | grep "unauthorized"
+```
 
 ---
 
@@ -18,26 +25,28 @@ docker compose ps
 Before the agents can think, the backbone must be ready.
 
 ### A. NATS JetStream (Central Nervous System)
-Check if NATS is accepting connections and Monitoring is active:
+Check if NATS is routing all 9 core subjects:
 ```bash
-# Check monitoring endpoint
-curl http://localhost:8222/varz
+# Check if JetStream is active on all subjects
+docker exec -it nats_mesh nats stream info AI_MESSAGES
+```
+*Expect: Subjects list including `system.*`, `memory.*`, `identity.*`, and `knowledge.*`.*
 
-# Check if JetStream is active on audio subjects (CVS Requirement)
-docker exec -it nats_mesh nats stream info audio
+### B. Persistence Seeding (Prisma 7.7.0)
+Ensure the AI's "Deep Self" has been successfully hydrated:
+```bash
+# Check if AgentConfig exists with ID 1
+docker exec -it postgres_db psql -U ai_friend -d ai_friend_db -c "SELECT personality FROM agent_configs WHERE id = 1 LIMIT 1;"
 ```
 
-### B. Ollama (The Brain's Processor)
-Ensure models are loaded and accessible:
+### C. Ollama & SoVITS
+Ensure local inference engines are responsive:
 ```bash
+# Check Ollama
 docker exec -it local_brain ollama list
-```
-*Expected: `llama3.2:1b` and `llama3.2:3b` should be in the list.*
 
-### C. Neo4j (Memory Graph)
-Check if the Bolt port is active:
-```bash
-docker logs brain_graph | grep "Remote interface available at"
+# Check SoVITS API
+curl http://localhost:9871/
 ```
 
 ---

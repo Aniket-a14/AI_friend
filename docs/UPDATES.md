@@ -1,6 +1,17 @@
 ## 1. Project CVS-1.0: Hardened Architectural Stabilization (Apr 2026)
 
 We have officially entered **Phase 2 Hardening**, transforming the platform into a production-resilient, binary-transport mesh.
+
+### 1.1. Solid State Hardening: Zero-Drift Mesh Resilience (Apr 18, 2026)
+
+The mesh has been hardened for production portability and identity continuity.
+- **9-Subject Signal Bus**: NATS JetStream now covers the full cognitive loop: `chat`, `vision`, `state`, `cmd`, `voice`, `system`, `memory`, `identity`, and `knowledge`.
+- **Decentralized Credential Enforcer**: Removed all hardcoded credentials. The mesh now fails securely if environment-driven secrets (e.g. `NEO4J_AUTH`) are missing or using insecure defaults.
+- **Rigid Identity Seeding (Prisma 7.7.0)**: Integrated a one-way sync from local JSON genomes to the relational Postgres store, ensuring the AI's "Deep Self" is preserved across container lifecycles.
+- **Acoustic Perceptual Injection**: Hardware-optimized `sherpa-onnx` (SenseVoice) injected into the STT layer for real-time temporal intent detection.
+- **Wait-for-Mesh Healthchecks**: Implemented dependency-aware booting to prevent agent connection races during cold starts.
+
+### 1.2. Architecture Refinements
 - **Direct Binary Mesh**: Eliminated Base64/JSON overhead for audio signal (15-20% latency reduction).
 - **Temporal Intent Model**: Stability-gated interruption detection (250ms rolling window).
 - **Neo4j TTL Cache**: High-speed belief caching (300s TTL) for near-instant cognitive context lookups.
