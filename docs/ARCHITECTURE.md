@@ -18,7 +18,7 @@
 
 ## System Overview
 
-AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus.
+AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus. In the **Solid State Hardening (Apr 2026)**, the signal bus was expanded to include 9 core subjects covering system heartbeats, active memory recall, and identity synchronization.
 
 In **CVS-1.0 Hardened**, we have achieved **Identity Continuity**. The system is no longer a reactive "Think-Speak" pipeline; it is now a **State-Driven Identity Mesh** coached by a continuous NATS heartbeat. It anticipates context through memory surfacing and expresses emotion through deterministic temporal markers.
 
@@ -27,18 +27,20 @@ In **CVS-1.0 Hardened**, we have achieved **Identity Continuity**. The system is
 ## 🏗️ CVS-1.0 Hardened Architecture
 
 ### 🧠 1. Cognitive Layer (Identity & State)
-The BrainAgent orchestrates a **State-Driven Identity**.
+The BrainAgent orchestrates a **State-Driven Identity** with a hardened relational foundation.
 - **Neo4j State Persistence**: Mood, energy, trust, and attachment are persistent and evolve via mesh heartbeats.
+- **Relational Seeding (Prisma 7.7.0)**: On first-boot, the identity mesh hydrates the PostgreSQL relational store with the AI's "Seed Genome" (Personality & History), ensuring zero-drift identity across restarts.
 - **Identity Heartbeat (`system.tick`)**: A 60s NATS pulse ensures the agent's internal state matures even when user interaction is idle.
 - **Hybrid Identity Model**: Separates an **Immutable Core** (base tone, values) from **Adaptive Variables** (habits, relationship status).
 
 ### 📖 2. Proactive Memory Surfacing
-The system anticipates conversational context through an asynchronous recall layer.
+The system anticipates conversational context through an asynchronous recall layer that merges Relational (Postgres) and Graph (Neo4j) knowledge.
 - **`SurfacingAgent`**: Background process that evaluates shared history vs. current intent.
-- **Active Influence**: Surfaces relevant past moments as mesh events to color the agent's tone and recall accuracy.
+- **Signal Bus Expansion**: The mesh now monitors 9 core subjects: `chat.*`, `vision.*`, `state.*`, `cmd.*`, `voice.*`, `system.*`, `memory.*`, `identity.*`, and `knowledge.*`.
 
-### ⏱️ 2. Perceptual Intelligence (STT Agent)
-Interruption is now handled as a **Temporal Intent Problem**.
+### ⏱️ 3. Perceptual Intelligence (STT Agent)
+Interruption is now handled as a **Temporal Intent Problem** powered by binary PCM transport.
+- **Dual-STT Pipeline**: Uses Whisper for deep context and `sherpa-onnx` (SenseVoice) for low-latency temporal intent.
 - **Temporal Intent Model**: Evaluates intent stability over a rolling 250ms window.
 - **Stability Gating**: Only consistent "Stop/Wait" intent (score > 0.75) triggers an interrupt signal.
 

@@ -1,6 +1,5 @@
 import pytest
 from app.cognitive.decision import DecisionService
-from unittest.mock import MagicMock
 
 @pytest.fixture
 def decision_service(mock_llm_service, mock_memory_store):

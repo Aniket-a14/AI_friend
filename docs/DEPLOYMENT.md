@@ -8,13 +8,14 @@ Production deployment strategies for the AI Friend platform, optimized for the *
 
 1. [Production Checklist](#production-checklist)
 2. [CVS-1.0 Runtime Baseline](#cvs-10-runtime-baseline)
-3. [Deployment Strategies](#deployment-strategies)
-4. [Cloud Platforms](#cloud-platforms)
-5. [SSL/HTTPS Setup](#sslhttps-setup)
-6. [Environment Configuration](#environment-configuration)
-7. [Monitoring & Logging](#monitoring--logging)
-8. [Scaling](#scaling)
-9. [Troubleshooting](#troubleshooting)
+3. [Solid State Mesh Hardening](#solid-state-mesh-hardening)
+4. [Deployment Strategies](#deployment-strategies)
+5. [Cloud Platforms](#cloud-platforms)
+6. [SSL/HTTPS Setup](#sslhttps-setup)
+7. [Environment Configuration](#environment-configuration)
+8. [Monitoring & Logging](#monitoring--logging)
+9. [Scaling](#scaling)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -81,6 +82,33 @@ PCM_SAMPLE_RATE=32000
 *   **Signal Path**: V4 Weights
 *   **Latency Target**: <250ms
 *   **Optimization**: Enable `soxr` resampling for UI-specific playback if needed.
+
+---
+
+## 🛡️ Solid State Mesh Hardening (April 2026)
+
+The CVS-1.0 Mesh has been hardened for **Zero-Drift Portability**. This ensures the AI Friend can be deployed on any machine while maintaining identity continuity and security.
+
+### 1. Decentralized Credential Enforcer
+Hardcoded credentials are strictly rejected. The mesh utilizes the **Solid State Enforcer** in `backend/app/knowledge/graph_db.py` to prevent insecure booting.
+- **NEO4J_AUTH**: Must be provided via `.env`. Default `neo4j/password` will trigger a security violation.
+- **Environment Isolation**: All services use internal mesh aliases (`nats_mesh`, `postgres_db`) rather than `localhost` to allow cross-machine Docker networking.
+
+### 2. Relational Hydration (Prisma 7.7.0)
+The database schema is managed via the modern Prisma 7.7.0 standard. On any new PC, you MUST synchronize the persistent state:
+```bash
+# Set your local DB secret in the terminal session
+$env:DIRECT_URL="postgresql://ai_friend:[PASSWORD]@localhost:5432/ai_friend_db"
+cd frontend
+npx prisma db push
+```
+
+### 3. Mesh Portability Checklist
+Before moving the project to a new machine:
+- [ ] **Sanity Check .env**: Ensure all variables in `.env.example` are populated.
+- [ ] **Relative Paths**: Verify `docker-compose.infra.yml` uses relative mounts (e.g., `./backend`).
+- [ ] **Clean Volume Recovery**: To reset a machine's data completely, use `docker compose down -v`.
+- [ ] **AI Perception**: Ensure `requirements-ai.txt` is installed to support `sherpa-onnx` (SenseVoice).
 
 ---
 
