@@ -8,6 +8,7 @@ from livekit import api
 import nats
 
 from app.config import Config
+from scripts.provision_models import ensure_models_provisioned
 
 # Configure logging
 logging.basicConfig(
@@ -28,8 +29,18 @@ class AIBackend:
         self.nc = None
 
     async def initialize(self):
-        """Minimal initialization for signaling server."""
+        """Minimal initialization for signaling server with Provisioning Guard."""
         logger.info("Initializing Sovereign Signaling Backend...")
+        
+        # 1. CVS-1.0 Provisioning Guard (Solid State Mesh Requirement)
+        try:
+            ensure_models_provisioned()
+            logger.info("✅ Sensory Mesh models verified and locked.")
+        except Exception as e:
+            logger.error(f"❌ Provisioning Guard Failure: {e}")
+            # In a production identity system, we might halt boot here.
+            
+        # 2. Network Mesh Discovery
         try:
             # Check NATS connection
             self.nc = await nats.connect(Config.NATS_URL)

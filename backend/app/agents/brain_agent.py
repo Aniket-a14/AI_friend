@@ -201,8 +201,24 @@ class BrainAgent(BaseAgent):
         logger.info(f"🧠 {self.name} Offline.")
 
 async def main():
-    agent = BrainAgent()
+    # 1. Initialize CVS-1.0 Foundation (Pool-based logic)
+    conversation_store = ConversationHistoryStore()
+    await conversation_store.initialize() # Creates the database pool
+    
+    # Inject the established pool into MemoryStore
+    memory_store = MemoryStore(pool=conversation_store.pool)
+    graph_db = GraphDB()
+    
+    # 2. Instantiate Brain Agent with injected dependencies
+    agent = BrainAgent(
+        ollama_url=Config.OLLAMA_URL,
+        graph_db=graph_db,
+        memory_store=memory_store,
+        conversation_store=conversation_store
+    )
+    
     await agent.start()
+    
     try:
         while True:
             await asyncio.sleep(1)
@@ -210,5 +226,8 @@ async def main():
         await agent.stop()
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     asyncio.run(main())

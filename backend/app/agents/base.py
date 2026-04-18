@@ -33,9 +33,12 @@ class BaseAgent:
             raise
 
     async def _bootstrap_mesh(self):
-        """Ensure core streams exist on the mesh."""
+        """Ensure core streams exist on the mesh (CVS-1.0 Hardened)."""
         core_streams = {
-            "AI_MESSAGES": ["chat.*", "vision.*", "state.*", "cmd.*", "voice.*"],
+            "AI_MESSAGES": [
+                "chat.*", "vision.*", "state.*", "cmd.*", "voice.*", 
+                "system.*", "memory.*", "identity.*", "knowledge.*"
+            ],
             "AI_AUDIO": ["audio.*"]
         }
         
@@ -161,8 +164,7 @@ class BaseAgent:
                 # but in high-speed audio, we usually just drop and move on
                 await msg.ack()
 
-        # Generate a unique durable name... (keep rest of logic)
-
+        # 3. Durable Management
         # Generate a unique durable name based on the subject if not provided
         if not durable:
             # Replace dots with underscores for NATS-friendly durable name

@@ -33,6 +33,7 @@ model AgentConfig {
   id                Int      @id @default(1)
   personality       String   @db.Text
   backgroundHistory String   @map("background_history") @db.Text
+  evolvedLearnings  String   @map("evolved_learnings") @db.Text
   updatedAt         DateTime @updatedAt @map("updated_at")
 
   @@map("agent_configs")

@@ -109,6 +109,63 @@ class DecisionService:
 
     # --- BT Actions ---
 
+    def is_speculative_stop_confirmed(self, backbone_text: str, perception_keywords: list[str] = None) -> bool:
+        """
+        Hardened Semantic Conflict Resolver for CVS-1.0.
+        Logic: Distinguish between Agent Commands and Conversational Context.
+        """
+        if not backbone_text:
+            return False
+            
+        if perception_keywords is None:
+            perception_keywords = ["stop", "wait", "hold", "listen", "sunno", "ruko", "quiet"] 
+            
+        clean_text = backbone_text.lower().strip()
+        raw_words = clean_text.split()
+        # Normalize: Strip common punctuation from words for exact matching
+        words = [w.strip("!.,?;:") for w in raw_words]
+        
+        # 1. Contextual Filters (Reject stop if followed by these external objects/connectors)
+        conversational_connectors = [
+            "i agree", "i think", "i actually", "i just", "i am", "but", "though", "it is",
+            "raining", "singing", "working", "playing", "for", "to", "be"
+        ]
+        
+        call_signs = ["hey", "friend", "listen"]
+        
+        for kw in perception_keywords:
+            kw = kw.lower()
+            if kw in words:
+                idx = words.index(kw)
+                
+                # Check for Conversational Context (Connectors following)
+                if idx + 1 < len(words):
+                    next_words = " ".join(words[idx+1:idx+3])
+                    if any(conn in next_words for conn in conversational_connectors):
+                        logger.debug(f"[ConflictResolver] Rejected '{kw}' - Conversational context: '{next_words}'")
+                        continue
+                        
+                # 2. Positional Intelligence
+                # Stop word must be at start OR preceded only by call-signs
+                is_pivot = (idx == 0) or all(words[w] in call_signs for w in range(idx))
+                
+                if not is_pivot:
+                    logger.debug(f"[ConflictResolver] Rejected '{kw}' - Buried intent in: '{clean_text}'")
+                    continue
+
+                # 3. Concise Command Check
+                if len(words) <= 4:
+                    logger.info(f"[ConflictResolver] Stop CONFIRMED (Concise Command): '{kw}' in '{clean_text}'")
+                    return True
+                
+                # Default case for keywords at the start of longer sentences
+                if idx == 0:
+                    logger.info(f"[ConflictResolver] Stop CONFIRMED (Pivot Match): '{kw}' in '{clean_text}'")
+                    return True
+                
+        logger.warning(f"[ConflictResolver] Speculative stop REJECTED. Backbone text '{clean_text}' contradicts early perception.")
+        return False
+
     async def _plan_social_response(self, blackboard: Dict[str, Any]) -> bool:
         event = blackboard["event"]
         goal = event.metadata.get("suggested_goal", "ENGAGE")

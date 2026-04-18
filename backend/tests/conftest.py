@@ -10,12 +10,14 @@ if backend_dir not in sys.path:
 
 @pytest.fixture
 def mock_llm_service():
-    """Mock for OllamaClient"""
+    """Mock for OllamaClient (Hardened for CVS-1.0)"""
     client = MagicMock()
-    client.generate = AsyncMock(return_value='{"intent": "CHAT", "goal": "ENGAGE"}')
+    # Support **kwargs in async mock
+    client.generate = AsyncMock(return_value='{"intent": "CHAT", "goal": "ENGAGE", "confidence": 0.9}')
     client.generate_stream = MagicMock()
     
-    async def mock_stream(prompt, system=None):
+    async def mock_stream(prompt, system=None, **kwargs):
+        """Streaming mock that accepts Resilient parameters (model, num_thread, etc.)"""
         yield "Hello "
         yield "there!"
     
@@ -24,10 +26,13 @@ def mock_llm_service():
 
 @pytest.fixture
 def mock_graph_db():
-    """Mock for Neo4j GraphDB"""
+    """Mock for Neo4j GraphDB (Async-Mesh Migration)"""
     db = MagicMock()
+    # All methods MUST be async to match AsyncGraphDatabase driver
     db.execute_query = AsyncMock(return_value=[])
     db.create_relationship = AsyncMock(return_value=None)
+    db.create_entity = AsyncMock(return_value=None)
+    db.close = AsyncMock(return_value=None)
     return db
 
 @pytest.fixture

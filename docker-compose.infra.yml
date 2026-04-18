@@ -39,7 +39,12 @@ services:
     command: [ "neo4j" ]
     environment:
       NEO4J_AUTH: ${NEO4J_AUTH}
-      NEO4J_PLUGINS: ${NEO4J_PLUGINS}
+      NEO4J_PLUGINS: ${NEO4J_PLUGINS:-["apoc"]}
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     ports:
       - "7474:7474" # HTTP
       - "7687:7687" # Bolt

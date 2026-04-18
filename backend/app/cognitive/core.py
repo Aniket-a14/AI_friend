@@ -33,21 +33,33 @@ class CognitiveService:
         )
         self.identity = IdentityManager()
         self.surfaced_memories = [] # Buffer for active memory influence
+        self.agent = None # NATS Mesh connection
 
     async def initialize(self, agent: Any = None):
         """Load identity and hydrate states. Subscribes to Mesh heartbeats."""
         await self.state.hydrate_state()
         
-        # Subscribe to Mesh Heartbeat (system.tick)
+        # Subscribe to Mesh Channels
         if agent:
+             self.agent = agent
              await agent.subscribe("system.tick", self._on_system_tick)
              await agent.subscribe("memory.surfaced", self._on_memory_surfaced)
+             await agent.subscribe("audio.perception", self._on_audio_perception)
              
         logger.info("[CognitiveService] Hardened Identity Mesh Fully Initialized.")
 
     async def _on_system_tick(self, data: Dict[str, Any]):
         """Mesh-driven idle evolution."""
         await self.state.handle_system_tick(data)
+
+    async def _on_audio_perception(self, data: Dict[str, Any]):
+        """
+        Sensory Intelligence: Handle emotional & event cues from SenseVoice.
+        """
+        perception_meta = data.get("metadata", {})
+        # Store last speculative intent for arbitration
+        self.state.last_speculative_intent = data.get("intent")
+        await self.state.apply_sensory_perception(perception_meta)
 
     async def _on_memory_surfaced(self, data: Dict[str, Any]):
         """Proactive memory recall (Active influence)."""
@@ -65,16 +77,29 @@ class CognitiveService:
     async def process_event(self, raw_event: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
         """
         The Master Cognitive Loop:
-        1. Perceive: Raw -> Structured Event
-        2. State Update: Dynamic evolution
-        3. Decide: Plan based on Goal
-        4. Execute: Generate and Validate
-        5. Learn: Consolidation
+        Refined for Solid State Social Mesh Arbitration.
         """
-        # 1. & 2. Concurrent Perception and State Retrieval
-        # While perception classifies intent, we can simultaneously fetch current state.
+        # 1. Conflict Resolution (Turn-Taking Stability)
+        # If we just received a final transcript, check if it contradicts a recent speculative stop.
+        if raw_event.get("event_type") == "USER_MESSAGE" and not raw_event.get("is_partial"):
+            final_text = raw_event.get("content", "")
+            if self.state.last_speculative_intent:
+                confirmed = self.decision.is_speculative_stop_confirmed(final_text)
+                if not confirmed:
+                    # REJECTED: False positive. Resume playback immediately.
+                    logger.info("[Cognitive] Interruption REJECTED. Resuming playback...")
+                    
+                    # DIRECT MESH SIGNAL: Resume bypasses the cognitive generator
+                    if self.agent:
+                        await self.agent.publish("audio.resume", {"reason": "conflict_rejected"})
+                    
+                    self.state.last_speculative_intent = None
+                    yield {"type": "mesh_signal", "data": "audio.resume"}
+
+        # 2. Sequential Perception and State Retrieval
         perception_task = asyncio.create_task(self.perception.perceive(raw_event))
-        state_task = asyncio.create_task(self.state.hydrate_state()) # Ensure fresh state from Neo4j
+        state_task = asyncio.create_task(self.state.hydrate_state())
+ # Ensure fresh state from Neo4j
         
         event, _ = await asyncio.gather(perception_task, state_task)
         
@@ -98,12 +123,20 @@ class CognitiveService:
                 full_response += chunk["data"]
             yield chunk
             
-        # 5. Validation Check
+        # 5. Validation Check & Self-Correction
         if full_response:
             is_valid, reason = await self.identity.validate_response(full_response, plan.goal)
             if not is_valid:
-                logger.warning(f"[Identity] Validation failed: {reason}. Triggering self-correction...")
-                # In a more advanced loop, we would re-run generation with the reason.
+                logger.warning(f"[Identity] Validation failed: {reason}. SELF-CORRECTION TRIGGERED.")
+                # PRODUCTION LOGIC: Automated Self-Correction
+                # We append the reason and re-generate once.
+                plan.payload["identity_prompt"] += f"\n\nCRITICAL FIX: Your previous response was rejected for: {reason}. Correct this immediately."
+                
+                full_response = ""
+                async for chunk in self.action.execute(plan):
+                    if chunk["type"] == "content":
+                        full_response += chunk["data"]
+                    yield chunk
         
         # 6. Learning
         if event.intent in ["CHAT", "REMEMBER"]:

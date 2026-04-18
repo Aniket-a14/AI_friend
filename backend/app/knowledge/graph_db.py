@@ -1,37 +1,43 @@
-from neo4j import GraphDatabase
+from neo4j import AsyncGraphDatabase
 import logging
-import os
 import time
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List
 from ..config import Config
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("graph_db")
 
 class GraphDB:
-    def __init__(
-        self, uri=None, user=None, password=None
-    ):
-        uri = uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
-        user = user or os.getenv("NEO4J_USER", "neo4j")
-        password = password or os.getenv("NEO4J_PASSWORD", "password123")
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+    """
+    Asynchronous Knowledge Mesh for CVS-1.0.
+    Manages persistent entities and relationships without blocking the cognitive loop.
+    """
+    def __init__(self, uri=None, user=None, password=None):
+        uri = uri or Config.NEO4J_URI
+        user = user or Config.NEO4J_USER
+        password = password or Config.NEO4J_PASSWORD
         
-        # CVS-1.0 Phase 2: Perceptual Belief Cache
+        if not password or password in ["password", "neo4j", "placeholder"]:
+            logger.error("🛑 Security Violation: Weak or Placeholder Neo4j Password Detected.")
+            raise ValueError("A strong, non-default NEO4J_PASSWORD must be provided in your .env file.")
+
+        self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
+        
+        # Perceptual Belief Cache
         self._belief_cache = {} 
         self._cache_ttl = getattr(Config, "GRAPH_CACHE_TTL", 300)
 
-    def close(self):
-        self.driver.close()
+    async def close(self):
+        await self.driver.close()
 
-    def _invalidate_cache(self, affected_entity: str = None):
+    async def _invalidate_cache(self, affected_entity: str = None):
         """Flush cache to prevent stale context."""
         self._belief_cache.clear()
         if affected_entity:
             logger.debug(f"Graph Store: Cache flushed due to update in '{affected_entity}'")
 
-    async def execute_query(self, query, parameters=None, use_cache=False):
-        """Generic query execution with TTL caching."""
+    async def execute_query(self, query: str, parameters: Dict[str, Any] = None, use_cache: bool = False) -> List[Any]:
+        """Generic async query execution with TTL caching."""
         cache_key = (query, json.dumps(parameters) if parameters else None)
         
         if use_cache and cache_key in self._belief_cache:
@@ -39,26 +45,31 @@ class GraphDB:
             if time.time() - ts < self._cache_ttl:
                 return result
         
-        with self.driver.session() as session:
-            result = session.run(query, parameters)
-            records = [record for record in result]
-            
-            if use_cache:
-                self._belief_cache[cache_key] = (time.time(), records)
-            return records
+        try:
+            async with self.driver.session() as session:
+                result = await session.run(query, parameters)
+                records = [record async for record in result]
+                
+                if use_cache:
+                    self._belief_cache[cache_key] = (time.time(), records)
+                return records
+        except Exception as e:
+            logger.error(f"Neo4j query failed: {e}")
+            return []
 
     async def create_entity(self, label: str, name: str, properties: Dict[str, Any] = None):
         """
         Creates/Updates a node with metadata: certainty, source, version.
         """
-        self._invalidate_cache(name)
+        await self._invalidate_cache(name)
         props = properties or {}
         props['name'] = name
         props.setdefault('certainty', 1.0)
         props.setdefault('source', 'agent_inference')
         props.setdefault('version', 1)
         
-        label = label[0].upper() + label[1:]
+        # Normalize label for Cypher
+        label = label[0].upper() + label[1:] if label else "Entity"
         
         query = (
             f"MERGE (e:{label} {{name: $name}}) "
@@ -69,17 +80,17 @@ class GraphDB:
         logger.debug(f"Graph Store: Hydrated Identity Node ({label} {{name: '{name}'}})")
 
     async def create_relationship(self, subject_name: str, subject_label: str, 
-                                  relation: str, 
-                                  target_name: str, target_label: str,
-                                  properties: Dict[str, Any] = None):
+                                   relation: str, 
+                                   target_name: str, target_label: str,
+                                   properties: Dict[str, Any] = None):
         """
         Creates a relationship with properties (e.g., TrustLevel, weight).
         Adheres to UPPER_SNAKE_CASE for relationships.
         """
-        self._invalidate_cache(subject_name)
-        rel_type = relation.upper().replace(" ", "_")
-        s_label = subject_label[0].upper() + subject_label[1:]
-        t_label = target_label[0].upper() + target_label[1:]
+        await self._invalidate_cache(subject_name)
+        rel_type = relation.upper().replace(" ", "_").replace("-", "_")
+        s_label = (subject_label[0].upper() + subject_label[1:]) if subject_label else "Entity"
+        t_label = (target_label[0].upper() + target_label[1:]) if target_label else "Entity"
         
         props = properties or {}
         props.setdefault('weight', 0.5)
