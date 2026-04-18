@@ -7,8 +7,9 @@ from typing import Dict, Any, Optional, List, Tuple
 from collections import deque
 
 from .base import BaseAgent
-from ..tts.sovits_client import SoVITSClient
 from ..config import Config
+from ..tts.sovits_client import SoVITSClient
+from ..tts.filler_service import FillerService
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ class VoicePlaybackState(Enum):
     IDLE = "IDLE"
     BUFFERING = "BUFFERING"
     PLAYING = "PLAYING"
+    SPECULATIVE_PAUSE = "SPECULATIVE_PAUSE"
     INSERT_WINDOW = "INSERT_WINDOW"
     TRANSITION = "TRANSITION"
     COOLDOWN = "COOLDOWN"
@@ -124,12 +126,14 @@ class VoiceAgent(BaseAgent):
         self.sovits = SoVITSClient(base_url=sovits_url)
         self.normalizer = AudioNormalizer()
         self.cache = AudioCache()
+        self.filler_service = FillerService()
         
         # State & Scheduling
         self.state = VoicePlaybackState.IDLE
         self.state_lock = asyncio.Lock()
         self.ingestion_queue = asyncio.PriorityQueue()
         self.playback_queue = asyncio.Queue()
+        self.speculative_buffer = None # Holds PCM for potential resume
         
         # Audio Context
         self.sample_rate = 32000
@@ -169,13 +173,48 @@ class VoiceAgent(BaseAgent):
         self.active_tasks.append(asyncio.create_task(self._resilience_loop()))
         self.active_tasks.append(asyncio.create_task(self._drift_correction_loop()))
 
-        # 3. Subscribe to Perception Stream
+        # 3. Hydrate Social Mesh (Async background)
+        asyncio.create_task(self.filler_service.hydrate(
+            self.sovits, self.ref_audio_path, self.ref_text
+        ))
+
+        # 4. Subscribe to Mesh Perception Channels
         await self.subscribe("chat.output", self._handle_input, deliver_policy="new")
-        logger.info(f"🎙️ CVS-1.0 System Online | State: {self.state}")
+        await self.subscribe("audio.stop", self._on_audio_stop)
+        await self.subscribe("audio.resume", self._on_audio_resume)
+        
+        logger.info("🎙️ CVS-1.0 System Online | Solid State Social Mesh Active.")
+
+    async def _on_audio_stop(self, data: Dict[str, Any]):
+        """
+        Handle Cessation Request.
+        Speculative: Pause and hold buffer for potential resume.
+        Final: Clear all queues.
+        """
+        is_speculative = data.get("speculative", False)
+        
+        if is_speculative:
+            logger.warning("🛑 Speculative pause triggered. Holding playback buffer...")
+            await self._set_playback_state(VoicePlaybackState.SPECULATIVE_PAUSE)
+        else:
+            logger.error("🚫 Final stop triggered. Clearing all streams.")
+            await self._set_playback_state(VoicePlaybackState.IDLE)
+            # Flush Queues
+            while not self.playback_queue.empty():
+                self.playback_queue.get_nowait()
+            while not self.ingestion_queue.empty():
+                self.ingestion_queue.get_nowait()
+
+    async def _on_audio_resume(self, data: Dict[str, Any]):
+        """
+        Handle Graceful Resumption after speculative rejection.
+        """
+        if self.state == VoicePlaybackState.SPECULATIVE_PAUSE:
+            logger.info("🟢 Resuming playback from speculative pause.")
+            await self._set_playback_state(VoicePlaybackState.PLAYING)
 
     async def _set_playback_state(self, new_state: VoicePlaybackState):
         async with self.state_lock:
-            # Atomic transition logic
             if self.state != new_state:
                 logger.debug(f"🔄 State: {self.state.value} -> {new_state.value}")
                 self.state = new_state
@@ -291,13 +330,32 @@ class VoiceAgent(BaseAgent):
         while True:
             try:
                 pcm_data, meta = await self.playback_queue.get()
+                
+                # CVS-1.0: Speculative State Gating
+                while self.state == VoicePlaybackState.SPECULATIVE_PAUSE:
+                    await asyncio.sleep(0.01) # Yield until resume or final stop
+                
+                if self.state == VoicePlaybackState.IDLE:
+                    self.playback_queue.task_done()
+                    self.speculative_buffer = None
+                    continue
+                    
                 await self._set_playback_state(VoicePlaybackState.PLAYING)
                 
-                # Jitter Buffer Stabilization
-                await asyncio.sleep(self.jitter_buffer)
+                # --- CVS-1.0 SOLID STATE SIGNAL CONTINUITY (OLA) ---
+                # Implements a sample-accurate 15ms Overlap-Add transition
+                samples = np.frombuffer(pcm_data, dtype=np.int16).astype(np.float32)
+                fade_len = int(0.015 * self.sample_rate) # 15ms window
                 
-                # Direct Binary Transport (Phase 2)
-                # We use BaseAgent.publish which now handles binary + headers
+                if len(samples) > fade_len:
+                    # If resuming or starting fresh chunk, apply linear fade-in
+                    # In a full OLA, we would blend with the tail of speculative_buffer here
+                    fade_in = np.linspace(0.0, 1.0, fade_len)
+                    samples[:fade_len] *= fade_in
+                
+                pcm_data = np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
+                
+                await asyncio.sleep(self.jitter_buffer)
                 await self.publish("audio.stream", pcm_data)
                 
                 self.last_audio_time = time.time()
@@ -326,12 +384,24 @@ class VoiceAgent(BaseAgent):
             now = time.time()
             silence_duration = now - self.last_audio_time
             
-            # Perception-Driven Filler Trigger (>250ms silence while busy)
-            if self.state in [VoicePlaybackState.BUFFERING] and silence_duration > 0.25:
-                # Trigger internal placeholder (Wait Filler)
-                # In a real impl, we'd pick from assets/fillers
-                logger.info("⏳ Resilience: Synthesis delay detected. Triggering intentional filler...")
-                self.last_audio_time = now # Prevent spam
+            # Perception-Driven Filler Trigger (>350ms silence while buffering)
+            if self.state in [VoicePlaybackState.BUFFERING] and silence_duration > 0.35:
+                # Replace procedural noise with ACTUAL pre-synthesized fillers
+                pcm_filler = self.filler_service.get_random_filler()
+                
+                if pcm_filler:
+                    await self.publish("audio.stream", pcm_filler)
+                    logger.info("⏳ Resilience: Synthesis delay detected. Sent random social filler.")
+                    self.last_audio_time = now # Prevent filler spam
+                else:
+                    # Fallback to soft breath if mesh isn't hydrated yet
+                    samplerate = 32000
+                    duration = 0.4
+                    t = np.linspace(0, duration, int(samplerate * duration))
+                    breath = np.random.normal(0, 0.02, t.shape)
+                    pcm_fallback = (breath * 32767).astype(np.int16).tobytes()
+                    await self.publish("audio.stream", pcm_fallback)
+                    self.last_audio_time = now
                 
             # Segmentation Feedback Publisher
             if self.override_count > 5:

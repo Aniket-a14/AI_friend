@@ -130,7 +130,15 @@ class MemoryStore:
             
             # Update last_recalled_at for the top results to 'refresh' them
             if results:
-                asyncio.create_task(self._refresh_memories(results))
+                # Actual Implementation: Robust background task safety wrapper
+                def _done_callback(t):
+                    try:
+                        t.result()
+                    except Exception as e:
+                        logger.error(f"Background Memory Refresh Failed: {e}")
+                
+                task = asyncio.create_task(self._refresh_memories(results))
+                task.add_done_callback(_done_callback)
                 
             return results
 

@@ -5,5 +5,6 @@ mss
 opencv-python
 pillow
 pyautogui
+sherpa-onnx
 # torch is handled by transitive deps of faster-whisper (usually)
 # Use torch-cpu in requirements-slim if ever needed.

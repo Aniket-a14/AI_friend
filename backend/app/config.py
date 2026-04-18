@@ -60,6 +60,10 @@ class Config:
             missing.append("LIVEKIT_API_KEY")
         if not Config.LIVEKIT_API_SECRET:
             missing.append("LIVEKIT_API_SECRET")
+        if not Config.NEO4J_PASSWORD:
+            missing.append("NEO4J_PASSWORD")
+        if not Config.NEO4J_URI:
+            missing.append("NEO4J_URI")
 
         if missing:
             raise ValueError(f"Missing environment variables: {', '.join(missing)}")

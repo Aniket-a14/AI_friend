@@ -22,6 +22,7 @@ class StateService:
     def __init__(self, graph_store=None):
         self.graph = graph_store
         self.current_state = AgentState()
+        self.last_speculative_intent = None # Transient sensory state
         
         self.alpha_mood = 0.05      # Slower mood decay for idle
         self.gamma_energy = 0.02   # Slower energy decay
@@ -66,12 +67,14 @@ class StateService:
         logger.debug(f"[State] Persisted to Neo4j: Mood={self.current_state.mood:.2f}")
 
     async def update_from_event(self, event_valence: float, user_trust_delta: float = 0.0):
+        """
+        Cognitive Update (0.7 weight).
+        Triggered after LLM sentiment analysis or explicit user actions.
+        """
         now = datetime.now()
-        dt = (now - self.current_state.last_update).total_seconds() / 3600.0
         
-        # 1. Evolution
-        self.current_state.mood = (self.current_state.mood * math.exp(-self.alpha_mood * dt) + 
-                                   event_valence * (1 - math.exp(-self.alpha_mood * dt)))
+        # Apply Cognitive Weight (0.7)
+        self.current_state.mood = (self.current_state.mood * 0.3) + (event_valence * 0.7)
         
         self.current_state.trust = max(0.0, min(1.0, self.current_state.trust + user_trust_delta))
         self.current_state.attachment += user_trust_delta * 0.1
@@ -79,8 +82,34 @@ class StateService:
         
         self.current_state.last_update = now
         self._enforce_bounds()
+        await self.persist_state()
+
+    async def apply_sensory_perception(self, perception_metadata: Dict[str, Any]):
+        """
+        Acoustic Perception Update (0.3 weight).
+        Triggered by SenseVoice emotional/event cues.
+        """
+        emotion_bias = perception_metadata.get("emotional_bias", 0.0)
+        events = perception_metadata.get("events", [])
         
-        # 2. Persist
+        # 1. Apply Damped Emotional Bias (0.3)
+        # Logic: mood = (current * 0.7) + (bias * 0.3)
+        self.current_state.mood = (self.current_state.mood * 0.7) + (emotion_bias * 0.3)
+        
+        # 2. Map Acoustic Events (AED)
+        for event in events:
+            if event == "Laughter":
+                self.current_state.energy = min(1.0, self.current_state.energy + 0.15)
+                self.current_state.trust = min(1.0, self.current_state.trust + 0.05)
+                logger.info("😄 Agent sensed laughter - Energy/Trust boosted.")
+            elif event == "Applause":
+                self.current_state.energy = min(1.0, self.current_state.energy + 0.2)
+                logger.info("👏 Agent sensed applause - Energy spike.")
+            elif event in ["Cough", "Sneeze"]:
+                self.current_state.attachment = min(1.0, self.current_state.attachment + 0.02)
+                logger.debug(f"🤧 Agent sensed {event} - Attachment nudged (Empathy).")
+        
+        self._enforce_bounds()
         await self.persist_state()
 
     async def handle_system_tick(self, tick_metadata: Dict[str, Any]):
@@ -91,21 +120,16 @@ class StateService:
         now = tick_metadata.get("timestamp", time.time())
         dt_hours = tick_metadata.get("interval", 60) / 3600.0
         
-        # 1. Self-evolution (Incremental Decay)
-        # Mood drifts towards 0, Energy towards 1.0 (Recovery), Trust towards 0.5
         self.current_state.mood *= math.exp(-self.alpha_mood * dt_hours)
         self.current_state.energy = min(1.0, self.current_state.energy + (self.gamma_energy * dt_hours))
         
-        # Trust drift (slowly normalization)
         trust_drift = (self.trust_baseline - self.current_state.trust) * 0.01
         self.current_state.trust += trust_drift
         
         self.current_state.last_update = datetime.fromtimestamp(now)
         self._enforce_bounds()
-        
-        # 2. Persist to Neo4j for observability
         await self.persist_state()
-        logger.debug(f"[State Heartbeat] Mood: {self.current_state.mood:.3f} | Trust: {self.current_state.trust:.3f}")
+        logger.debug(f"[State Heartbeat] Mood: {self.current_state.mood:.3f}")
 
     def _enforce_bounds(self):
         self.current_state.mood = max(-1.0, min(1.0, self.current_state.mood))

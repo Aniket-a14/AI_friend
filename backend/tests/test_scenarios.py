@@ -7,9 +7,17 @@ from app.cognitive.core import CognitiveService
 @pytest.fixture
 def cognitive_service(mock_llm_service, mock_graph_db, mock_memory_store):
     with patch("app.cognitive.state.StateService.persist_state", new_callable=AsyncMock):
+        # FIX: Align mock schema with CVS-1.0 Immutable Core
         with patch("app.cognitive.identity.IdentityManager._load_json", return_value={
             "name": "my friend",
-            "core_personality": {"traits": ["Warm"]},
+            "core_personality": {
+                "traits": ["Warm"],
+                "immutable": {
+                    "values": ["Honesty"],
+                    "base_tone": "Warm",
+                    "boundaries": []
+                }
+            },
             "history": {"relationship": "Friend", "memories": []},
             "conversation_rules": {"avoid": []},
             "speaking_style": {"style_description": "Hinglish"}
@@ -26,15 +34,15 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
     """
     Scenario: User is consistently mean. The agent should drift toward guarded/reserved.
     """
-    # 1. Setup Mock LLM to report negative valence and suggest 'Guarded' trait
+    # 1. Setup Mock LLM to report negative valence and suggest 'Guarded' trait with CONFIDENCE
     mock_llm_service.generate.side_effect = [
         # Decision (Intent/Goal)
-        '{"intent": "CHAT", "goal": "PROTECT"}',
+        '{"intent": "CHAT", "goal": "PROTECT", "confidence": 0.9}',
         # Action (Response) -> Already handled by streaming mock in conftest
         # Reflection - Fact Extraction
         '[]',
-        # Reflection - Identity Suggestion
-        '{"new_traits": ["Reserved"], "relationship": "Strained"}'
+        # Reflection - Identity Suggestion (REQUIRED: confidence >= 0.8)
+        '{"new_traits": ["Reserved"], "relationship": "Strained", "confidence": 0.9}'
     ] * 5 # Repeat for 5 cycles
     
     # 2. Process 5 hostile events
