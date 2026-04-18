@@ -121,7 +121,7 @@ class MemoryStore:
                 
                 # Sort by utility score and limit
                 scored_candidates.sort(key=lambda x: x["score"], reverse=True)
-                results = [c["content"] for c in scored_candidates[:limit]]
+                results = scored_candidates[:limit]
 
             if results:
                 logger.info(
@@ -146,9 +146,12 @@ class MemoryStore:
             logger.error(f"Memory search failed: {e}")
             return []
 
-    async def _refresh_memories(self, contents: list[str]):
+    async def _refresh_memories(self, memories: list[dict]):
         """Updates the last_recalled_at timestamp to prevent decay of recently used memories."""
         try:
+            contents = [memory["content"] for memory in memories if memory.get("content")]
+            if not contents:
+                return
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     "UPDATE memories SET last_recalled_at = CURRENT_TIMESTAMP WHERE content = ANY($1)",
