@@ -53,4 +53,28 @@ For full instructions on generating your own V4 weights using our one-click Cola
 
 ---
 
+## 🛡️ Avoiding Synthesis Artifacts ("Random Lines")
+
+GPT-SoVITS is a few-shot model. To prevent "hallucinations" or random lines being synthesized, follow these rules:
+
+1. **Golden Reference Sample**: Even with a trained model, SoVITS requires a **Reference Audio** clip. This clip **MUST** match the vocal signature of your trained model exactly.
+2. **Precision Text Matching**: The `ref_text` in `Config` must match the spoken words in the `ref_audio` perfectly. Any mismatch will cause the model to synthesize gibberish or hallucinate random segments.
+3. **PCM Purity**: Always use raw PCM for reference audio to avoid header-corruption in the embedding calculation.
+
+## 🎭 The Social Mesh (Filler Service)
+
+AI Friend utilizes a pre-synthesized "Social Mesh" of fillers (Hmm, Accha, Haan). These are played from memory when synthesis takes longer than 350ms to maintain conversational presence.
+
+### 🚀 Benefits of V4 Fine-Tuning:
+- **Sub-300ms Perceived Latency**.
+- **Elite Prosody**: Natural inflection during complex social reasoning.
+- **Zero Hallucinations**: Fine-tuning significantly stabilizes the synthesis against metallic artifacts.
+
+### 📖 The Training Guide
+For full instructions on generating your own V4 weights using our one-click Colab workflow, see:
+- [TRAINING_GUIDE.md](./TRAINING_GUIDE.md) — Step-by-step model creation.
+- [LATENCY_IMPROVEMENT.md](./LATENCY_IMPROVEMENT.md) — Timing and scheduling deep-dive.
+
+---
+
 **Designed for Identity. Refined for Emotion.**

@@ -3,7 +3,7 @@ import logging
 import time
 import os
 import nats
-from typing import Any
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class BaseAgent:
             except Exception as e:
                 logger.debug(f"Stream bootstrap note: {e}")
 
-    async def publish(self, subject: str, data: Any):
+    async def publish(self, subject: str, data: Any, metadata: Optional[Dict[str, Any]] = None):
         """Publish an event to the mesh with latency tracking and binary support."""
         if not self.js:
             await self.connect()
@@ -80,15 +80,24 @@ class BaseAgent:
         from ..config import Config
 
         # 1. Prepare Metadata
-        meta = {
-            "start_time": time.time(),
-            "hops": [],
-            "source": self.name
-        }
+        if metadata:
+            meta = dict(metadata)
+            meta.setdefault("start_time", time.time())
+            meta.setdefault("hops", [])
+            meta.setdefault("source", self.name)
+        else:
+            meta = {
+                "start_time": time.time(),
+                "hops": [],
+                "source": self.name
+            }
         
         # Propagate existing meta if present in dict data
         if isinstance(data, dict) and "latency_metadata" in data:
-            meta = data["latency_metadata"]
+            meta = dict(data["latency_metadata"] or {})
+            meta.setdefault("start_time", time.time())
+            meta.setdefault("hops", [])
+            meta.setdefault("source", self.name)
         
         meta["hops"].append({
             "agent": self.name,

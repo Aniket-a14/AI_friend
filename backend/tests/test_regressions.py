@@ -8,9 +8,13 @@ sys.modules.setdefault("asyncpg", SimpleNamespace(Pool=object))
 
 from app.agents.brain_agent import BrainAgent  # noqa: E402
 from app.agents.surfacing_agent import SurfacingAgent  # noqa: E402
+sys.modules.setdefault("numpy", SimpleNamespace())
+from app.agents.voice_agent import VoiceAgent, VoicePlaybackState  # noqa: E402
 from app.cognitive.action import ActionService  # noqa: E402
 from app.cognitive.core import CognitiveService  # noqa: E402
 from app.cognitive.decision import ActionPlan  # noqa: E402
+from app.cognitive.identity import IdentityManager  # noqa: E402
+from app.cognitive.state import StateService  # noqa: E402
 from app.conversation_history_store import ConversationHistoryStore  # noqa: E402
 
 
@@ -41,6 +45,7 @@ def test_cognitive_resume_recovery_accepts_type_key():
         "keywords": ["stop"],
         "text": "stop please",
         "confidence": 0.9,
+        "utterance_id": "utt-1",
     }
     service.state.hydrate_state = AsyncMock()
     service.state.get_context_snapshot = MagicMock(
@@ -88,7 +93,11 @@ def test_cognitive_resume_recovery_accepts_type_key():
     assert outputs[0] == {"type": "mesh_signal", "data": "audio.resume"}
     service.agent.publish.assert_awaited_once_with(
         "audio.resume",
-        {"reason": "conflict_rejected", "perception_text": "stop please"},
+        {
+            "reason": "conflict_rejected",
+            "perception_text": "stop please",
+            "utterance_id": "utt-1",
+        },
     )
     service.state.hydrate_state.assert_not_awaited()
 
@@ -101,6 +110,7 @@ def test_cognitive_confirmed_stop_escalates_to_final_audio_stop():
         "keywords": ["stop"],
         "text": "stop",
         "confidence": 0.9,
+        "utterance_id": "utt-2",
     }
     service.perception.perceive = AsyncMock()
     service.decision.is_speculative_stop_confirmed = MagicMock(return_value=True)
@@ -123,6 +133,8 @@ def test_cognitive_confirmed_stop_escalates_to_final_audio_stop():
             "reason": "confirmed_command",
             "command_text": "stop right now",
             "keywords": ["stop"],
+            "utterance_id": "utt-2",
+            "turn_id": None,
         },
     )
     service.decision.decide.assert_not_awaited()
@@ -157,7 +169,9 @@ def test_brain_agent_connects_before_cognitive_initialize():
 
     asyncio.run(agent.start())
 
-    assert call_order[:2] == ["connect", "initialize"]
+    assert call_order[0] == "connect"
+    assert call_order.index("connect") < call_order.index("initialize")
+    assert call_order.index("conversation_initialize") < call_order.index("initialize")
 
 
 def test_action_service_strips_emotion_wrappers_but_keeps_pause_tags():
@@ -198,6 +212,89 @@ def test_surfacing_agent_suppresses_recently_recalled_memories():
     second_call = memory_store.search_memories.await_args_list[1]
     assert second_call.kwargs["refresh_on_recall"] is False
     assert second_call.kwargs["exclude_contents"] == ["We talked about your exam"]
+
+
+def test_voice_final_stop_fences_old_synthesis_generation():
+    agent = VoiceAgent()
+    agent.set_state = AsyncMock()
+
+    stale_item = {"turn_id": "turn-1", "generation": agent.generation}
+    assert agent._is_current_item(stale_item)
+
+    asyncio.run(agent._on_audio_stop({"speculative": False, "turn_id": "turn-1"}))
+
+    assert not agent._is_current_item(stale_item)
+    assert agent._is_current_item({"turn_id": "turn-2", "generation": agent.generation})
+
+
+def test_voice_resume_ignores_stale_utterance_id():
+    agent = VoiceAgent()
+    agent.set_state = AsyncMock()
+    agent.state = VoicePlaybackState.SPECULATIVE_PAUSE
+    agent.paused_utterance_id = "utt-current"
+
+    asyncio.run(agent._on_audio_resume({"utterance_id": "utt-old"}))
+
+    assert agent.state == VoicePlaybackState.SPECULATIVE_PAUSE
+    agent.set_state.assert_not_awaited()
+
+
+def test_voice_silence_uses_configured_sample_rate():
+    agent = VoiceAgent()
+    agent.sample_rate = 16000
+
+    assert len(agent._silence_pcm(10)) == 320
+
+
+def test_state_ignores_low_confidence_acoustic_bias():
+    state = StateService(graph_store=None)
+    state.persist_state = AsyncMock()
+    state.current_state.mood = 0.4
+
+    asyncio.run(state.apply_sensory_perception({
+        "emotional_bias": -1.0,
+        "confidence": 0.1,
+        "events": [],
+    }))
+
+    assert state.current_state.mood == 0.4
+    state.persist_state.assert_not_awaited()
+
+
+def test_state_debounces_high_frequency_sensory_persistence():
+    state = StateService(graph_store=None)
+    state.persist_state = AsyncMock()
+    state.sensory_persist_interval = 999
+    state._last_sensory_persist = 0
+
+    asyncio.run(state.apply_sensory_perception({
+        "emotional_bias": 1.0,
+        "confidence": 1.0,
+        "events": [],
+    }))
+    asyncio.run(state.apply_sensory_perception({
+        "emotional_bias": -1.0,
+        "confidence": 1.0,
+        "events": [],
+    }))
+
+    assert state.persist_state.await_count == 1
+
+
+def test_identity_hydrates_from_durable_config_store():
+    store = SimpleNamespace()
+    store.get_agent_config = AsyncMock(return_value={
+        "personality": '{"name": "durable friend", "core_personality": {"immutable": {"values": ["Honesty"], "base_tone": "Calm", "boundaries": []}}}',
+        "history": '{"relationship": "Trusted Friend", "memories": []}',
+        "evolved_learnings": "prefers quiet pacing",
+    })
+
+    manager = IdentityManager(base_path="/missing/path")
+    asyncio.run(manager.hydrate_from_config_store(store))
+
+    assert manager.personality["name"] == "durable friend"
+    assert manager.history["relationship"] == "Trusted Friend"
+    assert manager.history["evolved_learnings"] == "prefers quiet pacing"
 
 
 async def _collect_outputs(generator):

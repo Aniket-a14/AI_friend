@@ -20,9 +20,11 @@ class CognitiveService:
         self,
         llm_service,
         memory_store,
-        graph_db
+        graph_db,
+        identity_store=None,
     ):
         self.identity = IdentityManager()
+        self.identity_store = identity_store
         self.perception = PerceptionService(llm_service=llm_service)
         self.state = StateService(graph_store=graph_db)
         self.decision = DecisionService(llm_service=llm_service, memory_store=memory_store)
@@ -38,6 +40,8 @@ class CognitiveService:
 
     async def initialize(self, agent: Any = None):
         """Load identity and hydrate states. Subscribes to Mesh heartbeats."""
+        if self.identity_store:
+            await self.identity.hydrate_from_config_store(self.identity_store)
         await self.state.hydrate_state()
         
         # Subscribe to Mesh Channels
@@ -58,6 +62,7 @@ class CognitiveService:
         Sensory Intelligence: Handle emotional & event cues from SenseVoice.
         """
         perception_meta = data.get("metadata", {})
+        perception_meta.setdefault("confidence", data.get("confidence", 0.0))
         speculative_intent = data.get("speculative_intent")
         if speculative_intent:
             self.state.last_speculative_intent = speculative_intent
@@ -110,6 +115,7 @@ class CognitiveService:
                         await self.agent.publish("audio.resume", {
                             "reason": "conflict_rejected",
                             "perception_text": speculative_intent.get("text", ""),
+                            "utterance_id": speculative_intent.get("utterance_id"),
                         })
                     
                     yield {"type": "mesh_signal", "data": "audio.resume"}
@@ -122,6 +128,8 @@ class CognitiveService:
                             "reason": "confirmed_command",
                             "command_text": final_text,
                             "keywords": speculative_intent.get("keywords", []),
+                            "utterance_id": speculative_intent.get("utterance_id"),
+                            "turn_id": raw_event.get("metadata", {}).get("turn_id"),
                         })
                     yield {"type": "mesh_signal", "data": "audio.stop"}
                     return

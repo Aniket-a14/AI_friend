@@ -123,6 +123,37 @@ class ConversationHistoryStore:
         except Exception as e:
             logger.error(f"Failed to update evolved learnings: {e}")
 
+    async def update_agent_config(
+        self,
+        personality: str,
+        history: str,
+        evolved_learnings: str = "",
+    ):
+        """Persist the active runtime identity back to durable config storage."""
+        if not self.pool:
+            return
+
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO agent_configs (
+                        id, personality, background_history, evolved_learnings, updated_at
+                    )
+                    VALUES (1, $1, $2, $3, NOW())
+                    ON CONFLICT (id) DO UPDATE SET
+                        personality = EXCLUDED.personality,
+                        background_history = EXCLUDED.background_history,
+                        evolved_learnings = EXCLUDED.evolved_learnings,
+                        updated_at = NOW()
+                    """,
+                    personality,
+                    history,
+                    evolved_learnings or "",
+                )
+        except Exception as e:
+            logger.error(f"Failed to update agent config: {e}")
+
     async def start_session(self) -> uuid.UUID:
         """Start a new session and return its ID."""
         if not self.pool:

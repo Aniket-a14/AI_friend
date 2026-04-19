@@ -80,7 +80,8 @@ sequenceDiagram
 ### 🛡️ Solid State Mesh Hardening
 In version **CVS-1.0 Hardened**, we achieved **Zero-Drift Resilience**.
 - **9-Subject Signal Bus**: NATS now routes `chat`, `vision`, `state`, `cmd`, `voice`, `system`, `memory`, `identity`, and `knowledge`.
-- **Decentralized Credential Enforcer**: Hardcoded credentials are rejected; the mesh requires strict `.env` variables.
+- **Infrastructure Phased Startup**: Implemented `depends_on` conditions with `service_healthy`. The mesh graduates in stages (Infra -> Brain -> Sensory Agents) to eliminate startup race conditions.
+- **Mesh Surveillance**: Automated health probes (`nc -z nats_mesh 4222`) trigger self-healing for disconnected agents.
 - **Identity Mesh (Prisma 7.7.0)**: On-demand relational seeding ensures the AI's "Deep Self" is preserved across any hardware or container restart.
 - **State Cache Correctness**: Live emotional state is never hydrated from stale Neo4j TTL cache. State writes invalidate graph cache so mood, energy, trust, and attachment cannot rewind after a fresh interaction.
 - **Single Identity Owner**: Reflection and response generation now share one live `IdentityManager`, ensuring adaptive persona evolution affects active conversation immediately.
@@ -89,12 +90,15 @@ In version **CVS-1.0 Hardened**, we achieved **Zero-Drift Resilience**.
 Introduced an **Immutable Core** (base values, boundaries) paired with **Adaptive Variables** (habits, style), preventing personality drift while allowing natural behavioral growth.
 
 ### ⏳ Expressive Temporal Phrasing
-Voice synthesis now executes cognitive timing. The system parses `<pause>` and `<hesitate>` tags, injecting deterministic silent PCM buffers into the 32kHz stream for human-like cognitive cues.
+Voice synthesis now executes cognitive timing. The system parses `<pause>` and `<hesitate>` tags, injecting deterministic silent PCM buffers into the **32kHz raw binary stream** for human-like cognitive cues.
 
-The voice path streams GPT-SoVITS PCM chunks as they arrive instead of waiting for full synthesis completion. This keeps perceived response timing closer to live conversation and allows filler, hesitation, and interruption recovery to happen inside the signal runtime instead of after the fact.
+AI Friend utilizes **100% Raw Binary PCM** (16-bit, 32kHz) across the entire mesh. By eliminating WAV headers and Base64 encoding, we achieve a Solid State signal path that reduces perceived latency to **<250ms**.
 
-### 🐚 Active Memory Surfacing
-Asynchronous background agent evaluates shared history vs. current intent to "surface" relevant past moments, allowing memory to color the current response without adding latency.
+### 🧪 Persistent Voice Identity
+Instead of synthesizing from scratch each session, you can train a permanent voice model. These weights ensure the AI's "vocal fingerprint" remains consistent forever.
+- **Phased Identity Loading**: `VoiceAgent` auto-detects and hydrates your custom `.ckpt` and `.pth` weights from the synchronized `models/` volumes during mesh startup.
+- **Reference Guard**: Every synthesis call is fenced with a "Golden Reference" clip that must match your trained weights to prevent model hallucinations or "random lines."
+- **Social Mesh**: Common fillers are pre-synthesized using your permanent identity and stored as local PCM files for 0ms access.
 
 Surfacing includes novelty suppression so the same memory is not repeatedly reintroduced in a short window. Passive surfacing also avoids refreshing `last_recalled_at`, preventing "compulsive recall" loops where a memory becomes more likely to appear just because it recently appeared.
 
@@ -128,17 +132,19 @@ Surfacing includes novelty suppression so the same memory is not repeatedly rein
 ```text
 ├── .agents/             # Agent skills and memory systems
 │   └── CONTEXT.md       # Persistent handoff ledger for future agents
-├── app/                 # Core logic
-│   ├── agents/          # Agent implementations (Brain, Voice, STT)
-│   ├── cognitive/       # BDI and decision services
-│   ├── tts/             # Speech synthesis clients
-│   └── main.py          # Signaling entry point
+├── backend/             # Core logic
+│   ├── app/             # Application code
+│   │   ├── agents/      # Agent implementations (Brain, Voice, STT)
+│   │   ├── cognitive/   # BDI and decision services
+│   │   └── main.py      # NATS mesh entry point
+│   ├── Dockerfile       # Hardened base image with netcat
+│   └── requirements.txt # Python dependencies
 ├── docs/                # Technical documentation suite
 ├── frontend/            # Next.js 16 application
 ├── GPT_SoVITS/          # Voice training submodule
 ├── notebooks/           # Training & Dev scripts
-├── docker-compose.yml   # Orchestration
-└── requirements.txt     # Python dependencies
+├── docker-compose.yml   # Infrastructure orchestration
+└── requirements.txt     # Root dependencies
 ```
 
 ---
@@ -150,9 +156,9 @@ Surfacing includes novelty suppression so the same memory is not repeatedly rein
 - **Hardware**: NVIDIA GPU (RTX 3060+) or Apple Silicon (M2+).
 - **Software**: Docker Desktop, Python 3.11+, NPM.
 
-### 2. Launch the Mesh (Zero-Drift)
+### 2. Launch the Mesh (Solid State)
 ```bash
-# A. infrastructure (NATS, Postgres, Neo4j, Ollama, SoVITS)
+# A. Infrastructure (NATS, Postgres, Neo4j, Ollama, SoVITS)
 docker compose -f docker-compose.infra.yml up -d
 
 # B. Sync the Identity Genome (Prisma 7.7.0)
@@ -164,9 +170,9 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 ### 3. Verification & Audit
-Run the automated mesh audit to ensure all 12 services are healthy:
+Run the automated mesh audit to ensure all 12 services have reached a **Healthy** status through the phased startup sequence:
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Health}}"
 ```
 Refer to the **[Installation Guide](docs/GPT_SOVITS_INSTALL.md)** and **[Deployment Guide](docs/DEPLOYMENT.md)** for deep environment hardening.
 
@@ -178,7 +184,7 @@ cd backend
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The latest verified result after the CVS runtime fixes was `48 passed`, with one non-blocking `.pytest_cache` permission warning on the local machine.
+The latest verified result after the CVS runtime fixes was `54 passed`, with one non-blocking `.pytest_cache` permission warning.
 
 ---
 
@@ -190,7 +196,7 @@ The full documentation suite lives in [docs](docs/README.md). Start there if you
 - [API Spec](docs/API_SPEC.md) documents REST endpoints and NATS subject contracts.
 - [Identity System](docs/IDENTITY_SYSTEM.md) explains immutable identity, adaptive variables, state, and memory surfacing.
 - [Latency Improvement](docs/LATENCY_IMPROVEMENT.md) explains perceived-latency strategy, streaming PCM, and timing markers.
-- [Deployment](docs/DEPLOYMENT.md) covers local and production deployment.
+- [Deployment](docs/DEPLOYMENT.md) covers local and production deployment (Phased Startup).
 - [.agents/CONTEXT.md](.agents/CONTEXT.md) is the persistent context ledger future agents should read before modifying the system.
 
 ---
@@ -200,6 +206,7 @@ The full documentation suite lives in [docs](docs/README.md). Start there if you
 - [x] **Dynamic Identity Evolution**: State-driven personality system with NATS heartbeat.
 - [x] **Structured Interruption Arbitration**: SenseVoice publishes speculative intent, Whisper validates, and the brain confirms stop/resume behavior.
 - [x] **Streaming Voice Runtime**: VoiceAgent queues raw PCM chunks as they arrive for lower perceived first-audio latency.
+- [x] **Phased Startup Mesh**: Zero-race condition graduation with automated health surveillance.
 - [ ] **Expression Side-Channel**: Move affect, rate, and intensity to a structured channel so only timing markers remain in text.
 - [ ] **Emotion-Matched Interjection**: Soft-pause logic for more human-like overlap and backchanneling.
 - [ ] **M4 CoreML Integration**: Native NPU support for zero-GPU voice synthesis.

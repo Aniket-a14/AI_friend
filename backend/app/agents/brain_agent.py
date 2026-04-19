@@ -64,7 +64,8 @@ class BrainAgent(BaseAgent):
         self.cognitive_core = CognitiveService(
             llm_service=self.ollama,
             memory_store=memory_store,
-            graph_db=graph_db
+            graph_db=graph_db,
+            identity_store=conversation_store,
         )
 
         self.last_interaction_time = datetime.now()
@@ -76,11 +77,12 @@ class BrainAgent(BaseAgent):
 
     async def start(self):
         await self.connect()
-        await self.cognitive_core.initialize(agent=self)
 
         if self.conversation_store:
             await self.conversation_store.initialize()
             await self.conversation_store.start_session()
+
+        await self.cognitive_core.initialize(agent=self)
 
         # Subscribe to I/O streams
         await self.subscribe("chat.input", self._on_chat_input)
@@ -114,6 +116,8 @@ class BrainAgent(BaseAgent):
         if not user_text:
             return
 
+        turn_id = message.get("turn_id") or message.get("utterance_id") or str(uuid.uuid4())
+
         raw_event = {
             "id": str(uuid.uuid4()),
             "type": "USER_MESSAGE",
@@ -121,6 +125,8 @@ class BrainAgent(BaseAgent):
             "metadata": {
                 **message.get("metadata", {}),
                 "visuals": self.last_visual_context,
+                "turn_id": turn_id,
+                "utterance_id": message.get("utterance_id"),
             }
         }
 
@@ -147,7 +153,7 @@ class BrainAgent(BaseAgent):
                         and (now_monotonic - segment_started_at) >= self.formation_buffer_ms
                         and len(current_chunk_words) >= 3
                     ):
-                        await self._publish_speech_chunk(current_chunk_words)
+                        await self._publish_speech_chunk(current_chunk_words, turn_id)
                         current_chunk_words = []
                         segment_started_at = None
                     
@@ -163,21 +169,22 @@ class BrainAgent(BaseAgent):
                         
                         # 2. Decision (Safe Split)
                         if score > 0.7 or len(current_chunk_words) > 12:
-                            await self._publish_speech_chunk(current_chunk_words)
+                            await self._publish_speech_chunk(current_chunk_words, turn_id)
                             current_chunk_words = []
                             segment_started_at = None
                 
                 elif output["type"] == "done":
                     # Emit residue
                     if current_chunk_words:
-                        await self._publish_speech_chunk(current_chunk_words)
+                        await self._publish_speech_chunk(current_chunk_words, turn_id)
                     
                     state_snap = self.cognitive_core.state.get_context_snapshot()
                     await self.publish("chat.output", {
                         "content": "", 
                         "done": True, 
                         "full_response": full_response,
-                        "emotion": state_snap.get("emotion", "neutral")
+                        "emotion": state_snap.get("emotion", "neutral"),
+                        "turn_id": turn_id,
                     })
 
         except Exception as e:
@@ -189,7 +196,7 @@ class BrainAgent(BaseAgent):
 
         await self.set_state("idle")
 
-    async def _publish_speech_chunk(self, words: List[str]):
+    async def _publish_speech_chunk(self, words: List[str], turn_id: str = None):
         """Publishes a semantically coherent chunk with CVS-1.0 metadata."""
         text = " ".join(words).strip()
         if not text:
@@ -205,7 +212,8 @@ class BrainAgent(BaseAgent):
             "emotional_intensity": state_snap.get("emotional_intensity", 0.6),
             "confidence": 0.9, # To be dynamically computed in future versions
             "speaking_rate": 1.0,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "turn_id": turn_id,
         }
         await self.publish("chat.output", payload)
 

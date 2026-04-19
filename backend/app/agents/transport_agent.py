@@ -1,6 +1,7 @@
 import base64
 import logging
 import asyncio
+import time
 import livekit.rtc as rtc
 from livekit.api import AccessToken, VideoGrants
 from .base import BaseAgent
@@ -91,15 +92,16 @@ class TransportAgent(BaseAgent):
         audio_stream = rtc.AudioStream(track)
         async for event in audio_stream:
             frame = event.frame
-            audio_data = frame.data
-            payload = {
-                "audio": base64.b64encode(audio_data).decode("utf-8"),
+            audio_data = bytes(frame.data)
+            metadata = {
                 "sample_rate": frame.sample_rate,
                 "channels": frame.num_channels,
                 "participant": track.sid,
+                "captured_at": time.time(),
             }
-            # Publish to mesh
-            await self.publish("audio.inbound", payload)
+            # Publish raw PCM to the binary mesh path. STT still accepts the
+            # legacy JSON/base64 shape for compatibility.
+            await self.publish("audio.inbound", audio_data, metadata=metadata)
 
     async def _on_nats_audio(self, data, metadata: dict = None):
         """Convert NATS audio events to WebRTC frames for User."""
