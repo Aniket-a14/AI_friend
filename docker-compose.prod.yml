@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   # ---------------------------------------------------------------------------
@@ -58,7 +57,7 @@ services:
       context: ./backend
       target: slim
     container_name: voice_agent
-    command: [ "python", "-m", "app.agents.voice_agent" ]
+    command: [ "python", "-m", "app.voice.agent" ]
     volumes:
       - ./backend:/app
       - ./backend/voice_samples:/app/output # For saving/reading WAVs
@@ -115,7 +114,7 @@ services:
       context: ./backend
       target: full
     container_name: stt_agent
-    command: [ "python", "-m", "app.agents.stt_agent" ]
+    command: [ "python", "-m", "app.stt.agent" ]
     volumes:
       - ./backend:/app
       - ./backend/models:/app/models # Persist models

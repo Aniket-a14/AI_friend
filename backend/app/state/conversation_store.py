@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 import asyncpg
-from .config import Config
+from ..config import Config
 
 logger = logging.getLogger(__name__)
 

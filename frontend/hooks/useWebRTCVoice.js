@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Room, RoomEvent, createLocalAudioTrack } from 'livekit-client';
 
-const BACKEND_URL = 'http://localhost:8000';
-const LIVEKIT_URL = 'ws://localhost:7880';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'ws://localhost:7880';
 
 export function useWebRTCVoice() {
     const [isConnected, setIsConnected] = useState(false);

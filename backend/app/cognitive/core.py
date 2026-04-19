@@ -3,7 +3,7 @@ import time
 from typing import Dict, Any, AsyncGenerator
 
 from .perception import PerceptionService
-from .state import StateService
+from ..state import StateService
 from .decision import DecisionService
 from .action import ActionService
 from .learning import ReflectionService

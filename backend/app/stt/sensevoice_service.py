@@ -32,7 +32,7 @@ class SenseVoiceSTTService:
 
     def load_model(self):
         """Initialize sherpa-onnx OfflineRecognizer."""
-        base_path = Path(__file__).parent.parent / self.model_dir
+        base_path = Path(__file__).parent.parent.parent / self.model_dir
         
         # SenseVoiceSmall specific files
         model_path = base_path / "model.int8.onnx"

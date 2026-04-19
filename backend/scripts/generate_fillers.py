@@ -9,7 +9,7 @@ from pathlib import Path
 # We need to add backend/ to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.tts.sovits_client import SoVITSClient
+from app.voice.sovits_client import SoVITSClient
 from app.config import Config
 
 async def generate_fillers():
