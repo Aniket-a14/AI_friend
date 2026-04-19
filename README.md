@@ -57,7 +57,7 @@ graph TD
 ```
 
 ### 2. The Perceptual "Pulse" Path
-To achieve sub-280ms perceived latency, the system utilizes a non-linear signal path with hardware-optimized `sherpa-onnx`.
+To achieve sub-250ms perceived latency, the system utilizes a non-linear signal path with hardware-optimized `sherpa-onnx`.
 
 ```mermaid
 sequenceDiagram
