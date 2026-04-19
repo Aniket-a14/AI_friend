@@ -9,13 +9,13 @@ sys.modules.setdefault("asyncpg", SimpleNamespace(Pool=object))
 from app.agents.brain_agent import BrainAgent  # noqa: E402
 from app.agents.surfacing_agent import SurfacingAgent  # noqa: E402
 sys.modules.setdefault("numpy", SimpleNamespace())
-from app.agents.voice_agent import VoiceAgent, VoicePlaybackState  # noqa: E402
+from app.voice.agent import VoiceAgent, VoicePlaybackState  # noqa: E402
 from app.cognitive.action import ActionService  # noqa: E402
 from app.cognitive.core import CognitiveService  # noqa: E402
 from app.cognitive.decision import ActionPlan  # noqa: E402
 from app.cognitive.identity import IdentityManager  # noqa: E402
-from app.cognitive.state import StateService  # noqa: E402
-from app.conversation_history_store import ConversationHistoryStore  # noqa: E402
+from app.state.agent_state import StateService  # noqa: E402
+from app.state.conversation_store import ConversationHistoryStore  # noqa: E402
 
 
 def test_get_last_session_time_without_current_session_builds_valid_query():

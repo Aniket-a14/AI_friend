@@ -3,13 +3,14 @@ import logging
 import time
 import numpy as np
 from enum import Enum
-from typing import Dict, Any, Optional, List, Tuple
-from collections import deque
+from typing import Dict, Any, List
 
-from .base import BaseAgent
+from ..agents.base import BaseAgent
 from ..config import Config
-from ..tts.sovits_client import SoVITSClient
-from ..tts.filler_service import FillerService
+from .sovits_client import SoVITSClient
+from .filler_service import FillerService
+from .normalizer import AudioNormalizer
+from .cache import AudioCache
 
 logger = logging.getLogger(__name__)
 
@@ -22,94 +23,6 @@ class VoicePlaybackState(Enum):
     TRANSITION = "TRANSITION"
     COOLDOWN = "COOLDOWN"
 
-class AudioNormalizer:
-    """
-    CVS-1.0 Signal Rendering Engine.
-    Handles Peak Normalization, Rate-Adaptive RMS, and Gain Matching.
-    """
-    def __init__(self, target_peak=-1.0, baseline_rms_window=0.1, sample_rate=Config.SAMPLE_RATE):
-        self.target_peak = 10 ** (target_peak / 20)  # Convert dB to linear
-        self.baseline_rms_window = baseline_rms_window
-        self.last_tail_rms = None
-        self.sample_rate = sample_rate
-
-    def process(self, audio_data: bytes, speaking_rate: float = 1.0) -> bytes:
-        """Apply adaptive normalization and return processed PCM."""
-        if not audio_data:
-            return b""
-            
-        samples = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
-        
-        # 1. Peak Normalization
-        peak = np.max(np.abs(samples))
-        if peak > 0:
-            samples = samples * (self.target_peak * 32767 / peak)
-        
-        # 2. Rate-Adaptive RMS Smoothing (Bounded 40-140ms)
-        # We don't change the gain here, but we calculate it for matching if needed.
-        # In this implementation, we focus on inter-chunk gain matching.
-        current_rms = np.sqrt(np.mean(samples**2))
-        
-        # 3. Inter-chunk Gain Matching
-        if self.last_tail_rms is not None and current_rms > 0:
-            # Smooth transition from previous tail
-            gain_multiplier = self.last_tail_rms / current_rms
-            # Clamp multiplier to avoid extreme jumps
-            gain_multiplier = max(0.5, min(2.0, gain_multiplier))
-            samples = samples * gain_multiplier
-            
-        # Update tail RMS for next chunk (using last 100ms)
-        tail_len = int(0.1 * self.sample_rate)
-        if len(samples) > tail_len:
-            self.last_tail_rms = np.sqrt(np.mean(samples[-tail_len:]**2))
-        else:
-            self.last_tail_rms = current_rms
-            
-        return np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
-
-class AudioCache:
-    """
-    Multidimensional Stylistic Cache.
-    Key: (text, emotion_hash, rate).
-    Supports Near-Neighbor Reuse.
-    """
-    def __init__(self, max_size=200):
-        self.cache = {}
-        self.order = deque()
-        self.max_size = max_size
-
-    def _get_key(self, text: str, emotion_vector: str, rate: float) -> Tuple[str, str, float]:
-        # Normalize text for robustness
-        norm_text = "".join(e for e in text.lower() if e.isalnum() or e.isspace()).strip()
-        return (norm_text, emotion_vector, round(rate, 2))
-
-    def get(self, text: str, emotion: str, rate: float) -> Optional[bytes]:
-        key = self._get_key(text, emotion, rate)
-        if key in self.cache:
-            self.order.remove(key)
-            self.order.append(key)
-            return self.cache[key]
-        
-        # Stylistic Near-Neighbor Match (V2)
-        # Search for same text but within +/- 10% rate/emotion tolerance
-        norm_text = key[0]
-        for c_key in self.cache:
-            if c_key[0] == norm_text and c_key[1] == emotion:
-                if abs(c_key[2] - rate) < 0.1:
-                    logger.info(f"🎯 Cache Near-Neighbor Hit: {text} (Rate: {c_key[2]} ~ {rate})")
-                    return self.cache[c_key]
-        return None
-
-    def set(self, text: str, emotion: str, rate: float, audio: bytes):
-        key = self._get_key(text, emotion, rate)
-        if key in self.cache:
-            self.order.remove(key)
-        elif len(self.cache) >= self.max_size:
-            oldest = self.order.popleft()
-            del self.cache[oldest]
-        
-        self.cache[key] = audio
-        self.order.append(key)
 
 class VoiceAgent(BaseAgent):
     """

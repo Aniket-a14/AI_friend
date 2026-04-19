@@ -7,9 +7,7 @@ from typing import Dict, Any, List
 
 from .base import BaseAgent
 from ..llm.ollama_client import OllamaClient
-from ..knowledge.graph_db import GraphDB
-from ..memory_store import MemoryStore
-from ..conversation_history_store import ConversationHistoryStore
+from ..state import GraphDB, MemoryStore, ConversationHistoryStore
 from ..config import Config
 from ..cognitive import CognitiveService
 

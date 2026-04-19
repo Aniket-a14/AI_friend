@@ -6,7 +6,7 @@ import sys
 # Add backend directory to path so we can import app modules
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from app.conversation_history_store import ConversationHistoryStore
+from app.state.conversation_store import ConversationHistoryStore
 
 
 async def update_soul():

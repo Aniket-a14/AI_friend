@@ -2,7 +2,7 @@ import asyncio
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, AsyncMock, patch
-from app.memory_store import MemoryStore
+from app.state.memory_store import MemoryStore
 
 @pytest.fixture
 def mock_pool():

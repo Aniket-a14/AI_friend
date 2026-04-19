@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timedelta
-from app.cognitive.state import StateService
+from app.state.agent_state import StateService
 
 @pytest.fixture
 def state_service(mock_graph_db):

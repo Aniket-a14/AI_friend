@@ -5,7 +5,7 @@ import AssistantCircle from '../components/AssistantCircle';
 import { useWebRTCVoice } from '../hooks/useWebRTCVoice';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 export default function Home() {
     const { isConnected, isConnecting, state, startRecording } = useWebRTCVoice();

@@ -3,9 +3,9 @@ import logging
 import numpy as np
 import asyncio
 import uuid
-from .base import BaseAgent
-from ..whisper_stt_service import WhisperSTTService
-from ..sensevoice_service import SenseVoiceSTTService
+from ..agents.base import BaseAgent
+from .whisper_service import WhisperSTTService
+from .sensevoice_service import SenseVoiceSTTService
 import soxr
 import time
 from typing import Any

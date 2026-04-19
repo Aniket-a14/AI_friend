@@ -27,7 +27,7 @@ def test_brain_wiring():
     print("2. Testing 'BrainAgent' wiring...", end=" ")
     try:
         from app.agents.brain_agent import BrainAgent
-        from app.conversation_history_store import ConversationHistoryStore
+        from app.state.conversation_store import ConversationHistoryStore
 
         history = ConversationHistoryStore()
         agent = BrainAgent(conversation_store=history)

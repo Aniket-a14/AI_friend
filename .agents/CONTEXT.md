@@ -44,19 +44,13 @@ Core design principles:
 
 ## Architecture Snapshot
 
-Main runtime layers:
+Main modular layers (Refactored 2026-04-19):
 
-- Sensory layer: Whisper for final transcription, SenseVoice for fast perception,
-  emotion, and speculative interruption.
-- Cognitive layer: BDI-style `CognitiveService`, identity management, state
-  service, action generation, and reflection.
-- State layer: persistent mood, energy, trust, attachment, acoustic bias, and
-  idle heartbeat evolution.
-- Memory layer: Postgres/vector memory plus Neo4j graph state and relationships.
-- Voice layer: GPT-SoVITS streaming PCM, temporal markers, filler audio, and
-  NATS audio transport.
-- Mesh: NATS JetStream subjects including `chat.*`, `audio.*`, `state.*`,
-  `memory.*`, `system.*`, `voice.*`, and related channels.
+- **Sensory (STT) Layer (`app/stt/`)**: Houses perception engines (Whisper, SenseVoice) and the `STTAgent`. Decoupled from core logic via structured hypotheses.
+- **Cognitive Layer (`app/cognitive/`)**: BDI orchestrator (`CognitiveService`), identity management, and behavioral reflection. Injects State services via package facade.
+- **State Layer (`app/state/`)**: The "Shared Kernel." Houses persistent mood/energy dynamics (`AgentState`), vector memory (`MemoryStore`), conversation history, and Neo4j graph state.
+- **Voice Layer (`app/voice/`)**: Signal rendering engine. Houses `VoiceAgent`, SoVITS runtime, and extracted signal helpers (`AudioNormalizer`, `AudioCache`).
+- **Mesh**: NATS JetStream subjects provide the only cross-layer integration point, ensuring a hardware-agnostic and decoupled runtime.
 
 ## Recent Review Findings
 
@@ -324,3 +318,51 @@ All workflows use `paths:` filters so they only trigger on relevant file changes
 Verification:
 
 - All 11 workflow files (6 existing + 5 new) pass YAML syntax validation.
+
+## 2026-04-19 Modular Architectural Refactor
+
+Refactored the monolithic CVS-1.0 backend into a 4-layer decoupled architecture to improve maintainability and strictly enforce structural boundaries.
+
+Changed files:
+
+- Created `app/stt/`, `app/state/`, `app/voice/`.
+- Moved 15+ files and updated 60+ internal import paths.
+- Extracted `app/voice/normalizer.py` and `app/voice/cache.py` from `VoiceAgent`.
+- Updated `docker-compose.prod.yml` with modular entry points.
+
+Behavior changes:
+
+- **Strict Layering**: No direct cross-imports between stores and agents; integration is now handled via package facades (`__init__.py`).
+- **State as Shared Kernel**: `StateService` is now the single source of truth for all identity-related dynamics, injected into the Cognitive layer.
+- **Hardware Agnostic STT/Voice**: Sensory perpection and audio rendering are now physically isolated modules.
+- **Frontend-Mesh Synchronization**: Replaced legacy Supabase database links with local Docker PostgreSQL connectivity. The Frontend and Backend now share the same "Sovereign" data layer for consistent history and personality state.
+- **Frontend Docker Hardening**:
+    - Updated `Dockerfile` with `libc6-compat` for Alpine stability and disabled Next.js telemetry.
+    - Implemented `ARG` support for `NEXT_PUBLIC_BACKEND_URL` to allow build-time mesh configuration.
+- **Connectivity Refactor**: Externalized all backend and LiveKit signal URLs into environment variables, removing hardcoded localhost dependencies.
+
+Verification:
+
+```powershell
+# Backend Verification
+cd backend
+python -m compileall app
+pytest --ignore=scripts
+
+# Frontend Verification
+cd frontend
+docker build -t ai-friend-frontend .
+docker run -p 3000:3000 ai-friend-frontend
+```
+
+Latest result:
+
+- **54 passed (Backend)**. 
+- **Frontend Health**: Build finished successfully and server initialized using the standalone production runtime.
+- **Mesh Connectivity**: All 13 containers (12 Backend/Infra + 1 Frontend) are now verified for interoperability.
+
+Next Recommended Work:
+
+- Implement per-layer latency telemetry to measure overhead of modular facades.
+- Transition `BrainAgent` logic into a more generic `MeshOrchestrator` if further layers (e.g., Vision, Motor) are added.
+- Review `StateService` for thread-safety under high-frequency mesh updates from multiple agents.

@@ -6,7 +6,7 @@ from app.cognitive.core import CognitiveService
 
 @pytest.fixture
 def cognitive_service(mock_llm_service, mock_graph_db, mock_memory_store):
-    with patch("app.cognitive.state.StateService.persist_state", new_callable=AsyncMock):
+    with patch("app.state.agent_state.StateService.persist_state", new_callable=AsyncMock):
         # FIX: Align mock schema with CVS-1.0 Immutable Core
         with patch("app.cognitive.identity.IdentityManager._load_json", return_value={
             "name": "my friend",
