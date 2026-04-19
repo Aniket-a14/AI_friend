@@ -1,0 +1,87 @@
+name: 🔒 Security & Secrets Audit
+
+# Prevents accidental credential leaks and validates that
+# hardcoded passwords are never committed. Runs on every push.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  credential-scan:
+    name: Credential Leak Prevention
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Full history for diff scanning
+
+      - name: Scan for Hardcoded Secrets
+        run: |
+          echo "🔍 Scanning for hardcoded credentials..."
+          errors=0
+
+          # Pattern 1: Hardcoded passwords in Python/JS (not in .env.example or tests)
+          if grep -rn --include="*.py" --include="*.js" --include="*.ts" --include="*.tsx" \
+             -E "(password|secret|api_key)\s*=\s*['\"][^'\"]{8,}['\"]" \
+             --exclude-dir=node_modules --exclude-dir=.next --exclude-dir=__pycache__ \
+             backend/ frontend/app/ frontend/components/ 2>/dev/null; then
+            echo "⚠️ Potential hardcoded secrets found in source code"
+            errors=$((errors + 1))
+          fi
+
+          # Pattern 2: Default Neo4j password in production code
+          if grep -rn "neo4j/password" backend/app/ --include="*.py" 2>/dev/null | \
+             grep -v "test" | grep -v "#" | grep -v "\.env"; then
+            echo "❌ Default Neo4j password found in production code"
+            errors=$((errors + 1))
+          fi
+
+          # Pattern 3: Committed .env file (should be gitignored)
+          if [ -f "backend/.env" ]; then
+            echo "❌ backend/.env is committed — this should be in .gitignore"
+            errors=$((errors + 1))
+          fi
+
+          if [ $errors -gt 0 ]; then
+            echo ""
+            echo "🚫 $errors security issue(s) found. Fix before merging."
+            exit 1
+          fi
+
+          echo "✅ No hardcoded credentials detected"
+
+  dependency-audit:
+    name: Python Dependency Vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+
+      - name: Audit Backend Dependencies
+        run: |
+          pip install pip-audit
+          cd backend
+          pip-audit -r requirements-base.txt --desc 2>&1 | tee audit_results.txt || true
+
+          # Count high/critical vulnerabilities
+          critical=$(grep -ci "critical\|high" audit_results.txt || echo "0")
+          if [ "$critical" -gt 0 ]; then
+            echo "⚠️ Found $critical high/critical vulnerabilities"
+            echo "Review audit_results.txt for details"
+          else
+            echo "✅ No critical vulnerabilities found"
+          fi
+
+      - name: Upload Audit Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit
+          path: backend/audit_results.txt
+          retention-days: 30

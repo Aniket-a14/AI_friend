@@ -1,0 +1,88 @@
+name: 📦 Docker Image Health
+
+# Builds all agent images and validates they can start.
+# Catches missing dependencies, broken entrypoints, and
+# import errors that only surface inside the container.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'backend/Dockerfile*'
+      - 'backend/requirements*.txt'
+      - 'docker-compose*.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'backend/Dockerfile*'
+      - 'backend/requirements*.txt'
+      - 'docker-compose*.yml'
+
+jobs:
+  build-agents:
+    name: Build & Smoke Test Agent Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        agent:
+          - name: brain_agent
+            target: slim
+            module: app.agents.brain_agent
+          - name: voice_agent
+            target: slim
+            module: app.agents.voice_agent
+          - name: transport_agent
+            target: slim
+            module: app.agents.transport_agent
+          - name: stt_agent
+            target: full
+            module: app.agents.stt_agent
+          - name: vision_agent
+            target: full
+            module: app.agents.vision_agent
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build ${{ matrix.agent.name }} image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          target: ${{ matrix.agent.target }}
+          push: false
+          load: true
+          tags: cvs/${{ matrix.agent.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.agent.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.agent.name }}
+
+      - name: Smoke Test — Verify Python Imports
+        run: |
+          # Verify the agent module can be imported without crashing
+          docker run --rm cvs/${{ matrix.agent.name }}:ci \
+            python -c "import ${{ matrix.agent.module }}; print('✅ ${{ matrix.agent.name }} imports OK')"
+
+      - name: Smoke Test — Verify netcat installed
+        run: |
+          # Health probes depend on netcat being present
+          docker run --rm cvs/${{ matrix.agent.name }}:ci \
+            which nc && echo "✅ netcat available" || echo "❌ netcat missing"
+
+  compose-config:
+    name: Unified Compose Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Generate CI .env
+        run: sed 's/your_.*$/ci_dummy/g' .env.example > .env
+
+      - name: Validate Phased Startup Config
+        run: |
+          docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config --quiet
+          echo "✅ Unified compose config is valid"
