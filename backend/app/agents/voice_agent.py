@@ -222,8 +222,11 @@ class VoiceAgent(BaseAgent):
 
     async def _handle_input(self, data: Dict[str, Any], metadata: dict = None):
         """Ingest chunked text with backpressure awareness."""
+        if data.get("done"):
+            return
+
         text = data.get("content", "").strip()
-        if not text and not data.get("done"):
+        if not text:
             return
 
         # 1. Backpressure Guard (Phase 2 Hardening)
@@ -268,7 +271,7 @@ class VoiceAgent(BaseAgent):
                     # Check Cache
                     cached_audio = self.cache.get(text, item["emotion"], item["rate"])
                     if cached_audio:
-                        await self.playback_queue.put((cached_audio, item["metadata"]))
+                        await self.playback_queue.put((cached_audio, item["metadata"], True))
                         self.ingestion_queue.task_done()
                         continue
 
@@ -286,14 +289,14 @@ class VoiceAgent(BaseAgent):
                         if part.startswith("<pause="):
                             ms = int(re.search(r'\d+', part).group())
                             silence_pcm = b'\x00' * (ms * 64) # 32000Hz * 2bytes / 1000ms = 64 bytes/ms
-                            await self.playback_queue.put((silence_pcm, item["metadata"]))
+                            await self.playback_queue.put((silence_pcm, item["metadata"], False))
                             logger.info(f"⏳ Injected Pause: {ms}ms")
                             continue
                         elif part == "<hesitate>":
                             import random
                             ms = random.randint(250, 450)
                             silence_pcm = b'\x00' * (ms * 64)
-                            await self.playback_queue.put((silence_pcm, item["metadata"]))
+                            await self.playback_queue.put((silence_pcm, item["metadata"], False))
                             logger.info(f"⏳ Injected Hesitation: {ms}ms")
                             continue
                         
@@ -301,7 +304,8 @@ class VoiceAgent(BaseAgent):
                         # Synthesis (Async SoVITS)
                         await self._set_playback_state(VoicePlaybackState.BUFFERING)
                         start_synth = time.time()
-                        full_pcm = b""
+                        assembled_pcm = bytearray()
+                        first_audio_chunk = True
                         
                         async for chunk in self.sovits.synthesize_stream(
                             text=part,
@@ -309,13 +313,31 @@ class VoiceAgent(BaseAgent):
                             ref_text=self.ref_text,
                             media_type="raw"
                         ):
-                            if chunk:
-                                full_pcm += chunk
+                            if not chunk:
+                                continue
+                            if len(chunk) % 2 != 0:
+                                chunk = chunk[:-1]
+                            if not chunk:
+                                continue
+
+                            clean_pcm = self.normalizer.process(
+                                chunk,
+                                speaking_rate=item["rate"],
+                            )
+                            if not clean_pcm:
+                                continue
+
+                            assembled_pcm.extend(clean_pcm)
+                            await self.playback_queue.put((
+                                clean_pcm,
+                                item["metadata"],
+                                first_audio_chunk,
+                            ))
+                            first_audio_chunk = False
                         
-                        if full_pcm:
-                            clean_pcm = self.normalizer.process(full_pcm, speaking_rate=item["rate"])
-                            self.cache.set(part, item["emotion"], item["rate"], clean_pcm)
-                            await self.playback_queue.put((clean_pcm, item["metadata"]))
+                        if assembled_pcm:
+                            full_pcm = bytes(assembled_pcm)
+                            self.cache.set(part, item["emotion"], item["rate"], full_pcm)
                             
                             elapsed = (time.time() - start_synth) * 1000
                             logger.info(f"🔊 Synth Done | '{part[:15]}' | Time: {elapsed:.2f}ms")
@@ -330,7 +352,7 @@ class VoiceAgent(BaseAgent):
         while True:
             queue_item_claimed = False
             try:
-                pcm_data, meta = await self.playback_queue.get()
+                pcm_data, meta, segment_start = await self.playback_queue.get()
                 queue_item_claimed = True
                 
                 # CVS-1.0: Speculative State Gating
@@ -348,7 +370,7 @@ class VoiceAgent(BaseAgent):
                 samples = np.frombuffer(pcm_data, dtype=np.int16).astype(np.float32)
                 fade_len = int(0.015 * self.sample_rate) # 15ms window
                 
-                if len(samples) > fade_len:
+                if segment_start and len(samples) > fade_len and np.any(samples):
                     # If resuming or starting fresh chunk, apply linear fade-in
                     # In a full OLA, we would blend with the tail of speculative_buffer here
                     fade_in = np.linspace(0.0, 1.0, fade_len)

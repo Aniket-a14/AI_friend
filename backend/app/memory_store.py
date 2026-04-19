@@ -4,6 +4,7 @@ import httpx
 import json
 import math
 from datetime import datetime
+from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,14 @@ class MemoryStore:
             logger.error(f"Failed to add memory: {e}")
             return False
 
-    async def search_memories(self, query_text, threshold=0.6, limit=5):
+    async def search_memories(
+        self,
+        query_text,
+        threshold=0.6,
+        limit=5,
+        refresh_on_recall=True,
+        exclude_contents: Iterable[str] = None,
+    ):
         """
         Searches and re-scores memories using a Utility Score:
         Score = Similarity * (Importance * Decay) * (1 + Beta * Emotion)
@@ -77,6 +85,7 @@ class MemoryStore:
 
             vector_str = str(query_vector)
             now = datetime.now()
+            excluded = {content for content in (exclude_contents or []) if content}
 
             results = []
             async with self.pool.acquire() as conn:
@@ -99,6 +108,8 @@ class MemoryStore:
                 
                 scored_candidates = []
                 for row in rows:
+                    if row["content"] in excluded:
+                        continue
                     sim = row["similarity"]
                     last_recall = row["last_recalled_at"]
                     importance = row["importance_score"]
@@ -129,7 +140,7 @@ class MemoryStore:
                 )
             
             # Update last_recalled_at for the top results to 'refresh' them
-            if results:
+            if results and refresh_on_recall:
                 # Actual Implementation: Robust background task safety wrapper
                 def _done_callback(t):
                     try:

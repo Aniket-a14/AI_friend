@@ -12,11 +12,11 @@ class ReflectionService:
     CVS-1.0 Solid State Learning Layer.
     Implements Fact Resolution, Confidence Gating, and Adaptive Persona Evolution.
     """
-    def __init__(self, llm_service=None, graph_store=None, pg_vector=None):
+    def __init__(self, llm_service=None, graph_store=None, pg_vector=None, identity_manager=None):
         self.llm = llm_service
         self.graph = graph_store
         self.vector = pg_vector
-        self.identity = IdentityManager()
+        self.identity = identity_manager or IdentityManager()
         self.is_reflecting = False
 
     async def trigger_reflection(self, recent_episodes: List[Dict[str, Any]]):

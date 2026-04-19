@@ -1,4 +1,5 @@
 import logging
+import inspect
 import math
 import time
 from dataclasses import dataclass, field
@@ -35,7 +36,8 @@ class StateService:
             
         logger.info(f"[State] Hydrating {agent_name} from Neo4j...")
         query = "MATCH (a:Agent {name: $name}) RETURN a"
-        res = await self.graph.execute_query(query, {"name": agent_name}, use_cache=True)
+        # Agent state must reflect the latest write, not a TTL-delayed cache snapshot.
+        res = await self.graph.execute_query(query, {"name": agent_name}, use_cache=False)
         if res:
             props = res[0]["a"]
             self.current_state.mood = props.get("mood", 0.0)
@@ -64,6 +66,10 @@ class StateService:
             "attachment": self.current_state.attachment
         }
         await self.graph.execute_query(query, params)
+        if hasattr(self.graph, "invalidate_cache"):
+            cache_invalidation = self.graph.invalidate_cache(agent_name)
+            if inspect.isawaitable(cache_invalidation):
+                await cache_invalidation
         logger.debug(f"[State] Persisted to Neo4j: Mood={self.current_state.mood:.2f}")
 
     async def update_from_event(self, event_valence: float, user_trust_delta: float = 0.0):
