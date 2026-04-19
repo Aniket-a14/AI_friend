@@ -30,6 +30,10 @@ class GraphDB:
     async def close(self):
         await self.driver.close()
 
+    async def invalidate_cache(self, affected_entity: str = None):
+        """Public cache flush hook for stateful services."""
+        await self._invalidate_cache(affected_entity)
+
     async def _invalidate_cache(self, affected_entity: str = None):
         """Flush cache to prevent stale context."""
         self._belief_cache.clear()

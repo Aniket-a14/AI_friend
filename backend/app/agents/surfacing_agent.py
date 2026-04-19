@@ -18,7 +18,9 @@ class SurfacingAgent(BaseAgent):
         self.graph = graph_db
         self.last_context = ""
         self.surfacing_cooldown = 30 # Seconds between surfacing events
+        self.surface_novelty_window = 300
         self.last_surfaced_time = 0
+        self.recently_surfaced = {}
 
     async def start(self):
         await self.connect()
@@ -52,27 +54,52 @@ class SurfacingAgent(BaseAgent):
             return
             
         try:
+            now = time.time()
+            self._prune_recently_surfaced(now)
+
             # 1. Vector Search for similarity
-            memories = await self.memory.search_memories(self.last_context, limit=2)
+            memories = await self.memory.search_memories(
+                self.last_context,
+                limit=3,
+                refresh_on_recall=False,
+                exclude_contents=list(self.recently_surfaced.keys()),
+            )
             
             # 2. Ranking & Filtering (Simulated ranking here)
             # In a full version, we'd use emotional_weight and recency.
             for mem in memories:
-                if mem.get("content"):
+                content = mem.get("content")
+                if content and not self._was_recently_surfaced(content, now):
                     # 3. Publish to Mesh
                     await self.publish("memory.surfaced", {
-                        "content": mem["content"],
-                        "timestamp": time.time(),
+                        "content": content,
+                        "timestamp": now,
                         "relevance": mem.get("score", 0.7),
                         "source": "vector_long_term"
                     })
-                    self.last_surfaced_time = time.time()
-                    logger.debug(f"[Surfacing] Emerged memory: {mem['content'][:40]}...")
+                    self.last_surfaced_time = now
+                    self.recently_surfaced[content] = now
+                    logger.debug(f"[Surfacing] Emerged memory: {content[:40]}...")
                     # Surface only one at a time for focus
                     break
                     
         except Exception as e:
             logger.error(f"[Surfacing] Error in background sweep: {e}")
+
+    def _prune_recently_surfaced(self, now: float):
+        stale = [
+            content
+            for content, surfaced_at in self.recently_surfaced.items()
+            if (now - surfaced_at) >= self.surface_novelty_window
+        ]
+        for content in stale:
+            self.recently_surfaced.pop(content, None)
+
+    def _was_recently_surfaced(self, content: str, now: float) -> bool:
+        surfaced_at = self.recently_surfaced.get(content)
+        if surfaced_at is None:
+            return False
+        return (now - surfaced_at) < self.surface_novelty_window
 
 async def main():
     agent = SurfacingAgent()

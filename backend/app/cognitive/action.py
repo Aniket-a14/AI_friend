@@ -4,6 +4,49 @@ from .decision import ActionPlan
 
 logger = logging.getLogger(__name__)
 
+
+class ControlMarkupSanitizer:
+    """Drops unsupported control tags while preserving timing markers."""
+
+    def __init__(self):
+        self._pending = ""
+
+    def feed(self, chunk: str) -> str:
+        data = f"{self._pending}{chunk}"
+        self._pending = ""
+        cleaned = []
+        idx = 0
+
+        while idx < len(data):
+            if data[idx] != "<":
+                cleaned.append(data[idx])
+                idx += 1
+                continue
+
+            end_idx = data.find(">", idx + 1)
+            if end_idx == -1:
+                self._pending = data[idx:]
+                break
+
+            tag = data[idx:end_idx + 1]
+            normalized = tag.strip().lower()
+            if normalized.startswith("<emotion") or normalized == "</emotion>":
+                idx = end_idx + 1
+                continue
+
+            cleaned.append(tag)
+            idx = end_idx + 1
+
+        return "".join(cleaned)
+
+    def flush(self) -> str:
+        pending = self._pending
+        self._pending = ""
+        normalized = pending.strip().lower()
+        if normalized.startswith("<emotion") or normalized == "</emotion>":
+            return ""
+        return pending
+
 class ActionService:
     """
     The Action Layer.
@@ -46,17 +89,24 @@ class ActionService:
             
             Guideline:
             - Maintain your identity rules at all times.
-            - Wrap your response in <emotion type="..." intensity="..." rate="...">...</emotion> tags.
             - Focus on short, natural conversational phrases.
-            - CRITICAL: Inject <pause=300ms> or <hesitate> naturally if the topics are deep or you are recalling memories.
+            - The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.
+            - You may use <pause=300ms> or <hesitate> when it improves natural timing.
             
             User: {msg}
             Assistant: """.strip()
             
             try:
                 # 2. Stream Generation
+                sanitizer = ControlMarkupSanitizer()
                 async for chunk in self.llm.generate_stream(full_prompt, model=model):
-                    yield {"type": "content", "data": chunk}
+                    clean_chunk = sanitizer.feed(chunk)
+                    if clean_chunk:
+                        yield {"type": "content", "data": clean_chunk}
+
+                trailing = sanitizer.flush()
+                if trailing:
+                    yield {"type": "content", "data": trailing}
                 yield {"type": "done", "data": "finished"}
                 
             except Exception as e:

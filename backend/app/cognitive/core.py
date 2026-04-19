@@ -1,5 +1,5 @@
-import asyncio
 import logging
+import time
 from typing import Dict, Any, AsyncGenerator
 
 from .perception import PerceptionService
@@ -22,6 +22,7 @@ class CognitiveService:
         memory_store,
         graph_db
     ):
+        self.identity = IdentityManager()
         self.perception = PerceptionService(llm_service=llm_service)
         self.state = StateService(graph_store=graph_db)
         self.decision = DecisionService(llm_service=llm_service, memory_store=memory_store)
@@ -29,9 +30,9 @@ class CognitiveService:
         self.learning = ReflectionService(
             llm_service=llm_service, 
             graph_store=graph_db, 
-            pg_vector=memory_store
+            pg_vector=memory_store,
+            identity_manager=self.identity
         )
-        self.identity = IdentityManager()
         self.surfaced_memories = [] # Buffer for active memory influence
         self.agent = None # NATS Mesh connection
 
@@ -57,8 +58,17 @@ class CognitiveService:
         Sensory Intelligence: Handle emotional & event cues from SenseVoice.
         """
         perception_meta = data.get("metadata", {})
-        # Store last speculative intent for arbitration
-        self.state.last_speculative_intent = data.get("intent")
+        speculative_intent = data.get("speculative_intent")
+        if speculative_intent:
+            self.state.last_speculative_intent = speculative_intent
+        elif data.get("intent"):
+            self.state.last_speculative_intent = {
+                "name": data.get("intent"),
+                "keywords": data.get("keywords", []),
+                "confidence": data.get("confidence", 0.0),
+                "text": data.get("text", ""),
+                "timestamp": data.get("timestamp", time.time()),
+            }
         await self.state.apply_sensory_perception(perception_meta)
 
     async def _on_memory_surfaced(self, data: Dict[str, Any]):
@@ -84,25 +94,40 @@ class CognitiveService:
         raw_event_type = raw_event.get("event_type") or raw_event.get("type")
         if raw_event_type == "USER_MESSAGE" and not raw_event.get("is_partial"):
             final_text = raw_event.get("content", "")
-            if self.state.last_speculative_intent:
-                confirmed = self.decision.is_speculative_stop_confirmed(final_text)
+            speculative_intent = self.state.last_speculative_intent
+            if speculative_intent:
+                confirmed = self.decision.is_speculative_stop_confirmed(
+                    final_text,
+                    speculative_intent.get("keywords"),
+                )
+                self.state.last_speculative_intent = None
                 if not confirmed:
                     # REJECTED: False positive. Resume playback immediately.
                     logger.info("[Cognitive] Interruption REJECTED. Resuming playback...")
                     
                     # DIRECT MESH SIGNAL: Resume bypasses the cognitive generator
                     if self.agent:
-                        await self.agent.publish("audio.resume", {"reason": "conflict_rejected"})
+                        await self.agent.publish("audio.resume", {
+                            "reason": "conflict_rejected",
+                            "perception_text": speculative_intent.get("text", ""),
+                        })
                     
-                    self.state.last_speculative_intent = None
                     yield {"type": "mesh_signal", "data": "audio.resume"}
+                else:
+                    logger.info("[Cognitive] Interruption CONFIRMED. Stopping playback.")
+                    if self.agent:
+                        await self.agent.publish("audio.stop", {
+                            "interrupt": True,
+                            "speculative": False,
+                            "reason": "confirmed_command",
+                            "command_text": final_text,
+                            "keywords": speculative_intent.get("keywords", []),
+                        })
+                    yield {"type": "mesh_signal", "data": "audio.stop"}
+                    return
 
-        # 2. Sequential Perception and State Retrieval
-        perception_task = asyncio.create_task(self.perception.perceive(raw_event))
-        state_task = asyncio.create_task(self.state.hydrate_state())
- # Ensure fresh state from Neo4j
-        
-        event, _ = await asyncio.gather(perception_task, state_task)
+        # 2. Sequential Perception
+        event = await self.perception.perceive(raw_event)
         
         # 3. Decision (BT Based)
         state_snapshot = self.state.get_context_snapshot()

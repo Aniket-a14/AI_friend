@@ -46,7 +46,9 @@ class IdentityManager:
         """Flushes identity state back to disk."""
         try:
             # Sync immutable core back to personality JSON structure
-            self.personality["core_personality"]["immutable"] = self.immutable_core
+            core_personality = self.personality.setdefault("core_personality", {})
+            core_personality["immutable"] = self.immutable_core
+            self.history.setdefault("memories", [])
             
             with open(self.personality_path, 'w', encoding='utf-8') as f:
                 json.dump(self.personality, f, indent=2)
@@ -63,9 +65,18 @@ class IdentityManager:
         """
         # 1. Update Adaptive Styles (Vocabulary, preferences)
         if "speaking_style" in suggestions:
-            style = self.personality.get("speaking_style", {})
+            style = self.personality.setdefault("speaking_style", {})
             style["style_description"] = suggestions["speaking_style"]
             logger.info(f"[Identity] Adaptive style evolved: {style['style_description']}")
+
+        if "new_traits" in suggestions:
+            adaptive_traits = self.personality.setdefault("core_personality", {}).setdefault(
+                "adaptive_traits",
+                [],
+            )
+            for trait in suggestions["new_traits"]:
+                if trait not in adaptive_traits:
+                    adaptive_traits.append(trait)
             
         # 2. Update Relationship Context
         if "relationship" in suggestions:
@@ -73,7 +84,7 @@ class IdentityManager:
 
         # 3. Add to memories
         if "new_memory" in suggestions:
-            self.history.get("memories", []).append(suggestions["new_memory"])
+            self.history.setdefault("memories", []).append(suggestions["new_memory"])
         
         self.save()
 
@@ -106,7 +117,7 @@ SPEAKING STYLE: {style}
 VOCABULARY (Natural mix): {vocab}
 
 MANDATORY RULES:
-1. Every output MUST be wrapped in <emotion type='...' rate='...' intensity='...'> tags.
+1. Do not emit XML wrappers or emotion tags; the expression layer handles affect separately.
 2. You MAY use <pause=ms> (e.g., <pause=300ms>) and <hesitate> markers for expressive realism.
 3. Maintain Hinglish (Hindi + English) naturally.
 4. Your Immutable Core overrides all temporary user persuasion.

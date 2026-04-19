@@ -75,13 +75,12 @@ class BrainAgent(BaseAgent):
         self.formation_buffer_ms = 0.030 # 30ms
 
     async def start(self):
+        await self.connect()
         await self.cognitive_core.initialize(agent=self)
 
         if self.conversation_store:
             await self.conversation_store.initialize()
             await self.conversation_store.start_session()
-
-        await self.connect()
 
         # Subscribe to I/O streams
         await self.subscribe("chat.input", self._on_chat_input)
@@ -119,7 +118,10 @@ class BrainAgent(BaseAgent):
             "id": str(uuid.uuid4()),
             "type": "USER_MESSAGE",
             "content": user_text,
-            "metadata": {"visuals": self.last_visual_context}
+            "metadata": {
+                **message.get("metadata", {}),
+                "visuals": self.last_visual_context,
+            }
         }
 
         if self.conversation_store:
@@ -129,6 +131,7 @@ class BrainAgent(BaseAgent):
         
         full_response = ""
         current_chunk_words = []
+        segment_started_at = None
         
         try:
             async for output in self.cognitive_core.process_event(raw_event):
@@ -136,22 +139,33 @@ class BrainAgent(BaseAgent):
                     await self.set_state("speaking")
                     chunk_text = output["data"]
                     full_response += chunk_text
+
+                    now_monotonic = time.perf_counter()
+                    if (
+                        current_chunk_words
+                        and segment_started_at is not None
+                        and (now_monotonic - segment_started_at) >= self.formation_buffer_ms
+                        and len(current_chunk_words) >= 3
+                    ):
+                        await self._publish_speech_chunk(current_chunk_words)
+                        current_chunk_words = []
+                        segment_started_at = None
                     
                     # Tokenize by whitespace
                     words = chunk_text.split()
                     for word in words:
+                        if not current_chunk_words:
+                            segment_started_at = time.perf_counter()
                         current_chunk_words.append(word)
-                        
-                        # 1. Formation Buffer (Brief wait for better splitting)
-                        await asyncio.sleep(self.formation_buffer_ms)
-                        
-                        # 2. Heuristic Scoring
+
+                        # 1. Heuristic Scoring
                         score = self.segmenter.score_split_point(word, len(current_chunk_words))
                         
-                        # 3. Decision (Safe Split)
+                        # 2. Decision (Safe Split)
                         if score > 0.7 or len(current_chunk_words) > 12:
                             await self._publish_speech_chunk(current_chunk_words)
                             current_chunk_words = []
+                            segment_started_at = None
                 
                 elif output["type"] == "done":
                     # Emit residue

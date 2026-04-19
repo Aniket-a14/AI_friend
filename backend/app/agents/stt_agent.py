@@ -2,6 +2,7 @@ import base64
 import logging
 import numpy as np
 import asyncio
+import uuid
 from .base import BaseAgent
 from ..whisper_stt_service import WhisperSTTService
 from ..sensevoice_service import SenseVoiceSTTService
@@ -86,7 +87,16 @@ class STTAgent(BaseAgent):
                 
                 if is_final:
                     logger.info(f"User (Whisper): {result_text}")
-                    await self.publish("chat.input", {"text": result_text, "latency_metadata": metadata})
+                    payload = {
+                        "text": result_text,
+                        "metadata": {
+                            "source": "whisper",
+                            "confidence": confidence,
+                        },
+                    }
+                    if metadata:
+                        payload["latency_metadata"] = metadata
+                    await self.publish("chat.input", payload)
                     self.intent_window.clear()
 
             # --- PATH 2: SENSEVOICE (PERCEPTION/FAST) ---
@@ -101,43 +111,62 @@ class STTAgent(BaseAgent):
                 perception_data = await asyncio.to_thread(self.sensevoice_service.process_audio, perception_audio)
                 
                 if perception_data:
+                    speculative_intent = self._build_speculative_intent(
+                        perception_data["text"],
+                        confidence=0.9,
+                    )
+
                     # Publish emotional signals & partials
                     await self.publish("audio.perception", {
+                        "text": perception_data["text"],
+                        "intent": speculative_intent["name"] if speculative_intent else None,
+                        "keywords": speculative_intent["keywords"] if speculative_intent else [],
+                        "confidence": speculative_intent["confidence"] if speculative_intent else 0.0,
+                        "speculative_intent": speculative_intent,
                         "metadata": perception_data,
                         "timestamp": time.time()
                     })
                     
                     # Speculative Intent Evaluation
-                    await self._evaluate_speculative_intent(perception_data["text"], 0.9)
+                    if speculative_intent:
+                        logger.warning(
+                            "🛑 [SPECULATIVE INTENT] Perception detected: '%s'. Triggering Early Stop.",
+                            perception_data["text"],
+                        )
+                        await self.publish("audio.stop", {
+                            "interrupt": True,
+                            "speculative": True,
+                            "intent": speculative_intent["name"],
+                            "keywords": speculative_intent["keywords"],
+                            "confidence": speculative_intent["confidence"],
+                            "perception_text": speculative_intent["text"],
+                            "utterance_id": speculative_intent["utterance_id"],
+                        })
 
         except Exception as e:
             logger.error(f"STT Dual-Inbound Error: {e}")
 
-    async def _evaluate_speculative_intent(self, text: str, confidence: float):
+    def _build_speculative_intent(self, text: str, confidence: float):
         """
-        Triggers SPECULATIVE_STOP based on fast perception layer.
-        Lower threshold & higher sensitivity than Whisper-based validation.
+        Build a structured speculative interruption hypothesis from the fast perception layer.
         """
-        try:
-            words = text.lower().strip().split()
-            if not words:
-                return
+        words = text.lower().strip().split()
+        if not words:
+            return None
 
-            # Speculative Interruption keywords (Fast gating)
-            stop_keywords = ["stop", "wait", "hold", "no", "wrong", "quiet", "alex", "friend"]
-            matches = [w for w in words if any(k in w for k in stop_keywords)]
-            
-            if matches:
-                # Instant speculative intent - bypassing complex windowing for max response
-                logger.warning(f"🛑 [SPECULATIVE INTENT] Perception detected: '{text}'. Triggering Early Stop.")
-                await self.publish("audio.stop", {
-                    "interrupt": True, 
-                    "speculative": True,
-                    "perception_text": text
-                })
-                    
-        except Exception as e:
-            logger.error(f"Error in speculative intent detection: {e}")
+        stop_keywords = ["stop", "wait", "hold", "no", "wrong", "quiet", "alex", "friend"]
+        matches = [keyword for keyword in stop_keywords if any(keyword in word for word in words)]
+        if not matches:
+            return None
+
+        return {
+            "name": "SPECULATIVE_STOP",
+            "keywords": matches,
+            "confidence": confidence,
+            "text": text,
+            "timestamp": time.time(),
+            "utterance_id": str(uuid.uuid4()),
+        }
 
 
 async def main():
