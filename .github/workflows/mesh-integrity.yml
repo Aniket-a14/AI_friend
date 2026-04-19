@@ -52,10 +52,7 @@ jobs:
       - name: Validate Infrastructure Compose
         run: docker compose -f docker-compose.infra.yml config --quiet
 
-      - name: Validate Production Compose
-        run: docker compose -f docker-compose.prod.yml config --quiet
-
-      - name: Validate Unified Phased Startup
+      - name: Validate Unified Phased Startup (Infra + Agents)
         run: docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config --quiet
 
   prisma-validation:
