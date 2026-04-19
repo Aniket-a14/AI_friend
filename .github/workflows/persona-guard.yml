@@ -5,6 +5,7 @@ name: 🎭 Persona & Prompt Guard
 # stripping, and identity seed corruption.
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main, master]
     paths:
