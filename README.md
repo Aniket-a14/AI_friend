@@ -6,6 +6,11 @@
 [![Latency: Perceived <250ms](https://img.shields.io/badge/Latency-Perceived%20%3C250ms-green.svg)](#performance-perceived-slos)
 [![Architecture: Hardened CVS-1.0](https://img.shields.io/badge/Architecture-CVS--1.0--Hardened-orange.svg)](#architecture-cvs-10-hardened)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb)
+[![🧠 Cognitive Regression](https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml)
+[![🛡️ Mesh Integrity](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml)
+[![🎭 Persona Guard](https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml)
+[![🔒 Security Audit](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml)
+[![📦 Docker Health](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml)
 
 ---
 
