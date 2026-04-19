@@ -48,8 +48,13 @@ class Config:
     
     INTENT_THRESHOLD = 0.75  # Temporal intent sensitivity (STTAgent)
     INTENT_STABILITY = 3     # Consecutive frames required for intent (STTAgent)
+    STT_WHISPER_QUEUE_SIZE = int(os.getenv("STT_WHISPER_QUEUE_SIZE", 8))
+    STT_PERCEPTION_QUEUE_SIZE = int(os.getenv("STT_PERCEPTION_QUEUE_SIZE", 4))
     
     GRAPH_CACHE_TTL = 300    # Belief freshness timeout in seconds (GraphDB)
+    MIN_PERCEPTION_CONFIDENCE = float(os.getenv("MIN_PERCEPTION_CONFIDENCE", 0.55))
+    STATE_SENSORY_WEIGHT = float(os.getenv("STATE_SENSORY_WEIGHT", 0.20))
+    STATE_SENSORY_PERSIST_INTERVAL = float(os.getenv("STATE_SENSORY_PERSIST_INTERVAL", 2.0))
 
     @staticmethod
     def validate():

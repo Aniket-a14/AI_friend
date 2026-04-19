@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, Any, List
 from datetime import datetime
+from ..config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,10 @@ class StateService:
         self.alpha_mood = 0.05      # Slower mood decay for idle
         self.gamma_energy = 0.02   # Slower energy decay
         self.trust_baseline = 0.5  # Neutral trust target
+        self.sensory_weight = getattr(Config, "STATE_SENSORY_WEIGHT", 0.20)
+        self.min_perception_confidence = getattr(Config, "MIN_PERCEPTION_CONFIDENCE", 0.55)
+        self.sensory_persist_interval = getattr(Config, "STATE_SENSORY_PERSIST_INTERVAL", 2.0)
+        self._last_sensory_persist = 0.0
 
     async def hydrate_state(self, agent_name: str = "my friend"):
         """Loads state from Neo4j."""
@@ -92,15 +97,26 @@ class StateService:
 
     async def apply_sensory_perception(self, perception_metadata: Dict[str, Any]):
         """
-        Acoustic Perception Update (0.3 weight).
+        Acoustic Perception Update (confidence-scaled low weight).
         Triggered by SenseVoice emotional/event cues.
         """
         emotion_bias = perception_metadata.get("emotional_bias", 0.0)
+        confidence = perception_metadata.get("confidence", 1.0)
         events = perception_metadata.get("events", [])
+
+        if confidence < self.min_perception_confidence and not events:
+            logger.debug(
+                "[State] Ignored low-confidence acoustic perception: %.2f",
+                confidence,
+            )
+            return
         
-        # 1. Apply Damped Emotional Bias (0.3)
-        # Logic: mood = (current * 0.7) + (bias * 0.3)
-        self.current_state.mood = (self.current_state.mood * 0.7) + (emotion_bias * 0.3)
+        # 1. Apply confidence-scaled emotional bias. Acoustic emotion is useful,
+        # but should not dominate semantic state over repeated 400ms chunks.
+        weight = self.sensory_weight * max(0.0, min(1.0, confidence))
+        self.current_state.mood = (
+            self.current_state.mood * (1 - weight)
+        ) + (emotion_bias * weight)
         
         # 2. Map Acoustic Events (AED)
         for event in events:
@@ -116,7 +132,7 @@ class StateService:
                 logger.debug(f"🤧 Agent sensed {event} - Attachment nudged (Empathy).")
         
         self._enforce_bounds()
-        await self.persist_state()
+        await self._persist_sensory_state_if_due()
 
     async def handle_system_tick(self, tick_metadata: Dict[str, Any]):
         """
@@ -187,3 +203,10 @@ class StateService:
         if self.current_state.energy > 0.8:
             return "excited"
         return "neutral"
+
+    async def _persist_sensory_state_if_due(self):
+        now = time.time()
+        if now - self._last_sensory_persist < self.sensory_persist_interval:
+            return
+        self._last_sensory_persist = now
+        await self.persist_state()

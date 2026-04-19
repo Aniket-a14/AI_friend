@@ -27,8 +27,17 @@ async def main():
 
     async def audio_handler(msg):
         nonlocal first_audio_time
-        data = json.loads(msg.data.decode())
-        if first_audio_time is None and data.get("audio"):
+        has_audio = False
+        if msg.headers and msg.headers.get("X-Payload-Format") == "binary/raw-pcm":
+            has_audio = bool(msg.data)
+        else:
+            try:
+                data = json.loads(msg.data.decode())
+                has_audio = bool(data.get("audio"))
+            except Exception:
+                has_audio = bool(msg.data)
+
+        if first_audio_time is None and has_audio:
             first_audio_time = time.time()
             logger.info(f"🔊 First Audio Chunk received in {(first_audio_time - start_time)*1000:.2f}ms")
 

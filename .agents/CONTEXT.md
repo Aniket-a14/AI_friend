@@ -199,3 +199,88 @@ Verification:
 
 - `git diff --check` passed with only line-ending warnings.
 - Documentation-only change; backend tests were not rerun during this docs pass.
+
+## 2026-04-19 Runtime Latency and Continuity Fixes
+
+Implemented the follow-up fixes from the architecture pass.
+
+Changed files:
+
+- `backend/app/agents/base.py`
+- `backend/app/agents/transport_agent.py`
+- `backend/app/agents/stt_agent.py`
+- `backend/app/agents/brain_agent.py`
+- `backend/app/agents/voice_agent.py`
+- `backend/app/cognitive/core.py`
+- `backend/app/cognitive/identity.py`
+- `backend/app/cognitive/state.py`
+- `backend/app/config.py`
+- `backend/app/conversation_history_store.py`
+- `backend/scripts/bench_latency.py`
+- `backend/tests/test_regressions.py`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `BaseAgent.publish()` now accepts explicit metadata for binary subjects.
+- `TransportAgent` publishes inbound LiveKit audio as raw PCM bytes with metadata
+  headers instead of base64 JSON.
+- `STTAgent` queues Whisper and SenseVoice work on bounded workers so NATS audio
+  callbacks do not block on transcription or perception inference.
+- STT, cognition, brain, and voice now propagate utterance/turn correlation so
+  speculative `audio.stop`, `audio.resume`, and final stops can be fenced.
+- `VoiceAgent` increments a generation on final stop, drains queues with proper
+  `task_done()` accounting, ignores stale resume events, drops stale synthesis
+  chunks, and uses a sequence number in its priority queue.
+- `BrainAgent` connects before cognitive subscriptions, avoiding split NATS
+  connections.
+- `IdentityManager` can hydrate from and persist back to `agent_configs`, making
+  JSON files seed/export storage rather than the only active runtime identity
+  source.
+- `StateService` now confidence-gates acoustic emotion updates, uses a lower
+  confidence-scaled sensory weight, and debounces Neo4j persistence for repeated
+  400ms perception chunks.
+- `bench_latency.py` understands binary `audio.stream` payloads.
+
+Verification:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m compileall app tests
+.\.venv\Scripts\python.exe -m pytest
+```
+
+Latest result:
+
+- `54 passed`
+- One non-blocking `.pytest_cache` permission warning remains.
+
+Remaining risks:
+
+- Real LiveKit/SoVITS session testing is still needed to validate frame sizing,
+  perceived first-audio latency, stop/resume timing, and stale synthesis fencing
+  under live audio pressure.
+
+## 2026-04-19 Docker Infrastructure Hardening
+
+Hardened the production container orchestration to support the 'Solid State' mesh requirements.
+
+Changed files:
+
+- `backend/Dockerfile`
+- `.env.example`
+- `docker-compose.prod.yml`
+- `docker-compose.infra.yml`
+
+Infrastructure changes:
+
+- **Phased Startup Mesh**: Implemented `depends_on` conditions with `service_healthy`. The mesh now graduates in stages (Infra -> Brain -> Sensory Agents) to eliminate startup race conditions.
+- **Mesh Surveillance**: Added `netcat-openbsd` to the base image. All agents now perform automated health probes (`nc -z nats_mesh 4222`) to monitor signal bus connectivity.
+- **Performance Exposure**: Mapped CVS-1.0 performance variables (`VOICE_SYNTH_CONCURRENCY`, `MAX_VOICE_QUEUE_SIZE`, `STT_WHISPER_QUEUE_SIZE`, `STATE_SENSORY_WEIGHT`) to the `.env` layer for production tuning.
+- **Identity Persistence**: Synchronized weight volumes (`GPT_weights`, `SoVITS_weights`) across the agent mesh to support permanent voice identity.
+- **Resilience**: Orchestrated SoVITS API health diagnostics using `/docs` probes to ensure dependent agents only start when the inference engine is ready.
+
+Verification:
+
+- `docker compose -f ...infra.yml -f ...prod.yml up -d`
+- `docker ps` confirmed all agents reached `Healthy` status (with Voice Agent auto-starting after SoVITS settled).

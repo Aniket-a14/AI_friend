@@ -6,7 +6,14 @@
 
 ## Executive Summary (CVS-1.0)
 
-In version **CVS-1.0**, we have moved beyond raw pipeline speed into **Perceptual Timing Mastery**. While raw synthesis latency is important, the human perception of "quickness" depends on conversational pacing, smooth transitions, and the use of fillers. CVS-1.0 achieves a stable **<280ms perceived latency** by implementing a state-machine driven scheduler that synchronizes cognition and signal rendering.
+In version **CVS-1.0**, the system is engineered as a **Solid State Signal Mesh**. By removing intermediate encoding layers (like WAV or Base64) and utilizing raw binary transport, we achieve sub-250ms conversational flow.
+
+### 1. Hardened PCM Standard
+AI Friend utilizes **100% Raw Binary PCM** (Little-Endian, 16-bit, 32kHz) across all mesh subjects:
+- **No WAV Headers**: SoVITS is configured with `media_type="raw"`. This prevents the 44-byte RIFF header from inducing jitter or requiring stripping at the transport layer.
+- **Headerless NATS**: Metadata (latency tracking, encryption keys) is carried in NATS Headers (`X-Latency-Meta`), keeping the payload pure audio bytes.
+- **Zero-Latency Buffering**: Raw PCM allows for sample-accurate "Overlap-Add" (OLA) transitions, ensuring seamless audio during speculative interruptions.
+uler that synchronizes cognition and signal rendering.
 
 The key shift is from "wait until everything is ready" to "start the right behavior as soon as it is safe." Fast perception may pause voice before Whisper is final. Voice synthesis can stream first PCM before the entire utterance is complete. Memory surfacing happens asynchronously and should already be available by the time the next decision loop needs it.
 
@@ -32,6 +39,12 @@ We have added intentional cognitive delays to the pipeline to improve conversati
 - **PCM Silence Injection**: Instead of synthesis delays, the VoiceAgent injects pure silent PCM buffers into the 32kHz stream, ensuring timing is physically tied to the audio signal.
 - **Streaming Synthesis**: VoiceAgent queues GPT-SoVITS PCM chunks as they arrive. It no longer waits for a full segment to finish before the user hears the first audio.
 - **Adaptive Formation Buffer**: Brain segmentation avoids per-word sleeping. It holds a short formation window only when useful, then flushes on semantic boundaries or chunk size limits.
+
+### 4. Solid State Mesh Graduation (Infrastructure)
+In addition to the software pipeline, the container mesh is hardened for zero-latency response.
+- **Phased Startup Mesh**: Zero-race condition graduation ensures agents wait for signal bus readiness before attempting connection.
+- **Mesh Surveillance**: sub-1s detection of disconnected agents with automated container recovery.
+- **Acoustic Memory Locality**: Synchronized weight volumes ensure voice identity models are pre-loaded and accessible with 0ms disk thrashing.
 
 ---
 

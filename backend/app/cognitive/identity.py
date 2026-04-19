@@ -19,13 +19,10 @@ class IdentityManager:
         
         self.personality = self._load_json(self.personality_path)
         self.history = self._load_json(self.history_path)
+        self.config_store = None
         
         # CVS-1.0: Immutable Core Trait seeding
-        self.immutable_core = self.personality.get("core_personality", {}).get("immutable", {
-            "values": ["Honesty", "Privacy", "Curiosity"],
-            "base_tone": "Warm, intellectual, and slightly protective",
-            "boundaries": ["Will never share user data", "Will not adopt toxic behavior"]
-        })
+        self._refresh_immutable_core()
         
         # Buffer for adaptive variable evolution
         self.evolution_buffer = {} 
@@ -41,6 +38,59 @@ class IdentityManager:
         except Exception as e:
             logger.error(f"Failed to load {path}: {e}")
             return {}
+
+    def _refresh_immutable_core(self):
+        self.immutable_core = self.personality.get("core_personality", {}).get("immutable", {
+            "values": ["Honesty", "Privacy", "Curiosity"],
+            "base_tone": "Warm, intellectual, and slightly protective",
+            "boundaries": ["Will never share user data", "Will not adopt toxic behavior"]
+        })
+
+    async def hydrate_from_config_store(self, config_store):
+        """
+        Prefer durable identity from the relational store when available.
+        Local JSON remains the seed/export path, not the only active runtime source.
+        """
+        if not config_store or not hasattr(config_store, "get_agent_config"):
+            return
+
+        self.config_store = config_store
+        try:
+            config = await config_store.get_agent_config()
+            personality_raw = config.get("personality")
+            history_raw = config.get("history")
+
+            if personality_raw:
+                loaded_personality = json.loads(personality_raw)
+                if loaded_personality:
+                    self.personality = loaded_personality
+
+            if history_raw:
+                loaded_history = json.loads(history_raw)
+                if loaded_history:
+                    self.history = loaded_history
+
+            evolved = config.get("evolved_learnings")
+            if evolved:
+                self.history["evolved_learnings"] = evolved
+
+            self._refresh_immutable_core()
+            logger.info("[Identity] Hydrated active persona from durable config store.")
+        except Exception as e:
+            logger.error(f"Failed to hydrate identity from config store: {e}")
+
+    async def persist_to_config_store(self):
+        if not self.config_store or not hasattr(self.config_store, "update_agent_config"):
+            return
+
+        try:
+            await self.config_store.update_agent_config(
+                personality=json.dumps(self.personality),
+                history=json.dumps(self.history),
+                evolved_learnings=self.history.get("evolved_learnings", ""),
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist identity to config store: {e}")
 
     def save(self):
         """Flushes identity state back to disk."""
@@ -87,6 +137,7 @@ class IdentityManager:
             self.history.setdefault("memories", []).append(suggestions["new_memory"])
         
         self.save()
+        await self.persist_to_config_store()
 
     def get_persona_prompt(self, current_mood_directive: str = "") -> str:
         p = self.personality

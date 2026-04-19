@@ -27,10 +27,11 @@ class AudioNormalizer:
     CVS-1.0 Signal Rendering Engine.
     Handles Peak Normalization, Rate-Adaptive RMS, and Gain Matching.
     """
-    def __init__(self, target_peak=-1.0, baseline_rms_window=0.1):
+    def __init__(self, target_peak=-1.0, baseline_rms_window=0.1, sample_rate=Config.SAMPLE_RATE):
         self.target_peak = 10 ** (target_peak / 20)  # Convert dB to linear
         self.baseline_rms_window = baseline_rms_window
         self.last_tail_rms = None
+        self.sample_rate = sample_rate
 
     def process(self, audio_data: bytes, speaking_rate: float = 1.0) -> bytes:
         """Apply adaptive normalization and return processed PCM."""
@@ -58,8 +59,7 @@ class AudioNormalizer:
             samples = samples * gain_multiplier
             
         # Update tail RMS for next chunk (using last 100ms)
-        sample_rate = 32000 # Default for V4
-        tail_len = int(0.1 * sample_rate)
+        tail_len = int(0.1 * self.sample_rate)
         if len(samples) > tail_len:
             self.last_tail_rms = np.sqrt(np.mean(samples[-tail_len:]**2))
         else:
@@ -133,10 +133,14 @@ class VoiceAgent(BaseAgent):
         self.state_lock = asyncio.Lock()
         self.ingestion_queue = asyncio.PriorityQueue()
         self.playback_queue = asyncio.Queue()
+        self.queue_seq = 0
         self.speculative_buffer = None # Holds PCM for potential resume
+        self.generation = 0
+        self.stopped_turn_ids = set()
+        self.paused_utterance_id = None
         
         # Audio Context
-        self.sample_rate = 32000
+        self.sample_rate = Config.SAMPLE_RATE
         self.ref_audio_path = ref_audio_path
         self.ref_text = ref_text
         self.last_audio_time = time.time()
@@ -194,23 +198,33 @@ class VoiceAgent(BaseAgent):
         is_speculative = data.get("speculative", False)
         
         if is_speculative:
+            self.paused_utterance_id = data.get("utterance_id")
             logger.warning("🛑 Speculative pause triggered. Holding playback buffer...")
             await self._set_playback_state(VoicePlaybackState.SPECULATIVE_PAUSE)
         else:
             logger.error("🚫 Final stop triggered. Clearing all streams.")
+            self.generation += 1
+            stopped_turn_id = data.get("turn_id")
+            if stopped_turn_id:
+                self.stopped_turn_ids.add(stopped_turn_id)
+            self.paused_utterance_id = None
             await self._set_playback_state(VoicePlaybackState.IDLE)
             # Flush Queues
-            while not self.playback_queue.empty():
-                self.playback_queue.get_nowait()
-            while not self.ingestion_queue.empty():
-                self.ingestion_queue.get_nowait()
+            self._drain_queue(self.playback_queue)
+            self._drain_queue(self.ingestion_queue)
 
     async def _on_audio_resume(self, data: Dict[str, Any]):
         """
         Handle Graceful Resumption after speculative rejection.
         """
+        utterance_id = data.get("utterance_id")
+        if self.paused_utterance_id and utterance_id and utterance_id != self.paused_utterance_id:
+            logger.debug("Ignoring stale audio.resume for utterance_id=%s", utterance_id)
+            return
+
         if self.state == VoicePlaybackState.SPECULATIVE_PAUSE:
             logger.info("🟢 Resuming playback from speculative pause.")
+            self.paused_utterance_id = None
             await self._set_playback_state(VoicePlaybackState.PLAYING)
 
     async def _set_playback_state(self, new_state: VoicePlaybackState):
@@ -242,16 +256,44 @@ class VoiceAgent(BaseAgent):
         intensity = max(0.0, min(1.0, data.get("emotional_intensity", 0.5)))
         rate = max(0.5, min(2.0, data.get("speaking_rate", 1.0)))
         emotion = data.get("emotion", "neutral")
+        turn_id = data.get("turn_id") or (metadata or {}).get("turn_id")
         
         # 3. Priority Assignment
         priority = 2 
         if len(text.split()) < 3 and ("hmm" in text.lower() or "oh" in text.lower()):
             priority = 1 # Urgent Filler
             
-        await self.ingestion_queue.put((priority, {
+        self.queue_seq += 1
+        await self.ingestion_queue.put((priority, self.queue_seq, {
             "text": text, "emotion": emotion, "intensity": intensity, 
-            "rate": rate, "timestamp": time.time(), "metadata": metadata
+            "rate": rate, "timestamp": time.time(), "metadata": metadata,
+            "turn_id": turn_id, "generation": self.generation,
         }))
+
+    def _drain_queue(self, queue: asyncio.Queue):
+        while not queue.empty():
+            try:
+                queue.get_nowait()
+                queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+    def _is_current_item(self, item: Dict[str, Any]) -> bool:
+        turn_id = item.get("turn_id")
+        return item.get("generation") == self.generation and turn_id not in self.stopped_turn_ids
+
+    def _playback_item(self, pcm: bytes, item: Dict[str, Any], segment_start: bool) -> Dict[str, Any]:
+        return {
+            "pcm": pcm,
+            "metadata": item.get("metadata"),
+            "segment_start": segment_start,
+            "turn_id": item.get("turn_id"),
+            "generation": item.get("generation"),
+        }
+
+    def _silence_pcm(self, ms: int) -> bytes:
+        bytes_per_ms = int(self.sample_rate * 2 / 1000)
+        return b'\x00' * (ms * bytes_per_ms)
 
     def _force_split(self, text: str) -> List[str]:
         words = text.split()
@@ -264,14 +306,19 @@ class VoiceAgent(BaseAgent):
         
         while True:
             try:
-                priority, item = await self.ingestion_queue.get()
+                priority, _seq, item = await self.ingestion_queue.get()
                 text = item["text"]
+                if not self._is_current_item(item):
+                    self.ingestion_queue.task_done()
+                    continue
                 
                 async with sem:
                     # Check Cache
                     cached_audio = self.cache.get(text, item["emotion"], item["rate"])
                     if cached_audio:
-                        await self.playback_queue.put((cached_audio, item["metadata"], True))
+                        await self.playback_queue.put(
+                            self._playback_item(cached_audio, item, True)
+                        )
                         self.ingestion_queue.task_done()
                         continue
 
@@ -288,15 +335,21 @@ class VoiceAgent(BaseAgent):
                         # Case 1: Silence Tags
                         if part.startswith("<pause="):
                             ms = int(re.search(r'\d+', part).group())
-                            silence_pcm = b'\x00' * (ms * 64) # 32000Hz * 2bytes / 1000ms = 64 bytes/ms
-                            await self.playback_queue.put((silence_pcm, item["metadata"], False))
+                            silence_pcm = self._silence_pcm(ms)
+                            if self._is_current_item(item):
+                                await self.playback_queue.put(
+                                    self._playback_item(silence_pcm, item, False)
+                                )
                             logger.info(f"⏳ Injected Pause: {ms}ms")
                             continue
                         elif part == "<hesitate>":
                             import random
                             ms = random.randint(250, 450)
-                            silence_pcm = b'\x00' * (ms * 64)
-                            await self.playback_queue.put((silence_pcm, item["metadata"], False))
+                            silence_pcm = self._silence_pcm(ms)
+                            if self._is_current_item(item):
+                                await self.playback_queue.put(
+                                    self._playback_item(silence_pcm, item, False)
+                                )
                             logger.info(f"⏳ Injected Hesitation: {ms}ms")
                             continue
                         
@@ -313,6 +366,12 @@ class VoiceAgent(BaseAgent):
                             ref_text=self.ref_text,
                             media_type="raw"
                         ):
+                            if not self._is_current_item(item):
+                                logger.debug(
+                                    "Dropping stale synthesis stream for turn_id=%s",
+                                    item.get("turn_id"),
+                                )
+                                break
                             if not chunk:
                                 continue
                             if len(chunk) % 2 != 0:
@@ -328,13 +387,15 @@ class VoiceAgent(BaseAgent):
                                 continue
 
                             assembled_pcm.extend(clean_pcm)
-                            await self.playback_queue.put((
-                                clean_pcm,
-                                item["metadata"],
-                                first_audio_chunk,
-                            ))
+                            await self.playback_queue.put(
+                                self._playback_item(clean_pcm, item, first_audio_chunk)
+                            )
                             first_audio_chunk = False
                         
+                        if not self._is_current_item(item):
+                            assembled_pcm.clear()
+                            break
+
                         if assembled_pcm:
                             full_pcm = bytes(assembled_pcm)
                             self.cache.set(part, item["emotion"], item["rate"], full_pcm)
@@ -352,14 +413,17 @@ class VoiceAgent(BaseAgent):
         while True:
             queue_item_claimed = False
             try:
-                pcm_data, meta, segment_start = await self.playback_queue.get()
+                playback_item = await self.playback_queue.get()
                 queue_item_claimed = True
+                pcm_data = playback_item["pcm"]
+                meta = playback_item.get("metadata") # noqa: F841
+                segment_start = playback_item.get("segment_start", False)
                 
                 # CVS-1.0: Speculative State Gating
                 while self.state == VoicePlaybackState.SPECULATIVE_PAUSE:
                     await asyncio.sleep(0.01) # Yield until resume or final stop
                 
-                if self.state == VoicePlaybackState.IDLE:
+                if not self._is_current_item(playback_item):
                     self.speculative_buffer = None
                     continue
                     
@@ -412,9 +476,8 @@ class VoiceAgent(BaseAgent):
                     self.last_audio_time = now # Prevent filler spam
                 else:
                     # Fallback to soft breath if mesh isn't hydrated yet
-                    samplerate = 32000
                     duration = 0.4
-                    t = np.linspace(0, duration, int(samplerate * duration))
+                    t = np.linspace(0, duration, int(self.sample_rate * duration))
                     breath = np.random.normal(0, 0.02, t.shape)
                     pcm_fallback = (breath * 32767).astype(np.int16).tobytes()
                     await self.publish("audio.stream", pcm_fallback)

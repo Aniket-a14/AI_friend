@@ -41,6 +41,14 @@ class STTAgent(BaseAgent):
         # Audio accumulator for SenseVoice (per-chunk perception)
         self.perception_chunk_size = int(16000 * 0.4) # 400ms chunks
         self.perception_buffer = []
+        self.whisper_queue = asyncio.Queue(
+            maxsize=getattr(Config, "STT_WHISPER_QUEUE_SIZE", 8)
+        )
+        self.perception_queue = asyncio.Queue(
+            maxsize=getattr(Config, "STT_PERCEPTION_QUEUE_SIZE", 4)
+        )
+        self.worker_tasks = []
+        self.current_utterance_id = None
 
     async def start(self):
         """Standard startup sequence for Micro-Agents"""
@@ -53,6 +61,10 @@ class STTAgent(BaseAgent):
         )
         
         self.whisper_service.start()
+        self.worker_tasks = [
+            asyncio.create_task(self._whisper_worker()),
+            asyncio.create_task(self._perception_worker()),
+        ]
         
         await self.subscribe(
             "audio.inbound", self._on_audio_inbound, deliver_policy="new"
@@ -80,24 +92,13 @@ class STTAgent(BaseAgent):
             pcm_16 = (audio_np * 32767).astype(np.int16).tobytes()
 
             # --- PATH 1: WHISPER (ACCURACY/BACKBONE) ---
-            whisper_res = self.whisper_service.process_frame(pcm_16)
-            if whisper_res:
-                text, is_final, is_partial = whisper_res
-                result_text, confidence = text if isinstance(text, tuple) else (text, 0.9)
-                
-                if is_final:
-                    logger.info(f"User (Whisper): {result_text}")
-                    payload = {
-                        "text": result_text,
-                        "metadata": {
-                            "source": "whisper",
-                            "confidence": confidence,
-                        },
-                    }
-                    if metadata:
-                        payload["latency_metadata"] = metadata
-                    await self.publish("chat.input", payload)
-                    self.intent_window.clear()
+            # Keep the NATS callback hot. Whisper may run a blocking decode when
+            # partial/final thresholds are reached, so it is isolated in a worker.
+            self._put_latest(
+                self.whisper_queue,
+                (pcm_16, metadata or {}),
+                "whisper",
+            )
 
             # --- PATH 2: SENSEVOICE (PERCEPTION/FAST) ---
             self.perception_buffer.append(audio_np)
@@ -107,44 +108,132 @@ class STTAgent(BaseAgent):
                 perception_audio = np.concatenate(self.perception_buffer)
                 self.perception_buffer = [] # Reset for next chunk
                 
-                # Async perception inference
-                perception_data = await asyncio.to_thread(self.sensevoice_service.process_audio, perception_audio)
-                
-                if perception_data:
-                    speculative_intent = self._build_speculative_intent(
-                        perception_data["text"],
-                        confidence=0.9,
-                    )
-
-                    # Publish emotional signals & partials
-                    await self.publish("audio.perception", {
-                        "text": perception_data["text"],
-                        "intent": speculative_intent["name"] if speculative_intent else None,
-                        "keywords": speculative_intent["keywords"] if speculative_intent else [],
-                        "confidence": speculative_intent["confidence"] if speculative_intent else 0.0,
-                        "speculative_intent": speculative_intent,
-                        "metadata": perception_data,
-                        "timestamp": time.time()
-                    })
-                    
-                    # Speculative Intent Evaluation
-                    if speculative_intent:
-                        logger.warning(
-                            "🛑 [SPECULATIVE INTENT] Perception detected: '%s'. Triggering Early Stop.",
-                            perception_data["text"],
-                        )
-                        await self.publish("audio.stop", {
-                            "interrupt": True,
-                            "speculative": True,
-                            "intent": speculative_intent["name"],
-                            "keywords": speculative_intent["keywords"],
-                            "confidence": speculative_intent["confidence"],
-                            "perception_text": speculative_intent["text"],
-                            "utterance_id": speculative_intent["utterance_id"],
-                        })
+                self._put_latest(
+                    self.perception_queue,
+                    (perception_audio, metadata or {}),
+                    "perception",
+                )
 
         except Exception as e:
             logger.error(f"STT Dual-Inbound Error: {e}")
+
+    def _put_latest(self, queue: asyncio.Queue, item: Any, label: str):
+        """Drop the oldest work item when a realtime queue is saturated."""
+        try:
+            queue.put_nowait(item)
+            return
+        except asyncio.QueueFull:
+            try:
+                queue.get_nowait()
+                queue.task_done()
+            except asyncio.QueueEmpty:
+                pass
+
+        try:
+            queue.put_nowait(item)
+            logger.warning("[STT] Dropped stale %s work item to preserve realtime latency.", label)
+        except asyncio.QueueFull:
+            logger.warning("[STT] Dropped incoming %s work item; worker remains saturated.", label)
+
+    async def _whisper_worker(self):
+        while True:
+            pcm_16, metadata = await self.whisper_queue.get()
+            try:
+                whisper_res = await asyncio.to_thread(
+                    self.whisper_service.process_frame,
+                    pcm_16,
+                )
+                if whisper_res:
+                    await self._handle_whisper_result(whisper_res, metadata)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"Whisper worker error: {e}")
+            finally:
+                self.whisper_queue.task_done()
+
+    async def _handle_whisper_result(self, whisper_res, metadata: dict):
+        text, is_final, is_partial = whisper_res
+        result_text, confidence = text if isinstance(text, tuple) else (text, 0.9)
+
+        if is_final:
+            utterance_id = self.current_utterance_id or str(uuid.uuid4())
+            logger.info(f"User (Whisper): {result_text}")
+            payload = {
+                "text": result_text,
+                "utterance_id": utterance_id,
+                "metadata": {
+                    "source": "whisper",
+                    "confidence": confidence,
+                    "utterance_id": utterance_id,
+                },
+            }
+            if metadata:
+                payload["latency_metadata"] = metadata
+            await self.publish("chat.input", payload)
+            self.intent_window.clear()
+            self.current_utterance_id = None
+        elif is_partial:
+            logger.debug("Whisper partial: %s", result_text)
+
+    async def _perception_worker(self):
+        while True:
+            perception_audio, metadata = await self.perception_queue.get()
+            try:
+                perception_data = await asyncio.to_thread(
+                    self.sensevoice_service.process_audio,
+                    perception_audio,
+                )
+                if perception_data:
+                    await self._handle_perception_result(perception_data, metadata)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"Perception worker error: {e}")
+            finally:
+                self.perception_queue.task_done()
+
+    async def _handle_perception_result(self, perception_data: dict, metadata: dict):
+        speculative_intent = self._build_speculative_intent(
+            perception_data["text"],
+            confidence=0.9,
+        )
+        perception_confidence = (
+            speculative_intent["confidence"]
+            if speculative_intent
+            else perception_data.get("confidence", 0.7)
+        )
+
+        # Publish emotional signals & partials
+        await self.publish("audio.perception", {
+            "text": perception_data["text"],
+            "intent": speculative_intent["name"] if speculative_intent else None,
+            "keywords": speculative_intent["keywords"] if speculative_intent else [],
+            "confidence": perception_confidence,
+            "speculative_intent": speculative_intent,
+            "metadata": {
+                **perception_data,
+                "confidence": perception_confidence,
+            },
+            "timestamp": time.time(),
+            "utterance_id": speculative_intent["utterance_id"] if speculative_intent else self.current_utterance_id,
+        })
+
+        # Speculative Intent Evaluation
+        if speculative_intent:
+            logger.warning(
+                "🛑 [SPECULATIVE INTENT] Perception detected: '%s'. Triggering Early Stop.",
+                perception_data["text"],
+            )
+            await self.publish("audio.stop", {
+                "interrupt": True,
+                "speculative": True,
+                "intent": speculative_intent["name"],
+                "keywords": speculative_intent["keywords"],
+                "confidence": speculative_intent["confidence"],
+                "perception_text": speculative_intent["text"],
+                "utterance_id": speculative_intent["utterance_id"],
+            })
 
     def _build_speculative_intent(self, text: str, confidence: float):
         """
@@ -159,14 +248,23 @@ class STTAgent(BaseAgent):
         if not matches:
             return None
 
+        utterance_id = self.current_utterance_id or str(uuid.uuid4())
+        self.current_utterance_id = utterance_id
+
         return {
             "name": "SPECULATIVE_STOP",
             "keywords": matches,
             "confidence": confidence,
             "text": text,
             "timestamp": time.time(),
-            "utterance_id": str(uuid.uuid4()),
+            "utterance_id": utterance_id,
         }
+
+    async def stop(self):
+        for task in self.worker_tasks:
+            task.cancel()
+        self.whisper_service.stop()
+        await super().stop()
 
 
 async def main():
