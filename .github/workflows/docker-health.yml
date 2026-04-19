@@ -34,13 +34,13 @@ jobs:
             module: app.agents.brain_agent
           - name: voice_agent
             target: slim
-            module: app.agents.voice_agent
+            module: app.voice.agent
           - name: transport_agent
             target: slim
             module: app.agents.transport_agent
           - name: stt_agent
             target: full
-            module: app.agents.stt_agent
+            module: app.stt.agent
           - name: vision_agent
             target: full
             module: app.agents.vision_agent
