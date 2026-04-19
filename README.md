@@ -15,6 +15,17 @@
 
 The system is built for **Sovereign Privacy**, ensuring that identity evolution, semantic memory, and voice synthesis happen 100% locally on user-controlled hardware.
 
+AI Friend should be read as a **software mind-and-voice layer**, not as a productivity assistant. Its success metric is not only correctness. The real target is whether conversation feels like speaking with a persistent person who has mood, memory, habits, timing, and a stable voice presence. That makes the project closer to a cognitive identity emulator than a conventional chatbot.
+
+### What CVS-1.0 Optimizes For
+
+- **Identity Continuity**: The same personality, values, boundaries, relationship state, and speaking habits should survive long sessions and restarts.
+- **Emotional Stability**: Mood, energy, trust, and attachment should move smoothly instead of jumping every turn.
+- **Perceptual Latency**: The system prioritizes when the user first hears a believable response, not only when the full response is complete.
+- **Natural Interruption**: Fast perception can pause speech speculatively, while the final transcript confirms or rejects the interruption.
+- **Organic Memory**: Memory should influence conversation like recollection, not like a rigid search result list.
+- **Local-First Modularity**: Every major component remains replaceable for future robotics, sensors, and voice engines.
+
 ---
 
 AI Friend uses a **Hardened Sovereign Mesh**. In version **CVS-1.0**, the architecture transitioned from a reactive "Think-Speak" pipeline to a persistent **Identity Mesh**. This ensures that the agent's internal state (mood, trust, energy) evolves continuously via a mesh heartbeat, even during idle periods.
@@ -71,6 +82,8 @@ In version **CVS-1.0 Hardened**, we achieved **Zero-Drift Resilience**.
 - **9-Subject Signal Bus**: NATS now routes `chat`, `vision`, `state`, `cmd`, `voice`, `system`, `memory`, `identity`, and `knowledge`.
 - **Decentralized Credential Enforcer**: Hardcoded credentials are rejected; the mesh requires strict `.env` variables.
 - **Identity Mesh (Prisma 7.7.0)**: On-demand relational seeding ensures the AI's "Deep Self" is preserved across any hardware or container restart.
+- **State Cache Correctness**: Live emotional state is never hydrated from stale Neo4j TTL cache. State writes invalidate graph cache so mood, energy, trust, and attachment cannot rewind after a fresh interaction.
+- **Single Identity Owner**: Reflection and response generation now share one live `IdentityManager`, ensuring adaptive persona evolution affects active conversation immediately.
 
 ### 🎭 Hybrid Identity Model
 Introduced an **Immutable Core** (base values, boundaries) paired with **Adaptive Variables** (habits, style), preventing personality drift while allowing natural behavioral growth.
@@ -78,8 +91,12 @@ Introduced an **Immutable Core** (base values, boundaries) paired with **Adaptiv
 ### ⏳ Expressive Temporal Phrasing
 Voice synthesis now executes cognitive timing. The system parses `<pause>` and `<hesitate>` tags, injecting deterministic silent PCM buffers into the 32kHz stream for human-like cognitive cues.
 
+The voice path streams GPT-SoVITS PCM chunks as they arrive instead of waiting for full synthesis completion. This keeps perceived response timing closer to live conversation and allows filler, hesitation, and interruption recovery to happen inside the signal runtime instead of after the fact.
+
 ### 🐚 Active Memory Surfacing
 Asynchronous background agent evaluates shared history vs. current intent to "surface" relevant past moments, allowing memory to color the current response without adding latency.
+
+Surfacing includes novelty suppression so the same memory is not repeatedly reintroduced in a short window. Passive surfacing also avoids refreshing `last_recalled_at`, preventing "compulsive recall" loops where a memory becomes more likely to appear just because it recently appeared.
 
 ---
 
@@ -88,9 +105,9 @@ Asynchronous background agent evaluates shared history vs. current intent to "su
 | Pipeline Stage | Raw Latency | Perceptual Strategy |
 | :--- | :--- | :--- |
 | **STT (Inference)** | <50ms | Whisper V3 Turbo |
-| **Brain (Cognition)**| <80ms | BDI Mesh + TTL Cache |
-| **TTS (Synthesis)** | <120ms | Direct Binary PCM 32kHz |
-| **Pacing (Wait)** | 0-15ms | Temporal Intent Guard |
+| **Brain (Cognition)**| <80ms | BDI Mesh + live state snapshot |
+| **TTS (First Audio)** | <120ms | Streaming GPT-SoVITS raw PCM chunks |
+| **Pacing (Wait)** | 0-15ms | Structured speculative intent guard |
 | **Perceived Turn** | **<250ms** | **Phase 2 Hardened Standard** |
 
 ---
@@ -110,6 +127,7 @@ Asynchronous background agent evaluates shared history vs. current intent to "su
 
 ```text
 ├── .agents/             # Agent skills and memory systems
+│   └── CONTEXT.md       # Persistent handoff ledger for future agents
 ├── app/                 # Core logic
 │   ├── agents/          # Agent implementations (Brain, Voice, STT)
 │   ├── cognitive/       # BDI and decision services
@@ -152,12 +170,38 @@ docker ps --format "table {{.Names}}\t{{.Status}}"
 ```
 Refer to the **[Installation Guide](docs/GPT_SOVITS_INSTALL.md)** and **[Deployment Guide](docs/DEPLOYMENT.md)** for deep environment hardening.
 
+### 4. Local Test Suite
+Use the project-local backend virtual environment rather than the global Python installation:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
+
+The latest verified result after the CVS runtime fixes was `48 passed`, with one non-blocking `.pytest_cache` permission warning on the local machine.
+
+---
+
+## 🧭 Documentation Map
+
+The full documentation suite lives in [docs](docs/README.md). Start there if you are helping another agent or developer understand the project.
+
+- [Architecture](docs/ARCHITECTURE.md) explains the mesh, cognition, memory, voice, and feedback loops.
+- [API Spec](docs/API_SPEC.md) documents REST endpoints and NATS subject contracts.
+- [Identity System](docs/IDENTITY_SYSTEM.md) explains immutable identity, adaptive variables, state, and memory surfacing.
+- [Latency Improvement](docs/LATENCY_IMPROVEMENT.md) explains perceived-latency strategy, streaming PCM, and timing markers.
+- [Deployment](docs/DEPLOYMENT.md) covers local and production deployment.
+- [.agents/CONTEXT.md](.agents/CONTEXT.md) is the persistent context ledger future agents should read before modifying the system.
+
 ---
 
 ## 🗺️ Roadmap: The Path to CVS-1.1
 
 - [x] **Dynamic Identity Evolution**: State-driven personality system with NATS heartbeat.
-- [ ] **Emotion-Matched Interjection**: Soft-pause logic for more human-like interruptions.
+- [x] **Structured Interruption Arbitration**: SenseVoice publishes speculative intent, Whisper validates, and the brain confirms stop/resume behavior.
+- [x] **Streaming Voice Runtime**: VoiceAgent queues raw PCM chunks as they arrive for lower perceived first-audio latency.
+- [ ] **Expression Side-Channel**: Move affect, rate, and intensity to a structured channel so only timing markers remain in text.
+- [ ] **Emotion-Matched Interjection**: Soft-pause logic for more human-like overlap and backchanneling.
 - [ ] **M4 CoreML Integration**: Native NPU support for zero-GPU voice synthesis.
 
 ---

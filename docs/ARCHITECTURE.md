@@ -22,6 +22,8 @@ AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentraliz
 
 In **CVS-1.0 Hardened**, we have achieved **Identity Continuity**. The system is no longer a reactive "Think-Speak" pipeline; it is now a **State-Driven Identity Mesh** coached by a continuous NATS heartbeat. It anticipates context through memory surfacing and expresses emotion through deterministic temporal markers.
 
+The architecture should be evaluated by conversational realism rather than only by model intelligence. A technically correct answer that arrives with unnatural timing, forgets recent emotional state, repeats memories mechanically, or fails to recover from a false interruption is considered a behavioral failure. Every layer exists to preserve the illusion of a continuous person: perception, state, memory, decision, and voice all contribute to that outcome.
+
 ---
 
 ## 🏗️ CVS-1.0 Hardened Architecture
@@ -29,24 +31,31 @@ In **CVS-1.0 Hardened**, we have achieved **Identity Continuity**. The system is
 ### 🧠 1. Cognitive Layer (Identity & State)
 The BrainAgent orchestrates a **State-Driven Identity** with a hardened relational foundation.
 - **Neo4j State Persistence**: Mood, energy, trust, and attachment are persistent and evolve via mesh heartbeats.
+- **Live State Safety**: Live emotional state is hydrated without TTL cache and graph cache is invalidated after writes, preventing recent mood/trust updates from being rewound by stale reads.
 - **Relational Seeding (Prisma 7.7.0)**: On first-boot, the identity mesh hydrates the PostgreSQL relational store with the AI's "Seed Genome" (Personality & History), ensuring zero-drift identity across restarts.
 - **Identity Heartbeat (`system.tick`)**: A 60s NATS pulse ensures the agent's internal state matures even when user interaction is idle.
 - **Hybrid Identity Model**: Separates an **Immutable Core** (base tone, values) from **Adaptive Variables** (habits, relationship status).
+- **Single Identity Owner**: Reflection and response generation share the same `IdentityManager`, so adaptive evolution affects the active personality without requiring restart.
 
 ### 📖 2. Proactive Memory Surfacing
 The system anticipates conversational context through an asynchronous recall layer that merges Relational (Postgres) and Graph (Neo4j) knowledge.
 - **`SurfacingAgent`**: Background process that evaluates shared history vs. current intent.
+- **Novelty Suppression**: Recently surfaced memories are suppressed for a short window, so the agent does not keep repeating the same recollection.
+- **Passive Recall Safety**: Surfacing does not refresh `last_recalled_at`, preventing memory relevance from becoming self-reinforcing only because a memory was surfaced.
 - **Signal Bus Expansion**: The mesh now monitors 9 core subjects: `chat.*`, `vision.*`, `state.*`, `cmd.*`, `voice.*`, `system.*`, `memory.*`, `identity.*`, and `knowledge.*`.
 
 ### ⏱️ 3. Perceptual Intelligence (STT Agent)
 Interruption is now handled as a **Temporal Intent Problem** powered by binary PCM transport.
 - **Dual-STT Pipeline**: Uses Whisper for deep context and `sherpa-onnx` (SenseVoice) for low-latency temporal intent.
-- **Temporal Intent Model**: Evaluates intent stability over a rolling 250ms window.
-- **Stability Gating**: Only consistent "Stop/Wait" intent (score > 0.75) triggers an interrupt signal.
+- **Speculative Intent Object**: SenseVoice publishes a structured hypothesis with intent name, keywords, confidence, text, timestamp, and utterance id.
+- **Whisper Validation**: Whisper final transcript confirms or rejects the speculative stop. Rejected false positives publish `audio.resume`; confirmed commands publish final `audio.stop`.
+- **Human Turn-Taking Goal**: The system favors quick reversible pause over late irreversible interruption, because a brief recoverable pause feels more natural than talking over the user.
 
 ### 🔊 4. Signal Rendering (Voice Agent)
 A persistent synthesis runtime with direct binary transport and expressive behavior.
 - **Expressive Temporal Layer**: Interprets `<pause>` and `<hesitate>` tags by injecting silent PCM buffers directly into the 32kHz stream.
+- **Streaming First Audio**: GPT-SoVITS chunks are queued as they arrive rather than buffered until full synthesis completion.
+- **Expression Sanitization**: Legacy `<emotion ...>` wrappers are stripped before TTS while timing markers are preserved. Affect should move as metadata rather than spoken text.
 - **Direct Binary Bus**: Publishes raw PCM bytes via NATS Headers (Phase 2).
 - **Backpressure Guard**: Bounded queue and synthesis semaphore protect GPU health.
 
@@ -77,15 +86,35 @@ graph TB
     end
 
     MIC -->|audio.captured| STT
+    STT -->|audio.perception| DECISION
+    STT -->|audio.stop speculative| VOICE_CONTROLLER
     STT -->|chat.input| DECISION
     SYSTEM_TICK -->|system.tick| DECISION
     SURFACING -->|memory.surfaced| DECISION
     DECISION -->|chat.output| VOICE_CONTROLLER
+    DECISION -->|audio.resume / final audio.stop| VOICE_CONTROLLER
     VOICE_CONTROLLER --> AUDIO_ENGINE
     AUDIO_ENGINE -->|audio.stream| PCM_PLAYER
 ```
 
 ---
+
+## 🔁 Real-Time Turn-Taking Flow
+
+The interruption loop is deliberately two-phase:
+
+1. **Fast perception**: SenseVoice sees a possible stop/wait/quiet command and publishes `audio.stop` with `speculative=true`.
+2. **Voice behavior**: VoiceAgent enters a reversible `SPECULATIVE_PAUSE` and holds output rather than clearing all buffers immediately.
+3. **Backbone validation**: Whisper produces the final transcript and BrainAgent checks whether the stop keyword was actually a command or just conversational context.
+4. **Resolution**: False positives publish `audio.resume`; confirmed commands publish final `audio.stop` with `speculative=false`.
+
+This is closer to human overlap behavior: people often pause briefly when another person starts speaking, then continue if the interjection was not meant to stop them.
+
+---
+
+## 🧭 Agent Handoff Context
+
+Future agents should read [../.agents/CONTEXT.md](../.agents/CONTEXT.md) before changing the architecture. It records durable project intent, recent runtime changes, verification commands, and next recommended work. Update it after architecture, behavior, or test changes so context survives beyond any single conversation window.
 
 ## ⚙️ Resource Matrix (CVS-1.0)
 

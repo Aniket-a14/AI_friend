@@ -45,6 +45,7 @@ Before deploying to production, ensure you have completed the following:
 - [ ] Enable health check endpoints
 - [ ] Configure alerting for critical failures
 - [ ] Set up uptime monitoring
+- [ ] Track CVS behavioral metrics: first-audio latency, speculative pause duration, resume latency, memory surfacing frequency, and persona validation failures.
 
 ---
 
@@ -109,6 +110,25 @@ Before moving the project to a new machine:
 - [ ] **Relative Paths**: Verify `docker-compose.infra.yml` uses relative mounts (e.g., `./backend`).
 - [ ] **Clean Volume Recovery**: To reset a machine's data completely, use `docker compose down -v`.
 - [ ] **AI Perception**: Ensure `requirements-ai.txt` is installed to support `sherpa-onnx` (SenseVoice).
+- [ ] **Agent Context Ledger**: Read `.agents/CONTEXT.md` before modifying runtime behavior and update it after deployment-impacting changes.
+- [ ] **Test Runner**: Prefer `backend/.venv/Scripts/python.exe -m pytest` on Windows because the global Anaconda environment may not load the same packages.
+
+### 4. CVS Runtime Regression Suite
+Before shipping changes to cognition, memory, STT, TTS, or mesh subjects, run:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
+
+The suite includes regression coverage for:
+
+- State hydration avoiding stale graph cache.
+- Speculative stop rejection and final stop confirmation.
+- Shared live identity ownership between cognition and reflection.
+- BrainAgent startup connection ordering.
+- Emotion markup sanitization.
+- Memory surfacing novelty suppression.
 
 ---
 

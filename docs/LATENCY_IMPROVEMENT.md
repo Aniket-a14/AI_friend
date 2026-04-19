@@ -8,6 +8,8 @@
 
 In version **CVS-1.0**, we have moved beyond raw pipeline speed into **Perceptual Timing Mastery**. While raw synthesis latency is important, the human perception of "quickness" depends on conversational pacing, smooth transitions, and the use of fillers. CVS-1.0 achieves a stable **<280ms perceived latency** by implementing a state-machine driven scheduler that synchronizes cognition and signal rendering.
 
+The key shift is from "wait until everything is ready" to "start the right behavior as soon as it is safe." Fast perception may pause voice before Whisper is final. Voice synthesis can stream first PCM before the entire utterance is complete. Memory surfacing happens asynchronously and should already be available by the time the next decision loop needs it.
+
 ---
 
 ## 🏗️ The CVS-1.0 Hardened Latency Stack
@@ -19,25 +21,28 @@ By eliminating Base64 transcoding, we have significantly reduced CPU overhead an
 - **Perceptual Gain**: ~15-20% reduction in end-to-end latency.
 
 ### 2. Perceptual Intent & Timing
-- **Temporal Intent Model**: Replaced keyword matching with a stability-gated intent scorer (rolling 250ms window). Reduces false-positive interruptions while maintaining high responsiveness.
-- **Neo4j TTL Cache**: Reduces the "Thinking Phase" by caching frequent belief lookups (300s TTL).
+- **Structured Speculative Intent**: SenseVoice creates a reversible interruption hypothesis containing keywords, confidence, text, timestamp, and utterance id.
+- **Whisper Validation**: Final transcript confirms or rejects the early interruption. Rejected hypotheses publish `audio.resume`; confirmed commands publish final `audio.stop`.
+- **Neo4j TTL Cache**: Reduces the "Thinking Phase" by caching frequent belief lookups (300s TTL), while live mood/trust state avoids stale cache reads.
 - **Identity Heartbeat (`system.tick`)**: Periodically recalibrates mesh-wide timestamps to prevent drift across decentralized agents.
 
 ### 3. Temporal Expression Layer (Behavioral Timing)
 We have added intentional cognitive delays to the pipeline to improve conversational believability.
 - **Semantic Pausing**: The BrainAgent injects `<pause=ms>` and `<hesitate>` tags based on the current emotional state and cognitive complexity.
 - **PCM Silence Injection**: Instead of synthesis delays, the VoiceAgent injects pure silent PCM buffers into the 32kHz stream, ensuring timing is physically tied to the audio signal.
+- **Streaming Synthesis**: VoiceAgent queues GPT-SoVITS PCM chunks as they arrive. It no longer waits for a full segment to finish before the user hears the first audio.
+- **Adaptive Formation Buffer**: Brain segmentation avoids per-word sleeping. It holds a short formation window only when useful, then flushes on semantic boundaries or chunk size limits.
 
 ---
 
 ## 📊 Latency Benchmarks (CVS-1.0 on RTX 4090)
 
-| Stage | Method | Latency (ms) | Percetual Impact |
+| Stage | Method | Latency (ms) | Perceptual Impact |
 | :--- | :--- | :--- | :--- |
 | **STT** | Whisper Turbo (Streaming) | 40-70ms | Real-time |
 | **Brain** | Qwen 2.5 7B (BDI Mesh) | 80-120ms | Thinking phase |
-| **Segmenter** | Hybrid Heuristic | 30ms | Formation Buffer |
-| **Synthesis** | GPT-SoVITS V4 (Raw PCM) | 120-180ms | Synthesis phase |
+| **Segmenter** | Hybrid Heuristic | 0-30ms | Adaptive Formation Buffer |
+| **First Audio** | GPT-SoVITS V4 Streaming PCM | 120-180ms | Starts before full synthesis completes |
 | **Controller** | Priority Scheduler | 5-15ms | Adaptive Jitter |
 | **Cognitive Timing**| `<pause>` / `<hesitate>` | **(Variable)** | **Believability Layer** |
 | **Total (Raw)** | Pipeline Sum | **275-415ms** | Theoretical |
@@ -55,6 +60,18 @@ To prevent volume "pumping" during rapid chunking, we utilize a **100ms rate-ada
 
 ### Clock Drift Correction
 The `VoiceController` state machine includes a **Periodic Resync** (every 5 mins). This recalibrates the base timestamp for the scheduler, preventing the microscopic accumulation of async timing drift that eventually causes playback "clicks" in long-running sessions.
+
+### Measurement Recommendations
+
+For future tuning, measure:
+
+- Time from final `chat.input` to first `audio.stream`.
+- Time from speculative `audio.stop` to either `audio.resume` or final `audio.stop`.
+- Percentage of speculative pauses rejected by Whisper validation.
+- Queue depth in `VoiceAgent.ingestion_queue` and `playback_queue`.
+- Memory surfacing frequency and repeated-memory suppression rate.
+
+These are behavioral realism metrics. A model can generate correct text while still failing the experience if first-audio latency, interruption recovery, or memory surfacing feels unnatural.
 
 ---
 

@@ -77,11 +77,32 @@ docker exec -it nats_mesh nats sub "chat.input"
 docker exec -it nats_mesh nats sub "chat.output"
 ```
 
+### Watch Interruption Arbitration
+```bash
+# Fast acoustic perception from SenseVoice
+docker exec -it nats_mesh nats sub "audio.perception"
+
+# Reversible and final interruption commands
+docker exec -it nats_mesh nats sub "audio.stop"
+
+# False-positive recovery after Whisper validation
+docker exec -it nats_mesh nats sub "audio.resume"
+```
+
+Expected behavior:
+
+- A speculative stop has `speculative: true`.
+- A confirmed stop has `speculative: false`.
+- A rejected interruption produces `audio.resume` with `reason: conflict_rejected`.
+
 ### Watch Pulse Telemetry (CVS-1.0 Closed-Loop)
 ```bash
 # Watch the BrainAgent adjusting to VoiceAgent feedback
 docker exec -it nats_mesh nats sub "voice.segmentation_feedback"
 ```
+
+### Watch Raw Audio Flow
+`audio.stream` is normally raw binary PCM with NATS headers. If using the NATS CLI, do not assume the payload is readable JSON. Inspect headers and byte rate rather than trying to parse speech chunks as text.
 
 ---
 
@@ -95,6 +116,18 @@ docker exec -it brain_agent python scripts/bench_latency_perceptual.py
 - `✅ BENCHMARK COMPLETE`
 - `Total Perceived Latency: <280ms`.
 - `Jitter Recovery Rate: 100%`.
+
+---
+
+## 6. Local Regression Check
+Before or after Docker validation, run the local backend regression suite:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
+
+This catches several behavioral regressions that Docker health checks cannot see, including stale state hydration, false speculative pauses, expression markup leakage, and repeated memory surfacing.
 
 ---
 
