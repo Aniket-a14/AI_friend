@@ -1,0 +1,106 @@
+name: 🛡️ Mesh & Schema Integrity
+
+# Validates that the Docker orchestration files parse correctly,
+# the Prisma schema is valid, and identity seed files exist.
+# Catches broken compose configs and schema drift BEFORE merge.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'docker-compose*.yml'
+      - 'backend/Dockerfile*'
+      - 'frontend/prisma/**'
+      - '.env.example'
+      - 'backend/app/cognitive/identity.py'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'docker-compose*.yml'
+      - 'backend/Dockerfile*'
+      - 'frontend/prisma/**'
+      - '.env.example'
+      - 'backend/app/cognitive/identity.py'
+
+jobs:
+  compose-validation:
+    name: Docker Compose Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Generate CI .env from .env.example
+        run: |
+          # Fill .env.example placeholders with dummy values for syntax check
+          sed 's/your_.*$/ci_dummy_value/g; s/\[PASSWORD\]/ci_dummy/g' .env.example > .env
+
+      - name: Validate Infrastructure Compose
+        run: docker compose -f docker-compose.infra.yml config --quiet
+
+      - name: Validate Production Compose
+        run: docker compose -f docker-compose.prod.yml config --quiet
+
+      - name: Validate Unified Phased Startup
+        run: docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config --quiet
+
+  prisma-validation:
+    name: Prisma Schema & Identity Seed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Prisma CLI
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Validate Prisma Schema
+        run: |
+          cd frontend
+          npx prisma validate
+          echo "✅ Prisma schema is valid"
+
+      - name: Check Identity Seed Exists
+        run: |
+          if [ ! -f frontend/prisma/seed.js ]; then
+            echo "❌ Identity seed file missing: frontend/prisma/seed.js"
+            exit 1
+          fi
+          echo "✅ Identity seed file found"
+
+  env-completeness:
+    name: Environment Variable Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check .env.example covers all compose references
+        run: |
+          echo "🔍 Scanning compose files for \${VAR} references..."
+          # Extract all ${VAR} and ${VAR:-default} references from compose files
+          compose_vars=$(grep -oP '\$\{(\w+)' docker-compose.infra.yml docker-compose.prod.yml \
+            | sed 's/.*\${\(.*\)/\1/' | sort -u)
+
+          missing=""
+          for var in $compose_vars; do
+            if ! grep -q "^${var}=" .env.example 2>/dev/null && \
+               ! grep -q "^# .*${var}" .env.example 2>/dev/null; then
+              missing="$missing $var"
+            fi
+          done
+
+          if [ -n "$missing" ]; then
+            echo "⚠️ Variables referenced in compose but missing from .env.example:"
+            for v in $missing; do echo "  - $v"; done
+            echo ""
+            echo "Add them to .env.example so new developers don't miss them."
+            # Warning only, not a hard fail
+          else
+            echo "✅ All compose variables are documented in .env.example"
+          fi

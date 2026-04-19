@@ -284,3 +284,43 @@ Verification:
 
 - `docker compose -f ...infra.yml -f ...prod.yml up -d`
 - `docker ps` confirmed all agents reached `Healthy` status (with Voice Agent auto-starting after SoVITS settled).
+
+## 2026-04-19 CI/CD Automation (Solid State Workflows)
+
+Added five specialized GitHub Actions workflows to protect CVS-1.0 architectural
+invariants. These are not generic linters — each one guards a specific failure
+mode encountered or identified during the infrastructure hardening session.
+
+New files:
+
+- `.github/workflows/cognitive-regression.yml`
+- `.github/workflows/mesh-integrity.yml`
+- `.github/workflows/persona-guard.yml`
+- `.github/workflows/security-audit.yml`
+- `.github/workflows/docker-health.yml`
+
+Workflow purposes:
+
+- **Cognitive Regression Gate**: Boots a live NATS service container, sets up
+  JetStream streams, and runs the full `pytest` regression suite. Catches broken
+  subscriptions, stale state hydration, and persona drift. Uploads test results
+  as artifacts for debugging.
+- **Mesh & Schema Integrity**: Validates all compose files (including unified
+  phased-startup config), runs `prisma validate`, and checks that every `${VAR}`
+  in compose files is documented in `.env.example`. Would have caught the
+  `nats_mesh` vs `nats` service name mismatch from the hardening session.
+- **Persona & Prompt Guard**: Triggers only when cognitive/identity code changes.
+  Runs identity-specific tests, validates emotion markup stripping preserves
+  timing markers, and checks all persona JSON seed files are parseable.
+- **Security & Secrets Audit**: Scans for hardcoded credentials, default Neo4j
+  passwords in production code, committed `.env` files, and runs `pip-audit` for
+  known Python dependency vulnerabilities.
+- **Docker Image Health**: Builds all five agent images in a matrix, smoke-tests
+  each by importing the agent module, verifies `netcat` is installed for health
+  probes, and validates the unified compose config.
+
+All workflows use `paths:` filters so they only trigger on relevant file changes.
+
+Verification:
+
+- All 11 workflow files (6 existing + 5 new) pass YAML syntax validation.
