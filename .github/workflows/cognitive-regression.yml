@@ -5,6 +5,7 @@ name: 🧠 Cognitive Regression Gate
 # persona drift, and memory surfacing regressions.
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, master]
     paths:
