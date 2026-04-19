@@ -153,3 +153,49 @@ cd backend
   `voice.segmentation_feedback` to evaluate natural conversation flow.
 - Review the transport bridge with real LiveKit audio for frame sizing,
   backpressure, and overlap behavior.
+
+## 2026-04-19 Documentation Refresh
+
+Updated public documentation to better reflect the CVS runtime design and the
+recent continuity fixes.
+
+Changed files:
+
+- `README.md`
+- `docs/README.md`
+- `docs/ARCHITECTURE.md`
+- `docs/API_SPEC.md`
+- `docs/IDENTITY_SYSTEM.md`
+- `docs/LATENCY_IMPROVEMENT.md`
+- `docs/DEPLOYMENT.md`
+- `docs/docker_verification.md`
+- `docs/VOICE_CLONING.md`
+- `docs/GPT_SOVITS_INSTALL.md`
+- `docs/UPDATES.md`
+- `.agents/CONTEXT.md`
+
+Documentation changes:
+
+- Added a docs map in `docs/README.md` so readers and future agents know where
+  to start.
+- Expanded the root README with CVS goals, runtime guarantees, current test
+  command, documentation map, and updated roadmap.
+- Updated architecture docs with live state safety, shared identity ownership,
+  structured speculative interruption flow, streaming voice output, and memory
+  novelty suppression.
+- Updated API specs for `audio.perception`, speculative/final `audio.stop`,
+  `audio.resume`, raw binary `audio.stream`, and the expression contract.
+- Updated identity docs to explain runtime identity ownership, cache boundaries,
+  affect metadata, and organic recall behavior.
+- Updated latency docs to describe first-audio streaming, adaptive segmentation,
+  Whisper validation, and behavioral latency metrics.
+- Updated deployment and Docker verification docs with regression test commands
+  and mesh subjects to monitor for interruption arbitration.
+- Updated voice/GPT-SoVITS docs to describe chunk-first playback and the text
+  vs expression boundary.
+- Prepended `UPDATES.md` with the Apr 19 CVS runtime continuity fix summary.
+
+Verification:
+
+- `git diff --check` passed with only line-ending warnings.
+- Documentation-only change; backend tests were not rerun during this docs pass.

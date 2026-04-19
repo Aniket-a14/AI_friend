@@ -1,3 +1,52 @@
+## 0. CVS-1.0 Runtime Continuity Fixes (Apr 19, 2026)
+
+The runtime was reviewed specifically against the goal of human-like continuity rather than generic assistant correctness. The review focused on identity consistency, emotional stability, natural interruption handling, perceived latency, expression/cognition separation, and memory realism.
+
+### 0.1. State Continuity Hardening
+- **Live State Hydration Safety**: `StateService.hydrate_state()` no longer reads live agent mood, energy, trust, and attachment through the Neo4j TTL cache.
+- **Graph Cache Invalidation**: `StateService.persist_state()` now invalidates graph cache after writing state. This prevents a fresh emotional update from being overwritten by a stale cached snapshot.
+- **Design Rule**: Belief and knowledge lookups can use TTL caching, but live identity state must reflect the latest write.
+
+### 0.2. Speculative Interruption Arbitration
+- **Structured Intent Packet**: STT now publishes a structured speculative interruption hypothesis from SenseVoice, including intent name, keywords, confidence, text, timestamp, and utterance id.
+- **Two-Phase Turn Taking**: VoiceAgent can pause quickly on `audio.stop` with `speculative=true`, then BrainAgent uses Whisper final text to confirm or reject the stop.
+- **False Positive Recovery**: Rejected interruption hypotheses publish `audio.resume` with `reason: conflict_rejected`.
+- **Final Stop Confirmation**: Confirmed stop commands publish `audio.stop` with `speculative=false`, allowing VoiceAgent to clear the stream intentionally.
+
+### 0.3. Identity Ownership Fix
+- **Single Live Identity Owner**: `CognitiveService` and `ReflectionService` now share the same `IdentityManager`.
+- **Immediate Adaptive Effect**: Reflection-driven relationship or style changes can affect active response generation without waiting for a restart.
+- **Persona Stability**: Immutable core remains protected, while adaptive variables can evolve through confidence-gated reflection.
+
+### 0.4. Voice Streaming And Expression Cleanup
+- **First-Audio Improvement**: VoiceAgent queues GPT-SoVITS PCM chunks as they arrive instead of waiting for the full synthesized segment.
+- **Segment Formation Fix**: Brain segmentation no longer sleeps per word. It flushes based on semantic boundaries and a short adaptive formation window.
+- **Control Markup Sanitization**: `ActionService` strips legacy `<emotion ...>` wrappers while preserving `<pause=...>` and `<hesitate>`.
+- **Expression Boundary**: Emotion should travel as structured metadata (`emotion`, `emotional_intensity`, `speaking_rate`) rather than as spoken XML-like tags.
+
+### 0.5. Memory Surfacing Realism
+- **Novelty Suppression**: Recently surfaced memories are temporarily suppressed to avoid repetitive recall.
+- **No Passive Refresh**: Surfaced memories do not refresh their own `last_recalled_at`, preventing relevance from becoming self-reinforcing.
+- **Behavioral Goal**: Memory should color conversation naturally, not announce itself as repeated database retrieval.
+
+### 0.6. Verification
+Regression tests were added to `backend/tests/test_regressions.py`.
+
+Run:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
+
+Latest verified result:
+
+- `48 passed`
+- One non-blocking `.pytest_cache` permission warning on the local machine.
+
+### 0.7. Durable Agent Handoff
+Created `.agents/CONTEXT.md` as the persistent context ledger for future agents. Future contributors should read it before making changes and update it after modifying architecture, behavior, tests, or runtime expectations.
+
 ## 1. Project CVS-1.0: Hardened Architectural Stabilization (Apr 2026)
 
 We have officially entered **Phase 2 Hardening**, transforming the platform into a production-resilient, binary-transport mesh.
@@ -13,7 +62,7 @@ The mesh has been hardened for production portability and identity continuity.
 
 ### 1.2. Architecture Refinements
 - **Direct Binary Mesh**: Eliminated Base64/JSON overhead for audio signal (15-20% latency reduction).
-- **Temporal Intent Model**: Stability-gated interruption detection (250ms rolling window).
+- **Structured Temporal Intent**: SenseVoice publishes speculative interruption hypotheses that Whisper can confirm or reject.
 - **Neo4j TTL Cache**: High-speed belief caching (300s TTL) for near-instant cognitive context lookups.
 - **Vocal Smoothing**: Alpha-damped feedback (α=0.7) prevents conversation fragmentation under load.
 - **Centralized Calibration**: Operational parameters moved to `Config` for rapid real-world tuning.

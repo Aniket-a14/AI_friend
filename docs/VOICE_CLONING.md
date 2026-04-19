@@ -12,6 +12,7 @@ In **CVS-1.0**, the VoiceAgent is no longer a simple synthesis worker. It is a *
 The system is optimized for **GPT-SoVITS V4**, providing studio-quality results without the latency of legacy headers.
 - **Waveform Fidelity**: 32kHz sampling rate (native V4 output).
 - **Zero-Header Streaming**: Raw 16-bit PCM buffers are streamed directly, eliminating **44-byte WAV header tax** and reducing client-side parsing by **~60ms**.
+- **Chunk-First Playback**: VoiceAgent queues PCM chunks as they arrive from GPT-SoVITS, so the listener can hear first audio before the full segment finishes synthesizing.
 - **One-Time Identity Load**: Model weights (`GPT_weights` and `SoVITS_weights`) are loaded into VRAM once at startup, ensuring subsequent synthesis turns are mathematically pure text-to-audio operations without cloning overhead.
 
 ### 2. Signal Rendering (Audio Engine)
@@ -24,6 +25,15 @@ The CVS-1.0 Signal Engine ensures every audio chunk sounds natural and consisten
 Conventional caching is too rigid for expressive speech. CVS-1.0 uses **Multidimensional Perceptual Clustering**:
 - **Similarity Metric**: $\alpha(EmotionDiff)^2 + \beta|RateDiff|$.
 - **Safe Reuse**: Audio is only reused if the emotional intensity and speaking rate match the stylistic target within a tight perceptual threshold.
+
+### 4. Text vs Expression Boundary
+The voice layer should synthesize natural speech, not control markup.
+
+- Supported timing markers: `<pause=300ms>` and `<hesitate>`.
+- Legacy `<emotion ...>` wrappers are stripped before TTS.
+- Emotion, rate, and intensity should be carried as structured metadata from `chat.output`.
+
+This boundary matters because the user should hear a person speaking, not the system leaking its control protocol into the cloned voice.
 
 ---
 

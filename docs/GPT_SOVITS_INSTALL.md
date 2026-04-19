@@ -45,7 +45,11 @@ Once the WebUI is running, the **Voice Agent** communicates via the local API.
 
 1.  **API Port**: Default is `9871`.
 2.  **Format**: Ensure the WebUI is configured for **32kHz Raw PCM** for maximum fidelity.
-3.  **Local Sync**: Put your trained models in the `backend/models/` directory using the renaming convention from the [Cheatsheet](./COLAB_PATHS_CHEATSHEET.md).
+3.  **Streaming Mode**: Enable raw streaming responses where supported. The CVS VoiceAgent is optimized to queue chunks as they arrive rather than waiting for complete synthesis.
+4.  **Local Sync**: Put your trained models in the `backend/models/` directory using the renaming convention from the [Cheatsheet](./COLAB_PATHS_CHEATSHEET.md).
+
+### Runtime Expectations
+The TTS API should return audio only. Do not rely on GPT-SoVITS to interpret CVS expression markup. The VoiceAgent handles timing tags such as `<pause=300ms>` and `<hesitate>` by injecting PCM silence directly, and strips legacy emotion wrappers before synthesis.
 
 ---
 

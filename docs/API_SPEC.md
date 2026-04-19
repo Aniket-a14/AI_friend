@@ -32,6 +32,33 @@ Generates a LiveKit access token for WebRTC sessions.
   }
   ```
 
+#### `POST /start-session`
+Alias for token generation used by legacy or simplified clients.
+- **Parameters**: `participant` (string, optional)
+- **Response**:
+  ```json
+  {
+    "token": "ey...",
+    "url": "http://localhost:7880",
+    "status": "session_started"
+  }
+  ```
+
+#### `GET /health`
+Minimal health endpoint for Docker and uptime monitors.
+- **Response**:
+  ```json
+  {
+    "status": "healthy",
+    "nats": true
+  }
+  ```
+
+#### `POST /vision/toggle`
+Broadcasts a vision source switch to the mesh.
+- **Parameters**: `source` must be `screen` or `camera`.
+- **Mesh Side Effect**: publishes `vision.control`.
+
 ---
 
 ## 🌊 Internal Messaging (NATS JetStream)
@@ -44,10 +71,12 @@ The "Sovereign Mesh" communicates via a decentralized event bus. CVS-1.0 utilize
 | :--- | :--- | :--- | :--- |
 | `audio.inbound` | Signaling | STT Agent | `{"audio": "base64", "sample_rate": 16000}` |
 | `chat.input` | STT Agent | Brain Agent | `{"text": "string", "metadata": {}}` |
-| `chat.output` | Brain Agent | Voice Agent | `{"content": "string", "done": bool, "metadata": {"emotion": str, "intensity": float, "speaking_rate": float}}` |
-| `audio.stream` | Voice Agent | Signaling | `{"audio": "base64", "format": "raw", "sample_rate": 32000, "done": bool}` |
+| `chat.output` | Brain Agent | Voice Agent | `{"content": "string", "done": bool, "emotion": str, "emotional_intensity": float, "speaking_rate": float}` |
+| `audio.perception` | STT Agent | Brain Agent | `{"text": "string", "metadata": {...}, "speculative_intent": {...}}` |
+| `audio.stop` | STT/Brain | Voice Agent | `{"interrupt": true, "speculative": bool, "keywords": []}` |
+| `audio.resume` | Brain Agent | Voice Agent | `{"reason": "conflict_rejected", "perception_text": "string"}` |
+| `audio.stream` | Voice Agent | Signaling | Raw 32kHz PCM bytes with NATS headers |
 | `voice.segmentation_feedback` | Voice Agent | Brain Agent | `{"segment_id": str, "latency": float, "drift": float, "override_triggered": bool}` |
-| `audio.stop` | STT Agent | Voice Agent | `{"interrupt": true}` |
 | `vision.frames` | Signaling | Brain Agent | `{"image": "base64", "source": "string"}` |
 | `state.update` | BaseAgent | UI / Logs | `{"agent": "string", "state": "string"}` |
 
@@ -59,15 +88,20 @@ Sent by the BrainAgent during cognitive streaming.
 {
   "content": "I'm listening, go on.",
   "done": false,
-  "metadata": {
-    "emotion": "attentive",
-    "intensity": 0.75,
-    "speaking_rate": 1.1,
-    "confidence": 0.98
-  },
+  "emotion": "attentive",
+  "emotional_intensity": 0.75,
+  "speaking_rate": 1.1,
+  "confidence": 0.98,
   "latency_metadata": {
     "start_time": 1713330000.0,
-    "hops": ["brain_agent"]
+    "hops": [
+      {
+        "agent": "brain_agent",
+        "subject": "chat.output",
+        "timestamp": 1713330000.1
+      }
+    ],
+    "source": "stt_agent"
   }
 }
 ```
@@ -79,13 +113,90 @@ Sent when the entire cognitive process is complete for history persistence.
   "content": "",
   "done": true,
   "full_response": "The entire response text.",
-  "metadata": {...},
+  "emotion": "neutral",
   "latency_metadata": {...}
 }
 ```
 
+#### `audio.perception` (Fast Acoustic Perception)
+Published by STT after SenseVoice processes a low-latency chunk. This event is not the final transcript. It is a fast perception packet used for emotion bias, acoustic events, and speculative interruption.
+
+```json
+{
+  "text": "wait",
+  "intent": "SPECULATIVE_STOP",
+  "keywords": ["wait"],
+  "confidence": 0.9,
+  "speculative_intent": {
+    "name": "SPECULATIVE_STOP",
+    "keywords": ["wait"],
+    "confidence": 0.9,
+    "text": "wait",
+    "timestamp": 1713330000.0,
+    "utterance_id": "a7f7..."
+  },
+  "metadata": {
+    "text": "wait",
+    "emotion": "NEUTRAL",
+    "emotional_bias": 0.0,
+    "events": [],
+    "latency_tier": "fast"
+  },
+  "timestamp": 1713330000.0
+}
+```
+
+#### `audio.stop` (Speculative And Final Stop)
+The same subject is used for reversible speculative pauses and final confirmed stops.
+
+```json
+{
+  "interrupt": true,
+  "speculative": true,
+  "intent": "SPECULATIVE_STOP",
+  "keywords": ["stop"],
+  "confidence": 0.9,
+  "perception_text": "stop",
+  "utterance_id": "a7f7..."
+}
+```
+
+If Whisper confirms the user intended to interrupt, BrainAgent publishes:
+
+```json
+{
+  "interrupt": true,
+  "speculative": false,
+  "reason": "confirmed_command",
+  "command_text": "stop right now",
+  "keywords": ["stop"]
+}
+```
+
+#### `audio.resume` (False Positive Recovery)
+If Whisper contradicts the early perception hypothesis, BrainAgent publishes:
+
+```json
+{
+  "reason": "conflict_rejected",
+  "perception_text": "stop"
+}
+```
+
 #### `audio.stream` (CVS-1.0 Raw 32kHz PCM)
-Sent by the VoiceAgent directly from the Signal Runtime.
+Sent by the VoiceAgent directly from the Signal Runtime. In the optimized path this is raw binary PCM, not JSON.
+
+NATS headers:
+
+```json
+{
+  "X-Payload-Format": "binary/raw-pcm",
+  "X-Latency-Meta": "{\"start_time\":1713330000.0,\"hops\":[...]}"
+}
+```
+
+Legacy JSON clients may still use:
+
 ```json
 {
   "audio": "UklGR...",
@@ -123,4 +234,16 @@ All agents broadcast their internal state to `state.update`.
 | `thinking` | Brain | Received `chat.input`, running semantic segmentation. |
 | `buffering` | Voice | Filling jitter buffer to safe watermark. |
 | `speaking` | Voice | Emitting PCM signals; active Atomic State. |
+| `speculative_pause` | Voice | Fast perception requested a reversible pause. |
 | `error` | All | Exception caught; failsafe triggered. |
+
+---
+
+## 🧾 Expression Contract
+
+Text content may contain timing markers:
+
+- `<pause=300ms>`
+- `<hesitate>`
+
+Text content should not contain `<emotion ...>` wrappers. The runtime strips legacy emotion wrappers before TTS, but new integrations should carry affect as structured metadata (`emotion`, `emotional_intensity`, `speaking_rate`) rather than as spoken control text.
