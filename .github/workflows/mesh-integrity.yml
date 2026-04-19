@@ -5,6 +5,7 @@ name: 🛡️ Mesh & Schema Integrity
 # Catches broken compose configs and schema drift BEFORE merge.
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, master]
     paths:

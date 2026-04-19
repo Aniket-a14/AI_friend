@@ -5,6 +5,7 @@ name: 📦 Docker Image Health
 # import errors that only surface inside the container.
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, master]
     paths:
