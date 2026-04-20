@@ -1,12 +1,17 @@
 import sys
 import os
 import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock
 
 # Add the backend directory to Python path
 backend_dir = os.path.dirname(os.path.abspath(__file__))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
+
+# Some local test environments cannot import asyncpg native bindings.
+# Provide a tiny stub so tests that don't hit real DB I/O can import modules safely.
+sys.modules.setdefault("asyncpg", SimpleNamespace(Pool=object))
 
 @pytest.fixture
 def mock_llm_service():
