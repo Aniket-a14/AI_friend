@@ -62,7 +62,21 @@ class SurfacingAgent(BaseAgent):
         self._record_subject_metric("system.tick", metadata=data.get("latency_metadata"))
         # Only surface if we haven't recently or if context is fresh
         if time.time() - self.last_surfaced_time > self.surfacing_cooldown:
-             self._schedule_sweep(source_metadata=data.get("latency_metadata"))
+             await self._run_sweep_now(source_metadata=data.get("latency_metadata"))
+
+    async def _run_sweep_now(self, source_metadata: Optional[Dict[str, Any]] = None):
+        """Run a sweep inline (used by low-frequency control channels like system.tick)."""
+        now = time.time()
+        if self._sweep_task is not None and not self._sweep_task.done():
+            return
+        if (now - self.last_sweep_attempt) < self.min_sweep_interval:
+            return
+
+        self.last_sweep_attempt = now
+        self._sweep_task = asyncio.create_task(
+            self._surface_relevant_memories(source_metadata=source_metadata)
+        )
+        await self._sweep_task
 
     def _schedule_sweep(self, source_metadata: Optional[Dict[str, Any]] = None):
         """Run at most one surfacing sweep at a time and throttle retry storms."""
