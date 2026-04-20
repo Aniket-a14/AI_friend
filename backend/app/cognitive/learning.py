@@ -4,6 +4,7 @@ import json
 import re
 from typing import List, Dict, Any
 from .identity import IdentityManager
+from ..config import Config
 
 logger = logging.getLogger("reflection")
 
@@ -49,7 +50,7 @@ class ReflectionService:
             """
             
             try:
-                fact_res = await self.llm.generate(fact_prompt, model="qwen2.5:7b")
+                fact_res = await self.llm.generate(fact_prompt, model=Config.LLM_REFLECTION_MODEL)
                 facts = self._extract_json(fact_res)
                 
                 for f in facts:
@@ -99,7 +100,7 @@ class ReflectionService:
             Output JSON ONLY: {{"new_traits": ["..."], "relationship": "...", "confidence": 0.0}}
             """
             try:
-                ident_res = await self.llm.generate(identity_prompt)
+                ident_res = await self.llm.generate(identity_prompt, model=Config.LLM_REFLECTION_MODEL)
                 suggestions = self._extract_json(ident_res)
                 if suggestions and suggestions.get("confidence", 0.0) >= 0.8:
                     await self.identity.evolve_persona(suggestions)

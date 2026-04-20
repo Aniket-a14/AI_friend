@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Dict, Any
 from .perception import CognitiveEvent
 from .bt import Selector, Sequence, Action, Condition, NodeStatus
+from ..config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class DecisionService:
         if self._is_simple_greeting(event.raw_content):
             event.intent = "CHAT"
             event.metadata["suggested_goal"] = "ENGAGE"
-            event.metadata["preferred_model"] = "llama3.2:1b" # Use fastest model for 'Hi'
+            event.metadata["preferred_model"] = Config.LLM_FAST_MODEL
         elif event.event_type == "USER_MESSAGE":
             # 2. Fast LLM-based Intent Classification (using 1B for speed)
             await self._classify_intent_and_goal(event, state_snapshot)
@@ -88,7 +89,7 @@ class DecisionService:
         
         try:
             # Use 1B model for classification to keep latency < 50ms
-            response = await self.llm.generate(prompt, model="llama3.2:1b")
+            response = await self.llm.generate(prompt, model=Config.LLM_FAST_MODEL)
             
             # Find JSON in response
             json_str = response
@@ -102,7 +103,7 @@ class DecisionService:
                 event.metadata["suggested_goal"] = data.get("goal", "ENGAGE")
                 
                 # If it's a simple CHAT, we can use 7B for quality, but for COMMAND/REMEMBER 1B is fine.
-                event.metadata["preferred_model"] = "qwen2.5:7b" if event.intent == "CHAT" else "llama3.2:1b"
+                event.metadata["preferred_model"] = Config.LLM_CHAT_MODEL if event.intent == "CHAT" else Config.LLM_FAST_MODEL
                 logger.info(f"[Decision] Fast Classified: {data}")
         except Exception as e:
             logger.error(f"Intent classification failed: {e}")

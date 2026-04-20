@@ -1,6 +1,9 @@
+import asyncio
 import logging
+import time
 from typing import Dict, Any, AsyncGenerator
 from .decision import ActionPlan
+from ..config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -99,15 +102,39 @@ class ActionService:
             try:
                 # 2. Stream Generation
                 sanitizer = ControlMarkupSanitizer()
-                async for chunk in self.llm.generate_stream(full_prompt, model=model):
-                    clean_chunk = sanitizer.feed(chunk)
-                    if clean_chunk:
-                        yield {"type": "content", "data": clean_chunk}
+                stream_budget = max(15, int(getattr(Config, "LLM_STREAM_MAX_SECONDS", 120)))
+                try:
+                    stream_iter = self.llm.generate_stream(full_prompt, model=model).__aiter__()
+                    deadline = time.monotonic() + stream_budget
 
-                trailing = sanitizer.flush()
-                if trailing:
-                    yield {"type": "content", "data": trailing}
-                yield {"type": "done", "data": "finished"}
+                    while True:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise asyncio.TimeoutError()
+
+                        try:
+                            chunk = await asyncio.wait_for(stream_iter.__anext__(), timeout=remaining)
+                        except StopAsyncIteration:
+                            break
+
+                        clean_chunk = sanitizer.feed(chunk)
+                        if clean_chunk:
+                            yield {"type": "content", "data": clean_chunk}
+
+                    trailing = sanitizer.flush()
+                    if trailing:
+                        yield {"type": "content", "data": trailing}
+                    yield {"type": "done", "data": "finished"}
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "[Action] Stream timed out after %ss; emitting graceful fallback.",
+                        stream_budget,
+                    )
+                    yield {
+                        "type": "content",
+                        "data": "I'm having trouble thinking right now...",
+                    }
+                    yield {"type": "done", "data": ""}
                 
             except Exception as e:
                 logger.error(f"[Action] LLM Execution failed: {e}")

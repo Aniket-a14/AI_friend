@@ -3,33 +3,56 @@ import asyncio
 import httpx
 import json
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable
+from ..config import Config
 
 logger = logging.getLogger(__name__)
 
 class MemoryStore:
-    def __init__(self, pool):
+    def __init__(self, pool, ollama_base_url=None):
         self.pool = pool
-        self.ollama_base_url = "http://localhost:11434"
+        self.ollama_base_url = (
+            ollama_base_url or getattr(Config, "OLLAMA_URL", "http://localhost:11434")
+        ).rstrip("/")
         self.embedding_model = "nomic-embed-text"
         self.lambda_decay = 0.001  # Decay constant for memory fading
         self.beta_emotion = 0.5   # Boost factor for emotional weight
 
     async def get_embedding(self, text: str):
         """Generates vector embedding for text using local Ollama."""
+        attempts = [
+            ("/api/embed", {"model": self.embedding_model, "input": text}),
+            ("/api/embeddings", {"model": self.embedding_model, "prompt": text}),
+        ]
+
+        last_error = None
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self.ollama_base_url}/api/embeddings",
-                    json={
-                        "model": self.embedding_model,
-                        "prompt": text
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
-                return result.get("embedding")
+                for endpoint, payload in attempts:
+                    response = await client.post(
+                        f"{self.ollama_base_url}{endpoint}",
+                        json=payload,
+                    )
+                    if response.status_code == 404:
+                        continue
+
+                    response.raise_for_status()
+                    result = response.json()
+
+                    embedding = result.get("embedding")
+                    if embedding:
+                        return embedding
+
+                    embeddings = result.get("embeddings")
+                    if isinstance(embeddings, list) and embeddings:
+                        return embeddings[0]
+
+                    last_error = f"No embedding payload returned by {endpoint}"
+
+                if last_error is None:
+                    last_error = "All embedding endpoints returned 404"
+                raise RuntimeError(last_error)
         except Exception as e:
             logger.error(f"Ollama embedding failed: {e}")
             return None
@@ -84,7 +107,7 @@ class MemoryStore:
                 return []
 
             vector_str = str(query_vector)
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             excluded = {content for content in (exclude_contents or []) if content}
 
             results = []
@@ -114,9 +137,14 @@ class MemoryStore:
                     last_recall = row["last_recalled_at"]
                     importance = row["importance_score"]
                     emotion = row["emotional_weight"]
+
+                    if last_recall is None:
+                        last_recall = now
+                    elif last_recall.tzinfo is None:
+                        last_recall = last_recall.replace(tzinfo=timezone.utc)
                     
                     # Calculate decay based on time elapsed (seconds)
-                    delta_t = (now - last_recall).total_seconds()
+                    delta_t = max(0.0, (now - last_recall).total_seconds())
                     decay = math.exp(-self.lambda_decay * (delta_t / 3600)) # Decay by hours
                     
                     # Utility Score formula

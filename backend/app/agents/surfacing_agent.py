@@ -3,6 +3,7 @@ import logging
 import time
 from typing import Dict, Any
 from .base import BaseAgent
+from ..state import ConversationHistoryStore, MemoryStore, GraphDB
 
 logger = logging.getLogger("surfacing_agent")
 
@@ -12,10 +13,11 @@ class SurfacingAgent(BaseAgent):
     Asynchronously evaluates long-term memory and 'surfaces' relevant context 
     as mesh events for current cognition.
     """
-    def __init__(self, memory_store=None, graph_db=None):
+    def __init__(self, memory_store=None, graph_db=None, conversation_store=None):
         super().__init__(name="surfacing_agent")
         self.memory = memory_store
         self.graph = graph_db
+        self.conversation_store = conversation_store
         self.last_context = ""
         self.surfacing_cooldown = 30 # Seconds between surfacing events
         self.surface_novelty_window = 300
@@ -101,13 +103,44 @@ class SurfacingAgent(BaseAgent):
             return False
         return (now - surfaced_at) < self.surface_novelty_window
 
+    async def stop(self):
+        if self.graph:
+            try:
+                await self.graph.close()
+            except Exception as e:
+                logger.warning(f"[Surfacing] GraphDB close warning: {e}")
+
+        if self.conversation_store:
+            try:
+                await self.conversation_store.close()
+            except Exception as e:
+                logger.warning(f"[Surfacing] Conversation store close warning: {e}")
+
+        await super().stop()
+        logger.info(f"🧠 {self.name} Offline.")
+
 async def main():
-    agent = SurfacingAgent()
+    conversation_store = ConversationHistoryStore()
+    await conversation_store.initialize()
+
+    memory_store = MemoryStore(pool=conversation_store.pool)
+    graph_db = GraphDB()
+
+    agent = SurfacingAgent(
+        memory_store=memory_store,
+        graph_db=graph_db,
+        conversation_store=conversation_store,
+    )
+
     await agent.start()
     try:
         while True:
             await asyncio.sleep(1)
+    except asyncio.CancelledError:
+        pass
     except KeyboardInterrupt:
+        pass
+    finally:
         await agent.stop()
 
 if __name__ == "__main__":

@@ -47,9 +47,25 @@ class CognitiveService:
         # Subscribe to Mesh Channels
         if agent:
              self.agent = agent
-             await agent.subscribe("system.tick", self._on_system_tick)
-             await agent.subscribe("memory.surfaced", self._on_memory_surfaced)
-             await agent.subscribe("audio.perception", self._on_audio_perception)
+             # Use live-only consumers for runtime channels to avoid replay storms on restart.
+             await agent.subscribe(
+                 "system.tick",
+                 self._on_system_tick,
+                 durable=f"{agent.name}_system_tick_live",
+                 deliver_policy="new",
+             )
+             await agent.subscribe(
+                 "memory.surfaced",
+                 self._on_memory_surfaced,
+                 durable=f"{agent.name}_memory_surfaced_live",
+                 deliver_policy="new",
+             )
+             await agent.subscribe(
+                 "audio.perception",
+                 self._on_audio_perception,
+                 durable=f"{agent.name}_audio_perception_live",
+                 deliver_policy="new",
+             )
              
         logger.info("[CognitiveService] Hardened Identity Mesh Fully Initialized.")
 

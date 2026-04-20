@@ -53,7 +53,7 @@ class BrainAgent(BaseAgent):
         conversation_store: ConversationHistoryStore = None,
     ):
         super().__init__(name="brain_agent")
-        self.ollama = OllamaClient(base_url=ollama_url)
+        self.ollama = OllamaClient(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
         self.graph_db = graph_db
         self.memory_store = memory_store
         self.conversation_store = conversation_store
@@ -83,9 +83,19 @@ class BrainAgent(BaseAgent):
         await self.cognitive_core.initialize(agent=self)
 
         # Subscribe to I/O streams
-        await self.subscribe("chat.input", self._on_chat_input)
+        await self.subscribe(
+            "chat.input",
+            self._on_chat_input,
+            durable=f"{self.name}_chat_input_live",
+            deliver_policy="new",
+        )
         await self.subscribe("vision.frames", self._on_vision_frame, deliver_policy="last")
-        await self.subscribe("voice.segmentation_feedback", self._on_voice_feedback)
+        await self.subscribe(
+            "voice.segmentation_feedback",
+            self._on_voice_feedback,
+            durable=f"{self.name}_voice_segmentation_feedback_live",
+            deliver_policy="new",
+        )
         
         logger.info(f"🧠 {self.name} Online | CVS-1.0 Cognitive Mesh Active.")
 

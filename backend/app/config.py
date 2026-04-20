@@ -27,6 +27,11 @@ class Config:
     
     AI_NAME = os.getenv("AI_NAME", "AI Friend")
     OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+    # LLM model routing defaults. Keep them overridable for different memory budgets.
+    LLM_FAST_MODEL = os.getenv("LLM_FAST_MODEL", "llama3.2:1b")
+    LLM_CHAT_MODEL = os.getenv("LLM_CHAT_MODEL", LLM_FAST_MODEL)
+    LLM_REFLECTION_MODEL = os.getenv("LLM_REFLECTION_MODEL", LLM_CHAT_MODEL)
+    LLM_STREAM_MAX_SECONDS = int(os.getenv("LLM_STREAM_MAX_SECONDS", "120"))
     SOVITS_URL = os.getenv("SOVITS_URL", "http://localhost:9871")
     
     # Custom Voice Models (Fine-tuned)
@@ -45,6 +50,13 @@ class Config:
     FEEDBACK_ALPHA = 0.70  # Conversational smooth filter (BrainAgent)
     MAX_VOICE_QUEUE_SIZE = 10  # Backpressure guard (VoiceAgent)
     VOICE_SYNTH_CONCURRENCY = 1  # GPU safety semaphore (VoiceAgent)
+    TRANSPORT_AUDIO_QUEUE_SIZE = int(os.getenv("TRANSPORT_AUDIO_QUEUE_SIZE", 256))
+    VOICE_FILLER_MIN_INTERVAL_SECONDS = float(
+        os.getenv("VOICE_FILLER_MIN_INTERVAL_SECONDS", 1.5)
+    )
+    VOICE_FILLER_MAX_PLAYBACK_BACKLOG = int(
+        os.getenv("VOICE_FILLER_MAX_PLAYBACK_BACKLOG", 4)
+    )
     
     INTENT_THRESHOLD = 0.75  # Temporal intent sensitivity (STTAgent)
     INTENT_STABILITY = 3     # Consecutive frames required for intent (STTAgent)

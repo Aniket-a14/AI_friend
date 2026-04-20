@@ -366,3 +366,182 @@ Next Recommended Work:
 - Implement per-layer latency telemetry to measure overhead of modular facades.
 - Transition `BrainAgent` logic into a more generic `MeshOrchestrator` if further layers (e.g., Vision, Motor) are added.
 - Review `StateService` for thread-safety under high-frequency mesh updates from multiple agents.
+
+## 2026-04-20 Mesh Service Activation (System + Surfacing)
+
+Activated the two missing runtime agents in production orchestration so heartbeat evolution and background surfacing processes are scheduled by default in Docker deployments.
+
+Changed files:
+
+- `docker-compose.prod.yml`
+
+Infrastructure changes:
+
+- Added `system_agent` service (`python -m app.agents.system_agent`) with mesh heartbeat environment and standard NATS health check.
+- Added `surfacing_agent` service (`python -m app.agents.surfacing_agent`) with NATS/Postgres/Neo4j environment wiring and startup dependencies on `brain_agent` and `system_agent`.
+- Kept service conventions aligned with existing mesh services (`restart: always`, `nc -z nats_mesh 4222` health check, shared `ai_mesh_network`).
+
+Verification:
+
+```powershell
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config
+```
+
+Latest result:
+
+- Compose merge and validation succeeded.
+
+Remaining risks:
+
+- `SurfacingAgent` entrypoint wiring has been completed (`ConversationHistoryStore` pool injection into `MemoryStore`, plus `GraphDB` lifecycle). Continue validating this under full Docker runtime with real Postgres/Neo4j connectivity and measure surfacing cadence in live sessions.
+
+## 2026-04-20 Surfacing Bootstrap Wiring Follow-up
+
+Completed the surfacing process bootstrap wiring so the newly orchestrated container can construct runtime dependencies instead of running in memory-only mode.
+
+Changed files:
+
+- `backend/app/agents/surfacing_agent.py`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `SurfacingAgent.main()` now initializes `ConversationHistoryStore`, injects `MemoryStore(pool=...)`, and instantiates `GraphDB` before starting mesh subscriptions.
+- Added explicit resource shutdown path in `SurfacingAgent.stop()` for `GraphDB` and `ConversationHistoryStore`.
+- Added cancellation-safe shutdown handling in `main()` (`asyncio.CancelledError` + `KeyboardInterrupt`).
+
+Verification:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest tests/test_regressions.py -k surfacing_agent_suppresses_recently_recalled_memories
+```
+
+Latest result:
+
+- `1 passed, 12 deselected`
+
+Remaining risks:
+
+- Local direct import validation currently fails in this workstation venv due `asyncpg` binary module load error (`asyncpg.protocol.protocol` missing). Regression tests that mock asyncpg still pass. Docker runtime validation remains the source-of-truth check for end-to-end startup.
+
+## 2026-04-20 Memory Surfacing Runtime Fixes (Embed Endpoint + Timezone Safety)
+
+Patched the surfacing retrieval path so memory queries work reliably in container runtime and validated end-to-end subject flow for both `system.tick` and `memory.surfaced`.
+
+Changed files:
+
+- `backend/app/state/memory_store.py`
+- `docker-compose.prod.yml`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `MemoryStore` now consumes `Config.OLLAMA_URL` (with optional constructor override) instead of hardcoded localhost, so containerized agents can reach mesh Ollama.
+- Embedding calls now support modern Ollama `/api/embed` with fallback to legacy `/api/embeddings`.
+- Memory scoring now handles offset-aware and offset-naive timestamps safely when computing decay.
+- `surfacing_agent` compose env now includes `OLLAMA_URL=http://local_brain:11434`.
+
+Runtime verification and enablement:
+
+- Applied `backend/db/schema.sql` in Postgres to ensure `memories` table/function exist.
+- Pulled embedding model in Ollama container: `nomic-embed-text`.
+- Seeded one memory entry through runtime `MemoryStore.add_memory(...)` path.
+- Recreated `surfacing_agent` container after code updates.
+- Active NATS probe observed:
+  - `system_tick`: 1
+  - `memory_surfaced`: 1
+
+Latest probe result:
+
+- `MEMORY_SURFACED` event emitted with seeded memory content.
+
+Remaining risks:
+
+- Local host Python venv still has asyncpg binary import issue (`asyncpg.protocol.protocol`) for non-mocked local test paths, but container runtime path is functioning for surfacing validation.
+
+## 2026-04-20 LLM Runtime Stabilization (Fallback + Completion Guard)
+
+Hardened LLM generation reliability for CPU-constrained runtime by adding endpoint fallback, robust stream parsing, and bounded completion behavior.
+
+Changed files:
+
+- `backend/app/llm/ollama_client.py`
+- `backend/app/cognitive/action.py`
+- `backend/app/config.py`
+- `backend/app/agents/brain_agent.py`
+- `backend/app/cognitive/core.py`
+- `backend/app/cognitive/decision.py`
+- `backend/app/cognitive/learning.py`
+- `backend/tests/test_resilience.py`
+- `docker-compose.prod.yml`
+
+Behavior changes:
+
+- Ollama client now supports resilient fallback across `/api/chat` and `/api/generate` for both non-streaming and streaming calls.
+- Streaming parser now handles fragmented chunk transport via newline-delimited JSON buffering.
+- Generation and stream calls now include timeout-aware retries and structured endpoint error accumulation.
+- Added model routing controls via config/env (`LLM_FAST_MODEL`, `LLM_CHAT_MODEL`, `LLM_REFLECTION_MODEL`).
+- Cognitive runtime channels moved to live-only durable consumers (`deliver_policy="new"`) to avoid replay storms on restarts.
+- Added bounded stream duration guard in action execution. On timeout, the runtime emits graceful fallback content and a terminal done event.
+
+Verification:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest tests/test_resilience.py
+```
+
+Latest result:
+
+- `10 passed`
+
+Runtime probe notes:
+
+- Deterministic `chat.input -> chat.output` probes produced successful `done=true` completions on multiple turns.
+- Under sustained load, intermittent turn timeouts still occur due to upstream model latency pressure.
+
+Remaining risks:
+
+- Ollama CPU-only runtime still shows long tail latency and occasional timeout cascades under mixed chat/embed pressure.
+
+## 2026-04-20 Audio Mesh Backpressure Hardening (NATS + Transport + Voice)
+
+Stabilized high-throughput `audio.stream` handling by decoupling transport callback work, increasing NATS pending limits, and reducing filler burst pressure from voice.
+
+Changed files:
+
+- `backend/app/agents/base.py`
+- `backend/app/agents/transport_agent.py`
+- `backend/app/voice/agent.py`
+- `backend/app/config.py`
+- `docker-compose.prod.yml`
+
+Behavior changes:
+
+- `BaseAgent.subscribe()` now supports `pending_msgs_limit` and `pending_bytes_limit` overrides.
+- Transport audio subscription switched to live durable `transport_agent_audio_stream_live` with high pending limits for PCM burst tolerance.
+- Transport now uses a bounded queue + dedicated playback worker so NATS callbacks remain fast and non-blocking.
+- On queue saturation, transport drops oldest buffered frames to preserve near-real-time playout.
+- Transport startup now retries LiveKit connection with bounded backoff instead of immediate crash on transient SFU refusal.
+- Voice resilience loop now throttles filler cadence and suppresses filler emission when playback backlog is already high.
+- Compose tuning envs added for transport queue size and voice filler controls.
+
+Verification:
+
+```powershell
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config
+cd backend
+.\.venv\Scripts\python.exe -m pytest tests/test_resilience.py
+```
+
+Latest result:
+
+- Compose config validation passed.
+- `10 passed` on resilience tests.
+- Synthetic burst publish to `audio.stream` completed (`401` messages) with no fresh slow-consumer signatures in recent NATS or transport log scans.
+
+Remaining risks:
+
+- LiveKit may still briefly refuse transport connection during SFU restart windows; retry path now allows recovery without manual intervention.
+- Host-side access to NATS monitoring endpoint (`:8222/varz`) is intermittently unavailable in this environment; broker log scans remain the practical validation path.
