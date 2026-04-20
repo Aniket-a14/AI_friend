@@ -20,9 +20,12 @@ class SurfacingAgent(BaseAgent):
         self.conversation_store = conversation_store
         self.last_context = ""
         self.surfacing_cooldown = 30 # Seconds between surfacing events
+        self.min_sweep_interval = 5  # Avoid high-frequency vector sweeps when no memory is surfaced.
         self.surface_novelty_window = 300
         self.last_surfaced_time = 0
+        self.last_sweep_attempt = 0
         self.recently_surfaced = {}
+        self._sweep_task: Optional[asyncio.Task] = None
         self.subject_metrics = {
             "system.tick": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
             "memory.surfaced": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
@@ -31,9 +34,19 @@ class SurfacingAgent(BaseAgent):
     async def start(self):
         await self.connect()
         # Subscribe to chat inputs to stay sync'd with user context
-        await self.subscribe("chat.input", self._on_chat_input)
+        await self.subscribe(
+            "chat.input",
+            self._on_chat_input,
+            durable=f"{self.name}_chat_input_live",
+            deliver_policy="new",
+        )
         # Periodic 'background sweep' on system tick
-        await self.subscribe("system.tick", self._on_system_tick)
+        await self.subscribe(
+            "system.tick",
+            self._on_system_tick,
+            durable=f"{self.name}_system_tick_live",
+            deliver_policy="new",
+        )
         logger.info(f"🧠 {self.name} Online | Memory Surfacing Active.")
 
     async def _on_chat_input(self, data: Dict[str, Any], metadata: dict = None):
@@ -42,14 +55,27 @@ class SurfacingAgent(BaseAgent):
         # Trigger immediate surfacing check if it's been a while
         if time.time() - self.last_surfaced_time > 10:
              source_meta = metadata or data.get("latency_metadata")
-             asyncio.create_task(self._surface_relevant_memories(source_metadata=source_meta))
+             self._schedule_sweep(source_metadata=source_meta)
 
     async def _on_system_tick(self, data: Dict[str, Any]):
         """Periodic background sweep for memory relevance."""
         self._record_subject_metric("system.tick", metadata=data.get("latency_metadata"))
         # Only surface if we haven't recently or if context is fresh
         if time.time() - self.last_surfaced_time > self.surfacing_cooldown:
-             await self._surface_relevant_memories(source_metadata=data.get("latency_metadata"))
+             self._schedule_sweep(source_metadata=data.get("latency_metadata"))
+
+    def _schedule_sweep(self, source_metadata: Optional[Dict[str, Any]] = None):
+        """Run at most one surfacing sweep at a time and throttle retry storms."""
+        now = time.time()
+        if self._sweep_task is not None and not self._sweep_task.done():
+            return
+        if (now - self.last_sweep_attempt) < self.min_sweep_interval:
+            return
+
+        self.last_sweep_attempt = now
+        self._sweep_task = asyncio.create_task(
+            self._surface_relevant_memories(source_metadata=source_metadata)
+        )
 
     async def _surface_relevant_memories(self, source_metadata: Optional[Dict[str, Any]] = None):
         """
@@ -149,6 +175,9 @@ class SurfacingAgent(BaseAgent):
             )
 
     async def stop(self):
+        if self._sweep_task and not self._sweep_task.done():
+            self._sweep_task.cancel()
+
         if self.graph:
             try:
                 await self.graph.close()

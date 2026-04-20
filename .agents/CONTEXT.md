@@ -597,3 +597,59 @@ Remaining risks:
 
 - Ollama cold pulls can extend first boot time when required models are missing; behavior is self-healing but startup duration may increase.
 - Subject metrics are intentionally lightweight (in-process counters/averages only); no durable metrics sink is configured yet.
+
+## 2026-04-20 Runtime Throughput Tuning + Surfacing Replay Guard
+
+Applied targeted runtime tuning to reduce LLM contention under load, and hardened surfacing subscriptions/task scheduling to avoid replay/backlog-induced embed saturation.
+
+Changed files:
+
+- `backend/app/config.py`
+- `backend/app/cognitive/decision.py`
+- `backend/app/cognitive/learning.py`
+- `docker-compose.prod.yml`
+- `.env.example`
+- `backend/app/agents/surfacing_agent.py`
+
+Behavior changes:
+
+- Added config/env controls:
+  - `LLM_INTENT_CLASSIFICATION_ENABLED` (toggle per-turn classifier)
+  - `REFLECTION_ENABLED`
+  - `REFLECTION_MIN_INTERVAL_SECONDS`
+- Decision path now applies deterministic low-cost routing defaults first and only runs LLM intent classification when enabled.
+- Reflection layer now supports runtime disable and minimum interval throttling to prevent frequent background LLM consolidation under heavy chat pressure.
+- Production compose defaults tuned for stability-first runtime:
+  - `LLM_INTENT_CLASSIFICATION_ENABLED=false`
+  - `REFLECTION_ENABLED=true`
+  - `REFLECTION_MIN_INTERVAL_SECONDS=300`
+- Surfacing agent subscriptions moved to live-only durable consumers (`deliver_policy="new"`) for both `chat.input` and `system.tick`.
+- Surfacing sweep scheduler now enforces no-overlap task execution and minimum sweep interval throttling to prevent concurrent or rapid-repeat vector sweeps.
+- Surfacing stop path now cancels any in-flight sweep task before shutdown.
+
+Verification:
+
+```powershell
+cd backend
+pytest tests/test_decision.py tests/test_regressions.py tests/test_resilience.py
+pytest
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config
+```
+
+Latest result:
+
+- `29 passed` targeted decision/resilience/regression suite.
+- `64 passed` full backend suite.
+- Compose merge validation passed (`COMPOSE_CONFIG_OK`).
+- Runtime env inside `brain_agent` confirmed tuned flags are active.
+
+Observed runtime notes (short soak probes):
+
+- Throughput improved vs prior baseline under more aggressive publish cadence (done ratio rose from ~0.093 to ~0.65 in a 4s-interval probe), but quality gate remains failing under that load profile.
+- Gate-style run remains unresolved; one probe showed mixed done-event accounting from unrelated turns, so strict per-run turn filtering is still required for authoritative pass/fail scoring.
+- `memory.surfaced` counts were inconsistent in short probes; surfacing replay/storm protection patch was applied to stabilize this path before the next controlled gate run.
+
+Remaining risks:
+
+- CPU-only Ollama latency remains the primary bottleneck for sustained high-rate turn completion.
+- Final soak gate sign-off still requires a controlled run with strict turn-id filtering and stable background load.

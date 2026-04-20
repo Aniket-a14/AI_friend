@@ -21,15 +21,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
 
-    services:
-      nats:
-        image: nats:latest
-        ports:
-          - 4222:4222
-          - 8222:8222
-
     steps:
       - uses: actions/checkout@v6
+
+      - name: Start NATS (JetStream Enabled)
+        run: |
+          docker run -d --name nats_mesh -p 4222:4222 -p 8222:8222 nats:latest -js -m 8222
 
       - uses: actions/setup-python@v6
         with:
