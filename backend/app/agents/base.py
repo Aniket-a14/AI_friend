@@ -19,6 +19,15 @@ class BaseAgent:
         self.nats_url = nats_url or os.getenv("NATS_URL", "nats://localhost:4222")
         self.nc = None
         self.js = None
+        tracked_subjects_raw = os.getenv(
+            "MESH_OBSERVED_SUBJECTS",
+            "system.tick,memory.surfaced,audio.stop,audio.resume,chat.output",
+        )
+        self._tracked_subjects = {
+            subject.strip() for subject in tracked_subjects_raw.split(",") if subject.strip()
+        }
+        self._subject_metrics: Dict[str, Dict[str, float]] = {}
+        self._metrics_log_every = max(1, int(os.getenv("SUBJECT_METRICS_LOG_EVERY", "25")))
 
     async def connect(self):
         """Connect to the NATS Mesh and bootstrap streams."""
@@ -122,6 +131,12 @@ class BaseAgent:
                     data["latency_metadata"] = meta
                 payload = json.dumps(data).encode()
                 await self.js.publish(subject, payload)
+
+            self._record_subject_metric(
+                subject,
+                direction="publish",
+                latency_ms=self._extract_latency_ms(meta),
+            )
             
             logger.debug(f"Agent '{self.name}' published to {subject} ({'binary' if is_binary else 'json'})")
         except Exception as e:
@@ -139,6 +154,50 @@ class BaseAgent:
             logger.info(f"⏱️ [LATENCY] Stage '{stage_name}' | Total: {elapsed:.2f}ms | Hops: {len(meta['hops'])}")
             return elapsed
         return 0
+
+    def _extract_latency_ms(self, metadata: Optional[Dict[str, Any]]) -> Optional[float]:
+        if not metadata:
+            return None
+        start_time = metadata.get("start_time")
+        if start_time is None:
+            return None
+        try:
+            return max(0.0, (time.time() - float(start_time)) * 1000)
+        except (TypeError, ValueError):
+            return None
+
+    def _record_subject_metric(
+        self,
+        subject: str,
+        direction: str,
+        latency_ms: Optional[float] = None,
+    ):
+        if subject not in self._tracked_subjects:
+            return
+
+        key = f"{direction}:{subject}"
+        metric = self._subject_metrics.setdefault(
+            key,
+            {"count": 0.0, "latency_total_ms": 0.0, "latency_samples": 0.0},
+        )
+        metric["count"] += 1
+
+        if latency_ms is not None:
+            metric["latency_total_ms"] += latency_ms
+            metric["latency_samples"] += 1
+
+        count = int(metric["count"])
+        if count == 1 or count % self._metrics_log_every == 0:
+            avg_latency = 0.0
+            if metric["latency_samples"] > 0:
+                avg_latency = metric["latency_total_ms"] / metric["latency_samples"]
+            logger.info(
+                "[SubjectMetrics][%s] subject=%s count=%s avg_latency_ms=%.2f",
+                direction,
+                subject,
+                count,
+                avg_latency,
+            )
 
     async def subscribe(
         self,
@@ -161,6 +220,11 @@ class BaseAgent:
                 if msg.headers and "X-Latency-Meta" in msg.headers:
                     try:
                         meta = json.loads(msg.headers["X-Latency-Meta"])
+                        self._record_subject_metric(
+                            subject,
+                            direction="consume",
+                            latency_ms=self._extract_latency_ms(meta),
+                        )
                         # Return binary data as-is if it's the target format
                         # or wrap it if the agent expects a dict with meta
                         await callback(msg.data, metadata=meta)
@@ -170,6 +234,12 @@ class BaseAgent:
                 else:
                     # 2. Standard JSON Fallback
                     data = json.loads(msg.data.decode())
+                    if isinstance(data, dict):
+                        self._record_subject_metric(
+                            subject,
+                            direction="consume",
+                            latency_ms=self._extract_latency_ms(data.get("latency_metadata")),
+                        )
                     await callback(data)
                 
                 await msg.ack()

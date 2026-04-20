@@ -545,3 +545,55 @@ Remaining risks:
 
 - LiveKit may still briefly refuse transport connection during SFU restart windows; retry path now allows recovery without manual intervention.
 - Host-side access to NATS monitoring endpoint (`:8222/varz`) is intermittently unavailable in this environment; broker log scans remain the practical validation path.
+
+## 2026-04-20 Runtime Stability Lock (Generation + Self-Healing Bootstrap + Observability)
+
+Completed the next stability tranche to avoid silent chat degradation, remove manual bootstrap prerequisites, and add minimal event-quality telemetry.
+
+Changed files:
+
+- `backend/app/llm/ollama_client.py`
+- `backend/app/agents/brain_agent.py`
+- `backend/app/config.py`
+- `backend/scripts/setup_nats_streams.py`
+- `backend/scripts/runtime_bootstrap.py`
+- `backend/app/agents/base.py`
+- `backend/app/agents/surfacing_agent.py`
+- `backend/app/cognitive/core.py`
+- `backend/tests/test_resilience.py`
+- `backend/tests/test_regressions.py`
+- `backend/tests/test_mesh_surfacing_integration.py`
+- `docker-compose.prod.yml`
+- `.env.example`
+
+Behavior changes:
+
+- Ollama generation path now includes model-name compatibility attempts (`model` then `model:latest` when untagged) across both `/api/chat` and `/api/generate` endpoint fallbacks.
+- Brain generation loop now fail-fast logs streamed LLM errors per turn and guarantees non-empty fallback speech when a turn would otherwise complete silently.
+- Brain startup now runs idempotent runtime bootstrap: apply DB schema from `db/schema.sql`, ensure core conversation/config tables exist, synchronize NATS streams deterministically via `setup_nats_streams.py`, and ensure required Ollama models exist via `/api/pull`.
+- Compose now wires bootstrap controls and model requirements through env vars, and brain depends on ollama startup to reduce cold-boot races.
+- Added minimal subject metrics in base publish/consume paths and focused metrics in surfacing/cognitive paths for `system.tick`, `memory.surfaced`, `audio.stop`, `audio.resume`, and `chat.output`.
+
+Regression coverage added:
+
+- `test_generate_retries_with_latest_tag_for_untagged_model` validates model compatibility fallback.
+- `test_brain_agent_emits_fallback_when_stream_errors_without_content` guards against silent turn completion.
+- `test_surfacing_mesh_regression_emits_system_tick_and_memory_surfaced` covers seeded-memory -> chat.input -> system.tick -> memory.surfaced mesh path.
+
+Verification:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest tests/test_resilience.py tests/test_regressions.py tests/test_mesh_surfacing_integration.py
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config
+```
+
+Latest result:
+
+- `26 passed` for targeted runtime regression suite.
+- Compose merge validation passed (`COMPOSE_CONFIG_OK`).
+
+Remaining risks:
+
+- Ollama cold pulls can extend first boot time when required models are missing; behavior is self-healing but startup duration may increase.
+- Subject metrics are intentionally lightweight (in-process counters/averages only); no durable metrics sink is configured yet.

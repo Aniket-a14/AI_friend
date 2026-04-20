@@ -10,6 +10,7 @@ from ..llm.ollama_client import OllamaClient
 from ..state import GraphDB, MemoryStore, ConversationHistoryStore
 from ..config import Config
 from ..cognitive import CognitiveService
+from scripts.runtime_bootstrap import bootstrap_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,8 @@ class BrainAgent(BaseAgent):
         full_response = ""
         current_chunk_words = []
         segment_started_at = None
+        generation_errors: List[str] = []
+        fallback_text = "I'm having trouble thinking right now..."
         
         try:
             async for output in self.cognitive_core.process_event(raw_event):
@@ -180,11 +183,31 @@ class BrainAgent(BaseAgent):
                             await self._publish_speech_chunk(current_chunk_words, turn_id)
                             current_chunk_words = []
                             segment_started_at = None
+
+                elif output["type"] == "error":
+                    error_msg = str(output.get("data", "unknown cognitive stream error"))
+                    generation_errors.append(error_msg)
+                    logger.error(
+                        "[Brain] LLM stream error on turn_id=%s: %s",
+                        turn_id,
+                        error_msg,
+                    )
                 
                 elif output["type"] == "done":
                     # Emit residue
                     if current_chunk_words:
                         await self._publish_speech_chunk(current_chunk_words, turn_id)
+                        current_chunk_words = []
+
+                    # Never allow silent completion in production runtime.
+                    if not full_response.strip():
+                        logger.error(
+                            "[Brain] Empty generation on turn_id=%s. errors=%s. Emitting fallback.",
+                            turn_id,
+                            generation_errors[-3:],
+                        )
+                        await self._publish_speech_chunk(fallback_text.split(), turn_id)
+                        full_response = fallback_text
                     
                     state_snap = self.cognitive_core.state.get_context_snapshot()
                     await self.publish("chat.output", {
@@ -193,11 +216,23 @@ class BrainAgent(BaseAgent):
                         "full_response": full_response,
                         "emotion": state_snap.get("emotion", "neutral"),
                         "turn_id": turn_id,
+                        "generation_error": generation_errors[-1] if generation_errors else None,
                     })
 
         except Exception as e:
-            logger.error(f"Cognitive Loop error: {e}")
-            await self.publish("chat.output", {"content": "I encountered an internal error.", "done": True})
+            logger.error("Cognitive Loop error on turn_id=%s: %s", turn_id, e)
+            await self._publish_speech_chunk(fallback_text.split(), turn_id)
+            await self.publish(
+                "chat.output",
+                {
+                    "content": "",
+                    "done": True,
+                    "full_response": fallback_text,
+                    "emotion": "neutral",
+                    "turn_id": turn_id,
+                    "generation_error": str(e),
+                },
+            )
 
         if self.conversation_store and full_response:
             asyncio.create_task(self.conversation_store.log_message("assistant", full_response))
@@ -231,6 +266,10 @@ class BrainAgent(BaseAgent):
         logger.info(f"🧠 {self.name} Offline.")
 
 async def main():
+    if Config.RUNTIME_AUTO_BOOTSTRAP:
+        logger.info("[Brain] Running runtime bootstrap checks...")
+        await bootstrap_runtime()
+
     # 1. Initialize CVS-1.0 Foundation (Pool-based logic)
     conversation_store = ConversationHistoryStore()
     await conversation_store.initialize() # Creates the database pool

@@ -3,48 +3,61 @@ Setup NATS JetStream streams for AI Friend
 """
 
 import asyncio
+import os
 import nats
 
 
-async def setup_streams():
-    print("🚀 Connecting to NATS...")
-    nc = await nats.connect("nats://localhost:4222")
-    js = nc.jetstream()
+CORE_STREAMS = {
+    "AI_MESSAGES": [
+        "chat.*",
+        "vision.*",
+        "state.*",
+        "cmd.*",
+        "voice.*",
+        "system.*",
+        "memory.*",
+        "identity.*",
+        "knowledge.*",
+    ],
+    "AI_AUDIO": ["audio.*"],
+}
 
-    streams = [
-        {"name": "CHAT", "subjects": ["chat.>"], "retention": "limits"},
-        {"name": "AUDIO", "subjects": ["audio.>"], "retention": "interest"},
-        {"name": "VISION", "subjects": ["vision.>"], "retention": "limits"},
-        {"name": "STATE", "subjects": ["state.>"], "retention": "limits"},
-    ]
 
-    for stream in streams:
-        config = nats.js.api.StreamConfig(
-            name=stream["name"],
-            subjects=stream["subjects"],
-            retention=stream["retention"],
-            max_msgs=5000,
-            max_bytes=100_000_000,
-        )
-        try:
-            await js.add_stream(config)
-            print(f"✅ Created {stream['name']} stream")
-        except nats.js.errors.BadRequestError:
-            # Likely already exists, try update
-            try:
-                await js.update_stream(config)
-                print(f"🔄 Updated {stream['name']} stream")
-            except Exception as e:
-                print(f"❌ Failed to update {stream['name']}: {e}")
-        except Exception as e:
-            print(f"⚠️ Error with {stream['name']}: {e}")
+async def setup_streams(nats_url: str = None):
+    nats_url = nats_url or os.getenv("NATS_URL", "nats://localhost:4222")
+    print(f"🚀 Connecting to NATS at {nats_url}...")
+    nc = await nats.connect(nats_url)
 
-    # List streams to verify
     try:
-        current_streams = await js.streams_info()
-        print(f"📊 Active Streams: {[s.config.name for s in current_streams]}")
-    except Exception:
-        pass
+        jsm = nc.jsm()
+    except Exception as e:
+        print(f"❌ NATS management API unavailable: {e}")
+        await nc.close()
+        raise
+
+    for stream_name, subjects in CORE_STREAMS.items():
+        try:
+            await jsm.add_stream(name=stream_name, subjects=subjects)
+            print(f"✅ Created {stream_name} stream")
+        except nats.js.errors.BadRequestError:
+            try:
+                info = await jsm.stream_info(stream_name)
+                current_subjects = set(info.config.subjects or [])
+                desired_subjects = set(subjects)
+                if desired_subjects.issubset(current_subjects):
+                    print(f"✅ {stream_name} already synchronized")
+                    continue
+
+                config = info.config
+                config.subjects = list(current_subjects.union(desired_subjects))
+                await jsm.update_stream(config)
+                print(f"🔄 Updated {stream_name} subjects")
+            except Exception as e:
+                print(f"❌ Failed to update {stream_name}: {e}")
+                raise
+        except Exception as e:
+            print(f"⚠️ Error with {stream_name}: {e}")
+            raise
 
     await nc.close()
     print("✨ NATS mesh infrastructure ready!")
