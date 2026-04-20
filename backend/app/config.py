@@ -32,6 +32,14 @@ class Config:
     LLM_CHAT_MODEL = os.getenv("LLM_CHAT_MODEL", LLM_FAST_MODEL)
     LLM_REFLECTION_MODEL = os.getenv("LLM_REFLECTION_MODEL", LLM_CHAT_MODEL)
     LLM_STREAM_MAX_SECONDS = int(os.getenv("LLM_STREAM_MAX_SECONDS", "120"))
+    LLM_INTENT_CLASSIFICATION_ENABLED = (
+        os.getenv("LLM_INTENT_CLASSIFICATION_ENABLED", "true").lower() == "true"
+    )
+
+    REFLECTION_ENABLED = os.getenv("REFLECTION_ENABLED", "true").lower() == "true"
+    REFLECTION_MIN_INTERVAL_SECONDS = float(
+        os.getenv("REFLECTION_MIN_INTERVAL_SECONDS", "0")
+    )
 
     RUNTIME_AUTO_BOOTSTRAP = os.getenv("RUNTIME_AUTO_BOOTSTRAP", "true").lower() == "true"
     RUNTIME_BOOTSTRAP_RETRIES = int(os.getenv("RUNTIME_BOOTSTRAP_RETRIES", "12"))

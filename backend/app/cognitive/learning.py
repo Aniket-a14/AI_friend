@@ -2,6 +2,7 @@ import logging
 import asyncio
 import json
 import re
+import time
 from typing import List, Dict, Any
 from .identity import IdentityManager
 from ..config import Config
@@ -19,11 +20,22 @@ class ReflectionService:
         self.vector = pg_vector
         self.identity = identity_manager or IdentityManager()
         self.is_reflecting = False
+        self.last_reflection_started_at = 0.0
 
     async def trigger_reflection(self, recent_episodes: List[Dict[str, Any]]):
         """Non-blocking trigger for background learning."""
+        if not getattr(Config, "REFLECTION_ENABLED", True):
+            return
+
         if self.is_reflecting or not recent_episodes:
             return
+
+        min_interval = max(0.0, float(getattr(Config, "REFLECTION_MIN_INTERVAL_SECONDS", 0.0)))
+        now = time.monotonic()
+        if min_interval > 0.0 and (now - self.last_reflection_started_at) < min_interval:
+            return
+
+        self.last_reflection_started_at = now
             
         logger.info(f"[Reflection] Starting semantic consolidation logic for {len(recent_episodes)} events.")
         asyncio.create_task(self._consolidate(recent_episodes))
