@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Optional
 
 import nats
 from nats.errors import NoRespondersError
@@ -38,15 +38,31 @@ def _is_retryable_error(error: Exception) -> bool:
     )
 
 
+def _build_jetstream_error_hint(error: Optional[Exception]) -> str:
+    if error is None:
+        return ""
+
+    if isinstance(error, ServiceUnavailableError):
+        return (
+            " JetStream appears unavailable. Ensure NATS is started with JetStream enabled "
+            "(for example: 'nats:latest -js -m 8222')."
+        )
+
+    if isinstance(error, NoRespondersError):
+        return " JetStream has no responders yet; NATS may still be starting."
+
+    return ""
+
+
 async def _wait_for_jetstream_ready(jsm, retries: int, delay_seconds: float) -> None:
-    last_error: Exception = None
+    last_error: Optional[Exception] = None
     for attempt in range(1, retries + 1):
         try:
             await jsm.account_info()
             return
         except Exception as error:
+            last_error = error
             if not _is_retryable_error(error) or attempt >= retries:
-                last_error = error
                 break
             logger.warning(
                 "JetStream API not ready (attempt %s/%s): %s",
@@ -56,7 +72,10 @@ async def _wait_for_jetstream_ready(jsm, retries: int, delay_seconds: float) -> 
             )
             await asyncio.sleep(delay_seconds)
 
-    raise RuntimeError(f"JetStream API not ready after {retries} attempts: {last_error}")
+    raise RuntimeError(
+        f"JetStream API not ready after {retries} attempts: {last_error}."
+        f"{_build_jetstream_error_hint(last_error)}"
+    )
 
 
 async def _ensure_stream(jsm, stream_name: str, subjects: List[str], retries: int, delay_seconds: float) -> None:
@@ -98,11 +117,16 @@ async def _ensure_stream(jsm, stream_name: str, subjects: List[str], retries: in
 
 async def setup_streams(
     nats_url: str = None,
-    retries: int = 15,
-    delay_seconds: float = 1.5,
+    retries: Optional[int] = None,
+    delay_seconds: Optional[float] = None,
 ) -> None:
     """Ensure core JetStream streams are available with startup-race tolerance."""
     nats_url = nats_url or os.getenv("NATS_URL", "nats://localhost:4222")
+    retries = max(1, int(retries if retries is not None else os.getenv("NATS_STREAM_SETUP_RETRIES", "30")))
+    delay_seconds = max(
+        0.1,
+        float(delay_seconds if delay_seconds is not None else os.getenv("NATS_STREAM_SETUP_DELAY_SECONDS", "1.5")),
+    )
     logger.info("Connecting to NATS at %s", nats_url)
 
     nc = await nats.connect(nats_url)
