@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from .base import BaseAgent
 from ..state import ConversationHistoryStore, MemoryStore, GraphDB
 
@@ -23,6 +23,10 @@ class SurfacingAgent(BaseAgent):
         self.surface_novelty_window = 300
         self.last_surfaced_time = 0
         self.recently_surfaced = {}
+        self.subject_metrics = {
+            "system.tick": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
+            "memory.surfaced": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
+        }
 
     async def start(self):
         await self.connect()
@@ -37,15 +41,17 @@ class SurfacingAgent(BaseAgent):
         self.last_context = data.get("text", "")
         # Trigger immediate surfacing check if it's been a while
         if time.time() - self.last_surfaced_time > 10:
-             asyncio.create_task(self._surface_relevant_memories())
+             source_meta = metadata or data.get("latency_metadata")
+             asyncio.create_task(self._surface_relevant_memories(source_metadata=source_meta))
 
     async def _on_system_tick(self, data: Dict[str, Any]):
         """Periodic background sweep for memory relevance."""
+        self._record_subject_metric("system.tick", metadata=data.get("latency_metadata"))
         # Only surface if we haven't recently or if context is fresh
         if time.time() - self.last_surfaced_time > self.surfacing_cooldown:
-             await self._surface_relevant_memories()
+             await self._surface_relevant_memories(source_metadata=data.get("latency_metadata"))
 
-    async def _surface_relevant_memories(self):
+    async def _surface_relevant_memories(self, source_metadata: Optional[Dict[str, Any]] = None):
         """
         The Core Surfacing Logic:
         1. Query Vector store for contextual similarity.
@@ -56,16 +62,19 @@ class SurfacingAgent(BaseAgent):
             return
             
         try:
+            sweep_started = time.perf_counter()
             now = time.time()
             self._prune_recently_surfaced(now)
 
             # 1. Vector Search for similarity
+            search_started = time.perf_counter()
             memories = await self.memory.search_memories(
                 self.last_context,
                 limit=3,
                 refresh_on_recall=False,
                 exclude_contents=list(self.recently_surfaced.keys()),
             )
+            search_ms = (time.perf_counter() - search_started) * 1000
             
             # 2. Ranking & Filtering (Simulated ranking here)
             # In a full version, we'd use emotional_weight and recency.
@@ -73,14 +82,24 @@ class SurfacingAgent(BaseAgent):
                 content = mem.get("content")
                 if content and not self._was_recently_surfaced(content, now):
                     # 3. Publish to Mesh
+                    publish_started = time.perf_counter()
                     await self.publish("memory.surfaced", {
                         "content": content,
                         "timestamp": now,
                         "relevance": mem.get("score", 0.7),
                         "source": "vector_long_term"
-                    })
+                    }, metadata=source_metadata)
+                    publish_ms = (time.perf_counter() - publish_started) * 1000
+
                     self.last_surfaced_time = now
                     self.recently_surfaced[content] = now
+                    self._record_subject_metric("memory.surfaced", metadata=source_metadata)
+                    logger.info(
+                        "[SurfacingMetrics] surfaced=1 search_ms=%.2f publish_ms=%.2f total_ms=%.2f",
+                        search_ms,
+                        publish_ms,
+                        (time.perf_counter() - sweep_started) * 1000,
+                    )
                     logger.debug(f"[Surfacing] Emerged memory: {content[:40]}...")
                     # Surface only one at a time for focus
                     break
@@ -102,6 +121,32 @@ class SurfacingAgent(BaseAgent):
         if surfaced_at is None:
             return False
         return (now - surfaced_at) < self.surface_novelty_window
+
+    def _record_subject_metric(self, subject: str, metadata: Optional[Dict[str, Any]] = None):
+        metric = self.subject_metrics.get(subject)
+        if metric is None:
+            return
+
+        metric["count"] += 1
+
+        if isinstance(metadata, dict) and metadata.get("start_time") is not None:
+            try:
+                latency_ms = max(0.0, (time.time() - float(metadata["start_time"])) * 1000)
+                metric["latency_total_ms"] += latency_ms
+                metric["latency_samples"] += 1
+            except (TypeError, ValueError):
+                pass
+
+        if metric["count"] == 1 or metric["count"] % 20 == 0:
+            avg_latency = 0.0
+            if metric["latency_samples"] > 0:
+                avg_latency = metric["latency_total_ms"] / metric["latency_samples"]
+            logger.info(
+                "[SurfacingMetrics] subject=%s count=%s avg_latency_ms=%.2f",
+                subject,
+                metric["count"],
+                avg_latency,
+            )
 
     async def stop(self):
         if self.graph:

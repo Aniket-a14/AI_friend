@@ -38,7 +38,9 @@ class OllamaClient:
         model: str,
         stream: bool,
         num_predict: int,
-    ) -> List[Tuple[str, Dict[str, Any]]]:
+    ) -> List[Tuple[str, Dict[str, Any], str]]:
+        model_variants = self._build_model_variants(model)
+
         options = {
             "temperature": 0.7,
             "top_p": 0.9,
@@ -47,26 +49,46 @@ class OllamaClient:
             "num_ctx": 2048,
         }
 
-        generate_payload = {
-            "model": model,
-            "prompt": self._build_generate_prompt(prompt, system),
-            "stream": stream,
-            "options": options,
-            "keep_alive": "20m",
-        }
-        chat_payload = {
-            "model": model,
-            "messages": self._build_chat_messages(prompt, system),
-            "stream": stream,
-            "options": options,
-            "keep_alive": "20m",
-        }
+        attempts: List[Tuple[str, Dict[str, Any], str]] = []
+        for model_variant in model_variants:
+            generate_payload = {
+                "model": model_variant,
+                "prompt": self._build_generate_prompt(prompt, system),
+                "stream": stream,
+                "options": options,
+                "keep_alive": "20m",
+            }
+            chat_payload = {
+                "model": model_variant,
+                "messages": self._build_chat_messages(prompt, system),
+                "stream": stream,
+                "options": options,
+                "keep_alive": "20m",
+            }
 
-        # /api/chat has been more stable than /api/generate in CPU-only environments.
-        return [
-            ("/api/chat", chat_payload),
-            ("/api/generate", generate_payload),
-        ]
+            # /api/chat has been more stable than /api/generate in CPU-only environments.
+            attempts.append(("/api/chat", chat_payload, model_variant))
+            attempts.append(("/api/generate", generate_payload, model_variant))
+
+        return attempts
+
+    def _build_model_variants(self, model: str) -> List[str]:
+        """Provide lightweight model-name compatibility similar to embedding endpoint fallbacks."""
+        variants = [model]
+
+        # If tag is omitted, try explicit :latest as a compatibility fallback.
+        if ":" not in model:
+            variants.append(f"{model}:latest")
+
+        deduped: List[str] = []
+        seen = set()
+        for variant in variants:
+            if variant in seen:
+                continue
+            seen.add(variant)
+            deduped.append(variant)
+
+        return deduped
 
     def _extract_response_text(self, payload: Dict[str, Any]) -> str:
         text = payload.get("response")
@@ -148,7 +170,7 @@ class OllamaClient:
         for attempt in range(self.max_retries):
             try:
                 async with aiohttp.ClientSession() as session:
-                    for endpoint, payload in payload_attempts:
+                    for endpoint, payload, model_variant in payload_attempts:
                         try:
                             async with session.post(
                                 f"{self.base_url}{endpoint}",
@@ -157,10 +179,13 @@ class OllamaClient:
                             ) as response:
                                 if response.status >= 400:
                                     details = (await response.text())[:200]
-                                    errors.append(f"{endpoint}: HTTP {response.status} {details}")
+                                    errors.append(
+                                        f"{endpoint} ({model_variant}): HTTP {response.status} {details}"
+                                    )
                                     logger.warning(
-                                        "Ollama endpoint %s returned HTTP %s, trying fallback. %s",
+                                        "Ollama endpoint %s (model=%s) returned HTTP %s, trying fallback. %s",
                                         endpoint,
+                                        model_variant,
                                         response.status,
                                         details,
                                     )
@@ -174,10 +199,13 @@ class OllamaClient:
                                         yield text
                                 return
                         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                            errors.append(f"{endpoint}: {type(e).__name__} {e}")
+                            errors.append(
+                                f"{endpoint} ({model_variant}): {type(e).__name__} {e}"
+                            )
                             logger.warning(
-                                "Ollama streaming endpoint %s failed, trying fallback: %s",
+                                "Ollama streaming endpoint %s (model=%s) failed, trying fallback: %s",
                                 endpoint,
+                                model_variant,
                                 repr(e),
                             )
                             continue
@@ -216,7 +244,7 @@ class OllamaClient:
         async def _do_gen():
             async with aiohttp.ClientSession() as session:
                 errors: List[str] = []
-                for endpoint, payload in payload_attempts:
+                for endpoint, payload, model_variant in payload_attempts:
                     try:
                         async with session.post(
                             f"{self.base_url}{endpoint}",
@@ -225,10 +253,13 @@ class OllamaClient:
                         ) as response:
                             if response.status >= 400:
                                 details = (await response.text())[:200]
-                                errors.append(f"{endpoint}: HTTP {response.status} {details}")
+                                errors.append(
+                                    f"{endpoint} ({model_variant}): HTTP {response.status} {details}"
+                                )
                                 logger.warning(
-                                    "Ollama endpoint %s returned HTTP %s, trying fallback. %s",
+                                    "Ollama endpoint %s (model=%s) returned HTTP %s, trying fallback. %s",
                                     endpoint,
+                                    model_variant,
                                     response.status,
                                     details,
                                 )
@@ -239,10 +270,13 @@ class OllamaClient:
                             if text:
                                 return text
                     except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                        errors.append(f"{endpoint}: {type(e).__name__} {e}")
+                        errors.append(
+                            f"{endpoint} ({model_variant}): {type(e).__name__} {e}"
+                        )
                         logger.warning(
-                            "Ollama endpoint %s request failed, trying fallback: %s",
+                            "Ollama endpoint %s (model=%s) request failed, trying fallback: %s",
                             endpoint,
+                            model_variant,
                             repr(e),
                         )
                         continue
@@ -253,7 +287,8 @@ class OllamaClient:
 
         try:
             return await self._request_with_backoff(_do_gen)
-        except Exception:
+        except Exception as e:
+            logger.error("Ollama non-stream generation failed hard: %s", e)
             return "Error generating response."
 
     async def check_health(self) -> bool:

@@ -174,6 +174,34 @@ def test_brain_agent_connects_before_cognitive_initialize():
     assert call_order.index("conversation_initialize") < call_order.index("initialize")
 
 
+def test_brain_agent_emits_fallback_when_stream_errors_without_content():
+    agent = BrainAgent(graph_db=None, memory_store=None, conversation_store=None)
+    agent.set_state = AsyncMock()
+    agent.publish = AsyncMock()
+    agent._publish_speech_chunk = AsyncMock()
+    agent.cognitive_core.state.get_context_snapshot = MagicMock(return_value={"emotion": "neutral"})
+
+    async def _error_only_stream(_raw_event):
+        yield {"type": "error", "data": "No compatible Ollama generation endpoint found"}
+        yield {"type": "done", "data": ""}
+
+    agent.cognitive_core.process_event = _error_only_stream
+
+    asyncio.run(agent._on_chat_input({"text": "hello", "turn_id": "turn-404"}))
+
+    agent._publish_speech_chunk.assert_awaited_once()
+    fallback_words, fallback_turn_id = agent._publish_speech_chunk.await_args.args
+    assert "trouble" in " ".join(fallback_words)
+    assert fallback_turn_id == "turn-404"
+
+    done_call = agent.publish.await_args_list[-1]
+    assert done_call.args[0] == "chat.output"
+    assert done_call.args[1]["done"] is True
+    assert done_call.args[1]["turn_id"] == "turn-404"
+    assert done_call.args[1]["full_response"] == "I'm having trouble thinking right now..."
+    assert "No compatible Ollama generation endpoint found" in done_call.args[1]["generation_error"]
+
+
 def test_action_service_strips_emotion_wrappers_but_keeps_pause_tags():
     llm = MagicMock()
 

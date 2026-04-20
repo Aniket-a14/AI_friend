@@ -32,6 +32,21 @@ class Config:
     LLM_CHAT_MODEL = os.getenv("LLM_CHAT_MODEL", LLM_FAST_MODEL)
     LLM_REFLECTION_MODEL = os.getenv("LLM_REFLECTION_MODEL", LLM_CHAT_MODEL)
     LLM_STREAM_MAX_SECONDS = int(os.getenv("LLM_STREAM_MAX_SECONDS", "120"))
+
+    RUNTIME_AUTO_BOOTSTRAP = os.getenv("RUNTIME_AUTO_BOOTSTRAP", "true").lower() == "true"
+    RUNTIME_BOOTSTRAP_RETRIES = int(os.getenv("RUNTIME_BOOTSTRAP_RETRIES", "12"))
+    _required_models_env = os.getenv("OLLAMA_REQUIRED_MODELS", "").strip()
+    if _required_models_env:
+        OLLAMA_REQUIRED_MODELS = [
+            model.strip() for model in _required_models_env.split(",") if model.strip()
+        ]
+    else:
+        OLLAMA_REQUIRED_MODELS = list(
+            dict.fromkeys(
+                [LLM_CHAT_MODEL, LLM_FAST_MODEL, LLM_REFLECTION_MODEL, "nomic-embed-text"]
+            )
+        )
+
     SOVITS_URL = os.getenv("SOVITS_URL", "http://localhost:9871")
     
     # Custom Voice Models (Fine-tuned)

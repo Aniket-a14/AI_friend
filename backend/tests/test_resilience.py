@@ -359,3 +359,38 @@ async def test_generate_stream_parses_fragmented_json_chunks(ollama_client):
 
         assert "".join(chunks) == "Hello world"
         assert mock_post.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_retries_with_latest_tag_for_untagged_model(ollama_client):
+    """If an untagged model 404s, client should retry with :latest model variant."""
+    with patch("aiohttp.ClientSession.post") as mock_post:
+        mock_not_found_resp = MagicMock()
+        mock_not_found_resp.status = 404
+        mock_not_found_resp.raise_for_status = MagicMock()
+
+        async def _not_found_text():
+            return '{"error":"not found"}'
+
+        mock_not_found_resp.text = _not_found_text
+        mock_not_found_cm = MagicMock()
+        mock_not_found_cm.__aenter__.return_value = mock_not_found_resp
+
+        mock_latest_resp = MagicMock()
+        mock_latest_resp.status = 200
+        mock_latest_resp.raise_for_status = MagicMock()
+
+        async def _latest_json():
+            return {"message": {"content": "Recovered with latest tag"}}
+
+        mock_latest_resp.json = _latest_json
+        mock_latest_cm = MagicMock()
+        mock_latest_cm.__aenter__.return_value = mock_latest_resp
+
+        mock_post.side_effect = [mock_not_found_cm, mock_not_found_cm, mock_latest_cm]
+
+        response = await ollama_client.generate("hello", model="llama3.2")
+
+        assert response == "Recovered with latest tag"
+        posted_models = [call.kwargs["json"]["model"] for call in mock_post.call_args_list]
+        assert posted_models[:3] == ["llama3.2", "llama3.2", "llama3.2:latest"]
