@@ -53,8 +53,10 @@ class DecisionService:
             event.metadata["suggested_goal"] = "ENGAGE"
             event.metadata["preferred_model"] = Config.LLM_FAST_MODEL
         elif event.event_type == "USER_MESSAGE":
-            # 2. Fast LLM-based Intent Classification (using 1B for speed)
-            await self._classify_intent_and_goal(event, state_snapshot)
+            # 2. Deterministic routing first; optional LLM classifier can refine if enabled.
+            self._apply_heuristic_intent_and_goal(event)
+            if Config.LLM_INTENT_CLASSIFICATION_ENABLED:
+                await self._classify_intent_and_goal(event, state_snapshot)
         
         # 3. Tick BT
         blackboard = {"event": event, "state": state_snapshot, "plan": None}
@@ -70,6 +72,22 @@ class DecisionService:
         greetings = {"hi", "hello", "hey", "hola", "namaste", "yo"}
         clean_text = text.lower().strip().strip("!").strip(".")
         return clean_text in greetings
+
+    def _apply_heuristic_intent_and_goal(self, event: CognitiveEvent):
+        """
+        Cheap intent defaults to avoid unnecessary LLM calls on every turn.
+        """
+        text = (event.raw_content or "").lower()
+
+        if "remember" in text or "memorize" in text:
+            event.intent = "REMEMBER"
+            event.metadata.setdefault("suggested_goal", "RECALL")
+            event.metadata.setdefault("preferred_model", Config.LLM_FAST_MODEL)
+            return
+
+        event.intent = "CHAT"
+        event.metadata.setdefault("suggested_goal", "ENGAGE")
+        event.metadata.setdefault("preferred_model", Config.LLM_CHAT_MODEL)
 
     async def _classify_intent_and_goal(self, event: CognitiveEvent, state: Dict[str, Any]):
         """

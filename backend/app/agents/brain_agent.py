@@ -10,7 +10,7 @@ from ..llm.ollama_client import OllamaClient
 from ..state import GraphDB, MemoryStore, ConversationHistoryStore
 from ..config import Config
 from ..cognitive import CognitiveService
-from scripts.runtime_bootstrap import bootstrap_runtime
+from ..runtime_bootstrap import bootstrap_runtime
 
 logger = logging.getLogger(__name__)
 
