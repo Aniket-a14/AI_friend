@@ -1,12 +1,8 @@
 import time
-import sys
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-sys.modules.setdefault("asyncpg", SimpleNamespace(Pool=object))
 
 from app.agents.surfacing_agent import SurfacingAgent
 from app.state.memory_store import MemoryStore
