@@ -41,6 +41,33 @@ class TransportAgent(BaseAgent):
         self.audio_track = rtc.LocalAudioTrack.create_audio_track(
             "ai-voice", self.audio_source
         )
+        self.audio_queue = asyncio.Queue(
+            maxsize=max(32, int(getattr(Config, "TRANSPORT_AUDIO_QUEUE_SIZE", 256)))
+        )
+        self.audio_worker_task = None
+        self.dropped_audio_frames = 0
+
+    async def _connect_livekit_with_retry(self, token: str):
+        """Connect to LiveKit with bounded retries for transient SFU startup gaps."""
+        max_attempts = 8
+        for attempt in range(1, max_attempts + 1):
+            try:
+                await self.room.connect(self.lk_url, token)
+                logger.info("Connected to LiveKit Room: ai-friend-room")
+                return
+            except Exception as e:
+                if attempt == max_attempts:
+                    raise
+
+                delay = min(10.0, 1.5 * attempt)
+                logger.warning(
+                    "LiveKit connection failed (attempt %s/%s): %s. Retrying in %.1fs",
+                    attempt,
+                    max_attempts,
+                    e,
+                    delay,
+                )
+                await asyncio.sleep(delay)
 
     async def start(self):
         """Initialize NATS and connect to LiveKit"""
@@ -55,19 +82,23 @@ class TransportAgent(BaseAgent):
             .to_jwt()
         )
 
-        await self.room.connect(self.lk_url, token)
-        logger.info("Connected to LiveKit Room: ai-friend-room")
+        await self._connect_livekit_with_retry(token)
 
         # 2. Publish Audio Track
         publication = await self.room.local_participant.publish_track(self.audio_track)
         logger.info(f"Published Audio Track: {publication.sid}")
 
+        # Capture frames on a dedicated worker so NATS callback can return fast.
+        self.audio_worker_task = asyncio.create_task(self._audio_playback_worker())
+
         # 3. Subscribe to NATS Audio Stream (Outbound - AI Speech)
         await self.subscribe(
             "audio.stream",
             callback=self._on_nats_audio,
-            durable="transport_bridge",
+            durable=f"{self.name}_audio_stream_live",
             deliver_policy="new",
+            pending_msgs_limit=200000,
+            pending_bytes_limit=268435456,
         )
         logger.info("Subscribed to NATS audio.stream. Outbound Bridge Active.")
 
@@ -135,14 +166,27 @@ class TransportAgent(BaseAgent):
                     pcm_data = audio_bytes
 
                 if pcm_data:
-                    samples_per_channel = len(pcm_data) // (2 * num_channels)
-                    frame = rtc.AudioFrame(
-                        data=pcm_data,
-                        sample_rate=sample_rate,
-                        num_channels=num_channels,
-                        samples_per_channel=samples_per_channel,
-                    )
-                    await self.audio_source.capture_frame(frame)
+                    try:
+                        self.audio_queue.put_nowait((pcm_data, sample_rate, num_channels))
+                    except asyncio.QueueFull:
+                        # Drop the oldest frame to keep playout near real-time.
+                        try:
+                            _ = self.audio_queue.get_nowait()
+                            self.audio_queue.task_done()
+                        except asyncio.QueueEmpty:
+                            pass
+
+                        try:
+                            self.audio_queue.put_nowait((pcm_data, sample_rate, num_channels))
+                        except asyncio.QueueFull:
+                            pass
+
+                        self.dropped_audio_frames += 1
+                        if self.dropped_audio_frames % 50 == 1:
+                            logger.warning(
+                                "Transport audio queue overloaded; dropped %s frames.",
+                                self.dropped_audio_frames,
+                            )
 
             if is_done:
                 logger.info("AI Utterance stream complete.")
@@ -150,7 +194,41 @@ class TransportAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Error bridging audio: {e}")
 
+    async def _audio_playback_worker(self):
+        """Drain queued PCM frames and push to LiveKit at sink pace."""
+        while True:
+            try:
+                pcm_data, sample_rate, num_channels = await self.audio_queue.get()
+                try:
+                    if not pcm_data or num_channels <= 0:
+                        continue
+
+                    samples_per_channel = len(pcm_data) // (2 * num_channels)
+                    if samples_per_channel <= 0:
+                        continue
+
+                    frame = rtc.AudioFrame(
+                        data=pcm_data,
+                        sample_rate=sample_rate,
+                        num_channels=num_channels,
+                        samples_per_channel=samples_per_channel,
+                    )
+                    await self.audio_source.capture_frame(frame)
+                finally:
+                    self.audio_queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Transport playback worker error: {e}")
+                await asyncio.sleep(0.01)
+
     async def stop(self):
+        if self.audio_worker_task:
+            self.audio_worker_task.cancel()
+            try:
+                await self.audio_worker_task
+            except asyncio.CancelledError:
+                pass
         await self.room.disconnect()
         await super().stop()
         logger.info("Transport Agent Stopped.")

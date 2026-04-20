@@ -141,7 +141,13 @@ class BaseAgent:
         return 0
 
     async def subscribe(
-        self, subject: str, callback, durable: str = None, deliver_policy: str = "all"
+        self,
+        subject: str,
+        callback,
+        durable: str = None,
+        deliver_policy: str = "all",
+        pending_msgs_limit: int = None,
+        pending_bytes_limit: int = None,
     ):
         """
         Subscribe to events on the mesh with header validation and fallback.
@@ -192,9 +198,17 @@ class BaseAgent:
         }
         policy = policy_map.get(deliver_policy, DeliverPolicy.ALL)
 
-        await self.js.subscribe(
-            subject, cb=_handler, durable=durable, deliver_policy=policy
-        )
+        subscribe_kwargs = {
+            "cb": _handler,
+            "durable": durable,
+            "deliver_policy": policy,
+        }
+        if pending_msgs_limit is not None:
+            subscribe_kwargs["pending_msgs_limit"] = pending_msgs_limit
+        if pending_bytes_limit is not None:
+            subscribe_kwargs["pending_bytes_limit"] = pending_bytes_limit
+
+        await self.js.subscribe(subject, **subscribe_kwargs)
         logger.info(
             f"Agent '{self.name}' subscribed to {subject} with durable '{durable}' and policy '{deliver_policy}'"
         )

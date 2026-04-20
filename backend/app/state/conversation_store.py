@@ -28,7 +28,7 @@ class ConversationHistoryStore:
             # We don't create tables here anymore since Prisma handles schema management
             # and we pushed it in the frontend step.
 
-            logger.info("Connected to Supabase via asyncpg.")
+            logger.info("Connected to Database via asyncpg.")
 
             # Seed personality/history if the table is empty
             await self._ensure_config_exists()
@@ -313,4 +313,4 @@ class ConversationHistoryStore:
         """Close the database connection pool."""
         if self.pool:
             await self.pool.close()
-            logger.info("Closed Supabase connection pool.")
+            logger.info("Closed Database connection pool.")

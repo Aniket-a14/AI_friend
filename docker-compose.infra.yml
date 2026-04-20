@@ -168,6 +168,9 @@ services:
       - OLLAMA_HOST=0.0.0.0:11434
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     networks:
       - ai_mesh_network
     restart: always

@@ -57,6 +57,7 @@ class VoiceAgent(BaseAgent):
         self.ref_audio_path = ref_audio_path
         self.ref_text = ref_text
         self.last_audio_time = time.time()
+        self.last_filler_emit_time = 0.0
         self.jitter_buffer = 0.010 # 10ms baseline
         
         # Resilience & Feedback
@@ -373,6 +374,13 @@ class VoiceAgent(BaseAgent):
 
     async def _resilience_loop(self):
         """Monitors perceived silence and triggers fillers or feedback."""
+        min_filler_interval = max(
+            0.5, float(getattr(Config, "VOICE_FILLER_MIN_INTERVAL_SECONDS", 1.5))
+        )
+        max_playback_backlog = max(
+            1, int(getattr(Config, "VOICE_FILLER_MAX_PLAYBACK_BACKLOG", 4))
+        )
+
         while True:
             await asyncio.sleep(0.1)
             now = time.time()
@@ -380,6 +388,12 @@ class VoiceAgent(BaseAgent):
             
             # Perception-Driven Filler Trigger (>350ms silence while buffering)
             if self.state in [VoicePlaybackState.BUFFERING] and silence_duration > 0.35:
+                # Prevent filler storms under sustained synthesis lag.
+                if now - self.last_filler_emit_time < min_filler_interval:
+                    continue
+                if self.playback_queue.qsize() > max_playback_backlog:
+                    continue
+
                 # Replace procedural noise with ACTUAL pre-synthesized fillers
                 pcm_filler = self.filler_service.get_random_filler()
                 
@@ -387,6 +401,7 @@ class VoiceAgent(BaseAgent):
                     await self.publish("audio.stream", pcm_filler)
                     logger.info("⏳ Resilience: Synthesis delay detected. Sent random social filler.")
                     self.last_audio_time = now # Prevent filler spam
+                    self.last_filler_emit_time = now
                 else:
                     # Fallback to soft breath if mesh isn't hydrated yet
                     duration = 0.4
@@ -395,6 +410,7 @@ class VoiceAgent(BaseAgent):
                     pcm_fallback = (breath * 32767).astype(np.int16).tobytes()
                     await self.publish("audio.stream", pcm_fallback)
                     self.last_audio_time = now
+                    self.last_filler_emit_time = now
                 
             # Segmentation Feedback Publisher
             if self.override_count > 5:

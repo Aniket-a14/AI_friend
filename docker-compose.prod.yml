@@ -22,6 +22,9 @@ services:
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - OLLAMA_URL=http://local_brain:11434
+      - LLM_FAST_MODEL=llama3.2:1b
+      - LLM_CHAT_MODEL=llama3.2:1b
+      - LLM_REFLECTION_MODEL=llama3.2:1b
       - DATABASE_URL=postgresql://ai_friend:${POSTGRES_PASSWORD}@postgres_db:5432/ai_friend_db
       - NEO4J_URI=bolt://brain_graph:7687
       - NEO4J_USER=neo4j
@@ -51,7 +54,67 @@ services:
       timeout: 5s
       retries: 5
 
-  # 2. VOICE AGENT (TTS, connects to GPT-SoVITS)
+  # 2. SYSTEM AGENT (Heartbeat / system.tick publisher)
+  system_agent:
+    build:
+      context: ./backend
+      target: slim
+    container_name: system_agent
+    command: [ "python", "-m", "app.agents.system_agent" ]
+    volumes:
+      - ./backend:/app
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+      - SYSTEM_TICK_INTERVAL=${SYSTEM_TICK_INTERVAL:-60}
+    networks:
+      - ai_mesh_network
+    depends_on:
+      nats:
+        condition: service_started
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. SURFACING AGENT (Proactive memory recall)
+  surfacing_agent:
+    build:
+      context: ./backend
+      target: slim
+    container_name: surfacing_agent
+    command: [ "python", "-m", "app.agents.surfacing_agent" ]
+    volumes:
+      - ./backend:/app
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+      - OLLAMA_URL=http://local_brain:11434
+      - DATABASE_URL=postgresql://ai_friend:${POSTGRES_PASSWORD}@postgres_db:5432/ai_friend_db
+      - NEO4J_URI=bolt://brain_graph:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+    networks:
+      - ai_mesh_network
+    depends_on:
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
+      brain_agent:
+        condition: service_healthy
+      system_agent:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. VOICE AGENT (TTS, connects to GPT-SoVITS)
   voice_agent:
     build:
       context: ./backend
@@ -66,6 +129,8 @@ services:
       - SOVITS_URL=http://local_voice:9871
       - MAX_VOICE_QUEUE_SIZE=${MAX_VOICE_QUEUE_SIZE:-10}
       - VOICE_SYNTH_CONCURRENCY=${VOICE_SYNTH_CONCURRENCY:-1}
+      - VOICE_FILLER_MIN_INTERVAL_SECONDS=${VOICE_FILLER_MIN_INTERVAL_SECONDS:-4.0}
+      - VOICE_FILLER_MAX_PLAYBACK_BACKLOG=${VOICE_FILLER_MAX_PLAYBACK_BACKLOG:-2}
     networks:
       - ai_mesh_network
     depends_on:
@@ -82,7 +147,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # 3. TRANSPORT AGENT (WebRTC Bridge)
+  # 5. TRANSPORT AGENT (WebRTC Bridge)
   transport_agent:
     build:
       context: ./backend
@@ -96,11 +161,16 @@ services:
       - LIVEKIT_URL=http://local_sfu:7880
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - TRANSPORT_AUDIO_QUEUE_SIZE=${TRANSPORT_AUDIO_QUEUE_SIZE:-1024}
     networks:
       - ai_mesh_network
     depends_on:
       brain_agent:
         condition: service_healthy
+      livekit:
+        condition: service_started
+      nats:
+        condition: service_started
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
@@ -108,7 +178,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # 4. STT AGENT (Whisper, VAD) - Heavy
+  # 6. STT AGENT (Whisper, VAD) - Heavy
   stt_agent:
     build:
       context: ./backend
@@ -140,7 +210,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # 5. VISION AGENT (OpenCV, Screen/Cam) - Heavy
+  # 7. VISION AGENT (OpenCV, Screen/Cam) - Heavy
   vision_agent:
     build:
       context: ./backend
