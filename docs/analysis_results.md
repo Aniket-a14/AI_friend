@@ -4,7 +4,7 @@
 >
 > **Method**: Each section maps feedback → current code → gap → recommended change.
 >
-> **Related**: See [pyscological_layer.md](./pyscological_layer.md) for the target equation sheet.
+> **Related**: See [psycological_layer.md](./psycological_layer.md) for the target equation sheet.
 
 ---
 
