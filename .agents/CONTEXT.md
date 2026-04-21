@@ -661,20 +661,42 @@ Finalized the transition to the hardened CVS-1.0 mesh on host Zenbook Duo (Lapto
 **Storage Optimization:**
 - Reclaimed **102.5GB of disk space** on the host `C:` drive via `diskpart` VHDX compaction. 
 - Established a **Targeted Rebuild Strategy**: Use `docker-compose build <service>` to avoid redundant 25-minute downloads of the 27GB SoVITS model cache.
- 
+  
 **Behavioral & Runtime Fixes:**
 - **Hardware-Agnostic Synthesis**: Updated `sovits_bootstrap.sh` to automatically detect CPU-only environments and switch to FP32 fallback, preventing CUDA initialization crashes on non-GPU hardware.
-- **Perception Fix (STT)**: Refactored `SenseVoice` (sherpa-onnx) initialization to use `FeatureExtractorConfig` and the corrected triple-argument `OfflineSenseVoiceModelConfig` constructor, resolving the "unexpected keyword" and "not indexed" errors.
-- **Voice Metric Isolation**: Resolved a naming conflict where `SurfacingAgent` was shadowing the `BaseAgent._record_subject_metric` signature. Renamed handler to `_record_surfacing_metric` to restore stable telemetry heartbeat.
-- **Social Vocabulary Hydration**: Fixed a `TypeError` in `FillerService` by aligning the `SoVITSClient.synthesize` call with the hardened `text_lang` parameter signature.
-- **English-Only Enforcement**: Restricted both Whisper and SenseVoice modules to the English language code to minimize hallucinatory outputs from non-verbal audio signals.
+- **Perception Fix (STT)**: Refactored `SenseVoice` (sherpa-onnx) initialization to use `FeatureExtractorConfig` and the corrected triple-argument `OfflineSenseVoiceModelConfig` constructor.
+- **English-Only Enforcement**: Restricted both Whisper and SenseVoice modules to the English language code.
  
+## 2026-04-21 Cognitive Mesh Stabilization & Test Resilience
+
+Resolved critical race conditions and environment-specific flakiness in the cognitive verification suite.
+
+**Tests & Concurrency:**
+- **Deterministic Synchronization**: Transitioned `ReflectionService` to use an `asyncio.Event` (`reflection_done`) that signals absolute completion of background consolidation. Scenario tests now strictly `wait()` for this event, ensuring Turn N evolution is finished before Turn N+1 begins.
+- **Absolute Test Isolation**: Refactored scenario fixtures to use `tmp_path` (sandboxing). The `IdentityManager` now persists `history.json` and `personality.json` to isolated temporary directories, eliminating disk-state leakage between test suites.
+- **Configuration Locking**: Hardened `conftest.py` to force `REFLECTION_ENABLED=True`, `REFLECTION_MIN_INTERVAL_SECONDS=0`, and `LLM_INTENT_CLASSIFICATION_ENABLED=True` for every test run.
+
+**Learning & Identity Hardening:**
+- **Defensive LLM Parsing**: Implemented robust dictionary-wrapping and `isinstance` checks in `ReflectionService` to handle cases where 1B models return raw strings or lists instead of expected JSON objects.
+- **Safe Identity Defaults**: Standardized `IdentityManager` to ensure `relationship` and `memories` keys always exist, preventing `KeyError` regressions during persona evolution.
+
 **Verification:**
-- Fully synchronized the 14-container AI mesh.
-- All agents verified `healthy` via `docker ps`.
-- Internal telemetry confirmed active for `system.tick` and `chat.input` without runtime exceptions.
-- SoVITS API responsiveness verified via Swagger endpoint probe.
- 
-**Remaining Risks:**
-- High CPU load (0.95+) on Zenbook Duo while all 14 agents are active may cause occasional jitter in the SFU bridge.
-- `memory.surfaced` replay-protection is effective, but Neo4j relationship surfacing requires higher-load soak testing to confirm scalability.
+- **100% Pass Rate**: Achieved **63/63 passed** across the full backend suite in the user terminal.
+- Verified that `test_scenario_hostile_interaction_drift` passes reliably in both isolated and full-suite runs.
+
+## 2026-04-21 GPT-SoVITS & Voice Layer Enhancements
+
+Hardened the signal rendering loop for psychological realism and signal continuity.
+
+**Signal Continuity:**
+- **Psychological VAD Mapping**: Implemented `_vad_to_prosody` in `VoiceAgent`. Maps internal Valence, Arousal, and Dominance (VAD) to SoVITS inference parameters (`speed`, `pitch`, `volume`) following Scherer’s vocal expression models.
+- **Overlap-Add (OLA) Transitions**: Implemented a 15ms sample-accurate linear cross-fade in the `_playback_loop` to ensure seamless stitching of PCM chunks and prevent "clicking" during sudden state transitions.
+- **Adaptive Timing Markers**: Support for native `<pause=...ms>` and `<hesitate>` markers injected directly into the PCM stream by splitting synthesis text into atomic temporal segments.
+
+**Resilience & Fillers:**
+- **Social Mesh Hydration**: Added `FillerService` to pre-generate and hydrate "social fillers" (hmm, got it, I see) in the background.
+- **Perception-Driven Fillers**: The `_resilience_loop` now automatically emits social fillers if synthesis latency exceeds 350ms while in a `BUFFERING` state, maintaining the "illusion of presence" during CPU-only fallback runs.
+
+**Next Recommended Work:**
+- Monitor CPU pressure on Zenbook Duo (0.95+) during high-rate turns; evaluate if further jitter-buffer expansion (beyond 10ms) is needed for the SFU bridge.
+- Implement per-utterance sentiment verification to calibrate the `VAD -> Prosody` mapping with real user emotional vibes.
