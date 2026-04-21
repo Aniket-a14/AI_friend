@@ -137,7 +137,7 @@ git checkout -b feature/your-feature-name
 
 ### 4. Commit Changes
 
-Use [Conventional Commits](https://www.conventionalcommits.org/):
+Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
 ```bash
 git add .
@@ -177,7 +177,7 @@ Then create a Pull Request on GitHub.
 
 #### Style Guide
 
-Follow [PEP 8](https://pep8.org/) with these specifics:
+Follow [PEP 8](https://peps.python.org/pep-0008/) with these specifics:
 
 - **Line Length**: 100 characters max
 - **Indentation**: 4 spaces
