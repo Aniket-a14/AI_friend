@@ -21,6 +21,10 @@ class ReflectionService:
         self.identity = identity_manager or IdentityManager()
         self.is_reflecting = False
         self.last_reflection_started_at = 0.0
+        
+        # CVS-1.0: Explicit completion signaling for deterministic mesh verification
+        self.reflection_done = asyncio.Event()
+        self.reflection_done.set()
 
     async def trigger_reflection(self, recent_episodes: List[Dict[str, Any]]):
         """Non-blocking trigger for background learning."""
@@ -28,17 +32,25 @@ class ReflectionService:
             return
 
         if self.is_reflecting or not recent_episodes:
-            return
+            # CVS-1.0: Always return awaitable to support deterministic testing
+            f = asyncio.Future()
+            f.set_result(None)
+            return f
 
         min_interval = max(0.0, float(getattr(Config, "REFLECTION_MIN_INTERVAL_SECONDS", 0.0)))
         now = time.monotonic()
         if min_interval > 0.0 and (now - self.last_reflection_started_at) < min_interval:
-            return
+            f = asyncio.Future()
+            f.set_result(None)
+            return f
 
         self.last_reflection_started_at = now
+        
+        # CVS-1.0: Signal started
+        self.reflection_done.clear()
             
         logger.info(f"[Reflection] Starting semantic consolidation logic for {len(recent_episodes)} events.")
-        asyncio.create_task(self._consolidate(recent_episodes))
+        return asyncio.create_task(self._consolidate(recent_episodes))
 
     async def _consolidate(self, episodes: List[Dict[str, Any]]):
         """
@@ -65,7 +77,16 @@ class ReflectionService:
                 fact_res = await self.llm.generate(fact_prompt, model=Config.LLM_REFLECTION_MODEL)
                 facts = self._extract_json(fact_res)
                 
+                # CVS-1.0: Defensive parsing for LLM output variability
+                if isinstance(facts, dict):
+                    facts = [facts]
+                elif not isinstance(facts, list):
+                    facts = []
+
                 for f in facts:
+                    if not isinstance(f, dict):
+                        continue
+                        
                     # 1. CONFIDENCE GATING: Only store facts with > 0.8 certainty
                     confidence = f.get("confidence", 0.0)
                     if confidence < 0.8:
@@ -114,6 +135,13 @@ class ReflectionService:
             try:
                 ident_res = await self.llm.generate(identity_prompt, model=Config.LLM_REFLECTION_MODEL)
                 suggestions = self._extract_json(ident_res)
+                
+                # CVS-1.0: Defensive parsing for identity suggestions (Ensures .get() availability)
+                if isinstance(suggestions, list) and len(suggestions) > 0:
+                    suggestions = suggestions[0]
+                elif not isinstance(suggestions, dict):
+                    suggestions = {}
+
                 if suggestions and suggestions.get("confidence", 0.0) >= 0.8:
                     await self.identity.evolve_persona(suggestions)
                 else:
@@ -127,6 +155,7 @@ class ReflectionService:
             logger.error(f"[Reflection] Critical Consolidation Failure: {e}")
         finally:
             self.is_reflecting = False
+            self.reflection_done.set() # Unblock waiters
 
     def _extract_json(self, text: str) -> Any:
         try:

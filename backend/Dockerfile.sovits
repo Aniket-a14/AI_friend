@@ -1,0 +1,33 @@
+# 🎙️ optimized GPT-SoVITS Inference Image
+# Targeted for RTX-series GPUs (2060 Super+)
+
+FROM xxxxrt666/gpt-sovits:latest
+
+# 1. Align Torch/TorchAudio (Base image has 12.6/12.8 mismatch)
+# We force-reinstall to overwrite broken base-image binaries
+RUN pip install --force-reinstall --no-cache-dir \
+    torch==2.4.1+cu124 torchaudio==2.4.1+cu124 \
+    --index-url https://download.pytorch.org/whl/cu124 \
+    --trusted-host download.pytorch.org
+
+# 2. Bake in the GPT-SoVITS runtime patches
+# This replaces torchaudio.load with a faster scipy-based read (per current infra hack)
+RUN python -c 'import os; p="/workspace/GPT-SoVITS/GPT_SoVITS/TTS_infer_pack/TTS.py"; c=open(p).read(); n=c.replace("torchaudio.load(ref_audio_path)", "(lambda f: (lambda s,d: (torch.from_numpy(d).float().unsqueeze(0)/32768.0, s))(*__import__(\"scipy.io.wavfile\").io.wavfile.read(f)))(ref_audio_path)"); open(p,"w").write(n)'
+
+# 3. Setup Persistent Pretrained Models
+# We reuse the host volume linking but ensure the workspace is ready
+RUN rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models && \
+    ln -s /workspace/models/pretrained_models /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models
+
+# 4. Set Environment for High-Performance Inference
+ENV CUDA_VISIBLE_DEVICES=0
+ENV is_half=true
+ENV PYTHONPATH=/workspace/GPT-SoVITS
+
+WORKDIR /workspace/GPT-SoVITS
+
+# Entrypoint is moved to a script for warm-start logic
+COPY scripts/sovits_bootstrap.sh /workspace/sovits_bootstrap.sh
+RUN chmod +x /workspace/sovits_bootstrap.sh
+
+ENTRYPOINT ["/workspace/sovits_bootstrap.sh"]

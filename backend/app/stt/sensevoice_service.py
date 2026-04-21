@@ -44,8 +44,8 @@ class SenseVoiceSTTService:
 
         try:
             # CPU/INT8 Configuration
-            feat_config = sherpa_onnx.FeatureConfig(
-                sample_rate=16000,
+            feat_config = sherpa_onnx.FeatureExtractorConfig(
+                sampling_rate=16000,
                 feature_dim=80,
             )
             
@@ -58,12 +58,13 @@ class SenseVoiceSTTService:
                 model_config=sherpa_onnx.OfflineModelConfig(
                     sense_voice=sherpa_onnx.OfflineSenseVoiceModelConfig(
                         model=str(model_path),
-                        tokens=str(tokens_path),
-                        num_threads=4,
-                        debug=False,
-                        use_itn=True, # Inverse Text Normalization
+                        language="",
+                        use_itn=True,
                     ),
-                    device="cpu", # User directed CPU/INT8
+                    tokens=str(tokens_path),
+                    num_threads=4,
+                    debug=False,
+                    device="cpu",
                 )
             )
             

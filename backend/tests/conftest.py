@@ -47,3 +47,21 @@ def mock_memory_store():
     store.search_memories = AsyncMock(return_value=[])
     store.add_memory = AsyncMock(return_value=None)
     return store
+
+@pytest.fixture(autouse=True)
+def enforce_test_config():
+    """CVS-1.0: Ensure deterministic configuration for cognitive tests."""
+    from app.config import Config
+    original_classifier = Config.LLM_INTENT_CLASSIFICATION_ENABLED
+    original_interval = Config.REFLECTION_MIN_INTERVAL_SECONDS
+    original_enabled = Config.REFLECTION_ENABLED
+    
+    Config.LLM_INTENT_CLASSIFICATION_ENABLED = True
+    Config.REFLECTION_MIN_INTERVAL_SECONDS = 0 
+    Config.REFLECTION_ENABLED = True
+    
+    yield
+    
+    Config.LLM_INTENT_CLASSIFICATION_ENABLED = original_classifier
+    Config.REFLECTION_MIN_INTERVAL_SECONDS = original_interval
+    Config.REFLECTION_ENABLED = original_enabled

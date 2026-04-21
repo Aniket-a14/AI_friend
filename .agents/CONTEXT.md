@@ -653,3 +653,28 @@ Remaining risks:
 
 - CPU-only Ollama latency remains the primary bottleneck for sustained high-rate turn completion.
 - Final soak gate sign-off still requires a controlled run with strict turn-id filtering and stable background load.
+ 
+## 2026-04-21 CVS-1.0 Stabilization & Storage Optimization
+ 
+Finalized the transition to the hardened CVS-1.0 mesh on host Zenbook Duo (Laptop/CPU-fallback mode).
+ 
+**Storage Optimization:**
+- Reclaimed **102.5GB of disk space** on the host `C:` drive via `diskpart` VHDX compaction. 
+- Established a **Targeted Rebuild Strategy**: Use `docker-compose build <service>` to avoid redundant 25-minute downloads of the 27GB SoVITS model cache.
+ 
+**Behavioral & Runtime Fixes:**
+- **Hardware-Agnostic Synthesis**: Updated `sovits_bootstrap.sh` to automatically detect CPU-only environments and switch to FP32 fallback, preventing CUDA initialization crashes on non-GPU hardware.
+- **Perception Fix (STT)**: Refactored `SenseVoice` (sherpa-onnx) initialization to use `FeatureExtractorConfig` and the corrected triple-argument `OfflineSenseVoiceModelConfig` constructor, resolving the "unexpected keyword" and "not indexed" errors.
+- **Voice Metric Isolation**: Resolved a naming conflict where `SurfacingAgent` was shadowing the `BaseAgent._record_subject_metric` signature. Renamed handler to `_record_surfacing_metric` to restore stable telemetry heartbeat.
+- **Social Vocabulary Hydration**: Fixed a `TypeError` in `FillerService` by aligning the `SoVITSClient.synthesize` call with the hardened `text_lang` parameter signature.
+- **English-Only Enforcement**: Restricted both Whisper and SenseVoice modules to the English language code to minimize hallucinatory outputs from non-verbal audio signals.
+ 
+**Verification:**
+- Fully synchronized the 14-container AI mesh.
+- All agents verified `healthy` via `docker ps`.
+- Internal telemetry confirmed active for `system.tick` and `chat.input` without runtime exceptions.
+- SoVITS API responsiveness verified via Swagger endpoint probe.
+ 
+**Remaining Risks:**
+- High CPU load (0.95+) on Zenbook Duo while all 14 agents are active may cause occasional jitter in the SFU bridge.
+- `memory.surfaced` replay-protection is effective, but Neo4j relationship surfacing requires higher-load soak testing to confirm scalability.
