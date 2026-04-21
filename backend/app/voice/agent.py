@@ -66,36 +66,23 @@ class VoiceAgent(BaseAgent):
 
     async def start(self):
         await self.connect()
-        
-        # 1. Warm-start Identity (Resilient Warning Mode)
-        identity_ready = False
-        if Config.CUSTOM_GPT_PATH or Config.CUSTOM_SOVITS_PATH:
-            retries = 3
-            for i in range(retries):
-                try:
-                    if Config.CUSTOM_GPT_PATH:
-                        await self.sovits.set_gpt_weights(Config.CUSTOM_GPT_PATH)
-                    if Config.CUSTOM_SOVITS_PATH:
-                        await self.sovits.set_sovits_weights(Config.CUSTOM_SOVITS_PATH)
-                    logger.info("✅ Persistent Voice Identity 'ai_friend_voice' loaded.")
-                    identity_ready = True
-                    break
-                except Exception as e:
-                    if i < retries - 1:
-                        logger.warning(f"⏳ SoVITS API not ready (Attempt {i+1}/{retries}). Retrying in 5s...")
-                        await asyncio.sleep(5)
-                    else:
-                        logger.warning(f"⚠️ Voice Identity weights not found or API unreachable: {e}")
-                        logger.warning("Agent fallback: Entering WARNING mode. Synthesis may fail or use defaults.")
-                        await self.set_state("warning_no_weights")
+        identity_ready = await self._warm_start_identity()
 
         if identity_ready:
-            # Broadcast readiness to the mesh
             await self.publish("voice.warm", {
                 "agent": self.name,
                 "status": "ready",
                 "identity": "fine_tuned",
-                "timestamp": time.time()
+                "timestamp": time.time(),
+            })
+        else:
+            await self.publish("voice.warm", {
+                "agent": self.name,
+                "status": "degraded_no_weights",
+                "identity": "fallback",
+                "expected_gpt_path": Config.CUSTOM_GPT_PATH,
+                "expected_sovits_path": Config.CUSTOM_SOVITS_PATH,
+                "timestamp": time.time(),
             })
 
         # 2. Start CVS Runtime Loops
@@ -104,10 +91,13 @@ class VoiceAgent(BaseAgent):
         self.active_tasks.append(asyncio.create_task(self._resilience_loop()))
         self.active_tasks.append(asyncio.create_task(self._drift_correction_loop()))
 
-        # 3. Hydrate Social Mesh (Async background)
-        asyncio.create_task(self.filler_service.hydrate(
-            self.sovits, self.ref_audio_path, self.ref_text
-        ))
+        # 3. Hydrate Social Mesh (optional async background)
+        if Config.VOICE_FILLER_HYDRATE_ON_STARTUP:
+            asyncio.create_task(self.filler_service.hydrate(
+                self.sovits, self.ref_audio_path, self.ref_text
+            ))
+        else:
+            logger.info("⏭️ Skipping filler hydration (VOICE_FILLER_HYDRATE_ON_STARTUP=false).")
 
         # 4. Subscribe to Mesh Perception Channels
         await self.subscribe("chat.output", self._handle_input, deliver_policy="new")
@@ -115,6 +105,47 @@ class VoiceAgent(BaseAgent):
         await self.subscribe("audio.resume", self._on_audio_resume)
         
         logger.info("🎙️ CVS-1.0 System Online | Solid State Social Mesh Active.")
+
+    async def _warm_start_identity(self) -> bool:
+        """Attempt to load configured voice identity in warning mode (non-fatal)."""
+        if not (Config.CUSTOM_GPT_PATH or Config.CUSTOM_SOVITS_PATH):
+            logger.warning("⚠️ No custom voice weight paths configured; running in fallback mode.")
+            await self.set_state("warning_no_weights")
+            return False
+
+        retries = max(1, int(getattr(Config, "VOICE_WEIGHT_LOAD_RETRIES", 3)))
+        gpt_required = bool(Config.CUSTOM_GPT_PATH)
+        sovits_required = bool(Config.CUSTOM_SOVITS_PATH)
+
+        for i in range(retries):
+            gpt_ok = True
+            sovits_ok = True
+
+            if gpt_required:
+                gpt_ok = await self.sovits.set_gpt_weights(Config.CUSTOM_GPT_PATH)
+            if sovits_required:
+                sovits_ok = await self.sovits.set_sovits_weights(Config.CUSTOM_SOVITS_PATH)
+
+            if gpt_ok and sovits_ok:
+                logger.info("✅ Persistent Voice Identity 'ai_friend_voice' loaded.")
+                return True
+
+            if i < retries - 1:
+                logger.warning(
+                    "⏳ Voice weights not ready (attempt %s/%s). Retrying in 5s...",
+                    i + 1,
+                    retries,
+                )
+                await asyncio.sleep(5)
+
+        logger.warning(
+            "⚠️ Voice identity unavailable. Expected GPT=%s SoVITS=%s",
+            Config.CUSTOM_GPT_PATH,
+            Config.CUSTOM_SOVITS_PATH,
+        )
+        logger.warning("Agent fallback: Entering WARNING mode. Synthesis may fail or use defaults.")
+        await self.set_state("warning_no_weights")
+        return False
 
     async def _on_audio_stop(self, data: Dict[str, Any]):
         """
@@ -316,7 +347,7 @@ class VoiceAgent(BaseAgent):
                             text=text,
                             ref_audio_path=self.ref_audio_path,
                             ref_text=self.ref_text,
-                            language="en", # English Lock
+                            language=Config.TTS_LANGUAGE,
                             speed=prosody["rate"],
                             pitch=prosody["pitch"],
                             volume=prosody["volume"]

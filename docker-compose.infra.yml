@@ -192,8 +192,8 @@ services:
       - LITE=true
       - WORKFLOW=true
       - PYTHONPATH=/workspace/GPT-SoVITS
-      - CUSTOM_GPT_PATH=GPT_weights/ai_friend_voice.ckpt
-      - CUSTOM_SOVITS_PATH=SoVITS_weights/ai_friend_voice.pth
+      - CUSTOM_GPT_PATH=${CUSTOM_GPT_PATH:-GPT_weights/ai_friend_voice.ckpt}
+      - CUSTOM_SOVITS_PATH=${CUSTOM_SOVITS_PATH:-SoVITS_weights/ai_friend_voice.pth}
     ports:
       - "9880:9880" # WebUI
       - "9871:9871" # API

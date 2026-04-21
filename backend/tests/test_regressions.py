@@ -14,6 +14,7 @@ from app.cognitive.action import ActionService  # noqa: E402
 from app.cognitive.core import CognitiveService  # noqa: E402
 from app.cognitive.decision import ActionPlan  # noqa: E402
 from app.cognitive.identity import IdentityManager  # noqa: E402
+from app.config import Config  # noqa: E402
 from app.state.agent_state import StateService  # noqa: E402
 from app.state.conversation_store import ConversationHistoryStore  # noqa: E402
 
@@ -272,6 +273,56 @@ def test_voice_silence_uses_configured_sample_rate():
     agent.sample_rate = 16000
 
     assert len(agent._silence_pcm(10)) == 320
+
+
+def test_voice_warm_start_sets_warning_when_weights_unavailable():
+    agent = VoiceAgent()
+    agent.set_state = AsyncMock()
+    agent.sovits.set_gpt_weights = AsyncMock(return_value=False)
+    agent.sovits.set_sovits_weights = AsyncMock(return_value=False)
+
+    original_gpt = Config.CUSTOM_GPT_PATH
+    original_sovits = Config.CUSTOM_SOVITS_PATH
+    original_retries = Config.VOICE_WEIGHT_LOAD_RETRIES
+
+    Config.CUSTOM_GPT_PATH = "GPT_weights/missing.ckpt"
+    Config.CUSTOM_SOVITS_PATH = "SoVITS_weights/missing.pth"
+    Config.VOICE_WEIGHT_LOAD_RETRIES = 1
+
+    try:
+        ready = asyncio.run(agent._warm_start_identity())
+    finally:
+        Config.CUSTOM_GPT_PATH = original_gpt
+        Config.CUSTOM_SOVITS_PATH = original_sovits
+        Config.VOICE_WEIGHT_LOAD_RETRIES = original_retries
+
+    assert ready is False
+    agent.set_state.assert_awaited_once_with("warning_no_weights")
+
+
+def test_voice_warm_start_succeeds_when_both_weights_load():
+    agent = VoiceAgent()
+    agent.set_state = AsyncMock()
+    agent.sovits.set_gpt_weights = AsyncMock(return_value=True)
+    agent.sovits.set_sovits_weights = AsyncMock(return_value=True)
+
+    original_gpt = Config.CUSTOM_GPT_PATH
+    original_sovits = Config.CUSTOM_SOVITS_PATH
+    original_retries = Config.VOICE_WEIGHT_LOAD_RETRIES
+
+    Config.CUSTOM_GPT_PATH = "GPT_weights/ok.ckpt"
+    Config.CUSTOM_SOVITS_PATH = "SoVITS_weights/ok.pth"
+    Config.VOICE_WEIGHT_LOAD_RETRIES = 1
+
+    try:
+        ready = asyncio.run(agent._warm_start_identity())
+    finally:
+        Config.CUSTOM_GPT_PATH = original_gpt
+        Config.CUSTOM_SOVITS_PATH = original_sovits
+        Config.VOICE_WEIGHT_LOAD_RETRIES = original_retries
+
+    assert ready is True
+    agent.set_state.assert_not_awaited()
 
 
 def test_state_ignores_low_confidence_acoustic_bias():

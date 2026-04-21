@@ -65,6 +65,10 @@ class Config:
     # These paths are relative to the GPT-SoVITS workspace inside the container
     CUSTOM_GPT_PATH = os.getenv("CUSTOM_GPT_PATH", "GPT_weights/ai_friend_voice.ckpt")
     CUSTOM_SOVITS_PATH = os.getenv("CUSTOM_SOVITS_PATH", "SoVITS_weights/ai_friend_voice.pth")
+    VOICE_WEIGHT_LOAD_RETRIES = int(os.getenv("VOICE_WEIGHT_LOAD_RETRIES", "3"))
+    VOICE_FILLER_HYDRATE_ON_STARTUP = (
+        os.getenv("VOICE_FILLER_HYDRATE_ON_STARTUP", "true").lower() == "true"
+    )
     
     STT_MODEL_SIZE = os.getenv("STT_MODEL_SIZE", "small")
     STT_DEVICE = os.getenv("STT_DEVICE", "cpu")

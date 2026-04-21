@@ -15,10 +15,11 @@ class WhisperSTTService:
     Targeted for <500ms latency mesh architecture.
     """
 
-    def __init__(self, model_size="small", device="cpu", compute_type="int8"):
+    def __init__(self, model_size="small", device="cpu", compute_type="int8", language="en"):
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
+        self.language = language
         self.model = None
         self.is_loading = False
 
@@ -161,7 +162,7 @@ class WhisperSTTService:
             segments, _ = self.model.transcribe(
                 audio_np,
                 beam_size=1,
-                language="en",
+                language=self.language,
                 condition_on_previous_text=False,
                 initial_prompt="A natural conversation between two friends.",
             )

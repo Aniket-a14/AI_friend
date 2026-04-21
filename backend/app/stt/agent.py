@@ -25,7 +25,11 @@ class STTAgent(BaseAgent):
     def __init__(self, model_size=Config.STT_MODEL_SIZE, device=Config.STT_DEVICE):
         super().__init__(name="stt_agent")
         # 1. Accuracy Backbone (GPU)
-        self.whisper_service = WhisperSTTService(model_size=model_size, device=device)
+        self.whisper_service = WhisperSTTService(
+            model_size=model_size,
+            device=device,
+            language=Config.STT_LANGUAGE,
+        )
         
         # 2. Perception Engine (CPU/INT8)
         self.sensevoice_service = SenseVoiceSTTService()
