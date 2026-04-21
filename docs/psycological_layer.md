@@ -6,6 +6,23 @@
 >
 > **Related**: See [analysis_results.md](./analysis_results.md) for the gap analysis that motivated this design.
 
+## 2026-04-20 Implementation Status Note
+
+This equation sheet is still the target-state design for future work.
+
+Recent runtime changes improved reliability and throughput behavior, but did not replace this
+planned psychological layer:
+
+- Live-only subscriptions, surfacing sweep guards, and bootstrap hardening improved operational stability.
+- CI startup reliability for NATS/JetStream was hardened.
+- Optional runtime controls were added to reduce background LLM pressure.
+
+Still pending from this equation sheet:
+
+- Full appraisal pass (`R, N, G, A, NA, RI`) as a first-class step in the cognitive loop.
+- Explicit PAD + relational state propagation as a structured affect side-channel to voice prosody.
+- Narrative episodic memory structure and retrieval beyond flat vector surfacing.
+
 ---
 
 ## 🎯 System Principle

@@ -6,6 +6,27 @@
 >
 > **Related**: See [psycological_layer.md](./psycological_layer.md) for the target equation sheet.
 
+## 2026-04-20 Runtime Hardening Update (Status Note)
+
+This gap analysis remains valid as a future-design document. Recent work improved runtime stability,
+but did not complete the psychological architecture upgrades described below.
+
+Implemented hardening relevant to this document:
+
+- Live-only durable subscriptions were applied on critical runtime channels to reduce replay storms.
+- Surfacing scheduling was hardened with no-overlap execution, minimum sweep interval throttling,
+  and deterministic `system.tick` sweep triggering.
+- Runtime bootstrap and NATS stream setup were hardened (including CI JetStream startup fixes).
+- Throughput controls were added (`LLM_INTENT_CLASSIFICATION_ENABLED`, `REFLECTION_ENABLED`,
+  `REFLECTION_MIN_INTERVAL_SECONDS`) to reduce background LLM contention under load.
+
+Current interpretation of the four feedback themes is unchanged:
+
+- Theme 1 (appraisal-first emotion): still not implemented end-to-end.
+- Theme 2 (full dimensional state + prosody integration): still partial.
+- Theme 3 (narrative episodic memory): still not implemented.
+- Theme 4 (behavior-quality loop): still partial.
+
 ---
 
 ## Scoring Legend
@@ -150,6 +171,7 @@
 The system has excellent **infrastructure** — the NATS mesh, the BDI loop skeleton, the identity guardrail, the speculative interruption pipeline, the streaming synthesis — but the **psychological layer** currently operates as a set of direct signal→state mappings rather than a reasoning system.
 
 ### Current Flow (Signal → State)
+
 ```mermaid
 graph TD
     A[SenseVoice acoustic] -->|emotional_bias float| B[agent_state.mood]
@@ -160,6 +182,7 @@ graph TD
 ```
 
 ### Target Flow (Signal → Appraisal → State → Expression)
+
 ```mermaid
 graph TD
     A[SenseVoice acoustic] --> B[Primary Appraisal]
@@ -175,6 +198,7 @@ graph TD
 > **IMPORTANT**: The hardest gap is **Appraisal** (Themes 1 & 4) — it requires inserting a new reasoning step into the cognitive loop. The **Dimensional State** upgrade (Theme 2) is mostly surgical renaming + adding a prosody mapping function. **Narrative Memory** (Theme 3) is the largest engineering effort — it touches the data model, persistence, retrieval, and consolidation.
 
 > **TIP**: A pragmatic implementation order would be:
+>
 > 1. **Theme 2** first (dimensional state vector) — smallest change, unlocks the others
 > 2. **Theme 1 + 4** together (appraisal + expression loop) — the core psychological upgrade
 > 3. **Theme 3** last (narrative memory) — largest scope, benefits from the appraisal infrastructure
@@ -187,3 +211,105 @@ graph TD
 2. [US11226673B2 — Affective Interaction Systems](https://patents.google.com/patent/US11226673B2/en) — Google Patents
 3. [Stateful Memory-Augmented Transformers for Efficient Dialogue Modeling](https://aclanthology.org/2024.findings-eacl.57/) — ACL Anthology, EACL 2024
 4. [Amory: Building Coherent Narrative-Driven Agent Memory](https://aclanthology.org/2026.eacl-long.183/) — ACL Anthology, EACL 2026
+5. [Projecting the End of a Speaker's Turn: A Cognitive Cornerstone of Conversation](https://doi.org/10.1353/lan.2006.0130) — de Ruiter, Mitterer & Enfield, 2006
+6. [Google Duplex: An AI System for Accomplishing Real-World Tasks Over the Phone](https://research.google/blog/google-duplex-an-ai-system-for-accomplishing-real-world-tasks-over-the-phone/) — Google Research Blog, 2018
+7. [A simplest systematics for the organization of turn-taking for conversation](https://doi.org/10.1353/lan.1974.0010) — Sacks, Schegloff & Jefferson, 1974
+8. [Timing in Turn-Taking and Its Implications for Processing Models of Language](https://www.frontiersin.org/articles/10.3389/fpsyg.2015.00731/full) — Levinson & Torreira, 2015
+
+---
+
+## 5. Duplex Parallel Cognition (process while user is still speaking)
+
+**Feedback core idea**: Human conversation is not strict turn-by-turn blocking. Listening and interpretation happen continuously while the other person is still speaking. The agent should run a low-latency partial-understanding path in parallel with deeper reasoning, then commit or revise once endpoint confidence is high.
+
+> **Research/Patent grounding**:
+>
+> - **Turn-end projection** evidence (de Ruiter, Mitterer, & Enfield, 2006) supports processing incremental linguistic structure before final endpoint completion.
+> - **Google Duplex** demonstrates practical real-time spoken interaction using incremental ASR/NLU updates and policy adaptation while the user is still speaking.
+> - **US11226673B2** describes affective interaction loops that adapt to ongoing user signals, consistent with speculative interpretation + commit/revise behavior.
+
+### Current code
+
+| File | What it does | Gap |
+|------|-------------|-----|
+| [`stt/agent.py`](../backend/app/stt/agent.py) | Streams audio perception and transcription events with queue-based workers. | 🟡 Streaming ingest exists, but speculative intent/context updates are not yet a first-class, continuously consumed cognitive contract. |
+| [`cognitive/core.py`](../backend/app/cognitive/core.py) — `process_event()` | Executes a sequential Perceive → Decide → Act loop for a received event payload. | 🔴 No explicit partial-hypothesis lane (`is_partial`, confidence trajectory, rolling commit) driving incremental plan updates before final transcript stabilization. |
+| [`agents/brain_agent.py`](../backend/app/agents/brain_agent.py) — `_on_chat_input()` | Begins response work after a discrete `chat.input` event and streams output chunks from action execution. | 🟡 Streaming output is present, but speculative pre-planning while user speech is in-flight is limited; start of cognition still mostly aligned to completed turn payloads. |
+| [`agents/transport_agent.py`](../backend/app/agents/transport_agent.py) | Handles transport-level queueing/backpressure and playback worker behavior. | 🟡 Real-time channel controls exist, but no explicit cognitive-priority scheduler separating reflex, speculative, and deep reasoning lanes. |
+
+### What's missing
+
+1. **Partial hypothesis schema** published at high cadence (100-200ms windows):
+   - `partial_text`, `confidence`, `intent_candidates`, `is_endpoint`, `utterance_id`, `turn_id`.
+2. **Speculative cognition lane** in `CognitiveService`:
+   - continuously updates candidate goals/stance while speech is ongoing.
+3. **Commit/revise gate**:
+   - commits best candidate at endpoint; fast-corrects on contradiction between partial and final transcript.
+4. **Priority scheduler**:
+   - hard-preemptive reflex tasks (`audio.stop`, barge-in) over deep generation tasks.
+
+### Evidence-backed implementation notes
+
+1. **Incremental NLU contract**:
+   - publish partial hypotheses with confidence at fixed cadence; consume them in cognition with confidence weighting.
+2. **Bounded speculative branching**:
+   - maintain top-k candidate intents/goals (k=2..4), prune continuously to avoid runaway compute.
+3. **Commit/revise thresholds**:
+   - commit only above endpoint or consistency thresholds; fast-correct if final transcript contradicts partial plan.
+
+### Gap score: 🔴 Not present end-to-end
+
+---
+
+## 6. Human-Like Timing and Turn-Taking Quality (perceived latency, not only final latency)
+
+**Feedback core idea**: Human-like behavior is timing-correct, not always instant. The system should react quickly, allow interruption immediately, and still take deliberate time for deeper thought. Evaluation should separate first-reaction latency from full-turn completion latency.
+
+> **Research/Patent grounding**:
+>
+> - **Sacks, Schegloff, Jefferson (1974)** establishes turn-taking as locally managed and tightly timed, requiring rapid ownership transitions.
+> - **Levinson & Torreira (2015)** shows human conversational gaps are short, motivating strict sub-second first-reaction targets.
+> - **Google Duplex** supports a two-speed pattern: immediate acknowledgments + deeper completion.
+
+### Current code
+
+| File | What it does | Gap |
+|------|-------------|-----|
+| [`agents/base.py`](../backend/app/agents/base.py) | Tracks subject metrics (counts and average latency) for observed channels. | 🟡 Useful observability baseline, but lacks explicit SLO metrics for first-reaction, first-chunk, interruption-stop, and commit latency percentiles. |
+| [`cognitive/action.py`](../backend/app/cognitive/action.py) | Adds stream timeout guard and graceful fallback output. | 🟡 Prevents silent hangs, but does not enforce stage-wise latency budgets or dynamic degrade policy per conversational phase. |
+| [`agents/brain_agent.py`](../backend/app/agents/brain_agent.py) | Streams chunked outputs and fallback completion on generation failures. | 🟡 Streams help perceived responsiveness, but no dedicated reflex/backchannel output lane with strict sub-400ms target. |
+| [`agents/surfacing_agent.py`](../backend/app/agents/surfacing_agent.py) | Hardens sweep scheduling (no overlap, throttle, deterministic tick path). | 🟢 Stability improved; however this does not directly guarantee user-facing conversational timing quality. |
+
+### What's missing
+
+1. **Latency budget contract** with separate KPIs:
+   - First reaction (<250-400ms), interruption stop (<120-300ms), first meaningful chunk (<500-900ms), final completion (variable).
+2. **Reflex output lane**:
+   - deterministic backchannel/ack outputs independent of deep LLM completion.
+3. **Interruption ownership model**:
+   - strict turn-generation fencing to avoid stale continuation after barge-in.
+4. **Stage-wise degrade policy**:
+   - if deep reasoning exceeds budget, emit short acknowledgment immediately and continue depth generation asynchronously.
+
+### Evidence-backed implementation notes
+
+1. **Two-class latency SLOs**:
+   - `Reflex`: interruption-stop, first acknowledgment, turn-ownership update.
+   - `Deliberation`: first meaningful chunk, full completion latency/quality.
+2. **Hard guardrail budgets**:
+   - enforce strict maximums on reflex path independent of deep LLM status.
+3. **Percentile observability**:
+   - track p50/p95 separately for interruption-stop and first meaningful chunk versus final completion.
+
+### Gap score: 🟡 Partial (infrastructure present, behavior-quality contract missing)
+
+---
+
+## Addendum to Implementation Order
+
+Given runtime hardening already completed, a practical next order is:
+
+1. **Theme 5 first** (duplex partial cognition): unlocks simultaneous listen+think behavior.
+2. **Theme 6 second** (timing contract + reflex lane): makes interaction feel human immediately.
+3. **Theme 1 + 4** next (appraisal + behavior loop): upgrades reasoning quality.
+4. **Theme 3 last** (narrative memory): largest persistence/retrieval scope.
