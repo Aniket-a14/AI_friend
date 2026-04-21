@@ -10,8 +10,9 @@ Before touching the WebUI, your audio files must be inside Google Colab.
 
 1. **Open the Files Sidebar**: Click the 📁 folder icon on the extreme left of your Colab screen.
 2. **Create Folder**: Right-click and select "New Folder". Name it `training_data`.
-3. **Upload**: Drag clean recordings (10-15 mins of WAV/MP3) into the `training_data` folder.
+3. **Upload**: Drag clean recordings (minimum 10-15 mins for a quick clone, 30-60+ mins for a stronger full voice model) into the `training_data` folder.
     - *Must be 32kHz or higher for CVS-1.0 fidelity.*
+    - *Prefer mono audio, consistent loudness, minimal noise/reverb, and no clipped words.*
 
 ---
 
@@ -50,7 +51,7 @@ Go to the **"1-GPT-SoVITS-TTS"** tab → **"1A-Dataset Formatting"** sub-tab.
 
 Go to the **"1B-Fine-tuning Training"** sub-tab.
 
-1. **SoVITS Training**: 
+1. **SoVITS Training**:
     - Set **Batch Size** to `12`.
     - Set **Total Epochs** to `8`.
     - Click **"Start SoVITS Training"**.
@@ -65,7 +66,7 @@ Go to the **"1B-Fine-tuning Training"** sub-tab.
 1. **Refresh**: Click **"Refresh Model Paths"**.
 2. **Load GPT**: Select `ai_friend_voice-e15.ckpt`.
 3. **Load SoVITS**: Select `ai_friend_voice_e8.pth`.
-2. **Synthesize**: Verify the voice sounds clean at **32kHz**.
+4. **Synthesize**: Verify the voice sounds clean at **32kHz**.
 
 ---
 
@@ -76,17 +77,29 @@ To make your voice active in the local app, you **must** rename the files exactl
 1. **GPT Weight**:
     - Download `.ckpt` from `GPT-SoVITS/GPT_weights/`.
     - Rename to: **`ai_friend_voice.ckpt`**.
-    - Local Path: `backend/models/GPT_weights/`.
+    - Local Path: `models/GPT_weights/`.
 
 2. **SoVITS Weight**:
     - Download `.pth` from `GPT-SoVITS/SoVITS_weights/`.
     - Rename to: **`ai_friend_voice.pth`**.
-    - Local Path: `backend/models/SoVITS_weights/`.
+    - Local Path: `models/SoVITS_weights/`.
 
 3. **Vocoder**:
     - Download `vocoder.pth` from `GPT-SoVITS/pretrained_models/gsv-v4-pretrained/`.
-    - Local Path: `backend/models/SoVITS_weights/`.
+    - Local Path: `models/SoVITS_weights/`.
 
 ---
 
-**CVS-1.0 Runtime will automatically detect and load these weights on startup.**
+**CVS-1.0 Runtime loads weights from configured paths on startup (defaults point to `models/GPT_weights/ai_friend_voice.ckpt` and `models/SoVITS_weights/ai_friend_voice.pth`, unless overridden by env vars).**
+
+---
+
+## ✅ Phase 7: Validation and Safe Promotion
+
+Before replacing production voice weights, run this quick gate:
+
+1. **A/B Prompt Set**: Generate 20 fixed prompts with old vs new weights.
+2. **Quality Check**: Compare pronunciation, pacing, emotion stability, and artifacts.
+3. **Latency Check**: Confirm startup and first-audio latency remain acceptable.
+4. **Promote**: Keep only the approved pair as `ai_friend_voice.ckpt` and `ai_friend_voice.pth`.
+5. **Rollback Plan**: Keep previous stable files (for example `ai_friend_voice_prev.ckpt/.pth`) and restore immediately if regression appears.
