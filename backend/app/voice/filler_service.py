@@ -15,13 +15,12 @@ class FillerService:
     
     PRE_SYNTH_LIST = [
         "Hmm...",
-        "Accha...",
         "Let me think.",
-        "Haan...",
         "Okay...",
         "Wait a second.",
-        "Ek minute...",
-        "Thik hai..."
+        "Got it.",
+        "I'm on it.",
+        "Just a moment."
     ]
 
     def __init__(self, cache_dir: str = "models/fillers"):
@@ -67,6 +66,7 @@ class FillerService:
             text=text,
             ref_audio_path=ref_audio,
             ref_text=ref_text,
+            text_lang="en",
             media_type="raw"
         )
         

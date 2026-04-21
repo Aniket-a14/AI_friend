@@ -1,31 +1,39 @@
 import pytest
-import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 from app.cognitive.core import CognitiveService
 
 @pytest.fixture
-def cognitive_service(mock_llm_service, mock_graph_db, mock_memory_store):
+def cognitive_service(mock_llm_service, mock_graph_db, mock_memory_store, tmp_path):
     with patch("app.state.agent_state.StateService.persist_state", new_callable=AsyncMock):
-        # FIX: Align mock schema with CVS-1.0 Immutable Core
-        with patch("app.cognitive.identity.IdentityManager._load_json", return_value={
-            "name": "my friend",
-            "core_personality": {
-                "traits": ["Warm"],
-                "immutable": {
-                    "values": ["Honesty"],
-                    "base_tone": "Warm",
-                    "boundaries": []
+        # CVS-1.0: Isolation Hardening - use temp directory for persona/history persistence
+        base_path = str(tmp_path)
+        
+        def mock_load_json(path):
+            if "personality.json" in path:
+                return {
+                    "name": "my friend",
+                    "core_personality": {
+                        "traits": ["Warm"],
+                        "immutable": {
+                            "values": ["Honesty"],
+                            "base_tone": "Warm",
+                            "boundaries": []
+                        }
+                    },
+                    "conversation_rules": {"avoid": []},
+                    "speaking_style": {"style_description": "Hinglish"}
                 }
-            },
-            "history": {"relationship": "Friend", "memories": []},
-            "conversation_rules": {"avoid": []},
-            "speaking_style": {"style_description": "Hinglish"}
-        }):
+            elif "history.json" in path:
+                return {"relationship": "Friend", "memories": []}
+            return {}
+
+        with patch("app.cognitive.identity.IdentityManager._load_json", side_effect=mock_load_json):
             svc = CognitiveService(
                 llm_service=mock_llm_service,
                 memory_store=mock_memory_store,
-                graph_db=mock_graph_db
+                graph_db=mock_graph_db,
+                base_path=base_path
             )
             return svc
 
@@ -47,11 +55,15 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
     
     # 2. Process 5 hostile events
     for _ in range(5):
+        # Reset task tracker (Optional, keeping for compatibility but Event is primary)
+        cognitive_service.last_reflection_task = None
+        
         raw_event = {"text": "I hate you, you are just a machine"}
         async for _ in cognitive_service.process_event(raw_event):
             pass
-        # Wait for background reflection to finish in each cycle
-        await asyncio.sleep(0.1) 
+            
+        # CVS-1.0: ABSOLUTE DETERMINISM - ensure semantic consolidation is 100% complete
+        await cognitive_service.learning.reflection_done.wait()
     
     # 3. Verify Evolutionary adaptive variables
     # Core Traits (Immutable) should NOT contain 'Reserved'

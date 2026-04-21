@@ -22,8 +22,9 @@ class CognitiveService:
         memory_store,
         graph_db,
         identity_store=None,
+        base_path=None,
     ):
-        self.identity = IdentityManager()
+        self.identity = IdentityManager(base_path=base_path)
         self.identity_store = identity_store
         self.perception = PerceptionService(llm_service=llm_service)
         self.state = StateService(graph_store=graph_db)
@@ -43,6 +44,7 @@ class CognitiveService:
             "audio.stop": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
             "audio.resume": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
         }
+        self.last_reflection_task = None # CVS-1.0: Track for test deterministic synchronization
 
     async def initialize(self, agent: Any = None):
         """Load identity and hydrate states. Subscribes to Mesh heartbeats."""
@@ -219,7 +221,8 @@ class CognitiveService:
                  "state": state_snapshot,
                  "response": full_response
              }
-             await self.learning.trigger_reflection([episode])
+             # CVS-1.0: Deterministic awaitable capture
+             self.last_reflection_task = await self.learning.trigger_reflection([episode])
 
     async def get_current_emotion(self) -> str:
         return self.state.get_emotion_label()

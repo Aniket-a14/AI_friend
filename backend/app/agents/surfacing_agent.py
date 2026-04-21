@@ -59,7 +59,7 @@ class SurfacingAgent(BaseAgent):
 
     async def _on_system_tick(self, data: Dict[str, Any]):
         """Periodic background sweep for memory relevance."""
-        self._record_subject_metric("system.tick", metadata=data.get("latency_metadata"))
+        self._record_surfacing_metric("system.tick", metadata=data.get("latency_metadata"))
         # Only surface if we haven't recently or if context is fresh
         if time.time() - self.last_surfaced_time > self.surfacing_cooldown:
              await self._run_sweep_now(source_metadata=data.get("latency_metadata"))
@@ -133,7 +133,7 @@ class SurfacingAgent(BaseAgent):
 
                     self.last_surfaced_time = now
                     self.recently_surfaced[content] = now
-                    self._record_subject_metric("memory.surfaced", metadata=source_metadata)
+                    self._record_surfacing_metric("memory.surfaced", metadata=source_metadata)
                     logger.info(
                         "[SurfacingMetrics] surfaced=1 search_ms=%.2f publish_ms=%.2f total_ms=%.2f",
                         search_ms,
@@ -162,7 +162,7 @@ class SurfacingAgent(BaseAgent):
             return False
         return (now - surfaced_at) < self.surface_novelty_window
 
-    def _record_subject_metric(self, subject: str, metadata: Optional[Dict[str, Any]] = None):
+    def _record_surfacing_metric(self, subject: str, metadata: Optional[Dict[str, Any]] = None):
         metric = self.subject_metrics.get(subject)
         if metric is None:
             return

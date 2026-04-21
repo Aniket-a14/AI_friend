@@ -65,7 +65,9 @@ class DecisionService:
         if status == NodeStatus.SUCCESS and blackboard["plan"]:
             return blackboard["plan"]
         
-        return ActionPlan("RESPOND_CHAT", {"message": event.raw_content}, "ENGAGE")
+        # CVS-1.0: Reliable fallback maintaining intent integrity
+        fallback_goal = event.metadata.get("suggested_goal", "ENGAGE")
+        return ActionPlan("RESPOND_CHAT", {"message": event.raw_content}, fallback_goal)
 
     def _is_simple_greeting(self, text: str) -> bool:
         """Returns True if the text is a simple, common greeting."""

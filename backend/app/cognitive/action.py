@@ -93,6 +93,7 @@ class ActionService:
             Guideline:
             - Maintain your identity rules at all times.
             - Focus on short, natural conversational phrases.
+            - Respond only in English. Do not use Hindi, Hinglish, or any other language for now.
             - The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.
             - You may use <pause=300ms> or <hesitate> when it improves natural timing.
             

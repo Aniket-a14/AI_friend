@@ -19,6 +19,11 @@ class IdentityManager:
         
         self.personality = self._load_json(self.personality_path)
         self.history = self._load_json(self.history_path)
+        
+        # CVS-1.0: Ensure safe defaults for adaptive history
+        self.history.setdefault("relationship", "Friend")
+        self.history.setdefault("memories", [])
+        
         self.config_store = None
         
         # CVS-1.0: Immutable Core Trait seeding
@@ -69,6 +74,9 @@ class IdentityManager:
                 loaded_history = json.loads(history_raw)
                 if loaded_history:
                     self.history = loaded_history
+                    # Re-enforce defaults after hydration
+                    self.history.setdefault("relationship", "Friend")
+                    self.history.setdefault("memories", [])
 
             evolved = config.get("evolved_learnings")
             if evolved:

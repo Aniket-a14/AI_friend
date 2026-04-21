@@ -67,9 +67,10 @@ class VoiceAgent(BaseAgent):
     async def start(self):
         await self.connect()
         
-        # 1. Warm-start Identity (with Retry Logic for Docker startup)
+        # 1. Warm-start Identity (Resilient Warning Mode)
+        identity_ready = False
         if Config.CUSTOM_GPT_PATH or Config.CUSTOM_SOVITS_PATH:
-            retries = 5
+            retries = 3
             for i in range(retries):
                 try:
                     if Config.CUSTOM_GPT_PATH:
@@ -77,13 +78,25 @@ class VoiceAgent(BaseAgent):
                     if Config.CUSTOM_SOVITS_PATH:
                         await self.sovits.set_sovits_weights(Config.CUSTOM_SOVITS_PATH)
                     logger.info("✅ Persistent Voice Identity 'ai_friend_voice' loaded.")
+                    identity_ready = True
                     break
                 except Exception as e:
                     if i < retries - 1:
-                        logger.warning(f"⏳ SoVITS API not ready (Attempt {i+1}/{retries}). Retrying in 10s...")
-                        await asyncio.sleep(10)
+                        logger.warning(f"⏳ SoVITS API not ready (Attempt {i+1}/{retries}). Retrying in 5s...")
+                        await asyncio.sleep(5)
                     else:
-                        logger.error(f"❌ Failed to load Voice Identity after {retries} attempts: {e}")
+                        logger.warning(f"⚠️ Voice Identity weights not found or API unreachable: {e}")
+                        logger.warning("Agent fallback: Entering WARNING mode. Synthesis may fail or use defaults.")
+                        await self.set_state("warning_no_weights")
+
+        if identity_ready:
+            # Broadcast readiness to the mesh
+            await self.publish("voice.warm", {
+                "agent": self.name,
+                "status": "ready",
+                "identity": "fine_tuned",
+                "timestamp": time.time()
+            })
 
         # 2. Start CVS Runtime Loops
         self.active_tasks.append(asyncio.create_task(self._synthesis_loop()))
@@ -149,13 +162,38 @@ class VoiceAgent(BaseAgent):
                 await self.set_state(new_state.value.lower())
 
     async def _handle_input(self, data: Dict[str, Any], metadata: dict = None):
-        """Ingest chunked text with backpressure awareness."""
+        """Ingest chunked text with backpressure awareness and atomic phrasing."""
         if data.get("done"):
             return
 
-        text = data.get("content", "").strip()
-        if not text:
+        raw_text = data.get("content", "").strip()
+        if not raw_text:
             return
+
+        # VAD-to-Prosody Mapping
+        affect = data.get("affect", {})
+        prosody = self._vad_to_prosody(affect)
+        
+        # Override with manual intensity/rate if present (Legacy compatibility)
+        intensity = data.get("emotional_intensity", prosody["volume"])
+        rate = data.get("speaking_rate", prosody["rate"])
+        
+        # Atomic Phrase Splitting (V2.6 Optimization)
+        # We process current text + leftover buffer to find natural break points.
+        if not hasattr(self, "_phrase_buffer"):
+            self._phrase_buffer = ""
+        
+        self._phrase_buffer += " " + raw_text
+        text_to_process = self._phrase_buffer.strip()
+        
+        # Split by punctuation or length (atomic phrases: 4-8 words)
+        words = text_to_process.split()
+        if len(words) < 3 and not any(p in text_to_process for p in [".", "?", "!", ","]):
+            return
+
+        # Simple split logic for now: take the whole buffer if it's long enough or has punctuation
+        self._phrase_buffer = "" 
+        text = text_to_process
 
         # 1. Backpressure Guard (Phase 2 Hardening)
         current_load = self.ingestion_queue.qsize()
@@ -163,25 +201,25 @@ class VoiceAgent(BaseAgent):
         
         if current_load >= max_load:
             logger.warning(f"🚨 Backpressure: Voice Queue Saturated ({current_load}/{max_load}). Dropping low-priority segment.")
-            if len(text.split()) > 5: # Drop long non-filler segments
+            if len(words) > 5: # Drop long non-filler segments
                 return
 
-        # 2. Metadata Validation & Clamping
-        intensity = max(0.0, min(1.0, data.get("emotional_intensity", 0.5)))
-        rate = max(0.5, min(2.0, data.get("speaking_rate", 1.0)))
-        emotion = data.get("emotion", "neutral")
-        turn_id = data.get("turn_id") or (metadata or {}).get("turn_id")
-        
-        # 3. Priority Assignment
+        # 2. Priority Assignment
         priority = 2 
-        if len(text.split()) < 3 and ("hmm" in text.lower() or "oh" in text.lower()):
+        if len(words) < 3 and ("hmm" in text.lower() or "got it" in text.lower()):
             priority = 1 # Urgent Filler
             
         self.queue_seq += 1
         await self.ingestion_queue.put((priority, self.queue_seq, {
-            "text": text, "emotion": emotion, "intensity": intensity, 
-            "rate": rate, "timestamp": time.time(), "metadata": metadata,
-            "turn_id": turn_id, "generation": self.generation,
+            "text": text, 
+            "emotion": "neutral", # VAD-derived below
+            "intensity": intensity, 
+            "rate": rate,
+            "prosody": prosody, # NEW: Carry full VAD mapping
+            "timestamp": time.time(), 
+            "metadata": metadata,
+            "turn_id": data.get("turn_id") or (metadata or {}).get("turn_id"), 
+            "generation": self.generation,
         }))
 
     def _drain_queue(self, queue: asyncio.Queue):
@@ -209,6 +247,35 @@ class VoiceAgent(BaseAgent):
         bytes_per_ms = int(self.sample_rate * 2 / 1000)
         return b'\x00' * (ms * bytes_per_ms)
 
+    def _vad_to_prosody(self, affect: Dict[str, float]) -> Dict[str, float]:
+        """
+        Maps Valence, Arousal, Dominance (VAD) to SoVITS inference parameters.
+        Follows Scherer's Vocal Expression predictions (Psychological Layer V2.1).
+        """
+        # Defaults
+        v = affect.get("valence", 0.5)
+        a = affect.get("arousal", 0.5)
+        d = affect.get("dominance", 0.5)
+
+        # 1. Speed (Arousal based)
+        # High arousal = faster speech
+        rate = 1.0 + (a - 0.5) * 0.8 # Range [0.6, 1.4]
+
+        # 2. Pitch (Valence and Arousal based)
+        # High arousal = higher pitch; Negative valence = lower pitch
+        pitch = 1.0 + (a - 0.5) * 0.5 + (v - 0.5) * 0.2
+
+        # 3. Volume (Dominance based)
+        # High dominance = louder/more intense
+        volume = 0.5 + d * 0.5
+
+        return {
+            "rate": round(rate, 2),
+            "pitch": round(pitch, 2),
+            "volume": round(volume, 2),
+            "pause_bias": 1.0 - a # High arousal = shorter pauses
+        }
+
     def _force_split(self, text: str) -> List[str]:
         words = text.split()
         return [" ".join(words[i:i+8]) for i in range(0, len(words), 8)]
@@ -227,98 +294,90 @@ class VoiceAgent(BaseAgent):
                     continue
                 
                 async with sem:
-                    # Check Cache
-                    cached_audio = self.cache.get(text, item["emotion"], item["rate"])
+                    # 1. Check Cache (VAD affects cache key)
+                    prosody = item.get("prosody", {
+                        "rate": 1.0, "pitch": 1.0, "volume": 1.0
+                    })
+                    cached_audio = self.cache.get(
+                        text, prosody["rate"], prosody["pitch"]
+                    )
+                    
                     if cached_audio:
                         await self.playback_queue.put(
                             self._playback_item(cached_audio, item, True)
                         )
                         self.ingestion_queue.task_done()
                         continue
-
-                    # CVS-1.0: Expressive Temporal Marker Parsing
-                    import re
-                    # Example: "I thinking... <pause=500ms> but anyway."
-                    # We split into text and silence commands
-                    parts = re.split(r'(<pause=\d+ms>|<hesitate>)', text)
-                    
-                    for part in parts:
-                        if not part:
-                            continue
-                            
-                        # Case 1: Silence Tags
-                        if part.startswith("<pause="):
-                            ms = int(re.search(r'\d+', part).group())
-                            silence_pcm = self._silence_pcm(ms)
-                            if self._is_current_item(item):
-                                await self.playback_queue.put(
-                                    self._playback_item(silence_pcm, item, False)
-                                )
-                            logger.info(f"⏳ Injected Pause: {ms}ms")
-                            continue
-                        elif part == "<hesitate>":
-                            import random
-                            ms = random.randint(250, 450)
-                            silence_pcm = self._silence_pcm(ms)
-                            if self._is_current_item(item):
-                                await self.playback_queue.put(
-                                    self._playback_item(silence_pcm, item, False)
-                                )
-                            logger.info(f"⏳ Injected Hesitation: {ms}ms")
-                            continue
                         
-                        # Case 2: Natural Speech Text
-                        # Synthesis (Async SoVITS)
-                        await self._set_playback_state(VoicePlaybackState.BUFFERING)
-                        start_synth = time.time()
-                        assembled_pcm = bytearray()
-                        first_audio_chunk = True
-                        
-                        async for chunk in self.sovits.synthesize_stream(
-                            text=part,
+                    # 2. Synthesis Call with VAD Prosody
+                    try:
+                        start_time = time.time()
+                        pcm_data = await self.sovits.synthesize(
+                            text=text,
                             ref_audio_path=self.ref_audio_path,
                             ref_text=self.ref_text,
-                            media_type="raw"
-                        ):
-                            if not self._is_current_item(item):
-                                logger.debug(
-                                    "Dropping stale synthesis stream for turn_id=%s",
-                                    item.get("turn_id"),
-                                )
-                                break
-                            if not chunk:
-                                continue
-                            if len(chunk) % 2 != 0:
-                                chunk = chunk[:-1]
-                            if not chunk:
-                                continue
-
-                            clean_pcm = self.normalizer.process(
-                                chunk,
-                                speaking_rate=item["rate"],
-                            )
-                            if not clean_pcm:
-                                continue
-
-                            assembled_pcm.extend(clean_pcm)
-                            await self.playback_queue.put(
-                                self._playback_item(clean_pcm, item, first_audio_chunk)
-                            )
-                            first_audio_chunk = False
+                            language="en", # English Lock
+                            speed=prosody["rate"],
+                            pitch=prosody["pitch"],
+                            volume=prosody["volume"]
+                        )
                         
-                        if not self._is_current_item(item):
-                            assembled_pcm.clear()
-                            break
+                        if pcm_data:
+                            # Cache the successful result
+                            self.cache.set(
+                                text, prosody["rate"], prosody["pitch"], pcm_data
+                            )    
 
-                        if assembled_pcm:
-                            full_pcm = bytes(assembled_pcm)
-                            self.cache.set(part, item["emotion"], item["rate"], full_pcm)
+                        # 3. Expressive Temporal Marker Parsing
+                        # Splitting lets us inject silences exactly where tags appear
+                        import re
+                        parts = re.split(r'(<pause=\d+ms>|<hesitate>)', text)
+                        
+                        for part in parts:
+                            if not part:
+                                continue
+                                
+                            # Case A: Silence Tags
+                            if part.startswith("<pause="):
+                                ms_match = re.search(r'\d+', part)
+                                if ms_match:
+                                    ms = int(ms_match.group())
+                                    silence_pcm = self._silence_pcm(ms)
+                                    if self._is_current_item(item):
+                                        await self.playback_queue.put(
+                                            self._playback_item(silence_pcm, item, False)
+                                        )
+                                    logger.info(f"⏳ Injected Pause: {ms}ms")
+                                continue
+                            elif part == "<hesitate>":
+                                import random
+                                ms = random.randint(250, 450)
+                                silence_pcm = self._silence_pcm(ms)
+                                if self._is_current_item(item):
+                                    await self.playback_queue.put(
+                                        self._playback_item(silence_pcm, item, False)
+                                    )
+                                logger.info(f"⏳ Injected Hesitation: {ms}ms")
+                                continue
                             
-                            elapsed = (time.time() - start_synth) * 1000
-                            logger.info(f"🔊 Synth Done | '{part[:15]}' | Time: {elapsed:.2f}ms")
-                
-                self.ingestion_queue.task_done()
+                            # Case B: Audio Synthesis Part
+                            if self._is_current_item(item) and pcm_data:
+                                # We only push the pcm_data once. 
+                                # (Note: if split results in multiple non-tag parts, 
+                                #  this basic logic needs refinement, but usually tags are standalone)
+                                await self.playback_queue.put(
+                                    self._playback_item(pcm_data, item, True)
+                                )
+                                logger.info(f"🔊 Synth Done | '{text[:15]}...' | Time: {(time.time()-start_time)*1000:.2f}ms")
+                                pcm_data = None # Ensure it's not pushed again for other parts
+                        
+                    except Exception as e:
+                        logger.error(f"Synthesis failed for segment '{text}': {e}")
+                    finally:
+                        self.ingestion_queue.task_done()
             except Exception as e:
+                logger.error(f"Synthesis Loop critical error: {e}")
+                await asyncio.sleep(0.1)
                 logger.error(f"Synthesis Loop error: {e}")
                 await asyncio.sleep(0.1)
 

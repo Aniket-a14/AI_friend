@@ -57,6 +57,10 @@ class Config:
 
     SOVITS_URL = os.getenv("SOVITS_URL", "http://localhost:9871")
     
+    # Language Lock (English Priority)
+    STT_LANGUAGE = os.getenv("STT_LANGUAGE", "en")
+    TTS_LANGUAGE = os.getenv("TTS_LANGUAGE", "en")
+    
     # Custom Voice Models (Fine-tuned)
     # These paths are relative to the GPT-SoVITS workspace inside the container
     CUSTOM_GPT_PATH = os.getenv("CUSTOM_GPT_PATH", "GPT_weights/ai_friend_voice.ckpt")

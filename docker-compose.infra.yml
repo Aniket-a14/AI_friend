@@ -180,23 +180,20 @@ services:
       timeout: 5s
       retries: 5
 
-  # 7. GPT-SoVITS (Local TTS)
+  # 7. GPT-SoVITS (Local TTS) - Optimized for RTX-series GPUs
   gpt-sovits:
-    image: xxxxrt666/gpt-sovits:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.sovits
     container_name: local_voice
-    entrypoint: null
-    command:
-      - bash
-      - -c
-      - |
-        pip install torch==2.10.0+cpu torchaudio==2.10.0+cpu --index-url https://download.pytorch.org/whl/cpu &&
-        pip uninstall -y torchcodec &&
-        python -c 'import os; p="/workspace/GPT-SoVITS/GPT_SoVITS/TTS_infer_pack/TTS.py"; c=open(p).read(); n=c.replace("torchaudio.load(ref_audio_path)", "(lambda f: (lambda s,d: (torch.from_numpy(d).float().unsqueeze(0)/32768.0, s))(*__import__(\"scipy.io.wavfile\").io.wavfile.read(f)))(ref_audio_path)"); open(p,"w").write(n)' &&
-        rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models &&
-        ln -s /workspace/models/pretrained_models /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models &&
-        cd /workspace/GPT-SoVITS &&
-        export LD_PRELOAD=/root/conda/lib/libstdc++.so.6 &&
-        python api_v2.py -a 0.0.0.0 -p 9871
+    environment:
+      - is_half=true
+      - CUDA_VISIBLE_DEVICES=0
+      - LITE=true
+      - WORKFLOW=true
+      - PYTHONPATH=/workspace/GPT-SoVITS
+      - CUSTOM_GPT_PATH=GPT_weights/ai_friend_voice.ckpt
+      - CUSTOM_SOVITS_PATH=SoVITS_weights/ai_friend_voice.pth
     ports:
       - "9880:9880" # WebUI
       - "9871:9871" # API
@@ -205,13 +202,7 @@ services:
       - ./backend/voice_samples:/workspace/GPT-SoVITS/output
       - ./models/GPT_weights:/workspace/GPT-SoVITS/GPT_weights
       - ./models/SoVITS_weights:/workspace/GPT-SoVITS/SoVITS_weights
-    environment:
-      - is_half=false
-      - CUDA_VISIBLE_DEVICES=-1
-      - LITE=true
-      - WORKFLOW=true
-      - PYTHONPATH=/workspace/GPT-SoVITS
-    working_dir: /workspace/GPT-SoVITS
+      - ./backend/scripts/sovits_bootstrap.sh:/workspace/sovits_bootstrap.sh
     shm_size: 16gb
     networks:
       - ai_mesh_network
