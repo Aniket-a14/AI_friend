@@ -11,8 +11,11 @@ The Signaling Server (FastAPI) acts as the gateway to the mesh.
 ### 1. REST Endpoints
 
 #### `GET /status`
+
 Health check and versioning info.
+
 - **Response**:
+
   ```json
   {
     "status": "healthy",
@@ -23,9 +26,12 @@ Health check and versioning info.
   ```
 
 #### `GET /token`
+
 Generates a LiveKit access token for WebRTC sessions.
+
 - **Parameters**: `identity` (string)
 - **Response**:
+
   ```json
   {
     "token": "ey..."
@@ -33,9 +39,12 @@ Generates a LiveKit access token for WebRTC sessions.
   ```
 
 #### `POST /start-session`
+
 Alias for token generation used by legacy or simplified clients.
+
 - **Parameters**: `participant` (string, optional)
 - **Response**:
+
   ```json
   {
     "token": "ey...",
@@ -45,8 +54,11 @@ Alias for token generation used by legacy or simplified clients.
   ```
 
 #### `GET /health`
+
 Minimal health endpoint for Docker and uptime monitors.
+
 - **Response**:
+
   ```json
   {
     "status": "healthy",
@@ -55,7 +67,9 @@ Minimal health endpoint for Docker and uptime monitors.
   ```
 
 #### `POST /vision/toggle`
+
 Broadcasts a vision source switch to the mesh.
+
 - **Parameters**: `source` must be `screen` or `camera`.
 - **Mesh Side Effect**: publishes `vision.control`.
 
@@ -83,7 +97,9 @@ The "Sovereign Mesh" communicates via a decentralized event bus. CVS-1.0 utilize
 ### Detailed Schemas
 
 #### `chat.output` (CVS-1.0 Cognitive Segment)
+
 Sent by the BrainAgent during cognitive streaming.
+
 ```json
 {
   "content": "I'm listening, go on.",
@@ -107,7 +123,9 @@ Sent by the BrainAgent during cognitive streaming.
 ```
 
 #### `chat.output` (Final Response)
+
 Sent when the entire cognitive process is complete for history persistence.
+
 ```json
 {
   "content": "",
@@ -119,6 +137,7 @@ Sent when the entire cognitive process is complete for history persistence.
 ```
 
 #### `audio.perception` (Fast Acoustic Perception)
+
 Published by STT after SenseVoice processes a low-latency chunk. This event is not the final transcript. It is a fast perception packet used for emotion bias, acoustic events, and speculative interruption.
 
 ```json
@@ -147,6 +166,7 @@ Published by STT after SenseVoice processes a low-latency chunk. This event is n
 ```
 
 #### `audio.stop` (Speculative And Final Stop)
+
 The same subject is used for reversible speculative pauses and final confirmed stops.
 
 ```json
@@ -174,6 +194,7 @@ If Whisper confirms the user intended to interrupt, BrainAgent publishes:
 ```
 
 #### `audio.resume` (False Positive Recovery)
+
 If Whisper contradicts the early perception hypothesis, BrainAgent publishes:
 
 ```json
@@ -184,6 +205,7 @@ If Whisper contradicts the early perception hypothesis, BrainAgent publishes:
 ```
 
 #### `audio.stream` (CVS-1.0 Raw 32kHz PCM)
+
 Sent by the VoiceAgent directly from the Signal Runtime. In the optimized path this is raw binary PCM, not JSON.
 
 NATS headers:
@@ -210,7 +232,9 @@ Legacy JSON clients may still use:
 ```
 
 #### `voice.segmentation_feedback` (Closed-Loop Pulse)
+
 Real-time telemetry used by the BrainAgent to adjust semantic chunking.
+
 ```json
 {
   "segment_id": "chunk_94a2",

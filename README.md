@@ -22,6 +22,13 @@ The system is built for **Sovereign Privacy**, ensuring that identity evolution,
 
 AI Friend should be read as a **software mind-and-voice layer**, not as a productivity assistant. Its success metric is not only correctness. The real target is whether conversation feels like speaking with a persistent person who has mood, memory, habits, timing, and a stable voice presence. That makes the project closer to a cognitive identity emulator than a conventional chatbot.
 
+## ✅ Current Status (April 2026)
+
+- Runtime and CI hardening are in place for JetStream startup, stream readiness, and fallback safety.
+- Surfacing behavior is deterministic on `system.tick`, while preserving async scheduling for chat-triggered sweeps.
+- Latency badges and targets refer to **perceived first reaction latency**, not full-turn completion latency.
+- Forward-looking cognition upgrades (duplex partial cognition and tighter human turn-taking timing contracts) are documented in [docs/analysis_results.md](docs/analysis_results.md).
+
 ### What CVS-1.0 Optimizes For
 
 - **Identity Continuity**: The same personality, values, boundaries, relationship state, and speaking habits should survive long sessions and restarts.
@@ -36,6 +43,7 @@ AI Friend should be read as a **software mind-and-voice layer**, not as a produc
 AI Friend uses a **Hardened Sovereign Mesh**. In version **CVS-1.0**, the architecture transitioned from a reactive "Think-Speak" pipeline to a persistent **Identity Mesh**. This ensures that the agent's internal state (mood, trust, energy) evolves continuously via a mesh heartbeat, even during idle periods.
 
 ### 1. System Topology
+
 The platform is orchestrated as a **Solid State Agent Mesh** communicating over a hardened NATS JetStream signal bus.
 
 ```mermaid
@@ -62,6 +70,7 @@ graph TD
 ```
 
 ### 2. The Perceptual "Pulse" Path
+
 To achieve sub-250ms perceived latency, the system utilizes a non-linear signal path with hardware-optimized `sherpa-onnx`.
 
 ```mermaid
@@ -83,7 +92,9 @@ sequenceDiagram
 ---
 
 ### 🛡️ Solid State Mesh Hardening
+
 In version **CVS-1.0 Hardened**, we achieved **Zero-Drift Resilience**.
+
 - **9-Subject Signal Bus**: NATS now routes `chat`, `vision`, `state`, `cmd`, `voice`, `system`, `memory`, `identity`, and `knowledge`.
 - **Infrastructure Phased Startup**: Implemented `depends_on` conditions with `service_healthy`. The mesh graduates in stages (Infra -> Brain -> Sensory Agents) to eliminate startup race conditions.
 - **Mesh Surveillance**: Automated health probes (`nc -z nats_mesh 4222`) trigger self-healing for disconnected agents.
@@ -92,15 +103,19 @@ In version **CVS-1.0 Hardened**, we achieved **Zero-Drift Resilience**.
 - **Single Identity Owner**: Reflection and response generation now share one live `IdentityManager`, ensuring adaptive persona evolution affects active conversation immediately.
 
 ### 🎭 Hybrid Identity Model
+
 Introduced an **Immutable Core** (base values, boundaries) paired with **Adaptive Variables** (habits, style), preventing personality drift while allowing natural behavioral growth.
 
 ### ⏳ Expressive Temporal Phrasing
+
 Voice synthesis now executes cognitive timing. The system parses `<pause>` and `<hesitate>` tags, injecting deterministic silent PCM buffers into the **32kHz raw binary stream** for human-like cognitive cues.
 
 AI Friend utilizes **100% Raw Binary PCM** (16-bit, 32kHz) across the entire mesh. By eliminating WAV headers and Base64 encoding, we achieve a Solid State signal path that reduces perceived latency to **<250ms**.
 
 ### 🧪 Persistent Voice Identity
+
 Instead of synthesizing from scratch each session, you can train a permanent voice model. These weights ensure the AI's "vocal fingerprint" remains consistent forever.
+
 - **Phased Identity Loading**: `VoiceAgent` auto-detects and hydrates your custom `.ckpt` and `.pth` weights from the synchronized `models/` volumes during mesh startup.
 - **Reference Guard**: Every synthesis call is fenced with a "Golden Reference" clip that must match your trained weights to prevent model hallucinations or "random lines."
 - **Social Mesh**: Common fillers are pre-synthesized using your permanent identity and stored as local PCM files for 0ms access.
@@ -144,12 +159,15 @@ Surfacing includes novelty suppression so the same memory is not repeatedly rein
 │   │   └── main.py      # NATS mesh entry point
 │   ├── Dockerfile       # Hardened base image with netcat
 │   └── requirements.txt # Python dependencies
+├── db/
+│   └── schema.sql        # Relational schema baseline
 ├── docs/                # Technical documentation suite
 ├── frontend/            # Next.js 16 application
 ├── GPT_SoVITS/          # Voice training submodule
 ├── notebooks/           # Training & Dev scripts
-├── docker-compose.yml   # Infrastructure orchestration
-└── requirements.txt     # Root dependencies
+├── docker-compose.infra.yml  # Infra services (NATS, DB, model services)
+├── docker-compose.prod.yml   # Cognitive/agent services
+└── scripts/                  # Utility/startup scripts
 ```
 
 ---
@@ -157,31 +175,37 @@ Surfacing includes novelty suppression so the same memory is not repeatedly rein
 ## ⚙️ Getting Started
 
 ### 1. Prerequisites (Portability Standard)
+
 - **OS**: Windows (WSL2) or Linux.
 - **Hardware**: NVIDIA GPU (RTX 3060+) or Apple Silicon (M2+).
-- **Software**: Docker Desktop, Python 3.11+, NPM.
+- **Software**: Docker Desktop, Python 3.11+, Node.js 20+ and npm.
 
 ### 2. Launch the Mesh (Solid State)
+
 ```bash
 # A. Infrastructure (NATS, Postgres, Neo4j, Ollama, SoVITS)
 docker compose -f docker-compose.infra.yml up -d
 
-# B. Sync the Identity Genome (Prisma 7.7.0)
+# B. Sync relational schema (Prisma 7.7.0)
 $env:DIRECT_URL="postgresql://ai_friend:[PASSWORD]@localhost:5432/ai_friend_db"
 cd frontend && npx prisma db push && cd ..
 
-# C. Cognitive Agents (Decision & Perception Layers)
-docker compose -f docker-compose.prod.yml up -d --build
+# C. Unified mesh build and launch (infra + cognitive agents)
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build
 ```
 
 ### 3. Verification & Audit
-Run the automated mesh audit to ensure all 12 services have reached a **Healthy** status through the phased startup sequence:
+
+Run a mesh health snapshot and confirm services are running and healthy where health checks are defined:
+
 ```bash
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Health}}"
 ```
+
 Refer to the **[Installation Guide](docs/GPT_SOVITS_INSTALL.md)** and **[Deployment Guide](docs/DEPLOYMENT.md)** for deep environment hardening.
 
 ### 4. Local Test Suite
+
 Use the project-local backend virtual environment rather than the global Python installation:
 
 ```powershell
@@ -189,7 +213,7 @@ cd backend
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The latest verified result after the CVS runtime fixes was `54 passed`, with one non-blocking `.pytest_cache` permission warning.
+If your shell is not PowerShell, run the same command with the interpreter path for your environment.
 
 ---
 

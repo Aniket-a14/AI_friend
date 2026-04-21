@@ -6,7 +6,8 @@ The decentralized, high-performance core of the AI Friend platform. This service
 
 The backend has evolved from a monolith into a **distributed agent mesh**. Each capability is a dedicated agent running as an independent process or container.
 
-### Core Agents:
+### Core Agents
+
 - **Signaling Server (`main.py`)**: Manages WebRTC/WebSocket handshakes and state synchronization.
 - **Brain Agent**: The reasoning engine (Ollama/Gemini) that processes context and calls tools.
 - **STT Agent**: Real-time voice-to-text using Faster-Whisper with Silero VAD.
@@ -24,18 +25,21 @@ The backend has evolved from a monolith into a **distributed agent mesh**. Each 
 ## ⚙️ Direct Deployment (Local Development)
 
 ### Prerequisites
+
 - Python 3.13+
 - NATS Server (with JetStream enabled: `nats-server -js`)
 - Ollama (running locally)
 
 ### Installation
-1.  **Navigate to backend**: `cd backend`
-2.  **Create venv**: `python -m venv .venv`
-3.  **Activate**: `.venv\Scripts\activate` (Windows) or `source .venv/bin/activate` (Linux)
-4.  **Install Base**: `pip install -r requirements-base.txt`
-5.  **Install AI (Optional)**: `pip install -r requirements-ai.txt` (Required for STT/Voice agents)
+
+1. **Navigate to backend**: `cd backend`
+2. **Create venv**: `python -m venv .venv`
+3. **Activate**: `.venv\Scripts\activate` (Windows) or `source .venv/bin/activate` (Linux)
+4. **Install Base**: `pip install -r requirements-base.txt`
+5. **Install AI (Optional)**: `pip install -r requirements-ai.txt` (Required for STT/Voice agents)
 
 ### Launching the Mesh
+
 You can start individual agents or use the master orchestrator:
 
 ```bash

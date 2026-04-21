@@ -29,7 +29,9 @@ The architecture should be evaluated by conversational realism rather than only 
 ## 🏗️ CVS-1.0 Hardened Architecture
 
 ### 🧠 1. Cognitive Layer (Identity & State)
+
 The BrainAgent orchestrates a **State-Driven Identity** with a hardened relational foundation.
+
 - **Neo4j State Persistence**: Mood, energy, trust, and attachment are persistent and evolve via mesh heartbeats.
 - **Live State Safety**: Live emotional state is hydrated without TTL cache and graph cache is invalidated after writes, preventing recent mood/trust updates from being rewound by stale reads.
 - **Relational Seeding (Prisma 7.7.0)**: On first-boot, the identity mesh hydrates the PostgreSQL relational store with the AI's "Seed Genome" (Personality & History), ensuring zero-drift identity across restarts.
@@ -38,21 +40,27 @@ The BrainAgent orchestrates a **State-Driven Identity** with a hardened relation
 - **Single Identity Owner**: Reflection and response generation share the same `IdentityManager`, so adaptive evolution affects the active personality without requiring restart.
 
 ### 📖 2. Proactive Memory Surfacing
+
 The system anticipates conversational context through an asynchronous recall layer that merges Relational (Postgres) and Graph (Neo4j) knowledge.
+
 - **`SurfacingAgent`**: Background process that evaluates shared history vs. current intent.
 - **Novelty Suppression**: Recently surfaced memories are suppressed for a short window, so the agent does not keep repeating the same recollection.
 - **Passive Recall Safety**: Surfacing does not refresh `last_recalled_at`, preventing memory relevance from becoming self-reinforcing only because a memory was surfaced.
 - **Signal Bus Expansion**: The mesh now monitors 9 core subjects: `chat.*`, `vision.*`, `state.*`, `cmd.*`, `voice.*`, `system.*`, `memory.*`, `identity.*`, and `knowledge.*`.
 
 ### ⏱️ 3. Perceptual Intelligence (STT Agent)
+
 Interruption is now handled as a **Temporal Intent Problem** powered by binary PCM transport.
+
 - **Dual-STT Pipeline**: Uses Whisper for deep context and `sherpa-onnx` (SenseVoice) for low-latency temporal intent.
 - **Speculative Intent Object**: SenseVoice publishes a structured hypothesis with intent name, keywords, confidence, text, timestamp, and utterance id.
 - **Whisper Validation**: Whisper final transcript confirms or rejects the speculative stop. Rejected false positives publish `audio.resume`; confirmed commands publish final `audio.stop`.
 - **Human Turn-Taking Goal**: The system favors quick reversible pause over late irreversible interruption, because a brief recoverable pause feels more natural than talking over the user.
 
 ### 🔊 4. Signal Rendering (Voice Agent)
+
 A persistent synthesis runtime with direct binary transport and expressive behavior.
+
 - **Expressive Temporal Layer**: Interprets `<pause>` and `<hesitate>` tags by injecting silent PCM buffers directly into the 32kHz stream.
 - **Streaming First Audio**: GPT-SoVITS chunks are queued as they arrive rather than buffered until full synthesis completion.
 - **Expression Sanitization**: Legacy `<emotion ...>` wrappers are stripped before TTS while timing markers are preserved. Affect should move as metadata rather than spoken text.
@@ -128,6 +136,7 @@ Future agents should read [../.agents/CONTEXT.md](../.agents/CONTEXT.md) before 
 ---
 
 **For implementation details, see:**
+
 - [LATENCY_IMPROVEMENT.md](./LATENCY_IMPROVEMENT.md) - Timing deep-dive
 - [VOICE_CLONING.md](./VOICE_CLONING.md) - Voice identity guide
 - [DEPLOYMENT.md](./DEPLOYMENT.md) - Infrastructure setup
