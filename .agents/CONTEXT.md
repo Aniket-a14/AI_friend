@@ -700,3 +700,47 @@ Hardened the signal rendering loop for psychological realism and signal continui
 **Next Recommended Work:**
 - Monitor CPU pressure on Zenbook Duo (0.95+) during high-rate turns; evaluate if further jitter-buffer expansion (beyond 10ms) is needed for the SFU bridge.
 - Implement per-utterance sentiment verification to calibrate the `VAD -> Prosody` mapping with real user emotional vibes.
+
+## 2026-04-21 Voice Warm-Start Truthfulness + Config Consistency
+
+Aligned the GPT-SoVITS warning-mode behavior with non-fatal startup intent while keeping status signals truthful.
+
+Changed files:
+
+- `backend/app/voice/agent.py`
+- `backend/app/voice/sovits_client.py`
+- `backend/app/config.py`
+- `backend/app/stt/agent.py`
+- `backend/app/stt/whisper_service.py`
+- `docker-compose.prod.yml`
+- `backend/tests/test_regressions.py`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `VoiceAgent` now treats weight loading as success only when both configured weight set calls return `True`; failures remain non-fatal and enter `warning_no_weights` mode.
+- Startup now emits truthful mesh status on `voice.warm`:
+  - `status=ready, identity=fine_tuned` only on successful weight load.
+  - `status=degraded_no_weights, identity=fallback` otherwise, with expected weight paths included.
+- Added `VOICE_FILLER_HYDRATE_ON_STARTUP` toggle to allow skipping filler pre-hydration when desired.
+- Added `VOICE_WEIGHT_LOAD_RETRIES` config for bounded retry tuning.
+- `SoVITSClient.synthesize()` now accepts optional `language/speed/pitch/volume` kwargs (best-effort payload mapping) to stay compatible with current `VoiceAgent` call signatures.
+- STT language wiring is now active: `STT_LANGUAGE` flows from config -> `STTAgent` -> `WhisperSTTService` transcription.
+- Compose voice/STT env wiring now includes `CUSTOM_GPT_PATH`, `CUSTOM_SOVITS_PATH`, `TTS_LANGUAGE`, `STT_LANGUAGE`, and warm-start/filler toggles.
+
+Verification:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest tests/test_regressions.py -k warm_start
+```
+
+Added regression coverage:
+
+- `test_voice_warm_start_sets_warning_when_weights_unavailable`
+- `test_voice_warm_start_succeeds_when_both_weights_load`
+
+Remaining risks:
+
+- Prosody knobs (`pitch`, `volume`) are passed best-effort; behavior depends on GPT-SoVITS API version support.
+- End-to-end Docker runtime validation is still recommended to confirm `voice.warm` status transitions under real container startup conditions.
