@@ -63,7 +63,7 @@ Evaluates the event's raw significance. Variables adapted from OCC/Lazarus:
 | **N** | Novelty | Unexpectedness (OCC intensity variable) | `1 − max(cosine_similarity(event, past_events))` |
 | **G** | Goal Congruence | Desirability (OCC) | `alignment(event_valence, goal_direction)` |
 
-> **Source**: OCC defines desirability as "the degree to which an event is congruent with 
+> **Source**: OCC defines desirability as "the degree to which an event is congruent with
 > an agent's goals." Novelty/unexpectedness is one of OCC's global intensity variables.
 > R (relevance) is from Lazarus's primary appraisal.
 >
@@ -158,6 +158,7 @@ D_new  = (1 − γ) · D_old  +  γ · (w₅·A + w₆·NA)
 > **Our adaptation**: ALMA pulls mood toward discrete OCC emotion coordinates. We instead
 > pull mood toward appraisal output values (G, RI, N, R, A, NA). The *mapping* of which
 > appraisal feeds which PAD dimension is our design choice:
+>
 > - Goal Congruence (G) + Relationship Impact (RI) → Valence — because "did things go well?" drives feeling
 > - Novelty (N) + Relevance (R) → Arousal — because surprising/important events energize
 > - Agency (A) + Norm Alignment (NA) → Dominance — because control and values → sense of agency
@@ -221,6 +222,7 @@ The base selection rule is **stateless** — it recomputes intent every turn.
 Human behavior, however, is **goal-continuous**, where intentions persist and evolve over time.
 
 Without persistence, the system may exhibit:
+
 - abrupt tone shifts  
 - inconsistent conversational direction  
 - loss of perceived intentionality  
@@ -237,6 +239,7 @@ Intent_t = (1 − ρ) · Intent_{t−1} + ρ · Intent_new
 ```
 
 Where:
+
 - `Intent_new = argmax(U(Intent))`
 - `ρ ∈ [0.3, 0.7]` is the adaptation rate
 
@@ -254,6 +257,7 @@ Else:
 ```
 
 Where:
+
 - `ContextShift` represents semantic or emotional change in conversation
 
 ---
@@ -261,6 +265,7 @@ Where:
 #### Behavioral Effect
 
 This layer ensures:
+
 - continuity in conversational goals  
 - smoother emotional transitions  
 - responses reflect ongoing intent rather than isolated decisions  
@@ -446,29 +451,34 @@ Score = Aᵢ + w₁·EmotionalAlignment + w₂·RelationshipRelevance
 ```
 
 where
+
 - Aᵢ is the ACT-R base-level + spreading activation
 - EmotionalAlignment measures similarity between memory emotion and current state
 - RelationshipRelevance captures impact on user-agent relationship
 
 Retrieval Condition
+
 ```
 Retrieve only if:
 Score > θ_retrieval
 ```
 
 Selection Rule
+
 ```
 SelectedMemory = argmax(Score)
 ```
+
 This deterministic selection ensures stability and consistency in memory recall. A probabilistic alternative (softmax sampling) can be introduced later if needed.
 
-
 Optional Multi-Memory Retrieval
+
 ```
 Top-k memories where:
 Score > θ_retrieval
 AND Score ≥ max(Score) − ε
 ```
+
 This allows retrieval of closely competing memories for richer contextual reasoning.
 
 Where `Aᵢ` is the ACT-R base+spreading activation above.
@@ -571,6 +581,7 @@ Where E = emotional response,
 ActualOutcome is not raw user emotion, but the change in user state caused by the agent's response.
 
 We define:
+
 ```
 ActualOutcome =
   w₁ · Δ_emotion_text
@@ -579,18 +590,23 @@ ActualOutcome =
 ```
 
 where
+
 - Δ_emotion_text = sentiment shift between user responses (before vs after agent reply)
 - Δ_emotion_acoustic = tone shift from SenseVoice (before vs after)
 - BehavioralSignal = engagement-based proxy (e.g., response length, openness, continuation)
 
 Additionally:
+
 ```
 Δ_emotion = Emotion_after − Emotion_before
 ```
+
 To handle noise:
+
 ```
 Δ_effective = confidence · Δ_emotion
 ```
+
 Outcome must be evaluated over a temporal window (1–2 turns), not instantly.
 
 > **Correction**: SenseVoice output alone is not a valid proxy for outcome.
@@ -624,11 +640,13 @@ where:
 > This maintains consistency with Gross/Bosse, where reappraisal changes interpretation, not raw feeling.
 >
 > **Known Risks**:
+>
 > - If η is too high → unstable behavior (overcorrection)
 > - If outcome signals are noisy → incorrect adaptation
 > - If behavioral signal is weak → system learns shallow patterns
 >
 > **To mitigate**:
+>
 > - Apply confidence weighting
 > - Use temporal smoothing
 > - Clamp parameter updates

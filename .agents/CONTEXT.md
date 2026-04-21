@@ -337,8 +337,8 @@ Behavior changes:
 - **Hardware Agnostic STT/Voice**: Sensory perpection and audio rendering are now physically isolated modules.
 - **Frontend-Mesh Synchronization**: Replaced legacy Supabase database links with local Docker PostgreSQL connectivity. The Frontend and Backend now share the same "Sovereign" data layer for consistent history and personality state.
 - **Frontend Docker Hardening**:
-    - Updated `Dockerfile` with `libc6-compat` for Alpine stability and disabled Next.js telemetry.
-    - Implemented `ARG` support for `NEXT_PUBLIC_BACKEND_URL` to allow build-time mesh configuration.
+  - Updated `Dockerfile` with `libc6-compat` for Alpine stability and disabled Next.js telemetry.
+  - Implemented `ARG` support for `NEXT_PUBLIC_BACKEND_URL` to allow build-time mesh configuration.
 - **Connectivity Refactor**: Externalized all backend and LiveKit signal URLs into environment variables, removing hardcoded localhost dependencies.
 
 Verification:
@@ -357,7 +357,7 @@ docker run -p 3000:3000 ai-friend-frontend
 
 Latest result:
 
-- **54 passed (Backend)**. 
+- **54 passed (Backend)**.
 - **Frontend Health**: Build finished successfully and server initialized using the standalone production runtime.
 - **Mesh Connectivity**: All 13 containers (12 Backend/Infra + 1 Frontend) are now verified for interoperability.
 

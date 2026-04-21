@@ -24,6 +24,7 @@ Production deployment strategies for the AI Friend platform, optimized for the *
 Before deploying to production, ensure you have completed the following:
 
 ### Security
+
 - [ ] Set `DEBUG=False` in backend/.env
 - [ ] Configure HTTPS/WSS endpoints (SSL is **required** for microphone access)
 - [ ] Set up proper CORS origins (no wildcards in production)
@@ -33,6 +34,7 @@ Before deploying to production, ensure you have completed the following:
 - [ ] Review [SECURITY.md](../SECURITY.md)
 
 ### Performance
+
 - [ ] Test with production-scale traffic
 - [ ] Configure resource limits (CPU, memory)
 - [ ] Enable caching where appropriate
@@ -40,6 +42,7 @@ Before deploying to production, ensure you have completed the following:
 - [ ] Set up CDN for static assets
 
 ### Monitoring
+
 - [ ] Configure logging aggregation
 - [ ] Set up error tracking (e.g., Sentry)
 - [ ] Enable health check endpoints
@@ -54,7 +57,9 @@ Before deploying to production, ensure you have completed the following:
 CVS-1.0 requires a state-aware runtime to maintain sub-280ms perceived latency.
 
 ### 1. Essential Configuration
+
 Ensure your `backend/.env` contains the Perceptual Mastery flags:
+
 ```bash
 # CVS-1.0 Runtime Config
 VOICE_RUNTIME_MODE=perceptual
@@ -66,23 +71,29 @@ PCM_SAMPLE_RATE=32000
 ### 2. Hardware Profiles
 
 #### 🏎️ Extreme Profile (RTX 4090 / M4 Max)
-*   **Cognitive Path**: `llama3.2:3b` (4-bit quant)
-*   **Signal Path**: V4 Weights with `media_type: raw`
-*   **Latency Target**: <180ms
-*   **Optimization**: Disable all post-synthesis filters; use direct PCM injection.
+
+- **Cognitive Path**: `llama3.2:3b` (4-bit quant)
+
+- **Signal Path**: V4 Weights with `media_type: raw`
+- **Latency Target**: <180ms
+- **Optimization**: Disable all post-synthesis filters; use direct PCM injection.
 
 #### 🍎 Elite Profile (M4 Pro / M4 Max)
-*   **Cognitive Path**: `llama3.2:3b` (Metal-Optimized)
-*   **Signal Path**: V4 Weights with `device="mps"`
-*   **Unified Memory**: Ensure at least 8GB of the 24GB+ pool is free for STT/TTS residency.
-*   **Latency Target**: <210ms
-*   **Optimization**: Use the **MPS (Metal Performance Shaders)** backend for PyTorch to eliminate CPU bottlenecks.
+
+- **Cognitive Path**: `llama3.2:3b` (Metal-Optimized)
+
+- **Signal Path**: V4 Weights with `device="mps"`
+- **Unified Memory**: Ensure at least 8GB of the 24GB+ pool is free for STT/TTS residency.
+- **Latency Target**: <210ms
+- **Optimization**: Use the **MPS (Metal Performance Shaders)** backend for PyTorch to eliminate CPU bottlenecks.
 
 #### ⚖️ Balanced Profile (RTX 3070 / M2)
-*   **Cognitive Path**: `llama3.2:1b` (8-bit quant)
-*   **Signal Path**: V4 Weights
-*   **Latency Target**: <250ms
-*   **Optimization**: Enable `soxr` resampling for UI-specific playback if needed.
+
+- **Cognitive Path**: `llama3.2:1b` (8-bit quant)
+
+- **Signal Path**: V4 Weights
+- **Latency Target**: <250ms
+- **Optimization**: Enable `soxr` resampling for UI-specific playback if needed.
 
 ---
 
@@ -91,12 +102,16 @@ PCM_SAMPLE_RATE=32000
 The CVS-1.0 Mesh has been hardened for **Zero-Drift Portability**. This ensures the AI Friend can be deployed on any machine while maintaining identity continuity and security.
 
 ### 1. Decentralized Credential Enforcer
+
 Hardcoded credentials are strictly rejected. The mesh utilizes the **Solid State Enforcer** in `backend/app/knowledge/graph_db.py` to prevent insecure booting.
+
 - **NEO4J_AUTH**: Must be provided via `.env`. Default `neo4j/password` will trigger a security violation.
 - **Environment Isolation**: All services use internal mesh aliases (`nats_mesh`, `postgres_db`) rather than `localhost` to allow cross-machine Docker networking.
 
 ### 2. Relational Hydration (Prisma 7.7.0)
+
 The database schema is managed via the modern Prisma 7.7.0 standard. On any new PC, you MUST synchronize the persistent state:
+
 ```bash
 # Set your local DB secret in the terminal session
 $env:DIRECT_URL="postgresql://ai_friend:[PASSWORD]@localhost:5432/ai_friend_db"
@@ -105,7 +120,9 @@ npx prisma db push
 ```
 
 ### 3. Mesh Portability Checklist
+
 Before moving the project to a new machine:
+
 - [ ] **Sanity Check .env**: Ensure all variables in `.env.example` are populated.
 - [ ] **Relative Paths**: Verify `docker-compose.infra.yml` uses relative mounts (e.g., `./backend`).
 - [ ] **Clean Volume Recovery**: To reset a machine's data completely, use `docker compose down -v`.
@@ -114,6 +131,7 @@ Before moving the project to a new machine:
 - [ ] **Test Runner**: Prefer `backend/.venv/Scripts/python.exe -m pytest` on Windows because the global Anaconda environment may not load the same packages.
 
 ### 4. CVS Runtime Regression Suite
+
 Before shipping changes to cognition, memory, STT, TTS, or mesh subjects, run:
 
 ```powershell
@@ -157,6 +175,7 @@ NEXT_PUBLIC_BACKEND_URL=https://api.yourdomain.com
 ```
 
 **Vercel Configuration** (`vercel.json`):
+
 ```json
 {
   "buildCommand": "cd frontend && npm run build",
@@ -172,6 +191,7 @@ NEXT_PUBLIC_BACKEND_URL=https://api.yourdomain.com
 These platforms support long-running WebSocket connections.
 
 **Railway**:
+
 ```bash
 # 1. Install Railway CLI
 npm install -g @railway/cli
@@ -187,6 +207,7 @@ railway up
 ```
 
 **Dockerfile** (already included in `backend/Dockerfile`):
+
 ```dockerfile
 FROM python:3.10-slim
 WORKDIR /app
@@ -199,9 +220,11 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ---
 
 ### Strategy 2: Production Hardening (Docker Compose)
+
 **Best for**: Self-hosted servers, workstations, total control.
 
 #### 1. Tiered Image Architecture
+
 CVS-1.0 relies on tiered Docker images to isolate the cognitive load from the signal runtime.
 
 ```bash
@@ -213,16 +236,13 @@ docker build -t cvs/voice:1.0 -f backend/Dockerfile.full backend/
 ```
 
 #### 2. Launch the Mesh
+
 Infrastructure must be healthy before agents initialize their jitter buffers.
 
-**Tier 1: Infrastructure**
-```bash
-docker compose -f docker-compose.infra.yml up -d
-```
+**Unified launch (infra + agent mesh)**
 
-**Tier 2: Agent Mesh**
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build
 ```
 
 ---
@@ -232,12 +252,14 @@ docker compose -f docker-compose.prod.yml up -d
 ### AWS (ECS/Fargate)
 
 **Architecture**:
+
 ```
 ALB → ECS Service (Frontend) → Target Group
 ALB → ECS Service (Backend) → Target Group
 ```
 
 **Steps**:
+
 1. Create ECR repositories for frontend and backend
 2. Push Docker images to ECR
 3. Create ECS task definitions
@@ -245,6 +267,7 @@ ALB → ECS Service (Backend) → Target Group
 5. Set up Auto Scaling
 
 **Example Task Definition** (`backend-task.json`):
+
 ```json
 {
   "family": "ai-friend-backend",
@@ -284,6 +307,7 @@ ALB → ECS Service (Backend) → Target Group
 ### Google Cloud (Cloud Run)
 
 **Steps**:
+
 ```bash
 # 1. Build and push images
 gcloud builds submit --tag gcr.io/PROJECT_ID/backend ./backend
@@ -309,6 +333,7 @@ gcloud run deploy frontend \
 ### Azure (Container Instances)
 
 **Steps**:
+
 ```bash
 # 1. Create resource group
 az group create --name ai-friend-rg --location eastus
@@ -338,12 +363,14 @@ az container create \
 ### Option 1: Nginx Reverse Proxy + Let's Encrypt
 
 **Install Nginx and Certbot**:
+
 ```bash
 sudo apt update
 sudo apt install nginx certbot python3-certbot-nginx
 ```
 
 **Nginx Configuration** (`/etc/nginx/sites-available/ai-friend`):
+
 ```nginx
 # Frontend
 server {
@@ -380,6 +407,7 @@ server {
 ```
 
 **Enable SSL**:
+
 ```bash
 sudo certbot --nginx -d yourdomain.com -d api.yourdomain.com
 sudo systemctl reload nginx
@@ -390,6 +418,7 @@ sudo systemctl reload nginx
 ### Option 2: Caddy (Automatic HTTPS)
 
 **Caddyfile**:
+
 ```caddy
 yourdomain.com {
     reverse_proxy localhost:3000
@@ -401,6 +430,7 @@ api.yourdomain.com {
 ```
 
 **Start Caddy**:
+
 ```bash
 sudo caddy run --config /etc/caddy/Caddyfile
 ```
@@ -412,6 +442,7 @@ sudo caddy run --config /etc/caddy/Caddyfile
 ### Production Environment Variables
 
 **Backend** (`backend/.env`):
+
 ```bash
 # Core
 DEBUG=False
@@ -433,6 +464,7 @@ VISION_FPS=1
 ```
 
 **Frontend** (`frontend/.env`):
+
 ```bash
 NEXT_PUBLIC_BACKEND_URL=https://api.yourdomain.com
 ```
@@ -442,14 +474,17 @@ NEXT_PUBLIC_BACKEND_URL=https://api.yourdomain.com
 ## Monitoring & Logging
 
 ### Logging Setup
+
 CVS-1.0 includes specialized health metrics beyond standard Uptime.
 
 **Perceptual Health Checks**:
-1.  **Pulse Check**: `nats sub "voice.segmentation_feedback"`
-2.  **Jitter Check**: Check `VoiceAgent` logs for `Buffer Recovery` events.
-3.  **Sync Check**: Ensure the system resyncs every 5 minutes (automatic).
+
+1. **Pulse Check**: `nats sub "voice.segmentation_feedback"`
+2. **Jitter Check**: Check `VoiceAgent` logs for `Buffer Recovery` events.
+3. **Sync Check**: Ensure the system resyncs every 5 minutes (automatic).
 
 **Backend Logging** (`backend/app/logging_config.py`):
+
 ```python
 import logging
 from logging.handlers import RotatingFileHandler
@@ -480,6 +515,7 @@ def setup_logging():
 ### Horizontal Scaling
 
 **Load Balancer Configuration**:
+
 ```nginx
 upstream backend {
     least_conn;
@@ -498,6 +534,7 @@ server {
 ### Database Connection Pooling
 
 **Backend** (`backend/app/database.py`):
+
 ```python
 from sqlalchemy import create_engine
 from sqlalchemy.pool import QueuePool
@@ -516,14 +553,17 @@ engine = create_engine(
 ## Troubleshooting
 
 ### WebSocket Connection Issues
+
 **Symptom**: WebSocket fails to connect in production
 **Solution**: Ensure SSL is configured (WSS required) and `proxy_read_timeout` is set to `86400`.
 
 ### High Memory Usage
+
 **Symptom**: Backend container using excessive memory
 **Solution**: Limit memory entries (`MAX_MEMORY_ITEMS=100`) and set Docker memory limits.
 
 ### Pulse Loop Latency
+
 **Symptom**: Voice response feels staggered or robotic.
 **Solution**: Check for clock drift in logs (`NATS Sync`). Ensure Signaling and VoiceAgent are in the same cloud region.
 

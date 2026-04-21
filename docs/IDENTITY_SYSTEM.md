@@ -33,13 +33,17 @@ graph LR
 To prevent personality drift while allowing for growth, the identity is split into two behavioral layers.
 
 ### 🛡️ Immutable Core
+
 Stored in `self.immutable_core`, these traits represent the agent's "DNA." They are never modified by the autonomous reflection loop.
+
 - **Values**: (e.g., Privacy, Curiosity, Empathy).
 - **Boundaries**: Hard constraints on behavior and data safety.
 - **Base Tone**: The fundamental frequency of the agent's personality.
 
 ### 🎭 Adaptive variables
+
 These traits are "soft" and evolve based on user interaction history.
+
 - **Speaking Style**: Vocabulary (Hinglish), sentence length, and pacing.
 - **Familiarity**: Level of formality adjusted by the `trust` state.
 - **Preferences**: Topics identified as high-relevance during reflection.
@@ -60,9 +64,10 @@ CVS-1.0 uses one live identity owner and confidence-gated reflection so adaptive
 
 ## 3. Active Memory Surfacing
 
-CVS-1.0 uses **Proactive Recall** rather than passive retrieval. 
+CVS-1.0 uses **Proactive Recall** rather than passive retrieval.
 
 The **`SurfacingAgent`** runs in the background, matching recent conversational context against the long-term `GraphRAG` and `Vector Store`.
+
 - **Asynchronous Triggers**: Relevant memories are published as `memory.surfaced` mesh events.
 - **Decision Blackboard**: The `CognitiveService` buffers these "surfaced" thoughts and injects them into the current decision loop, allowing the agent to "spontaneously" bring up past moments.
 - **Novelty Window**: Recently surfaced memories are suppressed temporarily so recall feels selective rather than repetitive.
@@ -77,11 +82,14 @@ Human-like recall should be suggestive and occasional. A memory can color tone, 
 Timing is a first-class cognitive citizen in CVS-1.0. The agent communicates cognitive load and emotional weight through intentional silence.
 
 ### Temporal Tags
+
 The BrainAgent injects structured tags into the LLM stream:
+
 - `<pause=ms>`: Adds a deterministic silence duration (e.g., `<pause=500ms>`).
 - `<hesitate>`: Adds a randomized 250-450ms hesitation buffer.
 
 ### Signal Execution
+
 The **VoiceAgent** parses these tags and, instead of synthesizing them as text, injects **zeroed PCM buffers** directly into the 32kHz audio stream. This ensures that the pause is physically part of the audio signal, not just a playback delay.
 
 ### Affect Is Not Spoken Markup
@@ -93,6 +101,7 @@ Earlier prompt contracts required `<emotion ...>` wrappers. CVS-1.0 now treats t
 ## 5. Configuration & Tuning
 
 All identity parameters are centralized in `config.py`:
+
 - `SYSTEM_TICK_INTERVAL`: Frequency of mesh-wide maturation.
 - `INTENT_THRESHOLD`: Sensitivity for interruption intent.
 - `GRAPH_CACHE_TTL`: Freshness of belief hydration.
