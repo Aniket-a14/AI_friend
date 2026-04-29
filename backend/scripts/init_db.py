@@ -28,8 +28,8 @@ async def init_db():
         await conn.execute("DROP TABLE IF EXISTS agent_configs CASCADE")
         await conn.execute("DROP TABLE IF EXISTS memories CASCADE")
 
-        # 3. Create memories table
-        logger.info("Creating memories table...")
+        # 3. Create memories table (Phase 2: ACT-R enhanced)
+        logger.info("Creating memories table (ACT-R enhanced)...")
         await conn.execute('''
             CREATE TABLE memories (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -38,8 +38,10 @@ async def init_db():
                 metadata JSONB,
                 importance_score DOUBLE PRECISION NOT NULL DEFAULT 0.5,
                 emotional_weight DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                valence DOUBLE PRECISION NOT NULL DEFAULT 0.0,
                 certainty DOUBLE PRECISION NOT NULL DEFAULT 1.0,
                 source TEXT NOT NULL DEFAULT 'user',
+                recall_count INTEGER NOT NULL DEFAULT 1,
                 last_recalled_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
@@ -83,7 +85,7 @@ async def init_db():
             );
         ''')
         
-        logger.info("✅ Clean Database initialization complete!")
+        logger.info("✅ Clean Database initialization complete (Phase 2: ACT-R + PAD)!")
         await conn.close()
     except Exception as e:
         logger.error(f"❌ Failed to initialize database: {e}")

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 import uuid
 import time
 from datetime import datetime
@@ -22,7 +23,7 @@ class HybridSegmenter:
     def __init__(self, target_size: int = 8):
         self.target_size = target_size
         self.conjunctions = {"and", "but", "so", "because", "although", "while"}
-        
+
     def score_split_point(self, word: str, chunk_len: int) -> float:
         score = 0.0
         # Punctuation (Primary)
@@ -30,15 +31,15 @@ class HybridSegmenter:
             score += 1.0
         elif "," in word:
             score += 0.6
-        
+
         # Conjunctions (Secondary)
         if word.lower().strip() in self.conjunctions:
             score += 0.4
-            
+
         # Proximity to target size
         size_factor = abs(chunk_len - self.target_size) / self.target_size
         score -= size_factor * 0.2
-        
+
         return score
 
 class BrainAgent(BaseAgent):
@@ -58,7 +59,7 @@ class BrainAgent(BaseAgent):
         self.graph_db = graph_db
         self.memory_store = memory_store
         self.conversation_store = conversation_store
-        
+
         # Initialize the Functional Core
         self.cognitive_core = CognitiveService(
             llm_service=self.ollama,
@@ -69,7 +70,7 @@ class BrainAgent(BaseAgent):
 
         self.last_interaction_time = datetime.now()
         self.last_visual_context = "No visual data available."
-        
+
         # CVS-1.0 Segmentation Config
         self.segmenter = HybridSegmenter(target_size=8)
         self.formation_buffer_ms = 0.030 # 30ms
@@ -104,18 +105,18 @@ class BrainAgent(BaseAgent):
             durable=f"{self.name}_system_tick_proactive_live",
             deliver_policy="new",
         )
-        
+
         logger.info(f"🧠 {self.name} Online | CVS-1.0 Cognitive Mesh Active.")
 
     async def _on_voice_feedback(self, data: Dict[str, Any]):
         """Adaptive Tuning Loop (CVS-1.0 alpha-damped loop)."""
         target = data.get("target_chunk_size", 8)
         alpha = getattr(Config, "FEEDBACK_ALPHA", 0.7)
-        
+
         # Alpha-damped damping to prevent jittery speech fragmentation
         smoothed_size = (alpha * self.segmenter.target_size) + ((1 - alpha) * target)
         new_size = int(round(smoothed_size))
-        
+
         if new_size != self.segmenter.target_size:
             logger.info(f"📈 Tuning Segmentation | Target: {target} -> Smoothed: {new_size}")
             self.segmenter.target_size = new_size
@@ -127,10 +128,10 @@ class BrainAgent(BaseAgent):
     async def _on_chat_input(self, message: Dict[str, Any]):
         now = datetime.now()
         self.last_interaction_time = now
-        
+
         # Phase 1: Track real interaction time for proactive idle detection
         self.cognitive_core.state.record_user_interaction()
-        
+
         user_text = message.get("text", "")
         if not user_text:
             return
@@ -153,13 +154,13 @@ class BrainAgent(BaseAgent):
             asyncio.create_task(self.conversation_store.log_message("user", user_text))
 
         await self.set_state("thinking")
-        
+
         full_response = ""
         current_chunk_words = []
         segment_started_at = None
         generation_errors: List[str] = []
         fallback_text = "I'm having trouble thinking right now..."
-        
+
         try:
             async for output in self.cognitive_core.process_event(raw_event):
                 if output["type"] == "content":
@@ -177,7 +178,7 @@ class BrainAgent(BaseAgent):
                         await self._publish_speech_chunk(current_chunk_words, turn_id)
                         current_chunk_words = []
                         segment_started_at = None
-                    
+
                     # Tokenize by whitespace
                     words = chunk_text.split()
                     for word in words:
@@ -187,7 +188,7 @@ class BrainAgent(BaseAgent):
 
                         # 1. Heuristic Scoring
                         score = self.segmenter.score_split_point(word, len(current_chunk_words))
-                        
+
                         # 2. Decision (Safe Split)
                         if score > 0.7 or len(current_chunk_words) > 12:
                             await self._publish_speech_chunk(current_chunk_words, turn_id)
@@ -202,7 +203,7 @@ class BrainAgent(BaseAgent):
                         turn_id,
                         error_msg,
                     )
-                
+
                 elif output["type"] == "done":
                     # Emit residue
                     if current_chunk_words:
@@ -218,11 +219,11 @@ class BrainAgent(BaseAgent):
                         )
                         await self._publish_speech_chunk(fallback_text.split(), turn_id)
                         full_response = fallback_text
-                    
+
                     state_snap = self.cognitive_core.state.get_context_snapshot()
                     await self.publish("chat.output", {
-                        "content": "", 
-                        "done": True, 
+                        "content": "",
+                        "done": True,
                         "full_response": full_response,
                         "emotion": state_snap.get("emotion", "neutral"),
                         "turn_id": turn_id,
@@ -250,21 +251,48 @@ class BrainAgent(BaseAgent):
         await self.set_state("idle")
 
     async def _publish_speech_chunk(self, words: List[str], turn_id: str = None):
-        """Publishes a semantically coherent chunk with CVS-1.0 metadata."""
+        """
+        Publishes a semantically coherent chunk with full PAD affect metadata.
+        Implements the Brain→Voice contract from psycological_layer.md §5.3.
+        """
         text = " ".join(words).strip()
         if not text:
             return
-            
+
         state_snap = self.cognitive_core.state.get_context_snapshot()
-        
-        # CVS-1.0 Metadata Propagation
+        V = state_snap.get("valence", state_snap.get("mood", 0.0))
+        Ar = state_snap.get("arousal", state_snap.get("energy", 0.5))
+        D = state_snap.get("dominance", 0.5)
+        T = state_snap.get("trust", 0.5)
+        At = state_snap.get("attachment", 0.1)
+
+        # §5.1: Scherer CPM — Prosody mapping
+        speaking_rate = 1.0 + math.tanh(0.5 * Ar - 0.2)  # High arousal → faster
+        confidence = 0.9  # Placeholder until appraisal confidence is threaded
+        intensity = abs(V) * Ar  # Emotional intensity
+
+        # §4.1: Goldman-Eisler — Pause bias
+        pause_bias = max(0.0, min(1.0,
+            0.2 + 0.4 * (1 - confidence) + 0.2 * Ar
+        ))
+
+        # Full §5.3 Affect Metadata Contract
         payload = {
             "content": text,
             "done": False,
             "emotion": state_snap.get("emotion", "neutral"),
-            "emotional_intensity": state_snap.get("emotional_intensity", 0.6),
-            "confidence": 0.9, # To be dynamically computed in future versions
-            "speaking_rate": 1.0,
+            # PAD dimensions
+            "valence": V,
+            "arousal": Ar,
+            "dominance": D,
+            # Relational
+            "trust": T,
+            "attachment": At,
+            # Prosody control
+            "confidence": confidence,
+            "intensity": intensity,
+            "speaking_rate": round(speaking_rate, 3),
+            "pause_bias": round(pause_bias, 3),
             "timestamp": time.time(),
             "turn_id": turn_id,
         }
@@ -361,11 +389,11 @@ async def main():
     # 1. Initialize CVS-1.0 Foundation (Pool-based logic)
     conversation_store = ConversationHistoryStore()
     await conversation_store.initialize() # Creates the database pool
-    
+
     # Inject the established pool into MemoryStore
     memory_store = MemoryStore(pool=conversation_store.pool)
     graph_db = GraphDB()
-    
+
     # 2. Instantiate Brain Agent with injected dependencies
     agent = BrainAgent(
         ollama_url=Config.OLLAMA_URL,
@@ -373,9 +401,9 @@ async def main():
         memory_store=memory_store,
         conversation_store=conversation_store
     )
-    
+
     await agent.start()
-    
+
     try:
         while True:
             await asyncio.sleep(1)

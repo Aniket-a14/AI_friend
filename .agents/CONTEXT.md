@@ -783,3 +783,43 @@ Remaining risks:
 
 - Proactive messages consume LLM compute. Under CPU-only Ollama, this adds to the overall inference pressure if triggered during active background reflection.
 - The proactive prompt quality depends heavily on the surfaced memory buffer. If no memories have been surfaced recently, the check-in will be more generic.
+
+## 2026-04-29 Phase 2 & 3: Psychological Layer & Narrative Memory
+
+Implemented the full Phase 2 & 3 Psychological Cognitive Layer according to `psycological_layer.md`. The cognitive core was upgraded to use deterministic heuristic math for emotional and behavioral evaluation.
+
+### Key Advancements:
+
+- **1. Theory of Mind (Modeling the User)**:
+    - **Dynamic User Model**: The `ReflectionService` now extracts "Theory of Mind" observations (e.g., "User seems stressed", "User is tired") into the Neo4j Knowledge Graph.
+    - **Behavioral Adjustment**: The `DecisionService` automatically adjusts its social goals (e.g., favoring COMFORT over ENGAGE) based on the user's detected emotional state and long-term mental state patterns.
+    - **The Vibe**: The AI can now realize if the user has been working late and automatically adjust to be softer, more supportive, and less demanding.
+
+- **2. Episodic vs. Semantic Memory Surfacing**:
+    - **Dual-Channel Recall**: `SurfacingAgent` alternates between Semantic facts (Neo4j) and Episodic narratives (pgvector).
+    - **Narrative Formatting**: Memories are no longer flat strings; they are constructed into "Tulving-style" episodes with temporal markers ("last week") and emotional context.
+    - **The Vibe**: The AI can casually reference shared history: "Remember last week when we were up until 3 AM debugging that routing issue? Let's not do that again tonight."
+
+- **3. Psychological State Engine (PAD)**:
+    - Moved from LLM-driven emotion tracking to **PAD (Valence, Arousal, Dominance)** using ALMA decay rules, Marsh trust, and Bowlby attachment.
+    - **Appraisal (OCC/Lazarus)**: Deterministically calculates relevance, novelty, and goal congruence before state updates.
+    - **Expression (Scherer)**: Computes speaking rate and pause bias from internal state for realistic vocal delivery.
+
+Changed files:
+- `backend/app/cognitive/appraisal.py` (New)
+- `backend/app/cognitive/reappraisal.py` (New)
+- `backend/app/state/agent_state.py`
+- `backend/app/state/memory_store.py`
+- `backend/app/cognitive/core.py`
+- `backend/app/cognitive/decision.py`
+- `backend/app/cognitive/learning.py`
+- `backend/app/agents/brain_agent.py`
+- `backend/app/agents/surfacing_agent.py`
+- `backend/app/config.py`
+- `backend/scripts/init_db.py`
+- `backend/tests/*` (Added robust state and memory regression tests)
+
+Verification:
+- The full backend test suite passes (66/66) after significant updates to state and memory testing.
+- `init_db.py` was executed in the Docker mesh to apply the schema migration (`recall_count`, `valence`).
+

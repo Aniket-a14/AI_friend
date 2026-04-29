@@ -42,7 +42,7 @@ class ScreenLink:
         """Captures and returns a compressed JPEG frame of the screen."""
         if self.headless:
             return None
-            
+
         try:
             sct_img = self.sct.grab(self.monitor)
             img = np.array(sct_img)

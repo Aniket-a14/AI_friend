@@ -1,8 +1,18 @@
+"""
+Cognitive Service — The Orchestrator for the Cognitive Loop.
+
+Pipeline (psycological_layer.md System Principle):
+    Signal → Appraisal → State → Intent → Expression → Reappraisal → Memory
+             ↑                                                         │
+             └─────────────────────────────────────────────────────────┘
+"""
+
 import logging
 import time
 from typing import Dict, Any, AsyncGenerator
 
 from .perception import PerceptionService
+from .appraisal import AppraisalEngine, AppraisalVector
 from ..state import StateService
 from .decision import DecisionService
 from .action import ActionService
@@ -11,10 +21,11 @@ from .identity import IdentityManager
 
 logger = logging.getLogger(__name__)
 
+
 class CognitiveService:
     """
     The Orchestrator for the Cognitive Loop.
-    Integrates BDI logic, State dynamics, and Identity enforcement.
+    Integrates BDI logic, State dynamics, Appraisal, and Identity enforcement.
     """
     def __init__(
         self,
@@ -27,35 +38,40 @@ class CognitiveService:
         self.identity = IdentityManager(base_path=base_path)
         self.identity_store = identity_store
         self.perception = PerceptionService(llm_service=llm_service)
+        self.appraisal = AppraisalEngine()  # §1: OCC/Lazarus/EMA
         self.state = StateService(graph_store=graph_db)
         self.decision = DecisionService(llm_service=llm_service, memory_store=memory_store)
         self.action = ActionService(llm_service=llm_service, memory_store=memory_store)
         self.learning = ReflectionService(
-            llm_service=llm_service, 
-            graph_store=graph_db, 
+            llm_service=llm_service,
+            graph_store=graph_db,
             pg_vector=memory_store,
             identity_manager=self.identity
         )
-        self.surfaced_memories = [] # Buffer for active memory influence
-        self.agent = None # NATS Mesh connection
+        self.surfaced_memories = []  # Buffer for active memory influence
+        self.agent = None  # NATS Mesh connection
+        self._last_appraisal: AppraisalVector = None  # Cache for downstream consumers
         self.subject_metrics = {
             "system.tick": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
             "memory.surfaced": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
             "audio.stop": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
             "audio.resume": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
         }
-        self.last_reflection_task = None # CVS-1.0: Track for test deterministic synchronization
+        self.last_reflection_task = None
 
     async def initialize(self, agent: Any = None):
         """Load identity and hydrate states. Subscribes to Mesh heartbeats."""
         if self.identity_store:
             await self.identity.hydrate_from_config_store(self.identity_store)
         await self.state.hydrate_state()
-        
+
+        # Initialize appraisal engine with identity boundaries
+        boundaries = self.identity.personality.get("boundaries", [])
+        self.appraisal = AppraisalEngine(identity_core_values=boundaries)
+
         # Subscribe to Mesh Channels
         if agent:
              self.agent = agent
-             # Use live-only consumers for runtime channels to avoid replay storms on restart.
              await agent.subscribe(
                  "system.tick",
                  self._on_system_tick,
@@ -74,7 +90,7 @@ class CognitiveService:
                  durable=f"{agent.name}_audio_perception_live",
                  deliver_policy="new",
              )
-             
+
         logger.info("[CognitiveService] Hardened Identity Mesh Fully Initialized.")
 
     async def _on_system_tick(self, data: Dict[str, Any]):
@@ -83,9 +99,7 @@ class CognitiveService:
         await self.state.handle_system_tick(data)
 
     async def _on_audio_perception(self, data: Dict[str, Any]):
-        """
-        Sensory Intelligence: Handle emotional & event cues from SenseVoice.
-        """
+        """Sensory Intelligence: Handle emotional & event cues from SenseVoice."""
         perception_meta = data.get("metadata", {})
         perception_meta.setdefault("confidence", data.get("confidence", 0.0))
         speculative_intent = data.get("speculative_intent")
@@ -111,17 +125,15 @@ class CognitiveService:
                 "timestamp": data.get("timestamp", 0),
                 "relevance": data.get("relevance", 1.0)
             })
-            # Keep only last 5 surfaced memories
             self.surfaced_memories = self.surfaced_memories[-5:]
             logger.debug(f"[Cognitive] Active Memory Influence: Surfaced '{memory_text[:30]}...'")
 
     async def process_event(self, raw_event: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        The Master Cognitive Loop:
-        Refined for Solid State Social Mesh Arbitration.
+        The Master Cognitive Loop (psycological_layer.md System Principle):
+        Perception → Appraisal → State Update → Decision → Action → Learning
         """
         # 1. Conflict Resolution (Turn-Taking Stability)
-        # If we just received a final transcript, check if it contradicts a recent speculative stop.
         raw_event_type = raw_event.get("event_type") or raw_event.get("type")
         event_metadata = raw_event.get("metadata", {}) if isinstance(raw_event.get("metadata"), dict) else {}
         latency_metadata = event_metadata.get("latency_metadata") if isinstance(event_metadata.get("latency_metadata"), dict) else None
@@ -135,10 +147,7 @@ class CognitiveService:
                 )
                 self.state.last_speculative_intent = None
                 if not confirmed:
-                    # REJECTED: False positive. Resume playback immediately.
                     logger.info("[Cognitive] Interruption REJECTED. Resuming playback...")
-                    
-                    # DIRECT MESH SIGNAL: Resume bypasses the cognitive generator
                     if self.agent:
                         publish_started = time.perf_counter()
                         await self.agent.publish("audio.resume", {
@@ -151,7 +160,6 @@ class CognitiveService:
                             {"latency_metadata": latency_metadata},
                             local_latency_ms=(time.perf_counter() - publish_started) * 1000,
                         )
-                    
                     yield {"type": "mesh_signal", "data": "audio.resume"}
                 else:
                     logger.info("[Cognitive] Interruption CONFIRMED. Stopping playback.")
@@ -176,52 +184,75 @@ class CognitiveService:
 
         # 2. Sequential Perception
         event = await self.perception.perceive(raw_event)
-        
-        # 3. Decision (BT Based)
+
+        # 3. Appraisal (§1 — OCC/Lazarus/EMA) — NEW
         state_snapshot = self.state.get_context_snapshot()
+        emotional_bias = state_snapshot.get("mood", 0.0)
+        appraisal_vector = self.appraisal.appraise(
+            event_content=event.raw_content,
+            event_type=event.event_type,
+            emotional_bias=emotional_bias,
+            state_snapshot=state_snapshot,
+            identity_boundaries=self.identity.personality.get("boundaries", []),
+        )
+        self._last_appraisal = appraisal_vector
+
+        # 4. State Update via Appraisal (§2.3 — ALMA mood-pull)
+        if event.event_type == "USER_MESSAGE":
+            await self.state.update_from_appraisal(appraisal_vector)
+            state_snapshot = self.state.get_context_snapshot()  # Refresh after update
+
+        # 5. Decision (BT + MAUT)
         state_directive = self.state.get_behavioral_directive()
-        
-        # Add surfaced memories to event context for 'Active Influence'
+
         if self.surfaced_memories:
             event.metadata["surfaced_memories"] = self.surfaced_memories
-            
+
+        # Pass appraisal to decision layer for MAUT scoring
+        event.metadata["appraisal"] = appraisal_vector.to_dict()
+
         plan = await self.decision.decide(event, state_snapshot)
-        
-        # 4. Action Execution with Identity Validation
-        # Condition behavior on Evolving State + Immutable Core
+
+        # 6. Action Execution with Identity Validation
         plan.payload["identity_prompt"] = self.identity.get_persona_prompt(state_directive)
-        
+
         full_response = ""
         async for chunk in self.action.execute(plan):
             if chunk["type"] == "content":
                 full_response += chunk["data"]
             yield chunk
-            
-        # 5. Validation Check & Self-Correction
+
+        # 7. Validation Check & Self-Correction
         if full_response:
             is_valid, reason = await self.identity.validate_response(full_response, plan.goal)
             if not is_valid:
                 logger.warning(f"[Identity] Validation failed: {reason}. SELF-CORRECTION TRIGGERED.")
-                # PRODUCTION LOGIC: Automated Self-Correction
-                # We append the reason and re-generate once.
                 plan.payload["identity_prompt"] += f"\n\nCRITICAL FIX: Your previous response was rejected for: {reason}. Correct this immediately."
-                
+
                 full_response = ""
                 async for chunk in self.action.execute(plan):
                     if chunk["type"] == "content":
                         full_response += chunk["data"]
                     yield chunk
-        
-        # 6. Learning
+
+        # 8. Learning + Episodic Memory (§6.1)
         if event.intent in ["CHAT", "REMEMBER"]:
              episode = {
                  "id": event.event_id,
-                 "content": event.raw_content,
+                 "event": event.raw_content,
+                 "context": state_directive,
+                 "emotion_vector": {
+                     "V": self.state.current_state.valence,
+                     "Ar": self.state.current_state.arousal,
+                     "D": self.state.current_state.dominance,
+                 },
+                 "appraisal": appraisal_vector.to_dict(),
+                 "relationship_delta": appraisal_vector.relationship_impact,
                  "intent": event.intent,
+                 "content": event.raw_content,
                  "state": state_snapshot,
-                 "response": full_response
+                 "response": full_response,
              }
-             # CVS-1.0: Deterministic awaitable capture
              self.last_reflection_task = await self.learning.trigger_reflection([episode])
 
     async def get_current_emotion(self) -> str:
@@ -231,9 +262,7 @@ class CognitiveService:
         """
         Phase 1: Proactive Engagement.
         Generates a spontaneous message grounded in real identity, state, and memory.
-        Streams through the exact same ActionService pipeline as reactive responses.
         """
-        # 1. Gather real context
         state_directive = self.state.get_behavioral_directive()
         state_snapshot = self.state.get_context_snapshot()
         identity_prompt = self.identity.get_persona_prompt(state_directive)
@@ -241,13 +270,11 @@ class CognitiveService:
         energy = self.state.current_state.energy
         mood_label = self.state.get_emotion_label()
 
-        # 2. Build memory context from surfaced memories (real, not mocked)
         memory_context = ""
         if self.surfaced_memories:
             memory_context = "\nRECENT SHARED MEMORIES:\n" + \
                 "\n".join([f"- {m['content']}" for m in self.surfaced_memories[-3:]])
 
-        # 3. Construct the proactive prompt
         proactive_instruction = f"""
         {identity_prompt}
 
@@ -271,7 +298,6 @@ class CognitiveService:
         Respond with ONLY the message. No quotes, no labels, no preamble.
         """.strip()
 
-        # 4. Build ActionPlan and stream through existing pipeline
         from .decision import ActionPlan
         plan = ActionPlan(
             action_type="RESPOND_CHAT",
@@ -291,12 +317,18 @@ class CognitiveService:
                 full_response += chunk["data"]
             yield chunk
 
-        # 5. Mark state and trigger reflection on the proactive episode
         self.state.mark_proactive_attempt()
 
         if full_response:
             episode = {
                 "id": f"proactive-{time.time()}",
+                "event": "[Agent initiated contact]",
+                "context": state_directive,
+                "emotion_vector": {
+                    "V": self.state.current_state.valence,
+                    "Ar": self.state.current_state.arousal,
+                    "D": self.state.current_state.dominance,
+                },
                 "content": "[Agent initiated contact]",
                 "intent": "CHAT",
                 "state": state_snapshot,

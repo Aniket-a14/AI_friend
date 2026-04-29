@@ -35,7 +35,7 @@ AI Friend should be read as a **software mind-and-voice layer**, not as a produc
 - **Emotional Stability**: Mood, energy, trust, and attachment should move smoothly instead of jumping every turn.
 - **Perceptual Latency**: The system prioritizes when the user first hears a believable response, not only when the full response is complete.
 - **Natural Interruption**: Fast perception can pause speech speculatively, while the final transcript confirms or rejects the interruption.
-- **Organic Memory**: Memory should influence conversation like recollection, not like a rigid search result list.
+- **Organic Memory**: Memory influences conversation like human recollection. The agent alternates between Semantic (fact retrieval) and Episodic (mood-congruent narrative) channels, allowing it to bond over shared history ("Remember last week when we...") rather than acting like a rigid search engine.
 - **Local-First Modularity**: Every major component remains replaceable for future robotics, sensors, and voice engines.
 
 ---

@@ -30,18 +30,18 @@ class STTAgent(BaseAgent):
             device=device,
             language=Config.STT_LANGUAGE,
         )
-        
+
         # 2. Perception Engine (CPU/INT8)
         self.sensevoice_service = SenseVoiceSTTService()
-        
+
         self.target_sample_rate = 16000 # Standard for both engines
-        
+
         # Temporal Intent Stability
         from collections import deque
-        self.intent_window = deque(maxlen=5) 
+        self.intent_window = deque(maxlen=5)
         self.interrupt_intent_threshold = getattr(Config, "INTENT_THRESHOLD", 0.65) # Lowered for speculative speed
         self.stability_required = getattr(Config, "INTENT_STABILITY", 2) # Faster latching
-        
+
         # Audio accumulator for SenseVoice (per-chunk perception)
         self.perception_chunk_size = int(16000 * 0.4) # 400ms chunks
         self.perception_buffer = []
@@ -57,19 +57,19 @@ class STTAgent(BaseAgent):
     async def start(self):
         """Standard startup sequence for Micro-Agents"""
         await self.connect()
-        
+
         # Parallel Engine Hydration
         await asyncio.gather(
             self.whisper_service.load_model(),
             asyncio.to_thread(self.sensevoice_service.load_model)
         )
-        
+
         self.whisper_service.start()
         self.worker_tasks = [
             asyncio.create_task(self._whisper_worker()),
             asyncio.create_task(self._perception_worker()),
         ]
-        
+
         await self.subscribe(
             "audio.inbound", self._on_audio_inbound, deliver_policy="new"
         )
@@ -92,7 +92,7 @@ class STTAgent(BaseAgent):
             audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
             if source_sr != self.target_sample_rate:
                 audio_np = soxr.resample(audio_np, source_sr, self.target_sample_rate)
-            
+
             pcm_16 = (audio_np * 32767).astype(np.int16).tobytes()
 
             # --- PATH 1: WHISPER (ACCURACY/BACKBONE) ---
@@ -107,11 +107,11 @@ class STTAgent(BaseAgent):
             # --- PATH 2: SENSEVOICE (PERCEPTION/FAST) ---
             self.perception_buffer.append(audio_np)
             current_buffer_len = sum(len(c) for c in self.perception_buffer)
-            
+
             if current_buffer_len >= self.perception_chunk_size:
                 perception_audio = np.concatenate(self.perception_buffer)
                 self.perception_buffer = [] # Reset for next chunk
-                
+
                 self._put_latest(
                     self.perception_queue,
                     (perception_audio, metadata or {}),

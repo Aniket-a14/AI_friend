@@ -12,7 +12,7 @@ class FillerService:
     Manages the pre-synthesis and random hydration of social fillers.
     Ensures 0ms latency for 'Thinking' markers (Hmm, Accha, etc.).
     """
-    
+
     PRE_SYNTH_LIST = [
         "Hmm...",
         "Let me think.",
@@ -35,19 +35,19 @@ class FillerService:
         """
         base_dir = Path(__file__).parent.parent.parent / self.cache_dir
         os.makedirs(base_dir, exist_ok=True)
-        
+
         logger.info(f"🎙️ Hydrating Social Vocabulary Mesh ({len(self.PRE_SYNTH_LIST)} fillers)...")
-        
+
         tasks = []
         for text in self.PRE_SYNTH_LIST:
             tasks.append(self._get_or_synth(sovits_client, text, ref_audio, ref_text, base_dir))
-            
+
         results = await asyncio.gather(*tasks)
-        
+
         for text, pcm in results:
             if pcm:
                 self.cache[text] = pcm
-        
+
         self.is_hydrated = True
         logger.info(f"✅ Social Mesh Hydrated. {len(self.cache)} fillers ready for 0ms access.")
 
@@ -55,11 +55,11 @@ class FillerService:
         """Fetch from disk or synthesize if missing."""
         clean_name = "".join(c for c in text.lower() if c.isalnum()) + ".pcm"
         file_path = base_dir / clean_name
-        
+
         if file_path.exists():
             with open(file_path, "rb") as f:
                 return text, f.read()
-        
+
         # Synthesize using SoVITS
         logger.debug(f"Synthesizing filler: {text}")
         pcm_data = await client.synthesize(
@@ -69,12 +69,12 @@ class FillerService:
             text_lang="en",
             media_type="raw"
         )
-        
+
         if pcm_data:
             with open(file_path, "wb") as f:
                 f.write(pcm_data)
             return text, pcm_data
-        
+
         return text, None
 
     def get_random_filler(self) -> Optional[bytes]:

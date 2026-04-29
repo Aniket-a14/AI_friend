@@ -16,15 +16,15 @@ class GraphDB:
         uri = uri or Config.NEO4J_URI
         user = user or Config.NEO4J_USER
         password = password or Config.NEO4J_PASSWORD
-        
+
         if not password or password in ["password", "neo4j", "placeholder"]:
             logger.error("🛑 Security Violation: Weak or Placeholder Neo4j Password Detected.")
             raise ValueError("A strong, non-default NEO4J_PASSWORD must be provided in your .env file.")
 
         self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
-        
+
         # Perceptual Belief Cache
-        self._belief_cache = {} 
+        self._belief_cache = {}
         self._cache_ttl = getattr(Config, "GRAPH_CACHE_TTL", 300)
 
     async def close(self):
@@ -43,17 +43,17 @@ class GraphDB:
     async def execute_query(self, query: str, parameters: Dict[str, Any] = None, use_cache: bool = False) -> List[Any]:
         """Generic async query execution with TTL caching."""
         cache_key = (query, json.dumps(parameters) if parameters else None)
-        
+
         if use_cache and cache_key in self._belief_cache:
             ts, result = self._belief_cache[cache_key]
             if time.time() - ts < self._cache_ttl:
                 return result
-        
+
         try:
             async with self.driver.session() as session:
                 result = await session.run(query, parameters)
                 records = [record async for record in result]
-                
+
                 if use_cache:
                     self._belief_cache[cache_key] = (time.time(), records)
                 return records
@@ -71,10 +71,10 @@ class GraphDB:
         props.setdefault('certainty', 1.0)
         props.setdefault('source', 'agent_inference')
         props.setdefault('version', 1)
-        
+
         # Normalize label for Cypher
         label = label[0].upper() + label[1:] if label else "Entity"
-        
+
         query = (
             f"MERGE (e:{label} {{name: $name}}) "
             "SET e += $props "
@@ -83,8 +83,8 @@ class GraphDB:
         await self.execute_query(query, {"name": name, "props": props})
         logger.debug(f"Graph Store: Hydrated Identity Node ({label} {{name: '{name}'}})")
 
-    async def create_relationship(self, subject_name: str, subject_label: str, 
-                                   relation: str, 
+    async def create_relationship(self, subject_name: str, subject_label: str,
+                                   relation: str,
                                    target_name: str, target_label: str,
                                    properties: Dict[str, Any] = None):
         """
@@ -95,11 +95,11 @@ class GraphDB:
         rel_type = relation.upper().replace(" ", "_").replace("-", "_")
         s_label = (subject_label[0].upper() + subject_label[1:]) if subject_label else "Entity"
         t_label = (target_label[0].upper() + target_label[1:]) if target_label else "Entity"
-        
+
         props = properties or {}
         props.setdefault('weight', 0.5)
         props.setdefault('certainty', 1.0)
-        
+
         query = (
             f"MERGE (s:{s_label} {{name: $s_name}}) "
             f"MERGE (t:{t_label} {{name: $t_name}}) "
@@ -108,7 +108,7 @@ class GraphDB:
             "RETURN s, r, t"
         )
         await self.execute_query(query, {
-            "s_name": subject_name, 
+            "s_name": subject_name,
             "t_name": target_name,
             "props": props
         })

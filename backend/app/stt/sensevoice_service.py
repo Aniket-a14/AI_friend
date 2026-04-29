@@ -18,7 +18,7 @@ class SenseVoiceSTTService:
         self.recognizer = None
         self.emotion_pattern = re.compile(r"<\|(HAPPY|SAD|ANGRY|NEUTRAL|FEARFUL|DISGUSTED|SURPRISED)\|>")
         self.event_pattern = re.compile(r"<\|(BGM|Speech|Applause|Laughter|Cry|Sneeze|Breath|Cough)\|>")
-        
+
         # Mapping for Damped Bias State Machine
         self.emotion_map = {
             "HAPPY": 0.4,
@@ -33,11 +33,11 @@ class SenseVoiceSTTService:
     def load_model(self):
         """Initialize sherpa-onnx OfflineRecognizer."""
         base_path = Path(__file__).parent.parent.parent / self.model_dir
-        
+
         # SenseVoiceSmall specific files
         model_path = base_path / "model.int8.onnx"
         tokens_path = base_path / "tokens.txt"
-        
+
         if not model_path.exists() or not tokens_path.exists():
             logger.error(f"❌ SenseVoice models not found at {base_path}. Please run provisioning script.")
             return False
@@ -48,11 +48,11 @@ class SenseVoiceSTTService:
                 sampling_rate=16000,
                 feature_dim=80,
             )
-            
+
             # SenseVoice uses a specific encoder-decoder architecture
             # but sherpa-onnx has a specialized SenseVoice config
             # (Note: Exact config names depend on sherpa-onnx version)
-            
+
             recognizer_config = sherpa_onnx.OfflineRecognizerConfig(
                 feat_config=feat_config,
                 model_config=sherpa_onnx.OfflineModelConfig(
@@ -67,11 +67,11 @@ class SenseVoiceSTTService:
                     device="cpu",
                 )
             )
-            
+
             self.recognizer = sherpa_onnx.OfflineRecognizer(recognizer_config)
             logger.info("✅ SenseVoice perception engine (CPU/INT8) initialized.")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to load SenseVoice: {e}")
             return False
@@ -87,25 +87,25 @@ class SenseVoiceSTTService:
         try:
             stream = self.recognizer.create_stream()
             stream.accept_waveform(16000, audio_np)
-            
+
             self.recognizer.decode_stream(stream)
             result = stream.result.text.strip()
-            
+
             if not result:
                 return None
-            
+
             # Extract Sensory Metadata
             emotions = self.emotion_pattern.findall(result)
             events = self.event_pattern.findall(result)
-            
+
             # Clean text (remove tags)
             clean_text = self.emotion_pattern.sub("", result)
             clean_text = self.event_pattern.sub("", clean_text).strip()
-            
+
             # Calibration: Extract strongest primary emotion
             primary_emotion = emotions[0] if emotions else "NEUTRAL"
             emotion_bias = self.emotion_map.get(primary_emotion, 0.0)
-            
+
             perception_data = {
                 "text": clean_text,
                 "emotion": primary_emotion,
@@ -113,7 +113,7 @@ class SenseVoiceSTTService:
                 "events": events,
                 "latency_tier": "fast"
             }
-            
+
             logger.debug(f"Perception: {primary_emotion} | Text: {clean_text}")
             return perception_data
 
