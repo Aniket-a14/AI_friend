@@ -18,6 +18,8 @@ class AgentState:
     attachment: float = 0.1    # 0.0 to 1.0
     active_goals: List[str] = field(default_factory=list)
     last_update: datetime = field(default_factory=datetime.now)
+    last_user_interaction: float = field(default_factory=time.time)  # Unix timestamp
+
 
 class StateService:
     """Manages Internal State continuity and Neo4j persistence."""
@@ -33,6 +35,7 @@ class StateService:
         self.min_perception_confidence = getattr(Config, "MIN_PERCEPTION_CONFIDENCE", 0.55)
         self.sensory_persist_interval = getattr(Config, "STATE_SENSORY_PERSIST_INTERVAL", 2.0)
         self._last_sensory_persist = 0.0
+        self._last_proactive_attempt = 0.0  # Unix timestamp of last proactive generation
 
     async def hydrate_state(self, agent_name: str = "my friend"):
         """Loads state from Neo4j."""
@@ -77,12 +80,19 @@ class StateService:
                 await cache_invalidation
         logger.debug(f"[State] Persisted to Neo4j: Mood={self.current_state.mood:.2f}")
 
+    def record_user_interaction(self):
+        """Mark that the user just interacted. Called by BrainAgent on every chat.input."""
+        self.current_state.last_user_interaction = time.time()
+
     async def update_from_event(self, event_valence: float, user_trust_delta: float = 0.0):
         """
         Cognitive Update (0.7 weight).
         Triggered after LLM sentiment analysis or explicit user actions.
         """
         now = datetime.now()
+        
+        # Track that the user is actively interacting
+        self.current_state.last_user_interaction = time.time()
         
         # Apply Cognitive Weight (0.7)
         self.current_state.mood = (self.current_state.mood * 0.3) + (event_valence * 0.7)
@@ -152,6 +162,59 @@ class StateService:
         self._enforce_bounds()
         await self.persist_state()
         logger.debug(f"[State Heartbeat] Mood: {self.current_state.mood:.3f}")
+
+    def check_proactive_eligibility(self) -> bool:
+        """
+        Phase 1: Proactive Engagement.
+        Evaluates whether the agent should spontaneously initiate contact.
+        Returns True only when ALL conditions are met:
+          1. Proactive feature is enabled
+          2. Idle duration exceeds threshold
+          3. Cooldown period has elapsed since last proactive attempt
+          4. Agent has enough energy (not exhausted)
+        """
+        if not getattr(Config, "PROACTIVE_ENABLED", False):
+            return False
+
+        now = time.time()
+
+        # Resolve the effective threshold (debug override takes priority)
+        debug_override = getattr(Config, "PROACTIVE_DEBUG_THRESHOLD_OVERRIDE", None)
+        if debug_override is not None:
+            try:
+                threshold = float(debug_override)
+            except (TypeError, ValueError):
+                threshold = Config.PROACTIVE_IDLE_THRESHOLD_SECONDS
+        else:
+            threshold = Config.PROACTIVE_IDLE_THRESHOLD_SECONDS
+
+        idle_duration = now - self.current_state.last_user_interaction
+        if idle_duration < threshold:
+            return False
+
+        # Cooldown: don't re-trigger if we already spoke proactively recently
+        cooldown = getattr(Config, "PROACTIVE_COOLDOWN_SECONDS", 3600)
+        if (now - self._last_proactive_attempt) < cooldown:
+            return False
+
+        # Energy gate: too tired to initiate
+        min_energy = getattr(Config, "PROACTIVE_MIN_ENERGY", 0.2)
+        if self.current_state.energy < min_energy:
+            logger.debug(
+                "[State] Proactive SKIPPED: energy %.2f < min %.2f",
+                self.current_state.energy, min_energy,
+            )
+            return False
+
+        logger.info(
+            "[State] Proactive ELIGIBLE: idle=%.0fs threshold=%.0fs energy=%.2f",
+            idle_duration, threshold, self.current_state.energy,
+        )
+        return True
+
+    def mark_proactive_attempt(self):
+        """Record that a proactive generation was initiated."""
+        self._last_proactive_attempt = time.time()
 
     def _enforce_bounds(self):
         self.current_state.mood = max(-1.0, min(1.0, self.current_state.mood))

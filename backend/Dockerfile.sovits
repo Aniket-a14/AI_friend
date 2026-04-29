@@ -5,7 +5,8 @@ FROM xxxxrt666/gpt-sovits:latest
 
 # 1. Align Torch/TorchAudio (Base image has 12.6/12.8 mismatch)
 # We force-reinstall to overwrite broken base-image binaries
-RUN pip install --force-reinstall --no-cache-dir \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --force-reinstall \
     torch==2.4.1+cu124 torchaudio==2.4.1+cu124 \
     --index-url https://download.pytorch.org/whl/cu124 \
     --trusted-host download.pytorch.org

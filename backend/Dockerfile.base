@@ -11,7 +11,7 @@ WORKDIR /app
 # 1. OS Dependencies
 # libportaudio2: Audio I/O
 # build-essential: Compiling C extensions
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libportaudio2 \
     libgl1 \
@@ -21,11 +21,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Python Environment
-RUN pip install --no-cache-dir --upgrade pip uv
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip uv
 
 # 3. Base Dependencies
 COPY requirements-base.txt .
-RUN pip install --no-cache-dir -r requirements-base.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements-base.txt
 
 # 4. Security: Non-root user
 RUN groupadd -g 1001 appgroup && useradd -m -u 1001 -g appgroup appuser

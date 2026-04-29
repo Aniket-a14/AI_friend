@@ -227,6 +227,86 @@ class CognitiveService:
     async def get_current_emotion(self) -> str:
         return self.state.get_emotion_label()
 
+    async def generate_proactive_response(self) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Phase 1: Proactive Engagement.
+        Generates a spontaneous message grounded in real identity, state, and memory.
+        Streams through the exact same ActionService pipeline as reactive responses.
+        """
+        # 1. Gather real context
+        state_directive = self.state.get_behavioral_directive()
+        state_snapshot = self.state.get_context_snapshot()
+        identity_prompt = self.identity.get_persona_prompt(state_directive)
+        relationship = self.identity.history.get("relationship", "Friend")
+        energy = self.state.current_state.energy
+        mood_label = self.state.get_emotion_label()
+
+        # 2. Build memory context from surfaced memories (real, not mocked)
+        memory_context = ""
+        if self.surfaced_memories:
+            memory_context = "\nRECENT SHARED MEMORIES:\n" + \
+                "\n".join([f"- {m['content']}" for m in self.surfaced_memories[-3:]])
+
+        # 3. Construct the proactive prompt
+        proactive_instruction = f"""
+        {identity_prompt}
+
+        SITUATION: The user has been away for a while. You feel an urge to reach out.
+        Your current emotional state: {mood_label}
+        Your energy level: {energy:.2f}
+        Your relationship with the user: {relationship}
+        {memory_context}
+
+        TASK: Generate a single, natural, spontaneous message to the user.
+        This should feel like a real friend checking in — not a notification or reminder.
+        Keep it brief (1-3 sentences max). Match your tone to your current mood and energy.
+        If you have shared memories, you may reference them naturally.
+        Do NOT ask "How can I help you?" — you are a friend, not an assistant.
+
+        Examples of natural check-ins:
+        - "Hey, been a while! What have you been up to?"
+        - "I was just thinking about that thing you mentioned earlier..."
+        - "You okay? Haven't heard from you in a bit."
+
+        Respond with ONLY the message. No quotes, no labels, no preamble.
+        """.strip()
+
+        # 4. Build ActionPlan and stream through existing pipeline
+        from .decision import ActionPlan
+        plan = ActionPlan(
+            action_type="RESPOND_CHAT",
+            goal="INITIATE",
+            payload={
+                "message": "[PROACTIVE_TRIGGER]",
+                "identity_prompt": proactive_instruction,
+                "emotion_state": mood_label,
+                "surfaced_memories": self.surfaced_memories[-3:] if self.surfaced_memories else [],
+            },
+            priority=0,
+        )
+
+        full_response = ""
+        async for chunk in self.action.execute(plan):
+            if chunk["type"] == "content":
+                full_response += chunk["data"]
+            yield chunk
+
+        # 5. Mark state and trigger reflection on the proactive episode
+        self.state.mark_proactive_attempt()
+
+        if full_response:
+            episode = {
+                "id": f"proactive-{time.time()}",
+                "content": "[Agent initiated contact]",
+                "intent": "CHAT",
+                "state": state_snapshot,
+                "response": full_response,
+            }
+            self.last_reflection_task = await self.learning.trigger_reflection([episode])
+
+        logger.info("[Cognitive] Proactive generation complete. Response length: %d", len(full_response))
+
+
     def _record_subject_metric(
         self,
         subject: str,

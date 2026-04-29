@@ -97,6 +97,13 @@ class BrainAgent(BaseAgent):
             durable=f"{self.name}_voice_segmentation_feedback_live",
             deliver_policy="new",
         )
+        # Phase 1: Subscribe to system.tick for proactive engagement evaluation
+        await self.subscribe(
+            "system.tick",
+            self._on_system_tick,
+            durable=f"{self.name}_system_tick_proactive_live",
+            deliver_policy="new",
+        )
         
         logger.info(f"🧠 {self.name} Online | CVS-1.0 Cognitive Mesh Active.")
 
@@ -120,6 +127,9 @@ class BrainAgent(BaseAgent):
     async def _on_chat_input(self, message: Dict[str, Any]):
         now = datetime.now()
         self.last_interaction_time = now
+        
+        # Phase 1: Track real interaction time for proactive idle detection
+        self.cognitive_core.state.record_user_interaction()
         
         user_text = message.get("text", "")
         if not user_text:
@@ -264,6 +274,84 @@ class BrainAgent(BaseAgent):
     async def stop(self):
         await super().stop()
         logger.info(f"🧠 {self.name} Offline.")
+
+    async def _on_system_tick(self, data: Dict[str, Any]):
+        """
+        Phase 1: Proactive Engagement.
+        Evaluates idle conditions on every heartbeat and triggers spontaneous speech.
+        """
+        if not self.cognitive_core.state.check_proactive_eligibility():
+            return
+
+        logger.info("💭 [Brain] Proactive engagement triggered. Generating spontaneous message...")
+        await self._generate_proactive_speech()
+
+    async def _generate_proactive_speech(self):
+        """
+        Generates and publishes a spontaneous proactive message using
+        the exact same segmenter and chat.output pipeline as reactive speech.
+        """
+        turn_id = f"proactive-{uuid.uuid4()}"
+        full_response = ""
+        current_chunk_words = []
+        segment_started_at = None
+
+        await self.set_state("thinking")
+
+        try:
+            async for output in self.cognitive_core.generate_proactive_response():
+                if output["type"] == "content":
+                    await self.set_state("speaking")
+                    chunk_text = output["data"]
+                    full_response += chunk_text
+
+                    now_monotonic = time.perf_counter()
+                    if (
+                        current_chunk_words
+                        and segment_started_at is not None
+                        and (now_monotonic - segment_started_at) >= self.formation_buffer_ms
+                        and len(current_chunk_words) >= 3
+                    ):
+                        await self._publish_speech_chunk(current_chunk_words, turn_id)
+                        current_chunk_words = []
+                        segment_started_at = None
+
+                    words = chunk_text.split()
+                    for word in words:
+                        if not current_chunk_words:
+                            segment_started_at = time.perf_counter()
+                        current_chunk_words.append(word)
+
+                        score = self.segmenter.score_split_point(word, len(current_chunk_words))
+                        if score > 0.7 or len(current_chunk_words) > 12:
+                            await self._publish_speech_chunk(current_chunk_words, turn_id)
+                            current_chunk_words = []
+                            segment_started_at = None
+
+                elif output["type"] == "done":
+                    if current_chunk_words:
+                        await self._publish_speech_chunk(current_chunk_words, turn_id)
+                        current_chunk_words = []
+
+                    if full_response.strip():
+                        state_snap = self.cognitive_core.state.get_context_snapshot()
+                        await self.publish("chat.output", {
+                            "content": "",
+                            "done": True,
+                            "full_response": full_response,
+                            "emotion": state_snap.get("emotion", "neutral"),
+                            "turn_id": turn_id,
+                            "proactive": True,
+                        })
+
+        except Exception as e:
+            logger.error("[Brain] Proactive generation error: %s", e)
+
+        if self.conversation_store and full_response:
+            asyncio.create_task(self.conversation_store.log_message("assistant", full_response))
+
+        await self.set_state("idle")
+        logger.info("💭 [Brain] Proactive message delivered: '%s'", full_response[:80] if full_response else "(empty)")
 
 async def main():
     if Config.RUNTIME_AUTO_BOOTSTRAP:
