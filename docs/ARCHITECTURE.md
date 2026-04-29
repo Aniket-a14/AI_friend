@@ -41,12 +41,15 @@ The BrainAgent orchestrates a **State-Driven Identity** with a hardened relation
 
 ### 📖 2. Proactive Memory Surfacing
 
-The system anticipates conversational context through an asynchronous recall layer that merges Relational (Postgres) and Graph (Neo4j) knowledge.
+The system anticipates conversational context through an asynchronous dual-channel recall layer that merges Relational (Postgres) and Graph (Neo4j) knowledge.
 
-- **`SurfacingAgent`**: Background process that evaluates shared history vs. current intent.
-- **Novelty Suppression**: Recently surfaced memories are suppressed for a short window, so the agent does not keep repeating the same recollection.
+- **`SurfacingAgent`**: Background process that alternates between two recall channels:
+  - **Episodic Channel (pgvector)**: ACT-R scored, mood-congruent recall of past events.
+  - **Semantic Channel (Neo4j)**: Structured facts and relationship extraction (e.g., "User -> LIKES -> Coffee").
+- **Narrative Formatting**: Episodic memories are not surfaced as flat strings, but constructed into narrative episodes with temporal labels ("last week") and emotional context, allowing the LLM to bond over shared history ("Remember when we...").
+- **Novelty Suppression**: Recently surfaced memories are suppressed for a short window, preventing the agent from repeating the same recollection.
 - **Passive Recall Safety**: Surfacing does not refresh `last_recalled_at`, preventing memory relevance from becoming self-reinforcing only because a memory was surfaced.
-- **Signal Bus Expansion**: The mesh now monitors 9 core subjects: `chat.*`, `vision.*`, `state.*`, `cmd.*`, `voice.*`, `system.*`, `memory.*`, `identity.*`, and `knowledge.*`.
+- **Signal Bus Expansion**: The mesh monitors 9 core subjects: `chat.*`, `vision.*`, `state.*`, `cmd.*`, `voice.*`, `system.*`, `memory.*`, `identity.*`, and `knowledge.*`.
 
 ### ⏱️ 3. Perceptual Intelligence (STT Agent)
 

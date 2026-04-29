@@ -64,10 +64,13 @@ CVS-1.0 uses one live identity owner and confidence-gated reflection so adaptive
 
 ## 3. Active Memory Surfacing
 
-CVS-1.0 uses **Proactive Recall** rather than passive retrieval.
+CVS-1.0 uses **Proactive Recall** rather than passive retrieval, utilizing a dual-channel cognitive architecture.
 
-The **`SurfacingAgent`** runs in the background, matching recent conversational context against the long-term `GraphRAG` and `Vector Store`.
+The **`SurfacingAgent`** runs in the background, alternating between two recall channels:
+- **Episodic Channel (pgvector)**: Recalls specific past events, scored using ACT-R base-level activation and Bower's mood-congruent alignment (recalling sad memories when sad).
+- **Semantic Channel (Neo4j)**: Extracts structured facts and relational knowledge based on the current conversational context.
 
+- **Narrative Formatting**: Episodic memories are not surfaced as flat strings. They are constructed into Tulving-style narrative episodes with temporal labels ("last week") and emotional context, allowing the agent to bond over shared history ("Remember when we...").
 - **Asynchronous Triggers**: Relevant memories are published as `memory.surfaced` mesh events.
 - **Decision Blackboard**: The `CognitiveService` buffers these "surfaced" thoughts and injects them into the current decision loop, allowing the agent to "spontaneously" bring up past moments.
 - **Novelty Window**: Recently surfaced memories are suppressed temporarily so recall feels selective rather than repetitive.

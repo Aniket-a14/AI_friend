@@ -1,17 +1,33 @@
+"""
+Surfacing Agent — Episodic + Semantic Memory (psycological_layer.md §6-7).
+
+Two memory channels:
+  1. Episodic (pgvector): ACT-R scored, mood-congruent recall (Bower, 1981)
+  2. Semantic (Neo4j):   Structured facts/relationships from the knowledge graph
+
+The agent alternates between channels to provide the cognitive core with both
+"I remember when..." (episodic) and "I know that..." (semantic) context.
+"""
+
 import asyncio
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from .base import BaseAgent
 from ..state import ConversationHistoryStore, MemoryStore, GraphDB
 
 logger = logging.getLogger("surfacing_agent")
 
+
 class SurfacingAgent(BaseAgent):
     """
     Active Memory Influence Agent.
-    Asynchronously evaluates long-term memory and 'surfaces' relevant context 
+    Asynchronously evaluates long-term memory and 'surfaces' relevant context
     as mesh events for current cognition.
+
+    Dual-channel retrieval:
+      - Episodic: pgvector similarity + ACT-R activation + emotional alignment
+      - Semantic: Neo4j entity/relationship lookup for structured knowledge
     """
     def __init__(self, memory_store=None, graph_db=None, conversation_store=None):
         super().__init__(name="surfacing_agent")
@@ -19,13 +35,18 @@ class SurfacingAgent(BaseAgent):
         self.graph = graph_db
         self.conversation_store = conversation_store
         self.last_context = ""
-        self.surfacing_cooldown = 30 # Seconds between surfacing events
-        self.min_sweep_interval = 5  # Avoid high-frequency vector sweeps when no memory is surfaced.
+        self.surfacing_cooldown = 30  # Seconds between surfacing events
+        self.min_sweep_interval = 5
         self.surface_novelty_window = 300
         self.last_surfaced_time = 0
         self.last_sweep_attempt = 0
         self.recently_surfaced = {}
         self._sweep_task: Optional[asyncio.Task] = None
+
+        # Dual-channel state
+        self._last_channel = "episodic"  # Alternate between channels
+        self._current_valence = 0.0      # For mood-congruent retrieval
+
         self.subject_metrics = {
             "system.tick": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
             "memory.surfaced": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
@@ -33,26 +54,30 @@ class SurfacingAgent(BaseAgent):
 
     async def start(self):
         await self.connect()
-        # Subscribe to chat inputs to stay sync'd with user context
         await self.subscribe(
             "chat.input",
             self._on_chat_input,
             durable=f"{self.name}_chat_input_live",
             deliver_policy="new",
         )
-        # Periodic 'background sweep' on system tick
         await self.subscribe(
             "system.tick",
             self._on_system_tick,
             durable=f"{self.name}_system_tick_live",
             deliver_policy="new",
         )
-        logger.info(f"🧠 {self.name} Online | Memory Surfacing Active.")
+        # Subscribe to state broadcasts to track current valence for mood-congruent recall
+        await self.subscribe(
+            "agent.state",
+            self._on_agent_state,
+            durable=f"{self.name}_agent_state_live",
+            deliver_policy="new",
+        )
+        logger.info(f"🧠 {self.name} Online | Dual-Channel Memory Surfacing Active.")
 
     async def _on_chat_input(self, data: Dict[str, Any], metadata: dict = None):
         """Update recent context tracking."""
         self.last_context = data.get("text", "")
-        # Trigger immediate surfacing check if it's been a while
         if time.time() - self.last_surfaced_time > 10:
              source_meta = metadata or data.get("latency_metadata")
              self._schedule_sweep(source_metadata=source_meta)
@@ -60,9 +85,15 @@ class SurfacingAgent(BaseAgent):
     async def _on_system_tick(self, data: Dict[str, Any]):
         """Periodic background sweep for memory relevance."""
         self._record_surfacing_metric("system.tick", metadata=data.get("latency_metadata"))
-        # Only surface if we haven't recently or if context is fresh
         if time.time() - self.last_surfaced_time > self.surfacing_cooldown:
              await self._run_sweep_now(source_metadata=data.get("latency_metadata"))
+
+    async def _on_agent_state(self, data: Dict[str, Any]):
+        """Track current valence for mood-congruent episodic retrieval (Bower, 1981)."""
+        if isinstance(data, dict):
+            self._current_valence = data.get(
+                "valence", data.get("mood", self._current_valence)
+            )
 
     async def _run_sweep_now(self, source_metadata: Optional[Dict[str, Any]] = None):
         """Run a sweep inline (used by low-frequency control channels like system.tick)."""
@@ -93,59 +124,306 @@ class SurfacingAgent(BaseAgent):
 
     async def _surface_relevant_memories(self, source_metadata: Optional[Dict[str, Any]] = None):
         """
-        The Core Surfacing Logic:
-        1. Query Vector store for contextual similarity.
-        2. Query Neo4j for relationship milestones.
-        3. Publish 'memory.surfaced' event.
+        Dual-Channel Surfacing Logic (§6-7):
+        1. Episodic channel: pgvector ACT-R + mood-congruent retrieval
+        2. Semantic channel: Neo4j entity/relationship lookup
+        3. Publish 'memory.surfaced' events with source tagging
         """
-        if not self.last_context or not self.memory:
+        if not self.last_context:
             return
-            
+
         try:
             sweep_started = time.perf_counter()
             now = time.time()
             self._prune_recently_surfaced(now)
 
-            # 1. Vector Search for similarity
+            # Alternate channels to balance episodic and semantic recall
+            if self._last_channel == "episodic":
+                surfaced = await self._surface_semantic(now, source_metadata)
+                if surfaced:
+                    self._last_channel = "semantic"
+                else:
+                    # Fallback to episodic if semantic yields nothing
+                    surfaced = await self._surface_episodic(now, source_metadata)
+                    if surfaced:
+                        self._last_channel = "episodic"
+            else:
+                surfaced = await self._surface_episodic(now, source_metadata)
+                if surfaced:
+                    self._last_channel = "episodic"
+                else:
+                    surfaced = await self._surface_semantic(now, source_metadata)
+                    if surfaced:
+                        self._last_channel = "semantic"
+
+            if surfaced:
+                total_ms = (time.perf_counter() - sweep_started) * 1000
+                logger.info(
+                    "[SurfacingMetrics] channel=%s total_ms=%.2f",
+                    self._last_channel, total_ms,
+                )
+
+        except Exception as e:
+            logger.error(f"[Surfacing] Error in background sweep: {e}")
+
+    # ── Episodic Channel (pgvector + ACT-R) ──
+
+    async def _surface_episodic(
+        self, now: float, source_metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Episodic retrieval via pgvector with ACT-R scoring and
+        mood-congruent recall (Bower, 1981 — §6.4).
+
+        Surfaces memories as narrative episodes (Tulving, 1972):
+        not just "Aniket likes coding" but "Late night debugging session,
+        felt stressed but bonded over solving the routing issue."
+        """
+        if not self.memory:
+            return False
+
+        search_started = time.perf_counter()
+        memories = await self.memory.search_memories(
+            self.last_context,
+            limit=3,
+            refresh_on_recall=False,
+            exclude_contents=list(self.recently_surfaced.keys()),
+            current_valence=self._current_valence,
+        )
+        search_ms = (time.perf_counter() - search_started) * 1000
+
+        for mem in memories:
+            content = mem.get("content")
+            if content and not self._was_recently_surfaced(content, now):
+                # Build a narrative episode from the enriched metadata
+                episode = self._build_episode_narrative(mem, now)
+
+                publish_started = time.perf_counter()
+                await self.publish("memory.surfaced", {
+                    "content": episode["narrative"],
+                    "raw_content": content,
+                    "timestamp": now,
+                    "relevance": mem.get("score", 0.7),
+                    "source": "episodic",
+                    "channel": "pgvector_actr",
+                    "episode": episode,
+                }, metadata=source_metadata)
+                publish_ms = (time.perf_counter() - publish_started) * 1000
+
+                self.last_surfaced_time = now
+                self.recently_surfaced[content] = now
+                self._record_surfacing_metric("memory.surfaced", metadata=source_metadata)
+                logger.info(
+                    "[Surfacing] Episodic recall: '%s...' (search=%.1fms pub=%.1fms)",
+                    episode["narrative"][:60], search_ms, publish_ms,
+                )
+                return True
+
+        return False
+
+    def _build_episode_narrative(self, mem: Dict[str, Any], now: float) -> Dict[str, Any]:
+        """
+        Transforms a raw memory row into a Tulving-style episode with
+        temporal context, emotional color, and narrative framing.
+
+        This is what allows the LLM to say:
+          "Remember last week when we were up until 3 AM debugging?"
+        instead of:
+          "You mentioned debugging."
+        """
+        content = mem.get("content", "")
+        created_at = mem.get("created_at")
+        valence = mem.get("valence", 0.0)
+        recall_count = mem.get("recall_count", 1)
+        meta = mem.get("metadata", {})
+
+        # Temporal context: "earlier today", "a few days ago", "last week"
+        time_label = self._temporal_label(created_at, now)
+
+        # Emotional color: what the mood was during this memory
+        if valence > 0.3:
+            mood_label = "a good moment"
+        elif valence < -0.3:
+            mood_label = "a tough time"
+        else:
+            mood_label = "a conversation"
+
+        # Familiarity: how often this has come up
+        if recall_count > 10:
+            familiarity = "something we keep coming back to"
+        elif recall_count > 3:
+            familiarity = "something that's come up before"
+        else:
+            familiarity = None
+
+        # Build the narrative string for the LLM
+        parts = []
+        if time_label:
+            parts.append(f"[{time_label}]")
+        parts.append(content)
+        if familiarity:
+            parts.append(f"({familiarity})")
+
+        narrative = " ".join(parts)
+
+        return {
+            "narrative": narrative,
+            "raw_content": content,
+            "time_label": time_label,
+            "mood_label": mood_label,
+            "valence": valence,
+            "recall_count": recall_count,
+            "created_at": created_at,
+            "metadata": meta,
+        }
+
+    @staticmethod
+    def _temporal_label(created_at_iso: str, now: float) -> str:
+        """Converts an ISO timestamp into a human-readable relative label."""
+        if not created_at_iso:
+            return ""
+        try:
+            from datetime import datetime, timezone
+            created = datetime.fromisoformat(created_at_iso)
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            now_dt = datetime.fromtimestamp(now, tz=timezone.utc)
+            delta = now_dt - created
+            hours = delta.total_seconds() / 3600
+
+            if hours < 1:
+                return "just now"
+            if hours < 6:
+                return "earlier today"
+            if hours < 24:
+                return "today"
+            if hours < 48:
+                return "yesterday"
+            if hours < 168:
+                days = int(hours / 24)
+                return f"{days} days ago"
+            if hours < 720:
+                weeks = int(hours / 168)
+                return f"{'last week' if weeks == 1 else f'{weeks} weeks ago'}"
+            months = int(hours / 720)
+            return f"{'last month' if months == 1 else f'{months} months ago'}"
+        except (ValueError, TypeError):
+            return ""
+
+    # ── Semantic Channel (Neo4j Knowledge Graph) ──
+
+    async def _surface_semantic(
+        self, now: float, source_metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Semantic retrieval from the Neo4j knowledge graph.
+        Extracts structured facts about entities mentioned in the current context.
+
+        Tulving (1972): Semantic memory = general knowledge, facts, concepts
+        (vs episodic = specific events with temporal context).
+        """
+        if not self.graph:
+            return False
+
+        # Extract candidate entity names from the context (simple word-based extraction)
+        entities = self._extract_entity_candidates(self.last_context)
+        if not entities:
+            return False
+
+        try:
             search_started = time.perf_counter()
-            memories = await self.memory.search_memories(
-                self.last_context,
-                limit=3,
-                refresh_on_recall=False,
-                exclude_contents=list(self.recently_surfaced.keys()),
-            )
+            facts = await self._query_related_facts(entities)
             search_ms = (time.perf_counter() - search_started) * 1000
-            
-            # 2. Ranking & Filtering (Simulated ranking here)
-            # In a full version, we'd use emotional_weight and recency.
-            for mem in memories:
-                content = mem.get("content")
-                if content and not self._was_recently_surfaced(content, now):
-                    # 3. Publish to Mesh
+
+            for fact_text in facts:
+                if not self._was_recently_surfaced(fact_text, now):
                     publish_started = time.perf_counter()
                     await self.publish("memory.surfaced", {
-                        "content": content,
+                        "content": fact_text,
                         "timestamp": now,
-                        "relevance": mem.get("score", 0.7),
-                        "source": "vector_long_term"
+                        "relevance": 0.8,
+                        "source": "semantic",
+                        "channel": "neo4j_graph",
                     }, metadata=source_metadata)
                     publish_ms = (time.perf_counter() - publish_started) * 1000
 
                     self.last_surfaced_time = now
-                    self.recently_surfaced[content] = now
+                    self.recently_surfaced[fact_text] = now
                     self._record_surfacing_metric("memory.surfaced", metadata=source_metadata)
                     logger.info(
-                        "[SurfacingMetrics] surfaced=1 search_ms=%.2f publish_ms=%.2f total_ms=%.2f",
-                        search_ms,
-                        publish_ms,
-                        (time.perf_counter() - sweep_started) * 1000,
+                        "[Surfacing] Semantic recall: '%s...' (search=%.1fms pub=%.1fms)",
+                        fact_text[:40], search_ms, publish_ms,
                     )
-                    logger.debug(f"[Surfacing] Emerged memory: {content[:40]}...")
-                    # Surface only one at a time for focus
-                    break
-                    
+                    return True
+
         except Exception as e:
-            logger.error(f"[Surfacing] Error in background sweep: {e}")
+            logger.error(f"[Surfacing] Semantic query failed: {e}")
+
+        return False
+
+    def _extract_entity_candidates(self, text: str) -> List[str]:
+        """
+        Lightweight entity extraction from context text.
+        Uses capitalized words as candidate proper nouns.
+        Filters out common stop words and short tokens.
+        """
+        stop_words = {
+            "i", "me", "my", "you", "your", "we", "our", "they", "the", "a", "an",
+            "is", "are", "was", "were", "am", "be", "been", "being", "have", "has",
+            "had", "do", "does", "did", "will", "would", "could", "should", "can",
+            "may", "might", "shall", "not", "no", "but", "and", "or", "if", "then",
+            "so", "what", "when", "where", "how", "why", "who", "which", "that",
+            "this", "it", "its", "just", "also", "very", "really", "about", "with",
+            "from", "into", "for", "of", "on", "in", "at", "to", "by", "up", "out",
+            "hey", "hello", "hi", "ok", "yeah", "yes", "no", "oh", "ah",
+        }
+
+        words = text.split()
+        candidates = []
+        for word in words:
+            clean = word.strip(".,!?;:'\"()[]{}").strip()
+            if len(clean) < 2:
+                continue
+            # Capitalized words (potential proper nouns)
+            if clean[0].isupper() and clean.lower() not in stop_words:
+                candidates.append(clean)
+
+        return list(dict.fromkeys(candidates))[:5]  # Deduplicate, limit to 5
+
+    async def _query_related_facts(self, entities: List[str]) -> List[str]:
+        """
+        Query Neo4j for all relationships involving the given entity names.
+        Returns human-readable fact strings.
+        """
+        if not entities:
+            return []
+
+        query = """
+        MATCH (s)-[r]->(t)
+        WHERE s.name IN $names OR t.name IN $names
+        RETURN s.name AS subject, type(r) AS relation, t.name AS object,
+               r.confidence AS confidence
+        ORDER BY r.confidence DESC
+        LIMIT 5
+        """
+        results = await self.graph.execute_query(
+            query, {"names": entities}, use_cache=True
+        )
+
+        facts = []
+        for record in results:
+            subj = record.get("subject", record.get("s.name", "?"))
+            rel = record.get("relation", record.get("type(r)", "?"))
+            obj = record.get("object", record.get("t.name", "?"))
+
+            # Convert UPPER_SNAKE_CASE relation to readable form
+            readable_rel = rel.replace("_", " ").lower()
+            fact_text = f"{subj} {readable_rel} {obj}"
+            facts.append(fact_text)
+
+        return facts
+
+    # ── Shared infrastructure ──
 
     def _prune_recently_surfaced(self, now: float):
         stale = [
@@ -206,6 +484,7 @@ class SurfacingAgent(BaseAgent):
 
         await super().stop()
         logger.info(f"🧠 {self.name} Offline.")
+
 
 async def main():
     conversation_store = ConversationHistoryStore()

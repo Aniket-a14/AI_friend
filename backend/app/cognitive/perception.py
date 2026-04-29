@@ -34,13 +34,13 @@ class PerceptionService:
         event_type = raw_event.get("type", "USER_MESSAGE")
         content = raw_event.get("content", "")
         metadata = raw_event.get("metadata", {})
-        
+
         # 2. Extract Intent
         intent = "CHAT" # Default fallback
-        
+
         if event_type == "SYSTEM_TICK":
             intent = "REFLECT"  # Idle reflection trigger
-            
+
         elif event_type == "USER_MESSAGE" and self.llm:
             # Here we might use a quick zero-shot local LLM call to classify intent
             # e.g., "classify this as CHAT or REMEMBER: {content}"
@@ -49,7 +49,7 @@ class PerceptionService:
                 intent = "REMEMBER"
             else:
                 intent = "CHAT"
-                
+
         logger.debug(f"[Perception] Extracted intent '{intent}' from {event_type}")
 
         return CognitiveEvent(

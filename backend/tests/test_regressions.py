@@ -49,14 +49,19 @@ def test_cognitive_resume_recovery_accepts_type_key():
         "utterance_id": "utt-1",
     }
     service.state.hydrate_state = AsyncMock()
+    service.state.update_from_appraisal = AsyncMock()
     service.state.get_context_snapshot = MagicMock(
         return_value={
             "emotion": "neutral",
             "mood": 0.0,
             "energy": 0.5,
+            "dominance": 0.5,
             "trust": 0.5,
             "attachment": 0.1,
+            "interaction_count": 0,
             "active_goals": [],
+            "valence": 0.0,
+            "arousal": 0.5,
         }
     )
     service.state.get_behavioral_directive = MagicMock(return_value="stay calm")
@@ -65,6 +70,7 @@ def test_cognitive_resume_recovery_accepts_type_key():
             metadata={},
             intent="CHAT",
             event_id="evt-1",
+            event_type="USER_MESSAGE",
             raw_content="please continue",
         )
     )

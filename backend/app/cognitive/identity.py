@@ -13,25 +13,25 @@ class IdentityManager:
     def __init__(self, base_path: str = None):
         if base_path is None:
             base_path = os.path.dirname(os.path.dirname(__file__))
-            
+
         self.personality_path = os.path.join(base_path, "personality.json")
         self.history_path = os.path.join(base_path, "history.json")
-        
+
         self.personality = self._load_json(self.personality_path)
         self.history = self._load_json(self.history_path)
-        
+
         # CVS-1.0: Ensure safe defaults for adaptive history
         self.history.setdefault("relationship", "Friend")
         self.history.setdefault("memories", [])
-        
+
         self.config_store = None
-        
+
         # CVS-1.0: Immutable Core Trait seeding
         self._refresh_immutable_core()
-        
+
         # Buffer for adaptive variable evolution
-        self.evolution_buffer = {} 
-        
+        self.evolution_buffer = {}
+
         logger.info(f"[Identity] Hybrid Persona Active | Core: {self.immutable_core['base_tone']}")
 
     def _load_json(self, path: str) -> Dict[str, Any]:
@@ -107,7 +107,7 @@ class IdentityManager:
             core_personality = self.personality.setdefault("core_personality", {})
             core_personality["immutable"] = self.immutable_core
             self.history.setdefault("memories", [])
-            
+
             with open(self.personality_path, 'w', encoding='utf-8') as f:
                 json.dump(self.personality, f, indent=2)
             with open(self.history_path, 'w', encoding='utf-8') as f:
@@ -135,7 +135,7 @@ class IdentityManager:
             for trait in suggestions["new_traits"]:
                 if trait not in adaptive_traits:
                     adaptive_traits.append(trait)
-            
+
         # 2. Update Relationship Context
         if "relationship" in suggestions:
             self.history["relationship"] = suggestions["relationship"]
@@ -143,7 +143,7 @@ class IdentityManager:
         # 3. Add to memories
         if "new_memory" in suggestions:
             self.history.setdefault("memories", []).append(suggestions["new_memory"])
-        
+
         self.save()
         await self.persist_to_config_store()
 
@@ -151,12 +151,12 @@ class IdentityManager:
         p = self.personality
         h = self.history
         core = self.immutable_core
-        
+
         # Adaptive current variables
         adaptive_traits = ", ".join(p.get("core_personality", {}).get("adaptive_traits", []))
         style = p.get("speaking_style", {}).get("style_description", "")
         vocab = ", ".join(p.get("speaking_style", {}).get("common_vocabulary", [])[:30])
-        
+
         return f"""
 YOU ARE {p.get('name', 'my friend')}. 🤖✨
 IMMUTABLE VALUES: {", ".join(core['values'])}
@@ -187,7 +187,7 @@ MANDATORY RULES:
         for boundary in self.immutable_core["boundaries"]:
             if "toxic" in boundary.lower() and "hate" in text.lower():
                  return False, "Response violates core boundary: Non-toxicity"
-        
+
         # Restricted phrases check
         forbidden = self.personality.get("conversation_rules", {}).get("avoid", [])
         for pattern in forbidden:

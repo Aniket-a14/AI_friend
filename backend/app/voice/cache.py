@@ -26,7 +26,7 @@ class AudioCache:
             self.order.remove(key)
             self.order.append(key)
             return self.cache[key]
-        
+
         # Stylistic Near-Neighbor Match (V2.6)
         norm_text = key[0]
         for c_key in self.cache:
@@ -43,6 +43,6 @@ class AudioCache:
         elif len(self.cache) >= self.max_size:
             oldest = self.order.popleft()
             del self.cache[oldest]
-        
+
         self.cache[key] = audio
         self.order.append(key)

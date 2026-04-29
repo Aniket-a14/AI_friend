@@ -58,10 +58,22 @@ async def test_bounds_enforcement(state_service):
 def test_emotion_label(state_service):
     state_service.current_state.mood = 0.5
     assert state_service.get_emotion_label() == "happy"
-    
+
     state_service.current_state.mood = -0.5
     assert state_service.get_emotion_label() == "sad"
-    
+
+    # PAD: Neutral valence + high arousal = "alert" (not "excited")
     state_service.current_state.mood = 0.0
     state_service.current_state.energy = 0.9
+    assert state_service.get_emotion_label() == "alert"
+
+    # PAD: Positive valence + high arousal = "excited"
+    state_service.current_state.mood = 0.5
+    state_service.current_state.energy = 0.9
     assert state_service.get_emotion_label() == "excited"
+
+    # PAD: Low dominance = "uncertain"
+    state_service.current_state.mood = 0.0
+    state_service.current_state.energy = 0.5
+    state_service.current_state.dominance = 0.2
+    assert state_service.get_emotion_label() == "uncertain"

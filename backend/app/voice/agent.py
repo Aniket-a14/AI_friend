@@ -40,7 +40,7 @@ class VoiceAgent(BaseAgent):
         self.normalizer = AudioNormalizer()
         self.cache = AudioCache()
         self.filler_service = FillerService()
-        
+
         # State & Scheduling
         self.state = VoicePlaybackState.IDLE
         self.state_lock = asyncio.Lock()
@@ -51,7 +51,7 @@ class VoiceAgent(BaseAgent):
         self.generation = 0
         self.stopped_turn_ids = set()
         self.paused_utterance_id = None
-        
+
         # Audio Context
         self.sample_rate = Config.SAMPLE_RATE
         self.ref_audio_path = ref_audio_path
@@ -59,7 +59,7 @@ class VoiceAgent(BaseAgent):
         self.last_audio_time = time.time()
         self.last_filler_emit_time = 0.0
         self.jitter_buffer = 0.010 # 10ms baseline
-        
+
         # Resilience & Feedback
         self.override_count = 0
         self.active_tasks = []
@@ -103,7 +103,7 @@ class VoiceAgent(BaseAgent):
         await self.subscribe("chat.output", self._handle_input, deliver_policy="new")
         await self.subscribe("audio.stop", self._on_audio_stop)
         await self.subscribe("audio.resume", self._on_audio_resume)
-        
+
         logger.info("🎙️ CVS-1.0 System Online | Solid State Social Mesh Active.")
 
     async def _warm_start_identity(self) -> bool:
@@ -154,7 +154,7 @@ class VoiceAgent(BaseAgent):
         Final: Clear all queues.
         """
         is_speculative = data.get("speculative", False)
-        
+
         if is_speculative:
             self.paused_utterance_id = data.get("utterance_id")
             logger.warning("🛑 Speculative pause triggered. Holding playback buffer...")
@@ -204,52 +204,52 @@ class VoiceAgent(BaseAgent):
         # VAD-to-Prosody Mapping
         affect = data.get("affect", {})
         prosody = self._vad_to_prosody(affect)
-        
+
         # Override with manual intensity/rate if present (Legacy compatibility)
         intensity = data.get("emotional_intensity", prosody["volume"])
         rate = data.get("speaking_rate", prosody["rate"])
-        
+
         # Atomic Phrase Splitting (V2.6 Optimization)
         # We process current text + leftover buffer to find natural break points.
         if not hasattr(self, "_phrase_buffer"):
             self._phrase_buffer = ""
-        
+
         self._phrase_buffer += " " + raw_text
         text_to_process = self._phrase_buffer.strip()
-        
+
         # Split by punctuation or length (atomic phrases: 4-8 words)
         words = text_to_process.split()
         if len(words) < 3 and not any(p in text_to_process for p in [".", "?", "!", ","]):
             return
 
         # Simple split logic for now: take the whole buffer if it's long enough or has punctuation
-        self._phrase_buffer = "" 
+        self._phrase_buffer = ""
         text = text_to_process
 
         # 1. Backpressure Guard (Phase 2 Hardening)
         current_load = self.ingestion_queue.qsize()
         max_load = getattr(Config, "MAX_VOICE_QUEUE_SIZE", 10)
-        
+
         if current_load >= max_load:
             logger.warning(f"🚨 Backpressure: Voice Queue Saturated ({current_load}/{max_load}). Dropping low-priority segment.")
             if len(words) > 5: # Drop long non-filler segments
                 return
 
         # 2. Priority Assignment
-        priority = 2 
+        priority = 2
         if len(words) < 3 and ("hmm" in text.lower() or "got it" in text.lower()):
             priority = 1 # Urgent Filler
-            
+
         self.queue_seq += 1
         await self.ingestion_queue.put((priority, self.queue_seq, {
-            "text": text, 
+            "text": text,
             "emotion": "neutral", # VAD-derived below
-            "intensity": intensity, 
+            "intensity": intensity,
             "rate": rate,
             "prosody": prosody, # NEW: Carry full VAD mapping
-            "timestamp": time.time(), 
+            "timestamp": time.time(),
             "metadata": metadata,
-            "turn_id": data.get("turn_id") or (metadata or {}).get("turn_id"), 
+            "turn_id": data.get("turn_id") or (metadata or {}).get("turn_id"),
             "generation": self.generation,
         }))
 
@@ -315,7 +315,7 @@ class VoiceAgent(BaseAgent):
         """Worker: Pops from ingestion queue with Concurrency Guard (Semaphore)."""
         limit = getattr(Config, "VOICE_SYNTH_CONCURRENCY", 1)
         sem = asyncio.Semaphore(limit)
-        
+
         while True:
             try:
                 priority, _seq, item = await self.ingestion_queue.get()
@@ -323,7 +323,7 @@ class VoiceAgent(BaseAgent):
                 if not self._is_current_item(item):
                     self.ingestion_queue.task_done()
                     continue
-                
+
                 async with sem:
                     # 1. Check Cache (VAD affects cache key)
                     prosody = item.get("prosody", {
@@ -332,14 +332,14 @@ class VoiceAgent(BaseAgent):
                     cached_audio = self.cache.get(
                         text, prosody["rate"], prosody["pitch"]
                     )
-                    
+
                     if cached_audio:
                         await self.playback_queue.put(
                             self._playback_item(cached_audio, item, True)
                         )
                         self.ingestion_queue.task_done()
                         continue
-                        
+
                     # 2. Synthesis Call with VAD Prosody
                     try:
                         start_time = time.time()
@@ -352,22 +352,22 @@ class VoiceAgent(BaseAgent):
                             pitch=prosody["pitch"],
                             volume=prosody["volume"]
                         )
-                        
+
                         if pcm_data:
                             # Cache the successful result
                             self.cache.set(
                                 text, prosody["rate"], prosody["pitch"], pcm_data
-                            )    
+                            )
 
                         # 3. Expressive Temporal Marker Parsing
                         # Splitting lets us inject silences exactly where tags appear
                         import re
                         parts = re.split(r'(<pause=\d+ms>|<hesitate>)', text)
-                        
+
                         for part in parts:
                             if not part:
                                 continue
-                                
+
                             # Case A: Silence Tags
                             if part.startswith("<pause="):
                                 ms_match = re.search(r'\d+', part)
@@ -390,18 +390,18 @@ class VoiceAgent(BaseAgent):
                                     )
                                 logger.info(f"⏳ Injected Hesitation: {ms}ms")
                                 continue
-                            
+
                             # Case B: Audio Synthesis Part
                             if self._is_current_item(item) and pcm_data:
-                                # We only push the pcm_data once. 
-                                # (Note: if split results in multiple non-tag parts, 
+                                # We only push the pcm_data once.
+                                # (Note: if split results in multiple non-tag parts,
                                 #  this basic logic needs refinement, but usually tags are standalone)
                                 await self.playback_queue.put(
                                     self._playback_item(pcm_data, item, True)
                                 )
                                 logger.info(f"🔊 Synth Done | '{text[:15]}...' | Time: {(time.time()-start_time)*1000:.2f}ms")
                                 pcm_data = None # Ensure it's not pushed again for other parts
-                        
+
                     except Exception as e:
                         logger.error(f"Synthesis failed for segment '{text}': {e}")
                     finally:
@@ -422,39 +422,39 @@ class VoiceAgent(BaseAgent):
                 pcm_data = playback_item["pcm"]
                 meta = playback_item.get("metadata") # noqa: F841
                 segment_start = playback_item.get("segment_start", False)
-                
+
                 # CVS-1.0: Speculative State Gating
                 while self.state == VoicePlaybackState.SPECULATIVE_PAUSE:
                     await asyncio.sleep(0.01) # Yield until resume or final stop
-                
+
                 if not self._is_current_item(playback_item):
                     self.speculative_buffer = None
                     continue
-                    
+
                 await self._set_playback_state(VoicePlaybackState.PLAYING)
-                
+
                 # --- CVS-1.0 SOLID STATE SIGNAL CONTINUITY (OLA) ---
                 # Implements a sample-accurate 15ms Overlap-Add transition
                 samples = np.frombuffer(pcm_data, dtype=np.int16).astype(np.float32)
                 fade_len = int(0.015 * self.sample_rate) # 15ms window
-                
+
                 if segment_start and len(samples) > fade_len and np.any(samples):
                     # If resuming or starting fresh chunk, apply linear fade-in
                     # In a full OLA, we would blend with the tail of speculative_buffer here
                     fade_in = np.linspace(0.0, 1.0, fade_len)
                     samples[:fade_len] *= fade_in
-                
+
                 pcm_data = np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
-                
+
                 await asyncio.sleep(self.jitter_buffer)
                 await self.publish("audio.stream", pcm_data)
-                
+
                 self.last_audio_time = time.time()
-                
+
                 if self.playback_queue.empty() and self.ingestion_queue.empty():
                     await asyncio.sleep(0.2)
                     await self._set_playback_state(VoicePlaybackState.IDLE)
-                    
+
             except Exception as e:
                 logger.error(f"Playback Loop error: {e}")
                 await asyncio.sleep(0.1)
@@ -475,7 +475,7 @@ class VoiceAgent(BaseAgent):
             await asyncio.sleep(0.1)
             now = time.time()
             silence_duration = now - self.last_audio_time
-            
+
             # Perception-Driven Filler Trigger (>350ms silence while buffering)
             if self.state in [VoicePlaybackState.BUFFERING] and silence_duration > 0.35:
                 # Prevent filler storms under sustained synthesis lag.
@@ -486,7 +486,7 @@ class VoiceAgent(BaseAgent):
 
                 # Replace procedural noise with ACTUAL pre-synthesized fillers
                 pcm_filler = self.filler_service.get_random_filler()
-                
+
                 if pcm_filler:
                     await self.publish("audio.stream", pcm_filler)
                     logger.info("⏳ Resilience: Synthesis delay detected. Sent random social filler.")
@@ -501,7 +501,7 @@ class VoiceAgent(BaseAgent):
                     await self.publish("audio.stream", pcm_fallback)
                     self.last_audio_time = now
                     self.last_filler_emit_time = now
-                
+
             # Segmentation Feedback Publisher
             if self.override_count > 5:
                 await self.publish("voice.segmentation_feedback", {

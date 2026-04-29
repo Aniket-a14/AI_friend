@@ -1,3 +1,18 @@
+## 0.0 Phase 2 & 3: Psychological Layer & Narrative Memory (April 2026)
+
+The cognitive core was upgraded from a generic LLM pipeline into a full Psychological Layer driven by established cognitive science models. The focus was on moving emotional evaluation out of prompt text and into fast, deterministic heuristic math.
+
+### 0.0.1 Core Psychological Models
+- **Appraisal (OCC/Lazarus/EMA)**: Event relevance, novelty, goal congruence, and relationship impact are evaluated deterministically.
+- **Emotion (PAD + ALMA)**: Emotional state tracks Valence, Arousal, and Dominance, mapped to human-readable emotion labels.
+- **Decision (MAUT)**: Intent generation uses Multi-Attribute Utility Theory to score social goals (ENGAGE, COMFORT, PROTECT) based on current PAD state and relationship trust.
+- **Expression (Scherer + Goldman-Eisler)**: Speaking rate and pause biases are deterministically derived from emotional arousal and cognitive confidence, transmitted to the voice synthesizer as metadata.
+
+### 0.0.2 Dual-Channel Narrative Memory
+- **Episodic Channel (ACT-R)**: Long-term memory retrieval now scores memories based on Anderson & Lebiere's ACT-R base-level activation (frequency + recency) and Bower's mood-congruent recall.
+- **Semantic Channel (GraphRAG)**: Extracts structured relational facts from Neo4j.
+- **Narrative Formatting**: The `SurfacingAgent` now groups memory retrieval into narrative episodes, complete with temporal markers ("last week") and emotional context, enabling the LLM to organically bond over shared history rather than reciting database rows.
+
 ## 0. CVS-1.0 Runtime Continuity Fixes (Apr 19, 2026)
 
 The runtime was reviewed specifically against the goal of human-like continuity rather than generic assistant correctness. The review focused on identity consistency, emotional stability, natural interruption handling, perceived latency, expression/cognition separation, and memory realism.

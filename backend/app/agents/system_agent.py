@@ -31,21 +31,21 @@ class SystemAgent(BaseAgent):
                 # 1. Prepare Tick Metadata
                 now = time.time()
                 uptime = now - self.start_time
-                
+
                 tick_data = {
                     "timestamp": now,
                     "uptime": uptime,
                     "interval": self.tick_interval,
                     "source": self.name
                 }
-                
+
                 # 2. Broadcast to Mesh
                 await self.publish("system.tick", tick_data)
                 logger.debug(f"[Pulse] system.tick broadcasted | Uptime: {uptime:.1f}s")
-                
+
                 # 3. Wait for next heartbeat
                 await asyncio.sleep(self.tick_interval)
-                
+
             except Exception as e:
                 logger.error(f"[Pulse] Heartbeat failure: {e}")
                 await asyncio.sleep(5) # Cooldown on failure

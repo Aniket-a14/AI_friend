@@ -65,22 +65,22 @@ class ActionService:
         Executes the plan and yields output chunks.
         """
         logger.info(f"[Action] Executing Decision: {plan.action_type} for Goal: {plan.goal}")
-        
+
         if plan.action_type == "RESPOND_CHAT":
             # 1. Prepare Identity-Aware Prompt
             msg = plan.payload.get("message", "")
             identity_prompt = plan.payload.get("identity_prompt", "You are my friend.")
             emotion = plan.payload.get("emotion_state", "neutral")
-            
+
             model = plan.payload.get("model")
-            
+
             # Contextual Enrichments
             surfaced = plan.payload.get("surfaced_memories", [])
             shared_history = ""
             if surfaced:
                 shared_history = "\nSHARED HISTORY / RECENT CONTEXT (Active Influence):\n" + \
                                  "\n".join([f"- {m['content']}" for m in surfaced])
-            
+
             # Construct the final prompt with structural guidance
             full_prompt = f"""
             {identity_prompt}
@@ -99,7 +99,7 @@ class ActionService:
             
             User: {msg}
             Assistant: """.strip()
-            
+
             try:
                 # 2. Stream Generation
                 sanitizer = ControlMarkupSanitizer()
@@ -136,12 +136,12 @@ class ActionService:
                         "data": "I'm having trouble thinking right now...",
                     }
                     yield {"type": "done", "data": ""}
-                
+
             except Exception as e:
                 logger.error(f"[Action] LLM Execution failed: {e}")
                 yield {"type": "error", "data": str(e)}
                 yield {"type": "done", "data": ""}
-             
+
         elif plan.action_type == "STORE_MEMORY":
              content = plan.payload.get("content", "")
              # Using the new intelligent MemoryStore
@@ -154,11 +154,11 @@ class ActionService:
                  )
              yield {"type": "system", "data": "Memory securely consolidated."}
              yield {"type": "done", "data": ""}
-             
+
         elif plan.action_type == "BACKGROUND_CONSOLIDATION":
              # Already triggered by CognitiveService
              yield {"type": "done", "data": ""}
-             
+
         else:
              logger.warning(f"[Action] Unrecognized action: {plan.action_type}")
              yield {"type": "error", "data": "Unknown operation."}

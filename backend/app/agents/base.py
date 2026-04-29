@@ -45,12 +45,12 @@ class BaseAgent:
         """Ensure core streams exist on the mesh (CVS-1.0 Hardened)."""
         core_streams = {
             "AI_MESSAGES": [
-                "chat.*", "vision.*", "state.*", "cmd.*", "voice.*", 
+                "chat.*", "vision.*", "state.*", "cmd.*", "voice.*",
                 "system.*", "memory.*", "identity.*", "knowledge.*"
             ],
             "AI_AUDIO": ["audio.*"]
         }
-        
+
         try:
             # Modern nats-py pattern
             jsm = self.nc.jsm()
@@ -69,7 +69,7 @@ class BaseAgent:
                     info = await jsm.stream_info(stream_name)
                     current_subjects = set(info.config.subjects or [])
                     required_subjects = set(subjects)
-                    
+
                     if not required_subjects.issubset(current_subjects):
                         logger.info(f"Updating NATS Stream '{stream_name}' with additional subjects...")
                         config = info.config
@@ -100,14 +100,14 @@ class BaseAgent:
                 "hops": [],
                 "source": self.name
             }
-        
+
         # Propagate existing meta if present in dict data
         if isinstance(data, dict) and "latency_metadata" in data:
             meta = dict(data["latency_metadata"] or {})
             meta.setdefault("start_time", time.time())
             meta.setdefault("hops", [])
             meta.setdefault("source", self.name)
-        
+
         meta["hops"].append({
             "agent": self.name,
             "subject": subject,
@@ -116,7 +116,7 @@ class BaseAgent:
 
         # 2. Determine Transport Mode
         is_binary = subject in getattr(Config, "BINARY_SUBJECTS", [])
-        
+
         try:
             if is_binary and isinstance(data, (bytes, bytearray)):
                 # Direct Binary Transport with Headers
@@ -137,7 +137,7 @@ class BaseAgent:
                 direction="publish",
                 latency_ms=self._extract_latency_ms(meta),
             )
-            
+
             logger.debug(f"Agent '{self.name}' published to {subject} ({'binary' if is_binary else 'json'})")
         except Exception as e:
             logger.error(f"Failed to publish to {subject}: {e}")
@@ -147,7 +147,7 @@ class BaseAgent:
         meta = None
         if isinstance(data, dict):
             meta = data.get("latency_metadata")
-        
+
         if meta and "start_time" in meta:
             elapsed = (time.time() - meta["start_time"]) * 1000
             # Track drift trends (Observability Hook)
@@ -241,7 +241,7 @@ class BaseAgent:
                             latency_ms=self._extract_latency_ms(data.get("latency_metadata")),
                         )
                     await callback(data)
-                
+
                 await msg.ack()
             except Exception as e:
                 logger.error(f"Subscription handler error on {subject}: {e}")

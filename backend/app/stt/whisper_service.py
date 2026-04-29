@@ -153,7 +153,7 @@ class WhisperSTTService:
         )
 
         sonic_label = self._analyze_sonic_cues(audio_np)
-        
+
         # Only reset on final transcription
         if not is_partial:
             self.reset()

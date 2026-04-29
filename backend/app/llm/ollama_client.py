@@ -145,7 +145,7 @@ class OllamaClient:
                 if attempt == self.max_retries - 1:
                     logger.error(f"❌ Ollama request failed after {self.max_retries} attempts: {e}")
                     raise
-                
+
                 delay = self.base_delay * (2 ** attempt) + random.uniform(0, 0.5)
                 logger.warning(f"⚠️ Ollama Busy/Down. Retrying in {delay:.2f}s (Attempt {attempt + 1}/{self.max_retries})")
                 await asyncio.sleep(delay)
