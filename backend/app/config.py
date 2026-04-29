@@ -41,6 +41,21 @@ class Config:
         os.getenv("REFLECTION_MIN_INTERVAL_SECONDS", "0")
     )
 
+    # Proactive Engagement (Phase 1: Initiating Contact)
+    PROACTIVE_ENABLED = os.getenv("PROACTIVE_ENABLED", "true").lower() == "true"
+    PROACTIVE_IDLE_THRESHOLD_SECONDS = float(
+        os.getenv("PROACTIVE_IDLE_THRESHOLD_SECONDS", "7200")  # 2 hours
+    )
+    PROACTIVE_COOLDOWN_SECONDS = float(
+        os.getenv("PROACTIVE_COOLDOWN_SECONDS", "3600")  # 1 hour between proactive attempts
+    )
+    PROACTIVE_MIN_ENERGY = float(
+        os.getenv("PROACTIVE_MIN_ENERGY", "0.2")  # Too tired below this
+    )
+    # Debug override: set to a low value (e.g. 30) for quick local testing
+    PROACTIVE_DEBUG_THRESHOLD_OVERRIDE = os.getenv("PROACTIVE_DEBUG_THRESHOLD_OVERRIDE")
+
+
     RUNTIME_AUTO_BOOTSTRAP = os.getenv("RUNTIME_AUTO_BOOTSTRAP", "true").lower() == "true"
     RUNTIME_BOOTSTRAP_RETRIES = int(os.getenv("RUNTIME_BOOTSTRAP_RETRIES", "12"))
     _required_models_env = os.getenv("OLLAMA_REQUIRED_MODELS", "").strip()

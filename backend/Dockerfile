@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     netcat-openbsd \
     libportaudio2 \
@@ -19,13 +19,15 @@ RUN apt-get update && apt-get install -y build-essential portaudio19-dev
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements-base.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements-base.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install -r requirements-base.txt
 
 # 3. FULL BUILDER: Includes heavy AI/Vision dependencies
 FROM slim-builder AS full-builder
 COPY requirements-ai.txt .
-RUN pip install --no-cache-dir -r requirements-ai.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements-ai.txt
 
 # 4. SLIM RUNTIME: For signaling & non-heavy agents
 FROM base AS slim

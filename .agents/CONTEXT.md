@@ -744,3 +744,42 @@ Remaining risks:
 
 - Prosody knobs (`pitch`, `volume`) are passed best-effort; behavior depends on GPT-SoVITS API version support.
 - End-to-end Docker runtime validation is still recommended to confirm `voice.warm` status transitions under real container startup conditions.
+
+## 2026-04-29 Phase 1: Proactive Engagement (Initiating Contact)
+
+Implemented the first phase of the Advanced Cognitive Companion roadmap. The system can now spontaneously initiate contact after detecting extended idle periods, using the same speech pipeline as reactive responses.
+
+Changed files:
+
+- `backend/app/config.py`
+- `backend/app/state/agent_state.py`
+- `backend/app/cognitive/core.py`
+- `backend/app/agents/brain_agent.py`
+- `docker-compose.prod.yml`
+- `.env.example`
+
+Behavior changes:
+
+- **Interaction Tracking**: `AgentState` now tracks `last_user_interaction` (Unix timestamp). `StateService.update_from_event()` and `BrainAgent._on_chat_input()` both refresh this timestamp on every user interaction.
+- **Proactive Eligibility**: `StateService.check_proactive_eligibility()` evaluates four conditions: feature enabled, idle threshold exceeded, cooldown elapsed, and sufficient energy. All thresholds are env-configurable.
+- **Proactive Generation**: `CognitiveService.generate_proactive_response()` constructs a real ActionPlan grounded in the agent's current identity, emotional state, relationship history, and surfaced memories. It streams through the existing `ActionService.execute()` pipeline.
+- **Production Loop**: `BrainAgent` subscribes to `system.tick` and evaluates proactive eligibility on every heartbeat. When triggered, it generates and publishes spontaneous speech using the exact same segmenter, `chat.output` subject, and VoiceAgent pipeline as reactive responses.
+- **Conversation Logging**: Proactive responses are logged to `ConversationHistoryStore` and trigger background reflection (memory consolidation) just like regular turns.
+- **Debug Override**: `PROACTIVE_DEBUG_THRESHOLD_OVERRIDE` env var allows setting a short idle threshold (e.g., 30 seconds) for quick local testing without modifying production defaults.
+
+Configuration additions:
+
+- `PROACTIVE_ENABLED` (default: true)
+- `PROACTIVE_IDLE_THRESHOLD_SECONDS` (default: 7200 / 2 hours)
+- `PROACTIVE_COOLDOWN_SECONDS` (default: 3600 / 1 hour)
+- `PROACTIVE_MIN_ENERGY` (default: 0.2)
+- `PROACTIVE_DEBUG_THRESHOLD_OVERRIDE` (optional, no default)
+
+Verification:
+
+- Pending: `pytest` full suite + live Docker mesh test.
+
+Remaining risks:
+
+- Proactive messages consume LLM compute. Under CPU-only Ollama, this adds to the overall inference pressure if triggered during active background reflection.
+- The proactive prompt quality depends heavily on the surfaced memory buffer. If no memories have been surfaced recently, the check-in will be more generic.
