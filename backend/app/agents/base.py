@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -278,10 +279,29 @@ class BaseAgent:
         if pending_bytes_limit is not None:
             subscribe_kwargs["pending_bytes_limit"] = pending_bytes_limit
 
-        await self.js.subscribe(subject, **subscribe_kwargs)
-        logger.info(
-            f"Agent '{self.name}' subscribed to {subject} with durable '{durable}' and policy '{deliver_policy}'"
-        )
+        # 4. Reliable Subscription (Retry for JetStream availability)
+        max_retries = 10
+        retry_delay = 1.0
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                await self.js.subscribe(subject, **subscribe_kwargs)
+                logger.info(
+                    f"Agent '{self.name}' subscribed to {subject} with durable '{durable}' and policy '{deliver_policy}'"
+                )
+                return
+            except Exception as e:
+                # nats.js.errors.NotFoundError: happens when the subject is not mapped to any stream
+                from nats.js.errors import NotFoundError
+                if isinstance(e, NotFoundError) and attempt < max_retries:
+                    logger.warning(
+                        f"Agent '{self.name}' subscription to {subject} failed: stream not found (attempt {attempt}/{max_retries}). Retrying in {retry_delay}s..."
+                    )
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(f"Agent '{self.name}' failed to subscribe to {subject}: {e}")
+                    raise e
 
     async def set_state(self, state: str):
         """Broadcast agent state to the mesh (e.g., 'thinking', 'speaking', 'idle')"""

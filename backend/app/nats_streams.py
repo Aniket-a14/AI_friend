@@ -15,6 +15,7 @@ CORE_STREAMS: Dict[str, Sequence[str]] = {
         "chat.*",
         "vision.*",
         "state.*",
+        "agent.*",
         "cmd.*",
         "voice.*",
         "system.*",
