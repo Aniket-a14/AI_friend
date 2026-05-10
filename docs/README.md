@@ -51,7 +51,7 @@ organic memory, and future robotics compatibility.
 ## Future Upgrades for pyscological fine-tuning
 
 - [ANALYSIS_RESULTS.md](./analysis_results.md) provides current gaps in the architecture along with solutions to improve.
-- [PSYCOLOGICAL_LAYER.md](./psycological_layer.md) is the mathematical equations through which the algorithm will be created for emotions/ai pysology.
+- [PSYCHOLOGICAL_LAYER.md](./psychological_layer.md) is the mathematical equations through which the algorithm will be created for emotions/ai pysology.
 
 ---
 
