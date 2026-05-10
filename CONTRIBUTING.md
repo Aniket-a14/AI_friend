@@ -121,6 +121,7 @@ git checkout -b feature/your-feature-name
 ```
 
 **Branch Naming Conventions**:
+
 - `feature/` - New features
 - `fix/` - Bug fixes
 - `docs/` - Documentation updates
@@ -145,6 +146,7 @@ git commit -m "feat: add voice cloning support"
 ```
 
 **Commit Types**:
+
 - `feat:` - New feature
 - `fix:` - Bug fix
 - `docs:` - Documentation only
@@ -154,6 +156,7 @@ git commit -m "feat: add voice cloning support"
 - `chore:` - Maintenance
 
 **Examples**:
+
 ```bash
 git commit -m "feat: add Neo4j GraphRAG integration"
 git commit -m "fix: resolve WebSocket connection timeout"
@@ -185,6 +188,7 @@ Follow [PEP 8](https://peps.python.org/pep-0008/) with these specifics:
 - **Type Hints**: Required for all function signatures
 
 **Example**:
+
 ```python
 from typing import Optional, List
 import asyncio
@@ -245,6 +249,7 @@ We emphasize strict architectural boundaries and microsecond-latency async patte
 - **Type Safety**: Strict TypeScript
 
 **Example**:
+
 ```typescript
 interface AudioConfig {
   sampleRate: number;
@@ -286,6 +291,7 @@ npm run type-check
 - Keep components small and focused
 
 **Example**:
+
 ```typescript
 interface VoiceInterfaceProps {
   onAudioData: (data: ArrayBuffer) => void;
@@ -334,6 +340,7 @@ pytest tests/ --cov=app --cov-report=html
 ```
 
 **Test Structure**:
+
 ```python
 import pytest
 from app.memory_store import MemoryStore
@@ -373,6 +380,7 @@ npm run test:e2e
 ```
 
 **Test Structure** (Jest + React Testing Library):
+
 ```typescript
 import { render, screen, fireEvent } from '@testing-library/react';
 import { VoiceInterface } from './VoiceInterface';
