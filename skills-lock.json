@@ -25,6 +25,11 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "computedHash": "8646a52fb34f1b88954aa84c86d5de04fbda1f415e509045c7f3ffff5886ded4"
+    },
+    "solution-architect-agent": {
+      "source": "repowise-dev/claude-code-prompts",
+      "sourceType": "github",
+      "computedHash": "5dcb254c44410d93207e9040b7f46de466462c1b3884c81a0af2d16d77ddf0be"
     }
   }
 }

@@ -68,6 +68,28 @@ behavior, tests, or runtime expectations.
 
 ---
 
+## Planning Before Coding
+
+For non-trivial work, use the Solution Architect planning skill first:
+
+- `skills/solution-architect-agent/SKILL.md`
+
+Use it to produce a codebase-grounded implementation plan before any edits,
+especially for cross-module refactors or runtime behavior changes.
+
+The required plan output is:
+
+1. Problem statement
+2. Affected files and dependencies
+3. Options (minimum two)
+4. Recommendation with rationale
+5. Ordered implementation plan with file paths
+6. Risks and open questions
+
+This planning phase does not include implementation code.
+
+---
+
 ## Documentation Principles
 
 When updating docs:

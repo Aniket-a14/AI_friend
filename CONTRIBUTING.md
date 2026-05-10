@@ -430,6 +430,7 @@ Brief description of changes
 - [ ] Comments added for complex logic
 - [ ] Documentation updated
 - [ ] No new warnings generated
+- [ ] For non-trivial changes, a pre-implementation plan was produced using `skills/solution-architect-agent/SKILL.md`
 ```
 
 ### Review Process
