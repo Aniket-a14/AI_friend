@@ -1,11 +1,13 @@
 from neo4j import AsyncGraphDatabase
 import logging
+import re
 import time
 import json
 from typing import Dict, Any, List
 from ..config import Config
 
 logger = logging.getLogger("graph_db")
+_CYPHER_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 class GraphDB:
     """
@@ -26,6 +28,21 @@ class GraphDB:
         # Perceptual Belief Cache
         self._belief_cache = {}
         self._cache_ttl = getattr(Config, "GRAPH_CACHE_TTL", 300)
+
+    @staticmethod
+    def _safe_label(label: str | None) -> str:
+        label = (label or "Entity").strip()
+        label = label[0].upper() + label[1:] if label else "Entity"
+        if not _CYPHER_IDENTIFIER_RE.fullmatch(label):
+            raise ValueError(f"Unsafe Cypher label: {label!r}")
+        return label
+
+    @staticmethod
+    def _safe_relation(relation: str) -> str:
+        rel_type = relation.upper().replace(" ", "_").replace("-", "_")
+        if not _CYPHER_IDENTIFIER_RE.fullmatch(rel_type):
+            raise ValueError(f"Unsafe Cypher relation: {relation!r}")
+        return rel_type
 
     async def close(self):
         await self.driver.close()
@@ -72,8 +89,7 @@ class GraphDB:
         props.setdefault('source', 'agent_inference')
         props.setdefault('version', 1)
 
-        # Normalize label for Cypher
-        label = label[0].upper() + label[1:] if label else "Entity"
+        label = self._safe_label(label)
 
         query = (
             f"MERGE (e:{label} {{name: $name}}) "
@@ -92,9 +108,9 @@ class GraphDB:
         Adheres to UPPER_SNAKE_CASE for relationships.
         """
         await self._invalidate_cache(subject_name)
-        rel_type = relation.upper().replace(" ", "_").replace("-", "_")
-        s_label = (subject_label[0].upper() + subject_label[1:]) if subject_label else "Entity"
-        t_label = (target_label[0].upper() + target_label[1:]) if target_label else "Entity"
+        rel_type = self._safe_relation(relation)
+        s_label = self._safe_label(subject_label)
+        t_label = self._safe_label(target_label)
 
         props = properties or {}
         props.setdefault('weight', 0.5)

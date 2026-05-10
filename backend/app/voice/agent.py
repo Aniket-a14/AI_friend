@@ -1,9 +1,15 @@
 import asyncio
 import logging
+import random
+import re
 import time
-import numpy as np
 from enum import Enum
 from typing import Dict, Any, List
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 from ..agents.base import BaseAgent
 from ..config import Config
@@ -195,6 +201,19 @@ class VoiceAgent(BaseAgent):
     async def _handle_input(self, data: Dict[str, Any], metadata: dict = None):
         """Ingest chunked text with backpressure awareness and atomic phrasing."""
         if data.get("done"):
+            buffered_text = getattr(self, "_phrase_buffer", "").strip()
+            self._phrase_buffer = ""
+            if buffered_text:
+                affect = data.get("affect", {})
+                prosody = self._vad_to_prosody(affect)
+                await self._queue_voice_segment(
+                    buffered_text,
+                    data=data,
+                    metadata=metadata,
+                    prosody=prosody,
+                    intensity=data.get("emotional_intensity", prosody["volume"]),
+                    rate=data.get("speaking_rate", prosody["rate"]),
+                )
             return
 
         raw_text = data.get("content", "").strip()
@@ -240,6 +259,27 @@ class VoiceAgent(BaseAgent):
         if len(words) < 3 and ("hmm" in text.lower() or "got it" in text.lower()):
             priority = 1 # Urgent Filler
 
+        await self._queue_voice_segment(
+            text,
+            data=data,
+            metadata=metadata,
+            prosody=prosody,
+            intensity=intensity,
+            rate=rate,
+            priority=priority,
+        )
+
+    async def _queue_voice_segment(
+        self,
+        text: str,
+        *,
+        data: Dict[str, Any],
+        metadata: dict = None,
+        prosody: Dict[str, float],
+        intensity: float,
+        rate: float,
+        priority: int = 2,
+    ):
         self.queue_seq += 1
         await self.ingestion_queue.put((priority, self.queue_seq, {
             "text": text,
@@ -277,6 +317,70 @@ class VoiceAgent(BaseAgent):
     def _silence_pcm(self, ms: int) -> bytes:
         bytes_per_ms = int(self.sample_rate * 2 / 1000)
         return b'\x00' * (ms * bytes_per_ms)
+
+    def _has_temporal_marker(self, text: str) -> bool:
+        return bool(re.search(r"(<pause=\d+ms>|<hesitate>)", text))
+
+    async def _enqueue_temporal_audio(
+        self,
+        text: str,
+        item: Dict[str, Any],
+        prosody: Dict[str, float],
+    ) -> List[bytes]:
+        """Synthesize text parts and enqueue timing-marker silences in order."""
+        chunks: List[bytes] = []
+        segment_start = True
+        parts = re.split(r"(<pause=\d+ms>|<hesitate>)", text)
+
+        for part in parts:
+            if not part:
+                continue
+
+            if part.startswith("<pause="):
+                ms_match = re.search(r"\d+", part)
+                if ms_match and self._is_current_item(item):
+                    await self.playback_queue.put(
+                        self._playback_item(
+                            self._silence_pcm(int(ms_match.group())),
+                            item,
+                            False,
+                        )
+                    )
+                continue
+
+            if part == "<hesitate>":
+                if self._is_current_item(item):
+                    await self.playback_queue.put(
+                        self._playback_item(
+                            self._silence_pcm(random.randint(250, 450)),
+                            item,
+                            False,
+                        )
+                    )
+                continue
+
+            text_part = part.strip()
+            if not text_part or not self._is_current_item(item):
+                continue
+
+            async for chunk in self.sovits.synthesize_stream(
+                text=text_part,
+                ref_audio_path=self.ref_audio_path,
+                ref_text=self.ref_text,
+                language=Config.TTS_LANGUAGE,
+                speed=prosody["rate"],
+                pitch=prosody["pitch"],
+                volume=prosody["volume"],
+            ):
+                if not chunk or not self._is_current_item(item):
+                    continue
+                chunks.append(chunk)
+                await self.playback_queue.put(
+                    self._playback_item(chunk, item, segment_start)
+                )
+                segment_start = False
+
+        return chunks
 
     def _vad_to_prosody(self, affect: Dict[str, float]) -> Dict[str, float]:
         """
@@ -343,64 +447,24 @@ class VoiceAgent(BaseAgent):
                     # 2. Synthesis Call with VAD Prosody
                     try:
                         start_time = time.time()
-                        pcm_data = await self.sovits.synthesize(
-                            text=text,
-                            ref_audio_path=self.ref_audio_path,
-                            ref_text=self.ref_text,
-                            language=Config.TTS_LANGUAGE,
-                            speed=prosody["rate"],
-                            pitch=prosody["pitch"],
-                            volume=prosody["volume"]
+                        await self._set_playback_state(VoicePlaybackState.BUFFERING)
+                        audio_chunks = await self._enqueue_temporal_audio(
+                            text, item, prosody
                         )
 
-                        if pcm_data:
-                            # Cache the successful result
+                        if audio_chunks and not self._has_temporal_marker(text):
                             self.cache.set(
-                                text, prosody["rate"], prosody["pitch"], pcm_data
+                                text,
+                                prosody["rate"],
+                                prosody["pitch"],
+                                b"".join(audio_chunks),
                             )
-
-                        # 3. Expressive Temporal Marker Parsing
-                        # Splitting lets us inject silences exactly where tags appear
-                        import re
-                        parts = re.split(r'(<pause=\d+ms>|<hesitate>)', text)
-
-                        for part in parts:
-                            if not part:
-                                continue
-
-                            # Case A: Silence Tags
-                            if part.startswith("<pause="):
-                                ms_match = re.search(r'\d+', part)
-                                if ms_match:
-                                    ms = int(ms_match.group())
-                                    silence_pcm = self._silence_pcm(ms)
-                                    if self._is_current_item(item):
-                                        await self.playback_queue.put(
-                                            self._playback_item(silence_pcm, item, False)
-                                        )
-                                    logger.info(f"⏳ Injected Pause: {ms}ms")
-                                continue
-                            elif part == "<hesitate>":
-                                import random
-                                ms = random.randint(250, 450)
-                                silence_pcm = self._silence_pcm(ms)
-                                if self._is_current_item(item):
-                                    await self.playback_queue.put(
-                                        self._playback_item(silence_pcm, item, False)
-                                    )
-                                logger.info(f"⏳ Injected Hesitation: {ms}ms")
-                                continue
-
-                            # Case B: Audio Synthesis Part
-                            if self._is_current_item(item) and pcm_data:
-                                # We only push the pcm_data once.
-                                # (Note: if split results in multiple non-tag parts,
-                                #  this basic logic needs refinement, but usually tags are standalone)
-                                await self.playback_queue.put(
-                                    self._playback_item(pcm_data, item, True)
-                                )
-                                logger.info(f"🔊 Synth Done | '{text[:15]}...' | Time: {(time.time()-start_time)*1000:.2f}ms")
-                                pcm_data = None # Ensure it's not pushed again for other parts
+                        if audio_chunks:
+                            logger.info(
+                                "🔊 Synth Done | '%s...' | Time: %.2fms",
+                                text[:15],
+                                (time.time() - start_time) * 1000,
+                            )
 
                     except Exception as e:
                         logger.error(f"Synthesis failed for segment '{text}': {e}")
@@ -435,16 +499,17 @@ class VoiceAgent(BaseAgent):
 
                 # --- CVS-1.0 SOLID STATE SIGNAL CONTINUITY (OLA) ---
                 # Implements a sample-accurate 15ms Overlap-Add transition
-                samples = np.frombuffer(pcm_data, dtype=np.int16).astype(np.float32)
-                fade_len = int(0.015 * self.sample_rate) # 15ms window
+                if np is not None:
+                    samples = np.frombuffer(pcm_data, dtype=np.int16).astype(np.float32)
+                    fade_len = int(0.015 * self.sample_rate) # 15ms window
 
-                if segment_start and len(samples) > fade_len and np.any(samples):
-                    # If resuming or starting fresh chunk, apply linear fade-in
-                    # In a full OLA, we would blend with the tail of speculative_buffer here
-                    fade_in = np.linspace(0.0, 1.0, fade_len)
-                    samples[:fade_len] *= fade_in
+                    if segment_start and len(samples) > fade_len and np.any(samples):
+                        # If resuming or starting fresh chunk, apply linear fade-in
+                        # In a full OLA, we would blend with the tail of speculative_buffer here
+                        fade_in = np.linspace(0.0, 1.0, fade_len)
+                        samples[:fade_len] *= fade_in
 
-                pcm_data = np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
+                    pcm_data = np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
 
                 await asyncio.sleep(self.jitter_buffer)
                 await self.publish("audio.stream", pcm_data)

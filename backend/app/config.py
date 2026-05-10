@@ -7,6 +7,16 @@ load_dotenv()
 class Config:
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
     ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+    LAN_ONLY = os.getenv("LAN_ONLY", "true").lower() == "true"
+    LAN_CORS_ORIGIN_REGEX = (
+        r"^https?://("
+        r"localhost|"
+        r"127(?:\.\d{1,3}){3}|"
+        r"10(?:\.\d{1,3}){3}|"
+        r"192\.168(?:\.\d{1,3}){2}|"
+        r"172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}"
+        r")(?::\d+)?$"
+    )
 
     # NATS Configuration
     NATS_URL = os.getenv("NATS_URL", "nats://localhost:4222")
@@ -115,7 +125,7 @@ class Config:
     STT_DEVICE = os.getenv("STT_DEVICE", "cpu")
 
     # Audio Settings
-    SAMPLE_RATE = 32000
+    SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "32000"))
     BINARY_SUBJECTS = ["audio.inbound", "audio.stream"]
     # Phase 2 Calibration (Hardening Watchpoints)
     SYSTEM_TICK_INTERVAL = int(os.getenv("SYSTEM_TICK_INTERVAL", 60)) # Heartbeat frequency

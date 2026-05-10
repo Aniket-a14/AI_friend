@@ -1,15 +1,16 @@
-import base64
 import logging
-import numpy as np
 import asyncio
 import uuid
+from array import array
 from ..agents.base import BaseAgent
-from .whisper_service import WhisperSTTService
-from .sensevoice_service import SenseVoiceSTTService
-import soxr
 import time
 from typing import Any
 from ..config import Config
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 logger = logging.getLogger("stt_agent")
 
@@ -24,6 +25,9 @@ class STTAgent(BaseAgent):
 
     def __init__(self, model_size=Config.STT_MODEL_SIZE, device=Config.STT_DEVICE):
         super().__init__(name="stt_agent")
+        from .sensevoice_service import SenseVoiceSTTService
+        from .whisper_service import WhisperSTTService
+
         # 1. Accuracy Backbone (GPU)
         self.whisper_service = WhisperSTTService(
             model_size=model_size,
@@ -78,22 +82,49 @@ class STTAgent(BaseAgent):
     async def _on_audio_inbound(self, data: Any, metadata: dict = None):
         """Process real-time PCM frames through dual-path sensory mesh."""
         try:
-            if isinstance(data, bytes):
-                audio_bytes = data
-                source_sr = metadata.get("sample_rate", 48000) if metadata else 48000
-            else:
-                audio_bytes = base64.b64decode(data.get("audio", ""))
-                source_sr = data.get("sample_rate", 48000)
+            if not isinstance(data, (bytes, bytearray)):
+                logger.warning("Rejected non-PCM audio.inbound payload: %s", type(data).__name__)
+                return
+
+            audio_bytes = bytes(data)
+            metadata = metadata or {}
+            source_sr = metadata.get("sample_rate", 48000)
+            channels = int(metadata.get("channels", 1) or 1)
 
             if not audio_bytes:
                 return
 
-            # Normalization
-            audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-            if source_sr != self.target_sample_rate:
-                audio_np = soxr.resample(audio_np, source_sr, self.target_sample_rate)
+            if np is not None:
+                audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+                if channels > 1:
+                    trim = len(audio_np) - (len(audio_np) % channels)
+                    if trim <= 0:
+                        return
+                    audio_np = audio_np[:trim].reshape(-1, channels).mean(axis=1)
+                if source_sr != self.target_sample_rate:
+                    import soxr
+                    audio_np = soxr.resample(audio_np, source_sr, self.target_sample_rate)
 
-            pcm_16 = (audio_np * 32767).astype(np.int16).tobytes()
+                pcm_16 = (audio_np * 32767).astype(np.int16).tobytes()
+            else:
+                samples = array("h")
+                samples.frombytes(audio_bytes[: len(audio_bytes) - (len(audio_bytes) % 2)])
+                if channels > 1:
+                    grouped = len(samples) - (len(samples) % channels)
+                    if grouped <= 0:
+                        return
+                    samples = array(
+                        "h",
+                        (
+                            int(sum(samples[i : i + channels]) / channels)
+                            for i in range(0, grouped, channels)
+                        ),
+                    )
+                if source_sr != self.target_sample_rate:
+                    logger.error("Cannot resample PCM without numpy/soxr; dropping frame.")
+                    return
+                audio_np = [sample / 32768.0 for sample in samples]
+                pcm_16 = samples.tobytes()
 
             # --- PATH 1: WHISPER (ACCURACY/BACKBONE) ---
             # Keep the NATS callback hot. Whisper may run a blocking decode when
@@ -109,7 +140,14 @@ class STTAgent(BaseAgent):
             current_buffer_len = sum(len(c) for c in self.perception_buffer)
 
             if current_buffer_len >= self.perception_chunk_size:
-                perception_audio = np.concatenate(self.perception_buffer)
+                if np is not None:
+                    perception_audio = np.concatenate(self.perception_buffer)
+                else:
+                    perception_audio = [
+                        sample
+                        for chunk in self.perception_buffer
+                        for sample in chunk
+                    ]
                 self.perception_buffer = [] # Reset for next chunk
 
                 self._put_latest(

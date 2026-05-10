@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import AssistantCircle from '../components/AssistantCircle';
 import { useWebRTCVoice } from '../hooks/useWebRTCVoice';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,6 +19,29 @@ export default function Home() {
         }
     }, [isConnected, state, startRecording]);
 
+    const startWebcamPreview = useCallback(async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+            } else {
+                stream.getTracks().forEach(t => t.stop());
+            }
+        } catch (err) {
+            console.error("Camera preview failed:", err);
+        }
+    }, []);
+
+    const stopWebcamPreview = useCallback(() => {
+        if (videoRef.current && videoRef.current.srcObject) {
+            const tracks = videoRef.current.srcObject.getTracks();
+            tracks.forEach(t => t.stop());
+            videoRef.current.srcObject = null;
+        }
+    }, []);
+
+    useEffect(() => stopWebcamPreview, [stopWebcamPreview]);
+
     // Handle Backend Vision Toggle
     const toggleVision = async (source) => {
         try {
@@ -35,25 +58,6 @@ export default function Home() {
             }
         } catch (err) {
             console.error("Failed to toggle vision:", err);
-        }
-    };
-
-    const startWebcamPreview = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-            }
-        } catch (err) {
-            console.error("Camera preview failed:", err);
-        }
-    };
-
-    const stopWebcamPreview = () => {
-        if (videoRef.current && videoRef.current.srcObject) {
-            const tracks = videoRef.current.srcObject.getTracks();
-            tracks.forEach(t => t.stop());
-            videoRef.current.srcObject = null;
         }
     };
 

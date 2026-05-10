@@ -8,15 +8,16 @@ sys.modules.setdefault("asyncpg", SimpleNamespace(Pool=object))
 
 from app.agents.brain_agent import BrainAgent  # noqa: E402
 from app.agents.surfacing_agent import SurfacingAgent  # noqa: E402
-sys.modules.setdefault("numpy", SimpleNamespace())
 from app.voice.agent import VoiceAgent, VoicePlaybackState  # noqa: E402
 from app.cognitive.action import ActionService  # noqa: E402
 from app.cognitive.core import CognitiveService  # noqa: E402
 from app.cognitive.decision import ActionPlan  # noqa: E402
 from app.cognitive.identity import IdentityManager  # noqa: E402
 from app.config import Config  # noqa: E402
+from app.state.graph_db import GraphDB  # noqa: E402
 from app.state.agent_state import StateService  # noqa: E402
 from app.state.conversation_store import ConversationHistoryStore  # noqa: E402
+from app.state.triple_extractor import TripleExtractor  # noqa: E402
 
 
 def test_get_last_session_time_without_current_session_builds_valid_query():
@@ -228,6 +229,201 @@ def test_action_service_strips_emotion_wrappers_but_keeps_pause_tags():
     content = "".join(item["data"] for item in outputs if item["type"] == "content")
 
     assert content == "hey there<pause=300ms>"
+
+
+def test_signaling_lan_guard_allows_only_loopback_and_private_clients():
+    from app.network import is_lan_client_allowed
+
+    assert is_lan_client_allowed("127.0.0.1")
+    assert is_lan_client_allowed("localhost")
+    assert is_lan_client_allowed("192.168.1.42")
+    assert is_lan_client_allowed("10.0.0.12")
+    assert is_lan_client_allowed("172.16.5.10")
+    assert not is_lan_client_allowed("8.8.8.8")
+    assert not is_lan_client_allowed("example.com")
+
+
+def test_surfacing_agent_subscribes_to_state_update_subject():
+    agent = SurfacingAgent(memory_store=MagicMock())
+    agent.connect = AsyncMock()
+    subscribed = []
+
+    async def _subscribe(subject, callback, **kwargs):
+        subscribed.append((subject, callback, kwargs))
+
+    agent.subscribe = AsyncMock(side_effect=_subscribe)
+
+    asyncio.run(agent.start())
+
+    subjects = [subject for subject, _callback, _kwargs in subscribed]
+    assert "state.update" in subjects
+    assert "agent.state" not in subjects
+
+
+def test_database_schema_matches_memory_store_runtime_columns():
+    from pathlib import Path
+
+    schema = (
+        Path(__file__).resolve().parents[1] / "db" / "schema.sql"
+    ).read_text(encoding="utf-8").lower()
+
+    for column in [
+        "importance_score",
+        "emotional_weight",
+        "valence",
+        "certainty",
+        "source",
+        "recall_count",
+        "last_recalled_at",
+        "created_at",
+        "metadata",
+    ]:
+        assert column in schema
+
+
+def test_graph_db_rejects_unsafe_cypher_identifiers_without_querying():
+    graph = object.__new__(GraphDB)
+    graph.execute_query = AsyncMock()
+    graph._invalidate_cache = AsyncMock()
+
+    try:
+        asyncio.run(
+            graph.create_relationship(
+                "User",
+                "Person`) DETACH DELETE n //",
+                "LIKES",
+                "Coffee",
+                "Concept",
+            )
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unsafe label should be rejected")
+
+    graph.execute_query.assert_not_awaited()
+
+    try:
+        asyncio.run(
+            graph.create_relationship(
+                "User",
+                "Person",
+                "LIKES`) DETACH DELETE n //",
+                "Coffee",
+                "Concept",
+            )
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unsafe relation should be rejected")
+
+    graph.execute_query.assert_not_awaited()
+
+
+def test_triple_extractor_uses_current_graph_relationship_contract():
+    graph = SimpleNamespace(create_relationship=AsyncMock())
+    extractor = TripleExtractor(graph_db=graph)
+
+    triples = asyncio.run(
+        extractor.extract_and_store("I live in Pune", user_id="Aniket")
+    )
+
+    assert triples == [["Aniket", "LIVES_IN", "Pune"]]
+    graph.create_relationship.assert_awaited_once_with(
+        "Aniket",
+        "Person",
+        "LIVES_IN",
+        "Pune",
+        "Entity",
+        {"source": "triple_extractor"},
+    )
+
+
+def test_stt_rejects_non_pcm_payloads_and_downmixes_multichannel_pcm():
+    sys.modules.setdefault(
+        "_webrtcvad",
+        SimpleNamespace(
+            create=lambda: object(),
+            init=lambda _vad: None,
+            set_mode=lambda _vad, _mode: None,
+            process=lambda _vad, _sample_rate, _buf, _length: False,
+            valid_rate_and_frame_length=lambda _rate, _frame_length: True,
+        ),
+    )
+    from app.stt.agent import STTAgent
+
+    agent = STTAgent.__new__(STTAgent)
+    agent.target_sample_rate = 16000
+    agent.whisper_queue = asyncio.Queue()
+    agent.perception_queue = asyncio.Queue()
+    agent.perception_buffer = []
+    agent.perception_chunk_size = 999999
+
+    enqueued = []
+
+    def _capture_put(queue, item, label):
+        enqueued.append((label, item))
+
+    agent._put_latest = _capture_put
+
+    asyncio.run(agent._on_audio_inbound({"audio": "legacy-json"}, metadata=None))
+    assert enqueued == []
+
+    stereo_samples = [1000, -1000, 3000, 1000]
+    stereo_pcm = b"".join(int(sample).to_bytes(2, "little", signed=True) for sample in stereo_samples)
+    asyncio.run(
+        agent._on_audio_inbound(
+            stereo_pcm,
+            metadata={"sample_rate": 16000, "channels": 2},
+        )
+    )
+
+    assert len(enqueued) == 1
+    label, (pcm_16, _metadata) = enqueued[0]
+    assert label == "whisper"
+    assert len(pcm_16) == 4
+
+
+def test_voice_temporal_renderer_keeps_timing_tags_out_of_tts():
+    agent = VoiceAgent()
+    agent.playback_queue = asyncio.Queue()
+    agent.sovits.synthesize_stream = MagicMock()
+
+    async def _stream(**kwargs):
+        yield b"pcm:" + kwargs["text"].encode()
+
+    agent.sovits.synthesize_stream.side_effect = _stream
+
+    item = {
+        "turn_id": "turn-1",
+        "generation": agent.generation,
+        "metadata": {"turn_id": "turn-1"},
+    }
+    prosody = {"rate": 1.0, "pitch": 1.0, "volume": 1.0}
+
+    asyncio.run(agent._enqueue_temporal_audio("hello<pause=20ms>there", item, prosody))
+
+    calls = agent.sovits.synthesize_stream.call_args_list
+    assert [call.kwargs["text"] for call in calls] == ["hello", "there"]
+    queued = []
+    while not agent.playback_queue.empty():
+        queued.append(agent.playback_queue.get_nowait()["pcm"])
+
+    assert queued[0] == b"pcm:hello"
+    assert queued[1] == agent._silence_pcm(20)
+    assert queued[2] == b"pcm:there"
+
+
+def test_voice_done_flushes_residual_phrase_buffer():
+    agent = VoiceAgent()
+    agent.ingestion_queue = asyncio.PriorityQueue()
+    agent._phrase_buffer = "small phrase"
+
+    asyncio.run(agent._handle_input({"done": True, "turn_id": "turn-1"}))
+
+    assert agent._phrase_buffer == ""
+    assert agent.ingestion_queue.qsize() == 1
 
 
 def test_surfacing_agent_suppresses_recently_recalled_memories():
