@@ -200,37 +200,62 @@ class ConversationHistoryStore:
 
         try:
             async with self.pool.acquire() as conn:
-                # Get last N sessions (excluding current if active)
-                exclude_clause = (
-                    f"WHERE id != '{self.current_session_id}'"
-                    if self.current_session_id
-                    else ""
-                )
-                sessions = await conn.fetch(
-                    f"SELECT id, started_at FROM sessions {exclude_clause} ORDER BY started_at DESC LIMIT $1",
-                    limit,
-                )
-
-                gists = []
-                for sess in sessions:
-                    # Fetch first and last message to get the "gist"
-                    messages = await conn.fetch(
+                # Single query: sessions + first/last message via LATERAL (no N+1)
+                if self.current_session_id:
+                    rows = await conn.fetch(
                         """
-                        (SELECT role, content, timestamp FROM messages WHERE session_id = $1 ORDER BY timestamp ASC LIMIT 1)
-                        UNION ALL
-                        (SELECT role, content, timestamp FROM messages WHERE session_id = $1 ORDER BY timestamp DESC LIMIT 1)
-                        ORDER BY timestamp ASC
+                        SELECT s.id AS session_id, s.started_at,
+                               m.role, m.content, m.timestamp, m.pos
+                        FROM (
+                            SELECT id, started_at FROM sessions
+                            WHERE id != $2
+                            ORDER BY started_at DESC LIMIT $1
+                        ) s,
+                        LATERAL (
+                            (SELECT role, content, timestamp, 1 AS pos FROM messages WHERE session_id = s.id ORDER BY timestamp ASC LIMIT 1)
+                            UNION ALL
+                            (SELECT role, content, timestamp, 2 AS pos FROM messages WHERE session_id = s.id ORDER BY timestamp DESC LIMIT 1)
+                        ) m
+                        ORDER BY s.started_at DESC, m.pos ASC
                         """,
-                        sess["id"],
+                        limit,
+                        self.current_session_id,
                     )
-                    if messages:
-                        gists.append(
-                            {
-                                "date": sess["started_at"].strftime("%Y-%m-%d"),
-                                "interaction": [dict(m) for m in messages],
-                            }
-                        )
-                return gists
+                else:
+                    rows = await conn.fetch(
+                        """
+                        SELECT s.id AS session_id, s.started_at,
+                               m.role, m.content, m.timestamp, m.pos
+                        FROM (
+                            SELECT id, started_at FROM sessions
+                            ORDER BY started_at DESC LIMIT $1
+                        ) s,
+                        LATERAL (
+                            (SELECT role, content, timestamp, 1 AS pos FROM messages WHERE session_id = s.id ORDER BY timestamp ASC LIMIT 1)
+                            UNION ALL
+                            (SELECT role, content, timestamp, 2 AS pos FROM messages WHERE session_id = s.id ORDER BY timestamp DESC LIMIT 1)
+                        ) m
+                        ORDER BY s.started_at DESC, m.pos ASC
+                        """,
+                        limit,
+                    )
+
+                # Group rows by session
+                gists_by_session = {}
+                for row in rows:
+                    sid = row["session_id"]
+                    if sid not in gists_by_session:
+                        gists_by_session[sid] = {
+                            "date": row["started_at"].strftime("%Y-%m-%d"),
+                            "interaction": [],
+                        }
+                    gists_by_session[sid]["interaction"].append({
+                        "role": row["role"],
+                        "content": row["content"],
+                        "timestamp": row["timestamp"],
+                    })
+
+                return list(gists_by_session.values())
         except Exception as e:
             logger.error(f"Failed to fetch session gists: {e}")
             return []

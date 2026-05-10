@@ -10,11 +10,10 @@ import nats
 from app.config import Config
 from app.network import is_lan_client_allowed
 from scripts.provision_models import ensure_models_provisioned
+from app.logging_config import setup_logging
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+setup_logging(level=logging.INFO, json_format=getattr(Config, "LOG_JSON", False))
 logger = logging.getLogger("ai_friend_backend")
 
 
@@ -117,7 +116,7 @@ app.add_middleware(
     allow_origins=[] if Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"] else Config.ALLOWED_ORIGINS,
     allow_origin_regex=Config.LAN_CORS_ORIGIN_REGEX if Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"] else None,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 

@@ -1,5 +1,5 @@
 """
-Surfacing Agent — Episodic + Semantic Memory (psycological_layer.md §6-7).
+Surfacing Agent — Episodic + Semantic Memory (psychological_layer.md §6-7).
 
 Two memory channels:
   1. Episodic (pgvector): ACT-R scored, mood-congruent recall (Bower, 1981)

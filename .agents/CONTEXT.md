@@ -866,3 +866,28 @@ Applied the maintainer decisions from the debt audit follow-up:
 Verification:
 
 - `backend/tests/test_regressions.py` passes locally.
+
+## 2026-05-11 AI Mesh Contracts & Observability Hardening
+
+Completed infrastructure hardening and API compatibility fixes to move the project from "Experimental" to "Hardened CVS-1.0".
+
+Changed files:
+- `backend/app/contracts.py`
+- `backend/app/agents/brain_agent.py`
+- `backend/app/voice/agent.py`
+- `backend/app/stt/sensevoice_service.py`
+- `backend/app/logging_config.py` (New)
+- `backend/main.py`
+- `backend/requirements-base.txt`
+- `README.md`
+- `walkthrough.md`
+
+Behavior changes:
+- **SenseVoice Restoration**: Fixed incompatible constructor in `SenseVoiceSTTService` caused by `sherpa-onnx` 1.13.0 API changes (switched to `from_sense_voice` factory method). This restores the fast-path speculative interruption STT.
+- **Typed Mesh Contracts**: Replaced raw Python dictionaries with strictly typed Pydantic models (`ChatInput`, `ChatOutput`, `ChatOutputAffect`) in the Brain and Voice agents. This validates the PAD affect metadata at the NATS boundary, preventing silent failures.
+- **Structured JSON Logging**: Implemented `logging_config.py` using `python-json-logger` for the entire backend. This enables production-grade log aggregation and tracing across the mesh.
+- **Signaling Server Restoration**: Restored the `AIBackend` class and `initialize()` lifecycle in `main.py` that had been accidentally removed during earlier refactoring, and wired it to the new structured logging.
+
+Verification:
+- Rebuilt all 8 container images with `docker compose ... up -d --build`.
+- Verified all 14 mesh containers reached `Running` and `Healthy` status (verified via `docker ps`).

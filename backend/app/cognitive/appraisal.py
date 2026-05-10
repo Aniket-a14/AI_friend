@@ -1,5 +1,5 @@
 """
-Appraisal Engine — OCC/Lazarus/EMA (psycological_layer.md §1).
+Appraisal Engine — OCC/Lazarus/EMA (psychological_layer.md §1).
 
 Computes the 6-variable appraisal vector on every user event.
 Uses heuristic computation on the hot path; the ReappraisalEngine

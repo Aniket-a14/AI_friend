@@ -1,7 +1,7 @@
 """
 Cognitive Service — The Orchestrator for the Cognitive Loop.
 
-Pipeline (psycological_layer.md System Principle):
+Pipeline (psychological_layer.md System Principle):
     Signal → Appraisal → State → Intent → Expression → Reappraisal → Memory
              ↑                                                         │
              └─────────────────────────────────────────────────────────┘
@@ -130,7 +130,7 @@ class CognitiveService:
 
     async def process_event(self, raw_event: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        The Master Cognitive Loop (psycological_layer.md System Principle):
+        The Master Cognitive Loop (psychological_layer.md System Principle):
         Perception → Appraisal → State Update → Decision → Action → Learning
         """
         # 1. Conflict Resolution (Turn-Taking Stability)

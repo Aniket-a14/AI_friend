@@ -65,7 +65,7 @@ class Config:
     # Debug override: set to a low value (e.g. 30) for quick local testing
     PROACTIVE_DEBUG_THRESHOLD_OVERRIDE = os.getenv("PROACTIVE_DEBUG_THRESHOLD_OVERRIDE")
 
-    # ── Psychological Layer Coefficients (psycological_layer.md §2.4) ──
+    # ── Psychological Layer Coefficients (psychological_layer.md §2.4) ──
     PSYCH_ALPHA = float(os.getenv("PSYCH_ALPHA", "0.3"))       # Valence drift rate
     PSYCH_BETA = float(os.getenv("PSYCH_BETA", "0.5"))         # Arousal response rate
     PSYCH_GAMMA = float(os.getenv("PSYCH_GAMMA", "0.2"))       # Dominance stability
@@ -73,12 +73,12 @@ class Config:
     PSYCH_EPSILON = float(os.getenv("PSYCH_EPSILON", "0.03"))  # Attachment growth (Bowlby)
     PSYCH_LAMBDA_DECAY = float(os.getenv("PSYCH_LAMBDA_DECAY", "0.05"))  # ALMA decay
 
-    # ── ACT-R Memory Retrieval (psycological_layer.md §6.2) ──
+    # ── ACT-R Memory Retrieval (psychological_layer.md §6.2) ──
     ACTR_DECAY_RATE = float(os.getenv("ACTR_DECAY_RATE", "0.5"))        # d in Bᵢ formula
     ACTR_SPREAD_WEIGHT = float(os.getenv("ACTR_SPREAD_WEIGHT", "1.0"))  # Context relevance
     ACTR_EMOTION_WEIGHT = float(os.getenv("ACTR_EMOTION_WEIGHT", "0.5"))  # Emotional alignment
 
-    # ── MAUT Decision Weights (psycological_layer.md §3.1) ──
+    # ── MAUT Decision Weights (psychological_layer.md §3.1) ──
     MAUT_W_GOAL = float(os.getenv("MAUT_W_GOAL", "0.35"))
     MAUT_W_EMOTION = float(os.getenv("MAUT_W_EMOTION", "0.25"))
     MAUT_W_IDENTITY = float(os.getenv("MAUT_W_IDENTITY", "0.20"))
@@ -86,7 +86,7 @@ class Config:
     INTENT_PERSISTENCE_RATE = float(os.getenv("INTENT_PERSISTENCE_RATE", "0.5"))  # ρ
     CONTEXT_SHIFT_THRESHOLD = float(os.getenv("CONTEXT_SHIFT_THRESHOLD", "0.6"))  # θ_shift
 
-    # ── Reappraisal Loop (psycological_layer.md §8) ──
+    # ── Reappraisal Loop (psychological_layer.md §8) ──
     REAPPRAISAL_ENABLED = os.getenv("REAPPRAISAL_ENABLED", "true").lower() == "true"
     REAPPRAISAL_LEARNING_RATE = float(os.getenv("REAPPRAISAL_LEARNING_RATE", "0.05"))
 

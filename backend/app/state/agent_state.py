@@ -1,5 +1,5 @@
 """
-Agent State — PAD + Relational Framework (psycological_layer.md §2).
+Agent State — PAD + Relational Framework (psychological_layer.md §2).
 
 Affective dimensions: Valence (V), Arousal (Ar), Dominance (D)
   — Mehrabian & Russell (1974)

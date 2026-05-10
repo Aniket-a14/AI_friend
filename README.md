@@ -22,7 +22,7 @@ The system is built for **Sovereign Privacy**, ensuring that identity evolution,
 
 AI Friend should be read as a **software mind-and-voice layer**, not as a productivity assistant. Its success metric is not only correctness. The real target is whether conversation feels like speaking with a persistent person who has mood, memory, habits, timing, and a stable voice presence. That makes the project closer to a cognitive identity emulator than a conventional chatbot.
 
-## ✅ Current Status (April 2026)
+## ✅ Current Status (May 2026)
 
 - Runtime and CI hardening are in place for JetStream startup, stream readiness, and fallback safety.
 - Surfacing behavior is deterministic on `system.tick`, while preserving async scheduling for chat-triggered sweeps.
@@ -44,48 +44,96 @@ AI Friend uses a **Hardened Sovereign Mesh**. In version **CVS-1.0**, the archit
 
 ### 1. System Topology
 
-The platform is orchestrated as a **Solid State Agent Mesh** communicating over a hardened NATS JetStream signal bus.
+The platform is orchestrated as a **Solid State Agent Mesh** communicating over a hardened NATS JetStream signal bus. All inter-agent messages are validated through **typed Pydantic contracts** (`contracts.py`).
 
 ```mermaid
 graph TD
     User((User)) <--> |"WebRTC / PCM"| Frontend["Next.js Frontend"]
     Frontend <--> |"FastAPI"| Signaling["Signaling Server"]
-    
-    subgraph "Sovereign Mesh [Solid State Mesh (9 Subjects)]"
-        Signaling <--> |"NATS"| Bus{"NATS JetStream"}
-        Bus <--> STT["STT Agent: Whisper/SenseVoice"]
-        Bus <--> Brain["Brain Agent: BDI Cognition"]
-        Bus <--> Voice["Voice Agent: CVS Runtime"]
-        Bus <--> Vision["Vision Agent: CV2/Llava"]
-        Bus <--> Pulse["System Agent: Heartbeat"]
-        Bus <--> Recall["Surfacing Agent: Memory"]
+
+    subgraph "WebRTC Bridge"
+        Transport["TransportAgent"]
     end
-    
+
+    Signaling <--> LK["LiveKit SFU"]
+    LK <--> Transport
+
+    subgraph "Sovereign Mesh — Typed Contract Layer"
+        Transport <--> |"audio.inbound / audio.stream"| Bus{"NATS JetStream"}
+        Bus <--> |"chat.input / audio.perception"| STT["STT Agent: Dual-Path"]
+        Bus <--> |"chat.input / chat.output"| Brain["Brain Agent: BDI Cognition"]
+        Bus <--> |"chat.output / audio.stop/resume"| Voice["Voice Agent: CVS Runtime"]
+        Bus <--> |"vision.control / vision.frames"| Vision["Vision Agent: CV2/Llava"]
+        Bus <--> |"system.tick"| Pulse["System Agent: Heartbeat"]
+        Bus <--> |"memory.surfaced / state.update"| Recall["Surfacing Agent: Memory"]
+    end
+
+    subgraph "Cognitive Core"
+        Perception["PerceptionService"]
+        Appraisal["AppraisalEngine — OCC/Lazarus"]
+        Decision["DecisionService — MAUT + BT"]
+        Action["ActionService — LLM Stream"]
+        State["StateService — PAD + ALMA"]
+        Learning["ReflectionService"]
+        Identity["IdentityManager"]
+    end
+
+    Brain --> Perception --> Appraisal --> Decision --> Action
+    Brain --> State
+    Brain --> Learning --> Identity
+
+    subgraph "Voice Subsystem"
+        Prosody["prosody.py — VAD Mapping"]
+        Playback["playback.py — OLA Signal"]
+        Resilience["resilience.py — Fillers"]
+    end
+
+    Voice --> Prosody
+    Voice --> Playback
+    Voice --> Resilience
+
     subgraph "Infrastructure"
-        Brain <--> Neo4j[("(Neo4j: GraphRAG)")]
-        Brain <--> Postgres[("(Postgres: Relational Identity)")]
-        Brain <--> Ollama["Ollama: LLM"]
-        Voice <--> SoVITS["GPT-SoVITS API"]
+        Brain <--> Neo4j[("Neo4j: Knowledge Graph")]
+        Brain <--> Postgres[("Postgres + pgvector")]
+        Action --> Ollama["Ollama: Local LLM"]
+        Voice --> SoVITS["GPT-SoVITS API"]
     end
 ```
 
-### 2. The Perceptual "Pulse" Path
+### 2. The Perceptual "Pulse" Path (Dual-STT)
 
-To achieve sub-250ms perceived latency, the system utilizes a non-linear signal path with hardware-optimized `sherpa-onnx`.
+To achieve sub-250ms perceived latency, the system utilizes a **dual-STT fan-out** with a 3-stage interruption protocol. All messages are validated through typed Pydantic contracts before publish.
 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant S as "STT Agent (SenseVoice)"
+    participant T as TransportAgent
+    participant SV as "SenseVoice (Fast Path)"
+    participant W as "Whisper (Accurate Path)"
     participant B as Brain Agent
     participant V as Voice Agent
-    
-    U->>S: Raw Audio Stream
-    S->>B: "chat.input (Hinglish/Text)"
-    B->>V: "chat.output (Incremental Segment + Metadata)"
-    V->>V: "Jitter Buffer & Atomic Phrasing"
-    V->>U: Raw 32kHz PCM
-    V-->>B: "voice.segmentation_feedback (Telemetry)"
+
+    U->>T: WebRTC Audio
+    T->>T: PCM → audio.inbound
+
+    par Dual-STT Fan-Out
+        T->>SV: 400ms chunks (CPU)
+        T->>W: Full utterance (GPU)
+    end
+
+    SV->>B: AudioPerception (emotion + speculative intent)
+    Note over SV,V: Stage 1 — Speculative pause if stop detected
+    SV-->>V: AudioStop(speculative=true)
+
+    W->>B: ChatInput (final transcript, typed contract)
+    Note over B: Stage 2 — Cognitive confirms or rejects stop
+    B-->>V: AudioResume (if rejected) / AudioStop (if confirmed)
+
+    B->>V: ChatOutput (incremental segments + affect)
+    V->>V: prosody.py → playback.py → resilience.py
+    V->>T: Raw 32kHz PCM → audio.stream
+    T->>U: WebRTC Audio
+    V-->>B: voice.segmentation_feedback (Telemetry)
     Note over B,V: Closed-Loop Pulse Adjustment
 ```
 
@@ -96,6 +144,7 @@ sequenceDiagram
 In version **CVS-1.0 Hardened**, we achieved **Zero-Drift Resilience**.
 
 - **9-Subject Signal Bus**: NATS now routes `chat`, `vision`, `state`, `cmd`, `voice`, `system`, `memory`, `identity`, and `knowledge`.
+- **Fully Typed Contract Mesh**: 100% of inter-agent messages are now validated via Pydantic models in `contracts.py`, eliminating runtime key-mismatch bugs.
 - **Infrastructure Phased Startup**: Implemented `depends_on` conditions with `service_healthy`. The mesh graduates in stages (Infra -> Brain -> Sensory Agents) to eliminate startup race conditions.
 - **Mesh Surveillance**: Automated health probes (`nc -z nats_mesh 4222`) trigger self-healing for disconnected agents.
 - **Identity Mesh (Prisma 7.7.0)**: On-demand relational seeding ensures the AI's "Deep Self" is preserved across any hardware or container restart.
@@ -150,24 +199,54 @@ Surfacing includes novelty suppression so the same memory is not repeatedly rein
 ## 📂 Project Structure
 
 ```text
-├── .agents/             # Agent skills and memory systems
-│   └── CONTEXT.md       # Persistent handoff ledger for future agents
-├── backend/             # Core logic
-│   ├── app/             # Application code
-│   │   ├── agents/      # Agent implementations (Brain, Voice, STT)
-│   │   ├── cognitive/   # BDI and decision services
-│   │   └── main.py      # NATS mesh entry point
-│   ├── Dockerfile       # Hardened base image with netcat
-│   └── requirements.txt # Python dependencies
+├── .agents/                  # Agent skills and memory systems
+│   └── CONTEXT.md            # Persistent handoff ledger for future agents
+├── .editorconfig             # Line ending + indent normalization
+├── .env.example              # Environment variable template
+├── .github/workflows/        # CI pipeline (pytest + ruff)
+├── backend/
+│   ├── app/
+│   │   ├── agents/           # Mesh agents (Brain, Transport, Surfacing, Vision)
+│   │   │   ├── base.py       # BaseAgent — NATS connection, subscribe, publish
+│   │   │   ├── brain_agent.py
+│   │   │   ├── surfacing_agent.py
+│   │   │   └── transport_agent.py
+│   │   ├── cognitive/        # BDI cognition pipeline
+│   │   │   ├── core.py       # CognitiveService — master loop
+│   │   │   ├── perception.py # Raw event → CognitiveEvent
+│   │   │   ├── appraisal.py  # OCC/Lazarus 6-variable vector
+│   │   │   ├── decision.py   # MAUT scoring + Behavior Tree
+│   │   │   ├── action.py     # LLM stream + sanitizer
+│   │   │   ├── learning.py   # Fact consolidation + persona evolution
+│   │   │   └── identity.py   # Immutable core + adaptive traits
+│   │   ├── state/            # Persistence layer
+│   │   │   ├── agent_state.py    # PAD + ALMA decay
+│   │   │   ├── memory_store.py   # ACT-R retrieval + pgvector
+│   │   │   ├── conversation_store.py
+│   │   │   └── graph_db.py       # Neo4j with Cypher injection defense
+│   │   ├── voice/            # CVS-1.0 voice runtime (decomposed)
+│   │   │   ├── agent.py      # State machine + synthesis loop
+│   │   │   ├── prosody.py    # VAD → speech parameter mapping
+│   │   │   ├── playback.py   # OLA signal continuity + PCM streaming
+│   │   │   ├── resilience.py # Filler injection + drift correction
+│   │   │   ├── cache.py      # Synthesis result cache
+│   │   │   └── sovits_client.py
+│   │   ├── stt/              # Dual-STT (SenseVoice + Whisper)
+│   │   │   └── agent.py      # Fan-out with typed contract publishing
+│   │   ├── contracts.py      # Pydantic models for NATS messages
+│   │   ├── metrics.py        # Shared SubjectMetrics utility
+│   │   └── config.py         # Centralized configuration
+│   ├── tests/
+│   │   └── test_regressions.py   # 24 targeted regression tests
+│   └── requirements-base.txt     # Pinned dependencies
 ├── db/
-│   └── schema.sql        # Relational schema baseline
-├── docs/                # Technical documentation suite
-├── frontend/            # Next.js 16 application
-├── GPT_SoVITS/          # Voice training submodule
-├── notebooks/           # Training & Dev scripts
-├── docker-compose.infra.yml  # Infra services (NATS, DB, model services)
+│   └── schema.sql            # Relational schema baseline
+├── docs/                     # Technical documentation suite
+│   └── psychological_layer.md    # OCC/Lazarus/EMA/ACT-R reference
+├── frontend/                 # Next.js 16 application
+├── docker-compose.infra.yml  # Infra (NATS, Postgres, Neo4j, Ollama, SoVITS)
 ├── docker-compose.prod.yml   # Cognitive/agent services
-└── scripts/                  # Utility/startup scripts
+└── _archive/                 # Deprecated files (quarantined)
 ```
 
 ---
