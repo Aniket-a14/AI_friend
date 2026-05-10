@@ -1,5 +1,5 @@
 """
-Memory Store — ACT-R Based Retrieval (psycological_layer.md §6).
+Memory Store — ACT-R Based Retrieval (psychological_layer.md §6).
 
 Retrieval scoring adapted from Anderson & Lebiere (1998):
     Aᵢ = Bᵢ + Σⱼ Wⱼ·Sⱼᵢ + ε
@@ -30,11 +30,12 @@ class MemoryStore:
             ollama_base_url or getattr(Config, "OLLAMA_URL", "http://localhost:11434")
         ).rstrip("/")
         self.embedding_model = "nomic-embed-text"
+        self._http_client = httpx.AsyncClient(timeout=30.0)
 
         # ACT-R Parameters (§6.2)
-        self.decay_rate = getattr(Config, "ACTR_DECAY_RATE", 0.5)       # d
-        self.spread_weight = getattr(Config, "ACTR_SPREAD_WEIGHT", 1.0)  # Wⱼ
-        self.emotion_weight = getattr(Config, "ACTR_EMOTION_WEIGHT", 0.5)  # w_emotion
+        self.decay_rate = Config.ACTR_DECAY_RATE       # d
+        self.spread_weight = Config.ACTR_SPREAD_WEIGHT  # Wⱼ
+        self.emotion_weight = Config.ACTR_EMOTION_WEIGHT  # w_emotion
 
     async def get_embedding(self, text: str):
         """Generates vector embedding for text using local Ollama."""
@@ -45,31 +46,31 @@ class MemoryStore:
 
         last_error = None
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                for endpoint, payload in attempts:
-                    response = await client.post(
-                        f"{self.ollama_base_url}{endpoint}",
-                        json=payload,
-                    )
-                    if response.status_code == 404:
-                        continue
+            client = self._http_client
+            for endpoint, payload in attempts:
+                response = await client.post(
+                    f"{self.ollama_base_url}{endpoint}",
+                    json=payload,
+                )
+                if response.status_code == 404:
+                    continue
 
-                    response.raise_for_status()
-                    result = response.json()
+                response.raise_for_status()
+                result = response.json()
 
-                    embedding = result.get("embedding")
-                    if embedding:
-                        return embedding
+                embedding = result.get("embedding")
+                if embedding:
+                    return embedding
 
-                    embeddings = result.get("embeddings")
-                    if isinstance(embeddings, list) and embeddings:
-                        return embeddings[0]
+                embeddings = result.get("embeddings")
+                if isinstance(embeddings, list) and embeddings:
+                    return embeddings[0]
 
-                    last_error = f"No embedding payload returned by {endpoint}"
+                last_error = f"No embedding payload returned by {endpoint}"
 
-                if last_error is None:
-                    last_error = "All embedding endpoints returned 404"
-                raise RuntimeError(last_error)
+            if last_error is None:
+                last_error = "All embedding endpoints returned 404"
+            raise RuntimeError(last_error)
         except Exception as e:
             logger.error(f"Ollama embedding failed: {e}")
             return None
@@ -266,3 +267,6 @@ class MemoryStore:
                 )
         except Exception as e:
             logger.error(f"Failed to refresh memories: {e}")
+    async def close(self):
+        """Close the persistent HTTP client."""
+        await self._http_client.aclose()

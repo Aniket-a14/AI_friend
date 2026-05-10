@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "develop" ]
   pull_request:
     branches: [ "main", "master" ]
 
@@ -25,13 +25,13 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.10'
-    - name: Backend Lint
+        python-version: '3.12'
+    - name: Backend Lint (ruff)
       run: |
         cd backend
         python -m pip install --upgrade pip
-        pip install flake8
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        pip install ruff
+        ruff check app/ tests/ --output-format=github
 
   frontend-build:
     needs: [lint]

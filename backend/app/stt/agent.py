@@ -6,6 +6,7 @@ from ..agents.base import BaseAgent
 import time
 from typing import Any
 from ..config import Config
+from ..contracts import ChatInput, ChatInputMetadata, AudioPerception, SpeculativeIntent, AudioStop
 
 try:
     import numpy as np
@@ -43,8 +44,8 @@ class STTAgent(BaseAgent):
         # Temporal Intent Stability
         from collections import deque
         self.intent_window = deque(maxlen=5)
-        self.interrupt_intent_threshold = getattr(Config, "INTENT_THRESHOLD", 0.65) # Lowered for speculative speed
-        self.stability_required = getattr(Config, "INTENT_STABILITY", 2) # Faster latching
+        self.interrupt_intent_threshold = Config.INTENT_THRESHOLD  # Lowered for speculative speed
+        self.stability_required = Config.INTENT_STABILITY  # Faster latching
 
         # Audio accumulator for SenseVoice (per-chunk perception)
         self.perception_chunk_size = int(16000 * 0.4) # 400ms chunks
@@ -201,18 +202,17 @@ class STTAgent(BaseAgent):
         if is_final:
             utterance_id = self.current_utterance_id or str(uuid.uuid4())
             logger.info(f"User (Whisper): {result_text}")
-            payload = {
-                "text": result_text,
-                "utterance_id": utterance_id,
-                "metadata": {
-                    "source": "whisper",
-                    "confidence": confidence,
-                    "utterance_id": utterance_id,
-                },
-            }
-            if metadata:
-                payload["latency_metadata"] = metadata
-            await self.publish("chat.input", payload)
+            msg = ChatInput(
+                text=result_text,
+                utterance_id=utterance_id,
+                metadata=ChatInputMetadata(
+                    source="whisper",
+                    confidence=confidence,
+                    utterance_id=utterance_id,
+                ),
+                latency_metadata=metadata if metadata else None,
+            )
+            await self.publish("chat.input", msg.model_dump())
             self.intent_window.clear()
             self.current_utterance_id = None
         elif is_partial:
@@ -247,35 +247,38 @@ class STTAgent(BaseAgent):
         )
 
         # Publish emotional signals & partials
-        await self.publish("audio.perception", {
-            "text": perception_data["text"],
-            "intent": speculative_intent["name"] if speculative_intent else None,
-            "keywords": speculative_intent["keywords"] if speculative_intent else [],
-            "confidence": perception_confidence,
-            "speculative_intent": speculative_intent,
-            "metadata": {
-                **perception_data,
-                "confidence": perception_confidence,
-            },
-            "timestamp": time.time(),
-            "utterance_id": speculative_intent["utterance_id"] if speculative_intent else self.current_utterance_id,
-        })
+        spec_model = None
+        if speculative_intent:
+            spec_model = SpeculativeIntent(**speculative_intent)
+
+        perception_msg = AudioPerception(
+            text=perception_data["text"],
+            intent=speculative_intent["name"] if speculative_intent else None,
+            keywords=speculative_intent["keywords"] if speculative_intent else [],
+            confidence=perception_confidence,
+            speculative_intent=spec_model,
+            metadata={**perception_data, "confidence": perception_confidence},
+            timestamp=time.time(),
+            utterance_id=speculative_intent["utterance_id"] if speculative_intent else self.current_utterance_id,
+        )
+        await self.publish("audio.perception", perception_msg.model_dump())
 
         # Speculative Intent Evaluation
         if speculative_intent:
             logger.warning(
-                "🛑 [SPECULATIVE INTENT] Perception detected: '%s'. Triggering Early Stop.",
+                "[SPECULATIVE INTENT] Perception detected: '%s'. Triggering Early Stop.",
                 perception_data["text"],
             )
-            await self.publish("audio.stop", {
-                "interrupt": True,
-                "speculative": True,
-                "intent": speculative_intent["name"],
-                "keywords": speculative_intent["keywords"],
-                "confidence": speculative_intent["confidence"],
-                "perception_text": speculative_intent["text"],
-                "utterance_id": speculative_intent["utterance_id"],
-            })
+            stop_msg = AudioStop(
+                interrupt=True,
+                speculative=True,
+                intent=speculative_intent["name"],
+                keywords=speculative_intent["keywords"],
+                confidence=speculative_intent["confidence"],
+                perception_text=speculative_intent["text"],
+                utterance_id=speculative_intent["utterance_id"],
+            )
+            await self.publish("audio.stop", stop_msg.model_dump())
 
     def _build_speculative_intent(self, text: str, confidence: float):
         """

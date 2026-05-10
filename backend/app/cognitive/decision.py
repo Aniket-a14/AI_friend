@@ -1,5 +1,5 @@
 """
-Decision Layer — MAUT + Intent Persistence (psycological_layer.md §3).
+Decision Layer — MAUT + Intent Persistence (psychological_layer.md §3).
 
 Intent selection uses Multi-Attribute Utility Theory (Keeney & Raiffa, 1976):
     U(Intent) = w₁·GoalAlignment + w₂·EmotionalFit + w₃·IdentityAlignment + w₄·ContextRelevance
@@ -43,14 +43,14 @@ class DecisionService:
         self.root = self._build_bt()
 
         # MAUT Weights (§3.1)
-        self.w_goal = getattr(Config, "MAUT_W_GOAL", 0.35)
-        self.w_emotion = getattr(Config, "MAUT_W_EMOTION", 0.25)
-        self.w_identity = getattr(Config, "MAUT_W_IDENTITY", 0.20)
-        self.w_context = getattr(Config, "MAUT_W_CONTEXT", 0.20)
+        self.w_goal = Config.MAUT_W_GOAL
+        self.w_emotion = Config.MAUT_W_EMOTION
+        self.w_identity = Config.MAUT_W_IDENTITY
+        self.w_context = Config.MAUT_W_CONTEXT
 
         # Intent Persistence (§3.2)
-        self.persistence_rate = getattr(Config, "INTENT_PERSISTENCE_RATE", 0.5)  # ρ
-        self.shift_threshold = getattr(Config, "CONTEXT_SHIFT_THRESHOLD", 0.6)   # θ_shift
+        self.persistence_rate = Config.INTENT_PERSISTENCE_RATE  # ρ
+        self.shift_threshold = Config.CONTEXT_SHIFT_THRESHOLD   # θ_shift
         self._previous_goal: Optional[str] = None
         self._goal_scores: Dict[str, float] = {g: 0.0 for g in GOALS}
 

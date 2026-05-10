@@ -1,5 +1,5 @@
 """
-Reappraisal Engine — Gross/Bosse Feedback Loop (psycological_layer.md §8).
+Reappraisal Engine — Gross/Bosse Feedback Loop (psychological_layer.md §8).
 
 Implements emotion regulation via parameter-level adaptation, not direct
 emotion modification. This maintains consistency with Gross (1998) and

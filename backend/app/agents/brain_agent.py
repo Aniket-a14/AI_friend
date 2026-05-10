@@ -12,6 +12,8 @@ from ..state import GraphDB, MemoryStore, ConversationHistoryStore
 from ..config import Config
 from ..cognitive import CognitiveService
 from ..runtime_bootstrap import bootstrap_runtime
+from ..contracts import ChatInput, ChatOutput, ChatOutputAffect
+from ..logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -132,21 +134,30 @@ class BrainAgent(BaseAgent):
         # Phase 1: Track real interaction time for proactive idle detection
         self.cognitive_core.state.record_user_interaction()
 
-        user_text = message.get("text", "")
+        try:
+            msg = ChatInput.model_validate(message)
+            user_text = msg.text
+            turn_id = msg.turn_id or msg.utterance_id or str(uuid.uuid4())
+            metadata = msg.metadata.model_dump()
+            utterance_id = msg.utterance_id
+        except Exception:
+            user_text = message.get("text", "")
+            turn_id = message.get("turn_id") or message.get("utterance_id") or str(uuid.uuid4())
+            metadata = message.get("metadata", {})
+            utterance_id = message.get("utterance_id")
+
         if not user_text:
             return
-
-        turn_id = message.get("turn_id") or message.get("utterance_id") or str(uuid.uuid4())
 
         raw_event = {
             "id": str(uuid.uuid4()),
             "type": "USER_MESSAGE",
             "content": user_text,
             "metadata": {
-                **message.get("metadata", {}),
+                **metadata,
                 "visuals": self.last_visual_context,
                 "turn_id": turn_id,
-                "utterance_id": message.get("utterance_id"),
+                "utterance_id": utterance_id,
             }
         }
 
@@ -221,29 +232,33 @@ class BrainAgent(BaseAgent):
                         full_response = fallback_text
 
                     state_snap = self.cognitive_core.state.get_context_snapshot()
-                    await self.publish("chat.output", {
-                        "content": "",
-                        "done": True,
-                        "full_response": full_response,
-                        "emotion": state_snap.get("emotion", "neutral"),
-                        "turn_id": turn_id,
-                        "generation_error": generation_errors[-1] if generation_errors else None,
-                    })
+                    output_msg = ChatOutput(
+                        done=True,
+                        full_response=full_response,
+                        turn_id=turn_id,
+                        generation_error=generation_errors[-1] if generation_errors else None,
+                        affect=ChatOutputAffect(
+                            valence=state_snap.get("valence", state_snap.get("mood", 0.0)),
+                            arousal=state_snap.get("arousal", state_snap.get("energy", 0.5)),
+                            dominance=state_snap.get("dominance", 0.5),
+                            trust=state_snap.get("trust", 0.5),
+                            attachment=state_snap.get("attachment", 0.1),
+                            emotion=state_snap.get("emotion", "neutral"),
+                        )
+                    )
+                    await self.publish("chat.output", output_msg.model_dump())
 
         except Exception as e:
             logger.error("Cognitive Loop error on turn_id=%s: %s", turn_id, e)
+            error_msg = str(e)
             await self._publish_speech_chunk(fallback_text.split(), turn_id)
-            await self.publish(
-                "chat.output",
-                {
-                    "content": "",
-                    "done": True,
-                    "full_response": fallback_text,
-                    "emotion": "neutral",
-                    "turn_id": turn_id,
-                    "generation_error": str(e),
-                },
+            output_msg = ChatOutput(
+                done=True,
+                full_response=fallback_text,
+                turn_id=turn_id,
+                generation_error=error_msg,
             )
+            await self.publish("chat.output", output_msg.model_dump())
 
         if self.conversation_store and full_response:
             asyncio.create_task(self.conversation_store.log_message("assistant", full_response))
@@ -253,7 +268,7 @@ class BrainAgent(BaseAgent):
     async def _publish_speech_chunk(self, words: List[str], turn_id: str = None):
         """
         Publishes a semantically coherent chunk with full PAD affect metadata.
-        Implements the Brain→Voice contract from psycological_layer.md §5.3.
+        Implements the Brain→Voice contract from psychological_layer.md §5.3.
         """
         text = " ".join(words).strip()
         if not text:
@@ -277,26 +292,24 @@ class BrainAgent(BaseAgent):
         ))
 
         # Full §5.3 Affect Metadata Contract
-        payload = {
-            "content": text,
-            "done": False,
-            "emotion": state_snap.get("emotion", "neutral"),
-            # PAD dimensions
-            "valence": V,
-            "arousal": Ar,
-            "dominance": D,
-            # Relational
-            "trust": T,
-            "attachment": At,
-            # Prosody control
-            "confidence": confidence,
-            "intensity": intensity,
-            "speaking_rate": round(speaking_rate, 3),
-            "pause_bias": round(pause_bias, 3),
-            "timestamp": time.time(),
-            "turn_id": turn_id,
-        }
-        await self.publish("chat.output", payload)
+        payload = ChatOutput(
+            content=text,
+            done=False,
+            turn_id=turn_id,
+            confidence=confidence,
+            intensity=intensity,
+            speaking_rate=round(speaking_rate, 3),
+            pause_bias=round(pause_bias, 3),
+            affect=ChatOutputAffect(
+                valence=V,
+                arousal=Ar,
+                dominance=D,
+                trust=T,
+                attachment=At,
+                emotion=state_snap.get("emotion", "neutral"),
+            )
+        )
+        await self.publish("chat.output", payload.model_dump())
 
 
     async def stop(self):
@@ -363,14 +376,21 @@ class BrainAgent(BaseAgent):
 
                     if full_response.strip():
                         state_snap = self.cognitive_core.state.get_context_snapshot()
-                        await self.publish("chat.output", {
-                            "content": "",
-                            "done": True,
-                            "full_response": full_response,
-                            "emotion": state_snap.get("emotion", "neutral"),
-                            "turn_id": turn_id,
-                            "proactive": True,
-                        })
+                        output_msg = ChatOutput(
+                            done=True,
+                            full_response=full_response,
+                            turn_id=turn_id,
+                            proactive=True,
+                            affect=ChatOutputAffect(
+                                valence=state_snap.get("valence", state_snap.get("mood", 0.0)),
+                                arousal=state_snap.get("arousal", state_snap.get("energy", 0.5)),
+                                dominance=state_snap.get("dominance", 0.5),
+                                trust=state_snap.get("trust", 0.5),
+                                attachment=state_snap.get("attachment", 0.1),
+                                emotion=state_snap.get("emotion", "neutral"),
+                            )
+                        )
+                        await self.publish("chat.output", output_msg.model_dump())
 
         except Exception as e:
             logger.error("[Brain] Proactive generation error: %s", e)
@@ -411,8 +431,5 @@ async def main():
         await agent.stop()
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    setup_logging(level=logging.INFO, json_format=getattr(Config, "LOG_JSON", False))
     asyncio.run(main())
