@@ -779,6 +779,34 @@ Verification:
 
 - Pending: `pytest` full suite + live Docker mesh test.
 
+## 2026-05-10 Solution Architect Planning Skill Adoption
+
+Adopted a planning-first skill to standardize implementation plans before code changes.
+
+Changed files:
+
+- `skills/solution-architect-agent/SKILL.md`
+- `skills-lock.json`
+- `README.md`
+- `docs/README.md`
+- `.agents/CONTEXT.md`
+
+Decision:
+
+- Canonical location is `skills/solution-architect-agent/SKILL.md`.
+- No mirrored copy was added under `.agents/skills` to avoid duplication drift.
+
+Behavior/process changes:
+
+- Non-trivial work should run the solution architect planning stage first.
+- Plans must be grounded in observed repository files and conventions.
+- Required plan output sections are fixed: problem statement, affected files and dependencies, options, recommendation, ordered implementation plan, and risks/open questions.
+- Planning stage is explicitly plan-only and does not include implementation code.
+
+Verification:
+
+- Docs/skills-only update; no runtime backend/frontend files changed.
+
 Remaining risks:
 
 - Proactive messages consume LLM compute. Under CPU-only Ollama, this adds to the overall inference pressure if triggered during active background reflection.

@@ -228,6 +228,27 @@ The full documentation suite lives in [docs](docs/README.md). Start there if you
 - [Deployment](docs/DEPLOYMENT.md) covers local and production deployment (Phased Startup).
 - [.agents/CONTEXT.md](.agents/CONTEXT.md) is the persistent context ledger future agents should read before modifying the system.
 
+### Planning Agent Workflow
+
+Before implementing non-trivial changes, run the Solution Architect planning skill at `skills/solution-architect-agent/SKILL.md`.
+
+Use it for:
+
+- Multi-file feature work and refactors.
+- Runtime reliability fixes affecting mesh behavior.
+- Changes that cross cognition, state, voice, or transport boundaries.
+
+Expected output sections:
+
+1. Problem statement
+2. Affected files and dependencies
+3. Options (at least two)
+4. Recommendation with rationale
+5. Implementation plan (ordered, file-specific)
+6. Risks and open questions
+
+Important: this stage produces a plan only. Code changes should be executed by an implementation agent after plan approval.
+
 ---
 
 ## 🗺️ Roadmap: The Path to CVS-1.1
