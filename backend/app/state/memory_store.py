@@ -33,7 +33,7 @@ class MemoryStore:
         self._http_client = httpx.AsyncClient(timeout=30.0)
 
         # ACT-R Parameters (§6.2)
-        self.decay_rate = Config.ACTR_DECAY_RATE       # d
+        self.decay_rate = Config.ACTR_DECAY_RATE  # d
         self.spread_weight = Config.ACTR_SPREAD_WEIGHT  # Wⱼ
         self.emotion_weight = Config.ACTR_EMOTION_WEIGHT  # w_emotion
 
@@ -82,7 +82,7 @@ class MemoryStore:
         emotion=0.0,
         valence=0.0,
         certainty=1.0,
-        source='user',
+        source="user",
         metadata=None,
     ):
         """Adds a new memory with ACT-R metadata to the local Postgres database."""
@@ -112,7 +112,9 @@ class MemoryStore:
                     source,
                     json.dumps(metadata or {}),
                 )
-            logger.info(f"🧠 Memory Stored: {content[:50]}... (Imp: {importance}, V: {valence})")
+            logger.info(
+                f"🧠 Memory Stored: {content[:50]}... (Imp: {importance}, V: {valence})"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to add memory: {e}")
@@ -182,11 +184,12 @@ class MemoryStore:
                         last_recall = last_recall.replace(tzinfo=timezone.utc)
 
                     # ACT-R Base-Level Activation (§6.2)
-                    hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
-                    base_activation = (
-                        math.log(max(1, recall_count))
-                        - self.decay_rate * math.log(hours_since + 1)
+                    hours_since = max(
+                        0.001, (now - last_recall).total_seconds() / 3600.0
                     )
+                    base_activation = math.log(
+                        max(1, recall_count)
+                    ) - self.decay_rate * math.log(hours_since + 1)
 
                     # Spreading Activation ≈ cosine similarity (§6.2)
                     spread_activation = self.spread_weight * similarity
@@ -212,15 +215,17 @@ class MemoryStore:
                             except (json.JSONDecodeError, TypeError):
                                 raw_meta = {}
 
-                        scored_candidates.append({
-                            "content": row["content"],
-                            "score": score,
-                            # Episodic context for narrative surfacing
-                            "valence": memory_valence,
-                            "created_at": created.isoformat() if created else None,
-                            "recall_count": recall_count,
-                            "metadata": raw_meta or {},
-                        })
+                        scored_candidates.append(
+                            {
+                                "content": row["content"],
+                                "score": score,
+                                # Episodic context for narrative surfacing
+                                "valence": memory_valence,
+                                "created_at": created.isoformat() if created else None,
+                                "recall_count": recall_count,
+                                "metadata": raw_meta or {},
+                            }
+                        )
 
                 scored_candidates.sort(key=lambda x: x["score"], reverse=True)
                 results = scored_candidates[:limit]
@@ -231,6 +236,7 @@ class MemoryStore:
                 )
 
             if results and refresh_on_recall:
+
                 def _done_callback(t):
                     try:
                         t.result()
@@ -252,7 +258,9 @@ class MemoryStore:
         This strengthens the base-level activation for recently accessed memories.
         """
         try:
-            contents = [memory["content"] for memory in memories if memory.get("content")]
+            contents = [
+                memory["content"] for memory in memories if memory.get("content")
+            ]
             if not contents:
                 return
             async with self.pool.acquire() as conn:
@@ -263,10 +271,11 @@ class MemoryStore:
                         recall_count = recall_count + 1
                     WHERE content = ANY($1)
                     """,
-                    contents
+                    contents,
                 )
         except Exception as e:
             logger.error(f"Failed to refresh memories: {e}")
+
     async def close(self):
         """Close the persistent HTTP client."""
         await self._http_client.aclose()

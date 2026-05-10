@@ -17,11 +17,13 @@ from ..logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
+
 class HybridSegmenter:
     """
     CVS-1.0 Semantic Chunking Engine.
     Uses scoring-based heuristics to identify optimal speech boundaries.
     """
+
     def __init__(self, target_size: int = 8):
         self.target_size = target_size
         self.conjunctions = {"and", "but", "so", "because", "although", "while"}
@@ -44,11 +46,13 @@ class HybridSegmenter:
 
         return score
 
+
 class BrainAgent(BaseAgent):
     """
     The Brain Agent (CVS-1.0 Edition).
     Orchestrator of Identity and Temporal Cognitive Flow.
     """
+
     def __init__(
         self,
         ollama_url: str = Config.OLLAMA_URL,
@@ -75,7 +79,7 @@ class BrainAgent(BaseAgent):
 
         # CVS-1.0 Segmentation Config
         self.segmenter = HybridSegmenter(target_size=8)
-        self.formation_buffer_ms = 0.030 # 30ms
+        self.formation_buffer_ms = 0.030  # 30ms
 
     async def start(self):
         await self.connect()
@@ -93,7 +97,9 @@ class BrainAgent(BaseAgent):
             durable=f"{self.name}_chat_input_live",
             deliver_policy="new",
         )
-        await self.subscribe("vision.frames", self._on_vision_frame, deliver_policy="last")
+        await self.subscribe(
+            "vision.frames", self._on_vision_frame, deliver_policy="last"
+        )
         await self.subscribe(
             "voice.segmentation_feedback",
             self._on_voice_feedback,
@@ -120,7 +126,9 @@ class BrainAgent(BaseAgent):
         new_size = int(round(smoothed_size))
 
         if new_size != self.segmenter.target_size:
-            logger.info(f"📈 Tuning Segmentation | Target: {target} -> Smoothed: {new_size}")
+            logger.info(
+                f"📈 Tuning Segmentation | Target: {target} -> Smoothed: {new_size}"
+            )
             self.segmenter.target_size = new_size
 
     async def _on_vision_frame(self, data: Dict[str, Any]):
@@ -142,7 +150,11 @@ class BrainAgent(BaseAgent):
             utterance_id = msg.utterance_id
         except Exception:
             user_text = message.get("text", "")
-            turn_id = message.get("turn_id") or message.get("utterance_id") or str(uuid.uuid4())
+            turn_id = (
+                message.get("turn_id")
+                or message.get("utterance_id")
+                or str(uuid.uuid4())
+            )
             metadata = message.get("metadata", {})
             utterance_id = message.get("utterance_id")
 
@@ -158,7 +170,7 @@ class BrainAgent(BaseAgent):
                 "visuals": self.last_visual_context,
                 "turn_id": turn_id,
                 "utterance_id": utterance_id,
-            }
+            },
         }
 
         if self.conversation_store:
@@ -183,7 +195,8 @@ class BrainAgent(BaseAgent):
                     if (
                         current_chunk_words
                         and segment_started_at is not None
-                        and (now_monotonic - segment_started_at) >= self.formation_buffer_ms
+                        and (now_monotonic - segment_started_at)
+                        >= self.formation_buffer_ms
                         and len(current_chunk_words) >= 3
                     ):
                         await self._publish_speech_chunk(current_chunk_words, turn_id)
@@ -198,16 +211,22 @@ class BrainAgent(BaseAgent):
                         current_chunk_words.append(word)
 
                         # 1. Heuristic Scoring
-                        score = self.segmenter.score_split_point(word, len(current_chunk_words))
+                        score = self.segmenter.score_split_point(
+                            word, len(current_chunk_words)
+                        )
 
                         # 2. Decision (Safe Split)
                         if score > 0.7 or len(current_chunk_words) > 12:
-                            await self._publish_speech_chunk(current_chunk_words, turn_id)
+                            await self._publish_speech_chunk(
+                                current_chunk_words, turn_id
+                            )
                             current_chunk_words = []
                             segment_started_at = None
 
                 elif output["type"] == "error":
-                    error_msg = str(output.get("data", "unknown cognitive stream error"))
+                    error_msg = str(
+                        output.get("data", "unknown cognitive stream error")
+                    )
                     generation_errors.append(error_msg)
                     logger.error(
                         "[Brain] LLM stream error on turn_id=%s: %s",
@@ -236,15 +255,21 @@ class BrainAgent(BaseAgent):
                         done=True,
                         full_response=full_response,
                         turn_id=turn_id,
-                        generation_error=generation_errors[-1] if generation_errors else None,
+                        generation_error=generation_errors[-1]
+                        if generation_errors
+                        else None,
                         affect=ChatOutputAffect(
-                            valence=state_snap.get("valence", state_snap.get("mood", 0.0)),
-                            arousal=state_snap.get("arousal", state_snap.get("energy", 0.5)),
+                            valence=state_snap.get(
+                                "valence", state_snap.get("mood", 0.0)
+                            ),
+                            arousal=state_snap.get(
+                                "arousal", state_snap.get("energy", 0.5)
+                            ),
                             dominance=state_snap.get("dominance", 0.5),
                             trust=state_snap.get("trust", 0.5),
                             attachment=state_snap.get("attachment", 0.1),
                             emotion=state_snap.get("emotion", "neutral"),
-                        )
+                        ),
                     )
                     await self.publish("chat.output", output_msg.model_dump())
 
@@ -261,7 +286,9 @@ class BrainAgent(BaseAgent):
             await self.publish("chat.output", output_msg.model_dump())
 
         if self.conversation_store and full_response:
-            asyncio.create_task(self.conversation_store.log_message("assistant", full_response))
+            asyncio.create_task(
+                self.conversation_store.log_message("assistant", full_response)
+            )
 
         await self.set_state("idle")
 
@@ -287,9 +314,7 @@ class BrainAgent(BaseAgent):
         intensity = abs(V) * Ar  # Emotional intensity
 
         # §4.1: Goldman-Eisler — Pause bias
-        pause_bias = max(0.0, min(1.0,
-            0.2 + 0.4 * (1 - confidence) + 0.2 * Ar
-        ))
+        pause_bias = max(0.0, min(1.0, 0.2 + 0.4 * (1 - confidence) + 0.2 * Ar))
 
         # Full §5.3 Affect Metadata Contract
         payload = ChatOutput(
@@ -307,10 +332,9 @@ class BrainAgent(BaseAgent):
                 trust=T,
                 attachment=At,
                 emotion=state_snap.get("emotion", "neutral"),
-            )
+            ),
         )
         await self.publish("chat.output", payload.model_dump())
-
 
     async def stop(self):
         await super().stop()
@@ -324,7 +348,9 @@ class BrainAgent(BaseAgent):
         if not self.cognitive_core.state.check_proactive_eligibility():
             return
 
-        logger.info("💭 [Brain] Proactive engagement triggered. Generating spontaneous message...")
+        logger.info(
+            "💭 [Brain] Proactive engagement triggered. Generating spontaneous message..."
+        )
         await self._generate_proactive_speech()
 
     async def _generate_proactive_speech(self):
@@ -350,7 +376,8 @@ class BrainAgent(BaseAgent):
                     if (
                         current_chunk_words
                         and segment_started_at is not None
-                        and (now_monotonic - segment_started_at) >= self.formation_buffer_ms
+                        and (now_monotonic - segment_started_at)
+                        >= self.formation_buffer_ms
                         and len(current_chunk_words) >= 3
                     ):
                         await self._publish_speech_chunk(current_chunk_words, turn_id)
@@ -363,9 +390,13 @@ class BrainAgent(BaseAgent):
                             segment_started_at = time.perf_counter()
                         current_chunk_words.append(word)
 
-                        score = self.segmenter.score_split_point(word, len(current_chunk_words))
+                        score = self.segmenter.score_split_point(
+                            word, len(current_chunk_words)
+                        )
                         if score > 0.7 or len(current_chunk_words) > 12:
-                            await self._publish_speech_chunk(current_chunk_words, turn_id)
+                            await self._publish_speech_chunk(
+                                current_chunk_words, turn_id
+                            )
                             current_chunk_words = []
                             segment_started_at = None
 
@@ -382,13 +413,17 @@ class BrainAgent(BaseAgent):
                             turn_id=turn_id,
                             proactive=True,
                             affect=ChatOutputAffect(
-                                valence=state_snap.get("valence", state_snap.get("mood", 0.0)),
-                                arousal=state_snap.get("arousal", state_snap.get("energy", 0.5)),
+                                valence=state_snap.get(
+                                    "valence", state_snap.get("mood", 0.0)
+                                ),
+                                arousal=state_snap.get(
+                                    "arousal", state_snap.get("energy", 0.5)
+                                ),
                                 dominance=state_snap.get("dominance", 0.5),
                                 trust=state_snap.get("trust", 0.5),
                                 attachment=state_snap.get("attachment", 0.1),
                                 emotion=state_snap.get("emotion", "neutral"),
-                            )
+                            ),
                         )
                         await self.publish("chat.output", output_msg.model_dump())
 
@@ -396,10 +431,16 @@ class BrainAgent(BaseAgent):
             logger.error("[Brain] Proactive generation error: %s", e)
 
         if self.conversation_store and full_response:
-            asyncio.create_task(self.conversation_store.log_message("assistant", full_response))
+            asyncio.create_task(
+                self.conversation_store.log_message("assistant", full_response)
+            )
 
         await self.set_state("idle")
-        logger.info("💭 [Brain] Proactive message delivered: '%s'", full_response[:80] if full_response else "(empty)")
+        logger.info(
+            "💭 [Brain] Proactive message delivered: '%s'",
+            full_response[:80] if full_response else "(empty)",
+        )
+
 
 async def main():
     if Config.RUNTIME_AUTO_BOOTSTRAP:
@@ -408,7 +449,7 @@ async def main():
 
     # 1. Initialize CVS-1.0 Foundation (Pool-based logic)
     conversation_store = ConversationHistoryStore()
-    await conversation_store.initialize() # Creates the database pool
+    await conversation_store.initialize()  # Creates the database pool
 
     # Inject the established pool into MemoryStore
     memory_store = MemoryStore(pool=conversation_store.pool)
@@ -419,7 +460,7 @@ async def main():
         ollama_url=Config.OLLAMA_URL,
         graph_db=graph_db,
         memory_store=memory_store,
-        conversation_store=conversation_store
+        conversation_store=conversation_store,
     )
 
     await agent.start()
@@ -429,6 +470,7 @@ async def main():
             await asyncio.sleep(1)
     except asyncio.CancelledError:
         await agent.stop()
+
 
 if __name__ == "__main__":
     setup_logging(level=logging.INFO, json_format=getattr(Config, "LOG_JSON", False))

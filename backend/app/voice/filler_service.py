@@ -7,6 +7,7 @@ from pathlib import Path
 
 logger = logging.getLogger("filler_service")
 
+
 class FillerService:
     """
     Manages the pre-synthesis and random hydration of social fillers.
@@ -20,7 +21,7 @@ class FillerService:
         "Wait a second.",
         "Got it.",
         "I'm on it.",
-        "Just a moment."
+        "Just a moment.",
     ]
 
     def __init__(self, cache_dir: str = "models/fillers"):
@@ -36,11 +37,15 @@ class FillerService:
         base_dir = Path(__file__).parent.parent.parent / self.cache_dir
         os.makedirs(base_dir, exist_ok=True)
 
-        logger.info(f"🎙️ Hydrating Social Vocabulary Mesh ({len(self.PRE_SYNTH_LIST)} fillers)...")
+        logger.info(
+            f"🎙️ Hydrating Social Vocabulary Mesh ({len(self.PRE_SYNTH_LIST)} fillers)..."
+        )
 
         tasks = []
         for text in self.PRE_SYNTH_LIST:
-            tasks.append(self._get_or_synth(sovits_client, text, ref_audio, ref_text, base_dir))
+            tasks.append(
+                self._get_or_synth(sovits_client, text, ref_audio, ref_text, base_dir)
+            )
 
         results = await asyncio.gather(*tasks)
 
@@ -49,7 +54,9 @@ class FillerService:
                 self.cache[text] = pcm
 
         self.is_hydrated = True
-        logger.info(f"✅ Social Mesh Hydrated. {len(self.cache)} fillers ready for 0ms access.")
+        logger.info(
+            f"✅ Social Mesh Hydrated. {len(self.cache)} fillers ready for 0ms access."
+        )
 
     async def _get_or_synth(self, client, text, ref_audio, ref_text, base_dir):
         """Fetch from disk or synthesize if missing."""
@@ -67,7 +74,7 @@ class FillerService:
             ref_audio_path=ref_audio,
             ref_text=ref_text,
             text_lang="en",
-            media_type="raw"
+            media_type="raw",
         )
 
         if pcm_data:

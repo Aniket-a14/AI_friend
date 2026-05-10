@@ -101,7 +101,7 @@ class SoVITSClient:
                 "text_split_method": "cut5",
                 "batch_size": 1,
                 "media_type": media_type,
-                "streaming_mode": 1, # mode 1 or True depending on version
+                "streaming_mode": 1,  # mode 1 or True depending on version
             }
             if speed is not None:
                 payload["speed_factor"] = speed

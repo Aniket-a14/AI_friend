@@ -27,6 +27,7 @@ class CognitiveService:
     The Orchestrator for the Cognitive Loop.
     Integrates BDI logic, State dynamics, Appraisal, and Identity enforcement.
     """
+
     def __init__(
         self,
         llm_service,
@@ -40,20 +41,26 @@ class CognitiveService:
         self.perception = PerceptionService(llm_service=llm_service)
         self.appraisal = AppraisalEngine()  # §1: OCC/Lazarus/EMA
         self.state = StateService(graph_store=graph_db)
-        self.decision = DecisionService(llm_service=llm_service, memory_store=memory_store)
+        self.decision = DecisionService(
+            llm_service=llm_service, memory_store=memory_store
+        )
         self.action = ActionService(llm_service=llm_service, memory_store=memory_store)
         self.learning = ReflectionService(
             llm_service=llm_service,
             graph_store=graph_db,
             pg_vector=memory_store,
-            identity_manager=self.identity
+            identity_manager=self.identity,
         )
         self.surfaced_memories = []  # Buffer for active memory influence
         self.agent = None  # NATS Mesh connection
         self._last_appraisal: AppraisalVector = None  # Cache for downstream consumers
         self.subject_metrics = {
             "system.tick": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
-            "memory.surfaced": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
+            "memory.surfaced": {
+                "count": 0,
+                "latency_total_ms": 0.0,
+                "latency_samples": 0,
+            },
             "audio.stop": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
             "audio.resume": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
         }
@@ -71,25 +78,25 @@ class CognitiveService:
 
         # Subscribe to Mesh Channels
         if agent:
-             self.agent = agent
-             await agent.subscribe(
-                 "system.tick",
-                 self._on_system_tick,
-                 durable=f"{agent.name}_system_tick_live",
-                 deliver_policy="new",
-             )
-             await agent.subscribe(
-                 "memory.surfaced",
-                 self._on_memory_surfaced,
-                 durable=f"{agent.name}_memory_surfaced_live",
-                 deliver_policy="new",
-             )
-             await agent.subscribe(
-                 "audio.perception",
-                 self._on_audio_perception,
-                 durable=f"{agent.name}_audio_perception_live",
-                 deliver_policy="new",
-             )
+            self.agent = agent
+            await agent.subscribe(
+                "system.tick",
+                self._on_system_tick,
+                durable=f"{agent.name}_system_tick_live",
+                deliver_policy="new",
+            )
+            await agent.subscribe(
+                "memory.surfaced",
+                self._on_memory_surfaced,
+                durable=f"{agent.name}_memory_surfaced_live",
+                deliver_policy="new",
+            )
+            await agent.subscribe(
+                "audio.perception",
+                self._on_audio_perception,
+                durable=f"{agent.name}_audio_perception_live",
+                deliver_policy="new",
+            )
 
         logger.info("[CognitiveService] Hardened Identity Mesh Fully Initialized.")
 
@@ -120,23 +127,37 @@ class CognitiveService:
         self._record_subject_metric("memory.surfaced", data)
         memory_text = data.get("content", "")
         if memory_text:
-            self.surfaced_memories.append({
-                "content": memory_text,
-                "timestamp": data.get("timestamp", 0),
-                "relevance": data.get("relevance", 1.0)
-            })
+            self.surfaced_memories.append(
+                {
+                    "content": memory_text,
+                    "timestamp": data.get("timestamp", 0),
+                    "relevance": data.get("relevance", 1.0),
+                }
+            )
             self.surfaced_memories = self.surfaced_memories[-5:]
-            logger.debug(f"[Cognitive] Active Memory Influence: Surfaced '{memory_text[:30]}...'")
+            logger.debug(
+                f"[Cognitive] Active Memory Influence: Surfaced '{memory_text[:30]}...'"
+            )
 
-    async def process_event(self, raw_event: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
+    async def process_event(
+        self, raw_event: Dict[str, Any]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         The Master Cognitive Loop (psychological_layer.md System Principle):
         Perception → Appraisal → State Update → Decision → Action → Learning
         """
         # 1. Conflict Resolution (Turn-Taking Stability)
         raw_event_type = raw_event.get("event_type") or raw_event.get("type")
-        event_metadata = raw_event.get("metadata", {}) if isinstance(raw_event.get("metadata"), dict) else {}
-        latency_metadata = event_metadata.get("latency_metadata") if isinstance(event_metadata.get("latency_metadata"), dict) else None
+        event_metadata = (
+            raw_event.get("metadata", {})
+            if isinstance(raw_event.get("metadata"), dict)
+            else {}
+        )
+        latency_metadata = (
+            event_metadata.get("latency_metadata")
+            if isinstance(event_metadata.get("latency_metadata"), dict)
+            else None
+        )
         if raw_event_type == "USER_MESSAGE" and not raw_event.get("is_partial"):
             final_text = raw_event.get("content", "")
             speculative_intent = self.state.last_speculative_intent
@@ -147,37 +168,49 @@ class CognitiveService:
                 )
                 self.state.last_speculative_intent = None
                 if not confirmed:
-                    logger.info("[Cognitive] Interruption REJECTED. Resuming playback...")
+                    logger.info(
+                        "[Cognitive] Interruption REJECTED. Resuming playback..."
+                    )
                     if self.agent:
                         publish_started = time.perf_counter()
-                        await self.agent.publish("audio.resume", {
-                            "reason": "conflict_rejected",
-                            "perception_text": speculative_intent.get("text", ""),
-                            "utterance_id": speculative_intent.get("utterance_id"),
-                        })
+                        await self.agent.publish(
+                            "audio.resume",
+                            {
+                                "reason": "conflict_rejected",
+                                "perception_text": speculative_intent.get("text", ""),
+                                "utterance_id": speculative_intent.get("utterance_id"),
+                            },
+                        )
                         self._record_subject_metric(
                             "audio.resume",
                             {"latency_metadata": latency_metadata},
-                            local_latency_ms=(time.perf_counter() - publish_started) * 1000,
+                            local_latency_ms=(time.perf_counter() - publish_started)
+                            * 1000,
                         )
                     yield {"type": "mesh_signal", "data": "audio.resume"}
                 else:
-                    logger.info("[Cognitive] Interruption CONFIRMED. Stopping playback.")
+                    logger.info(
+                        "[Cognitive] Interruption CONFIRMED. Stopping playback."
+                    )
                     if self.agent:
                         publish_started = time.perf_counter()
-                        await self.agent.publish("audio.stop", {
-                            "interrupt": True,
-                            "speculative": False,
-                            "reason": "confirmed_command",
-                            "command_text": final_text,
-                            "keywords": speculative_intent.get("keywords", []),
-                            "utterance_id": speculative_intent.get("utterance_id"),
-                            "turn_id": raw_event.get("metadata", {}).get("turn_id"),
-                        })
+                        await self.agent.publish(
+                            "audio.stop",
+                            {
+                                "interrupt": True,
+                                "speculative": False,
+                                "reason": "confirmed_command",
+                                "command_text": final_text,
+                                "keywords": speculative_intent.get("keywords", []),
+                                "utterance_id": speculative_intent.get("utterance_id"),
+                                "turn_id": raw_event.get("metadata", {}).get("turn_id"),
+                            },
+                        )
                         self._record_subject_metric(
                             "audio.stop",
                             {"latency_metadata": latency_metadata},
-                            local_latency_ms=(time.perf_counter() - publish_started) * 1000,
+                            local_latency_ms=(time.perf_counter() - publish_started)
+                            * 1000,
                         )
                     yield {"type": "mesh_signal", "data": "audio.stop"}
                     return
@@ -214,7 +247,9 @@ class CognitiveService:
         plan = await self.decision.decide(event, state_snapshot)
 
         # 6. Action Execution with Identity Validation
-        plan.payload["identity_prompt"] = self.identity.get_persona_prompt(state_directive)
+        plan.payload["identity_prompt"] = self.identity.get_persona_prompt(
+            state_directive
+        )
 
         full_response = ""
         async for chunk in self.action.execute(plan):
@@ -224,10 +259,16 @@ class CognitiveService:
 
         # 7. Validation Check & Self-Correction
         if full_response:
-            is_valid, reason = await self.identity.validate_response(full_response, plan.goal)
+            is_valid, reason = await self.identity.validate_response(
+                full_response, plan.goal
+            )
             if not is_valid:
-                logger.warning(f"[Identity] Validation failed: {reason}. SELF-CORRECTION TRIGGERED.")
-                plan.payload["identity_prompt"] += f"\n\nCRITICAL FIX: Your previous response was rejected for: {reason}. Correct this immediately."
+                logger.warning(
+                    f"[Identity] Validation failed: {reason}. SELF-CORRECTION TRIGGERED."
+                )
+                plan.payload["identity_prompt"] += (
+                    f"\n\nCRITICAL FIX: Your previous response was rejected for: {reason}. Correct this immediately."
+                )
 
                 full_response = ""
                 async for chunk in self.action.execute(plan):
@@ -237,23 +278,25 @@ class CognitiveService:
 
         # 8. Learning + Episodic Memory (§6.1)
         if event.intent in ["CHAT", "REMEMBER"]:
-             episode = {
-                 "id": event.event_id,
-                 "event": event.raw_content,
-                 "context": state_directive,
-                 "emotion_vector": {
-                     "V": self.state.current_state.valence,
-                     "Ar": self.state.current_state.arousal,
-                     "D": self.state.current_state.dominance,
-                 },
-                 "appraisal": appraisal_vector.to_dict(),
-                 "relationship_delta": appraisal_vector.relationship_impact,
-                 "intent": event.intent,
-                 "content": event.raw_content,
-                 "state": state_snapshot,
-                 "response": full_response,
-             }
-             self.last_reflection_task = await self.learning.trigger_reflection([episode])
+            episode = {
+                "id": event.event_id,
+                "event": event.raw_content,
+                "context": state_directive,
+                "emotion_vector": {
+                    "V": self.state.current_state.valence,
+                    "Ar": self.state.current_state.arousal,
+                    "D": self.state.current_state.dominance,
+                },
+                "appraisal": appraisal_vector.to_dict(),
+                "relationship_delta": appraisal_vector.relationship_impact,
+                "intent": event.intent,
+                "content": event.raw_content,
+                "state": state_snapshot,
+                "response": full_response,
+            }
+            self.last_reflection_task = await self.learning.trigger_reflection(
+                [episode]
+            )
 
     async def get_current_emotion(self) -> str:
         return self.state.get_emotion_label()
@@ -272,8 +315,9 @@ class CognitiveService:
 
         memory_context = ""
         if self.surfaced_memories:
-            memory_context = "\nRECENT SHARED MEMORIES:\n" + \
-                "\n".join([f"- {m['content']}" for m in self.surfaced_memories[-3:]])
+            memory_context = "\nRECENT SHARED MEMORIES:\n" + "\n".join(
+                [f"- {m['content']}" for m in self.surfaced_memories[-3:]]
+            )
 
         proactive_instruction = f"""
         {identity_prompt}
@@ -299,6 +343,7 @@ class CognitiveService:
         """.strip()
 
         from .decision import ActionPlan
+
         plan = ActionPlan(
             action_type="RESPOND_CHAT",
             goal="INITIATE",
@@ -306,7 +351,9 @@ class CognitiveService:
                 "message": "[PROACTIVE_TRIGGER]",
                 "identity_prompt": proactive_instruction,
                 "emotion_state": mood_label,
-                "surfaced_memories": self.surfaced_memories[-3:] if self.surfaced_memories else [],
+                "surfaced_memories": self.surfaced_memories[-3:]
+                if self.surfaced_memories
+                else [],
             },
             priority=0,
         )
@@ -334,10 +381,14 @@ class CognitiveService:
                 "state": state_snapshot,
                 "response": full_response,
             }
-            self.last_reflection_task = await self.learning.trigger_reflection([episode])
+            self.last_reflection_task = await self.learning.trigger_reflection(
+                [episode]
+            )
 
-        logger.info("[Cognitive] Proactive generation complete. Response length: %d", len(full_response))
-
+        logger.info(
+            "[Cognitive] Proactive generation complete. Response length: %d",
+            len(full_response),
+        )
 
     def _record_subject_metric(
         self,
@@ -354,7 +405,9 @@ class CognitiveService:
         metadata = data.get("latency_metadata") if isinstance(data, dict) else None
         if isinstance(metadata, dict) and metadata.get("start_time") is not None:
             try:
-                latency_ms = max(0.0, (time.time() - float(metadata["start_time"])) * 1000)
+                latency_ms = max(
+                    0.0, (time.time() - float(metadata["start_time"])) * 1000
+                )
                 metric["latency_total_ms"] += latency_ms
                 metric["latency_samples"] += 1
             except (TypeError, ValueError):

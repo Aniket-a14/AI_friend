@@ -7,6 +7,7 @@ from pathlib import Path
 
 logger = logging.getLogger("sensevoice_service")
 
+
 class SenseVoiceSTTService:
     """
     Ultra-low latency STT & Emotional Perception Service.
@@ -16,8 +17,12 @@ class SenseVoiceSTTService:
     def __init__(self, model_dir: str = "models/sensevoice"):
         self.model_dir = model_dir
         self.recognizer = None
-        self.emotion_pattern = re.compile(r"<\|(HAPPY|SAD|ANGRY|NEUTRAL|FEARFUL|DISGUSTED|SURPRISED)\|>")
-        self.event_pattern = re.compile(r"<\|(BGM|Speech|Applause|Laughter|Cry|Sneeze|Breath|Cough)\|>")
+        self.emotion_pattern = re.compile(
+            r"<\|(HAPPY|SAD|ANGRY|NEUTRAL|FEARFUL|DISGUSTED|SURPRISED)\|>"
+        )
+        self.event_pattern = re.compile(
+            r"<\|(BGM|Speech|Applause|Laughter|Cry|Sneeze|Breath|Cough)\|>"
+        )
 
         # Mapping for Damped Bias State Machine
         self.emotion_map = {
@@ -27,7 +32,7 @@ class SenseVoiceSTTService:
             "NEUTRAL": 0.0,
             "FEARFUL": -0.4,
             "DISGUSTED": -0.5,
-            "SURPRISED": 0.2
+            "SURPRISED": 0.2,
         }
 
     def load_model(self):
@@ -39,7 +44,9 @@ class SenseVoiceSTTService:
         tokens_path = base_path / "tokens.txt"
 
         if not model_path.exists() or not tokens_path.exists():
-            logger.error(f"❌ SenseVoice models not found at {base_path}. Please run provisioning script.")
+            logger.error(
+                f"❌ SenseVoice models not found at {base_path}. Please run provisioning script."
+            )
             return False
 
         try:
@@ -96,7 +103,7 @@ class SenseVoiceSTTService:
                 "emotion": primary_emotion,
                 "emotional_bias": emotion_bias,
                 "events": events,
-                "latency_tier": "fast"
+                "latency_tier": "fast",
             }
 
             logger.debug(f"Perception: {primary_emotion} | Text: {clean_text}")

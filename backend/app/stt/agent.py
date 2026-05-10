@@ -6,7 +6,13 @@ from ..agents.base import BaseAgent
 import time
 from typing import Any
 from ..config import Config
-from ..contracts import ChatInput, ChatInputMetadata, AudioPerception, SpeculativeIntent, AudioStop
+from ..contracts import (
+    ChatInput,
+    ChatInputMetadata,
+    AudioPerception,
+    SpeculativeIntent,
+    AudioStop,
+)
 
 try:
     import numpy as np
@@ -39,16 +45,19 @@ class STTAgent(BaseAgent):
         # 2. Perception Engine (CPU/INT8)
         self.sensevoice_service = SenseVoiceSTTService()
 
-        self.target_sample_rate = 16000 # Standard for both engines
+        self.target_sample_rate = 16000  # Standard for both engines
 
         # Temporal Intent Stability
         from collections import deque
+
         self.intent_window = deque(maxlen=5)
-        self.interrupt_intent_threshold = Config.INTENT_THRESHOLD  # Lowered for speculative speed
+        self.interrupt_intent_threshold = (
+            Config.INTENT_THRESHOLD
+        )  # Lowered for speculative speed
         self.stability_required = Config.INTENT_STABILITY  # Faster latching
 
         # Audio accumulator for SenseVoice (per-chunk perception)
-        self.perception_chunk_size = int(16000 * 0.4) # 400ms chunks
+        self.perception_chunk_size = int(16000 * 0.4)  # 400ms chunks
         self.perception_buffer = []
         self.whisper_queue = asyncio.Queue(
             maxsize=getattr(Config, "STT_WHISPER_QUEUE_SIZE", 8)
@@ -66,7 +75,7 @@ class STTAgent(BaseAgent):
         # Parallel Engine Hydration
         await asyncio.gather(
             self.whisper_service.load_model(),
-            asyncio.to_thread(self.sensevoice_service.load_model)
+            asyncio.to_thread(self.sensevoice_service.load_model),
         )
 
         self.whisper_service.start()
@@ -78,13 +87,17 @@ class STTAgent(BaseAgent):
         await self.subscribe(
             "audio.inbound", self._on_audio_inbound, deliver_policy="new"
         )
-        logger.info(f"🎙️ {self.name} Online | Robotic Perception Mesh (Dual-STT) Active.")
+        logger.info(
+            f"🎙️ {self.name} Online | Robotic Perception Mesh (Dual-STT) Active."
+        )
 
     async def _on_audio_inbound(self, data: Any, metadata: dict = None):
         """Process real-time PCM frames through dual-path sensory mesh."""
         try:
             if not isinstance(data, (bytes, bytearray)):
-                logger.warning("Rejected non-PCM audio.inbound payload: %s", type(data).__name__)
+                logger.warning(
+                    "Rejected non-PCM audio.inbound payload: %s", type(data).__name__
+                )
                 return
 
             audio_bytes = bytes(data)
@@ -96,7 +109,10 @@ class STTAgent(BaseAgent):
                 return
 
             if np is not None:
-                audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+                audio_np = (
+                    np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32)
+                    / 32768.0
+                )
                 if channels > 1:
                     trim = len(audio_np) - (len(audio_np) % channels)
                     if trim <= 0:
@@ -104,12 +120,17 @@ class STTAgent(BaseAgent):
                     audio_np = audio_np[:trim].reshape(-1, channels).mean(axis=1)
                 if source_sr != self.target_sample_rate:
                     import soxr
-                    audio_np = soxr.resample(audio_np, source_sr, self.target_sample_rate)
+
+                    audio_np = soxr.resample(
+                        audio_np, source_sr, self.target_sample_rate
+                    )
 
                 pcm_16 = (audio_np * 32767).astype(np.int16).tobytes()
             else:
                 samples = array("h")
-                samples.frombytes(audio_bytes[: len(audio_bytes) - (len(audio_bytes) % 2)])
+                samples.frombytes(
+                    audio_bytes[: len(audio_bytes) - (len(audio_bytes) % 2)]
+                )
                 if channels > 1:
                     grouped = len(samples) - (len(samples) % channels)
                     if grouped <= 0:
@@ -122,7 +143,9 @@ class STTAgent(BaseAgent):
                         ),
                     )
                 if source_sr != self.target_sample_rate:
-                    logger.error("Cannot resample PCM without numpy/soxr; dropping frame.")
+                    logger.error(
+                        "Cannot resample PCM without numpy/soxr; dropping frame."
+                    )
                     return
                 audio_np = [sample / 32768.0 for sample in samples]
                 pcm_16 = samples.tobytes()
@@ -145,11 +168,9 @@ class STTAgent(BaseAgent):
                     perception_audio = np.concatenate(self.perception_buffer)
                 else:
                     perception_audio = [
-                        sample
-                        for chunk in self.perception_buffer
-                        for sample in chunk
+                        sample for chunk in self.perception_buffer for sample in chunk
                     ]
-                self.perception_buffer = [] # Reset for next chunk
+                self.perception_buffer = []  # Reset for next chunk
 
                 self._put_latest(
                     self.perception_queue,
@@ -174,9 +195,13 @@ class STTAgent(BaseAgent):
 
         try:
             queue.put_nowait(item)
-            logger.warning("[STT] Dropped stale %s work item to preserve realtime latency.", label)
+            logger.warning(
+                "[STT] Dropped stale %s work item to preserve realtime latency.", label
+            )
         except asyncio.QueueFull:
-            logger.warning("[STT] Dropped incoming %s work item; worker remains saturated.", label)
+            logger.warning(
+                "[STT] Dropped incoming %s work item; worker remains saturated.", label
+            )
 
     async def _whisper_worker(self):
         while True:
@@ -259,7 +284,9 @@ class STTAgent(BaseAgent):
             speculative_intent=spec_model,
             metadata={**perception_data, "confidence": perception_confidence},
             timestamp=time.time(),
-            utterance_id=speculative_intent["utterance_id"] if speculative_intent else self.current_utterance_id,
+            utterance_id=speculative_intent["utterance_id"]
+            if speculative_intent
+            else self.current_utterance_id,
         )
         await self.publish("audio.perception", perception_msg.model_dump())
 
@@ -288,8 +315,21 @@ class STTAgent(BaseAgent):
         if not words:
             return None
 
-        stop_keywords = ["stop", "wait", "hold", "no", "wrong", "quiet", "alex", "friend"]
-        matches = [keyword for keyword in stop_keywords if any(keyword in word for word in words)]
+        stop_keywords = [
+            "stop",
+            "wait",
+            "hold",
+            "no",
+            "wrong",
+            "quiet",
+            "alex",
+            "friend",
+        ]
+        matches = [
+            keyword
+            for keyword in stop_keywords
+            if any(keyword in word for word in words)
+        ]
         if not matches:
             return None
 

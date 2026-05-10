@@ -23,15 +23,24 @@ async def bootstrap_runtime() -> None:
     logger.info("[Bootstrap] Runtime prerequisites verified.")
 
 
-async def _run_with_retry(label: str, fn, retries: int, base_delay: float = 2.0) -> None:
+async def _run_with_retry(
+    label: str, fn, retries: int, base_delay: float = 2.0
+) -> None:
     last_error = None
     for attempt in range(1, retries + 1):
         try:
             await fn()
             if attempt > 1:
-                logger.info("[Bootstrap] %s recovered on attempt %s/%s.", label, attempt, retries)
+                logger.info(
+                    "[Bootstrap] %s recovered on attempt %s/%s.",
+                    label,
+                    attempt,
+                    retries,
+                )
             return
-        except Exception as e:  # pragma: no cover - exercised through integration behavior
+        except (
+            Exception
+        ) as e:  # pragma: no cover - exercised through integration behavior
             last_error = e
             if attempt == retries:
                 break
@@ -46,7 +55,9 @@ async def _run_with_retry(label: str, fn, retries: int, base_delay: float = 2.0)
             )
             await asyncio.sleep(delay)
 
-    raise RuntimeError(f"bootstrap step '{label}' failed after {retries} attempts: {last_error}")
+    raise RuntimeError(
+        f"bootstrap step '{label}' failed after {retries} attempts: {last_error}"
+    )
 
 
 async def _ensure_database_schema() -> None:
@@ -107,9 +118,13 @@ async def _ensure_nats_streams() -> None:
 
 
 async def _ensure_ollama_models() -> None:
-    required = _normalized_required_models(getattr(Config, "OLLAMA_REQUIRED_MODELS", []))
+    required = _normalized_required_models(
+        getattr(Config, "OLLAMA_REQUIRED_MODELS", [])
+    )
     if not required:
-        logger.info("[Bootstrap] No required Ollama models configured; skipping model check.")
+        logger.info(
+            "[Bootstrap] No required Ollama models configured; skipping model check."
+        )
         return
 
     base_url = (Config.OLLAMA_URL or "http://localhost:11434").rstrip("/")
@@ -119,11 +134,17 @@ async def _ensure_ollama_models() -> None:
         tags_response.raise_for_status()
         tags_payload = tags_response.json()
 
-        available = [entry.get("name", "") for entry in tags_payload.get("models", []) if entry.get("name")]
+        available = [
+            entry.get("name", "")
+            for entry in tags_payload.get("models", [])
+            if entry.get("name")
+        ]
         missing = [model for model in required if not _model_exists(model, available)]
 
         if not missing:
-            logger.info("[Bootstrap] Required Ollama models already present: %s", required)
+            logger.info(
+                "[Bootstrap] Required Ollama models already present: %s", required
+            )
             return
 
         logger.info("[Bootstrap] Missing Ollama models: %s", missing)
@@ -157,7 +178,10 @@ def _model_exists(required_model: str, available_models: List[str]) -> bool:
     # Compatibility: treat "model" and "model:latest" as equivalent.
     if ":" not in required_model and f"{required_model}:latest" in available_models:
         return True
-    if required_model.endswith(":latest") and required_model.split(":", 1)[0] in available_models:
+    if (
+        required_model.endswith(":latest")
+        and required_model.split(":", 1)[0] in available_models
+    ):
         return True
 
     return False

@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def silence_pcm(ms: int, sample_rate: int) -> bytes:
     """Generate silent PCM16 data of given duration in milliseconds."""
     bytes_per_ms = int(sample_rate * 2 / 1000)
-    return b'\x00' * (ms * bytes_per_ms)
+    return b"\x00" * (ms * bytes_per_ms)
 
 
 def drain_queue(queue: asyncio.Queue):
@@ -60,7 +60,6 @@ async def run_playback_loop(
     - Generation fencing (discards stale audio)
     - OLA fade-in for segment boundaries
     """
-    from enum import Enum
 
     # Import locally to avoid circular dependency
     from .agent import VoicePlaybackState

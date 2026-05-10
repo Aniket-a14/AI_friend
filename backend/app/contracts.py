@@ -30,6 +30,7 @@ class ChatInputMetadata(BaseModel):
 
 class ChatInput(BaseModel):
     """Published by STTAgent on `chat.input` after final transcription."""
+
     text: str
     utterance_id: Optional[str] = None
     turn_id: Optional[str] = None
@@ -40,6 +41,7 @@ class ChatInput(BaseModel):
 # ─── chat.output ─────────────────────────────────────────────
 class ChatOutputAffect(BaseModel):
     """PAD and Relational affect vector attached to each speech chunk."""
+
     valence: float = 0.0
     arousal: float = 0.5
     dominance: float = 0.5
@@ -50,17 +52,18 @@ class ChatOutputAffect(BaseModel):
 
 class ChatOutput(BaseModel):
     """Published by BrainAgent on `chat.output` for each speech chunk or done signal."""
+
     content: Optional[str] = None
     done: bool = False
     turn_id: Optional[str] = None
     affect: Optional[ChatOutputAffect] = None
-    
+
     # Prosody control
     confidence: float = 1.0
     intensity: float = 0.0
     speaking_rate: float = 1.0
     pause_bias: float = 0.0
-    
+
     # Metadata
     timestamp: float = Field(default_factory=time.time)
     full_response: Optional[str] = None
@@ -80,6 +83,7 @@ class SpeculativeIntent(BaseModel):
 
 class AudioPerception(BaseModel):
     """Published by STTAgent on `audio.perception` from the SenseVoice fast path."""
+
     text: str = ""
     intent: Optional[str] = None
     keywords: List[str] = Field(default_factory=list)
@@ -93,6 +97,7 @@ class AudioPerception(BaseModel):
 # ─── audio.stop / audio.resume ───────────────────────────────
 class AudioStop(BaseModel):
     """Published on `audio.stop` to halt voice playback."""
+
     interrupt: bool = True
     speculative: bool = False
     reason: Optional[str] = None
@@ -107,6 +112,7 @@ class AudioStop(BaseModel):
 
 class AudioResume(BaseModel):
     """Published on `audio.resume` to resume voice playback after rejected stop."""
+
     reason: str = "conflict_rejected"
     perception_text: Optional[str] = None
     utterance_id: Optional[str] = None
@@ -124,6 +130,7 @@ class SurfacedMemory(BaseModel):
 
 class MemorySurfaced(BaseModel):
     """Published by SurfacingAgent on `memory.surfaced`."""
+
     memories: List[SurfacedMemory] = Field(default_factory=list)
     source: str = "episodic"
     context: Optional[str] = None
@@ -132,6 +139,7 @@ class MemorySurfaced(BaseModel):
 # ─── state.update ────────────────────────────────────────────
 class StateUpdate(BaseModel):
     """Published on `state.update` when agent state changes."""
+
     mood: float = 0.0
     energy: float = 0.5
     dominance: float = 0.5

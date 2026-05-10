@@ -5,11 +5,13 @@ from typing import Dict, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
+
 class IdentityManager:
     """
     Manages the persistent and evolving identity of the agent.
     Hybrid Model: Immutable Core + Adaptive System.
     """
+
     def __init__(self, base_path: str = None):
         if base_path is None:
             base_path = os.path.dirname(os.path.dirname(__file__))
@@ -32,12 +34,14 @@ class IdentityManager:
         # Buffer for adaptive variable evolution
         self.evolution_buffer = {}
 
-        logger.info(f"[Identity] Hybrid Persona Active | Core: {self.immutable_core['base_tone']}")
+        logger.info(
+            f"[Identity] Hybrid Persona Active | Core: {self.immutable_core['base_tone']}"
+        )
 
     def _load_json(self, path: str) -> Dict[str, Any]:
         try:
             if os.path.exists(path):
-                with open(path, 'r', encoding='utf-8') as f:
+                with open(path, "r", encoding="utf-8") as f:
                     return json.load(f)
             return {}
         except Exception as e:
@@ -45,11 +49,17 @@ class IdentityManager:
             return {}
 
     def _refresh_immutable_core(self):
-        self.immutable_core = self.personality.get("core_personality", {}).get("immutable", {
-            "values": ["Honesty", "Privacy", "Curiosity"],
-            "base_tone": "Warm, intellectual, and slightly protective",
-            "boundaries": ["Will never share user data", "Will not adopt toxic behavior"]
-        })
+        self.immutable_core = self.personality.get("core_personality", {}).get(
+            "immutable",
+            {
+                "values": ["Honesty", "Privacy", "Curiosity"],
+                "base_tone": "Warm, intellectual, and slightly protective",
+                "boundaries": [
+                    "Will never share user data",
+                    "Will not adopt toxic behavior",
+                ],
+            },
+        )
 
     async def hydrate_from_config_store(self, config_store):
         """
@@ -88,7 +98,9 @@ class IdentityManager:
             logger.error(f"Failed to hydrate identity from config store: {e}")
 
     async def persist_to_config_store(self):
-        if not self.config_store or not hasattr(self.config_store, "update_agent_config"):
+        if not self.config_store or not hasattr(
+            self.config_store, "update_agent_config"
+        ):
             return
 
         try:
@@ -108,9 +120,9 @@ class IdentityManager:
             core_personality["immutable"] = self.immutable_core
             self.history.setdefault("memories", [])
 
-            with open(self.personality_path, 'w', encoding='utf-8') as f:
+            with open(self.personality_path, "w", encoding="utf-8") as f:
                 json.dump(self.personality, f, indent=2)
-            with open(self.history_path, 'w', encoding='utf-8') as f:
+            with open(self.history_path, "w", encoding="utf-8") as f:
                 json.dump(self.history, f, indent=2)
             logger.info("[Identity] Persistent storage updated.")
         except Exception as e:
@@ -125,10 +137,14 @@ class IdentityManager:
         if "speaking_style" in suggestions:
             style = self.personality.setdefault("speaking_style", {})
             style["style_description"] = suggestions["speaking_style"]
-            logger.info(f"[Identity] Adaptive style evolved: {style['style_description']}")
+            logger.info(
+                f"[Identity] Adaptive style evolved: {style['style_description']}"
+            )
 
         if "new_traits" in suggestions:
-            adaptive_traits = self.personality.setdefault("core_personality", {}).setdefault(
+            adaptive_traits = self.personality.setdefault(
+                "core_personality", {}
+            ).setdefault(
                 "adaptive_traits",
                 [],
             )
@@ -153,18 +169,20 @@ class IdentityManager:
         core = self.immutable_core
 
         # Adaptive current variables
-        adaptive_traits = ", ".join(p.get("core_personality", {}).get("adaptive_traits", []))
+        adaptive_traits = ", ".join(
+            p.get("core_personality", {}).get("adaptive_traits", [])
+        )
         style = p.get("speaking_style", {}).get("style_description", "")
         vocab = ", ".join(p.get("speaking_style", {}).get("common_vocabulary", [])[:30])
 
         return f"""
-YOU ARE {p.get('name', 'my friend')}. 🤖✨
-IMMUTABLE VALUES: {", ".join(core['values'])}
-CORE TONE: {core['base_tone']}
-BOUNDARIES: {", ".join(core['boundaries'])}
+YOU ARE {p.get("name", "my friend")}. 🤖✨
+IMMUTABLE VALUES: {", ".join(core["values"])}
+CORE TONE: {core["base_tone"]}
+BOUNDARIES: {", ".join(core["boundaries"])}
 
 ADAPTIVE TRAITS: {adaptive_traits}
-RELATIONSHIP: {h.get('relationship', 'User')}
+RELATIONSHIP: {h.get("relationship", "User")}
 VOLATILE INTERNAL STATE: {current_mood_directive}
 
 SENSORY CAPABILITIES:
@@ -186,7 +204,7 @@ MANDATORY RULES:
         # Enforce Boundaries
         for boundary in self.immutable_core["boundaries"]:
             if "toxic" in boundary.lower() and "hate" in text.lower():
-                 return False, "Response violates core boundary: Non-toxicity"
+                return False, "Response violates core boundary: Non-toxicity"
 
         # Restricted phrases check
         forbidden = self.personality.get("conversation_rules", {}).get("avoid", [])

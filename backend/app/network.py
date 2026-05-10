@@ -12,7 +12,7 @@ def is_lan_client_allowed(host: str | None) -> bool:
     if host == "localhost":
         return True
     if host.startswith("[") and "]" in host:
-        host = host[1:host.index("]")]
+        host = host[1 : host.index("]")]
     elif ":" in host and host.count(":") == 1:
         host = host.rsplit(":", 1)[0]
 

@@ -8,12 +8,16 @@ try:
 except ImportError:
     np = None
 
+
 class AudioNormalizer:
     """
     CVS-1.0 Signal Rendering Engine.
     Handles Peak Normalization, Rate-Adaptive RMS, and Gain Matching.
     """
-    def __init__(self, target_peak=-1.0, baseline_rms_window=0.1, sample_rate=Config.SAMPLE_RATE):
+
+    def __init__(
+        self, target_peak=-1.0, baseline_rms_window=0.1, sample_rate=Config.SAMPLE_RATE
+    ):
         self.target_peak = 10 ** (target_peak / 20)  # Convert dB to linear
         self.baseline_rms_window = baseline_rms_window
         self.last_tail_rms = None
@@ -46,9 +50,13 @@ class AudioNormalizer:
             )
             tail_len = int(0.1 * self.sample_rate)
             tail_samples = samples[-tail_len:] if len(samples) > tail_len else samples
-            self.last_tail_rms = math.sqrt(
-                sum(sample * sample for sample in tail_samples) / len(tail_samples)
-            ) if tail_samples else current_rms
+            self.last_tail_rms = (
+                math.sqrt(
+                    sum(sample * sample for sample in tail_samples) / len(tail_samples)
+                )
+                if tail_samples
+                else current_rms
+            )
             return samples.tobytes()
 
         samples = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
@@ -70,7 +78,7 @@ class AudioNormalizer:
         # Update tail RMS for next chunk (using last 100ms)
         tail_len = int(0.1 * self.sample_rate)
         if len(samples) > tail_len:
-            self.last_tail_rms = np.sqrt(np.mean(samples[-tail_len:]**2))
+            self.last_tail_rms = np.sqrt(np.mean(samples[-tail_len:] ** 2))
         else:
             self.last_tail_rms = current_rms
 

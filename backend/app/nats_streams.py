@@ -79,7 +79,9 @@ async def _wait_for_jetstream_ready(jsm, retries: int, delay_seconds: float) -> 
     )
 
 
-async def _ensure_stream(jsm, stream_name: str, subjects: List[str], retries: int, delay_seconds: float) -> None:
+async def _ensure_stream(
+    jsm, stream_name: str, subjects: List[str], retries: int, delay_seconds: float
+) -> None:
     last_error: Exception = None
 
     for attempt in range(1, retries + 1):
@@ -123,17 +125,30 @@ async def setup_streams(
 ) -> None:
     """Ensure core JetStream streams are available with startup-race tolerance."""
     nats_url = nats_url or os.getenv("NATS_URL", "nats://localhost:4222")
-    retries = max(1, int(retries if retries is not None else os.getenv("NATS_STREAM_SETUP_RETRIES", "30")))
+    retries = max(
+        1,
+        int(
+            retries
+            if retries is not None
+            else os.getenv("NATS_STREAM_SETUP_RETRIES", "30")
+        ),
+    )
     delay_seconds = max(
         0.1,
-        float(delay_seconds if delay_seconds is not None else os.getenv("NATS_STREAM_SETUP_DELAY_SECONDS", "1.5")),
+        float(
+            delay_seconds
+            if delay_seconds is not None
+            else os.getenv("NATS_STREAM_SETUP_DELAY_SECONDS", "1.5")
+        ),
     )
     logger.info("Connecting to NATS at %s", nats_url)
 
     nc = await nats.connect(nats_url)
     try:
         jsm = nc.jsm()
-        await _wait_for_jetstream_ready(jsm, retries=retries, delay_seconds=delay_seconds)
+        await _wait_for_jetstream_ready(
+            jsm, retries=retries, delay_seconds=delay_seconds
+        )
 
         for stream_name, subjects in CORE_STREAMS.items():
             await _ensure_stream(

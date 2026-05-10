@@ -15,7 +15,9 @@ class WhisperSTTService:
     Targeted for <500ms latency mesh architecture.
     """
 
-    def __init__(self, model_size="small", device="cpu", compute_type="int8", language="en"):
+    def __init__(
+        self, model_size="small", device="cpu", compute_type="int8", language="en"
+    ):
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
@@ -173,7 +175,9 @@ class WhisperSTTService:
 
             raw_text = " ".join([s.text for s in segments_list]).strip()
             # Calculate average probability as confidence
-            confidence = sum([s.avg_logprob for s in segments_list]) / len(segments_list)
+            confidence = sum([s.avg_logprob for s in segments_list]) / len(
+                segments_list
+            )
             # Convert logprob to 0.0-1.0 roughly (Exp approximation)
             confidence = min(1.0, max(0.0, np.exp(confidence)))
 
@@ -189,7 +193,9 @@ class WhisperSTTService:
                 unique_words.append(word)
 
             final_text = f"{sonic_label} {' '.join(unique_words)}".strip()
-            logger.info(f"🎙️ STT ({'Partial' if is_partial else 'Final'}): {final_text} [Conf: {confidence:.2f}]")
+            logger.info(
+                f"🎙️ STT ({'Partial' if is_partial else 'Final'}): {final_text} [Conf: {confidence:.2f}]"
+            )
             return final_text, confidence
 
         except Exception as e:

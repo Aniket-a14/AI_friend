@@ -17,12 +17,13 @@ from .sovits_client import SoVITSClient
 from .filler_service import FillerService
 from .normalizer import AudioNormalizer
 from .cache import AudioCache
-from .prosody import vad_to_prosody, has_temporal_marker, force_split
+from .prosody import vad_to_prosody, has_temporal_marker
 from .playback import silence_pcm, drain_queue, make_playback_item, run_playback_loop
 from .resilience import run_resilience_loop, run_drift_correction_loop
 from ..contracts import ChatOutput, AudioStop, AudioResume
 
 logger = logging.getLogger(__name__)
+
 
 class VoicePlaybackState(Enum):
     IDLE = "IDLE"
@@ -44,6 +45,7 @@ class VoiceAgent(BaseAgent):
     - playback.py:    PCM streaming, OLA continuity, queue management
     - resilience.py:  Filler injection, drift correction
     """
+
     def __init__(
         self,
         sovits_url: str = Config.SOVITS_URL,
@@ -84,49 +86,73 @@ class VoiceAgent(BaseAgent):
         identity_ready = await self._warm_start_identity()
 
         if identity_ready:
-            await self.publish("voice.warm", {
-                "agent": self.name,
-                "status": "ready",
-                "identity": "fine_tuned",
-                "timestamp": time.time(),
-            })
+            await self.publish(
+                "voice.warm",
+                {
+                    "agent": self.name,
+                    "status": "ready",
+                    "identity": "fine_tuned",
+                    "timestamp": time.time(),
+                },
+            )
         else:
-            await self.publish("voice.warm", {
-                "agent": self.name,
-                "status": "degraded_no_weights",
-                "identity": "fallback",
-                "expected_gpt_path": Config.CUSTOM_GPT_PATH,
-                "expected_sovits_path": Config.CUSTOM_SOVITS_PATH,
-                "timestamp": time.time(),
-            })
+            await self.publish(
+                "voice.warm",
+                {
+                    "agent": self.name,
+                    "status": "degraded_no_weights",
+                    "identity": "fallback",
+                    "expected_gpt_path": Config.CUSTOM_GPT_PATH,
+                    "expected_sovits_path": Config.CUSTOM_SOVITS_PATH,
+                    "timestamp": time.time(),
+                },
+            )
 
         # 2. Start CVS Runtime Loops (delegated to extracted modules)
         self.active_tasks.append(asyncio.create_task(self._synthesis_loop()))
-        self.active_tasks.append(asyncio.create_task(
-            run_playback_loop(self, self.playback_queue, self.ingestion_queue)
-        ))
+        self.active_tasks.append(
+            asyncio.create_task(
+                run_playback_loop(self, self.playback_queue, self.ingestion_queue)
+            )
+        )
         self.active_tasks.append(asyncio.create_task(run_resilience_loop(self)))
         self.active_tasks.append(asyncio.create_task(run_drift_correction_loop(self)))
 
         # 3. Hydrate Social Mesh (optional async background)
         if Config.VOICE_FILLER_HYDRATE_ON_STARTUP:
-            asyncio.create_task(self.filler_service.hydrate(
-                self.sovits, self.ref_audio_path, self.ref_text
-            ))
+            asyncio.create_task(
+                self.filler_service.hydrate(
+                    self.sovits, self.ref_audio_path, self.ref_text
+                )
+            )
         else:
-            logger.info("Skipping filler hydration (VOICE_FILLER_HYDRATE_ON_STARTUP=false).")
+            logger.info(
+                "Skipping filler hydration (VOICE_FILLER_HYDRATE_ON_STARTUP=false)."
+            )
 
         # 4. Subscribe to Mesh Perception Channels
         await self.subscribe("chat.output", self._handle_input, deliver_policy="new")
-        await self.subscribe("audio.stop", self._on_audio_stop, deliver_policy="new", durable="voice_agent_audio_stop")
-        await self.subscribe("audio.resume", self._on_audio_resume, deliver_policy="new", durable="voice_agent_audio_resume")
+        await self.subscribe(
+            "audio.stop",
+            self._on_audio_stop,
+            deliver_policy="new",
+            durable="voice_agent_audio_stop",
+        )
+        await self.subscribe(
+            "audio.resume",
+            self._on_audio_resume,
+            deliver_policy="new",
+            durable="voice_agent_audio_resume",
+        )
 
         logger.info("CVS-1.0 System Online | Solid State Social Mesh Active.")
 
     async def _warm_start_identity(self) -> bool:
         """Attempt to load configured voice identity in warning mode (non-fatal)."""
         if not (Config.CUSTOM_GPT_PATH or Config.CUSTOM_SOVITS_PATH):
-            logger.warning("No custom voice weight paths configured; running in fallback mode.")
+            logger.warning(
+                "No custom voice weight paths configured; running in fallback mode."
+            )
             await self.set_state("warning_no_weights")
             return False
 
@@ -141,7 +167,9 @@ class VoiceAgent(BaseAgent):
             if gpt_required:
                 gpt_ok = await self.sovits.set_gpt_weights(Config.CUSTOM_GPT_PATH)
             if sovits_required:
-                sovits_ok = await self.sovits.set_sovits_weights(Config.CUSTOM_SOVITS_PATH)
+                sovits_ok = await self.sovits.set_sovits_weights(
+                    Config.CUSTOM_SOVITS_PATH
+                )
 
             if gpt_ok and sovits_ok:
                 logger.info("Persistent Voice Identity 'ai_friend_voice' loaded.")
@@ -160,7 +188,9 @@ class VoiceAgent(BaseAgent):
             Config.CUSTOM_GPT_PATH,
             Config.CUSTOM_SOVITS_PATH,
         )
-        logger.warning("Agent fallback: Entering WARNING mode. Synthesis may fail or use defaults.")
+        logger.warning(
+            "Agent fallback: Entering WARNING mode. Synthesis may fail or use defaults."
+        )
         await self.set_state("warning_no_weights")
         return False
 
@@ -204,8 +234,14 @@ class VoiceAgent(BaseAgent):
         except Exception:
             utterance_id = data.get("utterance_id")
 
-        if self.paused_utterance_id and utterance_id and utterance_id != self.paused_utterance_id:
-            logger.debug("Ignoring stale audio.resume for utterance_id=%s", utterance_id)
+        if (
+            self.paused_utterance_id
+            and utterance_id
+            and utterance_id != self.paused_utterance_id
+        ):
+            logger.debug(
+                "Ignoring stale audio.resume for utterance_id=%s", utterance_id
+            )
             return
 
         if self.state == VoicePlaybackState.SPECULATIVE_PAUSE:
@@ -265,7 +301,9 @@ class VoiceAgent(BaseAgent):
         text_to_process = self._phrase_buffer.strip()
 
         words = text_to_process.split()
-        if len(words) < 3 and not any(p in text_to_process for p in [".", "?", "!", ","]):
+        if len(words) < 3 and not any(
+            p in text_to_process for p in [".", "?", "!", ","]
+        ):
             return
 
         self._phrase_buffer = ""
@@ -276,7 +314,9 @@ class VoiceAgent(BaseAgent):
         max_load = getattr(Config, "MAX_VOICE_QUEUE_SIZE", 10)
 
         if current_load >= max_load:
-            logger.warning(f"Backpressure: Voice Queue Saturated ({current_load}/{max_load}). Dropping low-priority segment.")
+            logger.warning(
+                f"Backpressure: Voice Queue Saturated ({current_load}/{max_load}). Dropping low-priority segment."
+            )
             if len(words) > 5:
                 return
 
@@ -307,23 +347,32 @@ class VoiceAgent(BaseAgent):
         priority: int = 2,
     ):
         self.queue_seq += 1
-        await self.ingestion_queue.put((priority, self.queue_seq, {
-            "text": text,
-            "emotion": "neutral",
-            "intensity": intensity,
-            "rate": rate,
-            "prosody": prosody,
-            "timestamp": time.time(),
-            "metadata": metadata,
-            "turn_id": data.get("turn_id") or (metadata or {}).get("turn_id"),
-            "generation": self.generation,
-        }))
+        await self.ingestion_queue.put(
+            (
+                priority,
+                self.queue_seq,
+                {
+                    "text": text,
+                    "emotion": "neutral",
+                    "intensity": intensity,
+                    "rate": rate,
+                    "prosody": prosody,
+                    "timestamp": time.time(),
+                    "metadata": metadata,
+                    "turn_id": data.get("turn_id") or (metadata or {}).get("turn_id"),
+                    "generation": self.generation,
+                },
+            )
+        )
 
     # ─── Generation Fencing ────────────────────────────────────
 
     def _is_current_item(self, item: Dict[str, Any]) -> bool:
         turn_id = item.get("turn_id")
-        return item.get("generation") == self.generation and turn_id not in self.stopped_turn_ids
+        return (
+            item.get("generation") == self.generation
+            and turn_id not in self.stopped_turn_ids
+        )
 
     # ─── Convenience Wrappers (delegate to extracted modules) ──
 
@@ -349,9 +398,9 @@ class VoiceAgent(BaseAgent):
                     continue
 
                 async with sem:
-                    prosody = item.get("prosody", {
-                        "rate": 1.0, "pitch": 1.0, "volume": 1.0
-                    })
+                    prosody = item.get(
+                        "prosody", {"rate": 1.0, "pitch": 1.0, "volume": 1.0}
+                    )
                     cached_audio = self.cache.get(
                         text, prosody["rate"], prosody["pitch"]
                     )
@@ -462,6 +511,7 @@ class VoiceAgent(BaseAgent):
         await super().stop()
         logger.info(f"{self.name} CVS System stopped.")
 
+
 async def main():
     agent = VoiceAgent()
     await agent.start()
@@ -470,6 +520,7 @@ async def main():
             await asyncio.sleep(1)
     except asyncio.CancelledError:
         await agent.stop()
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

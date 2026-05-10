@@ -33,6 +33,7 @@ class AppraisalVector:
         NA — Norm Alignment     [0, 1]
         RI — Relationship Impact [-1, 1]  (our extension)
     """
+
     relevance: float = 0.5
     novelty: float = 0.3
     goal_congruence: float = 0.0
@@ -108,7 +109,7 @@ class AppraisalEngine:
         # Track content for novelty computation
         self._recent_contents.append(event_content[:100])
         if len(self._recent_contents) > self._max_recent:
-            self._recent_contents = self._recent_contents[-self._max_recent:]
+            self._recent_contents = self._recent_contents[-self._max_recent :]
 
         vector = AppraisalVector(
             relevance=relevance,
@@ -121,8 +122,12 @@ class AppraisalEngine:
 
         logger.debug(
             "[Appraisal] R=%.2f N=%.2f G=%.2f A=%.2f NA=%.2f RI=%.2f",
-            vector.relevance, vector.novelty, vector.goal_congruence,
-            vector.agency, vector.norm_alignment, vector.relationship_impact,
+            vector.relevance,
+            vector.novelty,
+            vector.goal_congruence,
+            vector.agency,
+            vector.norm_alignment,
+            vector.relationship_impact,
         )
         return vector
 
