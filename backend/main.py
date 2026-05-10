@@ -31,7 +31,7 @@ class AIBackend:
     async def initialize(self):
         """Minimal initialization for signaling server with Provisioning Guard."""
         logger.info("Initializing Sovereign Signaling Backend...")
-        
+
         # 1. CVS-1.0 Provisioning Guard (Solid State Mesh Requirement)
         try:
             ensure_models_provisioned()
@@ -39,7 +39,7 @@ class AIBackend:
         except Exception as e:
             logger.error(f"❌ Provisioning Guard Failure: {e}")
             # In a production identity system, we might halt boot here.
-            
+
         # 2. Network Mesh Discovery
         try:
             # Check NATS connection
@@ -113,8 +113,12 @@ app = FastAPI(
 # CORS Middleware (Sovereign Local Access)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[] if Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"] else Config.ALLOWED_ORIGINS,
-    allow_origin_regex=Config.LAN_CORS_ORIGIN_REGEX if Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"] else None,
+    allow_origins=[]
+    if Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"]
+    else Config.ALLOWED_ORIGINS,
+    allow_origin_regex=Config.LAN_CORS_ORIGIN_REGEX
+    if Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"]
+    else None,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],

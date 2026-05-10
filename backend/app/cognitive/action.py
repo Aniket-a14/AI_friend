@@ -31,7 +31,7 @@ class ControlMarkupSanitizer:
                 self._pending = data[idx:]
                 break
 
-            tag = data[idx:end_idx + 1]
+            tag = data[idx : end_idx + 1]
             normalized = tag.strip().lower()
             if normalized.startswith("<emotion") or normalized == "</emotion>":
                 idx = end_idx + 1
@@ -50,12 +50,14 @@ class ControlMarkupSanitizer:
             return ""
         return pending
 
+
 class ActionService:
     """
     The Action Layer.
     Executes the Decision Plan by generating responses or performing system tasks.
     Enforces the Identity Protocol in LLM generations.
     """
+
     def __init__(self, llm_service=None, memory_store=None):
         self.llm = llm_service
         self.memory = memory_store
@@ -64,7 +66,9 @@ class ActionService:
         """
         Executes the plan and yields output chunks.
         """
-        logger.info(f"[Action] Executing Decision: {plan.action_type} for Goal: {plan.goal}")
+        logger.info(
+            f"[Action] Executing Decision: {plan.action_type} for Goal: {plan.goal}"
+        )
 
         if plan.action_type == "RESPOND_CHAT":
             # 1. Prepare Identity-Aware Prompt
@@ -78,8 +82,10 @@ class ActionService:
             surfaced = plan.payload.get("surfaced_memories", [])
             shared_history = ""
             if surfaced:
-                shared_history = "\nSHARED HISTORY / RECENT CONTEXT (Active Influence):\n" + \
-                                 "\n".join([f"- {m['content']}" for m in surfaced])
+                shared_history = (
+                    "\nSHARED HISTORY / RECENT CONTEXT (Active Influence):\n"
+                    + "\n".join([f"- {m['content']}" for m in surfaced])
+                )
 
             # Construct the final prompt with structural guidance
             full_prompt = f"""
@@ -103,9 +109,13 @@ class ActionService:
             try:
                 # 2. Stream Generation
                 sanitizer = ControlMarkupSanitizer()
-                stream_budget = max(15, int(getattr(Config, "LLM_STREAM_MAX_SECONDS", 120)))
+                stream_budget = max(
+                    15, int(getattr(Config, "LLM_STREAM_MAX_SECONDS", 120))
+                )
                 try:
-                    stream_iter = self.llm.generate_stream(full_prompt, model=model).__aiter__()
+                    stream_iter = self.llm.generate_stream(
+                        full_prompt, model=model
+                    ).__aiter__()
                     deadline = time.monotonic() + stream_budget
 
                     while True:
@@ -114,7 +124,9 @@ class ActionService:
                             raise asyncio.TimeoutError()
 
                         try:
-                            chunk = await asyncio.wait_for(stream_iter.__anext__(), timeout=remaining)
+                            chunk = await asyncio.wait_for(
+                                stream_iter.__anext__(), timeout=remaining
+                            )
                         except StopAsyncIteration:
                             break
 
@@ -143,23 +155,23 @@ class ActionService:
                 yield {"type": "done", "data": ""}
 
         elif plan.action_type == "STORE_MEMORY":
-             content = plan.payload.get("content", "")
-             # Using the new intelligent MemoryStore
-             if self.memory:
-                 await self.memory.add_memory(
-                     content=content,
-                     importance=0.7, # High importance for explicit 'remember' commands
-                     emotion=0.2,
-                     source='user'
-                 )
-             yield {"type": "system", "data": "Memory securely consolidated."}
-             yield {"type": "done", "data": ""}
+            content = plan.payload.get("content", "")
+            # Using the new intelligent MemoryStore
+            if self.memory:
+                await self.memory.add_memory(
+                    content=content,
+                    importance=0.7,  # High importance for explicit 'remember' commands
+                    emotion=0.2,
+                    source="user",
+                )
+            yield {"type": "system", "data": "Memory securely consolidated."}
+            yield {"type": "done", "data": ""}
 
         elif plan.action_type == "BACKGROUND_CONSOLIDATION":
-             # Already triggered by CognitiveService
-             yield {"type": "done", "data": ""}
+            # Already triggered by CognitiveService
+            yield {"type": "done", "data": ""}
 
         else:
-             logger.warning(f"[Action] Unrecognized action: {plan.action_type}")
-             yield {"type": "error", "data": "Unknown operation."}
-             yield {"type": "done", "data": ""}
+            logger.warning(f"[Action] Unrecognized action: {plan.action_type}")
+            yield {"type": "error", "data": "Unknown operation."}
+            yield {"type": "done", "data": ""}

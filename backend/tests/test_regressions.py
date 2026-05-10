@@ -93,7 +93,9 @@ def test_cognitive_resume_recovery_accepts_type_key():
     outputs = list(
         asyncio.run(
             _collect_outputs(
-                service.process_event({"type": "USER_MESSAGE", "content": "please continue"})
+                service.process_event(
+                    {"type": "USER_MESSAGE", "content": "please continue"}
+                )
             )
         )
     )
@@ -127,7 +129,9 @@ def test_cognitive_confirmed_stop_escalates_to_final_audio_stop():
     outputs = list(
         asyncio.run(
             _collect_outputs(
-                service.process_event({"type": "USER_MESSAGE", "content": "stop right now"})
+                service.process_event(
+                    {"type": "USER_MESSAGE", "content": "stop right now"}
+                )
             )
         )
     )
@@ -167,10 +171,16 @@ def test_brain_agent_connects_before_cognitive_initialize():
         call_order.append("subscribe")
 
     conversation_store = MagicMock()
-    conversation_store.initialize = AsyncMock(side_effect=lambda: call_order.append("conversation_initialize"))
-    conversation_store.start_session = AsyncMock(side_effect=lambda: call_order.append("start_session"))
+    conversation_store.initialize = AsyncMock(
+        side_effect=lambda: call_order.append("conversation_initialize")
+    )
+    conversation_store.start_session = AsyncMock(
+        side_effect=lambda: call_order.append("start_session")
+    )
 
-    agent = BrainAgent(graph_db=None, memory_store=None, conversation_store=conversation_store)
+    agent = BrainAgent(
+        graph_db=None, memory_store=None, conversation_store=conversation_store
+    )
     agent.connect = AsyncMock(side_effect=_connect)
     agent.subscribe = AsyncMock(side_effect=_subscribe)
     agent.cognitive_core.initialize = AsyncMock(side_effect=_initialize)
@@ -187,10 +197,15 @@ def test_brain_agent_emits_fallback_when_stream_errors_without_content():
     agent.set_state = AsyncMock()
     agent.publish = AsyncMock()
     agent._publish_speech_chunk = AsyncMock()
-    agent.cognitive_core.state.get_context_snapshot = MagicMock(return_value={"emotion": "neutral"})
+    agent.cognitive_core.state.get_context_snapshot = MagicMock(
+        return_value={"emotion": "neutral"}
+    )
 
     async def _error_only_stream(_raw_event):
-        yield {"type": "error", "data": "No compatible Ollama generation endpoint found"}
+        yield {
+            "type": "error",
+            "data": "No compatible Ollama generation endpoint found",
+        }
         yield {"type": "done", "data": ""}
 
     agent.cognitive_core.process_event = _error_only_stream
@@ -206,8 +221,13 @@ def test_brain_agent_emits_fallback_when_stream_errors_without_content():
     assert done_call.args[0] == "chat.output"
     assert done_call.args[1]["done"] is True
     assert done_call.args[1]["turn_id"] == "turn-404"
-    assert done_call.args[1]["full_response"] == "I'm having trouble thinking right now..."
-    assert "No compatible Ollama generation endpoint found" in done_call.args[1]["generation_error"]
+    assert (
+        done_call.args[1]["full_response"] == "I'm having trouble thinking right now..."
+    )
+    assert (
+        "No compatible Ollama generation endpoint found"
+        in done_call.args[1]["generation_error"]
+    )
 
 
 def test_action_service_strips_emotion_wrappers_but_keeps_pause_tags():
@@ -221,7 +241,11 @@ def test_action_service_strips_emotion_wrappers_but_keeps_pause_tags():
     action = ActionService(llm_service=llm)
     plan = ActionPlan(
         action_type="RESPOND_CHAT",
-        payload={"message": "hello", "identity_prompt": "be natural", "emotion_state": "sad"},
+        payload={
+            "message": "hello",
+            "identity_prompt": "be natural",
+            "emotion_state": "sad",
+        },
         goal="ENGAGE",
     )
 
@@ -264,8 +288,10 @@ def test_database_schema_matches_memory_store_runtime_columns():
     from pathlib import Path
 
     schema = (
-        Path(__file__).resolve().parents[1] / "db" / "schema.sql"
-    ).read_text(encoding="utf-8").lower()
+        (Path(__file__).resolve().parents[1] / "db" / "schema.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
 
     for column in [
         "importance_score",
@@ -371,7 +397,9 @@ def test_stt_rejects_non_pcm_payloads_and_downmixes_multichannel_pcm():
     assert enqueued == []
 
     stereo_samples = [1000, -1000, 3000, 1000]
-    stereo_pcm = b"".join(int(sample).to_bytes(2, "little", signed=True) for sample in stereo_samples)
+    stereo_pcm = b"".join(
+        int(sample).to_bytes(2, "little", signed=True) for sample in stereo_samples
+    )
     asyncio.run(
         agent._on_audio_inbound(
             stereo_pcm,
@@ -532,11 +560,15 @@ def test_state_ignores_low_confidence_acoustic_bias():
     state.persist_state = AsyncMock()
     state.current_state.mood = 0.4
 
-    asyncio.run(state.apply_sensory_perception({
-        "emotional_bias": -1.0,
-        "confidence": 0.1,
-        "events": [],
-    }))
+    asyncio.run(
+        state.apply_sensory_perception(
+            {
+                "emotional_bias": -1.0,
+                "confidence": 0.1,
+                "events": [],
+            }
+        )
+    )
 
     assert state.current_state.mood == 0.4
     state.persist_state.assert_not_awaited()
@@ -548,27 +580,37 @@ def test_state_debounces_high_frequency_sensory_persistence():
     state.sensory_persist_interval = 999
     state._last_sensory_persist = 0
 
-    asyncio.run(state.apply_sensory_perception({
-        "emotional_bias": 1.0,
-        "confidence": 1.0,
-        "events": [],
-    }))
-    asyncio.run(state.apply_sensory_perception({
-        "emotional_bias": -1.0,
-        "confidence": 1.0,
-        "events": [],
-    }))
+    asyncio.run(
+        state.apply_sensory_perception(
+            {
+                "emotional_bias": 1.0,
+                "confidence": 1.0,
+                "events": [],
+            }
+        )
+    )
+    asyncio.run(
+        state.apply_sensory_perception(
+            {
+                "emotional_bias": -1.0,
+                "confidence": 1.0,
+                "events": [],
+            }
+        )
+    )
 
     assert state.persist_state.await_count == 1
 
 
 def test_identity_hydrates_from_durable_config_store():
     store = SimpleNamespace()
-    store.get_agent_config = AsyncMock(return_value={
-        "personality": '{"name": "durable friend", "core_personality": {"immutable": {"values": ["Honesty"], "base_tone": "Calm", "boundaries": []}}}',
-        "history": '{"relationship": "Trusted Friend", "memories": []}',
-        "evolved_learnings": "prefers quiet pacing",
-    })
+    store.get_agent_config = AsyncMock(
+        return_value={
+            "personality": '{"name": "durable friend", "core_personality": {"immutable": {"values": ["Honesty"], "base_tone": "Calm", "boundaries": []}}}',
+            "history": '{"relationship": "Trusted Friend", "memories": []}',
+            "evolved_learnings": "prefers quiet pacing",
+        }
+    )
 
     manager = IdentityManager(base_path="/missing/path")
     asyncio.run(manager.hydrate_from_config_store(store))

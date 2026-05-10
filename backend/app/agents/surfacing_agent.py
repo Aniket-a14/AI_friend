@@ -29,6 +29,7 @@ class SurfacingAgent(BaseAgent):
       - Episodic: pgvector similarity + ACT-R activation + emotional alignment
       - Semantic: Neo4j entity/relationship lookup for structured knowledge
     """
+
     def __init__(self, memory_store=None, graph_db=None, conversation_store=None):
         super().__init__(name="surfacing_agent")
         self.memory = memory_store
@@ -45,11 +46,15 @@ class SurfacingAgent(BaseAgent):
 
         # Dual-channel state
         self._last_channel = "episodic"  # Alternate between channels
-        self._current_valence = 0.0      # For mood-congruent retrieval
+        self._current_valence = 0.0  # For mood-congruent retrieval
 
         self.subject_metrics = {
             "system.tick": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
-            "memory.surfaced": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
+            "memory.surfaced": {
+                "count": 0,
+                "latency_total_ms": 0.0,
+                "latency_samples": 0,
+            },
         }
 
     async def start(self):
@@ -79,14 +84,16 @@ class SurfacingAgent(BaseAgent):
         """Update recent context tracking."""
         self.last_context = data.get("text", "")
         if time.time() - self.last_surfaced_time > 10:
-             source_meta = metadata or data.get("latency_metadata")
-             self._schedule_sweep(source_metadata=source_meta)
+            source_meta = metadata or data.get("latency_metadata")
+            self._schedule_sweep(source_metadata=source_meta)
 
     async def _on_system_tick(self, data: Dict[str, Any]):
         """Periodic background sweep for memory relevance."""
-        self._record_surfacing_metric("system.tick", metadata=data.get("latency_metadata"))
+        self._record_surfacing_metric(
+            "system.tick", metadata=data.get("latency_metadata")
+        )
         if time.time() - self.last_surfaced_time > self.surfacing_cooldown:
-             await self._run_sweep_now(source_metadata=data.get("latency_metadata"))
+            await self._run_sweep_now(source_metadata=data.get("latency_metadata"))
 
     async def _on_agent_state(self, data: Dict[str, Any]):
         """Track current valence for mood-congruent episodic retrieval (Bower, 1981)."""
@@ -122,7 +129,9 @@ class SurfacingAgent(BaseAgent):
             self._surface_relevant_memories(source_metadata=source_metadata)
         )
 
-    async def _surface_relevant_memories(self, source_metadata: Optional[Dict[str, Any]] = None):
+    async def _surface_relevant_memories(
+        self, source_metadata: Optional[Dict[str, Any]] = None
+    ):
         """
         Dual-Channel Surfacing Logic (§6-7):
         1. Episodic channel: pgvector ACT-R + mood-congruent retrieval
@@ -160,7 +169,8 @@ class SurfacingAgent(BaseAgent):
                 total_ms = (time.perf_counter() - sweep_started) * 1000
                 logger.info(
                     "[SurfacingMetrics] channel=%s total_ms=%.2f",
-                    self._last_channel, total_ms,
+                    self._last_channel,
+                    total_ms,
                 )
 
         except Exception as e:
@@ -199,29 +209,39 @@ class SurfacingAgent(BaseAgent):
                 episode = self._build_episode_narrative(mem, now)
 
                 publish_started = time.perf_counter()
-                await self.publish("memory.surfaced", {
-                    "content": episode["narrative"],
-                    "raw_content": content,
-                    "timestamp": now,
-                    "relevance": mem.get("score", 0.7),
-                    "source": "episodic",
-                    "channel": "pgvector_actr",
-                    "episode": episode,
-                }, metadata=source_metadata)
+                await self.publish(
+                    "memory.surfaced",
+                    {
+                        "content": episode["narrative"],
+                        "raw_content": content,
+                        "timestamp": now,
+                        "relevance": mem.get("score", 0.7),
+                        "source": "episodic",
+                        "channel": "pgvector_actr",
+                        "episode": episode,
+                    },
+                    metadata=source_metadata,
+                )
                 publish_ms = (time.perf_counter() - publish_started) * 1000
 
                 self.last_surfaced_time = now
                 self.recently_surfaced[content] = now
-                self._record_surfacing_metric("memory.surfaced", metadata=source_metadata)
+                self._record_surfacing_metric(
+                    "memory.surfaced", metadata=source_metadata
+                )
                 logger.info(
                     "[Surfacing] Episodic recall: '%s...' (search=%.1fms pub=%.1fms)",
-                    episode["narrative"][:60], search_ms, publish_ms,
+                    episode["narrative"][:60],
+                    search_ms,
+                    publish_ms,
                 )
                 return True
 
         return False
 
-    def _build_episode_narrative(self, mem: Dict[str, Any], now: float) -> Dict[str, Any]:
+    def _build_episode_narrative(
+        self, mem: Dict[str, Any], now: float
+    ) -> Dict[str, Any]:
         """
         Transforms a raw memory row into a Tulving-style episode with
         temporal context, emotional color, and narrative framing.
@@ -284,6 +304,7 @@ class SurfacingAgent(BaseAgent):
             return ""
         try:
             from datetime import datetime, timezone
+
             created = datetime.fromisoformat(created_at_iso)
             if created.tzinfo is None:
                 created = created.replace(tzinfo=timezone.utc)
@@ -338,21 +359,29 @@ class SurfacingAgent(BaseAgent):
             for fact_text in facts:
                 if not self._was_recently_surfaced(fact_text, now):
                     publish_started = time.perf_counter()
-                    await self.publish("memory.surfaced", {
-                        "content": fact_text,
-                        "timestamp": now,
-                        "relevance": 0.8,
-                        "source": "semantic",
-                        "channel": "neo4j_graph",
-                    }, metadata=source_metadata)
+                    await self.publish(
+                        "memory.surfaced",
+                        {
+                            "content": fact_text,
+                            "timestamp": now,
+                            "relevance": 0.8,
+                            "source": "semantic",
+                            "channel": "neo4j_graph",
+                        },
+                        metadata=source_metadata,
+                    )
                     publish_ms = (time.perf_counter() - publish_started) * 1000
 
                     self.last_surfaced_time = now
                     self.recently_surfaced[fact_text] = now
-                    self._record_surfacing_metric("memory.surfaced", metadata=source_metadata)
+                    self._record_surfacing_metric(
+                        "memory.surfaced", metadata=source_metadata
+                    )
                     logger.info(
                         "[Surfacing] Semantic recall: '%s...' (search=%.1fms pub=%.1fms)",
-                        fact_text[:40], search_ms, publish_ms,
+                        fact_text[:40],
+                        search_ms,
+                        publish_ms,
                     )
                     return True
 
@@ -368,14 +397,84 @@ class SurfacingAgent(BaseAgent):
         Filters out common stop words and short tokens.
         """
         stop_words = {
-            "i", "me", "my", "you", "your", "we", "our", "they", "the", "a", "an",
-            "is", "are", "was", "were", "am", "be", "been", "being", "have", "has",
-            "had", "do", "does", "did", "will", "would", "could", "should", "can",
-            "may", "might", "shall", "not", "no", "but", "and", "or", "if", "then",
-            "so", "what", "when", "where", "how", "why", "who", "which", "that",
-            "this", "it", "its", "just", "also", "very", "really", "about", "with",
-            "from", "into", "for", "of", "on", "in", "at", "to", "by", "up", "out",
-            "hey", "hello", "hi", "ok", "yeah", "yes", "no", "oh", "ah",
+            "i",
+            "me",
+            "my",
+            "you",
+            "your",
+            "we",
+            "our",
+            "they",
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "am",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "can",
+            "may",
+            "might",
+            "shall",
+            "not",
+            "no",
+            "but",
+            "and",
+            "or",
+            "if",
+            "then",
+            "so",
+            "what",
+            "when",
+            "where",
+            "how",
+            "why",
+            "who",
+            "which",
+            "that",
+            "this",
+            "it",
+            "its",
+            "just",
+            "also",
+            "very",
+            "really",
+            "about",
+            "with",
+            "from",
+            "into",
+            "for",
+            "of",
+            "on",
+            "in",
+            "at",
+            "to",
+            "by",
+            "up",
+            "out",
+            "hey",
+            "hello",
+            "hi",
+            "ok",
+            "yeah",
+            "yes",
+            "no",
+            "oh",
+            "ah",
         }
 
         words = text.split()
@@ -440,7 +539,9 @@ class SurfacingAgent(BaseAgent):
             return False
         return (now - surfaced_at) < self.surface_novelty_window
 
-    def _record_surfacing_metric(self, subject: str, metadata: Optional[Dict[str, Any]] = None):
+    def _record_surfacing_metric(
+        self, subject: str, metadata: Optional[Dict[str, Any]] = None
+    ):
         metric = self.subject_metrics.get(subject)
         if metric is None:
             return
@@ -449,7 +550,9 @@ class SurfacingAgent(BaseAgent):
 
         if isinstance(metadata, dict) and metadata.get("start_time") is not None:
             try:
-                latency_ms = max(0.0, (time.time() - float(metadata["start_time"])) * 1000)
+                latency_ms = max(
+                    0.0, (time.time() - float(metadata["start_time"])) * 1000
+                )
                 metric["latency_total_ms"] += latency_ms
                 metric["latency_samples"] += 1
             except (TypeError, ValueError):
@@ -509,6 +612,7 @@ async def main():
         pass
     finally:
         await agent.stop()
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

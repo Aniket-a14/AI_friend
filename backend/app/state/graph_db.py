@@ -9,19 +9,25 @@ from ..config import Config
 logger = logging.getLogger("graph_db")
 _CYPHER_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+
 class GraphDB:
     """
     Asynchronous Knowledge Mesh for CVS-1.0.
     Manages persistent entities and relationships without blocking the cognitive loop.
     """
+
     def __init__(self, uri=None, user=None, password=None):
         uri = uri or Config.NEO4J_URI
         user = user or Config.NEO4J_USER
         password = password or Config.NEO4J_PASSWORD
 
         if not password or password in ["password", "neo4j", "placeholder"]:
-            logger.error("🛑 Security Violation: Weak or Placeholder Neo4j Password Detected.")
-            raise ValueError("A strong, non-default NEO4J_PASSWORD must be provided in your .env file.")
+            logger.error(
+                "🛑 Security Violation: Weak or Placeholder Neo4j Password Detected."
+            )
+            raise ValueError(
+                "A strong, non-default NEO4J_PASSWORD must be provided in your .env file."
+            )
 
         self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
 
@@ -55,9 +61,13 @@ class GraphDB:
         """Flush cache to prevent stale context."""
         self._belief_cache.clear()
         if affected_entity:
-            logger.debug(f"Graph Store: Cache flushed due to update in '{affected_entity}'")
+            logger.debug(
+                f"Graph Store: Cache flushed due to update in '{affected_entity}'"
+            )
 
-    async def execute_query(self, query: str, parameters: Dict[str, Any] = None, use_cache: bool = False) -> List[Any]:
+    async def execute_query(
+        self, query: str, parameters: Dict[str, Any] = None, use_cache: bool = False
+    ) -> List[Any]:
         """Generic async query execution with TTL caching."""
         cache_key = (query, json.dumps(parameters) if parameters else None)
 
@@ -78,31 +88,36 @@ class GraphDB:
             logger.error(f"Neo4j query failed: {e}")
             return []
 
-    async def create_entity(self, label: str, name: str, properties: Dict[str, Any] = None):
+    async def create_entity(
+        self, label: str, name: str, properties: Dict[str, Any] = None
+    ):
         """
         Creates/Updates a node with metadata: certainty, source, version.
         """
         await self._invalidate_cache(name)
         props = properties or {}
-        props['name'] = name
-        props.setdefault('certainty', 1.0)
-        props.setdefault('source', 'agent_inference')
-        props.setdefault('version', 1)
+        props["name"] = name
+        props.setdefault("certainty", 1.0)
+        props.setdefault("source", "agent_inference")
+        props.setdefault("version", 1)
 
         label = self._safe_label(label)
 
-        query = (
-            f"MERGE (e:{label} {{name: $name}}) "
-            "SET e += $props "
-            "RETURN e"
-        )
+        query = f"MERGE (e:{label} {{name: $name}}) SET e += $props RETURN e"
         await self.execute_query(query, {"name": name, "props": props})
-        logger.debug(f"Graph Store: Hydrated Identity Node ({label} {{name: '{name}'}})")
+        logger.debug(
+            f"Graph Store: Hydrated Identity Node ({label} {{name: '{name}'}})"
+        )
 
-    async def create_relationship(self, subject_name: str, subject_label: str,
-                                   relation: str,
-                                   target_name: str, target_label: str,
-                                   properties: Dict[str, Any] = None):
+    async def create_relationship(
+        self,
+        subject_name: str,
+        subject_label: str,
+        relation: str,
+        target_name: str,
+        target_label: str,
+        properties: Dict[str, Any] = None,
+    ):
         """
         Creates a relationship with properties (e.g., TrustLevel, weight).
         Adheres to UPPER_SNAKE_CASE for relationships.
@@ -113,8 +128,8 @@ class GraphDB:
         t_label = self._safe_label(target_label)
 
         props = properties or {}
-        props.setdefault('weight', 0.5)
-        props.setdefault('certainty', 1.0)
+        props.setdefault("weight", 0.5)
+        props.setdefault("certainty", 1.0)
 
         query = (
             f"MERGE (s:{s_label} {{name: $s_name}}) "
@@ -123,9 +138,9 @@ class GraphDB:
             "SET r += $props "
             "RETURN s, r, t"
         )
-        await self.execute_query(query, {
-            "s_name": subject_name,
-            "t_name": target_name,
-            "props": props
-        })
-        logger.info(f"Graph Store: Linked {subject_name} -[:{rel_type} {{weight: {props['weight']}}}]-> {target_name}")
+        await self.execute_query(
+            query, {"s_name": subject_name, "t_name": target_name, "props": props}
+        )
+        logger.info(
+            f"Graph Store: Linked {subject_name} -[:{rel_type} {{weight: {props['weight']}}}]-> {target_name}"
+        )

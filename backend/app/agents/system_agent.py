@@ -6,11 +6,13 @@ from ..config import Config
 
 logger = logging.getLogger("system_agent")
 
+
 class SystemAgent(BaseAgent):
     """
     The System Pulse Orchestrator.
     Emits periodic 'system.tick' events to drive mesh-wide state evolution.
     """
+
     def __init__(self, tick_interval: int = None):
         super().__init__(name="system_agent")
         self.tick_interval = tick_interval or Config.SYSTEM_TICK_INTERVAL
@@ -21,7 +23,9 @@ class SystemAgent(BaseAgent):
         """Standard startup sequence."""
         await self.connect()
         self.is_active = True
-        logger.info(f"⚡ {self.name} Online | Heartbeat Interval: {self.tick_interval}s")
+        logger.info(
+            f"⚡ {self.name} Online | Heartbeat Interval: {self.tick_interval}s"
+        )
         asyncio.create_task(self._pulse_loop())
 
     async def _pulse_loop(self):
@@ -36,7 +40,7 @@ class SystemAgent(BaseAgent):
                     "timestamp": now,
                     "uptime": uptime,
                     "interval": self.tick_interval,
-                    "source": self.name
+                    "source": self.name,
                 }
 
                 # 2. Broadcast to Mesh
@@ -48,12 +52,13 @@ class SystemAgent(BaseAgent):
 
             except Exception as e:
                 logger.error(f"[Pulse] Heartbeat failure: {e}")
-                await asyncio.sleep(5) # Cooldown on failure
+                await asyncio.sleep(5)  # Cooldown on failure
 
     async def stop(self):
         self.is_active = False
         await super().stop()
         logger.info(f"⚡ {self.name} system heartbeat stopped.")
+
 
 async def main():
     agent = SystemAgent()
@@ -63,6 +68,7 @@ async def main():
             await asyncio.sleep(1)
     except KeyboardInterrupt:
         await agent.stop()
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

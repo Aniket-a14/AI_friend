@@ -10,12 +10,16 @@ from ..state.graph_db import GraphDB
 
 logger = logging.getLogger("reflection")
 
+
 class ReflectionService:
     """
     CVS-1.0 Solid State Learning Layer.
     Implements Fact Resolution, Confidence Gating, and Adaptive Persona Evolution.
     """
-    def __init__(self, llm_service=None, graph_store=None, pg_vector=None, identity_manager=None):
+
+    def __init__(
+        self, llm_service=None, graph_store=None, pg_vector=None, identity_manager=None
+    ):
         self.llm = llm_service
         self.graph = graph_store
         self.vector = pg_vector
@@ -38,9 +42,14 @@ class ReflectionService:
             f.set_result(None)
             return f
 
-        min_interval = max(0.0, float(getattr(Config, "REFLECTION_MIN_INTERVAL_SECONDS", 0.0)))
+        min_interval = max(
+            0.0, float(getattr(Config, "REFLECTION_MIN_INTERVAL_SECONDS", 0.0))
+        )
         now = time.monotonic()
-        if min_interval > 0.0 and (now - self.last_reflection_started_at) < min_interval:
+        if (
+            min_interval > 0.0
+            and (now - self.last_reflection_started_at) < min_interval
+        ):
             f = asyncio.Future()
             f.set_result(None)
             return f
@@ -50,7 +59,9 @@ class ReflectionService:
         # CVS-1.0: Signal started
         self.reflection_done.clear()
 
-        logger.info(f"[Reflection] Starting semantic consolidation logic for {len(recent_episodes)} events.")
+        logger.info(
+            f"[Reflection] Starting semantic consolidation logic for {len(recent_episodes)} events."
+        )
         return asyncio.create_task(self._consolidate(recent_episodes))
 
     async def _consolidate(self, episodes: List[Dict[str, Any]]):
@@ -96,7 +107,9 @@ class ReflectionService:
             """
 
             try:
-                fact_res = await self.llm.generate(fact_prompt, model=Config.LLM_REFLECTION_MODEL)
+                fact_res = await self.llm.generate(
+                    fact_prompt, model=Config.LLM_REFLECTION_MODEL
+                )
                 facts = self._extract_json(fact_res)
 
                 # CVS-1.0: Defensive parsing for LLM output variability
@@ -112,7 +125,9 @@ class ReflectionService:
                     # 1. CONFIDENCE GATING: Only store facts with > 0.8 certainty
                     confidence = f.get("confidence", 0.0)
                     if confidence < 0.8:
-                        logger.debug(f"Fact REJECTED (Low Confidence: {confidence}): {f.get('subject')} - {f.get('relation')}")
+                        logger.debug(
+                            f"Fact REJECTED (Low Confidence: {confidence}): {f.get('subject')} - {f.get('relation')}"
+                        )
                         continue
 
                     # 2. FACT RESOLUTION: Check for existing duplication in GraphDB
@@ -126,7 +141,9 @@ class ReflectionService:
                         rel_type = GraphDB._safe_relation(relation)
                         subject_label = GraphDB._safe_label(f.get("type", "Entity"))
                     except ValueError:
-                        logger.warning("Skipping unsafe graph fact from reflection: %r", f)
+                        logger.warning(
+                            "Skipping unsafe graph fact from reflection: %r", f
+                        )
                         continue
 
                     # Search if this relationship already exists with high weight
@@ -135,17 +152,28 @@ class ReflectionService:
                     WHERE s.name = $s_name AND t.name = $t_name
                     RETURN r
                     """
-                    existing = await self.graph.execute_query(query, {"s_name": subject, "t_name": object_val})
+                    existing = await self.graph.execute_query(
+                        query, {"s_name": subject, "t_name": object_val}
+                    )
 
                     if existing:
-                        logger.debug(f"Fact RESOLVED: Relationship already exists between {subject} and {object_val}.")
+                        logger.debug(
+                            f"Fact RESOLVED: Relationship already exists between {subject} and {object_val}."
+                        )
                         # Optionally nudge the weight instead of creating new
                         continue
 
                     # Actual Storage
                     await self.graph.create_relationship(
-                        subject, subject_label, rel_type, object_val, "Entity",
-                        properties={"confidence": confidence, "extracted_at": str(asyncio.get_event_loop().time())}
+                        subject,
+                        subject_label,
+                        rel_type,
+                        object_val,
+                        "Entity",
+                        properties={
+                            "confidence": confidence,
+                            "extracted_at": str(asyncio.get_event_loop().time()),
+                        },
                     )
             except Exception as e:
                 logger.error(f"Fact consolidation failure: {e}")
@@ -153,15 +181,17 @@ class ReflectionService:
             # --- PART 2: Persona Evolution ---
             # Identical pattern for Persona stability
             identity_prompt = f"""
-            Determine if {self.identity.personality.get('name')}'s personality or relationship should evolve.
+            Determine if {self.identity.personality.get("name")}'s personality or relationship should evolve.
             Interactions:
             {summary_text}
-            Current Role: {self.identity.history.get('relationship')}
+            Current Role: {self.identity.history.get("relationship")}
             
             Output JSON ONLY: {{"new_traits": ["..."], "relationship": "...", "confidence": 0.0}}
             """
             try:
-                ident_res = await self.llm.generate(identity_prompt, model=Config.LLM_REFLECTION_MODEL)
+                ident_res = await self.llm.generate(
+                    identity_prompt, model=Config.LLM_REFLECTION_MODEL
+                )
                 suggestions = self._extract_json(ident_res)
 
                 # CVS-1.0: Defensive parsing for identity suggestions (Ensures .get() availability)
@@ -173,7 +203,9 @@ class ReflectionService:
                 if suggestions and suggestions.get("confidence", 0.0) >= 0.8:
                     await self.identity.evolve_persona(suggestions)
                 else:
-                    logger.debug("Persona evolution REJECTED: Low confidence or no growth detected.")
+                    logger.debug(
+                        "Persona evolution REJECTED: Low confidence or no growth detected."
+                    )
             except Exception as e:
                 logger.error(f"Identity evolution failure: {e}")
 
@@ -183,14 +215,14 @@ class ReflectionService:
             logger.error(f"[Reflection] Critical Consolidation Failure: {e}")
         finally:
             self.is_reflecting = False
-            self.reflection_done.set() # Unblock waiters
+            self.reflection_done.set()  # Unblock waiters
 
     def _extract_json(self, text: str) -> Any:
         try:
-            if "<think>" in text: # Handle deep reasoning prefixes
+            if "<think>" in text:  # Handle deep reasoning prefixes
                 text = text.split("</think>")[-1].strip()
 
-            match = re.search(r'\[.*\]|\{.*\}', text, re.DOTALL)
+            match = re.search(r"\[.*\]|\{.*\}", text, re.DOTALL)
             if match:
                 return json.loads(match.group(0))
             return [] if "[" in text else {}

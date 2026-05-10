@@ -167,7 +167,9 @@ class TransportAgent(BaseAgent):
 
                 if pcm_data:
                     try:
-                        self.audio_queue.put_nowait((pcm_data, sample_rate, num_channels))
+                        self.audio_queue.put_nowait(
+                            (pcm_data, sample_rate, num_channels)
+                        )
                     except asyncio.QueueFull:
                         # Drop the oldest frame to keep playout near real-time.
                         try:
@@ -177,7 +179,9 @@ class TransportAgent(BaseAgent):
                             pass
 
                         try:
-                            self.audio_queue.put_nowait((pcm_data, sample_rate, num_channels))
+                            self.audio_queue.put_nowait(
+                                (pcm_data, sample_rate, num_channels)
+                            )
                         except asyncio.QueueFull:
                             pass
 

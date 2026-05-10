@@ -101,7 +101,9 @@ async def test_surfacing_mesh_regression_emits_system_tick_and_memory_surfaced()
     )
     assert seeded is True
     memory_store.search_memories = AsyncMock(
-        return_value=[{"content": "You mentioned exam stress yesterday.", "score": 0.95}]
+        return_value=[
+            {"content": "You mentioned exam stress yesterday.", "score": 0.95}
+        ]
     )
 
     mesh = _InMemoryMesh()

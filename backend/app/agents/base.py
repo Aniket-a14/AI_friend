@@ -25,10 +25,14 @@ class BaseAgent:
             "system.tick,memory.surfaced,audio.stop,audio.resume,chat.output",
         )
         self._tracked_subjects = {
-            subject.strip() for subject in tracked_subjects_raw.split(",") if subject.strip()
+            subject.strip()
+            for subject in tracked_subjects_raw.split(",")
+            if subject.strip()
         }
         self._subject_metrics: Dict[str, Dict[str, float]] = {}
-        self._metrics_log_every = max(1, int(os.getenv("SUBJECT_METRICS_LOG_EVERY", "25")))
+        self._metrics_log_every = max(
+            1, int(os.getenv("SUBJECT_METRICS_LOG_EVERY", "25"))
+        )
 
     async def connect(self):
         """Connect to the NATS Mesh and bootstrap streams."""
@@ -46,19 +50,27 @@ class BaseAgent:
         """Ensure core streams exist on the mesh (CVS-1.0 Hardened)."""
         core_streams = {
             "AI_MESSAGES": [
-                "chat.*", "vision.*", "state.*", "cmd.*", "voice.*",
-                "system.*", "memory.*", "identity.*", "knowledge.*"
+                "chat.*",
+                "vision.*",
+                "state.*",
+                "cmd.*",
+                "voice.*",
+                "system.*",
+                "memory.*",
+                "identity.*",
+                "knowledge.*",
             ],
-            "AI_AUDIO": ["audio.*"]
+            "AI_AUDIO": ["audio.*"],
         }
 
         try:
             # Modern nats-py pattern
             jsm = self.nc.jsm()
         except Exception as e:
-            logger.warning(f"NATS Management not available: {e}. Ensure streams are pre-configured.")
+            logger.warning(
+                f"NATS Management not available: {e}. Ensure streams are pre-configured."
+            )
             return
-
 
         for stream_name, subjects in core_streams.items():
             try:
@@ -72,17 +84,25 @@ class BaseAgent:
                     required_subjects = set(subjects)
 
                     if not required_subjects.issubset(current_subjects):
-                        logger.info(f"Updating NATS Stream '{stream_name}' with additional subjects...")
+                        logger.info(
+                            f"Updating NATS Stream '{stream_name}' with additional subjects..."
+                        )
                         config = info.config
-                        config.subjects = list(current_subjects.union(required_subjects))
+                        config.subjects = list(
+                            current_subjects.union(required_subjects)
+                        )
                         await jsm.update_stream(config)
-                        logger.info(f"✅ Stream '{stream_name}' synchronized successfully.")
+                        logger.info(
+                            f"✅ Stream '{stream_name}' synchronized successfully."
+                        )
                 except Exception as update_err:
                     logger.debug(f"Stream update note: {update_err}")
             except Exception as e:
                 logger.debug(f"Stream bootstrap note: {e}")
 
-    async def publish(self, subject: str, data: Any, metadata: Optional[Dict[str, Any]] = None):
+    async def publish(
+        self, subject: str, data: Any, metadata: Optional[Dict[str, Any]] = None
+    ):
         """Publish an event to the mesh with latency tracking and binary support."""
         if not self.js:
             await self.connect()
@@ -96,11 +116,7 @@ class BaseAgent:
             meta.setdefault("hops", [])
             meta.setdefault("source", self.name)
         else:
-            meta = {
-                "start_time": time.time(),
-                "hops": [],
-                "source": self.name
-            }
+            meta = {"start_time": time.time(), "hops": [], "source": self.name}
 
         # Propagate existing meta if present in dict data
         if isinstance(data, dict) and "latency_metadata" in data:
@@ -109,11 +125,9 @@ class BaseAgent:
             meta.setdefault("hops", [])
             meta.setdefault("source", self.name)
 
-        meta["hops"].append({
-            "agent": self.name,
-            "subject": subject,
-            "timestamp": time.time()
-        })
+        meta["hops"].append(
+            {"agent": self.name, "subject": subject, "timestamp": time.time()}
+        )
 
         # 2. Determine Transport Mode
         is_binary = subject in getattr(Config, "BINARY_SUBJECTS", [])
@@ -123,7 +137,7 @@ class BaseAgent:
                 # Direct Binary Transport with Headers
                 headers = {
                     "X-Latency-Meta": json.dumps(meta),
-                    "X-Payload-Format": "binary/raw-pcm"
+                    "X-Payload-Format": "binary/raw-pcm",
                 }
                 await self.js.publish(subject, data, headers=headers)
             else:
@@ -139,7 +153,9 @@ class BaseAgent:
                 latency_ms=self._extract_latency_ms(meta),
             )
 
-            logger.debug(f"Agent '{self.name}' published to {subject} ({'binary' if is_binary else 'json'})")
+            logger.debug(
+                f"Agent '{self.name}' published to {subject} ({'binary' if is_binary else 'json'})"
+            )
         except Exception as e:
             logger.error(f"Failed to publish to {subject}: {e}")
 
@@ -152,11 +168,15 @@ class BaseAgent:
         if meta and "start_time" in meta:
             elapsed = (time.time() - meta["start_time"]) * 1000
             # Track drift trends (Observability Hook)
-            logger.info(f"⏱️ [LATENCY] Stage '{stage_name}' | Total: {elapsed:.2f}ms | Hops: {len(meta['hops'])}")
+            logger.info(
+                f"⏱️ [LATENCY] Stage '{stage_name}' | Total: {elapsed:.2f}ms | Hops: {len(meta['hops'])}"
+            )
             return elapsed
         return 0
 
-    def _extract_latency_ms(self, metadata: Optional[Dict[str, Any]]) -> Optional[float]:
+    def _extract_latency_ms(
+        self, metadata: Optional[Dict[str, Any]]
+    ) -> Optional[float]:
         if not metadata:
             return None
         start_time = metadata.get("start_time")
@@ -230,7 +250,9 @@ class BaseAgent:
                         # or wrap it if the agent expects a dict with meta
                         await callback(msg.data, metadata=meta)
                     except Exception as he:
-                        logger.warning(f"Header validation failed on {subject}: {he}. Using fallback.")
+                        logger.warning(
+                            f"Header validation failed on {subject}: {he}. Using fallback."
+                        )
                         await callback(msg.data)
                 else:
                     # 2. Standard JSON Fallback
@@ -239,7 +261,9 @@ class BaseAgent:
                         self._record_subject_metric(
                             subject,
                             direction="consume",
-                            latency_ms=self._extract_latency_ms(data.get("latency_metadata")),
+                            latency_ms=self._extract_latency_ms(
+                                data.get("latency_metadata")
+                            ),
                         )
                     await callback(data)
 
@@ -282,7 +306,7 @@ class BaseAgent:
         # 4. Reliable Subscription (Retry for JetStream availability)
         max_retries = 10
         retry_delay = 1.0
-        
+
         for attempt in range(1, max_retries + 1):
             try:
                 await self.js.subscribe(subject, **subscribe_kwargs)
@@ -293,6 +317,7 @@ class BaseAgent:
             except Exception as e:
                 # nats.js.errors.NotFoundError: happens when the subject is not mapped to any stream
                 from nats.js.errors import NotFoundError
+
                 if isinstance(e, NotFoundError) and attempt < max_retries:
                     logger.warning(
                         f"Agent '{self.name}' subscription to {subject} failed: stream not found (attempt {attempt}/{max_retries}). Retrying in {retry_delay}s..."
@@ -300,7 +325,9 @@ class BaseAgent:
                     await asyncio.sleep(retry_delay)
                     continue
                 else:
-                    logger.error(f"Agent '{self.name}' failed to subscribe to {subject}: {e}")
+                    logger.error(
+                        f"Agent '{self.name}' failed to subscribe to {subject}: {e}"
+                    )
                     raise e
 
     async def set_state(self, state: str):

@@ -7,24 +7,28 @@ from typing import AsyncGenerator, Callable, Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("ollama_client")
 
+
 class OllamaClient:
     """
     Resilient Ollama Client for CVS-1.0.
     Implements Exponential Backoff with Jitter for high-load reliability.
     """
+
     def __init__(
         self, base_url: str = "http://localhost:11434", model: str = "llama3.2:1b"
     ):
         self.base_url = base_url
         self.model = model
         self.max_retries = 3
-        self.base_delay = 1.0 # 1 second baseline
+        self.base_delay = 1.0  # 1 second baseline
         self.stream_timeout = 180
 
     def _build_generate_prompt(self, prompt: str, system: str = None) -> str:
         return f"{system}\n\nUser: {prompt}\nAssistant:" if system else prompt
 
-    def _build_chat_messages(self, prompt: str, system: str = None) -> List[Dict[str, str]]:
+    def _build_chat_messages(
+        self, prompt: str, system: str = None
+    ) -> List[Dict[str, str]]:
         messages: List[Dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -116,7 +120,9 @@ class OllamaClient:
             return None
         return None
 
-    async def _iter_json_payloads(self, stream_content: Any) -> AsyncGenerator[Dict[str, Any], None]:
+    async def _iter_json_payloads(
+        self, stream_content: Any
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """Parse newline-delimited JSON payloads from chunked HTTP stream content."""
         buffer = b""
         async for chunk in stream_content:
@@ -143,11 +149,15 @@ class OllamaClient:
                 return await func(*args, **kwargs)
             except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as e:
                 if attempt == self.max_retries - 1:
-                    logger.error(f"❌ Ollama request failed after {self.max_retries} attempts: {e}")
+                    logger.error(
+                        f"❌ Ollama request failed after {self.max_retries} attempts: {e}"
+                    )
                     raise
 
-                delay = self.base_delay * (2 ** attempt) + random.uniform(0, 0.5)
-                logger.warning(f"⚠️ Ollama Busy/Down. Retrying in {delay:.2f}s (Attempt {attempt + 1}/{self.max_retries})")
+                delay = self.base_delay * (2**attempt) + random.uniform(0, 0.5)
+                logger.warning(
+                    f"⚠️ Ollama Busy/Down. Retrying in {delay:.2f}s (Attempt {attempt + 1}/{self.max_retries})"
+                )
                 await asyncio.sleep(delay)
         return None
 
@@ -191,7 +201,9 @@ class OllamaClient:
                                     )
                                     continue
 
-                                async for chunk in self._iter_json_payloads(response.content):
+                                async for chunk in self._iter_json_payloads(
+                                    response.content
+                                ):
                                     if chunk.get("done"):
                                         continue
                                     text = self._extract_response_text(chunk)
@@ -211,7 +223,7 @@ class OllamaClient:
                             continue
 
                 if attempt < self.max_retries - 1:
-                    delay = self.base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                    delay = self.base_delay * (2**attempt) + random.uniform(0, 0.5)
                     logger.warning(
                         "⚠️ Ollama stream generation retrying in %.2fs (Attempt %s/%s)",
                         delay,
@@ -282,7 +294,8 @@ class OllamaClient:
                         continue
 
                 raise RuntimeError(
-                    "No compatible Ollama generation endpoint found. " + " | ".join(errors)
+                    "No compatible Ollama generation endpoint found. "
+                    + " | ".join(errors)
                 )
 
         try:
@@ -295,7 +308,9 @@ class OllamaClient:
         """Check if Ollama is reachable"""
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_url}/api/tags", timeout=5) as response:
+                async with session.get(
+                    f"{self.base_url}/api/tags", timeout=5
+                ) as response:
                     return response.status == 200
         except Exception:
             return False

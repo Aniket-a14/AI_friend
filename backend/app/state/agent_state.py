@@ -30,17 +30,18 @@ class AgentState:
     Backward compatibility: 'mood' and 'energy' are kept as the canonical
     dataclass field names. New PAD vocabulary is provided via properties.
     """
+
     # PAD Affective Dimensions (Mehrabian & Russell, 1974)
-    mood: float = 0.0          # V (Valence): -1.0 to 1.0
-    energy: float = 0.5        # Ar (Arousal): 0.0 to 1.0
-    dominance: float = 0.5     # D (Dominance): 0.0 to 1.0 — NEW
+    mood: float = 0.0  # V (Valence): -1.0 to 1.0
+    energy: float = 0.5  # Ar (Arousal): 0.0 to 1.0
+    dominance: float = 0.5  # D (Dominance): 0.0 to 1.0 — NEW
 
     # Relational Dimensions
-    trust: float = 0.5         # T (Marsh, 1994): 0.0 to 1.0
-    attachment: float = 0.1    # At (Bowlby): 0.0 to 1.0
+    trust: float = 0.5  # T (Marsh, 1994): 0.0 to 1.0
+    attachment: float = 0.1  # At (Bowlby): 0.0 to 1.0
 
     # Interaction Tracking
-    interaction_count: int = 0          # For Bowlby attachment frequency
+    interaction_count: int = 0  # For Bowlby attachment frequency
     active_goals: List[str] = field(default_factory=list)
     last_update: datetime = field(default_factory=datetime.now)
     last_user_interaction: float = field(default_factory=time.time)
@@ -67,24 +68,31 @@ class AgentState:
 
 class StateService:
     """Manages Internal State continuity and Neo4j persistence."""
+
     def __init__(self, graph_store=None):
         self.graph = graph_store
         self.current_state = AgentState()
         self.last_speculative_intent = None  # Transient sensory state
 
         # --- Psychological Coefficients (§2.4) ---
-        self.alpha = getattr(Config, "PSYCH_ALPHA", 0.3)       # Valence drift rate
-        self.beta = getattr(Config, "PSYCH_BETA", 0.5)         # Arousal response rate
-        self.gamma = getattr(Config, "PSYCH_GAMMA", 0.2)       # Dominance stability
-        self.delta = getattr(Config, "PSYCH_DELTA", 0.1)       # Trust change rate (Marsh)
-        self.epsilon = getattr(Config, "PSYCH_EPSILON", 0.03)  # Attachment growth rate (Bowlby)
+        self.alpha = getattr(Config, "PSYCH_ALPHA", 0.3)  # Valence drift rate
+        self.beta = getattr(Config, "PSYCH_BETA", 0.5)  # Arousal response rate
+        self.gamma = getattr(Config, "PSYCH_GAMMA", 0.2)  # Dominance stability
+        self.delta = getattr(Config, "PSYCH_DELTA", 0.1)  # Trust change rate (Marsh)
+        self.epsilon = getattr(
+            Config, "PSYCH_EPSILON", 0.03
+        )  # Attachment growth rate (Bowlby)
         self.lambda_decay = getattr(Config, "PSYCH_LAMBDA_DECAY", 0.05)  # ALMA decay
 
         # Legacy coefficients (kept for idle evolution)
         self.trust_baseline = 0.5
         self.sensory_weight = getattr(Config, "STATE_SENSORY_WEIGHT", 0.20)
-        self.min_perception_confidence = getattr(Config, "MIN_PERCEPTION_CONFIDENCE", 0.55)
-        self.sensory_persist_interval = getattr(Config, "STATE_SENSORY_PERSIST_INTERVAL", 2.0)
+        self.min_perception_confidence = getattr(
+            Config, "MIN_PERCEPTION_CONFIDENCE", 0.55
+        )
+        self.sensory_persist_interval = getattr(
+            Config, "STATE_SENSORY_PERSIST_INTERVAL", 2.0
+        )
         self._last_sensory_persist = 0.0
         self._last_proactive_attempt = 0.0
 
@@ -95,7 +103,9 @@ class StateService:
 
         logger.info(f"[State] Hydrating {agent_name} from Neo4j...")
         query = "MATCH (a:Agent {name: $name}) RETURN a"
-        res = await self.graph.execute_query(query, {"name": agent_name}, use_cache=False)
+        res = await self.graph.execute_query(
+            query, {"name": agent_name}, use_cache=False
+        )
         if res:
             props = res[0]["a"]
             self.current_state.mood = props.get("mood", 0.0)
@@ -134,7 +144,9 @@ class StateService:
             cache_invalidation = self.graph.invalidate_cache(agent_name)
             if inspect.isawaitable(cache_invalidation):
                 await cache_invalidation
-        logger.debug(f"[State] Persisted to Neo4j: V={self.current_state.mood:.2f} Ar={self.current_state.energy:.2f} D={self.current_state.dominance:.2f}")
+        logger.debug(
+            f"[State] Persisted to Neo4j: V={self.current_state.mood:.2f} Ar={self.current_state.energy:.2f} D={self.current_state.dominance:.2f}"
+        )
 
     def record_user_interaction(self):
         """Mark that the user just interacted. Called by BrainAgent on every chat.input."""
@@ -158,28 +170,29 @@ class StateService:
 
         # PAD mood-pull (§2.3)
         self.current_state.mood = (
-            (1 - self.alpha) * self.current_state.mood
-            + self.alpha * (0.6 * G + 0.4 * RI)
-        )
+            1 - self.alpha
+        ) * self.current_state.mood + self.alpha * (0.6 * G + 0.4 * RI)
         self.current_state.energy = (
-            (1 - self.beta) * self.current_state.energy
-            + self.beta * (0.6 * N + 0.4 * R)
-        )
+            1 - self.beta
+        ) * self.current_state.energy + self.beta * (0.6 * N + 0.4 * R)
         self.current_state.dominance = (
-            (1 - self.gamma) * self.current_state.dominance
-            + self.gamma * (0.6 * A + 0.4 * NA)
-        )
+            1 - self.gamma
+        ) * self.current_state.dominance + self.gamma * (0.6 * A + 0.4 * NA)
 
         # Relational updates (§2.3)
-        self.current_state.trust = max(0.0, min(1.0,
-            self.current_state.trust + self.delta * RI
-        ))
+        self.current_state.trust = max(
+            0.0, min(1.0, self.current_state.trust + self.delta * RI)
+        )
         self.current_state.interaction_count += 1
         freq = min(1.0, self.current_state.interaction_count / 100.0)
-        self.current_state.attachment = max(0.0, min(1.0,
-            self.current_state.attachment
-            + self.epsilon * self.current_state.trust * freq
-        ))
+        self.current_state.attachment = max(
+            0.0,
+            min(
+                1.0,
+                self.current_state.attachment
+                + self.epsilon * self.current_state.trust * freq,
+            ),
+        )
 
         self.current_state.last_update = datetime.now()
         self._enforce_bounds()
@@ -187,12 +200,16 @@ class StateService:
 
         logger.debug(
             "[State] PAD update: V=%.3f Ar=%.3f D=%.3f T=%.3f At=%.3f",
-            self.current_state.mood, self.current_state.energy,
-            self.current_state.dominance, self.current_state.trust,
+            self.current_state.mood,
+            self.current_state.energy,
+            self.current_state.dominance,
+            self.current_state.trust,
             self.current_state.attachment,
         )
 
-    async def update_from_event(self, event_valence: float, user_trust_delta: float = 0.0):
+    async def update_from_event(
+        self, event_valence: float, user_trust_delta: float = 0.0
+    ):
         """
         Legacy Cognitive Update (backward-compatible).
         Wraps the new appraisal-driven update for code that still uses valence floats.
@@ -201,9 +218,13 @@ class StateService:
         self.current_state.last_user_interaction = time.time()
 
         # Apply Cognitive Weight (0.7)
-        self.current_state.mood = (self.current_state.mood * 0.3) + (event_valence * 0.7)
+        self.current_state.mood = (self.current_state.mood * 0.3) + (
+            event_valence * 0.7
+        )
 
-        self.current_state.trust = max(0.0, min(1.0, self.current_state.trust + user_trust_delta))
+        self.current_state.trust = max(
+            0.0, min(1.0, self.current_state.trust + user_trust_delta)
+        )
         self.current_state.attachment += user_trust_delta * 0.1
         self.current_state.energy -= 0.02
 
@@ -230,9 +251,9 @@ class StateService:
 
         # Confidence-scaled emotional bias
         weight = self.sensory_weight * max(0.0, min(1.0, confidence))
-        self.current_state.mood = (
-            self.current_state.mood * (1 - weight)
-        ) + (emotion_bias * weight)
+        self.current_state.mood = (self.current_state.mood * (1 - weight)) + (
+            emotion_bias * weight
+        )
 
         # Arousal modulation from acoustic events
         for event in events:
@@ -244,7 +265,9 @@ class StateService:
                 self.current_state.energy = min(1.0, self.current_state.energy + 0.2)
                 logger.info("👏 Agent sensed applause - Energy spike.")
             elif event in ["Cough", "Sneeze"]:
-                self.current_state.attachment = min(1.0, self.current_state.attachment + 0.02)
+                self.current_state.attachment = min(
+                    1.0, self.current_state.attachment + 0.02
+                )
                 logger.debug(f"🤧 Agent sensed {event} - Attachment nudged (Empathy).")
 
         self._enforce_bounds()
@@ -273,7 +296,8 @@ class StateService:
         await self.persist_state()
         logger.debug(
             "[State Heartbeat] V=%.3f Ar=%.3f D=%.3f",
-            self.current_state.mood, self.current_state.energy,
+            self.current_state.mood,
+            self.current_state.energy,
             self.current_state.dominance,
         )
 
@@ -308,13 +332,16 @@ class StateService:
         if self.current_state.energy < min_energy:
             logger.debug(
                 "[State] Proactive SKIPPED: energy %.2f < min %.2f",
-                self.current_state.energy, min_energy,
+                self.current_state.energy,
+                min_energy,
             )
             return False
 
         logger.info(
             "[State] Proactive ELIGIBLE: idle=%.0fs threshold=%.0fs energy=%.2f",
-            idle_duration, threshold, self.current_state.energy,
+            idle_duration,
+            threshold,
+            self.current_state.energy,
         )
         return True
 
@@ -327,7 +354,9 @@ class StateService:
         self.current_state.energy = max(0.0, min(1.0, self.current_state.energy))
         self.current_state.dominance = max(0.0, min(1.0, self.current_state.dominance))
         self.current_state.trust = max(0.0, min(1.0, self.current_state.trust))
-        self.current_state.attachment = max(0.0, min(1.0, self.current_state.attachment))
+        self.current_state.attachment = max(
+            0.0, min(1.0, self.current_state.attachment)
+        )
 
     def get_context_snapshot(self) -> Dict[str, Any]:
         return {

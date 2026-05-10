@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
+load_dotenv(
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+)
+
 
 async def reset_db():
     db_url = os.getenv("DATABASE_URL")
@@ -24,6 +27,7 @@ async def reset_db():
     except Exception as e:
         print(f"❌ Reset failed: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     asyncio.run(reset_db())

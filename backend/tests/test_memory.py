@@ -27,8 +27,15 @@ def memory_store(mock_pool):
     return MemoryStore(pool)
 
 
-def _make_row(content, similarity, hours_ago=0, recall_count=1, valence=0.0,
-              importance=0.5, emotion=0.0):
+def _make_row(
+    content,
+    similarity,
+    hours_ago=0,
+    recall_count=1,
+    valence=0.0,
+    importance=0.5,
+    emotion=0.0,
+):
     """Helper to build a mock DB row with all ACT-R fields."""
     now = datetime.now(timezone.utc)
     return {
@@ -50,7 +57,7 @@ def test_calculate_utility_no_emotion(memory_store, mock_pool):
     rows = [_make_row("Old memory", similarity=1.0, hours_ago=10, recall_count=3)]
     conn.fetch.return_value = rows
 
-    with patch.object(memory_store, 'get_embedding', return_value=[0.1]*768):
+    with patch.object(memory_store, "get_embedding", return_value=[0.1] * 768):
         results = asyncio.run(memory_store.search_memories("test query", threshold=0.1))
         assert len(results) == 1
         assert results[0]["content"] == "Old memory"
@@ -66,11 +73,13 @@ def test_emotional_boost(memory_store, mock_pool):
     ]
     conn.fetch.return_value = rows
 
-    with patch.object(memory_store, 'get_embedding', return_value=[0.1]*768):
+    with patch.object(memory_store, "get_embedding", return_value=[0.1] * 768):
         # With current_valence=0.5, emotional memory should align better
-        results = asyncio.run(memory_store.search_memories(
-            "test query", threshold=0.1, limit=1, current_valence=0.5
-        ))
+        results = asyncio.run(
+            memory_store.search_memories(
+                "test query", threshold=0.1, limit=1, current_valence=0.5
+            )
+        )
         assert results[0]["content"] == "Emotional Memory"
 
 
@@ -83,8 +92,10 @@ def test_time_decay_ranking(memory_store, mock_pool):
     ]
     conn.fetch.return_value = rows
 
-    with patch.object(memory_store, 'get_embedding', return_value=[0.1]*768):
-        results = asyncio.run(memory_store.search_memories("test query", threshold=-5.0, limit=1))
+    with patch.object(memory_store, "get_embedding", return_value=[0.1] * 768):
+        results = asyncio.run(
+            memory_store.search_memories("test query", threshold=-5.0, limit=1)
+        )
         # Recent memory has higher base-level activation despite lower similarity
         assert results[0]["content"] == "Recent memory"
 
@@ -98,7 +109,9 @@ def test_recall_frequency_boost(memory_store, mock_pool):
     ]
     conn.fetch.return_value = rows
 
-    with patch.object(memory_store, 'get_embedding', return_value=[0.1]*768):
-        results = asyncio.run(memory_store.search_memories("test query", threshold=-5.0, limit=1))
+    with patch.object(memory_store, "get_embedding", return_value=[0.1] * 768):
+        results = asyncio.run(
+            memory_store.search_memories("test query", threshold=-5.0, limit=1)
+        )
         # ln(50) >> ln(1), so frequent recall should win despite lower similarity
         assert results[0]["content"] == "Frequently recalled"

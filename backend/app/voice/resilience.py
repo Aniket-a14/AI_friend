@@ -47,7 +47,9 @@ async def run_resilience_loop(agent):
 
             if pcm_filler:
                 await agent.publish("audio.stream", pcm_filler)
-                logger.info("Resilience: Synthesis delay detected. Sent random social filler.")
+                logger.info(
+                    "Resilience: Synthesis delay detected. Sent random social filler."
+                )
                 agent.last_audio_time = now
                 agent.last_filler_emit_time = now
             elif np is not None:
@@ -62,11 +64,14 @@ async def run_resilience_loop(agent):
 
         # Segmentation Feedback Publisher
         if agent.override_count > 5:
-            await agent.publish("voice.segmentation_feedback", {
-                "agent": agent.name,
-                "override_rate": agent.override_count,
-                "target_chunk_size": 8,
-            })
+            await agent.publish(
+                "voice.segmentation_feedback",
+                {
+                    "agent": agent.name,
+                    "override_rate": agent.override_count,
+                    "target_chunk_size": 8,
+                },
+            )
             agent.override_count = 0
 
 

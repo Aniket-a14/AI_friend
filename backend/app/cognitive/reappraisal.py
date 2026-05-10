@@ -40,11 +40,11 @@ class ReappraisalEngine:
         # Adaptive appraisal weights (tuned over time by this engine)
         # These feed back into the StateService's mood-pull coefficients
         self.appraisal_weights: Dict[str, float] = {
-            "w1_g_to_v": 0.6,   # G → Valence weight
+            "w1_g_to_v": 0.6,  # G → Valence weight
             "w2_ri_to_v": 0.4,  # RI → Valence weight
             "w3_n_to_ar": 0.6,  # N → Arousal weight
             "w4_r_to_ar": 0.4,  # R → Arousal weight
-            "w5_a_to_d": 0.6,   # A → Dominance weight
+            "w5_a_to_d": 0.6,  # A → Dominance weight
             "w6_na_to_d": 0.4,  # NA → Dominance weight
         }
 
@@ -78,10 +78,10 @@ class ReappraisalEngine:
 
         # Goal → expected valence shift
         goal_expectations = {
-            "COMFORT": 0.3,   # We expect the user to feel better
-            "ENGAGE": 0.1,    # Neutral positive
-            "INFORM": 0.05,   # Slight positive from helpfulness
-            "TEASE": 0.15,    # Fun should improve mood
+            "COMFORT": 0.3,  # We expect the user to feel better
+            "ENGAGE": 0.1,  # Neutral positive
+            "INFORM": 0.05,  # Slight positive from helpfulness
+            "TEASE": 0.15,  # Fun should improve mood
             "PROTECT": -0.1,  # Boundary enforcement may cause friction
         }
         self._expected_valence = goal_expectations.get(goal, 0.1)
@@ -114,9 +114,7 @@ class ReappraisalEngine:
 
         # §8.1: Multi-signal outcome computation
         actual_outcome = (
-            0.5 * actual_text_valence
-            + 0.3 * acoustic_delta
-            + 0.2 * behavioral_signal
+            0.5 * actual_text_valence + 0.3 * acoustic_delta + 0.2 * behavioral_signal
         )
 
         # Prediction error
@@ -124,7 +122,9 @@ class ReappraisalEngine:
 
         # §8.2: Only adapt on significant mismatches
         if abs(delta) < 0.1:
-            logger.debug("[Reappraisal] Δ=%.3f — within tolerance, no adaptation.", delta)
+            logger.debug(
+                "[Reappraisal] Δ=%.3f — within tolerance, no adaptation.", delta
+            )
             self._reset_turn_state()
             return
 
@@ -142,7 +142,8 @@ class ReappraisalEngine:
 
         logger.info(
             "[Reappraisal] Δ=%.3f η_eff=%.4f → w1=%.3f w2=%.3f",
-            delta, effective_lr,
+            delta,
+            effective_lr,
             self.appraisal_weights["w1_g_to_v"],
             self.appraisal_weights["w2_ri_to_v"],
         )

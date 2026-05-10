@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class CognitiveEvent:
     event_id: str
@@ -12,12 +13,14 @@ class CognitiveEvent:
     metadata: Dict[str, Any]
     intent: Optional[str] = None  # e.g., "CHAT", "REFLECT", "REMEMBER"
 
+
 class PerceptionService:
     """
     The Perception Layer.
     Converts raw I/O events (like a NATS message) into structured CognitiveEvents.
     Responsible for early filtering, intent classification, and formatting.
     """
+
     def __init__(self, llm_service=None):
         """
         Dependency injection for any models we might need for early perception
@@ -36,7 +39,7 @@ class PerceptionService:
         metadata = raw_event.get("metadata", {})
 
         # 2. Extract Intent
-        intent = "CHAT" # Default fallback
+        intent = "CHAT"  # Default fallback
 
         if event_type == "SYSTEM_TICK":
             intent = "REFLECT"  # Idle reflection trigger
@@ -57,5 +60,5 @@ class PerceptionService:
             event_type=event_type,
             raw_content=content,
             metadata=metadata,
-            intent=intent
+            intent=intent,
         )

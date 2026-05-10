@@ -249,11 +249,13 @@ class ConversationHistoryStore:
                             "date": row["started_at"].strftime("%Y-%m-%d"),
                             "interaction": [],
                         }
-                    gists_by_session[sid]["interaction"].append({
-                        "role": row["role"],
-                        "content": row["content"],
-                        "timestamp": row["timestamp"],
-                    })
+                    gists_by_session[sid]["interaction"].append(
+                        {
+                            "role": row["role"],
+                            "content": row["content"],
+                            "timestamp": row["timestamp"],
+                        }
+                    )
 
                 return list(gists_by_session.values())
         except Exception as e:
