@@ -4,7 +4,7 @@
 >
 > **Method**: Each section maps feedback → current code → gap → recommended change.
 >
-> **Related**: See [psycological_layer.md](./psycological_layer.md) for the target equation sheet.
+> **Related**: See [psychological_layer.md](./psychological_layer.md) for the target equation sheet.
 
 ## 2026-04-20 Runtime Hardening Update (Status Note)
 
