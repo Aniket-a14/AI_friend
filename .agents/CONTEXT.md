@@ -823,3 +823,18 @@ Verification:
 - The full backend test suite passes (66/66) after significant updates to state and memory testing.
 - `init_db.py` was executed in the Docker mesh to apply the schema migration (`recall_count`, `valence`).
 
+
+## 2026-05-10 LAN / PCM Contract Hardening
+
+Applied the maintainer decisions from the debt audit follow-up:
+
+- The signaling API is LAN-only by default. `LAN_ONLY=true` accepts loopback, localhost, private IPv4, and link-local clients, while CORS defaults to a private-origin regex instead of wildcard credentials.
+- `audio.inbound` is now PCM-only. STT rejects JSON/base64 payloads and downmixes multichannel PCM before queueing Whisper/SenseVoice work.
+- `SurfacingAgent` listens to the canonical `state.update` subject for PAD valence instead of the stale `agent.state` subject.
+- `db/schema.sql` and `scripts/init_db.py` now agree on runtime columns (`valence`, `recall_count`, ACT-R fields) and `init_db.py` no longer drops local memory tables unless `ALLOW_DESTRUCTIVE_DB_RESET=true`.
+- Voice synthesis now parses `<pause=Nms>` and `<hesitate>` before TTS so timing tags are not spoken, streams clean text segments, and flushes residual phrase buffers on final `chat.output`.
+- Frontend LiveKit audio tracks are attached to hidden audio elements and removed on unsubscribe/unmount; webcam preview tracks are stopped on unmount.
+
+Verification:
+
+- `backend/tests/test_regressions.py` passes locally.

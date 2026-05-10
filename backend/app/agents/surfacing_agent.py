@@ -68,9 +68,9 @@ class SurfacingAgent(BaseAgent):
         )
         # Subscribe to state broadcasts to track current valence for mood-congruent recall
         await self.subscribe(
-            "agent.state",
+            "state.update",
             self._on_agent_state,
-            durable=f"{self.name}_agent_state_live",
+            durable=f"{self.name}_state_update_live",
             deliver_policy="new",
         )
         logger.info(f"🧠 {self.name} Online | Dual-Channel Memory Surfacing Active.")

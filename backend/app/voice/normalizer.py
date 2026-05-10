@@ -1,5 +1,12 @@
-import numpy as np
+import math
+from array import array
+
 from ..config import Config
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 class AudioNormalizer:
     """
@@ -16,6 +23,33 @@ class AudioNormalizer:
         """Apply adaptive normalization and return processed PCM."""
         if not audio_data:
             return b""
+
+        if np is None:
+            samples = array("h")
+            samples.frombytes(audio_data[: len(audio_data) - (len(audio_data) % 2)])
+            if not samples:
+                return b""
+
+            peak = max(abs(sample) for sample in samples)
+            if peak > 0:
+                scale = self.target_peak * 32767 / peak
+                samples = array(
+                    "h",
+                    (
+                        max(-32768, min(32767, int(sample * scale)))
+                        for sample in samples
+                    ),
+                )
+
+            current_rms = math.sqrt(
+                sum(sample * sample for sample in samples) / len(samples)
+            )
+            tail_len = int(0.1 * self.sample_rate)
+            tail_samples = samples[-tail_len:] if len(samples) > tail_len else samples
+            self.last_tail_rms = math.sqrt(
+                sum(sample * sample for sample in tail_samples) / len(tail_samples)
+            ) if tail_samples else current_rms
+            return samples.tobytes()
 
         samples = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
 

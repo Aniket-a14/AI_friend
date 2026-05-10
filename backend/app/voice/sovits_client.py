@@ -83,6 +83,10 @@ class SoVITSClient:
         text_lang: str = "en",
         ref_lang: str = "en",
         media_type: str = "raw",
+        language: Optional[str] = None,
+        speed: Optional[float] = None,
+        pitch: Optional[float] = None,
+        volume: Optional[float] = None,
     ) -> AsyncGenerator[bytes, None]:
         """
         Stream synthesized audio in raw PCM chunks (CVS-1.0 Optimal Path)
@@ -90,15 +94,21 @@ class SoVITSClient:
         try:
             payload = {
                 "text": text,
-                "text_lang": text_lang,
+                "text_lang": language or text_lang,
                 "ref_audio_path": ref_audio_path,
                 "prompt_text": ref_text,
-                "prompt_lang": ref_lang,
+                "prompt_lang": language or ref_lang,
                 "text_split_method": "cut5",
                 "batch_size": 1,
                 "media_type": media_type,
                 "streaming_mode": 1, # mode 1 or True depending on version
             }
+            if speed is not None:
+                payload["speed_factor"] = speed
+            if pitch is not None:
+                payload["pitch"] = pitch
+            if volume is not None:
+                payload["volume"] = volume
 
             session = await self._get_session()
             async with session.post(self.api_url, json=payload, timeout=60) as response:

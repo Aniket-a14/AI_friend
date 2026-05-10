@@ -83,7 +83,7 @@ The "Sovereign Mesh" communicates via a decentralized event bus. CVS-1.0 utilize
 
 | Subject | Source | Sink | Payload Schema |
 | :--- | :--- | :--- | :--- |
-| `audio.inbound` | Signaling | STT Agent | `{"audio": "base64", "sample_rate": 16000}` |
+| `audio.inbound` | Transport Agent | STT Agent | Raw PCM bytes with metadata headers: `sample_rate`, `channels` |
 | `chat.input` | STT Agent | Brain Agent | `{"text": "string", "metadata": {}}` |
 | `chat.output` | Brain Agent | Voice Agent | `{"content": "string", "done": bool, "emotion": str, "emotional_intensity": float, "speaking_rate": float}` |
 | `audio.perception` | STT Agent | Brain Agent | `{"text": "string", "metadata": {...}, "speculative_intent": {...}}` |
@@ -204,6 +204,20 @@ If Whisper contradicts the early perception hypothesis, BrainAgent publishes:
 }
 ```
 
+#### `audio.inbound` (CVS-1.0 Raw PCM)
+
+Sent by the transport layer to STT as raw signed 16-bit PCM bytes. JSON/base64 audio payloads are rejected on this subject.
+
+NATS metadata:
+
+```json
+{
+  "sample_rate": 48000,
+  "channels": 1,
+  "source": "livekit"
+}
+```
+
 #### `audio.stream` (CVS-1.0 Raw 32kHz PCM)
 
 Sent by the VoiceAgent directly from the Signal Runtime. In the optimized path this is raw binary PCM, not JSON.
@@ -214,20 +228,6 @@ NATS headers:
 {
   "X-Payload-Format": "binary/raw-pcm",
   "X-Latency-Meta": "{\"start_time\":1713330000.0,\"hops\":[...]}"
-}
-```
-
-Legacy JSON clients may still use:
-
-```json
-{
-  "audio": "UklGR...",
-  "format": "raw",
-  "sample_rate": 32000,
-  "bit_depth": 16,
-  "channels": 1,
-  "done": false,
-  "latency_metadata": {...}
 }
 ```
 

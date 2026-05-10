@@ -33,8 +33,8 @@ class TripleExtractor:
             # For now, we'll use a fallback or the provided LLM service
             if self.llm_service:
                 response = await self.llm_service.generate_response_stream(prompt)
-                # Note: This is simplified. In a real scenario, we'd use a non-streaming
-                # call or collect the stream.
+                if hasattr(response, "__aiter__"):
+                    response = "".join([chunk async for chunk in response])
                 triples = self._parse_json_from_text(response)
             else:
                 # Mock extraction for bootstrap
@@ -45,8 +45,18 @@ class TripleExtractor:
                         triples.append([user_id, "LIVES_IN", match.group(1)])
 
             if triples and self.graph_db:
-                for sub, rel, obj in triples:
-                    await self.graph_db.create_relationship(sub, rel, obj)
+                for triple in triples:
+                    if len(triple) != 3:
+                        continue
+                    sub, rel, obj = triple
+                    await self.graph_db.create_relationship(
+                        sub,
+                        "Person" if sub == user_id else "Entity",
+                        rel,
+                        obj,
+                        "Entity",
+                        {"source": "triple_extractor"},
+                    )
 
             return triples
         except Exception as e:

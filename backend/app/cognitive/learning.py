@@ -6,6 +6,7 @@ import time
 from typing import List, Dict, Any
 from .identity import IdentityManager
 from ..config import Config
+from ..state.graph_db import GraphDB
 
 logger = logging.getLogger("reflection")
 
@@ -119,12 +120,18 @@ class ReflectionService:
                     object_val = f.get("object")
                     relation = f.get("relation")
 
-                    if not subject or not object_val:
+                    if not subject or not object_val or not relation:
+                        continue
+                    try:
+                        rel_type = GraphDB._safe_relation(relation)
+                        subject_label = GraphDB._safe_label(f.get("type", "Entity"))
+                    except ValueError:
+                        logger.warning("Skipping unsafe graph fact from reflection: %r", f)
                         continue
 
                     # Search if this relationship already exists with high weight
                     query = f"""
-                    MATCH (s)-[r:{relation.upper().replace(' ', '_')}]->(t)
+                    MATCH (s)-[r:{rel_type}]->(t)
                     WHERE s.name = $s_name AND t.name = $t_name
                     RETURN r
                     """
@@ -137,7 +144,7 @@ class ReflectionService:
 
                     # Actual Storage
                     await self.graph.create_relationship(
-                        subject, f.get("type", "Entity"), f["relation"], object_val, "Entity",
+                        subject, subject_label, rel_type, object_val, "Entity",
                         properties={"confidence": confidence, "extracted_at": str(asyncio.get_event_loop().time())}
                     )
             except Exception as e:

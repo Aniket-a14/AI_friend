@@ -11,6 +11,7 @@ APScheduler==3.11.2
 nats-py>=2.7.0
 neo4j>=5.0.0
 requests
+httpx
 soxr
 livekit-api
 livekit

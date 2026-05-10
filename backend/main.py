@@ -1,13 +1,14 @@
 import logging
 import json
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from livekit import api
 import nats
 
 from app.config import Config
+from app.network import is_lan_client_allowed
 from scripts.provision_models import ensure_models_provisioned
 
 # Configure logging
@@ -84,6 +85,16 @@ class AIBackend:
 backend = AIBackend()
 
 
+async def require_lan_client(request: Request):
+    if not Config.LAN_ONLY:
+        return
+
+    forwarded_for = request.headers.get("x-forwarded-for")
+    host = forwarded_for or (request.client.host if request.client else None)
+    if not is_lan_client_allowed(host):
+        raise HTTPException(status_code=403, detail="LAN clients only")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -97,12 +108,14 @@ app = FastAPI(
     title="AI Friend Sovereign Mesh",
     description="Signaling and Control Hub for the Agentic Voice Mesh",
     lifespan=lifespan,
+    dependencies=[Depends(require_lan_client)],
 )
 
 # CORS Middleware (Sovereign Local Access)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[] if Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"] else Config.ALLOWED_ORIGINS,
+    allow_origin_regex=Config.LAN_CORS_ORIGIN_REGEX if Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"] else None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

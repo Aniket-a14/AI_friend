@@ -11,6 +11,7 @@ export function useWebRTCVoice() {
 
     const roomRef = useRef(null);
     const audioTrackRef = useRef(null);
+    const remoteAudioElementsRef = useRef(new Set());
 
     const startRecording = useCallback(async () => {
         setInteractionState('listening');
@@ -58,12 +59,21 @@ export function useWebRTCVoice() {
                     .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
                         if (mounted && track.kind === 'audio') {
                             console.log('Subscribed to audio track', track.sid);
-                            track.attach(); // Automatically play
+                            const element = track.attach();
+                            element.autoplay = true;
+                            element.playsInline = true;
+                            element.dataset.livekitRemoteAudio = 'true';
+                            element.style.display = 'none';
+                            document.body.appendChild(element);
+                            remoteAudioElementsRef.current.add(element);
                             setInteractionState('speaking');
                         }
                     })
                     .on(RoomEvent.TrackUnsubscribed, (track) => {
-                        track.detach();
+                        track.detach().forEach((element) => {
+                            remoteAudioElementsRef.current.delete(element);
+                            element.remove();
+                        });
                     });
 
                 await room.connect(url || LIVEKIT_URL, token);
@@ -76,6 +86,7 @@ export function useWebRTCVoice() {
                             noiseSuppression: true,
                         });
                         await room.localParticipant.publishTrack(localTrack);
+                        audioTrackRef.current = localTrack;
                         console.log('Published local audio track');
                     } catch (micErr) {
                         console.warn('Microphone permission denied or error:', micErr);
@@ -97,6 +108,12 @@ export function useWebRTCVoice() {
             if (roomRef.current) {
                 roomRef.current.disconnect();
             }
+            if (audioTrackRef.current) {
+                audioTrackRef.current.stop();
+                audioTrackRef.current = null;
+            }
+            remoteAudioElementsRef.current.forEach((element) => element.remove());
+            remoteAudioElementsRef.current.clear();
         };
     }, []); // Empty dependency array ensures this runs only once on mount
 
