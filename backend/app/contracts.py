@@ -21,6 +21,25 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
+from enum import Enum
+
+class Topics(str, Enum):
+    CHAT_INPUT = "chat.input"
+    CHAT_OUTPUT = "chat.output"
+    VISION_CONTROL = "vision.control"
+    VISION_FRAMES = "vision.frames"
+    AUDIO_PERCEPTION = "audio.perception"
+    AUDIO_STOP = "audio.stop"
+    AUDIO_RESUME = "audio.resume"
+    AUDIO_INBOUND = "audio.inbound"
+    AUDIO_STREAM = "audio.stream"
+    VOICE_WARM = "voice.warm"
+    VOICE_SEGMENTATION_FEEDBACK = "voice.segmentation_feedback"
+    SYSTEM_TICK = "system.tick"
+    MEMORY_SURFACED = "memory.surfaced"
+    STATE_UPDATE = "state.update"
+
+
 # ─── chat.input ──────────────────────────────────────────────
 class ChatInputMetadata(BaseModel):
     source: str = "whisper"
