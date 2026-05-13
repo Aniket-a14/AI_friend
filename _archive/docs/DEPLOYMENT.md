@@ -566,8 +566,3 @@ engine = create_engine(
 
 **Symptom**: Voice response feels staggered or robotic.
 **Solution**: Check for clock drift in logs (`NATS Sync`). Ensure Signaling and VoiceAgent are in the same cloud region.
-
----
-
-**For internal architecture details, see [ARCHITECTURE.md](./ARCHITECTURE.md)**  
-**For cloning procedures, see [VOICE_CLONING.md](./VOICE_CLONING.md)**

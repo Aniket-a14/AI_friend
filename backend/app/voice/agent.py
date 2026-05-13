@@ -11,6 +11,7 @@ try:
 except ImportError:
     np = None
 
+from pydantic import ValidationError
 from ..agents.base import BaseAgent
 from ..config import Config
 from .sovits_client import SoVITSClient
@@ -207,8 +208,11 @@ class VoiceAgent(BaseAgent):
             is_speculative = msg.speculative
             turn_id = msg.turn_id
             utterance_id = msg.utterance_id
-        except Exception as e:
+        except ValidationError as e:
             logger.warning(f"Dropping invalid audio.stop message: {e}")
+            return
+        except Exception as e:
+            logger.error(f"Unexpected error processing audio.stop: {e}", exc_info=True)
             return
 
         if is_speculative:
@@ -230,8 +234,11 @@ class VoiceAgent(BaseAgent):
         try:
             msg = AudioResume.model_validate(data)
             utterance_id = msg.utterance_id
-        except Exception as e:
+        except ValidationError as e:
             logger.warning(f"Dropping invalid audio.resume message: {e}")
+            return
+        except Exception as e:
+            logger.error(f"Unexpected error processing audio.resume: {e}", exc_info=True)
             return
 
         if (

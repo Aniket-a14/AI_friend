@@ -90,6 +90,7 @@ class AppSettings(BaseSettings):
     CUSTOM_SOVITS_PATH: str = "SoVITS_weights/ai_friend_voice.pth"
     VOICE_WEIGHT_LOAD_RETRIES: int = 3
     VOICE_FILLER_HYDRATE_ON_STARTUP: bool = True
+    VOICE_TTS_MOCK: bool = False
 
     STT_MODEL_SIZE: str = "small"
     STT_DEVICE: str = "cpu"

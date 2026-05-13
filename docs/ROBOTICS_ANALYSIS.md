@@ -133,7 +133,7 @@ As of mid-2026, the cutting edge of AI has shifted significantly. Here is how CV
 
 ---
 
-## 10. The Tiers of Conversational AI
+## 10. Tiers of Conversational AI
 
 To reach "Total Human" capability, the software must ascend a specific hierarchy of tiers.
 
