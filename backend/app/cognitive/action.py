@@ -107,14 +107,36 @@ class ActionService:
             Assistant: """.strip()
 
             try:
-                # 2. Stream Generation
+                # 2. Endocrine System: Calculate physiological LLM parameters
+                # Cortisol (stress) → inversely controls temperature
+                # Dopamine (reward) → controls top_p exploration
+                endocrine_options = None
+                cortisol = plan.payload.get("cortisol")
+                dopamine = plan.payload.get("dopamine")
+                if cortisol is not None and dopamine is not None:
+                    # High cortisol → low temp (rigid/defensive): range 0.3 to 0.9
+                    endo_temperature = round(0.9 - (cortisol * 0.6), 3)
+                    # High dopamine → high top_p (exploratory): range 0.70 to 0.95
+                    endo_top_p = round(0.70 + (dopamine * 0.25), 3)
+                    endocrine_options = {
+                        "temperature": endo_temperature,
+                        "top_p": endo_top_p,
+                    }
+                    logger.info(
+                        "[Endocrine] Cortisol=%.2f Dopamine=%.2f → temp=%.3f top_p=%.3f",
+                        cortisol, dopamine, endo_temperature, endo_top_p,
+                    )
+
+                # 3. Stream Generation
                 sanitizer = ControlMarkupSanitizer()
                 stream_budget = max(
                     15, int(getattr(Config, "LLM_STREAM_MAX_SECONDS", 120))
                 )
                 try:
                     stream_iter = self.llm.generate_stream(
-                        full_prompt, model=model
+                        full_prompt,
+                        model=model,
+                        options_override=endocrine_options,
                     ).__aiter__()
                     deadline = time.monotonic() + stream_budget
 

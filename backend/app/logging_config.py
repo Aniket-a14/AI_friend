@@ -1,10 +1,13 @@
 import logging
 import sys
-from pythonjsonlogger import jsonlogger
+try:
+    from pythonjsonlogger.json import JsonFormatter as _JsonFormatter
+except ImportError:
+    from pythonjsonlogger.jsonlogger import JsonFormatter as _JsonFormatter
 from datetime import datetime
 
 
-class CustomJsonFormatter(jsonlogger.JsonFormatter):
+class CustomJsonFormatter(_JsonFormatter):
     def add_fields(self, log_record, record, message_dict):
         super(CustomJsonFormatter, self).add_fields(log_record, record, message_dict)
         if not log_record.get("timestamp"):

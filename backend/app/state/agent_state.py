@@ -65,6 +65,27 @@ class AgentState:
     def arousal(self, value: float):
         self.energy = value
 
+    # --- Endocrine Hormonal Properties (Tier-5 Physiological Control) ---
+    @property
+    def cortisol(self) -> float:
+        """
+        Stress hormone. Inversely tracks valence.
+        High cortisol → rigid/defensive behavior (low LLM temperature).
+        Low cortisol → relaxed/creative behavior (higher temperature).
+        Range: 0.0 (fully relaxed) to 1.0 (maximum stress).
+        """
+        return max(0.0, min(1.0, 0.5 - (self.valence / 2.0)))
+
+    @property
+    def dopamine(self) -> float:
+        """
+        Reward hormone. Tracks positive valence × arousal.
+        High dopamine → exploratory/playful behavior (higher top_p).
+        Low dopamine → conservative/flat behavior (lower top_p).
+        Range: 0.0 (no reward signal) to 1.0 (peak reward).
+        """
+        return max(0.0, min(1.0, max(0.0, self.valence) * self.arousal))
+
 
 class StateService:
     """Manages Internal State continuity and Neo4j persistence."""
@@ -371,6 +392,9 @@ class StateService:
             # PAD aliases for new consumers
             "valence": self.current_state.mood,
             "arousal": self.current_state.energy,
+            # Endocrine hormones (Tier-5)
+            "cortisol": self.current_state.cortisol,
+            "dopamine": self.current_state.dopamine,
         }
 
     def get_behavioral_directive(self) -> str:
