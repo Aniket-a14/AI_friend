@@ -56,8 +56,9 @@ jobs:
 
       - name: Lowercase repo owner
         id: repo
+        shell: bash
         run: |
-          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
+          echo "owner=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Extract Metadata
         id: meta
@@ -68,6 +69,7 @@ jobs:
             type=ref,event=tag
             type=sha,format=long
             type=raw,value=latest
+            type=ref,event=branch
 
       - name: Build and Push
         uses: docker/build-push-action@v6
@@ -99,8 +101,9 @@ jobs:
 
       - name: Lowercase repo owner
         id: repo
+        shell: bash
         run: |
-          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
+          echo "owner=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Extract Metadata
         id: meta
@@ -111,6 +114,7 @@ jobs:
             type=ref,event=tag
             type=sha,format=long
             type=raw,value=latest
+            type=ref,event=branch
 
       - name: Build and Push Advanced Image (Full)
         uses: docker/build-push-action@v6
