@@ -10,7 +10,7 @@ def get_stats():
                     with open(path, "r", encoding="utf-8") as f:
                         lines = len(f.readlines())
                         file_stats.append((lines, path))
-                except:
+                except Exception:
                     pass
     file_stats.sort(reverse=True)
     print("Top Largest Files:")
