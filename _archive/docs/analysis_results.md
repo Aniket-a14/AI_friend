@@ -4,7 +4,7 @@
 >
 > **Method**: Each section maps feedback → current code → gap → recommended change.
 >
-> **Related**: See [psychological_layer.md](./psychological_layer.md) for the target equation sheet.
+> **Related**: See [./psychological_layer.md](./psychological_layer.md) for the target equation sheet.
 
 ## 2026-04-20 Runtime Hardening Update (Status Note)
 
@@ -47,10 +47,10 @@ Current interpretation of the four feedback themes is unchanged:
 
 | File | What it does | Gap |
 |------|-------------|-----|
-| [`state/agent_state.py`](../backend/app/state/agent_state.py) — `apply_sensory_perception()` | Takes `emotional_bias` float from SenseVoice, confidence-scales it, and **overwrites** mood with a weighted blend. Acoustic events (laughter, applause) directly nudge energy/trust with hardcoded deltas. | 🔴 **No appraisal.** This is exactly the "acoustic → mood formula" the feedback says to replace. There is no evaluation of *what the event means for goals or identity*. |
-| [`state/agent_state.py`](../backend/app/state/agent_state.py) — `update_from_event()` | Takes a raw `event_valence` float and applies it with 0.7 weight, instantly overwriting 70% of the previous mood. | 🔴 **No appraisal.** Cognitive events also skip evaluation — the LLM sentiment number goes straight into state. |
-| [`cognitive/core.py`](../backend/app/cognitive/core.py) — `process_event()` steps 2-3 | Perception extracts intent (CHAT/REMEMBER/REFLECT), then Decision picks a goal (COMFORT/INFORM/ENGAGE/TEASE/PROTECT). The goal is chosen *without consulting emotional state or identity values*. | 🟡 The BDI structure and goal vocabulary exist, but there is no appraisal step between perception and decision that evaluates the event against goals/values/relationship before updating mood. |
-| [`cognitive/perception.py`](../backend/app/cognitive/perception.py) — `perceive()` | Keyword-based intent routing (`"remember" in content.lower()`). No emotional or situational evaluation. | 🔴 Perception is purely syntactic — it has no notion of relevance, novelty, or goal-congruence. |
+| [`state/agent_state.py`](../../backend/app/state/agent_state.py) — `apply_sensory_perception()` | Takes `emotional_bias` float from SenseVoice, confidence-scales it, and **overwrites** mood with a weighted blend. Acoustic events (laughter, applause) directly nudge energy/trust with hardcoded deltas. | 🔴 **No appraisal.** This is exactly the "acoustic → mood formula" the feedback says to replace. There is no evaluation of *what the event means for goals or identity*. |
+| [`state/agent_state.py`](../../backend/app/state/agent_state.py) — `update_from_event()` | Takes a raw `event_valence` float and applies it with 0.7 weight, instantly overwriting 70% of the previous mood. | 🔴 **No appraisal.** Cognitive events also skip evaluation — the LLM sentiment number goes straight into state. |
+| [`cognitive/core.py`](../../backend/app/cognitive/core.py) — `process_event()` steps 2-3 | Perception extracts intent (CHAT/REMEMBER/REFLECT), then Decision picks a goal (COMFORT/INFORM/ENGAGE/TEASE/PROTECT). The goal is chosen *without consulting emotional state or identity values*. | 🟡 The BDI structure and goal vocabulary exist, but there is no appraisal step between perception and decision that evaluates the event against goals/values/relationship before updating mood. |
+| [`cognitive/perception.py`](../../backend/app/cognitive/perception.py) — `perceive()` | Keyword-based intent routing (`"remember" in content.lower()`). No emotional or situational evaluation. | 🔴 Perception is purely syntactic — it has no notion of relevance, novelty, or goal-congruence. |
 
 ### What's missing
 
@@ -80,11 +80,11 @@ Current interpretation of the four feedback themes is unchanged:
 
 | File | What it does | Gap |
 |------|-------------|-----|
-| [`state/agent_state.py`](../backend/app/state/agent_state.py) — `AgentState` dataclass | Stores `mood` (valence), `energy` (arousal), `trust`, `attachment`. | 🟡 **Partial.** The field names map reasonably to valence/arousal, but `dominance` is missing entirely. The naming is imprecise — `mood` conflates valence with emotion label. |
-| [`state/agent_state.py`](../backend/app/state/agent_state.py) — `get_emotion_label()` | Collapses the entire state vector into one of four strings: `happy`, `sad`, `excited`, `neutral`. | 🔴 **This is the exact anti-pattern the feedback targets.** The rich state is thrown away when it reaches the LLM via `get_context_snapshot()`, which includes the label. |
-| [`state/agent_state.py`](../backend/app/state/agent_state.py) — `get_behavioral_directive()` | Threshold-based string generation. Three mood buckets, two energy buckets, two trust buckets → concatenated prose. | 🟡 Better than the label, but still coarse. No dominance axis. No continuous mapping to prosody. |
-| [`voice/agent.py`](../backend/app/voice/agent.py) — `_handle_input()` | Receives `emotional_intensity` and `speaking_rate` from `chat.output` but **never reads the actual state vector**. These are whatever the Brain sends — not derived from the cognitive state. | 🔴 Voice layer is decoupled from the state vector. It cannot render dimensional emotion as prosody. |
-| [`cognitive/action.py`](../backend/app/cognitive/action.py) — prompt construction | Passes `emotion` (the label string) into the LLM prompt. The full vector (mood, energy, trust, attachment) is not exposed. | 🔴 The LLM only sees "neutral" or "happy" — not the continuous state. |
+| [`state/agent_state.py`](../../backend/app/state/agent_state.py) — `AgentState` dataclass | Stores `mood` (valence), `energy` (arousal), `trust`, `attachment`. | 🟡 **Partial.** The field names map reasonably to valence/arousal, but `dominance` is missing entirely. The naming is imprecise — `mood` conflates valence with emotion label. |
+| [`state/agent_state.py`](../../backend/app/state/agent_state.py) — `get_emotion_label()` | Collapses the entire state vector into one of four strings: `happy`, `sad`, `excited`, `neutral`. | 🔴 **This is the exact anti-pattern the feedback targets.** The rich state is thrown away when it reaches the LLM via `get_context_snapshot()`, which includes the label. |
+| [`state/agent_state.py`](../../backend/app/state/agent_state.py) — `get_behavioral_directive()` | Threshold-based string generation. Three mood buckets, two energy buckets, two trust buckets → concatenated prose. | 🟡 Better than the label, but still coarse. No dominance axis. No continuous mapping to prosody. |
+| [`voice/agent.py`](../../backend/app/voice/agent.py) — `_handle_input()` | Receives `emotional_intensity` and `speaking_rate` from `chat.output` but **never reads the actual state vector**. These are whatever the Brain sends — not derived from the cognitive state. | 🔴 Voice layer is decoupled from the state vector. It cannot render dimensional emotion as prosody. |
+| [`cognitive/action.py`](../../backend/app/cognitive/action.py) — prompt construction | Passes `emotion` (the label string) into the LLM prompt. The full vector (mood, energy, trust, attachment) is not exposed. | 🔴 The LLM only sees "neutral" or "happy" — not the continuous state. |
 
 ### What's missing
 
@@ -106,11 +106,11 @@ Current interpretation of the four feedback themes is unchanged:
 
 | File | What it does | Gap |
 |------|-------------|-----|
-| [`state/memory_store.py`](../backend/app/state/memory_store.py) — `add_memory()` | Stores flat text with `importance_score`, `emotional_weight`, `certainty`, `source`, and a JSON `metadata` blob. No episode structure. | 🔴 Memories are **isolated text fragments** — no cause, no temporal sequence, no relationship context, no episode boundary. |
-| [`state/memory_store.py`](../backend/app/state/memory_store.py) — `search_memories()` | Cosine similarity → utility score (decay × importance × emotion boost). Returns flat `{content, score}` dicts. | 🔴 **Pure vector retrieval.** No episode reconstruction, no temporal graph traversal, no narrative coherence. |
-| [`agents/surfacing_agent.py`](../backend/app/agents/surfacing_agent.py) — `_surface_relevant_memories()` | Calls `search_memories()`, publishes the first novel result as `memory.surfaced`. | 🔴 Surfaces **a single snippet** — not an episode. No cause, no emotional context, no relationship framing. The cognitive layer receives it as if it were a search result, not a lived experience. |
-| [`cognitive/learning.py`](../backend/app/cognitive/learning.py) — `_consolidate()` | Extracts entity triples from recent interactions → Neo4j. This is *fact* consolidation, not narrative consolidation. | 🟡 The consolidation machinery exists but only produces `(subject, relation, object)` triples — no episode summaries, no temporal event graphs, no semantic memory compression. |
-| [`cognitive/core.py`](../backend/app/cognitive/core.py) — episode construction | Creates an `episode` dict with `id, content, intent, state, response` — but this is passed to `trigger_reflection()` and then discarded. It's never stored as a retrievable episodic memory. | 🟡 The word "episode" is used but it's a transient dict, not a persisted narrative entity. |
+| [`state/memory_store.py`](../../backend/app/state/memory_store.py) — `add_memory()` | Stores flat text with `importance_score`, `emotional_weight`, `certainty`, `source`, and a JSON `metadata` blob. No episode structure. | 🔴 Memories are **isolated text fragments** — no cause, no temporal sequence, no relationship context, no episode boundary. |
+| [`state/memory_store.py`](../../backend/app/state/memory_store.py) — `search_memories()` | Cosine similarity → utility score (decay × importance × emotion boost). Returns flat `{content, score}` dicts. | 🔴 **Pure vector retrieval.** No episode reconstruction, no temporal graph traversal, no narrative coherence. |
+| [`agents/surfacing_agent.py`](../../backend/app/agents/surfacing_agent.py) — `_surface_relevant_memories()` | Calls `search_memories()`, publishes the first novel result as `memory.surfaced`. | 🔴 Surfaces **a single snippet** — not an episode. No cause, no emotional context, no relationship framing. The cognitive layer receives it as if it were a search result, not a lived experience. |
+| [`cognitive/learning.py`](../../backend/app/cognitive/learning.py) — `_consolidate()` | Extracts entity triples from recent interactions → Neo4j. This is *fact* consolidation, not narrative consolidation. | 🟡 The consolidation machinery exists but only produces `(subject, relation, object)` triples — no episode summaries, no temporal event graphs, no semantic memory compression. |
+| [`cognitive/core.py`](../../backend/app/cognitive/core.py) — episode construction | Creates an `episode` dict with `id, content, intent, state, response` — but this is passed to `trigger_reflection()` and then discarded. It's never stored as a retrievable episodic memory. | 🟡 The word "episode" is used but it's a transient dict, not a persisted narrative entity. |
 
 ### What's missing
 
@@ -132,11 +132,11 @@ Current interpretation of the four feedback themes is unchanged:
 
 | File | What it does | Gap |
 |------|-------------|-----|
-| [`cognitive/core.py`](../backend/app/cognitive/core.py) — `process_event()` | The cognitive loop is: Perceive → Decide → Act → Validate → Learn. Identity validation and self-correction exist. | 🟡 The loop structure is right, but there's no **appraisal pass** between Perceive and Decide. The Brain doesn't "choose an emotional stance" — it reads whatever label `get_emotion_label()` returns. |
-| [`cognitive/identity.py`](../backend/app/cognitive/identity.py) — `get_persona_prompt()` | Immutable core values + adaptive traits + mood directive → system prompt. | 🟢 **This is strong.** The immutable core as guardrail pattern is exactly what the feedback recommends. |
-| [`voice/agent.py`](../backend/app/voice/agent.py) — timing markers | Pauses and hesitation come from `<pause=Nms>` and `<hesitate>` tags embedded in text. | 🟡 The mechanism works, but timing is **text-driven** (LLM decides when to hesitate), not **state-driven** (appraisal/emotion deciding when to hesitate). |
-| [`cognitive/action.py`](../backend/app/cognitive/action.py) — prompt | "The voice layer already carries emotion separately" — but it actually doesn't. The voice layer receives `emotion: "neutral"` and `intensity: 0.5` without any mapping from the cognitive state vector. | 🔴 **The expression loop is broken.** Brain thinks Voice handles affect; Voice receives no affect signal from Brain's cognitive state. |
-| [`cognitive/decision.py`](../backend/app/cognitive/decision.py) — `_classify_intent_and_goal()` | Uses LLM to pick intent + goal. Sends "Mood: happy (Valence: 0.3)" as context. | 🟡 The decision *sees* state but doesn't reason about it in an appraisal-like way. Goal selection is unstructured. |
+| [`cognitive/core.py`](../../backend/app/cognitive/core.py) — `process_event()` | The cognitive loop is: Perceive → Decide → Act → Validate → Learn. Identity validation and self-correction exist. | 🟡 The loop structure is right, but there's no **appraisal pass** between Perceive and Decide. The Brain doesn't "choose an emotional stance" — it reads whatever label `get_emotion_label()` returns. |
+| [`cognitive/identity.py`](../../backend/app/cognitive/identity.py) — `get_persona_prompt()` | Immutable core values + adaptive traits + mood directive → system prompt. | 🟢 **This is strong.** The immutable core as guardrail pattern is exactly what the feedback recommends. |
+| [`voice/agent.py`](../../backend/app/voice/agent.py) — timing markers | Pauses and hesitation come from `<pause=Nms>` and `<hesitate>` tags embedded in text. | 🟡 The mechanism works, but timing is **text-driven** (LLM decides when to hesitate), not **state-driven** (appraisal/emotion deciding when to hesitate). |
+| [`cognitive/action.py`](../../backend/app/cognitive/action.py) — prompt | "The voice layer already carries emotion separately" — but it actually doesn't. The voice layer receives `emotion: "neutral"` and `intensity: 0.5` without any mapping from the cognitive state vector. | 🔴 **The expression loop is broken.** Brain thinks Voice handles affect; Voice receives no affect signal from Brain's cognitive state. |
+| [`cognitive/decision.py`](../../backend/app/cognitive/decision.py) — `_classify_intent_and_goal()` | Uses LLM to pick intent + goal. Sends "Mood: happy (Valence: 0.3)" as context. | 🟡 The decision *sees* state but doesn't reason about it in an appraisal-like way. Goal selection is unstructured. |
 
 ### What's missing
 
@@ -159,10 +159,10 @@ Current interpretation of the four feedback themes is unchanged:
 
 | Feedback Theme | Current Score | Key Gap | Primary Files |
 |----------------|:---:|---------|---------------|
-| 1. Appraisal-based emotion | 🔴 | No appraisal step exists; acoustic/cognitive signals go straight to state | [`agent_state.py`](../backend/app/state/agent_state.py), [`core.py`](../backend/app/cognitive/core.py), [`perception.py`](../backend/app/cognitive/perception.py) |
-| 2. Dimensional emotion vector | 🟡 | Fields exist but `dominance` missing; label reduction destroys richness; Voice decoupled | [`agent_state.py`](../backend/app/state/agent_state.py), [`action.py`](../backend/app/cognitive/action.py), [`voice/agent.py`](../backend/app/voice/agent.py) |
-| 3. Narrative memory | 🔴 | No episode structure; flat vector retrieval; no temporal graphs; no narrative consolidation | [`memory_store.py`](../backend/app/state/memory_store.py), [`surfacing_agent.py`](../backend/app/agents/surfacing_agent.py), [`learning.py`](../backend/app/cognitive/learning.py) |
-| 4. Humanness as behavior | 🟡 | Identity guardrail strong; appraisal pass and expression loop missing | [`core.py`](../backend/app/cognitive/core.py), [`identity.py`](../backend/app/cognitive/identity.py), [`voice/agent.py`](../backend/app/voice/agent.py) |
+| 1. Appraisal-based emotion | 🔴 | No appraisal step exists; acoustic/cognitive signals go straight to state | [`agent_state.py`](../../backend/app/state/agent_state.py), [`core.py`](../../backend/app/cognitive/core.py), [`perception.py`](../../backend/app/cognitive/perception.py) |
+| 2. Dimensional emotion vector | 🟡 | Fields exist but `dominance` missing; label reduction destroys richness; Voice decoupled | [`agent_state.py`](../../backend/app/state/agent_state.py), [`action.py`](../../backend/app/cognitive/action.py), [`voice/agent.py`](../../backend/app/voice/agent.py) |
+| 3. Narrative memory | 🔴 | No episode structure; flat vector retrieval; no temporal graphs; no narrative consolidation | [`memory_store.py`](../../backend/app/state/memory_store.py), [`surfacing_agent.py`](../../backend/app/agents/surfacing_agent.py), [`learning.py`](../../backend/app/cognitive/learning.py) |
+| 4. Humanness as behavior | 🟡 | Identity guardrail strong; appraisal pass and expression loop missing | [`core.py`](../../backend/app/cognitive/core.py), [`identity.py`](../../backend/app/cognitive/identity.py), [`voice/agent.py`](../../backend/app/voice/agent.py) |
 
 ---
 
@@ -232,10 +232,10 @@ graph TD
 
 | File | What it does | Gap |
 |------|-------------|-----|
-| [`stt/agent.py`](../backend/app/stt/agent.py) | Streams audio perception and transcription events with queue-based workers. | 🟡 Streaming ingest exists, but speculative intent/context updates are not yet a first-class, continuously consumed cognitive contract. |
-| [`cognitive/core.py`](../backend/app/cognitive/core.py) — `process_event()` | Executes a sequential Perceive → Decide → Act loop for a received event payload. | 🔴 No explicit partial-hypothesis lane (`is_partial`, confidence trajectory, rolling commit) driving incremental plan updates before final transcript stabilization. |
-| [`agents/brain_agent.py`](../backend/app/agents/brain_agent.py) — `_on_chat_input()` | Begins response work after a discrete `chat.input` event and streams output chunks from action execution. | 🟡 Streaming output is present, but speculative pre-planning while user speech is in-flight is limited; start of cognition still mostly aligned to completed turn payloads. |
-| [`agents/transport_agent.py`](../backend/app/agents/transport_agent.py) | Handles transport-level queueing/backpressure and playback worker behavior. | 🟡 Real-time channel controls exist, but no explicit cognitive-priority scheduler separating reflex, speculative, and deep reasoning lanes. |
+| [`stt/agent.py`](../../backend/app/stt/agent.py) | Streams audio perception and transcription events with queue-based workers. | 🟡 Streaming ingest exists, but speculative intent/context updates are not yet a first-class, continuously consumed cognitive contract. |
+| [`cognitive/core.py`](../../backend/app/cognitive/core.py) — `process_event()` | Executes a sequential Perceive → Decide → Act loop for a received event payload. | 🔴 No explicit partial-hypothesis lane (`is_partial`, confidence trajectory, rolling commit) driving incremental plan updates before final transcript stabilization. |
+| [`agents/brain_agent.py`](../../backend/app/agents/brain_agent.py) — `_on_chat_input()` | Begins response work after a discrete `chat.input` event and streams output chunks from action execution. | 🟡 Streaming output is present, but speculative pre-planning while user speech is in-flight is limited; start of cognition still mostly aligned to completed turn payloads. |
+| [`agents/transport_agent.py`](../../backend/app/agents/transport_agent.py) | Handles transport-level queueing/backpressure and playback worker behavior. | 🟡 Real-time channel controls exist, but no explicit cognitive-priority scheduler separating reflex, speculative, and deep reasoning lanes. |
 
 ### What's missing
 
@@ -275,10 +275,10 @@ graph TD
 
 | File | What it does | Gap |
 |------|-------------|-----|
-| [`agents/base.py`](../backend/app/agents/base.py) | Tracks subject metrics (counts and average latency) for observed channels. | 🟡 Useful observability baseline, but lacks explicit SLO metrics for first-reaction, first-chunk, interruption-stop, and commit latency percentiles. |
-| [`cognitive/action.py`](../backend/app/cognitive/action.py) | Adds stream timeout guard and graceful fallback output. | 🟡 Prevents silent hangs, but does not enforce stage-wise latency budgets or dynamic degrade policy per conversational phase. |
-| [`agents/brain_agent.py`](../backend/app/agents/brain_agent.py) | Streams chunked outputs and fallback completion on generation failures. | 🟡 Streams help perceived responsiveness, but no dedicated reflex/backchannel output lane with strict sub-400ms target. |
-| [`agents/surfacing_agent.py`](../backend/app/agents/surfacing_agent.py) | Hardens sweep scheduling (no overlap, throttle, deterministic tick path). | 🟢 Stability improved; however this does not directly guarantee user-facing conversational timing quality. |
+| [`agents/base.py`](../../backend/app/agents/base.py) | Tracks subject metrics (counts and average latency) for observed channels. | 🟡 Useful observability baseline, but lacks explicit SLO metrics for first-reaction, first-chunk, interruption-stop, and commit latency percentiles. |
+| [`cognitive/action.py`](../../backend/app/cognitive/action.py) | Adds stream timeout guard and graceful fallback output. | 🟡 Prevents silent hangs, but does not enforce stage-wise latency budgets or dynamic degrade policy per conversational phase. |
+| [`agents/brain_agent.py`](../../backend/app/agents/brain_agent.py) | Streams chunked outputs and fallback completion on generation failures. | 🟡 Streams help perceived responsiveness, but no dedicated reflex/backchannel output lane with strict sub-400ms target. |
+| [`agents/surfacing_agent.py`](../../backend/app/agents/surfacing_agent.py) | Hardens sweep scheduling (no overlap, throttle, deterministic tick path). | 🟢 Stability improved; however this does not directly guarantee user-facing conversational timing quality. |
 
 ### What's missing
 

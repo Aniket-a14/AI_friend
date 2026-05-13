@@ -102,5 +102,5 @@ These are behavioral realism metrics. A model can generate correct text while st
 
 **For architectural details, see:**
 
-- [ARCHITECTURE.md](./ARCHITECTURE.md) - System overview
+- [ARCHITECTURE.md](../../docs/ARCHITECTURE.md) - System overview
 - [VOICE_CLONING.md](./VOICE_CLONING.md) - Identity layer setup

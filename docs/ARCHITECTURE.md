@@ -151,6 +151,6 @@ Future agents should read [../.agents/CONTEXT.md](../.agents/CONTEXT.md) before 
 
 **For implementation details, see:**
 
-- [LATENCY_IMPROVEMENT.md](./LATENCY_IMPROVEMENT.md) - Timing deep-dive
-- [VOICE_CLONING.md](./VOICE_CLONING.md) - Voice identity guide
-- [DEPLOYMENT.md](./DEPLOYMENT.md) - Infrastructure setup
+- [LATENCY_IMPROVEMENT.md](../_archive/docs/LATENCY_IMPROVEMENT.md) - Timing deep-dive
+- [VOICE_CLONING.md](../_archive/docs/VOICE_CLONING.md) - Voice identity guide
+- [DEPLOYMENT.md](../_archive/docs/DEPLOYMENT.md) - Infrastructure setup
