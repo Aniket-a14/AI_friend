@@ -304,10 +304,11 @@ class CognitiveService:
     async def get_current_emotion(self) -> str:
         return self.state.get_emotion_label()
 
-    async def generate_proactive_response(self) -> AsyncGenerator[Dict[str, Any], None]:
+    async def generate_proactive_response(self, thought_prompt: str = None) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Phase 1: Proactive Engagement.
         Generates a spontaneous message grounded in real identity, state, and memory.
+        If thought_prompt is provided by the SubconsciousEngine, it acts as the seed.
         """
         state_directive = self.state.get_behavioral_directive()
         state_snapshot = self.state.get_context_snapshot()
@@ -322,16 +323,18 @@ class CognitiveService:
                 [f"- {m['content']}" for m in self.surfaced_memories[-3:]]
             )
 
+        thought_context = f"Your subconscious thought: \"{thought_prompt}\"" if thought_prompt else "You feel an urge to reach out."
+
         proactive_instruction = f"""
         {identity_prompt}
 
-        SITUATION: The user has been away for a while. You feel an urge to reach out.
+        SITUATION: The user has been away for a while. {thought_context}
         Your current emotional state: {mood_label}
         Your energy level: {energy:.2f}
         Your relationship with the user: {relationship}
         {memory_context}
 
-        TASK: Generate a single, natural, spontaneous message to the user.
+        TASK: Generate a single, natural, spontaneous message to the user based on your subconscious thought.
         This should feel like a real friend checking in — not a notification or reminder.
         Keep it brief (1-3 sentences max). Match your tone to your current mood and energy.
         If you have shared memories, you may reference them naturally.

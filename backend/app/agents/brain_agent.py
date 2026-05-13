@@ -106,13 +106,7 @@ class BrainAgent(BaseAgent):
             durable=f"{self.name}_voice_segmentation_feedback_live",
             deliver_policy="new",
         )
-        # Phase 1: Subscribe to system.tick for proactive engagement evaluation
-        await self.subscribe(
-            Topics.SYSTEM_TICK,
-            self._on_system_tick,
-            durable=f"{self.name}_system_tick_proactive_live",
-            deliver_policy="new",
-        )
+        # Note: system.tick proactive engagement is now handled by SubconsciousAgent
 
         logger.info(f"🧠 {self.name} Online | CVS-1.0 Cognitive Mesh Active.")
 
@@ -139,21 +133,23 @@ class BrainAgent(BaseAgent):
         now = datetime.now()
         self.last_interaction_time = now
 
-        # Phase 1: Track real interaction time for proactive idle detection
-        self.cognitive_core.state.record_user_interaction()
-
         try:
             msg = ChatInput.model_validate(message)
             user_text = msg.text
             turn_id = msg.turn_id or msg.utterance_id or str(uuid.uuid4())
             metadata = msg.metadata.model_dump()
             utterance_id = msg.utterance_id
+            is_subconscious = msg.metadata.source == "subconscious"
         except Exception as e:
             logger.warning(f"Dropping invalid chat.input message: {e}")
             return
 
         if not user_text:
             return
+
+        # Only update human interaction tracking if it's an actual user message
+        if not is_subconscious:
+            self.cognitive_core.state.record_user_interaction()
 
         raw_event = {
             "id": str(uuid.uuid4()),
@@ -167,13 +163,19 @@ class BrainAgent(BaseAgent):
             },
         }
 
-        if self.conversation_store:
+        if self.conversation_store and not is_subconscious:
             asyncio.create_task(self.conversation_store.log_message("user", user_text))
 
+        if is_subconscious:
+            logger.info("💭 [Brain] Processing subconscious thought: %s", user_text)
+            generator = self.cognitive_core.generate_proactive_response(thought_prompt=user_text)
+        else:
+            generator = self.cognitive_core.process_event(raw_event)
+
         full_response = await self._stream_to_speech(
-            self.cognitive_core.process_event(raw_event), 
+            generator, 
             turn_id=turn_id, 
-            is_proactive=False
+            is_proactive=is_subconscious
         )
 
         if self.conversation_store and full_response:
@@ -333,42 +335,6 @@ class BrainAgent(BaseAgent):
     async def stop(self):
         await super().stop()
         logger.info(f"🧠 {self.name} Offline.")
-
-    async def _on_system_tick(self, data: Dict[str, Any]):
-        """
-        Phase 1: Proactive Engagement.
-        Evaluates idle conditions on every heartbeat and triggers spontaneous speech.
-        """
-        if not self.cognitive_core.state.check_proactive_eligibility():
-            return
-
-        logger.info(
-            "💭 [Brain] Proactive engagement triggered. Generating spontaneous message..."
-        )
-        await self._generate_proactive_speech()
-
-    async def _generate_proactive_speech(self):
-        """
-        Generates and publishes a spontaneous proactive message using
-        the exact same segmenter and chat.output pipeline as reactive speech.
-        """
-        turn_id = f"proactive-{uuid.uuid4()}"
-        
-        full_response = await self._stream_to_speech(
-            self.cognitive_core.generate_proactive_response(), 
-            turn_id=turn_id, 
-            is_proactive=True
-        )
-
-        if self.conversation_store and full_response:
-            asyncio.create_task(
-                self.conversation_store.log_message("assistant", full_response)
-            )
-
-        logger.info(
-            "💭 [Brain] Proactive message delivered: '%s'",
-            full_response[:80] if full_response else "(empty)",
-        )
 
 
 async def main():

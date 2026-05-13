@@ -112,7 +112,6 @@ class TestEndocrineLLMModulation:
 
         # Capture the options_override passed to generate_stream
         captured_options = {}
-        original_stream = action_service.llm.generate_stream
 
         async def capturing_stream(prompt, model=None, options_override=None):
             captured_options.update(options_override or {})

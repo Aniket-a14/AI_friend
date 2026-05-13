@@ -891,3 +891,34 @@ Behavior changes:
 Verification:
 - Rebuilt all 8 container images with `docker compose ... up -d --build`.
 - Verified all 14 mesh containers reached `Running` and `Healthy` status (verified via `docker ps`).
+
+## 2026-05-13 Tier-5 Autonomy: Endocrine & Subconscious Engines
+
+Advanced the AI Mesh to Tier-5 Autonomy by introducing physiological LLM control and independent background reasoning, effectively decoupling "thinking" from the reactive chat loop.
+
+Changed files:
+- `backend/app/state/agent_state.py`
+- `backend/app/llm/ollama_client.py`
+- `backend/app/cognitive/action.py`
+- `backend/app/cognitive/core.py`
+- `backend/app/agents/subconscious_agent.py` (New)
+- `backend/app/agents/brain_agent.py`
+- `backend/tests/test_endocrine.py` (New)
+- `backend/tests/test_subconscious.py` (New)
+- `docker-compose.prod.yml`
+- `docker-compose.infra.yml`
+
+Behavior changes:
+- **Endocrine System**: `AgentState` now computes synthetic hormones (`cortisol` for stress, `dopamine` for reward) based on the PAD emotional vector. 
+- **Physiological LLM Modulation**: `ActionService` injects these hormones into `OllamaClient` dynamically overriding `temperature` and `top_p`. High cortisol triggers rigid, lower-temp responses; high dopamine triggers creative, high-temp responses.
+- **Subconscious Engine**: Extracted the proactive `system.tick` background loop out of `BrainAgent` and into a dedicated `SubconsciousAgent` microservice. 
+- **Internal Thought Routing**: `SubconsciousAgent` evaluates idle thresholds and uses the LLM to generate an "internal thought". This thought is published to `chat.input` with `source="subconscious"`. `BrainAgent` intercepts this, avoids logging it as a user message, and naturally vocalizes the thought using the existing proactive generator.
+- **Resilience**: Fixed `python-json-logger` deprecation warnings and removed unused local variables. Increased the `start_period` for the heavy `gpt-sovits` container in `docker-compose.infra.yml` to `500s` to accommodate slow CPU-only loading times.
+
+Verification:
+- The full backend test suite passes (92/92 tests) including 17 new tests for endocrine mathematics, API overrides, and subconscious thought routing.
+- Deployed successfully to the NATS mesh with `docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build`.
+
+Remaining risks:
+- The `SubconsciousAgent` currently polls `system.tick`. If `system_agent` dies, proactive thinking stops.
+- GPT-SoVITS remains a major bottleneck on CPU-only machines, taking up to 5 minutes to load weights on startup.
