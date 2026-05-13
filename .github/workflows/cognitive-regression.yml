@@ -70,6 +70,8 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci_test_password
           DATABASE_URL: postgresql://test:test@localhost:5432/test
+          LIVEKIT_API_KEY: dummy_key
+          LIVEKIT_API_SECRET: dummy_secret
         run: |
           cd backend
           pytest -v --tb=short -x 2>&1 | tee test_results.txt
