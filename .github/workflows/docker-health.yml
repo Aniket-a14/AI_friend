@@ -65,7 +65,14 @@ jobs:
       - name: Smoke Test — Verify Python Imports
         run: |
           # Verify the agent module can be imported without crashing
-          docker run --rm cvs/${{ matrix.agent.name }}:ci \
+          docker run --rm \
+            -e NATS_URL=nats://localhost:4222 \
+            -e LIVEKIT_API_KEY=dummy_key \
+            -e LIVEKIT_API_SECRET=dummy_secret \
+            -e DATABASE_URL=postgresql://test:test@localhost:5432/test \
+            -e NEO4J_URI=bolt://localhost:7687 \
+            -e NEO4J_PASSWORD=dummy_password \
+            cvs/${{ matrix.agent.name }}:ci \
             python -c "import ${{ matrix.agent.module }}; print('✅ ${{ matrix.agent.name }} imports OK')"
 
       - name: Smoke Test — Verify netcat installed
