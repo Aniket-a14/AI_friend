@@ -49,14 +49,18 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
     """
     Scenario: User is consistently mean. The agent should drift toward guarded/reserved.
     """
-    # 1. Setup Mock LLM to report negative valence and suggest 'Guarded' trait with CONFIDENCE
+    # 1. Explicitly disable intent classification so generate() is only called for:
+    #   1. Reflection - Fact Extraction
+    #   2. Reflection - Identity Suggestion (REQUIRED: confidence >= 0.8)
+    # This avoids fragile coupling with the autouse fixture's .env interaction.
+    from app.config import Config
+    original_val = Config.LLM_INTENT_CLASSIFICATION_ENABLED
+    Config.LLM_INTENT_CLASSIFICATION_ENABLED = False
+
     mock_llm_service.generate.side_effect = [
-        # Decision (Intent/Goal)
-        '{"intent": "CHAT", "goal": "PROTECT", "confidence": 0.9}',
-        # Action (Response) -> Already handled by streaming mock in conftest
         # Reflection - Fact Extraction
         "[]",
-        # Reflection - Identity Suggestion (REQUIRED: confidence >= 0.8)
+        # Reflection - Identity Suggestion
         '{"new_traits": ["Reserved"], "relationship": "Strained", "confidence": 0.9}',
     ] * 5  # Repeat for 5 cycles
 
@@ -81,6 +85,9 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
 
     # Relationship (Adaptive) should have evolved
     assert cognitive_service.identity.history["relationship"] == "Strained"
+
+    # Cleanup
+    Config.LLM_INTENT_CLASSIFICATION_ENABLED = original_val
 
 
 @pytest.mark.asyncio

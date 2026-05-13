@@ -208,10 +208,10 @@ services:
       - ai_mesh_network
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9871/docs || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9871/docs || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 15
+      retries: 5
       start_period: 60s
 
 networks:
