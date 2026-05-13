@@ -233,7 +233,7 @@ def test_brain_agent_emits_fallback_when_stream_errors_without_content():
 def test_action_service_strips_emotion_wrappers_but_keeps_pause_tags():
     llm = MagicMock()
 
-    async def _stream(prompt, model=None):
+    async def _stream(prompt, model=None, **kwargs):
         yield "<emotion type='sad'>hey"
         yield " there</emotion><pause=300ms>"
 

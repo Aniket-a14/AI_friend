@@ -43,6 +43,7 @@ class OllamaClient:
         model: str,
         stream: bool,
         num_predict: int,
+        options_override: Optional[Dict[str, Any]] = None,
     ) -> List[Tuple[str, Dict[str, Any], str]]:
         model_variants = self._build_model_variants(model)
 
@@ -53,6 +54,8 @@ class OllamaClient:
             "num_thread": 6,
             "num_ctx": 2048,
         }
+        if options_override:
+            options.update(options_override)
 
         attempts: List[Tuple[str, Dict[str, Any], str]] = []
         for model_variant in model_variants:
@@ -163,10 +166,15 @@ class OllamaClient:
         return None
 
     async def generate_stream(
-        self, prompt: str, system: str = None, model: str = None
+        self,
+        prompt: str,
+        system: str = None,
+        model: str = None,
+        options_override: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Stream responses from Ollama with Resilience Guard.
+        Accepts optional options_override for Endocrine-driven parameter modulation.
         """
         payload_attempts = self._build_payload_attempts(
             prompt=prompt,
@@ -174,6 +182,7 @@ class OllamaClient:
             model=model or self.model,
             stream=True,
             num_predict=40,
+            options_override=options_override,
         )
 
         errors: List[str] = []
@@ -242,9 +251,16 @@ class OllamaClient:
         )
         yield "I'm having trouble thinking right now..."
 
-    async def generate(self, prompt: str, system: str = None, model: str = None) -> str:
+    async def generate(
+        self,
+        prompt: str,
+        system: str = None,
+        model: str = None,
+        options_override: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """
         Non-blocking generation with Exponential Backoff.
+        Accepts optional options_override for Endocrine-driven parameter modulation.
         """
         payload_attempts = self._build_payload_attempts(
             prompt=prompt,
@@ -252,6 +268,7 @@ class OllamaClient:
             model=model or self.model,
             stream=False,
             num_predict=64,
+            options_override=options_override,
         )
 
         async def _do_gen():

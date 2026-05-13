@@ -246,10 +246,13 @@ class CognitiveService:
 
         plan = await self.decision.decide(event, state_snapshot)
 
-        # 6. Action Execution with Identity Validation
+        # 6. Action Execution with Identity Validation & Endocrine Modulation
         plan.payload["identity_prompt"] = self.identity.get_persona_prompt(
             state_directive
         )
+        # Tier-5 Endocrine: Inject hormonal state for LLM parameter modulation
+        plan.payload["cortisol"] = state_snapshot.get("cortisol", 0.5)
+        plan.payload["dopamine"] = state_snapshot.get("dopamine", 0.0)
 
         full_response = ""
         async for chunk in self.action.execute(plan):
@@ -354,6 +357,9 @@ class CognitiveService:
                 "surfaced_memories": self.surfaced_memories[-3:]
                 if self.surfaced_memories
                 else [],
+                # Tier-5 Endocrine: Inject hormonal state
+                "cortisol": state_snapshot.get("cortisol", 0.5),
+                "dopamine": state_snapshot.get("dopamine", 0.0),
             },
             priority=0,
         )
