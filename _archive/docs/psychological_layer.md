@@ -516,7 +516,7 @@ Link(i, j) = w₁·TemporalProximity + w₂·EmotionalSimilarity + w₃·CausalR
 
 ---
 
-## 🧠 7. Memory Consolidation — Long-Term Learning
+## 🧠 7. Memory System — Long-Term Learning
 
 ### Model Basis
 
@@ -717,5 +717,3 @@ where:
 - Memory feels contextual and human-like (ACT-R retrieval + episodic structure)
 - Speech timing reflects cognition (Goldman-Eisler empirical basis)
 - Responses feel intentional, not reactive (appraisal before generation)
-
----

@@ -244,7 +244,7 @@ graph TD
 2. **Speculative cognition lane** in `CognitiveService`:
    - continuously updates candidate goals/stance while speech is ongoing.
 3. **Commit/revise gate**:
-   - commits best candidate at endpoint; fast-corrects on contradiction between partial and final transcript.
+   - commits best candidate at endpoint; fast-correct on contradiction between partial and final transcript.
 4. **Priority scheduler**:
    - hard-preemptive reflex tasks (`audio.stop`, barge-in) over deep generation tasks.
 

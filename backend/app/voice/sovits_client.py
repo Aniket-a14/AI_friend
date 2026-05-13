@@ -2,9 +2,11 @@
 GPT-SoVITS Client - API wrapper for local voice synthesis (Async CVS-1.0 Edition)
 """
 
+import asyncio
 import aiohttp
 import logging
 from typing import Optional, AsyncGenerator
+from ..config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,9 @@ class SoVITSClient:
                 return await response.read()
 
         except Exception as e:
+            if getattr(Config, "VOICE_TTS_MOCK", False):
+                logger.info(f"SoVITS fallback: Mocking synthesis for '{text[:20]}...'")
+                return b"\x00" * 32000 # 1s of silence
             logger.error(f"SoVITS synthesis failed: {e}")
             return None
 
@@ -119,6 +124,10 @@ class SoVITSClient:
                         yield chunk
 
         except Exception as e:
+            if getattr(Config, "VOICE_TTS_MOCK", False):
+                logger.info(f"SoVITS fallback: Mocking stream for '{text[:20]}...'")
+                yield b"\x00" * 1600 # small chunk of silence
+                return
             logger.error(f"SoVITS streaming failed: {e}")
             yield b""
 

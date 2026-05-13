@@ -103,3 +103,13 @@ Before replacing production voice weights, run this quick gate:
 3. **Latency Check**: Confirm startup and first-audio latency remain acceptable.
 4. **Promote**: Keep only the approved pair as `ai_friend_voice.ckpt` and `ai_friend_voice.pth`.
 5. **Rollback Plan**: Keep previous stable files (for example `ai_friend_voice_prev.ckpt/.pth`) and restore immediately if regression appears.
+
+---
+
+## 💭 Tier-5: Subconscious & Endocrine Verification
+
+In Tier-5 Autonomy, your trained voice is modulated by simulated "Endocrine" states.
+
+1. **Prosody Consistency**: Verify that your voice model handles high-energy/arousal (faster rate) and low-energy (slower rate) without sounding robotic.
+2. **Filler Hydration**: Ensure your `backend/voice_samples/` contains clean recordings of your trained voice for fillers like "hmm", "let me think", etc., to maintain identity continuity during subconscious reflections.
+3. **Mock Fallback**: If testing on CPU-only hardware, set `VOICE_TTS_MOCK=true` in `.env` to verify the mesh logic without waiting for heavy synthesis.

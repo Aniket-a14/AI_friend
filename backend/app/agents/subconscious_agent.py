@@ -92,7 +92,7 @@ class SubconsciousAgent(BaseAgent):
             self.state_service.mark_proactive_attempt()
 
         except Exception as e:
-            logger.error(f"[Subconscious] Failed to generate thought: {e}")
+            logger.error(f"[Subconscious] Failed to generate thought: {e}", exc_info=True)
 
     async def stop(self):
         await super().stop()

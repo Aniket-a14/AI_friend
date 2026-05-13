@@ -17,41 +17,24 @@ organic memory, and future robotics compatibility.
   agents, cognition, state, memory, voice, and feedback loops.
 - [API_SPEC.md](./API_SPEC.md) defines the REST endpoints and NATS subjects used
   by the runtime.
-- [IDENTITY_SYSTEM.md](./IDENTITY_SYSTEM.md) explains persistent identity,
-  emotional state, adaptive variables, memory surfacing, and expression rules.
-- [LATENCY_IMPROVEMENT.md](./LATENCY_IMPROVEMENT.md) explains why perceived
-  latency matters more than full-response latency and how the signal runtime
-  reduces silence.
-- [DEPLOYMENT.md](./DEPLOYMENT.md) explains environment configuration,
-  production hardening, Docker, and platform deployment.
+- [ROBOTICS_ANALYSIS.md](./ROBOTICS_ANALYSIS.md) provides a deep-dive into the 
+  architectural performance and the roadmap for humanoid embodiment.
 
 ---
 
-## Voice And Training
+## Voice and Training
 
-- [VOICE_CLONING.md](./VOICE_CLONING.md) explains the real-time voice identity
-  layer and GPT-SoVITS runtime assumptions.
-- [TRAINING_GUIDE.md](./TRAINING_GUIDE.md) explains how to fine-tune a V4 voice
-  model for AI Friend.
-- [GPT_SOVITS_INSTALL.md](./GPT_SOVITS_INSTALL.md) covers local GPT-SoVITS setup.
+- [GPT_SOVITS_INSTALL.md](./GPT_SOVITS_INSTALL.md) covers local GPT-SoVITS setup
+  and CVS-1.0 hardening requirements.
 - [COLAB_PATHS_CHEATSHEET.md](./COLAB_PATHS_CHEATSHEET.md) helps map Colab
   training artifacts back into the local project.
 
 ---
 
-## Operations And Verification
+## Operations and Research Archive
 
-- [docker_verification.md](./docker_verification.md) provides runtime smoke tests
-  for Docker, NATS, Postgres, Neo4j, Ollama, SoVITS, and agent logs.
-- [UPDATES.md](./UPDATES.md) is the historical evolution log. It includes older
-  architecture research and the current CVS-1.0 hardening notes.
-
----
-
-## Future Upgrades for pyscological fine-tuning
-
-- [ANALYSIS_RESULTS.md](./analysis_results.md) provides current gaps in the architecture along with solutions to improve.
-- [PSYCHOLOGICAL_LAYER.md](./psychological_layer.md) is the mathematical equations through which the algorithm will be created for emotions/ai pysology.
+- **[RESEARCH_GUIDE.md](./RESEARCH_GUIDE.md)**: Comprehensive guide for training, testing, observing, and visualizing the Tier-5 Sovereign Mesh for research purposes.
+- **[ARCHIVE_TOC.md](./ARCHIVE_TOC.md)**: Centralized index for archived CVS-1.0 technical documentation, historical research, and baseline optimizations.
 
 ---
 

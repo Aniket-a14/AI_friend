@@ -38,8 +38,17 @@ The BrainAgent orchestrates a **State-Driven Identity** with a hardened relation
 - **Identity Heartbeat (`system.tick`)**: A 60s NATS pulse ensures the agent's internal state matures even when user interaction is idle.
 - **Hybrid Identity Model**: Separates an **Immutable Core** (base tone, values) from **Adaptive Variables** (habits, relationship status).
 - **Single Identity Owner**: Reflection and response generation share the same `IdentityManager`, so adaptive evolution affects the active personality without requiring restart.
+- **Endocrine Modulation**: LLM generation parameters (temperature, top_p, frequency_penalty) are dynamically adjusted based on the agent's current PAD state (e.g., high cortisol/stress → lower temperature for more focused/rigid responses).
 
-### 📖 2. Proactive Memory Surfacing
+### 💭 2. Subconscious Engine (Tier-5 Autonomy)
+
+Introduced the **Subconscious Agent** to manage background cognition during periods of inactivity.
+
+- **Internal Monologue**: Generates proactive "thoughts" based on the current context, recent memories, and emotional state when the system is idle.
+- **Cognitive Injection**: Subconscious thoughts are published to `chat.input` (source: `subconscious`), allowing the Brain Agent to process them as internal prompts without contaminating the external chat history.
+- **Idle-State Proactivity**: Triggers reflection or proactive reaching out based on the psychological state (e.g., high "Attachment" + high "Energy" → reaching out to the user).
+
+### 📖 3. Proactive Memory Surfacing
 
 The system anticipates conversational context through an asynchronous dual-channel recall layer that merges Relational (Postgres) and Graph (Neo4j) knowledge.
 
@@ -86,6 +95,7 @@ graph TB
         
         subgraph Brain_Core ["State & Identity"]
             SYSTEM_TICK["System Agent<br/>Mesh Heartbeat"]
+            SUBCO["Subconscious Agent<br/>Idle Thoughts"]
             SURFACING["Surfacing Agent<br/>Active Memory"]
             DECISION["Cognitive Service<br/>State-Driven BDI"]
         end
@@ -101,6 +111,7 @@ graph TB
     STT -->|audio.stop speculative| VOICE_CONTROLLER
     STT -->|chat.input| DECISION
     SYSTEM_TICK -->|system.tick| DECISION
+    SUBCO -->|chat.input| DECISION
     SURFACING -->|memory.surfaced| DECISION
     DECISION -->|chat.output| VOICE_CONTROLLER
     DECISION -->|audio.resume / final audio.stop| VOICE_CONTROLLER

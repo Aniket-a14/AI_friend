@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from typing import Dict, Any, List
 
+from pydantic import ValidationError
 from .base import BaseAgent
 from ..llm.ollama_client import OllamaClient
 from ..state import GraphDB, MemoryStore, ConversationHistoryStore
@@ -140,8 +141,11 @@ class BrainAgent(BaseAgent):
             metadata = msg.metadata.model_dump()
             utterance_id = msg.utterance_id
             is_subconscious = msg.metadata.source == "subconscious"
-        except Exception as e:
+        except ValidationError as e:
             logger.warning(f"Dropping invalid chat.input message: {e}")
+            return
+        except Exception as e:
+            logger.error(f"Unexpected error processing chat.input: {e}", exc_info=True)
             return
 
         if not user_text:

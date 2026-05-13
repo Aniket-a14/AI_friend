@@ -45,4 +45,4 @@ if __name__ == "__main__":
     print("🔍 Verifying Phase 25 Changes:\n")
     test_soxr_import()
     test_brain_wiring()
-    print("\n✨ All checks passed. Ready for run_all.py!")
+    print("\n✨ All checks passed. Ready for docker compose -f docker-compose.infra.yml up -d")
