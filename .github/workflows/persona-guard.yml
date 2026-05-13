@@ -59,6 +59,11 @@ jobs:
       - name: Run Identity-Specific Tests
         env:
           NATS_URL: nats://localhost:4222
+          LIVEKIT_API_KEY: dummy_key
+          LIVEKIT_API_SECRET: dummy_secret
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          NEO4J_URI: bolt://localhost:7687
+          NEO4J_PASSWORD: dummy_password
         run: |
           cd backend
           # Run only tests tagged with identity/persona/state keywords
