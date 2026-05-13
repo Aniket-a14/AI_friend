@@ -20,7 +20,7 @@ from .cache import AudioCache
 from .prosody import vad_to_prosody, has_temporal_marker
 from .playback import silence_pcm, drain_queue, make_playback_item, run_playback_loop
 from .resilience import run_resilience_loop, run_drift_correction_loop
-from ..contracts import ChatOutput, AudioStop, AudioResume
+from ..contracts import ChatOutput, AudioStop, AudioResume, Topics
 
 logger = logging.getLogger(__name__)
 
@@ -131,15 +131,15 @@ class VoiceAgent(BaseAgent):
             )
 
         # 4. Subscribe to Mesh Perception Channels
-        await self.subscribe("chat.output", self._handle_input, deliver_policy="new")
+        await self.subscribe(Topics.CHAT_OUTPUT, self._handle_input, deliver_policy="new")
         await self.subscribe(
-            "audio.stop",
+            Topics.AUDIO_STOP,
             self._on_audio_stop,
             deliver_policy="new",
             durable="voice_agent_audio_stop",
         )
         await self.subscribe(
-            "audio.resume",
+            Topics.AUDIO_RESUME,
             self._on_audio_resume,
             deliver_policy="new",
             durable="voice_agent_audio_resume",
@@ -207,10 +207,9 @@ class VoiceAgent(BaseAgent):
             is_speculative = msg.speculative
             turn_id = msg.turn_id
             utterance_id = msg.utterance_id
-        except Exception:
-            is_speculative = data.get("speculative", False)
-            turn_id = data.get("turn_id")
-            utterance_id = data.get("utterance_id")
+        except Exception as e:
+            logger.warning(f"Dropping invalid audio.stop message: {e}")
+            return
 
         if is_speculative:
             self.paused_utterance_id = utterance_id
@@ -231,8 +230,9 @@ class VoiceAgent(BaseAgent):
         try:
             msg = AudioResume.model_validate(data)
             utterance_id = msg.utterance_id
-        except Exception:
-            utterance_id = data.get("utterance_id")
+        except Exception as e:
+            logger.warning(f"Dropping invalid audio.resume message: {e}")
+            return
 
         if (
             self.paused_utterance_id

@@ -88,8 +88,9 @@ async def require_lan_client(request: Request):
     if not Config.LAN_ONLY:
         return
 
-    forwarded_for = request.headers.get("x-forwarded-for")
-    host = forwarded_for or (request.client.host if request.client else None)
+    # In a local-only system, x-forwarded-for should not be trusted as it can be spoofed.
+    # We strictly check the direct client host connection.
+    host = request.client.host if request.client else None
     if not is_lan_client_allowed(host):
         raise HTTPException(status_code=403, detail="LAN clients only")
 

@@ -43,12 +43,13 @@ The backend has evolved from a monolith into a **distributed agent mesh**. Each 
 You can start individual agents or use the master orchestrator:
 
 ```bash
-# Start everything (Recommended)
-python run_all.py
+# Start the signaling hub (FastAPI) and core logic
+python main.py
 
 # Or start agents individually
 python -m app.agents.brain_agent
-python -m app.agents.stt_agent
+python -m app.stt.agent
+python -m app.voice.agent
 ```
 
 ## 🧪 Testing & Verification

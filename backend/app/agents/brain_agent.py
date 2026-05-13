@@ -12,7 +12,7 @@ from ..state import GraphDB, MemoryStore, ConversationHistoryStore
 from ..config import Config
 from ..cognitive import CognitiveService
 from ..runtime_bootstrap import bootstrap_runtime
-from ..contracts import ChatInput, ChatOutput, ChatOutputAffect
+from ..contracts import ChatInput, ChatOutput, ChatOutputAffect, Topics
 from ..logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -92,23 +92,23 @@ class BrainAgent(BaseAgent):
 
         # Subscribe to I/O streams
         await self.subscribe(
-            "chat.input",
+            Topics.CHAT_INPUT,
             self._on_chat_input,
             durable=f"{self.name}_chat_input_live",
             deliver_policy="new",
         )
         await self.subscribe(
-            "vision.frames", self._on_vision_frame, deliver_policy="last"
+            Topics.VISION_FRAMES, self._on_vision_frame, deliver_policy="last"
         )
         await self.subscribe(
-            "voice.segmentation_feedback",
+            Topics.VOICE_SEGMENTATION_FEEDBACK,
             self._on_voice_feedback,
             durable=f"{self.name}_voice_segmentation_feedback_live",
             deliver_policy="new",
         )
         # Phase 1: Subscribe to system.tick for proactive engagement evaluation
         await self.subscribe(
-            "system.tick",
+            Topics.SYSTEM_TICK,
             self._on_system_tick,
             durable=f"{self.name}_system_tick_proactive_live",
             deliver_policy="new",
@@ -148,15 +148,9 @@ class BrainAgent(BaseAgent):
             turn_id = msg.turn_id or msg.utterance_id or str(uuid.uuid4())
             metadata = msg.metadata.model_dump()
             utterance_id = msg.utterance_id
-        except Exception:
-            user_text = message.get("text", "")
-            turn_id = (
-                message.get("turn_id")
-                or message.get("utterance_id")
-                or str(uuid.uuid4())
-            )
-            metadata = message.get("metadata", {})
-            utterance_id = message.get("utterance_id")
+        except Exception as e:
+            logger.warning(f"Dropping invalid chat.input message: {e}")
+            return
 
         if not user_text:
             return
@@ -176,16 +170,29 @@ class BrainAgent(BaseAgent):
         if self.conversation_store:
             asyncio.create_task(self.conversation_store.log_message("user", user_text))
 
-        await self.set_state("thinking")
+        full_response = await self._stream_to_speech(
+            self.cognitive_core.process_event(raw_event), 
+            turn_id=turn_id, 
+            is_proactive=False
+        )
 
+        if self.conversation_store and full_response:
+            asyncio.create_task(
+                self.conversation_store.log_message("assistant", full_response)
+            )
+
+    async def _stream_to_speech(self, generator, turn_id: str, is_proactive: bool = False) -> str:
+        """Helper method to process text generation streams and segment them into speech chunks."""
         full_response = ""
         current_chunk_words = []
         segment_started_at = None
         generation_errors: List[str] = []
         fallback_text = "I'm having trouble thinking right now..."
+        
+        await self.set_state("thinking")
 
         try:
-            async for output in self.cognitive_core.process_event(raw_event):
+            async for output in generator:
                 if output["type"] == "content":
                     await self.set_state("speaking")
                     chunk_text = output["data"]
@@ -203,19 +210,15 @@ class BrainAgent(BaseAgent):
                         current_chunk_words = []
                         segment_started_at = None
 
-                    # Tokenize by whitespace
                     words = chunk_text.split()
                     for word in words:
                         if not current_chunk_words:
                             segment_started_at = time.perf_counter()
                         current_chunk_words.append(word)
 
-                        # 1. Heuristic Scoring
                         score = self.segmenter.score_split_point(
                             word, len(current_chunk_words)
                         )
-
-                        # 2. Decision (Safe Split)
                         if score > 0.7 or len(current_chunk_words) > 12:
                             await self._publish_speech_chunk(
                                 current_chunk_words, turn_id
@@ -235,13 +238,11 @@ class BrainAgent(BaseAgent):
                     )
 
                 elif output["type"] == "done":
-                    # Emit residue
                     if current_chunk_words:
                         await self._publish_speech_chunk(current_chunk_words, turn_id)
                         current_chunk_words = []
 
-                    # Never allow silent completion in production runtime.
-                    if not full_response.strip():
+                    if not full_response.strip() and not is_proactive:
                         logger.error(
                             "[Brain] Empty generation on turn_id=%s. errors=%s. Emitting fallback.",
                             turn_id,
@@ -250,47 +251,40 @@ class BrainAgent(BaseAgent):
                         await self._publish_speech_chunk(fallback_text.split(), turn_id)
                         full_response = fallback_text
 
-                    state_snap = self.cognitive_core.state.get_context_snapshot()
-                    output_msg = ChatOutput(
-                        done=True,
-                        full_response=full_response,
-                        turn_id=turn_id,
-                        generation_error=generation_errors[-1]
-                        if generation_errors
-                        else None,
-                        affect=ChatOutputAffect(
-                            valence=state_snap.get(
-                                "valence", state_snap.get("mood", 0.0)
+                    if full_response.strip() or not is_proactive:
+                        state_snap = self.cognitive_core.state.get_context_snapshot()
+                        output_msg = ChatOutput(
+                            done=True,
+                            full_response=full_response,
+                            turn_id=turn_id,
+                            proactive=is_proactive,
+                            generation_error=generation_errors[-1] if generation_errors else None,
+                            affect=ChatOutputAffect(
+                                valence=state_snap.get("valence", state_snap.get("mood", 0.0)),
+                                arousal=state_snap.get("arousal", state_snap.get("energy", 0.5)),
+                                dominance=state_snap.get("dominance", 0.5),
+                                trust=state_snap.get("trust", 0.5),
+                                attachment=state_snap.get("attachment", 0.1),
+                                emotion=state_snap.get("emotion", "neutral"),
                             ),
-                            arousal=state_snap.get(
-                                "arousal", state_snap.get("energy", 0.5)
-                            ),
-                            dominance=state_snap.get("dominance", 0.5),
-                            trust=state_snap.get("trust", 0.5),
-                            attachment=state_snap.get("attachment", 0.1),
-                            emotion=state_snap.get("emotion", "neutral"),
-                        ),
-                    )
-                    await self.publish("chat.output", output_msg.model_dump())
+                        )
+                        await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
 
         except Exception as e:
             logger.error("Cognitive Loop error on turn_id=%s: %s", turn_id, e)
-            error_msg = str(e)
-            await self._publish_speech_chunk(fallback_text.split(), turn_id)
-            output_msg = ChatOutput(
-                done=True,
-                full_response=fallback_text,
-                turn_id=turn_id,
-                generation_error=error_msg,
-            )
-            await self.publish("chat.output", output_msg.model_dump())
-
-        if self.conversation_store and full_response:
-            asyncio.create_task(
-                self.conversation_store.log_message("assistant", full_response)
-            )
+            if not is_proactive:
+                error_msg = str(e)
+                await self._publish_speech_chunk(fallback_text.split(), turn_id)
+                output_msg = ChatOutput(
+                    done=True,
+                    full_response=fallback_text,
+                    turn_id=turn_id,
+                    generation_error=error_msg,
+                )
+                await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
 
         await self.set_state("idle")
+        return full_response
 
     async def _publish_speech_chunk(self, words: List[str], turn_id: str = None):
         """
@@ -334,7 +328,7 @@ class BrainAgent(BaseAgent):
                 emotion=state_snap.get("emotion", "neutral"),
             ),
         )
-        await self.publish("chat.output", payload.model_dump())
+        await self.publish(Topics.CHAT_OUTPUT, payload.model_dump())
 
     async def stop(self):
         await super().stop()
@@ -359,83 +353,18 @@ class BrainAgent(BaseAgent):
         the exact same segmenter and chat.output pipeline as reactive speech.
         """
         turn_id = f"proactive-{uuid.uuid4()}"
-        full_response = ""
-        current_chunk_words = []
-        segment_started_at = None
-
-        await self.set_state("thinking")
-
-        try:
-            async for output in self.cognitive_core.generate_proactive_response():
-                if output["type"] == "content":
-                    await self.set_state("speaking")
-                    chunk_text = output["data"]
-                    full_response += chunk_text
-
-                    now_monotonic = time.perf_counter()
-                    if (
-                        current_chunk_words
-                        and segment_started_at is not None
-                        and (now_monotonic - segment_started_at)
-                        >= self.formation_buffer_ms
-                        and len(current_chunk_words) >= 3
-                    ):
-                        await self._publish_speech_chunk(current_chunk_words, turn_id)
-                        current_chunk_words = []
-                        segment_started_at = None
-
-                    words = chunk_text.split()
-                    for word in words:
-                        if not current_chunk_words:
-                            segment_started_at = time.perf_counter()
-                        current_chunk_words.append(word)
-
-                        score = self.segmenter.score_split_point(
-                            word, len(current_chunk_words)
-                        )
-                        if score > 0.7 or len(current_chunk_words) > 12:
-                            await self._publish_speech_chunk(
-                                current_chunk_words, turn_id
-                            )
-                            current_chunk_words = []
-                            segment_started_at = None
-
-                elif output["type"] == "done":
-                    if current_chunk_words:
-                        await self._publish_speech_chunk(current_chunk_words, turn_id)
-                        current_chunk_words = []
-
-                    if full_response.strip():
-                        state_snap = self.cognitive_core.state.get_context_snapshot()
-                        output_msg = ChatOutput(
-                            done=True,
-                            full_response=full_response,
-                            turn_id=turn_id,
-                            proactive=True,
-                            affect=ChatOutputAffect(
-                                valence=state_snap.get(
-                                    "valence", state_snap.get("mood", 0.0)
-                                ),
-                                arousal=state_snap.get(
-                                    "arousal", state_snap.get("energy", 0.5)
-                                ),
-                                dominance=state_snap.get("dominance", 0.5),
-                                trust=state_snap.get("trust", 0.5),
-                                attachment=state_snap.get("attachment", 0.1),
-                                emotion=state_snap.get("emotion", "neutral"),
-                            ),
-                        )
-                        await self.publish("chat.output", output_msg.model_dump())
-
-        except Exception as e:
-            logger.error("[Brain] Proactive generation error: %s", e)
+        
+        full_response = await self._stream_to_speech(
+            self.cognitive_core.generate_proactive_response(), 
+            turn_id=turn_id, 
+            is_proactive=True
+        )
 
         if self.conversation_store and full_response:
             asyncio.create_task(
                 self.conversation_store.log_message("assistant", full_response)
             )
 
-        await self.set_state("idle")
         logger.info(
             "💭 [Brain] Proactive message delivered: '%s'",
             full_response[:80] if full_response else "(empty)",

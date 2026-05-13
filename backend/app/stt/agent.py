@@ -12,6 +12,7 @@ from ..contracts import (
     AudioPerception,
     SpeculativeIntent,
     AudioStop,
+    Topics,
 )
 
 try:
@@ -85,7 +86,7 @@ class STTAgent(BaseAgent):
         ]
 
         await self.subscribe(
-            "audio.inbound", self._on_audio_inbound, deliver_policy="new"
+            Topics.AUDIO_INBOUND, self._on_audio_inbound, deliver_policy="new"
         )
         logger.info(
             f"🎙️ {self.name} Online | Robotic Perception Mesh (Dual-STT) Active."
@@ -237,7 +238,7 @@ class STTAgent(BaseAgent):
                 ),
                 latency_metadata=metadata if metadata else None,
             )
-            await self.publish("chat.input", msg.model_dump())
+            await self.publish(Topics.CHAT_INPUT, msg.model_dump())
             self.intent_window.clear()
             self.current_utterance_id = None
         elif is_partial:
@@ -288,7 +289,7 @@ class STTAgent(BaseAgent):
             if speculative_intent
             else self.current_utterance_id,
         )
-        await self.publish("audio.perception", perception_msg.model_dump())
+        await self.publish(Topics.AUDIO_PERCEPTION, perception_msg.model_dump())
 
         # Speculative Intent Evaluation
         if speculative_intent:
@@ -305,7 +306,7 @@ class STTAgent(BaseAgent):
                 perception_text=speculative_intent["text"],
                 utterance_id=speculative_intent["utterance_id"],
             )
-            await self.publish("audio.stop", stop_msg.model_dump())
+            await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
 
     def _build_speculative_intent(self, text: str, confidence: float):
         """
