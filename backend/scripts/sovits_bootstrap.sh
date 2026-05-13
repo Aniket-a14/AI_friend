@@ -41,19 +41,23 @@ fi
 
 # 4. Identity Warmup (Populate BERT/HuBERT Latent Caches)
 # We perform a dummy synthesis with the neutral anchor to 'prime' the GPU
-echo "🔥 Performing Identity Warmup (BERT/HuBERT Cache)..."
-curl -s -X POST "http://localhost:9871/tts" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "text": "Warmup segment.",
-           "text_lang": "en",
-           "ref_audio_path": "output/sample_en_gold.wav",
-           "prompt_text": "At the end of the exam, the program shows the performance summary.",
-           "prompt_lang": "en",
-           "streaming_mode": 0
-         }' > /dev/null
+if [ -f "$CUSTOM_GPT_PATH" ] && [ -f "$CUSTOM_SOVITS_PATH" ]; then
+    echo "🔥 Performing Identity Warmup (BERT/HuBERT Cache)..."
+    curl -s -X POST "http://localhost:9871/tts" \
+         -H "Content-Type: application/json" \
+         -d '{
+               "text": "Warmup segment.",
+               "text_lang": "en",
+               "ref_audio_path": "output/sample_en_gold.wav",
+               "prompt_text": "At the end of the exam, the program shows the performance summary.",
+               "prompt_lang": "en",
+               "streaming_mode": 0
+             }' > /dev/null
 
-echo "✅ Identity 'ai_friend_voice' is Warm. System is Ready."
+    echo "✅ Identity 'ai_friend_voice' is Warm. System is Ready."
+else
+    echo "⚠️ Custom weights not found on disk. Skipping Warmup."
+fi
 
 # 5. Keep process in foreground
 wait $SERVER_PID

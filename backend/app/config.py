@@ -26,16 +26,16 @@ class AppSettings(BaseSettings):
 
     # LiveKit Configuration
     LIVEKIT_URL: str = "http://localhost:7880"
-    LIVEKIT_API_KEY: str
-    LIVEKIT_API_SECRET: str
+    LIVEKIT_API_KEY: Optional[str] = None
+    LIVEKIT_API_SECRET: Optional[str] = None
 
     # Memory & Personality
-    DATABASE_URL: str
+    DATABASE_URL: Optional[str] = None
 
     # Neo4j Graph Configuration
-    NEO4J_URI: str
+    NEO4J_URI: Optional[str] = None
     NEO4J_USER: str = "neo4j"
-    NEO4J_PASSWORD: str
+    NEO4J_PASSWORD: Optional[str] = None
     NEO4J_AUTH: Optional[str] = None
 
     AI_NAME: str = "AI Friend"
