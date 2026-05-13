@@ -2,6 +2,7 @@ import pyautogui
 import webbrowser
 import datetime
 import logging
+import urllib.parse
 from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -102,11 +103,15 @@ class ToolRegistry:
                 return {"result": f"Executed {action}"}
 
             elif name == "search_web":
-                query = args.get("query")
+                query = args.get("query", "")
                 if query.startswith("http"):
+                    parsed = urllib.parse.urlparse(query)
+                    if parsed.scheme not in ["http", "https"]:
+                        return {"error": "Only HTTP/HTTPS protocols are allowed."}
                     webbrowser.open(query)
                 else:
-                    webbrowser.open(f"https://www.google.com/search?q={query}")
+                    safe_query = urllib.parse.quote_plus(query)
+                    webbrowser.open(f"https://www.google.com/search?q={safe_query}")
                 return {"result": f"Opened browser for: {query}"}
 
             elif name == "get_time":

@@ -24,7 +24,8 @@ class OllamaClient:
         self.stream_timeout = 180
 
     def _build_generate_prompt(self, prompt: str, system: str = None) -> str:
-        return f"{system}\n\nUser: {prompt}\nAssistant:" if system else prompt
+        safe_prompt = prompt.replace("System:", "").replace("Assistant:", "")
+        return f"{system}\n\nUser: {safe_prompt}\nAssistant:" if system else safe_prompt
 
     def _build_chat_messages(
         self, prompt: str, system: str = None
