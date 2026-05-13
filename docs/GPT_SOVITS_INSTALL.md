@@ -70,4 +70,4 @@ The TTS API should return audio only. Do not rely on GPT-SoVITS to interpret CVS
 
 ---
 
-**For training workflows, see [TRAINING_GUIDE.md](./TRAINING_GUIDE.md)**
+**For training workflows, see [_archive/docs/TRAINING_GUIDE.md](../_archive/docs/TRAINING_GUIDE.md)**

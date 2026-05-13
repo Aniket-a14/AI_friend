@@ -2,7 +2,6 @@
 GPT-SoVITS Client - API wrapper for local voice synthesis (Async CVS-1.0 Edition)
 """
 
-import asyncio
 import aiohttp
 import logging
 from typing import Optional, AsyncGenerator

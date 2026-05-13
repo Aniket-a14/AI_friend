@@ -27,7 +27,7 @@ AI Friend should be read as a **software mind-and-voice layer**, not as a produc
 - Runtime and CI hardening are in place for JetStream startup, stream readiness, and fallback safety.
 - Surfacing behavior is deterministic on `system.tick`, while preserving async scheduling for chat-triggered sweeps.
 - Latency badges and targets refer to **perceived first reaction latency**, not full-turn completion latency.
-- Forward-looking cognition upgrades (duplex partial cognition and tighter human turn-taking timing contracts) are documented in [docs/analysis_results.md](docs/analysis_results.md).
+- Forward-looking cognition upgrades (duplex partial cognition and tighter human turn-taking timing contracts) are documented in [_archive/docs/analysis_results.md](_archive/docs/analysis_results.md).
 
 ### What CVS-1.0 Optimizes For
 
@@ -281,7 +281,7 @@ Run a mesh health snapshot and confirm services are running and healthy where he
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Health}}"
 ```
 
-Refer to the **[Installation Guide](docs/GPT_SOVITS_INSTALL.md)** and **[Deployment Guide](docs/DEPLOYMENT.md)** for deep environment hardening.
+Refer to the **[Installation Guide](docs/GPT_SOVITS_INSTALL.md)** and **[_archive/docs/DEPLOYMENT.md](_archive/docs/DEPLOYMENT.md)** for deep environment hardening.
 
 ### 4. Local Test Suite
 
@@ -302,9 +302,9 @@ The full documentation suite lives in [docs](docs/README.md). Start there if you
 
 - [Architecture](docs/ARCHITECTURE.md) explains the mesh, cognition, memory, voice, and feedback loops.
 - [API Spec](docs/API_SPEC.md) documents REST endpoints and NATS subject contracts.
-- [Identity System](docs/IDENTITY_SYSTEM.md) explains immutable identity, adaptive variables, state, and memory surfacing.
-- [Latency Improvement](docs/LATENCY_IMPROVEMENT.md) explains perceived-latency strategy, streaming PCM, and timing markers.
-- [Deployment](docs/DEPLOYMENT.md) covers local and production deployment (Phased Startup).
+- [Identity System](_archive/docs/IDENTITY_SYSTEM.md) explains immutable identity, adaptive variables, state, and memory surfacing.
+- [Latency Improvement](_archive/docs/LATENCY_IMPROVEMENT.md) explains perceived-latency strategy, streaming PCM, and timing markers.
+- [Deployment](_archive/docs/DEPLOYMENT.md) covers local and production deployment (Phased Startup).
 - [.agents/CONTEXT.md](.agents/CONTEXT.md) is the persistent context ledger future agents should read before modifying the system.
 
 ### Planning Agent Workflow

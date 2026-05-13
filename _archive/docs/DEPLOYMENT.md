@@ -31,7 +31,7 @@ Before deploying to production, ensure you have completed the following:
 - [ ] Rotate API keys and use environment variables
 - [ ] Enable rate limiting
 - [ ] Configure database backups
-- [ ] Review [SECURITY.md](../SECURITY.md)
+- [ ] Review [SECURITY.md](../../SECURITY.md)
 
 ### Performance
 
