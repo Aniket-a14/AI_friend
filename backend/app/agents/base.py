@@ -50,17 +50,18 @@ class BaseAgent:
         """Ensure core streams exist on the mesh (CVS-1.0 Hardened)."""
         core_streams = {
             "AI_MESSAGES": [
-                "chat.*",
-                "vision.*",
-                "state.*",
-                "cmd.*",
-                "voice.*",
-                "system.*",
-                "memory.*",
-                "identity.*",
-                "knowledge.*",
+                "chat.>",
+                "vision.>",
+                "state.>",
+                "agent.>",
+                "cmd.>",
+                "voice.>",
+                "system.>",
+                "memory.>",
+                "identity.>",
+                "knowledge.>",
             ],
-            "AI_AUDIO": ["audio.*"],
+            "AI_AUDIO": ["audio.>"],
         }
 
         try:
@@ -145,7 +146,9 @@ class BaseAgent:
                 if isinstance(data, dict):
                     data["latency_metadata"] = meta
                 payload = json.dumps(data).encode()
-                await self.js.publish(subject, payload)
+                
+                # Standard NATS publish (resilient fallback)
+                await self.nc.publish(subject, payload)
 
             self._record_subject_metric(
                 subject,

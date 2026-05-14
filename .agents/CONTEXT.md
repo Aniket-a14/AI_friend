@@ -922,3 +922,36 @@ Verification:
 Remaining risks:
 - The `SubconsciousAgent` currently polls `system.tick`. If `system_agent` dies, proactive thinking stops.
 - GPT-SoVITS remains a major bottleneck on CPU-only machines, taking up to 5 minutes to load weights on startup.
+
+## 2026-05-14 Tier-4 Multimodal Cognition: Integrated Visual Appraisal
+
+Successfully integrated local host-resident visual appraisal into the agentic mesh, achieving stable cross-network NATS communication and resolving container-side screen capture limitations.
+
+Changed files:
+- `backend/app/vision/` (New Module)
+- `backend/app/vision/__init__.py` (New)
+- `backend/app/vision/links.py` (New - Migrated from `app/vision.py`)
+- `backend/app/vision/appraisal.py` (New - Migrated from `app/cognitive/visual_appraisal.py`)
+- `backend/app/vision/agent.py` (New - Migrated from `app/agents/vision_agent.py`)
+- `backend/app/agents/base.py`
+- `backend/app/nats_streams.py`
+- `backend/app/cognitive/__init__.py`
+- `scripts/start-vision.ps1` (New)
+- `docker-compose.prod.yml`
+- `.env`
+
+Behavior changes:
+- **Host-Native Vision**: Offloaded visual appraisal to a host-native `moondream:latest` VLM via Ollama, circumventing Windows Docker container limitations for desktop screen capture.
+- **NATS Mesh Hardening**: Transitioned all NATS communication to use "Super Wildcards" (`>`) instead of simple wildcards (`*`). This resolves subject overlap errors and enables multi-token routing (e.g., `vision.description`).
+- **Resilient Publishing**: Switched from JetStream `js.publish` to standard `nc.publish` for the host-to-container bridge, eliminating acknowledgment timeout failures in resource-constrained environments.
+- **Unified Vision Module**: Consolidated all vision-related capture and AI logic into a dedicated `backend/app/vision/` module, cleaning up the scattered architecture in `agents/` and `cognitive/`.
+- **Latency Tuning**: Increased VLM inference timeouts to 120s and NATS publish timeouts to 30s to accommodate local laptop GPU/CPU spikes.
+
+Verification:
+- Successfully performed a "Nuclear Wipe" of NATS volumes (`down -v`) to reset stream definitions to the new `>` wildcard format.
+- Verified successful capture and description generation on the Windows host with delivery to the `brain_agent` inside the Docker mesh.
+- Verified all 22 containers (infra + prod) reached `Healthy` status.
+
+Remaining risks:
+- GPT-SoVITS continues to be a startup bottleneck (requires high `start_period`).
+- The Host Vision Agent must be manually started via `scripts/start-vision.ps1` as it cannot be containerized on Windows for screen access.

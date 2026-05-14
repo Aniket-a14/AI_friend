@@ -102,6 +102,11 @@ class BrainAgent(BaseAgent):
             Topics.VISION_FRAMES, self._on_vision_frame, deliver_policy="last"
         )
         await self.subscribe(
+            Topics.VISION_DESCRIPTION,
+            self._on_vision_description,
+            deliver_policy="last",
+        )
+        await self.subscribe(
             Topics.VOICE_SEGMENTATION_FEEDBACK,
             self._on_voice_feedback,
             durable=f"{self.name}_voice_segmentation_feedback_live",
@@ -127,8 +132,21 @@ class BrainAgent(BaseAgent):
             self.segmenter.target_size = new_size
 
     async def _on_vision_frame(self, data: Dict[str, Any]):
+        """Fallback: basic source awareness from raw frames."""
         source = data.get("source", "unknown")
-        self.last_visual_context = f"I am seeing the user's {source}."
+        # Only update if we don't have a richer VLM description yet
+        if not self.last_visual_context or self.last_visual_context == "No visual data available.":
+            self.last_visual_context = f"I am seeing the user's {source}."
+
+    async def _on_vision_description(self, data: Dict[str, Any]):
+        """Tier-4 VLM: Rich semantic visual context from the Visual Appraisal pipeline."""
+        description = data.get("description", "")
+        source = data.get("source", "unknown")
+        if description:
+            self.last_visual_context = f"[Visual Context from {source}]: {description}"
+            logger.debug("[Brain] Visual context updated: %s", description[:60])
+        else:
+            self.last_visual_context = f"I am seeing the user's {source}."
 
     async def _on_chat_input(self, message: Dict[str, Any]):
         now = datetime.now()
