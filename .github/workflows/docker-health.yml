@@ -43,7 +43,7 @@ jobs:
             module: app.stt.agent
           - name: vision_agent
             target: full
-            module: app.agents.vision_agent
+            module: app.vision.agent
 
     steps:
       - uses: actions/checkout@v4

@@ -270,7 +270,7 @@ services:
 #      context: ./backend
 #      target: full
 #    container_name: vision_agent
-#    command: [ "python", "-m", "app.agents.vision_agent" ]
+#    command: [ "python", "-m", "app.vision.agent" ]
 #    env_file: .env
 #    environment:
 #      - AGENT_NAME=vision_agent
