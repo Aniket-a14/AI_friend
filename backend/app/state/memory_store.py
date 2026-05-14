@@ -238,9 +238,9 @@ class MemoryStore:
                         scored_candidates.append(
                             {
                                 "content": row["content"],
-                                "raw_content": row["raw_content"] or row["content"],
-                                "wing": row["wing"],
-                                "room": row["room"],
+                                "raw_content": row.get("raw_content") or row["content"],
+                                "wing": row.get("wing", "personal"),
+                                "room": row.get("room"),
                                 "score": score,
                                 # Episodic context for narrative surfacing
                                 "valence": memory_valence,
