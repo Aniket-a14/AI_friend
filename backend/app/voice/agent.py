@@ -288,6 +288,7 @@ class VoiceAgent(BaseAgent):
                     prosody=prosody,
                     intensity=msg.intensity or prosody["volume"],
                     rate=msg.speaking_rate or prosody["rate"],
+                    paralinguistic_tags=msg.paralinguistic_tags,
                 )
             return
 
@@ -340,6 +341,7 @@ class VoiceAgent(BaseAgent):
             intensity=intensity,
             rate=rate,
             priority=priority,
+            paralinguistic_tags=msg.paralinguistic_tags,
         )
 
     async def _queue_voice_segment(
@@ -352,6 +354,7 @@ class VoiceAgent(BaseAgent):
         intensity: float,
         rate: float,
         priority: int = 2,
+        **kwargs,
     ):
         self.queue_seq += 1
         await self.ingestion_queue.put(
@@ -368,6 +371,7 @@ class VoiceAgent(BaseAgent):
                     "metadata": metadata,
                     "turn_id": data.get("turn_id") or (metadata or {}).get("turn_id"),
                     "generation": self.generation,
+                    "paralinguistic_tags": kwargs.get("paralinguistic_tags", []),
                 },
             )
         )
@@ -457,6 +461,19 @@ class VoiceAgent(BaseAgent):
         """Synthesize text parts and enqueue timing-marker silences in order."""
         chunks: List[bytes] = []
         segment_start = True
+
+        # 1. Handle Leading Paralinguistic Tags
+        tags = item.get("paralinguistic_tags", [])
+        for tag in tags:
+            # Check for specifically supported sounds or fillers
+            filler_pcm = self.filler_service.get_specific_filler(tag)
+            if filler_pcm and self._is_current_item(item):
+                await self.playback_queue.put(
+                    make_playback_item(filler_pcm, item, segment_start)
+                )
+                chunks.append(filler_pcm)
+                segment_start = False
+
         parts = re.split(r"(<pause=\d+ms>|<hesitate>)", text)
 
         for part in parts:

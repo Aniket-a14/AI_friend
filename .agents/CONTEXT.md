@@ -955,3 +955,37 @@ Verification:
 Remaining risks:
 - GPT-SoVITS continues to be a startup bottleneck (requires high `start_period`).
 - The Host Vision Agent must be manually started via `scripts/start-vision.ps1` as it cannot be containerized on Windows for screen access.
+
+## 2026-05-14 Sovereign Memory Mesh & Voice I/O Upgrade
+
+Hardened the PankudiAI memory and voice subsystems by implementing hierarchical truth preservation and paralinguistic signal processing.
+
+### Key Advancements:
+
+- **1. Sovereign Memory Hierarchy (Wings/Rooms/Drawers)**:
+    - **Scoped Retrieval**: Transitioned from flat vector storage to a hierarchical scoping model. This enables the agent to differentiate between "personal," "system," and "public" memory spaces, improving identity continuity.
+    - **Verbatim Truth Preservation**: Implemented `raw_content` storage in the `MemoryStore`. All memory records now maintain a byte-for-byte copy of the original input to mitigate RAG-based hallucinations.
+- **2. Local-First Voice I/O Architect**:
+    - **Paralinguistic Perception**: Hardened the `STTAgent` to extract non-speech events (`Laughter`, `Cough`, `Breath`) from the fast-path SenseVoice engine.
+    - **Emotional Signal Rendering**: Upgraded the `VoiceAgent` and `FillerService` to support zero-latency injection of emotional markers like `[laughs]` and `[sighs]` using pre-hydrated PCM segments.
+- **3. Sensory Hardening (Real-System Acoustics)**:
+    - **EMA Noise Floor Tracking**: Replaced basic SNR logic with an **Exponential Moving Average (EMA)** noise floor tracker. This provides robust Signal-to-Noise Ratio (SNR) estimation in dynamic acoustic environments.
+    - **Prosody Mapping v2**: Refined the VAD-to-Prosody mapping to be more sensitive to arousal, resulting in more distinct vocal transformations during high-emotion states.
+
+Changed files:
+- `backend/app/contracts.py`
+- `backend/app/state/memory_store.py`
+- `backend/app/stt/agent.py`
+- `backend/app/stt/sensevoice_service.py`
+- `backend/app/voice/agent.py`
+- `backend/app/voice/filler_service.py`
+- `backend/app/voice/prosody.py`
+- `backend/db/schema.sql`
+- `backend/tests/test_memory_hierarchy.py`
+- `backend/tests/test_voice_paralinguistics.py`
+- `backend/tests/test_stt_perception.py`
+
+Verification:
+- Rebuilt `stt_agent`, `voice_agent`, and `brain_agent` containers.
+- Verified all 14 mesh containers reached `Healthy` status.
+- All 100 tests for memory hierarchy, paralinguistics, and SNR tracking passed with zero warnings (suppressed `pkg_resources` deprecation in `pytest.ini`).

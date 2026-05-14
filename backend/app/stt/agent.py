@@ -68,6 +68,7 @@ class STTAgent(BaseAgent):
         )
         self.worker_tasks = []
         self.current_utterance_id = None
+        self.noise_floor = 1e-4  # Baseline RMS for SNR tracking
 
     async def start(self):
         """Standard startup sequence for Micro-Agents"""
@@ -262,6 +263,7 @@ class STTAgent(BaseAgent):
                 self.perception_queue.task_done()
 
     async def _handle_perception_result(self, perception_data: dict, metadata: dict):
+        # 1. Speculative Intent Extraction
         speculative_intent = self._build_speculative_intent(
             perception_data["text"],
             confidence=0.9,
@@ -272,7 +274,24 @@ class STTAgent(BaseAgent):
             else perception_data.get("confidence", 0.7)
         )
 
-        # Publish emotional signals & partials
+        # 2. Real-time SNR with Noise Floor Tracking
+        # We track the ambient noise floor during non-speech intervals.
+        snr = 0.0
+        if "audio_np" in perception_data:
+            audio = perception_data["audio_np"]
+            current_rms = np.sqrt(np.mean(audio**2)) if np is not None else 0.0
+            
+            # If no speech or events detected, update the noise floor (EMA)
+            if not perception_data.get("text") and not perception_data.get("events"):
+                # Smoothly track the noise floor (alpha=0.05)
+                self.noise_floor = 0.95 * self.noise_floor + 0.05 * current_rms
+            
+            # SNR = 20 * log10(Signal_RMS / Noise_Floor)
+            # Clamped to avoid log(0) and extreme spikes
+            snr = 20 * np.log10(current_rms / (self.noise_floor + 1e-7) + 1e-7)
+            snr = max(-20.0, min(60.0, snr))
+
+        # 3. Build & Publish Perception Message
         spec_model = None
         if speculative_intent:
             spec_model = SpeculativeIntent(**speculative_intent)
@@ -280,8 +299,11 @@ class STTAgent(BaseAgent):
         perception_msg = AudioPerception(
             text=perception_data["text"],
             intent=speculative_intent["name"] if speculative_intent else None,
+            intent_type="COMMAND" if speculative_intent else "CONVERSATIONAL",
             keywords=speculative_intent["keywords"] if speculative_intent else [],
             confidence=perception_confidence,
+            snr=snr,
+            paralinguistic_events=perception_data.get("events", []),
             speculative_intent=spec_model,
             metadata={**perception_data, "confidence": perception_confidence},
             timestamp=time.time(),
@@ -291,7 +313,7 @@ class STTAgent(BaseAgent):
         )
         await self.publish(Topics.AUDIO_PERCEPTION, perception_msg.model_dump())
 
-        # Speculative Intent Evaluation
+        # 4. Speculative Intent Evaluation (Early Stop)
         if speculative_intent:
             logger.warning(
                 "[SPECULATIVE INTENT] Perception detected: '%s'. Triggering Early Stop.",
@@ -301,6 +323,7 @@ class STTAgent(BaseAgent):
                 interrupt=True,
                 speculative=True,
                 intent=speculative_intent["name"],
+                intent_type="VOICE_INTERRUPTION",
                 keywords=speculative_intent["keywords"],
                 confidence=speculative_intent["confidence"],
                 perception_text=speculative_intent["text"],

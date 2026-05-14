@@ -104,6 +104,7 @@ class SenseVoiceSTTService:
                 "emotional_bias": emotion_bias,
                 "events": events,
                 "latency_tier": "fast",
+                "audio_np": audio_np,
             }
 
             logger.debug(f"Perception: {primary_emotion} | Text: {clean_text}")
