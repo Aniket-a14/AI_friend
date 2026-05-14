@@ -1,559 +1,138 @@
-# 🤝 Contributing to AI Friend
+# 🤝 Contributing to AI Friend (CVS-1.0 Hardened)
 
-Thank you for your interest in contributing to AI Friend! This document provides guidelines and best practices for contributing to the project.
-
----
-
-## Table of Contents
-
-1. [Code of Conduct](#code-of-conduct)
-2. [Getting Started](#getting-started)
-3. [Development Workflow](#development-workflow)
-4. [Coding Standards](#coding-standards)
-5. [Testing](#testing)
-6. [Pull Request Process](#pull-request-process)
-7. [Issue Guidelines](#issue-guidelines)
+Thank you for contributing to the **Sovereign Mesh**. This project is a high-fidelity cognitive identity emulator designed for 100% local, ultra-low latency execution. We value precision, architectural integrity, and behavioral realism.
 
 ---
 
-## Code of Conduct
+## 🏗️ 1. Understanding the Sovereign Mesh
 
-This project adheres to a Code of Conduct that all contributors are expected to follow. Please read [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) before contributing.
+Before writing a single line of code, you must understand that AI Friend is a **decentralized system of autonomous agents** synchronized via a central nervous system (**NATS JetStream**).
+
+### The Cognitive Hierarchy
+- **Tier 1 (Infrastructure)**: NATS, Neo4j, PostgreSQL, Redis. The "Bones".
+- **Tier 2 (Sensory)**: STT, Vision, Transport. The "Eyes and Ears".
+- **Tier 3 (Cognitive)**: Appraisal, Decision, Learning. The "Mind".
+- **Tier 4 (State)**: Emotion (PAD), Memory (ACT-R). The "Personality".
+- **Tier 5 (Autonomy)**: Subconscious reflection, Proactive check-ins. The "Will".
 
 ---
 
-## Getting Started
+## 🛠️ 2. Development Workflow: The "Solution Architect" Protocol
 
-### Prerequisites
+We follow a strict **Planning-First** philosophy. Non-trivial changes (anything affecting >2 agents or the cognitive core) require a plan.
 
-- **Python 3.10+** for backend development
-- **Node.js 22+** for frontend development
-- **Docker & Docker Compose** for full-stack development
-- **Git** for version control
+### Step 1: Research & Planning
+1.  **Identify the Boundary**: Determine which agents or services are affected.
+2.  **Define the Contract**: If agents need to talk, define the Pydantic model in `backend/app/contracts.py`.
+3.  **Latency Budget**: Every cognitive turn has a budget of **<150ms**. If your change adds latency, you must justify it.
 
-### Fork and Clone
+### Step 2: Implementation Sequence
+1.  **Contract Update**: Modify `contracts.py` and run `scripts/setup_nats_streams.py`.
+2.  **Logic Update**: Modify the core service in `app/cognitive/` or `app/vision/`.
+3.  **Agent Wiring**: Update the agent in `app/agents/` to handle the new signals.
+4.  **Verification**: Run targeted regression tests.
 
-```bash
-# 1. Fork the repository on GitHub
-# 2. Clone your fork
-git clone https://github.com/YOUR_USERNAME/AI_friend.git
-cd AI_friend
+---
 
-# 3. Add upstream remote
-git remote add upstream https://github.com/Aniket-a14/AI_friend.git
+## 📂 3. The Project Map: Where to Edit?
 
-# 4. Create a feature branch
-git checkout -b feature/your-feature-name
-```
+| If you want to... | Edit these files/folders |
+| :--- | :--- |
+| **Change how AI "Sees"** | `backend/app/vision/` (Links, Appraisal, Agent) |
+| **Change AI Personality** | `backend/persona/` (JSON seeds) and `app/cognitive/identity.py` |
+| **Add a new Voice/Tone** | `backend/app/voice/prosody.py` |
+| **Change Memory logic** | `backend/app/state/memory_store.py` (ACT-R) |
+| **Add a new NATS Signal** | `backend/app/contracts.py` and `backend/app/nats_streams.py` |
+| **Update the Dashboard** | `frontend/components/` and `frontend/app/` |
+| **Change Mesh Startup** | `docker-compose.infra.yml` or `docker-compose.prod.yml` |
 
-### Local Setup
+---
 
-#### Backend
+## ⚙️ 4. Running the Mesh for Development
 
-```bash
-cd backend
+### A. The "Nuclear" Clean Start
+If you've modified NATS stream definitions or Database schemas, start fresh:
+```powershell
+# 1. Wipe everything (including volumes)
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml down -v
 
-# Create virtual environment
-python -m venv .venv
-
-# Activate (Windows)
-.venv\Scripts\activate
-
-# Activate (Linux/Mac)
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your API keys
-
-# Run development server
-python main.py
-```
-
-#### Frontend
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Configure environment
-cp .env.example .env
-# Edit .env with backend URL
-
-# Run development server
-npm run dev
-```
-
-#### v3.0 Infrastructure (Optional)
-
-```bash
-# Start NATS and Neo4j
+# 2. Start Infrastructure
 docker compose -f docker-compose.infra.yml up -d
 
-# Verify
-docker ps
+# 3. Hydrate Mesh & Database
+cd backend
+python scripts/setup_nats_streams.py
+cd ../frontend
+npx prisma db push
 ```
+
+### B. Multimodal Development (Vision)
+Because Windows screen capture cannot run inside Docker, use the **Host Bridge**:
+1.  Ensure **Ollama** is running on your host with `moondream`.
+2.  Run the launcher:
+    ```powershell
+    ./scripts/start-vision.ps1
+    ```
 
 ---
 
-## Development Workflow
+## 🧪 5. Verification: How to Check?
 
-### 1. Sync with Upstream
-
-Before starting work, sync your fork with the upstream repository:
-
-```bash
-git fetch upstream
-git checkout main
-git merge upstream/main
-git push origin main
-```
-
-### 2. Create Feature Branch
-
-```bash
-git checkout -b feature/your-feature-name
-```
-
-**Branch Naming Conventions**:
-
-- `feature/` - New features
-- `fix/` - Bug fixes
-- `docs/` - Documentation updates
-- `refactor/` - Code refactoring
-- `test/` - Test additions/updates
-- `chore/` - Maintenance tasks
-
-### 3. Make Changes
-
-- Write clean, readable code
-- Follow coding standards (see below)
-- Add tests for new features
-- Update documentation as needed
-
-### 4. Commit Changes
-
-Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
-
-```bash
-git add .
-git commit -m "feat: add voice cloning support"
-```
-
-**Commit Types**:
-
-- `feat:` - New feature
-- `fix:` - Bug fix
-- `docs:` - Documentation only
-- `style:` - Code style (formatting, no logic change)
-- `refactor:` - Code restructuring
-- `test:` - Adding tests
-- `chore:` - Maintenance
-
-**Examples**:
-
-```bash
-git commit -m "feat: add Neo4j GraphRAG integration"
-git commit -m "fix: resolve WebSocket connection timeout"
-git commit -m "docs: update API_SPEC.md with new endpoints"
-git commit -m "refactor: extract memory logic into separate module"
-```
-
-### 5. Push and Create PR
-
-```bash
-git push origin feature/your-feature-name
-```
-
-Then create a Pull Request on GitHub.
-
----
-
-## Coding Standards
-
-### Python (Backend)
-
-#### Style Guide
-
-Follow [PEP 8](https://peps.python.org/pep-0008/) with these specifics:
-
-- **Line Length**: 100 characters max
-- **Indentation**: 4 spaces
-- **Imports**: Grouped and sorted (stdlib, third-party, local)
-- **Type Hints**: Required for all function signatures
-
-**Example**:
-
-```python
-from typing import Optional, List
-import asyncio
-
-from fastapi import WebSocket
-from app.models import Message
-
-
-async def process_audio(
-    audio_data: bytes,
-    session_id: str,
-    user_id: Optional[str] = None
-) -> List[Message]:
-    """
-    Process audio data and return conversation messages.
-    
-    Args:
-        audio_data: Raw PCM audio bytes
-        session_id: Unique session identifier
-        user_id: Optional user identifier
-        
-    Returns:
-        List of conversation messages
-    """
-    # Implementation
-    pass
-```
-
-#### Linting & Quality Control
-
-We use **Ruff** for linting and **Black** for formatting. Your code must pass all checks before a PR will be considered.
-
-```bash
-# Install linting tools
-pip install ruff black mypy
-
-# Run ruff (Lints + Fixes common issues)
-ruff check app/ --fix
-
-# Run black (Formatting)
-black app/ --check
-
-# Run mypy (Type checking)
-mypy app/
-```
-
-**Configuration** (`pyproject.toml`):
-We emphasize strict architectural boundaries and microsecond-latency async patterns.
-
-### TypeScript/JavaScript (Frontend)
-
-#### Style Guide
-
-- **Line Length**: 100 characters max
-- **Indentation**: 2 spaces
-- **Quotes**: Single quotes for strings
-- **Semicolons**: Required
-- **Type Safety**: Strict TypeScript
-
-**Example**:
-
-```typescript
-interface AudioConfig {
-  sampleRate: number;
-  channels: number;
-  bitDepth: number;
-}
-
-async function captureAudio(config: AudioConfig): Promise<MediaStream> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      sampleRate: config.sampleRate,
-      channelCount: config.channels,
-    },
-  });
-  
-  return stream;
-}
-```
-
-#### Linting
-
-```bash
-# Run ESLint
-npm run lint
-
-# Fix auto-fixable issues
-npm run lint:fix
-
-# Type check
-npm run type-check
-```
-
-### React Best Practices
-
-- Use functional components with hooks
-- Prefer `const` over `let`
-- Use TypeScript interfaces for props
-- Extract reusable logic into custom hooks
-- Keep components small and focused
-
-**Example**:
-
-```typescript
-interface VoiceInterfaceProps {
-  onAudioData: (data: ArrayBuffer) => void;
-  isActive: boolean;
-}
-
-export const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
-  onAudioData,
-  isActive,
-}) => {
-  const [isRecording, setIsRecording] = useState(false);
-  
-  useEffect(() => {
-    if (isActive) {
-      startRecording();
-    } else {
-      stopRecording();
-    }
-  }, [isActive]);
-  
-  return (
-    <div className="voice-interface">
-      {/* Component JSX */}
-    </div>
-  );
-};
-```
-
----
-
-## Testing
-
-### Backend Tests
-
+### 1. Linting & Type Safety (Mandatory)
+We use **Ruff** for high-speed linting. Your code **must** be clean before pushing.
 ```bash
 cd backend
-
-# Install test dependencies
-pip install pytest pytest-asyncio pytest-cov
-
-# Run tests
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ --cov=app --cov-report=html
+ruff check . --fix
+mypy .
 ```
 
-**Test Structure**:
-
-```python
-import pytest
-from app.memory_store import MemoryStore
-
-
-@pytest.mark.asyncio
-async def test_memory_storage():
-    """Test memory entry storage and retrieval."""
-    store = MemoryStore()
-    
-    # Store memory
-    entry_id = await store.store(
-        content="User likes blue",
-        type="preference"
-    )
-    
-    # Retrieve memory
-    results = await store.query("favorite color")
-    
-    assert len(results) > 0
-    assert results[0].content == "User likes blue"
-```
-
-### Frontend Tests
-
+### 2. Cognitive Regression Tests
+Check that your change didn't break the AI's "Mind":
 ```bash
-cd frontend
+# Run all cognitive tests
+pytest backend/tests/test_decision.py backend/tests/test_subconscious.py -v
 
-# Run unit tests
-npm test
-
-# Run with coverage
-npm test -- --coverage
-
-# Run E2E tests
-npm run test:e2e
+# Run state persistence tests
+pytest backend/tests/test_regressions.py -k "state"
 ```
 
-**Test Structure** (Jest + React Testing Library):
-
-```typescript
-import { render, screen, fireEvent } from '@testing-library/react';
-import { VoiceInterface } from './VoiceInterface';
-
-describe('VoiceInterface', () => {
-  it('should start recording when activated', () => {
-    const onAudioData = jest.fn();
-    
-    render(
-      <VoiceInterface onAudioData={onAudioData} isActive={true} />
-    );
-    
-    const button = screen.getByRole('button', { name: /start/i });
-    fireEvent.click(button);
-    
-    expect(onAudioData).toHaveBeenCalled();
-  });
-});
+### 3. Mesh Health Probe
+Verify all 22 containers are actually talking to each other:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Health}}"
 ```
 
 ---
 
-## Pull Request Process
+## 📜 6. Mesh Communication Contracts (NATS)
 
-### Before Submitting
+All inter-agent talk is strictly typed. **Never** send raw dictionaries.
 
-1. **Sync with upstream**: Ensure your branch is up-to-date
-2. **Run tests**: All tests must pass
-3. **Run linters**: Code must pass linting checks
-4. **Update docs**: Update README, API_SPEC, etc. if needed
-5. **Test locally**: Verify changes work end-to-end
+**To add a new subject:**
+1.  Define the `Topic` in `app/contracts.py`.
+2.  Define the `Pydantic Model` for the payload.
+3.  Add the subject to the stream list in `app/nats_streams.py` (using `>` wildcards).
 
-### PR Template
+**Example Code Pattern:**
+```python
+# GOOD: Using a contract
+from app.contracts import Topics, MyNewContract
 
-When creating a PR, use this template:
+await self.publish(Topics.MY_NEW_SUBJECT, MyNewContract(field="value").model_dump())
 
-```markdown
-## Description
-Brief description of changes
-
-## Type of Change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Documentation update
-
-## Testing
-- [ ] Unit tests added/updated
-- [ ] Integration tests added/updated
-- [ ] Tested locally
-
-## Checklist
-- [ ] Code follows style guidelines
-- [ ] Self-review completed
-- [ ] Comments added for complex logic
-- [ ] Documentation updated
-- [ ] No new warnings generated
-- [ ] For non-trivial changes, a pre-implementation plan was produced using `skills/solution-architect-agent/SKILL.md`
-```
-
-### Review Process
-
-1. **Automated Checks**: CI/CD must pass
-2. **Code Review**: At least one maintainer approval required
-3. **Testing**: Reviewer may request additional tests
-4. **Documentation**: Ensure all changes are documented
-
-### After Approval
-
-Maintainers will merge your PR. Your contribution will be included in the next release!
-
----
-
-## Issue Guidelines
-
-### Reporting Bugs
-
-Use the bug report template:
-
-```markdown
-**Describe the bug**
-Clear description of the issue
-
-**To Reproduce**
-Steps to reproduce:
-1. Go to '...'
-2. Click on '...'
-3. See error
-
-**Expected behavior**
-What should happen
-
-**Screenshots**
-If applicable
-
-**Environment**
-- OS: [e.g., Windows 11]
-- Browser: [e.g., Chrome 120]
-- Version: [e.g., 2.2.0]
-
-**Additional context**
-Any other relevant information
-```
-
-### Feature Requests
-
-Use the feature request template:
-
-```markdown
-**Is your feature request related to a problem?**
-Clear description of the problem
-
-**Describe the solution you'd like**
-What you want to happen
-
-**Describe alternatives you've considered**
-Other solutions you've thought about
-
-**Additional context**
-Any other relevant information
+# BAD: Do not do this
+await self.publish("my.raw.subject", {"raw": "data"})
 ```
 
 ---
 
-## Codebase Structure
+## 🚀 7. Pull Request Rules
 
-### Backend (`/backend`)
-
-```
-backend/
-├── app/
-│   ├── agents/           # v3.0 micro-agents
-│   │   └── base.py       # BaseAgent abstraction
-│   ├── knowledge/        # GraphRAG components
-│   │   ├── graph_db.py   # Neo4j connector
-│   │   └── triple_extractor.py
-│   ├── gemini_live.py    # Gemini Live client
-│   ├── llm.py            # LLM orchestration
-│   └── memory_store.py   # RAG memory
-├── tools/                # Client tools
-├── tests/                # Test suite
-├── main.py               # FastAPI app
-└── requirements.txt      # Dependencies
-```
-
-### Frontend (`/frontend`)
-
-```
-frontend/
-├── app/                  # Next.js App Router
-│   ├── page.tsx          # Landing page
-│   └── layout.tsx        # Root layout
-├── components/           # React components
-│   ├── VoiceInterface.tsx
-│   └── AudioWorklet.ts
-├── public/               # Static assets
-└── package.json          # Dependencies
-```
+1.  **Conventional Commits**: `feat:`, `fix:`, `refactor:`, `mesh:`, `docs:`.
+2.  **Context Ledger**: If you change agent behavior, you **MUST** update `.agents/CONTEXT.md` with a summary of the change.
+3.  **No Dead Code**: Remove unused variables and commented-out blocks (unless documenting a design decision).
 
 ---
 
-## Getting Help
-
-- **Questions**: Open a [Discussion](https://github.com/Aniket-a14/AI_friend/discussions)
-- **Bugs**: Open an [Issue](https://github.com/Aniket-a14/AI_friend/issues)
-- **Security**: See [SECURITY.md](./SECURITY.md)
-
----
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the MIT License.
-
----
-
-**Thank you for contributing to AI Friend!** 🎉
+**Designed for Perception. Built for Identity.**  
+*The Sovereign Mesh is a living organism. Treat its architecture with respect.* 🦾✨
