@@ -10,8 +10,9 @@ on:
     branches: [main, master]
     paths:
       - 'backend/app/cognitive/**'
+      - 'backend/app/vision/**'
       - 'backend/app/agents/brain_agent.py'
-      - 'backend/app/agents/voice_agent.py'
+      - 'backend/app/voice/agent.py'
       - 'backend/persona/**'
       - 'frontend/prisma/seed.js'
 
