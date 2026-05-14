@@ -6,6 +6,9 @@ create extension if not exists pgcrypto;
 create table if not exists memories (
   id uuid primary key default gen_random_uuid(),
   content text not null,
+  raw_content text, -- Verbatim Truth
+  wing text not null default 'personal',
+  room text,
   embedding vector(768), -- Gemini 1.5 Flash/Pro embedding dimension
   importance_score double precision not null default 0.5,
   emotional_weight double precision not null default 0.0,

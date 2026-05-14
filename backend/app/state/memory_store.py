@@ -78,6 +78,9 @@ class MemoryStore:
     async def add_memory(
         self,
         content,
+        raw_content=None,
+        wing="personal",
+        room=None,
         importance=0.5,
         emotion=0.0,
         valence=0.0,
@@ -85,25 +88,30 @@ class MemoryStore:
         source="user",
         metadata=None,
     ):
-        """Adds a new memory with ACT-R metadata to the local Postgres database."""
+        """Adds a new memory with ACT-R metadata and hierarchical scope."""
         try:
             vector = await self.get_embedding(content)
             if not vector:
                 return False
 
             vector_str = str(vector)
+            raw_val = raw_content or content
 
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     """
                     INSERT INTO memories (
-                        content, embedding, importance_score, emotional_weight,
+                        content, raw_content, wing, room,
+                        embedding, importance_score, emotional_weight,
                         valence, certainty, source, metadata,
                         recall_count, last_recalled_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, CURRENT_TIMESTAMP)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, CURRENT_TIMESTAMP)
                     """,
                     content,
+                    raw_val,
+                    wing,
+                    room,
                     vector_str,
                     importance,
                     emotion,
@@ -113,7 +121,7 @@ class MemoryStore:
                     json.dumps(metadata or {}),
                 )
             logger.info(
-                f"🧠 Memory Stored: {content[:50]}... (Imp: {importance}, V: {valence})"
+                f"🧠 Memory Stored [{wing}:{room or 'global'}]: {content[:50]}..."
             )
             return True
         except Exception as e:
@@ -123,6 +131,8 @@ class MemoryStore:
     async def search_memories(
         self,
         query_text,
+        wing: str = "personal",
+        room: str = None,
         threshold=0.3,
         limit=5,
         refresh_on_recall=True,
@@ -130,12 +140,10 @@ class MemoryStore:
         current_valence: float = 0.0,
     ):
         """
-        ACT-R Based Retrieval (§6.2–6.4):
+        ACT-R Based Retrieval with Hierarchical Scoping:
             Score = Bᵢ + w_spread·Similarity + w_emotion·EmotionalAlignment
 
-        Where:
-            Bᵢ ≈ ln(recall_count) - d · ln(hours_since_last + 1)
-            EmotionalAlignment = exp(-|Memory.V - Current.V|)  (Bower, 1981)
+        Filters results by 'wing' and optionally 'room' before scoring.
         """
         try:
             query_vector = await self.get_embedding(query_text)
@@ -148,10 +156,20 @@ class MemoryStore:
 
             results = []
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
+                # Scoped query: filter by wing (required) and room (optional)
+                where_clause = "WHERE wing = $2"
+                params = [vector_str, wing]
+
+                if room:
+                    where_clause += " AND room = $3"
+                    params.append(room)
+
+                query = f"""
                     SELECT
                         content,
+                        raw_content,
+                        wing,
+                        room,
                         importance_score,
                         emotional_weight,
                         valence,
@@ -161,12 +179,14 @@ class MemoryStore:
                         metadata,
                         1 - (embedding <=> $1) as similarity
                     FROM memories
+                    {where_clause}
                     ORDER BY embedding <=> $1
-                    LIMIT $2
-                    """,
-                    vector_str,
-                    limit * 3,
-                )
+                    LIMIT ${len(params) + 1}
+                """
+                # Add limit parameter
+                params.append(limit * 3)
+
+                rows = await conn.fetch(query, *params)
 
                 scored_candidates = []
                 for row in rows:
@@ -218,6 +238,9 @@ class MemoryStore:
                         scored_candidates.append(
                             {
                                 "content": row["content"],
+                                "raw_content": row["raw_content"] or row["content"],
+                                "wing": row["wing"],
+                                "room": row["room"],
                                 "score": score,
                                 # Episodic context for narrative surfacing
                                 "valence": memory_valence,
