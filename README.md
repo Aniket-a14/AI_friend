@@ -74,7 +74,7 @@ graph TD
         Bus <--> |"chat.input / audio.perception"| STT["STT Agent: Dual-Path"]
         Bus <--> |"chat.input / chat.output"| Brain["Brain Agent: BDI Cognition"]
         Bus <--> |"chat.output / audio.stop/resume"| Voice["Voice Agent: CVS Runtime"]
-        Bus <--> |"vision.control / vision.frames"| Vision["Vision Agent: CV2/Llava"]
+        Bus <--> |"vision.control / vision.description"| Vision["Vision Agent: Host-Native VLM"]
         Bus <--> |"system.tick"| Pulse["System Agent: Heartbeat"]
         Bus <--> |"memory.surfaced / state.update"| Recall["Surfacing Agent: Memory"]
     end
@@ -125,31 +125,44 @@ CVS-1.0 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant T as TransportAgent
+    participant H as Host (Windows)
+    participant T as TransportAgent (Docker)
     participant SV as "SenseVoice (Fast Path)"
     participant W as "Whisper (Accurate Path)"
-    participant B as Brain Agent
-    participant V as Voice Agent
+    participant VA as "Vision Agent (VLM)"
+    participant B as Brain Agent (Decision)
+    participant V as Voice Agent (CVS)
 
-    U->>T: WebRTC Audio
-    T->>T: PCM → audio.inbound
-
-    par Dual-STT Fan-Out
-        T->>SV: 400ms chunks (CPU)
-        T->>W: Full utterance (GPU)
+    Note over U, H: Multimodal Input (Sight & Sound)
+    par Visual Appraisal (Host-Resident)
+        H->>VA: Screen/Cam Buffer (Host-Native)
+        VA->>VA: VLM Inference (moondream)
+        VA->>B: vision.description (nc.publish)
+    and Audio Perception (Mesh)
+        U->>T: WebRTC Audio
+        T->>T: PCM → audio.inbound
+        par Dual-STT Fan-Out
+            T->>SV: 400ms chunks (Speculative)
+            T->>W: Full utterance (Semantic)
+        end
     end
 
-    SV->>B: AudioPerception (emotion + speculative intent)
-    Note over SV,V: Stage 1 — Speculative pause if stop detected
-    SV-->>V: AudioStop(speculative=true)
+    Note over SV, B: Stage 1 — Speculative Perception
+    SV->>B: AudioPerception (emotion + intent)
+    SV-->>V: audio.stop (speculative=true)
+    V->>V: Immediate OLA Pause
 
-    W->>B: ChatInput (final transcript, typed contract)
-    Note over B: Stage 2 — Cognitive confirms or rejects stop
-    B-->>V: AudioResume (if rejected) / AudioStop (if confirmed)
-
-    B->>V: ChatOutput (incremental segments + affect)
-    V->>V: prosody.py → playback.py → resilience.py
-    V->>T: Raw 32kHz PCM → audio.stream
+    Note over W, B: Stage 2 — Semantic Resolution
+    W->>B: ChatInput (Typed Contract)
+    B->>B: Multimodal Context Merge (Audio + Vision)
+    
+    Note over B, V: Stage 3 — Cognitive Action
+    B-->>V: audio.stop (confirmed) / audio.resume
+    B->>V: ChatOutput (Segments + Affect Vector)
+    
+    Note over V, U: Stage 4 — Signal Rendering
+    V->>V: prosody.py → playback.py
+    V->>T: 32kHz PCM → audio.stream
     T->>U: WebRTC Audio
     V-->>B: voice.segmentation_feedback (Telemetry)
     Note over B,V: Closed-Loop Pulse Adjustment
