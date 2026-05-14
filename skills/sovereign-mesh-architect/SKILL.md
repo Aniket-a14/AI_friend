@@ -1,6 +1,6 @@
 ---
 name: sovereign-mesh-architect
-description: A high-fidelity development protocol and architectural framework for building and evolving the CVS-1.0 Sovereign Mesh. Enforces contract-first development, parallel codegen, and local-first memory integrity.
+description: A high-fidelity development protocol and architectural framework for building and evolving the CVS-1.0 Sovereign Mesh. Enforces contract-first development, parallel codegen, local-first memory integrity, and physically-grounded embodied intelligence.
 ---
 
 # Sovereign Mesh Architect
