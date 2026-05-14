@@ -139,8 +139,17 @@ class AudioResume(BaseModel):
 
 
 # ─── memory.surfaced ─────────────────────────────────────────
+class MemoryScope(BaseModel):
+    """Hierarchical scope for memory items (Wings -> Rooms -> Drawers)."""
+    wing: str = "personal"
+    room: Optional[str] = None
+    drawer_id: Optional[str] = None
+
+
 class SurfacedMemory(BaseModel):
     content: str
+    raw_content: str  # Verbatim Truth
+    scope: MemoryScope = Field(default_factory=MemoryScope)
     score: float = 0.0
     valence: float = 0.0
     created_at: Optional[str] = None
@@ -153,6 +162,7 @@ class MemorySurfaced(BaseModel):
 
     memories: List[SurfacedMemory] = Field(default_factory=list)
     source: str = "episodic"
+    provenance: str = "pgvector_actr"  # cognitive source of the memory
     context: Optional[str] = None
 
 

@@ -15,6 +15,7 @@ import time
 from typing import Dict, Any, Optional, List
 from .base import BaseAgent
 from ..state import ConversationHistoryStore, MemoryStore, GraphDB
+from ..contracts import MemorySurfaced, SurfacedMemory, MemoryScope
 
 logger = logging.getLogger("surfacing_agent")
 
@@ -195,6 +196,7 @@ class SurfacingAgent(BaseAgent):
         search_started = time.perf_counter()
         memories = await self.memory.search_memories(
             self.last_context,
+            wing="personal",  # Default wing for conversation history
             limit=3,
             refresh_on_recall=False,
             exclude_contents=list(self.recently_surfaced.keys()),
@@ -208,18 +210,32 @@ class SurfacingAgent(BaseAgent):
                 # Build a narrative episode from the enriched metadata
                 episode = self._build_episode_narrative(mem, now)
 
+                # Validate and publish via CVS-1.0 Contracts
+                surfaced_msg = MemorySurfaced(
+                    memories=[
+                        SurfacedMemory(
+                            content=episode["narrative"],
+                            raw_content=episode["raw_content"],
+                            scope=MemoryScope(
+                                wing=mem.get("wing", "personal"),
+                                room=mem.get("room"),
+                            ),
+                            score=mem.get("score", 0.0),
+                            valence=episode["valence"],
+                            created_at=episode["created_at"],
+                            recall_count=episode["recall_count"],
+                            metadata=episode["metadata"],
+                        )
+                    ],
+                    source="episodic",
+                    provenance="pgvector_actr",
+                    context=self.last_context,
+                )
+
                 publish_started = time.perf_counter()
                 await self.publish(
                     "memory.surfaced",
-                    {
-                        "content": episode["narrative"],
-                        "raw_content": content,
-                        "timestamp": now,
-                        "relevance": mem.get("score", 0.7),
-                        "source": "episodic",
-                        "channel": "pgvector_actr",
-                        "episode": episode,
-                    },
+                    surfaced_msg.model_dump(),
                     metadata=source_metadata,
                 )
                 publish_ms = (time.perf_counter() - publish_started) * 1000
@@ -358,16 +374,24 @@ class SurfacingAgent(BaseAgent):
 
             for fact_text in facts:
                 if not self._was_recently_surfaced(fact_text, now):
+                    surfaced_msg = MemorySurfaced(
+                        memories=[
+                            SurfacedMemory(
+                                content=fact_text,
+                                raw_content=fact_text,
+                                scope=MemoryScope(wing="knowledge"),
+                                score=0.8,
+                            )
+                        ],
+                        source="semantic",
+                        provenance="neo4j_graph",
+                        context=self.last_context,
+                    )
+
                     publish_started = time.perf_counter()
                     await self.publish(
                         "memory.surfaced",
-                        {
-                            "content": fact_text,
-                            "timestamp": now,
-                            "relevance": 0.8,
-                            "source": "semantic",
-                            "channel": "neo4j_graph",
-                        },
+                        surfaced_msg.model_dump(),
                         metadata=source_metadata,
                     )
                     publish_ms = (time.perf_counter() - publish_started) * 1000
