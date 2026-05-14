@@ -28,6 +28,7 @@ class Topics(str, Enum):
     CHAT_OUTPUT = "chat.output"
     VISION_CONTROL = "vision.control"
     VISION_FRAMES = "vision.frames"
+    VISION_DESCRIPTION = "vision.description"
     AUDIO_PERCEPTION = "audio.perception"
     AUDIO_STOP = "audio.stop"
     AUDIO_RESUME = "audio.resume"
@@ -153,6 +154,15 @@ class MemorySurfaced(BaseModel):
     memories: List[SurfacedMemory] = Field(default_factory=list)
     source: str = "episodic"
     context: Optional[str] = None
+
+
+# ─── vision.description ──────────────────────────────────────
+class VisionDescription(BaseModel):
+    """Published by VisionAgent on `vision.description` after VLM appraisal."""
+
+    description: str
+    source: str = "screen"
+    timestamp: float = Field(default_factory=time.time)
 
 
 # ─── state.update ────────────────────────────────────────────

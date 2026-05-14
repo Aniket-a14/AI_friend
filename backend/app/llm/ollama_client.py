@@ -322,6 +322,60 @@ class OllamaClient:
             logger.error("Ollama non-stream generation failed hard: %s", e)
             return "Error generating response."
 
+    async def describe_image(
+        self,
+        image_b64: str,
+        prompt: str = "What do you see?",
+        model: str = None,
+    ) -> str:
+        """
+        Send a base64-encoded image to a Vision-Language Model via Ollama.
+        Uses the /api/generate endpoint with the native `images` parameter.
+        """
+        target_model = model or self.model
+        payload = {
+            "model": target_model,
+            "prompt": prompt,
+            "images": [image_b64],
+            "stream": False,
+            "options": {
+                "temperature": 0.3,
+                "num_predict": 128,
+                "num_ctx": 2048,
+            },
+            "keep_alive": "10m",
+        }
+
+        async def _do_describe():
+            async with aiohttp.ClientSession() as session:
+                try:
+                    async with session.post(
+                        f"{self.base_url}/api/generate",
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=120),
+                    ) as response:
+                        if response.status >= 400:
+                            details = (await response.text())[:200]
+                            logger.warning(
+                                "[VLM] Ollama /api/generate returned HTTP %s: %s",
+                                response.status,
+                                details,
+                            )
+                            return ""
+
+                        result = await response.json()
+                        return self._extract_response_text(result)
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    logger.warning("[VLM] Ollama vision request failed: %s", repr(e))
+                    return ""
+
+        try:
+            result = await self._request_with_backoff(_do_describe)
+            return (result or "").strip()
+        except Exception as e:
+            logger.error("[VLM] Vision describe_image failed hard: %s", e)
+            return ""
+
     async def check_health(self) -> bool:
         """Check if Ollama is reachable"""
         try:

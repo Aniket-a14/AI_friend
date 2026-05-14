@@ -92,6 +92,12 @@ class AppSettings(BaseSettings):
     VOICE_FILLER_HYDRATE_ON_STARTUP: bool = True
     VOICE_TTS_MOCK: bool = False
 
+    # Vision / VLM Configuration
+    VLM_MODEL: str = "moondream"
+    VLM_ENABLED: bool = True
+    VLM_APPRAISAL_INTERVAL: float = 5.0
+    VLM_PROMPT: str = "Describe what you see in this image briefly. Focus on what the user is doing."
+
     STT_MODEL_SIZE: str = "small"
     STT_DEVICE: str = "cpu"
 
@@ -139,16 +145,15 @@ class ConfigMeta(type):
                     if model.strip()
                 ]
             else:
-                return list(
-                    dict.fromkeys(
-                        [
-                            config_instance.LLM_CHAT_MODEL,
-                            config_instance.LLM_FAST_MODEL,
-                            config_instance.LLM_REFLECTION_MODEL,
-                            "nomic-embed-text",
-                        ]
-                    )
-                )
+                models = [
+                    config_instance.LLM_CHAT_MODEL,
+                    config_instance.LLM_FAST_MODEL,
+                    config_instance.LLM_REFLECTION_MODEL,
+                    "nomic-embed-text",
+                ]
+                if config_instance.VLM_ENABLED:
+                    models.append(config_instance.VLM_MODEL)
+                return list(dict.fromkeys(models))
         return getattr(config_instance, name)
 
 

@@ -12,18 +12,18 @@ logger = logging.getLogger("nats_streams")
 
 CORE_STREAMS: Dict[str, Sequence[str]] = {
     "AI_MESSAGES": [
-        "chat.*",
-        "vision.*",
-        "state.*",
-        "agent.*",
-        "cmd.*",
-        "voice.*",
-        "system.*",
-        "memory.*",
-        "identity.*",
-        "knowledge.*",
+        "chat.>",
+        "vision.>",
+        "state.>",
+        "agent.>",
+        "cmd.>",
+        "voice.>",
+        "system.>",
+        "memory.>",
+        "identity.>",
+        "knowledge.>",
     ],
-    "AI_AUDIO": ["audio.*"],
+    "AI_AUDIO": ["audio.>"],
 }
 
 

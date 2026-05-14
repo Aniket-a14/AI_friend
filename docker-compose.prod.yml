@@ -265,27 +265,28 @@ services:
       retries: 5
 
   # 7. VISION AGENT (OpenCV, Screen/Cam) - Heavy
-  vision_agent:
-    build:
-      context: ./backend
-      target: full
-    container_name: vision_agent
-    command: [ "python", "-m", "app.agents.vision_agent" ]
-    volumes:
-      - ./backend:/app
-    environment:
-      - NATS_URL=nats://nats_mesh:4222
-    networks:
-      - ai_mesh_network
-    depends_on:
-      brain_agent:
-        condition: service_healthy
-    restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+#  vision_agent:
+#    build:
+#      context: ./backend
+#      target: full
+#    container_name: vision_agent
+#    command: [ "python", "-m", "app.agents.vision_agent" ]
+#    env_file: .env
+#    environment:
+#      - AGENT_NAME=vision_agent
+#      - NATS_URL=nats://nats_mesh:4222
+#      - OLLAMA_URL=${OLLAMA_URL}
+#    depends_on:
+#      nats:
+#        condition: service_started
+#    networks:
+#      - ai_mesh_network
+#    restart: always
+#    healthcheck:
+#      test: ["CMD-SHELL", "pgrep python || exit 1"]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 35
 
 # Use the existing network created by infra
 networks:
