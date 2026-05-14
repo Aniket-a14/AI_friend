@@ -22,6 +22,9 @@ class FillerService:
         "Got it.",
         "I'm on it.",
         "Just a moment.",
+        "[laughs]",
+        "[sighs]",
+        "[gasps]",
     ]
 
     def __init__(self, cache_dir: str = "models/fillers"):

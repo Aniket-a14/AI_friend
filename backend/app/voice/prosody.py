@@ -20,18 +20,20 @@ def vad_to_prosody(affect: Dict[str, float]) -> Dict[str, float]:
     d = affect.get("dominance", 0.5)
 
     # 1. Speed (Arousal based) — High arousal = faster speech
-    rate = 1.0 + (a - 0.5) * 0.8  # Range [0.6, 1.4]
+    # Range [0.7, 1.5]
+    rate = 1.0 + (a - 0.5) * 1.0
 
     # 2. Pitch (Valence and Arousal based)
-    pitch = 1.0 + (a - 0.5) * 0.5 + (v - 0.5) * 0.2
+    # Range [0.6, 1.6]
+    pitch = 1.0 + (a - 0.5) * 0.7 + (v - 0.5) * 0.3
 
     # 3. Volume (Dominance based)
-    volume = 0.5 + d * 0.5
+    volume = 0.4 + d * 0.6
 
     return {
-        "rate": round(rate, 2),
-        "pitch": round(pitch, 2),
-        "volume": round(volume, 2),
+        "rate": round(max(0.6, min(1.8, rate)), 2),
+        "pitch": round(max(0.5, min(2.0, pitch)), 2),
+        "volume": round(max(0.1, min(1.0, volume)), 2),
         "pause_bias": 1.0 - a,  # High arousal = shorter pauses
     }
 

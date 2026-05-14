@@ -78,11 +78,12 @@ class ChatOutput(BaseModel):
     turn_id: Optional[str] = None
     affect: Optional[ChatOutputAffect] = None
 
-    # Prosody control
+    # Prosody & Signals
     confidence: float = 1.0
     intensity: float = 0.0
     speaking_rate: float = 1.0
     pause_bias: float = 0.0
+    paralinguistic_tags: List[str] = Field(default_factory=list)  # [laughs], [sighs], etc.
 
     # Metadata
     timestamp: float = Field(default_factory=time.time)
@@ -106,8 +107,11 @@ class AudioPerception(BaseModel):
 
     text: str = ""
     intent: Optional[str] = None
+    intent_type: str = "CONVERSATIONAL"  # COMMAND, PERCEPTION, CONVERSATIONAL
     keywords: List[str] = Field(default_factory=list)
     confidence: float = 0.0
+    snr: float = 0.0  # Signal-to-Noise Ratio
+    paralinguistic_events: List[str] = Field(default_factory=list) # [laughter], [cough], etc.
     speculative_intent: Optional[SpeculativeIntent] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     timestamp: float = 0.0
@@ -123,6 +127,7 @@ class AudioStop(BaseModel):
     reason: Optional[str] = None
     command_text: Optional[str] = None
     intent: Optional[str] = None
+    intent_type: str = "VOICE_INTERRUPTION" # VOICE_INTERRUPTION, VISION_INTERRUPTION, SYSTEM_HALT
     keywords: List[str] = Field(default_factory=list)
     confidence: float = 0.0
     perception_text: Optional[str] = None
