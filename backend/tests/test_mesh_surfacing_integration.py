@@ -16,11 +16,15 @@ class _FakeConn:
         normalized = " ".join(query.split()).lower()
 
         if normalized.startswith("insert into memories"):
+            # New Arg Order: content, raw_val, wing, room, vector_str, importance, emotion...
             self.rows.append(
                 {
                     "content": args[0],
-                    "importance_score": float(args[2]),
-                    "emotional_weight": float(args[3]),
+                    "raw_content": args[1],
+                    "wing": args[2],
+                    "room": args[3],
+                    "importance_score": float(args[5]),
+                    "emotional_weight": float(args[6]),
                     "last_recalled_at": datetime.now(timezone.utc),
                 }
             )
@@ -37,15 +41,24 @@ class _FakeConn:
         return "OK"
 
     async def fetch(self, _query, *args):
-        limit = int(args[1]) if len(args) > 1 else len(self.rows)
+        # New Params: vector_str, wing, [room], limit
+        limit_idx = len(args) - 1
+        limit = int(args[limit_idx]) if len(args) > 0 else len(self.rows)
         results = []
         for row in self.rows[:limit]:
             results.append(
                 {
                     "content": row["content"],
+                    "raw_content": row.get("raw_content", row["content"]),
+                    "wing": row.get("wing", "personal"),
+                    "room": row.get("room"),
                     "importance_score": row["importance_score"],
                     "emotional_weight": row["emotional_weight"],
+                    "valence": row.get("valence", 0.0),
+                    "recall_count": row.get("recall_count", 1),
+                    "created_at": row.get("created_at", datetime.now(timezone.utc)),
                     "last_recalled_at": row["last_recalled_at"],
+                    "metadata": row.get("metadata", {}),
                     "similarity": 0.99,
                 }
             )
@@ -141,4 +154,4 @@ async def test_surfacing_mesh_regression_emits_system_tick_and_memory_surfaced()
     assert "system.tick" in mesh.events
     assert "memory.surfaced" in mesh.events
     surfaced_payload = mesh.payloads["memory.surfaced"][0]
-    assert "exam stress" in surfaced_payload["content"].lower()
+    assert "exam stress" in surfaced_payload["memories"][0]["content"].lower()

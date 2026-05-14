@@ -30,6 +30,9 @@ def memory_store(mock_pool):
 def _make_row(
     content,
     similarity,
+    raw_content=None,
+    wing="personal",
+    room=None,
     hours_ago=0,
     recall_count=1,
     valence=0.0,
@@ -40,6 +43,9 @@ def _make_row(
     now = datetime.now(timezone.utc)
     return {
         "content": content,
+        "raw_content": raw_content or content,
+        "wing": wing,
+        "room": room,
         "importance_score": importance,
         "emotional_weight": emotion,
         "valence": valence,
