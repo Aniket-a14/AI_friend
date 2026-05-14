@@ -2,46 +2,66 @@ import asyncio
 import json
 import time
 import nats
+import os
 
 async def run_monitor():
     """
-    Mesh Latency Monitor.
-    Subscribes to input and output subjects to calculate precise cognitive turnaround.
+    Mesh Latency Monitor (CVS-1.0 Multimodal).
+    Subscribes to input, output, and perceptual subjects to calculate precise 
+    cognitive turnaround and multimodal jitter.
     """
-    print("📡 Mesh Latency Monitor online...")
-    nc = await nats.connect("nats://localhost:4222")
+    print("\n📡 Sovereign Mesh Research Monitor (Tier-4/5) online...")
+    nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
+    nc = await nats.connect(nats_url)
     
     start_times = {}
 
+    print(f"Connected to NATS at {nats_url}")
+    print("Tracking: Audio, Vision, and Speculative Intent.\n")
+
     async def input_handler(msg):
         data = json.loads(msg.data.decode())
-        if "metadata" in data and "start_time" in data["metadata"]:
-            benchmark_id = data["metadata"].get("benchmark_id", "default")
-            start_times[benchmark_id] = data["metadata"]["start_time"]
-            print(f"TRACKING: {benchmark_id}")
+        # Track start time from the mesh metadata
+        metadata = data.get("metadata", {})
+        benchmark_id = metadata.get("benchmark_id", "user_input")
+        start_times[benchmark_id] = time.time()
+        print(f"📥 [Input] Received: {benchmark_id}")
 
     async def output_handler(msg):
         data = json.loads(msg.data.decode())
         now = time.time()
         
-        # Try to find matching benchmark_id in metadata
         metadata = data.get("metadata", {})
-        benchmark_id = metadata.get("benchmark_id", "default")
+        benchmark_id = metadata.get("benchmark_id", "user_input")
         
         if benchmark_id in start_times:
             latency_ms = (now - start_times[benchmark_id]) * 1000
-            print(f"✅ TURNAROUND COMPLETE | ID: {benchmark_id} | Latency: {latency_ms:.2f}ms")
+            print(f"✅ [Result] TURNAROUND COMPLETE | ID: {benchmark_id} | Latency: {latency_ms:.2f}ms")
             del start_times[benchmark_id]
 
+    async def perception_handler(msg):
+        """Track speculative STT latency (The 'Reflex' time)"""
+        now = time.time()
+        print(f"⚡ [Reflex] Speculative Intent Detected: {msg.subject} (High Frequency)")
+
+    async def vision_handler(msg):
+        """Track Multimodal Vision descriptions"""
+        data = json.loads(msg.data.decode())
+        desc = data.get("description", "")
+        print(f"👁️ [Vision] Description received ({len(desc)} chars): {desc[:60]}...")
+
+    # Subscribe to subjects using the new Super-Wildcard routing
     await nc.subscribe("chat.input", cb=input_handler)
     await nc.subscribe("chat.output", cb=output_handler)
+    await nc.subscribe("audio.perception", cb=perception_handler)
+    await nc.subscribe("vision.description", cb=vision_handler)
     
     print("Listening for signal pulses... (Ctrl+C to stop)")
     try:
         while True:
             await asyncio.sleep(1)
-    except asyncio.CancelledError:
-        pass
+    except KeyboardInterrupt:
+        print("\nStopping monitor...")
     finally:
         await nc.close()
 

@@ -1,62 +1,75 @@
 import asyncio
 import csv
 import time
-from datetime import datetime
-from neo4j import GraphDatabase
+import json
+import nats
 import os
+from datetime import datetime
 
-# Research Configuration (Override via env if needed)
-NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASS = os.getenv("NEO4J_PASSWORD", "password") # Default for local
+# Research-grade Event-Driven State Collector (CVS-1.0)
+# Listens to NATS broadcasts for the current PAD state of the agent 
+# and logs it to a CSV for high-fidelity research trajectories.
+
 LOG_FILE = "research_pad_trajectory.csv"
 
 async def run_collector():
     """
     Research State Collector.
-    Polls Neo4j for the current PAD state of the agent and logs it to a CSV.
-    This captures both chat-driven updates and idle ALMA decay.
+    Uses NATS state.updated broadcasts to log PAD trajectories.
     """
-    print(f"📊 State Collector starting... logging to {LOG_FILE}")
+    print(f"\n📊 [Sovereign Mesh] State Collector starting... logging to {LOG_FILE}")
     
-    driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
-    
-    # Initialize CSV with headers
+    nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
+    nc = await nats.connect(nats_url)
+
+    # Initialize CSV with high-fidelity headers
+    # PAD (Pleasure, Arousal, Dominance)
     with open(LOG_FILE, mode='w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(["timestamp", "valence", "arousal", "dominance", "trust", "attachment"])
+        writer.writerow(["timestamp", "elapsed_sec", "pleasure", "arousal", "dominance", "event_type"])
 
-    print("Listening for state changes (Polling 1Hz)... (Ctrl+C to stop)")
+    print(f"Connected to NATS at {nats_url}")
+    print("Listening for Real-time State Updates... (Ctrl+C to stop)\n")
+    
+    start_time = time.time()
+
+    async def state_handler(msg):
+        try:
+            data = json.loads(msg.data.decode())
+            pad = data.get("pad", {})
+            p = pad.get("p", 0.0)
+            a = pad.get("a", 0.0)
+            d = pad.get("d", 0.0)
+            event = data.get("event", "decay")
+            
+            elapsed = time.time() - start_time
+            
+            row = [
+                datetime.now().isoformat(),
+                round(elapsed, 3),
+                p, a, d,
+                event
+            ]
+            
+            with open(LOG_FILE, mode='a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(row)
+            
+            # Print state to console
+            print(f"💓 [State] P:{p:+.2f} A:{a:+.2f} D:{d:+.2f} | {event[:15]}")
+        except Exception as e:
+            print(f"Error parsing state: {e}")
+
+    # Subscribe to state updates (Super-Wildcard routing)
+    await nc.subscribe("state.updated", cb=state_handler)
     
     try:
         while True:
-            with driver.session() as session:
-                result = session.run("MATCH (a:Agent {name: 'my friend'}) RETURN a")
-                record = result.single()
-                if record:
-                    props = record["a"]
-                    row = [
-                        datetime.now().isoformat(),
-                        props.get("mood", 0.0),
-                        props.get("energy", 0.5),
-                        props.get("dominance", 0.5),
-                        props.get("trust", 0.5),
-                        props.get("attachment", 0.1)
-                    ]
-                    
-                    with open(LOG_FILE, mode='a', newline='') as f:
-                        writer = csv.writer(f)
-                        writer.writerow(row)
-                    
-                    # Print pulse to console
-                    print(f"[{row[0][:19]}] V:{row[1]:.2f} Ar:{row[2]:.2f} D:{row[3]:.2f} T:{row[4]:.2f}", end='\r')
-            
-            await asyncio.sleep(1) # 1Hz sampling rate for trajectories
-            
+            await asyncio.sleep(1)
     except KeyboardInterrupt:
         print("\nStopping collector...")
     finally:
-        driver.close()
+        await nc.close()
 
 if __name__ == "__main__":
     asyncio.run(run_collector())
