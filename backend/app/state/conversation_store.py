@@ -1,7 +1,7 @@
 import logging
-import os
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 import asyncpg
@@ -23,6 +23,11 @@ class ConversationHistoryStore:
         self.dsn = Config.DATABASE_URL
         self.pool: Optional[asyncpg.Pool] = None
         self.current_session_id: Optional[uuid.UUID] = None
+        app_dir = Path(__file__).resolve().parents[1]
+        self.personality_seed_path = (
+            Config.PERSONALITY_SEED_PATH or str(app_dir / "personality.json")
+        )
+        self.history_seed_path = Config.HISTORY_SEED_PATH or str(app_dir / "history.json")
 
     async def initialize(self):
         """Initialize the database connection pool."""
@@ -57,16 +62,10 @@ class ConversationHistoryStore:
                     logger.info(
                         "No AgentConfig found. Seeding from local JSON files..."
                     )
-                    state_dir = os.path.dirname(os.path.abspath(__file__))
-                    app_dir = os.path.dirname(state_dir)
-
-                    personality_path = os.path.join(app_dir, "personality.json")
-                    history_path = os.path.join(app_dir, "history.json")
-
                     personality = DEFAULT_PERSONALITY_JSON
                     try:
                         with open(
-                            personality_path,
+                            self.personality_seed_path,
                             "r",
                             encoding="utf-8",
                         ) as f:
@@ -79,7 +78,7 @@ class ConversationHistoryStore:
                     history = DEFAULT_HISTORY_JSON
                     try:
                         with open(
-                            history_path,
+                            self.history_seed_path,
                             "r",
                             encoding="utf-8",
                         ) as f:
