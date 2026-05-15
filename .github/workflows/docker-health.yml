@@ -32,6 +32,15 @@ jobs:
           - name: brain_agent
             target: slim
             module: app.agents.brain_agent
+          - name: system_agent
+            target: slim
+            module: app.agents.system_agent
+          - name: subconscious_agent
+            target: slim
+            module: app.agents.subconscious_agent
+          - name: surfacing_agent
+            target: slim
+            module: app.agents.surfacing_agent
           - name: voice_agent
             target: slim
             module: app.voice.agent
@@ -41,9 +50,6 @@ jobs:
           - name: stt_agent
             target: full
             module: app.stt.agent
-          - name: vision_agent
-            target: full
-            module: app.vision.agent
 
     steps:
       - uses: actions/checkout@v4
