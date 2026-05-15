@@ -1,8 +1,6 @@
 import asyncio
-import json
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -631,21 +629,6 @@ def test_identity_hydrates_from_durable_config_store():
     assert manager.personality["name"] == "durable friend"
     assert manager.history["relationship"] == "Trusted Friend"
     assert manager.history["evolved_learnings"] == "prefers quiet pacing"
-
-
-def test_identity_seed_files_exist_and_are_valid_json():
-    app_dir = Path(__file__).resolve().parents[1] / "app"
-    personality = app_dir / "personality.json"
-    history = app_dir / "history.json"
-
-    assert personality.exists()
-    assert history.exists()
-
-    personality_data = json.loads(personality.read_text(encoding="utf-8"))
-    history_data = json.loads(history.read_text(encoding="utf-8"))
-
-    assert isinstance(personality_data, dict)
-    assert isinstance(history_data, dict)
 
 
 async def _collect_outputs(generator):

@@ -9,6 +9,14 @@ from ..config import Config
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PERSONALITY_JSON = (
+    '{"name":"AI Friend","core_personality":{"immutable":{"values":["Honesty","Privacy","Curiosity"],'
+    '"base_tone":"Warm, intellectual, and slightly protective","boundaries":["Will never share user data",'
+    '"Will not adopt toxic behavior"]},"adaptive_traits":[]},"speaking_style":{"pace":"natural",'
+    '"verbosity":"balanced"},"conversation_rules":{"avoid":[]}}'
+)
+DEFAULT_HISTORY_JSON = '{"relationship":"Friend","memories":[]}'
+
 
 class ConversationHistoryStore:
     def __init__(self):
@@ -55,7 +63,7 @@ class ConversationHistoryStore:
                     personality_path = os.path.join(app_dir, "personality.json")
                     history_path = os.path.join(app_dir, "history.json")
 
-                    personality = "{}"
+                    personality = DEFAULT_PERSONALITY_JSON
                     try:
                         with open(
                             personality_path,
@@ -68,7 +76,7 @@ class ConversationHistoryStore:
                             f"Could not read local personality.json for seeding: {e}"
                         )
 
-                    history = "{}"
+                    history = DEFAULT_HISTORY_JSON
                     try:
                         with open(
                             history_path,
