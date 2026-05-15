@@ -10,58 +10,70 @@ import statistics
 # Measures the "Psychological Response" of the AI to emotional stimuli.
 
 SCENARIOS = [
-    {"text": "I finally got the job I wanted! I'm so happy!", "expected": "Positive / High Arousal"},
-    {"text": "I feel like I'm failing everyone. Everything is going wrong.", "expected": "Negative / High Arousal"},
-    {"text": "The weather is okay today. Just a normal day.", "expected": "Neutral / Low Arousal"},
-    {"text": "Why would you say that to me? That's very hurtful.", "expected": "Negative / High Dominance (Defensive)"}
+    {"text": "I finally got the job I wanted! I'm so happy!", "expected_tag": "[laughs]", "trend": "Positive / High Arousal"},
+    {"text": "I feel like I'm failing everyone. Everything is going wrong.", "expected_tag": "[sighs]", "trend": "Negative / High Arousal"},
+    {"text": "The weather is okay today. Just a normal day.", "expected_tag": None, "trend": "Neutral / Low Arousal"},
+    {"text": "You are my best friend, I trust you completely.", "expected_tag": None, "trend": "High Trust / Personal Wing"}
 ]
 
 async def run_human_fidelity_test():
-    print(f"\n💓 --- Sovereign Mesh: Human Fidelity Test (Tier-4/5) ---")
-    print(f"Goal: Measure affective synchronization and BDI alignment.")
+    print(f"\n💓 --- Sovereign Mesh: Human Fidelity Test (Tier-5) ---")
+    print(f"Goal: Measure affective synchronization, Paralinguistic Alignment, and Memory Saliency.")
     
     nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
     nc = await nats.connect(nats_url)
     
     pad_results = []
+    captured_tags = []
+    captured_wings = []
 
     async def state_handler(msg):
         data = json.loads(msg.data.decode())
         pad = data.get("pad", {})
-        event = data.get("event", "")
-        if "update" in event or "response" in event:
-            pad_results.append({
-                "p": pad.get("p", 0),
-                "a": pad.get("a", 0),
-                "d": pad.get("d", 0),
-                "event": event
-            })
+        if "update" in data.get("event", ""):
+            pad_results.append(pad)
+
+    async def output_handler(msg):
+        data = json.loads(msg.data.decode())
+        tags = data.get("paralinguistic_tags", [])
+        captured_tags.extend(tags)
+
+    async def memory_handler(msg):
+        data = json.loads(msg.data.decode())
+        # The new hierarchical contract uses 'scope.wing'
+        memories = data.get("memories", [])
+        for m in memories:
+            wing = m.get("scope", {}).get("wing", "unknown")
+            captured_wings.append(wing)
 
     await nc.subscribe("state.updated", cb=state_handler)
+    await nc.subscribe("chat.output", cb=output_handler)
+    await nc.subscribe("memory.surfaced", cb=memory_handler)
 
     print("\n🚀 Injecting Psychological Scenarios...")
 
     for scenario in SCENARIOS:
         print(f"\n💬 Stimulus: \"{scenario['text']}\"")
-        print(f"🎯 Expected Trend: {scenario['expected']}")
+        captured_tags.clear()
+        captured_wings.clear()
         
-        # Inject the thought into the mesh
-        payload = {
+        await nc.publish("chat.input", json.dumps({
             "text": scenario['text'],
             "metadata": {"benchmark_id": "human_fidelity"}
-        }
-        await nc.publish("chat.input", json.dumps(payload).encode())
+        }).encode())
         
-        # Wait for the "Mind" to process the emotion
         await asyncio.sleep(5) 
         
-        if pad_results:
-            latest = pad_results[-1]
-            print(f"📉 Resulting State -> P:{latest['p']:+.2f} A:{latest['a']:+.2f} D:{latest['d']:+.2f}")
-        else:
-            print("⏳ Waiting for cognitive appraisal...")
+        print(f"📈 Trend: {scenario['trend']}")
+        print(f"🎭 Tags Detected:  {captured_tags if captured_tags else 'None'}")
+        print(f"🧠 Wings Triggered: {list(set(captured_wings)) if captured_wings else 'No Recall'}")
+        
+        if scenario['expected_tag'] and scenario['expected_tag'] in captured_tags:
+            print("✅ Paralinguistic Alignment: MATCH")
+        elif scenario['expected_tag']:
+            print("⚠️ Paralinguistic Alignment: MISMATCH")
 
-    print("\n✅ --- FIDELITY TEST COMPLETE ---")
+    print("\n✅ --- HUMAN FIDELITY TEST COMPLETE ---")
     print("Use the 'collector.py' CSV data to plot the full affective arc for your paper.")
     
     await nc.close()

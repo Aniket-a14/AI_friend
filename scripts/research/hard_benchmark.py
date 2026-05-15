@@ -18,6 +18,7 @@ async def run_benchmark(iterations=20):
     nc = await nats.connect(nats_url)
     
     results = []
+    reflex_results = []
     
     # Test Payload: Standard conversation pulse
     test_pulse = {
@@ -27,6 +28,18 @@ async def run_benchmark(iterations=20):
             "start_time": 0
         }
     }
+
+    async def reflex_handler(msg):
+        nonlocal reflex_results
+        now = time.time()
+        data = json.loads(msg.data.decode())
+        
+        metadata = data.get("metadata", {})
+        if metadata.get("benchmark_id") == "bench_pulse":
+            start_time = metadata.get("start_time", 0)
+            if start_time > 0:
+                latency = (now - start_time) * 1000
+                reflex_results.append(latency)
 
     async def output_handler(msg):
         nonlocal results
@@ -39,15 +52,15 @@ async def run_benchmark(iterations=20):
             if start_time > 0:
                 latency = (now - start_time) * 1000
                 results.append(latency)
-                print(f"✅ Pulse {len(results)}: {latency:.2f}ms (RTT-aware)")
+                print(f"✅ Pulse {len(results)}: Thought={latency:.0f}ms | Reflex={reflex_results[-1] if reflex_results else 0:.0f}ms")
 
-    # Subscribe to the final cognitive output (The moment the Brain decides)
+    # Subscribe to Reflex (First sound) and Output (Full thought)
+    await nc.subscribe("voice.segment", cb=reflex_handler)
     await nc.subscribe("chat.output", cb=output_handler)
 
     print(f"Starting {iterations} pulses...")
 
     for i in range(iterations):
-        pulse_id = f"pulse_{i}"
         current_pulse = test_pulse.copy()
         current_pulse["metadata"] = {
             "benchmark_id": "bench_pulse",
@@ -55,33 +68,23 @@ async def run_benchmark(iterations=20):
             "start_time": time.time()
         }
         
-        # Publish to the mesh
         await nc.publish("chat.input", json.dumps(current_pulse).encode())
-        
-        # Wait for the mesh to process before next pulse
-        # This simulates high-frequency natural interaction
-        await asyncio.sleep(1.5) 
-        print(f"[{i+1}/{iterations}] Pulse injected...", end='\r')
+        await asyncio.sleep(2.5) # Increased for stability
 
     print("\n✅ Benchmarking complete. Finalizing statistics...")
 
     if results:
-        p50 = statistics.median(results)
-        p95 = sorted(results)[int(len(results) * 0.95)]
-        p99 = sorted(results)[int(len(results) * 0.99)]
-        avg = statistics.mean(results)
-        jitter = statistics.stdev(results) if len(results) > 1 else 0
+        avg_thought = statistics.mean(results)
+        avg_reflex = statistics.mean(reflex_results) if reflex_results else 0
+        p99_thought = sorted(results)[int(len(results) * 0.99)]
 
-        print(f"\n📈 --- QUANTIFIABLE RESULTS FOR PAPER ---")
-        print(f"Subject: Cognitive Turnaround (STT -> Brain Decision)")
+        print(f"\n📈 --- HUMAN-FIDELITY RESULTS FOR PAPER ---")
+        print(f"Reflex Latency (First Sound):  {avg_reflex:.2f} ms")
+        print(f"Cognitive Latency (Thought):   {avg_thought:.2f} ms")
+        print(f"Human-Likeness Gap:            {avg_thought - avg_reflex:.2f} ms")
         print("-" * 45)
-        print(f"Average Latency: {avg:.2f} ms")
-        print(f"p50 (Median):    {p50:.2f} ms")
-        print(f"p95 (Burst):     {p95:.2f} ms")
-        print(f"p99 (Worst Case):{p99:.2f} ms")
-        print(f"Jitter (StdDev): {jitter:.2f} ms")
+        print(f"p99 Stability (Thought):       {p99_thought:.2f} ms")
         print("-" * 45)
-        print(f"Throughput:      {1000/avg:.2f} cognitive-turns/sec (theoretical)")
         
         # Save to file for easy copy-paste
         with open("benchmark_results.json", "w") as f:
