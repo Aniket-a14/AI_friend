@@ -1,4 +1,5 @@
 import logging
+import json
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -9,13 +10,25 @@ from ..config import Config
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PERSONALITY_JSON = (
-    '{"name":"AI Friend","core_personality":{"immutable":{"values":["Honesty","Privacy","Curiosity"],'
-    '"base_tone":"Warm, intellectual, and slightly protective","boundaries":["Will never share user data",'
-    '"Will not adopt toxic behavior"]},"adaptive_traits":[]},"speaking_style":{"pace":"natural",'
-    '"verbosity":"balanced"},"conversation_rules":{"avoid":[]}}'
-)
-DEFAULT_HISTORY_JSON = '{"relationship":"Friend","memories":[]}'
+DEFAULT_PERSONALITY = {
+    "name": "AI Friend",
+    "core_personality": {
+        "immutable": {
+            "values": ["Honesty", "Privacy", "Curiosity"],
+            "base_tone": "Warm, intellectual, and slightly protective",
+            "boundaries": [
+                "Will never share user data",
+                "Will not adopt toxic behavior",
+            ],
+        },
+        "adaptive_traits": [],
+    },
+    "speaking_style": {"pace": "natural", "verbosity": "balanced"},
+    "conversation_rules": {"avoid": []},
+}
+DEFAULT_HISTORY = {"relationship": "Friend", "memories": []}
+DEFAULT_PERSONALITY_JSON = json.dumps(DEFAULT_PERSONALITY)
+DEFAULT_HISTORY_JSON = json.dumps(DEFAULT_HISTORY)
 
 
 class ConversationHistoryStore:
