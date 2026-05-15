@@ -100,14 +100,16 @@ class BrainAgent(BaseAgent):
         alpha = getattr(Config, "FEEDBACK_ALPHA", 0.7)
 
         # Alpha-damped damping to prevent jittery speech fragmentation
-        smoothed_size = (alpha * self.segmenter.target_size) + ((1 - alpha) * target)
+        smoothed_size = (alpha * self.coordinator.segmenter.target_size) + (
+            (1 - alpha) * target
+        )
         new_size = int(round(smoothed_size))
 
-        if new_size != self.segmenter.target_size:
+        if new_size != self.coordinator.segmenter.target_size:
             logger.info(
                 f"📈 Tuning Segmentation | Target: {target} -> Smoothed: {new_size}"
             )
-            self.segmenter.target_size = new_size
+            self.coordinator.segmenter.target_size = new_size
 
     async def _on_vision_frame(self, data: Dict[str, Any]):
         """Fallback: basic source awareness from raw frames."""
