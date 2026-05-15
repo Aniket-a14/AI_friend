@@ -12,6 +12,8 @@ export function useWebRTCVoice() {
     const roomRef = useRef(null);
     const audioTrackRef = useRef(null);
     const remoteAudioElementsRef = useRef(new Set());
+    const isConnectedRef = useRef(false);
+    const isConnectingRef = useRef(false);
 
     const startRecording = useCallback(async () => {
         setInteractionState('listening');
@@ -22,10 +24,19 @@ export function useWebRTCVoice() {
     }, []);
 
     useEffect(() => {
+        isConnectedRef.current = isConnected;
+    }, [isConnected]);
+
+    useEffect(() => {
+        isConnectingRef.current = isConnecting;
+    }, [isConnecting]);
+
+    useEffect(() => {
         let mounted = true;
+        const remoteAudioElements = remoteAudioElementsRef.current;
 
         const connectToRoom = async () => {
-            if (isConnected || isConnecting) return;
+            if (isConnectedRef.current || isConnectingRef.current) return;
 
             setIsConnecting(true);
             try {
@@ -65,13 +76,13 @@ export function useWebRTCVoice() {
                             element.dataset.livekitRemoteAudio = 'true';
                             element.style.display = 'none';
                             document.body.appendChild(element);
-                            remoteAudioElementsRef.current.add(element);
+                            remoteAudioElements.add(element);
                             setInteractionState('speaking');
                         }
                     })
                     .on(RoomEvent.TrackUnsubscribed, (track) => {
                         track.detach().forEach((element) => {
-                            remoteAudioElementsRef.current.delete(element);
+                            remoteAudioElements.delete(element);
                             element.remove();
                         });
                     });
@@ -112,8 +123,8 @@ export function useWebRTCVoice() {
                 audioTrackRef.current.stop();
                 audioTrackRef.current = null;
             }
-            remoteAudioElementsRef.current.forEach((element) => element.remove());
-            remoteAudioElementsRef.current.clear();
+            remoteAudioElements.forEach((element) => element.remove());
+            remoteAudioElements.clear();
         };
     }, []); // Empty dependency array ensures this runs only once on mount
 

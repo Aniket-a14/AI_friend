@@ -49,12 +49,16 @@ class ConversationHistoryStore:
                     logger.info(
                         "No AgentConfig found. Seeding from local JSON files..."
                     )
-                    current_dir = os.path.dirname(os.path.abspath(__file__))
+                    state_dir = os.path.dirname(os.path.abspath(__file__))
+                    app_dir = os.path.dirname(state_dir)
+
+                    personality_path = os.path.join(app_dir, "personality.json")
+                    history_path = os.path.join(app_dir, "history.json")
 
                     personality = "{}"
                     try:
                         with open(
-                            os.path.join(current_dir, "personality.json"),
+                            personality_path,
                             "r",
                             encoding="utf-8",
                         ) as f:
@@ -67,7 +71,7 @@ class ConversationHistoryStore:
                     history = "{}"
                     try:
                         with open(
-                            os.path.join(current_dir, "history.json"),
+                            history_path,
                             "r",
                             encoding="utf-8",
                         ) as f:
