@@ -3,7 +3,6 @@ import logging
 import random
 import re
 import time
-from enum import Enum
 from typing import Dict, Any, List
 
 try:
@@ -23,17 +22,9 @@ from .playback import silence_pcm, drain_queue, make_playback_item, run_playback
 from .resilience import run_resilience_loop, run_drift_correction_loop
 from ..contracts import ChatOutput, AudioStop, AudioResume, Topics
 
+from .system import VoicePlaybackState, VoiceSystem
+
 logger = logging.getLogger(__name__)
-
-
-class VoicePlaybackState(Enum):
-    IDLE = "IDLE"
-    BUFFERING = "BUFFERING"
-    PLAYING = "PLAYING"
-    SPECULATIVE_PAUSE = "SPECULATIVE_PAUSE"
-    INSERT_WINDOW = "INSERT_WINDOW"
-    TRANSITION = "TRANSITION"
-    COOLDOWN = "COOLDOWN"
 
 
 class VoiceAgent(BaseAgent):
@@ -59,16 +50,13 @@ class VoiceAgent(BaseAgent):
         self.cache = AudioCache()
         self.filler_service = FillerService()
 
-        # State & Scheduling
-        self.state = VoicePlaybackState.IDLE
+        # State & Logic Engine
+        self.system = VoiceSystem()
         self.state_lock = asyncio.Lock()
         self.ingestion_queue = asyncio.PriorityQueue()
         self.playback_queue = asyncio.Queue()
         self.queue_seq = 0
-        self.speculative_buffer = None  # Holds PCM for potential resume
-        self.generation = 0
-        self.stopped_turn_ids = set()
-        self.paused_utterance_id = None
+        self.speculative_buffer = None
 
         # Audio Context
         self.sample_rate = Config.SAMPLE_RATE
@@ -215,16 +203,17 @@ class VoiceAgent(BaseAgent):
             logger.error(f"Unexpected error processing audio.stop: {e}", exc_info=True)
             return
 
-        if is_speculative:
-            self.paused_utterance_id = utterance_id
+        action = self.system.handle_stop(
+            is_speculative=is_speculative,
+            turn_id=turn_id,
+            utterance_id=utterance_id
+        )
+
+        if action == "speculative_pause":
             logger.warning("Speculative pause triggered. Holding playback buffer...")
             await self._set_playback_state(VoicePlaybackState.SPECULATIVE_PAUSE)
         else:
             logger.error("Final stop triggered. Clearing all streams.")
-            self.generation += 1
-            if turn_id:
-                self.stopped_turn_ids.add(turn_id)
-            self.paused_utterance_id = None
             await self._set_playback_state(VoicePlaybackState.IDLE)
             drain_queue(self.playback_queue)
             drain_queue(self.ingestion_queue)
@@ -241,28 +230,17 @@ class VoiceAgent(BaseAgent):
             logger.error(f"Unexpected error processing audio.resume: {e}", exc_info=True)
             return
 
-        if (
-            self.paused_utterance_id
-            and utterance_id
-            and utterance_id != self.paused_utterance_id
-        ):
-            logger.debug(
-                "Ignoring stale audio.resume for utterance_id=%s", utterance_id
-            )
-            return
-
-        if self.state == VoicePlaybackState.SPECULATIVE_PAUSE:
+        if self.system.handle_resume(utterance_id):
             logger.info("Resuming playback from speculative pause.")
-            self.paused_utterance_id = None
             await self._set_playback_state(VoicePlaybackState.PLAYING)
 
     # ─── State Machine ─────────────────────────────────────────
 
     async def _set_playback_state(self, new_state: VoicePlaybackState):
         async with self.state_lock:
-            if self.state != new_state:
-                logger.debug(f"State: {self.state.value} -> {new_state.value}")
-                self.state = new_state
+            if self.system.state != new_state:
+                logger.debug(f"State: {self.system.state.value} -> {new_state.value}")
+                self.system.set_state(new_state)
                 await self.set_state(new_state.value.lower())
 
     # ─── Input Handling & Phrase Segmentation ──────────────────
@@ -370,7 +348,7 @@ class VoiceAgent(BaseAgent):
                     "timestamp": time.time(),
                     "metadata": metadata,
                     "turn_id": data.get("turn_id") or (metadata or {}).get("turn_id"),
-                    "generation": self.generation,
+                    "generation": self.system.generation,
                     "paralinguistic_tags": kwargs.get("paralinguistic_tags", []),
                 },
             )
@@ -379,11 +357,7 @@ class VoiceAgent(BaseAgent):
     # ─── Generation Fencing ────────────────────────────────────
 
     def _is_current_item(self, item: Dict[str, Any]) -> bool:
-        turn_id = item.get("turn_id")
-        return (
-            item.get("generation") == self.generation
-            and turn_id not in self.stopped_turn_ids
-        )
+        return self.system.is_current_item(item)
 
     # ─── Convenience Wrappers (delegate to extracted modules) ──
 

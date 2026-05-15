@@ -2,7 +2,7 @@
 GPT-SoVITS Client - API wrapper for local voice synthesis (Async CVS-1.0 Edition)
 """
 
-import aiohttp
+import httpx
 import logging
 from typing import Optional, AsyncGenerator
 from ..config import Config
@@ -14,21 +14,26 @@ class SoVITSClient:
     """
     Async Client for GPT-SoVITS local TTS API.
     Optimized for CVS-1.0 temporal orchestration.
+    Uses httpx for high-performance async I/O.
     """
 
     def __init__(self, base_url: str = "http://localhost:9871"):
-        self.base_url = base_url
-        self.api_url = f"{base_url}/tts"
-        self._session = None
+        self.base_url = base_url.rstrip("/")
+        self.api_url = f"{self.base_url}/tts"
+        self._client: Optional[httpx.AsyncClient] = None
 
-    async def _get_session(self) -> aiohttp.ClientSession:
-        if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
-        return self._session
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url,
+                timeout=httpx.Timeout(10.0, read=60.0),
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            )
+        return self._client
 
     async def close(self):
-        if self._session and not self._session.closed:
-            await self._session.close()
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     async def synthesize(
         self,
@@ -59,7 +64,6 @@ class SoVITSClient:
                 "streaming_mode": 0,
             }
 
-            # Keep optional prosody knobs best-effort only for API versions that support them.
             if speed is not None:
                 payload["speed_factor"] = speed
             if pitch is not None:
@@ -67,10 +71,10 @@ class SoVITSClient:
             if volume is not None:
                 payload["volume"] = volume
 
-            session = await self._get_session()
-            async with session.post(self.api_url, json=payload, timeout=30) as response:
-                response.raise_for_status()
-                return await response.read()
+            client = await self._get_client()
+            response = await client.post("/tts", json=payload, timeout=30.0)
+            response.raise_for_status()
+            return response.content
 
         except Exception as e:
             if getattr(Config, "VOICE_TTS_MOCK", False):
@@ -105,7 +109,7 @@ class SoVITSClient:
                 "text_split_method": "cut5",
                 "batch_size": 1,
                 "media_type": media_type,
-                "streaming_mode": 1,  # mode 1 or True depending on version
+                "streaming_mode": 1,
             }
             if speed is not None:
                 payload["speed_factor"] = speed
@@ -114,11 +118,10 @@ class SoVITSClient:
             if volume is not None:
                 payload["volume"] = volume
 
-            session = await self._get_session()
-            async with session.post(self.api_url, json=payload, timeout=60) as response:
+            client = await self._get_client()
+            async with client.stream("POST", "/tts", json=payload, timeout=60.0) as response:
                 response.raise_for_status()
-                # Stream blocks
-                async for chunk in response.content.iter_any():
+                async for chunk in response.aiter_bytes():
                     if chunk:
                         yield chunk
 
@@ -133,22 +136,22 @@ class SoVITSClient:
     async def check_health(self) -> bool:
         """Check if GPT-SoVITS API is reachable"""
         try:
-            session = await self._get_session()
-            async with session.get(f"{self.base_url}/", timeout=5) as response:
-                return response.status == 200
+            client = await self._get_client()
+            response = await client.get("/", timeout=5.0)
+            return response.status_code == 200
         except Exception:
             return False
 
     async def set_gpt_weights(self, weights_path: str) -> bool:
         """Set GPT weights file path (Async)"""
         try:
-            url = f"{self.base_url}/set_gpt_weights"
+            url = "/set_gpt_weights"
             params = {"weights_path": weights_path}
-            session = await self._get_session()
-            async with session.get(url, params=params, timeout=10) as response:
-                response.raise_for_status()
-                logger.info(f"GPT weights set to: {weights_path}")
-                return True
+            client = await self._get_client()
+            response = await client.get(url, params=params, timeout=10.0)
+            response.raise_for_status()
+            logger.info(f"GPT weights set to: {weights_path}")
+            return True
         except Exception as e:
             logger.error(f"Failed to set GPT weights: {e}")
             return False
@@ -156,13 +159,13 @@ class SoVITSClient:
     async def set_sovits_weights(self, weights_path: str) -> bool:
         """Set SoVITS weights file path (Async)"""
         try:
-            url = f"{self.base_url}/set_sovits_weights"
+            url = "/set_sovits_weights"
             params = {"weights_path": weights_path}
-            session = await self._get_session()
-            async with session.get(url, params=params, timeout=10) as response:
-                response.raise_for_status()
-                logger.info(f"SoVITS weights set to: {weights_path}")
-                return True
+            client = await self._get_client()
+            response = await client.get(url, params=params, timeout=10.0)
+            response.raise_for_status()
+            logger.info(f"SoVITS weights set to: {weights_path}")
+            return True
         except Exception as e:
             logger.error(f"Failed to set SoVITS weights: {e}")
             return False
