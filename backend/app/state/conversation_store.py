@@ -1,7 +1,8 @@
 import logging
-import os
+import json
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 import asyncpg
@@ -9,12 +10,37 @@ from ..config import Config
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PERSONALITY = {
+    "name": "AI Friend",
+    "core_personality": {
+        "immutable": {
+            "values": ["Honesty", "Privacy", "Curiosity"],
+            "base_tone": "Warm, intellectual, and slightly protective",
+            "boundaries": [
+                "Will never share user data",
+                "Will not adopt toxic behavior",
+            ],
+        },
+        "adaptive_traits": [],
+    },
+    "speaking_style": {"pace": "natural", "verbosity": "balanced"},
+    "conversation_rules": {"avoid": []},
+}
+DEFAULT_HISTORY = {"relationship": "Friend", "memories": []}
+DEFAULT_PERSONALITY_JSON = json.dumps(DEFAULT_PERSONALITY)
+DEFAULT_HISTORY_JSON = json.dumps(DEFAULT_HISTORY)
+
 
 class ConversationHistoryStore:
     def __init__(self):
         self.dsn = Config.DATABASE_URL
         self.pool: Optional[asyncpg.Pool] = None
         self.current_session_id: Optional[uuid.UUID] = None
+        app_dir = Path(__file__).resolve().parents[1]
+        self.personality_seed_path = (
+            Config.PERSONALITY_SEED_PATH or str(app_dir / "personality.json")
+        )
+        self.history_seed_path = Config.HISTORY_SEED_PATH or str(app_dir / "history.json")
 
     async def initialize(self):
         """Initialize the database connection pool."""
@@ -49,12 +75,10 @@ class ConversationHistoryStore:
                     logger.info(
                         "No AgentConfig found. Seeding from local JSON files..."
                     )
-                    current_dir = os.path.dirname(os.path.abspath(__file__))
-
-                    personality = "{}"
+                    personality = DEFAULT_PERSONALITY_JSON
                     try:
                         with open(
-                            os.path.join(current_dir, "personality.json"),
+                            self.personality_seed_path,
                             "r",
                             encoding="utf-8",
                         ) as f:
@@ -64,10 +88,10 @@ class ConversationHistoryStore:
                             f"Could not read local personality.json for seeding: {e}"
                         )
 
-                    history = "{}"
+                    history = DEFAULT_HISTORY_JSON
                     try:
                         with open(
-                            os.path.join(current_dir, "history.json"),
+                            self.history_seed_path,
                             "r",
                             encoding="utf-8",
                         ) as f:

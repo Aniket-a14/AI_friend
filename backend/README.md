@@ -26,7 +26,7 @@ The backend has evolved from a monolith into a **distributed agent mesh**. Each 
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.10+
 - NATS Server (with JetStream enabled: `nats-server -js`)
 - Ollama (running locally)
 

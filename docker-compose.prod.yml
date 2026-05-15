@@ -17,8 +17,6 @@ services:
       target: slim
     container_name: brain_agent
     command: [ "python", "-m", "app.agents.brain_agent" ]
-    volumes:
-      - ./backend:/app # Development mount (remove in prod build)
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - OLLAMA_URL=http://local_brain:11434
@@ -73,8 +71,6 @@ services:
       target: slim
     container_name: system_agent
     command: [ "python", "-m", "app.agents.system_agent" ]
-    volumes:
-      - ./backend:/app
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - SYSTEM_TICK_INTERVAL=${SYSTEM_TICK_INTERVAL:-60}
@@ -97,8 +93,6 @@ services:
       target: slim
     container_name: subconscious_agent
     command: [ "python", "-m", "app.agents.subconscious_agent" ]
-    volumes:
-      - ./backend:/app
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - OLLAMA_URL=http://local_brain:11434
@@ -133,8 +127,6 @@ services:
       target: slim
     container_name: surfacing_agent
     command: [ "python", "-m", "app.agents.surfacing_agent" ]
-    volumes:
-      - ./backend:/app
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - OLLAMA_URL=http://local_brain:11434
@@ -170,8 +162,7 @@ services:
     container_name: voice_agent
     command: [ "python", "-m", "app.voice.agent" ]
     volumes:
-      - ./backend:/app
-      - ./backend/voice_samples:/app/output # For saving/reading WAVs
+      - voice_samples_data:/app/output # For saving/reading WAVs
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - SOVITS_URL=http://local_voice:9871
@@ -207,8 +198,6 @@ services:
       target: slim
     container_name: transport_agent
     command: [ "python", "-m", "app.agents.transport_agent" ]
-    volumes:
-      - ./backend:/app
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - LIVEKIT_URL=http://local_sfu:7880
@@ -239,8 +228,7 @@ services:
     container_name: stt_agent
     command: [ "python", "-m", "app.stt.agent" ]
     volumes:
-      - ./backend:/app
-      - ./backend/models:/app/models # Persist models
+      - stt_models_data:/app/models # Persist models
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - STT_MODEL_SIZE=small
@@ -292,3 +280,7 @@ services:
 networks:
   ai_mesh_network:
     external: true
+
+volumes:
+  voice_samples_data:
+  stt_models_data:

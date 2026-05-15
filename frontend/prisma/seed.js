@@ -3,10 +3,51 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 
 const prisma = new PrismaClient()
+const DEFAULT_PERSONALITY = JSON.stringify({
+    name: 'AI Friend',
+    core_personality: {
+        immutable: {
+            values: ['Honesty', 'Privacy', 'Curiosity'],
+            base_tone: 'Warm, intellectual, and slightly protective',
+            boundaries: ['Will never share user data', 'Will not adopt toxic behavior']
+        },
+        adaptive_traits: []
+    },
+    speaking_style: { pace: 'natural', verbosity: 'balanced' },
+    conversation_rules: { avoid: [] }
+})
+const DEFAULT_HISTORY = JSON.stringify({
+    relationship: 'Friend',
+    memories: []
+})
+
+function readSeedOrFallback(path, fallbackValue, label) {
+    try {
+        return readFileSync(path, 'utf8')
+    } catch (err) {
+        if (err && err.code === 'ENOENT') {
+            console.warn(`Seed file not found for ${label}, using defaults: ${path}`)
+            return fallbackValue
+        }
+
+        console.error(
+            `Failed to read seed file for ${label} at ${path}: ${err && err.message ? err.message : err}`
+        )
+        throw err
+    }
+}
 
 async function main() {
-    const personalityStr = readFileSync(join(__dirname, '../../backend/app/personality.json'), 'utf8')
-    const historyStr = readFileSync(join(__dirname, '../../backend/app/history.json'), 'utf8')
+    const personalityStr = readSeedOrFallback(
+        join(__dirname, '../../backend/app/personality.json'),
+        DEFAULT_PERSONALITY,
+        'personality'
+    )
+    const historyStr = readSeedOrFallback(
+        join(__dirname, '../../backend/app/history.json'),
+        DEFAULT_HISTORY,
+        'history'
+    )
 
     console.log('--- Seeding Start ---')
 

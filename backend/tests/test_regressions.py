@@ -194,6 +194,15 @@ def test_brain_agent_connects_before_cognitive_initialize():
     assert call_order.index("conversation_initialize") < call_order.index("initialize")
 
 
+def test_brain_agent_voice_feedback_updates_coordinator_segmenter():
+    agent = BrainAgent(graph_db=None, memory_store=None, conversation_store=None)
+    agent.coordinator.segmenter.target_size = 8
+
+    asyncio.run(agent._on_voice_feedback({"target_chunk_size": 12}))
+
+    assert agent.coordinator.segmenter.target_size == 9
+
+
 def test_brain_agent_emits_fallback_when_stream_errors_without_content():
     agent = BrainAgent(graph_db=None, memory_store=None, conversation_store=None)
     agent.set_state = AsyncMock()
