@@ -1,6 +1,8 @@
 import asyncio
+import json
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -192,6 +194,15 @@ def test_brain_agent_connects_before_cognitive_initialize():
     assert call_order[0] == "connect"
     assert call_order.index("connect") < call_order.index("initialize")
     assert call_order.index("conversation_initialize") < call_order.index("initialize")
+
+
+def test_brain_agent_voice_feedback_updates_coordinator_segmenter():
+    agent = BrainAgent(graph_db=None, memory_store=None, conversation_store=None)
+    agent.coordinator.segmenter.target_size = 8
+
+    asyncio.run(agent._on_voice_feedback({"target_chunk_size": 12}))
+
+    assert agent.coordinator.segmenter.target_size == 9
 
 
 def test_brain_agent_emits_fallback_when_stream_errors_without_content():
@@ -620,6 +631,21 @@ def test_identity_hydrates_from_durable_config_store():
     assert manager.personality["name"] == "durable friend"
     assert manager.history["relationship"] == "Trusted Friend"
     assert manager.history["evolved_learnings"] == "prefers quiet pacing"
+
+
+def test_identity_seed_files_exist_and_are_valid_json():
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    personality = app_dir / "personality.json"
+    history = app_dir / "history.json"
+
+    assert personality.exists()
+    assert history.exists()
+
+    personality_data = json.loads(personality.read_text(encoding="utf-8"))
+    history_data = json.loads(history.read_text(encoding="utf-8"))
+
+    assert isinstance(personality_data, dict)
+    assert isinstance(history_data, dict)
 
 
 async def _collect_outputs(generator):
