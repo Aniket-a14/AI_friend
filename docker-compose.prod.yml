@@ -161,6 +161,8 @@ services:
       target: slim
     container_name: voice_agent
     command: [ "python", "-m", "app.voice.agent" ]
+    volumes:
+      - voice_samples_data:/app/output # For saving/reading WAVs
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - SOVITS_URL=http://local_voice:9871
@@ -225,6 +227,8 @@ services:
       target: full
     container_name: stt_agent
     command: [ "python", "-m", "app.stt.agent" ]
+    volumes:
+      - stt_models_data:/app/models # Persist models
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - STT_MODEL_SIZE=small
@@ -276,3 +280,7 @@ services:
 networks:
   ai_mesh_network:
     external: true
+
+volumes:
+  voice_samples_data:
+  stt_models_data:
