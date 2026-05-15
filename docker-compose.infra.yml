@@ -93,57 +93,7 @@ services:
       - "7881:7881" # TURN/STUN TCP
       - "7882:7882" # Additional TCP
       - "3478:3478/udp" # STUN/TURN UDP
-      - "50000:50000/udp"
-      - "50001:50001/udp"
-      - "50002:50002/udp"
-      - "50003:50003/udp"
-      - "50004:50004/udp"
-      - "50005:50005/udp"
-      - "50006:50006/udp"
-      - "50007:50007/udp"
-      - "50008:50008/udp"
-      - "50009:50009/udp"
-      - "50010:50010/udp"
-      - "50011:50011/udp"
-      - "50012:50012/udp"
-      - "50013:50013/udp"
-      - "50014:50014/udp"
-      - "50015:50015/udp"
-      - "50016:50016/udp"
-      - "50017:50017/udp"
-      - "50018:50018/udp"
-      - "50019:50019/udp"
-      - "50020:50020/udp"
-      - "50021:50021/udp"
-      - "50022:50022/udp"
-      - "50023:50023/udp"
-      - "50024:50024/udp"
-      - "50025:50025/udp"
-      - "50026:50026/udp"
-      - "50027:50027/udp"
-      - "50028:50028/udp"
-      - "50029:50029/udp"
-      - "50030:50030/udp"
-      - "50031:50031/udp"
-      - "50032:50032/udp"
-      - "50033:50033/udp"
-      - "50034:50034/udp"
-      - "50035:50035/udp"
-      - "50036:50036/udp"
-      - "50037:50037/udp"
-      - "50038:50038/udp"
-      - "50039:50039/udp"
-      - "50040:50040/udp"
-      - "50041:50041/udp"
-      - "50042:50042/udp"
-      - "50043:50043/udp"
-      - "50044:50044/udp"
-      - "50045:50045/udp"
-      - "50046:50046/udp"
-      - "50047:50047/udp"
-      - "50048:50048/udp"
-      - "50049:50049/udp"
-      - "50050:50050/udp"
+      - "50100-50120:50100-50120/udp" # WebRTC media ports
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml
     environment:
@@ -151,8 +101,15 @@ services:
     networks:
       - ai_mesh_network
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7880 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # 6. Ollama (Local LLM)
   ollama:

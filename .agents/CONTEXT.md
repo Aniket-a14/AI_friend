@@ -989,3 +989,34 @@ Verification:
 - Rebuilt `stt_agent`, `voice_agent`, and `brain_agent` containers.
 - Verified all 14 mesh containers reached `Healthy` status.
 - All 100 tests for memory hierarchy, paralinguistics, and SNR tracking passed with zero warnings (suppressed `pkg_resources` deprecation in `pytest.ini`).
+
+## 2026-05-15 Sovereign Mesh Decoupling & Container Deployment
+
+The PankudiAI cognitive pipeline has been successfully transitioned into a modular, production-grade, transport-agnostic architecture. This refactor eliminates significant technical debt and establishes a robust foundation for future robotic hardware integration.
+
+### 1. Architectural Transformation (CVS-1.0)
+We have successfully decoupled all high-level agentic logic from the NATS/Mesh signaling layer. This was achieved by extracting pure logic "Engines" and "Systems" that operate without I/O side effects.
+
+- **`CognitivePipeline`** (`app/cognitive/pipeline.py`): Centralized the master cognitive loop (Perception → Appraisal → State → Decision → Action → Learning).
+- **`SubconsciousEngine`** (`app/cognitive/subconscious.py`): Extracted proactive thought generation logic.
+- **`VoiceSystem`** (`app/voice/system.py`): Isolated the voice playback state machine and fencing logic.
+- **`BrainAgent` & `VoiceAgent`**: These are now thin transport wrappers that delegate all behavioral intelligence to the functional cores.
+
+### 2. Networking Standardization
+The entire backend networking stack has been migrated to `httpx`.
+- **`OllamaClient`** (`app/llm/ollama_client.py`): Now utilizes a persistent `AsyncClient` with connection pooling and robust retry logic.
+- **SoVITS Service**: Legacy `requests` and `aiohttp` code was removed in favor of standardized `httpx` calls.
+- **Performance**: Standardized on connection pooling ensures low-latency cognitive turnaround times required for real-time conversation.
+
+### 3. Cognitive Loop & Episodic Learning
+The loop is now deterministic and observable:
+1. **Appraisal Engine**: Implements OCC/Lazarus models to update emotional state (PAD).
+2. **Identity Manager**: Enforces immutable core values and allows for adaptive persona evolution.
+3. **Reflection Service**: Automatically triggers episodic memory consolidation after interactions, updating the knowledge graph (Neo4j) and identity history.
+
+### 4. Verification & Container Integrity
+- **Automated Regression Testing**: Verified the system integrity using a comprehensive `pytest` suite. 24/24 Tests Passed validating turn-taking stability, interruption confirmation, memory retrieval, and agent state dynamics. Updated all test expectations to match the new, richer event schema yielded by the `CognitivePipeline`.
+- **Container Network Fixes**: Fixed a LiveKit startup crash loop by adding a `service_healthy` `depends_on` condition for Redis. Mitigated a Windows Docker Desktop ghost binding bug by shifting the LiveKit WebRTC UDP range from `50000-50020` to a fresh `50100-50120` block.
+
+Remaining risks:
+- **Missing TTS Models**: The `models/GPT_weights/` and `models/SoVITS_weights/` directories on the local host are currently empty. The `voice_agent` reports a 400 Bad Request when attempting to load `ai_friend_voice.ckpt` and `ai_friend_voice.pth`. Synthesis is falling back to defaults until the user places the custom `.ckpt` and `.pth` files into the host directories.
