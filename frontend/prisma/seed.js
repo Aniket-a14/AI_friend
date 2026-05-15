@@ -25,8 +25,15 @@ function readSeedOrFallback(path, fallbackValue, label) {
     try {
         return readFileSync(path, 'utf8')
     } catch (err) {
-        console.warn(`Seed file not found for ${label}, using defaults: ${path}`)
-        return fallbackValue
+        if (err && err.code === 'ENOENT') {
+            console.warn(`Seed file not found for ${label}, using defaults: ${path}`)
+            return fallbackValue
+        }
+
+        console.error(
+            `Failed to read seed file for ${label} at ${path}: ${err && err.message ? err.message : err}`
+        )
+        throw err
     }
 }
 
