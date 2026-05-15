@@ -18,6 +18,7 @@ from .decision import DecisionService
 from .action import ActionService
 from .learning import ReflectionService
 from .identity import IdentityManager
+from .pipeline import CognitivePipeline
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,16 @@ class CognitiveService:
             pg_vector=memory_store,
             identity_manager=self.identity,
         )
-        self.surfaced_memories = []  # Buffer for active memory influence
+        self.pipeline = CognitivePipeline(
+            perception=self.perception,
+            appraisal=self.appraisal,
+            state=self.state,
+            decision=self.decision,
+            action=self.action,
+            learning=self.learning,
+            identity=self.identity
+        )
+        self.surfaced_memories = []
         self.agent = None  # NATS Mesh connection
         self._last_appraisal: AppraisalVector = None  # Cache for downstream consumers
         self.subject_metrics = {
@@ -143,163 +153,44 @@ class CognitiveService:
         self, raw_event: Dict[str, Any]
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        The Master Cognitive Loop (psychological_layer.md System Principle):
-        Perception → Appraisal → State Update → Decision → Action → Learning
+        Mesh-aware wrapper for the pure CognitivePipeline.
+        Handles transport side-effects like NATS signaling and reflection triggers.
         """
-        # 1. Conflict Resolution (Turn-Taking Stability)
-        raw_event_type = raw_event.get("event_type") or raw_event.get("type")
-        event_metadata = (
-            raw_event.get("metadata", {})
-            if isinstance(raw_event.get("metadata"), dict)
-            else {}
-        )
-        latency_metadata = (
-            event_metadata.get("latency_metadata")
-            if isinstance(event_metadata.get("latency_metadata"), dict)
-            else None
-        )
-        if raw_event_type == "USER_MESSAGE" and not raw_event.get("is_partial"):
-            final_text = raw_event.get("content", "")
-            speculative_intent = self.state.last_speculative_intent
-            if speculative_intent:
-                confirmed = self.decision.is_speculative_stop_confirmed(
-                    final_text,
-                    speculative_intent.get("keywords"),
-                )
-                self.state.last_speculative_intent = None
-                if not confirmed:
-                    logger.info(
-                        "[Cognitive] Interruption REJECTED. Resuming playback..."
+        event_metadata = raw_event.get("metadata", {})
+        latency_metadata = event_metadata.get("latency_metadata") if isinstance(event_metadata, dict) else None
+
+        async for output in self.pipeline.execute(
+            raw_event, 
+            surfaced_memories=self.surfaced_memories
+        ):
+            if output["type"] == "mesh_signal":
+                subject = output["subject"]
+                data = output["data"]
+                
+                if self.agent:
+                    publish_started = time.perf_counter()
+                    await self.agent.publish(subject, data)
+                    
+                    self._record_subject_metric(
+                        subject,
+                        {"latency_metadata": latency_metadata},
+                        local_latency_ms=(time.perf_counter() - publish_started) * 1000,
                     )
-                    if self.agent:
-                        publish_started = time.perf_counter()
-                        await self.agent.publish(
-                            "audio.resume",
-                            {
-                                "reason": "conflict_rejected",
-                                "perception_text": speculative_intent.get("text", ""),
-                                "utterance_id": speculative_intent.get("utterance_id"),
-                            },
-                        )
-                        self._record_subject_metric(
-                            "audio.resume",
-                            {"latency_metadata": latency_metadata},
-                            local_latency_ms=(time.perf_counter() - publish_started)
-                            * 1000,
-                        )
-                    yield {"type": "mesh_signal", "data": "audio.resume"}
-                else:
-                    logger.info(
-                        "[Cognitive] Interruption CONFIRMED. Stopping playback."
-                    )
-                    if self.agent:
-                        publish_started = time.perf_counter()
-                        await self.agent.publish(
-                            "audio.stop",
-                            {
-                                "interrupt": True,
-                                "speculative": False,
-                                "reason": "confirmed_command",
-                                "command_text": final_text,
-                                "keywords": speculative_intent.get("keywords", []),
-                                "utterance_id": speculative_intent.get("utterance_id"),
-                                "turn_id": raw_event.get("metadata", {}).get("turn_id"),
-                            },
-                        )
-                        self._record_subject_metric(
-                            "audio.stop",
-                            {"latency_metadata": latency_metadata},
-                            local_latency_ms=(time.perf_counter() - publish_started)
-                            * 1000,
-                        )
-                    yield {"type": "mesh_signal", "data": "audio.stop"}
-                    return
+                yield output
 
-        # 2. Sequential Perception
-        event = await self.perception.perceive(raw_event)
+            elif output["type"] == "appraisal":
+                self._last_appraisal = output["data"]
+                yield output
 
-        # 3. Appraisal (§1 — OCC/Lazarus/EMA) — NEW
-        state_snapshot = self.state.get_context_snapshot()
-        emotional_bias = state_snapshot.get("mood", 0.0)
-        appraisal_vector = self.appraisal.appraise(
-            event_content=event.raw_content,
-            event_type=event.event_type,
-            emotional_bias=emotional_bias,
-            state_snapshot=state_snapshot,
-            identity_boundaries=self.identity.personality.get("boundaries", []),
-        )
-        self._last_appraisal = appraisal_vector
+            elif output["type"] == "reflection_needed":
+                episodes = output["data"]
+                self.last_reflection_task = await self.learning.trigger_reflection(episodes)
+                yield output
 
-        # 4. State Update via Appraisal (§2.3 — ALMA mood-pull)
-        if event.event_type == "USER_MESSAGE":
-            await self.state.update_from_appraisal(appraisal_vector)
-            state_snapshot = self.state.get_context_snapshot()  # Refresh after update
+            else:
+                # content, error, done, etc.
+                yield output
 
-        # 5. Decision (BT + MAUT)
-        state_directive = self.state.get_behavioral_directive()
-
-        if self.surfaced_memories:
-            event.metadata["surfaced_memories"] = self.surfaced_memories
-
-        # Pass appraisal to decision layer for MAUT scoring
-        event.metadata["appraisal"] = appraisal_vector.to_dict()
-
-        plan = await self.decision.decide(event, state_snapshot)
-
-        # 6. Action Execution with Identity Validation & Endocrine Modulation
-        plan.payload["identity_prompt"] = self.identity.get_persona_prompt(
-            state_directive
-        )
-        # Tier-5 Endocrine: Inject hormonal state for LLM parameter modulation
-        plan.payload["cortisol"] = state_snapshot.get("cortisol", 0.5)
-        plan.payload["dopamine"] = state_snapshot.get("dopamine", 0.0)
-
-        full_response = ""
-        async for chunk in self.action.execute(plan):
-            if chunk["type"] == "content":
-                full_response += chunk["data"]
-            yield chunk
-
-        # 7. Validation Check & Self-Correction
-        if full_response:
-            is_valid, reason = await self.identity.validate_response(
-                full_response, plan.goal
-            )
-            if not is_valid:
-                logger.warning(
-                    f"[Identity] Validation failed: {reason}. SELF-CORRECTION TRIGGERED."
-                )
-                plan.payload["identity_prompt"] += (
-                    f"\n\nCRITICAL FIX: Your previous response was rejected for: {reason}. Correct this immediately."
-                )
-
-                full_response = ""
-                async for chunk in self.action.execute(plan):
-                    if chunk["type"] == "content":
-                        full_response += chunk["data"]
-                    yield chunk
-
-        # 8. Learning + Episodic Memory (§6.1)
-        if event.intent in ["CHAT", "REMEMBER"]:
-            episode = {
-                "id": event.event_id,
-                "event": event.raw_content,
-                "context": state_directive,
-                "emotion_vector": {
-                    "V": self.state.current_state.valence,
-                    "Ar": self.state.current_state.arousal,
-                    "D": self.state.current_state.dominance,
-                },
-                "appraisal": appraisal_vector.to_dict(),
-                "relationship_delta": appraisal_vector.relationship_impact,
-                "intent": event.intent,
-                "content": event.raw_content,
-                "state": state_snapshot,
-                "response": full_response,
-            }
-            self.last_reflection_task = await self.learning.trigger_reflection(
-                [episode]
-            )
 
     async def get_current_emotion(self) -> str:
         return self.state.get_emotion_label()

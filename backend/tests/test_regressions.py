@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-sys.modules.setdefault("asyncpg", SimpleNamespace(Pool=object))
+# asyncpg stub is now handled in tests/conftest.py
 
 from app.agents.brain_agent import BrainAgent  # noqa: E402
 from app.agents.surfacing_agent import SurfacingAgent  # noqa: E402
@@ -100,7 +100,8 @@ def test_cognitive_resume_recovery_accepts_type_key():
         )
     )
 
-    assert outputs[0] == {"type": "mesh_signal", "data": "audio.resume"}
+    assert outputs[0]["type"] == "mesh_signal"
+    assert outputs[0]["subject"] == "audio.resume"
     service.agent.publish.assert_awaited_once_with(
         "audio.resume",
         {
@@ -136,7 +137,8 @@ def test_cognitive_confirmed_stop_escalates_to_final_audio_stop():
         )
     )
 
-    assert outputs == [{"type": "mesh_signal", "data": "audio.stop"}]
+    assert outputs[0]["type"] == "mesh_signal"
+    assert outputs[0]["subject"] == "audio.stop"
     service.agent.publish.assert_awaited_once_with(
         "audio.stop",
         {
@@ -425,7 +427,7 @@ def test_voice_temporal_renderer_keeps_timing_tags_out_of_tts():
 
     item = {
         "turn_id": "turn-1",
-        "generation": agent.generation,
+        "generation": agent.system.generation,
         "metadata": {"turn_id": "turn-1"},
     }
     prosody = {"rate": 1.0, "pitch": 1.0, "volume": 1.0}
@@ -477,24 +479,24 @@ def test_voice_final_stop_fences_old_synthesis_generation():
     agent = VoiceAgent()
     agent.set_state = AsyncMock()
 
-    stale_item = {"turn_id": "turn-1", "generation": agent.generation}
+    stale_item = {"turn_id": "turn-1", "generation": agent.system.generation}
     assert agent._is_current_item(stale_item)
 
     asyncio.run(agent._on_audio_stop({"speculative": False, "turn_id": "turn-1"}))
 
     assert not agent._is_current_item(stale_item)
-    assert agent._is_current_item({"turn_id": "turn-2", "generation": agent.generation})
+    assert agent._is_current_item({"turn_id": "turn-2", "generation": agent.system.generation})
 
 
 def test_voice_resume_ignores_stale_utterance_id():
     agent = VoiceAgent()
     agent.set_state = AsyncMock()
-    agent.state = VoicePlaybackState.SPECULATIVE_PAUSE
-    agent.paused_utterance_id = "utt-current"
+    agent.system.state = VoicePlaybackState.SPECULATIVE_PAUSE
+    agent.system.paused_utterance_id = "utt-current"
 
     asyncio.run(agent._on_audio_resume({"utterance_id": "utt-old"}))
 
-    assert agent.state == VoicePlaybackState.SPECULATIVE_PAUSE
+    assert agent.system.state == VoicePlaybackState.SPECULATIVE_PAUSE
     agent.set_state.assert_not_awaited()
 
 
