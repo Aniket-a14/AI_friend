@@ -169,7 +169,7 @@ The current system design is **architecturally strong** for a latest iMac (decou
 
 1. Infra image tags were pinned (via `.env` variables) to remove `latest` drift across environments.
 2. Added `docker-compose.macos.light.yml` for lightweight Mac runs (heavy voice/STT services disabled by default).
-3. Added `docker-compose.macos.heavy.yml` for full Mac runs (CPU-safe defaults for Ollama/STT/SoVITS).
+3. Added `docker-compose.macos.heavy.yml` for heavier Mac runs (CPU-safe defaults for Ollama/STT, with CUDA-only GPT-SoVITS excluded).
 
 ### macOS run profiles
 
@@ -181,7 +181,7 @@ docker compose \
   -f docker-compose.macos.light.yml \
   up -d
 
-# Heavy profile (full voice + STT stack)
+# Heavy profile (STT-enabled on macOS; CUDA-only voice services remain excluded)
 docker compose \
   -f docker-compose.infra.yml \
   -f docker-compose.prod.yml \
