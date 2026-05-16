@@ -978,6 +978,7 @@ Changed files:
 - `backend/app/stt/agent.py`
 - `backend/app/stt/sensevoice_service.py`
 - `backend/app/voice/agent.py`
+
 - `backend/app/voice/filler_service.py`
 - `backend/app/voice/prosody.py`
 - `backend/db/schema.sql`
@@ -1020,3 +1021,43 @@ The loop is now deterministic and observable:
 
 Remaining risks:
 - **Missing TTS Models**: The `models/GPT_weights/` and `models/SoVITS_weights/` directories on the local host are currently empty. The `voice_agent` reports a 400 Bad Request when attempting to load `ai_friend_voice.ckpt` and `ai_friend_voice.pth`. Synthesis is falling back to defaults until the user places the custom `.ckpt` and `.pth` files into the host directories.
+
+## 2026-05-16 macOS Compose Profiles + Image Tag Stabilization
+
+Implemented deployment-level hardening for reproducible cross-environment
+runtime behavior, with explicit macOS light/heavy startup modes.
+
+Changed files:
+
+- `docker-compose.infra.yml`
+- `docker-compose.macos.light.yml` (new)
+- `docker-compose.macos.heavy.yml` (new)
+- `.env.example`
+- `docs/ARCHITECTURE.md`
+- `.agents/CONTEXT.md`
+
+Behavior/deployment changes:
+
+- Replaced infra `latest` image tags with pinned tag variables:
+  `NATS_IMAGE_TAG`, `NEO4J_IMAGE_TAG`, `LIVEKIT_IMAGE_TAG`,
+  `OLLAMA_IMAGE_TAG`.
+- Added optional GPU hint env vars (`NVIDIA_VISIBLE_DEVICES`,
+  `NVIDIA_DRIVER_CAPABILITIES`) with empty defaults so macOS runs do not
+  inherit Linux/NVIDIA assumptions.
+- Added a **light macOS compose override** that marks heavy media services
+  (`livekit`, `transport_agent`, `stt_agent`, `gpt-sovits`, `voice_agent`)
+  behind a `heavy` profile for lower local resource pressure.
+- Added a **heavy macOS compose override** that keeps full audio stack enabled
+  but uses CPU-safe defaults for STT and SoVITS.
+- Updated architecture docs with concrete light/heavy macOS compose commands.
+
+Verification:
+
+- `python -m ruff check backend/app/ backend/tests/` passed.
+- Full backend `pytest` run in this sandbox still shows pre-existing failures
+  unrelated to these deployment/docs changes (NATS-dependent mesh tests when
+  no local NATS is running, plus existing `test_stt_perception` fixture errors).
+- Compose files are intended to be validated with:
+  `docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.light.yml config --quiet`
+  and
+  `docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.heavy.yml config --quiet`.

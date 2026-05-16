@@ -163,15 +163,31 @@ The current system design is **architecturally strong** for a latest iMac (decou
 
 ### Gaps for iMac smoothness
 
-- Several infrastructure images are pinned to `latest` tags, which reduces reproducibility and can cause unpredictable performance shifts.
-- Compose defaults still include **NVIDIA/CUDA-oriented settings** in infra services, which are not directly aligned with Apple Silicon/Metal execution.
-- There is no dedicated **macOS override profile** documenting recommended memory/CPU/service toggles for local iMac deployment.
+- Heavy voice/STT services are still CPU-expensive on macOS and should be started only when needed for real-time audio sessions.
 
-### Recommended next optimization steps
+### Implemented hardening for macOS stability
 
-1. Pin infra image versions (NATS, Neo4j, Redis, LiveKit, Ollama) to tested tags instead of `latest`.
-2. Add a `docker-compose.macos.yml` override for Apple Silicon defaults (resource limits, CPU-first STT profile, optional heavy services).
-3. Keep heavy inference services optional in local Mac runs (enable only when needed), while keeping Brain/Voice/Transport hot for low-latency interaction loops.
+1. Infra image tags were pinned (via `.env` variables) to remove `latest` drift across environments.
+2. Added `docker-compose.macos.light.yml` for lightweight Mac runs (heavy voice/STT services disabled by default).
+3. Added `docker-compose.macos.heavy.yml` for full Mac runs (CPU-safe defaults for Ollama/STT/SoVITS).
+
+### macOS run profiles
+
+```bash
+# Light profile (faster boot, lower RAM/CPU pressure)
+docker compose \
+  -f docker-compose.infra.yml \
+  -f docker-compose.prod.yml \
+  -f docker-compose.macos.light.yml \
+  up -d
+
+# Heavy profile (full voice + STT stack)
+docker compose \
+  -f docker-compose.infra.yml \
+  -f docker-compose.prod.yml \
+  -f docker-compose.macos.heavy.yml \
+  up -d --build
+```
 
 ---
 

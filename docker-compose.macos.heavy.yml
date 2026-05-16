@@ -1,0 +1,31 @@
+services:
+  # Heavy mode enables full voice + STT stack with Apple-Silicon-safe defaults.
+  ollama:
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      NVIDIA_VISIBLE_DEVICES: ""
+      NVIDIA_DRIVER_CAPABILITIES: ""
+
+  stt_agent:
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+      - STT_MODEL_SIZE=${STT_MODEL_SIZE:-small}
+      - STT_DEVICE=cpu
+      - STT_LANGUAGE=${STT_LANGUAGE:-en}
+      - INTENT_THRESHOLD=${INTENT_THRESHOLD:-0.75}
+      - STT_WHISPER_QUEUE_SIZE=${STT_WHISPER_QUEUE_SIZE:-8}
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+
+  gpt-sovits:
+    environment:
+      is_half: "false"
+      CUDA_VISIBLE_DEVICES: ""
+      LITE: "true"
+      WORKFLOW: "true"
+      PYTHONPATH: /workspace/GPT-SoVITS
+      CUSTOM_GPT_PATH: ${CUSTOM_GPT_PATH:-GPT_weights/ai_friend_voice.ckpt}
+      CUSTOM_SOVITS_PATH: ${CUSTOM_SOVITS_PATH:-SoVITS_weights/ai_friend_voice.pth}
+    shm_size: 12gb
