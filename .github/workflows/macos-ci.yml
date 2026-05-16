@@ -6,12 +6,16 @@ on:
     branches: [main, master, develop]
     paths:
       - 'backend/**'
+      - 'docker-compose.infra.yml'
+      - 'docker-compose.prod.yml'
       - 'docker-compose.macos*.yml'
       - '.github/workflows/macos-ci.yml'
   pull_request:
     branches: [main, master]
     paths:
       - 'backend/**'
+      - 'docker-compose.infra.yml'
+      - 'docker-compose.prod.yml'
       - 'docker-compose.macos*.yml'
       - '.github/workflows/macos-ci.yml'
 
