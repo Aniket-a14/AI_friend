@@ -1061,3 +1061,28 @@ Verification:
   `docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.light.yml config --quiet`
   and
   `docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.heavy.yml config --quiet`.
+
+## 2026-05-16 macOS Workflow Coverage
+
+Added CI coverage for macOS runners to keep backend behavior consistent with the
+new macOS deployment profiles.
+
+Changed files:
+
+- `.github/workflows/macos-ci.yml` (new)
+- `.github/workflows/docker-health.yml`
+- `.agents/CONTEXT.md`
+
+Behavior/process changes:
+
+- Added `macos-ci.yml` workflow that runs on `macos-14`, installs `nats-server`
+  via Homebrew, provisions backend dependencies, configures NATS streams, then
+  runs backend `ruff` and `pytest`.
+- Expanded Docker compose validation in `docker-health.yml` to include:
+  `docker-compose.macos.light.yml` and `docker-compose.macos.heavy.yml` merged
+  with infra+prod files.
+
+Verification:
+
+- Local backend validation remains green with NATS running:
+  `python -m ruff check app/ tests/` and `python -m pytest -q` (`103 passed`).
