@@ -1042,13 +1042,14 @@ Behavior/deployment changes:
   `NATS_IMAGE_TAG`, `NEO4J_IMAGE_TAG`, `LIVEKIT_IMAGE_TAG`,
   `OLLAMA_IMAGE_TAG`.
 - Added optional GPU hint env vars (`NVIDIA_VISIBLE_DEVICES`,
-  `NVIDIA_DRIVER_CAPABILITIES`) with empty defaults so macOS runs do not
-  inherit Linux/NVIDIA assumptions.
+  `NVIDIA_DRIVER_CAPABILITIES`) while preserving Linux-friendly infra defaults
+  in the base compose file.
 - Added a **light macOS compose override** that marks heavy media services
   (`livekit`, `transport_agent`, `stt_agent`, `gpt-sovits`, `voice_agent`)
   behind a `heavy` profile for lower local resource pressure.
-- Added a **heavy macOS compose override** that keeps full audio stack enabled
-  but uses CPU-safe defaults for STT and SoVITS.
+- Added a **heavy macOS compose override** with CPU-safe defaults for STT while
+  explicitly excluding CUDA-oriented `gpt-sovits` and dependent `voice_agent`
+  from macOS startup.
 - Updated architecture docs with concrete light/heavy macOS compose commands.
 
 Verification:

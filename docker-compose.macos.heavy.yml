@@ -1,5 +1,6 @@
 services:
-  # Heavy mode enables full voice + STT stack with Apple-Silicon-safe defaults.
+  # Heavy mode enables STT/voice runtime tuning for macOS.
+  # GPT-SoVITS remains excluded here because its current image is CUDA-oriented.
   ollama:
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
@@ -20,12 +21,7 @@ services:
           memory: 6G
 
   gpt-sovits:
-    environment:
-      is_half: "false"
-      CUDA_VISIBLE_DEVICES: ""
-      LITE: "true"
-      WORKFLOW: "true"
-      PYTHONPATH: /workspace/GPT-SoVITS
-      CUSTOM_GPT_PATH: ${CUSTOM_GPT_PATH:-GPT_weights/ai_friend_voice.ckpt}
-      CUSTOM_SOVITS_PATH: ${CUSTOM_SOVITS_PATH:-SoVITS_weights/ai_friend_voice.pth}
-    shm_size: 12gb
+    profiles: ["linux-gpu"]
+
+  voice_agent:
+    profiles: ["linux-gpu"]
