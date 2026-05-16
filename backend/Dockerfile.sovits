@@ -1,10 +1,10 @@
 # 🎙️ optimized GPT-SoVITS Inference Image
 # Targeted for RTX-series GPUs (2060 Super+)
 
-FROM xxxxrt666/gpt-sovits:latest
+FROM xxxxrt666/gpt-sovits:cu126-20260209-e4ae04
 
-# 1. Align Torch/TorchAudio (Base image has 12.6/12.8 mismatch)
-# We force-reinstall to overwrite broken base-image binaries
+# 1. Align Torch/TorchAudio
+# We force-reinstall to overwrite base-image binaries with a deterministic version
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --force-reinstall \
     torch==2.4.1+cu124 torchaudio==2.4.1+cu124 \

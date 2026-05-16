@@ -115,7 +115,8 @@ class AppSettings(BaseSettings):
 
     INTENT_THRESHOLD: float = 0.75
     INTENT_STABILITY: int = 3
-    STT_WHISPER_QUEUE_SIZE: int = 8
+    # Reduced to 4 for smoother macOS/CPU performance during high-throughput research
+    STT_WHISPER_QUEUE_SIZE: int = 4
     STT_PERCEPTION_QUEUE_SIZE: int = 4
 
     GRAPH_CACHE_TTL: int = 300
