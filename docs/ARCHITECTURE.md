@@ -149,6 +149,32 @@ Future agents should read [../.agents/CONTEXT.md](../.agents/CONTEXT.md) before 
 
 ---
 
+## 🍏 Latest iMac Optimization Audit (Backend + Docker + Architecture)
+
+### Verdict
+
+The current system design is **architecturally strong** for a latest iMac (decoupled agents, asynchronous NATS mesh, tiered backend images), but it is **not fully optimized out-of-the-box** for smooth Mac-first operation.
+
+### What is already optimized well
+
+- **Decoupled mesh topology** keeps CPU-bound and I/O-heavy workloads isolated by agent.
+- **Tiered backend Docker build** (`slim` and `full`) avoids shipping heavy AI dependencies where not required.
+- **Non-root containers + healthchecks** improve runtime safety and recovery behavior.
+
+### Gaps for iMac smoothness
+
+- Several infrastructure images are pinned to `latest` tags, which reduces reproducibility and can cause unpredictable performance shifts.
+- Compose defaults still include **NVIDIA/CUDA-oriented settings** in infra services, which are not directly aligned with Apple Silicon/Metal execution.
+- There is no dedicated **macOS override profile** documenting recommended memory/CPU/service toggles for local iMac deployment.
+
+### Recommended next optimization steps
+
+1. Pin infra image versions (NATS, Neo4j, Redis, LiveKit, Ollama) to tested tags instead of `latest`.
+2. Add a `docker-compose.macos.yml` override for Apple Silicon defaults (resource limits, CPU-first STT profile, optional heavy services).
+3. Keep heavy inference services optional in local Mac runs (enable only when needed), while keeping Brain/Voice/Transport hot for low-latency interaction loops.
+
+---
+
 **For implementation details, see:**
 
 - [LATENCY_IMPROVEMENT.md](../_archive/docs/LATENCY_IMPROVEMENT.md) - Timing deep-dive
