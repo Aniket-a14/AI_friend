@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
 """
-PankudiAI Industrial Benchmark Visualizer
+AI Friend Industrial Benchmark Visualizer
 Parses stored JSON benchmark history files and generates a premium, 
 Grafana-style, interactive HTML analytics dashboard using Chart.js.
 """
@@ -20,7 +19,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PankudiAI - Industrial Performance Analytics Dashboard</title>
+    <title>AI Friend - Industrial Performance Analytics Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -253,7 +252,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     <header>
         <div>
-            <h1>PankudiAI Performance Hub</h1>
+            <h1>AI Friend Performance Hub</h1>
             <div class="subtitle">Grafana-style cognitive, memory, and voice pipeline performance metrics</div>
         </div>
         <div style="text-align: right;">
