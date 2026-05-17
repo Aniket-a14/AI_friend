@@ -6,11 +6,11 @@ This directory contains the high-fidelity empirical datasets compiled from the *
 
 ## 📁 Dataset Directory Contents
 
-1.  **[raw_research_data.json](file:///c:/3rd_Year/Development/Projects/AI Friend_ai/scripts/research/raw_research_data.json)**:
+1.  **[raw_research_data.json](file:///C:/3rd_Year/Development/Projects/AI Friend_ai/scripts/research/raw_research_data.json)**:
     *   **Micro-Benchmarks**: Pre- vs. Post-optimization latency tables (LLM Modulation, Hybrid Segmenter, Audio Normalizer).
     *   **State Trajectories**: Pleasure-Arousal-Dominance (PAD) and Hormone (Cortisol/Dopamine) transitions over a 90-second threat-appraisal stressor pulse.
     *   **System Budgets**: Hardware budget execution ratios for a NVIDIA Jetson AGX Orin edge robot rig.
-2.  **[benchmark_results.json](file:///c:/3rd_Year/Development/Projects/AI Friend_ai/scripts/research/benchmark_results.json)**:
+2.  **[benchmark_results.json](file:///C:/3rd_Year/Development/Projects/AI Friend_ai/scripts/research/benchmark_results.json)**:
     *   Dynamic statistical aggregates (Min, Mean, Median, Max, Jitter, p95, p99) automatically populated whenever you run the physical architectural benchmarker script (`python scripts/research/hard_benchmark.py`).
 
 ---
