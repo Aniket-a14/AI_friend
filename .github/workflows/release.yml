@@ -95,6 +95,7 @@ jobs:
 
       - name: Create GitHub Release
         id: create_release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           name: AI Friend ${{ github.ref_name }}
@@ -362,6 +363,7 @@ jobs:
 
       # ----------------- UPLOAD ALL ASSETS -----------------
       - name: Upload Matrix Packages, Checksums & Manifests to Release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
