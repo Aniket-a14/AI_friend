@@ -149,6 +149,48 @@ Future agents should read [../.agents/CONTEXT.md](../.agents/CONTEXT.md) before 
 
 ---
 
+## 🍏 Latest iMac Optimization Audit (Backend + Docker + Architecture)
+
+### Verdict
+
+The current system design is **architecturally strong** for a latest iMac (decoupled agents, asynchronous NATS mesh, tiered backend images), but it is **not fully optimized out-of-the-box** for smooth Mac-first operation.
+
+### What is already optimized well
+
+- **Decoupled mesh topology** keeps CPU-bound and I/O-heavy workloads isolated by agent.
+- **Tiered backend Docker build** (`slim` and `full`) avoids shipping heavy AI dependencies where not required.
+- **Non-root containers + healthchecks** improve runtime safety and recovery behavior.
+
+### Gaps for iMac smoothness
+
+- Heavy voice/STT services are still CPU-expensive on macOS and should be started only when needed for real-time audio sessions.
+
+### Implemented hardening for macOS stability
+
+1. Infra image tags were pinned (via `.env` variables) to remove `latest` drift across environments.
+2. Added `docker-compose.macos.light.yml` for lightweight Mac runs (heavy voice/STT services disabled by default).
+3. Added `docker-compose.macos.heavy.yml` for heavier Mac runs (CPU-safe defaults for Ollama/STT, with CUDA-only GPT-SoVITS excluded).
+
+### macOS run profiles
+
+```bash
+# Light profile (faster boot, lower RAM/CPU pressure)
+docker compose \
+  -f docker-compose.infra.yml \
+  -f docker-compose.prod.yml \
+  -f docker-compose.macos.light.yml \
+  up -d
+
+# Heavy profile (STT-enabled on macOS; CUDA-only voice services remain excluded)
+docker compose \
+  -f docker-compose.infra.yml \
+  -f docker-compose.prod.yml \
+  -f docker-compose.macos.heavy.yml \
+  up -d --build
+```
+
+---
+
 **For implementation details, see:**
 
 - [LATENCY_IMPROVEMENT.md](../_archive/docs/LATENCY_IMPROVEMENT.md) - Timing deep-dive

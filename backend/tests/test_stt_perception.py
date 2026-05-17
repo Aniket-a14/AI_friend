@@ -1,14 +1,34 @@
 import pytest
 import numpy as np
+import sys
+import types
 from unittest.mock import AsyncMock, patch
 from app.stt.agent import STTAgent
 from app.contracts import Topics
 
 @pytest.fixture
 def stt_agent():
-    # Use patch.multiple to mock the services at the module level
-    with patch("app.stt.whisper_service.WhisperSTTService"), \
-         patch("app.stt.sensevoice_service.SenseVoiceSTTService"):
+    fake_whisper_module = types.ModuleType("app.stt.whisper_service")
+    fake_sensevoice_module = types.ModuleType("app.stt.sensevoice_service")
+
+    class _FakeWhisperSTTService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class _FakeSenseVoiceSTTService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    fake_whisper_module.WhisperSTTService = _FakeWhisperSTTService
+    fake_sensevoice_module.SenseVoiceSTTService = _FakeSenseVoiceSTTService
+
+    with patch.dict(
+        sys.modules,
+        {
+            "app.stt.whisper_service": fake_whisper_module,
+            "app.stt.sensevoice_service": fake_sensevoice_module,
+        },
+    ):
         agent = STTAgent()
         agent.publish = AsyncMock()
         agent.connect = AsyncMock()
