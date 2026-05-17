@@ -1,13 +1,12 @@
 import time
 import json
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 from app.metrics import SubjectMetrics
 from app.utils.segmentation import HybridSegmenter
 from app.state.agent_state import AgentState
 from app.cognitive.identity import IdentityManager
-from app.state.memory_store import MemoryStore
 from app.state.triple_extractor import TripleExtractor
 from app.voice.normalizer import AudioNormalizer
 
@@ -189,8 +188,6 @@ def test_personality_modulation_benchmark(benchmark):
 @pytest.mark.benchmark
 def test_memory_semantic_retrieve_benchmark(benchmark):
     """Benchmarks ACT-R semantic memory retrieval scoring (recency/frequency weights)."""
-    mock_pool = MagicMock()
-    store = MemoryStore(mock_pool)
     rows = [_make_mock_row("Fact #%d" % i, similarity=0.8 - (i * 0.01), recall_count=i) for i in range(50)]
 
     def run():
@@ -212,7 +209,6 @@ def test_memory_semantic_retrieve_benchmark(benchmark):
 def test_triple_extractor_nlp_benchmark(benchmark):
     """Profiles extracting subject-verb-object knowledge triples from input text."""
     extractor = TripleExtractor(llm_service=None, graph_db=None)
-    text = "Aniket lives in Mumbai and is a software engineer."
 
     def run():
         return extractor._parse_json_from_text('[["Aniket", "LIVES_IN", "Mumbai"], ["Aniket", "ROLE", "Engineer"]]')

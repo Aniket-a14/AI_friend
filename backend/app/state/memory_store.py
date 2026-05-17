@@ -15,7 +15,6 @@ import logging
 import time
 import asyncio
 import httpx
-import json
 import orjson
 import math
 from datetime import datetime, timezone
