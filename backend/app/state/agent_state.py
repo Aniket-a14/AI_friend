@@ -159,7 +159,7 @@ class StateService:
             "attachment": self.current_state.attachment,
             "interaction_count": self.current_state.interaction_count,
         }
-        await self.graph.execute_query(query, params)
+        await self.graph.execute_query(query, params, write=True)
         if hasattr(self.graph, "invalidate_cache"):
             await self.graph.invalidate_cache(agent_name)
         logger.debug(
