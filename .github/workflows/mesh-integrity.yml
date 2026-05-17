@@ -28,7 +28,7 @@ jobs:
     name: Docker Compose Syntax
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Generate CI .env
         run: |
@@ -59,9 +59,9 @@ jobs:
     name: Prisma Schema & Identity Seed
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -90,7 +90,7 @@ jobs:
     name: Environment Variable Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check .env.example covers all compose references
         run: |
