@@ -56,7 +56,9 @@ class GraphDB:
             try:
                 async with self.driver.session() as session:
                     # Run schema operations inside explicit transaction functions
-                    await session.execute_write(lambda tx: tx.run(query))
+                    async def _tx(tx):
+                        return await tx.run(query)
+                    await session.execute_write(_tx)
                 logger.debug(f"Graph Store Schema: Constraint initialized ({query})")
             except Exception as e:
                 logger.warning(
