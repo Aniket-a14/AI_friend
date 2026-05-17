@@ -632,13 +632,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             <div class="detail-grid">
                 <!-- Focused Latency Line Chart -->
-                <div style="background-color: var(--bg-card); border-radius: 0.75rem; border: 1px solid var(--border-color); padding: 1.5rem;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
-                        <h3 id="chartTitle" style="font-size: 1.1rem; font-weight: 600; margin: 0;">⚡ Telemetry Loop Latency Trend</h3>
-                        <button id="scaleToggleBtn" onclick="toggleChartScale()" style="background: rgba(59, 130, 246, 0.1); border: 1px solid var(--border-color); color: var(--accent-primary); padding: 0.35rem 0.75rem; border-radius: 0.35rem; cursor: pointer; font-size: 0.8rem; font-weight: 600; font-family: 'Outfit'; transition: all 0.2s ease;">Y-Scale: LINEAR</button>
+                <div style="background-color: var(--bg-card); border-radius: 0.75rem; border: 1px solid var(--border-color); padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                            <h3 id="chartTitle" style="font-size: 1.1rem; font-weight: 600; margin: 0;">⚡ Telemetry Loop Latency Trend</h3>
+                            <span style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); color: var(--accent-success); padding: 0.35rem 0.75rem; border-radius: 0.35rem; font-size: 0.75rem; font-weight: 600; font-family: 'Outfit';">🔬 LOGARITHMIC DECADE PROFILE</span>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="categoryChart"></canvas>
+                        </div>
                     </div>
-                    <div class="chart-container">
-                        <canvas id="categoryChart"></canvas>
+                    
+                    <div style="margin-top: 1.5rem; background: rgba(59, 130, 246, 0.04); border-left: 4px solid var(--accent-primary); padding: 1rem; border-radius: 0.35rem; font-size: 0.85rem; line-height: 1.45; color: var(--text-secondary);">
+                        <strong style="color: var(--text-primary); font-weight: 600; display: block; margin-bottom: 0.25rem;">💡 System Data Science Guide: Logarithmic Axis</strong>
+                        This chart uses an industrial <strong>Logarithmic Decade Scale</strong> ($10^{-4}$ to $10^{2}$ ms). Rather than squashing microsecond telemetry loops (e.g. <code>0.45 μs</code>) onto a flat line relative to millisecond voice normalizers (e.g. <code>4.09 ms</code>), this scale preserves readable ratios across multiple magnitudes. Ticks below <code>1.0 ms</code> represent microseconds (<code>μs</code>); ticks above represent milliseconds (<code>ms</code>). 
                     </div>
                 </div>
 
@@ -991,19 +998,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         // Category Tab charts
         let categoryChart = null;
-        let currentYScale = 'linear';
         let activeCategory = 'telemetry';
-
-        window.toggleChartScale = function() {
-            currentYScale = currentYScale === 'linear' ? 'logarithmic' : 'linear';
-            document.getElementById('scaleToggleBtn').innerText = `Y-Scale: ${currentYScale.toUpperCase()}`;
-            
-            // Re-render the active category
-            const activeBtn = document.querySelector('.tab-btn.active');
-            if (activeBtn) {
-                switchPipeline(activeCategory, activeBtn);
-            }
-        }
 
         window.switchPipeline = function(category, btn) {
             activeCategory = category;
@@ -1075,7 +1070,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     },
                     scales: {
                         y: { 
-                            type: currentYScale,
+                            type: 'logarithmic',
+                            min: 0.0001, // 0.1 microseconds
+                            max: 100, // 100 ms
                             grid: { color: 'rgba(255, 255, 255, 0.04)' }, 
                             ticks: { 
                                 color: '#9ca3af', 
@@ -1091,7 +1088,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                                     return value.toFixed(2) + ' ms';
                                 }
                             }, 
-                            title: { display: true, text: 'Mean Latency (ms)', color: '#9ca3af', font: { family: 'Outfit' } } 
+                            title: { display: true, text: 'Mean Latency (Log Scale)', color: '#9ca3af', font: { family: 'Outfit', weight: '600' } } 
                         },
                         x: { 
                             grid: { display: false }, 
