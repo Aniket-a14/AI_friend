@@ -44,7 +44,13 @@ class SubjectMetrics:
                 self.parent = parent
             def qsize(self):
                 return len(self.parent._buffer)
+            def join(self):
+                import time
+                # Wait until the buffer is empty and no batch is currently being processed
+                while self.parent._buffer or getattr(self.parent, '_is_processing', False):
+                    time.sleep(0.01)
         self._queue = CompatibilityQueue(self)
+        self._is_processing = False
 
         self._shutdown_event = threading.Event()
         self._worker_thread = threading.Thread(
@@ -109,6 +115,7 @@ class SubjectMetrics:
                 batch = self._buffer
                 self._buffer = []
 
+            self._is_processing = True
             # Aggregate batch items
             for item in batch:
                 try:
@@ -180,6 +187,8 @@ class SubjectMetrics:
                         )
                 except Exception as e:
                     logger.error("Error in SubjectMetrics batch processing: %s", e)
+            
+            self._is_processing = False
 
     def shutdown(self, timeout: float = 1.0):
         """Gracefully shut down the background telemetry thread and flush buffer."""
