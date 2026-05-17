@@ -34,6 +34,7 @@ def test_subject_metrics_record_benchmark(benchmark):
 
 
 @pytest.mark.latency
-def test_compute_latency_never_negative(monkeypatch):
+def test_compute_latency_clamps_future_start_times(monkeypatch):
     monkeypatch.setattr("app.metrics.time.time", lambda: 10.0)
+    # Future start_time would produce negative latency; implementation clamps to 0.0.
     assert SubjectMetrics.compute_latency(20.0) == 0.0
