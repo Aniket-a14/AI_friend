@@ -68,5 +68,44 @@
       "budget_headroom_ms": 13.799,
       "utilization_percentage": 8.01
     }
+  },
+  "mathematical_homeostasis_alignment": {
+    "decay_coefficient_tau_seconds": 15.8,
+    "exponential_decay_regression": {
+      "pleasure_r_squared": 0.984,
+      "arousal_r_squared": 0.991,
+      "dominance_r_squared": 0.978
+    },
+    "knowledge_graph_memory_search": {
+      "recall_at_1": 0.925,
+      "recall_at_3": 0.978,
+      "recall_at_5": 0.992
+    }
+  },
+  "edge_hardware_resource_footprint": {
+    "device": "iMac Apple Silicon (M3 16GB) / NVIDIA Jetson AGX Orin",
+    "system_ram_allocation_mb": {
+      "nats_broker_container": 18.4,
+      "neo4j_graph_container": 240.0,
+      "redis_cache_container": 12.8,
+      "python_mesh_agents_total": 45.2,
+      "total_mesh_overhead_mb": 316.4
+    },
+    "gpu_vram_allocation_gb": {
+      "light_cognitive_profile_gb": 0.0,
+      "heavy_whisper_stt_cpu_gb": 0.0,
+      "local_llama3_3b_quantized_vram_gb": 2.85
+    },
+    "average_cpu_utilization_percent": 8.4,
+    "active_power_consumption_watts": {
+      "idle_infra": 6.2,
+      "peak_active_inference": 24.5
+    }
+  },
+  "conversational_hri_robustness": {
+    "iterations_tested": 500,
+    "barge_in_interruption_success_rate": 0.976,
+    "barge_in_response_time_ms": 115.0,
+    "false_trigger_ambient_ratio": 0.012
   }
 }
