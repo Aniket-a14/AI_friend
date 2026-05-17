@@ -286,6 +286,10 @@ def test_audio_normalizer_16bit_pcm_benchmark(benchmark):
     from array import array
     mock_samples = array("h", [100, -200, 300, -400] * 400).tobytes()
 
+    # Pre-warm CPU Instruction Cache and pre-allocate memory page tables to eliminate cold-start outliers
+    for _ in range(1000):
+        normalizer.process(mock_samples)
+
     def run():
         return normalizer.process(mock_samples)
 
