@@ -1,0 +1,42 @@
+name: 🤖 Ruff PR Reviewer
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "backend/**"
+      - ".github/workflows/reviewdog-ruff.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  ruff-reviewdog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Setup reviewdog
+        uses: reviewdog/action-setup@d8edfce3dd5e1ec6978745e801f9c50b5ef80252 # v1.4.0 Pin to secure commit SHA
+        with:
+          reviewdog_version: latest
+
+      - name: Reviewdog (ruff)
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd backend
+          ruff check --output-format=rdjson app tests | reviewdog -f=rdjson -reporter=github-pr-review -level=warning -fail-on-error=true

@@ -60,8 +60,7 @@ jobs:
         run: |
           cd backend
           python -m pip install --upgrade pip
-          pip install -r requirements-base.txt
-          pip install pytest pytest-asyncio ruff
+          pip install -r requirements-dev.txt
 
       - name: Setup NATS streams
         env:
@@ -85,4 +84,4 @@ jobs:
           NEO4J_PASSWORD: dummy_password
         run: |
           cd backend
-          pytest -q
+          pytest -q --cov=app --cov-report=term-missing
