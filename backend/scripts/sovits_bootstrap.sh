@@ -25,9 +25,7 @@ SERVER_PID=$!
 API_READY_TIMEOUT_SECONDS=${API_READY_TIMEOUT_SECONDS:-300}
 
 cleanup() {
-    if kill -0 "$SERVER_PID" 2>/dev/null; then
-        kill "$SERVER_PID" 2>/dev/null || true
-    fi
+    kill "$SERVER_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 
