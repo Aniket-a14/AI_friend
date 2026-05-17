@@ -89,26 +89,10 @@ class ActionService:
 
             # 1. Prepare Identity-Aware System and User Prompts
             # Static System Prompt (cached by inference engines like Ollama/vLLM)
-            system_instruction = f"""
-            {identity_prompt}
-            
-            Guideline:
-            - Maintain your identity rules at all times.
-            - Focus on short, natural conversational phrases.
-            - Respond only in English. Do not use Hindi, Hinglish, or any other language for now.
-            - The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.
-            - You may use <pause=300ms> or <hesitate> when it improves natural timing.
-            """.strip()
+            system_instruction = f"{identity_prompt}\n\nGuideline:\n- Maintain your identity rules at all times.\n- Focus on short, natural conversational phrases.\n- Respond only in English. Do not use Hindi, Hinglish, or any other language for now.\n- The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.\n- You may use <pause=300ms> or <hesitate> when it improves natural timing."
 
             # Dynamic User Prompt (appends active context to the query suffix)
-            user_prompt = f"""
-            Current Context: 
-            - Goal: {plan.goal}
-            - Current Emotion: {emotion}
-            {shared_history}
-            
-            User: {msg}
-            Assistant: """.strip()
+            user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{shared_history}\n\nUser: {msg}\nAssistant:"
 
             try:
                 # 2. Endocrine System: Calculate physiological LLM parameters
