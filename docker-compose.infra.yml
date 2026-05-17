@@ -2,7 +2,7 @@
 services:
   # 1. Event Bus (NATS JetStream)
   nats:
-    image: nats:latest
+    image: nats:${NATS_IMAGE_TAG:-2.10.24-alpine}
     container_name: nats_mesh
     entrypoint: [ "/nats-server" ]
     command: [ "-js" ]
@@ -14,7 +14,11 @@ services:
       - ai_mesh_network
     restart: always
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8222/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   # 2. PostgreSQL with PGVector (RAG + Conversation History)
   postgres:
@@ -39,7 +43,7 @@ services:
 
   # 3. Neo4j (Knowledge Graph)
   neo4j:
-    image: neo4j:latest
+    image: neo4j:${NEO4J_IMAGE_TAG:-5.26.0}
     container_name: brain_graph
     entrypoint: [ "tini", "-g", "--", "/startup/docker-entrypoint.sh" ]
     command: [ "neo4j" ]
@@ -84,7 +88,7 @@ services:
 
   # 5. LiveKit (WebRTC SFU)
   livekit:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:${LIVEKIT_IMAGE_TAG:-v1.8.4}
     container_name: local_sfu
     entrypoint: [ "/livekit-server" ]
     command: [ "--config", "/etc/livekit.yaml" ]
@@ -113,7 +117,7 @@ services:
 
   # 6. Ollama (Local LLM)
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.5.7}
     container_name: local_brain
     entrypoint: [ "/bin/ollama" ]
     command: [ "serve" ]
@@ -123,8 +127,8 @@ services:
       - ollama_models:/root/.ollama
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
     dns:
       - 1.1.1.1
       - 8.8.8.8

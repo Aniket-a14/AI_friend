@@ -46,13 +46,13 @@ services:
       - ai_mesh_network
     depends_on:
       nats:
-        condition: service_started
+        condition: service_healthy
       postgres:
-        condition: service_started
+        condition: service_healthy
       neo4j:
         condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -78,7 +78,7 @@ services:
       - ai_mesh_network
     depends_on:
       nats:
-        condition: service_started
+        condition: service_healthy
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
@@ -108,7 +108,7 @@ services:
       - ai_mesh_network
     depends_on:
       nats:
-        condition: service_started
+        condition: service_healthy
       neo4j:
         condition: service_healthy
       system_agent:
@@ -138,9 +138,9 @@ services:
       - ai_mesh_network
     depends_on:
       nats:
-        condition: service_started
+        condition: service_healthy
       postgres:
-        condition: service_started
+        condition: service_healthy
       neo4j:
         condition: service_healthy
       brain_agent:
@@ -181,7 +181,7 @@ services:
       brain_agent:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
       gpt-sovits:
         condition: service_healthy
     restart: always
@@ -210,9 +210,9 @@ services:
       brain_agent:
         condition: service_healthy
       livekit:
-        condition: service_started
+        condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
