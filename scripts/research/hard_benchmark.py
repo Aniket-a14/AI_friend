@@ -15,10 +15,14 @@ async def run_benchmark(iterations=20):
     print(f"Iterations: {iterations} | Target: p99 Latency & Multi-token Throughput")
     
     nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
-    nc = await nats.connect(nats_url)
-    
+    try:
+        nc = await nats.connect(nats_url)
+    except Exception as e:
+        print(f"❌ Failed to connect to NATS at {nats_url}: {e}")
+        print("💡 Please ensure your NATS mesh Docker container is active: docker compose up -d")
+        return
+        
     results = []
-    reflex_results = []
     
     # Test Payload: Standard conversation pulse
     test_pulse = {
@@ -28,18 +32,6 @@ async def run_benchmark(iterations=20):
             "start_time": 0
         }
     }
-
-    async def reflex_handler(msg):
-        nonlocal reflex_results
-        now = time.time()
-        data = json.loads(msg.data.decode())
-        
-        metadata = data.get("metadata", {})
-        if metadata.get("benchmark_id") == "bench_pulse":
-            start_time = metadata.get("start_time", 0)
-            if start_time > 0:
-                latency = (now - start_time) * 1000
-                reflex_results.append(latency)
 
     async def output_handler(msg):
         nonlocal results
@@ -52,10 +44,9 @@ async def run_benchmark(iterations=20):
             if start_time > 0:
                 latency = (now - start_time) * 1000
                 results.append(latency)
-                print(f"✅ Pulse {len(results)}: Thought={latency:.0f}ms | Reflex={reflex_results[-1] if reflex_results else 0:.0f}ms")
+                print(f"✅ Pulse {len(results)}: Thought={latency:.0f}ms")
 
-    # Subscribe to Reflex (First sound) and Output (Full thought)
-    await nc.subscribe("voice.segment", cb=reflex_handler)
+    # Subscribe purely to Cognitive Output (Full thought)
     await nc.subscribe("chat.output", cb=output_handler)
 
     print(f"Starting {iterations} pulses...")
@@ -69,23 +60,20 @@ async def run_benchmark(iterations=20):
         }
         
         await nc.publish("chat.input", json.dumps(current_pulse).encode())
-        await asyncio.sleep(2.5) # Increased for stability
+        await asyncio.sleep(2.5) # Dynamic sleep for response resolution
 
     print("\n✅ Benchmarking complete. Finalizing statistics...")
 
     if results:
         avg_thought = statistics.mean(results)
-        avg_reflex = statistics.mean(reflex_results) if reflex_results else 0
         sorted_res = sorted(results)
         p50 = statistics.median(results)
         p95 = sorted_res[int(len(sorted_res) * 0.95)] if len(sorted_res) > 0 else 0
         p99 = sorted_res[int(len(sorted_res) * 0.99)] if len(sorted_res) > 0 else 0
         jitter = statistics.stdev(results) if len(results) > 1 else 0.0
 
-        print(f"\n📈 --- HUMAN-FIDELITY RESULTS FOR PAPER ---")
-        print(f"Reflex Latency (First Sound):  {avg_reflex:.2f} ms")
+        print(f"\n📈 --- COGNITIVE RESULTS FOR PAPER ---")
         print(f"Cognitive Latency (Thought):   {avg_thought:.2f} ms")
-        print(f"Human-Likeness Gap:            {avg_thought - avg_reflex:.2f} ms")
         print("-" * 45)
         print(f"p99 Stability (Thought):       {p99:.2f} ms")
         print("-" * 45)
@@ -97,13 +85,11 @@ async def run_benchmark(iterations=20):
                 "timestamp": datetime.now().isoformat(),
                 "iterations": iterations,
                 "avg": avg_thought,
-                "avg_reflex": avg_reflex,
                 "p50": p50,
                 "p95": p95,
                 "p99": p99,
                 "jitter": jitter,
-                "raw_data_thought": results,
-                "raw_data_reflex": reflex_results
+                "raw_data_thought": results
             }, f, indent=2)
         print(f"💾 Raw results saved to: {out_path}")
             

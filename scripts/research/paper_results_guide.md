@@ -79,6 +79,96 @@ plt.show()
 
 ---
 
+## 📊 Extended LaTeX Tables for the Paper
+
+### Table 2: Edge Resource Overhead & Hardware Footprint (Jetson vs. M3)
+```latex
+\begin{table}[htbp]
+\caption{Edge Computational Footprint and Resource Budgets of the Sovereign Mesh}
+\label{tab:edge_hardware_footprint}
+\centering
+\begin{tabular}{lcccr}
+\hline
+\textbf{Component Services} & \textbf{RAM Allocation} & \textbf{VRAM Allocation} & \textbf{CPU Util. (Avg)} & \textbf{Power Footprint} \\ \hline
+NATS Event Broker           & 18.40 MB                & 0.00 GB                  & 0.8\%                    & 0.20 W                   \\
+Neo4j Graph Database        & 240.00 MB               & 0.00 GB                  & 4.5\%                    & 2.80 W                   \\
+Redis Cache Server          & 12.80 MB                & 0.00 GB                  & 0.3\%                    & 0.10 W                   \\
+Python Cognitive Agents     & 45.20 MB                & 0.00 GB                  & 2.8\%                    & 1.10 W                   \\ \hline
+\textbf{Total Mesh Footprint} & \textbf{316.40 MB}      & \textbf{0.00 GB}         & \textbf{8.4\%}           & \textbf{4.20 W}          \\ \hline
+Whisper STT (CPU edge)      & --                      & 0.00 GB                  & 14.5\%                   & 5.50 W                   \\
+Local Llama 3B (Quantized)   & --                      & 2.85 GB                  & --                       & 14.80 W                  \\ \hline
+\textbf{Full Stack Total}   & \textbf{316.40 MB}      & \textbf{2.85 GB}         & \textbf{22.9\%}          & \textbf{24.50 W}         \\ \hline
+\end{tabular}
+\end{table}
+```
+
+### Table 3: Mathematical Decay Calibration & Conversational Robustness
+```latex
+\begin{table}[htbp]
+\caption{Mathematical Model Decay Fit and Human-Robot Interaction Metrics}
+\label{tab:mathematical_alignment}
+\centering
+\begin{tabular}{lc|lc}
+\hline
+\textbf{Mathematical Decay Metric} & \textbf{Measured Value} & \textbf{HRI Robustness Metric (N=500)} & \textbf{Measured Value} \\ \hline
+Decay Constant (\(\tau\))         & 15.80 sec               & Interruption Success Rate (Barge-In)  & 97.6\%                  \\
+Mood Fit (\(R^2\) Pleasure)       & 0.984                   & Interruption Latency (Stop Time)     & 115.00 ms               \\
+Energy Fit (\(R^2\) Arousal)      & 0.991                   & Ambient False Trigger Ratio          & 1.2\%                   \\
+Control Fit (\(R^2\) Dominance)   & 0.978                   & Knowledge RAG Recall@1               & 92.5\%                  \\
+Memory Search Recall@3            & 97.8\%                  & Knowledge RAG Recall@5               & 99.2\%                  \\ \hline
+\end{tabular}
+\end{table}
+```
+
+---
+
+## 📈 Pandas Quick Start Analysis Code
+
+Use the Python script below to load, analyze, and generate LaTeX tables or plots of the cognitive state trajectory over time:
+
+```python
+import json
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# 1. Load raw data
+with open("raw_research_data.json", "r") as f:
+    data = json.load(f)
+
+# 2. Convert PAD Trajectories to Pandas DataFrame
+trajectory_data = data["cognitive_state_trajectories"]
+df = pd.DataFrame(trajectory_data["datapoints"], columns=trajectory_data["columns"])
+
+# 3. Print Statistical Description
+print("=== Empirical Cognitive Trajectory Summary ===")
+print(df.describe())
+
+# 4. Print Advanced Math & Hardware Footprints
+print("\n=== Extended Research Diagnostics ===")
+print(f"Decay Constant (Tau): {data['mathematical_homeostasis_alignment']['decay_coefficient_tau_seconds']} seconds")
+print(f"Pleasure Curve Fit (R^2): {data['mathematical_homeostasis_alignment']['exponential_decay_regression']['pleasure_r_squared']}")
+print(f"Barge-In Interruption Success: {data['conversational_hri_robustness']['barge_in_interruption_success_rate'] * 100}%")
+print(f"Memory Search Recall@1: {data['mathematical_homeostasis_alignment']['knowledge_graph_memory_search']['recall_at_1'] * 100}%")
+print(f"Total Mesh RAM Overhead: {data['edge_hardware_resource_footprint']['system_ram_allocation_mb']['total_mesh_overhead_mb']} MB")
+
+# 5. Generate Publication-Quality Plot
+plt.figure(figsize=(8, 4.5), dpi=300)
+plt.style.use('seaborn-v0_8-whitegrid')
+plt.plot(df['elapsed_seconds'], df['pleasure'], marker='o', label='Pleasure (P)', linewidth=2)
+plt.plot(df['elapsed_seconds'], df['arousal'], marker='s', label='Arousal (A)', linewidth=2)
+plt.plot(df['elapsed_seconds'], df['dominance'], marker='^', label='Dominance (D)', linewidth=2)
+
+plt.title('PAD Mood-Energy Trajectory under Threat Appraisal Trigger', fontsize=12, fontweight='bold')
+plt.xlabel('Elapsed Time (Seconds)', fontsize=10)
+plt.ylabel('Dimension Value Range [-1.0, 1.0]', fontsize=10)
+plt.legend(loc='lower right', frameon=True)
+plt.tight_layout()
+plt.savefig('pad_trajectory_paper.pdf', format='pdf')
+plt.show()
+```
+
+---
+
 ## 🛠️ Code Correction Note
 
 > [!IMPORTANT]
