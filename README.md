@@ -328,91 +328,87 @@ The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
 
 ## ⚙️ Quick Start
 
-Follow this standardized, cross-platform sequence to initialize the Sovereign Mesh:
+Follow this standardized, environment-hardened sequence to initialize the Sovereign Mesh:
 
 ### **Step 1: Bootstrap Shared Network & Infrastructure**
 1. Recreate the external shared network required by the mesh:
-   ```bash
+   ```powershell
    docker network create ai_mesh_network
    ```
 2. Launch the infrastructure containers (PostgreSQL, Neo4j, Redis, NATS, and LiveKit):
-   ```bash
+   ```powershell
    docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d postgres neo4j redis nats livekit
    ```
 
-### **Step 2: Hydrate the Database Schema**
-To prevent database port contentions and host network routing bugs, the containerized PostgreSQL database is mapped to the isolated external port **`5433`** on your host.
+### **Step 2: Hydrate & Seed the Database (Prisma + Raw SQL)**
+To bypass Windows/WSL2 IPv6 network deadlocks and native Postgres conflicts, the containerized database is mapped to the isolated external port **`5433`** on IPv4 (`127.0.0.1`).
 
-#### **On macOS / Linux (Bash/Zsh)**:
-```bash
-# 1. Set the direct database connection path using your custom password
-export DIRECT_URL="postgresql://ai_friend:YOUR_DB_PASSWORD@127.0.0.1:5433/ai_friend_db"
+1. **Push the Schema**:
+   ```powershell
+   # 1. Set the direct database connection path using your password (default: 'Pankudi')
+   $env:DIRECT_URL="postgresql://ai_friend:[YOUR-PASSWORD]@127.0.0.1:5433/ai_friend_db"
 
-# 2. Navigate to the frontend, generate the Prisma Client, and sync the schema
-cd frontend
-npx prisma generate
-npx prisma db push
-cd ..
-```
+   # 2. Enter the frontend folder, generate the Prisma Client, and push the schema
+   cd frontend
+   npx prisma generate
+   npx prisma db push
+   cd ..
+   ```
+2. **Seed Agent Personality**:
+   Pisma v7 requires strict module bindings for external scripts. To bypass this, pipe the raw baseline SQL seed directly into the running database container in one command:
+   ```powershell
+   # Create and pipe the seed configuration
+   Get-Content -Raw -Encoding utf8 -Path (Join-Path (Get-Location) "frontend" "prisma" "seed.js") | ForEach-Object {
+       # Seed is executed via psql within the running container
+       docker exec -i postgres_db psql -U ai_friend -d ai_friend_db -c "
+       INSERT INTO agent_configs (id, personality, background_history, evolved_learnings, updated_at) 
+       VALUES (
+           1, 
+           '{\"name\": \"AI Friend\", \"core_personality\": {\"immutable\": {\"values\": [\"Honesty\", \"Privacy\", \"Curiosity\"], \"base_tone\": \"Warm, intellectual, and slightly protective\", \"boundaries\": [\"Will never share user data\", \"Will not adopt toxic behavior\"]}, \"adaptive_traits\": []}, \"speaking_style\": {\"pace\": \"natural\", \"verbosity\": \"balanced\"}, \"conversation_rules\": {\"avoid\": []}}', 
+           '{\"relationship\": \"Friend\", \"memories\": []}', 
+           '', 
+           NOW()
+       ) 
+       ON CONFLICT (id) DO UPDATE SET 
+           personality = EXCLUDED.personality, 
+           background_history = EXCLUDED.background_history;"
+   }
+   ```
 
-#### **On Windows (PowerShell)**:
+### **Step 3: Launch Cognitive Agents**
+Build and boot up your local agent containers (the brain, stt, voice, surfacing agents, etc.):
 ```powershell
-# 1. Set the direct database connection path using your custom password
-$env:DIRECT_URL="postgresql://ai_friend:YOUR_DB_PASSWORD@127.0.0.1:5433/ai_friend_db"
-
-# 2. Navigate to the frontend, generate the Prisma Client, and sync the schema
-cd frontend
-npx prisma generate
-npx prisma db push
-cd ..
-```
-
-### **Step 3: Private Seeding & Agent Launch**
-The Sovereign Mesh is designed with **Privacy by Default**. The baseline agent identity genome and conversation history are kept secure and local using two private, Git-ignored files in the backend:
-* `backend/app/personality.json`
-* `backend/app/history.json`
-
-You do not need to run manual SQL inserts. On startup, the backend cognitive agents **automatically hydrate and seed the relational PostgreSQL database** using your private local configurations!
-
-To launch the full mesh:
-```bash
 docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build
 ```
 
 ### **Step 4: Health Audit**
-Confirm all active containers are running and communicating:
-```bash
+Confirm all 14 containers are in an active, healthy, and communicating state:
+```powershell
 docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml ps
 ```
 
 ---
 
-## 🛠️ Operating System & WSL2 Troubleshooting Guide
+## 🛠️ Windows & WSL2 Troubleshooting Guide
 
-Review these common OS-specific configurations if you run into boot bottlenecks:
+If you encounter initialization errors, review these standard Windows-specific fixes:
 
-### **1. Port Conflicts (e.g. Port 5432/5433 already in use)**
-If you have a native database installation running on your host machine (outside of Docker), it will block container port bindings.
-* **On macOS/Linux**: Stop the native Postgres service via systemctl or brew:
-  ```bash
-  brew services stop postgresql
-  # OR
-  sudo systemctl stop postgresql
-  ```
-* **On Windows**: Forcefully stop all native Postgres database services and active background processes:
+### **1. P1000 Authentication Failed on Port 5432/5433**
+This happens when a **native Windows PostgreSQL service** (installed outside of Docker) is running in the background and capturing port bindings.
+* Stop and kill all native `postgres` processes at once:
   ```powershell
   Stop-Service -Name "postgresql*" -Force -ErrorAction SilentlyContinue
   Get-Process -Name "postgres" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   ```
-* Restart the container to capture the port bind:
-  ```bash
+* Restart the Docker container to capture the port:
+  ```powershell
   docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml restart postgres
   ```
 
-### **2. Dynamic WSL2 Disk Bloat (Windows Host)**
-WSL2 virtual disk files (`ext4.vhdx`) grow dynamically but **never shrink automatically** even after you prune Docker caches and volumes.
-* **Empty the Recycle Bin**: Deleted WSL virtual folder contents are temporarily held in the host Recycle Bin, retaining their size on disk.
-* **WSL shutdown**: Clear WSL memory locks to force Windows to reclaim released space:
+### **2. Disk Space Not Reclaimed After Wiping Volumes**
+WSL2 dynamically expands its virtual disk file (`ext4.vhdx`) but **never shrinks it automatically** when you delete containers/images.
+* **Empty your Recycle Bin**: Manually deleted folders (like `%LOCALAPPDATA%\Docker\wsl`) are held in the Windows Recycle Bin, retaining all 100GB+ of space.
+* **WSL2 Shutdown**: Force Windows to release the WSL virtual disk memory locks:
   ```powershell
   wsl --shutdown
   ```
