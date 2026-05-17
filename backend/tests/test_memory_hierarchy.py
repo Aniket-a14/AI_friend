@@ -65,7 +65,7 @@ async def test_memory_contract_validation():
 
 @pytest.mark.asyncio
 async def test_scoped_search_query_generation(memory_store, mock_pool):
-    """Verify that search_memories builds the correct SQL WHERE clause for wings/rooms."""
+    """Verify that search_memories routes queries using the correct function and parameters."""
     pool, conn = mock_pool
     conn.fetch.return_value = []
     
@@ -78,8 +78,7 @@ async def test_scoped_search_query_generation(memory_store, mock_pool):
         query_sql = call_args[0][0]
         params = call_args[0][1:]
         
-        assert "WHERE wing = $2" in query_sql
-        assert "AND room = $3" in query_sql
+        assert "surface_actr_memories" in query_sql
         assert "identity" in params
         assert "reflections" in params
 
