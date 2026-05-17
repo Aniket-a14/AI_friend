@@ -63,6 +63,16 @@ class AudioNormalizer:
         self.last_tail_rms = None
         self.sample_rate = sample_rate
 
+        # Pre-warm the JIT compiler to eliminate the first-call compilation latency spike on live voice streams
+        if HAS_NUMBA:
+            try:
+                dummy_samples = [0] * 10
+                _ = _jit_scale_and_clip(dummy_samples, 1.0, -32768, 32767)
+                _ = _jit_rms(dummy_samples)
+            except Exception:
+                # Warmup failure should never block application startup
+                pass
+
     def process(self, audio_data: bytes, speaking_rate: float = 1.0) -> bytes:
         """Apply adaptive normalization and return processed PCM."""
         if not audio_data:
