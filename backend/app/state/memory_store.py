@@ -16,11 +16,23 @@ import time
 import asyncio
 import httpx
 import orjson
+import math
 from datetime import timezone
 from typing import Iterable
 from ..config import Config
 
 logger = logging.getLogger(__name__)
+
+# Global logarithmic lookup cache to bypass floating-point log calculations in ACT-R decay loops
+_LN_CACHE = {}
+
+
+def _cached_ln(x: float) -> float:
+    """Returns the cached natural logarithm rounded to 3 decimal places to maximize hits."""
+    key = round(x, 3)
+    if key not in _LN_CACHE:
+        _LN_CACHE[key] = math.log(x)
+    return _LN_CACHE[key]
 
 
 class MemoryStore:
@@ -225,8 +237,7 @@ class MemoryStore:
 
                         hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
 
-                        import math
-                        base_activation = math.log(recall_count) - self.decay_rate * math.log(hours_since + 1)
+                        base_activation = _cached_ln(recall_count) - self.decay_rate * _cached_ln(hours_since + 1)
                         spread_activation = self.spread_weight * similarity
                         memory_valence = row.get("valence") or 0.0
                         emotion_weight_row = row.get("emotional_weight") or 0.0

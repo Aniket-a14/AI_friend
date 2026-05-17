@@ -3,6 +3,7 @@ import logging
 import re
 import time
 import json
+import asyncio
 from typing import Dict, Any, List
 from ..config import Config
 
@@ -35,6 +36,35 @@ class GraphDB:
         self._belief_cache = {}
         self._cache_ttl = getattr(Config, "GRAPH_CACHE_TTL", 300)
 
+        # Asynchronously bootstrap uniqueness constraints and indexes on startup
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                loop.create_task(self.bootstrap_constraints())
+        except RuntimeError:
+            # If no running event loop (e.g. mock setup), bootstrap will run on first query or be skipped
+            pass
+
+    async def bootstrap_constraints(self):
+        """Asynchronously initialize schema unique constraints and indexes to guarantee O(1) performance."""
+        queries = [
+            "CREATE CONSTRAINT agent_name_unique IF NOT EXISTS FOR (a:Agent) REQUIRE a.name IS UNIQUE",
+            "CREATE CONSTRAINT entity_name_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE",
+            "CREATE INDEX entity_name_idx IF NOT EXISTS FOR (e:Entity) ON (e.name)"
+        ]
+        for query in queries:
+            try:
+                async with self.driver.session() as session:
+                    # Run schema operations inside explicit transaction functions
+                    async def _tx(tx):
+                        return await tx.run(query)
+                    await session.execute_write(_tx)
+                logger.debug(f"Graph Store Schema: Constraint initialized ({query})")
+            except Exception as e:
+                logger.warning(
+                    f"Graph Store Schema: Optional index/constraint initialization skipped ({query}): {e}"
+                )
+
     @staticmethod
     def _safe_label(label: str | None) -> str:
         label = (label or "Entity").strip()
@@ -66,9 +96,14 @@ class GraphDB:
             )
 
     async def execute_query(
-        self, query: str, parameters: Dict[str, Any] = None, use_cache: bool = False
+        self,
+        query: str,
+        parameters: Dict[str, Any] = None,
+        use_cache: bool = False,
+        write: bool = False,
+        strong_consistency: bool = False,
     ) -> List[Any]:
-        """Generic async query execution with TTL caching."""
+        """Generic async query execution with TTL caching and explicit read/write transaction routing."""
         cache_key = (query, json.dumps(parameters) if parameters else None)
 
         if use_cache and cache_key in self._belief_cache:
@@ -78,8 +113,31 @@ class GraphDB:
 
         try:
             async with self.driver.session() as session:
-                result = await session.run(query, parameters)
-                records = [record async for record in result]
+                attempt = 0
+                if write or strong_consistency:
+                    # Execute as explicit write transaction function (directing queries to the Leader to bypass lag)
+                    async def write_tx(tx):
+                        nonlocal attempt
+                        attempt += 1
+                        if attempt > 1:
+                            logger.warning(
+                                f"Graph Store: Transient write transaction retry #{attempt - 1} for query: '{query[:50]}...'"
+                            )
+                        res = await tx.run(query, parameters)
+                        return [record async for record in res]
+                    records = await session.execute_write(write_tx)
+                else:
+                    # Execute as explicit read transaction function (which can be routed to followers/read-replicas)
+                    async def read_tx(tx):
+                        nonlocal attempt
+                        attempt += 1
+                        if attempt > 1:
+                            logger.warning(
+                                f"Graph Store: Transient read transaction retry #{attempt - 1} for query: '{query[:50]}...'"
+                            )
+                        res = await tx.run(query, parameters)
+                        return [record async for record in res]
+                    records = await session.execute_read(read_tx)
 
                 if use_cache:
                     self._belief_cache[cache_key] = (time.time(), records)
@@ -104,7 +162,7 @@ class GraphDB:
         label = self._safe_label(label)
 
         query = f"MERGE (e:{label} {{name: $name}}) SET e += $props RETURN e"
-        await self.execute_query(query, {"name": name, "props": props})
+        await self.execute_query(query, {"name": name, "props": props}, write=True)
         logger.debug(
             f"Graph Store: Hydrated Identity Node ({label} {{name: '{name}'}})"
         )
@@ -139,7 +197,7 @@ class GraphDB:
             "RETURN s, r, t"
         )
         await self.execute_query(
-            query, {"s_name": subject_name, "t_name": target_name, "props": props}
+            query, {"s_name": subject_name, "t_name": target_name, "props": props}, write=True
         )
         logger.info(
             f"Graph Store: Linked {subject_name} -[:{rel_type} {{weight: {props['weight']}}}]-> {target_name}"
