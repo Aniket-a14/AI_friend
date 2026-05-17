@@ -13,18 +13,103 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Retrieve full history for git log computation
+
+      - name: Generate Dynamic Commit Changelog
+        id: changelog
+        shell: bash
+        run: |
+          # Fetch all tags to resolve the previous release tag
+          git fetch --tags
+          
+          # Get current tag
+          CURRENT_TAG=${{ github.ref_name }}
+          
+          # Find the previous release tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 $CURRENT_TAG^ 2>/dev/null || echo "")
+          
+          echo "### 🚀 What's Changed in $CURRENT_TAG" > release_notes.md
+          echo "" >> release_notes.md
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "Initial release of AI Friend!" >> release_notes.md
+            echo "" >> release_notes.md
+            git log --oneline --pretty=format:"* %s (%h)" >> release_notes.md
+          else
+            echo "Commits since previous release ($PREVIOUS_TAG):" >> release_notes.md
+            echo "" >> release_notes.md
+            git log $PREVIOUS_TAG..$CURRENT_TAG --oneline --pretty=format:"* %s (%h)" >> release_notes.md
+          fi
+          
+          # Save changelog body into github output env
+          EOF=$(dd if=/dev/urandom bs=15 count=1 2>/dev/null | base64 | tr -dc 'a-zA-Z0-9')
+          echo "body<<$EOF" >> $GITHUB_OUTPUT
+          cat release_notes.md >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
           name: AI Friend ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.body }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
+
+  build-assets:
+    needs: [release]
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            platform_name: win
+          - os: macos-latest
+            platform_name: macos
+          - os: ubuntu-latest
+            platform_name: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Application Directory Structure
+        shell: bash
+        run: |
+          mkdir -p build_dist/backend
+          mkdir -p build_dist/frontend
+          
+          # Copy backend & frontend source trees
+          cp -r backend/app build_dist/backend/
+          cp backend/requirements*.txt build_dist/backend/ 2>/dev/null || true
+          cp -r frontend/src build_dist/frontend/ 2>/dev/null || true
+          cp frontend/package*.json build_dist/frontend/ 2>/dev/null || true
+
+      - name: Compress Platform Archive (ZIP/Tar)
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform_name }}" = "win" ]; then
+            powershell Compress-Archive -Path build_dist/* -DestinationPath ai-friend-win.zip
+          elif [ "${{ matrix.platform_name }}" = "macos" ]; then
+            zip -r ai-friend-macos.zip build_dist/*
+          else
+            tar -czf ai-friend-linux.tar.gz build_dist/
+          fi
+
+      - name: Upload Platform Package to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ai-friend-win.zip
+            ai-friend-macos.zip
+            ai-friend-linux.tar.gz
 
   docker-release-primary:
     needs: [release]
