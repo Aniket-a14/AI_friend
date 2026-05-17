@@ -346,7 +346,7 @@ To bypass Windows/WSL2 IPv6 network deadlocks and native Postgres conflicts, the
 1. **Push the Schema**:
    ```powershell
    # 1. Set the direct database connection path using your password (default: 'Pankudi')
-   $env:DIRECT_URL="postgresql://ai_friend:Pankudi@127.0.0.1:5433/ai_friend_db"
+   $env:DIRECT_URL="postgresql://ai_friend:[YOUR-PASSWORD]@127.0.0.1:5433/ai_friend_db"
 
    # 2. Enter the frontend folder, generate the Prisma Client, and push the schema
    cd frontend
