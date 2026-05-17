@@ -3,8 +3,15 @@
 
 FROM xxxxrt666/gpt-sovits:cu126-20260209-e4ae04
 
-# 1. Bake in GPT-SoVITS runtime patches for resilient audio I/O
+# 1. Align Torch/TorchAudio to a single binary family from one index source.
+# Using PyPI avoids download-r2.pytorch.org DNS failures observed in CI.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir --force-reinstall \
+    torch==2.10.0 torchaudio==2.10.0
+
+# 2. Bake in GPT-SoVITS runtime patches for resilient audio I/O
 # - Avoid importing torchaudio hard-fail paths when CUDA build metadata drifts.
+# - Fall back to librosa-based resampling if torchaudio import fails (slower but stable).
 # - Replace torchaudio.load with scipy wav read (existing infra behavior).
 RUN python - <<'PY'
 from pathlib import Path
@@ -48,12 +55,12 @@ c = c.replace(
 p.write_text(c)
 PY
 
-# 2. Setup Persistent Pretrained Models
+# 3. Setup Persistent Pretrained Models
 # We reuse the host volume linking but ensure the workspace is ready
 RUN rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models && \
     ln -s /workspace/models/pretrained_models /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models
 
-# 3. Set Environment for High-Performance Inference
+# 4. Set Environment for High-Performance Inference
 ENV CUDA_VISIBLE_DEVICES=0
 ENV is_half=true
 ENV PYTHONPATH=/workspace/GPT-SoVITS
