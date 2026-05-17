@@ -61,7 +61,7 @@ jobs:
           NATS_URL: nats://localhost:4222
         run: |
           cd backend
-          python scripts/setup_nats_streams.py
+          python scripts/bootstrap/setup_nats_streams.py
 
       - name: Run Cognitive Regression Suite
         env:
