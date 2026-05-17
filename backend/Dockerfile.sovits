@@ -3,24 +3,57 @@
 
 FROM xxxxrt666/gpt-sovits:cu126-20260209-e4ae04
 
-# 1. Align Torch/TorchAudio
-# We force-reinstall to overwrite base-image binaries with a deterministic version
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --force-reinstall \
-    torch==2.4.1+cu124 torchaudio==2.4.1+cu124 \
-    --index-url https://download.pytorch.org/whl/cu124 \
-    --trusted-host download.pytorch.org
+# 1. Bake in GPT-SoVITS runtime patches for resilient audio I/O
+# - Avoid importing torchaudio hard-fail paths when CUDA build metadata drifts.
+# - Replace torchaudio.load with scipy wav read (existing infra behavior).
+RUN python - <<'PY'
+from pathlib import Path
 
-# 2. Bake in the GPT-SoVITS runtime patches
-# This replaces torchaudio.load with a faster scipy-based read (per current infra hack)
-RUN python -c 'import os; p="/workspace/GPT-SoVITS/GPT_SoVITS/TTS_infer_pack/TTS.py"; c=open(p).read(); n=c.replace("torchaudio.load(ref_audio_path)", "(lambda f: (lambda s,d: (torch.from_numpy(d).float().unsqueeze(0)/32768.0, s))(*__import__(\"scipy.io.wavfile\").io.wavfile.read(f)))(ref_audio_path)"); open(p,"w").write(n)'
+p = Path("/workspace/GPT-SoVITS/GPT_SoVITS/TTS_infer_pack/TTS.py")
+c = p.read_text()
 
-# 3. Setup Persistent Pretrained Models
+c = c.replace(
+    "import torchaudio",
+    "try:\n    import torchaudio\nexcept Exception:\n    torchaudio = None",
+)
+
+c = c.replace(
+    '''def resample(audio_tensor, sr0, sr1, device):
+    global resample_transform_dict
+    key = "%s-%s-%s" % (sr0, sr1, str(device))
+    if key not in resample_transform_dict:
+        resample_transform_dict[key] = torchaudio.transforms.Resample(sr0, sr1).to(device)
+    return resample_transform_dict[key](audio_tensor)
+''',
+    '''def resample(audio_tensor, sr0, sr1, device):
+    global resample_transform_dict
+    if torchaudio is None:
+        audio_np = audio_tensor.detach().cpu().numpy()
+        if audio_np.ndim == 2 and audio_np.shape[0] == 1:
+            audio_np = audio_np[0]
+        resampled = librosa.resample(audio_np, orig_sr=sr0, target_sr=sr1)
+        return torch.from_numpy(resampled).float().unsqueeze(0).to(device)
+    key = "%s-%s-%s" % (sr0, sr1, str(device))
+    if key not in resample_transform_dict:
+        resample_transform_dict[key] = torchaudio.transforms.Resample(sr0, sr1).to(device)
+    return resample_transform_dict[key](audio_tensor)
+''',
+)
+
+c = c.replace(
+    "torchaudio.load(ref_audio_path)",
+    "(lambda f: (lambda s,d: (torch.from_numpy(d).float().unsqueeze(0)/32768.0, s))(*__import__(\"scipy.io.wavfile\").io.wavfile.read(f)))(ref_audio_path)",
+)
+
+p.write_text(c)
+PY
+
+# 2. Setup Persistent Pretrained Models
 # We reuse the host volume linking but ensure the workspace is ready
 RUN rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models && \
     ln -s /workspace/models/pretrained_models /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models
 
-# 4. Set Environment for High-Performance Inference
+# 3. Set Environment for High-Performance Inference
 ENV CUDA_VISIBLE_DEVICES=0
 ENV is_half=true
 ENV PYTHONPATH=/workspace/GPT-SoVITS

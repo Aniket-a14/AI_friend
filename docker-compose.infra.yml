@@ -14,7 +14,11 @@ services:
       - ai_mesh_network
     restart: always
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8222/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   # 2. PostgreSQL with PGVector (RAG + Conversation History)
   postgres:

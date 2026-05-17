@@ -2,6 +2,8 @@
 # 🚀 GPT-SoVITS Sovereignty Bootstrap Script
 # Targets: Persistent Identity + Zero-Latency Warmup
 
+set -Eeuo pipefail
+
 # 1. Hardware Autodetect (Laptop vs. 2060 Super)
 echo "🧬 Detecting Hardware Profile..."
 if command -v nvidia-smi &> /dev/null && nvidia-smi -L &> /dev/null; then
@@ -20,33 +22,51 @@ fi
 echo "🎙️ Starting GPT-SoVITS API Server ($DEVICE_FLAG)..."
 python api_v2.py -a 0.0.0.0 -p 9871 &
 SERVER_PID=$!
+API_READY_TIMEOUT_SECONDS=${API_READY_TIMEOUT_SECONDS:-300}
+
+cleanup() {
+    if kill -0 "$SERVER_PID" 2>/dev/null; then
+        kill "$SERVER_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
 
 # 2. Wait for API to reach readiness
 echo "⏳ Waiting for API readiness..."
-until curl -s http://localhost:9871/ > /dev/null; do
+elapsed=0
+until curl -fsS http://localhost:9871/ > /dev/null; do
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "❌ SoVITS API process exited before becoming ready."
+    exit 1
+  fi
+  if [ "$elapsed" -ge "$API_READY_TIMEOUT_SECONDS" ]; then
+    echo "❌ SoVITS API readiness timed out after ${API_READY_TIMEOUT_SECONDS}s."
+    exit 1
+  fi
   sleep 2
+  elapsed=$((elapsed + 2))
 done
 echo "✅ SoVITS API is Online."
 
 # 3. Dynamic Identity Injection (Persistent Weights)
-if [ ! -z "$CUSTOM_GPT_PATH" ]; then
+if [ -n "${CUSTOM_GPT_PATH:-}" ]; then
     echo "⚖️ Pre-loading GPT Weights: $CUSTOM_GPT_PATH"
-    curl -s "http://localhost:9871/set_gpt_weights?weights_path=$CUSTOM_GPT_PATH"
+    curl -fsS --retry 5 --retry-delay 2 "http://localhost:9871/set_gpt_weights?weights_path=$CUSTOM_GPT_PATH" > /dev/null
 fi
 
-if [ ! -z "$CUSTOM_SOVITS_PATH" ]; then
+if [ -n "${CUSTOM_SOVITS_PATH:-}" ]; then
     echo "⚖️ Pre-loading SoVITS Weights: $CUSTOM_SOVITS_PATH"
-    curl -s "http://localhost:9871/set_sovits_weights?weights_path=$CUSTOM_SOVITS_PATH"
+    curl -fsS --retry 5 --retry-delay 2 "http://localhost:9871/set_sovits_weights?weights_path=$CUSTOM_SOVITS_PATH" > /dev/null
 fi
 
 # 4. Identity Warmup (Populate BERT/HuBERT Latent Caches)
 # We perform a dummy synthesis with the neutral anchor to 'prime' the GPU
 if [ -f "$CUSTOM_GPT_PATH" ] && [ -f "$CUSTOM_SOVITS_PATH" ]; then
     echo "🔥 Performing Identity Warmup (BERT/HuBERT Cache)..."
-    curl -s -X POST "http://localhost:9871/tts" \
+    curl -fsS -X POST "http://localhost:9871/tts" \
          -H "Content-Type: application/json" \
          -d '{
-               "text": "Warmup segment.",
+                "text": "Warmup segment.",
                "text_lang": "en",
                "ref_audio_path": "output/sample_en_gold.wav",
                "prompt_text": "At the end of the exam, the program shows the performance summary.",
@@ -60,4 +80,5 @@ else
 fi
 
 # 5. Keep process in foreground
+trap - EXIT
 wait $SERVER_PID
