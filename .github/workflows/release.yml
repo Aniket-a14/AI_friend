@@ -111,41 +111,50 @@ jobs:
     strategy:
       matrix:
         environment: [development, staging, production]
+        platform: [win-x64, win-x86, win-arm64, macos-arm64, macos-x64, linux-x86_64, linux-arm64, linux-386]
         include:
           # ----- Windows Targets -----
-          - os: windows-latest
+          - platform: win-x64
+            os: windows-latest
             platform_name: win
             arch: x64
             archive_ext: zip
-          - os: windows-latest
+          - platform: win-x86
+            os: windows-latest
             platform_name: win
             arch: x86
             archive_ext: zip
-          - os: windows-latest
+          - platform: win-arm64
+            os: windows-latest
             platform_name: win
             arch: arm64
             archive_ext: zip
 
           # ----- macOS Targets -----
-          - os: macos-latest
+          - platform: macos-arm64
+            os: macos-latest
             platform_name: macos
             arch: arm64
             archive_ext: zip
-          - os: macos-latest
+          - platform: macos-x64
+            os: macos-latest
             platform_name: macos
             arch: x64
             archive_ext: zip
 
           # ----- Linux Targets -----
-          - os: ubuntu-latest
+          - platform: linux-x86_64
+            os: ubuntu-latest
             platform_name: linux
             arch: x86_64
             archive_ext: tar.gz
-          - os: ubuntu-latest
+          - platform: linux-arm64
+            os: ubuntu-latest
             platform_name: linux
             arch: arm64
             archive_ext: tar.gz
-          - os: ubuntu-latest
+          - platform: linux-386
+            os: ubuntu-latest
             platform_name: linux
             arch: 386
             archive_ext: tar.gz
