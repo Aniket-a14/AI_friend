@@ -19,7 +19,7 @@ services:
     command: [ "python", "-m", "app.agents.brain_agent" ]
     environment:
       - NATS_URL=nats://nats_mesh:4222
-      - OLLAMA_URL=http://local_brain:11434
+      - OLLAMA_URL=${OLLAMA_URL:-http://local_brain:11434}
       - LLM_FAST_MODEL=llama3.2:1b
       - LLM_CHAT_MODEL=llama3.2:1b
       - LLM_REFLECTION_MODEL=llama3.2:1b
@@ -51,8 +51,7 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
+
     deploy:
       resources:
         limits:
@@ -95,7 +94,7 @@ services:
     command: [ "python", "-m", "app.agents.subconscious_agent" ]
     environment:
       - NATS_URL=nats://nats_mesh:4222
-      - OLLAMA_URL=http://local_brain:11434
+      - OLLAMA_URL=${OLLAMA_URL:-http://local_brain:11434}
       - NEO4J_URI=bolt://brain_graph:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
@@ -129,7 +128,7 @@ services:
     command: [ "python", "-m", "app.agents.surfacing_agent" ]
     environment:
       - NATS_URL=nats://nats_mesh:4222
-      - OLLAMA_URL=http://local_brain:11434
+      - OLLAMA_URL=${OLLAMA_URL:-http://local_brain:11434}
       - DATABASE_URL=postgresql://ai_friend:${POSTGRES_PASSWORD}@postgres_db:5432/ai_friend_db
       - NEO4J_URI=bolt://brain_graph:7687
       - NEO4J_USER=neo4j
