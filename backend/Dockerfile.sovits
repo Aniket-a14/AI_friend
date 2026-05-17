@@ -21,7 +21,7 @@ c = p.read_text()
 
 c = c.replace(
     "import torchaudio",
-    "try:\n    import torchaudio\nexcept Exception:\n    torchaudio = None",
+    "try:\n    import torchaudio\nexcept ImportError:\n    torchaudio = None",
 )
 
 c = c.replace(
