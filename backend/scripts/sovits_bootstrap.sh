@@ -29,10 +29,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
+curl_retry() {
+    curl -fS --retry 5 --retry-delay 2 "$@"
+}
+
 # 2. Wait for API to reach readiness
 echo "⏳ Waiting for API readiness..."
 elapsed=0
-until curl -fS http://localhost:9871/ > /dev/null; do
+until curl_retry http://localhost:9871/ > /dev/null; do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     echo "❌ SoVITS API process exited before becoming ready."
     exit 1
@@ -49,14 +53,14 @@ echo "✅ SoVITS API is Online."
 # 3. Dynamic Identity Injection (Persistent Weights)
 if [ -n "${CUSTOM_GPT_PATH:-}" ]; then
     echo "⚖️ Pre-loading GPT Weights: $CUSTOM_GPT_PATH"
-    curl -fS --retry 5 --retry-delay 2 -G \
+    curl_retry -G \
       --data-urlencode "weights_path=$CUSTOM_GPT_PATH" \
       "http://localhost:9871/set_gpt_weights" > /dev/null
 fi
 
 if [ -n "${CUSTOM_SOVITS_PATH:-}" ]; then
     echo "⚖️ Pre-loading SoVITS Weights: $CUSTOM_SOVITS_PATH"
-    curl -fS --retry 5 --retry-delay 2 -G \
+    curl_retry -G \
       --data-urlencode "weights_path=$CUSTOM_SOVITS_PATH" \
       "http://localhost:9871/set_sovits_weights" > /dev/null
 fi
@@ -65,7 +69,7 @@ fi
 # We perform a dummy synthesis with the neutral anchor to 'prime' the GPU
 if [ -f "$CUSTOM_GPT_PATH" ] && [ -f "$CUSTOM_SOVITS_PATH" ]; then
     echo "🔥 Performing Identity Warmup (BERT/HuBERT Cache)..."
-    curl -fS -X POST "http://localhost:9871/tts" \
+    curl_retry -X POST "http://localhost:9871/tts" \
          -H "Content-Type: application/json" \
          -d '{
                 "text": "Warmup segment.",
