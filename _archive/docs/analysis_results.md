@@ -208,7 +208,7 @@ graph TD
 ## References
 
 1. [Third-Person Appraisal Agent: Simulating Human Emotional Reasoning in Text with LLMs](https://aclanthology.org/2025.findings-emnlp.1288/) — ACL Anthology, EMNLP 2025
-2. [US11226673B2 — Affective Interaction Systems](https://patents.google.com/patent/US11226673B2/en) — Google Patents
+2. [US11226673B2 — Affective Interaction Systems](https://patents.google.com/?q=US11226673B2) — Google Patents
 3. [Stateful Memory-Augmented Transformers for Efficient Dialogue Modeling](https://aclanthology.org/2024.findings-eacl.57/) — ACL Anthology, EACL 2024
 4. [Amory: Building Coherent Narrative-Driven Agent Memory](https://aclanthology.org/2026.eacl-long.183/) — ACL Anthology, EACL 2026
 5. [Projecting the End of a Speaker's Turn: A Cognitive Cornerstone of Conversation](https://doi.org/10.1353/lan.2006.0130) — de Ruiter, Mitterer & Enfield, 2006
