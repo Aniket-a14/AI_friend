@@ -374,9 +374,36 @@ The Sovereign Mesh is designed with **Privacy by Default**. The baseline agent i
 
 You do not need to run manual SQL inserts or standalone scripts. On startup, the backend cognitive agents **automatically hydrate and seed the relational PostgreSQL database** using your private local configurations!
 
-To launch the full mesh:
+Select your launching profile based on your operating system and hardware resources:
+
+#### **A. Standard Production Launch (Linux / Windows Host)**:
+This command boots up the entire 14-container real-time voice, STT, and voice cloning mesh:
 ```bash
 docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build
+```
+
+#### **B. macOS Apple Silicon Launch**:
+On Apple Silicon MacBooks (M1/M2/M3/M4), real-time CUDA-based voice cloning is bypassed in favor of local performance profiles. Choose between **Light** and **Heavy** modes:
+
+* **🍎 macOS Light Mode** (Cognitive-Only):
+  Focuses strictly on cognitive RAG, memory graph, and text agents. Excludes heavy real-time WebRTC media streams, Whisper STT, and voice synthesis to conserve battery and CPU:
+  ```bash
+  docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.light.yml up -d --build
+  ```
+* **🍎 macOS Heavy Mode** (Local RAG & Whisper STT):
+  Enables the advanced cognitive mesh and local real-time audio Whisper STT, optimized for M-series CPU cores with a memory constraint limit of 6G:
+  ```bash
+  docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.heavy.yml up -d --build
+  ```
+
+##### **Solving macOS compilation bottlenecks via layered builds**:
+If Apple Silicon arm64 PyTorch or C++ dependencies cause compilation timeouts during standard compose builds, compile the secure, cached build layers sequentially using the dedicated Mac Dockerfiles:
+```bash
+# 1. Compile and cache base arm64 dependencies
+docker build -t ai-friend/base:v1 -f backend/Dockerfile.base ./backend
+
+# 2. Compile and cache advanced AI, Torch, and STT libraries on top of the base image
+docker build -t ai-friend/full:v1 --build-arg BASE_IMAGE=ai-friend/base:v1 -f backend/Dockerfile.full ./backend
 ```
 
 ### **Step 4: Health Audit**
