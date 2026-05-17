@@ -4,7 +4,7 @@ services:
   nats:
     image: nats:${NATS_IMAGE_TAG:-2.10.24-alpine}
     container_name: nats_mesh
-    entrypoint: [ "/nats-server" ]
+    entrypoint: [ "nats-server" ]
     command: [ "-js" ]
     ports:
       - "4222:4222" # Client connections
