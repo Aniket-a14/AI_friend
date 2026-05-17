@@ -1,4 +1,5 @@
 import logging
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +11,7 @@ class HybridSegmenter:
     def __init__(self, target_size: int = 8):
         self.target_size = target_size
 
+    @lru_cache(maxsize=2048)
     def score_split_point(self, word: str, chunk_len: int) -> float:
         """
         Calculates the probability [0, 1] that a word is a good segment boundary.
