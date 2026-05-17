@@ -107,6 +107,7 @@ jobs:
     needs: [release]
     env:
       ENV_SUFFIX: ""
+      CONFIG_URL: ""
     strategy:
       matrix:
         environment: [development, staging, production]
