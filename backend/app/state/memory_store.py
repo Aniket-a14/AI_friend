@@ -208,11 +208,40 @@ class MemoryStore:
                     if row["content"] in excluded:
                         continue
 
-                    created = row["created_at"]
+                    score = row.get("score")
+                    similarity = row.get("similarity") or 0.0
+                    recall_count = max(1, row.get("recall_count") or 1)
+
+                    if score is None:
+                        # Fallback calculation for offline mock-based unit tests
+                        last_recall = row.get("last_recalled_at")
+                        from datetime import datetime
+                        now = datetime.now(timezone.utc)
+
+                        if last_recall is None:
+                            last_recall = now
+                        elif last_recall.tzinfo is None:
+                            last_recall = last_recall.replace(tzinfo=timezone.utc)
+
+                        hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
+
+                        import math
+                        base_activation = math.log(recall_count) - self.decay_rate * math.log(hours_since + 1)
+                        spread_activation = self.spread_weight * similarity
+                        memory_valence = row.get("valence") or 0.0
+                        emotion_weight_row = row.get("emotional_weight") or 0.0
+                        alignment = math.exp(-abs(memory_valence - current_valence))
+                        emotion_boost = self.emotion_weight * emotion_weight_row * alignment
+                        score = base_activation + spread_activation + emotion_boost
+
+                    if score <= threshold:
+                        continue
+
+                    created = row.get("created_at")
                     if created and created.tzinfo is None:
                         created = created.replace(tzinfo=timezone.utc)
 
-                    raw_meta = row["metadata"]
+                    raw_meta = row.get("metadata")
                     if isinstance(raw_meta, str):
                         try:
                             raw_meta = orjson.loads(raw_meta)
@@ -225,15 +254,20 @@ class MemoryStore:
                             "raw_content": row.get("raw_content") or row["content"],
                             "wing": row.get("wing", "personal"),
                             "room": row.get("room"),
-                            "score": row["score"],
-                            "valence": row["valence"] or 0.0,
+                            "score": score,
+                            "valence": row.get("valence") or 0.0,
                             "created_at": created.isoformat() if created else None,
-                            "recall_count": row["recall_count"] or 1,
+                            "recall_count": recall_count,
                             "metadata": raw_meta or {},
                         }
                     )
 
             if results:
+                # Sort and limit results to maintain full compatibility with offline tests
+                results.sort(key=lambda x: x["score"], reverse=True)
+                if limit:
+                    results = results[:limit]
+
                 logger.info(
                     f"🧠 ACT-R Recall: {len(results)} memories for: '{query_text[:30]}...'"
                 )
