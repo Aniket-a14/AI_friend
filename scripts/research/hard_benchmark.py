@@ -76,28 +76,36 @@ async def run_benchmark(iterations=20):
     if results:
         avg_thought = statistics.mean(results)
         avg_reflex = statistics.mean(reflex_results) if reflex_results else 0
-        p99_thought = sorted(results)[int(len(results) * 0.99)]
+        sorted_res = sorted(results)
+        p50 = statistics.median(results)
+        p95 = sorted_res[int(len(sorted_res) * 0.95)] if len(sorted_res) > 0 else 0
+        p99 = sorted_res[int(len(sorted_res) * 0.99)] if len(sorted_res) > 0 else 0
+        jitter = statistics.stdev(results) if len(results) > 1 else 0.0
 
         print(f"\n📈 --- HUMAN-FIDELITY RESULTS FOR PAPER ---")
         print(f"Reflex Latency (First Sound):  {avg_reflex:.2f} ms")
         print(f"Cognitive Latency (Thought):   {avg_thought:.2f} ms")
         print(f"Human-Likeness Gap:            {avg_thought - avg_reflex:.2f} ms")
         print("-" * 45)
-        print(f"p99 Stability (Thought):       {p99_thought:.2f} ms")
+        print(f"p99 Stability (Thought):       {p99:.2f} ms")
         print("-" * 45)
         
         # Save to file for easy copy-paste
-        with open("benchmark_results.json", "w") as f:
+        out_path = os.path.join(os.path.dirname(__file__), "benchmark_results.json")
+        with open(out_path, "w") as f:
             json.dump({
                 "timestamp": datetime.now().isoformat(),
                 "iterations": iterations,
-                "avg": avg,
+                "avg": avg_thought,
+                "avg_reflex": avg_reflex,
                 "p50": p50,
                 "p95": p95,
                 "p99": p99,
                 "jitter": jitter,
-                "raw_data": results
+                "raw_data_thought": results,
+                "raw_data_reflex": reflex_results
             }, f, indent=2)
+        print(f"💾 Raw results saved to: {out_path}")
             
     else:
         print("❌ No results captured. Is the Brain Agent running in Docker?")
