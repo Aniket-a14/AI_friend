@@ -18,7 +18,7 @@ from typing import Dict, Any, List
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(slots=True)
 class AppraisalVector:
     """
     6-variable appraisal vector (§1.3).

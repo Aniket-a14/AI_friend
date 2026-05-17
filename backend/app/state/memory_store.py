@@ -16,8 +16,7 @@ import time
 import asyncio
 import httpx
 import orjson
-import math
-from datetime import datetime, timezone
+from datetime import timezone
 from typing import Iterable
 from ..config import Config
 
@@ -172,20 +171,12 @@ class MemoryStore:
                 return []
 
             vector_str = str(query_vector)
-            now = datetime.now(timezone.utc)
             excluded = {content for content in (exclude_contents or []) if content}
 
             results = []
             async with self.pool.acquire() as conn:
-                # Scoped query: filter by wing (required) and room (optional)
-                where_clause = "WHERE wing = $2"
-                params = [vector_str, wing]
-
-                if room:
-                    where_clause += " AND room = $3"
-                    params.append(room)
-
-                query = f"""
+                rows = await conn.fetch(
+                    """
                     SELECT
                         content,
                         raw_content,
@@ -198,81 +189,49 @@ class MemoryStore:
                         last_recalled_at,
                         created_at,
                         metadata,
-                        1 - (embedding <=> $1) as similarity
-                    FROM memories
-                    {where_clause}
-                    ORDER BY embedding <=> $1
-                    LIMIT ${len(params) + 1}
-                """
-                # Add limit parameter
-                params.append(limit * 3)
+                        similarity,
+                        score
+                    FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer)
+                    """,
+                    vector_str,
+                    wing,
+                    room,
+                    self.decay_rate,
+                    self.spread_weight,
+                    self.emotion_weight,
+                    current_valence,
+                    threshold,
+                    limit,
+                )
 
-                rows = await conn.fetch(query, *params)
-
-                scored_candidates = []
                 for row in rows:
                     if row["content"] in excluded:
                         continue
 
-                    similarity = row["similarity"]
-                    recall_count = max(1, row["recall_count"] or 1)
-                    last_recall = row["last_recalled_at"]
-                    memory_valence = row["valence"] or 0.0
+                    created = row["created_at"]
+                    if created and created.tzinfo is None:
+                        created = created.replace(tzinfo=timezone.utc)
 
-                    if last_recall is None:
-                        last_recall = now
-                    elif last_recall.tzinfo is None:
-                        last_recall = last_recall.replace(tzinfo=timezone.utc)
+                    raw_meta = row["metadata"]
+                    if isinstance(raw_meta, str):
+                        try:
+                            raw_meta = orjson.loads(raw_meta)
+                        except Exception:
+                            raw_meta = {}
 
-                    # ACT-R Base-Level Activation (§6.2)
-                    hours_since = max(
-                        0.001, (now - last_recall).total_seconds() / 3600.0
+                    results.append(
+                        {
+                            "content": row["content"],
+                            "raw_content": row.get("raw_content") or row["content"],
+                            "wing": row.get("wing", "personal"),
+                            "room": row.get("room"),
+                            "score": row["score"],
+                            "valence": row["valence"] or 0.0,
+                            "created_at": created.isoformat() if created else None,
+                            "recall_count": row["recall_count"] or 1,
+                            "metadata": raw_meta or {},
+                        }
                     )
-                    base_activation = math.log(
-                        max(1, recall_count)
-                    ) - self.decay_rate * math.log(hours_since + 1)
-
-                    # Spreading Activation ≈ cosine similarity (§6.2)
-                    spread_activation = self.spread_weight * similarity
-
-                    # Emotional Alignment (§6.4 — Bower, 1981)
-                    emotional_alignment = math.exp(
-                        -abs(memory_valence - current_valence)
-                    )
-                    emotion_boost = self.emotion_weight * emotional_alignment
-
-                    # Final ACT-R Score
-                    score = base_activation + spread_activation + emotion_boost
-
-                    if score > threshold:
-                        created = row["created_at"]
-                        if created and created.tzinfo is None:
-                            created = created.replace(tzinfo=timezone.utc)
-
-                        raw_meta = row["metadata"]
-                        if isinstance(raw_meta, str):
-                            try:
-                                raw_meta = orjson.loads(raw_meta)
-                            except Exception:
-                                raw_meta = {}
-
-                        scored_candidates.append(
-                            {
-                                "content": row["content"],
-                                "raw_content": row.get("raw_content") or row["content"],
-                                "wing": row.get("wing", "personal"),
-                                "room": row.get("room"),
-                                "score": score,
-                                # Episodic context for narrative surfacing
-                                "valence": memory_valence,
-                                "created_at": created.isoformat() if created else None,
-                                "recall_count": recall_count,
-                                "metadata": raw_meta or {},
-                            }
-                        )
-
-                scored_candidates.sort(key=lambda x: x["score"], reverse=True)
-                results = scored_candidates[:limit]
 
             if results:
                 logger.info(
