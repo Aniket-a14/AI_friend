@@ -27,7 +27,7 @@ We follow a strict **Planning-First** philosophy. Non-trivial changes (anything 
 3.  **Latency Budget**: Every cognitive turn has a budget of **<150ms**. If your change adds latency, you must justify it.
 
 ### Step 2: Implementation Sequence
-1.  **Contract Update**: Modify `contracts.py` and run `scripts/setup_nats_streams.py`.
+1.  **Contract Update**: Modify `contracts.py` and run `backend/scripts/bootstrap/setup_nats_streams.py`.
 2.  **Logic Update**: Modify the core service in `app/cognitive/` or `app/vision/`.
 3.  **Agent Wiring**: Update the agent in `app/agents/` to handle the new signals.
 4.  **Verification**: Run targeted regression tests.
@@ -61,7 +61,7 @@ docker compose -f docker-compose.infra.yml up -d
 
 # 3. Hydrate Mesh & Database
 cd backend
-python scripts/setup_nats_streams.py
+python scripts/bootstrap/setup_nats_streams.py
 cd ../frontend
 npx prisma db push
 ```
@@ -71,7 +71,7 @@ Because Windows screen capture cannot run inside Docker, use the **Host Bridge**
 1.  Ensure **Ollama** is running on your host with `moondream`.
 2.  Run the launcher:
     ```powershell
-    ./scripts/start-vision.ps1
+    ./scripts/host/start-vision.ps1
     ```
 
 ---

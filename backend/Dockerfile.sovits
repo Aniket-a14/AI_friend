@@ -68,7 +68,7 @@ ENV PYTHONPATH=/workspace/GPT-SoVITS
 WORKDIR /workspace/GPT-SoVITS
 
 # Entrypoint is moved to a script for warm-start logic
-COPY scripts/sovits_bootstrap.sh /workspace/sovits_bootstrap.sh
+COPY scripts/bootstrap/sovits_bootstrap.sh /workspace/sovits_bootstrap.sh
 RUN chmod +x /workspace/sovits_bootstrap.sh
 
 ENTRYPOINT ["/workspace/sovits_bootstrap.sh"]

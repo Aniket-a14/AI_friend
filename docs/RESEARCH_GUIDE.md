@@ -75,7 +75,7 @@ nats sub ">"
 Use the **React Flow** dashboard (`/admin/mesh`) to visualize the decoupling of agents.
 
 ### B. Emotional Trajectory Plotting
-Generate PAD charts using `scripts/visualize_affect.py` to demonstrate deterministic emotional evolution over time.
+Generate PAD charts using `scripts/visualization/visualize_affect.py` to demonstrate deterministic emotional evolution over time.
 
 ### C. Memory Activation Heatmaps
 Plot the "Activation Score" of recalled memories over a 60-minute session to show contextual relevance dynamics.
