@@ -51,12 +51,16 @@ echo "✅ SoVITS API is Online."
 # 3. Dynamic Identity Injection (Persistent Weights)
 if [ -n "${CUSTOM_GPT_PATH:-}" ]; then
     echo "⚖️ Pre-loading GPT Weights: $CUSTOM_GPT_PATH"
-    curl -fS --retry 5 --retry-delay 2 "http://localhost:9871/set_gpt_weights?weights_path=$CUSTOM_GPT_PATH" > /dev/null
+    curl -fS --retry 5 --retry-delay 2 -G \
+      --data-urlencode "weights_path=$CUSTOM_GPT_PATH" \
+      "http://localhost:9871/set_gpt_weights" > /dev/null
 fi
 
 if [ -n "${CUSTOM_SOVITS_PATH:-}" ]; then
     echo "⚖️ Pre-loading SoVITS Weights: $CUSTOM_SOVITS_PATH"
-    curl -fS --retry 5 --retry-delay 2 "http://localhost:9871/set_sovits_weights?weights_path=$CUSTOM_SOVITS_PATH" > /dev/null
+    curl -fS --retry 5 --retry-delay 2 -G \
+      --data-urlencode "weights_path=$CUSTOM_SOVITS_PATH" \
+      "http://localhost:9871/set_sovits_weights" > /dev/null
 fi
 
 # 4. Identity Warmup (Populate BERT/HuBERT Latent Caches)
