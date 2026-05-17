@@ -15,7 +15,19 @@ This directory contains the high-fidelity empirical datasets compiled from the *
 
 ---
 
-## 📊 LaTeX Table Template for Your Paper
+## 📊 Empirical Performance Table (GitHub Preview)
+
+| Subsystem Component | Original Latency | Optimized Latency | Throughput | Budget Limit | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Audio Ingest & Normalizer** | -- | 40.89 µs | 24,454 OPS | 5.00 ms | Optimized |
+| **Hybrid Text Segmenter** | 4.294 ms | 586.10 µs | 1,706 OPS | 10.00 ms | 7.3x Speedup |
+| **Subconscious Threat Scan** | -- | 200.00 µs | 5,000 OPS | 2.00 ms | Stable |
+| **Memory ACT-R Index Search** | -- | 50.00 µs | 20,000 OPS | 8.00 ms | High-Fidelity |
+| **Hormonal State Appraisal** | -- | 330.00 µs | 3,030 OPS | 5.00 ms | Active |
+| **LLM Temperature Modulation** | 2.30 µs | 1.29 µs | 775,193 OPS | 1.00 ms | 1.8x Speedup |
+| **End-to-End Pathway** | **--** | **1.207 ms** | **828 OPS** | **15.00 ms** | **92% Headroom** |
+
+### LaTeX Table Template for Your Paper
 
 You can copy-paste the LaTeX code below directly into your paper's **Results & Evaluation** section:
 
@@ -79,9 +91,22 @@ plt.show()
 
 ---
 
-## 📊 Extended LaTeX Tables for the Paper
+## 📊 Extended Results Tables (GitHub Preview)
 
-### Table 2: Edge Resource Overhead & Hardware Footprint (Jetson vs. M3)
+### Table 2: Edge Resource Overhead & Hardware Footprint (GitHub Preview)
+
+| Component Services | RAM Allocation | VRAM Allocation | CPU Util. (Avg) | Power Footprint |
+| :--- | :--- | :--- | :--- | :--- |
+| **NATS Event Broker** | 18.40 MB | 0.00 GB | 0.8% | 0.20 W |
+| **Neo4j Graph Database** | 240.00 MB | 0.00 GB | 4.5% | 2.80 W |
+| **Redis Cache Server** | 12.80 MB | 0.00 GB | 0.3% | 0.10 W |
+| **Python Cognitive Agents** | 45.20 MB | 0.00 GB | 2.8% | 1.10 W |
+| **Total Mesh Footprint** | **316.40 MB** | **0.00 GB** | **8.4%** | **4.20 W** |
+| Whisper STT (CPU edge) | -- | 0.00 GB | 14.5% | 5.50 W |
+| Local Llama 3B (Quantized) | -- | 2.85 GB | -- | 14.80 W |
+| **Full Stack Total** | **316.40 MB** | **2.85 GB** | **22.9%** | **24.50 W** |
+
+#### Copy LaTeX Code for Table 2:
 ```latex
 \begin{table}[htbp]
 \caption{Edge Computational Footprint and Resource Budgets of the Sovereign Mesh}
@@ -102,7 +127,17 @@ Local Llama 3B (Quantized)   & --                      & 2.85 GB                
 \end{table}
 ```
 
-### Table 3: Mathematical Decay Calibration & Conversational Robustness
+### Table 3: Mathematical Decay Calibration & Conversational Robustness (GitHub Preview)
+
+| Mathematical Decay Metric | Measured Value | HRI Robustness Metric (N=500) | Measured Value |
+| :--- | :--- | :--- | :--- |
+| **Decay Constant (Tau)** | 15.80 sec | **Interruption Success Rate (Barge-In)** | 97.6% |
+| **Mood Fit (R2 Pleasure)** | 0.984 | **Interruption Latency (Stop Time)** | 115.00 ms |
+| **Energy Fit (R2 Arousal)** | 0.991 | **Ambient False Trigger Ratio** | 1.2% |
+| **Control Fit (R2 Dominance)** | 0.978 | **Knowledge RAG Recall@1** | 92.5% |
+| **Memory Search Recall@3** | 97.8% | **Knowledge RAG Recall@5** | 99.2% |
+
+#### Copy LaTeX Code for Table 3:
 ```latex
 \begin{table}[htbp]
 \caption{Mathematical Model Decay Fit and Human-Robot Interaction Metrics}
