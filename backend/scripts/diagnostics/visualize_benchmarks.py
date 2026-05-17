@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 AI Friend Industrial Benchmark Visualizer
 Parses stored JSON benchmark history files and generates a premium, 
