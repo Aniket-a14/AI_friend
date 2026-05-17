@@ -87,14 +87,10 @@ class ActionService:
                     + "\n".join([f"- {m['content']}" for m in surfaced])
                 )
 
-            # Construct the final prompt with structural guidance
-            full_prompt = f"""
+            # 1. Prepare Identity-Aware System and User Prompts
+            # Static System Prompt (cached by inference engines like Ollama/vLLM)
+            system_instruction = f"""
             {identity_prompt}
-            
-            Current Context: 
-            - Goal: {plan.goal}
-            - Current Emotion: {emotion}
-            {shared_history}
             
             Guideline:
             - Maintain your identity rules at all times.
@@ -102,6 +98,14 @@ class ActionService:
             - Respond only in English. Do not use Hindi, Hinglish, or any other language for now.
             - The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.
             - You may use <pause=300ms> or <hesitate> when it improves natural timing.
+            """.strip()
+
+            # Dynamic User Prompt (appends active context to the query suffix)
+            user_prompt = f"""
+            Current Context: 
+            - Goal: {plan.goal}
+            - Current Emotion: {emotion}
+            {shared_history}
             
             User: {msg}
             Assistant: """.strip()
@@ -134,7 +138,8 @@ class ActionService:
                 )
                 try:
                     stream_iter = self.llm.generate_stream(
-                        full_prompt,
+                        prompt=user_prompt,
+                        system=system_instruction,
                         model=model,
                         options_override=endocrine_options,
                     ).__aiter__()
