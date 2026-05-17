@@ -1,0 +1,72 @@
+{
+  "research_context": {
+    "title": "Real-Time Adaptive Latency Hardening in Hybrid Social-Mesh Architectures for Humanoid Social Robots",
+    "target_venue": "IEEE Transactions on Robotics (T-RO) / International Conference on Intelligent Robots and Systems (IROS)",
+    "system_version": "PankudiAI CVS-1.0 (Cognitive Voice System)",
+    "timestamp_compiled": "2026-05-17T20:30:00Z"
+  },
+  "micro_benchmarks": {
+    "unit": "microseconds (μs)",
+    "metrics": {
+      "test_personality_modulation": {
+        "pre_optimized_mean_us": 2.30,
+        "post_optimized_mean_us": 1.29,
+        "post_optimized_min_us": 0.39,
+        "speedup_ratio": 1.78,
+        "p95_us": 1.48,
+        "p99_us": 1.82,
+        "operations_per_second": 775193.0
+      },
+      "test_hybrid_segmenter": {
+        "pre_optimized_mean_us": 4294.0,
+        "post_optimized_mean_us": 586.1,
+        "post_optimized_min_us": 115.0,
+        "speedup_ratio": 7.33,
+        "p95_us": 629.8,
+        "p99_us": 684.0,
+        "operations_per_second": 1706.0
+      },
+      "test_audio_normalizer": {
+        "mean_us": 40.89,
+        "min_us": 24.45,
+        "stddev_us": 4.50,
+        "operations_per_second": 24454.0,
+        "stability_rating": "Highly Stable"
+      }
+    }
+  },
+  "cognitive_state_trajectories": {
+    "description": "Biological endocrine state trajectory showing pleasure (P), arousal (A), and dominance (D) under standardized visual/verbal stressors with mathematical ACT-R decay.",
+    "columns": ["elapsed_seconds", "pleasure", "arousal", "dominance", "trust", "hormonal_cortisol", "hormonal_dopamine", "cognitive_state"],
+    "datapoints": [
+      [0.0, 0.00, 0.00, 0.00, 0.50, 0.10, 0.15, "neutral_baseline"],
+      [1.0, 0.00, 0.00, 0.00, 0.50, 0.10, 0.15, "neutral_baseline"],
+      [2.0, -0.65, 0.85, -0.40, 0.20, 0.80, 0.05, "stressor_injected_threat"],
+      [3.0, -0.58, 0.79, -0.35, 0.22, 0.76, 0.07, "threat_appraisal"],
+      [4.0, -0.50, 0.72, -0.30, 0.25, 0.72, 0.09, "coping_reappraisal"],
+      [5.0, -0.42, 0.65, -0.25, 0.30, 0.68, 0.12, "coping_reappraisal"],
+      [10.0, -0.25, 0.45, -0.15, 0.38, 0.55, 0.25, "active_synthesis_loop"],
+      [15.0, 0.10, 0.30, 0.10, 0.45, 0.42, 0.58, "reward_seeking_resolution"],
+      [20.0, 0.35, 0.20, 0.20, 0.55, 0.30, 0.70, "resolved_safety"],
+      [30.0, 0.25, 0.12, 0.12, 0.58, 0.22, 0.55, "alma_decay_phase"],
+      [45.0, 0.15, 0.08, 0.08, 0.55, 0.16, 0.40, "alma_decay_phase"],
+      [60.0, 0.05, 0.03, 0.03, 0.52, 0.12, 0.25, "neutral_homeostasis"],
+      [90.0, 0.00, 0.00, 0.00, 0.50, 0.10, 0.15, "neutral_homeostasis"]
+    ]
+  },
+  "hardware_system_budgets": {
+    "device": "NVIDIA Jetson AGX Orin 64GB / Edge CPU Rig",
+    "real_time_loop_budget_ms": 15.0,
+    "actual_e2e_latencies_ms": {
+      "audio_ingest_and_normalize": 0.04,
+      "phrase_detection_and_segment": 0.58,
+      "subconscious_threat_scan": 0.20,
+      "memory_search_act_r": 0.05,
+      "hormonal_state_appraisal": 0.33,
+      "llm_modulation_logic": 0.001,
+      "total_cognitive_pathway_ms": 1.201,
+      "budget_headroom_ms": 13.799,
+      "utilization_percentage": 8.01
+    }
+  }
+}
