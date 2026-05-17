@@ -242,8 +242,8 @@ async def main():
     agent = TransportAgent()
     try:
         await agent.start()
-        while True:
-            await asyncio.sleep(1)
+        shutdown_trigger = asyncio.Event()
+        await shutdown_trigger.wait()
     except KeyboardInterrupt:
         await agent.stop()
 

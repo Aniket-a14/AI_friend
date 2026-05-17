@@ -148,8 +148,8 @@ class BaseAgent:
                     data["latency_metadata"] = meta
                 payload = orjson.dumps(data)
                 
-                # Standard NATS publish (resilient fallback)
-                await self.nc.publish(subject, payload)
+                # Use JetStream for all persistent message streams
+                await self.js.publish(subject, payload)
 
             self._record_subject_metric(
                 subject,
@@ -274,9 +274,11 @@ class BaseAgent:
                 await msg.ack()
             except Exception as e:
                 logger.error(f"Subscription handler error on {subject}: {e}")
-                # Don't ack so it can be redelivered/investigated if necessary
-                # but in high-speed audio, we usually just drop and move on
-                await msg.ack()
+                # Auto-ACK fast-moving media, but NACK critical state/chat flows
+                if subject.startswith("chat.") or subject.startswith("state."):
+                    await msg.nak()
+                else:
+                    await msg.ack()
 
         # 3. Durable Management
         # Generate a unique durable name based on the subject if not provided
