@@ -28,6 +28,7 @@ coverage.xml
 .benchmarks.json
 .benchmarks/
 htmlcov/
+benchmark_report.html
 
 # Node
 node_modules/
