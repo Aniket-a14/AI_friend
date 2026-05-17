@@ -6,7 +6,7 @@ from pathlib import Path
 # Add backend to path to import app modules
 # Script is in backend/scripts/generate_fillers.py
 # We need to add backend/ to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from app.voice.sovits_client import SoVITSClient
 from app.config import Config
