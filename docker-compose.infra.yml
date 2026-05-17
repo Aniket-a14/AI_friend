@@ -117,10 +117,12 @@ services:
 
   # 6. Ollama (Local LLM)
   ollama:
+    profiles: ["docker-ollama"]
     image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.5.7}
     container_name: local_brain
     entrypoint: [ "/bin/ollama" ]
     command: [ "serve" ]
+
     ports:
       - "11434:11434"
     volumes:
