@@ -43,7 +43,7 @@ curl_retry() {
 # 2. Wait for API to reach readiness
 echo "⏳ Waiting for API readiness..."
 elapsed=0
-until curl_retry http://localhost:9871/ > /dev/null; do
+until curl_retry http://localhost:9871/docs > /dev/null; do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     echo "❌ SoVITS API process exited before becoming ready."
     exit 1
@@ -58,18 +58,22 @@ done
 echo "✅ SoVITS API is Online."
 
 # 3. Dynamic Identity Injection (Persistent Weights)
-if [ -n "${CUSTOM_GPT_PATH:-}" ]; then
+if [ -n "${CUSTOM_GPT_PATH:-}" ] && [ -f "$CUSTOM_GPT_PATH" ]; then
     echo "⚖️ Pre-loading GPT Weights: $CUSTOM_GPT_PATH"
     curl_retry -G \
       --data-urlencode "weights_path=$CUSTOM_GPT_PATH" \
       "http://localhost:9871/set_gpt_weights" > /dev/null
+else
+    echo "⚠️ Custom GPT weights file not found on disk ($CUSTOM_GPT_PATH). Skipping pre-load."
 fi
 
-if [ -n "${CUSTOM_SOVITS_PATH:-}" ]; then
+if [ -n "${CUSTOM_SOVITS_PATH:-}" ] && [ -f "$CUSTOM_SOVITS_PATH" ]; then
     echo "⚖️ Pre-loading SoVITS Weights: $CUSTOM_SOVITS_PATH"
     curl_retry -G \
       --data-urlencode "weights_path=$CUSTOM_SOVITS_PATH" \
       "http://localhost:9871/set_sovits_weights" > /dev/null
+else
+    echo "⚠️ Custom SoVITS weights file not found on disk ($CUSTOM_SOVITS_PATH). Skipping pre-load."
 fi
 
 # 4. Identity Warmup (Populate BERT/HuBERT Latent Caches)
