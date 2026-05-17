@@ -1028,7 +1028,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         dataMap: {}
                     };
                 }
-                grouped[item.test_name].dataMap[item.run_id] = (item.mean * 1000).toFixed(3);
+                grouped[item.test_name].dataMap[item.run_id] = item.mean * 1000; // Store full precision float
             });
 
             // Extract unique run IDs sorted chronologically
@@ -1045,7 +1045,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 // Map data map to the exact chronological run_id slots, filling missing ones with null
                 const alignedData = uniqueRunIds.map(id => {
                     const val = ds.dataMap[id];
-                    return val !== undefined ? parseFloat(val) : null;
+                    return val !== undefined ? val : null; // Load raw high-fidelity float directly
                 });
 
                 datasets.push({
@@ -1081,10 +1081,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                                 color: '#9ca3af', 
                                 font: { family: 'Outfit' },
                                 callback: function(value) {
-                                    if (currentYScale === 'logarithmic') {
-                                        return value >= 0.01 ? value.toFixed(2) + ' ms' : value.toFixed(4) + ' ms';
+                                    if (value === 0) return '0 ms';
+                                    if (value < 0.001) {
+                                        return (value * 1000).toFixed(2) + ' μs';
                                     }
-                                    return value + ' ms';
+                                    if (value < 1.0) {
+                                        return value.toFixed(4) + ' ms';
+                                    }
+                                    return value.toFixed(2) + ' ms';
                                 }
                             }, 
                             title: { display: true, text: 'Mean Latency (ms)', color: '#9ca3af', font: { family: 'Outfit' } } 
