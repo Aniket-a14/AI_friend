@@ -167,6 +167,47 @@ sequenceDiagram
     V-->>B: voice.segmentation_feedback (Telemetry)
     Note over B,V: Closed-Loop Pulse Adjustment
 ```
+## 📂 Codebase Directory Layout & Nested Trees
+
+To assist developers in navigating the platform, the physical workspace structure maps directly to the cognitive and sensory layers of the **Sovereign Mesh**:
+
+```text
+AI Friend_ai/                # Platform Workspace Root
+├── .agents/               # Multi-store cognitive memory & MCP modules
+├── backend/               # 🐳 Asynchronous Python Microservices Core
+│   ├── app/               # Core application packages
+│   │   ├── agents/        # NATS Signal Handlers & durables (Brain, Voice, etc.)
+│   │   ├── cognitive/     # BDI Cognition, OCC Appraisal, PAD Emotion calculations
+│   │   ├── stt/           # Speculative SenseVoice & Whisper audio queues
+│   │   ├── voice/         # Affect-aware Synthesizer, OLA Buffers, & Filler Caching
+│   │   ├── llm/           # Local Ollama integration & prompt templates
+│   │   └── config.py      # Universal platform environment schema
+│   ├── db/                # Postgres migration profiles & Neo4j APOC plugins
+│   ├── scripts/           # Runtime bootstraps (sovits_bootstrap.sh, health checks)
+│   ├── tests/             # Comprehensive Pytest regression suite
+│   ├── main.py            # FastAPI Entrypoint for sensory WebSocket streams
+│   └── Dockerfile.sovits  # Custom optimized voice-cloning runtime image
+├── frontend/              # ⚡ Next.js 14 WebRTC Visual Interface
+│   ├── app/               # App Router pages and client state providers
+│   ├── components/        # Premium Outfit typography buttons, modals, & sliders
+│   └── public/            # Premium SVG assets & media files
+├── docs/                  # 📄 Hardened System Architecture & Research Trajectory
+├── notebooks/             # 📓 Interactive Colab-ready Google Voice Training sheets
+├── models/                # 💾 Volume Mounts for persistent cloned voice weights
+└── scripts/               # 🛠️ Global powershell orchestrators & backup routines
+```
+
+### Core Workspace Architectural Directory Description
+
+| Path | Primary Architectural Responsibility | Key Code Implementation |
+| :--- | :--- | :--- |
+| **`backend/app/agents/`** | Signal durables, message queue management, and NATS contract mappings. | `agent.py`, `brain.py`, `voice.py` |
+| **`backend/app/cognitive/`** | Core decision tree, BDI action-planning, and PAD emotional drift equations. | `bdi_core.py`, `pad_state.py` |
+| **`backend/app/voice/`** | Synthesis caches, OLA signal reconstruction, and zero-latency social fillers. | `filler_service.py`, `sovits_client.py` |
+| **`backend/app/stt/`** | Parallel fan-out queue and speculative interruption arbitration. | `sensevoice_service.py`, `whisper_service.py` |
+| **`backend/scripts/`** | Service hydration, dynamic health diagnostics, and container bootstrapping. | `sovits_bootstrap.sh`, `integration_health_check.py` |
+| **`frontend/app/`** | Real-time audio stream rendering, client-side WebRTC signaling, and dynamic emotional graphs. | `page.jsx`, `layout.jsx` |
+| **`docs/`** | Conceptual and algorithmic models, mathematical proofs, and platform API schemas. | `ARCHITECTURE.md`, `RESEARCH_GUIDE.md` |
 
 ---
 
