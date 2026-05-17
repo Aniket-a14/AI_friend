@@ -38,27 +38,27 @@ class AudioNormalizer:
             if not samples:
                 return b""
 
-            peak = max(abs(sample) for sample in samples)
+            peak = max([abs(sample) for sample in samples])
             if peak > 0:
-                scale = self.target_peak * 32767 / peak
-                clip_min, clip_max = -32768, 32767
-                # Inlined fast list comprehension
+                scale_val = self.target_peak * 32767 / peak
+                # Fully flat single loop list comprehension, avoiding generator heap frames completely
                 samples = array(
                     "h",
                     [
-                        clip_min if val < clip_min else (clip_max if val > clip_max else val)
-                        for val in (int(s * scale) for s in samples)
+                        -32768 if int(s * scale_val) < -32768 else (32767 if int(s * scale_val) > 32767 else int(s * scale_val))
+                        for s in samples
                     ],
                 )
 
+            # Avoid generator aggregation frames by list comprehension summing
             current_rms = math.sqrt(
-                sum(sample * sample for sample in samples) / len(samples)
+                sum([sample * sample for sample in samples]) / len(samples)
             )
             tail_len = int(0.1 * self.sample_rate)
             tail_samples = samples[-tail_len:] if len(samples) > tail_len else samples
             self.last_tail_rms = (
                 math.sqrt(
-                    sum(sample * sample for sample in tail_samples) / len(tail_samples)
+                    sum([sample * sample for sample in tail_samples]) / len(tail_samples)
                 )
                 if tail_samples
                 else current_rms
