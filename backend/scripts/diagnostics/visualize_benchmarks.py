@@ -633,7 +633,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="detail-grid">
                 <!-- Focused Latency Line Chart -->
                 <div style="background-color: var(--bg-card); border-radius: 0.75rem; border: 1px solid var(--border-color); padding: 1.5rem;">
-                    <h3 id="chartTitle" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1.25rem;">⚡ Telemetry Loop Latency Trend</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                        <h3 id="chartTitle" style="font-size: 1.1rem; font-weight: 600; margin: 0;">⚡ Telemetry Loop Latency Trend</h3>
+                        <button id="scaleToggleBtn" onclick="toggleChartScale()" style="background: rgba(59, 130, 246, 0.1); border: 1px solid var(--border-color); color: var(--accent-primary); padding: 0.35rem 0.75rem; border-radius: 0.35rem; cursor: pointer; font-size: 0.8rem; font-weight: 600; font-family: 'Outfit'; transition: all 0.2s ease;">Y-Scale: LINEAR</button>
+                    </div>
                     <div class="chart-container">
                         <canvas id="categoryChart"></canvas>
                     </div>
@@ -988,8 +991,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         // Category Tab charts
         let categoryChart = null;
+        let currentYScale = 'linear';
+        let activeCategory = 'telemetry';
+
+        window.toggleChartScale = function() {
+            currentYScale = currentYScale === 'linear' ? 'logarithmic' : 'linear';
+            document.getElementById('scaleToggleBtn').innerText = `Y-Scale: ${currentYScale.toUpperCase()}`;
+            
+            // Re-render the active category
+            const activeBtn = document.querySelector('.tab-btn.active');
+            if (activeBtn) {
+                switchPipeline(activeCategory, activeBtn);
+            }
+        }
 
         window.switchPipeline = function(category, btn) {
+            activeCategory = category;
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
 
@@ -1008,28 +1025,39 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 if (!grouped[item.test_name]) {
                     grouped[item.test_name] = {
                         label: niceNames[item.test_name] || item.test_name,
-                        means: []
+                        dataMap: {}
                     };
                 }
-                grouped[item.test_name].means.push((item.mean * 1000).toFixed(3));
+                grouped[item.test_name].dataMap[item.run_id] = (item.mean * 1000).toFixed(3);
             });
 
-            const uniqueRuns = [...new Set(runData.map(item => `Run #${item.run_id}`))];
+            // Extract unique run IDs sorted chronologically
+            const uniqueRunIds = [...new Set(runData.map(item => item.run_id))].sort((a, b) => a - b);
+            const uniqueRuns = uniqueRunIds.map(id => `Run #${id}`);
+            
             const datasets = [];
             let colorIdx = 0;
 
             for (const [key, ds] of Object.entries(grouped)) {
                 const color = colors[colorIdx % colors.length];
                 colorIdx++;
+
+                // Map data map to the exact chronological run_id slots, filling missing ones with null
+                const alignedData = uniqueRunIds.map(id => {
+                    const val = ds.dataMap[id];
+                    return val !== undefined ? parseFloat(val) : null;
+                });
+
                 datasets.push({
                     label: ds.label,
-                    data: ds.means,
+                    data: alignedData,
                     borderColor: color,
                     backgroundColor: color + '10',
                     borderWidth: 2.5,
                     pointRadius: 3,
                     tension: 0.15,
-                    fill: false
+                    fill: false,
+                    spanGaps: true
                 });
             }
 
@@ -1047,8 +1075,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     },
                     scales: {
                         y: { 
+                            type: currentYScale,
                             grid: { color: 'rgba(255, 255, 255, 0.04)' }, 
-                            ticks: { color: '#9ca3af', font: { family: 'Outfit' } }, 
+                            ticks: { 
+                                color: '#9ca3af', 
+                                font: { family: 'Outfit' },
+                                callback: function(value) {
+                                    if (currentYScale === 'logarithmic') {
+                                        return value >= 0.01 ? value.toFixed(2) + ' ms' : value.toFixed(4) + ' ms';
+                                    }
+                                    return value + ' ms';
+                                }
+                            }, 
                             title: { display: true, text: 'Mean Latency (ms)', color: '#9ca3af', font: { family: 'Outfit' } } 
                         },
                         x: { 
