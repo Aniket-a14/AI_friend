@@ -11,7 +11,6 @@ State updates: ALMA mood-pull + exponential decay (Gebhard, 2005)
 """
 
 import logging
-import inspect
 import math
 import time
 from dataclasses import dataclass, field
@@ -162,9 +161,7 @@ class StateService:
         }
         await self.graph.execute_query(query, params)
         if hasattr(self.graph, "invalidate_cache"):
-            cache_invalidation = self.graph.invalidate_cache(agent_name)
-            if inspect.isawaitable(cache_invalidation):
-                await cache_invalidation
+            await self.graph.invalidate_cache(agent_name)
         logger.debug(
             f"[State] Persisted to Neo4j: V={self.current_state.mood:.2f} Ar={self.current_state.energy:.2f} D={self.current_state.dominance:.2f}"
         )

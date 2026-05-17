@@ -628,8 +628,8 @@ async def main():
 
     await agent.start()
     try:
-        while True:
-            await asyncio.sleep(1)
+        shutdown_trigger = asyncio.Event()
+        await shutdown_trigger.wait()
     except asyncio.CancelledError:
         pass
     except KeyboardInterrupt:

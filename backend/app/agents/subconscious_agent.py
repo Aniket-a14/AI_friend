@@ -80,8 +80,8 @@ async def main():
     agent = SubconsciousAgent()
     await agent.start()
     try:
-        while True:
-            await asyncio.sleep(1)
+        shutdown_trigger = asyncio.Event()
+        await shutdown_trigger.wait()
     except asyncio.CancelledError:
         await agent.stop()
 
