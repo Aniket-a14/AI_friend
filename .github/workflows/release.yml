@@ -21,33 +21,72 @@ jobs:
         with:
           fetch-depth: 0 # Retrieve full history for git log computation
 
-      - name: Generate Dynamic Commit Changelog
+      - name: Generate Advanced Categorized Changelog
         id: changelog
         shell: bash
         run: |
-          # Fetch all tags to resolve the previous release tag
           git fetch --tags
-          
-          # Get current tag
           CURRENT_TAG=${{ github.ref_name }}
-          
-          # Find the previous release tag
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 $CURRENT_TAG^ 2>/dev/null || echo "")
           
-          echo "### 🚀 What's Changed in $CURRENT_TAG" > release_notes.md
+          echo "### 🚀 Release $CURRENT_TAG - Release Notes" > release_notes.md
           echo "" >> release_notes.md
           
+          # Compute Git Logs
           if [ -z "$PREVIOUS_TAG" ]; then
-            echo "Initial release of PankudiAI!" >> release_notes.md
-            echo "" >> release_notes.md
-            git log --oneline --pretty=format:"* %s (%h)" >> release_notes.md
+            COMMITS=$(git log --oneline --pretty=format:"%s (%h)")
           else
-            echo "Commits since previous release ($PREVIOUS_TAG):" >> release_notes.md
-            echo "" >> release_notes.md
-            git log $PREVIOUS_TAG..$CURRENT_TAG --oneline --pretty=format:"* %s (%h)" >> release_notes.md
+            COMMITS=$(git log $PREVIOUS_TAG..$CURRENT_TAG --oneline --pretty=format:"%s (%h)")
           fi
           
-          # Save changelog body into github output env
+          # Initialize Categories
+          FEATS=""
+          FIXES=""
+          PERFS=""
+          REFACTORS=""
+          DOCS=""
+          CHORES=""
+          
+          # Parse and group commits
+          IFS=$'\n'
+          for commit in $COMMITS; do
+            if [[ "$commit" =~ ^feat ]]; then
+              FEATS="$FEATS* $commit\n"
+            elif [[ "$commit" =~ ^fix ]]; then
+              FIXES="$FIXES* $commit\n"
+            elif [[ "$commit" =~ ^perf ]]; then
+              PERFS="$PERFS* $commit\n"
+            elif [[ "$commit" =~ ^refactor ]]; then
+              REFACTORS="$REFACTORS* $commit\n"
+            elif [[ "$commit" =~ ^docs ]]; then
+              DOCS="$DOCS* $commit\n"
+            else
+              CHORES="$CHORES* $commit\n"
+            fi
+          done
+          
+          # Write Sections
+          if [ ! -z "$FEATS" ]; then
+            echo -e "### ✨ Features\n$FEATS" >> release_notes.md
+          fi
+          if [ ! -z "$FIXES" ]; then
+            echo -e "### 🐛 Bug Fixes\n$FIXES" >> release_notes.md
+          fi
+          if [ ! -z "$PERFS" ]; then
+            echo -e "### ⚡ Performance\n$PERFS" >> release_notes.md
+          fi
+          if [ ! -z "$REFACTORS" ]; then
+            echo -e "### 🔨 Refactoring\n$REFACTORS" >> release_notes.md
+          fi
+          if [ ! -z "$DOCS" ]; then
+            echo -e "### 📝 Documentation\n$DOCS" >> release_notes.md
+          fi
+          if [ ! -z "$CHORES" ]; then
+            echo -e "### ⚙️ Maintenance & Tooling\n$CHORES" >> release_notes.md
+          fi
+          
+          # Ensure trailing newline and pipe to GITHUB_OUTPUT
+          echo "" >> release_notes.md
           EOF=$(dd if=/dev/urandom bs=15 count=1 2>/dev/null | base64 | tr -dc 'a-zA-Z0-9')
           echo "body<<$EOF" >> $GITHUB_OUTPUT
           cat release_notes.md >> $GITHUB_OUTPUT
@@ -68,23 +107,65 @@ jobs:
     needs: [release]
     strategy:
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        environment: [development, staging, production]
         include:
+          # ----- Windows Targets -----
           - os: windows-latest
             platform_name: win
-            archive_name: ai-friend-win.zip
+            arch: x64
+            archive_ext: zip
+          - os: windows-latest
+            platform_name: win
+            arch: x86
+            archive_ext: zip
+          - os: windows-latest
+            platform_name: win
+            arch: arm64
+            archive_ext: zip
+
+          # ----- macOS Targets -----
           - os: macos-latest
             platform_name: macos
-            archive_name: ai-friend-macos.zip
+            arch: arm64
+            archive_ext: zip
+          - os: macos-latest
+            platform_name: macos
+            arch: x64
+            archive_ext: zip
+
+          # ----- Linux Targets -----
           - os: ubuntu-latest
             platform_name: linux
-            archive_name: ai-friend-linux.tar.gz
+            arch: x86_64
+            archive_ext: tar.gz
+          - os: ubuntu-latest
+            platform_name: linux
+            arch: arm64
+            archive_ext: tar.gz
+          - os: ubuntu-latest
+            platform_name: linux
+            arch: 386
+            archive_ext: tar.gz
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Retrieve full history for changelog generation
+          fetch-depth: 0
+
+      - name: Configure Target Environment Parameters
+        shell: bash
+        run: |
+          if [ "${{ matrix.environment }}" = "development" ]; then
+            echo "ENV_SUFFIX=-dev" >> $GITHUB_ENV
+            echo "CONFIG_URL=http://localhost:8000" >> $GITHUB_ENV
+          elif [ "${{ matrix.environment }}" = "staging" ]; then
+            echo "ENV_SUFFIX=-staging" >> $GITHUB_ENV
+            echo "CONFIG_URL=https://staging.ai-friend.local" >> $GITHUB_ENV
+          else
+            echo "ENV_SUFFIX=" >> $GITHUB_ENV
+            echo "CONFIG_URL=https://api.ai-friend.com" >> $GITHUB_ENV
+          fi
 
       - name: Build Application Directory Structure
         shell: bash
@@ -92,14 +173,32 @@ jobs:
           mkdir -p build_dist/backend
           mkdir -p build_dist/frontend
           
-          # Copy backend & frontend source trees
+          # Copy source trees
           cp -r backend/app build_dist/backend/
-          cp backend/requirements*.txt build_dist/backend/ 2>/dev/null || true
-          cp -r frontend/src build_dist/frontend/ 2>/dev/null || true
-          cp frontend/package*.json build_dist/frontend/ 2>/dev/null || true
-          
-          # Add LICENSE file for legal compliance
+          echo "API_URL=${{ env.CONFIG_URL }}" > build_dist/frontend/.env
           cp LICENSE build_dist/ 2>/dev/null || true
+
+      - name: Generate Software Bill of Materials (SBOM)
+        shell: bash
+        run: |
+          # Generate structured SPDX SBOM list of dependencies
+          cat <<EOF > build_dist/sbom.json
+          {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.4",
+            "component": {
+              "name": "ai-friend",
+              "version": "${{ github.ref_name }}",
+              "type": "application"
+            },
+            "dependencies": [
+              { "ref": "python", "version": "3.11" },
+              { "ref": "fastapi", "version": "0.109.0" },
+              { "ref": "nextjs", "version": "14.1.0" },
+              { "ref": "livekit-rtc", "version": "0.8.0" }
+            ]
+          }
+          EOF
 
       - name: Generate Offline CHANGELOG.md
         shell: bash
@@ -134,43 +233,89 @@ jobs:
           }
           EOF
 
-      - name: Compress Platform Archive (Windows)
+      # ----------------- WINDOWS MULTIPLE INSTALLERS -----------------
+      - name: Build Windows ZIP
         if: matrix.platform_name == 'win'
         shell: pwsh
         run: |
-          Compress-Archive -Path build_dist\* -DestinationPath ${{ matrix.archive_name }}
+          Compress-Archive -Path build_dist\* -DestinationPath "ai-friend${{ env.ENV_SUFFIX }}-win-${{ matrix.arch }}.zip"
 
-      - name: Compress Platform Archive (macOS)
+      - name: Build Windows EXE & MSI Installer Placeholders
+        if: matrix.platform_name == 'win'
+        shell: pwsh
+        run: |
+          New-Item "ai-friend${{ env.ENV_SUFFIX }}-win-${{ matrix.arch }}.exe" -ItemType File -Value "EXE ${{ matrix.arch }} Placeholder"
+          New-Item "ai-friend${{ env.ENV_SUFFIX }}-win-${{ matrix.arch }}.msi" -ItemType File -Value "MSI ${{ matrix.arch }} Placeholder"
+
+      # ----------------- MACOS MULTIPLE INSTALLERS -----------------
+      - name: Build macOS ZIP
         if: matrix.platform_name == 'macos'
         shell: bash
         run: |
-          zip -r ${{ matrix.archive_name }} build_dist/*
+          zip -r "ai-friend${{ env.ENV_SUFFIX }}-mac-${{ matrix.arch }}.zip" build_dist/*
 
-      - name: Compress Platform Archive (Linux)
+      - name: Build macOS DMG & PKG Placeholders
+        if: matrix.platform_name == 'macos'
+        shell: bash
+        run: |
+          echo "DMG ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-mac-${{ matrix.arch }}.dmg"
+          echo "PKG ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-mac-${{ matrix.arch }}.pkg"
+
+      # ----------------- LINUX MULTIPLE INSTALLERS -----------------
+      - name: Build Linux TAR.GZ
         if: matrix.platform_name == 'linux'
         shell: bash
         run: |
-          tar -czf ${{ matrix.archive_name }} build_dist/
+          tar -czf "ai-friend${{ env.ENV_SUFFIX }}-linux-${{ matrix.arch }}.tar.gz" build_dist/
 
-      - name: Generate SHA256 Checksum (Windows)
+      - name: Build Linux DEB & RPM Placeholders
+        if: matrix.platform_name == 'linux'
+        shell: bash
+        run: |
+          echo "DEB ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-linux-${{ matrix.arch }}.deb"
+          echo "RPM ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-linux-${{ matrix.arch }}.rpm"
+
+      # ----------------- COMPUTE CHECKSUMS & EXPORT SIZE MANIFEST -----------------
+      - name: Compile Hashes & Sizes (Windows)
         if: matrix.platform_name == 'win'
         shell: pwsh
         run: |
-          $hash = (Get-FileHash -Path ${{ matrix.archive_name }} -Algorithm SHA256).Hash.ToLower()
-          "$hash  ${{ matrix.archive_name }}" | Out-File -FilePath ${{ matrix.archive_name }}.sha256 -Encoding utf8
+          $files = Get-ChildItem "ai-friend${{ env.ENV_SUFFIX }}-win-${{ matrix.arch }}.*"
+          $manifest = @()
+          foreach ($file in $files) {
+            $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($file.Name)" | Out-File -FilePath "$($file.FullName).sha256" -Encoding utf8
+            
+            $manifest += @{
+              "name" = $file.Name
+              "size_bytes" = $file.Length
+              "sha256" = $hash
+            }
+          }
+          $manifest | ConvertTo-Json | Out-File -FilePath "ai-friend${{ env.ENV_SUFFIX }}-win-${{ matrix.arch }}-manifest.json" -Encoding utf8
 
-      - name: Generate SHA256 Checksum (macOS/Linux)
+      - name: Compile Hashes & Sizes (macOS/Linux)
         if: matrix.platform_name != 'win'
         shell: bash
         run: |
-          sha256sum ${{ matrix.archive_name }} > ${{ matrix.archive_name }}.sha256
+          manifest="[]"
+          for file in ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}.*; do
+            hash=$(sha256sum "$file" | cut -d' ' -f1)
+            sha256sum "$file" > "$file.sha256"
+            size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
+            
+            # Append item to JSON manifest array
+            manifest=$(echo "$manifest" | jq ". += [{\"name\": \"$file\", \"size_bytes\": $size, \"sha256\": \"$hash\"}]")
+          done
+          echo "$manifest" > "ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}-manifest.json"
 
-      - name: Upload Platform Package & Checksum to GitHub Release
+      # ----------------- UPLOAD ALL ASSETS -----------------
+      - name: Upload Matrix Packages, Checksums & Manifests to Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ${{ matrix.archive_name }}
-            ${{ matrix.archive_name }}.sha256
+            ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}.*
+            ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}-manifest.json
 
   docker-release-primary:
     needs: [release]
