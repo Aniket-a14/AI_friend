@@ -51,6 +51,7 @@ def mock_graph_db():
     db.execute_query = AsyncMock(return_value=[])
     db.create_relationship = AsyncMock(return_value=None)
     db.create_entity = AsyncMock(return_value=None)
+    db.invalidate_cache = AsyncMock(return_value=None)
     db.close = AsyncMock(return_value=None)
     return db
 
