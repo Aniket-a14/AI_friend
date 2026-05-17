@@ -41,12 +41,14 @@ class AudioNormalizer:
             peak = max(abs(sample) for sample in samples)
             if peak > 0:
                 scale = self.target_peak * 32767 / peak
+                clip_min, clip_max = -32768, 32767
+                # Inlined fast list comprehension
                 samples = array(
                     "h",
-                    (
-                        max(-32768, min(32767, int(sample * scale)))
-                        for sample in samples
-                    ),
+                    [
+                        clip_min if val < clip_min else (clip_max if val > clip_max else val)
+                        for val in (int(s * scale) for s in samples)
+                    ],
                 )
 
             current_rms = math.sqrt(
