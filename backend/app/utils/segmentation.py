@@ -18,10 +18,12 @@ class HybridSegmenter:
         """
         score = 0.0
         # Punctuation is the strongest cue
-        if re.search(r'[.?!]', word):
-            score += 0.8
-        elif re.search(r'[,:;]', word):
-            score += 0.4
+        if word:
+            # Inline character checks to completely avoid generator allocation overhead
+            if '.' in word or '?' in word or '!' in word:
+                score += 0.8
+            elif ',' in word or ':' in word or ';' in word:
+                score += 0.4
         
         # Length-based pressure
         if chunk_len >= self.target_size:
