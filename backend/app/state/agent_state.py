@@ -124,7 +124,7 @@ class StateService:
         logger.info(f"[State] Hydrating {agent_name} from Neo4j...")
         query = "MATCH (a:Agent {name: $name}) RETURN a"
         res = await self.graph.execute_query(
-            query, {"name": agent_name}, use_cache=False
+            query, {"name": agent_name}, use_cache=False, strong_consistency=True
         )
         if res:
             props = res[0]["a"]

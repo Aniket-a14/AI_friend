@@ -101,6 +101,7 @@ class GraphDB:
         parameters: Dict[str, Any] = None,
         use_cache: bool = False,
         write: bool = False,
+        strong_consistency: bool = False,
     ) -> List[Any]:
         """Generic async query execution with TTL caching and explicit read/write transaction routing."""
         cache_key = (query, json.dumps(parameters) if parameters else None)
@@ -112,14 +113,14 @@ class GraphDB:
 
         try:
             async with self.driver.session() as session:
-                if write:
-                    # Execute as explicit write transaction function
+                if write or strong_consistency:
+                    # Execute as explicit write transaction function (directing queries to the Leader to bypass lag)
                     async def write_tx(tx):
                         res = await tx.run(query, parameters)
                         return [record async for record in res]
                     records = await session.execute_write(write_tx)
                 else:
-                    # Execute as explicit read transaction function
+                    # Execute as explicit read transaction function (which can be routed to followers/read-replicas)
                     async def read_tx(tx):
                         res = await tx.run(query, parameters)
                         return [record async for record in res]
