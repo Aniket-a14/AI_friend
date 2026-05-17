@@ -105,6 +105,8 @@ jobs:
 
   build-assets:
     needs: [release]
+    env:
+      ENV_SUFFIX: ""
     strategy:
       matrix:
         environment: [development, staging, production]
