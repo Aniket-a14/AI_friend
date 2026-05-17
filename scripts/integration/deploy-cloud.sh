@@ -36,7 +36,7 @@ sleep 10
 pip install nats-py pydantic-settings > /dev/null 2>&1 || echo "⚠️ Non-critical: Local pip install failed, skipping host-side hydration."
 
 echo "💧 Hydrating NATS Mesh Contracts..."
-docker exec brain_agent python scripts/setup_nats_streams.py
+docker exec brain_agent python scripts/bootstrap/setup_nats_streams.py
 
 # 6. Finalize Deployment
 echo "🧠 Launching Cognitive Agents..."

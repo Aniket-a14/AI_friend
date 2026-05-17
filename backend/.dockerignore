@@ -23,7 +23,7 @@ recordings/
 wake_up_file/
 tests/
 scripts/
-!scripts/sovits_bootstrap.sh
+!scripts/bootstrap/sovits_bootstrap.sh
 models/
 checkpoint*/
 *.wav
