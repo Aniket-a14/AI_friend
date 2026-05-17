@@ -12,9 +12,11 @@ Base-level activation (simplified):
 """
 
 import logging
+import time
 import asyncio
 import httpx
 import json
+import orjson
 import math
 from datetime import datetime, timezone
 from typing import Iterable
@@ -36,6 +38,10 @@ class MemoryStore:
         self.decay_rate = Config.ACTR_DECAY_RATE  # d
         self.spread_weight = Config.ACTR_SPREAD_WEIGHT  # Wⱼ
         self.emotion_weight = Config.ACTR_EMOTION_WEIGHT  # w_emotion
+
+        # L1 Memory Activation Cache
+        self._l1_cache = {}  # key -> (timestamp, results)
+        self._l1_cache_ttl = 15.0  # seconds
 
     async def get_embedding(self, text: str):
         """Generates vector embedding for text using local Ollama."""
@@ -118,7 +124,7 @@ class MemoryStore:
                     valence,
                     certainty,
                     source,
-                    json.dumps(metadata or {}),
+                    orjson.dumps(metadata or {}).decode(),
                 )
             logger.info(
                 f"🧠 Memory Stored [{wing}:{room or 'global'}]: {content[:50]}..."
@@ -145,6 +151,22 @@ class MemoryStore:
 
         Filters results by 'wing' and optionally 'room' before scoring.
         """
+        # L1 Cache lookup to bypass DB and math activation loops for active topics
+        cache_key = (
+            query_text,
+            wing,
+            room,
+            threshold,
+            limit,
+            current_valence,
+            tuple(sorted(exclude_contents or []))
+        )
+        now_ts = time.time()
+        if cache_key in self._l1_cache:
+            ts, cached_results = self._l1_cache[cache_key]
+            if now_ts - ts < self._l1_cache_ttl:
+                return cached_results
+
         try:
             query_vector = await self.get_embedding(query_text)
             if not query_vector:
@@ -231,8 +253,8 @@ class MemoryStore:
                         raw_meta = row["metadata"]
                         if isinstance(raw_meta, str):
                             try:
-                                raw_meta = json.loads(raw_meta)
-                            except (json.JSONDecodeError, TypeError):
+                                raw_meta = orjson.loads(raw_meta)
+                            except Exception:
                                 raw_meta = {}
 
                         scored_candidates.append(
@@ -269,6 +291,8 @@ class MemoryStore:
                 task = asyncio.create_task(self._refresh_memories(results))
                 task.add_done_callback(_done_callback)
 
+            # Cache results in L1 memory cache before returning
+            self._l1_cache[cache_key] = (now_ts, results)
             return results
 
         except Exception as e:

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import orjson
 import logging
 import time
 import os
@@ -137,7 +138,7 @@ class BaseAgent:
             if is_binary and isinstance(data, (bytes, bytearray)):
                 # Direct Binary Transport with Headers
                 headers = {
-                    "X-Latency-Meta": json.dumps(meta),
+                    "X-Latency-Meta": orjson.dumps(meta).decode(),
                     "X-Payload-Format": "binary/raw-pcm",
                 }
                 await self.js.publish(subject, data, headers=headers)
@@ -145,7 +146,7 @@ class BaseAgent:
                 # Standard JSON Transport
                 if isinstance(data, dict):
                     data["latency_metadata"] = meta
-                payload = json.dumps(data).encode()
+                payload = orjson.dumps(data)
                 
                 # Standard NATS publish (resilient fallback)
                 await self.nc.publish(subject, payload)
