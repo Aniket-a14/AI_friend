@@ -30,7 +30,7 @@ jobs:
       run: |
         cd backend
         python -m pip install --upgrade pip
-        pip install ruff
+        pip install -r requirements-dev.txt
         ruff check app/ tests/ --output-format=github
 
   frontend-build:
@@ -81,8 +81,7 @@ jobs:
       run: |
         cd backend
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-asyncio
+        pip install -r requirements-dev.txt
     - name: Setup NATS Streams
       env:
         NATS_URL: nats://localhost:4222
@@ -99,4 +98,60 @@ jobs:
         NEO4J_PASSWORD: dummy_password
       run: |
         cd backend
-        pytest -v --tb=short
+        pytest -v --tb=short --cov=app --cov-report=term-missing --cov-report=xml
+
+    - name: Upload Coverage XML
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-coverage
+        path: backend/coverage.xml
+        retention-days: 14
+
+  backend-benchmark:
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Start NATS Service
+      run: |
+        docker run -d --name nats -p 4222:4222 -p 8222:8222 nats:latest -js -m 8222
+        for i in {1..10}; do
+          if wget --no-verbose --tries=1 --spider http://localhost:8222/healthz; then
+            echo "NATS is ready!"
+            exit 0
+          fi
+          echo "Waiting for NATS..."
+          sleep 2
+        done
+        echo "NATS failed to start"
+        exit 1
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+    - name: Setup NATS Streams
+      env:
+        NATS_URL: nats://localhost:4222
+      run: |
+        cd backend
+        python scripts/bootstrap/setup_nats_streams.py
+    - name: Run benchmark and latency tests
+      env:
+        NATS_URL: nats://localhost:4222
+      run: |
+        cd backend
+        pytest -q tests/test_performance.py --benchmark-json=.benchmarks.json
+    - name: Upload benchmark results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-benchmarks
+        path: backend/.benchmarks.json
+        retention-days: 14

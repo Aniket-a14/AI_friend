@@ -61,6 +61,23 @@ We use `pytest` for integration testing against the NATS mesh:
 pytest tests/test_mesh.py
 ```
 
+### Coverage, Benchmarks, and Tooling
+
+```bash
+# Install dev tooling
+pip install -r requirements-dev.txt
+
+# Full backend tests + coverage
+pytest --cov=app --cov-report=term-missing --cov-report=xml
+
+# Benchmark + latency suite
+pytest tests/test_performance.py --benchmark-json=.benchmarks.json
+
+# Lint and format checks
+ruff check app tests
+pre-commit run --all-files
+```
+
 ## 📂 Project Structure
 
 - `app/agents/`: Specialized micro-agent implementations.

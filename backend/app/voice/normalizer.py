@@ -27,6 +27,10 @@ class AudioNormalizer:
         """Apply adaptive normalization and return processed PCM."""
         if not audio_data:
             return b""
+        if len(audio_data) % 2:
+            audio_data = audio_data[:-1]
+            if not audio_data:
+                return b""
 
         if np is None:
             samples = array("h")

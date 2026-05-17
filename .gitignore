@@ -23,6 +23,9 @@ __pycache__/
 venv/
 .venv/
 env/
+.coverage
+coverage.xml
+.benchmarks.json
 
 # Node
 node_modules/

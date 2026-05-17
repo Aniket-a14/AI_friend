@@ -1,0 +1,8 @@
+-r requirements-base.txt
+pytest
+pytest-asyncio
+pytest-cov
+pytest-benchmark
+ruff
+pre-commit
+codespell
