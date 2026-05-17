@@ -328,26 +328,90 @@ The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
 
 ## ⚙️ Quick Start
 
-Follow this standardized sequence to initialize the Sovereign Mesh:
+Follow this standardized, environment-hardened sequence to initialize the Sovereign Mesh:
 
-1. **Bootstrap Infrastructure**: Start the NATS bus, Neo4j graph, and Postgres persistence.
-   ```bash
-   docker compose -f docker-compose.infra.yml up -d
+### **Step 1: Bootstrap Shared Network & Infrastructure**
+1. Recreate the external shared network required by the mesh:
+   ```powershell
+   docker network create ai_mesh_network
    ```
-2. **Hydrate Persistence**: Push the Prisma schema and seed the identity genome.
-   ```bash
-   # Replace YOUR_PASSWORD with your actual database password
-   $env:DIRECT_URL="postgresql://ai_friend:YOUR_PASSWORD@localhost:5432/ai_friend_db"
-   cd frontend && npx prisma db push && cd ..
+2. Launch the infrastructure containers (PostgreSQL, Neo4j, Redis, NATS, and LiveKit):
+   ```powershell
+   docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d postgres neo4j redis nats livekit
    ```
-3. **Launch Cognitive Agents**: Build and launch the agentic mesh.
-   ```bash
-   docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build
+
+### **Step 2: Hydrate & Seed the Database (Prisma + Raw SQL)**
+To bypass Windows/WSL2 IPv6 network deadlocks and native Postgres conflicts, the containerized database is mapped to the isolated external port **`5433`** on IPv4 (`127.0.0.1`).
+
+1. **Push the Schema**:
+   ```powershell
+   # 1. Set the direct database connection path using your password (default: 'AI Friend')
+   $env:DIRECT_URL="postgresql://ai_friend:AI Friend@127.0.0.1:5433/ai_friend_db"
+
+   # 2. Enter the frontend folder, generate the Prisma Client, and push the schema
+   cd frontend
+   npx prisma generate
+   npx prisma db push
+   cd ..
    ```
-4. **Health Audit**: Confirm all 14 containers are in a healthy state.
-   ```bash
-   docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Health}}"
+2. **Seed Agent Personality**:
+   Pisma v7 requires strict module bindings for external scripts. To bypass this, pipe the raw baseline SQL seed directly into the running database container in one command:
+   ```powershell
+   # Create and pipe the seed configuration
+   Get-Content -Raw -Encoding utf8 -Path (Join-Path (Get-Location) "frontend" "prisma" "seed.js") | ForEach-Object {
+       # Seed is executed via psql within the running container
+       docker exec -i postgres_db psql -U ai_friend -d ai_friend_db -c "
+       INSERT INTO agent_configs (id, personality, background_history, evolved_learnings, updated_at) 
+       VALUES (
+           1, 
+           '{\"name\": \"AI Friend\", \"core_personality\": {\"immutable\": {\"values\": [\"Honesty\", \"Privacy\", \"Curiosity\"], \"base_tone\": \"Warm, intellectual, and slightly protective\", \"boundaries\": [\"Will never share user data\", \"Will not adopt toxic behavior\"]}, \"adaptive_traits\": []}, \"speaking_style\": {\"pace\": \"natural\", \"verbosity\": \"balanced\"}, \"conversation_rules\": {\"avoid\": []}}', 
+           '{\"relationship\": \"Friend\", \"memories\": []}', 
+           '', 
+           NOW()
+       ) 
+       ON CONFLICT (id) DO UPDATE SET 
+           personality = EXCLUDED.personality, 
+           background_history = EXCLUDED.background_history;"
+   }
    ```
+
+### **Step 3: Launch Cognitive Agents**
+Build and boot up your local agent containers (the brain, stt, voice, surfacing agents, etc.):
+```powershell
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build
+```
+
+### **Step 4: Health Audit**
+Confirm all 14 containers are in an active, healthy, and communicating state:
+```powershell
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml ps
+```
+
+---
+
+## 🛠️ Windows & WSL2 Troubleshooting Guide
+
+If you encounter initialization errors, review these standard Windows-specific fixes:
+
+### **1. P1000 Authentication Failed on Port 5432/5433**
+This happens when a **native Windows PostgreSQL service** (installed outside of Docker) is running in the background and capturing port bindings.
+* Stop and kill all native `postgres` processes at once:
+  ```powershell
+  Stop-Service -Name "postgresql*" -Force -ErrorAction SilentlyContinue
+  Get-Process -Name "postgres" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  ```
+* Restart the Docker container to capture the port:
+  ```powershell
+  docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml restart postgres
+  ```
+
+### **2. Disk Space Not Reclaimed After Wiping Volumes**
+WSL2 dynamically expands its virtual disk file (`ext4.vhdx`) but **never shrinks it automatically** when you delete containers/images.
+* **Empty your Recycle Bin**: Manually deleted folders (like `%LOCALAPPDATA%\Docker\wsl`) are held in the Windows Recycle Bin, retaining all 100GB+ of space.
+* **WSL2 Shutdown**: Force Windows to release the WSL virtual disk memory locks:
+  ```powershell
+  wsl --shutdown
+  ```
 
 ---
 
