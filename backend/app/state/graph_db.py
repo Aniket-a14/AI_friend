@@ -113,15 +113,28 @@ class GraphDB:
 
         try:
             async with self.driver.session() as session:
+                attempt = 0
                 if write or strong_consistency:
                     # Execute as explicit write transaction function (directing queries to the Leader to bypass lag)
                     async def write_tx(tx):
+                        nonlocal attempt
+                        attempt += 1
+                        if attempt > 1:
+                            logger.warning(
+                                f"Graph Store: Transient write transaction retry #{attempt - 1} for query: '{query[:50]}...'"
+                            )
                         res = await tx.run(query, parameters)
                         return [record async for record in res]
                     records = await session.execute_write(write_tx)
                 else:
                     # Execute as explicit read transaction function (which can be routed to followers/read-replicas)
                     async def read_tx(tx):
+                        nonlocal attempt
+                        attempt += 1
+                        if attempt > 1:
+                            logger.warning(
+                                f"Graph Store: Transient read transaction retry #{attempt - 1} for query: '{query[:50]}...'"
+                            )
                         res = await tx.run(query, parameters)
                         return [record async for record in res]
                     records = await session.execute_read(read_tx)
