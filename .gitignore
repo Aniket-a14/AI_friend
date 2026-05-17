@@ -26,6 +26,8 @@ env/
 .coverage
 coverage.xml
 .benchmarks.json
+.benchmarks/
+htmlcov/
 
 # Node
 node_modules/
