@@ -14,7 +14,7 @@
 [![📦 Docker Build](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml)
 [![🩺 Docker Health](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml)
 [![🔗 Link Validator](https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml)
-[![🚀 Release Status](https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml)
+[![🚀 Release Status](https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml)
 
 **CALIBRATION: EXPERT** — *This documentation assumes proficiency in asynchronous event-driven architectures, NATS JetStream protocols, and computational cognitive modeling (BDI, PAD, ACT-R, MAUT).*
 
