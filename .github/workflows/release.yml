@@ -83,6 +83,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Retrieve full history for changelog generation
 
       - name: Build Application Directory Structure
         shell: bash
@@ -95,6 +97,42 @@ jobs:
           cp backend/requirements*.txt build_dist/backend/ 2>/dev/null || true
           cp -r frontend/src build_dist/frontend/ 2>/dev/null || true
           cp frontend/package*.json build_dist/frontend/ 2>/dev/null || true
+          
+          # Add LICENSE file for legal compliance
+          cp LICENSE build_dist/ 2>/dev/null || true
+
+      - name: Generate Offline CHANGELOG.md
+        shell: bash
+        run: |
+          git fetch --tags
+          CURRENT_TAG=${{ github.ref_name }}
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 $CURRENT_TAG^ 2>/dev/null || echo "")
+          
+          echo "# Changelog - $CURRENT_TAG" > build_dist/CHANGELOG.md
+          echo "" >> build_dist/CHANGELOG.md
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "Initial release of PankudiAI!" >> build_dist/CHANGELOG.md
+            echo "" >> build_dist/CHANGELOG.md
+            git log --oneline --pretty=format:"* %s (%h)" >> build_dist/CHANGELOG.md
+          else
+            echo "Commits since previous release ($PREVIOUS_TAG):" >> build_dist/CHANGELOG.md
+            echo "" >> build_dist/CHANGELOG.md
+            git log $PREVIOUS_TAG..$CURRENT_TAG --oneline --pretty=format:"* %s (%h)" >> build_dist/CHANGELOG.md
+          fi
+
+      - name: Generate Release Metadata JSON
+        shell: bash
+        run: |
+          TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          cat <<EOF > build_dist/metadata.json
+          {
+            "version": "${{ github.ref_name }}",
+            "commit": "${{ github.sha }}",
+            "timestamp": "$TIMESTAMP",
+            "platform": "${{ matrix.platform_name }}"
+          }
+          EOF
 
       - name: Compress Platform Archive (Windows)
         if: matrix.platform_name == 'win'
@@ -114,10 +152,25 @@ jobs:
         run: |
           tar -czf ${{ matrix.archive_name }} build_dist/
 
-      - name: Upload Platform Package to GitHub Release
+      - name: Generate SHA256 Checksum (Windows)
+        if: matrix.platform_name == 'win'
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Path ${{ matrix.archive_name }} -Algorithm SHA256).Hash.ToLower()
+          "$hash  ${{ matrix.archive_name }}" | Out-File -FilePath ${{ matrix.archive_name }}.sha256 -Encoding utf8
+
+      - name: Generate SHA256 Checksum (macOS/Linux)
+        if: matrix.platform_name != 'win'
+        shell: bash
+        run: |
+          sha256sum ${{ matrix.archive_name }} > ${{ matrix.archive_name }}.sha256
+
+      - name: Upload Platform Package & Checksum to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.archive_name }}
+          files: |
+            ${{ matrix.archive_name }}
+            ${{ matrix.archive_name }}.sha256
 
   docker-release-primary:
     needs: [release]
