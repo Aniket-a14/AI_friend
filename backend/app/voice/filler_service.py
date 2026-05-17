@@ -27,8 +27,8 @@ class FillerService:
         "[gasps]",
     ]
 
-    def __init__(self, cache_dir: str = "models/fillers"):
-        self.cache_dir = cache_dir
+    def __init__(self, cache_dir: str = None):
+        self.cache_dir = cache_dir or os.getenv("VOICE_FILLER_CACHE_DIR", "models/fillers")
         self.cache: Dict[str, bytes] = {}
         self.is_hydrated = False
 
