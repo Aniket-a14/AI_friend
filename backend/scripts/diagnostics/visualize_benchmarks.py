@@ -1174,8 +1174,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 grouped[item.test_name].dataMap[item.run_id] = item.mean * 1000; // Store full precision float
             });
 
-            // Extract unique run IDs sorted chronologically
-            const uniqueRunIds = [...new Set(runData.map(item => item.run_id))].sort((a, b) => a - b);
+            // Extract unique run IDs sorted chronologically, keeping only the latest 10 for the trend chart
+            const allUniqueRunIds = [...new Set(runData.map(item => item.run_id))].sort((a, b) => a - b);
+            const uniqueRunIds = allUniqueRunIds.slice(-10);
             const uniqueRuns = uniqueRunIds.map(id => `Run #${id}`);
             
             const datasets = [];
@@ -1288,7 +1289,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             const body = document.getElementById('tableBody');
             body.innerHTML = '';
 
-            const sortedDesc = [...runData].sort((a, b) => b.run_id - a.run_id);
+            // Extract unique run IDs sorted chronologically and get the latest 10
+            const latest10RunIds = [...new Set(runData.map(item => item.run_id))].sort((a, b) => b - a).slice(0, 10);
+
+            const sortedDesc = [...runData]
+                .filter(item => latest10RunIds.includes(item.run_id))
+                .sort((a, b) => b.run_id - a.run_id);
+                
             sortedDesc.forEach(item => {
                 const row = document.createElement('tr');
                 const ms = item.mean * 1000;
