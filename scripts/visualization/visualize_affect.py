@@ -20,7 +20,7 @@ def plot_sample_pad_trajectory():
     dominance = 0.6 - 0.2 * np.exp(-(time_points - 30)**2 / 50)
     
     plt.figure(figsize=(12, 6))
-    plt.plot(time_points, pleasure, label='Pleasure (Valence)', color='emerald', linewidth=2)
+    plt.plot(time_points, pleasure, label='Pleasure (Valence)', color='#10B981', linewidth=2)
     plt.plot(time_points, arousal, label='Arousal (Intensity)', color='orange', linewidth=2)
     plt.plot(time_points, dominance, label='Dominance (Control)', color='royalblue', linewidth=2)
     
