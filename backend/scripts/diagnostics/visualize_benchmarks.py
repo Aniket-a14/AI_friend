@@ -678,6 +678,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     <script>
         const runData = /*DATA_PLACEHOLDER*/;
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f43f5e', '#a855f7'];
 
         // Sort chronologically
         runData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
