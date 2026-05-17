@@ -14,6 +14,16 @@ if backend_dir not in sys.path:
 sys.modules.setdefault("asyncpg", SimpleNamespace(Pool=object))
 
 
+def pytest_configure(config):
+    """Dynamically enable benchmark-autosave if pytest-benchmark is installed.
+    This prevents CI/CD failures on environments that do not have pytest-benchmark,
+    while ensuring local runs are always saved for visualization.
+    """
+    if config.pluginmanager.hasplugin("benchmark"):
+        config.option.benchmark_autosave = True
+
+
+
 @pytest.fixture
 def mock_llm_service():
     """Mock for OllamaClient (Hardened for CVS-1.0)"""
