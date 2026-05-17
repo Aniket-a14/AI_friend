@@ -67,9 +67,9 @@ if [ -f "$CUSTOM_GPT_PATH" ] && [ -f "$CUSTOM_SOVITS_PATH" ]; then
          -H "Content-Type: application/json" \
          -d '{
                 "text": "Warmup segment.",
-               "text_lang": "en",
-               "ref_audio_path": "output/sample_en_gold.wav",
-               "prompt_text": "At the end of the exam, the program shows the performance summary.",
+                "text_lang": "en",
+                "ref_audio_path": "output/sample_en_gold.wav",
+                "prompt_text": "At the end of the exam, the program shows the performance summary.",
                "prompt_lang": "en",
                "streaming_mode": 0
              }' > /dev/null
