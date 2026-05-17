@@ -72,10 +72,13 @@ jobs:
         include:
           - os: windows-latest
             platform_name: win
+            archive_name: ai-friend-win.zip
           - os: macos-latest
             platform_name: macos
+            archive_name: ai-friend-macos.zip
           - os: ubuntu-latest
             platform_name: linux
+            archive_name: ai-friend-linux.tar.gz
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -93,24 +96,28 @@ jobs:
           cp -r frontend/src build_dist/frontend/ 2>/dev/null || true
           cp frontend/package*.json build_dist/frontend/ 2>/dev/null || true
 
-      - name: Compress Platform Archive (ZIP/Tar)
+      - name: Compress Platform Archive (Windows)
+        if: matrix.platform_name == 'win'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build_dist\* -DestinationPath ${{ matrix.archive_name }}
+
+      - name: Compress Platform Archive (macOS)
+        if: matrix.platform_name == 'macos'
         shell: bash
         run: |
-          if [ "${{ matrix.platform_name }}" = "win" ]; then
-            powershell Compress-Archive -Path build_dist/* -DestinationPath ai-friend-win.zip
-          elif [ "${{ matrix.platform_name }}" = "macos" ]; then
-            zip -r ai-friend-macos.zip build_dist/*
-          else
-            tar -czf ai-friend-linux.tar.gz build_dist/
-          fi
+          zip -r ${{ matrix.archive_name }} build_dist/*
+
+      - name: Compress Platform Archive (Linux)
+        if: matrix.platform_name == 'linux'
+        shell: bash
+        run: |
+          tar -czf ${{ matrix.archive_name }} build_dist/
 
       - name: Upload Platform Package to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ai-friend-win.zip
-            ai-friend-macos.zip
-            ai-friend-linux.tar.gz
+          files: ${{ matrix.archive_name }}
 
   docker-release-primary:
     needs: [release]
