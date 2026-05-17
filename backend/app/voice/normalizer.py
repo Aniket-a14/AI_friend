@@ -38,14 +38,15 @@ class AudioNormalizer:
             if not samples:
                 return b""
 
-            peak = max([abs(sample) for sample in samples])
+            peak = max(max(samples), -min(samples)) if samples else 0
             if peak > 0:
                 scale_val = self.target_peak * 32767 / peak
-                # Fully flat single loop list comprehension, avoiding generator heap frames completely
+                clip_min, clip_max = -32768, 32767
+                # Assignment expressions (walrus operator) evaluate scale calculations exactly once
                 samples = array(
                     "h",
                     [
-                        -32768 if int(s * scale_val) < -32768 else (32767 if int(s * scale_val) > 32767 else int(s * scale_val))
+                        clip_min if (val := int(s * scale_val)) < clip_min else (clip_max if val > clip_max else val)
                         for s in samples
                     ],
                 )
