@@ -184,21 +184,58 @@ jobs:
       - name: Generate Software Bill of Materials (SBOM)
         shell: bash
         run: |
-          # Generate structured SPDX SBOM list of dependencies
+          # Generate structured, CycloneDX 1.4 schema-compliant SBOM
           cat <<EOF > build_dist/sbom.json
           {
             "bomFormat": "CycloneDX",
             "specVersion": "1.4",
-            "component": {
-              "name": "ai-friend",
-              "version": "${{ github.ref_name }}",
-              "type": "application"
+            "serialNumber": "urn:uuid:3e078c50-d4cf-4ca6-8f3e-52b04f76d2a2",
+            "version": 1,
+            "metadata": {
+              "timestamp": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+              "component": {
+                "bom-ref": "ai-friend",
+                "name": "ai-friend",
+                "version": "${{ github.ref_name }}",
+                "type": "application"
+              }
             },
+            "components": [
+              {
+                "bom-ref": "python",
+                "type": "programming-language",
+                "name": "python",
+                "version": "3.11"
+              },
+              {
+                "bom-ref": "fastapi",
+                "type": "library",
+                "name": "fastapi",
+                "version": "0.109.0"
+              },
+              {
+                "bom-ref": "nextjs",
+                "type": "library",
+                "name": "nextjs",
+                "version": "14.1.0"
+              },
+              {
+                "bom-ref": "livekit-rtc",
+                "type": "library",
+                "name": "livekit-rtc",
+                "version": "0.8.0"
+              }
+            ],
             "dependencies": [
-              { "ref": "python", "version": "3.11" },
-              { "ref": "fastapi", "version": "0.109.0" },
-              { "ref": "nextjs", "version": "14.1.0" },
-              { "ref": "livekit-rtc", "version": "0.8.0" }
+              {
+                "ref": "ai-friend",
+                "dependsOn": [
+                  "python",
+                  "fastapi",
+                  "nextjs",
+                  "livekit-rtc"
+                ]
+              }
             ]
           }
           EOF
@@ -232,7 +269,9 @@ jobs:
             "version": "${{ github.ref_name }}",
             "commit": "${{ github.sha }}",
             "timestamp": "$TIMESTAMP",
-            "platform": "${{ matrix.platform_name }}"
+            "platform": "${{ matrix.platform_name }}",
+            "arch": "${{ matrix.arch }}",
+            "environment": "${{ matrix.environment }}"
           }
           EOF
 
@@ -255,14 +294,14 @@ jobs:
         if: matrix.platform_name == 'macos'
         shell: bash
         run: |
-          zip -r "ai-friend${{ env.ENV_SUFFIX }}-mac-${{ matrix.arch }}.zip" build_dist/*
+          zip -r "ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}.zip" build_dist/*
 
       - name: Build macOS DMG & PKG Placeholders
         if: matrix.platform_name == 'macos'
         shell: bash
         run: |
-          echo "DMG ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-mac-${{ matrix.arch }}.dmg"
-          echo "PKG ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-mac-${{ matrix.arch }}.pkg"
+          echo "DMG ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}.dmg"
+          echo "PKG ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}.pkg"
 
       # ----------------- LINUX MULTIPLE INSTALLERS -----------------
       - name: Build Linux TAR.GZ
