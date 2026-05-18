@@ -97,6 +97,12 @@ async def _ensure_database_schema() -> None:
             );
             """
         )
+        # Migration: add consolidated column to existing tables if it does not already exist
+        await conn.execute(
+            """
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS consolidated BOOLEAN DEFAULT FALSE;
+            """
+        )
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS agent_configs (

@@ -170,7 +170,7 @@ class ReflectionService:
                         object_val,
                         properties={
                             "confidence": confidence,
-                            "extracted_at": str(asyncio.get_event_loop().time()),
+                            "extracted_at": str(time.time()),
                         },
                     )
             except Exception as e:

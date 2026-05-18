@@ -53,6 +53,11 @@ class MemoryStore:
         self._l1_cache = {}  # key -> (timestamp, results)
         self._l1_cache_ttl = 15.0  # seconds
 
+    @property
+    def is_sqlite(self) -> bool:
+        """Heuristic check to determine if the backing pool uses the Mock SQLite adaptor."""
+        return type(self.pool).__name__ == "MockPGPool" or hasattr(self.pool, "connection")
+
     async def get_embedding(self, text: str):
         """Generates vector embedding for text using local Ollama."""
         attempts = [
@@ -416,25 +421,35 @@ class MemoryStore:
             if not contents:
                 return
             async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE memories
-                    SET last_recalled_at = CURRENT_TIMESTAMP,
-                         recall_count = recall_count + 1
-                    WHERE content = ANY($1)
-                    """,
-                    contents,
-                )
+                if self.is_sqlite:
+                    placeholders = ",".join("?" for _ in contents)
+                    await conn.execute(
+                        f"""
+                        UPDATE memories
+                        SET last_recalled_at = CURRENT_TIMESTAMP,
+                             recall_count = recall_count + 1
+                        WHERE content IN ({placeholders})
+                        """,
+                        *contents,
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        UPDATE memories
+                        SET last_recalled_at = CURRENT_TIMESTAMP,
+                             recall_count = recall_count + 1
+                        WHERE content = ANY($1)
+                        """,
+                        contents,
+                    )
         except Exception as e:
             logger.error(f"Failed to refresh memories: {e}")
 
     async def get_recent_unconsolidated_episodes(self, limit: int = 10):
         """Fetches recent user and assistant dialogue entries from messages for consolidation."""
         try:
-            is_sqlite = type(self.pool).__name__ == "MockPGPool"
-            
             async with self.pool.acquire() as conn:
-                if is_sqlite:
+                if self.is_sqlite:
                     rows = await conn.fetch(
                         "SELECT id, role, content, timestamp FROM messages WHERE consolidated = 0 AND role IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT ?",
                         limit
@@ -454,9 +469,8 @@ class MemoryStore:
         if not message_ids:
             return
         try:
-            is_sqlite = type(self.pool).__name__ == "MockPGPool"
             async with self.pool.acquire() as conn:
-                if is_sqlite:
+                if self.is_sqlite:
                     placeholders = ",".join("?" for _ in message_ids)
                     await conn.execute(
                         f"UPDATE messages SET consolidated = 1 WHERE id IN ({placeholders})",
@@ -478,10 +492,9 @@ class MemoryStore:
             
             # Deduplicate memory contents to prevent repeated decay updates in SQLite loop
             unique_contents = list(dict.fromkeys(memory_contents))
-            is_sqlite = hasattr(self.pool, "connection") or type(self.pool).__name__ == "MockPGPool"
             
             async with self.pool.acquire() as conn:
-                if is_sqlite:
+                if self.is_sqlite:
                     for content in unique_contents:
                         await conn.execute(
                             "UPDATE memories SET importance_score = importance_score * 0.5 WHERE content = ?",

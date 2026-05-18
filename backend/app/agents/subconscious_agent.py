@@ -102,18 +102,46 @@ class SubconsciousAgent(BaseAgent):
             episodes = await self.memory_store.get_recent_unconsolidated_episodes(limit=10)
             
             if episodes:
-                # Map SQLite/PG message rows into reflection schemas
+                # Map SQLite/PG message rows into reflection schemas by pairing user and assistant chronologically
                 reflection_episodes = []
-                for ep in episodes:
-                    reflection_episodes.append({
-                        "id": ep.get("id"),
-                        "event": ep.get("content") if ep.get("role") == "user" else "",
-                        "response": ep.get("content") if ep.get("role") == "assistant" else "",
-                        "context": "Session conversation message",
-                        "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
-                        "relationship_delta": 0.0,
-                        "content": ep.get("content") if ep.get("role") == "user" else ""
-                    })
+                chrono_episodes = list(reversed(episodes))
+                
+                i = 0
+                while i < len(chrono_episodes):
+                    ep = chrono_episodes[i]
+                    role = ep.get("role")
+                    content = ep.get("content", "")
+                    
+                    if role == "user":
+                        # Check if the next message is from the assistant to pair them
+                        assistant_content = ""
+                        if i + 1 < len(chrono_episodes) and chrono_episodes[i + 1].get("role") == "assistant":
+                            assistant_content = chrono_episodes[i + 1].get("content", "")
+                            i += 2  # Consume both user and assistant
+                        else:
+                            i += 1  # Consume only user
+                        
+                        reflection_episodes.append({
+                            "id": ep.get("id"),
+                            "event": content,
+                            "response": assistant_content,
+                            "context": "Session conversation message",
+                            "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
+                            "relationship_delta": 0.0,
+                            "content": content
+                        })
+                    else:
+                        # Unpaired assistant message
+                        reflection_episodes.append({
+                            "id": ep.get("id"),
+                            "event": "",
+                            "response": content,
+                            "context": "Session conversation message",
+                            "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
+                            "relationship_delta": 0.0,
+                            "content": ""
+                        })
+                        i += 1
                 
                 # Trigger reflection task asynchronously
                 task = await self.reflection_service.trigger_reflection(reflection_episodes)

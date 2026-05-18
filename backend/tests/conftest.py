@@ -84,7 +84,7 @@ class MockNATSConnection:
             matched = False
             if sub_subj == subject:
                 matched = True
-            elif sub_subj.endswith(".>") and subject.startswith(sub_subj[:-2]):
+            elif sub_subj.endswith(".>") and subject.startswith(sub_subj[:-1]):
                 matched = True
             elif sub_subj.endswith(".*") and subject.split(".")[:-1] == sub_subj.split(".")[:-1]:
                 matched = True
@@ -193,12 +193,13 @@ class SQLiteConnection:
         translated = re.sub(r'\$\d+', '?', query)
         # 2. Replace NOW() with CURRENT_TIMESTAMP
         translated = re.sub(r'\bNOW\(\)', 'CURRENT_TIMESTAMP', translated, flags=re.IGNORECASE)
-        # 3. Translate PostgreSQL ON CONFLICT (id) DO UPDATE to SQLite REPLACE
-        if "ON CONFLICT (id) DO UPDATE" in translated:
-            translated = """
-                INSERT OR REPLACE INTO agent_configs (id, personality, background_history, evolved_learnings, updated_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """
+        # 3. Translate PostgreSQL ON CONFLICT DO UPDATE to SQLite INSERT OR REPLACE INTO generically
+        if "ON CONFLICT" in translated.upper():
+            # Strip everything starting from ON CONFLICT
+            parts = re.split(r'\bON\s+CONFLICT\b', translated, flags=re.IGNORECASE)
+            base_query = parts[0].strip()
+            # Replace INSERT INTO with INSERT OR REPLACE INTO
+            translated = re.sub(r'\bINSERT\s+INTO\b', 'INSERT OR REPLACE INTO', base_query, flags=re.IGNORECASE)
         return translated
 
     async def execute(self, query, *args):
