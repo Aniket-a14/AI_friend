@@ -54,7 +54,11 @@ async fn main() -> Result<()> {
         .with_context(|| format!("connect to NATS at {}", config.nats_url))?;
     let jetstream = async_nats::jetstream::new(client.clone());
     let mut subscriber = client.subscribe(topics::CHAT_OUTPUT).await?;
-    let http = Client::new();
+    let http = Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(3))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .context("build reqwest client with timeouts")?;
 
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
 
@@ -144,7 +148,8 @@ fn split_temporal_parts(text: &str) -> Result<Vec<TemporalPart>> {
                 .trim_end_matches("ms>")
                 .parse::<u32>()
                 .context("parse pause duration")?;
-            parts.push(TemporalPart::Silence(ms));
+            let clamped_ms = ms.min(5000);
+            parts.push(TemporalPart::Silence(clamped_ms));
         }
         last = mat.end();
     }

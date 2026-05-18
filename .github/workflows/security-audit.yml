@@ -74,6 +74,7 @@ jobs:
           if [ "$critical" -gt 0 ]; then
             echo "⚠️ Found $critical high/critical vulnerabilities"
             echo "Review audit_results.txt for details"
+            exit 1
           else
             echo "✅ No critical vulnerabilities found"
           fi

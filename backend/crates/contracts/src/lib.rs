@@ -279,8 +279,9 @@ fn clamp_round(value: f64, min: f64, max: f64) -> f64 {
 }
 
 pub fn silence_pcm(ms: u32, sample_rate: u32) -> Vec<u8> {
-    let bytes_per_ms = sample_rate.saturating_mul(2) / 1000;
-    vec![0; ms.saturating_mul(bytes_per_ms) as usize]
+    let samples = ((ms as u64).saturating_mul(sample_rate as u64) + 999) / 1000;
+    let bytes = samples.saturating_mul(2);
+    vec![0; bytes as usize]
 }
 
 #[cfg(test)]

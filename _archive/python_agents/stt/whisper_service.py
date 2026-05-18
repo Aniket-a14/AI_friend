@@ -103,15 +103,19 @@ class WhisperSTTService:
                 # 1. Early Intent Trigger (Partial lookahead every 800ms)
                 if time.time() - getattr(self, "last_partial_time", 0) > 0.8:
                     self.last_partial_time = time.time()
-                    text = self.transcribe(is_partial=True)
-                    if text:
+                    res = self.transcribe(is_partial=True)
+                    if res:
+                        text, _ = res
                         return text, False, True
 
                 # 2. Check for forced break
                 if self.speech_start_time and (
                     time.time() - self.speech_start_time > self.max_utterance_duration
                 ):
-                    return self.transcribe(), True, False
+                    res = self.transcribe()
+                    if res:
+                        text, _ = res
+                        return text, True, False
             else:
                 if self.is_speaking:
                     if self.silence_start_time is None:
@@ -121,7 +125,10 @@ class WhisperSTTService:
 
                     # Cut-off logic (Final)
                     if time.time() - self.silence_start_time > self.silence_threshold:
-                        return self.transcribe(), True, False
+                        res = self.transcribe()
+                        if res:
+                            text, _ = res
+                            return text, True, False
 
         return None
 

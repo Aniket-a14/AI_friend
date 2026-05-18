@@ -79,7 +79,7 @@ jobs:
         run: |
           # Health probes depend on netcat being present
           docker run --rm cvs/${{ matrix.agent.name }}:ci \
-            which nc && echo "✅ netcat available" || echo "❌ netcat missing"
+            which nc && echo "✅ netcat available" || { echo "❌ netcat missing"; exit 1; }
 
   compose-config:
     name: Unified Compose Validation

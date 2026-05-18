@@ -3,17 +3,15 @@ import sys
 from types import SimpleNamespace
 from archive.stt.agent import STTAgent
 
-def test_stt_rejects_non_pcm_payloads_and_downmixes_multichannel_pcm():
-    sys.modules.setdefault(
-        "_webrtcvad",
-        SimpleNamespace(
-            create=lambda: object(),
-            init=lambda _vad: None,
-            set_mode=lambda _vad, _mode: None,
-            process=lambda _vad, _sample_rate, _buf, _length: False,
-            valid_rate_and_frame_length=lambda _rate, _frame_length: True,
-        ),
+def test_stt_rejects_non_pcm_payloads_and_downmixes_multichannel_pcm(monkeypatch):
+    mock_vad = SimpleNamespace(
+        create=lambda: object(),
+        init=lambda _vad: None,
+        set_mode=lambda _vad, _mode: None,
+        process=lambda _vad, _sample_rate, _buf, _length: False,
+        valid_rate_and_frame_length=lambda _rate, _frame_length: True,
     )
+    monkeypatch.setitem(sys.modules, "_webrtcvad", mock_vad)
 
     agent = STTAgent.__new__(STTAgent)
     agent.target_sample_rate = 16000

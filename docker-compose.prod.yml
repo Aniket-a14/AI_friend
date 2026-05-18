@@ -227,7 +227,7 @@ services:
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - STT_TARGET_SAMPLE_RATE=${STT_TARGET_SAMPLE_RATE:-16000}
-      - RUST_STT_MOCK_TRANSCRIPT=${RUST_STT_MOCK_TRANSCRIPT:-}
+      - RUST_STT_MOCK_TRANSCRIPT=${RUST_STT_MOCK_TRANSCRIPT:-mock_transcript_active}
     networks:
       - ai_mesh_network
     depends_on:

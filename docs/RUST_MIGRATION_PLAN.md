@@ -322,6 +322,7 @@ Because your agents communicate entirely over independent NATS topics, **there i
 *   **Signal Contention Test**: Verify that both Rust agents and remaining Python agents run concurrently without NATS subject lockups.
 
 ### Latency Performance Target Benchmarks
+
 | Measurement | Python Legacy (CVS-1.0) | Rust Optimized (CVS-2.0 Target) |
 | :--- | :--- | :--- |
 | **First-Frame Synthesis Delay** | ~180ms | **<60ms** |
