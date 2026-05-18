@@ -2,11 +2,8 @@ import sys
 import os
 import pytest
 import asyncio
-import json
 import sqlite3
 import re
-from datetime import datetime
-from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock
 
 # Add the backend directory to Python path
@@ -74,7 +71,7 @@ class MockNATSConnection:
         async def run_callback(cb, msg):
             try:
                 await cb(msg)
-            except Exception as e:
+            except Exception:
                 pass
         
         msg = MockMessage(subject, data, headers)

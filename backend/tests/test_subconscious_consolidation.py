@@ -3,12 +3,9 @@ Unit Tests for Subconscious Memory Consolidation & ACT-R Offline Fallbacks.
 """
 
 import pytest
-import asyncio
-import uuid
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock
 from app.state.conversation_store import ConversationHistoryStore
 from app.state.memory_store import MemoryStore
-from app.state.graph_db import GraphDB
 from app.agents.subconscious_agent import SubconsciousAgent
 from app.cognitive.learning import ReflectionService
 
