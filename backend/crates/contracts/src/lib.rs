@@ -29,6 +29,10 @@ pub struct LatencyMetadata {
     pub start_time: f64,
     pub hops: Vec<LatencyHop>,
     pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sample_rate: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -258,7 +262,7 @@ pub struct Prosody {
 pub fn vad_to_prosody(affect: Option<&ChatOutputAffect>) -> Prosody {
     let affect = affect.cloned().unwrap_or_default();
     let rate = 1.0 + (affect.arousal - 0.5);
-    let pitch = 1.0 + (affect.arousal - 0.5) * 0.7 + (affect.valence - 0.5) * 0.3;
+    let pitch = 1.0 + (affect.arousal - 0.5) * 0.7 + affect.valence * 0.3;
     let volume = 0.4 + affect.dominance * 0.6;
 
     Prosody {
@@ -318,5 +322,19 @@ mod tests {
     fn silence_uses_configured_sample_rate() {
         assert_eq!(silence_pcm(10, 16_000).len(), 320);
         assert_eq!(silence_pcm(10, 32_000).len(), 640);
+    }
+
+    #[test]
+    fn prosody_pitch_respects_negative_valence_range() {
+        let negative = ChatOutputAffect {
+            valence: -1.0,
+            ..Default::default()
+        };
+        let positive = ChatOutputAffect {
+            valence: 1.0,
+            ..Default::default()
+        };
+
+        assert!(vad_to_prosody(Some(&negative)).pitch < vad_to_prosody(Some(&positive)).pitch);
     }
 }

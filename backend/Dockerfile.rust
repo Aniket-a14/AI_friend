@@ -2,6 +2,7 @@ FROM rust:1-bookworm AS builder
 
 WORKDIR /app
 COPY Cargo.toml ./Cargo.toml
+COPY Cargo.lock ./Cargo.lock
 COPY crates ./crates
 
 RUN cargo build --release --package voice-agent --package stt-agent

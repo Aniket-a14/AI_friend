@@ -8,7 +8,7 @@ use contracts::{
 use futures_util::StreamExt;
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -43,6 +43,18 @@ async fn main() -> Result<()> {
         .init();
 
     let config = SttConfig::from_env();
+    if config
+        .mock_transcript
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_none()
+    {
+        anyhow::bail!(
+            "RUST_STT_MOCK_TRANSCRIPT is empty and no live STT backend is configured; refusing to start"
+        );
+    }
+
     let client = async_nats::connect(config.nats_url.clone())
         .await
         .with_context(|| format!("connect to NATS at {}", config.nats_url))?;
@@ -66,23 +78,15 @@ async fn handle_audio_inbound(
     message: Message,
 ) -> Result<()> {
     let metadata = metadata_from_headers(&message);
-    let channels = metadata
-        .as_ref()
-        .and_then(|m| m.source.parse::<usize>().ok())
-        .unwrap_or(1);
+    let channels = metadata.as_ref().and_then(|m| m.channels).unwrap_or(1);
     let _pcm_16k_mono = normalize_pcm_i16(&message.payload, channels.max(1));
 
-    let Some(text) = config
+    let text = config
         .mock_transcript
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
-    else {
-        warn!(
-            "received PCM but no Rust STT model backend is configured; dropping without transcript"
-        );
-        return Ok(());
-    };
+        .context("RUST_STT_MOCK_TRANSCRIPT is empty and no live STT backend is configured")?;
 
     let utterance_id = Uuid::new_v4().to_string();
     let latency_metadata = append_latency(metadata, topics::CHAT_INPUT);
@@ -147,6 +151,8 @@ fn append_latency(metadata: Option<LatencyMetadata>, subject: &str) -> LatencyMe
         start_time: now,
         hops: Vec::new(),
         source: "stt_agent".to_string(),
+        channels: None,
+        sample_rate: None,
     });
     metadata.hops.push(LatencyHop {
         agent: "stt_agent".to_string(),
@@ -176,16 +182,19 @@ fn normalize_pcm_i16(bytes: &[u8], channels: usize) -> Vec<i16> {
 }
 
 fn build_speculative_intent(text: &str, utterance_id: &str) -> Option<SpeculativeIntent> {
-    let lower = text.to_lowercase();
+    let normalized = text
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect::<String>();
+    let tokens = normalized
+        .split_whitespace()
+        .collect::<std::collections::HashSet<_>>();
     let keywords = [
         "stop", "wait", "hold", "no", "wrong", "quiet", "alex", "friend",
     ]
     .iter()
-    .filter(|keyword| {
-        lower
-            .split_whitespace()
-            .any(|word| word.contains(**keyword))
-    })
+    .filter(|keyword| tokens.contains(**keyword))
     .map(|keyword| keyword.to_string())
     .collect::<Vec<_>>();
 
@@ -260,7 +269,7 @@ mod tests {
 
         assert_eq!(perception.intent.as_deref(), Some("SPECULATIVE_STOP"));
         assert_eq!(perception.intent_type, "COMMAND");
-        assert_eq!(perception.keywords, vec!["stop", "no"]);
+        assert_eq!(perception.keywords, vec!["stop"]);
         assert_eq!(
             perception
                 .speculative_intent
@@ -269,5 +278,10 @@ mod tests {
                 .as_deref(),
             Some("utt-1")
         );
+    }
+
+    #[test]
+    fn speculative_stop_avoids_partial_keyword_matches() {
+        assert!(build_speculative_intent("knowledge now", "utt-1").is_none());
     }
 }

@@ -99,7 +99,7 @@ async fn handle_chat_output(
                 publish_pcm(jetstream, pcm, &event).await?;
             }
             TemporalPart::Text(text) => {
-                let chunks = synthesize_stream(
+                let mut response = synthesize_stream(
                     config,
                     http,
                     &text,
@@ -108,9 +108,9 @@ async fn handle_chat_output(
                     prosody.volume,
                 )
                 .await?;
-                for chunk in chunks {
+                while let Some(chunk) = response.chunk().await? {
                     if !chunk.is_empty() {
-                        publish_pcm(jetstream, chunk, &event).await?;
+                        publish_pcm(jetstream, chunk.to_vec(), &event).await?;
                     }
                 }
             }
@@ -170,7 +170,7 @@ async fn synthesize_stream(
     speed: f64,
     pitch: f64,
     volume: f64,
-) -> Result<Vec<Vec<u8>>> {
+) -> Result<reqwest::Response> {
     let payload = json!({
         "text": text,
         "text_lang": config.tts_language,
@@ -187,16 +187,12 @@ async fn synthesize_stream(
     });
 
     let url = format!("{}/tts", config.sovits_url.trim_end_matches('/'));
-    let mut response = http.post(url).json(&payload).send().await?;
+    let response = http.post(url).json(&payload).send().await?;
     if !response.status().is_success() {
         anyhow::bail!("SoVITS returned HTTP {}", response.status());
     }
 
-    let mut chunks = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
-        chunks.push(chunk.to_vec());
-    }
-    Ok(chunks)
+    Ok(response)
 }
 
 async fn publish_pcm(
