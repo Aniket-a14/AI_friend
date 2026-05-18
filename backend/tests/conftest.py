@@ -96,16 +96,48 @@ class MockNATSConnection:
     async def close(self):
         pass
 
-# Intercept and stub the nats library
-class MockNatsLib:
-    async def connect(self, nats_url, **kwargs):
-        return MockNATSConnection()
+import types
 
-    class errors:
-        class NotFoundError(Exception):
-            pass
+# Create mock module objects for nats and its submodules
+nats_module = types.ModuleType("nats")
+async def mock_connect(nats_url, **kwargs):
+    return MockNATSConnection()
+nats_module.connect = mock_connect
 
-sys.modules["nats"] = MockNatsLib()
+nats_errors_module = types.ModuleType("nats.errors")
+class NoRespondersError(Exception):
+    pass
+class TimeoutError(Exception):
+    pass
+nats_errors_module.NoRespondersError = NoRespondersError
+nats_errors_module.TimeoutError = TimeoutError
+
+nats_js_module = types.ModuleType("nats.js")
+
+nats_js_errors_module = types.ModuleType("nats.js.errors")
+class BadRequestError(Exception):
+    pass
+class ServiceUnavailableError(Exception):
+    pass
+class NotFoundError(Exception):
+    pass
+nats_js_errors_module.BadRequestError = BadRequestError
+nats_js_errors_module.ServiceUnavailableError = ServiceUnavailableError
+nats_js_errors_module.NotFoundError = NotFoundError
+
+nats_js_api_module = types.ModuleType("nats.js.api")
+class DeliverPolicy:
+    ALL = "all"
+    LAST = "last"
+    NEW = "new"
+nats_js_api_module.DeliverPolicy = DeliverPolicy
+
+# Register them in sys.modules to satisfy python's package import system
+sys.modules["nats"] = nats_module
+sys.modules["nats.errors"] = nats_errors_module
+sys.modules["nats.js"] = nats_js_module
+sys.modules["nats.js.errors"] = nats_js_errors_module
+sys.modules["nats.js.api"] = nats_js_api_module
 
 
 # =====================================================================

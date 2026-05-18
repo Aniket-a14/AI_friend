@@ -185,7 +185,7 @@ class MemoryStore:
             vector_str = str(query_vector)
             excluded = {content for content in (exclude_contents or []) if content}
 
-            is_sqlite = hasattr(self.pool, "connection") or type(self.pool).__name__ == "MockPGPool"
+            is_sqlite = type(self.pool).__name__ == "MockPGPool"
 
             results = []
             async with self.pool.acquire() as conn:
