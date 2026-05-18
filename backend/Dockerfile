@@ -1,6 +1,6 @@
 # Backend Dockerfile - Tiered Multi-Stage Optimization
 # 1. BASE: OS-level dependencies
-FROM python:3.10-slim-bookworm AS base
+FROM python:3.12-slim-bookworm AS base
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
