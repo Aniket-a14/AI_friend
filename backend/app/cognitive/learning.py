@@ -139,7 +139,7 @@ class ReflectionService:
                         continue
                     try:
                         rel_type = GraphDB._safe_relation(relation)
-                        subject_label = GraphDB._safe_label(f.get("type", "Entity"))
+                        GraphDB._safe_label(f.get("type", "Entity"))
                     except ValueError:
                         logger.warning(
                             "Skipping unsafe graph fact from reflection: %r", f
@@ -164,15 +164,13 @@ class ReflectionService:
                         continue
 
                     # Actual Storage
-                    await self.graph.create_relationship(
+                    await self.graph.create_triplet(
                         subject,
-                        subject_label,
                         rel_type,
                         object_val,
-                        "Entity",
                         properties={
                             "confidence": confidence,
-                            "extracted_at": str(asyncio.get_event_loop().time()),
+                            "extracted_at": str(time.time()),
                         },
                     )
             except Exception as e:
