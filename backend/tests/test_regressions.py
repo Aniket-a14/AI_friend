@@ -359,7 +359,7 @@ def test_graph_db_rejects_unsafe_cypher_identifiers_without_querying():
 
 
 def test_triple_extractor_uses_current_graph_relationship_contract():
-    graph = SimpleNamespace(create_relationship=AsyncMock())
+    graph = SimpleNamespace(create_triplet=AsyncMock())
     extractor = TripleExtractor(graph_db=graph)
 
     triples = asyncio.run(
@@ -367,12 +367,10 @@ def test_triple_extractor_uses_current_graph_relationship_contract():
     )
 
     assert triples == [["Aniket", "LIVES_IN", "Pune"]]
-    graph.create_relationship.assert_awaited_once_with(
+    graph.create_triplet.assert_awaited_once_with(
         "Aniket",
-        "Person",
         "LIVES_IN",
         "Pune",
-        "Entity",
         {"source": "triple_extractor"},
     )
 

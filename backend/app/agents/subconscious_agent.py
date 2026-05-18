@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class SubconsciousAgent(BaseAgent):
     """
     Tier-5 Subconscious Agent.
-    NATS wrapper for the SubconsciousEngine.
+    NATS wrapper for the SubconsciousEngine and solid-state memory consolidation.
     """
 
     def __init__(
@@ -25,11 +25,19 @@ class SubconsciousAgent(BaseAgent):
         ollama_url: str = Config.OLLAMA_URL,
         graph_db: GraphDB = None,
         state_service: StateService = None,
+        memory_store = None,
+        reflection_service = None,
     ):
         super().__init__(name="subconscious_agent")
         self._llm = OllamaClient(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
-        self.state_service = state_service or StateService(graph_store=graph_db or GraphDB())
+        self.graph_db = graph_db or GraphDB()
+        self.state_service = state_service or StateService(graph_store=self.graph_db)
         self.engine = SubconsciousEngine(llm_client=self._llm)
+        self.memory_store = memory_store
+        self._owns_memory_store = memory_store is None
+        self._owns_db_store = memory_store is None
+        self.reflection_service = reflection_service
+        self.db_store = None
 
     @property
     def llm(self):
@@ -43,6 +51,24 @@ class SubconsciousAgent(BaseAgent):
 
     async def start(self):
         await self.connect()
+
+        # Initialize SQLite/Postgres DB pool and MemoryStore if not provided
+        if not self.memory_store:
+            from app.state.conversation_store import ConversationHistoryStore
+            from app.state.memory_store import MemoryStore
+            
+            self.db_store = ConversationHistoryStore()
+            await self.db_store.initialize()
+            self.memory_store = MemoryStore(pool=self.db_store.pool)
+            
+        if not self.reflection_service:
+            from app.cognitive.learning import ReflectionService
+            self.reflection_service = ReflectionService(
+                llm_service=self._llm,
+                graph_store=self.graph_db,
+                pg_vector=self.memory_store,
+            )
+
         await self.subscribe(
             Topics.SYSTEM_TICK,
             self._on_system_tick,
@@ -70,8 +96,76 @@ class SubconsciousAgent(BaseAgent):
             await self.publish(Topics.CHAT_INPUT, msg.model_dump())
             self.state_service.mark_proactive_attempt()
 
+        # Subconscious Memory Consolidation (ACT-R & Fact Triplet Crystallization)
+        try:
+            logger.info("[Subconscious] Initiating subconscious consolidation pass...")
+            episodes = await self.memory_store.get_recent_unconsolidated_episodes(limit=10)
+            
+            if episodes:
+                # Map SQLite/PG message rows into reflection schemas by pairing user and assistant chronologically
+                reflection_episodes = []
+                chrono_episodes = list(reversed(episodes))
+                
+                i = 0
+                while i < len(chrono_episodes):
+                    ep = chrono_episodes[i]
+                    role = ep.get("role")
+                    content = ep.get("content", "")
+                    
+                    if role == "user":
+                        # Check if the next message is from the assistant to pair them
+                        assistant_content = ""
+                        if i + 1 < len(chrono_episodes) and chrono_episodes[i + 1].get("role") == "assistant":
+                            assistant_content = chrono_episodes[i + 1].get("content", "")
+                            i += 2  # Consume both user and assistant
+                        else:
+                            i += 1  # Consume only user
+                        
+                        reflection_episodes.append({
+                            "id": ep.get("id"),
+                            "event": content,
+                            "response": assistant_content,
+                            "context": "Session conversation message",
+                            "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
+                            "relationship_delta": 0.0,
+                            "content": content
+                        })
+                    else:
+                        # Unpaired assistant message
+                        reflection_episodes.append({
+                            "id": ep.get("id"),
+                            "event": "",
+                            "response": content,
+                            "context": "Session conversation message",
+                            "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
+                            "relationship_delta": 0.0,
+                            "content": ""
+                        })
+                        i += 1
+                
+                # Trigger reflection task asynchronously
+                task = await self.reflection_service.trigger_reflection(reflection_episodes)
+                if task and isinstance(task, asyncio.Task):
+                    await task  # Wait for background fact extraction and graph writing to finish
+                    
+                    # Mark these episodes as consolidated in the database
+                    message_ids = [ep.get("id") for ep in episodes if ep.get("id")]
+                    await self.memory_store.mark_episodes_consolidated(message_ids)
+                    
+                    # Apply ACT-R decay on the raw user memories corresponding to these episodes
+                    contents = [ep.get("content") for ep in episodes if ep.get("role") == "user" and ep.get("content")]
+                    await self.memory_store.apply_actr_decay(contents)
+                    
+            logger.info("[Subconscious] Subconscious consolidation pass completed successfully.")
+        except Exception as e:
+            logger.error(f"[Subconscious] Consolidation pass failed: {e}")
+
     async def stop(self):
         await self.llm.close()
+        if self.db_store and self._owns_db_store:
+            await self.db_store.close()
+        if self.memory_store and self._owns_memory_store:
+            await self.memory_store.close()
         await super().stop()
         logger.info(f"🧠 {self.name} Offline.")
 

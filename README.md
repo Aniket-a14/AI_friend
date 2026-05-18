@@ -16,8 +16,8 @@
 [![🔗 Link Validator](https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml)
 [![🚀 Release Status](https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml)
 [![Platforms: Windows | macOS | Linux](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux-blueviolet.svg)](#-release-package-selection-guide)
-[![Arch: x64 | arm64 | x86 | 386](https://img.shields.io/badge/Architectures-x64%20%7C%20arm64%20%7C%20x86%20%7C%20386-blue.svg)](#-release-package-selection-guide)
-[![Release Variants: 170](https://img.shields.io/badge/Release%20Variants-170%20Compiled-success.svg)](#-release-package-selection-guide)
+[![Arch: Multi-Platform](https://img.shields.io/badge/Architectures-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#-release-package-selection-guide)
+[![Release Assets: 3 Packages](https://img.shields.io/badge/Release%20Assets-3%20Packages-success.svg)](#-release-package-selection-guide)
 
 **CALIBRATION: EXPERT** — *This documentation assumes proficiency in asynchronous event-driven architectures, NATS JetStream protocols, and computational cognitive modeling (BDI, PAD, ACT-R, MAUT).*
 
@@ -331,31 +331,20 @@ The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
 
 ## 📦 Release Package Selection Guide
 
-With **170+ fully optimized package variants** generated automatically on every release, use the following guide to choose the exact installer for your development, staging, or production target.
+Every release of **AI Friend** provides high-quality, pre-packaged standalone archives for major operating systems (Windows, macOS, and Linux) so you can get started instantly without administrative installation headaches.
 
-### 1. Identify Your Environment Suffix
-*   **Production (Recommended)**: Files **WITHOUT** environment prefixes (e.g., `ai-friend-win-x64.exe`). Connects automatically to the live, secure production endpoints (`https://api.ai-friend.com`).
-*   **Staging (`-staging-`)**: Named `ai-friend-staging-*`. Used for pre-release testing against the staging environment (`https://staging.ai-friend.local`).
-*   **Development (`-dev-`)**: Named `ai-friend-dev-*`. Optimized for offline local hacking and debugging (`http://localhost:8000`).
+### 📦 Available Release Packages
 
-### 2. Operating System & Architecture Matrix
-
-| Target OS | CPU Architecture | Recommended Package | Description |
+| Platform | Format | Filename | Description |
 | :--- | :--- | :--- | :--- |
-| 🪟 **Windows** | Intel/AMD 64-bit | `ai-friend-win-x64.msi` | Standard installer for modern desktop PCs. |
-| | Intel/AMD 32-bit | `ai-friend-win-x86.msi` | For legacy 32-bit Windows systems. |
-| | ARM 64-bit | `ai-friend-win-arm64.msi` | Native ARM build (Snapdragon X Elite, etc.). |
-| 🍏 **macOS** | Apple Silicon (M1+) | `ai-friend-macos-arm64.dmg` | Native Apple Silicon disk image. Highly optimized. |
-| | Intel Core (Core i5/i7/i9)| `ai-friend-macos-x64.dmg` | For legacy Intel-based MacBooks/iMacs. |
-| 🐧 **Linux** | Standard 64-bit | `ai-friend-linux-x86_64.deb` | Debian/Ubuntu system packages. |
-| | ARM 64-bit | `ai-friend-linux-arm64.deb` | Native ARM64 package (Raspberry Pi 4/5, Jetson). |
-| | Legacy 32-bit | `ai-friend-linux-386.deb` | Standard package for 32-bit Linux distros. |
+| 🪟 **Windows** | Portable ZIP | `ai-friend-windows.zip` | Extract and run on any modern 64-bit Windows PC. |
+| 🍏 **macOS** | Portable ZIP | `ai-friend-macos.zip` | Highly optimized standalone archive for Intel and Apple Silicon Macs. |
+| 🐧 **Linux** | Standard Tarball | `ai-friend-linux.tar.gz` | Gzipped archive containing all source files and backend components. |
 
-### 3. Installer Format Types: Which to Choose?
-*   **`.msi` (Windows)** / **`.pkg` (macOS)**: Native system installers. Best for system-wide installation with auto-updater registration.
-*   **`.exe` (Windows)** / **`.dmg` (macOS)**: Direct executables. Best for single-user desktop installations.
-*   **`.zip` (Windows/macOS)** / **`.tar.gz` (Linux)**: Portable standalone archives. Just extract and run! Ideal if you do not have administrative install permissions.
-*   **`.deb` (Debian/Ubuntu)** / **`.rpm` (RedHat/Fedora)**: Standard Linux distribution package managers for automatic dependency management.
+### 🔑 Checksums & Verification Manifest
+Each package is built automatically in a secure containerized environment and includes:
+*   **`.sha256` File**: Contains the SHA256 checksum for cryptographic verification (e.g. `ai-friend-windows.zip.sha256`).
+*   **`ai-friend-release-manifest.json`**: A structured JSON manifest mapping the filenames, precise byte sizes, and SHA256 hashes of all release packages for automated deployment tools.
 
 ---
 

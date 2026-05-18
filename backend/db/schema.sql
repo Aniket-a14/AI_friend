@@ -36,7 +36,8 @@ create table if not exists messages (
   session_id uuid references sessions(id),
   role varchar(50) not null,
   content text not null,
-  timestamp timestamptz default now()
+  timestamp timestamptz default now(),
+  consolidated boolean default false
 );
 
 create table if not exists agent_configs (
@@ -69,4 +70,74 @@ as $$
   where 1 - (memories.embedding <=> query_embedding) > match_threshold
   order by memories.embedding <=> query_embedding
   limit match_count;
+$$;
+
+-- Create a high-performance ACT-R Based memory surfacing function
+-- usage: select * from surface_actr_memories(query_embedding, wing, room, decay_rate, spread_weight, emotion_weight, current_valence, threshold, limit)
+create or replace function surface_actr_memories (
+  query_embedding vector(768),
+  p_wing text,
+  p_room text,
+  p_decay_rate double precision,
+  p_spread_weight double precision,
+  p_emotion_weight double precision,
+  p_current_valence double precision,
+  p_threshold double precision,
+  p_limit int
+)
+returns table (
+  content text,
+  raw_content text,
+  wing text,
+  room text,
+  importance_score double precision,
+  emotional_weight double precision,
+  valence double precision,
+  recall_count integer,
+  last_recalled_at timestamptz,
+  created_at timestamptz,
+  metadata jsonb,
+  similarity double precision,
+  score double precision
+)
+language plpgsql stable
+as $$
+declare
+  now_ts timestamptz := clock_timestamp();
+begin
+  return query
+  select
+    m.content,
+    m.raw_content,
+    m.wing,
+    m.room,
+    m.importance_score,
+    m.emotional_weight,
+    m.valence,
+    m.recall_count,
+    m.last_recalled_at,
+    m.created_at,
+    m.metadata,
+    (1 - (m.embedding <=> query_embedding))::double precision as similarity,
+    (
+      -- ACT-R Base-Level Activation (B_i)
+      ln(greatest(1, m.recall_count)) - p_decay_rate * ln(greatest(0.001, extract(epoch from (now_ts - coalesce(m.last_recalled_at, now_ts))) / 3600.0) + 1)
+      -- Spreading Activation (Similarity)
+      + p_spread_weight * (1 - (m.embedding <=> query_embedding))
+      -- Emotional Alignment (Bower)
+      + p_emotion_weight * exp(-abs(coalesce(m.valence, 0.0) - p_current_valence))
+    )::double precision as score
+  from memories m
+  where m.wing = p_wing
+    and (p_room is null or m.room = p_room)
+    and (
+      (
+        ln(greatest(1, m.recall_count)) - p_decay_rate * ln(greatest(0.001, extract(epoch from (now_ts - coalesce(m.last_recalled_at, now_ts))) / 3600.0) + 1)
+        + p_spread_weight * (1 - (m.embedding <=> query_embedding))
+        + p_emotion_weight * exp(-abs(coalesce(m.valence, 0.0) - p_current_valence))
+      ) > p_threshold
+    )
+  order by score desc
+  limit p_limit;
+end;
 $$;

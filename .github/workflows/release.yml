@@ -106,79 +106,12 @@ jobs:
 
   build-assets:
     needs: [release]
-    env:
-      ENV_SUFFIX: ""
-      CONFIG_URL: ""
-    strategy:
-      matrix:
-        environment: [development, staging, production]
-        platform: [win-x64, win-x86, win-arm64, macos-arm64, macos-x64, linux-x86_64, linux-arm64, linux-386]
-        include:
-          # ----- Windows Targets -----
-          - platform: win-x64
-            os: windows-latest
-            platform_name: win
-            arch: x64
-            archive_ext: zip
-          - platform: win-x86
-            os: windows-latest
-            platform_name: win
-            arch: x86
-            archive_ext: zip
-          - platform: win-arm64
-            os: windows-latest
-            platform_name: win
-            arch: arm64
-            archive_ext: zip
-
-          # ----- macOS Targets -----
-          - platform: macos-arm64
-            os: macos-latest
-            platform_name: macos
-            arch: arm64
-            archive_ext: zip
-          - platform: macos-x64
-            os: macos-latest
-            platform_name: macos
-            arch: x64
-            archive_ext: zip
-
-          # ----- Linux Targets -----
-          - platform: linux-x86_64
-            os: ubuntu-latest
-            platform_name: linux
-            arch: x86_64
-            archive_ext: tar.gz
-          - platform: linux-arm64
-            os: ubuntu-latest
-            platform_name: linux
-            arch: arm64
-            archive_ext: tar.gz
-          - platform: linux-386
-            os: ubuntu-latest
-            platform_name: linux
-            arch: 386
-            archive_ext: tar.gz
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Configure Target Environment Parameters
-        shell: bash
-        run: |
-          if [ "${{ matrix.environment }}" = "development" ]; then
-            echo "ENV_SUFFIX=-dev" >> $GITHUB_ENV
-            echo "CONFIG_URL=http://localhost:8000" >> $GITHUB_ENV
-          elif [ "${{ matrix.environment }}" = "staging" ]; then
-            echo "ENV_SUFFIX=-staging" >> $GITHUB_ENV
-            echo "CONFIG_URL=https://staging.ai-friend.local" >> $GITHUB_ENV
-          else
-            echo "ENV_SUFFIX=" >> $GITHUB_ENV
-            echo "CONFIG_URL=https://api.ai-friend.com" >> $GITHUB_ENV
-          fi
 
       - name: Build Application Directory Structure
         shell: bash
@@ -188,13 +121,11 @@ jobs:
           
           # Copy source trees
           cp -r backend/app build_dist/backend/
-          echo "API_URL=${{ env.CONFIG_URL }}" > build_dist/frontend/.env
           cp LICENSE build_dist/ 2>/dev/null || true
 
       - name: Generate Software Bill of Materials (SBOM)
         shell: bash
         run: |
-          # Generate structured, CycloneDX 1.4 schema-compliant SBOM
           cat <<EOF > build_dist/sbom.json
           {
             "bomFormat": "CycloneDX",
@@ -278,97 +209,48 @@ jobs:
           {
             "version": "${{ github.ref_name }}",
             "commit": "${{ github.sha }}",
-            "timestamp": "$TIMESTAMP",
-            "platform": "${{ matrix.platform_name }}",
-            "arch": "${{ matrix.arch }}",
-            "environment": "${{ matrix.environment }}"
+            "timestamp": "$TIMESTAMP"
           }
           EOF
 
-      # ----------------- WINDOWS MULTIPLE INSTALLERS -----------------
-      - name: Build Windows ZIP
-        if: matrix.platform_name == 'win'
-        shell: pwsh
-        run: |
-          Compress-Archive -Path build_dist\* -DestinationPath "ai-friend${{ env.ENV_SUFFIX }}-win-${{ matrix.arch }}.zip"
-
-      - name: Build Windows EXE & MSI Installer Placeholders
-        if: matrix.platform_name == 'win'
-        shell: pwsh
-        run: |
-          New-Item "ai-friend${{ env.ENV_SUFFIX }}-win-${{ matrix.arch }}.exe" -ItemType File -Value "EXE ${{ matrix.arch }} Placeholder"
-          New-Item "ai-friend${{ env.ENV_SUFFIX }}-win-${{ matrix.arch }}.msi" -ItemType File -Value "MSI ${{ matrix.arch }} Placeholder"
-
-      # ----------------- MACOS MULTIPLE INSTALLERS -----------------
-      - name: Build macOS ZIP
-        if: matrix.platform_name == 'macos'
+      - name: Package Archives
         shell: bash
         run: |
-          zip -r "ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}.zip" build_dist/*
+          # Package zip for Windows
+          cd build_dist
+          zip -r ../ai-friend-windows.zip *
+          
+          # Package zip for macOS
+          zip -r ../ai-friend-macos.zip *
+          
+          # Package tar.gz for Linux
+          tar -czf ../ai-friend-linux.tar.gz *
+          cd ..
 
-      - name: Build macOS DMG & PKG Placeholders
-        if: matrix.platform_name == 'macos'
-        shell: bash
-        run: |
-          echo "DMG ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}.dmg"
-          echo "PKG ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}.pkg"
-
-      # ----------------- LINUX MULTIPLE INSTALLERS -----------------
-      - name: Build Linux TAR.GZ
-        if: matrix.platform_name == 'linux'
-        shell: bash
-        run: |
-          tar -czf "ai-friend${{ env.ENV_SUFFIX }}-linux-${{ matrix.arch }}.tar.gz" build_dist/
-
-      - name: Build Linux DEB & RPM Placeholders
-        if: matrix.platform_name == 'linux'
-        shell: bash
-        run: |
-          echo "DEB ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-linux-${{ matrix.arch }}.deb"
-          echo "RPM ${{ matrix.arch }} Placeholder" > "ai-friend${{ env.ENV_SUFFIX }}-linux-${{ matrix.arch }}.rpm"
-
-      # ----------------- COMPUTE CHECKSUMS & EXPORT SIZE MANIFEST -----------------
-      - name: Compile Hashes & Sizes (Windows)
-        if: matrix.platform_name == 'win'
-        shell: pwsh
-        run: |
-          $files = Get-ChildItem "ai-friend${{ env.ENV_SUFFIX }}-win-${{ matrix.arch }}.*"
-          $manifest = @()
-          foreach ($file in $files) {
-            $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($file.Name)" | Out-File -FilePath "$($file.FullName).sha256" -Encoding utf8
-            
-            $manifest += @{
-              "name" = $file.Name
-              "size_bytes" = $file.Length
-              "sha256" = $hash
-            }
-          }
-          $manifest | ConvertTo-Json | Out-File -FilePath "ai-friend${{ env.ENV_SUFFIX }}-win-${{ matrix.arch }}-manifest.json" -Encoding utf8
-
-      - name: Compile Hashes & Sizes (macOS/Linux)
-        if: matrix.platform_name != 'win'
+      - name: Generate Checksums & Manifest
         shell: bash
         run: |
           manifest="[]"
-          for file in ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}.*; do
+          for file in ai-friend-windows.zip ai-friend-macos.zip ai-friend-linux.tar.gz; do
             hash=$(sha256sum "$file" | cut -d' ' -f1)
-            sha256sum "$file" > "$file.sha256"
-            size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
-            
-            # Append item to JSON manifest array
+            echo "$hash  $file" > "$file.sha256"
+            size=$(stat -c%s "$file")
             manifest=$(echo "$manifest" | jq ". += [{\"name\": \"$file\", \"size_bytes\": $size, \"sha256\": \"$hash\"}]")
           done
-          echo "$manifest" > "ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}-manifest.json"
+          echo "$manifest" > ai-friend-release-manifest.json
 
-      # ----------------- UPLOAD ALL ASSETS -----------------
-      - name: Upload Matrix Packages, Checksums & Manifests to Release
+      - name: Upload Packages, Checksums & Manifest to Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}.*
-            ai-friend${{ env.ENV_SUFFIX }}-${{ matrix.platform_name }}-${{ matrix.arch }}-manifest.json
+            ai-friend-windows.zip
+            ai-friend-windows.zip.sha256
+            ai-friend-macos.zip
+            ai-friend-macos.zip.sha256
+            ai-friend-linux.tar.gz
+            ai-friend-linux.tar.gz.sha256
+            ai-friend-release-manifest.json
 
   docker-release-primary:
     needs: [release]

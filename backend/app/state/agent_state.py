@@ -21,7 +21,7 @@ from ..config import Config
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(slots=True)
 class AgentState:
     """
     Multidimensional PAD + Relational state for human-like dynamics.
@@ -124,7 +124,7 @@ class StateService:
         logger.info(f"[State] Hydrating {agent_name} from Neo4j...")
         query = "MATCH (a:Agent {name: $name}) RETURN a"
         res = await self.graph.execute_query(
-            query, {"name": agent_name}, use_cache=False
+            query, {"name": agent_name}, use_cache=False, strong_consistency=True
         )
         if res:
             props = res[0]["a"]
@@ -159,7 +159,7 @@ class StateService:
             "attachment": self.current_state.attachment,
             "interaction_count": self.current_state.interaction_count,
         }
-        await self.graph.execute_query(query, params)
+        await self.graph.execute_query(query, params, write=True)
         if hasattr(self.graph, "invalidate_cache"):
             await self.graph.invalidate_cache(agent_name)
         logger.debug(
