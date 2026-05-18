@@ -26,3 +26,9 @@ services:
 
   voice_agent:
     profiles: ["linux-gpu"]
+
+  rust_voice_agent:
+    profiles: ["rust-voice"]
+
+  rust_stt_agent:
+    profiles: ["rust-stt"]

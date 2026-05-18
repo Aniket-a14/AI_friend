@@ -191,6 +191,40 @@ services:
       timeout: 5s
       retries: 5
 
+  # 4R. RUST VOICE AGENT (opt-in parity target; Python voice_agent remains default)
+  rust_voice_agent:
+    profiles: ["rust-voice"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rust
+      target: runtime
+    container_name: rust_voice_agent
+    command: [ "voice-agent" ]
+    volumes:
+      - voice_samples_data:/app/output
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+      - SOVITS_URL=http://local_voice:9871
+      - TTS_LANGUAGE=${TTS_LANGUAGE:-en}
+      - SAMPLE_RATE=${SAMPLE_RATE:-32000}
+      - REF_AUDIO_PATH=${REF_AUDIO_PATH:-output/sample_en_gold.wav}
+      - REF_TEXT=${REF_TEXT:-At the end of the exam, the program shows the performance summary.}
+    networks:
+      - ai_mesh_network
+    depends_on:
+      brain_agent:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      gpt-sovits:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # 5. TRANSPORT AGENT (WebRTC Bridge)
   transport_agent:
     build:
@@ -246,6 +280,33 @@ services:
       brain_agent:
         condition: service_healthy
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 6R. RUST STT AGENT (opt-in parity target; Python stt_agent remains default)
+  rust_stt_agent:
+    profiles: ["rust-stt"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rust
+      target: runtime
+    container_name: rust_stt_agent
+    command: [ "stt-agent" ]
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+      - STT_TARGET_SAMPLE_RATE=${STT_TARGET_SAMPLE_RATE:-16000}
+      - RUST_STT_MOCK_TRANSCRIPT=${RUST_STT_MOCK_TRANSCRIPT:-}
+    networks:
+      - ai_mesh_network
+    depends_on:
+      brain_agent:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: "no"
     healthcheck:
       test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
       interval: 10s

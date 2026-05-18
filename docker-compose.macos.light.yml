@@ -16,6 +16,12 @@ services:
   voice_agent:
     profiles: ["heavy"]
 
+  rust_voice_agent:
+    profiles: ["rust-voice"]
+
+  rust_stt_agent:
+    profiles: ["rust-stt"]
+
   ollama:
     environment:
       OLLAMA_HOST: 0.0.0.0:11434

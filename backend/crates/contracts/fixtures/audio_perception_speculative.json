@@ -1,0 +1,1 @@
+{"text":"stop","intent":"SPECULATIVE_STOP","intent_type":"COMMAND","keywords":["stop"],"confidence":0.9,"snr":12.5,"paralinguistic_events":[],"speculative_intent":{"name":"SPECULATIVE_STOP","keywords":["stop"],"confidence":0.9,"text":"stop","timestamp":1713330000.0,"utterance_id":"utt-1"},"metadata":{"text":"stop","confidence":0.9},"timestamp":1713330000.0,"utterance_id":"utt-1"}
