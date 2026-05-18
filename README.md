@@ -279,31 +279,35 @@ The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
 
 ---
 
-## 📂 Directory Structure Deep-Dive
+## 📂 Clean Directory Tree (Scalable Layout)
 
 ```text
-├── .agents/                  # Agent skills and context ledgers
-├── backend/
-│   ├── app/
-│   │   ├── agents/           # NATS Agent Implementations
-│   │   │   ├── base.py       # Base class for all mesh participants
-│   │   │   ├── brain_agent.py# BDI decision core
-│   │   │   └── ...           # STT, Voice, Vision, etc.
-│   │   ├── cognitive/        # Cognitive modeling logic
-│   │   │   ├── appraisal.py  # OCC/Lazarus engine
-│   │   │   ├── decision.py   # MAUT intent selection
-│   │   │   └── identity.py   # Immutable vs Adaptive traits
-│   │   ├── state/            # Persistence and Memory
-│   │   │   ├── agent_state.py# PAD + ALMA dynamics
-│   │   │   └── memory_store.py# ACT-R + pgvector retrieval
-│   │   ├── voice/            # CVS-2.0 Audio Runtime
-│   │   ├── stt/              # Dual-path STT perception
-│   │   └── contracts.py      # Pydantic Signal Contracts
-│   └── tests/                # 24+ regression tests for cognitive stability
-├── db/                       # Prisma schemas and SQL baselines
-├── docs/                     # Technical deep-dives (Architecture, Research)
-├── frontend/                 # Next.js 16 WebRTC dashboard
-└── docker-compose.infra.yml  # Multi-stage mesh orchestration
+AI_friend/
+├── backend/                         # Unified backend workspace (Python + Rust)
+│   ├── app/                         # Python runtime (agents, cognition, state, vision, stt)
+│   ├── crates/                      # Rust runtime crates
+│   │   ├── contracts/               # Shared signal contracts
+│   │   ├── cognitive-rust/          # Rust cognitive engine components
+│   │   ├── stt-agent/               # Rust STT agent
+│   │   └── voice-agent/             # Rust voice agent
+│   ├── tests/                       # Python tests and benchmarks
+│   ├── scripts/                     # Bootstrap, diagnostics, db/audio/testing utilities
+│   ├── tools/                       # Tool registry and support modules
+│   └── db/                          # Backend-local database artifacts
+├── frontend/                        # Next.js WebRTC/UI application
+│   ├── app/                         # App Router pages
+│   ├── components/                  # Shared UI components
+│   ├── hooks/                       # Reusable client hooks
+│   └── prisma/                      # Frontend-side Prisma schema/client config
+├── docs/                            # Architecture and operational documentation
+├── scripts/                         # Root-level host/integration/research utilities
+├── _archive/                        # Legacy/archived implementations (read-only reference)
+├── .agents/                         # Local skill and agent metadata
+├── notebooks/                       # Experimental notebooks
+├── docker-compose.infra.yml         # Shared infra services
+├── docker-compose.prod.yml          # Production composition
+├── docker-compose.macos.light.yml   # macOS light profile
+└── docker-compose.macos.heavy.yml   # macOS heavy profile
 ```
 
 ---
