@@ -34,6 +34,8 @@ class SubconsciousAgent(BaseAgent):
         self.state_service = state_service or StateService(graph_store=self.graph_db)
         self.engine = SubconsciousEngine(llm_client=self._llm)
         self.memory_store = memory_store
+        self._owns_memory_store = memory_store is None
+        self._owns_db_store = memory_store is None
         self.reflection_service = reflection_service
         self.db_store = None
 
@@ -132,9 +134,9 @@ class SubconsciousAgent(BaseAgent):
 
     async def stop(self):
         await self.llm.close()
-        if self.db_store:
+        if self.db_store and self._owns_db_store:
             await self.db_store.close()
-        if self.memory_store:
+        if self.memory_store and self._owns_memory_store:
             await self.memory_store.close()
         await super().stop()
         logger.info(f"🧠 {self.name} Offline.")

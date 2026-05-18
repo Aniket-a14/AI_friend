@@ -436,12 +436,12 @@ class MemoryStore:
             async with self.pool.acquire() as conn:
                 if is_sqlite:
                     rows = await conn.fetch(
-                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = 0 ORDER BY timestamp DESC LIMIT ?",
+                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = 0 AND role IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT ?",
                         limit
                     )
                 else:
                     rows = await conn.fetch(
-                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = FALSE ORDER BY timestamp DESC LIMIT $1",
+                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = FALSE AND role IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT $1",
                         limit
                     )
                 return rows
@@ -475,11 +475,14 @@ class MemoryStore:
         try:
             if not memory_contents:
                 return
+            
+            # Deduplicate memory contents to prevent repeated decay updates in SQLite loop
+            unique_contents = list(dict.fromkeys(memory_contents))
             is_sqlite = hasattr(self.pool, "connection") or type(self.pool).__name__ == "MockPGPool"
             
             async with self.pool.acquire() as conn:
                 if is_sqlite:
-                    for content in memory_contents:
+                    for content in unique_contents:
                         await conn.execute(
                             "UPDATE memories SET importance_score = importance_score * 0.5 WHERE content = ?",
                             content
@@ -487,9 +490,9 @@ class MemoryStore:
                 else:
                     await conn.execute(
                         "UPDATE memories SET importance_score = importance_score * 0.5 WHERE content = ANY($1)",
-                        memory_contents
+                        unique_contents
                     )
-            logger.info(f"📉 Decayed base importance scores for {len(memory_contents)} memories.")
+            logger.info(f"📉 Decayed base importance scores for {len(unique_contents)} memories.")
         except Exception as e:
             logger.error(f"Failed to decay memories: {e}")
 

@@ -48,6 +48,7 @@ class MockJetStream:
         
     async def publish(self, subject, data, headers=None):
         self.connection._trigger(subject, data, headers)
+        await self.connection.drain()
         return None
         
     async def subscribe(self, subject, cb, durable=None, **kwargs):
@@ -58,6 +59,7 @@ class MockNATSConnection:
     def __init__(self):
         self.subscribers = {}
         self._js = MockJetStream(self)
+        self.pending_tasks = set()
         
     def jetstream(self):
         return self._js
@@ -72,8 +74,10 @@ class MockNATSConnection:
         async def run_callback(cb, msg):
             try:
                 await cb(msg)
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger("MockNATS").error(f"Subscriber callback failed: {e}", exc_info=True)
+                raise
         
         msg = MockMessage(subject, data, headers)
         for sub_subj, callbacks in self.subscribers.items():
@@ -89,13 +93,17 @@ class MockNATSConnection:
                 
             if matched:
                 for cb in callbacks:
-                    asyncio.create_task(run_callback(cb, msg))
+                    task = asyncio.create_task(run_callback(cb, msg))
+                    self.pending_tasks.add(task)
+                    task.add_done_callback(self.pending_tasks.discard)
                     
     async def drain(self):
-        pass
+        if self.pending_tasks:
+            # Gather all pending subscriber tasks to ensure deterministic completion
+            await asyncio.gather(*list(self.pending_tasks), return_exceptions=True)
 
     async def close(self):
-        pass
+        await self.drain()
 
 # Create mock module objects for nats and its submodules
 nats_module = types.ModuleType("nats")
