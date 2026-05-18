@@ -18,8 +18,9 @@ This document serves as a centralized Table of Contents for technical documentat
 - **[VOICE_CLONING.md](../_archive/docs/VOICE_CLONING.md)**: Identity layer setup and real-time voice synthesis assumptions.
 - **[TRAINING_GUIDE.md](../_archive/docs/TRAINING_GUIDE.md)**: Step-by-step guide for fine-tuning custom V4 voice models.
 
-## 📜 Historical Logs
-- **[UPDATES.md](../_archive/docs/UPDATES.md)**: Historical development log covering Phases 2 & 3 (April 2026).
+## 🗃️ Archived Python Codebase (CVS-1.0 Legacy)
+- **[_archive/python_agents/](../_archive/python_agents)**: Original Python-based STT (SenseVoice/Whisper) and Voice (VAD/Prosody/Playback) agents.
+- **[_archive/python_agents/tests/](../_archive/python_agents/tests)**: Corresponding voice paralinguistics and STT perception regression test suites.
 
 ---
 

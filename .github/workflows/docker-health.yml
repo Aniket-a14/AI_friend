@@ -41,15 +41,9 @@ jobs:
           - name: surfacing_agent
             target: slim
             module: app.agents.surfacing_agent
-          - name: voice_agent
-            target: slim
-            module: app.voice.agent
           - name: transport_agent
             target: slim
             module: app.agents.transport_agent
-          - name: stt_agent
-            target: full
-            module: app.stt.agent
 
     steps:
       - uses: actions/checkout@v4

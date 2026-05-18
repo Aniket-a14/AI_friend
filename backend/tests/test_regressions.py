@@ -1,5 +1,4 @@
 import asyncio
-import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -12,7 +11,6 @@ from app.cognitive.action import ActionService  # noqa: E402
 from app.cognitive.core import CognitiveService  # noqa: E402
 from app.cognitive.decision import ActionPlan  # noqa: E402
 from app.cognitive.identity import IdentityManager  # noqa: E402
-from app.config import Config  # noqa: E402
 from app.state.graph_db import GraphDB  # noqa: E402
 from app.state.agent_state import StateService  # noqa: E402
 from app.state.conversation_store import ConversationHistoryStore  # noqa: E402
