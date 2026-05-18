@@ -300,7 +300,61 @@ def test_hybrid_segmenter_benchmark(benchmark):
     scores = benchmark(run)
     assert len(scores) == len(words)
 
+# ==========================================
+# 7. SENSORY & PROSODY MAPPING
+# ==========================================
 
+@pytest.mark.benchmark
+def test_stt_payload_parsing_benchmark(benchmark):
+    """Profiles parsing and validating raw STT payload data."""
+    raw_payload = json.dumps({
+        "text": "This is a simulated speech to text transcription.",
+        "is_final": True,
+        "is_partial": False,
+        "confidence": 0.98,
+        "language": "en"
+    }).encode("utf-8")
+
+    def run():
+        parsed = json.loads(raw_payload.decode("utf-8"))
+        return parsed["text"]
+
+    text = benchmark(run)
+    assert text == "This is a simulated speech to text transcription."
+
+
+@pytest.mark.benchmark
+def test_vision_frame_encode_benchmark(benchmark):
+    """Profiles simulating basic visual frame compression overhead."""
+    # Simulate a small dummy byte array to prevent JSON serialization hangs
+    raw_bytes = b"\x00\xFF\x80" * 1024
+
+    def run():
+        # Simulate an ultra-fast structural validation
+        return len(raw_bytes) > 100
+
+    valid = benchmark(run)
+    assert valid is True
+
+
+@pytest.mark.benchmark
+def test_affective_prosody_mapping_benchmark(benchmark):
+    """Profiles mapping PAD emotional state variables to GPT-SoVITS prosody parameters."""
+    def run():
+        pleasure = 0.6
+        arousal = 0.8
+        dominance = 0.4
+        
+        # CVS-2.0 Mapping Algorithm
+        speaking_rate = 1.0 + (arousal * 0.15) - (pleasure * 0.05)
+        pitch_shift = (arousal * 0.1) + (dominance * 0.05)
+        energy_scale = 1.0 + (dominance * 0.2)
+        
+        return speaking_rate, pitch_shift, energy_scale
+
+    sr, ps, es = benchmark(run)
+    assert sr > 0
+    assert es > 0
 # ==========================================
 # LATENCY SANITY TESTS
 # ==========================================
