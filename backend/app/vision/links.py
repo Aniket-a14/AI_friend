@@ -1,6 +1,15 @@
-import mss
+try:
+    import mss
+except ImportError:
+    mss = None
+
 import numpy as np
-import cv2
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
 import logging
 from typing import Optional
 
@@ -11,6 +20,13 @@ class ScreenLink:
     """High-performance primary monitor capture."""
 
     def __init__(self):
+        if mss is None:
+            logger.warning("[Vision] mss dependency is missing. Running in headless mode.")
+            self.sct = None
+            self.monitor = None
+            self.headless = True
+            return
+
         try:
             self.sct = mss.mss()
             try:
@@ -58,9 +74,11 @@ class CameraLink:
 
     def __init__(self):
         self.cap = None
+        if cv2 is None:
+            logger.warning("[Vision] cv2 dependency is missing. Camera capture disabled.")
 
     def _compress_frame(self, frame: np.ndarray) -> Optional[bytes]:
-        if frame is None:
+        if frame is None or cv2 is None:
             return None
         height, width = frame.shape[:2]
         target_width = 512
@@ -74,6 +92,8 @@ class CameraLink:
         return buffer.tobytes()
 
     def _ensure_cap(self):
+        if cv2 is None:
+            raise RuntimeError("cv2 dependency is missing. Camera capture unavailable.")
         if self.cap is None or not self.cap.isOpened():
             self.cap = cv2.VideoCapture(0)
 

@@ -64,6 +64,7 @@ RUN rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models && \
 ENV CUDA_VISIBLE_DEVICES=0
 ENV is_half=true
 ENV PYTHONPATH=/workspace/GPT-SoVITS
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /workspace/GPT-SoVITS
 

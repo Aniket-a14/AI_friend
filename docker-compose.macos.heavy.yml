@@ -8,19 +8,6 @@ services:
       NVIDIA_VISIBLE_DEVICES: ""
       NVIDIA_DRIVER_CAPABILITIES: ""
 
-  stt_agent:
-    environment:
-      - NATS_URL=nats://nats_mesh:4222
-      - STT_MODEL_SIZE=${STT_MODEL_SIZE:-small}
-      - STT_DEVICE=cpu
-      - STT_LANGUAGE=${STT_LANGUAGE:-en}
-      - INTENT_THRESHOLD=${INTENT_THRESHOLD:-0.75}
-      - STT_WHISPER_QUEUE_SIZE=${STT_WHISPER_QUEUE_SIZE:-8}
-    deploy:
-      resources:
-        limits:
-          memory: 6G
-
   gpt-sovits:
     profiles: ["linux-gpu"]
 

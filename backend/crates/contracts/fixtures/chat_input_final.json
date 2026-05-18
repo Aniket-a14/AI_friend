@@ -1,0 +1,1 @@
+{"text":"hello there","utterance_id":"utt-1","turn_id":null,"metadata":{"source":"whisper","confidence":0.9,"utterance_id":"utt-1"},"latency_metadata":{"start_time":1713330000.0,"hops":[{"agent":"stt_agent","subject":"chat.input","timestamp":1713330000.1}],"source":"transport_agent"}}

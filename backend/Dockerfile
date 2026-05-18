@@ -1,6 +1,6 @@
 # Backend Dockerfile - Tiered Multi-Stage Optimization
 # 1. BASE: OS-level dependencies
-FROM python:3.10-slim-bookworm AS base
+FROM python:3.12-slim-bookworm AS base
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 2. SLIM BUILDER: Core dependencies only
 FROM base AS slim-builder
-RUN apt-get update && apt-get install -y build-essential portaudio19-dev
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential portaudio19-dev \
+    && rm -rf /var/lib/apt/lists/*
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements-base.txt .

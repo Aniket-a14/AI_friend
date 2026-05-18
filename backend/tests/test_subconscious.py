@@ -30,7 +30,7 @@ class TestSubconsciousAgent:
         
         mock_state_service.check_proactive_eligibility.return_value = False
         
-        agent = SubconsciousAgent(state_service=mock_state_service)
+        agent = SubconsciousAgent(state_service=mock_state_service, graph_db=MagicMock())
         agent.llm = mock_llm_service
         agent.publish = AsyncMock()
 
@@ -44,7 +44,7 @@ class TestSubconsciousAgent:
     async def test_subconscious_agent_generates_and_publishes_thought(self, mock_state_service, mock_llm_service):
         from app.agents.subconscious_agent import SubconsciousAgent
 
-        agent = SubconsciousAgent(state_service=mock_state_service)
+        agent = SubconsciousAgent(state_service=mock_state_service, graph_db=MagicMock())
         agent.llm = mock_llm_service
         agent.publish = AsyncMock()
 

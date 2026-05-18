@@ -180,8 +180,8 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | Agent | Technology | Primary Responsibility | NATS Subjects |
 | :--- | :--- | :--- | :--- |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
-| **Voice Agent** | Python / SoVITS | CVS-1.0 Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
-| **STT Agent** | ONNX / Whisper | Dual-path perception; fan-out transcription. | `audio.inbound`, `chat.input`, `audio.perception` |
+| **Voice Agent** | Rust / SoVITS | CVS-1.0 Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
+| **STT Agent** | Rust / Whisper | Dual-path perception; fan-out transcription. | `audio.inbound`, `chat.input`, `audio.perception` |
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
 | **Subconscious** | Python / Neo4j | Background reflection, fact consolidation, persona evolution. | `system.tick`, `knowledge.*` |
