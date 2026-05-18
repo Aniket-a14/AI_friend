@@ -202,3 +202,21 @@ class GraphDB:
         logger.info(
             f"Graph Store: Linked {subject_name} -[:{rel_type} {{weight: {props['weight']}}}]-> {target_name}"
         )
+
+    async def create_triplet(
+        self,
+        subject: str,
+        relation: str,
+        target: str,
+        properties: Dict[str, Any] = None,
+    ):
+        """High-level transactional helper to write a semantic triplet directly."""
+        await self.create_relationship(
+            subject_name=subject,
+            subject_label="Entity",
+            relation=relation,
+            target_name=target,
+            target_label="Entity",
+            properties=properties
+        )
+

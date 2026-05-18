@@ -1,6 +1,11 @@
 import sys
 import os
 import pytest
+import asyncio
+import json
+import sqlite3
+import re
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock
 
@@ -9,10 +14,220 @@ backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-# Some local test environments cannot import asyncpg native bindings.
-# Provide a tiny stub so tests that don't hit real DB I/O can import modules safely.
-sys.modules.setdefault("asyncpg", SimpleNamespace(Pool=object))
 
+# =====================================================================
+# 📦 HIGH-FIDELITY IN-MEMORY NATS SIMULATOR
+# =====================================================================
+
+class MockJSM:
+    async def add_stream(self, name, subjects):
+        return None
+    async def stream_info(self, name):
+        # Return a mock object with config.subjects
+        class MockConfig:
+            def __init__(self):
+                self.subjects = []
+        class MockInfo:
+            def __init__(self):
+                self.config = MockConfig()
+        return MockInfo()
+    async def update_stream(self, config):
+        return None
+
+class MockMessage:
+    def __init__(self, subject, data, headers=None):
+        self.subject = subject
+        self.data = data
+        self.headers = headers
+    async def ack(self):
+        pass
+    async def nak(self):
+        pass
+
+class MockJetStream:
+    def __init__(self, connection):
+        self.connection = connection
+        
+    async def publish(self, subject, data, headers=None):
+        self.connection._trigger(subject, data, headers)
+        return None
+        
+    async def subscribe(self, subject, cb, durable=None, **kwargs):
+        self.connection._subscribe(subject, cb)
+        return None
+
+class MockNATSConnection:
+    def __init__(self):
+        self.subscribers = {}
+        self._js = MockJetStream(self)
+        
+    def jetstream(self):
+        return self._js
+        
+    def jsm(self):
+        return MockJSM()
+        
+    def _subscribe(self, subject, cb):
+        self.subscribers.setdefault(subject, []).append(cb)
+        
+    def _trigger(self, subject, data, headers=None):
+        async def run_callback(cb, msg):
+            try:
+                await cb(msg)
+            except Exception as e:
+                pass
+        
+        msg = MockMessage(subject, data, headers)
+        for sub_subj, callbacks in self.subscribers.items():
+            matched = False
+            if sub_subj == subject:
+                matched = True
+            elif sub_subj.endswith(".>") and subject.startswith(sub_subj[:-2]):
+                matched = True
+            elif sub_subj.endswith(".*") and subject.split(".")[:-1] == sub_subj.split(".")[:-1]:
+                matched = True
+            elif sub_subj == ">":
+                matched = True
+                
+            if matched:
+                for cb in callbacks:
+                    asyncio.create_task(run_callback(cb, msg))
+                    
+    async def drain(self):
+        pass
+
+    async def close(self):
+        pass
+
+# Intercept and stub the nats library
+class MockNatsLib:
+    async def connect(self, nats_url, **kwargs):
+        return MockNATSConnection()
+
+    class errors:
+        class NotFoundError(Exception):
+            pass
+
+sys.modules["nats"] = MockNatsLib()
+
+
+# =====================================================================
+# 🗄️ IN-MEMORY SQLITE-BACKED ASYNCPG MOCK
+# =====================================================================
+
+class SQLiteConnection:
+    def __init__(self):
+        self.conn = sqlite3.connect(":memory:", detect_types=sqlite3.PARSE_DECLTYPES)
+        self.conn.row_factory = sqlite3.Row
+        self._create_schema()
+
+    def _create_schema(self):
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ended_at TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT,
+                role TEXT,
+                content TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(session_id) REFERENCES sessions(id)
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_configs (
+                id INTEGER PRIMARY KEY,
+                personality TEXT,
+                background_history TEXT,
+                evolved_learnings TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.conn.commit()
+
+    def _translate_query(self, query: str):
+        # 1. Translate PostgreSQL $1, $2 placeholders to SQLite ?
+        translated = re.sub(r'\$\d+', '?', query)
+        # 2. Replace NOW() with CURRENT_TIMESTAMP
+        translated = re.sub(r'\bNOW\(\)', 'CURRENT_TIMESTAMP', translated, flags=re.IGNORECASE)
+        # 3. Translate PostgreSQL ON CONFLICT (id) DO UPDATE to SQLite REPLACE
+        if "ON CONFLICT (id) DO UPDATE" in translated:
+            translated = """
+                INSERT OR REPLACE INTO agent_configs (id, personality, background_history, evolved_learnings, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """
+        return translated
+
+    async def execute(self, query, *args):
+        translated = self._translate_query(query)
+        cleaned_args = [str(arg) if hasattr(arg, 'hex') else arg for arg in args]
+        cursor = self.conn.cursor()
+        cursor.execute(translated, cleaned_args)
+        self.conn.commit()
+        return None
+
+    async def fetch(self, query, *args):
+        translated = self._translate_query(query)
+        cleaned_args = [str(arg) if hasattr(arg, 'hex') else arg for arg in args]
+        cursor = self.conn.cursor()
+        cursor.execute(translated, cleaned_args)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def fetchrow(self, query, *args):
+        translated = self._translate_query(query)
+        cleaned_args = [str(arg) if hasattr(arg, 'hex') else arg for arg in args]
+        cursor = self.conn.cursor()
+        cursor.execute(translated, cleaned_args)
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    async def fetchval(self, query, *args):
+        translated = self._translate_query(query)
+        cleaned_args = [str(arg) if hasattr(arg, 'hex') else arg for arg in args]
+        cursor = self.conn.cursor()
+        cursor.execute(translated, cleaned_args)
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+class MockPoolAcquisition:
+    def __init__(self, connection):
+        self.connection = connection
+
+    async def __aenter__(self):
+        return self.connection
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+class MockPGPool:
+    def __init__(self):
+        self.connection = SQLiteConnection()
+
+    def acquire(self):
+        return MockPoolAcquisition(self.connection)
+
+    async def close(self):
+        pass
+
+# Intercept and stub asyncpg library
+class MockAsyncPG:
+    Pool = MockPGPool
+    async def create_pool(self, dsn=None, **kwargs):
+        return MockPGPool()
+
+sys.modules["asyncpg"] = MockAsyncPG()
+
+
+# =====================================================================
+# 🛠️ STANDARD PYTEST CONFIGURATION & FIXTURES
+# =====================================================================
 
 def pytest_configure(config):
     """Dynamically enable benchmark-autosave if pytest-benchmark is installed.
@@ -21,7 +236,6 @@ def pytest_configure(config):
     """
     if config.pluginmanager.hasplugin("benchmark"):
         config.option.benchmark_autosave = True
-
 
 
 @pytest.fixture
