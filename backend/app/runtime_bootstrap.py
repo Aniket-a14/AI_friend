@@ -92,8 +92,15 @@ async def _ensure_database_schema() -> None:
                 session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
                 role VARCHAR(50) NOT NULL,
                 content TEXT NOT NULL,
-                timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                consolidated BOOLEAN DEFAULT FALSE
             );
+            """
+        )
+        # Migration: add consolidated column to existing tables if it does not already exist
+        await conn.execute(
+            """
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS consolidated BOOLEAN DEFAULT FALSE;
             """
         )
         await conn.execute(

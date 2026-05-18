@@ -23,8 +23,8 @@ async def test_fact_consolidation(reflection_service, mock_llm_service, mock_gra
     await reflection_service._consolidate(episodes)
 
     # Updated assertion to handle dynamic properties (extracted_at, confidence)
-    mock_graph_db.create_relationship.assert_called_with(
-        "User", "Interest", "LOVES", "Coding", "Entity", properties=ANY
+    mock_graph_db.create_triplet.assert_called_with(
+        "User", "LOVES", "Coding", properties=ANY
     )
 
 
@@ -63,7 +63,7 @@ async def test_fact_rejection_low_confidence(
         [{"content": "Spam is okay i guess", "response": "?"}]
     )
 
-    mock_graph_db.create_relationship.assert_not_called()
+    mock_graph_db.create_triplet.assert_not_called()
 
 
 def test_json_extraction_robustness(reflection_service):

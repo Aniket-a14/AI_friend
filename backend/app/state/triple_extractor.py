@@ -49,12 +49,10 @@ class TripleExtractor:
                     if len(triple) != 3:
                         continue
                     sub, rel, obj = triple
-                    await self.graph_db.create_relationship(
+                    await self.graph_db.create_triplet(
                         sub,
-                        "Person" if sub == user_id else "Entity",
                         rel,
                         obj,
-                        "Entity",
                         {"source": "triple_extractor"},
                     )
 
