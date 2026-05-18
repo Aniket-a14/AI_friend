@@ -323,7 +323,7 @@ Because your agents communicate entirely over independent NATS topics, **there i
 
 ### Latency Performance Target Benchmarks
 
-| Measurement | Python Legacy (CVS-1.0) | Rust Optimized (CVS-2.0 Target) |
+| Measurement | Python Legacy (CVS-2.0) | Rust Optimized (CVS-2.0 Target) |
 | :--- | :--- | :--- |
 | **First-Frame Synthesis Delay** | ~180ms | **<60ms** |
 | **Interruption Stop Latency** | ~120ms | **<15ms** |

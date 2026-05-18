@@ -1,10 +1,10 @@
-# 🎙️ AI Friend: Cognitive Voice System (CVS-1.0)
+# 🎙️ AI Friend: Cognitive Voice System (CVS-2.0)
 
 **A high-fidelity, state-driven cognitive identity emulator built on a hardened Sovereign Mesh for ultra-low latency conversational realism.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/license/MIT)
 [![Latency: Perceived <250ms](https://img.shields.io/badge/Latency-Perceived%20%3C250ms-green.svg)](#performance-perceived-slos)
-[![Architecture: Hardened CVS-1.0](https://img.shields.io/badge/Architecture-CVS--1.0--Hardened-orange.svg)](#architecture-cvs-10-hardened)
+[![Architecture: Hardened CVS-2.0](https://img.shields.io/badge/Architecture-CVS--1.0--Hardened-orange.svg)](#architecture-cvs-10-hardened)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb)
 [![Continuous Integration](https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml)
 [![🛡️ Mesh Integrity](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml)
@@ -25,11 +25,12 @@
 
 ## 🌟 The Philosophy of Perceptual Mastery
 
-AI Friend is not a reactive "turn-based" chatbot. It is a **Sovereign Mesh** of specialized agents synchronized through a hardened signal bus. In the **CVS-1.0 Hardened (May 2026)** release, the architecture shifted from a monolithic processing pipeline to a **State-Driven Identity Mesh**.
+AI Friend is not a reactive "turn-based" chatbot. It is a **Sovereign Mesh** of specialized agents synchronized through a hardened signal bus. In the **CVS-2.0 (Rust Native Edition)** release, the architecture shifted from legacy Python audio loops to a **High-Performance Rust Signal Mesh**, guaranteeing sub-50ms deterministic execution and true temporal identity continuity.
 
 ### 🧠 Reactive vs. Sovereign Intelligence
-| Feature | Reactive Chatbot (Legacy) | Sovereign Mesh (CVS-1.0) |
+| Feature | Reactive Chatbot (Legacy) | Sovereign Mesh (CVS-2.0) |
 | :--- | :--- | :--- |
+| **Execution** | Python Interpreter | PyO3 FFI / Native Rust Crates |
 | **Cognitive Loop** | Synchronous Request-Response | Asynchronous Event-Driven |
 | **State** | Session-based / Stateless | Persistent / Self-Maturing |
 | **Emotion** | Prompt-driven labels | Deterministic mathematical drift (PAD) |
@@ -116,7 +117,7 @@ graph TD
 
 ### 2. Perceptual Interruption Protocol
 
-CVS-1.0 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration protocol.
+CVS-2.0 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration protocol.
 
 > [!IMPORTANT]
 > **Protocol Description**:
@@ -180,7 +181,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | Agent | Technology | Primary Responsibility | NATS Subjects |
 | :--- | :--- | :--- | :--- |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
-| **Voice Agent** | Rust / SoVITS | CVS-1.0 Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
+| **Voice Agent** | Rust / SoVITS | CVS-2.0 Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
 | **STT Agent** | Rust / Whisper | Dual-path perception; fan-out transcription. | `audio.inbound`, `chat.input`, `audio.perception` |
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
@@ -265,7 +266,7 @@ Communication is strictly governed by a **Typed Contract Mesh** (Pydantic). Ever
 ## 🛡️ Infrastructure & Hardening
 
 ### 1. Solid State Signal Hardening
-In version **CVS-1.0**, the mesh implements "Solid State" principles to ensure portability and security:
+In version **CVS-2.0**, the mesh implements "Solid State" principles to ensure portability and security:
 - **Zero-Drift Persistence**: On-demand relational seeding via Prisma 7.7.0 ensures the "Identity Genome" is identical across container restarts.
 - **Health Surveillance**: Automated probes (`nc -z nats_mesh 4222`) trigger self-healing for disconnected agents.
 - **State Read-Safety**: Live emotional state is never hydrated from stale Neo4j TTL cache. After state persistence, graph cache is invalidated to prevent "memory rewinding."
@@ -295,7 +296,7 @@ The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
 │   │   ├── state/            # Persistence and Memory
 │   │   │   ├── agent_state.py# PAD + ALMA dynamics
 │   │   │   └── memory_store.py# ACT-R + pgvector retrieval
-│   │   ├── voice/            # CVS-1.0 Audio Runtime
+│   │   ├── voice/            # CVS-2.0 Audio Runtime
 │   │   ├── stt/              # Dual-path STT perception
 │   │   └── contracts.py      # Pydantic Signal Contracts
 │   └── tests/                # 24+ regression tests for cognitive stability
@@ -315,7 +316,7 @@ The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
 | **Cognitive Turn** | Turnaround | BDI Mesh + State Hydration | <120ms |
 | **First Audio** | Response | Streaming PCM Chunking | <180ms |
 | **Interruption Stop**| Reflex | Speculative Intent Guard | <100ms |
-| **Total Perceived** | **End-to-End**| **CVS-1.0 Solid State Mesh** | **<250ms** |
+| **Total Perceived** | **End-to-End**| **CVS-2.0 Solid State Mesh** | **<250ms** |
 
 ---
 

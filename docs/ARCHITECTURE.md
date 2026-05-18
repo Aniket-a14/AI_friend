@@ -1,13 +1,13 @@
-# 🏗️ Architecture Documentation - CVS-1.0
+# 🏗️ Architecture Documentation - CVS-2.0
 
-> **Deep dive into the AI Friend platform architecture, design decisions, and the Cognitive Voice System (CVS-1.0)**
+> **Deep dive into the AI Friend platform architecture, design decisions, and the Cognitive Voice System (CVS-2.0)**
 
 ---
 
 ## Table of Contents
 
 1. [System Overview](#system-overview)
-2. [CVS-1.0 Architecture (Perceptual Mastery)](#cvs-10-architecture-perceptual-mastery)
+2. [CVS-2.0 Architecture (Perceptual Mastery)](#cvs-10-architecture-perceptual-mastery)
 3. [Cognitive Layer (Brain)](#1-cognitive-layer-brain)
 4. [Temporal Orchestration (Voice Controller)](#2-temporal-orchestration-voice-controller)
 5. [Signal Rendering (Audio Engine)](#3-signal-rendering-audio-engine)
@@ -20,13 +20,13 @@
 
 AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus. In the **Solid State Hardening (Apr 2026)**, the signal bus was expanded to include 9 core subjects covering system heartbeats, active memory recall, and identity synchronization.
 
-In **CVS-1.0 Hardened**, we have achieved **Identity Continuity**. The system is no longer a reactive "Think-Speak" pipeline; it is now a **State-Driven Identity Mesh** coached by a continuous NATS heartbeat. It anticipates context through memory surfacing and expresses emotion through deterministic temporal markers.
+In **CVS-2.0 Hardened**, we have achieved **Identity Continuity**. The system is no longer a reactive "Think-Speak" pipeline; it is now a **State-Driven Identity Mesh** coached by a continuous NATS heartbeat. It anticipates context through memory surfacing and expresses emotion through deterministic temporal markers.
 
 The architecture should be evaluated by conversational realism rather than only by model intelligence. A technically correct answer that arrives with unnatural timing, forgets recent emotional state, repeats memories mechanically, or fails to recover from a false interruption is considered a behavioral failure. Every layer exists to preserve the illusion of a continuous person: perception, state, memory, decision, and voice all contribute to that outcome.
 
 ---
 
-## 🏗️ CVS-1.0 Hardened Architecture
+## 🏗️ CVS-2.0 Hardened Architecture
 
 ### 🧠 1. Cognitive Layer (Identity & State)
 
@@ -90,7 +90,7 @@ graph TB
         PCM_PLAYER["PCM Stream Player"]
     end
 
-    subgraph CVS_Mesh ["CVS-1.0 - Identity Mesh"]
+    subgraph CVS_Mesh ["CVS-2.0 - Identity Mesh"]
         STT["STT Agent<br/>Temporal Intent"]
         
         subgraph Brain_Core ["State & Identity"]
@@ -138,7 +138,7 @@ This is closer to human overlap behavior: people often pause briefly when anothe
 
 Future agents should read [../.agents/CONTEXT.md](../.agents/CONTEXT.md) before changing the architecture. It records durable project intent, recent runtime changes, verification commands, and next recommended work. Update it after architecture, behavior, or test changes so context survives beyond any single conversation window.
 
-## ⚙️ Resource Matrix (CVS-1.0)
+## ⚙️ Resource Matrix (CVS-2.0)
 
 | Agent | Context | CPU (Min) | RAM (Target) | Notes |
 | :--- | :--- | :--- | :--- | :--- |

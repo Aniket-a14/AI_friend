@@ -1,6 +1,6 @@
-# GPT-SoVITS Installation Guide (CVS-1.0 Optimized)
+# GPT-SoVITS Installation Guide (CVS-2.0 Optimized)
 
-This guide covers the local installation of GPT-SoVITS, hardened for **CVS-1.0 (April 2026)** requirements.
+This guide covers the local installation of GPT-SoVITS, hardened for **CVS-2.0 (April 2026)** requirements.
 
 ---
 
@@ -11,7 +11,7 @@ This guide covers the local installation of GPT-SoVITS, hardened for **CVS-1.0 (
 1. Go to the [Official Releases](https://github.com/RVC-Boss/GPT-SoVITS/releases).
 2. Download the **V4 Integrated Package** (`GPT-SoVITS-v4.zip`).
 
-### Step 2: CVS-1.0 Hardening (Required)
+### Step 2: CVS-2.0 Hardening (Required)
 
 Before launching, ensure your local Python environment won't crash due to 2026 dependency shifts:
 
@@ -26,7 +26,7 @@ Double-click `go-webui.bat`. The UI will launch at `http://localhost:9874`.
 
 ## 🐧 Alternative: Manual Linux/WSL2 Installation
 
-If using manual `pip` installation, you **must** use the CVS-1.0 hardened pins:
+If using manual `pip` installation, you **must** use the CVS-2.0 hardened pins:
 
 ```bash
 # 1. System Dependencies
@@ -43,7 +43,7 @@ python download_models.py --v4
 
 ---
 
-## 🔌 Integration with CVS-1.0
+## 🔌 Integration with CVS-2.0
 
 Once the WebUI is running, the **Voice Agent** communicates via the local API.
 

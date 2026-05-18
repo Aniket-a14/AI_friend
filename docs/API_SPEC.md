@@ -1,6 +1,6 @@
-# 🔌 API & Messaging Specification (CVS-1.0)
+# 🔌 API & Messaging Specification (CVS-2.0)
 
-This document provides a technical exhaustive breakdown of the external and internal interfaces of the AI Friend **Cognitive Voice System (CVS-1.0)**.
+This document provides a technical exhaustive breakdown of the external and internal interfaces of the AI Friend **Cognitive Voice System (CVS-2.0)**.
 
 ---
 
@@ -19,7 +19,7 @@ Health check and versioning info.
   ```json
   {
     "status": "healthy",
-    "version": "CVS-1.0",
+    "version": "CVS-2.0",
     "uptime": 1234.5,
     "runtime": "Perceptual Mastery"
   }
@@ -77,7 +77,7 @@ Broadcasts a vision source switch to the mesh.
 
 ## 🌊 Internal Messaging (NATS JetStream)
 
-The "Sovereign Mesh" communicates via a decentralized event bus. CVS-1.0 utilizes high-speed pulse telemetry for real-time behavior adjustment.
+The "Sovereign Mesh" communicates via a decentralized event bus. CVS-2.0 utilizes high-speed pulse telemetry for real-time behavior adjustment.
 
 ### Subject Dictionary
 
@@ -96,7 +96,7 @@ The "Sovereign Mesh" communicates via a decentralized event bus. CVS-1.0 utilize
 
 ### Detailed Schemas
 
-#### `chat.output` (CVS-1.0 Cognitive Segment)
+#### `chat.output` (CVS-2.0 Cognitive Segment)
 
 Sent by the BrainAgent during cognitive streaming.
 
@@ -204,7 +204,7 @@ If Whisper contradicts the early perception hypothesis, BrainAgent publishes:
 }
 ```
 
-#### `audio.inbound` (CVS-1.0 Raw PCM)
+#### `audio.inbound` (CVS-2.0 Raw PCM)
 
 Sent by the transport layer to STT as raw signed 16-bit PCM bytes. JSON/base64 audio payloads are rejected on this subject.
 
@@ -218,7 +218,7 @@ NATS metadata:
 }
 ```
 
-#### `audio.stream` (CVS-1.0 Raw 32kHz PCM)
+#### `audio.stream` (CVS-2.0 Raw 32kHz PCM)
 
 Sent by the VoiceAgent directly from the Signal Runtime. In the optimized path this is raw binary PCM, not JSON.
 

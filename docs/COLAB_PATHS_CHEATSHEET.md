@@ -1,6 +1,6 @@
-# 🎙️ Master Guide: AI Friend Voice Training on Colab (CVS-1.0 / V4)
+# 🎙️ Master Guide: AI Friend Voice Training on Colab (CVS-2.0 / V4)
 
-This guide takes you from a raw recording to a fully trained **CVS-1.0 compatible** voice model. Follow these steps exactly to avoid common "File Not Found" errors.
+This guide takes you from a raw recording to a fully trained **CVS-2.0 compatible** voice model. Follow these steps exactly to avoid common "File Not Found" errors.
 
 ---
 
@@ -11,7 +11,7 @@ Before touching the WebUI, your audio files must be inside Google Colab.
 1. **Open the Files Sidebar**: Click the 📁 folder icon on the extreme left of your Colab screen.
 2. **Create Folder**: Right-click and select "New Folder". Name it `training_data`.
 3. **Upload**: Drag clean recordings (minimum 10-15 mins for a quick clone, 30-60+ mins for a stronger full voice model) into the `training_data` folder.
-    - *Must be 32kHz or higher for CVS-1.0 fidelity.*
+    - *Must be 32kHz or higher for CVS-2.0 fidelity.*
     - *Prefer mono audio, consistent loudness, minimal noise/reverb, and no clipped words.*
 
 ---
@@ -70,7 +70,7 @@ Go to the **"1B-Fine-tuning Training"** sub-tab.
 
 ---
 
-## 🚩 Phase 6: Exporting for CVS-1.0 (Naming Governance)
+## 🚩 Phase 6: Exporting for CVS-2.0 (Naming Governance)
 
 To make your voice active in the local app, you **must** rename the files exactly:
 
@@ -90,7 +90,7 @@ To make your voice active in the local app, you **must** rename the files exactl
 
 ---
 
-**CVS-1.0 Runtime loads weights from configured paths on startup (defaults point to `models/GPT_weights/ai_friend_voice.ckpt` and `models/SoVITS_weights/ai_friend_voice.pth`, unless overridden by env vars).**
+**CVS-2.0 Runtime loads weights from configured paths on startup (defaults point to `models/GPT_weights/ai_friend_voice.ckpt` and `models/SoVITS_weights/ai_friend_voice.pth`, unless overridden by env vars).**
 
 ---
 
