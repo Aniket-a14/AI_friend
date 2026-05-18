@@ -80,7 +80,7 @@ services:
         condition: service_healthy
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "[ -n \"${RUST_STT_MOCK_TRANSCRIPT}\" ] && nc -z nats_mesh 4222 || exit 1"]
+      test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -237,7 +237,7 @@ services:
         condition: service_healthy
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
+      test: ["CMD-SHELL", "[ -n \"${RUST_STT_MOCK_TRANSCRIPT}\" ] && nc -z nats_mesh 4222 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

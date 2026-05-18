@@ -194,8 +194,9 @@ fn build_speculative_intent(text: &str, utterance_id: &str) -> Option<Speculativ
         "stop", "wait", "hold", "no", "wrong", "quiet", "alex", "friend",
     ]
     .iter()
-    .filter(|keyword| tokens.contains(**keyword))
-    .map(|keyword| keyword.to_string())
+    .copied()
+    .filter(|keyword| tokens.contains(keyword))
+    .map(ToString::to_string)
     .collect::<Vec<_>>();
 
     if keywords.is_empty() {
