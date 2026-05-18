@@ -153,52 +153,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # 4. VOICE AGENT (TTS, connects to GPT-SoVITS)
+  # 4. VOICE AGENT (TTS, connects to GPT-SoVITS) - Rust-based Default
   voice_agent:
-    build:
-      context: ./backend
-      target: slim
-    container_name: voice_agent
-    command: [ "python", "-m", "app.voice.agent" ]
-    volumes:
-      - voice_samples_data:/app/output # For saving/reading WAVs
-    environment:
-      - NATS_URL=nats://nats_mesh:4222
-      - SOVITS_URL=http://local_voice:9871
-      - VOICE_FILLER_CACHE_DIR=output/fillers
-      - CUSTOM_GPT_PATH=${CUSTOM_GPT_PATH:-GPT_weights/ai_friend_voice.ckpt}
-      - CUSTOM_SOVITS_PATH=${CUSTOM_SOVITS_PATH:-SoVITS_weights/ai_friend_voice.pth}
-      - TTS_LANGUAGE=${TTS_LANGUAGE:-en}
-      - MAX_VOICE_QUEUE_SIZE=${MAX_VOICE_QUEUE_SIZE:-10}
-      - VOICE_SYNTH_CONCURRENCY=${VOICE_SYNTH_CONCURRENCY:-1}
-      - VOICE_WEIGHT_LOAD_RETRIES=${VOICE_WEIGHT_LOAD_RETRIES:-3}
-      - VOICE_FILLER_HYDRATE_ON_STARTUP=${VOICE_FILLER_HYDRATE_ON_STARTUP:-true}
-      - VOICE_FILLER_MIN_INTERVAL_SECONDS=${VOICE_FILLER_MIN_INTERVAL_SECONDS:-4.0}
-      - VOICE_FILLER_MAX_PLAYBACK_BACKLOG=${VOICE_FILLER_MAX_PLAYBACK_BACKLOG:-2}
-    networks:
-      - ai_mesh_network
-    depends_on:
-      brain_agent:
-        condition: service_healthy
-      nats:
-        condition: service_healthy
-      gpt-sovits:
-        condition: service_healthy
-    restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # 4R. RUST VOICE AGENT (opt-in parity target; Python voice_agent remains default)
-  rust_voice_agent:
-    profiles: ["rust-voice"]
     build:
       context: ./backend
       dockerfile: Dockerfile.rust
       target: runtime
-    container_name: rust_voice_agent
+    container_name: voice_agent
     command: [ "voice-agent" ]
     volumes:
       - voice_samples_data:/app/output
@@ -218,12 +179,13 @@ services:
         condition: service_healthy
       gpt-sovits:
         condition: service_healthy
-    restart: "no"
+    restart: always
     healthcheck:
       test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+
 
   # 5. TRANSPORT AGENT (WebRTC Bridge)
   transport_agent:
@@ -254,46 +216,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # 6. STT AGENT (Whisper, VAD) - Heavy
+  # 6. STT AGENT (Whisper, VAD) - Rust-based Default
   stt_agent:
-    build:
-      context: ./backend
-      target: full
-    container_name: stt_agent
-    command: [ "python", "-m", "app.stt.agent" ]
-    volumes:
-      - ./backend/models:/app/models # Mount local models folder directly
-    environment:
-      - NATS_URL=nats://nats_mesh:4222
-      - STT_MODEL_SIZE=small
-      - STT_DEVICE=cpu
-      - STT_LANGUAGE=${STT_LANGUAGE:-en}
-      - INTENT_THRESHOLD=${INTENT_THRESHOLD:-0.75}
-      - STT_WHISPER_QUEUE_SIZE=${STT_WHISPER_QUEUE_SIZE:-8}
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-    networks:
-      - ai_mesh_network
-    depends_on:
-      brain_agent:
-        condition: service_healthy
-    restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # 6R. RUST STT AGENT (opt-in parity target; Python stt_agent remains default)
-  rust_stt_agent:
-    profiles: ["rust-stt"]
     build:
       context: ./backend
       dockerfile: Dockerfile.rust
       target: runtime
-    container_name: rust_stt_agent
+    container_name: stt_agent
     command: [ "stt-agent" ]
     environment:
       - NATS_URL=nats://nats_mesh:4222
@@ -306,12 +235,13 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
-    restart: "no"
+    restart: always
     healthcheck:
       test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+
 
   # 7. VISION AGENT (OpenCV, Screen/Cam) - Heavy
 #  vision_agent:

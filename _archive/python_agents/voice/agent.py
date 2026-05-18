@@ -11,8 +11,8 @@ except ImportError:
     np = None
 
 from pydantic import ValidationError
-from ..agents.base import BaseAgent
-from ..config import Config
+from app.agents.base import BaseAgent
+from app.config import Config
 from .sovits_client import SoVITSClient
 from .filler_service import FillerService
 from .normalizer import AudioNormalizer
@@ -20,7 +20,7 @@ from .cache import AudioCache
 from .prosody import vad_to_prosody, has_temporal_marker
 from .playback import silence_pcm, drain_queue, make_playback_item, run_playback_loop
 from .resilience import run_resilience_loop, run_drift_correction_loop
-from ..contracts import ChatOutput, AudioStop, AudioResume, Topics
+from app.contracts import ChatOutput, AudioStop, AudioResume, Topics
 
 from .system import VoicePlaybackState, VoiceSystem
 

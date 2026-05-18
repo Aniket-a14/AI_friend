@@ -2,11 +2,11 @@ import logging
 import asyncio
 import uuid
 from array import array
-from ..agents.base import BaseAgent
+from app.agents.base import BaseAgent
 import time
 from typing import Any
-from ..config import Config
-from ..contracts import (
+from app.config import Config
+from app.contracts import (
     ChatInput,
     ChatInputMetadata,
     AudioPerception,
