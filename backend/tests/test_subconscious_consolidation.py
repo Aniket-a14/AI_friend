@@ -203,11 +203,11 @@ async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_
     await agent._on_system_tick({"uptime": 100})
     
     # Verify graph write was attempted
-    mock_graph_db.create_relationship.assert_called_once()
-    args, kwargs = mock_graph_db.create_relationship.call_args
+    mock_graph_db.create_triplet.assert_called_once()
+    args, kwargs = mock_graph_db.create_triplet.call_args
     assert args[0] == "User"
-    assert args[2] == "LIKES"
-    assert args[3] == "Python"
+    assert args[1] == "LIKES"
+    assert args[2] == "Python"
     
     await store.close()
     await mem_store.close()

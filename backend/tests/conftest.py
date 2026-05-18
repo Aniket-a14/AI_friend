@@ -1,5 +1,6 @@
 import sys
 import os
+import types
 import pytest
 import asyncio
 import sqlite3
@@ -96,8 +97,6 @@ class MockNATSConnection:
     async def close(self):
         pass
 
-import types
-
 # Create mock module objects for nats and its submodules
 nats_module = types.ModuleType("nats")
 async def mock_connect(nats_url, **kwargs):
@@ -166,6 +165,7 @@ class SQLiteConnection:
                 role TEXT,
                 content TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                consolidated INTEGER DEFAULT 0,
                 FOREIGN KEY(session_id) REFERENCES sessions(id)
             )
         """)
@@ -293,6 +293,7 @@ def mock_graph_db():
     # All methods MUST be async to match AsyncGraphDatabase driver
     db.execute_query = AsyncMock(return_value=[])
     db.create_relationship = AsyncMock(return_value=None)
+    db.create_triplet = AsyncMock(return_value=None)
     db.create_entity = AsyncMock(return_value=None)
     db.invalidate_cache = AsyncMock(return_value=None)
     db.close = AsyncMock(return_value=None)

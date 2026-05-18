@@ -92,7 +92,8 @@ async def _ensure_database_schema() -> None:
                 session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
                 role VARCHAR(50) NOT NULL,
                 content TEXT NOT NULL,
-                timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                consolidated BOOLEAN DEFAULT FALSE
             );
             """
         )

@@ -36,7 +36,8 @@ create table if not exists messages (
   session_id uuid references sessions(id),
   role varchar(50) not null,
   content text not null,
-  timestamp timestamptz default now()
+  timestamp timestamptz default now(),
+  consolidated boolean default false
 );
 
 create table if not exists agent_configs (

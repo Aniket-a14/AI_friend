@@ -110,16 +110,20 @@ class SubconsciousAgent(BaseAgent):
                         "context": "Session conversation message",
                         "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
                         "relationship_delta": 0.0,
-                        "content": ep.get("content")
+                        "content": ep.get("content") if ep.get("role") == "user" else ""
                     })
                 
                 # Trigger reflection task asynchronously
                 task = await self.reflection_service.trigger_reflection(reflection_episodes)
-                if task:
+                if task and isinstance(task, asyncio.Task):
                     await task  # Wait for background fact extraction and graph writing to finish
                     
-                    # Apply ACT-R decay on the raw memories corresponding to these episodes
-                    contents = [ep.get("content") for ep in episodes if ep.get("content")]
+                    # Mark these episodes as consolidated in the database
+                    message_ids = [ep.get("id") for ep in episodes if ep.get("id")]
+                    await self.memory_store.mark_episodes_consolidated(message_ids)
+                    
+                    # Apply ACT-R decay on the raw user memories corresponding to these episodes
+                    contents = [ep.get("content") for ep in episodes if ep.get("role") == "user" and ep.get("content")]
                     await self.memory_store.apply_actr_decay(contents)
                     
             logger.info("[Subconscious] Subconscious consolidation pass completed successfully.")

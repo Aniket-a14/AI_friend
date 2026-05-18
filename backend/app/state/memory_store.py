@@ -431,23 +431,44 @@ class MemoryStore:
     async def get_recent_unconsolidated_episodes(self, limit: int = 10):
         """Fetches recent user and assistant dialogue entries from messages for consolidation."""
         try:
-            is_sqlite = hasattr(self.pool, "connection") or type(self.pool).__name__ == "MockPGPool"
+            is_sqlite = type(self.pool).__name__ == "MockPGPool"
             
             async with self.pool.acquire() as conn:
                 if is_sqlite:
                     rows = await conn.fetch(
-                        "SELECT id, role, content, timestamp FROM messages ORDER BY timestamp DESC LIMIT ?",
+                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = 0 ORDER BY timestamp DESC LIMIT ?",
                         limit
                     )
                 else:
                     rows = await conn.fetch(
-                        "SELECT id, role, content, timestamp FROM messages ORDER BY timestamp DESC LIMIT $1",
+                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = FALSE ORDER BY timestamp DESC LIMIT $1",
                         limit
                     )
                 return rows
         except Exception as e:
             logger.error(f"Failed to fetch recent episodes: {e}")
             return []
+
+    async def mark_episodes_consolidated(self, message_ids: list[str]):
+        """Marks specific dialogue messages as consolidated to avoid duplicate processing."""
+        if not message_ids:
+            return
+        try:
+            is_sqlite = type(self.pool).__name__ == "MockPGPool"
+            async with self.pool.acquire() as conn:
+                if is_sqlite:
+                    placeholders = ",".join("?" for _ in message_ids)
+                    await conn.execute(
+                        f"UPDATE messages SET consolidated = 1 WHERE id IN ({placeholders})",
+                        *message_ids
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE messages SET consolidated = TRUE WHERE id = ANY($1)",
+                        message_ids
+                    )
+        except Exception as e:
+            logger.error(f"Failed to mark episodes consolidated: {e}")
 
     async def apply_actr_decay(self, memory_contents: list[str]):
         """Decays the importance score of consolidated raw episodic memories using ACT-R feedback."""
