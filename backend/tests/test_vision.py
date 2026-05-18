@@ -4,7 +4,6 @@ Validates VLM appraisals, rate-limiting, source switching controls, and NATS emi
 """
 
 import pytest
-import base64
 import time
 from unittest.mock import MagicMock, AsyncMock, patch
 from app.vision.appraisal import VisualAppraisalService
