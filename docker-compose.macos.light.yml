@@ -15,7 +15,6 @@ services:
 
   voice_agent:
     profiles: ["heavy"]
-
   ollama:
     environment:
       OLLAMA_HOST: 0.0.0.0:11434

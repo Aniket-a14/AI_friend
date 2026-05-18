@@ -35,6 +35,9 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
+# Rust
+target/
+
 # Project Specific (Personal Data)
 **/personality.json
 **/history.json

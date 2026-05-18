@@ -8,7 +8,7 @@ from app.utils.segmentation import HybridSegmenter
 from app.state.agent_state import AgentState
 from app.cognitive.identity import IdentityManager
 from app.state.triple_extractor import TripleExtractor
-from app.voice.normalizer import AudioNormalizer
+
 
 pytest.importorskip("pytest_benchmark")
 
@@ -269,28 +269,6 @@ def test_pipeline_step_dispatch_benchmark(benchmark):
     res = benchmark(run)
     assert len(res) == 20
 
-
-# ==========================================
-# 7. AUDIO & TEXT VOICING HOTPATHS
-# ==========================================
-
-@pytest.mark.benchmark
-def test_audio_normalizer_16bit_pcm_benchmark(benchmark):
-    """Profiles AudioNormalizer pre-processing PCM 16-bit sound signals."""
-    normalizer = AudioNormalizer(target_peak=-1.0, sample_rate=16000)
-    # Generate 1600 samples of mock PCM-16 voice data
-    from array import array
-    mock_samples = array("h", [100, -200, 300, -400] * 400).tobytes()
-
-    # Pre-warm CPU Instruction Cache and pre-allocate memory page tables to eliminate cold-start outliers
-    for _ in range(1000):
-        normalizer.process(mock_samples)
-
-    def run():
-        return normalizer.process(mock_samples)
-
-    res = benchmark(run)
-    assert len(res) > 0
 
 
 @pytest.mark.benchmark

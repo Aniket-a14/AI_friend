@@ -1,0 +1,15 @@
+[package]
+name = "cognitive-rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "cognitive_rust"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
