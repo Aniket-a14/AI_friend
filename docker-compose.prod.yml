@@ -95,6 +95,7 @@ services:
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - OLLAMA_URL=${OLLAMA_URL:-http://local_brain:11434}
+      - DATABASE_URL=postgresql://ai_friend:${POSTGRES_PASSWORD}@postgres_db:5432/ai_friend_db
       - NEO4J_URI=bolt://brain_graph:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
@@ -106,6 +107,8 @@ services:
     networks:
       - ai_mesh_network
     depends_on:
+      postgres:
+        condition: service_healthy
       nats:
         condition: service_healthy
       neo4j:
