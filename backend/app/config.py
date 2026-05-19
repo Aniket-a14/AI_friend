@@ -9,7 +9,7 @@ class AppSettings(BaseSettings):
     )
 
     DEBUG: bool = False
-    TESTING_CONSOLIDATION_BYPASS_SILENCE: bool = True
+    TESTING_CONSOLIDATION_BYPASS_SILENCE: bool = False
     ALLOWED_ORIGINS_STR: str = Field(default="*", alias="ALLOWED_ORIGINS")
     LAN_ONLY: bool = True
     LAN_CORS_ORIGIN_REGEX: str = (

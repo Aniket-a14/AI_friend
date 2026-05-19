@@ -3,11 +3,13 @@ Unit Tests for Subconscious Memory Consolidation & ACT-R Offline Fallbacks.
 """
 
 import pytest
+import time
 from unittest.mock import AsyncMock
 from app.state.conversation_store import ConversationHistoryStore
 from app.state.memory_store import MemoryStore
 from app.agents.subconscious_agent import SubconsciousAgent
 from app.cognitive.learning import ReflectionService
+from app.config import Config
 
 
 @pytest.mark.asyncio
@@ -171,60 +173,68 @@ async def test_memory_decay_loop(mock_llm_service):
 @pytest.mark.asyncio
 async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_db):
     """Verify that the SubconsciousAgent runs a full fact-extraction & consolidation pass."""
+    orig_bypass = getattr(Config, "TESTING_CONSOLIDATION_BYPASS_SILENCE", False)
+    Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = True
+
     store = ConversationHistoryStore()
-    await store.initialize()
+    mem_store = None
+    try:
+        await store.initialize()
 
-    # Create memories and config tables
-    async with store.pool.acquire() as conn:
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                content TEXT,
-                raw_content TEXT,
-                wing TEXT,
-                room TEXT,
-                embedding TEXT,
-                importance_score REAL,
-                emotional_weight REAL,
-                valence REAL,
-                certainty REAL,
-                source TEXT,
-                metadata TEXT,
-                recall_count INTEGER,
-                last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        # Create memories and config tables
+        async with store.pool.acquire() as conn:
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content TEXT,
+                    raw_content TEXT,
+                    wing TEXT,
+                    room TEXT,
+                    embedding TEXT,
+                    importance_score REAL,
+                    emotional_weight REAL,
+                    valence REAL,
+                    certainty REAL,
+                    source TEXT,
+                    metadata TEXT,
+                    recall_count INTEGER,
+                    last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
 
-    mem_store = MemoryStore(pool=store.pool)
-    mem_store.get_embedding = AsyncMock(return_value=[0.1] * 768)
+        mem_store = MemoryStore(pool=store.pool)
+        mem_store.get_embedding = AsyncMock(return_value=[0.1] * 768)
 
-    # Seed a conversation episode
-    await store.start_session()
-    await store.log_message(
-        "user", "My favorite programming language is Python because it feels clean."
-    )
+        # Seed a conversation episode
+        await store.start_session()
+        await store.log_message(
+            "user", "My favorite programming language is Python because it feels clean."
+        )
 
-    # Initialize reflection service with mocked LLM and GraphDB
-    mock_llm_service.generate.return_value = '[{"subject": "User", "relation": "LIKES", "object": "Python", "type": "Preference", "confidence": 0.9, "reason": "Explicitly stated favorite language"}]'
+        # Initialize reflection service with mocked LLM and GraphDB
+        mock_llm_service.generate.return_value = '[{"subject": "User", "relation": "LIKES", "object": "Python", "type": "Preference", "confidence": 0.9, "reason": "Explicitly stated favorite language"}]'
 
-    ref_service = ReflectionService(
-        llm_service=mock_llm_service, graph_store=mock_graph_db, pg_vector=mem_store
-    )
+        ref_service = ReflectionService(
+            llm_service=mock_llm_service, graph_store=mock_graph_db, pg_vector=mem_store
+        )
 
-    agent = SubconsciousAgent(
-        memory_store=mem_store, reflection_service=ref_service, graph_db=mock_graph_db
-    )
+        agent = SubconsciousAgent(
+            memory_store=mem_store, reflection_service=ref_service, graph_db=mock_graph_db
+        )
+        agent.state_service.current_state.last_user_interaction = time.time() - 301
 
-    # Simulate a system.tick event manually
-    await agent._on_system_tick({"uptime": 100})
+        # Simulate a system.tick event manually
+        await agent._on_system_tick({"uptime": 100})
 
-    # Verify graph write was attempted
-    mock_graph_db.create_triplet.assert_called_once()
-    args, kwargs = mock_graph_db.create_triplet.call_args
-    assert args[0] == "User"
-    assert args[1] == "LIKES"
-    assert args[2] == "Python"
-
-    await store.close()
-    await mem_store.close()
+        # Verify graph write was attempted
+        mock_graph_db.create_triplet.assert_called_once()
+        args, kwargs = mock_graph_db.create_triplet.call_args
+        assert args[0] == "User"
+        assert args[1] == "LIKES"
+        assert args[2] == "Python"
+    finally:
+        if mem_store is not None:
+            await mem_store.close()
+        await store.close()
+        Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = orig_bypass

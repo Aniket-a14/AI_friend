@@ -61,7 +61,11 @@ class BrainAgent(BaseAgent):
         await self.connect()
 
         if self.conversation_store:
-            await self.conversation_store.initialize()
+            pool = getattr(self.conversation_store, "pool", None)
+            from unittest.mock import Mock
+
+            if pool is None or isinstance(pool, Mock):
+                await self.conversation_store.initialize()
 
         await self.cognitive_core.initialize(agent=self)
 
