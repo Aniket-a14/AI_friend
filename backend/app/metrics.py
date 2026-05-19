@@ -37,18 +37,24 @@ class SubjectMetrics:
         # High-performance list-based atomic double buffer
         self._buffer = []
         self._lock = threading.Lock()
-        
+
         # Thread-safe queue interface for compatibility with legacy tests
         class CompatibilityQueue:
             def __init__(self, parent):
                 self.parent = parent
+
             def qsize(self):
                 return len(self.parent._buffer)
+
             def join(self):
                 import time
+
                 # Wait until the buffer is empty and no batch is currently being processed
-                while self.parent._buffer or getattr(self.parent, '_is_processing', False):
+                while self.parent._buffer or getattr(
+                    self.parent, "_is_processing", False
+                ):
                     time.sleep(0.01)
+
         self._queue = CompatibilityQueue(self)
         self._is_processing = False
 
@@ -126,7 +132,10 @@ class SubjectMetrics:
 
                     # Track inter-arrival timings for Jitter Index
                     if metric["last_event_time"] is not None:
-                        diff_ms = max(0.0, (event_time - float(metric["last_event_time"])) * 1000.0)
+                        diff_ms = max(
+                            0.0,
+                            (event_time - float(metric["last_event_time"])) * 1000.0,
+                        )
                         metric["inter_arrival_times"].append(diff_ms)
                     metric["last_event_time"] = event_time
 
@@ -140,10 +149,14 @@ class SubjectMetrics:
                     # Extract latency from embedded metadata using pre-captured event_time
                     if data and isinstance(data, dict):
                         metadata = data.get("latency_metadata")
-                        if isinstance(metadata, dict) and metadata.get("start_time") is not None:
+                        if (
+                            isinstance(metadata, dict)
+                            and metadata.get("start_time") is not None
+                        ):
                             try:
                                 end_to_end_ms = max(
-                                    0.0, (event_time - float(metadata["start_time"])) * 1000
+                                    0.0,
+                                    (event_time - float(metadata["start_time"])) * 1000,
                                 )
                                 metric["latency_total_ms"] += end_to_end_ms
                                 metric["latency_samples"] += 1
@@ -163,7 +176,9 @@ class SubjectMetrics:
 
                         recent = list(metric["recent_latencies"])
                         if metric["latency_samples"] > 0:
-                            avg_latency = metric["latency_total_ms"] / metric["latency_samples"]
+                            avg_latency = (
+                                metric["latency_total_ms"] / metric["latency_samples"]
+                            )
                         if recent:
                             p95 = self._get_percentile(recent, 95)
                             p99 = self._get_percentile(recent, 99)
@@ -171,7 +186,9 @@ class SubjectMetrics:
                         inter_arrivals = list(metric["inter_arrival_times"])
                         if len(inter_arrivals) > 1:
                             mean_ia = sum(inter_arrivals) / len(inter_arrivals)
-                            variance = sum((x - mean_ia) ** 2 for x in inter_arrivals) / len(inter_arrivals)
+                            variance = sum(
+                                (x - mean_ia) ** 2 for x in inter_arrivals
+                            ) / len(inter_arrivals)
                             jitter = math.sqrt(variance)
 
                         logger.info(
@@ -187,7 +204,7 @@ class SubjectMetrics:
                         )
                 except Exception as e:
                     logger.error("Error in SubjectMetrics batch processing: %s", e)
-            
+
             self._is_processing = False
 
     def shutdown(self, timeout: float = 1.0):
@@ -213,10 +230,14 @@ class SubjectMetrics:
                         metric["latency_samples"] += 1
                     if data and isinstance(data, dict):
                         metadata = data.get("latency_metadata")
-                        if isinstance(metadata, dict) and metadata.get("start_time") is not None:
+                        if (
+                            isinstance(metadata, dict)
+                            and metadata.get("start_time") is not None
+                        ):
                             try:
                                 end_to_end_ms = max(
-                                    0.0, (event_time - float(metadata["start_time"])) * 1000
+                                    0.0,
+                                    (event_time - float(metadata["start_time"])) * 1000,
                                 )
                                 metric["latency_total_ms"] += end_to_end_ms
                                 metric["latency_samples"] += 1

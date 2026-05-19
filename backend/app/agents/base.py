@@ -147,7 +147,7 @@ class BaseAgent:
                 if isinstance(data, dict):
                     data["latency_metadata"] = meta
                 payload = orjson.dumps(data)
-                
+
                 # Use JetStream for all persistent message streams
                 await self.js.publish(subject, payload)
 

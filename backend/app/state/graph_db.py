@@ -50,7 +50,7 @@ class GraphDB:
         queries = [
             "CREATE CONSTRAINT agent_name_unique IF NOT EXISTS FOR (a:Agent) REQUIRE a.name IS UNIQUE",
             "CREATE CONSTRAINT entity_name_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE",
-            "CREATE INDEX entity_name_idx IF NOT EXISTS FOR (e:Entity) ON (e.name)"
+            "CREATE INDEX entity_name_idx IF NOT EXISTS FOR (e:Entity) ON (e.name)",
         ]
         for query in queries:
             try:
@@ -58,6 +58,7 @@ class GraphDB:
                     # Run schema operations inside explicit transaction functions
                     async def _tx(tx):
                         return await tx.run(query)
+
                     await session.execute_write(_tx)
                 logger.debug(f"Graph Store Schema: Constraint initialized ({query})")
             except Exception as e:
@@ -125,6 +126,7 @@ class GraphDB:
                             )
                         res = await tx.run(query, parameters)
                         return [record async for record in res]
+
                     records = await session.execute_write(write_tx)
                 else:
                     # Execute as explicit read transaction function (which can be routed to followers/read-replicas)
@@ -137,6 +139,7 @@ class GraphDB:
                             )
                         res = await tx.run(query, parameters)
                         return [record async for record in res]
+
                     records = await session.execute_read(read_tx)
 
                 if use_cache:
@@ -197,10 +200,46 @@ class GraphDB:
             "RETURN s, r, t"
         )
         await self.execute_query(
-            query, {"s_name": subject_name, "t_name": target_name, "props": props}, write=True
+            query,
+            {"s_name": subject_name, "t_name": target_name, "props": props},
+            write=True,
         )
         logger.info(
             f"Graph Store: Linked {subject_name} -[:{rel_type} {{weight: {props['weight']}}}]-> {target_name}"
+        )
+
+    async def consolidate_relationship(
+        self,
+        subject_name: str,
+        relation: str,
+        target_name: str,
+        properties: Dict[str, Any] = None,
+    ):
+        """
+        Consolidates a relationship, incrementing weight on match or setting default properties.
+        """
+        await self._invalidate_cache(subject_name)
+        rel_type = self._safe_relation(relation)
+
+        props = properties or {}
+        props.setdefault("certainty", 1.0)
+
+        # Cypher query with ON CREATE and ON MATCH logic for weight consolidation
+        query = (
+            f"MERGE (s:Entity {{name: $s_name}}) "
+            f"MERGE (t:Entity {{name: $t_name}}) "
+            f"MERGE (s)-[r:{rel_type}]->(t) "
+            "ON CREATE SET r += $props, r.weight = 1 "
+            "ON MATCH SET r.weight = coalesce(r.weight, 1) + 1, r.certainty = $props.certainty "
+            "RETURN s, r, t"
+        )
+        await self.execute_query(
+            query,
+            {"s_name": subject_name, "t_name": target_name, "props": props},
+            write=True,
+        )
+        logger.info(
+            f"Graph Store: Consolidated relationship {subject_name} -[:{rel_type}]-> {target_name}"
         )
 
     async def create_triplet(
@@ -210,13 +249,10 @@ class GraphDB:
         target: str,
         properties: Dict[str, Any] = None,
     ):
-        """High-level transactional helper to write a semantic triplet directly."""
-        await self.create_relationship(
+        """High-level transactional helper to write a semantic triplet directly with weight consolidation."""
+        await self.consolidate_relationship(
             subject_name=subject,
-            subject_label="Entity",
             relation=relation,
             target_name=target,
-            target_label="Entity",
-            properties=properties
+            properties=properties,
         )
-

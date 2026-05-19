@@ -1,10 +1,11 @@
 import subprocess
 
+
 def get_git_stats():
     try:
         output = subprocess.check_output(
-            ['git', 'log', '--since=6 months ago', '--name-only', '--format='],
-            text=True
+            ["git", "log", "--since=6 months ago", "--name-only", "--format="],
+            text=True,
         )
         counts = {}
         for line in output.split("\n"):
@@ -17,6 +18,7 @@ def get_git_stats():
             print(f"{count}: {file}")
     except Exception as e:
         print(f"Error: {e}")
+
 
 if __name__ == "__main__":
     get_git_stats()

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 AI Friend Industrial Benchmark Visualizer — Advanced Data Science Edition
-Parses stored JSON benchmark history files and generates a premium, 
+Parses stored JSON benchmark history files and generates a premium,
 data-science grade interactive HTML analytics dashboard using Chart.js.
-Features multi-dimensional logarithmic bubble plots, cognitive radar scorecards, 
+Features multi-dimensional logarithmic bubble plots, cognitive radar scorecards,
 and custom statistical jitter box-plots.
 """
 
@@ -1397,38 +1397,74 @@ def load_benchmarks():
 
             timestamp = data.get("datetime", "")
             benchmarks = data.get("benchmarks", [])
-            
+
             runs_by_id[run_id] = {
                 "timestamp": timestamp,
-                "benchmarks": {bench.get("name"): bench for bench in benchmarks}
+                "benchmarks": {bench.get("name"): bench for bench in benchmarks},
             }
 
     # Gather average statistics for the 15 metrics to seed baseline missing runs
     import random
+
     random.seed(42)  # Secure deterministic reproducibility
 
     metric_defaults = {
-        'test_async_telemetry_queue_put_benchmark': {'mean': 0.00000045, 'stddev': 0.00000005},
-        'test_subject_metrics_record_benchmark': {'mean': 0.0000041, 'stddev': 0.0000003},
-        'test_identity_appraisal_benchmark': {'mean': 0.00015, 'stddev': 0.000012},
-        'test_reappraisal_cognitive_benchmark': {'mean': 0.0000015, 'stddev': 0.00000015},
-        'test_subconscious_threat_scan_benchmark': {'mean': 0.0000018, 'stddev': 0.00000018},
-        'test_arbitration_layer_benchmark': {'mean': 0.0000014, 'stddev': 0.00000012},
-        'test_endocrine_state_decay_benchmark': {'mean': 0.0000036, 'stddev': 0.00000032},
-        'test_personality_modulation_benchmark': {'mean': 0.0000023, 'stddev': 0.0000002},
-        'test_decision_tree_walk_benchmark': {'mean': 0.0000036, 'stddev': 0.0000003},
-        'test_pipeline_step_dispatch_benchmark': {'mean': 0.0000045, 'stddev': 0.0000004},
-        'test_nats_metadata_serialization_benchmark': {'mean': 0.0000052, 'stddev': 0.0000005},
-        'test_memory_semantic_retrieve_benchmark': {'mean': 0.0000311, 'stddev': 0.0000025},
-        'test_triple_extractor_nlp_benchmark': {'mean': 0.0000075, 'stddev': 0.0000007},
-        'test_conversation_serialization_benchmark': {'mean': 0.0000651, 'stddev': 0.000005},
-        'test_hybrid_segmenter_benchmark': {'mean': 0.004091, 'stddev': 0.00035},
-        'test_audio_normalizer_16bit_pcm_benchmark': {'mean': 0.00012, 'stddev': 0.00001}
+        "test_async_telemetry_queue_put_benchmark": {
+            "mean": 0.00000045,
+            "stddev": 0.00000005,
+        },
+        "test_subject_metrics_record_benchmark": {
+            "mean": 0.0000041,
+            "stddev": 0.0000003,
+        },
+        "test_identity_appraisal_benchmark": {"mean": 0.00015, "stddev": 0.000012},
+        "test_reappraisal_cognitive_benchmark": {
+            "mean": 0.0000015,
+            "stddev": 0.00000015,
+        },
+        "test_subconscious_threat_scan_benchmark": {
+            "mean": 0.0000018,
+            "stddev": 0.00000018,
+        },
+        "test_arbitration_layer_benchmark": {"mean": 0.0000014, "stddev": 0.00000012},
+        "test_endocrine_state_decay_benchmark": {
+            "mean": 0.0000036,
+            "stddev": 0.00000032,
+        },
+        "test_personality_modulation_benchmark": {
+            "mean": 0.0000023,
+            "stddev": 0.0000002,
+        },
+        "test_decision_tree_walk_benchmark": {"mean": 0.0000036, "stddev": 0.0000003},
+        "test_pipeline_step_dispatch_benchmark": {
+            "mean": 0.0000045,
+            "stddev": 0.0000004,
+        },
+        "test_nats_metadata_serialization_benchmark": {
+            "mean": 0.0000052,
+            "stddev": 0.0000005,
+        },
+        "test_memory_semantic_retrieve_benchmark": {
+            "mean": 0.0000311,
+            "stddev": 0.0000025,
+        },
+        "test_triple_extractor_nlp_benchmark": {"mean": 0.0000075, "stddev": 0.0000007},
+        "test_conversation_serialization_benchmark": {
+            "mean": 0.0000651,
+            "stddev": 0.000005,
+        },
+        "test_hybrid_segmenter_benchmark": {"mean": 0.004091, "stddev": 0.00035},
+        "test_audio_normalizer_16bit_pcm_benchmark": {
+            "mean": 0.00012,
+            "stddev": 0.00001,
+        },
     }
 
     all_runs = []
     # Make sure we sort keys numerically
-    sorted_run_ids = sorted(list(runs_by_id.keys()), key=lambda x: int(x) if str(x).isdigit() else 999)
+    sorted_run_ids = sorted(
+        list(runs_by_id.keys()), key=lambda x: int(x) if str(x).isdigit() else 999
+    )
 
     for run_id in sorted_run_ids:
         run_info = runs_by_id[run_id]
@@ -1445,43 +1481,47 @@ def load_benchmarks():
                 p95 = percentiles.get("95", stats.get("mean", 0) * 1.12)
                 p99 = percentiles.get("99", stats.get("mean", 0) * 1.25)
 
-                all_runs.append({
-                    "run_id": run_id,
-                    "timestamp": timestamp,
-                    "test_name": metric_name,
-                    "min": stats.get("min", 0),
-                    "max": stats.get("max", 0),
-                    "mean": stats.get("mean", 0),
-                    "median": stats.get("median", 0),
-                    "stddev": stats.get("stddev", 0),
-                    "ops": stats.get("ops", 0),
-                    "p95": p95,
-                    "p99": p99,
-                })
+                all_runs.append(
+                    {
+                        "run_id": run_id,
+                        "timestamp": timestamp,
+                        "test_name": metric_name,
+                        "min": stats.get("min", 0),
+                        "max": stats.get("max", 0),
+                        "mean": stats.get("mean", 0),
+                        "median": stats.get("median", 0),
+                        "stddev": stats.get("stddev", 0),
+                        "ops": stats.get("ops", 0),
+                        "p95": p95,
+                        "p99": p99,
+                    }
+                )
             else:
-                base_mean = defaults['mean'] * progression_multiplier
+                base_mean = defaults["mean"] * progression_multiplier
                 jitter = random.uniform(-0.06, 0.06)
                 mean = base_mean * (1.0 + jitter)
-                stddev = defaults['stddev'] * (1.0 + jitter)
+                stddev = defaults["stddev"] * (1.0 + jitter)
                 min_val = mean * 0.88
                 max_val = mean * 1.15
                 ops = 1.0 / mean if mean > 0 else 0
                 p95 = mean * 1.12
                 p99 = mean * 1.25
 
-                all_runs.append({
-                    "run_id": run_id,
-                    "timestamp": timestamp,
-                    "test_name": metric_name,
-                    "min": min_val,
-                    "max": max_val,
-                    "mean": mean,
-                    "median": mean,
-                    "stddev": stddev,
-                    "ops": ops,
-                    "p95": p95,
-                    "p99": p99,
-                })
+                all_runs.append(
+                    {
+                        "run_id": run_id,
+                        "timestamp": timestamp,
+                        "test_name": metric_name,
+                        "min": min_val,
+                        "max": max_val,
+                        "mean": mean,
+                        "median": mean,
+                        "stddev": stddev,
+                        "ops": ops,
+                        "p95": p95,
+                        "p99": p99,
+                    }
+                )
 
     return all_runs
 
@@ -1500,7 +1540,9 @@ def main():
     with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
         f.write(compiled_html)
 
-    print(f"✨ Success! Upgraded industrial dashboard written to: {OUTPUT_HTML.absolute()}")
+    print(
+        f"✨ Success! Upgraded industrial dashboard written to: {OUTPUT_HTML.absolute()}"
+    )
     print("🚀 You can now double-click this file or open it in your browser!")
 
 

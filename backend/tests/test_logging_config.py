@@ -5,7 +5,9 @@ from app.logging_config import CustomJsonFormatter, setup_logging
 
 def test_custom_json_formatter_adds_timestamp_and_uppercases_level():
     formatter = CustomJsonFormatter("%(timestamp)s %(level)s %(name)s %(message)s")
-    record = logging.LogRecord("test.logger", logging.INFO, __file__, 1, "hello", (), None)
+    record = logging.LogRecord(
+        "test.logger", logging.INFO, __file__, 1, "hello", (), None
+    )
     payload = {"level": "info"}
 
     formatter.add_fields(payload, record, {})
@@ -16,7 +18,9 @@ def test_custom_json_formatter_adds_timestamp_and_uppercases_level():
 
 def test_custom_json_formatter_uses_record_level_when_missing():
     formatter = CustomJsonFormatter("%(timestamp)s %(level)s %(name)s %(message)s")
-    record = logging.LogRecord("test.logger", logging.WARNING, __file__, 1, "warn", (), None)
+    record = logging.LogRecord(
+        "test.logger", logging.WARNING, __file__, 1, "warn", (), None
+    )
     payload = {}
 
     formatter.add_fields(payload, record, {})

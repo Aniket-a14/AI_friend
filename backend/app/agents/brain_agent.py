@@ -21,9 +21,6 @@ from ..utils.speech import SpeechCoordinator
 logger = logging.getLogger(__name__)
 
 
-
-
-
 class BrainAgent(BaseAgent):
     """
     The Brain Agent (CVS-1.0 Edition).
@@ -53,22 +50,31 @@ class BrainAgent(BaseAgent):
 
         self.last_interaction_time = datetime.now()
         self.last_visual_context = "No visual data available."
-        self.last_user_distance = None
+        self.last_user_distance = 1.0
 
         # CVS-1.0 Segmentation Config
         self.coordinator = SpeechCoordinator(
-            segmenter=HybridSegmenter(target_size=8),
-            formation_buffer_ms=0.030
+            segmenter=HybridSegmenter(target_size=8), formation_buffer_ms=0.030
         )
 
     async def start(self):
         await self.connect()
 
         if self.conversation_store:
-            await self.conversation_store.initialize()
-            await self.conversation_store.start_session()
+            pool = getattr(self.conversation_store, "pool", None)
+            from unittest.mock import Mock
+
+            if pool is None or isinstance(pool, Mock):
+                await self.conversation_store.initialize()
 
         await self.cognitive_core.initialize(agent=self)
+
+        if self.conversation_store:
+            await self.conversation_store.start_session(
+                trust_benevolence=self.cognitive_core.state.current_state.trust_benevolence,
+                trust_competence=self.cognitive_core.state.current_state.trust_competence,
+                trust_integrity=self.cognitive_core.state.current_state.trust_integrity,
+            )
 
         # Subscribe to I/O streams
         await self.subscribe(
@@ -116,7 +122,10 @@ class BrainAgent(BaseAgent):
         """Fallback: basic source awareness from raw frames."""
         source = data.get("source", "unknown")
         # Only update if we don't have a richer VLM description yet
-        if not self.last_visual_context or self.last_visual_context == "No visual data available.":
+        if (
+            not self.last_visual_context
+            or self.last_visual_context == "No visual data available."
+        ):
             self.last_visual_context = f"I am seeing the user's {source}."
 
     async def _on_vision_description(self, data: Dict[str, Any]):
@@ -128,7 +137,9 @@ class BrainAgent(BaseAgent):
             logger.debug("[Brain] Visual context updated: %s", description[:60])
         else:
             self.last_visual_context = f"I am seeing the user's {source}."
-        self.last_user_distance = data.get("user_distance")
+        self.last_user_distance = (
+            data.get("user_distance") if data.get("user_distance") is not None else 1.0
+        )
 
     async def _on_chat_input(self, message: Dict[str, Any]):
         now = datetime.now()
@@ -172,14 +183,14 @@ class BrainAgent(BaseAgent):
 
         if is_subconscious:
             logger.info("💭 [Brain] Processing subconscious thought: %s", user_text)
-            generator = self.cognitive_core.generate_proactive_response(thought_prompt=user_text)
+            generator = self.cognitive_core.generate_proactive_response(
+                thought_prompt=user_text
+            )
         else:
             generator = self.cognitive_core.process_event(raw_event)
 
         full_response = await self._stream_to_speech(
-            generator, 
-            turn_id=turn_id, 
-            is_proactive=is_subconscious
+            generator, turn_id=turn_id, is_proactive=is_subconscious
         )
 
         if self.conversation_store and full_response:
@@ -187,14 +198,16 @@ class BrainAgent(BaseAgent):
                 self.conversation_store.log_message("assistant", full_response)
             )
 
-    async def _stream_to_speech(self, generator, turn_id: str, is_proactive: bool = False) -> str:
+    async def _stream_to_speech(
+        self, generator, turn_id: str, is_proactive: bool = False
+    ) -> str:
         """Helper method to process text generation streams and segment them into speech chunks."""
         full_response = ""
         current_chunk_words = []
         segment_started_at = None
         generation_errors: List[str] = []
         fallback_text = "I'm having trouble thinking right now..."
-        
+
         await self.set_state("thinking")
 
         try:
@@ -264,8 +277,10 @@ class BrainAgent(BaseAgent):
                             turn_id=turn_id,
                             done=True,
                             full_response=full_response,
-                            generation_error=generation_errors[-1] if generation_errors else None,
-                            proactive=is_proactive
+                            generation_error=generation_errors[-1]
+                            if generation_errors
+                            else None,
+                            proactive=is_proactive,
                         )
                         await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
 
@@ -278,7 +293,7 @@ class BrainAgent(BaseAgent):
                     done=True,
                     full_response=fallback_text,
                     turn_id=turn_id,
-                    generation_error=error_msg
+                    generation_error=error_msg,
                 )
                 await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
 

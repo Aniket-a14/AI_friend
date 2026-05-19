@@ -5,7 +5,9 @@ import os
 from dotenv import load_dotenv
 
 # Add project root to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from app.cognitive.core import CognitiveService
 from app.llm.ollama_client import OllamaClient

@@ -133,10 +133,14 @@ class OllamaClient:
         for attempt in range(self.max_retries):
             for endpoint, payload, model_variant in payload_attempts:
                 try:
-                    async with client.stream("POST", endpoint, json=payload) as response:
+                    async with client.stream(
+                        "POST", endpoint, json=payload
+                    ) as response:
                         if response.status_code >= 400:
                             details = (await response.aread())[:200].decode()
-                            errors.append(f"{endpoint} ({model_variant}): HTTP {response.status_code} {details}")
+                            errors.append(
+                                f"{endpoint} ({model_variant}): HTTP {response.status_code} {details}"
+                            )
                             continue
 
                         async for line in response.aiter_lines():
@@ -188,7 +192,7 @@ class OllamaClient:
                     if response.status_code >= 400:
                         errors.append(f"{endpoint}: HTTP {response.status_code}")
                         continue
-                    
+
                     result = response.json()
                     text = self._extract_response_text(result)
                     if text:

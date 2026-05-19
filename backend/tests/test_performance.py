@@ -12,6 +12,7 @@ from app.state.triple_extractor import TripleExtractor
 
 pytest.importorskip("pytest_benchmark")
 
+
 # Helper mock for memory rows
 def _make_mock_row(content, similarity=1.0, recall_count=1):
     return {
@@ -34,11 +35,12 @@ def _make_mock_row(content, similarity=1.0, recall_count=1):
 # 1. ASYNC TELEMETRY BUFFER BENCHMARKS
 # ==========================================
 
+
 @pytest.mark.benchmark
 def test_async_telemetry_queue_put_benchmark(benchmark):
     """Profiles the latency of posting metrics to the new asynchronous queue buffer."""
     metrics = SubjectMetrics(tracked_subjects={"chat.input"}, log_every=100)
-    
+
     def run():
         # Captures start time and queues non-blockingly instantly
         metrics.record("chat.input", direction="rx", latency_ms=1.2)
@@ -68,6 +70,7 @@ def test_subject_metrics_record_benchmark(benchmark):
 # 2. COGNITIVE & IDENTITY APPRAISAL
 # ==========================================
 
+
 @pytest.mark.benchmark
 def test_identity_appraisal_benchmark(benchmark):
     """Profiles dynamic prompt generation and identity parsing in the IdentityManager."""
@@ -77,13 +80,15 @@ def test_identity_appraisal_benchmark(benchmark):
         "conversation_rules": {"avoid": ["As an AI", "I am a language model"]},
         "speaking_style": {"pace": "fluent", "common_vocabulary": ["arre", "yaar"]},
     }
-    m_open = patch("builtins.open", mock_open=MagicMock(return_value=json.dumps(personality)))
+    m_open = patch(
+        "builtins.open", mock_open=MagicMock(return_value=json.dumps(personality))
+    )
     m_exists = patch("os.path.exists", return_value=True)
 
     with m_open, m_exists:
         manager = IdentityManager(base_path="/fake/path")
         manager.personality = personality
-        
+
         def run():
             return manager.get_persona_prompt()
 
@@ -95,6 +100,7 @@ def test_identity_appraisal_benchmark(benchmark):
 def test_reappraisal_cognitive_benchmark(benchmark):
     """Profiles secondary cognitive reappraisal triggers adjusting emotional coping valence."""
     from app.state.agent_state import AgentState
+
     state = AgentState(mood=0.2, energy=0.5)
 
     def run():
@@ -110,9 +116,11 @@ def test_reappraisal_cognitive_benchmark(benchmark):
 # 3. SUBCONSCIOUS & ARBITRATION
 # ==========================================
 
+
 @pytest.mark.benchmark
 def test_subconscious_threat_scan_benchmark(benchmark):
     """Profiles dynamic threat appraisal scanning metrics inside perceptual inputs."""
+
     def run():
         threat_index = 0.0
         # Simulated scan of perceptual queues for triggers
@@ -131,12 +139,13 @@ def test_subconscious_threat_scan_benchmark(benchmark):
 @pytest.mark.benchmark
 def test_arbitration_layer_benchmark(benchmark):
     """Profiles behavioral node arbitration resolving conflicting state values."""
+
     def run():
         # Arbitrate active speaking node between speech parameters
         endocrine_active = True
         arousal = 0.8
         dominance = 0.4
-        
+
         # Conflict weighting arbitration algorithm
         weight = (arousal * 0.5) + (dominance * 0.3)
         if endocrine_active:
@@ -150,6 +159,7 @@ def test_arbitration_layer_benchmark(benchmark):
 # ==========================================
 # 4. ENDOCRINE SYSTEM DERIVATIONS
 # ==========================================
+
 
 @pytest.mark.benchmark
 def test_endocrine_state_decay_benchmark(benchmark):
@@ -168,6 +178,7 @@ def test_endocrine_state_decay_benchmark(benchmark):
 @pytest.mark.benchmark
 def test_personality_modulation_benchmark(benchmark):
     """Profiles real-time temperature/top_p logic modulation based on endocrine state."""
+
     def run():
         cortisol = 0.8
         dopamine = 0.2
@@ -185,10 +196,14 @@ def test_personality_modulation_benchmark(benchmark):
 # 5. MEMORY & NLP EXTRACTION
 # ==========================================
 
+
 @pytest.mark.benchmark
 def test_memory_semantic_retrieve_benchmark(benchmark):
     """Benchmarks ACT-R semantic memory retrieval scoring (recency/frequency weights)."""
-    rows = [_make_mock_row("Fact #%d" % i, similarity=0.8 - (i * 0.01), recall_count=i) for i in range(50)]
+    rows = [
+        _make_mock_row("Fact #%d" % i, similarity=0.8 - (i * 0.01), recall_count=i)
+        for i in range(50)
+    ]
 
     def run():
         # Manually invoke activation calculations to isolate computational load
@@ -211,7 +226,9 @@ def test_triple_extractor_nlp_benchmark(benchmark):
     extractor = TripleExtractor(llm_service=None, graph_db=None)
 
     def run():
-        return extractor._parse_json_from_text('[["Aniket", "LIVES_IN", "Mumbai"], ["Aniket", "ROLE", "Engineer"]]')
+        return extractor._parse_json_from_text(
+            '[["Aniket", "LIVES_IN", "Mumbai"], ["Aniket", "ROLE", "Engineer"]]'
+        )
 
     triples = benchmark(run)
     assert len(triples) == 2
@@ -221,13 +238,18 @@ def test_triple_extractor_nlp_benchmark(benchmark):
 # 6. PIPELINES & CONVERSATION SERIALIZATION
 # ==========================================
 
+
 @pytest.mark.benchmark
 def test_conversation_serialization_benchmark(benchmark):
     """Profiles serializing context history and window segments in ConversationStore."""
     history = {
         "relationship": "Empathy Guide",
-        "memories": ["First prompt check", "NATS stream initialization", "Subconscious tick evolution"],
-        "turns": [{"role": "user", "text": "Hello, computer"}] * 50
+        "memories": [
+            "First prompt check",
+            "NATS stream initialization",
+            "Subconscious tick evolution",
+        ],
+        "turns": [{"role": "user", "text": "Hello, computer"}] * 50,
     }
 
     def run():
@@ -240,15 +262,18 @@ def test_conversation_serialization_benchmark(benchmark):
 @pytest.mark.benchmark
 def test_decision_tree_walk_benchmark(benchmark):
     """Profiles evaluating behavior tree conditions and scoring priority pathways."""
+
     def run():
         pathways = [
             {"node": "Appraise", "priority": 3, "state": "active"},
             {"node": "Subconscious", "priority": 1, "state": "idle"},
             {"node": "TTS", "priority": 4, "state": "active"},
-            {"node": "Arbitration", "priority": 2, "state": "pending"}
+            {"node": "Arbitration", "priority": 2, "state": "pending"},
         ]
         # Walk and score
-        sorted_paths = sorted([p for p in pathways if p["state"] == "active"], key=lambda x: x["priority"])
+        sorted_paths = sorted(
+            [p for p in pathways if p["state"] == "active"], key=lambda x: x["priority"]
+        )
         return sorted_paths[0]["node"]
 
     node = benchmark(run)
@@ -270,13 +295,12 @@ def test_pipeline_step_dispatch_benchmark(benchmark):
     assert len(res) == 20
 
 
-
 @pytest.mark.benchmark
 def test_nats_metadata_serialization_benchmark(benchmark):
     """Profiles compiling NATS message wrappers with timestamp metadata."""
     payload = {
         "text": "Streaming reply.",
-        "session_id": "8e36780c-a9fe-443b-a212-001a18bc009b"
+        "session_id": "8e36780c-a9fe-443b-a212-001a18bc009b",
     }
 
     def run():
@@ -295,25 +319,31 @@ def test_hybrid_segmenter_benchmark(benchmark):
     words = ["hello", "there,", "how", "are", "you?", "today"] * 200
 
     def run():
-        return [segmenter.score_split_point(word, i % 14) for i, word in enumerate(words)]
+        return [
+            segmenter.score_split_point(word, i % 14) for i, word in enumerate(words)
+        ]
 
     scores = benchmark(run)
     assert len(scores) == len(words)
+
 
 # ==========================================
 # 7. SENSORY & PROSODY MAPPING
 # ==========================================
 
+
 @pytest.mark.benchmark
 def test_stt_payload_parsing_benchmark(benchmark):
     """Profiles parsing and validating raw STT payload data."""
-    raw_payload = json.dumps({
-        "text": "This is a simulated speech to text transcription.",
-        "is_final": True,
-        "is_partial": False,
-        "confidence": 0.98,
-        "language": "en"
-    }).encode("utf-8")
+    raw_payload = json.dumps(
+        {
+            "text": "This is a simulated speech to text transcription.",
+            "is_final": True,
+            "is_partial": False,
+            "confidence": 0.98,
+            "language": "en",
+        }
+    ).encode("utf-8")
 
     def run():
         parsed = json.loads(raw_payload.decode("utf-8"))
@@ -327,7 +357,7 @@ def test_stt_payload_parsing_benchmark(benchmark):
 def test_vision_frame_encode_benchmark(benchmark):
     """Profiles simulating basic visual frame compression overhead."""
     # Simulate a small dummy byte array to prevent JSON serialization hangs
-    raw_bytes = b"\x00\xFF\x80" * 1024
+    raw_bytes = b"\x00\xff\x80" * 1024
 
     def run():
         # Simulate an ultra-fast structural validation
@@ -340,24 +370,28 @@ def test_vision_frame_encode_benchmark(benchmark):
 @pytest.mark.benchmark
 def test_affective_prosody_mapping_benchmark(benchmark):
     """Profiles mapping PAD emotional state variables to GPT-SoVITS prosody parameters."""
+
     def run():
         pleasure = 0.6
         arousal = 0.8
         dominance = 0.4
-        
+
         # CVS-2.0 Mapping Algorithm
         speaking_rate = 1.0 + (arousal * 0.15) - (pleasure * 0.05)
         pitch_shift = (arousal * 0.1) + (dominance * 0.05)
         energy_scale = 1.0 + (dominance * 0.2)
-        
+
         return speaking_rate, pitch_shift, energy_scale
 
     sr, ps, es = benchmark(run)
     assert sr > 0
     assert es > 0
+
+
 # ==========================================
 # LATENCY SANITY TESTS
 # ==========================================
+
 
 @pytest.mark.latency
 def test_compute_latency_clamps_future_start_times(monkeypatch):

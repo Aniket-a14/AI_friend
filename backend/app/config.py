@@ -9,6 +9,7 @@ class AppSettings(BaseSettings):
     )
 
     DEBUG: bool = False
+    TESTING_CONSOLIDATION_BYPASS_SILENCE: bool = False
     ALLOWED_ORIGINS_STR: str = Field(default="*", alias="ALLOWED_ORIGINS")
     LAN_ONLY: bool = True
     LAN_CORS_ORIGIN_REGEX: str = (
@@ -99,7 +100,9 @@ class AppSettings(BaseSettings):
     VLM_ENABLED: bool = True
     VLM_APPRAISAL_INTERVAL: float = 5.0
     VLM_HABITUATION_THRESHOLD: float = 0.005
-    VLM_PROMPT: str = "Describe what you see in this image briefly. Focus on what the user is doing."
+    VLM_PROMPT: str = (
+        "Describe what you see in this image briefly. Focus on what the user is doing."
+    )
 
     STT_MODEL_SIZE: str = "small"
     STT_DEVICE: str = "cpu"

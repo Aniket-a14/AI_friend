@@ -25,9 +25,21 @@ class SQLiteConnection:
                 id TEXT PRIMARY KEY,
                 started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 ended_at TIMESTAMP,
+                trust_benevolence REAL DEFAULT 0.5,
+                trust_competence REAL DEFAULT 0.5,
+                trust_integrity REAL DEFAULT 0.5,
                 metadata TEXT DEFAULT '{}'
             )
         """)
+
+        # Schema migration for existing databases
+        cursor.execute("PRAGMA table_info(sessions)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        for col in ["trust_benevolence", "trust_competence", "trust_integrity"]:
+            if col not in existing_cols:
+                cursor.execute(
+                    f"ALTER TABLE sessions ADD COLUMN {col} REAL DEFAULT 0.5"
+                )
 
         # Messages Table (Consolidated column handles ACT-R processing)
         cursor.execute("""

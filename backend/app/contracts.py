@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from enum import Enum
 
+
 class Topics(str, Enum):
     CHAT_INPUT = "chat.input"
     CHAT_OUTPUT = "chat.output"
@@ -85,7 +86,9 @@ class ChatOutput(BaseModel):
     intensity: float = 0.0
     speaking_rate: float = 1.0
     pause_bias: float = 0.0
-    paralinguistic_tags: List[str] = Field(default_factory=list)  # [laughs], [sighs], etc.
+    paralinguistic_tags: List[str] = Field(
+        default_factory=list
+    )  # [laughs], [sighs], etc.
 
     # Metadata
     timestamp: float = Field(default_factory=time.time)
@@ -113,7 +116,9 @@ class AudioPerception(BaseModel):
     keywords: List[str] = Field(default_factory=list)
     confidence: float = 0.0
     snr: float = 0.0  # Signal-to-Noise Ratio
-    paralinguistic_events: List[str] = Field(default_factory=list) # [laughter], [cough], etc.
+    paralinguistic_events: List[str] = Field(
+        default_factory=list
+    )  # [laughter], [cough], etc.
     speculative_intent: Optional[SpeculativeIntent] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     timestamp: float = 0.0
@@ -129,7 +134,9 @@ class AudioStop(BaseModel):
     reason: Optional[str] = None
     command_text: Optional[str] = None
     intent: Optional[str] = None
-    intent_type: str = "VOICE_INTERRUPTION" # VOICE_INTERRUPTION, VISION_INTERRUPTION, SYSTEM_HALT
+    intent_type: str = (
+        "VOICE_INTERRUPTION"  # VOICE_INTERRUPTION, VISION_INTERRUPTION, SYSTEM_HALT
+    )
     keywords: List[str] = Field(default_factory=list)
     confidence: float = 0.0
     perception_text: Optional[str] = None
@@ -148,6 +155,7 @@ class AudioResume(BaseModel):
 # ─── memory.surfaced ─────────────────────────────────────────
 class MemoryScope(BaseModel):
     """Hierarchical scope for memory items (Wings -> Rooms -> Drawers)."""
+
     wing: str = "personal"
     room: Optional[str] = None
     drawer_id: Optional[str] = None

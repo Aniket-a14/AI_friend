@@ -288,7 +288,7 @@ pub fn compute_vector_delta(v1: Vec<f64>, v2: Vec<f64>) -> f64 {
     }
     // Mean squared difference (MSE) between vectors.
     let sum: f64 = v1.iter().zip(v2.iter()).map(|(a, b)| (a - b).powi(2)).sum();
-    sum.sqrt()
+    sum / v1.len() as f64
 }
 
 #[pymodule]
