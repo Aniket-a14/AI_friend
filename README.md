@@ -212,22 +212,42 @@ Every interaction follows a strictly governed loop through the mesh:
 The agent's emotional state is a 3D coordinate in **PAD Space** (Pleasure, Arousal, Dominance).
 - **Mood Pull**: Emotional events "pull" the current state toward target coordinates.
 - **Logarithmic Decay**: During idle periods, the state drifts back to a neutral baseline following the ALMA formula: $I(t) = I_0 \cdot e^{-\lambda t}$.
-- **Endocrine Modulation**: Current PAD values modulate LLM parameters. For example, high **Arousal** (Stress) reduces LLM `temperature` to produce more focused, rigid responses.
 
-### 2. Memory Activation (ACT-R)
-The Surfacing Agent utilizes the **ACT-R Base-Level Activation** formula to prioritize episodic recall:
-$$A_i = \ln \left( \sum_{j=1}^n t_j^{-d} \right)$$
-- **$d$ (Decay)**: Typically set to `0.5`, simulating human-like forgetting where older, unaccessed memories lose activation.
-- **$n$ (Frequency)**: Strengthens memories that are frequently recalled or accessed.
+### 2. Neuromodulatory Memory Gating (CVS-3.0)
+Semantic memory search incorporating dynamic physiological bias gates memory retrieval based on emotional relevance:
+$$S_i = \text{CosineSimilarity} \cdot (1 + 0.1 \cdot \text{valence} \cdot \text{emotional\_weight} - 0.2 \cdot \text{arousal} \cdot \text{cortisol})$$
+* **Positive reinforcement**:valence $\cdot$ emotional_weight increases matching scores for positive memories.
+* **Stress inhibition**:arousal $\cdot$ cortisol suppresses high-stress memories during hyper-arousal, avoiding repetitive trauma loops.
 
-### 3. Relational Trust (Marsh Model)
-Trust evolves as a function of interaction outcomes and perceived agent reliability:
-$$T_{new} = \text{clamp}(T_{old} + \delta \cdot RI, 0, 1)$$
-Where $RI$ is the **Relationship Impact** derived from the Appraisal Engine.
+### 3. Dimensional Trust Matrix (Marsh Model - CVS-3.0)
+The agent's trust model deconstructs the legacy trust scalar into three distinct sub-dimensions:
+1. **Benevolence** ($T_b$): Direct relationship warmth, modulated by Relationship Impact ($RI$).
+2. **Competence** ($T_c$): Pragmatic task capability, modulated by Goal Congruence ($G$) and Relevance ($R$).
+3. **Integrity** ($T_i$): Moral/ethical alignments, modulated by Norm Alignment ($NA$).
 
-### 4. Decision Utility (MAUT)
-The Decision Service uses **Multi-Attribute Utility Theory** to score intent candidates:
-$$U(Intent) = w_{goal} \cdot G + w_{emotion} \cdot E + w_{identity} \cdot I + w_{context} \cdot C$$
+The overall trust score returned for backward compatibility is:
+$$\text{trust} = \frac{T_b + T_c + T_i}{3.0}$$
+
+Appraisal-driven trust evolution updates individual sub-dimensions:
+* $T_b \leftarrow \text{clamp}(T_b + \delta \cdot RI)$
+* $T_c \leftarrow \text{clamp}(T_c + \delta \cdot (0.6 \cdot G + 0.4 \cdot R))$
+* $T_i \leftarrow \text{clamp}(T_i + \delta \cdot NA)$
+
+### 4. Memory Activation & ACT-R Pruning (CVS-3.0)
+The subconscious memory agent runs background reflection sweeps after 5 minutes of user silence to apply ACT-R base activation decay:
+$$A_i = \ln(\text{recall\_count}) - d \cdot \ln(\text{hours\_since\_created} + 1)$$
+* **ACT-R Pruning**: Memories where base activation falls below the retention threshold ($A_i < -2.0$) are permanently pruned from local SQLite/PostgreSQL stores.
+* **Decay**: Surviving memories have their importance scores scaled by `0.8` on each consolidation tick.
+
+### 5. Endocrine LLM Parameter Modulation (CVS-3.0)
+Action execution dynamically modulates Ollama inference parameters independently:
+* **Cortisol (Stress)**: Controls `temperature` ($0.9 - 0.6 \cdot \text{cortisol}$).
+* **Dopamine (Reward)**: Controls exploration `top_p` ($0.70 + 0.25 \cdot \text{dopamine}$).
+* **Fatigue**: Truncates response length `num_predict` ($40 - 25 \cdot \text{fatigue}$ tokens, strictly bounded in $[15, 40]$).
+
+### 6. Decision Utility (MAUT)
+The Decision Service uses Multi-Attribute Utility Theory to score intent candidates:
+$$U(\text{Intent}) = w_{\text{goal}} \cdot G + w_{\text{emotion}} \cdot E + w_{\text{identity}} \cdot I + w_{\text{context}} \cdot C$$
 
 ---
 

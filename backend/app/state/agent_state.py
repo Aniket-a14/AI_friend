@@ -36,7 +36,9 @@ class AgentState:
     dominance: float = 0.5  # D (Dominance): 0.0 to 1.0 — NEW
 
     # Relational Dimensions
-    trust: float = 0.5  # T (Marsh, 1994): 0.0 to 1.0
+    trust_benevolence: float = 0.5  # Tb (Marsh): 0.0 to 1.0
+    trust_competence: float = 0.5  # Tc (Marsh): 0.0 to 1.0
+    trust_integrity: float = 0.5  # Ti (Marsh): 0.0 to 1.0
     attachment: float = 0.1  # At (Bowlby): 0.0 to 1.0
 
     # Interaction Tracking
@@ -65,6 +67,19 @@ class AgentState:
     @arousal.setter
     def arousal(self, value: float):
         self.energy = value
+
+    @property
+    def trust(self) -> float:
+        """PAD Trust (T) — maps to average of Benevolence, Competence, and Integrity."""
+        return (
+            self.trust_benevolence + self.trust_competence + self.trust_integrity
+        ) / 3.0
+
+    @trust.setter
+    def trust(self, value: float):
+        self.trust_benevolence = value
+        self.trust_competence = value
+        self.trust_integrity = value
 
     # --- Endocrine Hormonal Properties (Tier-5 Physiological Control) ---
     @property
@@ -135,7 +150,18 @@ class StateService:
             self.current_state.mood = props.get("mood", 0.0)
             self.current_state.energy = props.get("energy", 0.5)
             self.current_state.dominance = props.get("dominance", 0.5)
-            self.current_state.trust = props.get("trust", 0.5)
+
+            # Dimensional trust hydration with legacy fallback
+            self.current_state.trust_benevolence = props.get(
+                "trust_benevolence", props.get("trust", 0.5)
+            )
+            self.current_state.trust_competence = props.get(
+                "trust_competence", props.get("trust", 0.5)
+            )
+            self.current_state.trust_integrity = props.get(
+                "trust_integrity", props.get("trust", 0.5)
+            )
+
             self.current_state.attachment = props.get("attachment", 0.1)
             self.current_state.fatigue = props.get("fatigue", 0.0)
             self.current_state.last_user_interaction = props.get(
@@ -153,6 +179,9 @@ class StateService:
         SET a.mood = $mood,
             a.energy = $energy,
             a.dominance = $dominance,
+            a.trust_benevolence = $trust_benevolence,
+            a.trust_competence = $trust_competence,
+            a.trust_integrity = $trust_integrity,
             a.trust = $trust,
             a.attachment = $attachment,
             a.fatigue = $fatigue,
@@ -165,6 +194,9 @@ class StateService:
             "mood": self.current_state.mood,
             "energy": self.current_state.energy,
             "dominance": self.current_state.dominance,
+            "trust_benevolence": self.current_state.trust_benevolence,
+            "trust_competence": self.current_state.trust_competence,
+            "trust_integrity": self.current_state.trust_integrity,
             "trust": self.current_state.trust,
             "attachment": self.current_state.attachment,
             "fatigue": self.current_state.fatigue,
@@ -210,8 +242,18 @@ class StateService:
         ) * self.current_state.dominance + self.gamma * (0.6 * A + 0.4 * NA)
 
         # Relational updates (§2.3)
-        self.current_state.trust = max(
-            0.0, min(1.0, self.current_state.trust + self.delta * RI)
+        self.current_state.trust_benevolence = max(
+            0.0, min(1.0, self.current_state.trust_benevolence + self.delta * RI)
+        )
+        self.current_state.trust_competence = max(
+            0.0,
+            min(
+                1.0,
+                self.current_state.trust_competence + self.delta * (0.6 * G + 0.4 * R),
+            ),
+        )
+        self.current_state.trust_integrity = max(
+            0.0, min(1.0, self.current_state.trust_integrity + self.delta * NA)
         )
         self.current_state.interaction_count += 1
         freq = min(1.0, self.current_state.interaction_count / 100.0)
@@ -339,8 +381,12 @@ class StateService:
         )
         # Dominance does NOT decay — it's trait-like (Mehrabian)
 
-        trust_drift = (self.trust_baseline - self.current_state.trust) * 0.01
-        self.current_state.trust += trust_drift
+        tb_drift = (self.trust_baseline - self.current_state.trust_benevolence) * 0.01
+        tc_drift = (self.trust_baseline - self.current_state.trust_competence) * 0.01
+        ti_drift = (self.trust_baseline - self.current_state.trust_integrity) * 0.01
+        self.current_state.trust_benevolence += tb_drift
+        self.current_state.trust_competence += tc_drift
+        self.current_state.trust_integrity += ti_drift
 
         self.current_state.last_update = datetime.fromtimestamp(now)
         self._enforce_bounds()
@@ -405,7 +451,15 @@ class StateService:
         self.current_state.mood = max(-1.0, min(1.0, self.current_state.mood))
         self.current_state.energy = max(0.0, min(1.0, self.current_state.energy))
         self.current_state.dominance = max(0.0, min(1.0, self.current_state.dominance))
-        self.current_state.trust = max(0.0, min(1.0, self.current_state.trust))
+        self.current_state.trust_benevolence = max(
+            0.0, min(1.0, self.current_state.trust_benevolence)
+        )
+        self.current_state.trust_competence = max(
+            0.0, min(1.0, self.current_state.trust_competence)
+        )
+        self.current_state.trust_integrity = max(
+            0.0, min(1.0, self.current_state.trust_integrity)
+        )
         self.current_state.attachment = max(
             0.0, min(1.0, self.current_state.attachment)
         )
@@ -418,6 +472,9 @@ class StateService:
             "energy": self.current_state.energy,
             "dominance": self.current_state.dominance,
             "trust": self.current_state.trust,
+            "trust_benevolence": self.current_state.trust_benevolence,
+            "trust_competence": self.current_state.trust_competence,
+            "trust_integrity": self.current_state.trust_integrity,
             "attachment": self.current_state.attachment,
             "interaction_count": self.current_state.interaction_count,
             "active_goals": self.current_state.active_goals,
@@ -495,13 +552,11 @@ class StateService:
         k_drain = 0.15
         k_restore = 0.20
         if is_idle:
-            next_fatigue = (
-                self.current_state.fatigue
-                - (k_restore * dt_hours / circadian_multiplier)
+            next_fatigue = self.current_state.fatigue - (
+                k_restore * dt_hours / circadian_multiplier
             )
         else:
-            next_fatigue = (
-                self.current_state.fatigue
-                + (k_drain * dt_hours * circadian_multiplier)
+            next_fatigue = self.current_state.fatigue + (
+                k_drain * dt_hours * circadian_multiplier
             )
         self.current_state.fatigue = max(0.0, min(1.0, next_fatigue))

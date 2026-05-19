@@ -56,7 +56,9 @@ class MemoryStore:
     @property
     def is_sqlite(self) -> bool:
         """Heuristic check to determine if the backing pool uses the Mock SQLite adaptor."""
-        return type(self.pool).__name__ == "MockPGPool" or hasattr(self.pool, "connection")
+        return type(self.pool).__name__ == "MockPGPool" or hasattr(
+            self.pool, "connection"
+        )
 
     async def get_embedding(self, text: str):
         """Generates vector embedding for text using local Ollama."""
@@ -159,10 +161,12 @@ class MemoryStore:
         refresh_on_recall=True,
         exclude_contents: Iterable[str] = None,
         current_valence: float = 0.0,
+        current_arousal: float = 0.5,
+        current_cortisol: float = 0.0,
     ):
         """
-        ACT-R Based Retrieval with Hierarchical Scoping:
-            Score = Bᵢ + w_spread·Similarity + w_emotion·EmotionalAlignment
+        ACT-R Based Retrieval with Hierarchical Scoping & Neuromodulatory Gating:
+            Score = Bᵢ + w_spread·Similarity_eff + w_emotion·EmotionalAlignment
 
         Filters results by 'wing' and optionally 'room' before scoring.
         """
@@ -174,7 +178,9 @@ class MemoryStore:
             threshold,
             limit,
             current_valence,
-            tuple(sorted(exclude_contents or []))
+            current_arousal,
+            current_cortisol,
+            tuple(sorted(exclude_contents or [])),
         )
         now_ts = time.time()
         if cache_key in self._l1_cache:
@@ -191,6 +197,7 @@ class MemoryStore:
             excluded = {content for content in (exclude_contents or []) if content}
 
             is_sqlite = type(self.pool).__name__ == "MockPGPool"
+            w = max(0.0, min(0.7, current_cortisol * 0.4 + current_arousal * 0.2))
 
             results = []
             async with self.pool.acquire() as conn:
@@ -199,33 +206,35 @@ class MemoryStore:
                     if room is not None:
                         rows = await conn.fetch(
                             "SELECT * FROM memories WHERE wing = ? AND room = ?",
-                            wing, room
+                            wing,
+                            room,
                         )
                     else:
                         rows = await conn.fetch(
-                            "SELECT * FROM memories WHERE wing = ?",
-                            wing
+                            "SELECT * FROM memories WHERE wing = ?", wing
                         )
-                    
+
                     # Manual cosine similarity and ACT-R scoring
                     for row in rows:
                         if row["content"] in excluded:
                             continue
-                            
+
                         # Parse embedding vector
                         try:
                             emb_str = row.get("embedding")
                             if isinstance(emb_str, str):
                                 # Strip brackets and split
                                 emb_str = emb_str.strip("[]")
-                                emb_val = [float(x) for x in emb_str.split(",") if x.strip()]
+                                emb_val = [
+                                    float(x) for x in emb_str.split(",") if x.strip()
+                                ]
                             elif isinstance(emb_str, list):
                                 emb_val = emb_str
                             else:
                                 emb_val = []
                         except Exception:
                             emb_val = []
-                            
+
                         if len(emb_val) == len(query_vector) and len(query_vector) > 0:
                             # Dot product
                             dot = sum(x * y for x, y in zip(query_vector, emb_val))
@@ -233,10 +242,11 @@ class MemoryStore:
                             mag2 = math.sqrt(sum(x * x for x in emb_val))
                             similarity = dot / (mag1 * mag2) if mag1 * mag2 > 0 else 0.0
                         else:
-                            similarity = 0.5 # default similarity fallback
-                            
+                            similarity = 0.5  # default similarity fallback
+
                         last_recall = row.get("last_recalled_at")
                         from datetime import datetime
+
                         now = datetime.now(timezone.utc)
 
                         if last_recall is None:
@@ -246,24 +256,41 @@ class MemoryStore:
                                 last_recall = datetime.fromisoformat(last_recall)
                             except Exception:
                                 last_recall = now
-                        
+
                         if last_recall.tzinfo is None:
                             last_recall = last_recall.replace(tzinfo=timezone.utc)
 
-                        hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
+                        hours_since = max(
+                            0.001, (now - last_recall).total_seconds() / 3600.0
+                        )
                         recall_count = max(1, row.get("recall_count") or 1)
 
-                        base_activation = _cached_ln(recall_count) - self.decay_rate * _cached_ln(hours_since + 1)
-                        spread_activation = self.spread_weight * similarity
+                        base_activation = _cached_ln(
+                            recall_count
+                        ) - self.decay_rate * _cached_ln(hours_since + 1)
+
+                        cosine_dist = 1.0 - similarity
                         memory_valence = row.get("valence") or 0.0
                         emotion_weight_row = row.get("emotional_weight") or 0.0
+
+                        # Neuromodulatory distance mapping
+                        emotional_dist = math.sqrt(
+                            (current_valence - memory_valence) ** 2
+                            + (current_arousal - emotion_weight_row) ** 2
+                        )
+                        effective_dist = cosine_dist * (1.0 - w) + w * emotional_dist
+                        effective_similarity = 1.0 - effective_dist
+
+                        spread_activation = self.spread_weight * effective_similarity
                         alignment = math.exp(-abs(memory_valence - current_valence))
-                        emotion_boost = self.emotion_weight * emotion_weight_row * alignment
+                        emotion_boost = (
+                            self.emotion_weight * emotion_weight_row * alignment
+                        )
                         score = base_activation + spread_activation + emotion_boost
-                        
+
                         if score <= threshold:
                             continue
-                            
+
                         created = row.get("created_at")
                         if isinstance(created, str):
                             try:
@@ -328,29 +355,46 @@ class MemoryStore:
                         if row["content"] in excluded:
                             continue
 
-                        score = row.get("score")
                         similarity = row.get("similarity") or 0.0
                         recall_count = max(1, row.get("recall_count") or 1)
 
-                        if score is None:
-                            last_recall = row.get("last_recalled_at")
-                            from datetime import datetime
-                            now = datetime.now(timezone.utc)
+                        # Recalculate score with neuromodulatory gating
+                        last_recall = row.get("last_recalled_at")
+                        from datetime import datetime
 
-                            if last_recall is None:
-                                last_recall = now
-                            elif last_recall.tzinfo is None:
-                                last_recall = last_recall.replace(tzinfo=timezone.utc)
+                        now = datetime.now(timezone.utc)
 
-                            hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
+                        if last_recall is None:
+                            last_recall = now
+                        elif last_recall.tzinfo is None:
+                            last_recall = last_recall.replace(tzinfo=timezone.utc)
 
-                            base_activation = _cached_ln(recall_count) - self.decay_rate * _cached_ln(hours_since + 1)
-                            spread_activation = self.spread_weight * similarity
-                            memory_valence = row.get("valence") or 0.0
-                            emotion_weight_row = row.get("emotional_weight") or 0.0
-                            alignment = math.exp(-abs(memory_valence - current_valence))
-                            emotion_boost = self.emotion_weight * emotion_weight_row * alignment
-                            score = base_activation + spread_activation + emotion_boost
+                        hours_since = max(
+                            0.001, (now - last_recall).total_seconds() / 3600.0
+                        )
+
+                        base_activation = _cached_ln(
+                            recall_count
+                        ) - self.decay_rate * _cached_ln(hours_since + 1)
+
+                        cosine_dist = 1.0 - similarity
+                        memory_valence = row.get("valence") or 0.0
+                        emotion_weight_row = row.get("emotional_weight") or 0.0
+
+                        # Neuromodulatory distance mapping
+                        emotional_dist = math.sqrt(
+                            (current_valence - memory_valence) ** 2
+                            + (current_arousal - emotion_weight_row) ** 2
+                        )
+                        effective_dist = cosine_dist * (1.0 - w) + w * emotional_dist
+                        effective_similarity = 1.0 - effective_dist
+
+                        spread_activation = self.spread_weight * effective_similarity
+                        alignment = math.exp(-abs(memory_valence - current_valence))
+                        emotion_boost = (
+                            self.emotion_weight * emotion_weight_row * alignment
+                        )
+                        score = base_activation + spread_activation + emotion_boost
 
                         if score <= threshold:
                             continue
@@ -446,18 +490,18 @@ class MemoryStore:
             logger.error(f"Failed to refresh memories: {e}")
 
     async def get_recent_unconsolidated_episodes(self, limit: int = 10):
-        """Fetches recent user and assistant dialogue entries from messages for consolidation."""
+        """Fetches recent user and assistant dialogue entries from messages for consolidation within 24 hours."""
         try:
             async with self.pool.acquire() as conn:
                 if self.is_sqlite:
                     rows = await conn.fetch(
-                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = 0 AND role IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT ?",
-                        limit
+                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = 0 AND role IN ('user', 'assistant') AND timestamp >= datetime('now', '-24 hours') ORDER BY timestamp DESC LIMIT ?",
+                        limit,
                     )
                 else:
                     rows = await conn.fetch(
-                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = FALSE AND role IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT $1",
-                        limit
+                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = FALSE AND role IN ('user', 'assistant') AND timestamp >= NOW() - INTERVAL '24 hours' ORDER BY timestamp DESC LIMIT $1",
+                        limit,
                     )
                 return rows
         except Exception as e:
@@ -474,40 +518,144 @@ class MemoryStore:
                     placeholders = ",".join("?" for _ in message_ids)
                     await conn.execute(
                         f"UPDATE messages SET consolidated = 1 WHERE id IN ({placeholders})",
-                        *message_ids
+                        *message_ids,
                     )
                 else:
                     await conn.execute(
                         "UPDATE messages SET consolidated = TRUE WHERE id = ANY($1)",
-                        message_ids
+                        message_ids,
                     )
         except Exception as e:
             logger.error(f"Failed to mark episodes consolidated: {e}")
 
     async def apply_actr_decay(self, memory_contents: list[str]):
         """Decays the importance score of consolidated raw episodic memories using ACT-R feedback."""
+        from datetime import datetime
+        import json
+
         try:
             if not memory_contents:
                 return
-            
+
             # Deduplicate memory contents to prevent repeated decay updates in SQLite loop
             unique_contents = list(dict.fromkeys(memory_contents))
-            
+
             async with self.pool.acquire() as conn:
+                # 1. Fetch matching memories
                 if self.is_sqlite:
-                    for content in unique_contents:
-                        await conn.execute(
-                            "UPDATE memories SET importance_score = importance_score * 0.5 WHERE content = ?",
-                            content
-                        )
-                else:
-                    await conn.execute(
-                        "UPDATE memories SET importance_score = importance_score * 0.5 WHERE content = ANY($1)",
-                        unique_contents
+                    placeholders = ",".join("?" for _ in unique_contents)
+                    rows = await conn.fetch(
+                        f"SELECT id, content, recall_count, created_at, metadata, importance_score FROM memories WHERE content IN ({placeholders})",
+                        *unique_contents,
                     )
-            logger.info(f"📉 Decayed base importance scores for {len(unique_contents)} memories.")
+                else:
+                    rows = await conn.fetch(
+                        "SELECT id, content, recall_count, created_at, metadata, importance_score FROM memories WHERE content = ANY($1)",
+                        unique_contents,
+                    )
+
+                if not rows:
+                    return
+
+                to_delete = []
+                to_update = []
+
+                for row in rows:
+                    mem_id = row.get("id")
+                    recall_count = row.get("recall_count")
+                    created_at = row.get("created_at")
+                    metadata = row.get("metadata")
+                    importance_score = row.get("importance_score") or 0.5
+
+                    # Fallbacks
+                    n_recalls = max(1, recall_count if recall_count is not None else 1)
+
+                    # Parse created_at safely
+                    if not created_at:
+                        created_at = datetime.now()
+
+                    if isinstance(created_at, str):
+                        for fmt in (
+                            "%Y-%m-%d %H:%M:%S",
+                            "%Y-%m-%dT%H:%M:%S",
+                            "%Y-%m-%d %H:%M:%S.%f",
+                            "%Y-%m-%dT%H:%M:%S.%f",
+                        ):
+                            try:
+                                dt = datetime.strptime(created_at.split("+")[0], fmt)
+                                break
+                            except ValueError:
+                                continue
+                        else:
+                            dt = datetime.now()
+                    else:
+                        dt = created_at
+
+                    # Calculate hours since creation
+                    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+                    delta = now - dt
+                    hours_since = max(0.0, delta.total_seconds() / 3600.0)
+
+                    # Extract decay_rate from metadata if possible
+                    meta = {}
+                    if isinstance(metadata, str):
+                        try:
+                            meta = json.loads(metadata)
+                        except Exception:
+                            pass
+                    elif isinstance(metadata, dict):
+                        meta = metadata
+
+                    decay_rate = float(meta.get("decay_rate", 0.5)) if meta else 0.5
+
+                    # Calculate base activation: A_i = ln(recall_count) - d * ln(hours_since + 1)
+                    activation = math.log(n_recalls) - decay_rate * math.log(
+                        hours_since + 1.0
+                    )
+
+                    if activation < -2.0:
+                        to_delete.append(mem_id)
+                    else:
+                        # Decay importance score slightly
+                        new_importance = max(0.01, importance_score * 0.8)
+                        to_update.append((new_importance, mem_id))
+
+                # 2. Execute Deletions and Updates
+                if to_delete:
+                    if self.is_sqlite:
+                        placeholders = ",".join("?" for _ in to_delete)
+                        await conn.execute(
+                            f"DELETE FROM memories WHERE id IN ({placeholders})",
+                            *to_delete,
+                        )
+                    else:
+                        await conn.execute(
+                            "DELETE FROM memories WHERE id = ANY($1)", to_delete
+                        )
+                    logger.info(
+                        f"🗑️ Pruned {len(to_delete)} memories with base activation below -2.0."
+                    )
+
+                if to_update:
+                    if self.is_sqlite:
+                        for importance, mem_id in to_update:
+                            await conn.execute(
+                                "UPDATE memories SET importance_score = ? WHERE id = ?",
+                                importance,
+                                mem_id,
+                            )
+                    else:
+                        # Batch update for PostgreSQL
+                        await conn.executemany(
+                            "UPDATE memories SET importance_score = $1 WHERE id = $2",
+                            to_update,
+                        )
+
+            logger.info(
+                f"📉 Checked and decayed {len(rows)} memories (pruned: {len(to_delete)})."
+            )
         except Exception as e:
-            logger.error(f"Failed to decay memories: {e}")
+            logger.error(f"Failed to apply ACT-R decay pruning: {e}")
 
     async def close(self):
         """Close the persistent HTTP client."""

@@ -16,7 +16,9 @@ def test_record_ignores_untracked_subject():
 
 
 def test_record_accumulates_count_and_latency(caplog):
-    metrics = SubjectMetrics(tracked_subjects={"chat.input"}, log_every=2, tag="TestMetrics")
+    metrics = SubjectMetrics(
+        tracked_subjects={"chat.input"}, log_every=2, tag="TestMetrics"
+    )
     try:
         with caplog.at_level(logging.INFO):
             metrics.record("chat.input", direction="rx", latency_ms=15.0)
@@ -32,7 +34,10 @@ def test_record_accumulates_count_and_latency(caplog):
         assert metrics._metrics[key]["count"] == 2.0
         assert metrics._metrics[key]["latency_samples"] == 2.0
         assert metrics._metrics[key]["latency_total_ms"] >= 15.0
-        assert any("[TestMetrics][rx] subject=chat.input count=2" in r.message for r in caplog.records)
+        assert any(
+            "[TestMetrics][rx] subject=chat.input count=2" in r.message
+            for r in caplog.records
+        )
     finally:
         metrics.shutdown()
 
@@ -40,7 +45,9 @@ def test_record_accumulates_count_and_latency(caplog):
 def test_record_ignores_invalid_metadata():
     metrics = SubjectMetrics(tracked_subjects={"chat.input"})
     try:
-        metrics.record("chat.input", data={"latency_metadata": {"start_time": "not-a-number"}})
+        metrics.record(
+            "chat.input", data={"latency_metadata": {"start_time": "not-a-number"}}
+        )
         metrics._queue.join()
 
         key = "rx:chat.input"

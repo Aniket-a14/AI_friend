@@ -25,68 +25,81 @@ if backend_dir not in sys.path:
 # 📦 HIGH-FIDELITY IN-MEMORY NATS SIMULATOR
 # =====================================================================
 
+
 class MockJSM:
     async def add_stream(self, name, subjects):
         return None
+
     async def stream_info(self, name):
         # Return a mock object with config.subjects
         class MockConfig:
             def __init__(self):
                 self.subjects = []
+
         class MockInfo:
             def __init__(self):
                 self.config = MockConfig()
+
         return MockInfo()
+
     async def update_stream(self, config):
         return None
+
 
 class MockMessage:
     def __init__(self, subject, data, headers=None):
         self.subject = subject
         self.data = data
         self.headers = headers
+
     async def ack(self):
         pass
+
     async def nak(self):
         pass
+
 
 class MockJetStream:
     def __init__(self, connection):
         self.connection = connection
-        
+
     async def publish(self, subject, data, headers=None):
         self.connection._trigger(subject, data, headers)
         await self.connection.drain()
         return None
-        
+
     async def subscribe(self, subject, cb, durable=None, **kwargs):
         self.connection._subscribe(subject, cb)
         return None
+
 
 class MockNATSConnection:
     def __init__(self):
         self.subscribers = {}
         self._js = MockJetStream(self)
         self.pending_tasks = set()
-        
+
     def jetstream(self):
         return self._js
-        
+
     def jsm(self):
         return MockJSM()
-        
+
     def _subscribe(self, subject, cb):
         self.subscribers.setdefault(subject, []).append(cb)
-        
+
     def _trigger(self, subject, data, headers=None):
         async def run_callback(cb, msg):
             try:
                 await cb(msg)
             except Exception as e:
                 import logging
-                logging.getLogger("MockNATS").error(f"Subscriber callback failed: {e}", exc_info=True)
+
+                logging.getLogger("MockNATS").error(
+                    f"Subscriber callback failed: {e}", exc_info=True
+                )
                 raise
-        
+
         msg = MockMessage(subject, data, headers)
         for sub_subj, callbacks in self.subscribers.items():
             matched = False
@@ -94,17 +107,20 @@ class MockNATSConnection:
                 matched = True
             elif sub_subj.endswith(".>") and subject.startswith(sub_subj[:-1]):
                 matched = True
-            elif sub_subj.endswith(".*") and subject.split(".")[:-1] == sub_subj.split(".")[:-1]:
+            elif (
+                sub_subj.endswith(".*")
+                and subject.split(".")[:-1] == sub_subj.split(".")[:-1]
+            ):
                 matched = True
             elif sub_subj == ">":
                 matched = True
-                
+
             if matched:
                 for cb in callbacks:
                     task = asyncio.create_task(run_callback(cb, msg))
                     self.pending_tasks.add(task)
                     task.add_done_callback(self.pending_tasks.discard)
-                    
+
     async def drain(self):
         if self.pending_tasks:
             # Gather all pending subscriber tasks to ensure deterministic completion
@@ -113,38 +129,61 @@ class MockNATSConnection:
     async def close(self):
         await self.drain()
 
+
 # Create mock module objects for nats and its submodules
 nats_module = types.ModuleType("nats")
+
+
 async def mock_connect(nats_url, **kwargs):
     return MockNATSConnection()
+
+
 nats_module.connect = mock_connect
 
 nats_errors_module = types.ModuleType("nats.errors")
+
+
 class NoRespondersError(Exception):
     pass
+
+
 class TimeoutError(Exception):
     pass
+
+
 nats_errors_module.NoRespondersError = NoRespondersError
 nats_errors_module.TimeoutError = TimeoutError
 
 nats_js_module = types.ModuleType("nats.js")
 
 nats_js_errors_module = types.ModuleType("nats.js.errors")
+
+
 class BadRequestError(Exception):
     pass
+
+
 class ServiceUnavailableError(Exception):
     pass
+
+
 class NotFoundError(Exception):
     pass
+
+
 nats_js_errors_module.BadRequestError = BadRequestError
 nats_js_errors_module.ServiceUnavailableError = ServiceUnavailableError
 nats_js_errors_module.NotFoundError = NotFoundError
 
 nats_js_api_module = types.ModuleType("nats.js.api")
+
+
 class DeliverPolicy:
     ALL = "all"
     LAST = "last"
     NEW = "new"
+
+
 nats_js_api_module.DeliverPolicy = DeliverPolicy
 
 # Register them in sys.modules to satisfy python's package import system
@@ -158,6 +197,7 @@ sys.modules["nats.js.api"] = nats_js_api_module
 # =====================================================================
 # 🗄️ IN-MEMORY SQLITE-BACKED ASYNCPG MOCK
 # =====================================================================
+
 
 class SQLiteConnection:
     def __init__(self):
@@ -198,21 +238,28 @@ class SQLiteConnection:
 
     def _translate_query(self, query: str):
         # 1. Translate PostgreSQL $1, $2 placeholders to SQLite ?
-        translated = re.sub(r'\$\d+', '?', query)
+        translated = re.sub(r"\$\d+", "?", query)
         # 2. Replace NOW() with CURRENT_TIMESTAMP
-        translated = re.sub(r'\bNOW\(\)', 'CURRENT_TIMESTAMP', translated, flags=re.IGNORECASE)
+        translated = re.sub(
+            r"\bNOW\(\)", "CURRENT_TIMESTAMP", translated, flags=re.IGNORECASE
+        )
         # 3. Translate PostgreSQL ON CONFLICT DO UPDATE to SQLite INSERT OR REPLACE INTO generically
         if "ON CONFLICT" in translated.upper():
             # Strip everything starting from ON CONFLICT
-            parts = re.split(r'\bON\s+CONFLICT\b', translated, flags=re.IGNORECASE)
+            parts = re.split(r"\bON\s+CONFLICT\b", translated, flags=re.IGNORECASE)
             base_query = parts[0].strip()
             # Replace INSERT INTO with INSERT OR REPLACE INTO
-            translated = re.sub(r'\bINSERT\s+INTO\b', 'INSERT OR REPLACE INTO', base_query, flags=re.IGNORECASE)
+            translated = re.sub(
+                r"\bINSERT\s+INTO\b",
+                "INSERT OR REPLACE INTO",
+                base_query,
+                flags=re.IGNORECASE,
+            )
         return translated
 
     async def execute(self, query, *args):
         translated = self._translate_query(query)
-        cleaned_args = [str(arg) if hasattr(arg, 'hex') else arg for arg in args]
+        cleaned_args = [str(arg) if hasattr(arg, "hex") else arg for arg in args]
         cursor = self.conn.cursor()
         cursor.execute(translated, cleaned_args)
         self.conn.commit()
@@ -220,7 +267,7 @@ class SQLiteConnection:
 
     async def fetch(self, query, *args):
         translated = self._translate_query(query)
-        cleaned_args = [str(arg) if hasattr(arg, 'hex') else arg for arg in args]
+        cleaned_args = [str(arg) if hasattr(arg, "hex") else arg for arg in args]
         cursor = self.conn.cursor()
         cursor.execute(translated, cleaned_args)
         rows = cursor.fetchall()
@@ -228,7 +275,7 @@ class SQLiteConnection:
 
     async def fetchrow(self, query, *args):
         translated = self._translate_query(query)
-        cleaned_args = [str(arg) if hasattr(arg, 'hex') else arg for arg in args]
+        cleaned_args = [str(arg) if hasattr(arg, "hex") else arg for arg in args]
         cursor = self.conn.cursor()
         cursor.execute(translated, cleaned_args)
         row = cursor.fetchone()
@@ -236,11 +283,12 @@ class SQLiteConnection:
 
     async def fetchval(self, query, *args):
         translated = self._translate_query(query)
-        cleaned_args = [str(arg) if hasattr(arg, 'hex') else arg for arg in args]
+        cleaned_args = [str(arg) if hasattr(arg, "hex") else arg for arg in args]
         cursor = self.conn.cursor()
         cursor.execute(translated, cleaned_args)
         row = cursor.fetchone()
         return row[0] if row else None
+
 
 class MockPoolAcquisition:
     def __init__(self, connection):
@@ -252,6 +300,7 @@ class MockPoolAcquisition:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         pass
 
+
 class MockPGPool:
     def __init__(self):
         self.connection = SQLiteConnection()
@@ -262,11 +311,14 @@ class MockPGPool:
     async def close(self):
         pass
 
+
 # Intercept and stub asyncpg library
 class MockAsyncPG:
     Pool = MockPGPool
+
     async def create_pool(self, dsn=None, **kwargs):
         return MockPGPool()
+
 
 sys.modules["asyncpg"] = MockAsyncPG()
 
@@ -274,6 +326,7 @@ sys.modules["asyncpg"] = MockAsyncPG()
 # =====================================================================
 # 🛠️ STANDARD PYTEST CONFIGURATION & FIXTURES
 # =====================================================================
+
 
 def pytest_configure(config):
     """Dynamically enable benchmark-autosave if pytest-benchmark is installed.

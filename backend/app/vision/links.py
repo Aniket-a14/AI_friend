@@ -21,7 +21,9 @@ class ScreenLink:
 
     def __init__(self):
         if mss is None:
-            logger.warning("[Vision] mss dependency is missing. Running in headless mode.")
+            logger.warning(
+                "[Vision] mss dependency is missing. Running in headless mode."
+            )
             self.sct = None
             self.monitor = None
             self.headless = True
@@ -75,7 +77,9 @@ class CameraLink:
     def __init__(self):
         self.cap = None
         if cv2 is None:
-            logger.warning("[Vision] cv2 dependency is missing. Camera capture disabled.")
+            logger.warning(
+                "[Vision] cv2 dependency is missing. Camera capture disabled."
+            )
 
     def _compress_frame(self, frame: np.ndarray) -> Optional[bytes]:
         if frame is None or cv2 is None:

@@ -69,6 +69,24 @@ class ConversationHistoryStore:
             # Use statement_cache_size=0 for pgbouncer compatibility
             self.pool = await asyncpg.create_pool(dsn=self.dsn, statement_cache_size=0)
             logger.info("Connected to Database via asyncpg.")
+
+            # Run schema migration for sessions table in PostgreSQL
+            try:
+                async with self.pool.acquire() as conn:
+                    await conn.execute(
+                        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS trust_benevolence double precision default 0.5"
+                    )
+                    await conn.execute(
+                        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS trust_competence double precision default 0.5"
+                    )
+                    await conn.execute(
+                        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS trust_integrity double precision default 0.5"
+                    )
+            except Exception as migration_err:
+                logger.warning(
+                    f"PostgreSQL sessions schema migration skipped/failed: {migration_err}"
+                )
+
             await self._ensure_config_exists()
 
         except Exception as e:
@@ -202,7 +220,12 @@ class ConversationHistoryStore:
         except Exception as e:
             logger.error(f"Failed to update agent config: {e}")
 
-    async def start_session(self) -> uuid.UUID:
+    async def start_session(
+        self,
+        trust_benevolence: float = 0.5,
+        trust_competence: float = 0.5,
+        trust_integrity: float = 0.5,
+    ) -> uuid.UUID:
         """Start a new session and return its ID."""
         if not self.pool:
             self.current_session_id = uuid.uuid4()
@@ -212,8 +235,14 @@ class ConversationHistoryStore:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "INSERT INTO sessions (id, started_at) VALUES ($1, NOW())",
+                    """
+                    INSERT INTO sessions (id, started_at, trust_benevolence, trust_competence, trust_integrity)
+                    VALUES ($1, NOW(), $2, $3, $4)
+                    """,
                     self.current_session_id,
+                    trust_benevolence,
+                    trust_competence,
+                    trust_integrity,
                 )
             logger.info(f"Started new session: {self.current_session_id}")
             return self.current_session_id
@@ -369,7 +398,12 @@ class ConversationHistoryStore:
             logger.error(f"Failed to fetch last interaction: {e}")
             return None
 
-    async def end_session(self):
+    async def end_session(
+        self,
+        trust_benevolence: float = 0.5,
+        trust_competence: float = 0.5,
+        trust_integrity: float = 0.5,
+    ):
         """End the current session."""
         if not self.pool or not self.current_session_id:
             return
@@ -377,8 +411,18 @@ class ConversationHistoryStore:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "UPDATE sessions SET ended_at = NOW() WHERE id = $1",
+                    """
+                    UPDATE sessions 
+                    SET ended_at = NOW(), 
+                        trust_benevolence = $2, 
+                        trust_competence = $3, 
+                        trust_integrity = $4 
+                    WHERE id = $1
+                    """,
                     self.current_session_id,
+                    trust_benevolence,
+                    trust_competence,
+                    trust_integrity,
                 )
             self.current_session_id = None
         except Exception as e:

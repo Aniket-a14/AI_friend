@@ -102,15 +102,33 @@ class ActionService:
                 endocrine_options = None
                 cortisol = plan.payload.get("cortisol")
                 dopamine = plan.payload.get("dopamine")
-                fatigue = plan.payload.get("fatigue", 0.0)
-                if cortisol is not None and dopamine is not None:
-                    # High cortisol → low temp (rigid/defensive): range 0.3 to 0.9
-                    endo_temperature = round(0.9 - (cortisol * 0.6), 3)
-                    # High dopamine → high top_p (exploratory): range 0.70 to 0.95
-                    endo_top_p = round(0.70 + (dopamine * 0.25), 3)
+                fatigue = plan.payload.get("fatigue")
+
+                if cortisol is not None or dopamine is not None or fatigue is not None:
+                    endocrine_options = {}
+                    if cortisol is not None:
+                        try:
+                            endo_temperature = round(0.9 - (float(cortisol) * 0.6), 3)
+                        except (ValueError, TypeError):
+                            endo_temperature = 0.7
+                        endocrine_options["temperature"] = endo_temperature
+                    else:
+                        endocrine_options["temperature"] = 0.7
+
+                    if dopamine is not None:
+                        try:
+                            endo_top_p = round(0.70 + (float(dopamine) * 0.25), 3)
+                        except (ValueError, TypeError):
+                            endo_top_p = 0.8
+                        endocrine_options["top_p"] = endo_top_p
+                    else:
+                        endocrine_options["top_p"] = 0.8
 
                     try:
-                        fatigue_val = max(0.0, min(1.0, float(fatigue)))
+                        fatigue_val = max(
+                            0.0,
+                            min(1.0, float(fatigue if fatigue is not None else 0.0)),
+                        )
                     except (ValueError, TypeError):
                         fatigue_val = 0.0
 
@@ -118,19 +136,16 @@ class ActionService:
                     endo_num_predict = int(
                         max(15, min(40, int(40 - (fatigue_val * 25))))
                     )
-                    endocrine_options = {
-                        "temperature": endo_temperature,
-                        "top_p": endo_top_p,
-                        "num_predict": endo_num_predict,
-                    }
+                    endocrine_options["num_predict"] = endo_num_predict
+
                     logger.info(
-                        "[Endocrine] Cortisol=%.2f Dopamine=%.2f Fatigue=%.2f → temp=%.3f top_p=%.3f num_predict=%d",
+                        "[Endocrine] Cortisol=%s Dopamine=%s Fatigue=%s → temp=%.3f top_p=%.3f num_predict=%d",
                         cortisol,
                         dopamine,
-                        fatigue_val,
-                        endo_temperature,
-                        endo_top_p,
-                        endo_num_predict,
+                        fatigue,
+                        endocrine_options["temperature"],
+                        endocrine_options["top_p"],
+                        endocrine_options["num_predict"],
                     )
 
                 # 3. Stream Generation

@@ -48,6 +48,8 @@ class SurfacingAgent(BaseAgent):
         # Dual-channel state
         self._last_channel = "episodic"  # Alternate between channels
         self._current_valence = 0.0  # For mood-congruent retrieval
+        self._current_arousal = 0.5
+        self._current_cortisol = 0.0
 
         self.subject_metrics = {
             "system.tick": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
@@ -97,11 +99,15 @@ class SurfacingAgent(BaseAgent):
             await self._run_sweep_now(source_metadata=data.get("latency_metadata"))
 
     async def _on_agent_state(self, data: Dict[str, Any]):
-        """Track current valence for mood-congruent episodic retrieval (Bower, 1981)."""
+        """Track current valence, arousal, and cortisol for mood-congruent episodic retrieval (Bower, 1981)."""
         if isinstance(data, dict):
             self._current_valence = data.get(
                 "valence", data.get("mood", self._current_valence)
             )
+            self._current_arousal = data.get(
+                "arousal", data.get("energy", self._current_arousal)
+            )
+            self._current_cortisol = data.get("cortisol", self._current_cortisol)
 
     async def _run_sweep_now(self, source_metadata: Optional[Dict[str, Any]] = None):
         """Run a sweep inline (used by low-frequency control channels like system.tick)."""
@@ -201,6 +207,8 @@ class SurfacingAgent(BaseAgent):
             refresh_on_recall=False,
             exclude_contents=list(self.recently_surfaced.keys()),
             current_valence=self._current_valence,
+            current_arousal=self._current_arousal,
+            current_cortisol=self._current_cortisol,
         )
         search_ms = (time.perf_counter() - search_started) * 1000
 

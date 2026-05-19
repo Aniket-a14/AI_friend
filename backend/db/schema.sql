@@ -28,6 +28,9 @@ create table if not exists sessions (
   id uuid primary key,
   started_at timestamptz default now(),
   ended_at timestamptz,
+  trust_benevolence double precision default 0.5,
+  trust_competence double precision default 0.5,
+  trust_integrity double precision default 0.5,
   metadata jsonb default '{}'::jsonb
 );
 

@@ -9,32 +9,35 @@ from app.state.memory_store import MemoryStore
 from app.agents.subconscious_agent import SubconsciousAgent
 from app.cognitive.learning import ReflectionService
 
+
 @pytest.mark.asyncio
 async def test_sqlite_in_memory_persistence(mock_llm_service, mock_graph_db):
     """Verify that asyncpg/sqlite mock pool can write and fetch conversations completely offline."""
     store = ConversationHistoryStore()
-    
+
     # Initialize the database (this will trigger schema creation inside our in-memory SQLite connection)
     await store.initialize()
-    
+
     # 1. Start a session
     session_id = await store.start_session()
     assert session_id is not None
-    
+
     # 2. Log messages
     await store.log_message("user", "Hello! Tell me about cognitive architectures.")
-    await store.log_message("assistant", "ACT-R structures short-term and long-term memory elements.")
-    
+    await store.log_message(
+        "assistant", "ACT-R structures short-term and long-term memory elements."
+    )
+
     # 3. Retrieve recent unconsolidated messages via MemoryStore
     mem_store = MemoryStore(pool=store.pool)
     mem_store.get_embedding = AsyncMock(return_value=[0.1] * 768)
-    
+
     episodes = await mem_store.get_recent_unconsolidated_episodes(limit=5)
     assert len(episodes) == 2
     roles = {ep["role"] for ep in episodes}
     assert "user" in roles
     assert "assistant" in roles
-    
+
     await store.close()
     await mem_store.close()
 
@@ -44,25 +47,25 @@ async def test_sqlite_cosine_similarity_fallback(mock_llm_service):
     """Verify that Python-backed SQLite Cosine Similarity fallback yields correct scores."""
     store = ConversationHistoryStore()
     await store.initialize()
-    
+
     mem_store = MemoryStore(pool=store.pool)
-    
+
     # Seed embeddings manually
     # Memory 1: Vector aligned with query
     # Memory 2: Vector orthogonal to query
     query_vector = [1.0, 0.0, 0.0] + [0.0] * 765
     aligned_vector = [0.9, 0.1, 0.0] + [0.0] * 765
     orthogonal_vector = [0.0, 1.0, 0.0] + [0.0] * 765
-    
+
     async def mock_get_embedding(text):
         if "query" in text:
             return query_vector
         if "aligned" in text:
             return aligned_vector
         return orthogonal_vector
-        
+
     mem_store.get_embedding = mock_get_embedding
-    
+
     # Add memories manually to bypass pgvector schema inserts
     async with store.pool.acquire() as conn:
         # We need to create memories table since it is part of pgvector
@@ -85,21 +88,35 @@ async def test_sqlite_cosine_similarity_fallback(mock_llm_service):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
     # Store memories
-    res1 = await mem_store.add_memory("aligned memory", raw_content="aligned raw", wing="personal", importance=0.8, valence=0.5)
-    res2 = await mem_store.add_memory("orthogonal memory", raw_content="orthogonal raw", wing="personal", importance=0.3, valence=-0.5)
-    
+    res1 = await mem_store.add_memory(
+        "aligned memory",
+        raw_content="aligned raw",
+        wing="personal",
+        importance=0.8,
+        valence=0.5,
+    )
+    res2 = await mem_store.add_memory(
+        "orthogonal memory",
+        raw_content="orthogonal raw",
+        wing="personal",
+        importance=0.3,
+        valence=-0.5,
+    )
+
     assert res1 is True
     assert res2 is True
-    
+
     # Search memories
-    results = await mem_store.search_memories("query text", wing="personal", threshold=-5.0, limit=2)
+    results = await mem_store.search_memories(
+        "query text", wing="personal", threshold=-5.0, limit=2
+    )
     assert len(results) == 2
-    
+
     # Aligned memory should have higher similarity and score
     assert results[0]["content"] == "aligned memory"
-    
+
     await store.close()
     await mem_store.close()
 
@@ -109,10 +126,10 @@ async def test_memory_decay_loop(mock_llm_service):
     """Verify that ACT-R memory decay successfully scales down base importance scores."""
     store = ConversationHistoryStore()
     await store.initialize()
-    
+
     mem_store = MemoryStore(pool=store.pool)
     mem_store.get_embedding = AsyncMock(return_value=[0.1] * 768)
-    
+
     # Create the memories table
     async with store.pool.acquire() as conn:
         await conn.execute("""
@@ -134,17 +151,19 @@ async def test_memory_decay_loop(mock_llm_service):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
     await mem_store.add_memory("Test memory to decay", importance=0.8)
-    
+
     # Decay the memory
     await mem_store.apply_actr_decay(["Test memory to decay"])
-    
+
     # Verify importance score is decayed
     async with store.pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT importance_score FROM memories WHERE content = 'Test memory to decay'")
-        assert abs(row["importance_score"] - 0.4) < 1e-5
-        
+        row = await conn.fetchrow(
+            "SELECT importance_score FROM memories WHERE content = 'Test memory to decay'"
+        )
+        assert abs(row["importance_score"] - 0.64) < 1e-5
+
     await store.close()
     await mem_store.close()
 
@@ -154,7 +173,7 @@ async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_
     """Verify that the SubconsciousAgent runs a full fact-extraction & consolidation pass."""
     store = ConversationHistoryStore()
     await store.initialize()
-    
+
     # Create memories and config tables
     async with store.pool.acquire() as conn:
         await conn.execute("""
@@ -176,38 +195,36 @@ async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
     mem_store = MemoryStore(pool=store.pool)
     mem_store.get_embedding = AsyncMock(return_value=[0.1] * 768)
-    
+
     # Seed a conversation episode
     await store.start_session()
-    await store.log_message("user", "My favorite programming language is Python because it feels clean.")
-    
+    await store.log_message(
+        "user", "My favorite programming language is Python because it feels clean."
+    )
+
     # Initialize reflection service with mocked LLM and GraphDB
     mock_llm_service.generate.return_value = '[{"subject": "User", "relation": "LIKES", "object": "Python", "type": "Preference", "confidence": 0.9, "reason": "Explicitly stated favorite language"}]'
-    
+
     ref_service = ReflectionService(
-        llm_service=mock_llm_service,
-        graph_store=mock_graph_db,
-        pg_vector=mem_store
+        llm_service=mock_llm_service, graph_store=mock_graph_db, pg_vector=mem_store
     )
-    
+
     agent = SubconsciousAgent(
-        memory_store=mem_store,
-        reflection_service=ref_service,
-        graph_db=mock_graph_db
+        memory_store=mem_store, reflection_service=ref_service, graph_db=mock_graph_db
     )
-    
+
     # Simulate a system.tick event manually
     await agent._on_system_tick({"uptime": 100})
-    
+
     # Verify graph write was attempted
     mock_graph_db.create_triplet.assert_called_once()
     args, kwargs = mock_graph_db.create_triplet.call_args
     assert args[0] == "User"
     assert args[1] == "LIKES"
     assert args[2] == "Python"
-    
+
     await store.close()
     await mem_store.close()

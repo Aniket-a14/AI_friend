@@ -25,9 +25,21 @@ class SQLiteConnection:
                 id TEXT PRIMARY KEY,
                 started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 ended_at TIMESTAMP,
+                trust_benevolence REAL DEFAULT 0.5,
+                trust_competence REAL DEFAULT 0.5,
+                trust_integrity REAL DEFAULT 0.5,
                 metadata TEXT DEFAULT '{}'
             )
         """)
+
+        # Schema migration for existing databases
+        for col in ["trust_benevolence", "trust_competence", "trust_integrity"]:
+            try:
+                cursor.execute(
+                    f"ALTER TABLE sessions ADD COLUMN {col} REAL DEFAULT 0.5"
+                )
+            except sqlite3.OperationalError:
+                pass
 
         # Messages Table (Consolidated column handles ACT-R processing)
         cursor.execute("""

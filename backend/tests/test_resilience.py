@@ -37,9 +37,13 @@ async def test_ollama_exponential_backoff_success(ollama_client):
         # Setup sequence of responses
         # httpx calls are direct async calls
         mock_post.side_effect = [
-            httpx.HTTPStatusError("Busy", request=MagicMock(), response=MagicMock(status_code=503)),
-            httpx.HTTPStatusError("Busy", request=MagicMock(), response=MagicMock(status_code=503)),
-            mock_success
+            httpx.HTTPStatusError(
+                "Busy", request=MagicMock(), response=MagicMock(status_code=503)
+            ),
+            httpx.HTTPStatusError(
+                "Busy", request=MagicMock(), response=MagicMock(status_code=503)
+            ),
+            mock_success,
         ]
 
         ollama_client.base_delay = 0.01
@@ -83,10 +87,12 @@ async def test_generate_falls_back_to_chat_endpoint(ollama_client):
     with patch("httpx.AsyncClient.post") as mock_post:
         mock_404 = MagicMock()
         mock_404.status_code = 404
-        
+
         mock_success = MagicMock()
         mock_success.status_code = 200
-        mock_success.json.return_value = {"message": {"content": "Fallback chat response"}}
+        mock_success.json.return_value = {
+            "message": {"content": "Fallback chat response"}
+        }
 
         mock_post.side_effect = [mock_404, mock_success]
 
@@ -104,7 +110,7 @@ async def test_generate_stream_falls_back_to_chat_endpoint(ollama_client):
         mock_404_resp = MagicMock()
         mock_404_resp.status_code = 404
         mock_404_resp.aread = AsyncMock(return_value=b'{"error":"not found"}')
-        
+
         mock_404_cm = MagicMock()
         mock_404_cm.__aenter__.return_value = mock_404_resp
 
@@ -117,7 +123,7 @@ async def test_generate_stream_falls_back_to_chat_endpoint(ollama_client):
         mock_success_resp = MagicMock()
         mock_success_resp.status_code = 200
         mock_success_resp.aiter_lines.return_value = AsyncIterator(stream_lines)
-        
+
         mock_success_cm = MagicMock()
         mock_success_cm.__aenter__.return_value = mock_success_resp
 
@@ -136,7 +142,7 @@ async def test_generate_falls_back_on_500_to_chat_endpoint(ollama_client):
     with patch("httpx.AsyncClient.post") as mock_post:
         mock_500 = MagicMock()
         mock_500.status_code = 500
-        
+
         mock_success = MagicMock()
         mock_success.status_code = 200
         mock_success.json.return_value = {"message": {"content": "Recovered"}}
@@ -154,7 +160,7 @@ async def test_generate_stream_falls_back_on_500_to_chat_endpoint(ollama_client)
     with patch("httpx.AsyncClient.stream") as mock_stream:
         mock_500_resp = MagicMock()
         mock_500_resp.status_code = 500
-        mock_500_resp.aread = AsyncMock(return_value=b'error')
+        mock_500_resp.aread = AsyncMock(return_value=b"error")
         mock_500_cm = MagicMock()
         mock_500_cm.__aenter__.return_value = mock_500_resp
 
@@ -184,7 +190,9 @@ async def test_generate_falls_back_on_timeout_to_chat_endpoint(ollama_client):
     with patch("httpx.AsyncClient.post") as mock_post:
         mock_success = MagicMock()
         mock_success.status_code = 200
-        mock_success.json.return_value = {"message": {"content": "Recovered after timeout"}}
+        mock_success.json.return_value = {
+            "message": {"content": "Recovered after timeout"}
+        }
 
         mock_post.side_effect = [asyncio.TimeoutError(), mock_success]
 
@@ -225,7 +233,7 @@ async def test_generate_stream_parses_fragmented_json_chunks(ollama_client):
     with patch("httpx.AsyncClient.stream") as mock_stream:
         mock_404_resp = MagicMock()
         mock_404_resp.status_code = 404
-        mock_404_resp.aread = AsyncMock(return_value=b'not found')
+        mock_404_resp.aread = AsyncMock(return_value=b"not found")
         mock_404_cm = MagicMock()
         mock_404_cm.__aenter__.return_value = mock_404_resp
 
@@ -257,10 +265,12 @@ async def test_generate_retries_with_latest_tag_for_untagged_model(ollama_client
     with patch("httpx.AsyncClient.post") as mock_post:
         mock_404 = MagicMock()
         mock_404.status_code = 404
-        
+
         mock_success = MagicMock()
         mock_success.status_code = 200
-        mock_success.json.return_value = {"message": {"content": "Recovered with latest tag"}}
+        mock_success.json.return_value = {
+            "message": {"content": "Recovered with latest tag"}
+        }
 
         # Attempt 1: llama3.2/chat -> 404, llama3.2/generate -> 404
         # Attempt 2: llama3.2:latest/chat -> 200

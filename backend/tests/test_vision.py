@@ -31,7 +31,9 @@ def mock_appraisal_service(mock_ollama_client):
 
 class TestVisualAppraisalService:
     @pytest.mark.asyncio
-    async def test_appraisal_initial_call_triggers_vlm(self, mock_appraisal_service, mock_ollama_client):
+    async def test_appraisal_initial_call_triggers_vlm(
+        self, mock_appraisal_service, mock_ollama_client
+    ):
         # Initial call should trigger the VLM describe_image call
         desc = await mock_appraisal_service.appraise("fake_base64_string")
         assert desc == "A developer coding on a laptop."
@@ -42,7 +44,9 @@ class TestVisualAppraisalService:
         )
 
     @pytest.mark.asyncio
-    async def test_appraisal_rate_limiting_returns_cached_description(self, mock_appraisal_service, mock_ollama_client):
+    async def test_appraisal_rate_limiting_returns_cached_description(
+        self, mock_appraisal_service, mock_ollama_client
+    ):
         # Call it once to populate the cache
         desc1 = await mock_appraisal_service.appraise("fake_base64_string")
         assert desc1 == "A developer coding on a laptop."
@@ -50,30 +54,37 @@ class TestVisualAppraisalService:
         # Call it again immediately; it should respect rate limiting and NOT trigger a second VLM call
         mock_ollama_client.describe_image.reset_mock()
         desc2 = await mock_appraisal_service.appraise("another_fake_base64_string")
-        
+
         # Returns cached value from first call
         assert desc2 == "A developer coding on a laptop."
         mock_ollama_client.describe_image.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_appraisal_error_tolerance_returns_cache(self, mock_appraisal_service, mock_ollama_client):
+    async def test_appraisal_error_tolerance_returns_cache(
+        self, mock_appraisal_service, mock_ollama_client
+    ):
         # Call once successfully to establish cache
         await mock_appraisal_service.appraise("fake_base64_string")
 
         # Force next VLM call to raise an exception
-        mock_ollama_client.describe_image = AsyncMock(side_effect=Exception("Ollama Connection Timeout"))
-        
+        mock_ollama_client.describe_image = AsyncMock(
+            side_effect=Exception("Ollama Connection Timeout")
+        )
+
         # Advance time beyond the appraisal interval to trigger a new VLM call
         mock_appraisal_service._last_appraisal_time = time.time() - 2.0
-        
+
         # Call service; it should gracefully catch exception and return last cached value
         desc = await mock_appraisal_service.appraise("new_frame_b64")
         assert desc == "A developer coding on a laptop."
 
     @pytest.mark.asyncio
-    async def test_sensory_habituation_bypasses_vlm_if_below_threshold(self, mock_appraisal_service, mock_ollama_client):
+    async def test_sensory_habituation_bypasses_vlm_if_below_threshold(
+        self, mock_appraisal_service, mock_ollama_client
+    ):
         # 1. Establish the initial frame and cache
         import base64
+
         frame_data = b"identical_frame_data"
         frame_b64 = base64.b64encode(frame_data).decode("utf-8")
 
@@ -105,9 +116,11 @@ class TestVisionAgent:
     @pytest.mark.asyncio
     @patch("app.vision.agent.ScreenLink")
     @patch("app.vision.agent.CameraLink")
-    async def test_vision_agent_source_switching(self, mock_camera_cls, mock_screen_cls):
+    async def test_vision_agent_source_switching(
+        self, mock_camera_cls, mock_screen_cls
+    ):
         agent = VisionAgent()
-        
+
         # Initial source defaults to screen
         assert agent.source == "screen"
 
@@ -126,28 +139,33 @@ class TestVisionAgent:
     @pytest.mark.asyncio
     @patch("app.vision.agent.ScreenLink")
     @patch("app.vision.agent.CameraLink")
-    async def test_vision_agent_run_appraisal_publishes_event(self, mock_camera_cls, mock_screen_cls):
+    async def test_vision_agent_run_appraisal_publishes_event(
+        self, mock_camera_cls, mock_screen_cls
+    ):
         agent = VisionAgent()
         agent.publish = AsyncMock()
-        
+
         # Mock appraisal service to return a description
         mock_appraisal = MagicMock()
         mock_appraisal.should_appraise.return_value = True
-        mock_appraisal.appraise = AsyncMock(return_value="A clean glass desk with three monitors.")
+        mock_appraisal.appraise = AsyncMock(
+            return_value="A clean glass desk with three monitors."
+        )
         agent.appraisal = mock_appraisal
 
         # We pass a simple valid base64 string for a tiny 1x1 black png or blank bytes
         import base64
+
         blank_frame_b64 = base64.b64encode(b"\x00" * 100).decode("utf-8")
         await agent._run_appraisal(blank_frame_b64)
 
         # Verify appraisal was invoked and output published to Topics.VISION_DESCRIPTION
         mock_appraisal.appraise.assert_awaited_once_with(blank_frame_b64)
         agent.publish.assert_awaited_once()
-        
+
         topic, payload = agent.publish.await_args.args
         assert topic == Topics.VISION_DESCRIPTION
-        
+
         # Verify schema compliance and user_distance presence
         msg = VisionDescription.model_validate(payload)
         assert msg.description == "A clean glass desk with three monitors."

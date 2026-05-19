@@ -174,7 +174,7 @@ def test_brain_agent_connects_before_cognitive_initialize():
         side_effect=lambda: call_order.append("conversation_initialize")
     )
     conversation_store.start_session = AsyncMock(
-        side_effect=lambda: call_order.append("start_session")
+        side_effect=lambda *args, **kwargs: call_order.append("start_session")
     )
 
     agent = BrainAgent(
@@ -370,7 +370,6 @@ def test_triple_extractor_uses_current_graph_relationship_contract():
         "Pune",
         {"source": "triple_extractor"},
     )
-
 
 
 def test_surfacing_agent_suppresses_recently_recalled_memories():
