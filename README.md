@@ -10,7 +10,7 @@
 [![🛡️ Mesh Integrity](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml)
 [![🧠 Cognitive Regression](https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml)
 [![🎭 Persona Guard](https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml)
-[![🔒 Security Audit](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml) 
+[![🔒 Security Audit](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml)
 [![📦 Docker Build](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml)
 [![🩺 Docker Health](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml)
 [![🔗 Link Validator](https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml)
@@ -28,6 +28,7 @@
 AI Friend is not a reactive "turn-based" chatbot. It is a **Sovereign Mesh** of specialized agents synchronized through a hardened signal bus. In the **CVS-2.0 (Rust Native Edition)** release, the architecture shifted from legacy Python audio loops to a **High-Performance Rust Signal Mesh**, guaranteeing sub-50ms deterministic execution and true temporal identity continuity.
 
 ### 🧠 Reactive vs. Sovereign Intelligence
+
 | Feature | Reactive Chatbot (Legacy) | Sovereign Mesh (CVS-2.0) |
 | :--- | :--- | :--- |
 | **Execution** | Python Interpreter | PyO3 FFI / Native Rust Crates |
@@ -39,11 +40,12 @@ AI Friend is not a reactive "turn-based" chatbot. It is a **Sovereign Mesh** of 
 | **Topology** | Centralized API | Decentralized Local Mesh |
 
 ### Why Perceptual Mastery?
+
 The success of a cognitive voice system is measured by **conversational realism**, not just linguistic correctness. A technically accurate answer that arrives with unnatural timing or forgets recent emotional context is a behavioral failure. AI Friend solves this through **speculative perception** and **deterministic affect**:
 
-*   **Identity Continuity**: Personality, values, and relationship state survive long sessions and hardware restarts.
-*   **Organic Timing**: Pauses and hesitations are physically injected as silent PCM buffers, not just text tags.
-*   **Privacy Sovereignty**: 100% local execution ensures your identity genome never leaves your hardware.
+* **Identity Continuity**: Personality, values, and relationship state survive long sessions and hardware restarts.
+* **Organic Timing**: Pauses and hesitations are physically injected as silent PCM buffers, not just text tags.
+* **Privacy Sovereignty**: 100% local execution ensures your identity genome never leaves your hardware.
 
 ---
 
@@ -55,11 +57,12 @@ The platform utilizes **NATS JetStream** as its central nervous system, routing 
 
 > [!NOTE]
 > **Architecture Description**:
-> The system follows a decoupled "Signal Bus" pattern. The **NATS JetStream** serves as the message backbone, enforcing strict communication contracts across nine core subjects. 
-> - **Sensory Agents**: The **STT Agent** and **Vision Agent** publish perceptual signals to the bus.
-> - **Cognitive Agents**: The **Brain Agent** (Decision Core), **Subconscious Agent** (Idle reflection), and **Surfacing Agent** (Memory) process these signals asynchronously.
-> - **Infrastructure**: **Neo4j** stores the high-dimensional knowledge graph, while **PostgreSQL** with `pgvector` manages episodic memories and relational identity state.
-> - **Signal Rendering**: The **Voice Agent** consumes decision events to produce high-fidelity 32kHz PCM audio.
+> The system follows a decoupled "Signal Bus" pattern. The **NATS JetStream** serves as the message backbone, enforcing strict communication contracts across nine core subjects.
+>
+> * **Sensory Agents**: The **STT Agent** and **Vision Agent** publish perceptual signals to the bus.
+> * **Cognitive Agents**: The **Brain Agent** (Decision Core), **Subconscious Agent** (Idle reflection), and **Surfacing Agent** (Memory) process these signals asynchronously.
+> * **Infrastructure**: **Neo4j** stores the high-dimensional knowledge graph, while **PostgreSQL** with `pgvector` manages episodic memories and relational identity state.
+> * **Signal Rendering**: The **Voice Agent** consumes decision events to produce high-fidelity 32kHz PCM audio.
 
 ```mermaid
 graph TD
@@ -123,9 +126,10 @@ CVS-2.0 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration 
 > [!IMPORTANT]
 > **Protocol Description**:
 > Audio arriving via WebRTC is fanned out to two paths: **SenseVoice** (optimized for CPU-based temporal intent) and **Whisper** (optimized for GPU-based semantic accuracy).
-> - **Stage 1 (Speculative)**: SenseVoice detects interruption markers in <100ms and publishes a speculative `audio.stop` message. The Voice Agent immediately enters a reversible pause.
-> - **Stage 2 (Validation)**: The Brain Agent evaluates the speculative perception. If confirmed, it commits the stop. If rejected as noise, it publishes `audio.resume`, causing the Voice Agent to resume playback from its OLA buffer.
-> - **Stage 3 (Resolution)**: Once Whisper produces the final transcript, the Brain Agent performs a deep cognitive turn to update state and generate the response.
+>
+> * **Stage 1 (Speculative)**: SenseVoice detects interruption markers in <100ms and publishes a speculative `audio.stop` message. The Voice Agent immediately enters a reversible pause.
+> * **Stage 2 (Validation)**: The Brain Agent evaluates the speculative perception. If confirmed, it commits the stop. If rejected as noise, it publishes `audio.resume`, causing the Voice Agent to resume playback from its OLA buffer.
+> * **Stage 3 (Resolution)**: Once Whisper produces the final transcript, the Brain Agent performs a deep cognitive turn to update state and generate the response.
 
 ```mermaid
 sequenceDiagram
@@ -196,31 +200,37 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 
 Every interaction follows a strictly governed loop through the mesh:
 
-1.  **Perception**: Transport Agent publishes raw PCM to `audio.inbound`.
-2.  **Speculation**: STT Agent (SenseVoice) identifies high-confidence intent and publishes `audio.perception`.
-3.  **Reflex**: Voice Agent receives `audio.perception` and triggers an immediate speculative pause.
-4.  **Appraisal**: Brain Agent receives final transcript, computes emotional valence via **OCC/Lazarus**, and updates **PAD** state.
-5.  **Deliberation**: Decision Service selects the optimal intent using **MAUT** scoring.
-6.  **Synthesis**: Voice Agent renders segments using the current **Affect Vector**, injecting timing markers.
-7.  **Closure**: Voice Agent publishes `voice.segmentation_feedback` to the Brain for pulse adjustment.
+1. **Perception**: Transport Agent publishes raw PCM to `audio.inbound`.
+2. **Speculation**: STT Agent (SenseVoice) identifies high-confidence intent and publishes `audio.perception`.
+3. **Reflex**: Voice Agent receives `audio.perception` and triggers an immediate speculative pause.
+4. **Appraisal**: Brain Agent receives final transcript, computes emotional valence via **OCC/Lazarus**, and updates **PAD** state.
+5. **Deliberation**: Decision Service selects the optimal intent using **MAUT** scoring.
+6. **Synthesis**: Voice Agent renders segments using the current **Affect Vector**, injecting timing markers.
+7. **Closure**: Voice Agent publishes `voice.segmentation_feedback` to the Brain for pulse adjustment.
 
 ---
 
 ## 🧠 Core Cognitive Models (Mathematical Specification)
 
 ### 1. Affective Dynamics (PAD + ALMA)
+
 The agent's emotional state is a 3D coordinate in **PAD Space** (Pleasure, Arousal, Dominance).
-- **Mood Pull**: Emotional events "pull" the current state toward target coordinates.
-- **Logarithmic Decay**: During idle periods, the state drifts back to a neutral baseline following the ALMA formula: $I(t) = I_0 \cdot e^{-\lambda t}$.
+
+* **Mood Pull**: Emotional events "pull" the current state toward target coordinates.
+* **Logarithmic Decay**: During idle periods, the state drifts back to a neutral baseline following the ALMA formula: $I(t) = I_0 \cdot e^{-\lambda t}$.
 
 ### 2. Neuromodulatory Memory Gating (CVS-3.0)
+
 Semantic memory search incorporating dynamic physiological bias gates memory retrieval based on emotional relevance:
 $$S_i = \text{CosineSimilarity} \cdot (1 + 0.1 \cdot \text{valence} \cdot \text{emotional\_weight} - 0.2 \cdot \text{arousal} \cdot \text{cortisol})$$
+
 * **Positive reinforcement**: $\text{valence} \cdot \text{emotional\_weight}$ increases matching scores for positive memories.
-* **Stress inhibition**:arousal $\cdot$ cortisol suppresses high-stress memories during hyper-arousal, avoiding repetitive trauma loops.
+* **Stress inhibition**: arousal $\cdot$ cortisol suppresses high-stress memories during hyper-arousal, avoiding repetitive trauma loops.
 
 ### 3. Dimensional Trust Matrix (Marsh Model - CVS-3.0)
+
 The agent's trust model deconstructs the legacy trust scalar into three distinct sub-dimensions:
+
 1. **Benevolence** ($T_b$): Direct relationship warmth, modulated by Relationship Impact ($RI$).
 2. **Competence** ($T_c$): Pragmatic task capability, modulated by Goal Congruence ($G$) and Relevance ($R$).
 3. **Integrity** ($T_i$): Moral/ethical alignments, modulated by Norm Alignment ($NA$).
@@ -229,23 +239,29 @@ The overall trust score returned for backward compatibility is:
 $$\text{trust} = \frac{T_b + T_c + T_i}{3.0}$$
 
 Appraisal-driven trust evolution updates individual sub-dimensions:
+
 * $T_b \leftarrow \text{clamp}(T_b + \delta \cdot RI)$
 * $T_c \leftarrow \text{clamp}(T_c + \delta \cdot (0.6 \cdot G + 0.4 \cdot R))$
 * $T_i \leftarrow \text{clamp}(T_i + \delta \cdot NA)$
 
 ### 4. Memory Activation & ACT-R Pruning (CVS-3.0)
+
 The subconscious memory agent runs background reflection sweeps after 5 minutes of user silence to apply ACT-R base activation decay:
 $$A_i = \ln(\text{recall\_count}) - d \cdot \ln(\text{hours\_since\_created} + 1)$$
+
 * **ACT-R Pruning**: Memories where base activation falls below the retention threshold ($A_i < -2.0$) are permanently pruned from local SQLite/PostgreSQL stores.
 * **Decay**: Surviving memories have their importance scores scaled by `0.8` on each consolidation tick.
 
 ### 5. Endocrine LLM Parameter Modulation (CVS-3.0)
+
 Action execution dynamically modulates Ollama inference parameters independently:
+
 * **Cortisol (Stress)**: Controls `temperature` ($0.9 - 0.6 \cdot \text{cortisol}$).
 * **Dopamine (Reward)**: Controls exploration `top_p` ($0.70 + 0.25 \cdot \text{dopamine}$).
 * **Fatigue**: Truncates response length `num_predict` ($40 - 25 \cdot \text{fatigue}$ tokens, strictly bounded in $[15, 40]$).
 
 ### 6. Decision Utility (MAUT)
+
 The Decision Service uses Multi-Attribute Utility Theory to score intent candidates:
 $$U(\text{Intent}) = w_{\text{goal}} \cdot G + w_{\text{emotion}} \cdot E + w_{\text{identity}} \cdot I + w_{\text{context}} \cdot C$$
 
@@ -256,6 +272,7 @@ $$U(\text{Intent}) = w_{\text{goal}} \cdot G + w_{\text{emotion}} \cdot E + w_{\
 Communication is strictly governed by a **Typed Contract Mesh** (Pydantic). Every subject has a specific schema defined in `backend/app/contracts.py`.
 
 ### Example: `chat.output` Schema
+
 ```json
 {
   "content": "Hey, I remember that!",
@@ -287,16 +304,20 @@ Communication is strictly governed by a **Typed Contract Mesh** (Pydantic). Ever
 ## 🛡️ Infrastructure & Hardening
 
 ### 1. Solid State Signal Hardening
+
 In version **CVS-2.0**, the mesh implements "Solid State" principles to ensure portability and security:
-- **Zero-Drift Persistence**: On-demand relational seeding via Prisma 7.7.0 ensures the "Identity Genome" is identical across container restarts.
-- **Health Surveillance**: Automated probes (`nc -z nats_mesh 4222`) trigger self-healing for disconnected agents.
-- **State Read-Safety**: Live emotional state is never hydrated from stale Neo4j TTL cache. After state persistence, graph cache is invalidated to prevent "memory rewinding."
+
+* **Zero-Drift Persistence**: On-demand relational seeding via Prisma 7.7.0 ensures the "Identity Genome" is identical across container restarts.
+* **Health Surveillance**: Automated probes (`nc -z nats_mesh 4222`) trigger self-healing for disconnected agents.
+* **State Read-Safety**: Live emotional state is never hydrated from stale Neo4j TTL cache. After state persistence, graph cache is invalidated to prevent "memory rewinding."
 
 ### 2. Voice Subsystem Runtime
+
 The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
-- **Prosody Mapping**: Converts PAD state into acoustic parameters (pitch, pace, volume).
-- **OLA Signal Continuity**: Uses Overlap-Add (OLA) algorithms to ensure zero-click transitions between streaming PCM chunks.
-- **Filler Resilience**: Injects pre-synthesized "Social Mesh" fillers if the cognitive path exceeds 350ms.
+
+* **Prosody Mapping**: Converts PAD state into acoustic parameters (pitch, pace, volume).
+* **OLA Signal Continuity**: Uses Overlap-Add (OLA) algorithms to ensure zero-click transitions between streaming PCM chunks.
+* **Filler Resilience**: Injects pre-synthesized "Social Mesh" fillers if the cognitive path exceeds 350ms.
 
 ---
 
@@ -369,9 +390,11 @@ Every release of **AI Friend** provides high-quality, pre-packaged standalone ar
 | 🐧 **Linux** | Standard Tarball | `ai-friend-linux.tar.gz` | Gzipped archive containing all source files and backend components. |
 
 ### 🔑 Checksums & Verification Manifest
+
 Each package is built automatically in a secure containerized environment and includes:
-*   **`.sha256` File**: Contains the SHA256 checksum for cryptographic verification (e.g. `ai-friend-windows.zip.sha256`).
-*   **`ai-friend-release-manifest.json`**: A structured JSON manifest mapping the filenames, precise byte sizes, and SHA256 hashes of all release packages for automated deployment tools.
+
+* **`.sha256` File**: Contains the SHA256 checksum for cryptographic verification (e.g. `ai-friend-windows.zip.sha256`).
+* **`ai-friend-release-manifest.json`**: A structured JSON manifest mapping the filenames, precise byte sizes, and SHA256 hashes of all release packages for automated deployment tools.
 
 ---
 
@@ -380,19 +403,25 @@ Each package is built automatically in a secure containerized environment and in
 Follow this standardized, cross-platform sequence to initialize the Sovereign Mesh:
 
 ### **Step 1: Bootstrap Shared Network & Infrastructure**
+
 1. Recreate the external shared network required by the mesh:
+
    ```bash
    docker network create ai_mesh_network
    ```
+
 2. Launch the infrastructure containers (PostgreSQL, Neo4j, Redis, NATS, and LiveKit):
+
    ```bash
    docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d postgres neo4j redis nats livekit
    ```
 
 ### **Step 2: Hydrate the Database Schema**
+
 To prevent database port contentions and host network routing bugs, the containerized PostgreSQL database is mapped to the isolated external port **`5433`** on your host.
 
-#### **On macOS / Linux (Bash/Zsh)**:
+#### **On macOS / Linux (Bash/Zsh)**
+
 ```bash
 # 1. Set the direct database connection path using your custom password
 export DIRECT_URL="postgresql://ai_friend:YOUR_DB_PASSWORD@127.0.0.1:5433/ai_friend_db"
@@ -404,7 +433,8 @@ npx prisma db push
 cd ..
 ```
 
-#### **On Windows (PowerShell)**:
+#### **On Windows (PowerShell)**
+
 ```powershell
 # 1. Set the direct database connection path using your custom password
 $env:DIRECT_URL="postgresql://ai_friend:YOUR_DB_PASSWORD@127.0.0.1:5433/ai_friend_db"
@@ -417,7 +447,9 @@ cd ..
 ```
 
 ### **Step 3: Private Seeding & Agent Launch**
+
 The Sovereign Mesh is designed with **Privacy by Default**. The baseline agent identity genome and conversation history are kept secure and local using two private, Git-ignored files in the backend:
+
 * `backend/app/personality.json`
 * `backend/app/history.json`
 
@@ -425,28 +457,36 @@ You do not need to run manual SQL inserts or standalone scripts. On startup, the
 
 Select your launching profile based on your operating system and hardware resources:
 
-#### **A. Standard Production Launch (Linux / Windows Host)**:
+#### **A. Standard Production Launch (Linux / Windows Host)**
+
 This command boots up the entire 14-container real-time voice, STT, and voice cloning mesh:
+
 ```bash
 docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build
 ```
 
-#### **B. macOS Apple Silicon Launch**:
+#### **B. macOS Apple Silicon Launch**
+
 On Apple Silicon MacBooks (M1/M2/M3/M4), real-time CUDA-based voice cloning is bypassed in favor of local performance profiles. Choose between **Light** and **Heavy** modes:
 
 * **🍎 macOS Light Mode** (Cognitive-Only):
   Focuses strictly on cognitive RAG, memory graph, and text agents. Excludes heavy real-time WebRTC media streams, Whisper STT, and voice synthesis to conserve battery and CPU:
+
   ```bash
   docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.light.yml up -d --build
   ```
+
 * **🍎 macOS Heavy Mode** (Local RAG & Whisper STT):
   Enables the advanced cognitive mesh and local real-time audio Whisper STT, optimized for M-series CPU cores with a memory constraint limit of 6G:
+
   ```bash
   docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.heavy.yml up -d --build
   ```
 
-##### **Solving macOS compilation bottlenecks via layered builds**:
+##### **Solving macOS compilation bottlenecks via layered builds**
+
 If Apple Silicon arm64 PyTorch or C++ dependencies cause compilation timeouts during standard compose builds, compile the secure, cached build layers sequentially using the dedicated Mac Dockerfiles:
+
 ```bash
 # 1. Compile and cache base arm64 dependencies
 docker build -t ai-friend/base:v1 -f backend/Dockerfile.base ./backend
@@ -456,7 +496,9 @@ docker build -t ai-friend/full:v1 --build-arg BASE_IMAGE=ai-friend/base:v1 -f ba
 ```
 
 ### **Step 4: Health Audit**
+
 Confirm all active containers are running and communicating:
+
 ```bash
 docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml ps
 ```
@@ -468,27 +510,37 @@ docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml ps
 Review these common OS-specific configurations if you run into boot bottlenecks:
 
 ### **1. Port Conflicts (e.g. Port 5432/5433 already in use)**
+
 If you have a native database installation running on your host machine (outside of Docker), it will block container port bindings.
+
 * **On macOS/Linux**: Stop the native Postgres service via systemctl or brew:
+
   ```bash
   brew services stop postgresql
   # OR
   sudo systemctl stop postgresql
   ```
+
 * **On Windows**: Forcefully stop all native Postgres database services and active background processes:
+
   ```powershell
   Stop-Service -Name "postgresql*" -Force -ErrorAction SilentlyContinue
   Get-Process -Name "postgres" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   ```
+
 * Restart the container to capture the port bind:
+
   ```bash
   docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml restart postgres
   ```
 
 ### **2. Dynamic WSL2 Disk Bloat (Windows Host)**
+
 WSL2 virtual disk files (`ext4.vhdx`) grow dynamically but **never shrink automatically** even after you prune Docker caches and volumes.
+
 * **Empty the Recycle Bin**: Deleted WSL virtual folder contents are temporarily held in the host Recycle Bin, retaining their size on disk.
 * **WSL shutdown**: Clear WSL memory locks to force Windows to reclaim released space:
+
   ```powershell
   wsl --shutdown
   ```
@@ -500,6 +552,7 @@ WSL2 virtual disk files (`ext4.vhdx`) grow dynamically but **never shrink automa
 Grouped by domain. Refer to `backend/app/config.py` for all 50+ tunable parameters.
 
 ### 🛡️ Infrastructure
+
 | Parameter | Default | Purpose |
 | :--- | :--- | :--- |
 | `NATS_URL` | `nats://localhost:4222` | Central signal bus endpoint. |
@@ -507,6 +560,7 @@ Grouped by domain. Refer to `backend/app/config.py` for all 50+ tunable paramete
 | `DATABASE_URL` | `postgresql://...` | Identity and memory state store. |
 
 ### 🧠 Cognition & Affect
+
 | Parameter | Default | Purpose |
 | :--- | :--- | :--- |
 | `SYSTEM_TICK_INTERVAL` | `60s` | Frequency of mesh-wide identity maturation. |
@@ -519,37 +573,43 @@ Grouped by domain. Refer to `backend/app/config.py` for all 50+ tunable paramete
 ## 🛠️ Troubleshooting & Debugging
 
 ### Symptom: Mesh Communication Silence
-- **Check**: Verify NATS stream state.
-- **Action**: `docker exec -it nats_mesh nats stream info AI_MESSAGES`
+
+* **Check**: Verify NATS stream state.
+
+* **Action**: `docker exec -it nats_mesh nats stream info AI_MESSAGES`
 
 ### Symptom: Stale Emotional State
-- **Check**: Verify Neo4j TTL cache invalidation.
-- **Action**: Run `pytest backend/tests/test_regressions.py::test_state_hydration_avoids_stale_cache`.
+
+* **Check**: Verify Neo4j TTL cache invalidation.
+
+* **Action**: Run `pytest backend/tests/test_regressions.py::test_state_hydration_avoids_stale_cache`.
 
 ---
 
 ## 🧪 Research Instrumentation
+
 For controlled experiments, use the dedicated research toolkit located in `scripts/research/`.
 
-- **`monitor.py`**: Real-time signal mesh latency profiling.
-- **`collector.py`**: High-frequency PAD state trajectory logger.
-- **`injector.py`**: Automated standardized pulse injection to eliminate human timing noise.
-- **`visualizer.py`**: Generates publication-ready Matplotlib plots of emotional evolution.
+* **`monitor.py`**: Real-time signal mesh latency profiling.
+* **`collector.py`**: High-frequency PAD state trajectory logger.
+* **`injector.py`**: Automated standardized pulse injection to eliminate human timing noise.
+* **`visualizer.py`**: Generates publication-ready Matplotlib plots of emotional evolution.
 
 ---
 
 ## 📚 Glossary
 
-- **BDI**: Belief-Desire-Intention cognitive framework.
-- **CVS**: Cognitive Voice System.
-- **MAUT**: Multi-Attribute Utility Theory.
-- **PAD**: Pleasure, Arousal, Dominance emotional model.
-- **OLA**: Overlap-Add signal processing.
-- **ACT-R**: Adaptive Control of Thought—Rational.
+* **BDI**: Belief-Desire-Intention cognitive framework.
+* **CVS**: Cognitive Voice System.
+* **MAUT**: Multi-Attribute Utility Theory.
+* **PAD**: Pleasure, Arousal, Dominance emotional model.
+* **OLA**: Overlap-Add signal processing.
+* **ACT-R**: Adaptive Control of Thought—Rational.
 
 ---
 
 ## 📜 License
+
 Distributed under the **MIT License**. See `LICENSE` for details.
 
 **Designed for Perception. Built for Identity.**
