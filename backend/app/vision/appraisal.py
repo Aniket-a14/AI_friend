@@ -46,21 +46,29 @@ class VisualAppraisalService:
         """Convert base64 JPEG frame to a downsampled 16x16 grayscale vector."""
         import base64
         import numpy as np
+
         try:
             jpeg_bytes = base64.b64decode(frame_b64)
         except Exception:
             return [0.0] * 256
-            
+
         try:
             import cv2
-            img = cv2.imdecode(np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+
+            img = cv2.imdecode(
+                np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_GRAYSCALE
+            )
             if img is not None:
                 resized = cv2.resize(img, (16, 16))
                 return (resized.flatten().astype(float) / 255.0).tolist()
         except Exception as e:
-            logger.debug("[VisualAppraisal] OpenCV downsampling failed, falling back to hash: %s", e)
-            
+            logger.debug(
+                "[VisualAppraisal] OpenCV downsampling failed, falling back to hash: %s",
+                e,
+            )
+
         import hashlib
+
         h = hashlib.sha256(jpeg_bytes).digest()
         extended = bytearray()
         for i in range(8):
@@ -84,14 +92,19 @@ class VisualAppraisalService:
         if self._last_visual_vector is not None:
             try:
                 import cognitive_rust
-                delta = cognitive_rust.compute_vector_delta(self._last_visual_vector, current_vector)
+
+                delta = cognitive_rust.compute_vector_delta(
+                    self._last_visual_vector, current_vector
+                )
             except ImportError:
                 import numpy as np
+
                 v1 = np.array(self._last_visual_vector)
                 v2 = np.array(current_vector)
                 delta = float(np.sum((v1 - v2) ** 2) / len(v1))
 
             from ..config import Config
+
             threshold = getattr(Config, "VLM_HABITUATION_THRESHOLD", 0.005)
             if delta < threshold:
                 logger.info(
@@ -99,6 +112,7 @@ class VisualAppraisalService:
                     delta,
                     threshold,
                 )
+                self._last_visual_vector = current_vector
                 self._last_appraisal_time = time.time()
                 return self._last_description
 

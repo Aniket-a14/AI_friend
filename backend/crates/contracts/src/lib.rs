@@ -268,7 +268,7 @@ pub struct Prosody {
 
 pub fn vad_to_prosody(affect: Option<&ChatOutputAffect>) -> Prosody {
     let affect = affect.cloned().unwrap_or_default();
-    
+
     // Fatigue dynamically slows down the rate and reduces pitch
     let fatigue_slow = 0.25 * affect.fatigue;
     let fatigue_pitch_drop = 0.1 * affect.fatigue;
@@ -284,7 +284,8 @@ pub fn vad_to_prosody(affect: Option<&ChatOutputAffect>) -> Prosody {
     };
 
     let rate = 1.0 + (affect.arousal - 0.5) - fatigue_slow;
-    let pitch = 1.0 + (affect.arousal - 0.5) * 0.7 + affect.valence * 0.3 - fatigue_pitch_drop + dist_pitch_mod;
+    let pitch = 1.0 + (affect.arousal - 0.5) * 0.7 + affect.valence * 0.3 - fatigue_pitch_drop
+        + dist_pitch_mod;
     let volume = 0.4 + affect.dominance * 0.6 + dist_vol_mod;
 
     Prosody {

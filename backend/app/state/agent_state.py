@@ -138,6 +138,9 @@ class StateService:
             self.current_state.trust = props.get("trust", 0.5)
             self.current_state.attachment = props.get("attachment", 0.1)
             self.current_state.fatigue = props.get("fatigue", 0.0)
+            self.current_state.last_user_interaction = props.get(
+                "last_user_interaction", self.current_state.last_user_interaction
+            )
             self.current_state.interaction_count = props.get("interaction_count", 0)
 
     async def persist_state(self, agent_name: str = "my friend"):
@@ -153,6 +156,7 @@ class StateService:
             a.trust = $trust,
             a.attachment = $attachment,
             a.fatigue = $fatigue,
+            a.last_user_interaction = $last_user_interaction,
             a.interaction_count = $interaction_count,
             a.last_sync = datetime()
         """
@@ -164,6 +168,7 @@ class StateService:
             "trust": self.current_state.trust,
             "attachment": self.current_state.attachment,
             "fatigue": self.current_state.fatigue,
+            "last_user_interaction": self.current_state.last_user_interaction,
             "interaction_count": self.current_state.interaction_count,
         }
         await self.graph.execute_query(query, params, write=True)
@@ -308,18 +313,15 @@ class StateService:
 
         # Evolve fatigue
         hour = datetime.fromtimestamp(now).hour
-        is_night = (hour >= 22 or hour < 6)
+        is_night = hour >= 22 or hour < 6
         try:
             import cognitive_rust
+
             rust_state = cognitive_rust.FatigueState(
-                self.current_state.fatigue,
-                self.current_state.last_user_interaction
+                self.current_state.fatigue, self.current_state.last_user_interaction
             )
             updated_rust = cognitive_rust.update_fatigue(
-                rust_state,
-                now,
-                dt_hours,
-                is_night
+                rust_state, now, dt_hours, is_night
             )
             self.current_state.fatigue = updated_rust.fatigue
         except ImportError:
@@ -421,7 +423,7 @@ class StateService:
             "active_goals": self.current_state.active_goals,
             # PAD aliases for new consumers
             "valence": self.current_state.mood,
-            "arousal": self.current_state.energy,
+            "arousal": self.current_state.arousal,
             "fatigue": self.current_state.fatigue,
             # Endocrine hormones (Tier-5)
             "cortisol": self.current_state.cortisol,
@@ -494,9 +496,13 @@ class StateService:
         k_restore = 0.20
         if is_idle:
             self.current_state.fatigue = max(
-                0.0, self.current_state.fatigue - (k_restore * dt_hours / circadian_multiplier)
+                0.0,
+                self.current_state.fatigue
+                - (k_restore * dt_hours / circadian_multiplier),
             )
         else:
             self.current_state.fatigue = min(
-                1.0, self.current_state.fatigue + (k_drain * dt_hours * circadian_multiplier)
+                1.0,
+                self.current_state.fatigue
+                + (k_drain * dt_hours * circadian_multiplier),
             )

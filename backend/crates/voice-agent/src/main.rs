@@ -15,6 +15,10 @@ use tracing::{error, info, warn};
 #[derive(Debug, Clone, serde::Deserialize)]
 struct VisionDescriptionMsg {
     user_distance: Option<f64>,
+    #[allow(dead_code)]
+    description: Option<String>,
+    #[allow(dead_code)]
+    source: Option<String>,
 }
 
 struct ReverbFilter {
@@ -34,7 +38,7 @@ impl ReverbFilter {
         }
     }
 
-    fn process(&mut self, bytes: &[u8]) -> Vec<u8> {
+    fn process(&mut self, bytes: &[u8], wet_gain: f32) -> Vec<u8> {
         let mut framed =
             Vec::with_capacity(bytes.len() + if self.pending_byte.is_some() { 1 } else { 0 });
         if let Some(byte) = self.pending_byte.take() {
@@ -56,8 +60,9 @@ impl ReverbFilter {
             let output = input + self.gain * delayed;
             self.buffer[self.index] = output;
             self.index = (self.index + 1) % self.buffer.len();
-            
-            *sample = output.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+
+            let blended = (1.0 - wet_gain) * input + wet_gain * output;
+            *sample = blended.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
         }
 
         let mut output_bytes = Vec::with_capacity(samples.len() * 2);
@@ -127,14 +132,23 @@ async fn main() -> Result<()> {
     let mut vision_sub = client.subscribe(topics::VISION_DESCRIPTION).await?;
     tokio::spawn(async move {
         while let Some(msg) = vision_sub.next().await {
-            if let Ok(desc) = serde_json::from_slice::<VisionDescriptionMsg>(&msg.payload) {
-                if let Some(dist) = desc.user_distance {
-                    if let Ok(mut guard) = last_distance_clone.lock() {
-                        *guard = dist;
+            match serde_json::from_slice::<VisionDescriptionMsg>(&msg.payload) {
+                Ok(desc) => {
+                    if let Some(dist) = desc.user_distance {
+                        if let Ok(mut guard) = last_distance_clone.lock() {
+                            *guard = dist;
+                        }
                     }
+                }
+                Err(err) => {
+                    warn!(
+                        "Failed to deserialize vision description message: {:?}",
+                        err
+                    );
                 }
             }
         }
+        warn!("Vision description subscription stream closed.");
     });
 
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
@@ -150,7 +164,8 @@ async fn main() -> Result<()> {
                     last_distance.clone(),
                     reverb_filter.clone(),
                 )
-                .await {
+                .await
+                {
                     error!("voice-agent failed to process chat.output: {err:#}");
                 }
             }
@@ -214,10 +229,20 @@ async fn handle_chat_output(
                 while let Some(chunk) = response.chunk().await? {
                     if !chunk.is_empty() {
                         let mut pcm_bytes = chunk.to_vec();
-                        if distance > 3.0 {
-                            if let Ok(mut filter) = reverb_filter.lock() {
-                                pcm_bytes = filter.process(&pcm_bytes);
-                            }
+
+                        const REVERB_DRY_LIMIT: f64 = 2.5;
+                        const REVERB_WET_LIMIT: f64 = 3.5;
+                        let wet_gain = if distance <= REVERB_DRY_LIMIT {
+                            0.0
+                        } else if distance >= REVERB_WET_LIMIT {
+                            1.0
+                        } else {
+                            ((distance - REVERB_DRY_LIMIT) / (REVERB_WET_LIMIT - REVERB_DRY_LIMIT))
+                                as f32
+                        };
+
+                        if let Ok(mut filter) = reverb_filter.lock() {
+                            pcm_bytes = filter.process(&pcm_bytes, wet_gain);
                         }
                         publish_pcm(jetstream, pcm_bytes, &event).await?;
                     }
@@ -391,8 +416,10 @@ mod tests {
     fn test_reverb_filter_processing() {
         let mut filter = ReverbFilter::new(4, 0.5);
         let input_pcm = vec![10, 0, 20, 0, 30, 0, 40, 0, 50, 0, 60, 0];
-        let processed = filter.process(&input_pcm);
-        
+
+        // 100% wet output
+        let processed = filter.process(&input_pcm, 1.0);
+
         // Since delay is 4 samples (8 bytes), and gain is 0.5:
         // The first 4 samples should be unchanged (except buffer updates)
         assert_eq!(processed.len(), input_pcm.len());
@@ -400,21 +427,26 @@ mod tests {
             .chunks_exact(2)
             .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<i16>>();
-        
+
         // Sample 4 (5th sample, index 4): input 50, delayed sample 0 (index 0) * 0.5 = 10 * 0.5 = 5. Output: 50 + 5 = 55
         assert_eq!(out_samples[0], 10);
         assert_eq!(out_samples[4], 55);
+
+        // Test 0% wet (completely dry output, but state still advances)
+        let mut filter2 = ReverbFilter::new(4, 0.5);
+        let processed2 = filter2.process(&input_pcm, 0.0);
+        assert_eq!(processed2, input_pcm); // Exactly matches input
     }
 
     #[test]
     fn reverb_filter_preserves_samples_across_odd_chunks() {
         let mut filter = ReverbFilter::new(4, 0.5);
 
-        let first = filter.process(&[10, 0, 20]);
+        let first = filter.process(&[10, 0, 20], 1.0);
         assert_eq!(first.len(), 2);
         assert_eq!(first, vec![10, 0]);
 
-        let second = filter.process(&[0, 30, 0]);
+        let second = filter.process(&[0, 30, 0], 1.0);
         assert_eq!(second.len(), 4);
         let out_samples = second
             .chunks_exact(2)

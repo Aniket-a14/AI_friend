@@ -263,18 +263,18 @@ pub fn update_fatigue(
 ) -> FatigueState {
     let idle_duration = now - state.last_user_interaction;
     let is_idle = idle_duration > 300.0; // 5 minutes
-    
+
     let circadian_multiplier = if is_night { 1.8 } else { 1.0 };
-    
+
     let k_drain = 0.15;
     let k_restore = 0.20;
-    
+
     let next_fatigue = if is_idle {
         (state.fatigue - (k_restore * dt_hours / circadian_multiplier)).max(0.0)
     } else {
         (state.fatigue + (k_drain * dt_hours * circadian_multiplier)).min(1.0)
     };
-    
+
     FatigueState {
         fatigue: next_fatigue,
         last_user_interaction: state.last_user_interaction,
