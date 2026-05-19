@@ -187,6 +187,8 @@ class MemoryStore:
         if cache_key in self._l1_cache:
             ts, cached_results = self._l1_cache[cache_key]
             if now_ts - ts < self._l1_cache_ttl:
+                if cached_results and refresh_on_recall:
+                    await self._refresh_memories(cached_results)
                 return cached_results
 
         try:
