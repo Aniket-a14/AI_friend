@@ -5,16 +5,16 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/license/MIT)
 [![Latency: Perceived <250ms](https://img.shields.io/badge/Latency-Perceived%20%3C250ms-green.svg)](#performance-perceived-slos)
 [![Architecture: CVS-2.0 Rust Native](https://img.shields.io/badge/Architecture-CVS--2.0--Rust--Native-orange.svg)](#architecture-cvs-20-rust-native)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb)
-[![Continuous Integration](https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml)
-[![🛡️ Mesh Integrity](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml)
-[![🧠 Cognitive Regression](https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml)
-[![🎭 Persona Guard](https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml)
-[![🔒 Security Audit](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml)
-[![📦 Docker Build](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml)
-[![🩺 Docker Health](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml)
-[![🔗 Link Validator](https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml)
-[![🚀 Release Status](https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](<https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb>)
+[![Continuous Integration](https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml>)
+[![🛡️ Mesh Integrity](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml>)
+[![🧠 Cognitive Regression](https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml>)
+[![🎭 Persona Guard](https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml>)
+[![🔒 Security Audit](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml>)
+[![📦 Docker Build](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml>)
+[![🩺 Docker Health](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml>)
+[![🔗 Link Validator](https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml>)
+[![🚀 Release Status](https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml/badge.svg?branch=main)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml>)
 [![Platforms: Windows | macOS | Linux](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux-blueviolet.svg)](#-release-package-selection-guide)
 [![Arch: Multi-Platform](https://img.shields.io/badge/Architectures-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#-release-package-selection-guide)
 [![Release Assets: 3 Packages](https://img.shields.io/badge/Release%20Assets-3%20Packages-success.svg)](#-release-package-selection-guide)
@@ -222,10 +222,11 @@ The agent's emotional state is a 3D coordinate in **PAD Space** (Pleasure, Arous
 ### 2. Neuromodulatory Memory Gating (CVS-3.0)
 
 Semantic memory search incorporating dynamic physiological bias gates memory retrieval based on emotional relevance:
-$$S_i = \text{CosineSimilarity} \cdot (1 + 0.1 \cdot \text{valence} \cdot \text{emotional\_weight} - 0.2 \cdot \text{arousal} \cdot \text{cortisol})$$
+$$S\_i = \text{CosineSimilarity} \cdot (1 + 0.1 \cdot \text{valence} \cdot \text{emotional\_weight} - 0.2 \cdot \text{arousal} \cdot \text{cortisol})$$
 
 * **Positive reinforcement**: $\text{valence} \cdot \text{emotional\_weight}$ increases matching scores for positive memories.
 * **Stress inhibition**: arousal $\cdot$ cortisol suppresses high-stress memories during hyper-arousal, avoiding repetitive trauma loops.
+$$A\_i = \ln(\text{recall\_count}) - d \cdot \ln(\text{hours\_since\_created} + 1)$$
 
 ### 3. Dimensional Trust Matrix (Marsh Model - CVS-3.0)
 
@@ -247,7 +248,7 @@ Appraisal-driven trust evolution updates individual sub-dimensions:
 ### 4. Memory Activation & ACT-R Pruning (CVS-3.0)
 
 The subconscious memory agent runs background reflection sweeps after 5 minutes of user silence to apply ACT-R base activation decay:
-$$A_i = \ln(\text{recall\_count}) - d \cdot \ln(\text{hours\_since\_created} + 1)$$
+$$A\_i = \ln(\text{recall\_count}) - d \cdot \ln(\text{hours\_since\_created} + 1)$$
 
 * **ACT-R Pruning**: Memories where base activation falls below the retention threshold ($A_i < -2.0$) are permanently pruned from local SQLite/PostgreSQL stores.
 * **Decay**: Surviving memories have their importance scores scaled by `0.8` on each consolidation tick.
