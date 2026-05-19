@@ -36,6 +36,7 @@ class ConversationHistoryStore:
         self.dsn = Config.DATABASE_URL
         self.pool: Optional[asyncpg.Pool] = None
         self.current_session_id: Optional[uuid.UUID] = None
+        self.trust_columns_available: bool = True
         app_dir = Path(__file__).resolve().parents[1]
         self.personality_seed_path = Config.PERSONALITY_SEED_PATH or str(
             app_dir / "personality.json"
@@ -86,6 +87,7 @@ class ConversationHistoryStore:
                 logger.warning(
                     f"PostgreSQL sessions schema migration skipped/failed: {migration_err}"
                 )
+                self.trust_columns_available = False
 
             await self._ensure_config_exists()
 
@@ -227,6 +229,20 @@ class ConversationHistoryStore:
         trust_integrity: float = 0.5,
     ) -> uuid.UUID:
         """Start a new session and return its ID."""
+        import math
+
+        def clamp_trust(val: float) -> float:
+            if val is None or (isinstance(val, float) and math.isnan(val)):
+                return 0.5
+            try:
+                return max(0.0, min(1.0, float(val)))
+            except (ValueError, TypeError):
+                return 0.5
+
+        tb = clamp_trust(trust_benevolence)
+        tc = clamp_trust(trust_competence)
+        ti = clamp_trust(trust_integrity)
+
         if not self.pool:
             self.current_session_id = uuid.uuid4()
             return self.current_session_id
@@ -234,16 +250,25 @@ class ConversationHistoryStore:
         self.current_session_id = uuid.uuid4()
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO sessions (id, started_at, trust_benevolence, trust_competence, trust_integrity)
-                    VALUES ($1, NOW(), $2, $3, $4)
-                    """,
-                    self.current_session_id,
-                    trust_benevolence,
-                    trust_competence,
-                    trust_integrity,
-                )
+                if getattr(self, "trust_columns_available", True):
+                    await conn.execute(
+                        """
+                        INSERT INTO sessions (id, started_at, trust_benevolence, trust_competence, trust_integrity)
+                        VALUES ($1, NOW(), $2, $3, $4)
+                        """,
+                        self.current_session_id,
+                        tb,
+                        tc,
+                        ti,
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        INSERT INTO sessions (id, started_at)
+                        VALUES ($1, NOW())
+                        """,
+                        self.current_session_id,
+                    )
             logger.info(f"Started new session: {self.current_session_id}")
             return self.current_session_id
         except Exception as e:

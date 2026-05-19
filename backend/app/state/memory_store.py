@@ -56,8 +56,9 @@ class MemoryStore:
     @property
     def is_sqlite(self) -> bool:
         """Heuristic check to determine if the backing pool uses the Mock SQLite adaptor."""
-        return type(self.pool).__name__ == "MockPGPool" or hasattr(
-            self.pool, "connection"
+        return type(self.pool).__name__ == "MockPGPool" or (
+            hasattr(self.pool, "connection")
+            and type(self.pool).__name__ not in ("MagicMock", "AsyncMock", "Mock")
         )
 
     async def get_embedding(self, text: str):
@@ -196,8 +197,7 @@ class MemoryStore:
             vector_str = str(query_vector)
             excluded = {content for content in (exclude_contents or []) if content}
 
-            is_sqlite = type(self.pool).__name__ == "MockPGPool"
-            w = max(0.0, min(0.7, current_cortisol * 0.4 + current_arousal * 0.2))
+            is_sqlite = self.is_sqlite
 
             results = []
             async with self.pool.acquire() as conn:
@@ -269,17 +269,15 @@ class MemoryStore:
                             recall_count
                         ) - self.decay_rate * _cached_ln(hours_since + 1)
 
-                        cosine_dist = 1.0 - similarity
                         memory_valence = row.get("valence") or 0.0
                         emotion_weight_row = row.get("emotional_weight") or 0.0
 
                         # Neuromodulatory distance mapping
-                        emotional_dist = math.sqrt(
-                            (current_valence - memory_valence) ** 2
-                            + (current_arousal - emotion_weight_row) ** 2
+                        effective_similarity = similarity * (
+                            1.0
+                            + 0.1 * current_valence * emotion_weight_row
+                            - 0.2 * current_arousal * current_cortisol
                         )
-                        effective_dist = cosine_dist * (1.0 - w) + w * emotional_dist
-                        effective_similarity = 1.0 - effective_dist
 
                         spread_activation = self.spread_weight * effective_similarity
                         alignment = math.exp(-abs(memory_valence - current_valence))
@@ -377,17 +375,15 @@ class MemoryStore:
                             recall_count
                         ) - self.decay_rate * _cached_ln(hours_since + 1)
 
-                        cosine_dist = 1.0 - similarity
                         memory_valence = row.get("valence") or 0.0
                         emotion_weight_row = row.get("emotional_weight") or 0.0
 
                         # Neuromodulatory distance mapping
-                        emotional_dist = math.sqrt(
-                            (current_valence - memory_valence) ** 2
-                            + (current_arousal - emotion_weight_row) ** 2
+                        effective_similarity = similarity * (
+                            1.0
+                            + 0.1 * current_valence * emotion_weight_row
+                            - 0.2 * current_arousal * current_cortisol
                         )
-                        effective_dist = cosine_dist * (1.0 - w) + w * emotional_dist
-                        effective_similarity = 1.0 - effective_dist
 
                         spread_activation = self.spread_weight * effective_similarity
                         alignment = math.exp(-abs(memory_valence - current_valence))
@@ -606,7 +602,11 @@ class MemoryStore:
                     elif isinstance(metadata, dict):
                         meta = metadata
 
-                    decay_rate = float(meta.get("decay_rate", 0.5)) if meta else 0.5
+                    decay_rate = (
+                        float(meta.get("decay_rate", self.decay_rate))
+                        if meta
+                        else self.decay_rate
+                    )
 
                     # Calculate base activation: A_i = ln(recall_count) - d * ln(hours_since + 1)
                     activation = math.log(n_recalls) - decay_rate * math.log(

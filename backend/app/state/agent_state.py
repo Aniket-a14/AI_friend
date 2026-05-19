@@ -76,10 +76,26 @@ class AgentState:
         ) / 3.0
 
     @trust.setter
-    def trust(self, value: float):
-        self.trust_benevolence = value
-        self.trust_competence = value
-        self.trust_integrity = value
+    def trust(self, value: Any):
+        if isinstance(value, dict):
+            self.trust_benevolence = float(
+                value.get("trust_benevolence", self.trust_benevolence)
+            )
+            self.trust_competence = float(
+                value.get("trust_competence", self.trust_competence)
+            )
+            self.trust_integrity = float(
+                value.get("trust_integrity", self.trust_integrity)
+            )
+        elif isinstance(value, (list, tuple)) and len(value) == 3:
+            self.trust_benevolence = float(value[0])
+            self.trust_competence = float(value[1])
+            self.trust_integrity = float(value[2])
+        else:
+            try:
+                _ = float(value)
+            except (ValueError, TypeError):
+                pass
 
     # --- Endocrine Hormonal Properties (Tier-5 Physiological Control) ---
     @property

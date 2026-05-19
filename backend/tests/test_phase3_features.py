@@ -140,11 +140,23 @@ async def test_dimensional_trust_matrix():
     # trust getter should return mathematical average
     assert abs(state.trust - 0.6) < 1e-5
 
-    # trust setter should update all three sub-dimensions equally
+    # trust setter: scalar writes do NOT clobber per-dimension fields
     state.trust = 0.7
-    assert state.trust_benevolence == 0.7
+    assert state.trust_benevolence == 0.8
+    assert state.trust_competence == 0.6
+    assert state.trust_integrity == 0.4
+
+    # trust setter with sequence
+    state.trust = (0.9, 0.7, 0.5)
+    assert state.trust_benevolence == 0.9
     assert state.trust_competence == 0.7
-    assert state.trust_integrity == 0.7
+    assert state.trust_integrity == 0.5
+
+    # trust setter with dict
+    state.trust = {"trust_benevolence": 0.3}
+    assert state.trust_benevolence == 0.3
+    assert state.trust_competence == 0.7
+    assert state.trust_integrity == 0.5
 
     # 2. Verify independent update_from_appraisal logic
     # Mock StateService with local MockPGPool
@@ -235,19 +247,23 @@ async def test_subconscious_agent_silence_check_and_24h_window():
 
     # Set user activity to very recent (0 seconds ago) and configure bypass=False
     state_service.current_state.last_user_interaction = time.time()
-    Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = False
+    orig_bypass = getattr(Config, "TESTING_CONSOLIDATION_BYPASS_SILENCE", True)
+    try:
+        Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = False
 
-    # Mock reflection trigger
-    ref_service.trigger_reflection = AsyncMock()
+        # Mock reflection trigger
+        ref_service.trigger_reflection = AsyncMock()
 
-    # Run system tick (should bypass consolidation because user was active recently)
-    await agent._on_system_tick({"uptime": 1})
-    ref_service.trigger_reflection.assert_not_called()
+        # Run system tick (should bypass consolidation because user was active recently)
+        await agent._on_system_tick({"uptime": 1})
+        ref_service.trigger_reflection.assert_not_called()
 
-    # Now enable bypass
-    Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = True
-    await agent._on_system_tick({"uptime": 2})
-    ref_service.trigger_reflection.assert_called_once()
+        # Now enable bypass
+        Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = True
+        await agent._on_system_tick({"uptime": 2})
+        ref_service.trigger_reflection.assert_called_once()
+    finally:
+        Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = orig_bypass
 
     await store.close()
     await mem_store.close()

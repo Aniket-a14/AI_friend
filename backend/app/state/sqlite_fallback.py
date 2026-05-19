@@ -33,13 +33,13 @@ class SQLiteConnection:
         """)
 
         # Schema migration for existing databases
+        cursor.execute("PRAGMA table_info(sessions)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
         for col in ["trust_benevolence", "trust_competence", "trust_integrity"]:
-            try:
+            if col not in existing_cols:
                 cursor.execute(
                     f"ALTER TABLE sessions ADD COLUMN {col} REAL DEFAULT 0.5"
                 )
-            except sqlite3.OperationalError:
-                pass
 
         # Messages Table (Consolidated column handles ACT-R processing)
         cursor.execute("""

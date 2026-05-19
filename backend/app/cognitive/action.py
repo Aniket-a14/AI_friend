@@ -108,7 +108,10 @@ class ActionService:
                     endocrine_options = {}
                     if cortisol is not None:
                         try:
-                            endo_temperature = round(0.9 - (float(cortisol) * 0.6), 3)
+                            val = float(cortisol)
+                            endo_temperature = max(
+                                0.0, min(1.0, round(0.9 - (val * 0.6), 3))
+                            )
                         except (ValueError, TypeError):
                             endo_temperature = 0.7
                         endocrine_options["temperature"] = endo_temperature
@@ -117,7 +120,10 @@ class ActionService:
 
                     if dopamine is not None:
                         try:
-                            endo_top_p = round(0.70 + (float(dopamine) * 0.25), 3)
+                            val = float(dopamine)
+                            endo_top_p = max(
+                                0.0, min(1.0, round(0.70 + (val * 0.25), 3))
+                            )
                         except (ValueError, TypeError):
                             endo_top_p = 0.8
                         endocrine_options["top_p"] = endo_top_p
