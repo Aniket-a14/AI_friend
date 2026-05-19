@@ -59,7 +59,7 @@ class CognitiveService:
             decision=self.decision,
             action=self.action,
             learning=self.learning,
-            identity=self.identity
+            identity=self.identity,
         )
         self.surfaced_memories = []
         self.agent = None  # NATS Mesh connection
@@ -157,20 +157,23 @@ class CognitiveService:
         Handles transport side-effects like NATS signaling and reflection triggers.
         """
         event_metadata = raw_event.get("metadata", {})
-        latency_metadata = event_metadata.get("latency_metadata") if isinstance(event_metadata, dict) else None
+        latency_metadata = (
+            event_metadata.get("latency_metadata")
+            if isinstance(event_metadata, dict)
+            else None
+        )
 
         async for output in self.pipeline.execute(
-            raw_event, 
-            surfaced_memories=self.surfaced_memories
+            raw_event, surfaced_memories=self.surfaced_memories
         ):
             if output["type"] == "mesh_signal":
                 subject = output["subject"]
                 data = output["data"]
-                
+
                 if self.agent:
                     publish_started = time.perf_counter()
                     await self.agent.publish(subject, data)
-                    
+
                     self._record_subject_metric(
                         subject,
                         {"latency_metadata": latency_metadata},
@@ -184,18 +187,21 @@ class CognitiveService:
 
             elif output["type"] == "reflection_needed":
                 episodes = output["data"]
-                self.last_reflection_task = await self.learning.trigger_reflection(episodes)
+                self.last_reflection_task = await self.learning.trigger_reflection(
+                    episodes
+                )
                 yield output
 
             else:
                 # content, error, done, etc.
                 yield output
 
-
     async def get_current_emotion(self) -> str:
         return self.state.get_emotion_label()
 
-    async def generate_proactive_response(self, thought_prompt: str = None) -> AsyncGenerator[Dict[str, Any], None]:
+    async def generate_proactive_response(
+        self, thought_prompt: str = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Phase 1: Proactive Engagement.
         Generates a spontaneous message grounded in real identity, state, and memory.
@@ -214,7 +220,11 @@ class CognitiveService:
                 [f"- {m['content']}" for m in self.surfaced_memories[-3:]]
             )
 
-        thought_context = f"Your subconscious thought: \"{thought_prompt}\"" if thought_prompt else "You feel an urge to reach out."
+        thought_context = (
+            f'Your subconscious thought: "{thought_prompt}"'
+            if thought_prompt
+            else "You feel an urge to reach out."
+        )
 
         proactive_instruction = f"""
         {identity_prompt}

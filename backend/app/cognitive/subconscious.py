@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+
 class SubconsciousEngine:
     """
     Pure Logic Engine for Tier-5 Subconscious Thoughts.
@@ -13,9 +14,7 @@ class SubconsciousEngine:
         self.llm = llm_client
 
     async def evaluate_and_think(
-        self, 
-        state_snapshot: Dict[str, Any],
-        proactive_eligible: bool
+        self, state_snapshot: Dict[str, Any], proactive_eligible: bool
     ) -> Optional[str]:
         """
         Evaluates conditions and generates a thought string if eligible.
@@ -39,10 +38,10 @@ class SubconsciousEngine:
         try:
             thought = await self.llm.generate(
                 prompt,
-                system="You are an internal thought generator. Output ONLY the thought string."
+                system="You are an internal thought generator. Output ONLY the thought string.",
             )
-            thought = thought.strip().strip('"\'')
-            
+            thought = thought.strip().strip("\"'")
+
             if not thought:
                 return None
 

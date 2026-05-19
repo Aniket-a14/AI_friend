@@ -54,6 +54,7 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
     #   2. Reflection - Identity Suggestion (REQUIRED: confidence >= 0.8)
     # This avoids fragile coupling with the autouse fixture's .env interaction.
     from app.config import Config
+
     original_val = Config.LLM_INTENT_CLASSIFICATION_ENABLED
     Config.LLM_INTENT_CLASSIFICATION_ENABLED = False
 

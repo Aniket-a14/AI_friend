@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+import time
 from typing import Dict, Any
 
 from app.agents.base import BaseAgent
@@ -25,8 +26,8 @@ class SubconsciousAgent(BaseAgent):
         ollama_url: str = Config.OLLAMA_URL,
         graph_db: GraphDB = None,
         state_service: StateService = None,
-        memory_store = None,
-        reflection_service = None,
+        memory_store=None,
+        reflection_service=None,
     ):
         super().__init__(name="subconscious_agent")
         self._llm = OllamaClient(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
@@ -38,6 +39,7 @@ class SubconsciousAgent(BaseAgent):
         self._owns_db_store = memory_store is None
         self.reflection_service = reflection_service
         self.db_store = None
+        self._is_consolidating = False
 
     @property
     def llm(self):
@@ -56,13 +58,14 @@ class SubconsciousAgent(BaseAgent):
         if not self.memory_store:
             from app.state.conversation_store import ConversationHistoryStore
             from app.state.memory_store import MemoryStore
-            
+
             self.db_store = ConversationHistoryStore()
             await self.db_store.initialize()
             self.memory_store = MemoryStore(pool=self.db_store.pool)
-            
+
         if not self.reflection_service:
             from app.cognitive.learning import ReflectionService
+
             self.reflection_service = ReflectionService(
                 llm_service=self._llm,
                 graph_store=self.graph_db,
@@ -83,10 +86,10 @@ class SubconsciousAgent(BaseAgent):
         eligible = self.state_service.check_proactive_eligibility()
 
         thought = await self.engine.evaluate_and_think(state_snap, eligible)
-        
+
         if thought:
             logger.info(f"[Subconscious] Thought generated: '{thought}'")
-            
+
             msg = ChatInput(
                 text=thought,
                 utterance_id=str(uuid.uuid4()),
@@ -97,68 +100,109 @@ class SubconsciousAgent(BaseAgent):
             self.state_service.mark_proactive_attempt()
 
         # Subconscious Memory Consolidation (ACT-R & Fact Triplet Crystallization)
+        # Enforce 5-minute silence check: user must be inactive for at least 300 seconds (unless bypassed)
+        last_interact = self.state_service.current_state.last_user_interaction
+        silence_duration = time.time() - last_interact
+        bypass = getattr(Config, "TESTING_CONSOLIDATION_BYPASS_SILENCE", False)
+
+        if silence_duration < 300 and not bypass:
+            logger.info(
+                f"[Subconscious] Bypassing consolidation pass: user active {silence_duration:.1f}s ago (needs 300s)."
+            )
+            return
+
+        if self._is_consolidating:
+            logger.warning(
+                "[Subconscious] Bypassing consolidation pass: sweep already active."
+            )
+            return
+
+        self._is_consolidating = True
         try:
             logger.info("[Subconscious] Initiating subconscious consolidation pass...")
-            episodes = await self.memory_store.get_recent_unconsolidated_episodes(limit=10)
-            
+            episodes = await self.memory_store.get_recent_unconsolidated_episodes(
+                limit=10
+            )
+
             if episodes:
                 # Map SQLite/PG message rows into reflection schemas by pairing user and assistant chronologically
                 reflection_episodes = []
                 chrono_episodes = list(reversed(episodes))
-                
+
                 i = 0
                 while i < len(chrono_episodes):
                     ep = chrono_episodes[i]
                     role = ep.get("role")
                     content = ep.get("content", "")
-                    
+
                     if role == "user":
                         # Check if the next message is from the assistant to pair them
                         assistant_content = ""
-                        if i + 1 < len(chrono_episodes) and chrono_episodes[i + 1].get("role") == "assistant":
-                            assistant_content = chrono_episodes[i + 1].get("content", "")
+                        if (
+                            i + 1 < len(chrono_episodes)
+                            and chrono_episodes[i + 1].get("role") == "assistant"
+                        ):
+                            assistant_content = chrono_episodes[i + 1].get(
+                                "content", ""
+                            )
                             i += 2  # Consume both user and assistant
                         else:
                             i += 1  # Consume only user
-                        
-                        reflection_episodes.append({
-                            "id": ep.get("id"),
-                            "event": content,
-                            "response": assistant_content,
-                            "context": "Session conversation message",
-                            "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
-                            "relationship_delta": 0.0,
-                            "content": content
-                        })
+
+                        reflection_episodes.append(
+                            {
+                                "id": ep.get("id"),
+                                "event": content,
+                                "response": assistant_content,
+                                "context": "Session conversation message",
+                                "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
+                                "relationship_delta": 0.0,
+                                "content": content,
+                            }
+                        )
                     else:
                         # Unpaired assistant message
-                        reflection_episodes.append({
-                            "id": ep.get("id"),
-                            "event": "",
-                            "response": content,
-                            "context": "Session conversation message",
-                            "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
-                            "relationship_delta": 0.0,
-                            "content": ""
-                        })
+                        reflection_episodes.append(
+                            {
+                                "id": ep.get("id"),
+                                "event": "",
+                                "response": content,
+                                "context": "Session conversation message",
+                                "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
+                                "relationship_delta": 0.0,
+                                "content": "",
+                            }
+                        )
                         i += 1
-                
+
                 # Trigger reflection task asynchronously
-                task = await self.reflection_service.trigger_reflection(reflection_episodes)
+                task = await self.reflection_service.trigger_reflection(
+                    reflection_episodes
+                )
                 if task and isinstance(task, asyncio.Task):
-                    await task  # Wait for background fact extraction and graph writing to finish
-                    
+                    await (
+                        task
+                    )  # Wait for background fact extraction and graph writing to finish
+
                     # Mark these episodes as consolidated in the database
                     message_ids = [ep.get("id") for ep in episodes if ep.get("id")]
                     await self.memory_store.mark_episodes_consolidated(message_ids)
-                    
+
                     # Apply ACT-R decay on the raw user memories corresponding to these episodes
-                    contents = [ep.get("content") for ep in episodes if ep.get("role") == "user" and ep.get("content")]
+                    contents = [
+                        ep.get("content")
+                        for ep in episodes
+                        if ep.get("role") == "user" and ep.get("content")
+                    ]
                     await self.memory_store.apply_actr_decay(contents)
-                    
-            logger.info("[Subconscious] Subconscious consolidation pass completed successfully.")
+
+            logger.info(
+                "[Subconscious] Subconscious consolidation pass completed successfully."
+            )
         except Exception as e:
             logger.error(f"[Subconscious] Consolidation pass failed: {e}")
+        finally:
+            self._is_consolidating = False
 
     async def stop(self):
         await self.llm.close()
@@ -182,5 +226,6 @@ async def main():
 
 if __name__ == "__main__":
     from app.logging_config import setup_logging
+
     setup_logging(level=logging.INFO, json_format=getattr(Config, "LOG_JSON", False))
     asyncio.run(main())

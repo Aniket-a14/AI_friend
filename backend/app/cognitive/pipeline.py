@@ -3,24 +3,18 @@ from typing import Dict, Any, AsyncGenerator, List
 
 logger = logging.getLogger(__name__)
 
+
 class CognitivePipeline:
     """
     Pure Logic Pipeline for the Cognitive Loop.
     Transport-agnostic (Zero NATS/HTTP dependencies).
-    
+
     Pipeline (psychological_layer.md System Principle):
         Signal -> Perception -> Appraisal -> State Update -> Decision -> Action -> Learning
     """
 
     def __init__(
-        self,
-        perception,
-        appraisal,
-        state,
-        decision,
-        action,
-        learning,
-        identity
+        self, perception, appraisal, state, decision, action, learning, identity
     ):
         self.perception = perception
         self.appraisal = appraisal
@@ -31,9 +25,7 @@ class CognitivePipeline:
         self.identity = identity
 
     async def execute(
-        self, 
-        raw_event: Dict[str, Any],
-        surfaced_memories: List[Dict[str, Any]] = None
+        self, raw_event: Dict[str, Any], surfaced_memories: List[Dict[str, Any]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Executes the master cognitive loop.
@@ -44,29 +36,31 @@ class CognitivePipeline:
         event_metadata = raw_event.get("metadata", {})
         if not isinstance(event_metadata, dict):
             event_metadata = {}
-            
+
         # 2. Conflict Resolution (Turn-Taking Stability)
         if raw_event_type == "USER_MESSAGE" and not raw_event.get("is_partial"):
             final_text = raw_event.get("content", "")
             speculative_intent = self.state.last_speculative_intent
-            
+
             if speculative_intent:
                 confirmed = self.decision.is_speculative_stop_confirmed(
                     final_text,
                     speculative_intent.get("keywords"),
                 )
                 self.state.last_speculative_intent = None
-                
+
                 if not confirmed:
-                    logger.info("[Pipeline] Interruption REJECTED. Resuming playback...")
+                    logger.info(
+                        "[Pipeline] Interruption REJECTED. Resuming playback..."
+                    )
                     yield {
-                        "type": "mesh_signal", 
+                        "type": "mesh_signal",
                         "subject": "audio.resume",
                         "data": {
                             "reason": "conflict_rejected",
                             "perception_text": speculative_intent.get("text", ""),
                             "utterance_id": speculative_intent.get("utterance_id"),
-                        }
+                        },
                     }
                 else:
                     logger.info("[Pipeline] Interruption CONFIRMED. Stopping playback.")
@@ -81,7 +75,7 @@ class CognitivePipeline:
                             "keywords": speculative_intent.get("keywords", []),
                             "utterance_id": speculative_intent.get("utterance_id"),
                             "turn_id": event_metadata.get("turn_id"),
-                        }
+                        },
                     }
                     return
 
@@ -114,7 +108,9 @@ class CognitivePipeline:
         plan = await self.decision.decide(event, state_snapshot)
 
         # 7. Action Preparation
-        plan.payload["identity_prompt"] = self.identity.get_persona_prompt(state_directive)
+        plan.payload["identity_prompt"] = self.identity.get_persona_prompt(
+            state_directive
+        )
         plan.payload["cortisol"] = state_snapshot.get("cortisol", 0.5)
         plan.payload["dopamine"] = state_snapshot.get("dopamine", 0.0)
         plan.payload["fatigue"] = state_snapshot.get("fatigue", 0.0)
@@ -128,10 +124,16 @@ class CognitivePipeline:
 
         # 9. Validation & Self-Correction
         if full_response:
-            is_valid, reason = await self.identity.validate_response(full_response, plan.goal)
+            is_valid, reason = await self.identity.validate_response(
+                full_response, plan.goal
+            )
             if not is_valid:
-                logger.warning(f"[Identity] Validation failed: {reason}. SELF-CORRECTION.")
-                plan.payload["identity_prompt"] += f"\n\nCRITICAL FIX: Your previous response was rejected for: {reason}. Correct this immediately."
+                logger.warning(
+                    f"[Identity] Validation failed: {reason}. SELF-CORRECTION."
+                )
+                plan.payload["identity_prompt"] += (
+                    f"\n\nCRITICAL FIX: Your previous response was rejected for: {reason}. Correct this immediately."
+                )
                 full_response = ""
                 async for chunk in self.action.execute(plan):
                     if chunk["type"] == "content":

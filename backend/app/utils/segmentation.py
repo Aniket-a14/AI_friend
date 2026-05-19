@@ -2,11 +2,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class HybridSegmenter:
     """
     CVS-1.0 Semantic Chunking Logic.
     Uses punctuation cues and target chunk sizes to find natural speech boundaries.
     """
+
     def __init__(self, target_size: int = 8):
         self.target_size = target_size
 
@@ -19,17 +21,17 @@ class HybridSegmenter:
         # Punctuation is the strongest cue
         if word:
             # Inline character checks to completely avoid generator allocation overhead
-            if '.' in word or '?' in word or '!' in word:
+            if "." in word or "?" in word or "!" in word:
                 score += 0.8
-            elif ',' in word or ':' in word or ';' in word:
+            elif "," in word or ":" in word or ";" in word:
                 score += 0.4
-        
+
         # Length-based pressure
         if chunk_len >= self.target_size:
             score += 0.3
-        
+
         # Extreme length override
         if chunk_len > 12:
             score = 1.0
-            
+
         return score

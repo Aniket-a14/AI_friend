@@ -1,5 +1,6 @@
 import logging
 import sys
+
 try:
     from pythonjsonlogger.json import JsonFormatter as _JsonFormatter
 except ImportError:

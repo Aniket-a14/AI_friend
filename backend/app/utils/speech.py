@@ -2,6 +2,7 @@ import math
 from typing import List, Dict, Any
 from ..contracts import ChatOutput, ChatOutputAffect
 
+
 class SpeechCoordinator:
     """
     Coordinates text-to-speech chunking and prosody mapping.
@@ -16,33 +17,33 @@ class SpeechCoordinator:
         """§5.1: Scherer CPM — Prosody mapping."""
         V = state_snap.get("valence", state_snap.get("mood", 0.0))
         Ar = state_snap.get("arousal", state_snap.get("energy", 0.5))
-        
+
         # Prosody Logic
         speaking_rate = 1.0 + math.tanh(0.5 * Ar - 0.2)
         confidence = 0.9  # Baseline
         intensity = abs(V) * Ar
         pause_bias = max(0.0, min(1.0, 0.2 + 0.4 * (1 - confidence) + 0.2 * Ar))
-        
+
         return {
             "speaking_rate": round(speaking_rate, 3),
             "intensity": round(intensity, 3),
             "pause_bias": round(pause_bias, 3),
-            "confidence": confidence
+            "confidence": confidence,
         }
 
     def create_chunk_payload(
-        self, 
-        words: List[str] = None, 
-        state_snap: Dict[str, Any] = None, 
+        self,
+        words: List[str] = None,
+        state_snap: Dict[str, Any] = None,
         turn_id: str = None,
         done: bool = False,
         full_response: str = None,
         generation_error: str = None,
-        proactive: bool = False
+        proactive: bool = False,
     ) -> ChatOutput:
         text = " ".join(words).strip() if words else None
         prosody = self.map_affect_to_prosody(state_snap or {})
-        
+
         return ChatOutput(
             content=text,
             done=done,
@@ -55,11 +56,17 @@ class SpeechCoordinator:
             generation_error=generation_error,
             proactive=proactive,
             affect=ChatOutputAffect(
-                valence=state_snap.get("valence", state_snap.get("mood", 0.0)) if state_snap else 0.0,
-                arousal=state_snap.get("arousal", state_snap.get("energy", 0.5)) if state_snap else 0.5,
+                valence=state_snap.get("valence", state_snap.get("mood", 0.0))
+                if state_snap
+                else 0.0,
+                arousal=state_snap.get("arousal", state_snap.get("energy", 0.5))
+                if state_snap
+                else 0.5,
                 dominance=state_snap.get("dominance", 0.5) if state_snap else 0.5,
                 trust=state_snap.get("trust", 0.5) if state_snap else 0.5,
                 attachment=state_snap.get("attachment", 0.1) if state_snap else 0.1,
-                emotion=state_snap.get("emotion", "neutral") if state_snap else "neutral",
+                emotion=state_snap.get("emotion", "neutral")
+                if state_snap
+                else "neutral",
             ),
         )

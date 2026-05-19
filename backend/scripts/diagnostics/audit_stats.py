@@ -1,5 +1,6 @@
 import os
 
+
 def get_stats():
     file_stats = []
     for root, _, files in os.walk("app"):
@@ -16,6 +17,7 @@ def get_stats():
     print("Top Largest Files:")
     for lines, path in file_stats[:20]:
         print(f"{lines}: {path}")
+
 
 if __name__ == "__main__":
     get_stats()
