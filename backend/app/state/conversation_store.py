@@ -37,29 +37,53 @@ class ConversationHistoryStore:
         self.pool: Optional[asyncpg.Pool] = None
         self.current_session_id: Optional[uuid.UUID] = None
         app_dir = Path(__file__).resolve().parents[1]
-        self.personality_seed_path = (
-            Config.PERSONALITY_SEED_PATH or str(app_dir / "personality.json")
+        self.personality_seed_path = Config.PERSONALITY_SEED_PATH or str(
+            app_dir / "personality.json"
         )
-        self.history_seed_path = Config.HISTORY_SEED_PATH or str(app_dir / "history.json")
+        self.history_seed_path = Config.HISTORY_SEED_PATH or str(
+            app_dir / "history.json"
+        )
 
     async def initialize(self):
-        """Initialize the database connection pool."""
+        """Initialize the database connection pool with automatic SQLite fallback."""
         try:
-            if not self.dsn:
-                raise ValueError("DATABASE_URL is not set.")
+            if (
+                not self.dsn
+                or self.dsn.startswith("sqlite")
+                or self.dsn == "sqlite:///:memory:"
+            ):
+                from .sqlite_fallback import SQLitePool
+
+                db_file = "app.db"
+                if self.dsn and self.dsn.startswith("sqlite:///"):
+                    db_file = self.dsn.replace("sqlite:///", "")
+                elif self.dsn == "sqlite:///:memory:":
+                    db_file = ":memory:"
+                self.pool = SQLitePool(db_file)
+                logger.info(
+                    f"Connected to local SQLite database via fallback: {db_file}"
+                )
+                await self._ensure_config_exists()
+                return
 
             # Use statement_cache_size=0 for pgbouncer compatibility
             self.pool = await asyncpg.create_pool(dsn=self.dsn, statement_cache_size=0)
-
-            # We don't create tables here anymore since Prisma handles schema management
-            # and we pushed it in the frontend step.
-
             logger.info("Connected to Database via asyncpg.")
-
-            # Seed personality/history if the table is empty
             await self._ensure_config_exists()
 
         except Exception as e:
+            if self.dsn and not self.dsn.startswith("sqlite"):
+                logger.warning(
+                    f"Failed to connect to PostgreSQL: {e}. Falling back to local SQLite database."
+                )
+                try:
+                    from .sqlite_fallback import SQLitePool
+
+                    self.pool = SQLitePool("app.db")
+                    await self._ensure_config_exists()
+                    return
+                except Exception as ex:
+                    logger.error(f"Failed to load SQLite fallback pool: {ex}")
             logger.error(f"Failed to initialize ConversationHistoryStore: {e}")
             raise
 
