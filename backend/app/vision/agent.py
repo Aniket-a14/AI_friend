@@ -8,8 +8,16 @@ from ..llm.ollama_client import OllamaClient
 from .appraisal import VisualAppraisalService
 from ..config import Config
 from ..contracts import Topics, VisionDescription
-import cv2
-import numpy as np
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 # Distance estimation parameters
 ASSUMED_FACE_WIDTH_M = 0.15
@@ -110,6 +118,11 @@ class VisionAgent(BaseAgent):
                 await asyncio.sleep(1)
 
     def _calculate_user_distance(self, frame_b64: str) -> float:
+        if cv2 is None or np is None:
+            logger.debug(
+                "OpenCV or NumPy is not installed. Bypassing user distance calculation."
+            )
+            return 1.0
         try:
             frame_bytes = base64.b64decode(frame_b64)
             nparr = np.frombuffer(frame_bytes, np.uint8)
