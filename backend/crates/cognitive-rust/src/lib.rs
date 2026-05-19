@@ -270,13 +270,13 @@ pub fn update_fatigue(
     let k_restore = 0.20;
 
     let next_fatigue = if is_idle {
-        (state.fatigue - (k_restore * dt_hours / circadian_multiplier)).max(0.0)
+        state.fatigue - (k_restore * dt_hours / circadian_multiplier)
     } else {
-        (state.fatigue + (k_drain * dt_hours * circadian_multiplier)).min(1.0)
+        state.fatigue + (k_drain * dt_hours * circadian_multiplier)
     };
 
     FatigueState {
-        fatigue: next_fatigue,
+        fatigue: next_fatigue.clamp(0.0, 1.0),
         last_user_interaction: state.last_user_interaction,
     }
 }
@@ -376,6 +376,25 @@ mod tests {
         let updated = update_fatigue(&state, 1400.0, 1.0, false);
         assert!(updated.fatigue < 0.5);
         assert!(updated.fatigue >= 0.0);
+    }
+
+    #[test]
+    fn fatigue_updates_are_clamped_to_bounds() {
+        // Test high out-of-bounds fatigue
+        let state_high = FatigueState::new(1.5, 1000.0);
+        let updated_high = update_fatigue(&state_high, 1001.0, 1.0, false);
+        assert_eq!(updated_high.fatigue, 1.0);
+
+        let updated_high_idle = update_fatigue(&state_high, 1400.0, 0.01, false);
+        assert!(updated_high_idle.fatigue <= 1.0);
+
+        // Test low out-of-bounds fatigue
+        let state_low = FatigueState::new(-0.5, 1000.0);
+        let updated_low = update_fatigue(&state_low, 1400.0, 1.0, false);
+        assert_eq!(updated_low.fatigue, 0.0);
+
+        let updated_low_active = update_fatigue(&state_low, 1001.0, 0.01, false);
+        assert!(updated_low_active.fatigue >= 0.0);
     }
 
     #[test]

@@ -122,10 +122,6 @@ async fn main() -> Result<()> {
         .context("build reqwest client with timeouts")?;
 
     let last_distance = std::sync::Arc::new(std::sync::Mutex::new(1.0));
-    let reverb_filter = std::sync::Arc::new(std::sync::Mutex::new(ReverbFilter::new(
-        (config.sample_rate as f32 * 0.05) as usize, // 50ms delay
-        0.5,
-    )));
 
     // Subscribe to vision description and track user distance dynamically
     let last_distance_clone = last_distance.clone();
@@ -162,7 +158,6 @@ async fn main() -> Result<()> {
                     &jetstream,
                     event,
                     last_distance.clone(),
-                    reverb_filter.clone(),
                 )
                 .await
                 {
@@ -182,11 +177,15 @@ async fn handle_chat_output(
     jetstream: &async_nats::jetstream::Context,
     event: ChatOutput,
     last_distance: std::sync::Arc<std::sync::Mutex<f64>>,
-    reverb_filter: std::sync::Arc<std::sync::Mutex<ReverbFilter>>,
 ) -> Result<()> {
     if event.done {
         return Ok(());
     }
+
+    let mut reverb_filter = ReverbFilter::new(
+        (config.sample_rate as f32 * 0.05) as usize, // 50ms delay
+        0.5,
+    );
 
     let Some(content) = event
         .content
@@ -241,9 +240,7 @@ async fn handle_chat_output(
                                 as f32
                         };
 
-                        if let Ok(mut filter) = reverb_filter.lock() {
-                            pcm_bytes = filter.process(&pcm_bytes, wet_gain);
-                        }
+                        pcm_bytes = reverb_filter.process(&pcm_bytes, wet_gain);
                         publish_pcm(jetstream, pcm_bytes, &event).await?;
                     }
                 }

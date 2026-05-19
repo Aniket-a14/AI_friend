@@ -495,14 +495,13 @@ class StateService:
         k_drain = 0.15
         k_restore = 0.20
         if is_idle:
-            self.current_state.fatigue = max(
-                0.0,
+            next_fatigue = (
                 self.current_state.fatigue
-                - (k_restore * dt_hours / circadian_multiplier),
+                - (k_restore * dt_hours / circadian_multiplier)
             )
         else:
-            self.current_state.fatigue = min(
-                1.0,
+            next_fatigue = (
                 self.current_state.fatigue
-                + (k_drain * dt_hours * circadian_multiplier),
+                + (k_drain * dt_hours * circadian_multiplier)
             )
+        self.current_state.fatigue = max(0.0, min(1.0, next_fatigue))
