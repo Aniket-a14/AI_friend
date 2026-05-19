@@ -17,6 +17,8 @@ Before launching, ensure your local Python environment won't crash due to 2026 d
 
 1. **FFmpeg**: Ensure `ffmpeg.exe` and `ffprobe.exe` are in the root folder.
 2. **Audio Fix**: Install `libsox` to your system (on Windows, this is usually bundled in the prezip).
+3. **Hardware-Agnostic FP32 Fallback**: If running in a CPU-only environment (no CUDA), explicitly set `--device cpu --half False` in your launch script. The CVS-2.0 Rust integration will detect this and fallback gracefully without crashing.
+4. **Language Enforcement**: To maximize deterministic throughput, the TTS engine (along with SenseVoice) is strictly restricted to English by default.
 
 ### Step 3: Launch
 

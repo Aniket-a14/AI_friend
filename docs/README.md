@@ -38,6 +38,12 @@ organic memory, and future robotics compatibility.
 
 ---
 
+## Roadmap & Future Architecture
+
+- **[cvs3_architecture_roadmap.md](./cvs3_architecture_roadmap.md)**: The foundational baseline and planned architecture for **CVS-3.0**, encompassing Dual-Process Kahneman Engines, Hermetic SQLite Mocking, and Continuous Prosody Mapping.
+
+---
+
 ## Persistent Agent Context
 
 Agents should also read:
