@@ -216,7 +216,7 @@ The agent's emotional state is a 3D coordinate in **PAD Space** (Pleasure, Arous
 ### 2. Neuromodulatory Memory Gating (CVS-3.0)
 Semantic memory search incorporating dynamic physiological bias gates memory retrieval based on emotional relevance:
 $$S_i = \text{CosineSimilarity} \cdot (1 + 0.1 \cdot \text{valence} \cdot \text{emotional\_weight} - 0.2 \cdot \text{arousal} \cdot \text{cortisol})$$
-* **Positive reinforcement**:valence $\cdot$ emotional_weight increases matching scores for positive memories.
+* **Positive reinforcement**: $\text{valence} \cdot \text{emotional\_weight}$ increases matching scores for positive memories.
 * **Stress inhibition**:arousal $\cdot$ cortisol suppresses high-stress memories during hyper-arousal, avoiding repetitive trauma loops.
 
 ### 3. Dimensional Trust Matrix (Marsh Model - CVS-3.0)
