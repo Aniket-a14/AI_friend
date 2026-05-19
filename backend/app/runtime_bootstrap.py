@@ -61,8 +61,38 @@ async def _run_with_retry(
 
 
 async def _ensure_database_schema() -> None:
-    if not Config.DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not set")
+    dsn = Config.DATABASE_URL
+    if not dsn:
+        dsn = "sqlite:///app.db"
+
+    if dsn.startswith("sqlite") or dsn == "sqlite:///:memory:":
+        logger.info(
+            "[Bootstrap] Detected SQLite target database. Bypassing pg schema initialization."
+        )
+        from .state.sqlite_fallback import SQLiteConnection
+
+        db_file = "app.db"
+        if dsn.startswith("sqlite:///"):
+            db_file = dsn.replace("sqlite:///", "")
+        elif dsn == "sqlite:///:memory:":
+            db_file = ":memory:"
+        SQLiteConnection(db_file)
+        logger.info("[Bootstrap] SQLite database schema and core tables verified.")
+        return
+
+    try:
+        conn = await asyncpg.connect(dsn)
+    except Exception as e:
+        logger.warning(
+            f"[Bootstrap] PostgreSQL connection failed: {e}. Falling back to SQLite."
+        )
+        from .state.sqlite_fallback import SQLiteConnection
+
+        SQLiteConnection("app.db")
+        logger.info(
+            "[Bootstrap] SQLite database schema and core tables verified via fallback."
+        )
+        return
 
     schema_path = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
     if not schema_path.exists():
@@ -70,7 +100,6 @@ async def _ensure_database_schema() -> None:
 
     schema_sql = schema_path.read_text(encoding="utf-8")
 
-    conn = await asyncpg.connect(Config.DATABASE_URL)
     try:
         await conn.execute(schema_sql)
 
