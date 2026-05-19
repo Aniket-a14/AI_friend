@@ -9,6 +9,7 @@ pub mod topics {
     pub const AUDIO_RESUME: &str = "audio.resume";
     pub const AUDIO_INBOUND: &str = "audio.inbound";
     pub const AUDIO_STREAM: &str = "audio.stream";
+    pub const VISION_DESCRIPTION: &str = "vision.description";
 }
 
 pub const HEADER_LATENCY_META: &str = "X-Latency-Meta";
@@ -90,6 +91,10 @@ pub struct ChatOutputAffect {
     pub attachment: f64,
     #[serde(default = "default_neutral")]
     pub emotion: String,
+    #[serde(default)]
+    pub fatigue: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_distance: Option<f64>,
 }
 
 fn default_half() -> f64 {
@@ -113,6 +118,8 @@ impl Default for ChatOutputAffect {
             trust: 0.5,
             attachment: 0.1,
             emotion: default_neutral(),
+            fatigue: 0.0,
+            user_distance: None,
         }
     }
 }
@@ -261,9 +268,25 @@ pub struct Prosody {
 
 pub fn vad_to_prosody(affect: Option<&ChatOutputAffect>) -> Prosody {
     let affect = affect.cloned().unwrap_or_default();
-    let rate = 1.0 + (affect.arousal - 0.5);
-    let pitch = 1.0 + (affect.arousal - 0.5) * 0.7 + affect.valence * 0.3;
-    let volume = 0.4 + affect.dominance * 0.6;
+
+    // Fatigue dynamically slows down the rate and reduces pitch
+    let fatigue_slow = 0.25 * affect.fatigue;
+    let fatigue_pitch_drop = 0.1 * affect.fatigue;
+
+    // Distance adaptation
+    let user_distance = affect.user_distance.unwrap_or(1.0);
+    let (dist_vol_mod, dist_pitch_mod) = if user_distance < 0.6 {
+        (-0.15, -0.05) // close range (whisper)
+    } else if user_distance > 1.5 {
+        (0.2, 0.1) // far range (loud/calling out)
+    } else {
+        (0.0, 0.0) // baseline
+    };
+
+    let rate = 1.0 + (affect.arousal - 0.5) - fatigue_slow;
+    let pitch = 1.0 + (affect.arousal - 0.5) * 0.7 + affect.valence * 0.3 - fatigue_pitch_drop
+        + dist_pitch_mod;
+    let volume = 0.4 + affect.dominance * 0.6 + dist_vol_mod;
 
     Prosody {
         rate: clamp_round(rate, 0.6, 1.8),
@@ -337,5 +360,41 @@ mod tests {
         };
 
         assert!(vad_to_prosody(Some(&negative)).pitch < vad_to_prosody(Some(&positive)).pitch);
+    }
+
+    #[test]
+    fn prosody_responds_to_fatigue() {
+        let fresh = ChatOutputAffect {
+            fatigue: 0.0,
+            ..Default::default()
+        };
+        let tired = ChatOutputAffect {
+            fatigue: 0.8,
+            ..Default::default()
+        };
+
+        let fresh_prosody = vad_to_prosody(Some(&fresh));
+        let tired_prosody = vad_to_prosody(Some(&tired));
+
+        assert!(tired_prosody.rate < fresh_prosody.rate);
+        assert!(tired_prosody.pitch < fresh_prosody.pitch);
+    }
+
+    #[test]
+    fn prosody_adapts_to_user_distance() {
+        let close = ChatOutputAffect {
+            user_distance: Some(0.4),
+            ..Default::default()
+        };
+        let far = ChatOutputAffect {
+            user_distance: Some(2.0),
+            ..Default::default()
+        };
+
+        let close_prosody = vad_to_prosody(Some(&close));
+        let far_prosody = vad_to_prosody(Some(&far));
+
+        assert!(close_prosody.volume < far_prosody.volume);
+        assert!(close_prosody.pitch < far_prosody.pitch);
     }
 }

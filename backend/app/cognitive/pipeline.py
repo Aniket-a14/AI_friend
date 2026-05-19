@@ -117,6 +117,7 @@ class CognitivePipeline:
         plan.payload["identity_prompt"] = self.identity.get_persona_prompt(state_directive)
         plan.payload["cortisol"] = state_snapshot.get("cortisol", 0.5)
         plan.payload["dopamine"] = state_snapshot.get("dopamine", 0.0)
+        plan.payload["fatigue"] = state_snapshot.get("fatigue", 0.0)
 
         # 8. Action Execution
         full_response = ""

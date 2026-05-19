@@ -70,6 +70,27 @@ class TestVisualAppraisalService:
         desc = await mock_appraisal_service.appraise("new_frame_b64")
         assert desc == "A developer coding on a laptop."
 
+    @pytest.mark.asyncio
+    async def test_sensory_habituation_bypasses_vlm_if_below_threshold(self, mock_appraisal_service, mock_ollama_client):
+        # 1. Establish the initial frame and cache
+        import base64
+        frame_data = b"identical_frame_data"
+        frame_b64 = base64.b64encode(frame_data).decode("utf-8")
+
+        desc1 = await mock_appraisal_service.appraise(frame_b64)
+        assert desc1 == "A developer coding on a laptop."
+        assert mock_ollama_client.describe_image.call_count == 1
+
+        # Reset VLM mock and advance time beyond interval
+        mock_ollama_client.describe_image.reset_mock()
+        mock_appraisal_service._last_appraisal_time = time.time() - 2.0
+
+        # 2. Call again with the same base64 frame (delta will be 0.0 < VLM_HABITUATION_THRESHOLD)
+        desc2 = await mock_appraisal_service.appraise(frame_b64)
+        assert desc2 == "A developer coding on a laptop."
+        # Should bypass describe_image call completely due to habituation
+        mock_ollama_client.describe_image.assert_not_awaited()
+
 
 class TestVisionAgent:
     @pytest.mark.asyncio
@@ -115,16 +136,21 @@ class TestVisionAgent:
         mock_appraisal.appraise = AsyncMock(return_value="A clean glass desk with three monitors.")
         agent.appraisal = mock_appraisal
 
-        await agent._run_appraisal("frame_payload_b64")
+        # We pass a simple valid base64 string for a tiny 1x1 black png or blank bytes
+        import base64
+        blank_frame_b64 = base64.b64encode(b"\x00" * 100).decode("utf-8")
+        await agent._run_appraisal(blank_frame_b64)
 
         # Verify appraisal was invoked and output published to Topics.VISION_DESCRIPTION
-        mock_appraisal.appraise.assert_awaited_once_with("frame_payload_b64")
+        mock_appraisal.appraise.assert_awaited_once_with(blank_frame_b64)
         agent.publish.assert_awaited_once()
         
         topic, payload = agent.publish.await_args.args
         assert topic == Topics.VISION_DESCRIPTION
         
-        # Verify schema compliance
+        # Verify schema compliance and user_distance presence
         msg = VisionDescription.model_validate(payload)
         assert msg.description == "A clean glass desk with three monitors."
         assert msg.source == "screen"
+        assert msg.user_distance is not None
+        assert msg.user_distance == 1.0  # Fallback since frame is invalid/blank

@@ -80,3 +80,24 @@ def test_emotion_label(state_service):
     state_service.current_state.energy = 0.5
     state_service.current_state.dominance = 0.2
     assert state_service.get_emotion_label() == "uncertain"
+
+
+@pytest.mark.asyncio
+async def test_fatigue_evolution(state_service):
+    # Set deterministic base time
+    base_time = 1716000000.0
+    state_service.current_state.fatigue = 0.5
+    state_service.current_state.last_user_interaction = base_time - 10.0
+
+    # Not idle -> fatigue increases
+    tick = {"timestamp": base_time, "interval": 3600}
+    await state_service.handle_system_tick(tick)
+    # Check bounded range reflecting configuration (timezone day/night safe)
+    assert 0.64 < state_service.current_state.fatigue < 0.78
+
+    # Idle -> fatigue decreases
+    state_service.current_state.fatigue = 0.5
+    state_service.current_state.last_user_interaction = base_time - 600.0
+    await state_service.handle_system_tick(tick)
+    # Check bounded range reflecting configuration (timezone day/night safe)
+    assert 0.29 < state_service.current_state.fatigue < 0.40
