@@ -44,6 +44,7 @@ class AgentState:
     active_goals: List[str] = field(default_factory=list)
     last_update: datetime = field(default_factory=datetime.now)
     last_user_interaction: float = field(default_factory=time.time)
+    fatigue: float = 0.0  # Metabolic fatigue cycle F(t)
 
     # --- PAD Property Aliases (§2.1) ---
     @property
@@ -57,8 +58,9 @@ class AgentState:
 
     @property
     def arousal(self) -> float:
-        """PAD Arousal (Ar) — maps to 'energy'."""
-        return self.energy
+        """PAD Arousal (Ar) — maps to 'energy' + fatigue-induced restlessness."""
+        fatigue_restlessness = 0.2 * self.fatigue
+        return max(0.0, min(1.0, self.energy + fatigue_restlessness))
 
     @arousal.setter
     def arousal(self, value: float):
@@ -68,12 +70,14 @@ class AgentState:
     @property
     def cortisol(self) -> float:
         """
-        Stress hormone. Inversely tracks valence.
+        Stress hormone. Inversely tracks valence + fatigue contribution.
         High cortisol → rigid/defensive behavior (low LLM temperature).
         Low cortisol → relaxed/creative behavior (higher temperature).
         Range: 0.0 (fully relaxed) to 1.0 (maximum stress).
         """
-        return max(0.0, min(1.0, 0.5 - (self.valence / 2.0)))
+        base_cortisol = 0.5 - (self.valence / 2.0)
+        fatigue_contribution = 0.3 * self.fatigue
+        return max(0.0, min(1.0, base_cortisol + fatigue_contribution))
 
     @property
     def dopamine(self) -> float:
@@ -133,6 +137,10 @@ class StateService:
             self.current_state.dominance = props.get("dominance", 0.5)
             self.current_state.trust = props.get("trust", 0.5)
             self.current_state.attachment = props.get("attachment", 0.1)
+            self.current_state.fatigue = props.get("fatigue", 0.0)
+            self.current_state.last_user_interaction = props.get(
+                "last_user_interaction", self.current_state.last_user_interaction
+            )
             self.current_state.interaction_count = props.get("interaction_count", 0)
 
     async def persist_state(self, agent_name: str = "my friend"):
@@ -147,6 +155,8 @@ class StateService:
             a.dominance = $dominance,
             a.trust = $trust,
             a.attachment = $attachment,
+            a.fatigue = $fatigue,
+            a.last_user_interaction = $last_user_interaction,
             a.interaction_count = $interaction_count,
             a.last_sync = datetime()
         """
@@ -157,6 +167,8 @@ class StateService:
             "dominance": self.current_state.dominance,
             "trust": self.current_state.trust,
             "attachment": self.current_state.attachment,
+            "fatigue": self.current_state.fatigue,
+            "last_user_interaction": self.current_state.last_user_interaction,
             "interaction_count": self.current_state.interaction_count,
         }
         await self.graph.execute_query(query, params, write=True)
@@ -294,10 +306,31 @@ class StateService:
     async def handle_system_tick(self, tick_metadata: Dict[str, Any]):
         """
         Idle evolution triggered by NATS system.tick.
-        Implements ALMA exponential decay (§2.2).
+        Implements ALMA exponential decay (§2.2) and Fatigue updates.
         """
         now = tick_metadata.get("timestamp", time.time())
         dt_hours = tick_metadata.get("interval", 60) / 3600.0
+
+        # Evolve fatigue
+        hour = datetime.fromtimestamp(now).hour
+        is_night = hour >= 22 or hour < 6
+        try:
+            import cognitive_rust
+
+            rust_state = cognitive_rust.FatigueState(
+                self.current_state.fatigue, self.current_state.last_user_interaction
+            )
+            updated_rust = cognitive_rust.update_fatigue(
+                rust_state, now, dt_hours, is_night
+            )
+            self.current_state.fatigue = updated_rust.fatigue
+        except ImportError:
+            self._update_fatigue_python(now, dt_hours, is_night)
+        except Exception:
+            logger.exception(
+                "[State] Unexpected Rust fatigue update error; using Python fallback."
+            )
+            self._update_fatigue_python(now, dt_hours, is_night)
 
         # ALMA Decay (§2.2): I(t) = I₀ · exp(−λ · t)
         self.current_state.mood *= math.exp(-self.lambda_decay * dt_hours)
@@ -313,10 +346,11 @@ class StateService:
         self._enforce_bounds()
         await self.persist_state()
         logger.debug(
-            "[State Heartbeat] V=%.3f Ar=%.3f D=%.3f",
+            "[State Heartbeat] V=%.3f Ar=%.3f D=%.3f F=%.3f",
             self.current_state.mood,
             self.current_state.energy,
             self.current_state.dominance,
+            self.current_state.fatigue,
         )
 
     def check_proactive_eligibility(self) -> bool:
@@ -375,6 +409,7 @@ class StateService:
         self.current_state.attachment = max(
             0.0, min(1.0, self.current_state.attachment)
         )
+        self.current_state.fatigue = max(0.0, min(1.0, self.current_state.fatigue))
 
     def get_context_snapshot(self) -> Dict[str, Any]:
         return {
@@ -388,7 +423,8 @@ class StateService:
             "active_goals": self.current_state.active_goals,
             # PAD aliases for new consumers
             "valence": self.current_state.mood,
-            "arousal": self.current_state.energy,
+            "arousal": self.current_state.arousal,
+            "fatigue": self.current_state.fatigue,
             # Endocrine hormones (Tier-5)
             "cortisol": self.current_state.cortisol,
             "dopamine": self.current_state.dopamine,
@@ -450,3 +486,22 @@ class StateService:
             return
         self._last_sensory_persist = now
         await self.persist_state()
+
+    def _update_fatigue_python(self, now: float, dt_hours: float, is_night: bool):
+        """Fallback fatigue update matching Rust behavior."""
+        circadian_multiplier = 1.8 if is_night else 1.0
+        idle_duration = now - self.current_state.last_user_interaction
+        is_idle = idle_duration > 300.0
+        k_drain = 0.15
+        k_restore = 0.20
+        if is_idle:
+            next_fatigue = (
+                self.current_state.fatigue
+                - (k_restore * dt_hours / circadian_multiplier)
+            )
+        else:
+            next_fatigue = (
+                self.current_state.fatigue
+                + (k_drain * dt_hours * circadian_multiplier)
+            )
+        self.current_state.fatigue = max(0.0, min(1.0, next_fatigue))

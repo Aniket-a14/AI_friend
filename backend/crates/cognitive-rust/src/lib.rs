@@ -234,14 +234,74 @@ fn check_norm_alignment(content: &str, boundaries: &[String]) -> f64 {
     (1.0 - violations as f64 * 0.2).clamp(0.0, 1.0)
 }
 
+#[pyclass(skip_from_py_object)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct FatigueState {
+    #[pyo3(get, set)]
+    pub fatigue: f64,
+    #[pyo3(get, set)]
+    pub last_user_interaction: f64,
+}
+
+#[pymethods]
+impl FatigueState {
+    #[new]
+    fn new(fatigue: f64, last_user_interaction: f64) -> Self {
+        Self {
+            fatigue,
+            last_user_interaction,
+        }
+    }
+}
+
+#[pyfunction]
+pub fn update_fatigue(
+    state: &FatigueState,
+    now: f64,
+    dt_hours: f64,
+    is_night: bool,
+) -> FatigueState {
+    let idle_duration = now - state.last_user_interaction;
+    let is_idle = idle_duration > 300.0; // 5 minutes
+
+    let circadian_multiplier = if is_night { 1.8 } else { 1.0 };
+
+    let k_drain = 0.15;
+    let k_restore = 0.20;
+
+    let next_fatigue = if is_idle {
+        state.fatigue - (k_restore * dt_hours / circadian_multiplier)
+    } else {
+        state.fatigue + (k_drain * dt_hours * circadian_multiplier)
+    };
+
+    FatigueState {
+        fatigue: next_fatigue.clamp(0.0, 1.0),
+        last_user_interaction: state.last_user_interaction,
+    }
+}
+
+#[pyfunction]
+pub fn compute_vector_delta(v1: Vec<f64>, v2: Vec<f64>) -> f64 {
+    if v1.len() != v2.len() || v1.is_empty() {
+        return 1.0;
+    }
+    // Mean squared difference (MSE) between vectors.
+    let sum: f64 = v1.iter().zip(v2.iter()).map(|(a, b)| (a - b).powi(2)).sum();
+    sum.sqrt()
+}
+
 #[pymodule]
 fn cognitive_rust(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<AppraisalVector>()?;
     module.add_class::<PadState>()?;
     module.add_class::<PsychWeights>()?;
+    module.add_class::<FatigueState>()?;
     module.add_function(wrap_pyfunction!(compute_appraisal, module)?)?;
     module.add_function(wrap_pyfunction!(update_pad_from_appraisal, module)?)?;
     module.add_function(wrap_pyfunction!(apply_alma_decay, module)?)?;
+    module.add_function(wrap_pyfunction!(update_fatigue, module)?)?;
+    module.add_function(wrap_pyfunction!(compute_vector_delta, module)?)?;
     Ok(())
 }
 
@@ -298,5 +358,51 @@ mod tests {
         let (valence, arousal) = apply_alma_decay(0.5, 0.5, 0.05, 1.0);
         assert!(valence < 0.5);
         assert_eq!(arousal, 0.52);
+    }
+
+    #[test]
+    fn fatigue_updates_increase_when_active() {
+        let state = FatigueState::new(0.1, 1000.0);
+        // Current time is 1001.0, meaning active since last user interaction was 1000.0 (1s ago, idle is > 300s)
+        let updated = update_fatigue(&state, 1001.0, 1.0, false);
+        assert!(updated.fatigue > 0.1);
+        assert!(updated.fatigue <= 1.0);
+    }
+
+    #[test]
+    fn fatigue_updates_decrease_when_idle() {
+        let state = FatigueState::new(0.5, 1000.0);
+        // Current time is 1400.0, meaning idle since last interaction was 1000.0 (400s ago)
+        let updated = update_fatigue(&state, 1400.0, 1.0, false);
+        assert!(updated.fatigue < 0.5);
+        assert!(updated.fatigue >= 0.0);
+    }
+
+    #[test]
+    fn fatigue_updates_are_clamped_to_bounds() {
+        // Test high out-of-bounds fatigue
+        let state_high = FatigueState::new(1.5, 1000.0);
+        let updated_high = update_fatigue(&state_high, 1001.0, 1.0, false);
+        assert_eq!(updated_high.fatigue, 1.0);
+
+        let updated_high_idle = update_fatigue(&state_high, 1400.0, 0.01, false);
+        assert!(updated_high_idle.fatigue <= 1.0);
+
+        // Test low out-of-bounds fatigue
+        let state_low = FatigueState::new(-0.5, 1000.0);
+        let updated_low = update_fatigue(&state_low, 1400.0, 1.0, false);
+        assert_eq!(updated_low.fatigue, 0.0);
+
+        let updated_low_active = update_fatigue(&state_low, 1001.0, 0.01, false);
+        assert!(updated_low_active.fatigue >= 0.0);
+    }
+
+    #[test]
+    fn compute_vector_delta_calculates_mean_squared_difference() {
+        let v1 = vec![0.0, 0.0, 0.0];
+        let v2 = vec![1.0, 2.0, 2.0];
+        let delta = compute_vector_delta(v1, v2);
+        // (1^2 + 2^2 + 2^2) / 3 = (1 + 4 + 4) / 3 = 9 / 3 = 3.0
+        assert!((delta - 3.0).abs() < 1e-9);
     }
 }
