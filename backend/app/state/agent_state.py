@@ -44,6 +44,7 @@ class AgentState:
     active_goals: List[str] = field(default_factory=list)
     last_update: datetime = field(default_factory=datetime.now)
     last_user_interaction: float = field(default_factory=time.time)
+    fatigue: float = 0.0  # Metabolic fatigue cycle F(t)
 
     # --- PAD Property Aliases (§2.1) ---
     @property
@@ -57,8 +58,9 @@ class AgentState:
 
     @property
     def arousal(self) -> float:
-        """PAD Arousal (Ar) — maps to 'energy'."""
-        return self.energy
+        """PAD Arousal (Ar) — maps to 'energy' + fatigue-induced restlessness."""
+        fatigue_restlessness = 0.2 * self.fatigue
+        return max(0.0, min(1.0, self.energy + fatigue_restlessness))
 
     @arousal.setter
     def arousal(self, value: float):
@@ -68,12 +70,14 @@ class AgentState:
     @property
     def cortisol(self) -> float:
         """
-        Stress hormone. Inversely tracks valence.
+        Stress hormone. Inversely tracks valence + fatigue contribution.
         High cortisol → rigid/defensive behavior (low LLM temperature).
         Low cortisol → relaxed/creative behavior (higher temperature).
         Range: 0.0 (fully relaxed) to 1.0 (maximum stress).
         """
-        return max(0.0, min(1.0, 0.5 - (self.valence / 2.0)))
+        base_cortisol = 0.5 - (self.valence / 2.0)
+        fatigue_contribution = 0.3 * self.fatigue
+        return max(0.0, min(1.0, base_cortisol + fatigue_contribution))
 
     @property
     def dopamine(self) -> float:
@@ -294,10 +298,44 @@ class StateService:
     async def handle_system_tick(self, tick_metadata: Dict[str, Any]):
         """
         Idle evolution triggered by NATS system.tick.
-        Implements ALMA exponential decay (§2.2).
+        Implements ALMA exponential decay (§2.2) and Fatigue updates.
         """
         now = tick_metadata.get("timestamp", time.time())
         dt_hours = tick_metadata.get("interval", 60) / 3600.0
+
+        # Evolve fatigue
+        try:
+            import cognitive_rust
+            hour = datetime.fromtimestamp(now).hour
+            is_night = (hour >= 22 or hour < 6)
+            rust_state = cognitive_rust.FatigueState(
+                self.current_state.fatigue,
+                self.current_state.last_user_interaction
+            )
+            updated_rust = cognitive_rust.update_fatigue(
+                rust_state,
+                now,
+                dt_hours,
+                is_night
+            )
+            self.current_state.fatigue = updated_rust.fatigue
+        except Exception:
+            # Fallback Python calculation
+            hour = datetime.fromtimestamp(now).hour
+            is_night = (hour >= 22 or hour < 6)
+            circadian_multiplier = 1.8 if is_night else 1.0
+            idle_duration = now - self.current_state.last_user_interaction
+            is_idle = idle_duration > 300.0
+            k_drain = 0.15
+            k_restore = 0.20
+            if is_idle:
+                self.current_state.fatigue = max(
+                    0.0, self.current_state.fatigue - (k_restore * dt_hours / circadian_multiplier)
+                )
+            else:
+                self.current_state.fatigue = min(
+                    1.0, self.current_state.fatigue + (k_drain * dt_hours * circadian_multiplier)
+                )
 
         # ALMA Decay (§2.2): I(t) = I₀ · exp(−λ · t)
         self.current_state.mood *= math.exp(-self.lambda_decay * dt_hours)
@@ -313,10 +351,11 @@ class StateService:
         self._enforce_bounds()
         await self.persist_state()
         logger.debug(
-            "[State Heartbeat] V=%.3f Ar=%.3f D=%.3f",
+            "[State Heartbeat] V=%.3f Ar=%.3f D=%.3f F=%.3f",
             self.current_state.mood,
             self.current_state.energy,
             self.current_state.dominance,
+            self.current_state.fatigue,
         )
 
     def check_proactive_eligibility(self) -> bool:
@@ -375,6 +414,7 @@ class StateService:
         self.current_state.attachment = max(
             0.0, min(1.0, self.current_state.attachment)
         )
+        self.current_state.fatigue = max(0.0, min(1.0, self.current_state.fatigue))
 
     def get_context_snapshot(self) -> Dict[str, Any]:
         return {
@@ -389,6 +429,7 @@ class StateService:
             # PAD aliases for new consumers
             "valence": self.current_state.mood,
             "arousal": self.current_state.energy,
+            "fatigue": self.current_state.fatigue,
             # Endocrine hormones (Tier-5)
             "cortisol": self.current_state.cortisol,
             "dopamine": self.current_state.dopamine,

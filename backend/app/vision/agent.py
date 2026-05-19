@@ -100,6 +100,35 @@ class VisionAgent(BaseAgent):
                 logger.error(f"Vision capture error: {e}")
                 await asyncio.sleep(1)
 
+    def _calculate_user_distance(self, frame_b64: str) -> float:
+        try:
+            import cv2
+            import numpy as np
+
+            frame_bytes = base64.b64decode(frame_b64)
+            nparr = np.frombuffer(frame_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                return 1.0
+
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            face_cascade = cv2.CascadeClassifier(cascade_path)
+
+            faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+            if len(faces) > 0:
+                max_w = max(w for (x, y, w, h) in faces)
+                img_width = img.shape[1]
+                S = max_w / img_width if img_width > 0 else 0.0
+                if S > 0.0:
+                    d = 0.15 / S
+                    return float(np.clip(d, 0.2, 5.0))
+
+            return 1.0
+        except Exception as e:
+            logger.debug(f"Failed to calculate user distance: {e}")
+            return 1.0
+
     async def _run_appraisal(self, frame_b64: str):
         """Run VLM appraisal if the interval has elapsed and publish the description."""
         if not self.appraisal.should_appraise():
@@ -108,9 +137,11 @@ class VisionAgent(BaseAgent):
         try:
             description = await self.appraisal.appraise(frame_b64)
             if description:
+                user_distance = self._calculate_user_distance(frame_b64)
                 msg = VisionDescription(
                     description=description,
                     source=self.source,
+                    user_distance=user_distance,
                 )
                 await self.publish(
                     Topics.VISION_DESCRIPTION, msg.model_dump()

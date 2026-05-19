@@ -98,21 +98,26 @@ class ActionService:
                 # 2. Endocrine System: Calculate physiological LLM parameters
                 # Cortisol (stress) → inversely controls temperature
                 # Dopamine (reward) → controls top_p exploration
+                # Fatigue (sleepiness) → restricts response length (terser replies)
                 endocrine_options = None
                 cortisol = plan.payload.get("cortisol")
                 dopamine = plan.payload.get("dopamine")
+                fatigue = plan.payload.get("fatigue", 0.0)
                 if cortisol is not None and dopamine is not None:
                     # High cortisol → low temp (rigid/defensive): range 0.3 to 0.9
                     endo_temperature = round(0.9 - (cortisol * 0.6), 3)
                     # High dopamine → high top_p (exploratory): range 0.70 to 0.95
                     endo_top_p = round(0.70 + (dopamine * 0.25), 3)
+                    # Bounded num_predict between 15 (exhausted) and 40 (fresh)
+                    endo_num_predict = int(40 - (fatigue * 25))
                     endocrine_options = {
                         "temperature": endo_temperature,
                         "top_p": endo_top_p,
+                        "num_predict": endo_num_predict,
                     }
                     logger.info(
-                        "[Endocrine] Cortisol=%.2f Dopamine=%.2f → temp=%.3f top_p=%.3f",
-                        cortisol, dopamine, endo_temperature, endo_top_p,
+                        "[Endocrine] Cortisol=%.2f Dopamine=%.2f Fatigue=%.2f → temp=%.3f top_p=%.3f num_predict=%d",
+                        cortisol, dopamine, fatigue, endo_temperature, endo_top_p, endo_num_predict,
                     )
 
                 # 3. Stream Generation

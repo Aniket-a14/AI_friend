@@ -12,6 +12,50 @@ use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
+#[derive(Debug, Clone, serde::Deserialize)]
+struct VisionDescriptionMsg {
+    user_distance: Option<f64>,
+}
+
+struct ReverbFilter {
+    buffer: Vec<f32>,
+    index: usize,
+    gain: f32,
+}
+
+impl ReverbFilter {
+    fn new(delay_samples: usize, gain: f32) -> Self {
+        Self {
+            buffer: vec![0.0; delay_samples],
+            index: 0,
+            gain,
+        }
+    }
+
+    fn process(&mut self, bytes: &[u8]) -> Vec<u8> {
+        let mut samples = bytes
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<i16>>();
+
+        for sample in samples.iter_mut() {
+            let input = *sample as f32;
+            let delayed = self.buffer[self.index];
+            let output = input + self.gain * delayed;
+            self.buffer[self.index] = output;
+            self.index = (self.index + 1) % self.buffer.len();
+            
+            *sample = output.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+        }
+
+        let mut output_bytes = Vec::with_capacity(samples.len() * 2);
+        for sample in samples {
+            output_bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        output_bytes
+    }
+}
+
 #[derive(Debug, Clone)]
 struct VoiceConfig {
     nats_url: String,
@@ -60,12 +104,41 @@ async fn main() -> Result<()> {
         .build()
         .context("build reqwest client with timeouts")?;
 
+    let last_distance = std::sync::Arc::new(std::sync::Mutex::new(1.0));
+    let reverb_filter = std::sync::Arc::new(std::sync::Mutex::new(ReverbFilter::new(
+        (config.sample_rate as f32 * 0.05) as usize, // 50ms delay
+        0.5,
+    )));
+
+    // Subscribe to vision description and track user distance dynamically
+    let last_distance_clone = last_distance.clone();
+    let mut vision_sub = client.subscribe(topics::VISION_DESCRIPTION).await?;
+    tokio::spawn(async move {
+        while let Some(msg) = vision_sub.next().await {
+            if let Ok(desc) = serde_json::from_slice::<VisionDescriptionMsg>(&msg.payload) {
+                if let Some(dist) = desc.user_distance {
+                    if let Ok(mut guard) = last_distance_clone.lock() {
+                        *guard = dist;
+                    }
+                }
+            }
+        }
+    });
+
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
 
     while let Some(message) = subscriber.next().await {
         match serde_json::from_slice::<ChatOutput>(&message.payload) {
             Ok(event) => {
-                if let Err(err) = handle_chat_output(&config, &http, &jetstream, event).await {
+                if let Err(err) = handle_chat_output(
+                    &config,
+                    &http,
+                    &jetstream,
+                    event,
+                    last_distance.clone(),
+                    reverb_filter.clone(),
+                )
+                .await {
                     error!("voice-agent failed to process chat.output: {err:#}");
                 }
             }
@@ -81,6 +154,8 @@ async fn handle_chat_output(
     http: &Client,
     jetstream: &async_nats::jetstream::Context,
     event: ChatOutput,
+    last_distance: std::sync::Arc<std::sync::Mutex<f64>>,
+    reverb_filter: std::sync::Arc<std::sync::Mutex<ReverbFilter>>,
 ) -> Result<()> {
     if event.done {
         return Ok(());
@@ -96,6 +171,18 @@ async fn handle_chat_output(
     };
 
     let prosody = vad_to_prosody(event.affect.as_ref());
+    let distance = event
+        .affect
+        .as_ref()
+        .map(|a| a.user_distance)
+        .unwrap_or_else(|| {
+            if let Ok(guard) = last_distance.lock() {
+                *guard
+            } else {
+                1.0
+            }
+        });
+
     for part in split_temporal_parts(content)? {
         match part {
             TemporalPart::Silence(ms) => {
@@ -114,7 +201,13 @@ async fn handle_chat_output(
                 .await?;
                 while let Some(chunk) = response.chunk().await? {
                     if !chunk.is_empty() {
-                        publish_pcm(jetstream, chunk.to_vec(), &event).await?;
+                        let mut pcm_bytes = chunk.to_vec();
+                        if distance > 3.0 {
+                            if let Ok(mut filter) = reverb_filter.lock() {
+                                pcm_bytes = filter.process(&pcm_bytes);
+                            }
+                        }
+                        publish_pcm(jetstream, pcm_bytes, &event).await?;
                     }
                 }
             }
@@ -280,5 +373,24 @@ mod tests {
 
         assert_eq!(hops.last().unwrap()["agent"], "voice_agent");
         assert_eq!(hops.last().unwrap()["subject"], topics::AUDIO_STREAM);
+    }
+
+    #[test]
+    fn test_reverb_filter_processing() {
+        let mut filter = ReverbFilter::new(4, 0.5);
+        let input_pcm = vec![10, 0, 20, 0, 30, 0, 40, 0, 50, 0, 60, 0];
+        let processed = filter.process(&input_pcm);
+        
+        // Since delay is 4 samples (8 bytes), and gain is 0.5:
+        // The first 4 samples should be unchanged (except buffer updates)
+        assert_eq!(processed.len(), input_pcm.len());
+        let out_samples = processed
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<i16>>();
+        
+        // Sample 4 (5th sample, index 4): input 50, delayed sample 0 (index 0) * 0.5 = 10 * 0.5 = 5. Output: 50 + 5 = 55
+        assert_eq!(out_samples[0], 10);
+        assert_eq!(out_samples[4], 55);
     }
 }

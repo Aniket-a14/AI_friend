@@ -1177,3 +1177,32 @@ Behavior/process changes:
 Verification:
 - Successfully ran all 138 unit, integration, and performance tests in `40.93s` with 100% pass rate.
 - Validated that Ruff format and check diagnostics are warning-free.
+
+## 2026-05-19 CVS-3.0 Phase 2: Physiology & Sensory Filters (Fatigue, Habituation, and Acoustic Reverb)
+
+Implemented Improvements 9 (Sensory Novelty Filtering), 10 (Metabolic Fatigue Cycles), and 12 (Spatial Proprioception & Acoustic Environment Adaptation) to make the agent's cognition, affect, and vocal behavior adapt dynamically to physical fatigue and spatial location.
+
+Changed files:
+- `backend/app/cognitive/pipeline.py` (Modified)
+- `backend/app/cognitive/action.py` (Modified)
+- `backend/app/agents/brain_agent.py` (Modified)
+- `backend/app/contracts.py` (Modified)
+- `backend/app/vision/agent.py` (Modified)
+- `backend/crates/contracts/src/lib.rs` (Modified)
+- `backend/crates/contracts/fixtures/chat_output_chunk.json` (Modified)
+- `backend/crates/voice-agent/src/main.rs` (Modified)
+- `backend/tests/test_vision.py` (Modified)
+- `backend/tests/test_state.py` (Modified)
+
+Behavior/process changes:
+- **Sensory Novelty Filtering**: Refactored `VisualAppraisalService` to bypass heavy VLM calls when frame vector delta (Euclidean distance calculated using Rust FFI bindings) falls below `VLM_HABITUATION_THRESHOLD` (0.005).
+- **Metabolic Fatigue Cycles**: Added `FatigueState` and dynamic decay/recovery calculations to `cognitive-rust` via PyO3, featuring a circadian night modifier (1.8x multiplier between 10 PM and 6 AM). Hooked this up to `StateService.handle_system_tick` to dynamically scale response token lengths (`num_predict` override between 15 and 40 tokens) based on fatigue level.
+- **Vocal Affect & Spatial Proprioception**: Appended `user_distance` and `fatigue` fields to `ChatOutputAffect` structures in both Python and Rust models.
+- **Continuous Prosody Modulation**: Integrated dynamic modulation rules into `vad_to_prosody` in Rust to scale down speaking rate and pitch when fatigue is high, and dynamically adjust speaking volume and pitch based on user distance.
+- **Haar Cascade Distance Inference**: Wired OpenCV Haar Cascade face detection inside `VisionAgent` to calculate distance as a function of face width ($d = 0.15 / S$) and publish it via `vision.description`.
+- **Acoustic Environment Adaptation**: Implemented a `ReverbFilter` DSP comb filter (50ms delay, 0.5 feedback gain) inside `voice-agent`. The voice agent listens to the `vision.description` NATS stream and automatically applies the reverb process to outgoing 16-bit PCM voice streaming audio when the user is located further than 3.0 meters away.
+
+Verification:
+- Added comprehensive unit tests for `ReverbFilter` in `voice-agent`, VLM habituation in `test_vision.py`, and fatigue evolution in `test_state.py`.
+- Checked all Rust workspaces with `cargo test --all` (19/19 tests passed).
+- Executed full pytest suite (140/140 tests passed, 100% pass rate).

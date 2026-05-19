@@ -98,6 +98,8 @@ class AppSettings(BaseSettings):
     VLM_MODEL: str = "moondream"
     VLM_ENABLED: bool = True
     VLM_APPRAISAL_INTERVAL: float = 5.0
+    VLM_HABITUATION_THRESHOLD: float = 0.005
+    VLM_PROPLAYLOAD: Optional[str] = None
     VLM_PROMPT: str = "Describe what you see in this image briefly. Focus on what the user is doing."
 
     STT_MODEL_SIZE: str = "small"

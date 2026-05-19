@@ -68,6 +68,8 @@ class ChatOutputAffect(BaseModel):
     trust: float = 0.5
     attachment: float = 0.1
     emotion: str = "neutral"
+    fatigue: float = 0.0
+    user_distance: float = 1.0
 
 
 class ChatOutput(BaseModel):
@@ -178,6 +180,7 @@ class VisionDescription(BaseModel):
     description: str
     source: str = "screen"
     timestamp: float = Field(default_factory=time.time)
+    user_distance: Optional[float] = None
 
 
 # ─── state.update ────────────────────────────────────────────

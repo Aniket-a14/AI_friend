@@ -298,6 +298,7 @@ class BrainAgent(BaseAgent):
         D = state_snap.get("dominance", 0.5)
         T = state_snap.get("trust", 0.5)
         At = state_snap.get("attachment", 0.1)
+        F = state_snap.get("fatigue", 0.0)
 
         # §5.1: Scherer CPM — Prosody mapping
         speaking_rate = 1.0 + math.tanh(0.5 * Ar - 0.2)  # High arousal → faster
@@ -323,6 +324,7 @@ class BrainAgent(BaseAgent):
                 trust=T,
                 attachment=At,
                 emotion=state_snap.get("emotion", "neutral"),
+                fatigue=F,
             ),
         )
         await self.publish(Topics.CHAT_OUTPUT, payload.model_dump())
