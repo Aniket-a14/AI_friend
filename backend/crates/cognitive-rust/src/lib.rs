@@ -286,6 +286,7 @@ pub fn compute_vector_delta(v1: Vec<f64>, v2: Vec<f64>) -> f64 {
     if v1.len() != v2.len() || v1.is_empty() {
         return 1.0;
     }
+    // Mean squared difference (MSE) between vectors.
     let sum: f64 = v1.iter().zip(v2.iter()).map(|(a, b)| (a - b).powi(2)).sum();
     sum / v1.len() as f64
 }
@@ -378,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_vector_delta_calculates_euclidean_distance() {
+    fn compute_vector_delta_calculates_mean_squared_difference() {
         let v1 = vec![0.0, 0.0, 0.0];
         let v2 = vec![1.0, 2.0, 2.0];
         let delta = compute_vector_delta(v1, v2);

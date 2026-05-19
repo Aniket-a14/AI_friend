@@ -21,6 +21,7 @@ struct ReverbFilter {
     buffer: Vec<f32>,
     index: usize,
     gain: f32,
+    pending_byte: Option<u8>,
 }
 
 impl ReverbFilter {
@@ -29,11 +30,22 @@ impl ReverbFilter {
             buffer: vec![0.0; delay_samples],
             index: 0,
             gain,
+            pending_byte: None,
         }
     }
 
     fn process(&mut self, bytes: &[u8]) -> Vec<u8> {
-        let mut samples = bytes
+        let mut framed =
+            Vec::with_capacity(bytes.len() + if self.pending_byte.is_some() { 1 } else { 0 });
+        if let Some(byte) = self.pending_byte.take() {
+            framed.push(byte);
+        }
+        framed.extend_from_slice(bytes);
+        if framed.len() % 2 != 0 {
+            self.pending_byte = framed.pop();
+        }
+
+        let mut samples = framed
             .chunks_exact(2)
             .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<i16>>();
@@ -174,7 +186,7 @@ async fn handle_chat_output(
     let distance = event
         .affect
         .as_ref()
-        .map(|a| a.user_distance)
+        .and_then(|a| a.user_distance)
         .unwrap_or_else(|| {
             if let Ok(guard) = last_distance.lock() {
                 *guard
@@ -392,5 +404,22 @@ mod tests {
         // Sample 4 (5th sample, index 4): input 50, delayed sample 0 (index 0) * 0.5 = 10 * 0.5 = 5. Output: 50 + 5 = 55
         assert_eq!(out_samples[0], 10);
         assert_eq!(out_samples[4], 55);
+    }
+
+    #[test]
+    fn reverb_filter_preserves_samples_across_odd_chunks() {
+        let mut filter = ReverbFilter::new(4, 0.5);
+
+        let first = filter.process(&[10, 0, 20]);
+        assert_eq!(first.len(), 2);
+        assert_eq!(first, vec![10, 0]);
+
+        let second = filter.process(&[0, 30, 0]);
+        assert_eq!(second.len(), 4);
+        let out_samples = second
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<i16>>();
+        assert_eq!(out_samples, vec![20, 30]);
     }
 }

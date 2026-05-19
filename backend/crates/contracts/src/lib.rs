@@ -93,8 +93,8 @@ pub struct ChatOutputAffect {
     pub emotion: String,
     #[serde(default)]
     pub fatigue: f64,
-    #[serde(default = "default_distance")]
-    pub user_distance: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_distance: Option<f64>,
 }
 
 fn default_half() -> f64 {
@@ -109,10 +109,6 @@ fn default_neutral() -> String {
     "neutral".to_string()
 }
 
-fn default_distance() -> f64 {
-    1.0
-}
-
 impl Default for ChatOutputAffect {
     fn default() -> Self {
         Self {
@@ -123,7 +119,7 @@ impl Default for ChatOutputAffect {
             attachment: 0.1,
             emotion: default_neutral(),
             fatigue: 0.0,
-            user_distance: 1.0,
+            user_distance: None,
         }
     }
 }
@@ -278,9 +274,10 @@ pub fn vad_to_prosody(affect: Option<&ChatOutputAffect>) -> Prosody {
     let fatigue_pitch_drop = 0.1 * affect.fatigue;
 
     // Distance adaptation
-    let (dist_vol_mod, dist_pitch_mod) = if affect.user_distance < 0.6 {
+    let user_distance = affect.user_distance.unwrap_or(1.0);
+    let (dist_vol_mod, dist_pitch_mod) = if user_distance < 0.6 {
         (-0.15, -0.05) // close range (whisper)
-    } else if affect.user_distance > 1.5 {
+    } else if user_distance > 1.5 {
         (0.2, 0.1) // far range (loud/calling out)
     } else {
         (0.0, 0.0) // baseline
@@ -385,11 +382,11 @@ mod tests {
     #[test]
     fn prosody_adapts_to_user_distance() {
         let close = ChatOutputAffect {
-            user_distance: 0.4,
+            user_distance: Some(0.4),
             ..Default::default()
         };
         let far = ChatOutputAffect {
-            user_distance: 2.0,
+            user_distance: Some(2.0),
             ..Default::default()
         };
 

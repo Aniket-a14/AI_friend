@@ -53,6 +53,7 @@ class BrainAgent(BaseAgent):
 
         self.last_interaction_time = datetime.now()
         self.last_visual_context = "No visual data available."
+        self.last_user_distance = None
 
         # CVS-1.0 Segmentation Config
         self.coordinator = SpeechCoordinator(
@@ -127,6 +128,7 @@ class BrainAgent(BaseAgent):
             logger.debug("[Brain] Visual context updated: %s", description[:60])
         else:
             self.last_visual_context = f"I am seeing the user's {source}."
+        self.last_user_distance = data.get("user_distance")
 
     async def _on_chat_input(self, message: Dict[str, Any]):
         now = datetime.now()
@@ -325,6 +327,7 @@ class BrainAgent(BaseAgent):
                 attachment=At,
                 emotion=state_snap.get("emotion", "neutral"),
                 fatigue=F,
+                user_distance=self.last_user_distance,
             ),
         )
         await self.publish(Topics.CHAT_OUTPUT, payload.model_dump())

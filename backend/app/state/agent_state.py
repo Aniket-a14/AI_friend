@@ -137,6 +137,7 @@ class StateService:
             self.current_state.dominance = props.get("dominance", 0.5)
             self.current_state.trust = props.get("trust", 0.5)
             self.current_state.attachment = props.get("attachment", 0.1)
+            self.current_state.fatigue = props.get("fatigue", 0.0)
             self.current_state.interaction_count = props.get("interaction_count", 0)
 
     async def persist_state(self, agent_name: str = "my friend"):
@@ -151,6 +152,7 @@ class StateService:
             a.dominance = $dominance,
             a.trust = $trust,
             a.attachment = $attachment,
+            a.fatigue = $fatigue,
             a.interaction_count = $interaction_count,
             a.last_sync = datetime()
         """
@@ -161,6 +163,7 @@ class StateService:
             "dominance": self.current_state.dominance,
             "trust": self.current_state.trust,
             "attachment": self.current_state.attachment,
+            "fatigue": self.current_state.fatigue,
             "interaction_count": self.current_state.interaction_count,
         }
         await self.graph.execute_query(query, params, write=True)
@@ -304,10 +307,10 @@ class StateService:
         dt_hours = tick_metadata.get("interval", 60) / 3600.0
 
         # Evolve fatigue
+        hour = datetime.fromtimestamp(now).hour
+        is_night = (hour >= 22 or hour < 6)
         try:
             import cognitive_rust
-            hour = datetime.fromtimestamp(now).hour
-            is_night = (hour >= 22 or hour < 6)
             rust_state = cognitive_rust.FatigueState(
                 self.current_state.fatigue,
                 self.current_state.last_user_interaction
@@ -319,23 +322,13 @@ class StateService:
                 is_night
             )
             self.current_state.fatigue = updated_rust.fatigue
+        except ImportError:
+            self._update_fatigue_python(now, dt_hours, is_night)
         except Exception:
-            # Fallback Python calculation
-            hour = datetime.fromtimestamp(now).hour
-            is_night = (hour >= 22 or hour < 6)
-            circadian_multiplier = 1.8 if is_night else 1.0
-            idle_duration = now - self.current_state.last_user_interaction
-            is_idle = idle_duration > 300.0
-            k_drain = 0.15
-            k_restore = 0.20
-            if is_idle:
-                self.current_state.fatigue = max(
-                    0.0, self.current_state.fatigue - (k_restore * dt_hours / circadian_multiplier)
-                )
-            else:
-                self.current_state.fatigue = min(
-                    1.0, self.current_state.fatigue + (k_drain * dt_hours * circadian_multiplier)
-                )
+            logger.exception(
+                "[State] Unexpected Rust fatigue update error; using Python fallback."
+            )
+            self._update_fatigue_python(now, dt_hours, is_night)
 
         # ALMA Decay (§2.2): I(t) = I₀ · exp(−λ · t)
         self.current_state.mood *= math.exp(-self.lambda_decay * dt_hours)
@@ -491,3 +484,19 @@ class StateService:
             return
         self._last_sensory_persist = now
         await self.persist_state()
+
+    def _update_fatigue_python(self, now: float, dt_hours: float, is_night: bool):
+        """Fallback fatigue update matching Rust behavior."""
+        circadian_multiplier = 1.8 if is_night else 1.0
+        idle_duration = now - self.current_state.last_user_interaction
+        is_idle = idle_duration > 300.0
+        k_drain = 0.15
+        k_restore = 0.20
+        if is_idle:
+            self.current_state.fatigue = max(
+                0.0, self.current_state.fatigue - (k_restore * dt_hours / circadian_multiplier)
+            )
+        else:
+            self.current_state.fatigue = min(
+                1.0, self.current_state.fatigue + (k_drain * dt_hours * circadian_multiplier)
+            )

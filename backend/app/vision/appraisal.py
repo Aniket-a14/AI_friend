@@ -102,8 +102,6 @@ class VisualAppraisalService:
                 self._last_appraisal_time = time.time()
                 return self._last_description
 
-        self._last_visual_vector = current_vector
-
         try:
             description = await self.llm.describe_image(
                 image_b64=frame_b64,
@@ -113,6 +111,7 @@ class VisualAppraisalService:
 
             if description:
                 self._last_description = description
+                self._last_visual_vector = current_vector
                 self._last_appraisal_time = time.time()
                 logger.info(
                     "[VisualAppraisal] VLM description (%.0fch): %s",
