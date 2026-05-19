@@ -1,10 +1,10 @@
-# 🎙️ AI Friend: Cognitive Voice System (CVS-2.0)
+# 🎙️ AI Friend: Cognitive Voice System (v5.0.0 / CVS-2.0 Rust Native Edition)
 
 **A high-fidelity, state-driven cognitive identity emulator built on a hardened Sovereign Mesh for ultra-low latency conversational realism.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/license/MIT)
 [![Latency: Perceived <250ms](https://img.shields.io/badge/Latency-Perceived%20%3C250ms-green.svg)](#performance-perceived-slos)
-[![Architecture: Hardened CVS-2.0](https://img.shields.io/badge/Architecture-CVS--1.0--Hardened-orange.svg)](#architecture-cvs-10-hardened)
+[![Architecture: CVS-2.0 Rust Native](https://img.shields.io/badge/Architecture-CVS--2.0--Rust--Native-orange.svg)](#architecture-cvs-20-rust-native)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb)
 [![Continuous Integration](https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml)
 [![🛡️ Mesh Integrity](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml/badge.svg)](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml)
@@ -77,10 +77,11 @@ graph TD
         Transport <--> |"audio.inbound / audio.stream"| Bus{"NATS JetStream"}
         Bus <--> |"chat.input / audio.perception"| STT["STT Agent: Dual-Path"]
         Bus <--> |"chat.input / chat.output"| Brain["Brain Agent: BDI Cognition"]
-        Bus <--> |"chat.output / audio.stop/resume"| Voice["Voice Agent: CVS Runtime"]
+        Bus <--> |"chat.output / audio.stop/resume"| Voice["Voice Agent: Rust PyO3 Audio"]
         Bus <--> |"vision.control / vision.description"| Vision["Vision Agent: Host-Native VLM"]
         Bus <--> |"system.tick"| Pulse["System Agent: Heartbeat"]
         Bus <--> |"memory.surfaced / state.update"| Recall["Surfacing Agent: Memory"]
+        Bus <--> |"chat.input (subconscious)"| Subconscious["Subconscious Agent: Autonomy"]
     end
 
     subgraph "Cognitive Core"
@@ -181,12 +182,12 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | Agent | Technology | Primary Responsibility | NATS Subjects |
 | :--- | :--- | :--- | :--- |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
-| **Voice Agent** | Rust / SoVITS | CVS-2.0 Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
+| **Voice Agent** | Rust / PyO3 / SoVITS | CVS-2.0 Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
 | **STT Agent** | Rust / Whisper | Dual-path perception; fan-out transcription. | `audio.inbound`, `chat.input`, `audio.perception` |
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
-| **Subconscious** | Python / Neo4j | Background reflection, fact consolidation, persona evolution. | `system.tick`, `knowledge.*` |
-| **Vision Agent** | Llava / OpenCV | Visual perception and spatial reasoning. | `vision.frames`, `vision.control` |
+| **Subconscious** | Python / Neo4j | Background reflection, internal monologue generation (Tier-5). | `chat.input`, `system.tick`, `knowledge.*` |
+| **Vision Agent** | Ollama / moondream | Host-native visual appraisal and spatial reasoning (Tier-4). | `vision.frames`, `vision.control`, `vision.description` |
 | **Pulse Agent** | Python / Cron | Mesh heartbeat emitter; triggers maturation cycles. | `system.tick` |
 
 ---
@@ -316,11 +317,12 @@ AI_friend/
 
 | Pipeline Stage | Metric | Strategy | Target (p99) |
 | :--- | :--- | :--- | :--- |
+| **Mesh Telemetry** | Speed | orjson / NATS Binary | <0.5 µs |
+| **Data Throughput**| Scale | PyO3 FFI Audio | 80,000 OPS |
 | **STT Perception** | Latency | SenseVoice CPU Fan-out | <50ms |
 | **Cognitive Turn** | Turnaround | BDI Mesh + State Hydration | <120ms |
 | **First Audio** | Response | Streaming PCM Chunking | <180ms |
-| **Interruption Stop**| Reflex | Speculative Intent Guard | <100ms |
-| **Total Perceived** | **End-to-End**| **CVS-2.0 Solid State Mesh** | **<250ms** |
+| **Total Perceived** | **End-to-End**| **CVS-2.0 Rust Native Mesh** | **<250ms** |
 
 ---
 

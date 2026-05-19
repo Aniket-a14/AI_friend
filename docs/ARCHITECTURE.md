@@ -7,20 +7,22 @@
 ## Table of Contents
 
 1. [System Overview](#system-overview)
-2. [CVS-2.0 Architecture (Perceptual Mastery)](#cvs-10-architecture-perceptual-mastery)
-3. [Cognitive Layer (Brain)](#1-cognitive-layer-brain)
-4. [Temporal Orchestration (Voice Controller)](#2-temporal-orchestration-voice-controller)
-5. [Signal Rendering (Audio Engine)](#3-signal-rendering-audio-engine)
-6. [The Feedback Mesh](#4-the-feedback-mesh)
-7. [System Flow Diagram](#system-flow-diagram)
+2. [CVS-2.0 Architecture (Perceptual Mastery)](#cvs-20-hardened-architecture)
+3. [Cognitive Layer (Identity & State)](#1-cognitive-layer-identity--state)
+4. [Subconscious Engine (Tier-5 Autonomy)](#2-subconscious-engine-tier-5-autonomy)
+5. [Visual Appraisal (Tier-4 Multimodal)](#3-visual-appraisal-tier-4-multimodal)
+6. [Sovereign Memory Surfacing](#4-sovereign-memory-surfacing)
+7. [Perceptual Intelligence (STT Agent)](#5-perceptual-intelligence-stt-agent)
+8. [Signal Rendering (Voice Agent)](#6-signal-rendering-voice-agent)
+9. [System Flow Diagram](#system-flow-diagram)
 
 ---
 
 ## System Overview
 
-AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus. In the **Solid State Hardening (Apr 2026)**, the signal bus was expanded to include 9 core subjects covering system heartbeats, active memory recall, and identity synchronization.
+AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus. In the finalized **v5.0.0 (CVS-2.0 Rust Native Edition)**, the signal bus was expanded to include 9 core subjects covering system heartbeats, active memory recall, and identity synchronization.
 
-In **CVS-2.0 Hardened**, we have achieved **Identity Continuity**. The system is no longer a reactive "Think-Speak" pipeline; it is now a **State-Driven Identity Mesh** coached by a continuous NATS heartbeat. It anticipates context through memory surfacing and expresses emotion through deterministic temporal markers.
+In **CVS-2.0**, we have achieved **Identity Continuity**. The system is no longer a reactive "Think-Speak" pipeline; it is now a **State-Driven Identity Mesh** coached by a continuous NATS heartbeat. It anticipates context through memory surfacing and expresses emotion through deterministic temporal markers.
 
 The architecture should be evaluated by conversational realism rather than only by model intelligence. A technically correct answer that arrives with unnatural timing, forgets recent emotional state, repeats memories mechanically, or fails to recover from a false interruption is considered a behavioral failure. Every layer exists to preserve the illusion of a continuous person: perception, state, memory, decision, and voice all contribute to that outcome.
 
@@ -48,36 +50,40 @@ Introduced the **Subconscious Agent** to manage background cognition during peri
 - **Cognitive Injection**: Subconscious thoughts are published to `chat.input` (source: `subconscious`), allowing the Brain Agent to process them as internal prompts without contaminating the external chat history.
 - **Idle-State Proactivity**: Triggers reflection or proactive reaching out based on the psychological state (e.g., high "Attachment" + high "Energy" → reaching out to the user).
 
-### 📖 3. Proactive Memory Surfacing
+### 👁️ 3. Visual Appraisal (Tier-4 Multimodal)
+
+Introduced the **Vision Agent** to provide spatial and visual grounding for the cognitive mesh.
+
+- **Host-Native Bridge**: Screen and camera processing operate outside Docker constraints using a native Windows/macOS bridge to bypass container limitations.
+- **Visual Appraisal**: The VisionAgent captures frames and queries local `moondream:latest` via Ollama. It publishes `vision.description` back to the BrainAgent for context-aware grounding without sending raw image blobs over the mesh.
+
+### 📖 4. Sovereign Memory Surfacing
 
 The system anticipates conversational context through an asynchronous dual-channel recall layer that merges Relational (Postgres) and Graph (Neo4j) knowledge.
 
 - **`SurfacingAgent`**: Background process that alternates between two recall channels:
-  - **Episodic Channel (pgvector)**: ACT-R scored, mood-congruent recall of past events.
+  - **Episodic Channel (pgvector)**: ACT-R scored, mood-congruent recall of past events using verbatim `raw_content` storage organized via the Wings/Rooms/Drawers spatial hierarchy.
   - **Semantic Channel (Neo4j)**: Structured facts and relationship extraction (e.g., "User -> LIKES -> Coffee").
-- **Narrative Formatting**: Episodic memories are not surfaced as flat strings, but constructed into narrative episodes with temporal labels ("last week") and emotional context, allowing the LLM to bond over shared history ("Remember when we...").
-- **Novelty Suppression**: Recently surfaced memories are suppressed for a short window, preventing the agent from repeating the same recollection.
-- **Passive Recall Safety**: Surfacing does not refresh `last_recalled_at`, preventing memory relevance from becoming self-reinforcing only because a memory was surfaced.
-- **Signal Bus Expansion**: The mesh monitors 9 core subjects: `chat.*`, `vision.*`, `state.*`, `cmd.*`, `voice.*`, `system.*`, `memory.*`, `identity.*`, and `knowledge.*`.
+- **PostgreSQL PL/pgSQL Offloading**: Memory decay equations ($A = \ln(\sum t_j^{-d})$) are computed directly inside the database via the `surface_actr_memories` function, eliminating Python transfer overhead.
+- **O(1) L1 Memory Activation Cache**: An ultra-fast in-memory lookup table avoids Postgres queries for hot memories, reducing retrieval latency to < 1ms.
 
-### ⏱️ 3. Perceptual Intelligence (STT Agent)
+### ⏱️ 5. Perceptual Intelligence (STT Agent)
 
 Interruption is now handled as a **Temporal Intent Problem** powered by binary PCM transport.
 
 - **Dual-STT Pipeline**: Uses Whisper for deep context and `sherpa-onnx` (SenseVoice) for low-latency temporal intent.
+- **Paralinguistic Perception**: Non-speech events (laughter, coughs) are captured and added to PAD metadata to influence emotional trajectories.
 - **Speculative Intent Object**: SenseVoice publishes a structured hypothesis with intent name, keywords, confidence, text, timestamp, and utterance id.
 - **Whisper Validation**: Whisper final transcript confirms or rejects the speculative stop. Rejected false positives publish `audio.resume`; confirmed commands publish final `audio.stop`.
-- **Human Turn-Taking Goal**: The system favors quick reversible pause over late irreversible interruption, because a brief recoverable pause feels more natural than talking over the user.
 
-### 🔊 4. Signal Rendering (Voice Agent)
+### 🔊 6. Signal Rendering (Voice Agent)
 
 A persistent synthesis runtime with direct binary transport and expressive behavior.
 
-- **Expressive Temporal Layer**: Interprets `<pause>` and `<hesitate>` tags by injecting silent PCM buffers directly into the 32kHz stream.
+- **Rust Native Audio**: The serialization and PyO3 FFI layer handles pure PCM payloads.
+- **Direct Binary Bus**: Publishes raw PCM bytes via `orjson` serialization at 80,000 OPS.
+- **Expressive Temporal Layer**: Interprets `<pause=300ms>` and `<hesitate>` tags by injecting silent PCM buffers directly into the 32kHz stream.
 - **Streaming First Audio**: GPT-SoVITS chunks are queued as they arrive rather than buffered until full synthesis completion.
-- **Expression Sanitization**: Legacy `<emotion ...>` wrappers are stripped before TTS while timing markers are preserved. Affect should move as metadata rather than spoken text.
-- **Direct Binary Bus**: Publishes raw PCM bytes via NATS Headers (Phase 2).
-- **Backpressure Guard**: Bounded queue and synthesis semaphore protect GPU health.
 
 ---
 
@@ -92,6 +98,7 @@ graph TB
 
     subgraph CVS_Mesh ["CVS-2.0 - Identity Mesh"]
         STT["STT Agent<br/>Temporal Intent"]
+        VISION["Vision Agent<br/>Visual Appraisal"]
         
         subgraph Brain_Core ["State & Identity"]
             SYSTEM_TICK["System Agent<br/>Mesh Heartbeat"]
@@ -102,7 +109,7 @@ graph TB
 
         subgraph Voice_Core ["Signal Rendering"]
             VOICE_CONTROLLER["Voice Agent<br/>Temporal Injection"]
-            AUDIO_ENGINE["Audio Engine<br/>Adaptive Normalizer"]
+            AUDIO_ENGINE["Audio Engine<br/>Rust PyO3 Transport"]
         end
     end
 
@@ -110,13 +117,14 @@ graph TB
     STT -->|audio.perception| DECISION
     STT -->|audio.stop speculative| VOICE_CONTROLLER
     STT -->|chat.input| DECISION
+    VISION -->|vision.description| DECISION
     SYSTEM_TICK -->|system.tick| DECISION
     SUBCO -->|chat.input| DECISION
     SURFACING -->|memory.surfaced| DECISION
     DECISION -->|chat.output| VOICE_CONTROLLER
     DECISION -->|audio.resume / final audio.stop| VOICE_CONTROLLER
     VOICE_CONTROLLER --> AUDIO_ENGINE
-    AUDIO_ENGINE -->|audio.stream| PCM_PLAYER
+    AUDIO_ENGINE -->|audio.stream (PCM)| PCM_PLAYER
 ```
 
 ---

@@ -5,15 +5,17 @@
 Use this section to tell people about which versions of your project are
 currently being supported with security updates.
 
-| 3.1.x+ | :white_check_mark: |
-| 2.x.x   | :x:                |
-| < 2.0   | :x:                |
+| Version | Status |
+| :--- | :--- |
+| 5.0.x (CVS-2.0) | :white_check_mark: |
+| < 5.0.0 | :x:                |
 
 ## Privacy-First Security
 
 AI Friend is designed with **Sovereign Privacy** as a core architectural requirement:
 - **Local Inference**: Default configurations use Ollama and local TTS to ensure no voice or reasoning data leaves your network.
 - **Air-Gapped Ready**: The system is designed to function without external internet access once models are cached.
+- **Binary Audio Transport**: Audio payloads are transported over the LAN mesh via strict binary PCM `orjson` serialization, effectively mitigating plain-text JSON network sniffing.
 - **No Data Harvesting**: We do not collect telemetry or conversation logs.
 
 ## Reporting a Vulnerability

@@ -4,13 +4,13 @@ This report provides a detailed analysis of the CVS-2.0 Sovereign Mesh architect
 
 ---
 
-## 1. Why Python? The High-Level Orchestration Fallacy
+## 1. Python vs. Rust: The Evolution of Orchestration
 
-A common misconception is that using Python for real-time systems causes latency bottlenecks. While Python is objectively slower than compiled languages like Rust or C++, **it is not the bottleneck in this architecture.**
+A common misconception is that using Python for real-time systems causes insurmountable latency bottlenecks. In the finalized **CVS-2.0 (Rust Native Edition)**, we have optimized this paradigm:
 
-*   **The Heavy Lifting is Already Low-Level:** The actual computational bottlenecks in CVS-2.0 are matrix multiplications and tensor operations. Whisper (STT), Ollama (LLM), SenseVoice, and GPT-SoVITS (TTS) all run on highly optimized C, C++, and CUDA backends (e.g., PyTorch, ONNX, llama.cpp). 
-*   **Python is the Glue, Not the Engine:** Python acts as a high-level orchestration layer routing events. By leveraging `asyncio` and pushing binary PCM audio directly over **NATS JetStream** (which is written in Go and handles millions of messages per second), Python never blocks the event loop.
-*   **The Trade-off:** The 1–3 millisecond overhead of Python's event loop is mathematically negligible when the AI models themselves take hundreds of milliseconds to process data. Writing the orchestration layer in Python allows for massive development velocity, access to the entire AI ecosystem, and rapid iteration of the complex psychological mathematics (PAD model) that would be painfully slow to write and debug in Rust.
+*   **Python Orchestrates the Cognitive Loop:** The high-level BDI orchestration, semantic memory routing, and complex psychological mathematics (PAD model) remain in Python. This allows for massive development velocity and access to the broader AI ecosystem where Python's 1-3ms overhead is mathematically negligible against 300ms LLM inferences.
+*   **Rust Drives the Sensory and Motor Layers:** The actual computational bottlenecks and low-latency audio routing have been completely migrated to Rust (PyO3 FFI). The `STTAgent` and `VoiceAgent` now use Native Rust components for deterministic, sub-50ms execution.
+*   **Binary Transport:** By pushing binary `orjson` payloads directly over **NATS JetStream**, serialization overhead has been accelerated to 80,000 OPS, eliminating Python dictionary allocation latency during dense communication spikes.
 
 ---
 
@@ -20,13 +20,13 @@ Assuming a high-end local GPU (e.g., RTX 4090 or Mac M-series with unified memor
 
 Here is the lifecycle of a single conversational turn:
 
-1.  **VAD & Fast Perception (100–200ms):** SenseVoice continuously monitors the `audio.inbound` stream. If you interrupt, it publishes a `SPECULATIVE_STOP` in ~150ms.
-2.  **Deep Perception Validation (300–400ms):** Whisper processes the audio chunk to generate a highly accurate transcript.
-3.  **Cognitive Routing & LLM TTFT (200–350ms):** The BrainAgent ingests the transcript, calculates the ACT-R memory retrieval, updates the psychological state, and prompts Ollama. Time To First Token (TTFT) is typically ~250ms.
-4.  **Semantic Chunking & TTS (150–250ms):** The `HybridSegmenter` waits for a complete logical boundary (e.g., 8 words or a comma). Once reached, it fires the text and PAD metadata to the VoiceAgent. GPT-SoVITS synthesizes the first chunk.
-5.  **Audio Render (~50ms):** The PCM buffer is injected into the playback queue.
+1.  **VAD & Fast Perception (<50ms):** The Rust-native SenseVoice integration continuously monitors the `audio.inbound` stream. If you interrupt, it publishes an `audio.stop` (speculative) deterministically under 50ms.
+2.  **Deep Perception Validation (~250ms):** Whisper processes the audio chunk to generate a highly accurate transcript.
+3.  **Cognitive Routing & LLM TTFT (~200ms):** The BrainAgent ingests the transcript, hits the O(1) L1 Memory Activation Cache to skip database overhead, updates the psychological state, and prompts Ollama. Time To First Token (TTFT) is typically ~150-200ms.
+4.  **Semantic Chunking & TTS (~150ms):** The `HybridSegmenter` (optimized with inlined bytecode string operators) waits for a complete logical boundary. It fires the text and PAD metadata to the VoiceAgent. GPT-SoVITS synthesizes the first chunk.
+5.  **Audio Render (<1ms):** The Rust-native VoiceAgent queues the PCM buffer for overlap-add (OLA) playback.
 
-**Total Estimated Turnaround:** **~800ms to 1.2 seconds** from the moment you stop speaking to the moment the AI's voice begins playing. 
+**Total Estimated Turnaround:** **~650ms to 850ms** from the moment you stop speaking to the moment the AI's voice begins playing, representing a significantly tightened response envelope for physical interactions. 
 
 > [!TIP]
 > **Human-Level Overlap:** Because the STT agent separates *speculative intent* from *deep transcription*, if you interrupt the AI while it is speaking, the VoiceAgent applies a `SPECULATIVE_PAUSE` in roughly **~200ms**. This makes the AI feel incredibly human, as it stops talking almost the instant you interject, rather than talking over you while it waits for Whisper to finish transcribing.

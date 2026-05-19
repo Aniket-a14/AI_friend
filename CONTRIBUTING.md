@@ -1,4 +1,4 @@
-# 🤝 Contributing to AI Friend (CVS-1.0 Hardened)
+# 🤝 Contributing to AI Friend (v5.0.0 / CVS-2.0 Rust Native Edition)
 
 Thank you for contributing to the **Sovereign Mesh**. This project is a high-fidelity cognitive identity emulator designed for 100% local, ultra-low latency execution. We value precision, architectural integrity, and behavioral realism.
 
@@ -10,10 +10,10 @@ Before writing a single line of code, you must understand that AI Friend is a **
 
 ### The Cognitive Hierarchy
 - **Tier 1 (Infrastructure)**: NATS, Neo4j, PostgreSQL, Redis. The "Bones".
-- **Tier 2 (Sensory)**: STT, Vision, Transport. The "Eyes and Ears".
+- **Tier 2 (Sensory)**: Dual-path STT, Vision, Transport. The "Eyes and Ears".
 - **Tier 3 (Cognitive)**: Appraisal, Decision, Learning. The "Mind".
 - **Tier 4 (State)**: Emotion (PAD), Memory (ACT-R). The "Personality".
-- **Tier 5 (Autonomy)**: Subconscious reflection, Proactive check-ins. The "Will".
+- **Tier 5 (Autonomy)**: Subconscious Engine (internal monologue) and Endocrine system (Cortisol/Dopamine modulation). The "Will".
 
 ---
 
@@ -87,13 +87,16 @@ mypy .
 ```
 
 ### 2. Cognitive Regression Tests
-Check that your change didn't break the AI's "Mind":
+Check that your change didn't break the AI's "Mind" or performance budget:
 ```bash
 # Run all cognitive tests
 pytest backend/tests/test_decision.py backend/tests/test_subconscious.py -v
 
 # Run state persistence tests
 pytest backend/tests/test_regressions.py -k "state"
+
+# Run the 16-metric isolated performance suite (Mandatory for latency-sensitive PRs)
+pytest backend/tests/test_performance.py
 ```
 
 ### 3. Mesh Health Probe
@@ -106,19 +109,19 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Health}}"
 
 ## 📜 6. Mesh Communication Contracts (NATS)
 
-All inter-agent talk is strictly typed. **Never** send raw dictionaries.
+All inter-agent talk is strictly typed. **Never** send raw dictionaries. We utilize strict Pydantic models for validation and `orjson` binary serialization for ultra-fast 80,000 OPS network transport.
 
 **To add a new subject:**
 1.  Define the `Topic` in `app/contracts.py`.
-2.  Define the `Pydantic Model` for the payload.
+2.  Define the strictly typed `Pydantic Model` for the payload.
 3.  Add the subject to the stream list in `app/nats_streams.py` (using `>` wildcards).
 
 **Example Code Pattern:**
 ```python
-# GOOD: Using a contract
+# GOOD: Using a contract with binary serialization
 from app.contracts import Topics, MyNewContract
 
-await self.publish(Topics.MY_NEW_SUBJECT, MyNewContract(field="value").model_dump())
+await self.publish(Topics.MY_NEW_SUBJECT, MyNewContract(field="value").model_dump_json().encode("utf-8"))
 
 # BAD: Do not do this
 await self.publish("my.raw.subject", {"raw": "data"})

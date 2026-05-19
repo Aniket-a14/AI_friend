@@ -49,7 +49,10 @@ $$L_{cognitive} = T_{perception} + T_{memory\_surfacing} + T_{llm\_generation}$$
 - **Target**: sub-500ms for total cognitive turnaround on local hardware.
 
 ### B. State Hydration Performance
-Measure the time taken to hydrate the agent's full state (Prisma + Neo4j) during a heartbeat.
+Measure the time taken to hydrate the agent's full state (Prisma + Neo4j) during a heartbeat. The O(1) L1 Cache provides sub-microsecond `surface_actr_memories` resolution.
+
+### C. Telemetry Profiling
+Monitor signal bounds using the lock-free asynchronous telemetry worker. Previous synchronous logging induced 661 µs overhead; the current Tier-5 baseline is strictly `< 0.5 µs` per pulse.
 
 ---
 
@@ -125,6 +128,7 @@ To produce valid research data, follow this standardized benchmarking pipeline.
 
 ### Step 1: Baseline Establishment
 Run the system with the default parameters listed in Section 6.
+- **Automated Validation**: For isolated system-level verification, run the 16-metric automated suite via `pytest backend/tests/test_performance.py`.
 - **Log Source**: Ensure `DEBUG=True` in `.env` to capture high-fidelity signal timing.
 - **State Capture**: Initialize a clean Neo4j and PostgreSQL state.
 
@@ -173,6 +177,7 @@ Apply the results to the formulas in Section 2.
 4.  **Finalization**: Once the session ends, stop the collector and generate plots:
     ```bash
     python scripts/research/visualizer.py
+    python scripts/diagnostics/human_readable_benchmarks.py  # Generate decade profiles
     ```
 
 ### When to Benchmark
