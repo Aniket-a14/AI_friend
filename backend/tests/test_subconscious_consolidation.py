@@ -174,7 +174,6 @@ async def test_memory_decay_loop(mock_llm_service):
 async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_db):
     """Verify that the SubconsciousAgent runs a full fact-extraction & consolidation pass."""
     orig_bypass = getattr(Config, "TESTING_CONSOLIDATION_BYPASS_SILENCE", False)
-    Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = True
 
     store = ConversationHistoryStore()
     mem_store = None
