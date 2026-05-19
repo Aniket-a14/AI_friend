@@ -48,9 +48,7 @@ organic memory, and future robotics compatibility.
 
 Agents should also read:
 
-- [CONTEXT.md](../.agents/CONTEXT.md)
-
-That file is the durable handoff ledger for future coding agents. It records
+- **[CONTEXT.md](../.agents/CONTEXT.md)**: That file is the durable handoff ledger for future coding agents. It records
 current project intent, recent changes, verification commands, and next
 recommended work. Update it whenever changes materially affect architecture,
 behavior, tests, or runtime expectations.
