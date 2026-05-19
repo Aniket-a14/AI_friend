@@ -277,7 +277,7 @@ class MemoryStore:
                         # Neuromodulatory distance mapping
                         effective_similarity = similarity * (
                             1.0
-                            + 0.1 * current_valence * emotion_weight_row
+                            + 0.1 * memory_valence * emotion_weight_row
                             - 0.2 * current_arousal * current_cortisol
                         )
 
@@ -383,7 +383,7 @@ class MemoryStore:
                         # Neuromodulatory distance mapping
                         effective_similarity = similarity * (
                             1.0
-                            + 0.1 * current_valence * emotion_weight_row
+                            + 0.1 * memory_valence * emotion_weight_row
                             - 0.2 * current_arousal * current_cortisol
                         )
 

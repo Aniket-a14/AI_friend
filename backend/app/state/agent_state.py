@@ -93,7 +93,10 @@ class AgentState:
             self.trust_integrity = float(value[2])
         else:
             try:
-                _ = float(value)
+                scalar_value = float(value)
+                self.trust_benevolence = scalar_value
+                self.trust_competence = scalar_value
+                self.trust_integrity = scalar_value
             except (ValueError, TypeError):
                 pass
 

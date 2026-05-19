@@ -140,11 +140,11 @@ async def test_dimensional_trust_matrix():
     # trust getter should return mathematical average
     assert abs(state.trust - 0.6) < 1e-5
 
-    # trust setter: scalar writes do NOT clobber per-dimension fields
+    # trust setter: scalar writes propagate to all per-dimension fields
     state.trust = 0.7
-    assert state.trust_benevolence == 0.8
-    assert state.trust_competence == 0.6
-    assert state.trust_integrity == 0.4
+    assert state.trust_benevolence == 0.7
+    assert state.trust_competence == 0.7
+    assert state.trust_integrity == 0.7
 
     # trust setter with sequence
     state.trust = (0.9, 0.7, 0.5)
