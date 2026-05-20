@@ -9,6 +9,7 @@ from app.cognitive.appraisal import AppraisalVector
 def mock_components():
     state = MagicMock()
     state.update_from_appraisal = AsyncMock()
+    state.update_theory_of_mind = AsyncMock()
     state.get_context_snapshot = MagicMock()
     state.get_behavioral_directive = MagicMock()
 

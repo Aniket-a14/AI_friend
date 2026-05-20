@@ -322,7 +322,7 @@ Communication is strictly governed by a **Typed Contract Mesh** (Pydantic). Ever
 | `chat.output` | `ChatOutput` | Cognitive responses with affect metadata. |
 | `audio.perception` | `AudioPerception` | Real-time emotional bias and speculative intent. |
 | `audio.stop` | `ControlEvent` | Speculative or final interruption commands. |
-| `state.updated` | `StateUpdate` | Broadcast of PAD/Relational coordinate shifts. |
+| `state.update` | `StateUpdate` | Broadcast of PAD/Relational coordinate shifts. |
 | `memory.surfaced` | `MemoryEvent` | Proactive episodic or semantic recall triggers. |
 | `system.tick` | `PulseEvent` | The 60s mesh-wide maturation heartbeat. |
 

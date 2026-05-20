@@ -12,7 +12,7 @@ The primary research goal is validating the efficacy of a decentralized, event-d
 
 ### A. Mesh Resilience & Throughput
 - **Goal**: Measure the overhead of NATS JetStream compared to a monolithic architecture.
-- **Methodology**: Simulate high-frequency event bursts across `chat.input`, `state.updated`, and `memory.surfaced` subjects.
+- **Methodology**: Simulate high-frequency event bursts across `chat.input`, `state.update`, and `memory.surfaced` subjects.
 - **Key Metric**: Event propagation jitter and message delivery reliability under high cognitive load.
 
 ### B. Agent Decoupling Efficiency
@@ -141,7 +141,7 @@ Do not use manual chat input for benchmarks; it introduces human latency variabi
 Use the NATS CLI to capture the "Turnaround Mesh" timing.
 ```bash
 # Monitor perception, brain, and mesh update latency simultaneously
-nats sub "audio.perception" & nats sub "chat.output" & nats sub "state.updated"
+nats sub "audio.perception" & nats sub "chat.output" & nats sub "state.update"
 ```
 
 ### Step 4: Parameter Stress Testing (A/B Isolation)
