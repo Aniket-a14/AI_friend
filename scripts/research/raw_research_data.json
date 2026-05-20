@@ -85,18 +85,35 @@
   "edge_hardware_resource_footprint": {
     "device": "iMac Apple Silicon (M3 16GB) / NVIDIA Jetson AGX Orin",
     "system_ram_allocation_mb": {
-      "nats_broker_container": 18.4,
-      "neo4j_graph_container": 240.0,
-      "redis_cache_container": 12.8,
-      "python_mesh_agents_total": 45.2,
-      "total_mesh_overhead_mb": 316.4
+      "nats_broker_container": 22.05,
+      "neo4j_graph_container": 702.6,
+      "redis_cache_container": 19.09,
+      "postgres_db_container": 67.98,
+      "brain_agent": 82.36,
+      "system_agent": 33.92,
+      "surfacing_agent": 75.42,
+      "subconscious_agent": 76.16,
+      "python_mesh_agents_total": 267.86,
+      "total_mesh_overhead_mb": 1079.58,
+      "note": "Measured via docker stats on macOS M3 with llama3.2:1b"
     },
     "gpu_vram_allocation_gb": {
       "light_cognitive_profile_gb": 0.0,
       "heavy_whisper_stt_cpu_gb": 0.0,
-      "local_llama3_3b_quantized_vram_gb": 2.85
+      "local_llama3_1b_quantized_vram_gb": 0.0,
+      "note": "llama3.2:1b runs on CPU/Metal; no dedicated VRAM allocation"
     },
-    "average_cpu_utilization_percent": 8.4,
+    "average_cpu_utilization_percent": {
+      "brain_agent": 0.13,
+      "system_agent": 0.13,
+      "surfacing_agent": 0.24,
+      "subconscious_agent": 0.30,
+      "nats_mesh": 0.36,
+      "postgres_db": 0.41,
+      "brain_graph_neo4j": 0.81,
+      "brain_cache_redis": 0.99,
+      "total_avg": 3.37
+    },
     "active_power_consumption_watts": {
       "idle_infra": 6.2,
       "peak_active_inference": 24.5

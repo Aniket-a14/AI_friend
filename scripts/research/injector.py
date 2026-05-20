@@ -2,7 +2,6 @@ import asyncio
 import json
 import time
 import nats
-from nats.js.errors import TimeoutError
 
 async def run_injector():
     """
@@ -12,6 +11,7 @@ async def run_injector():
     """
     print("🚀 Research Injector starting...")
     nc = await nats.connect("nats://localhost:4222")
+    js = nc.jetstream()
     
     test_inputs = [
         "Hello! How are you today?",
@@ -34,7 +34,7 @@ async def run_injector():
         }
         
         print(f"Pulse {i}: Sending '{text}'")
-        await nc.publish("chat.input", json.dumps(payload).encode())
+        await js.publish("chat.input", json.dumps(payload).encode())
         
         # Wait for cognitive cooldown between pulses
         await asyncio.sleep(15) 
