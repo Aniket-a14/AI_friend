@@ -1572,7 +1572,7 @@
     }
   },
   "live_telemetry": {
-    "e2e_mean": 819.24,
-    "ttft_mean": 212.44
+    "e2e_mean": 1646.95,
+    "ttft_mean": 703.36
   }
 }

@@ -2,7 +2,7 @@
   "research_context": {
     "title": "Real-Time Adaptive Latency Hardening in Hybrid Social-Mesh Architectures for Humanoid Social Robots",
     "target_venue": "IEEE Transactions on Robotics (T-RO) / International Conference on Intelligent Robots and Systems (IROS)",
-    "system_version": "AI Friend CVS-1.0 (Cognitive Voice System)",
+    "system_version": "AI Friend CVS-2.0 (Cognitive Voice System)",
     "timestamp_compiled": "2026-05-17T20:30:00Z"
   },
   "micro_benchmarks": {
