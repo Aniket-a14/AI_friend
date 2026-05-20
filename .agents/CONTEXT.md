@@ -1222,4 +1222,4 @@ Details:
 
 Verification:
 - Checked syntax and LaTeX markdown block rendering in the modified markdown files.
-- Verified that all equations strictly match the actual implementation in `backend/crates/contracts/src/lib.rs` and `backend/crates/voice-agent/src/main.rs`.
+- Equations are intended to match the actual implementation in `backend/crates/contracts/src/lib.rs` and `backend/crates/voice-agent/src/main.rs`; see the 2026-05-20 correction entry below for the corrected formulas.

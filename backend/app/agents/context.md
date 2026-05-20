@@ -45,13 +45,13 @@ These equations are computed native in Rust (`backend/crates/contracts/src/lib.r
 ### 2.2 Core Synthesis Parameters
 
 1. **Speaking Rate ($R$)**:
-   Modulated directly by arousal energy, slowed down by metabolic fatigue, clamped to safety bounds:
-   $$R = 1.0 + (Ar - 0.5) - \text{fatigue\_slow}$$
+   Modulated by arousal energy and valence, slowed down by metabolic fatigue, clamped to safety bounds:
+   $$R = 1.0 + 0.20 \cdot Ar - 0.10 \cdot V - \text{fatigue\_slow}$$
    $$\text{SpeedFactor} = \text{clamp}(R, 0.6, 1.8)$$
 
 2. **Vocal Pitch ($P$)**:
-   Jointly modulated by arousal tension and valence valence, and adjusted for fatigue and distance:
-   $$P = 1.0 + 0.7 \cdot (Ar - 0.5) + 0.3 \cdot V - \text{fatigue\_pitch\_drop} + \text{dist\_pitch\_mod}$$
+   Jointly modulated by valence and arousal, tempered by dominance, and adjusted for fatigue and distance:
+   $$P = 1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - \text{fatigue\_pitch\_drop} + \text{dist\_pitch\_mod}$$
    $$\text{Pitch} = \text{clamp}(P, 0.5, 2.0)$$
 
 3. **Vocal Volume ($V_{ol}$)**:
@@ -73,25 +73,25 @@ To ensure seamless audio transitions, eliminate acoustic pops, and guarantee sig
 
 ### 3.1 Linear Fade Window Formulation
 
-When a fresh audio segment boundary is flagged (`segment_start = true`), the engine computes a **15ms linear fade-in window** based on the configured sample rate (typically 32kHz):
+When a prosody shift is detected between consecutive audio segments, the engine computes a **10ms linear crossfade window** based on the configured sample rate (typically 32kHz):
 
-$$\text{fade\_len} = \lfloor 0.015 \cdot \text{SampleRate} \rfloor$$
+$$\text{fade\_len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$$
 
-For $32,000\text{Hz}$, the crossfade window contains exactly $480$ samples.
+For $32,000\text{Hz}$, the crossfade window contains exactly $320$ samples.
 
 ### 3.2 Signal Modulation
 
-For each sample index $i$ in the initial fade window ($0 \le i < \text{fade\_len}$), the linear fade-in scale factor $f_i$ is computed as:
+For each sample index $i$ in the crossfade window ($0 \le i < \text{fade\_len}$), the blend factor $t$ is computed as:
 
-$$f_i = \frac{i}{\text{fade\_len}}$$
+$$t = \frac{i}{\text{fade\_len}}$$
 
-The input PCM sample buffer $x[i]$ is scaled directly:
+The output blends the previous prosody segment buffer $x_{\text{prev}}[i]$ with the incoming segment $x_{\text{curr}}[i]$:
 
-$$y[i] = x[i] \cdot f_i, \quad 0 \le i < \text{fade\_len}$$
+$$y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade\_len}$$
 
-For $i \ge \text{fade\_len}$, the signal remains dry:
+For $i \ge \text{fade\_len}$, the signal passes through unmodified:
 
-$$y[i] = x[i]$$
+$$y[i] = x_{\text{curr}}[i]$$
 
 ### 3.3 Dynamic Signal Reconstruction
 

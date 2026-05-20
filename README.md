@@ -278,14 +278,14 @@ Vocal parameters (speaking rate, pitch, volume, and pause bias) are continuously
   * Otherwise: $\text{dist\_vol\_mod} = 0.0, \quad \text{dist\_pitch\_mod} = 0.0$
 
 #### Prosody Equations
-$$\text{SpeedFactor} = \text{clamp}(1.0 + (\text{arousal} - 0.5) - \text{fatigue\_slow}, 0.6, 1.8)$$
-$$\text{Pitch} = \text{clamp}(1.0 + 0.7 \cdot (\text{arousal} - 0.5) + 0.3 \cdot \text{valence} - \text{fatigue\_pitch\_drop} + \text{dist\_pitch\_mod}, 0.5, 2.0)$$
+$$\text{SpeedFactor} = \text{clamp}(1.0 + 0.20 \cdot \text{arousal} - 0.10 \cdot \text{valence} - \text{fatigue\_slow}, 0.6, 1.8)$$
+$$\text{Pitch} = \text{clamp}(1.0 + 0.05 \cdot \text{valence} + 0.15 \cdot \text{arousal} - 0.10 \cdot \text{dominance} - \text{fatigue\_pitch\_drop} + \text{dist\_pitch\_mod}, 0.5, 2.0)$$
 $$\text{Volume} = \text{clamp}(0.4 + 0.6 \cdot \text{dominance} + \text{dist\_vol\_mod}, 0.1, 1.0)$$
 $$\text{PauseBias} = 1.0 - \text{arousal}$$
 
 #### Overlap-Add (OLA) Sample-Accurate Linear Crossfade
-During boundary segments, a linear fade-in is applied over a 15ms window (where $\text{fade\_len} = \lfloor 0.015 \cdot \text{SampleRate} \rfloor$ samples) to eliminate switching clicks:
-$$y[i] = x[i] \cdot \left( \frac{i}{\text{fade\_len}} \right), \quad 0 \le i < \text{fade\_len}$$
+During prosody-shift boundaries, a linear crossfade is applied over a **10ms window** ($\text{fade\_len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ samples, i.e., 320 samples at 32kHz), blending the previous prosody segment into the new one to eliminate switching clicks:
+$$y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad t = \frac{i}{\text{fade\_len}}, \quad 0 \le i < \text{fade\_len}$$
 
 #### Spatial Reverb DSP Blend
 Acoustic environmental reflection utilizes a comb filter with a 50ms delay and 0.5 feedback gain, dynamically blended via $\text{wet\_gain}$ linear interpolation based on user distance:
