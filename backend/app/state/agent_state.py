@@ -21,9 +21,12 @@ from ..config import Config
 if TYPE_CHECKING:
     from ..cognitive.tom import UserMentalModel
 
+
 def _default_user_mental_model():
     from ..cognitive.tom import UserMentalModel
+
     return UserMentalModel()
+
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +57,9 @@ class AgentState:
     last_update: datetime = field(default_factory=datetime.now)
     last_user_interaction: float = field(default_factory=time.time)
     fatigue: float = 0.0  # Metabolic fatigue cycle F(t)
-    user_mental_model: "UserMentalModel" = field(default_factory=_default_user_mental_model)
+    user_mental_model: "UserMentalModel" = field(
+        default_factory=_default_user_mental_model
+    )
 
     # --- PAD Property Aliases (§2.1) ---
     @property
@@ -380,7 +385,8 @@ class StateService:
         if confidence >= self.min_perception_confidence:
             user_weight = self.sensory_weight * max(0.0, min(1.0, confidence))
             self.current_state.user_mental_model.inferred_valence = (
-                (1 - user_weight) * self.current_state.user_mental_model.inferred_valence
+                (1 - user_weight)
+                * self.current_state.user_mental_model.inferred_valence
                 + user_weight * emotion_bias
             )
 

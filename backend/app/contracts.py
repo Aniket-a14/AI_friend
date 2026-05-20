@@ -53,6 +53,7 @@ class ChatInputMetadata(BaseModel):
 
 class ChatInput(BaseModel):
     """Published by STTAgent on `chat.input` after final transcription."""
+
     model_config = {"extra": "allow"}
 
     text: str
@@ -78,6 +79,7 @@ class ChatOutputAffect(BaseModel):
 
 class ChatOutput(BaseModel):
     """Published by BrainAgent on `chat.output` for each speech chunk or done signal."""
+
     model_config = {"extra": "allow"}
 
     content: Optional[str] = None
@@ -200,6 +202,7 @@ class VisionDescription(BaseModel):
 # ─── state.update ────────────────────────────────────────────
 class StateUpdate(BaseModel):
     """Published on `state.update` when agent state changes."""
+
     model_config = {"extra": "allow"}
 
     mood: float = 0.0

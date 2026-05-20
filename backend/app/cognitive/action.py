@@ -96,10 +96,14 @@ class ActionService:
                 impl_goals = user_tom.get("implied_goals", [])
                 # Take the last 10 known concepts to keep it concise and avoid context bloat
                 known_con = user_tom.get("known_concepts", [])[-10:]
-                
-                tom_context = "\n\nYour Inferred Perspective of the User (Theory of Mind):\n"
+
+                tom_context = (
+                    "\n\nYour Inferred Perspective of the User (Theory of Mind):\n"
+                )
                 tom_context += f"- User Inferred Valence: {inferred_val:.2f} (Scale: -1.0 to 1.0)\n"
-                tom_context += f"- User Inferred Arousal: {inferred_ar:.2f} (Scale: 0.0 to 1.0)\n"
+                tom_context += (
+                    f"- User Inferred Arousal: {inferred_ar:.2f} (Scale: 0.0 to 1.0)\n"
+                )
                 if impl_goals:
                     tom_context += f"- User Implied Goals: {', '.join(impl_goals)}\n"
                 if known_con:

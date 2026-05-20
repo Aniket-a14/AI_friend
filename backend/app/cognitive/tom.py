@@ -14,10 +14,13 @@ class UserMentalModel(BaseModel):
     Representation of the user's mental state separate from the agent's internal state.
     Designed to be lightweight and serializable.
     """
+
     inferred_valence: float = 0.0  # -1.0 (negative) to 1.0 (positive)
     inferred_arousal: float = 0.5  # 0.0 (calm) to 1.0 (excited/angry)
     implied_goals: List[str] = []  # List of user's inferred immediate goals
-    known_concepts: List[str] = []  # Unique case-insensitive list of concepts user knows/mentioned
+    known_concepts: List[
+        str
+    ] = []  # Unique case-insensitive list of concepts user knows/mentioned
 
 
 def update_known_concepts(current_concepts: List[str], user_input: str) -> List[str]:
@@ -33,12 +36,57 @@ def update_known_concepts(current_concepts: List[str], user_input: str) -> List[
 
     # High-frequency stop words to filter out
     stop_words = {
-        "them", "they", "their", "there", "these", "those", "this", "that",
-        "with", "from", "your", "what", "when", "where", "which", "who", "whom",
-        "have", "has", "had", "been", "being", "were", "was", "will", "would",
-        "should", "could", "about", "above", "after", "again", "against", "some",
-        "more", "most", "other", "such", "than", "then", "very", "just", "here",
-        "about", "would", "their", "about", "could", "should", "would", "about"
+        "them",
+        "they",
+        "their",
+        "there",
+        "these",
+        "those",
+        "this",
+        "that",
+        "with",
+        "from",
+        "your",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "whom",
+        "have",
+        "has",
+        "had",
+        "been",
+        "being",
+        "were",
+        "was",
+        "will",
+        "would",
+        "should",
+        "could",
+        "about",
+        "above",
+        "after",
+        "again",
+        "against",
+        "some",
+        "more",
+        "most",
+        "other",
+        "such",
+        "than",
+        "then",
+        "very",
+        "just",
+        "here",
+        "about",
+        "would",
+        "their",
+        "about",
+        "could",
+        "should",
+        "would",
+        "about",
     }
 
     updated = list(current_concepts)

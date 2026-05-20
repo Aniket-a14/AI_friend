@@ -219,7 +219,9 @@ async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_
         )
 
         agent = SubconsciousAgent(
-            memory_store=mem_store, reflection_service=ref_service, graph_db=mock_graph_db
+            memory_store=mem_store,
+            reflection_service=ref_service,
+            graph_db=mock_graph_db,
         )
         agent.state_service.current_state.last_user_interaction = time.time() - 301
 

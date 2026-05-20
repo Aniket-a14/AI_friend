@@ -98,7 +98,7 @@ class CognitivePipeline:
         if event.event_type == "USER_MESSAGE":
             # Pre-Decision Vocabulary Update (zero LLM overhead concepts indexing)
             await self.state.update_theory_of_mind(event.raw_content)
-            
+
             await self.state.update_from_appraisal(appraisal_vector)
             state_snapshot = self.state.get_context_snapshot()
             yield {
@@ -131,7 +131,9 @@ class CognitivePipeline:
         if event.event_type == "USER_MESSAGE":
             tom_inferences = event.metadata.get("tom_inferences")
             if tom_inferences:
-                await self.state.update_theory_of_mind(event.raw_content, tom_inferences)
+                await self.state.update_theory_of_mind(
+                    event.raw_content, tom_inferences
+                )
                 state_snapshot = self.state.get_context_snapshot()
                 yield {
                     "type": "mesh_signal",

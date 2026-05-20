@@ -279,15 +279,15 @@ class DecisionService:
                     if event.intent == "CHAT"
                     else Config.LLM_FAST_MODEL
                 )
-                
+
                 # Extract and store ToM inferences in metadata
                 tom_inferences = {
                     "inferred_valence": float(data.get("inferred_valence", 0.0)),
                     "inferred_arousal": float(data.get("inferred_arousal", 0.5)),
-                    "implied_goals": list(data.get("implied_goals", []))
+                    "implied_goals": list(data.get("implied_goals", [])),
                 }
                 event.metadata["tom_inferences"] = tom_inferences
-                
+
                 logger.info(f"[Decision] Fast Classified with ToM: {data}")
         except Exception as e:
             logger.error(f"Intent and ToM classification failed: {e}")
