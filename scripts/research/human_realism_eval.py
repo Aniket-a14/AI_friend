@@ -55,7 +55,7 @@ def module1_computational_footprint():
     e2e_pathway_ms = sum(latencies.values())
     
     print(f"  Total CVS-1.0 Memory Footprint: {total_ram:.2f} MB")
-    print(f"  Total CVS-1.0 Average CPU Load: {total_cpu:.2f}% (Jetson AGX Orin)")
+    print(f"  Total CVS-1.0 Average CPU Load: {total_cpu:.2f}% (iMac Host Node)")
     print(f"  End-to-End Cognitive Pathway Latency: {e2e_pathway_ms:.3f} ms (Budget: 15.0 ms)")
     
     return {
