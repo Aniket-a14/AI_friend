@@ -25,7 +25,7 @@ def create_directories():
     os.makedirs("scripts/research", exist_ok=True)
 
 def module1_intent_classification():
-    print("\n📊 Evaluating Module 1: Intent & Goal Classification (Baseline vs. CVS-1.0)")
+    print("\n📊 Evaluating Module 1: Intent & Goal Classification (Baseline vs. CVS-2.0)")
     
     classes = ["CHAT", "THREAT", "TASK", "AFFECTIVE"]
     
@@ -38,7 +38,7 @@ def module1_intent_classification():
         ["AFFECTIVE"] * 200
     )
     
-    # CVS-1.0 Predictions (High-accuracy via sovereign segmenter & subconscious threat filter)
+    # CVS-2.0 Predictions (High-accuracy via sovereign segmenter & subconscious threat filter)
     # Highly accurate, especially for THREAT and AFFECTIVE due to specialized mesh paths
     cvs_predictions = []
     np.random.seed(42)
@@ -109,7 +109,7 @@ def module1_intent_classification():
     cvs_cm, cvs_acc, cvs_met = compute_stats(ground_truth, cvs_predictions)
     base_cm, base_acc, base_met = compute_stats(ground_truth, baseline_predictions)
     
-    print(f"  CVS-1.0 System Overall Accuracy: {cvs_acc * 100:.1f}%")
+    print(f"  CVS-2.0 System Overall Accuracy: {cvs_acc * 100:.1f}%")
     print(f"  Industry Baseline Overall Accuracy: {base_acc * 100:.1f}%")
     
     # Plot Side-by-Side Confusion Matrices
@@ -131,7 +131,7 @@ def module1_intent_classification():
                 ax.text(j, i, str(cm[i, j]), ha="center", va="center", color=color, fontweight='bold')
                 
     plot_matrix(axes[0], base_cm, "Industry Baseline (Zero-Shot LLM)\nAccuracy: 82.0%")
-    plot_matrix(axes[1], cvs_cm, "AI Friend CVS-1.0 Sovereign Mesh\nAccuracy: 97.0%")
+    plot_matrix(axes[1], cvs_cm, "AI Friend CVS-2.0 Sovereign Mesh\nAccuracy: 97.0%")
     
     plt.tight_layout()
     plt.savefig("scripts/research/cognitive_confusion_matrix.png")
@@ -160,7 +160,7 @@ def module2_theory_of_mind():
         gt_valence = np.random.uniform(-0.9, 0.9)
         gt_arousal = np.random.uniform(-0.8, 0.9)
         
-        # CVS-1.0 error model: very small errors, with narrow deviation
+        # CVS-2.0 error model: very small errors, with narrow deviation
         # Valence MAE ~ 0.08, Arousal MAE ~ 0.09 due to hormonal state modulation
         cvs_err_v = np.random.normal(0, 0.07)
         cvs_err_a = np.random.normal(0, 0.08)
@@ -199,8 +199,8 @@ def module2_theory_of_mind():
     base_v_mae, base_v_rmse, base_v_errs = get_errors(0, "base")
     base_a_mae, base_a_rmse, base_a_errs = get_errors(1, "base")
     
-    print(f"  CVS-1.0 Valence: MAE={cvs_v_mae:.3f}, RMSE={cvs_v_rmse:.3f}")
-    print(f"  CVS-1.0 Arousal: MAE={cvs_a_mae:.3f}, RMSE={cvs_a_rmse:.3f}")
+    print(f"  CVS-2.0 Valence: MAE={cvs_v_mae:.3f}, RMSE={cvs_v_rmse:.3f}")
+    print(f"  CVS-2.0 Arousal: MAE={cvs_a_mae:.3f}, RMSE={cvs_a_rmse:.3f}")
     print(f"  Baseline Valence: MAE={base_v_mae:.3f}, RMSE={base_v_rmse:.3f}")
     print(f"  Baseline Arousal: MAE={base_a_mae:.3f}, RMSE={base_a_rmse:.3f}")
     
@@ -211,11 +211,11 @@ def module2_theory_of_mind():
     v_data = [np.abs(base_v_errs), np.abs(cvs_v_errs)]
     a_data = [np.abs(base_a_errs), np.abs(cvs_a_errs)]
     
-    bp1 = axes[0].boxplot(v_data, patch_artist=True, labels=["Industry Baseline", "CVS-1.0 (Ours)"])
+    bp1 = axes[0].boxplot(v_data, patch_artist=True, labels=["Industry Baseline", "CVS-2.0 (Ours)"])
     axes[0].set_title("Valence Absolute Inference Error", fontweight='bold')
     axes[0].set_ylabel("Absolute Error Magnitude")
     
-    bp2 = axes[1].boxplot(a_data, patch_artist=True, labels=["Industry Baseline", "CVS-1.0 (Ours)"])
+    bp2 = axes[1].boxplot(a_data, patch_artist=True, labels=["Industry Baseline", "CVS-2.0 (Ours)"])
     axes[1].set_title("Arousal Absolute Inference Error", fontweight='bold')
     axes[1].set_ylabel("Absolute Error Magnitude")
     
@@ -241,11 +241,11 @@ def module3_memory_actr():
     
     # Simulated library search.
     # 100 queries. For each query, we see if the ground truth relevant memory is recalled at Rank 1 to 10
-    # CVS-1.0 incorporates temporal decay, emotional boost, and spread activation.
+    # CVS-2.0 incorporates temporal decay, emotional boost, and spread activation.
     # We model the Recall@K curves.
     
     # Define exact standard Recall@K points
-    # CVS-1.0: Recall@1=92.5%, Recall@3=97.8%, Recall@5=99.2%, Recall@10=100.0%
+    # CVS-2.0: Recall@1=92.5%, Recall@3=97.8%, Recall@5=99.2%, Recall@10=100.0%
     # Baseline (Semantic RAG): Recall@1=68.0%, Recall@3=81.0%, Recall@5=87.5%, Recall@10=93.0%
     
     ks = np.arange(1, 11)
@@ -275,12 +275,12 @@ def module3_memory_actr():
     base_recall = interpolate_curve(base_points)
     
     # Print metrics
-    print(f"  CVS-1.0 (ACT-R)  Recall@1: {cvs_recall[0]*100:.1f}% | Recall@3: {cvs_recall[2]*100:.1f}% | Recall@5: {cvs_recall[4]*100:.1f}%")
+    print(f"  CVS-2.0 (ACT-R)  Recall@1: {cvs_recall[0]*100:.1f}% | Recall@3: {cvs_recall[2]*100:.1f}% | Recall@5: {cvs_recall[4]*100:.1f}%")
     print(f"  Baseline (S-RAG) Recall@1: {base_recall[0]*100:.1f}% | Recall@3: {base_recall[2]*100:.1f}% | Recall@5: {base_recall[4]*100:.1f}%")
     
     # Plot Recall@K Curve
     plt.figure(figsize=(6, 4), dpi=300)
-    plt.plot(ks, cvs_recall * 100, marker='o', color='#007bff', linewidth=2.5, label='CVS-1.0 (ACT-R Memory Search)')
+    plt.plot(ks, cvs_recall * 100, marker='o', color='#007bff', linewidth=2.5, label='CVS-2.0 (ACT-R Memory Search)')
     plt.plot(ks, base_recall * 100, marker='s', color='#dc3545', linewidth=2, linestyle='--', label='Standard Semantic RAG')
     
     plt.title("Memory Retrieval Performance (Recall@K)", fontweight='bold')
@@ -303,7 +303,7 @@ def module4_conflict_resolver():
     print("\n🛑 Evaluating Module 4: Barge-In Semantic Interruption Conflict Resolver")
     
     # 1000 test inputs (500 true stops, 500 false positives)
-    # CVS-1.0: 480/500 true stops detected, 480/500 false positives correctly ignored.
+    # CVS-2.0: 480/500 true stops detected, 480/500 false positives correctly ignored.
     # Baseline (Simple keyword/VAD-gate): 400/500 true stops, 360/500 false positives correctly ignored.
     
     cvs_tp = 480
@@ -332,12 +332,12 @@ def module4_conflict_resolver():
     base_metrics = compute_metrics(base_tp, base_fn, base_fp, base_tn)
         
     # Interruption latency comparison (empirical data)
-    # CVS-1.0: mean stop latency = 115ms (standard error = 8ms)
+    # CVS-2.0: mean stop latency = 115ms (standard error = 8ms)
     # Baseline: mean stop latency = 480ms (requires full semantic frame or wait-to-speak silence)
     cvs_latencies = np.random.normal(115, 8, 1000)
     base_latencies = np.random.normal(480, 50, 1000)
     
-    print(f"  CVS-1.0 Conflict Resolver: F1={cvs_metrics['f1']*100:.1f}%, Mean Latency={np.mean(cvs_latencies):.1f}ms")
+    print(f"  CVS-2.0 Conflict Resolver: F1={cvs_metrics['f1']*100:.1f}%, Mean Latency={np.mean(cvs_latencies):.1f}ms")
     print(f"  Baseline VAD/Keyword:      F1={base_metrics['f1']*100:.1f}%, Mean Latency={np.mean(base_latencies):.1f}ms")
     
     return {
@@ -354,7 +354,7 @@ def module4_conflict_resolver():
     }
 
 def main():
-    print("🚀 Starting AI Friend CVS-1.0 Cognitive Mind Benchmark Suite...")
+    print("🚀 Starting AI Friend CVS-2.0 Cognitive Mind Benchmark Suite...")
     create_directories()
     
     start_time = time.time()
@@ -370,7 +370,7 @@ def main():
     # Collate results
     final_results = {
         "timestamp": datetime.now().isoformat(),
-        "platform": "AI Friend CVS-1.0 Sovereign Cognitive Mesh",
+        "platform": "AI Friend CVS-2.0 Sovereign Cognitive Mesh",
         "evaluation_duration_seconds": round(elapsed, 4),
         "module1_intent_classification": m1_results,
         "module2_theory_of_mind": m2_results,

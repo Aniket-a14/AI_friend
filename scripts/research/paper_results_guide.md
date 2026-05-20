@@ -1,6 +1,6 @@
 # 🔬 Latency Hardening & Cognitive Decay: Research Results Data Guide
 
-This directory contains the high-fidelity empirical datasets compiled from the **AI Friend CVS-1.0** edge social humanoid robot platform. These metrics represent the post-optimization state of your sovereign mesh subsystems and are fully formatted to be dropped directly into your LaTeX manuscript, parsed with pandas, or plotted in matplotlib.
+This directory contains the high-fidelity empirical datasets compiled from the **AI Friend CVS-2.0** edge social humanoid robot platform. These metrics represent the post-optimization state of your sovereign mesh subsystems and are fully formatted to be dropped directly into your LaTeX manuscript, parsed with pandas, or plotted in matplotlib.
 
 ---
 

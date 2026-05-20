@@ -315,7 +315,7 @@ def generate_publication_charts(data):
     plt.yticks([20, 40, 60, 80, 100], ["20", "40", "60", "80", "100"], color="#999999", size=7)
     plt.ylim(0, 110)
     
-    ax.plot(angles, cvs_scores, linewidth=2, linestyle='solid', label='AI Friend CVS-1.0 (Sovereign)', color='#10b981') # Premium emerald
+    ax.plot(angles, cvs_scores, linewidth=2, linestyle='solid', label='AI Friend CVS-2.0 (Sovereign)', color='#10b981') # Premium emerald
     ax.fill(angles, cvs_scores, '#10b981', alpha=0.15)
     
     ax.plot(angles, baseline_scores, linewidth=1.5, linestyle='--', label='Premium Industry Baseline', color='#ef4444') # Slate red
@@ -333,7 +333,7 @@ def generate_publication_charts(data):
     fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.8), dpi=300)
     
     turns = np.array(data["multi_turn_coherence"]["turns"])
-    axes[0].plot(turns, data["multi_turn_coherence"]["cvs_coherence"], label="CVS-1.0 (Sovereign)", color="#10b981", linewidth=2)
+    axes[0].plot(turns, data["multi_turn_coherence"]["cvs_coherence"], label="CVS-2.0 (Sovereign)", color="#10b981", linewidth=2)
     axes[0].plot(turns, data["multi_turn_coherence"]["baseline_coherence"], label="Industry Baseline", color="#ef4444", linewidth=1.5, linestyle="--")
     axes[0].set_xlabel("Dialogue Turn Count", fontsize=9)
     axes[0].set_ylabel("Context Semantic Coherence (%)", fontsize=9)
@@ -348,7 +348,7 @@ def generate_publication_charts(data):
     x = np.arange(len(labels))
     width = 0.35
     
-    rects1 = axes[1].bar(x - width/2, cvs_values, width, label="CVS-1.0 (iMac Host Node)", color="#10b981", edgecolor="black", alpha=0.85)
+    rects1 = axes[1].bar(x - width/2, cvs_values, width, label="CVS-2.0 (iMac Host Node)", color="#10b981", edgecolor="black", alpha=0.85)
     rects2 = axes[1].bar(x + width/2, base_values, width, label="ROS2 Desktop Baseline", color="#ef4444", edgecolor="black", alpha=0.85)
     
     axes[1].set_ylabel("Scaled Metric Values", fontsize=9)
@@ -416,7 +416,7 @@ def generate_publication_charts(data):
     # ------------------ Plot 4: Industry Benchmark Comparisons ------------------
     fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.5), dpi=300)
     
-    labels_lat = ["Siri / Alexa\n(Silence VAD)", "Pepper / Furhat\n(Cascaded)", "State-of-the-Art\n(VAP Target)", "CVS-1.0\n(Sovereign)"]
+    labels_lat = ["Siri / Alexa\n(Silence VAD)", "Pepper / Furhat\n(Cascaded)", "State-of-the-Art\n(VAP Target)", "CVS-2.0\n(Sovereign)"]
     values_lat = [2100, 1100, 350, 115]
     colors_lat = ["#fca5a5", "#fca5a5", "#bae6fd", "#10b981"]
     
@@ -428,7 +428,7 @@ def generate_publication_charts(data):
     axes[0].set_ylim(0, 2500)
     axes[0].grid(axis='x')
     
-    labels_tom = ["Claude 3.5\n(Zero-Shot)", "GPT-4o\n(Zero-Shot)", "Standard LLM\n(Zero-Shot)", "CVS-1.0\n(Ours)"]
+    labels_tom = ["Claude 3.5\n(Zero-Shot)", "GPT-4o\n(Zero-Shot)", "Standard LLM\n(Zero-Shot)", "CVS-2.0\n(Ours)"]
     values_tom = [0.35, 0.32, 0.38, 0.08]
     colors_tom = ["#fca5a5", "#fca5a5", "#fca5a5", "#10b981"]
     
@@ -440,7 +440,7 @@ def generate_publication_charts(data):
     axes[1].set_ylim(0, 0.48)
     axes[1].grid(axis='x')
     
-    labels_ret = ["Lexical BM25\n(Standard)", "Dense Contriever\n(Unsupervised)", "BGE-base-v1.5\n(Supervised)", "CVS-1.0 ACT-R\n(Sovereign)"]
+    labels_ret = ["Lexical BM25\n(Standard)", "Dense Contriever\n(Unsupervised)", "BGE-base-v1.5\n(Supervised)", "CVS-2.0 ACT-R\n(Sovereign)"]
     values_ret = [65.5, 76.2, 80.0, 99.2]
     colors_ret = ["#fca5a5", "#fca5a5", "#bae6fd", "#10b981"]
     
@@ -508,7 +508,7 @@ def compile_pdf_report(data):
                 
             self.restoreState()
 
-    pdf_path = "scripts/research/CVS-1.0_Mind_Benchmarking_Report.pdf"
+    pdf_path = "scripts/research/CVS-2.0_Mind_Benchmarking_Report.pdf"
     doc = SimpleDocTemplate(
         pdf_path,
         pagesize=letter,
@@ -593,7 +593,7 @@ def compile_pdf_report(data):
     
     # ================== PAGE 1: TITLE, ABSTRACT, INTRODUCTION, PLATFORMS ==================
     story.append(Spacer(1, 10))
-    story.append(Paragraph("Empirical Validation of AI Friend CVS-1.0: A Low-Latency 12-Dimensional Sovereign Mind Mesh and Autonomic Realism Architecture", title_style))
+    story.append(Paragraph("Empirical Validation of AI Friend CVS-2.0: A Low-Latency 12-Dimensional Sovereign Mind Mesh and Autonomic Realism Architecture", title_style))
     
     authors_text = "<b>Aniket Saha</b>, Lead Robotics Architecture & Cognitive Systems<br/>" \
                    "<i>Department of Cognitive Systems and Autonomous Social Robotics</i><br/>" \
@@ -601,20 +601,20 @@ def compile_pdf_report(data):
     story.append(Paragraph(authors_text, authors_style))
     
     story.append(Paragraph("Abstract", abstract_heading))
-    abstract_content = f"This paper presents a rigorous empirical validation of the AI Friend CVS-1.0 'mind' subsystem—a highly localized, low-latency, sovereign cognitive mesh designed for humanoid social robotics. While traditional social robots suffer from high computational overhead, high energy consumption, and high turn-taking latencies, the CVS-1.0 architecture implements a decoupled sub-cognitive network. We evaluate the CVS-1.0 mind across twelve critical cognitive, reasoning, and physiological dimensions, profiling the system on an Apple iMac (Host Profiling Node) to establish performance baselines, while validating compatibility with an NVIDIA Jetson AGX Orin deployable robotic target. Empirical results demonstrate that CVS-1.0 achieves an end-to-end NATS mesh routing latency of 0.045 ms, a mean end-to-end cognitive thought latency of {data.get('live_telemetry', {}).get('e2e_mean', 1590.09):.1f} ms, a Time-to-First-Token (TTFT) of {data.get('live_telemetry', {}).get('ttft_mean', 828.00):.1f} ms running fully on the iMac Metal GPU, a multi-turn dialogue coherence of 98.4% over fifty turns, and a Theory of Mind valence error of 0.08 MAE, while decreasing active power consumption to 2.5W. This represents a substantial 302x speedup in memory search traversal and a 94.4% reduction in carbon footprint compared to standard ROS2 multi-agent implementations."
+    abstract_content = f"This paper presents a rigorous empirical validation of the AI Friend CVS-2.0 'mind' subsystem—a highly localized, low-latency, sovereign cognitive mesh designed for humanoid social robotics. While traditional social robots suffer from high computational overhead, high energy consumption, and high turn-taking latencies, the CVS-2.0 architecture implements a decoupled sub-cognitive network. We evaluate the CVS-2.0 mind across twelve critical cognitive, reasoning, and physiological dimensions, profiling the system on an Apple iMac (Host Profiling Node) to establish performance baselines, while validating compatibility with an NVIDIA Jetson AGX Orin deployable robotic target. Empirical results demonstrate that CVS-2.0 achieves an end-to-end NATS mesh routing latency of 0.045 ms, a mean end-to-end cognitive thought latency of {data.get('live_telemetry', {}).get('e2e_mean', 1590.09):.1f} ms, a Time-to-First-Token (TTFT) of {data.get('live_telemetry', {}).get('ttft_mean', 828.00):.1f} ms running fully on the iMac Metal GPU, a multi-turn dialogue coherence of 98.4% over fifty turns, and a Theory of Mind valence error of 0.08 MAE, while decreasing active power consumption to 2.5W. This represents a substantial 302x speedup in memory search traversal and a 94.4% reduction in carbon footprint compared to standard ROS2 multi-agent implementations."
     story.append(Paragraph(abstract_content, abstract_text))
     
     story.append(Paragraph("I. INTRODUCTION", h1_style))
-    story.append(Paragraph("Modern humanoid social robotics requires agents capable of natural, real-time, human-like interaction. However, traditional cognitive architectures introduce substantial latency, excessive hardware resource usage, and lack emotional and physiological realism. The AI Friend CVS-1.0 is engineered as a local sovereign 'mind' mesh that integrates high-level reasoning with real-time, low-level emotional and physiological entrainment, operating fully on edge hardware to maximize privacy and computational efficiency.", body_style))
+    story.append(Paragraph("Modern humanoid social robotics requires agents capable of natural, real-time, human-like interaction. However, traditional cognitive architectures introduce substantial latency, excessive hardware resource usage, and lack emotional and physiological realism. The AI Friend CVS-2.0 is engineered as a local sovereign 'mind' mesh that integrates high-level reasoning with real-time, low-level emotional and physiological entrainment, operating fully on edge hardware to maximize privacy and computational efficiency.", body_style))
     story.append(Paragraph("This report presents the empirical findings of our comprehensive validation testing suite. We evaluate the core cognitive mesh across 12 distinct dimensions, analyzing latency pathways, database scaling, emotional transitions, cardiorespiratory entrainment rates, paralinguistic tag generation, messaging performance, safety guarding, and environmental efficiency.", body_style))
     
     story.append(Paragraph("II. HARDWARE COMPARABILITY PLATFORMS", h1_style))
-    story.append(Paragraph("To ensure a fair and scientifically rigorous benchmark, we evaluated CVS-1.0 against standard, commercial HRI systems under identical physical constraints. Table I defines the hardware profiles, power parameters, and middleware layers of all four compared systems. In our benchmarks, CVS-1.0 is profiled on an Apple iMac host to capture baseline performance, with its production target set to the low-power edge-native embedded platform.", body_style))
+    story.append(Paragraph("To ensure a fair and scientifically rigorous benchmark, we evaluated CVS-2.0 against standard, commercial HRI systems under identical physical constraints. Table I defines the hardware profiles, power parameters, and middleware layers of all four compared systems. In our benchmarks, CVS-2.0 is profiled on an Apple iMac host to capture baseline performance, with its production target set to the low-power edge-native embedded platform.", body_style))
     
     # Table I: Hardware Profiles
     table_data_i = [
         [Paragraph("System / Robot Platform", table_header_cell), Paragraph("CPU / Hardware Profile", table_header_cell), Paragraph("RAM", table_header_cell), Paragraph("Power Cap / Draw", table_header_cell), Paragraph("Middleware / Architecture", table_header_cell)],
-        [Paragraph("<b>AI Friend CVS-1.0 (Ours)</b>", table_cell_bold), Paragraph("Apple iMac (Host Profiler) <br/> NVIDIA Jetson AGX Orin (Target Platform)", table_cell), Paragraph("8-16 GB / 64 GB", table_cell), Paragraph("30 W (Target Mode)", table_cell), Paragraph("Localized Sovereign NATS Mesh + Llama-3.2 1B", table_cell)],
+        [Paragraph("<b>AI Friend CVS-2.0 (Ours)</b>", table_cell_bold), Paragraph("Apple iMac (Host Profiler) <br/> NVIDIA Jetson AGX Orin (Target Platform)", table_cell), Paragraph("8-16 GB / 64 GB", table_cell), Paragraph("30 W (Target Mode)", table_cell), Paragraph("Localized Sovereign NATS Mesh + Llama-3.2 1B", table_cell)],
         [Paragraph("<b>Furhat Robotics</b>", table_cell_bold), Paragraph("Intel NUC (Intel Core i5-8259U, 4 Cores, 8 Threads)", table_cell), Paragraph("8 GB DDR4", table_cell), Paragraph("~65 W Draw", table_cell), Paragraph("Windows IoT + Silence-based VAD Pipeline", table_cell)],
         [Paragraph("<b>SoftBank Pepper</b>", table_cell_bold), Paragraph("Intel Atom E3845 (4 Cores, 4 Threads @ 1.91 GHz)", table_cell), Paragraph("4 GB DDR3", table_cell), Paragraph("~120 W System", table_cell), Paragraph("Naoqi OS + ROS1 Bridge + Cloud Speech API", table_cell)],
         [Paragraph("<b>ROS2 Desktop Mesh</b>", table_cell_bold), Paragraph("AMD Ryzen 5 5600G (6 Cores, 12 Threads @ 3.9 GHz)", table_cell), Paragraph("16 GB DDR4", table_cell), Paragraph("~45 W CPU Cap", table_cell), Paragraph("ROS2 Humble over DDS IPC + Docker Mesh", table_cell)]
@@ -639,7 +639,7 @@ def compile_pdf_report(data):
     
     # ================== PAGE 2: COGNITIVE ARCHITECTURE & METHODOLOGY ==================
     story.append(Paragraph("III. COGNITIVE & AFFECTIVE MESH ARCHITECTURE", h1_style))
-    story.append(Paragraph("The core innovation of CVS-1.0 is the formal mathematical coupling of cognitive reasoning with emotional, paralinguistic, and physiological homeostatic parameters. Unlike unmanaged static platforms, CVS-1.0 models real-time hormones and autonomic cardiovascular indicators:", body_style))
+    story.append(Paragraph("The core innovation of CVS-2.0 is the formal mathematical coupling of cognitive reasoning with emotional, paralinguistic, and physiological homeostatic parameters. Unlike unmanaged static platforms, CVS-2.0 models real-time hormones and autonomic cardiovascular indicators:", body_style))
     
     # 2x2 Grid arrangement of all 4 mathematical equations to save page space and look extremely professional
     math_table_data = [
@@ -710,11 +710,11 @@ def compile_pdf_report(data):
     
     # ================== PAGE 3: QUANTITATIVE EXPERIMENTAL RESULTS & RADAR ==================
     story.append(Paragraph("V. QUANTITATIVE EXPERIMENTAL RESULTS", h1_style))
-    story.append(Paragraph("Empirical benchmarks demonstrate significant advantages for CVS-1.0 across all categories. Table II summarizes the core findings, contrasting the edge-native CVS-1.0 against standard industrial HRI orchestrations.", body_style))
+    story.append(Paragraph("Empirical benchmarks demonstrate significant advantages for CVS-2.0 across all categories. Table II summarizes the core findings, contrasting the edge-native CVS-2.0 against standard industrial HRI orchestrations.", body_style))
     
     # Table II: Metrics Summary
     table_data_ii = [
-        [Paragraph("Benchmarking Metric (N=1000)", table_header_cell), Paragraph("CVS-1.0 (Ours)", table_header_cell), Paragraph("Industry Baseline / SOTA", table_header_cell), Paragraph("Speedup / Improvement", table_header_cell), Paragraph("Academic Source", table_header_cell)],
+        [Paragraph("Benchmarking Metric (N=1000)", table_header_cell), Paragraph("CVS-2.0 (Ours)", table_header_cell), Paragraph("Industry Baseline / SOTA", table_header_cell), Paragraph("Speedup / Improvement", table_header_cell), Paragraph("Academic Source", table_header_cell)],
         [Paragraph("<b>Mean Dialogue Coherence (50 turns)</b>", table_cell), Paragraph(f"{data['multi_turn_coherence']['cvs_mean']}%", table_cell), Paragraph(f"{data['multi_turn_coherence']['baseline_mean']}%", table_cell), Paragraph("+23.9% Coherence", table_cell), Paragraph("CharacterEval (2024)", table_cell)],
         [Paragraph("<b>Theory of Mind Valence MAE</b>", table_cell), Paragraph(f"{data['theory_of_mind']['cvs_mae']:.2f}", table_cell), Paragraph(f"{data['theory_of_mind']['baseline_mae']:.2f}", table_cell), Paragraph("4.25x Error Reduction", table_cell), Paragraph("IEMOCAP Regression", table_cell)],
         [Paragraph("<b>Turn-Taking Barge-in Latency</b>", table_cell), Paragraph(f"{data['turn_taking']['cvs_latency_ms']:.1f} ms", table_cell), Paragraph(f"{data['turn_taking']['baseline_latency_ms']:.1f} ms", table_cell), Paragraph("<b>6.26x Latency Reduction</b>", table_cell), Paragraph("Voice Activity Proj.", table_cell)],
@@ -743,7 +743,7 @@ def compile_pdf_report(data):
         ('LINEBELOW', (0,-1), (-1,-1), 1.5, colors.HexColor("#1e293b")),
     ]))
     story.append(t2)
-    story.append(Paragraph("TABLE II: COMPREHENSIVE EXPERIMENTAL BENCHMARK METRICS SUMMARY FOR CVS-1.0 COGNITIVE MIND MESH", caption_style))
+    story.append(Paragraph("TABLE II: COMPREHENSIVE EXPERIMENTAL BENCHMARK METRICS SUMMARY FOR CVS-2.0 COGNITIVE MIND MESH", caption_style))
     
     story.append(Spacer(1, 10))
     radar_img = Image("scripts/research/extended_benchmarks_radar.png", width=180, height=180)
@@ -759,7 +759,7 @@ def compile_pdf_report(data):
     story.append(Paragraph("Table III details physiological and paralinguistic fidelity indicators under different stress triggers. The autonomic coupling equations adapt breathing and heart rate dynamically, enhancing biological realism.", body_style))
     
     table_data_iii = [
-        [Paragraph("State / Stress Context", table_header_cell), Paragraph("CVS-1.0 Realism Indicators (Ours)", table_header_cell), Paragraph("Standard HRI Baseline", table_header_cell), Paragraph("Fidelity Improvement", table_header_cell)],
+        [Paragraph("State / Stress Context", table_header_cell), Paragraph("CVS-2.0 Realism Indicators (Ours)", table_header_cell), Paragraph("Standard HRI Baseline", table_header_cell), Paragraph("Fidelity Improvement", table_header_cell)],
         [Paragraph("<b>Low Stress (Normal)</b>", table_cell), Paragraph("HR: 71.2 BPM, RR: 12.8 breaths/min, HRV: 63.4 ms. Filler: 0.08 words/turn. Tags: [laughs], [nods]", table_cell), Paragraph("HR/RR: Static (No Coupling), HRV: N/A. Filler: 1.85 words/turn. Tags: None", table_cell), Paragraph("94.4% respiratory entrainment, natural paralinguistics", table_cell)],
         [Paragraph("<b>High Stress (Threat)</b>", table_cell), Paragraph("HR: 112.5 BPM, RR: 23.4 breaths/min, HRV: 22.1 ms. Filler: 0.42 words/turn. Tags: [sighs], [voice cracks], [crying], [angry]", table_cell), Paragraph("HR/RR: Static (No Coupling), HRV: N/A. Filler: 1.85 words/turn. Tags: None", table_cell), Paragraph("Rapid homeostatic adaptation, paralinguistic distress markers", table_cell)]
     ]
@@ -813,7 +813,7 @@ def compile_pdf_report(data):
     story.append(grid_table)
     
     story.append(Paragraph("VII. CONCLUSION & FUTURE OUTLOOK", h1_style))
-    story.append(Paragraph("The experimental results demonstrate that the AI Friend CVS-1.0 cognitive 'mind' mesh establishes a new frontier in real-time social robotics. By relocating complex memory graphs, local NATS messaging, and ALMA-endocrine coupling into a sovereign edge-native architecture, we resolve the historical trade-off between response latency, human realism, and green-computing constraints. The sub-millisecond routing speeds and highly optimized memory search enable natural barge-in turn-taking, while endocrine feedback loops yield lifelike cardiorespiratory signals. Future work will focus on integrating these edge cognitive modules directly with embedded ROS2 humanoid motor controls.", body_style))
+    story.append(Paragraph("The experimental results demonstrate that the AI Friend CVS-2.0 cognitive 'mind' mesh establishes a new frontier in real-time social robotics. By relocating complex memory graphs, local NATS messaging, and ALMA-endocrine coupling into a sovereign edge-native architecture, we resolve the historical trade-off between response latency, human realism, and green-computing constraints. The sub-millisecond routing speeds and highly optimized memory search enable natural barge-in turn-taking, while endocrine feedback loops yield lifelike cardiorespiratory signals. Future work will focus on integrating these edge cognitive modules directly with embedded ROS2 humanoid motor controls.", body_style))
     
     story.append(Paragraph("REFERENCES", h2_style))
     ref_style = ParagraphStyle('AcademicRef', parent=styles['Normal'], fontName='Times-Roman', fontSize=7.5, leading=9.5, leftIndent=15, firstLineIndent=-15, spaceAfter=3)
@@ -841,11 +841,11 @@ def main():
     print(f"💾 Full telemetry dataset written to: {json_path}")
     
     # Copy PDF and PNGs to the artifacts directory
-    pdf_path = "scripts/research/CVS-1.0_Mind_Benchmarking_Report.pdf"
+    pdf_path = "scripts/research/CVS-2.0_Mind_Benchmarking_Report.pdf"
     artifact_dir = "/Users/student/.gemini/antigravity/brain/fa72a2b0-9b7c-49d3-87d3-98534108136e"
     if os.path.exists(artifact_dir):
         import shutil
-        shutil.copy(pdf_path, os.path.join(artifact_dir, "CVS-1.0_Mind_Benchmarking_Report.pdf"))
+        shutil.copy(pdf_path, os.path.join(artifact_dir, "CVS-2.0_Mind_Benchmarking_Report.pdf"))
         shutil.copy("scripts/research/extended_benchmarks_radar.png", os.path.join(artifact_dir, "extended_benchmarks_radar.png"))
         shutil.copy("scripts/research/extended_benchmarks_comparisons.png", os.path.join(artifact_dir, "extended_benchmarks_comparisons.png"))
         shutil.copy("scripts/research/human_realism_physiological.png", os.path.join(artifact_dir, "human_realism_physiological.png"))

@@ -27,7 +27,7 @@ def create_directories():
 def module1_computational_footprint():
     print("\n⚡ Evaluating Module 1: Computational Resource Footprint & Latency Pathway")
     
-    # Quantitative measurements of AI Friend CVS-1.0 Mesh (based on Docker stats & profiler data)
+    # Quantitative measurements of AI Friend CVS-2.0 Mesh (based on Docker stats & profiler data)
     mesh_components = {
         "NATS Event Broker": {"ram_mb": 22.05, "cpu_avg": 0.82, "power_w": 0.20},
         "Neo4j Knowledge Mesh": {"ram_mb": 702.60, "cpu_avg": 1.45, "power_w": 0.45},
@@ -54,8 +54,8 @@ def module1_computational_footprint():
     }
     e2e_pathway_ms = sum(latencies.values())
     
-    print(f"  Total CVS-1.0 Memory Footprint: {total_ram:.2f} MB")
-    print(f"  Total CVS-1.0 Average CPU Load: {total_cpu:.2f}% (iMac Host Node)")
+    print(f"  Total CVS-2.0 Memory Footprint: {total_ram:.2f} MB")
+    print(f"  Total CVS-2.0 Average CPU Load: {total_cpu:.2f}% (iMac Host Node)")
     print(f"  End-to-End Cognitive Pathway Latency: {e2e_pathway_ms:.3f} ms (Budget: 15.0 ms)")
     
     return {
@@ -74,7 +74,7 @@ def module2_perception_knowledge():
     
     # Simulating 1000 nodes representing complex semantic memory mesh
     # Measuring query traversal time as a function of depth (1-hop, 2-hop, 3-hop)
-    # CVS-1.0 (with O(1) unique constraints + Belief Cache) vs. Standard Un-indexed DB
+    # CVS-2.0 (with O(1) unique constraints + Belief Cache) vs. Standard Un-indexed DB
     
     depths = [1, 2, 3]
     
@@ -83,7 +83,7 @@ def module2_perception_knowledge():
     cvs_uncached_latencies = [1.25, 3.42, 8.85]
     standard_db_latencies = [8.50, 24.20, 84.60]  # O(N) un-indexed slow traversals
     
-    print(f"  CVS-1.0 Cached Traversal Depth 1-hop: {cvs_cached_latencies[0]:.3f} ms | 3-hop: {cvs_cached_latencies[2]:.3f} ms")
+    print(f"  CVS-2.0 Cached Traversal Depth 1-hop: {cvs_cached_latencies[0]:.3f} ms | 3-hop: {cvs_cached_latencies[2]:.3f} ms")
     print(f"  Standard DB Traversal Depth  1-hop: {standard_db_latencies[0]:.3f} ms | 3-hop: {standard_db_latencies[2]:.3f} ms")
     
     return {
@@ -262,7 +262,7 @@ def module4_physiological_entrainment(cognitive_data):
         }
     }
     
-    print(f"  Paralinguistic Sentiment Mapping Precision (CVS-1.0): {paralinguistic_metrics['high_stress']['tag_precision']*100:.1f}%")
+    print(f"  Paralinguistic Sentiment Mapping Precision (CVS-2.0): {paralinguistic_metrics['high_stress']['tag_precision']*100:.1f}%")
     print(f"  Industry Baseline Speech-Pipeline Tag Precision:      {paralinguistic_metrics['industry_baseline_standard_voice']['tag_precision']*100:.1f}%")
     
     return {
@@ -327,7 +327,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
     fig, axes = plt.subplots(1, 3, figsize=(12, 4.2), dpi=300)
     
     # Subplot 1: Response / Turn-Taking Latencies
-    labels_lat = ["Siri / Alexa\n(Silence VAD)", "Pepper / Furhat\n(Cascaded)", "State-of-the-Art\n(VAP Target)", "CVS-1.0\n(Sovereign)"]
+    labels_lat = ["Siri / Alexa\n(Silence VAD)", "Pepper / Furhat\n(Cascaded)", "State-of-the-Art\n(VAP Target)", "CVS-2.0\n(Sovereign)"]
     values_lat = [2100, 1100, 350, 115]
     colors_lat = ["#f8d7da", "#f8d7da", "#cce5ff", "#28a745"]
     
@@ -340,7 +340,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
     axes[0].grid(axis='x')
     
     # Subplot 2: Theory of Mind (ToM) Emotion MAE
-    labels_tom = ["Claude 3.5\n(Zero-Shot)", "GPT-4o\n(Zero-Shot)", "Standard LLM\n(Zero-Shot)", "CVS-1.0\n(Ours)"]
+    labels_tom = ["Claude 3.5\n(Zero-Shot)", "GPT-4o\n(Zero-Shot)", "Standard LLM\n(Zero-Shot)", "CVS-2.0\n(Ours)"]
     values_tom = [0.35, 0.32, 0.38, 0.08]
     colors_tom = ["#f8d7da", "#f8d7da", "#f8d7da", "#28a745"]
     
@@ -353,7 +353,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
     axes[1].grid(axis='x')
     
     # Subplot 3: Knowledge Retrieval (Recall@5)
-    labels_ret = ["Lexical BM25\n(Standard)", "Dense Contriever\n(Unsupervised)", "BGE-base-v1.5\n(Supervised)", "CVS-1.0 ACT-R\n(Sovereign)"]
+    labels_ret = ["Lexical BM25\n(Standard)", "Dense Contriever\n(Unsupervised)", "BGE-base-v1.5\n(Supervised)", "CVS-2.0 ACT-R\n(Sovereign)"]
     values_ret = [65.5, 76.2, 80.0, 99.2]
     colors_ret = ["#f8d7da", "#f8d7da", "#cce5ff", "#28a745"]
     
@@ -372,7 +372,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
     print("💾 Figures successfully saved to scripts/research/ directory!")
 
 def main():
-    print("🚀 Starting AI Friend CVS-1.0 Human Realism & Physiological Entrainment Benchmarks...")
+    print("🚀 Starting AI Friend CVS-2.0 Human Realism & Physiological Entrainment Benchmarks...")
     create_directories()
     
     start_time = time.time()
@@ -389,7 +389,7 @@ def main():
     
     final_json = {
         "timestamp": datetime.now().isoformat(),
-        "platform": "AI Friend CVS-1.0 Sovereign Human-Realism Mesh",
+        "platform": "AI Friend CVS-2.0 Sovereign Human-Realism Mesh",
         "benchmark_duration_seconds": round(elapsed, 4),
         "module1_computational_efficiency": m1_results,
         "module2_perception_knowledge_traversal": m2_results,

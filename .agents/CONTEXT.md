@@ -270,7 +270,7 @@ Infrastructure changes:
 
 - **Phased Startup Mesh**: Implemented `depends_on` conditions with `service_healthy`. The mesh now graduates in stages (Infra -> Brain -> Sensory Agents) to eliminate startup race conditions.
 - **Mesh Surveillance**: Added `netcat-openbsd` to the base image. All agents now perform automated health probes (`nc -z nats_mesh 4222`) to monitor signal bus connectivity.
-- **Performance Exposure**: Mapped CVS-1.0 performance variables (`VOICE_SYNTH_CONCURRENCY`, `MAX_VOICE_QUEUE_SIZE`, `STT_WHISPER_QUEUE_SIZE`, `STATE_SENSORY_WEIGHT`) to the `.env` layer for production tuning.
+- **Performance Exposure**: Mapped CVS-2.0 performance variables (`VOICE_SYNTH_CONCURRENCY`, `MAX_VOICE_QUEUE_SIZE`, `STT_WHISPER_QUEUE_SIZE`, `STATE_SENSORY_WEIGHT`) to the `.env` layer for production tuning.
 - **Identity Persistence**: Synchronized weight volumes (`GPT_weights`, `SoVITS_weights`) across the agent mesh to support permanent voice identity.
 - **Resilience**: Orchestrated SoVITS API health diagnostics using `/docs` probes to ensure dependent agents only start when the inference engine is ready.
 
@@ -281,7 +281,7 @@ Verification:
 
 ## 2026-04-19 CI/CD Automation (Solid State Workflows)
 
-Added five specialized GitHub Actions workflows to protect CVS-1.0 architectural
+Added five specialized GitHub Actions workflows to protect CVS-2.0 architectural
 invariants. These are not generic linters — each one guards a specific failure
 mode encountered or identified during the infrastructure hardening session.
 
@@ -321,7 +321,7 @@ Verification:
 
 ## 2026-04-19 Modular Architectural Refactor
 
-Refactored the monolithic CVS-1.0 backend into a 4-layer decoupled architecture to improve maintainability and strictly enforce structural boundaries.
+Refactored the monolithic CVS-2.0 backend into a 4-layer decoupled architecture to improve maintainability and strictly enforce structural boundaries.
 
 Changed files:
 
@@ -654,9 +654,9 @@ Remaining risks:
 - CPU-only Ollama latency remains the primary bottleneck for sustained high-rate turn completion.
 - Final soak gate sign-off still requires a controlled run with strict turn-id filtering and stable background load.
  
-## 2026-04-21 CVS-1.0 Stabilization & Storage Optimization
+## 2026-04-21 CVS-2.0 Stabilization & Storage Optimization
  
-Finalized the transition to the hardened CVS-1.0 mesh on host Zenbook Duo (Laptop/CPU-fallback mode).
+Finalized the transition to the hardened CVS-2.0 mesh on host Zenbook Duo (Laptop/CPU-fallback mode).
  
 **Storage Optimization:**
 - Reclaimed **102.5GB of disk space** on the host `C:` drive via `diskpart` VHDX compaction. 
@@ -869,7 +869,7 @@ Verification:
 
 ## 2026-05-11 AI Mesh Contracts & Observability Hardening
 
-Completed infrastructure hardening and API compatibility fixes to move the project from "Experimental" to "Hardened CVS-1.0".
+Completed infrastructure hardening and API compatibility fixes to move the project from "Experimental" to "Hardened CVS-2.0".
 
 Changed files:
 - `backend/app/contracts.py`
@@ -995,7 +995,7 @@ Verification:
 
 The AI Friend cognitive pipeline has been successfully transitioned into a modular, production-grade, transport-agnostic architecture. This refactor eliminates significant technical debt and establishes a robust foundation for future robotic hardware integration.
 
-### 1. Architectural Transformation (CVS-1.0)
+### 1. Architectural Transformation (CVS-2.0)
 We have successfully decoupled all high-level agentic logic from the NATS/Mesh signaling layer. This was achieved by extracting pure logic "Engines" and "Systems" that operate without I/O side effects.
 
 - **`CognitivePipeline`** (`app/cognitive/pipeline.py`): Centralized the master cognitive loop (Perception → Appraisal → State → Decision → Action → Learning).
