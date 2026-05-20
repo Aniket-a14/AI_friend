@@ -73,6 +73,111 @@ impl ReverbFilter {
     }
 }
 
+struct OlaCrossfadeFilter {
+    sample_rate: u32,
+    last_prosody: Option<contracts::Prosody>,
+    last_samples: Vec<i16>,
+    active_fade_buffer: Vec<i16>,
+    fade_in_progress: bool,
+    fade_index: usize,
+    pending_byte: Option<u8>,
+}
+
+impl OlaCrossfadeFilter {
+    fn new(sample_rate: u32) -> Self {
+        Self {
+            sample_rate,
+            last_prosody: None,
+            last_samples: Vec::new(),
+            active_fade_buffer: Vec::new(),
+            fade_in_progress: false,
+            fade_index: 0,
+            pending_byte: None,
+        }
+    }
+
+    fn clear_history(&mut self) {
+        self.last_samples.clear();
+        self.active_fade_buffer.clear();
+        self.fade_in_progress = false;
+        self.fade_index = 0;
+    }
+
+    fn notify_new_prosody(&mut self, prosody: contracts::Prosody) {
+        let is_shift = match self.last_prosody {
+            None => false,
+            Some(last) => last != prosody,
+        };
+        self.last_prosody = Some(prosody);
+
+        if is_shift {
+            let n = (self.sample_rate * 10 / 1000) as usize; // 10ms of samples
+            if !self.last_samples.is_empty() {
+                self.active_fade_buffer = self.last_samples.clone();
+                self.fade_in_progress = true;
+                self.fade_index = 0;
+                info!("Prosody shift detected! Initiating 10ms OLA crossfade.");
+            }
+        }
+    }
+
+    fn process(&mut self, bytes: &[u8]) -> Vec<u8> {
+        let n = (self.sample_rate * 10 / 1000) as usize;
+
+        let mut framed = Vec::with_capacity(bytes.len() + if self.pending_byte.is_some() { 1 } else { 0 });
+        if let Some(byte) = self.pending_byte.take() {
+            framed.push(byte);
+        }
+        framed.extend_from_slice(bytes);
+        if framed.len() % 2 != 0 {
+            self.pending_byte = framed.pop();
+        }
+
+        let mut samples = framed
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<i16>>();
+
+        if samples.is_empty() {
+            return Vec::new();
+        }
+
+        if self.fade_in_progress && !self.active_fade_buffer.is_empty() {
+            let fade_len = self.active_fade_buffer.len().min(n);
+            for s in samples.iter_mut() {
+                if self.fade_index < fade_len {
+                    let prev_s = self.active_fade_buffer[self.fade_index] as f32;
+                    let curr_s = *s as f32;
+                    let t = self.fade_index as f32 / fade_len as f32;
+                    let blended = (1.0 - t) * prev_s + t * curr_s;
+                    *s = blended.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+                    self.fade_index += 1;
+                } else {
+                    self.fade_in_progress = false;
+                    break;
+                }
+            }
+        }
+
+        // Maintain rolling buffer of last n samples
+        if samples.len() >= n {
+            self.last_samples = samples[samples.len() - n..].to_vec();
+        } else {
+            self.last_samples.extend_from_slice(&samples);
+            if self.last_samples.len() > n {
+                let excess = self.last_samples.len() - n;
+                self.last_samples.drain(0..excess);
+            }
+        }
+
+        let mut output_bytes = Vec::with_capacity(samples.len() * 2);
+        for sample in samples {
+            output_bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        output_bytes
+    }
+}
+
 #[derive(Debug, Clone)]
 struct VoiceConfig {
     nats_url: String,
@@ -149,6 +254,8 @@ async fn main() -> Result<()> {
 
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
 
+    let mut ola_filter = OlaCrossfadeFilter::new(config.sample_rate);
+
     while let Some(message) = subscriber.next().await {
         match serde_json::from_slice::<ChatOutput>(&message.payload) {
             Ok(event) => {
@@ -158,6 +265,7 @@ async fn main() -> Result<()> {
                     &jetstream,
                     event,
                     last_distance.clone(),
+                    &mut ola_filter,
                 )
                 .await
                 {
@@ -177,6 +285,7 @@ async fn handle_chat_output(
     jetstream: &async_nats::jetstream::Context,
     event: ChatOutput,
     last_distance: std::sync::Arc<std::sync::Mutex<f64>>,
+    ola_filter: &mut OlaCrossfadeFilter,
 ) -> Result<()> {
     if event.done {
         return Ok(());
@@ -197,6 +306,8 @@ async fn handle_chat_output(
     };
 
     let prosody = vad_to_prosody(event.affect.as_ref());
+    ola_filter.notify_new_prosody(prosody);
+
     let distance = event
         .affect
         .as_ref()
@@ -212,6 +323,7 @@ async fn handle_chat_output(
     for part in split_temporal_parts(content)? {
         match part {
             TemporalPart::Silence(ms) => {
+                ola_filter.clear_history();
                 let pcm = contracts::silence_pcm(ms, config.sample_rate);
                 publish_pcm(jetstream, pcm, &event).await?;
             }
@@ -241,6 +353,7 @@ async fn handle_chat_output(
                         };
 
                         pcm_bytes = reverb_filter.process(&pcm_bytes, wet_gain);
+                        pcm_bytes = ola_filter.process(&pcm_bytes);
                         publish_pcm(jetstream, pcm_bytes, &event).await?;
                     }
                 }
@@ -450,5 +563,68 @@ mod tests {
             .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<i16>>();
         assert_eq!(out_samples, vec![20, 30]);
+    }
+
+    #[test]
+    fn test_ola_crossfade_filter() {
+        let mut filter = OlaCrossfadeFilter::new(32_000); // 320 samples for 10ms
+        
+        // Initial state, no shift
+        let p1 = contracts::Prosody {
+            rate: 1.0,
+            pitch: 1.0,
+            volume: 1.0,
+            pause_bias: 0.5,
+        };
+        filter.notify_new_prosody(p1);
+        
+        let chunk1 = vec![100_i16; 400]; // 400 samples
+        let mut chunk1_bytes = Vec::new();
+        for &s in &chunk1 {
+            chunk1_bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        
+        let out1 = filter.process(&chunk1_bytes);
+        assert_eq!(out1, chunk1_bytes); // Since there is no shift, it should be untouched
+        
+        // Let's check that rolling buffer is updated. The rolling buffer should contain the last 320 samples (all 100).
+        assert_eq!(filter.last_samples.len(), 320);
+        assert!(filter.last_samples.iter().all(|&s| s == 100));
+        
+        // Shift prosody!
+        let p2 = contracts::Prosody {
+            rate: 1.2,
+            pitch: 1.1,
+            volume: 0.8,
+            pause_bias: 0.4,
+        };
+        filter.notify_new_prosody(p2);
+        assert!(filter.fade_in_progress);
+        
+        // Process new chunk with different values, say 200_i16
+        let chunk2 = vec![200_i16; 400];
+        let mut chunk2_bytes = Vec::new();
+        for &s in &chunk2 {
+            chunk2_bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        
+        let out2_bytes = filter.process(&chunk2_bytes);
+        let out2_samples = out2_bytes
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<i16>>();
+            
+        // First sample should be exactly equal to previous sample (100) because t=0
+        assert_eq!(out2_samples[0], 100);
+        
+        // As index progresses, the value should blend towards 200.
+        // At index 160 (halfway through 320 samples of crossfade): it should be around (100 + 200) / 2 = 150.
+        assert!((out2_samples[160] - 150).abs() <= 2);
+        
+        // At index 320, the crossfade has ended, so it should be exactly 200.
+        assert_eq!(out2_samples[320], 200);
+        
+        // Fade in progress should now be false
+        assert!(!filter.fade_in_progress);
     }
 }
