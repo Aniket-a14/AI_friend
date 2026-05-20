@@ -551,13 +551,27 @@ class StateService:
         # 2. Update LLM-inferred fields if available
         if tom_inferences:
             if "inferred_valence" in tom_inferences:
-                self.current_state.user_mental_model.inferred_valence = float(
-                    tom_inferences["inferred_valence"]
-                )
+                try:
+                    self.current_state.user_mental_model.inferred_valence = float(
+                        tom_inferences["inferred_valence"]
+                    )
+                except (ValueError, TypeError) as e:
+                    logger.warning(
+                        "[ToM] Failed to parse inferred_valence: %s (value: %s)",
+                        e,
+                        tom_inferences["inferred_valence"],
+                    )
             if "inferred_arousal" in tom_inferences:
-                self.current_state.user_mental_model.inferred_arousal = float(
-                    tom_inferences["inferred_arousal"]
-                )
+                try:
+                    self.current_state.user_mental_model.inferred_arousal = float(
+                        tom_inferences["inferred_arousal"]
+                    )
+                except (ValueError, TypeError) as e:
+                    logger.warning(
+                        "[ToM] Failed to parse inferred_arousal: %s (value: %s)",
+                        e,
+                        tom_inferences["inferred_arousal"],
+                    )
             if "implied_goals" in tom_inferences:
                 self.current_state.user_mental_model.implied_goals = list(
                     tom_inferences["implied_goals"]
@@ -587,7 +601,7 @@ class StateService:
             "cortisol": self.current_state.cortisol,
             "dopamine": self.current_state.dopamine,
             # Theory of Mind snapshot — dict format
-            "user_mental_model": self.current_state.user_mental_model.dict(),
+            "user_mental_model": self.current_state.user_mental_model.model_dump(),
         }
 
     def get_behavioral_directive(self) -> str:

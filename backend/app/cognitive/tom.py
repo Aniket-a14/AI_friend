@@ -32,10 +32,10 @@ def update_known_concepts(current_concepts: List[str], user_input: str) -> List[
         return current_concepts
 
     # Extract clean alphabetical words between 4 and 15 characters in length
-    words = re.findall(r"\b[a-zA-Z]{4,15}\b", user_input.lower())
+    words = re.findall(r"\b[a-zA-Z]{4,15}\b", user_input)
 
-    # High-frequency stop words to filter out
-    stop_words = {
+    # High-frequency stop words to filter out (lowercase)
+    stop_words_lower = {
         "them",
         "they",
         "their",
@@ -79,19 +79,14 @@ def update_known_concepts(current_concepts: List[str], user_input: str) -> List[
         "very",
         "just",
         "here",
-        "about",
-        "would",
-        "their",
-        "about",
-        "could",
-        "should",
-        "would",
-        "about",
     }
 
     updated = list(current_concepts)
+    seen_lower = {c.lower() for c in updated}
+
     for word in words:
-        if word not in stop_words and word not in updated:
+        if word.lower() not in stop_words_lower and word.lower() not in seen_lower:
             updated.append(word)
+            seen_lower.add(word.lower())
 
     return updated
