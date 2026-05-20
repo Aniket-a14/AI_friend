@@ -1206,3 +1206,20 @@ Verification:
 - Added comprehensive unit tests for `ReverbFilter` in `voice-agent`, VLM habituation in `test_vision.py`, and fatigue evolution in `test_state.py`.
 - Checked all Rust workspaces with `cargo test --all` (19/19 tests passed).
 - Executed full pytest suite (140/140 tests passed, 100% pass rate).
+
+## 2026-05-20 Phase 4 & CVS-3.0 Documentation Hardening
+
+Documented the Phase 4 Dynamic Continuous Prosody Mapping equations, Overlap-Add (OLA) crossfade processing, dynamic emotional-physiological parameters, and spatial reverb DSP blends.
+
+Changed files:
+- `backend/app/agents/context.md` (Created)
+- `README.md` (Modified)
+- `.agents/CONTEXT.md` (Modified)
+
+Details:
+- **`backend/app/agents/context.md`**: Authored a detailed, dedicated agent context document detailing dynamic emotional parameters (PAD, Trust, Attachment, Fatigue, User Distance), continuous prosody equations in Rust, OLA 15ms sample-accurate linear crossfade formulation, and the wet/dry spatial reverb comb filter DSP mechanics.
+- **`README.md`**: Injected **Section 7: Dynamic Continuous Prosody Mapping & OLA Crossfade** under the Core Cognitive Models section, ensuring the math is publicly visible and formally specified.
+
+Verification:
+- Checked syntax and LaTeX markdown block rendering in the modified markdown files.
+- Verified that all equations strictly match the actual implementation in `backend/crates/contracts/src/lib.rs` and `backend/crates/voice-agent/src/main.rs`.

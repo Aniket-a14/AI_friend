@@ -281,6 +281,7 @@ class BrainAgent(BaseAgent):
                             if generation_errors
                             else None,
                             proactive=is_proactive,
+                            user_distance=self.last_user_distance,
                         )
                         await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
 
@@ -294,6 +295,7 @@ class BrainAgent(BaseAgent):
                     full_response=fallback_text,
                     turn_id=turn_id,
                     generation_error=error_msg,
+                    user_distance=self.last_user_distance,
                 )
                 await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
 
@@ -317,13 +319,13 @@ class BrainAgent(BaseAgent):
         At = state_snap.get("attachment", 0.1)
         F = state_snap.get("fatigue", 0.0)
 
-        # §5.1: Scherer CPM — Prosody mapping
-        speaking_rate = 1.0 + math.tanh(0.5 * Ar - 0.2)  # High arousal → faster
+        # §5.1: Continuous PAD-to-prosody formulas
+        speaking_rate = max(0.6, min(1.8, 1.0 + (0.20 * Ar) - (0.10 * V) - (0.25 * F)))
         confidence = 0.9  # Placeholder until appraisal confidence is threaded
         intensity = abs(V) * Ar  # Emotional intensity
 
         # §4.1: Goldman-Eisler — Pause bias
-        pause_bias = max(0.0, min(1.0, 0.2 + 0.4 * (1 - confidence) + 0.2 * Ar))
+        pause_bias = max(0.0, min(1.0, 1.0 - Ar))
 
         # Full §5.3 Affect Metadata Contract
         payload = ChatOutput(

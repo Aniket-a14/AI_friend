@@ -266,6 +266,32 @@ Action execution dynamically modulates Ollama inference parameters independently
 The Decision Service uses Multi-Attribute Utility Theory to score intent candidates:
 $$U(\text{Intent}) = w_{\text{goal}} \cdot G + w_{\text{emotion}} \cdot E + w_{\text{identity}} \cdot I + w_{\text{context}} \cdot C$$
 
+### 7. Dynamic Continuous Prosody Mapping & OLA Crossfade (CVS-3.0 / Phase 4)
+
+Vocal parameters (speaking rate, pitch, volume, and pause bias) are continuously modulated in Rust based on emotional PAD state, fatigue $F$, user distance $d$, and signal continuity window:
+
+* **Fatigue Slowdown**: $\text{fatigue\_slow} = 0.25 \cdot F$
+* **Fatigue Pitch Drop**: $\text{fatigue\_pitch\_drop} = 0.1 \cdot F$
+* **Distance Modifiers**:
+  * If $d < 0.6\text{m}$ (close range): $\text{dist\_vol\_mod} = -0.15, \quad \text{dist\_pitch\_mod} = -0.05$
+  * If $d > 1.5\text{m}$ (far range): $\text{dist\_vol\_mod} = 0.2, \quad \text{dist\_pitch\_mod} = 0.1$
+  * Otherwise: $\text{dist\_vol\_mod} = 0.0, \quad \text{dist\_pitch\_mod} = 0.0$
+
+#### Prosody Equations
+$$\text{SpeedFactor} = \text{clamp}(1.0 + (\text{arousal} - 0.5) - \text{fatigue\_slow}, 0.6, 1.8)$$
+$$\text{Pitch} = \text{clamp}(1.0 + 0.7 \cdot (\text{arousal} - 0.5) + 0.3 \cdot \text{valence} - \text{fatigue\_pitch\_drop} + \text{dist\_pitch\_mod}, 0.5, 2.0)$$
+$$\text{Volume} = \text{clamp}(0.4 + 0.6 \cdot \text{dominance} + \text{dist\_vol\_mod}, 0.1, 1.0)$$
+$$\text{PauseBias} = 1.0 - \text{arousal}$$
+
+#### Overlap-Add (OLA) Sample-Accurate Linear Crossfade
+During boundary segments, a linear fade-in is applied over a 15ms window (where $\text{fade\_len} = \lfloor 0.015 \cdot \text{SampleRate} \rfloor$ samples) to eliminate switching clicks:
+$$y[i] = x[i] \cdot \left( \frac{i}{\text{fade\_len}} \right), \quad 0 \le i < \text{fade\_len}$$
+
+#### Spatial Reverb DSP Blend
+Acoustic environmental reflection utilizes a comb filter with a 50ms delay and 0.5 feedback gain, dynamically blended via $\text{wet\_gain}$ linear interpolation based on user distance:
+$$\text{wet\_gain} = \text{clamp}\left(\frac{d - 2.5}{3.5 - 2.5}, 0.0, 1.0\right)$$
+$$y[n] = (1 - \text{wet\_gain}) \cdot x[n] + \text{wet\_gain} \cdot d_{\text{buffer}}[n \pmod M]$$
+
 ---
 
 ## 📡 Signal Bus Communication Contracts
