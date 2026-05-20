@@ -109,6 +109,11 @@ class BaseAgent:
         if not self.js:
             await self.connect()
 
+        # Resolve Enum subjects to their string values (e.g. Topics.CHAT_OUTPUT -> "chat.output")
+        from enum import Enum
+        if isinstance(subject, Enum):
+            subject = subject.value
+
         from ..config import Config
 
         # 1. Prepare Metadata
@@ -141,15 +146,21 @@ class BaseAgent:
                     "X-Latency-Meta": orjson.dumps(meta).decode(),
                     "X-Payload-Format": "binary/raw-pcm",
                 }
-                await self.js.publish(subject, data, headers=headers)
+                await self.js.publish(subject, data, headers=headers, timeout=10)
             else:
                 # Standard JSON Transport
                 if isinstance(data, dict):
                     data["latency_metadata"] = meta
                 payload = orjson.dumps(data)
 
-                # Use JetStream for all persistent message streams
-                await self.js.publish(subject, payload)
+                # Use JetStream with explicit timeout and core NATS fallback
+                try:
+                    await self.js.publish(subject, payload, timeout=10)
+                except Exception as js_err:
+                    logger.warning(
+                        f"JetStream publish to {subject} failed ({js_err}), falling back to core NATS"
+                    )
+                    await self.nc.publish(subject, payload)
 
             self._record_subject_metric(
                 subject,
@@ -162,6 +173,7 @@ class BaseAgent:
             )
         except Exception as e:
             logger.error(f"Failed to publish to {subject}: {e}")
+
 
     def log_latency(self, data: Any, stage_name: str):
         """Utility to log current latency relative to start_time."""

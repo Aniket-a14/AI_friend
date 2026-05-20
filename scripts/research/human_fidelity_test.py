@@ -22,6 +22,7 @@ async def run_human_fidelity_test():
     
     nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
     nc = await nats.connect(nats_url)
+    js = nc.jetstream()
     
     pad_results = []
     captured_tags = []
@@ -60,12 +61,12 @@ async def run_human_fidelity_test():
         captured_tags.clear()
         captured_wings.clear()
         
-        await nc.publish("chat.input", json.dumps({
+        await js.publish("chat.input", json.dumps({
             "text": scenario['text'],
             "metadata": {"benchmark_id": "human_fidelity"}
         }).encode())
         
-        await asyncio.sleep(5) 
+        await asyncio.sleep(8)  # Allow time for full cognitive pipeline + LLM
         
         print(f"📈 Trend: {scenario['trend']}")
         print(f"🎭 Tags Detected:  {captured_tags if captured_tags else 'None'}")
