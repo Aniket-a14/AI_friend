@@ -49,10 +49,86 @@ def test_speech_coordinator_continuous_formulas():
         "fatigue": 0.8,
     }
     prosody_tired = coordinator.map_affect_to_prosody(state_snap_tired)
-    # Sr = 1.0 + 0.20 * 0.8 - 0.10 * -0.4 - 0.25 * 0.8 = 1.0 + 0.16 + 0.04 - 0.20 = 1.00
+    # Sr = 1.0 + (0.20 * arousal) - (0.10 * valence) - (0.25 * fatigue) = 1.0 + 0.16 + 0.04 - 0.20 = 1.00
     assert abs(prosody_tired["speaking_rate"] - 1.00) < 1e-5
     assert abs(prosody_tired["pause_bias"] - 0.2) < 1e-5
     assert abs(prosody_tired["intensity"] - 0.32) < 1e-5
+
+    # (1) Max fatigue (fatigue=1.0) with high arousal (arousal=0.9)
+    # Sr = 1.0 + 0.20 * Ar - 0.10 * V - 0.25 * F = 1.0 + 0.20 * 0.9 - 0.10 * 0.5 - 0.25 * 1.0 = 0.88
+    # Intensity = |V| * Ar = |0.5| * 0.9 = 0.45
+    # Pause Bias = clamp(1.0 - Ar, 0, 1) = clamp(1.0 - 0.9, 0, 1) = 0.10
+    state_snap_max_fatigue = {
+        "valence": 0.5,
+        "arousal": 0.9,
+        "dominance": 0.5,
+        "fatigue": 1.0,
+    }
+    prosody_fatigue = coordinator.map_affect_to_prosody(state_snap_max_fatigue)
+    assert abs(prosody_fatigue["speaking_rate"] - 0.880) < 1e-5
+    assert abs(prosody_fatigue["pause_bias"] - 0.100) < 1e-5
+    assert abs(prosody_fatigue["intensity"] - 0.450) < 1e-5
+
+    # (2) Zero arousal (arousal=0.0) combined with varying valence
+    # Case A: Positive valence (valence=0.5)
+    # Sr = 1.0 + 0.20 * 0.0 - 0.10 * 0.5 - 0.25 * 0.0 = 0.95
+    # Intensity = |V| * Ar = |0.5| * 0.0 = 0.00
+    # Pause Bias = clamp(1.0 - Ar, 0, 1) = clamp(1.0 - 0.0, 0, 1) = 1.00
+    state_snap_zero_arousal_pos = {
+        "valence": 0.5,
+        "arousal": 0.0,
+        "dominance": 0.5,
+        "fatigue": 0.0,
+    }
+    prosody_zero_ar_pos = coordinator.map_affect_to_prosody(state_snap_zero_arousal_pos)
+    assert abs(prosody_zero_ar_pos["speaking_rate"] - 0.950) < 1e-5
+    assert abs(prosody_zero_ar_pos["pause_bias"] - 1.000) < 1e-5
+    assert abs(prosody_zero_ar_pos["intensity"] - 0.000) < 1e-5
+
+    # Case B: Negative valence (valence=-0.8)
+    # Sr = 1.0 + 0.20 * 0.0 - 0.10 * -0.8 - 0.25 * 0.0 = 1.08
+    # Intensity = |V| * Ar = |-0.8| * 0.0 = 0.00
+    # Pause Bias = clamp(1.0 - Ar, 0, 1) = clamp(1.0 - 0.0, 0, 1) = 1.00
+    state_snap_zero_arousal_neg = {
+        "valence": -0.8,
+        "arousal": 0.0,
+        "dominance": 0.5,
+        "fatigue": 0.0,
+    }
+    prosody_zero_ar_neg = coordinator.map_affect_to_prosody(state_snap_zero_arousal_neg)
+    assert abs(prosody_zero_ar_neg["speaking_rate"] - 1.080) < 1e-5
+    assert abs(prosody_zero_ar_neg["pause_bias"] - 1.000) < 1e-5
+    assert abs(prosody_zero_ar_neg["intensity"] - 0.000) < 1e-5
+
+    # (3) Negative/edge dominance values (e.g. dominance=-1.0)
+    # Sr = 1.0 + 0.20 * 0.6 - 0.10 * 0.4 - 0.25 * 0.2 = 1.03
+    # Intensity = |V| * Ar = |0.4| * 0.6 = 0.24
+    # Pause Bias = clamp(1.0 - Ar, 0, 1) = clamp(1.0 - 0.6, 0, 1) = 0.40
+    state_snap_neg_dom = {
+        "valence": 0.4,
+        "arousal": 0.6,
+        "dominance": -1.0,
+        "fatigue": 0.2,
+    }
+    prosody_neg_dom = coordinator.map_affect_to_prosody(state_snap_neg_dom)
+    assert abs(prosody_neg_dom["speaking_rate"] - 1.030) < 1e-5
+    assert abs(prosody_neg_dom["pause_bias"] - 0.400) < 1e-5
+    assert abs(prosody_neg_dom["intensity"] - 0.240) < 1e-5
+
+    # (4) Out-of-range input (e.g., arousal=1.5, valence=-1.5)
+    # Sr = max(0.6, min(1.8, 1.0 + 0.20 * 1.5 - 0.10 * -1.5)) = max(0.6, min(1.8, 1.45)) = 1.45
+    # Intensity = |V| * Ar = |-1.5| * 1.5 = 2.25
+    # Pause Bias = clamp(1.0 - Ar, 0, 1) = clamp(1.0 - 1.5, 0, 1) = 0.00
+    state_snap_out_of_range = {
+        "valence": -1.5,
+        "arousal": 1.5,
+        "dominance": 0.5,
+        "fatigue": 0.0,
+    }
+    prosody_out_of_range = coordinator.map_affect_to_prosody(state_snap_out_of_range)
+    assert abs(prosody_out_of_range["speaking_rate"] - 1.450) < 1e-5
+    assert abs(prosody_out_of_range["pause_bias"] - 0.000) < 1e-5
+    assert abs(prosody_out_of_range["intensity"] - 2.250) < 1e-5
 
 
 def test_speech_coordinator_create_chunk_payload():

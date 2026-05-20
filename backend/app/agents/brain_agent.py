@@ -311,38 +311,25 @@ class BrainAgent(BaseAgent):
             return
 
         state_snap = self.cognitive_core.state.get_context_snapshot()
-        V = state_snap.get("valence", state_snap.get("mood", 0.0))
-        Ar = state_snap.get("arousal", state_snap.get("energy", 0.5))
-        D = state_snap.get("dominance", 0.5)
-        T = state_snap.get("trust", 0.5)
-        At = state_snap.get("attachment", 0.1)
-        F = state_snap.get("fatigue", 0.0)
-
-        # §5.1: Continuous PAD-to-prosody formulas
-        speaking_rate = max(0.6, min(1.8, 1.0 + (0.20 * Ar) - (0.10 * V) - (0.25 * F)))
-        confidence = 0.9  # Placeholder until appraisal confidence is threaded
-        intensity = abs(V) * Ar  # Emotional intensity
-
-        # §4.1: Goldman-Eisler — Pause bias
-        pause_bias = max(0.0, min(1.0, 1.0 - Ar))
+        prosody = self.coordinator.map_affect_to_prosody(state_snap)
 
         # Full §5.3 Affect Metadata Contract
         payload = ChatOutput(
             content=text,
             done=False,
             turn_id=turn_id,
-            confidence=confidence,
-            intensity=intensity,
-            speaking_rate=round(speaking_rate, 3),
-            pause_bias=round(pause_bias, 3),
+            confidence=prosody["confidence"],
+            intensity=prosody["intensity"],
+            speaking_rate=prosody["speaking_rate"],
+            pause_bias=prosody["pause_bias"],
             affect=ChatOutputAffect(
-                valence=V,
-                arousal=Ar,
-                dominance=D,
-                trust=T,
-                attachment=At,
+                valence=state_snap.get("valence", state_snap.get("mood", 0.0)),
+                arousal=state_snap.get("arousal", state_snap.get("energy", 0.5)),
+                dominance=state_snap.get("dominance", 0.5),
+                trust=state_snap.get("trust", 0.5),
+                attachment=state_snap.get("attachment", 0.1),
                 emotion=state_snap.get("emotion", "neutral"),
-                fatigue=F,
+                fatigue=state_snap.get("fatigue", 0.0),
                 user_distance=self.last_user_distance,
             ),
         )

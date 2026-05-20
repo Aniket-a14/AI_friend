@@ -293,11 +293,14 @@ pub fn vad_to_prosody(affect: Option<&ChatOutputAffect>) -> Prosody {
         
     let volume = 0.4 + affect.dominance * 0.6 + dist_vol_mod;
 
+    let v = 1.0 - affect.arousal;
+    let pause_bias = v.clamp(0.0, 1.0);
+
     Prosody {
         rate: clamp_round(rate, 0.6, 1.8),
         pitch: clamp_round(pitch, 0.5, 2.0),
         volume: clamp_round(volume, 0.1, 1.0),
-        pause_bias: 1.0 - affect.arousal,
+        pause_bias,
     }
 }
 
