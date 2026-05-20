@@ -287,3 +287,43 @@ async def test_pipeline_tom_integration():
 
     # Ensure pre-decision update is called
     assert state.update_theory_of_mind.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_llm_tom_inference_invalid_type_graceful():
+    """Asserts that _classify_intent_and_goal gracefully handles invalid implied_goals types (e.g. dict, int) and falls back to an empty list."""
+    # Mock LLM response for classification with invalid implied_goals type (integer instead of list)
+    mock_llm = MagicMock()
+    mock_llm.generate = AsyncMock(
+        return_value="""
+    {
+      "intent": "CHAT",
+      "goal": "ENGAGE",
+      "inferred_valence": 0.3,
+      "inferred_arousal": 0.6,
+      "implied_goals": 12345
+    }
+    """
+    )
+
+    decision_service = DecisionService(llm_service=mock_llm)
+
+    event = CognitiveEvent(
+        event_id="evt-456",
+        event_type="USER_MESSAGE",
+        raw_content="This is a test case",
+        metadata={},
+    )
+
+    state_snapshot = {"emotion": "neutral", "mood": 0.0}
+
+    await decision_service._classify_intent_and_goal(event, state_snapshot)
+
+    assert event.intent == "CHAT"
+    assert event.metadata["suggested_goal"] == "ENGAGE"
+    assert "tom_inferences" in event.metadata
+
+    tom = event.metadata["tom_inferences"]
+    assert tom["inferred_valence"] == 0.3
+    assert tom["inferred_arousal"] == 0.6
+    assert tom["implied_goals"] == []

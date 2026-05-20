@@ -280,7 +280,6 @@ class DecisionService:
                     else Config.LLM_FAST_MODEL
                 )
 
-                # Extract and store ToM inferences in metadata
                 # Normalize implied_goals to avoid splitting strings into character arrays
                 val = data.get("implied_goals", None)
                 if val is None:
@@ -290,7 +289,10 @@ class DecisionService:
                 elif isinstance(val, (list, tuple)):
                     implied_goals = list(val)
                 else:
-                    raise TypeError(f"Unexpected type for implied_goals: {type(val)}")
+                    implied_goals = []
+                    logger.warning(
+                        f"[Decision] Unexpected type for implied_goals: {type(val)}. Falling back to empty list."
+                    )
 
                 tom_inferences = {
                     "inferred_valence": float(data.get("inferred_valence", 0.0)),

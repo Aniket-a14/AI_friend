@@ -94,6 +94,11 @@ class ActionService:
                 inferred_val = user_tom.get("inferred_valence", 0.0)
                 inferred_ar = user_tom.get("inferred_arousal", 0.5)
                 impl_goals = user_tom.get("implied_goals", [])
+                if not isinstance(impl_goals, list):
+                    logger.warning(
+                        f"[Action] Unexpected type for implied_goals in user_mental_model: {type(impl_goals)}. Falling back to empty list."
+                    )
+                    impl_goals = []
                 # Take the last 10 known concepts to keep it concise and avoid context bloat
                 known_con = user_tom.get("known_concepts", [])[-10:]
 

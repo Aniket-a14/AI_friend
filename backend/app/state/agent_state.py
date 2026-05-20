@@ -208,9 +208,14 @@ class StateService:
             self.current_state.user_mental_model.inferred_arousal = float(
                 props.get("inferred_arousal", 0.5)
             )
-            self.current_state.user_mental_model.implied_goals = list(
-                props.get("implied_goals", [])
-            )
+            implied_goals_raw = props.get("implied_goals", [])
+            if isinstance(implied_goals_raw, list):
+                self.current_state.user_mental_model.implied_goals = implied_goals_raw
+            else:
+                self.current_state.user_mental_model.implied_goals = []
+                logger.warning(
+                    f"[StateService] Unexpected type for implied_goals in props: {type(implied_goals_raw)}. Falling back to empty list."
+                )
             self.current_state.user_mental_model.known_concepts = list(
                 props.get("known_concepts", [])
             )
@@ -573,9 +578,16 @@ class StateService:
                         tom_inferences["inferred_arousal"],
                     )
             if "implied_goals" in tom_inferences:
-                self.current_state.user_mental_model.implied_goals = list(
-                    tom_inferences["implied_goals"]
-                )
+                implied_goals_raw = tom_inferences["implied_goals"]
+                if isinstance(implied_goals_raw, list):
+                    self.current_state.user_mental_model.implied_goals = (
+                        implied_goals_raw
+                    )
+                else:
+                    self.current_state.user_mental_model.implied_goals = []
+                    logger.warning(
+                        f"[StateService] Unexpected type for implied_goals in tom_inferences: {type(implied_goals_raw)}. Falling back to empty list."
+                    )
 
         self._enforce_bounds()
         await self.persist_state()
