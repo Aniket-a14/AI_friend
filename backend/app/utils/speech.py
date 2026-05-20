@@ -1,4 +1,3 @@
-import math
 from typing import List, Dict, Any
 from ..contracts import ChatOutput, ChatOutputAffect
 
@@ -14,15 +13,18 @@ class SpeechCoordinator:
         self.formation_buffer_ms = formation_buffer_ms
 
     def map_affect_to_prosody(self, state_snap: Dict[str, Any]) -> Dict[str, float]:
-        """§5.1: Scherer CPM — Prosody mapping."""
+        """§5.1: Continuous PAD-to-prosody formulas."""
         V = state_snap.get("valence", state_snap.get("mood", 0.0))
         Ar = state_snap.get("arousal", state_snap.get("energy", 0.5))
+        F = state_snap.get("fatigue", 0.0)
 
-        # Prosody Logic
-        speaking_rate = 1.0 + math.tanh(0.5 * Ar - 0.2)
+        # Continuous formulas from CVS-3.0 Roadmap:
+        # Sr = 1.0 + (0.20 * arousal) - (0.10 * valence) - (0.25 * fatigue)
+        speaking_rate = max(0.6, min(1.8, 1.0 + (0.20 * Ar) - (0.10 * V) - (0.25 * F)))
         confidence = 0.9  # Baseline
         intensity = abs(V) * Ar
-        pause_bias = max(0.0, min(1.0, 0.2 + 0.4 * (1 - confidence) + 0.2 * Ar))
+        # pause_bias = 1.0 - arousal
+        pause_bias = max(0.0, min(1.0, 1.0 - Ar))
 
         return {
             "speaking_rate": round(speaking_rate, 3),
@@ -40,6 +42,7 @@ class SpeechCoordinator:
         full_response: str = None,
         generation_error: str = None,
         proactive: bool = False,
+        user_distance: float = None,
     ) -> ChatOutput:
         text = " ".join(words).strip() if words else None
         prosody = self.map_affect_to_prosody(state_snap or {})
@@ -68,5 +71,7 @@ class SpeechCoordinator:
                 emotion=state_snap.get("emotion", "neutral")
                 if state_snap
                 else "neutral",
+                fatigue=state_snap.get("fatigue", 0.0) if state_snap else 0.0,
+                user_distance=user_distance,
             ),
         )

@@ -266,6 +266,32 @@ Action execution dynamically modulates Ollama inference parameters independently
 The Decision Service uses Multi-Attribute Utility Theory to score intent candidates:
 $$U(\text{Intent}) = w_{\text{goal}} \cdot G + w_{\text{emotion}} \cdot E + w_{\text{identity}} \cdot I + w_{\text{context}} \cdot C$$
 
+### 7. Dynamic Continuous Prosody Mapping & OLA Crossfade (CVS-3.0 / Phase 4)
+
+Vocal parameters (speaking rate, pitch, volume, and pause bias) are continuously modulated in Rust based on emotional PAD state, fatigue $F$, user distance $d$, and signal continuity window:
+
+* **Fatigue Slowdown**: $\text{fatigue\_slow} = 0.25 \cdot F$
+* **Fatigue Pitch Drop**: $\text{fatigue\_pitch\_drop} = 0.1 \cdot F$
+* **Distance Modifiers**:
+  * If $d < 0.6\text{m}$ (close range): $\text{dist\_vol\_mod} = -0.15, \quad \text{dist\_pitch\_mod} = -0.05$
+  * If $d > 1.5\text{m}$ (far range): $\text{dist\_vol\_mod} = 0.2, \quad \text{dist\_pitch\_mod} = 0.1$
+  * Otherwise: $\text{dist\_vol\_mod} = 0.0, \quad \text{dist\_pitch\_mod} = 0.0$
+
+#### Prosody Equations
+$$\text{SpeedFactor} = \text{clamp}(1.0 + 0.20 \cdot \text{arousal} - 0.10 \cdot \text{valence} - \text{fatigue\_slow}, 0.6, 1.8)$$
+$$\text{Pitch} = \text{clamp}(1.0 + 0.05 \cdot \text{valence} + 0.15 \cdot \text{arousal} - 0.10 \cdot \text{dominance} - \text{fatigue\_pitch\_drop} + \text{dist\_pitch\_mod}, 0.5, 2.0)$$
+$$\text{Volume} = \text{clamp}(0.4 + 0.6 \cdot \text{dominance} + \text{dist\_vol\_mod}, 0.1, 1.0)$$
+$$\text{PauseBias} = 1.0 - \text{arousal}$$
+
+#### Overlap-Add (OLA) Sample-Accurate Linear Crossfade
+During prosody-shift boundaries, a linear crossfade is applied over a **10ms window** ($\text{fade\_len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ samples, i.e., 320 samples at 32kHz), blending the previous prosody segment into the new one to eliminate switching clicks:
+$$y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad t = \frac{i}{\text{fade\_len}}, \quad 0 \le i < \text{fade\_len}$$
+
+#### Spatial Reverb DSP Blend
+Acoustic environmental reflection utilizes a comb filter with a 50ms delay and 0.5 feedback gain, dynamically blended via $\text{wet\_gain}$ linear interpolation based on user distance:
+$$\text{wet\_gain} = \text{clamp}\left(\frac{d - 2.5}{3.5 - 2.5}, 0.0, 1.0\right)$$
+$$y[n] = (1 - \text{wet\_gain}) \cdot x[n] + \text{wet\_gain} \cdot d_{\text{buffer}}[n \pmod M]$$
+
 ---
 
 ## 📡 Signal Bus Communication Contracts
