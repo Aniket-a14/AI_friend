@@ -1,4 +1,3 @@
-import math
 from typing import List, Dict, Any
 from ..contracts import ChatOutput, ChatOutputAffect
 
@@ -76,4 +75,3 @@ class SpeechCoordinator:
                 user_distance=user_distance,
             ),
         )
-

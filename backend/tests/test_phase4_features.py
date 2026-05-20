@@ -129,7 +129,9 @@ async def test_brain_agent_prosody_calculation_publishing():
     agent.publish = AsyncMock()
 
     # Call the speech publishing method
-    await agent._publish_speech_chunk(words=["testing", "continuous", "prosody"], turn_id="turn-5")
+    await agent._publish_speech_chunk(
+        words=["testing", "continuous", "prosody"], turn_id="turn-5"
+    )
 
     # Assert publish was called once
     agent.publish.assert_called_once()
