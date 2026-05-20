@@ -5,7 +5,10 @@ import os
 def generate_research_plots(csv_file="research_pad_trajectory.csv"):
     """
     Research Visualizer.
-    Generates publication-quality PAD trajectory charts from collector logs.
+    Generates publication-quality 3-panel trajectory charts tracking:
+    1. Core Affect & Relational Dynamics (Valence/Pleasure, Arousal, Dominance, Trust)
+    2. Theory of Mind Alignment (Inferred Valence, Inferred Arousal)
+    3. Endocrine & Hormonal Dynamics (Cortisol, Dopamine, Fatigue)
     """
     if not os.path.exists(csv_file):
         print(f"Error: {csv_file} not found. Run the collector first.")
@@ -19,27 +22,62 @@ def generate_research_plots(csv_file="research_pad_trajectory.csv"):
     start_time = df['timestamp'].iloc[0]
     df['seconds'] = (df['timestamp'] - start_time).dt.total_seconds()
 
-    plt.figure(figsize=(12, 6))
+    # Premium style configuration
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica', 'sans-serif']
     
-    # Plot PAD Dimensions
-    plt.plot(df['seconds'], df['valence'], label='Valence (V)', color='green', linewidth=2)
-    plt.plot(df['seconds'], df['arousal'], label='Arousal (Ar)', color='orange', linewidth=2)
-    plt.plot(df['seconds'], df['dominance'], label='Dominance (D)', color='blue', linewidth=2)
-    
-    # Plot Trust for reference
-    plt.plot(df['seconds'], df['trust'], label='Trust (T)', color='purple', linestyle='--', alpha=0.7)
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 14), sharex=True)
+    fig.suptitle('Cognitive Affective Trajectory Benchmarking\n(Tier-5 Sovereign Mesh & Theory of Mind)', fontsize=16, fontweight='bold', color='#2C3E50', y=0.96)
 
-    plt.title('Affective Trajectory Benchmarking (Tier-5 Sovereign Mesh)', fontsize=14)
-    plt.xlabel('Time (seconds)', fontsize=12)
-    plt.ylabel('Coordinate Value [-1, 1]', fontsize=12)
-    plt.ylim(-1.1, 1.1)
-    plt.grid(True, which='both', linestyle='--', alpha=0.5)
-    plt.legend(loc='upper right')
+    # 1. Panel 1: Core Affect & Relational Dynamics
+    # Mapping 'pleasure' to mood/valence
+    ax1.plot(df['seconds'], df['pleasure'], label='Pleasure/Valence (P)', color='#E05A47', linewidth=2.5)
+    ax1.plot(df['seconds'], df['arousal'], label='Arousal (Ar)', color='#F1C40F', linewidth=2.5)
+    ax1.plot(df['seconds'], df['dominance'], label='Dominance (D)', color='#3498DB', linewidth=2.5)
+    ax1.plot(df['seconds'], df['trust'], label='Trust (T)', color='#9B59B6', linewidth=2.0, linestyle='--')
+    
+    ax1.set_title('Core Affect (PAD) & Relational Dynamics', fontsize=12, fontweight='semibold', color='#34495E')
+    ax1.set_ylabel('State Space [-1.0, 1.0]', fontsize=10)
+    ax1.set_ylim(-1.1, 1.1)
+    ax1.grid(True, which='both', linestyle=':', alpha=0.6, color='#BDC3C7')
+    ax1.legend(loc='upper right', frameon=True, facecolor='#F8F9F9', edgecolor='#BDC3C7', fontsize=9)
+    
+    # 2. Panel 2: Theory of Mind (ToM) Alignment
+    # Inferred Valence and Arousal are mapped against pleasure/arousal to show alignment
+    ax2.plot(df['seconds'], df['pleasure'], label='Actual Valence (P)', color='#E05A47', linewidth=1.5, alpha=0.5)
+    ax2.plot(df['seconds'], df['arousal'], label='Actual Arousal (Ar)', color='#F1C40F', linewidth=1.5, alpha=0.5)
+    ax2.plot(df['seconds'], df['inferred_valence'], label='ToM Inferred Valence', color='#1ABC9C', linewidth=2.5)
+    ax2.plot(df['seconds'], df['inferred_arousal'], label='ToM Inferred Arousal', color='#E67E22', linewidth=2.5)
+    
+    ax2.set_title('Theory of Mind (ToM) User Alignment Tracking', fontsize=12, fontweight='semibold', color='#34495E')
+    ax2.set_ylabel('State Space [-1.0, 1.0]', fontsize=10)
+    ax2.set_ylim(-1.1, 1.1)
+    ax2.grid(True, which='both', linestyle=':', alpha=0.6, color='#BDC3C7')
+    ax2.legend(loc='upper right', frameon=True, facecolor='#F8F9F9', edgecolor='#BDC3C7', fontsize=9)
+
+    # 3. Panel 3: Endocrine & Hormonal Dynamics
+    ax3.plot(df['seconds'], df['cortisol'], label='Cortisol (Stress)', color='#E74C3C', linewidth=2.5)
+    ax3.plot(df['seconds'], df['dopamine'], label='Dopamine (Reward)', color='#2ECC71', linewidth=2.5)
+    ax3.plot(df['seconds'], df['fatigue'], label='Fatigue (Metabolic)', color='#7F8C8D', linewidth=2.0, linestyle='-.')
+    
+    ax3.set_title('Endocrine Hormonal & Metabolic Dynamics', fontsize=12, fontweight='semibold', color='#34495E')
+    ax3.set_xlabel('Time (elapsed seconds)', fontsize=11, fontweight='semibold', color='#2C3E50')
+    ax3.set_ylabel('Concentration [0.0, 1.0]', fontsize=10)
+    ax3.set_ylim(-0.05, 1.05)
+    ax3.grid(True, which='both', linestyle=':', alpha=0.6, color='#BDC3C7')
+    ax3.legend(loc='upper right', frameon=True, facecolor='#F8F9F9', edgecolor='#BDC3C7', fontsize=9)
+
+    # Spacing and layout
+    plt.tight_layout(rect=[0, 0.02, 1, 0.95])
     
     output_plot = "research_trajectory_plot.png"
-    plt.savefig(output_plot, dpi=300)
+    plt.savefig(output_plot, dpi=300, bbox_inches='tight')
     print(f"✅ Plot saved to {output_plot}")
-    plt.show()
+    
+    try:
+        plt.show()
+    except Exception:
+        print("Note: Could not show plot window (likely running in a headless environment). Saving was successful.")
 
 if __name__ == "__main__":
     generate_research_plots()

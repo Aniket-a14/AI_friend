@@ -87,12 +87,30 @@ class ActionService:
                     + "\n".join([f"- {m['content']}" for m in surfaced])
                 )
 
+            # Theory of Mind (ToM) Context Injection
+            tom_context = ""
+            user_tom = plan.payload.get("user_mental_model")
+            if user_tom:
+                inferred_val = user_tom.get("inferred_valence", 0.0)
+                inferred_ar = user_tom.get("inferred_arousal", 0.5)
+                impl_goals = user_tom.get("implied_goals", [])
+                # Take the last 10 known concepts to keep it concise and avoid context bloat
+                known_con = user_tom.get("known_concepts", [])[-10:]
+                
+                tom_context = "\n\nYour Inferred Perspective of the User (Theory of Mind):\n"
+                tom_context += f"- User Inferred Valence: {inferred_val:.2f} (Scale: -1.0 to 1.0)\n"
+                tom_context += f"- User Inferred Arousal: {inferred_ar:.2f} (Scale: 0.0 to 1.0)\n"
+                if impl_goals:
+                    tom_context += f"- User Implied Goals: {', '.join(impl_goals)}\n"
+                if known_con:
+                    tom_context += f"- User Known Concepts (Respect this knowledge boundary): {', '.join(known_con)}\n"
+
             # 1. Prepare Identity-Aware System and User Prompts
             # Static System Prompt (cached by inference engines like Ollama/vLLM)
             system_instruction = f"{identity_prompt}\n\nGuideline:\n- Maintain your identity rules at all times.\n- Focus on short, natural conversational phrases.\n- Respond only in English. Do not use Hindi, Hinglish, or any other language for now.\n- The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.\n- You may use <pause=300ms> or <hesitate> when it improves natural timing."
 
             # Dynamic User Prompt (appends active context to the query suffix)
-            user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{shared_history}\n\nUser: {msg}\nAssistant:"
+            user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{shared_history}{tom_context}\n\nUser: {msg}\nAssistant:"
 
             try:
                 # 2. Endocrine System: Calculate physiological LLM parameters

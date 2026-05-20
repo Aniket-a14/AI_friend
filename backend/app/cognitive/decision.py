@@ -237,7 +237,7 @@ class DecisionService:
     async def _classify_intent_and_goal(
         self, event: CognitiveEvent, state: Dict[str, Any]
     ):
-        """Uses LLM to classify intent and suggested goal."""
+        """Uses LLM to classify intent and suggested goal, enriching with Theory of Mind inferences."""
         prompt = f"""
         Analyze user input and current agent state.
         Input: "{event.raw_content}"
@@ -247,7 +247,19 @@ class DecisionService:
         - intent: REMEMBER, CHAT, COMMAND
         - goal: COMFORT, INFORM, ENGAGE, TEASE, PROTECT
         
-        Output JSON ONLY: {{"intent": "...", "goal": "..."}}
+        Also infer Theory of Mind (ToM) details:
+        - inferred_valence: float between -1.0 and 1.0 (mood valence of the user)
+        - inferred_arousal: float between 0.0 and 1.0 (arousal level of the user)
+        - implied_goals: up to 2 implied immediate user goals (list of strings like "seek_reassurance", "express_frustration", "learn_concept", "chat_socially")
+        
+        Output JSON ONLY:
+        {{
+          "intent": "...",
+          "goal": "...",
+          "inferred_valence": 0.0,
+          "inferred_arousal": 0.5,
+          "implied_goals": ["..."]
+        }}
         """.strip()
 
         try:
@@ -267,9 +279,18 @@ class DecisionService:
                     if event.intent == "CHAT"
                     else Config.LLM_FAST_MODEL
                 )
-                logger.info(f"[Decision] Fast Classified: {data}")
+                
+                # Extract and store ToM inferences in metadata
+                tom_inferences = {
+                    "inferred_valence": float(data.get("inferred_valence", 0.0)),
+                    "inferred_arousal": float(data.get("inferred_arousal", 0.5)),
+                    "implied_goals": list(data.get("implied_goals", []))
+                }
+                event.metadata["tom_inferences"] = tom_inferences
+                
+                logger.info(f"[Decision] Fast Classified with ToM: {data}")
         except Exception as e:
-            logger.error(f"Intent classification failed: {e}")
+            logger.error(f"Intent and ToM classification failed: {e}")
 
     # --- BT Actions ---
 

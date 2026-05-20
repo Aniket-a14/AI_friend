@@ -44,6 +44,8 @@ class Topics(str, Enum):
 
 # ─── chat.input ──────────────────────────────────────────────
 class ChatInputMetadata(BaseModel):
+    model_config = {"extra": "allow"}
+
     source: str = "whisper"
     confidence: float = 0.9
     utterance_id: Optional[str] = None
@@ -51,6 +53,7 @@ class ChatInputMetadata(BaseModel):
 
 class ChatInput(BaseModel):
     """Published by STTAgent on `chat.input` after final transcription."""
+    model_config = {"extra": "allow"}
 
     text: str
     utterance_id: Optional[str] = None
@@ -75,6 +78,7 @@ class ChatOutputAffect(BaseModel):
 
 class ChatOutput(BaseModel):
     """Published by BrainAgent on `chat.output` for each speech chunk or done signal."""
+    model_config = {"extra": "allow"}
 
     content: Optional[str] = None
     done: bool = False
@@ -95,6 +99,8 @@ class ChatOutput(BaseModel):
     full_response: Optional[str] = None
     generation_error: Optional[str] = None
     proactive: bool = False
+    metadata: Optional[Dict[str, Any]] = None
+    latency_metadata: Optional[Dict[str, Any]] = None
 
 
 # ─── audio.perception ────────────────────────────────────────
@@ -194,6 +200,7 @@ class VisionDescription(BaseModel):
 # ─── state.update ────────────────────────────────────────────
 class StateUpdate(BaseModel):
     """Published on `state.update` when agent state changes."""
+    model_config = {"extra": "allow"}
 
     mood: float = 0.0
     energy: float = 0.5
@@ -202,3 +209,7 @@ class StateUpdate(BaseModel):
     attachment: float = 0.1
     emotion: str = "neutral"
     interaction_count: int = 0
+    cortisol: float = 0.0
+    dopamine: float = 0.0
+    fatigue: float = 0.0
+    user_mental_model: Optional[Dict[str, Any]] = None

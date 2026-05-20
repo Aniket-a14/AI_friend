@@ -14,9 +14,16 @@ import logging
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Any, List
+from typing import Dict, Any, List, TYPE_CHECKING
 from datetime import datetime
 from ..config import Config
+
+if TYPE_CHECKING:
+    from ..cognitive.tom import UserMentalModel
+
+def _default_user_mental_model():
+    from ..cognitive.tom import UserMentalModel
+    return UserMentalModel()
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +54,7 @@ class AgentState:
     last_update: datetime = field(default_factory=datetime.now)
     last_user_interaction: float = field(default_factory=time.time)
     fatigue: float = 0.0  # Metabolic fatigue cycle F(t)
+    user_mental_model: "UserMentalModel" = field(default_factory=_default_user_mental_model)
 
     # --- PAD Property Aliases (§2.1) ---
     @property
@@ -188,6 +196,20 @@ class StateService:
             )
             self.current_state.interaction_count = props.get("interaction_count", 0)
 
+            # Hydrate Theory of Mind User Mental Model
+            self.current_state.user_mental_model.inferred_valence = float(
+                props.get("inferred_valence", 0.0)
+            )
+            self.current_state.user_mental_model.inferred_arousal = float(
+                props.get("inferred_arousal", 0.5)
+            )
+            self.current_state.user_mental_model.implied_goals = list(
+                props.get("implied_goals", [])
+            )
+            self.current_state.user_mental_model.known_concepts = list(
+                props.get("known_concepts", [])
+            )
+
     async def persist_state(self, agent_name: str = "my friend"):
         """Saves current state to Neo4j."""
         if not self.graph:
@@ -206,6 +228,10 @@ class StateService:
             a.fatigue = $fatigue,
             a.last_user_interaction = $last_user_interaction,
             a.interaction_count = $interaction_count,
+            a.inferred_valence = $inferred_valence,
+            a.inferred_arousal = $inferred_arousal,
+            a.implied_goals = $implied_goals,
+            a.known_concepts = $known_concepts,
             a.last_sync = datetime()
         """
         params = {
@@ -221,6 +247,10 @@ class StateService:
             "fatigue": self.current_state.fatigue,
             "last_user_interaction": self.current_state.last_user_interaction,
             "interaction_count": self.current_state.interaction_count,
+            "inferred_valence": self.current_state.user_mental_model.inferred_valence,
+            "inferred_arousal": self.current_state.user_mental_model.inferred_arousal,
+            "implied_goals": self.current_state.user_mental_model.implied_goals,
+            "known_concepts": self.current_state.user_mental_model.known_concepts,
         }
         await self.graph.execute_query(query, params, write=True)
         if hasattr(self.graph, "invalidate_cache"):
@@ -345,6 +375,14 @@ class StateService:
         self.current_state.mood = (self.current_state.mood * (1 - weight)) + (
             emotion_bias * weight
         )
+
+        # Drift user mental model's inferred valence based on acoustic cues
+        if confidence >= self.min_perception_confidence:
+            user_weight = self.sensory_weight * max(0.0, min(1.0, confidence))
+            self.current_state.user_mental_model.inferred_valence = (
+                (1 - user_weight) * self.current_state.user_mental_model.inferred_valence
+                + user_weight * emotion_bias
+            )
 
         # Arousal modulation from acoustic events
         for event in events:
@@ -483,6 +521,44 @@ class StateService:
             0.0, min(1.0, self.current_state.attachment)
         )
         self.current_state.fatigue = max(0.0, min(1.0, self.current_state.fatigue))
+        self.current_state.user_mental_model.inferred_valence = max(
+            -1.0, min(1.0, self.current_state.user_mental_model.inferred_valence)
+        )
+        self.current_state.user_mental_model.inferred_arousal = max(
+            0.0, min(1.0, self.current_state.user_mental_model.inferred_arousal)
+        )
+
+    async def update_theory_of_mind(
+        self, user_input: str, tom_inferences: Dict[str, Any] = None
+    ):
+        """
+        Updates the Theory of Mind mental model of the user.
+        Runs a zero-overhead text concepts tracker and digests LLM-inferred parameters.
+        """
+        from ..cognitive.tom import update_known_concepts
+
+        # 1. Update vocabulary tracker (zero LLM overhead text indexing)
+        self.current_state.user_mental_model.known_concepts = update_known_concepts(
+            self.current_state.user_mental_model.known_concepts, user_input
+        )
+
+        # 2. Update LLM-inferred fields if available
+        if tom_inferences:
+            if "inferred_valence" in tom_inferences:
+                self.current_state.user_mental_model.inferred_valence = float(
+                    tom_inferences["inferred_valence"]
+                )
+            if "inferred_arousal" in tom_inferences:
+                self.current_state.user_mental_model.inferred_arousal = float(
+                    tom_inferences["inferred_arousal"]
+                )
+            if "implied_goals" in tom_inferences:
+                self.current_state.user_mental_model.implied_goals = list(
+                    tom_inferences["implied_goals"]
+                )
+
+        self._enforce_bounds()
+        await self.persist_state()
 
     def get_context_snapshot(self) -> Dict[str, Any]:
         return {
@@ -504,6 +580,8 @@ class StateService:
             # Endocrine hormones (Tier-5)
             "cortisol": self.current_state.cortisol,
             "dopamine": self.current_state.dopamine,
+            # Theory of Mind snapshot — dict format
+            "user_mental_model": self.current_state.user_mental_model.dict(),
         }
 
     def get_behavioral_directive(self) -> str:

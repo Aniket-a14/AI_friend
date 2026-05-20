@@ -129,3 +129,52 @@ The DSP reverb comb filter uses a **50ms circular delay line** with a $0.5$ feed
    $$y[n] = (1.0 - \text{wet\_gain}) \cdot x[n] + \text{wet\_gain} \cdot d_{\text{buffer}}[n \pmod M]$$
 
 This ensures that the agent's spatial projection matches the visual distance of the user, achieving true sensory-motor loop integration.
+
+---
+
+## 🧠 5. Phase 5: Theory of Mind (ToM) Modeling Layer
+
+To prevent generic and repetitive responses, the system implements a **Theory of Mind (ToM) Modeling Layer** that maintains separate, lightweight representations of the user's inferred emotional state, implied goals, and known concept vocabulary.
+
+### 5.1 The User Mental Model (`UserMentalModel`)
+
+The user's perspective is decoupled from the agent's internal state and represented as:
+- **Inferred Valence ($V_{\text{user}}$)**: $[-1.0, 1.0]$. The user's pleasure/mood, drifted dynamically by SenseVoice acoustic appraisal signals and extracted by LLM classification.
+- **Inferred Arousal ($Ar_{\text{user}}$)**: $[0.0, 1.0]$. The user's emotional intensity/arousal, extracted via System 2 classification.
+- **Implied Goals**: Inferred short-term desires of the user (e.g., `"seek_reassurance"`, `"express_frustration"`, `"learn_concept"`, `"chat_socially"`).
+- **Known Concepts**: A case-insensitive history of terms and concepts the user has active knowledge of.
+
+### 5.2 Zero-Overhead Vocabulary Tracking
+
+To enforce knowledge boundaries without introducing dynamic LLM inference costs, raw user transcripts undergo pre-decision word indexing:
+- **Length Constraint**: Matches alphabetical words $w$ where $4 \le |w| \le 15$ characters.
+- **Stop-Word Filtering**: Prunes common high-frequency English particles and pronouns (e.g. `them`, `their`, `there`, `with`, `from`, `your`).
+- **Deduplication**: Appends newly discovered concepts uniquely to `known_concepts`, preserving chronological order.
+
+### 5.3 System 2 Latency-Optimized Schema Merge
+
+To respect the sub-800ms System 2 latency budget, ToM parameter extraction is merged directly into the pre-existing intent/goal classification LLM query. The combined schema eliminates extra REST/FCP network overhead:
+
+```json
+{
+  "intent": "CHAT",
+  "goal": "ENGAGE",
+  "inferred_valence": 0.25,
+  "inferred_arousal": 0.60,
+  "implied_goals": ["learn_concept"]
+}
+```
+
+### 5.4 Dynamic Dialogue Empathy Prompts
+
+During dialogue generation (`RESPOND_CHAT`), the `ActionService` retrieves the active `user_mental_model`. The **10 most recent** entries of `known_concepts` are slice-extracted and formatted alongside the user's emotional parameters into the LLM dynamic user prompt:
+
+```text
+Your Inferred Perspective of the User (Theory of Mind):
+- User Inferred Valence: 0.25 (Scale: -1.0 to 1.0)
+- User Inferred Arousal: 0.60 (Scale: 0.0 to 1.0)
+- User Implied Goals: learn_concept
+- User Known Concepts (Respect this knowledge boundary): python, programming
+```
+
+This enforces strict cognitive boundaries, forcing the assistant to explain new topics using only vocabulary matching the user's inferred familiarity, and directly prevents repetitive or overly generic responses.

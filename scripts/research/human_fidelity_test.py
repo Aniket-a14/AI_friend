@@ -29,9 +29,12 @@ async def run_human_fidelity_test():
 
     async def state_handler(msg):
         data = json.loads(msg.data.decode())
-        pad = data.get("pad", {})
-        if "update" in data.get("event", ""):
-            pad_results.append(pad)
+        pad = {
+            "P": data.get("mood", 0.0),
+            "A": data.get("energy", 0.5),
+            "D": data.get("dominance", 0.5)
+        }
+        pad_results.append(pad)
 
     async def output_handler(msg):
         data = json.loads(msg.data.decode())
@@ -46,7 +49,7 @@ async def run_human_fidelity_test():
             wing = m.get("scope", {}).get("wing", "unknown")
             captured_wings.append(wing)
 
-    await nc.subscribe("state.updated", cb=state_handler)
+    await nc.subscribe("state.update", cb=state_handler)
     await nc.subscribe("chat.output", cb=output_handler)
     await nc.subscribe("memory.surfaced", cb=memory_handler)
 

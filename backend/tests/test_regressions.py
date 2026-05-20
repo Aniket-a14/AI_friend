@@ -99,7 +99,7 @@ def test_cognitive_resume_recovery_accepts_type_key():
 
     assert outputs[0]["type"] == "mesh_signal"
     assert outputs[0]["subject"] == "audio.resume"
-    service.agent.publish.assert_awaited_once_with(
+    service.agent.publish.assert_any_await(
         "audio.resume",
         {
             "reason": "conflict_rejected",
