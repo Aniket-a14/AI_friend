@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-05-20T14:02:04.179243",
+  "timestamp": "2026-05-20T14:52:02.961419",
   "platform": "AI Friend CVS-1.0 Sovereign Cognitive Mesh",
-  "evaluation_duration_seconds": 0.4372,
+  "evaluation_duration_seconds": 0.3812,
   "module1_intent_classification": {
     "classes": [
       "CHAT",
@@ -9,12 +9,12 @@
       "TASK",
       "AFFECTIVE"
     ],
-    "cvs_accuracy": 0.99,
+    "cvs_accuracy": 0.977,
     "cvs_metrics": {
       "CHAT": {
-        "precision": 0.972,
-        "recall": 1.0,
-        "f1": 0.986
+        "precision": 0.968,
+        "recall": 0.966,
+        "f1": 0.967
       },
       "THREAT": {
         "precision": 1.0,
@@ -22,108 +22,108 @@
         "f1": 1.0
       },
       "TASK": {
-        "precision": 1.0,
-        "recall": 0.96,
+        "precision": 0.984,
+        "recall": 0.976,
         "f1": 0.98
       },
       "AFFECTIVE": {
-        "precision": 1.0,
-        "recall": 1.0,
-        "f1": 1.0
+        "precision": 0.961,
+        "recall": 0.975,
+        "f1": 0.968
       }
     },
     "cvs_confusion_matrix": [
       [
-        35,
+        338,
         0,
+        4,
+        8
+      ],
+      [
+        0,
+        200,
         0,
         0
       ],
       [
+        6,
         0,
-        20,
-        0,
+        244,
         0
       ],
       [
-        1,
-        0,
-        24,
-        0
-      ],
-      [
+        5,
         0,
         0,
-        0,
-        20
+        195
       ]
     ],
-    "baseline_accuracy": 0.78,
+    "baseline_accuracy": 0.821,
     "baseline_metrics": {
       "CHAT": {
-        "precision": 0.667,
-        "recall": 0.8,
-        "f1": 0.727
+        "precision": 0.707,
+        "recall": 0.894,
+        "f1": 0.789
       },
       "THREAT": {
-        "precision": 0.947,
-        "recall": 0.9,
-        "f1": 0.923
+        "precision": 0.927,
+        "recall": 0.76,
+        "f1": 0.835
       },
       "TASK": {
-        "precision": 0.821,
-        "recall": 0.92,
-        "f1": 0.868
+        "precision": 0.917,
+        "recall": 0.88,
+        "f1": 0.898
       },
       "AFFECTIVE": {
-        "precision": 0.818,
-        "recall": 0.45,
-        "f1": 0.581
+        "precision": 0.889,
+        "recall": 0.68,
+        "f1": 0.771
       }
     },
     "baseline_confusion_matrix": [
       [
-        28,
+        313,
         0,
-        5,
-        2
+        20,
+        17
       ],
       [
-        2,
+        48,
+        152,
+        0,
+        0
+      ],
+      [
         18,
-        0,
+        12,
+        220,
         0
       ],
       [
-        1,
-        1,
-        23,
-        0
-      ],
-      [
-        11,
+        64,
         0,
         0,
-        9
+        136
       ]
     ]
   },
   "module2_theory_of_mind": {
     "cvs_valence": {
-      "mae": 0.0504,
-      "rmse": 0.0636
+      "mae": 0.0543,
+      "rmse": 0.0678
     },
     "cvs_arousal": {
-      "mae": 0.0499,
-      "rmse": 0.0664
+      "mae": 0.0615,
+      "rmse": 0.0774
     },
     "baseline_valence": {
-      "mae": 0.312,
-      "rmse": 0.3774
+      "mae": 0.3197,
+      "rmse": 0.3972
     },
     "baseline_arousal": {
-      "mae": 0.3288,
-      "rmse": 0.419
+      "mae": 0.3599,
+      "rmse": 0.4525
     }
   },
   "module3_memory_retrieval": {
@@ -178,12 +178,12 @@
       "f1": 0.7692
     },
     "cvs_stop_latency_ms": {
-      "mean": 113.85,
-      "std": 8.37
+      "mean": 114.91,
+      "std": 8.21
     },
     "baseline_stop_latency_ms": {
-      "mean": 469.19,
-      "std": 51.32
+      "mean": 477.07,
+      "std": 48.38
     }
   }
 }

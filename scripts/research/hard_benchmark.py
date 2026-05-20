@@ -159,4 +159,12 @@ async def run_benchmark(iterations=50):
     await nc.close()
 
 if __name__ == "__main__":
-    asyncio.run(run_benchmark())
+    import sys
+    iters = 50
+    for idx, arg in enumerate(sys.argv):
+        if arg in ("--iterations", "-i") and idx + 1 < len(sys.argv):
+            try:
+                iters = int(sys.argv[idx + 1])
+            except ValueError:
+                print(f"⚠️ Invalid iterations value, defaulting to 50")
+    asyncio.run(run_benchmark(iterations=iters))
