@@ -148,7 +148,12 @@ class BrainAgent(BaseAgent):
             msg = ChatInput.model_validate(message)
             user_text = msg.text
             turn_id = msg.turn_id or msg.utterance_id or str(uuid.uuid4())
-            metadata = msg.metadata.model_dump()
+            metadata = message.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = msg.metadata.model_dump() if msg.metadata else {}
+            latency_metadata = message.get("latency_metadata")
+            if not isinstance(latency_metadata, dict):
+                latency_metadata = {}
             utterance_id = msg.utterance_id
             is_subconscious = msg.metadata.source == "subconscious"
         except ValidationError as e:
@@ -189,7 +194,11 @@ class BrainAgent(BaseAgent):
             generator = self.cognitive_core.process_event(raw_event)
 
         full_response = await self._stream_to_speech(
-            generator, turn_id=turn_id, is_proactive=is_subconscious
+            generator,
+            turn_id=turn_id,
+            is_proactive=is_subconscious,
+            incoming_metadata=metadata,
+            incoming_latency_metadata=latency_metadata,
         )
 
         if self.conversation_store and full_response:
@@ -198,7 +207,12 @@ class BrainAgent(BaseAgent):
             )
 
     async def _stream_to_speech(
-        self, generator, turn_id: str, is_proactive: bool = False
+        self,
+        generator,
+        turn_id: str,
+        is_proactive: bool = False,
+        incoming_metadata: Dict[str, Any] = None,
+        incoming_latency_metadata: Dict[str, Any] = None,
     ) -> str:
         """Helper method to process text generation streams and segment them into speech chunks."""
         full_response = ""
@@ -224,7 +238,12 @@ class BrainAgent(BaseAgent):
                         >= self.coordinator.formation_buffer_ms
                         and len(current_chunk_words) >= 3
                     ):
-                        await self._publish_speech_chunk(current_chunk_words, turn_id)
+                        await self._publish_speech_chunk(
+                            current_chunk_words,
+                            turn_id,
+                            incoming_metadata=incoming_metadata,
+                            incoming_latency_metadata=incoming_latency_metadata,
+                        )
                         current_chunk_words = []
                         segment_started_at = None
 
@@ -239,7 +258,10 @@ class BrainAgent(BaseAgent):
                         )
                         if score > 0.7 or len(current_chunk_words) > 12:
                             await self._publish_speech_chunk(
-                                current_chunk_words, turn_id
+                                current_chunk_words,
+                                turn_id,
+                                incoming_metadata=incoming_metadata,
+                                incoming_latency_metadata=incoming_latency_metadata,
                             )
                             current_chunk_words = []
                             segment_started_at = None
@@ -257,7 +279,12 @@ class BrainAgent(BaseAgent):
 
                 elif output["type"] == "done":
                     if current_chunk_words:
-                        await self._publish_speech_chunk(current_chunk_words, turn_id)
+                        await self._publish_speech_chunk(
+                            current_chunk_words,
+                            turn_id,
+                            incoming_metadata=incoming_metadata,
+                            incoming_latency_metadata=incoming_latency_metadata,
+                        )
                         current_chunk_words = []
 
                     if not full_response.strip() and not is_proactive:
@@ -266,7 +293,12 @@ class BrainAgent(BaseAgent):
                             turn_id,
                             generation_errors[-3:],
                         )
-                        await self._publish_speech_chunk(fallback_text.split(), turn_id)
+                        await self._publish_speech_chunk(
+                            fallback_text.split(),
+                            turn_id,
+                            incoming_metadata=incoming_metadata,
+                            incoming_latency_metadata=incoming_latency_metadata,
+                        )
                         full_response = fallback_text
 
                     if full_response.strip() or not is_proactive:
@@ -282,13 +314,20 @@ class BrainAgent(BaseAgent):
                             proactive=is_proactive,
                             user_distance=self.last_user_distance,
                         )
+                        output_msg.metadata = incoming_metadata
+                        output_msg.latency_metadata = incoming_latency_metadata
                         await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
 
         except Exception as e:
             logger.error("Cognitive Loop error on turn_id=%s: %s", turn_id, e)
             if not is_proactive:
                 error_msg = str(e)
-                await self._publish_speech_chunk(fallback_text.split(), turn_id)
+                await self._publish_speech_chunk(
+                    fallback_text.split(),
+                    turn_id,
+                    incoming_metadata=incoming_metadata,
+                    incoming_latency_metadata=incoming_latency_metadata,
+                )
                 output_msg = self.coordinator.create_chunk_payload(
                     done=True,
                     full_response=fallback_text,
@@ -296,12 +335,20 @@ class BrainAgent(BaseAgent):
                     generation_error=error_msg,
                     user_distance=self.last_user_distance,
                 )
+                output_msg.metadata = incoming_metadata
+                output_msg.latency_metadata = incoming_latency_metadata
                 await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
 
         await self.set_state("idle")
         return full_response
 
-    async def _publish_speech_chunk(self, words: List[str], turn_id: str = None):
+    async def _publish_speech_chunk(
+        self,
+        words: List[str],
+        turn_id: str = None,
+        incoming_metadata: Dict[str, Any] = None,
+        incoming_latency_metadata: Dict[str, Any] = None,
+    ):
         """
         Publishes a semantically coherent chunk with full PAD affect metadata.
         Implements the Brain→Voice contract from psychological_layer.md §5.3.
@@ -332,6 +379,8 @@ class BrainAgent(BaseAgent):
                 fatigue=state_snap.get("fatigue", 0.0),
                 user_distance=self.last_user_distance,
             ),
+            metadata=incoming_metadata,
+            latency_metadata=incoming_latency_metadata,
         )
         await self.publish(Topics.CHAT_OUTPUT, payload.model_dump())
 

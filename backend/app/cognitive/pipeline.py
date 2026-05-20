@@ -96,8 +96,28 @@ class CognitivePipeline:
 
         # 5. State Update via Appraisal (§2.3 — ALMA mood-pull)
         if event.event_type == "USER_MESSAGE":
+            # Pre-Decision Vocabulary Update (zero LLM overhead concepts indexing)
+            await self.state.update_theory_of_mind(event.raw_content)
+
             await self.state.update_from_appraisal(appraisal_vector)
             state_snapshot = self.state.get_context_snapshot()
+            yield {
+                "type": "mesh_signal",
+                "subject": "state.update",
+                "data": {
+                    "mood": state_snapshot.get("mood", 0.0),
+                    "energy": state_snapshot.get("energy", 0.5),
+                    "dominance": state_snapshot.get("dominance", 0.5),
+                    "trust": state_snapshot.get("trust", 0.5),
+                    "attachment": state_snapshot.get("attachment", 0.1),
+                    "emotion": state_snapshot.get("emotion", "neutral"),
+                    "interaction_count": state_snapshot.get("interaction_count", 0),
+                    "cortisol": state_snapshot.get("cortisol", 0.0),
+                    "dopamine": state_snapshot.get("dopamine", 0.0),
+                    "fatigue": state_snapshot.get("fatigue", 0.0),
+                    "user_mental_model": state_snapshot.get("user_mental_model"),
+                },
+            }
 
         # 6. Decision (BT + MAUT)
         state_directive = self.state.get_behavioral_directive()
@@ -107,6 +127,32 @@ class CognitivePipeline:
 
         plan = await self.decision.decide(event, state_snapshot)
 
+        # Post-Decision ToM Application: ingest LLM-inferred parameters to state
+        if event.event_type == "USER_MESSAGE":
+            tom_inferences = event.metadata.get("tom_inferences")
+            if tom_inferences:
+                await self.state.update_theory_of_mind(
+                    event.raw_content, tom_inferences
+                )
+                state_snapshot = self.state.get_context_snapshot()
+                yield {
+                    "type": "mesh_signal",
+                    "subject": "state.update",
+                    "data": {
+                        "mood": state_snapshot.get("mood", 0.0),
+                        "energy": state_snapshot.get("energy", 0.5),
+                        "dominance": state_snapshot.get("dominance", 0.5),
+                        "trust": state_snapshot.get("trust", 0.5),
+                        "attachment": state_snapshot.get("attachment", 0.1),
+                        "emotion": state_snapshot.get("emotion", "neutral"),
+                        "interaction_count": state_snapshot.get("interaction_count", 0),
+                        "cortisol": state_snapshot.get("cortisol", 0.0),
+                        "dopamine": state_snapshot.get("dopamine", 0.0),
+                        "fatigue": state_snapshot.get("fatigue", 0.0),
+                        "user_mental_model": state_snapshot.get("user_mental_model"),
+                    },
+                }
+
         # 7. Action Preparation
         plan.payload["identity_prompt"] = self.identity.get_persona_prompt(
             state_directive
@@ -114,6 +160,7 @@ class CognitivePipeline:
         plan.payload["cortisol"] = state_snapshot.get("cortisol", 0.5)
         plan.payload["dopamine"] = state_snapshot.get("dopamine", 0.0)
         plan.payload["fatigue"] = state_snapshot.get("fatigue", 0.0)
+        plan.payload["user_mental_model"] = state_snapshot.get("user_mental_model")
 
         # 8. Action Execution
         full_response = ""
