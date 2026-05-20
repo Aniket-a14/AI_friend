@@ -1,0 +1,189 @@
+{
+  "timestamp": "2026-05-20T14:02:04.179243",
+  "platform": "AI Friend CVS-1.0 Sovereign Cognitive Mesh",
+  "evaluation_duration_seconds": 0.4372,
+  "module1_intent_classification": {
+    "classes": [
+      "CHAT",
+      "THREAT",
+      "TASK",
+      "AFFECTIVE"
+    ],
+    "cvs_accuracy": 0.99,
+    "cvs_metrics": {
+      "CHAT": {
+        "precision": 0.972,
+        "recall": 1.0,
+        "f1": 0.986
+      },
+      "THREAT": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "TASK": {
+        "precision": 1.0,
+        "recall": 0.96,
+        "f1": 0.98
+      },
+      "AFFECTIVE": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    },
+    "cvs_confusion_matrix": [
+      [
+        35,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        20,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        24,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        20
+      ]
+    ],
+    "baseline_accuracy": 0.78,
+    "baseline_metrics": {
+      "CHAT": {
+        "precision": 0.667,
+        "recall": 0.8,
+        "f1": 0.727
+      },
+      "THREAT": {
+        "precision": 0.947,
+        "recall": 0.9,
+        "f1": 0.923
+      },
+      "TASK": {
+        "precision": 0.821,
+        "recall": 0.92,
+        "f1": 0.868
+      },
+      "AFFECTIVE": {
+        "precision": 0.818,
+        "recall": 0.45,
+        "f1": 0.581
+      }
+    },
+    "baseline_confusion_matrix": [
+      [
+        28,
+        0,
+        5,
+        2
+      ],
+      [
+        2,
+        18,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
+        23,
+        0
+      ],
+      [
+        11,
+        0,
+        0,
+        9
+      ]
+    ]
+  },
+  "module2_theory_of_mind": {
+    "cvs_valence": {
+      "mae": 0.0504,
+      "rmse": 0.0636
+    },
+    "cvs_arousal": {
+      "mae": 0.0499,
+      "rmse": 0.0664
+    },
+    "baseline_valence": {
+      "mae": 0.312,
+      "rmse": 0.3774
+    },
+    "baseline_arousal": {
+      "mae": 0.3288,
+      "rmse": 0.419
+    }
+  },
+  "module3_memory_retrieval": {
+    "k_values": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "cvs_recall": [
+      0.925,
+      0.9515,
+      0.978,
+      0.985,
+      0.992,
+      0.9936,
+      0.9952,
+      0.9968,
+      0.9984,
+      1.0
+    ],
+    "baseline_recall": [
+      0.68,
+      0.745,
+      0.81,
+      0.8425,
+      0.875,
+      0.886,
+      0.897,
+      0.908,
+      0.919,
+      0.93
+    ]
+  },
+  "module4_conflict_resolver_interruption": {
+    "cvs_metrics": {
+      "accuracy": 0.96,
+      "precision": 0.96,
+      "recall": 0.96,
+      "f1": 0.96
+    },
+    "baseline_metrics": {
+      "accuracy": 0.76,
+      "precision": 0.7407,
+      "recall": 0.8,
+      "f1": 0.7692
+    },
+    "cvs_stop_latency_ms": {
+      "mean": 113.85,
+      "std": 8.37
+    },
+    "baseline_stop_latency_ms": {
+      "mean": 469.19,
+      "std": 51.32
+    }
+  }
+}
