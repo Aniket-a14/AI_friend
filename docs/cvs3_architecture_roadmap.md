@@ -59,7 +59,7 @@ Transform passive vector retrieval into an active, self-pruning working memory a
     MERGE (u)-[r:RELATION {type: $predicate}]->(e)
     ON MATCH SET r.weight = r.weight + 1
     ```
-5.  **ACT-R Decay & Pruning**: Apply $A = \ln(\sum t_j^{-d})$ to old transcripts. If activation $A$ falls below the retrieval threshold (e.g., -2.0), delete the raw transcript from `pgvector` to save LLM context window space, relying solely on the Neo4j graph for that memory.
+5.  **ACT-R Decay & Pruning**: Apply $A = \ln(\sum t_ j^{-d})$ to old transcripts. If activation $A$ falls below the retrieval threshold (e.g., -2.0), delete the raw transcript from `pgvector` to save LLM context window space, relying solely on the Neo4j graph for that memory.
 
 ---
 

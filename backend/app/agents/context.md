@@ -84,7 +84,7 @@ P = 1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - \text{fatigue\_pitch\_dr
 \text{Pitch} = \text{clamp}(P, 0.5, 2.0)
 ```
 
-3. **Vocal Volume ($V_{ol}$)**:
+3. **Vocal Volume ($V_ {ol}$)**:
    Modulated by interpersonal dominance (assertiveness) and adjusted for distance propagation:
 
 ```math
@@ -95,7 +95,7 @@ V_{ol} = 0.4 + 0.6 \cdot D + \text{dist\_vol\_mod}
 \text{Volume} = \text{clamp}(V_{ol}, 0.1, 1.0)
 ```
 
-4. **Pause Bias ($B_{\text{pause}}$)**:
+4. **Pause Bias ($B_ {\text{pause}}$)**:
    Determines the baseline silent duration between speech segments. Higher arousal suppresses silence:
 
 ```math
@@ -128,7 +128,7 @@ For each sample index $i$ in the crossfade window ($0 \le i < \text{fade\_len}$)
 t = \frac{i}{\text{fade\_len}}
 ```
 
-The output blends the previous prosody segment buffer $x_{\text{prev}}[i]$ with the incoming segment $x_{\text{curr}}[i]$:
+The output blends the previous prosody segment buffer $x_ {\text{prev}}[i]$ with the incoming segment $x_ {\text{curr}}[i]$:
 
 ```math
 y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade\_len}
@@ -206,8 +206,8 @@ To prevent generic and repetitive responses, the system implements a **Theory of
 ### 5.1 The User Mental Model (`UserMentalModel`)
 
 The user's perspective is decoupled from the agent's internal state and represented as:
-- **Inferred Valence ($V_{\text{user}}$)**: $[-1.0, 1.0]$. The user's pleasure/mood, drifted dynamically by SenseVoice acoustic appraisal signals and extracted by LLM classification.
-- **Inferred Arousal ($Ar_{\text{user}}$)**: $[0.0, 1.0]$. The user's emotional intensity/arousal, extracted via System 2 classification.
+- **Inferred Valence ($V_ {\text{user}}$)**: $[-1.0, 1.0]$. The user's pleasure/mood, drifted dynamically by SenseVoice acoustic appraisal signals and extracted by LLM classification.
+- **Inferred Arousal ($Ar_ {\text{user}}$)**: $[0.0, 1.0]$. The user's emotional intensity/arousal, extracted via System 2 classification.
 - **Implied Goals**: Inferred short-term desires of the user (e.g., `"seek_reassurance"`, `"express_frustration"`, `"learn_concept"`, `"chat_socially"`).
 - **Known Concepts**: A case-insensitive history of terms and concepts the user has active knowledge of.
 

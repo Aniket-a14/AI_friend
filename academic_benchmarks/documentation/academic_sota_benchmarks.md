@@ -238,29 +238,29 @@ ICI = \gamma \cdot \left(1 - P_{\text{false\_trigger}}\right) \cdot \exp\left(-\
 ```
 
 *   $\gamma \in [0, 1]$: Semantic coherence factor computed as the cosine similarity between the speculative user segment and active dialogue intent.
-*   $P_{\text{false\_trigger}}$: Measured empirical ratio of false interruptions triggered by ambient noise.
-*   $t_{\text{stop}}$: The physical epoch at which the robot's DSP audio stream was silenced.
-*   $t_{\text{interject}}$: The precise physical epoch at which the user began speaking.
-*   $\tau_{\text{overlap}} = 200.0\text{ ms}$: The biological turn-taking gap baseline constant (*Stivers et al., 2009*).
+*   $P_ {\text{false\_trigger}}$: Measured empirical ratio of false interruptions triggered by ambient noise.
+*   $t_ {\text{stop}}$: The physical epoch at which the robot's DSP audio stream was silenced.
+*   $t_ {\text{interject}}$: The precise physical epoch at which the user began speaking.
+*   $\tau_ {\text{overlap}} = 200.0\text{ ms}$: The biological turn-taking gap baseline constant (*Stivers et al., 2009*).
 
 ### 2.2 Temporal Context Retention Score ($TCRS$)
 
-The $TCRS$ evaluates the cognitive realism of the agent's memory. Instead of treating database records as static vectors, we model retrieval as a dynamic cognitive process governed by **ACT-R activation decay** and **emotional congruency scoring**. The sub-symbolic activation $A_i$ of a memory chunk $i$ is formulated as:
+The $TCRS$ evaluates the cognitive realism of the agent's memory. Instead of treating database records as static vectors, we model retrieval as a dynamic cognitive process governed by **ACT-R activation decay** and **emotional congruency scoring**. The sub-symbolic activation $A_ i$ of a memory chunk $i$ is formulated as:
 
 ```math
 A_i = \ln \left( \sum_{j=1}^{n} t_j^{-d} \right) + \sum_{k} W_k \cdot S_{ki} + C_{\text{emo}} \cdot \left(1 - \left\| \vec{E}_{\text{agent}} - \vec{E}_{\text{memory}} \right\|_2\right) + \epsilon
 ```
 
-*   $t_j$: Elapsed time (in seconds) since the $j$-th activation of the memory.
+*   $t_ j$: Elapsed time (in seconds) since the $j$-th activation of the memory.
 *   $d = 0.5$: Standard ACT-R logarithmic power-law decay constant (*Anderson et al., 2004*).
-*   $W_k$: Attentional weight allocated to retrieval context cues.
-*   $S_{ki}$: Associative strength between context cue $k$ and memory $i$.
-*   $C_{\text{emo}} = 0.15$: Emotional amplification factor.
-*   $\vec{E}_{\text{agent}} \in [-1, 1]^3$: Active Pleasure-Arousal-Dominance (PAD) emotion vector of the agent.
-*   $\vec{E}_{\text{memory}} \in [-1, 1]^3$: Emotional coordinate vector annotated on the memory chunk at encoding.
+*   $W_ k$: Attentional weight allocated to retrieval context cues.
+*   $S_ {ki}$: Associative strength between context cue $k$ and memory $i$.
+*   $C_ {\text{emo}} = 0.15$: Emotional amplification factor.
+*   $\vec{E}_ {\text{agent}} \in [-1, 1]^3$: Active Pleasure-Arousal-Dominance (PAD) emotion vector of the agent.
+*   $\vec{E}_ {\text{memory}} \in [-1, 1]^3$: Emotional coordinate vector annotated on the memory chunk at encoding.
 *   $\epsilon$: Logistic noise term drawn from a zero-mean distribution.
 
-The $TCRS$ represents the mathematical probability $P_i$ that the agent successfully retrieves this critical episodic context under dense competitive memory loads:
+The $TCRS$ represents the mathematical probability $P_ i$ that the agent successfully retrieves this critical episodic context under dense competitive memory loads:
 
 ```math
 TCRS = P_i = \frac{1}{1 + \exp\left(-\frac{A_i - \theta}{s}\right)}
@@ -285,7 +285,7 @@ R = \text{clamp}(1.0 + 0.20 \cdot Ar - 0.10 \cdot V - 0.25 \cdot F, 0.60, 1.80)
 P = \text{clamp}(1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.10 \cdot F + \text{dist\_pitch\_mod}, 0.50, 2.00)
 ```
 
-*   **Vocal Volume ($V_{ol}$)**:
+*   **Vocal Volume ($V_ {ol}$)**:
 
 ```math
 V_{ol} = \text{clamp}(0.40 + 0.60 \cdot D + \text{dist\_vol\_mod}, 0.10, 1.00)
@@ -313,12 +313,12 @@ The $EREC$ evaluates the computational efficiency of running continuous social c
 EREC = \frac{\theta_{\text{SLO}} \cdot \Omega_{\text{RAM\_limit}} \cdot \Phi_{\text{power\_limit}}}{\text{Latency}_{\text{E2E}} \cdot \text{Footprint}_{\text{RAM}} \cdot \text{Power}_{\text{active}}}
 ```
 
-*   $\theta_{\text{SLO}} = 15.0\text{ ms}$: Maximum end-to-end cognitive routing latency budget.
-*   $\text{Latency}_{\text{E2E}} = 1.208\text{ ms}$: Measured sub-LLM perception-appraisal-decision pathway latency.
-*   $\Omega_{\text{RAM\_limit}} = 4,096\text{ MB}$: Standard edge RAM allocation budget.
-*   $\text{Footprint}_{\text{RAM}} = 1,079.58\text{ MB}$: Total active memory footprint of all 8 container services in macOS light-mode.
-*   $\Phi_{\text{power\_limit}} = 35.0\text{ W}$: NVIDIA Jetson maximum edge TDP power budget.
-*   $\text{Power}_{\text{active}} = 2.50\text{ W}$: Measured active power draw of the decentralized mesh (excluding localized Llama inference GPU power).
+*   $\theta_ {\text{SLO}} = 15.0\text{ ms}$: Maximum end-to-end cognitive routing latency budget.
+*   $\text{Latency}_ {\text{E2E}} = 1.208\text{ ms}$: Measured sub-LLM perception-appraisal-decision pathway latency.
+*   $\Omega_ {\text{RAM\_limit}} = 4,096\text{ MB}$: Standard edge RAM allocation budget.
+*   $\text{Footprint}_ {\text{RAM}} = 1,079.58\text{ MB}$: Total active memory footprint of all 8 container services in macOS light-mode.
+*   $\Phi_ {\text{power\_limit}} = 35.0\text{ W}$: NVIDIA Jetson maximum edge TDP power budget.
+*   $\text{Power}_ {\text{active}} = 2.50\text{ W}$: Measured active power draw of the decentralized mesh (excluding localized Llama inference GPU power).
 
 ---
 
