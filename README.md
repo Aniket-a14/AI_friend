@@ -227,14 +227,12 @@ $$
 S_i = \text{CosineSimilarity} \cdot (1 + 0.1 \cdot \text{valence} \cdot \text{emotional-weight} - 0.2 \cdot \text{arousal} \cdot \text{cortisol})
 $$
 
-
 * **Positive reinforcement**: $\text{valence} \cdot \text{emotional-weight}$ increases matching scores for positive memories.
 * **Stress inhibition**: arousal $\cdot$ cortisol suppresses high-stress memories during hyper-arousal, avoiding repetitive trauma loops.
 
 $$
 A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
 $$
-
 
 ### 3. Dimensional Trust Matrix (Marsh Model - CVS-3.0)
 
@@ -250,7 +248,6 @@ $$
 \text{trust} = \frac{T_b + T_c + T_i}{3.0}
 $$
 
-
 Appraisal-driven trust evolution updates individual sub-dimensions:
 
 * $T_b \leftarrow \text{clamp}(T_b + \delta \cdot RI)$
@@ -264,7 +261,6 @@ The subconscious memory agent runs background reflection sweeps after 5 minutes 
 $$
 A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
 $$
-
 
 * **ACT-R Pruning**: Memories where base activation falls below the retention threshold ($A_i < -2.0$) are permanently pruned from local SQLite/PostgreSQL stores.
 * **Decay**: Surviving memories have their importance scores scaled by `0.8` on each consolidation tick.
@@ -284,7 +280,6 @@ The Decision Service uses Multi-Attribute Utility Theory to score intent candida
 $$
 U(\text{Intent}) = w_{\text{goal}} \cdot G + w_{\text{emotion}} \cdot E + w_{\text{identity}} \cdot I + w_{\text{context}} \cdot C
 $$
-
 
 ### 7. Dynamic Continuous Prosody Mapping & OLA Crossfade (CVS-3.0 / Phase 4)
 
@@ -315,14 +310,12 @@ $$
 \text{PauseBias} = 1.0 - \text{arousal}
 $$
 
-
 #### Overlap-Add (OLA) Sample-Accurate Linear Crossfade
 During prosody-shift boundaries, a linear crossfade is applied over a **10ms window** ($\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ samples, i.e., 320 samples at 32kHz), blending the previous prosody segment into the new one to eliminate switching clicks:
 
 $$
 y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad t = \frac{i}{\text{fade-len}}, \quad 0 \le i < \text{fade-len}
 $$
-
 
 #### Spatial Reverb DSP Blend
 Acoustic environmental reflection utilizes a comb filter with a 50ms delay and 0.5 feedback gain, dynamically blended via $\text{wet-gain}$ linear interpolation based on user distance:
@@ -334,7 +327,6 @@ $$
 $$
 y[n] = (1 - \text{wet-gain}) \cdot x[n] + \text{wet-gain} \cdot d_{\text{buffer}}[n \pmod M]
 $$
-
 
 ---
 

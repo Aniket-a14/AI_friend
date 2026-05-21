@@ -11,55 +11,55 @@ The Cognitive Vocal System (CVS) implements a dual-process appraisal model based
 ### 1.1 Primary Appraisal (Lazarus)
 Primary appraisal evaluates the immediate significance of an event for the agent's well-being and active goals*   **Relevance ($R \in [0, 1]$):** Quantifies the attention weight of the event. User-initiated dialogue events are treated as high relevance, while autonomous internal ticks are low relevance:
 
-    $$
-    R = \begin{cases} 
-      1.0 & \text{if event is } \texttt{USER\_MESSAGE} \\
-      0.1 & \text{if event is } \texttt{SYSTEM\_TICK} \\
-      0.5 & \text{otherwise}
-    \end{cases}
-    $$
+$$
+R = \begin{cases} 
+  1.0 & \text{if event is } \texttt{USER\_MESSAGE} \\
+  0.1 & \text{if event is } \texttt{SYSTEM\_TICK} \\
+  0.5 & \text{otherwise}
+\end{cases}
+$$
 
 *   **Novelty ($N \in [0, 1]$):** Measures semantic distance from recent dialogue history. Calculated as the Jaccard distance against a rolling queue of the $M = 20$ most recent conversational turns:
 
-    $$
-    N = 1 - \max_{h \in \mathcal{H}} \frac{|\mathcal{W}_{\text{event}} \cap \mathcal{W}_h|}{|\mathcal{W}_{\text{event}} \cup \mathcal{W}_h|}
-    $$
+$$
+N = 1 - \max_{h \in \mathcal{H}} \frac{|\mathcal{W}_{\text{event}} \cap \mathcal{W}_h|}{|\mathcal{W}_{\text{event}} \cup \mathcal{W}_h|}
+$$
 
     where $\mathcal{W}_{\text{event}}$ is the set of lowercase keywords in the active utterance, and $\mathcal{W}_h$ is the keyword set of historical turn $h$.
 *   **Goal Congruence ($G \in [-1, 1]$):** Represents how much the event advances or hinders the agent's core social goal. It maps directly from emotional bias $E_b$ (extracted via acoustic pitch/sentiment trackers):
 
-    $$
-    G = \text{clamp}(E_b, -1.0, 1.0)
-    $$
+$$
+G = \text{clamp}(E_b, -1.0, 1.0)
+$$
 
 ### 1.2 Secondary Appraisal (Lazarus/OCC/EMA)
 Secondary appraisal evaluates the agent's coping potential, social norms, and relational impact.
 
 *   **Agency ($A \in [0, 1]$):** Attributes causal responsibility. For user messages, the agent holds high coping agency since it can generate a verbal response; for system ticks, agency is lower:
 
-    $$
-    A = \begin{cases} 
-      0.8 & \text{if event is } \texttt{USER\_MESSAGE} \\
-      0.3 & \text{otherwise}
-    \end{cases}
-    $$
+$$
+A = \begin{cases} 
+  0.8 & \text{if event is } \texttt{USER\_MESSAGE} \\
+  0.3 & \text{otherwise}
+\end{cases}
+$$
 
 *   **Norm Alignment ($NA \in [0, 1]$):** Represents social praiseworthiness and boundary respect. Evaluated by matching user input keywords against a set of $B$ configured identity boundaries (e.g., toxic, personal boundaries). Every keyword violation decreases norm alignment:
 
-    $$
-    NA = \max\left(0.0, 1.0 - 0.2 \cdot \sum_{b \in B} \mathbb{I}(\text{Violation}(b))\right)
-    $$
+$$
+NA = \max\left(0.0, 1.0 - 0.2 \cdot \sum_{b \in B} \mathbb{I}(\text{Violation}(b))\right)
+$$
 
     where $\mathbb{I}(\cdot)$ is the indicator function.
 
 *   **Relationship Impact ($RI \in [-1, 1]$):** extension that projects the social valence of the interaction. Modulated by existing relational trust $T$:
 
-    $$
-    RI = \begin{cases} 
-      E_b \cdot 0.25 & \text{if } T < 0.3 \text{ (Low trust dampens positive impact)} \\
-      E_b \cdot 0.50 & \text{otherwise}
-    \end{cases}
-    $$
+$$
+RI = \begin{cases} 
+  E_b \cdot 0.25 & \text{if } T < 0.3 \text{ (Low trust dampens positive impact)} \\
+  E_b \cdot 0.50 & \text{otherwise}
+\end{cases}
+$$
 
 ### 1.3 System 2 Deliberative Reappraisal (LLM Hot-Path Drift)
 For deep semantic reasoning, CVS-3.0 runs an asynchronous deliberative reappraisal cycle. It queries the fast LLM to grade three dimensions on $[-1.0, 1.0]$: goal congruence ($G_{\text{delib}}$), norm alignment ($NA_{\text{delib}}$), and expectedness ($E_{\text{delib}}$). These values act as coordinates pulling the active PAD emotional state via a drift coefficient $\eta = 0.2$:
@@ -83,21 +83,21 @@ Internal emotional states are modeled using Mehrabian & Russell's (1974) **3D PA
 
 *   **Valence ($V \in [-1.0, 1.0]$):** Governed by goal congruence and relationship impact, with drift rate $\alpha = 0.3$:
 
-    $$
-    V(t) = (1 - \alpha) \cdot V(t-1) + \alpha \cdot (0.6 \cdot G + 0.4 \cdot RI)
-    $$
+$$
+V(t) = (1 - \alpha) \cdot V(t-1) + \alpha \cdot (0.6 \cdot G + 0.4 \cdot RI)
+$$
 
 *   **Arousal ($Ar \in [0, 1]$):** Governed by event novelty and attention relevance, with drift rate $\beta = 0.5$:
 
-    $$
-    Ar(t) = (1 - \beta) \cdot Ar(t-1) + \beta \cdot (0.6 \cdot N + 0.4 \cdot R)
-    $$
+$$
+Ar(t) = (1 - \beta) \cdot Ar(t-1) + \beta \cdot (0.6 \cdot N + 0.4 \cdot R)
+$$
 
 *   **Dominance ($D \in [0, 1]$):** Governed by causal agency and norm boundaries, with drift rate $\gamma = 0.2$:
 
-    $$
-    D(t) = (1 - \gamma) \cdot D(t-1) + \gamma \cdot (0.6 \cdot A + 0.4 \cdot NA)
-    $$
+$$
+D(t) = (1 - \gamma) \cdot D(t-1) + \gamma \cdot (0.6 \cdot A + 0.4 \cdot NA)
+$$
 
 ### 2.2 Relational Trust & Attachment Dynamics
 To model secure human-robot bonds, we implement a multi-dimensional trust space based on **Marsh's Formal Trust Model (1994)** and secure attachment styles based on **Bowlby's Attachment Theory**:
@@ -105,65 +105,65 @@ To model secure human-robot bonds, we implement a multi-dimensional trust space 
 *   **Dimensional Trust:** Trust is decomposed into three components updating with rate $\delta = 0.1$:
     *   **Trust Benevolence ($T_b$):** Sensitivity to emotional relationship impact:
 
-        $$
-        T_b(t) = \text{clamp}(T_b(t-1) + \delta \cdot RI, 0.0, 1.0)
-        $$
+$$
+T_b(t) = \text{clamp}(T_b(t-1) + \delta \cdot RI, 0.0, 1.0)
+$$
 
     *   **Trust Competence ($T_c$):** Sensitivity to conversational helpfulness and goal congruence:
 
-        $$
-        T_c(t) = \text{clamp}(T_c(t-1) + \delta \cdot (0.6 \cdot G + 0.4 \cdot R), 0.0, 1.0)
-        $$
+$$
+T_c(t) = \text{clamp}(T_c(t-1) + \delta \cdot (0.6 \cdot G + 0.4 \cdot R), 0.0, 1.0)
+$$
 
     *   **Trust Integrity ($T_i$):** Sensitivity to boundary adherence:
 
-        $$
-        T_i(t) = \text{clamp}(T_i(t-1) + \delta \cdot NA, 0.0, 1.0)
-        $$
+$$
+T_i(t) = \text{clamp}(T_i(t-1) + \delta \cdot NA, 0.0, 1.0)
+$$
 
     *   **Scalar Combined Trust ($T$):** The average of the three components:
 
-        $$
-        T(t) = \frac{T_b(t) + T_c(t) + T_i(t)}{3.0}
-        $$
+$$
+T(t) = \frac{T_b(t) + T_c(t) + T_i(t)}{3.0}
+$$
 
 *   **Bowlby Secure Attachment ($At \in [0, 1]$):** Attachment builds slowly over time based on interaction frequency and trust, with growth rate $\epsilon = 0.03$:
 
-    $$
-    At(t) = \text{clamp}\left(At(t-1) + \epsilon \cdot T(t) \cdot \min\left(1.0, \frac{\text{Interactions}}{100}\right), 0.0, 1.0\right)
-    $$
+$$
+At(t) = \text{clamp}\left(At(t-1) + \epsilon \cdot T(t) \cdot \min\left(1.0, \frac{\text{Interactions}}{100}\right), 0.0, 1.0\right)
+$$
 
 ### 2.3 Endocrine Homeostasis & Hormonal Coupling
 Three continuous hormones modulate the LLM's generation hyperparameters (temperature, top_p, penalty) to model physical cognitive constraints:
 
 *   **Fatigue Cycle ($F \in [0, 1]$):** Metabolic wear-and-tear accumulated during active turns and recovered during idle intervals. Governed by a circadian multiplier $\mu_{\text{circadian}}$ (set to $1.8$ at night $22:00\text{--}06:00$, otherwise $1.0$):
 
-    $$
-    F(t) = \begin{cases} 
-      \text{clamp}\left(F(t-1) + \frac{0.15 \cdot \Delta t \cdot \mu_{\text{circadian}}}{3600}, 0.0, 1.0\right) & \text{if active interaction} \\
-      \text{clamp}\left(F(t-1) - \frac{0.20 \cdot \Delta t}{\mu_{\text{circadian}} \cdot 3600}, 0.0, 1.0\right) & \text{if idle/resting} 
-    \end{cases}
-    $$
+$$
+F(t) = \begin{cases} 
+  \text{clamp}\left(F(t-1) + \frac{0.15 \cdot \Delta t \cdot \mu_{\text{circadian}}}{3600}, 0.0, 1.0\right) & \text{if active interaction} \\
+  \text{clamp}\left(F(t-1) - \frac{0.20 \cdot \Delta t}{\mu_{\text{circadian}} \cdot 3600}, 0.0, 1.0\right) & \text{if idle/resting} 
+\end{cases}
+$$
 
     where $\Delta t$ is the elapsed time in seconds.
 
 *   **Cortisol Coupling ($C \in [0, 1]$):** Represents stress levels. Spikes under negative valence ($V < 0$) and metabolic fatigue ($F$):
 
-    $$
-    C(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right)
-    $$
+$$
+C(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right)
+$$
 
     *Hyperparameter mapping:* High cortisol reduces LLM generation temperature to enforce strict, defensive responses; low cortisol increases temperature to support warm, creative responses.
 
 *   **Dopamine Coupling ($D_{\text{dopamine}} \in [0, 1]$):** Represents reward tracking. Mapped from positive valence ($V > 0$) combined with fatigue-modulated arousal $Ar_{\text{actual}}$:
 
-    $$
-    Ar_{\text{actual}}(t) = \text{clamp}(Ar(t) + 0.2 \cdot F(t), 0.0, 1.0) \quad \text{(fatigue induces restlessness)}
-    $$
+$$
+Ar_{\text{actual}}(t) = \text{clamp}(Ar(t) + 0.2 \cdot F(t), 0.0, 1.0) \quad \text{(fatigue induces restlessness)}
+$$
 
-    $$
-    D_{\text{dopamine}}(t) = \text{clamp}(\max(0.0, V(t)) \cdot Ar_{\text{actual}}(t), 0.0, 1.0)
-    $$
+$$
+D_{\text{dopamine}}(t) = \text{clamp}(\max(0.0, V(t)) \cdot Ar_{\text{actual}}(t), 0.0, 1.0)
+$$
 
     *Hyperparameter mapping:* High dopamine increases LLM `top_p` to enable playful and exploratory phrasing.
 
@@ -238,9 +238,9 @@ $$
 *   **Associative Attentional Weighting:** $\sum_{k} W_k S_{ki}$ calculates retrieval cue association, where $W_k$ represents context attention weights and $S_{ki}$ is graph proximity (hop depth factor) of context keys.
 *   **Emotional Congruency:** Mapped as the Euclidean distance between the active 3D PAD vector of the agent and the PAD vector stored at encoding:
 
-    $$
-    \left\| \vec{PAD}_{\text{agent}} - \vec{PAD}_{\text{memory}} \right\|_2 = \sqrt{(V_{\text{agent}} - V_i)^2 + (Ar_{\text{agent}} - Ar_i)^2 + (D_{\text{agent}} - D_i)^2}
-    $$
+$$
+\left\| \vec{PAD}_{\text{agent}} - \vec{PAD}_{\text{memory}} \right\|_2 = \sqrt{(V_{\text{agent}} - V_i)^2 + (Ar_{\text{agent}} - Ar_i)^2 + (D_{\text{agent}} - D_i)^2}
+$$
 
     where $C_{\text{emo}} = 0.15$ acts as the affective scale modifier.
 *   **Cognitive Noise:** $\epsilon$ is a stochastic noise variable drawn from a normal distribution $\epsilon \sim \mathcal{N}(0, 0.02^2)$.

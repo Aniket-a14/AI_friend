@@ -34,9 +34,9 @@ Validate the **Pleasure, Arousal, Dominance** trajectories.
 Validate the episodic recall mechanism.
 - **Metric**: Recall precision based on the **Base-Level Activation** formula:
 
-  $$
-  A_i = \ln \left( \sum_{j=1}^n t_j^{-d} \right)
-  $$
+$$
+A_i = \ln \left( \sum_{j=1}^n t_j^{-d} \right)
+$$
 
 - **Validation**: Show how time-based decay ($d$) and frequency of access ($n$) accurately simulate human-like forgetting and retrieval.
 
@@ -52,7 +52,6 @@ Measure the delta between `chat.input` and the final `chat.output` event.
 $$
 L_{cognitive} = T_{perception} + T_{memory\_surfacing} + T_{llm\_generation}
 $$
-
 
 - **Target**: sub-500ms for total cognitive turnaround on local hardware.
 
