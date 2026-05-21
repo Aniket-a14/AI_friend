@@ -31,76 +31,76 @@ These equations are computed native in Rust (`backend/crates/contracts/src/lib.r
 1. **Fatigue Adjustments**:
    * Speaking Rate slowdown: 
 
-$$
+```math
 \text{fatigue\_slow} = 0.25 \cdot F
-$$
+```
 
    * Pitch dropdown: 
 
-$$
+```math
 \text{fatigue\_pitch\_drop} = 0.10 \cdot F
-$$
+```
 
 2. **Distance Spatial Adaptation**:
    * Close-range threshold ($d < 0.6\text{m}$, whisper configuration):
 
-$$
+```math
 \text{dist\_vol\_mod} = -0.15, \quad \text{dist\_pitch\_mod} = -0.05
-$$
+```
 
    * Far-range threshold ($d > 1.5\text{m}$, projection configuration):
 
-$$
+```math
 \text{dist\_vol\_mod} = 0.20, \quad \text{dist\_pitch\_mod} = 0.10
-$$
+```
 
    * Intermediate baseline:
 
-$$
+```math
 \text{dist\_vol\_mod} = 0.00, \quad \text{dist\_pitch\_mod} = 0.00
-$$
+```
 
 ### 2.2 Core Synthesis Parameters
 
 1. **Speaking Rate ($R$)**:
    Modulated by arousal energy and valence, slowed down by metabolic fatigue, clamped to safety bounds:
 
-$$
+```math
 R = 1.0 + 0.20 \cdot Ar - 0.10 \cdot V - \text{fatigue\_slow}
-$$
+```
 
-$$
+```math
 \text{SpeedFactor} = \text{clamp}(R, 0.6, 1.8)
-$$
+```
 
 2. **Vocal Pitch ($P$)**:
    Jointly modulated by valence and arousal, tempered by dominance, and adjusted for fatigue and distance:
 
-$$
+```math
 P = 1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - \text{fatigue\_pitch\_drop} + \text{dist\_pitch\_mod}
-$$
+```
 
-$$
+```math
 \text{Pitch} = \text{clamp}(P, 0.5, 2.0)
-$$
+```
 
 3. **Vocal Volume ($V_{ol}$)**:
    Modulated by interpersonal dominance (assertiveness) and adjusted for distance propagation:
 
-$$
+```math
 V_{ol} = 0.4 + 0.6 \cdot D + \text{dist\_vol\_mod}
-$$
+```
 
-$$
+```math
 \text{Volume} = \text{clamp}(V_{ol}, 0.1, 1.0)
-$$
+```
 
 4. **Pause Bias ($B_{\text{pause}}$)**:
    Determines the baseline silent duration between speech segments. Higher arousal suppresses silence:
 
-$$
+```math
 B_{\text{pause}} = 1.0 - Ar
-$$
+```
 
 All parameters are rounded to exactly **two decimal places** ($0.01$ precision) prior to serialized delivery to the SoVITS inference pipeline.
 
@@ -114,46 +114,46 @@ To ensure seamless audio transitions, eliminate acoustic pops, and guarantee sig
 
 When a prosody shift is detected between consecutive audio segments, the engine computes a **10ms linear crossfade window** based on the configured sample rate (typically 32kHz):
 
-$$
+```math
 \text{fade\_len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor
-$$
+```
 
 For $32,000\text{Hz}$, the crossfade window contains exactly $320$ samples.
 
 ### 3.2 Signal Modulation
 
-For each sample index $i$ in the crossfade window ($0 \le i < \text{fade\_len}$), the blend factor $t$ is computed as:
+For each sample index $i$ in the crossfade window ($`0 \le i < \text{fade\_len}`$), the blend factor $t$ is computed as:
 
-$$
+```math
 t = \frac{i}{\text{fade\_len}}
-$$
+```
 
 The output blends the previous prosody segment buffer $x_{\text{prev}}[i]$ with the incoming segment $x_{\text{curr}}[i]$:
 
-$$
+```math
 y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade\_len}
-$$
+```
 
-For $i \ge \text{fade\_len}$, the signal passes through unmodified:
+For $`i \ge \text{fade\_len}`$, the signal passes through unmodified:
 
-$$
+```math
 y[i] = x_{\text{curr}}[i]
-$$
+```
 
 ### 3.3 Dynamic Signal Reconstruction
 
 1. **Quantization Recovery**: High-performance calculations are carried out in 32-bit floating point space to prevent precision loss.
 2. **Clipping Protection**: The modified floats are clipped to prevent digital overflow distortion:
 
-$$
+```math
 y_{\text{clipped}}[i] = \text{clamp}(y[i], -32768.0, 32767.0)
-$$
+```
 
 3. **Re-quantization**: Samples are re-quantized to signed 16-bit PCM (`int16`) bytes prior to NATS JetStream publication:
 
-$$
+```math
 y_{\text{pcm}}[i] = \lfloor y_{\text{clipped}}[i] \rceil
-$$
+```
 
 ---
 
@@ -163,15 +163,15 @@ When the physical distance $d$ increases, high-frequency elements decay, and atm
 
 ### 4.1 Wet/Dry Linear Interpolation
 
-Acoustic reverb gain ($\text{wet\_gain}$) is scaled dynamically as a function of distance:
+Acoustic reverb gain ($`\text{wet\_gain}`$) is scaled dynamically as a function of distance:
 
-$$
+```math
 \text{wet\_gain} = \begin{cases} 
 0.0 & \text{if } d \le 2.5\text{m} \\
 \frac{d - 2.5}{3.5 - 2.5} & \text{if } 2.5\text{m} < d < 3.5\text{m} \\
 1.0 & \text{if } d \ge 3.5\text{m}
 \end{cases}
-$$
+```
 
 ### 4.2 Delay & Feedback Network
 
@@ -179,21 +179,21 @@ The DSP reverb comb filter uses a **50ms circular delay line** with a $0.5$ feed
 
 1. Retrieve delayed sample:
 
-$$
+```math
 w[n] = d_{\text{buffer}}[n \pmod M]
-$$
+```
 
 2. Update delay buffer:
 
-$$
+```math
 d_{\text{buffer}}[n \pmod M] = x[n] + 0.5 \cdot w[n]
-$$
+```
 
 3. Blend dry and wet signals:
 
-$$
+```math
 y[n] = (1.0 - \text{wet\_gain}) \cdot x[n] + \text{wet\_gain} \cdot d_{\text{buffer}}[n \pmod M]
-$$
+```
 
 This ensures that the agent's spatial projection matches the visual distance of the user, achieving true sensory-motor loop integration.
 

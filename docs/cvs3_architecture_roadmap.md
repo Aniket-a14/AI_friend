@@ -108,13 +108,13 @@ Replace rigid, blocky voice parameter presets with a mathematically continuous e
 #### The Mathematical Models
 Instead of `if arousal > 0.5: speed = 1.2`, we will use continuous linear algebra applied globally:
 
-$$
+```math
 \text{Pitch Multiplier} (P_m) = 1.0 + (\alpha \cdot P_{pleasure}) + (\beta \cdot A_{arousal}) - (\gamma \cdot D_{dominance})
-$$
+```
 
-$$
+```math
 \text{Speech Rate} (S_r) = 1.0 + (\delta \cdot A_{arousal}) - (\epsilon \cdot P_{pleasure})
-$$
+```
 
 *   **Constants Definition**:
     *   $\alpha = 0.05$ (Pleasure slightly raises pitch for warmth)

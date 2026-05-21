@@ -233,12 +233,12 @@ graph TD
 
 The $ICI$ measures the cognitive precision of conversational barge-in interruption. In a natural dialogue, when a user interrupts the robot, a System 1 fast-loop (sub-cognitive VAD) must immediately pause physical playback, while a System 2 deep-loop (speculative segmenter) validates whether the interruption is a true semantic interjection or merely background ambient noise.
 
-$$
+```math
 ICI = \gamma \cdot \left(1 - P_{\text{false\_trigger}}\right) \cdot \exp\left(-\frac{\left|t_{\text{stop}} - t_{\text{interject}}\right|}{\tau_{\text{overlap}}}\right)
-$$
+```
 
 *   $\gamma \in [0, 1]$: Semantic coherence factor computed as the cosine similarity between the speculative user segment and active dialogue intent.
-*   $P_{\text{false\_trigger}}$: Measured empirical ratio of false interruptions triggered by ambient noise.
+*   $`P_{\text{false\_trigger}}`$: Measured empirical ratio of false interruptions triggered by ambient noise.
 *   $t_{\text{stop}}$: The physical epoch at which the robot's DSP audio stream was silenced.
 *   $t_{\text{interject}}$: The precise physical epoch at which the user began speaking.
 *   $\tau_{\text{overlap}} = 200.0\text{ ms}$: The biological turn-taking gap baseline constant (*Stivers et al., 2009*).
@@ -247,9 +247,9 @@ $$
 
 The $TCRS$ evaluates the cognitive realism of the agent's memory. Instead of treating database records as static vectors, we model retrieval as a dynamic cognitive process governed by **ACT-R activation decay** and **emotional congruency scoring**. The sub-symbolic activation $A_i$ of a memory chunk $i$ is formulated as:
 
-$$
+```math
 A_i = \ln \left( \sum_{j=1}^{n} t_j^{-d} \right) + \sum_{k} W_k \cdot S_{ki} + C_{\text{emo}} \cdot \left(1 - \left\| \vec{E}_{\text{agent}} - \vec{E}_{\text{memory}} \right\|_2\right) + \epsilon
-$$
+```
 
 *   $t_j$: Elapsed time (in seconds) since the $j$-th activation of the memory.
 *   $d = 0.5$: Standard ACT-R logarithmic power-law decay constant (*Anderson et al., 2004*).
@@ -262,9 +262,9 @@ $$
 
 The $TCRS$ represents the mathematical probability $P_i$ that the agent successfully retrieves this critical episodic context under dense competitive memory loads:
 
-$$
+```math
 TCRS = P_i = \frac{1}{1 + \exp\left(-\frac{A_i - \theta}{s}\right)}
-$$
+```
 
 *   $\theta$: Retrieval activation threshold below which memories cannot be surfaced.
 *   $s$: Cognitive noise scale factor.
@@ -275,49 +275,49 @@ The $APRA$ quantifies the alignment between the agent's internal psychological a
 
 *   **Speaking Rate ($R$)**:
 
-$$
+```math
 R = \text{clamp}(1.0 + 0.20 \cdot Ar - 0.10 \cdot V - 0.25 \cdot F, 0.60, 1.80)
-$$
+```
 
 *   **Vocal Pitch ($P$)**:
 
-$$
+```math
 P = \text{clamp}(1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.10 \cdot F + \text{dist\_pitch\_mod}, 0.50, 2.00)
-$$
+```
 
 *   **Vocal Volume ($V_{ol}$)**:
 
-$$
+```math
 V_{ol} = \text{clamp}(0.40 + 0.60 \cdot D + \text{dist\_vol\_mod}, 0.10, 1.00)
-$$
+```
 
 To guarantee acoustic continuity and prevent phase pops during rapid prosody transitions, the Voice Agent implements a **10 ms linear Overlap-Add (OLA) crossfade** sample window:
 
-$$
+```math
 y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \le i < \lfloor 0.010 \cdot \text{SampleRate} \rfloor
-$$
+```
 
-where $t = \frac{i}{\text{fade\_len}}$ represents the dynamic temporal blend factor. 
+where $`t = \frac{i}{\text{fade\_len}}`$ represents the dynamic temporal blend factor. 
 
 The $APRA$ measures the cumulative mathematical alignment precision:
 
-$$
+```math
 APRA = 1.0 - \frac{1}{3} \left( \left|\frac{R - R_{\text{target}}}{R_{\text{target}}}\right| + \left|\frac{P - P_{\text{target}}}{P_{\text{target}}}\right| + \left|\frac{V_{ol} - V_{\text{ol\_target}}}{V_{\text{ol\_target}}}\right| \right)
-$$
+```
 
 ### 2.4 Edge Resource Execution Coefficient ($EREC$)
 
 The $EREC$ evaluates the computational efficiency of running continuous social cognitive meshes on highly resource-constrained edge robotic deployable hardware (e.g., Jetson AGX Orin):
 
-$$
+```math
 EREC = \frac{\theta_{\text{SLO}} \cdot \Omega_{\text{RAM\_limit}} \cdot \Phi_{\text{power\_limit}}}{\text{Latency}_{\text{E2E}} \cdot \text{Footprint}_{\text{RAM}} \cdot \text{Power}_{\text{active}}}
-$$
+```
 
 *   $\theta_{\text{SLO}} = 15.0\text{ ms}$: Maximum end-to-end cognitive routing latency budget.
 *   $\text{Latency}_{\text{E2E}} = 1.208\text{ ms}$: Measured sub-LLM perception-appraisal-decision pathway latency.
-*   $\Omega_{\text{RAM\_limit}} = 4,096\text{ MB}$: Standard edge RAM allocation budget.
+*   $`\Omega_{\text{RAM\_limit}} = 4,096\text{ MB}`$: Standard edge RAM allocation budget.
 *   $\text{Footprint}_{\text{RAM}} = 1,079.58\text{ MB}$: Total active memory footprint of all 8 container services in macOS light-mode.
-*   $\Phi_{\text{power\_limit}} = 35.0\text{ W}$: NVIDIA Jetson maximum edge TDP power budget.
+*   $`\Phi_{\text{power\_limit}} = 35.0\text{ W}`$: NVIDIA Jetson maximum edge TDP power budget.
 *   $\text{Power}_{\text{active}} = 2.50\text{ W}$: Measured active power draw of the decentralized mesh (excluding localized Llama inference GPU power).
 
 ---
