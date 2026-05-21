@@ -4,7 +4,7 @@ This document provides a highly rigorous, publication-grade academic literature 
 
 ---
 
-## 1. Exhaustive Literature Review ($N=30$)
+## 1. Exhaustive Literature Review ($`N=30`$)
 
 To establish a solid scientific baseline, we review exactly 30 highly cited, authentic peer-reviewed publications spanning the four pillars of conversational social robotics. For each paper, we document the authors, year, venue, core methodology, and reported quantitative baseline limits.
 
@@ -28,7 +28,7 @@ graph TD
     *Title*: "Turn-taking in conversational systems"  
     *Venue*: *Foundations and Trends in Information Retrieval*  
     *Core Methodology*: Theoretical review and empirical auditing of turn-taking architectures in voice assistants and social robots.  
-    *Extracted Quantitative Baseline*: Proves that standard cascaded speak-wait pipelines (STT $\rightarrow$ LLM $\rightarrow$ TTS) exhibit turn-taking latencies between **700 ms and 2,500 ms**, which humans perceive as awkward and robotic.
+    *Extracted Quantitative Baseline*: Proves that standard cascaded speak-wait pipelines (STT $`\rightarrow`$ LLM $`\rightarrow`$ TTS) exhibit turn-taking latencies between **700 ms and 2,500 ms**, which humans perceive as awkward and robotic.
 
 3.  **Nokland, E., & Skantze, G. (2024)**  
     *Title*: "Voice Activity Projection with Transformer-Based Language Models"  
@@ -80,7 +80,7 @@ graph TD
     *Title*: "Analysis of the Pleasure-Arousal-Dominance (PAD) Emotion State Model"  
     *Venue*: *Basic and Applied Social Psychology*  
     *Core Methodology*: Continuous semantic differential scales and linear algebraic formulations modeling affect as a 3D vector.  
-    *Extracted Quantitative Baseline*: Explains over **90%** of human emotional variance using three normalized variables restricted to the range $[-1.0, 1.0]$.
+    *Extracted Quantitative Baseline*: Explains over **90%** of human emotional variance using three normalized variables restricted to the range $`[-1.0, 1.0]`$.
 
 11. **Scherer, K. R. (2009)**  
     *Title*: "The Component Process Model of Emotion: Outline of a professional theory"  

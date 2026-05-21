@@ -4,7 +4,7 @@ This document provides a highly rigorous, publication-grade academic literature 
 
 ---
 
-## 1. Exhaustive SOTA Literature Review ($N=30$)
+## 1. Exhaustive SOTA Literature Review ($`N=30`$)
 
 To establish a solid scientific baseline, we review exactly 30 highly cited, authentic peer-reviewed publications spanning the four pillars of conversational social robotics. For each paper, we document the authors, year, venue, core methodology, and reported quantitative baseline limits.
 
@@ -28,7 +28,7 @@ graph TD
    *Title*: "Turn-taking in conversational systems"  
    *Venue*: *Foundations and Trends in Information Retrieval*  
    *Core Methodology*: Theoretical review and empirical auditing of turn-taking architectures in voice assistants and social robots.  
-   *Extracted Quantitative Baseline*: Proves that standard cascaded speak-wait pipelines (STT $\rightarrow$ LLM $\rightarrow$ TTS) exhibit turn-taking latencies between **700 ms and 2,500 ms**, which humans perceive as awkward and robotic.
+   *Extracted Quantitative Baseline*: Proves that standard cascaded speak-wait pipelines (STT $`\rightarrow`$ LLM $`\rightarrow`$ TTS) exhibit turn-taking latencies between **700 ms and 2,500 ms**, which humans perceive as awkward and robotic.
 
 3. **Nokland, E., & Skantze, G. (2024)**  
    *Title*: "Voice Activity Projection with Transformer-Based Language Models"  
@@ -80,7 +80,7 @@ graph TD
     *Title*: "Analysis of the Pleasure-Arousal-Dominance (PAD) Emotion State Model"  
     *Venue*: *Basic and Applied Social Psychology*  
     *Core Methodology*: Continuous semantic differential scales and linear algebraic formulations modeling affect as a 3D vector.  
-    *Extracted Quantitative Baseline*: Explains over **90%** of human emotional variance using three normalized variables restricted to the range $[-1.0, 1.0]$.
+    *Extracted Quantitative Baseline*: Explains over **90%** of human emotional variance using three normalized variables restricted to the range $`[-1.0, 1.0]`$.
 
 11. **Scherer, K. R. (2009)**  
     *Title*: "The Component Process Model of Emotion: Outline of a professional theory"  
@@ -229,63 +229,63 @@ graph TD
     A --> E["Edge Resource Execution Coefficient (EREC)"]
 ```
 
-### 2.1 Interruption Coherence Index ($ICI$)
+### 2.1 Interruption Coherence Index ($`ICI`$)
 
-The $ICI$ measures the cognitive precision of conversational barge-in interruption. In a natural dialogue, when a user interrupts the robot, a System 1 fast-loop (sub-cognitive VAD) must immediately pause physical playback, while a System 2 deep-loop (speculative segmenter) validates whether the interruption is a true semantic interjection or merely background ambient noise.
+The $`ICI`$ measures the cognitive precision of conversational barge-in interruption. In a natural dialogue, when a user interrupts the robot, a System 1 fast-loop (sub-cognitive VAD) must immediately pause physical playback, while a System 2 deep-loop (speculative segmenter) validates whether the interruption is a true semantic interjection or merely background ambient noise.
 
 ```math
 ICI = \gamma \cdot \left(1 - P_{\text{false\_trigger}}\right) \cdot \exp\left(-\frac{\left|t_{\text{stop}} - t_{\text{interject}}\right|}{\tau_{\text{overlap}}}\right)
 ```
 
-*   $\gamma \in [0, 1]$: Semantic coherence factor computed as the cosine similarity between the speculative user segment and active dialogue intent.
+*   $`\gamma \in [0, 1]`$: Semantic coherence factor computed as the cosine similarity between the speculative user segment and active dialogue intent.
 *   $`P_{\text{false\_trigger}}`$: Measured empirical ratio of false interruptions triggered by ambient noise.
-*   $t_{\text{stop}}$: The physical epoch at which the robot's DSP audio stream was silenced.
-*   $t_{\text{interject}}$: The precise physical epoch at which the user began speaking.
-*   $\tau_{\text{overlap}} = 200.0\text{ ms}$: The biological turn-taking gap baseline constant (*Stivers et al., 2009*).
+*   $`t_{\text{stop}}`$: The physical epoch at which the robot's DSP audio stream was silenced.
+*   $`t_{\text{interject}}`$: The precise physical epoch at which the user began speaking.
+*   $`\tau_{\text{overlap}} = 200.0\text{ ms}`$: The biological turn-taking gap baseline constant (*Stivers et al., 2009*).
 
-### 2.2 Temporal Context Retention Score ($TCRS$)
+### 2.2 Temporal Context Retention Score ($`TCRS`$)
 
-The $TCRS$ evaluates the cognitive realism of the agent's memory. Instead of treating database records as static vectors, we model retrieval as a dynamic cognitive process governed by **ACT-R activation decay** and **emotional congruency scoring**. The sub-symbolic activation $A_i$ of a memory chunk $i$ is formulated as:
+The $`TCRS`$ evaluates the cognitive realism of the agent's memory. Instead of treating database records as static vectors, we model retrieval as a dynamic cognitive process governed by **ACT-R activation decay** and **emotional congruency scoring**. The sub-symbolic activation $`A_i`$ of a memory chunk $`i`$ is formulated as:
 
 ```math
 A_i = \ln \left( \sum_{j=1}^{n} t_j^{-d} \right) + \sum_{k} W_k \cdot S_{ki} + C_{\text{emo}} \cdot \left(1 - \left\| \vec{E}_{\text{agent}} - \vec{E}_{\text{memory}} \right\|_2\right) + \epsilon
 ```
 
-*   $t_j$: Elapsed time (in seconds) since the $j$-th activation of the memory.
-*   $d = 0.5$: Standard ACT-R logarithmic power-law decay constant (*Anderson et al., 2004*).
-*   $W_k$: Attentional weight allocated to retrieval context cues.
-*   $S_{ki}$: Associative strength between context cue $k$ and memory $i$.
-*   $C_{\text{emo}} = 0.15$: Emotional amplification factor.
-*   $\vec{E}_{\text{agent}} \in [-1, 1]^3$: Active Pleasure-Arousal-Dominance (PAD) emotion vector of the agent.
-*   $\vec{E}_{\text{memory}} \in [-1, 1]^3$: Emotional coordinate vector annotated on the memory chunk at encoding.
-*   $\epsilon$: Logistic noise term drawn from a zero-mean distribution.
+*   $`t_j`$: Elapsed time (in seconds) since the $`j`$-th activation of the memory.
+*   $`d = 0.5`$: Standard ACT-R logarithmic power-law decay constant (*Anderson et al., 2004*).
+*   $`W_k`$: Attentional weight allocated to retrieval context cues.
+*   $`S_{ki}`$: Associative strength between context cue $`k`$ and memory $`i`$.
+*   $`C_{\text{emo}} = 0.15`$: Emotional amplification factor.
+*   $`\vec{E}_{\text{agent}} \in [-1, 1]^3`$: Active Pleasure-Arousal-Dominance (PAD) emotion vector of the agent.
+*   $`\vec{E}_{\text{memory}} \in [-1, 1]^3`$: Emotional coordinate vector annotated on the memory chunk at encoding.
+*   $`\epsilon`$: Logistic noise term drawn from a zero-mean distribution.
 
-The $TCRS$ represents the mathematical probability $P_i$ that the agent successfully retrieves this critical episodic context under dense competitive memory loads:
+The $`TCRS`$ represents the mathematical probability $`P_i`$ that the agent successfully retrieves this critical episodic context under dense competitive memory loads:
 
 ```math
 TCRS = P_i = \frac{1}{1 + \exp\left(-\frac{A_i - \theta}{s}\right)}
 ```
 
-*   $\theta$: Retrieval activation threshold below which memories cannot be surfaced.
-*   $s$: Cognitive noise scale factor.
+*   $`\theta`$: Retrieval activation threshold below which memories cannot be surfaced.
+*   $`s`$: Cognitive noise scale factor.
 
-### 2.3 Affective Prosody Realism Alignment ($APRA$)
+### 2.3 Affective Prosody Realism Alignment ($`APRA`$)
 
-The $APRA$ quantifies the alignment between the agent's internal psychological affect states and the sample-accurate DSP audio synthesis parameters. We translate continuous Valence ($V$), Arousal ($Ar$), Dominance ($D$), and metabolic Fatigue ($F$) into synthesis factors rounded to two decimal places:
+The $`APRA`$ quantifies the alignment between the agent's internal psychological affect states and the sample-accurate DSP audio synthesis parameters. We translate continuous Valence ($`V`$), Arousal ($`Ar`$), Dominance ($`D`$), and metabolic Fatigue ($`F`$) into synthesis factors rounded to two decimal places:
 
-*   **Speaking Rate ($R$)**:
+*   **Speaking Rate ($`R`$)**:
 
 ```math
 R = \text{clamp}(1.0 + 0.20 \cdot Ar - 0.10 \cdot V - 0.25 \cdot F, 0.60, 1.80)
 ```
 
-*   **Vocal Pitch ($P$)**:
+*   **Vocal Pitch ($`P`$)**:
 
 ```math
 P = \text{clamp}(1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.10 \cdot F + \text{dist\_pitch\_mod}, 0.50, 2.00)
 ```
 
-*   **Vocal Volume ($V_{ol}$)**:
+*   **Vocal Volume ($`V_{ol}`$)**:
 
 ```math
 V_{ol} = \text{clamp}(0.40 + 0.60 \cdot D + \text{dist\_vol\_mod}, 0.10, 1.00)
@@ -299,26 +299,26 @@ y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \l
 
 where $`t = \frac{i}{\text{fade\_len}}`$ represents the dynamic temporal blend factor. 
 
-The $APRA$ measures the cumulative mathematical alignment precision:
+The $`APRA`$ measures the cumulative mathematical alignment precision:
 
 ```math
 APRA = 1.0 - \frac{1}{3} \left( \left|\frac{R - R_{\text{target}}}{R_{\text{target}}}\right| + \left|\frac{P - P_{\text{target}}}{P_{\text{target}}}\right| + \left|\frac{V_{ol} - V_{\text{ol\_target}}}{V_{\text{ol\_target}}}\right| \right)
 ```
 
-### 2.4 Edge Resource Execution Coefficient ($EREC$)
+### 2.4 Edge Resource Execution Coefficient ($`EREC`$)
 
-The $EREC$ evaluates the computational efficiency of running continuous social cognitive meshes on highly resource-constrained edge robotic deployable hardware (e.g., Jetson AGX Orin):
+The $`EREC`$ evaluates the computational efficiency of running continuous social cognitive meshes on highly resource-constrained edge robotic deployable hardware (e.g., Jetson AGX Orin):
 
 ```math
 EREC = \frac{\theta_{\text{SLO}} \cdot \Omega_{\text{RAM\_limit}} \cdot \Phi_{\text{power\_limit}}}{\text{Latency}_{\text{E2E}} \cdot \text{Footprint}_{\text{RAM}} \cdot \text{Power}_{\text{active}}}
 ```
 
-*   $\theta_{\text{SLO}} = 15.0\text{ ms}$: Maximum end-to-end cognitive routing latency budget.
-*   $\text{Latency}_{\text{E2E}} = 1.208\text{ ms}$: Measured sub-LLM perception-appraisal-decision pathway latency.
+*   $`\theta_{\text{SLO}} = 15.0\text{ ms}`$: Maximum end-to-end cognitive routing latency budget.
+*   $`\text{Latency}_{\text{E2E}} = 1.208\text{ ms}`$: Measured sub-LLM perception-appraisal-decision pathway latency.
 *   $`\Omega_{\text{RAM\_limit}} = 4,096\text{ MB}`$: Standard edge RAM allocation budget.
-*   $\text{Footprint}_{\text{RAM}} = 1,079.58\text{ MB}$: Total active memory footprint of all 8 container services in macOS light-mode.
+*   $`\text{Footprint}_{\text{RAM}} = 1,079.58\text{ MB}`$: Total active memory footprint of all 8 container services in macOS light-mode.
 *   $`\Phi_{\text{power\_limit}} = 35.0\text{ W}`$: NVIDIA Jetson maximum edge TDP power budget.
-*   $\text{Power}_{\text{active}} = 2.50\text{ W}$: Measured active power draw of the decentralized mesh (excluding localized Llama inference GPU power).
+*   $`\text{Power}_{\text{active}} = 2.50\text{ W}`$: Measured active power draw of the decentralized mesh (excluding localized Llama inference GPU power).
 
 ---
 
@@ -327,7 +327,7 @@ EREC = \frac{\theta_{\text{SLO}} \cdot \Omega_{\text{RAM\_limit}} \cdot \Phi_{\t
 We present a comprehensive, multi-dimensional empirical comparison matrix contrasting the **AI Friend CVS-3.0 Sovereign Mesh** against standard humanoid robot platforms and traditional academic architectures. 
 
 > [!NOTE]
-> All CVS-3.0 values represent validated empirical measurements from high-fidelity physical testing ($N=50$ interaction rounds) and massive accelerated simulation ($N=100,000$ iterations) compiled under macOS light-mode and Apple Metal GPU acceleration.
+> All CVS-3.0 values represent validated empirical measurements from high-fidelity physical testing ($`N=50`$ interaction rounds) and massive accelerated simulation ($`N=100,000`$ iterations) compiled under macOS light-mode and Apple Metal GPU acceleration.
 
 | Performance Metric | Humanoid: Furhat (Intel NUC / Win) | Humanoid: Pepper (Atom CPU / ROS1) | Traditional: Pure Vector RAG | Traditional: Zero-Shot PAD | Traditional: ROS2 Humble DDS | **CVS-3.0 (Physical Mode)** | **CVS-3.0 (Accelerated Mode)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |

@@ -23,15 +23,15 @@ graph TD
 ```
 
 ### 1.1 Pillar 1: Accelerated Mathematical Simulation (`--mode accelerated`)
-*   **Evaluation Scope:** $N = 100,000$ sequential dialogue iterations.
+*   **Evaluation Scope:** $`N = 100,000`$ sequential dialogue iterations.
 *   **Testing Setup:** Evaluates the symbolic and sub-symbolic cognitive mathematics (such as ACT-R temporal power-law decay, threat scan triggers, and user Theory of Mind valence/arousal tracking) under high-throughput synthetic loads.
-*   **Execution Duration:** **9.09 seconds** total runtime (bypassing slow external I/O, network latency, and physical LLM generation) utilizing localized math models. With our $O(1)$ constant-time ACT-R queue optimization and running-average computation, all 100,000 iterations run smoothly with minimal CPU overhead, establishing high statistical significance for mathematical error convergence.
+*   **Execution Duration:** **9.09 seconds** total runtime (bypassing slow external I/O, network latency, and physical LLM generation) utilizing localized math models. With our $`O(1)`$ constant-time ACT-R queue optimization and running-average computation, all 100,000 iterations run smoothly with minimal CPU overhead, establishing high statistical significance for mathematical error convergence.
 
 ### 1.2 Pillar 2: Physical Real-Time Interaction (`--mode physical`)
-*   **Evaluation Scope:** $N = 5$ local verification rounds / $N = 50$ full human-in-the-loop trials.
+*   **Evaluation Scope:** $`N = 5`$ local verification rounds / $`N = 50`$ full human-in-the-loop trials.
 *   **Testing Setup:** Hooks into the live containerized microservice stack via the NATS Event Broker. It fires actual sequential conversational prompts, traverses the Neo4j graph database, and invokes the localized Ollama edge LLM (`llama3.2:3b`) under Jetson and iMac M3 host targets.
-*   **Local Verification Runtime ($N=5$):** **$\approx 30.0$ seconds**. To allow background agents to index queries, execute post-response consolidation, and settle cleanly without message-collision, the test script enforces a **6.0-second turn sleep budget** per iteration. Running 5 iterations serves as a structural health check to verify that all databases and brokers are online.
-*   **Paper Target Runtime ($N=50$):** **$300.0$ seconds (5.0 minutes)**. This expanded interaction protocol is used to compile continuous physical telemetry, measuring speech barge-in latencies and paralinguistic tag insertion precision.
+*   **Local Verification Runtime ($`N=5`$):** **$`\approx 30.0`$ seconds**. To allow background agents to index queries, execute post-response consolidation, and settle cleanly without message-collision, the test script enforces a **6.0-second turn sleep budget** per iteration. Running 5 iterations serves as a structural health check to verify that all databases and brokers are online.
+*   **Paper Target Runtime ($`N=50`$):** **$`300.0`$ seconds (5.0 minutes)**. This expanded interaction protocol is used to compile continuous physical telemetry, measuring speech barge-in latencies and paralinguistic tag insertion precision.
 
 ---
 

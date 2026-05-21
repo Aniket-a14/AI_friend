@@ -44,7 +44,7 @@ graph TD
 ```
 
 ### 🧠 1. Accelerated Simulation Benchmarks
-* **Scope**: $N = 100,000$ high-speed iterations.
+* **Scope**: $`N = 100,000`$ high-speed iterations.
 * **Methodology**: Stress-tests high-level symbolic and sub-symbolic cognitive processes under synthetic loads. It injects cluttered vector spaces, emotional prompts, and adversarial dialogue turns to measure mathematical error convergence, classification bounds, and memory index retrieval accuracy.
 * **Key Visuals**: Confirms that memory recall remains scale-invariant and that user Theory of Mind (Valence/Arousal MAE) converges toward ground truth values without clock delays or physical I/O latency.
 
@@ -59,7 +59,7 @@ graph TD
 
 The complete, publication-grade comparison matrix (Table II in the formal report) compares **AI Friend CVS-3.0** against 6 state-of-the-art and legacy conversational robotics platforms across 8 core dimensions.
 
-### Table II: SOTA Comparative Matrix ($N = 100,000$ Accelerated Ticks)
+### Table II: SOTA Comparative Matrix ($`N = 100,000`$ Accelerated Ticks)
 
 | Architecture / Platform | E2E Latency (ms) | TTFT (ms) | Theory of Mind (ToM) MAE | Memory Recall@5 (%) | Barge-In Accuracy (F1) | Ram Footprint (MB) | CPU Peak Load (%) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -73,7 +73,7 @@ The complete, publication-grade comparison matrix (Table II in the formal report
 
 > [!NOTE]
 > * **E2E Latency** represents standard local inference execution (using accelerated `llama3.2:3b` cognitive layers).
-> * **Theory of Mind (ToM) MAE** is the Mean Absolute Error across Valence and Arousal dimensions normalized to $[-1.0, 1.0]$.
+> * **Theory of Mind (ToM) MAE** is the Mean Absolute Error across Valence and Arousal dimensions normalized to $`[-1.0, 1.0]`$.
 > * **CVS-3.0** outperforms standard cloud-based Zero-Shot LLMs by **2.6x in Time-to-First-Token (TTFT)** while requiring a fraction of the hardware footprint.
 
 ---
@@ -102,9 +102,9 @@ The custom cached graph traversal mechanisms in CVS-3.0 bypass typical O(N) data
 
 Under high-stress dialogue scenarios (e.g., threat detection), CVS-3.0's endocrine core dynamically couples the robot's breathing rate and cardiac indicators to human interaction states:
 
-* **Heart Rate (HR)**: Base: 94.8 BPM $\rightarrow$ Peak Stress: **113.3 BPM** $\rightarrow$ Recovery: 91.8 BPM.
-* **Respiration Rate (RR)**: Base: 15.5 breaths/min $\rightarrow$ Peak Stress: **23.7 breaths/min** $\rightarrow$ Recovery: 16.7 breaths/min.
-* **HRV RMSSD**: Base: 47.7 ms $\rightarrow$ Stress Minimum: **38.3 ms** $\rightarrow$ Recovery: 43.7 ms.
+* **Heart Rate (HR)**: Base: 94.8 BPM $`\rightarrow`$ Peak Stress: **113.3 BPM** $`\rightarrow`$ Recovery: 91.8 BPM.
+* **Respiration Rate (RR)**: Base: 15.5 breaths/min $`\rightarrow`$ Peak Stress: **23.7 breaths/min** $`\rightarrow`$ Recovery: 16.7 breaths/min.
+* **HRV RMSSD**: Base: 47.7 ms $`\rightarrow`$ Stress Minimum: **38.3 ms** $`\rightarrow`$ Recovery: 43.7 ms.
 
 ### Paralinguistic Sentiment Insertion Accuracies
 Dynamic vocal filler insertion rate (`Words/Turn`) and tag mapping accuracies:

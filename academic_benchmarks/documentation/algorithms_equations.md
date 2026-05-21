@@ -9,7 +9,7 @@ This document compiles the core mathematical formulations, system equations, and
 The Cognitive Vocal System (CVS) implements a dual-process appraisal model based on **Lazarus' Cognitive-Mediational Theory (1991)**, the **OCC Model (Ortony, Clore, & Collins, 1988)**, and the **EMA computational architecture (Gratch & Marsella, 2004)**. On every sensory or conversational event, the system calculates a 6-variable appraisal vector.
 
 ### 1.1 Primary Appraisal (Lazarus)
-Primary appraisal evaluates the immediate significance of an event for the agent's well-being and active goals*   **Relevance ($R \in [0, 1]$):** Quantifies the attention weight of the event. User-initiated dialogue events are treated as high relevance, while autonomous internal ticks are low relevance:
+Primary appraisal evaluates the immediate significance of an event for the agent's well-being and active goals*   **Relevance ($`R \in [0, 1]`$):** Quantifies the attention weight of the event. User-initiated dialogue events are treated as high relevance, while autonomous internal ticks are low relevance:
 
 ```math
 R = \begin{cases} 
@@ -19,14 +19,14 @@ R = \begin{cases}
 \end{cases}
 ```
 
-*   **Novelty ($N \in [0, 1]$):** Measures semantic distance from recent dialogue history. Calculated as the Jaccard distance against a rolling queue of the $M = 20$ most recent conversational turns:
+*   **Novelty ($`N \in [0, 1]`$):** Measures semantic distance from recent dialogue history. Calculated as the Jaccard distance against a rolling queue of the $`M = 20`$ most recent conversational turns:
 
 ```math
 N = 1 - \max_{h \in \mathcal{H}} \frac{|\mathcal{W}_{\text{event}} \cap \mathcal{W}_h|}{|\mathcal{W}_{\text{event}} \cup \mathcal{W}_h|}
 ```
 
-    where $\mathcal{W}_{\text{event}}$ is the set of lowercase keywords in the active utterance, and $\mathcal{W}_h$ is the keyword set of historical turn $h$.
-*   **Goal Congruence ($G \in [-1, 1]$):** Represents how much the event advances or hinders the agent's core social goal. It maps directly from emotional bias $E_b$ (extracted via acoustic pitch/sentiment trackers):
+    where $`\mathcal{W}_{\text{event}}`$ is the set of lowercase keywords in the active utterance, and $`\mathcal{W}_h`$ is the keyword set of historical turn $`h`$.
+*   **Goal Congruence ($`G \in [-1, 1]`$):** Represents how much the event advances or hinders the agent's core social goal. It maps directly from emotional bias $`E_b`$ (extracted via acoustic pitch/sentiment trackers):
 
 ```math
 G = \text{clamp}(E_b, -1.0, 1.0)
@@ -35,7 +35,7 @@ G = \text{clamp}(E_b, -1.0, 1.0)
 ### 1.2 Secondary Appraisal (Lazarus/OCC/EMA)
 Secondary appraisal evaluates the agent's coping potential, social norms, and relational impact.
 
-*   **Agency ($A \in [0, 1]$):** Attributes causal responsibility. For user messages, the agent holds high coping agency since it can generate a verbal response; for system ticks, agency is lower:
+*   **Agency ($`A \in [0, 1]`$):** Attributes causal responsibility. For user messages, the agent holds high coping agency since it can generate a verbal response; for system ticks, agency is lower:
 
 ```math
 A = \begin{cases} 
@@ -44,15 +44,15 @@ A = \begin{cases}
 \end{cases}
 ```
 
-*   **Norm Alignment ($NA \in [0, 1]$):** Represents social praiseworthiness and boundary respect. Evaluated by matching user input keywords against a set of $B$ configured identity boundaries (e.g., toxic, personal boundaries). Every keyword violation decreases norm alignment:
+*   **Norm Alignment ($`NA \in [0, 1]`$):** Represents social praiseworthiness and boundary respect. Evaluated by matching user input keywords against a set of $`B`$ configured identity boundaries (e.g., toxic, personal boundaries). Every keyword violation decreases norm alignment:
 
 ```math
 NA = \max\left(0.0, 1.0 - 0.2 \cdot \sum_{b \in B} \mathbb{I}(\text{Violation}(b))\right)
 ```
 
-    where $\mathbb{I}(\cdot)$ is the indicator function.
+    where $`\mathbb{I}(\cdot)`$ is the indicator function.
 
-*   **Relationship Impact ($RI \in [-1, 1]$):** extension that projects the social valence of the interaction. Modulated by existing relational trust $T$:
+*   **Relationship Impact ($`RI \in [-1, 1]`$):** extension that projects the social valence of the interaction. Modulated by existing relational trust $`T`$:
 
 ```math
 RI = \begin{cases} 
@@ -62,7 +62,7 @@ RI = \begin{cases}
 ```
 
 ### 1.3 System 2 Deliberative Reappraisal (LLM Hot-Path Drift)
-For deep semantic reasoning, CVS-3.0 runs an asynchronous deliberative reappraisal cycle. It queries the fast LLM to grade three dimensions on $[-1.0, 1.0]$: goal congruence ($G_{\text{delib}}$), norm alignment ($NA_{\text{delib}}$), and expectedness ($E_{\text{delib}}$). These values act as coordinates pulling the active PAD emotional state via a drift coefficient $\eta = 0.2$:
+For deep semantic reasoning, CVS-3.0 runs an asynchronous deliberative reappraisal cycle. It queries the fast LLM to grade three dimensions on $`[-1.0, 1.0]`$: goal congruence ($`G_{\text{delib}}`$), norm alignment ($`NA_{\text{delib}}`$), and expectedness ($`E_{\text{delib}}`$). These values act as coordinates pulling the active PAD emotional state via a drift coefficient $`\eta = 0.2`$:
 
 ```math
 \vec{T}_{\text{PAD}} = \begin{bmatrix} G_{\text{delib}} \\ -E_{\text{delib}} \\ NA_{\text{delib}} \end{bmatrix}
@@ -81,19 +81,19 @@ CVS-3.0 maintains cognitive continuity through a multi-dimensional state vector 
 ### 2.1 PAD Affective Space Updates (Gebhard's ALMA Mood-Pull)
 Internal emotional states are modeled using Mehrabian & Russell's (1974) **3D PAD (Valence-Arousal-Dominance) space**. Continuous updates are governed by Gebhard's (2005) ALMA mood-pull equations, using custom psychological drift rates:
 
-*   **Valence ($V \in [-1.0, 1.0]$):** Governed by goal congruence and relationship impact, with drift rate $\alpha = 0.3$:
+*   **Valence ($`V \in [-1.0, 1.0]`$):** Governed by goal congruence and relationship impact, with drift rate $`\alpha = 0.3`$:
 
 ```math
 V(t) = (1 - \alpha) \cdot V(t-1) + \alpha \cdot (0.6 \cdot G + 0.4 \cdot RI)
 ```
 
-*   **Arousal ($Ar \in [0, 1]$):** Governed by event novelty and attention relevance, with drift rate $\beta = 0.5$:
+*   **Arousal ($`Ar \in [0, 1]`$):** Governed by event novelty and attention relevance, with drift rate $`\beta = 0.5`$:
 
 ```math
 Ar(t) = (1 - \beta) \cdot Ar(t-1) + \beta \cdot (0.6 \cdot N + 0.4 \cdot R)
 ```
 
-*   **Dominance ($D \in [0, 1]$):** Governed by causal agency and norm boundaries, with drift rate $\gamma = 0.2$:
+*   **Dominance ($`D \in [0, 1]`$):** Governed by causal agency and norm boundaries, with drift rate $`\gamma = 0.2`$:
 
 ```math
 D(t) = (1 - \gamma) \cdot D(t-1) + \gamma \cdot (0.6 \cdot A + 0.4 \cdot NA)
@@ -102,32 +102,32 @@ D(t) = (1 - \gamma) \cdot D(t-1) + \gamma \cdot (0.6 \cdot A + 0.4 \cdot NA)
 ### 2.2 Relational Trust & Attachment Dynamics
 To model secure human-robot bonds, we implement a multi-dimensional trust space based on **Marsh's Formal Trust Model (1994)** and secure attachment styles based on **Bowlby's Attachment Theory**:
 
-*   **Dimensional Trust:** Trust is decomposed into three components updating with rate $\delta = 0.1$:
-    *   **Trust Benevolence ($T_b$):** Sensitivity to emotional relationship impact:
+*   **Dimensional Trust:** Trust is decomposed into three components updating with rate $`\delta = 0.1`$:
+    *   **Trust Benevolence ($`T_b`$):** Sensitivity to emotional relationship impact:
 
 ```math
 T_b(t) = \text{clamp}(T_b(t-1) + \delta \cdot RI, 0.0, 1.0)
 ```
 
-    *   **Trust Competence ($T_c$):** Sensitivity to conversational helpfulness and goal congruence:
+    *   **Trust Competence ($`T_c`$):** Sensitivity to conversational helpfulness and goal congruence:
 
 ```math
 T_c(t) = \text{clamp}(T_c(t-1) + \delta \cdot (0.6 \cdot G + 0.4 \cdot R), 0.0, 1.0)
 ```
 
-    *   **Trust Integrity ($T_i$):** Sensitivity to boundary adherence:
+    *   **Trust Integrity ($`T_i`$):** Sensitivity to boundary adherence:
 
 ```math
 T_i(t) = \text{clamp}(T_i(t-1) + \delta \cdot NA, 0.0, 1.0)
 ```
 
-    *   **Scalar Combined Trust ($T$):** The average of the three components:
+    *   **Scalar Combined Trust ($`T`$):** The average of the three components:
 
 ```math
 T(t) = \frac{T_b(t) + T_c(t) + T_i(t)}{3.0}
 ```
 
-*   **Bowlby Secure Attachment ($At \in [0, 1]$):** Attachment builds slowly over time based on interaction frequency and trust, with growth rate $\epsilon = 0.03$:
+*   **Bowlby Secure Attachment ($`At \in [0, 1]`$):** Attachment builds slowly over time based on interaction frequency and trust, with growth rate $`\epsilon = 0.03`$:
 
 ```math
 At(t) = \text{clamp}\left(At(t-1) + \epsilon \cdot T(t) \cdot \min\left(1.0, \frac{\text{Interactions}}{100}\right), 0.0, 1.0\right)
@@ -136,7 +136,7 @@ At(t) = \text{clamp}\left(At(t-1) + \epsilon \cdot T(t) \cdot \min\left(1.0, \fr
 ### 2.3 Endocrine Homeostasis & Hormonal Coupling
 Three continuous hormones modulate the LLM's generation hyperparameters (temperature, top_p, penalty) to model physical cognitive constraints:
 
-*   **Fatigue Cycle ($F \in [0, 1]$):** Metabolic wear-and-tear accumulated during active turns and recovered during idle intervals. Governed by a circadian multiplier $\mu_{\text{circadian}}$ (set to $1.8$ at night $22:00\text{--}06:00$, otherwise $1.0$):
+*   **Fatigue Cycle ($`F \in [0, 1]`$):** Metabolic wear-and-tear accumulated during active turns and recovered during idle intervals. Governed by a circadian multiplier $`\mu_{\text{circadian}}`$ (set to $`1.8`$ at night $`22:00\text{--}06:00`$, otherwise $`1.0`$):
 
 ```math
 F(t) = \begin{cases} 
@@ -145,9 +145,9 @@ F(t) = \begin{cases}
 \end{cases}
 ```
 
-    where $\Delta t$ is the elapsed time in seconds.
+    where $`\Delta t`$ is the elapsed time in seconds.
 
-*   **Cortisol Coupling ($C \in [0, 1]$):** Represents stress levels. Spikes under negative valence ($V < 0$) and metabolic fatigue ($F$):
+*   **Cortisol Coupling ($`C \in [0, 1]`$):** Represents stress levels. Spikes under negative valence ($`V < 0`$) and metabolic fatigue ($`F`$):
 
 ```math
 C(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right)
@@ -155,7 +155,7 @@ C(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right
 
     *Hyperparameter mapping:* High cortisol reduces LLM generation temperature to enforce strict, defensive responses; low cortisol increases temperature to support warm, creative responses.
 
-*   **Dopamine Coupling ($D_{\text{dopamine}} \in [0, 1]$):** Represents reward tracking. Mapped from positive valence ($V > 0$) combined with fatigue-modulated arousal $Ar_{\text{actual}}$:
+*   **Dopamine Coupling ($`D_{\text{dopamine}} \in [0, 1]`$):** Represents reward tracking. Mapped from positive valence ($`V > 0`$) combined with fatigue-modulated arousal $`Ar_{\text{actual}}`$:
 
 ```math
 Ar_{\text{actual}}(t) = \text{clamp}(Ar(t) + 0.2 \cdot F(t), 0.0, 1.0) \quad \text{(fatigue induces restlessness)}
@@ -168,13 +168,13 @@ D_{\text{dopamine}}(t) = \text{clamp}(\max(0.0, V(t)) \cdot Ar_{\text{actual}}(t
     *Hyperparameter mapping:* High dopamine increases LLM `top_p` to enable playful and exploratory phrasing.
 
 ### 2.4 Idle State Decay (ALMA Decay)
-During prolonged silence, internal mood converges back to the neutral baseline through exponential decay with decay coefficient $\lambda_{\text{decay}} = 0.05 \text{ hr}^{-1}$:
+During prolonged silence, internal mood converges back to the neutral baseline through exponential decay with decay coefficient $`\lambda_{\text{decay}} = 0.05 \text{ hr}^{-1}`$:
 
 ```math
 V(t) = V(0) \cdot e^{-\lambda_{\text{decay}} \cdot \Delta t}
 ```
 
-where $\Delta t$ is the silence duration in hours. Dominance remains stable as it behaves as a personality trait, while relational trust experiences a very slow drift ($0.01 \text{ hr}^{-1}$) back to the baseline of $0.5$.
+where $`\Delta t`$ is the silence duration in hours. Dominance remains stable as it behaves as a personality trait, while relational trust experiences a very slow drift ($`0.01 \text{ hr}^{-1}`$) back to the baseline of $`0.5`$.
 
 ---
 
@@ -183,7 +183,7 @@ where $\Delta t$ is the silence duration in hours. Dominance remains stable as i
 The decision layer selects the optimal conversational goal (**ENGAGE**, **COMFORT**, **INFORM**, **TEASE**, **PROTECT**) by executing Multi-Attribute Utility Theory (MAUT; Keeney & Raiffa, 1976).
 
 ### 3.1 Core MAUT Goal Scoring
-For each goal candidate $g \in \mathcal{G}$, we compute a multi-attribute utility score $U(g)$ representing a weighted linear combination of four cognitive dimensions:
+For each goal candidate $`g \in \mathcal{G}`$, we compute a multi-attribute utility score $`U(g)`$ representing a weighted linear combination of four cognitive dimensions:
 
 ```math
 U(g) = w_G \cdot S_G(g) + w_E \cdot S_E(g) + w_I \cdot S_I(g) + w_C \cdot S_C(g)
@@ -195,18 +195,18 @@ where the weights are configured to maintain system integrity:
 w_G = 0.3, \quad w_E = 0.3, \quad w_I = 0.2, \quad w_C = 0.2 \quad \left(\sum w_i = 1.0\right)
 ```
 
-The scores $S$ for each attribute are defined dynamically based on the current state:
+The scores $`S`$ for each attribute are defined dynamically based on the current state:
 
-| Goal ($g$) | Goal Congruence ($S_G$) | Emotion Fit ($S_E$) | Identity Fit ($S_I$) | Context Relevance ($S_C$) |
+| Goal ($`g`$) | Goal Congruence ($`S_G`$) | Emotion Fit ($`S_E`$) | Identity Fit ($`S_I`$) | Context Relevance ($`S_C`$) |
 | :--- | :--- | :--- | :--- | :--- |
-| **ENGAGE** | $\max(0, G + 0.5)$ | $0.5 + 0.3 \cdot V + 0.2 \cdot Ar$ | $NA$ | $R$ |
-| **COMFORT** | $\max(0, -G + 0.5)$ | $\max(0, -V + 0.5) \cdot (1.2 - 0.4 \cdot Ar)$ | $NA$ | $0.8 \cdot R$ |
-| **INFORM** | $\max(0, 0.5 \cdot G + 0.3)$ | $0.4 + 0.2 \cdot Ar$ | $NA$ | $R \cdot N$ |
-| **TEASE** | $\max(0, 0.3 \cdot G)$ | $\max(0, 0.3 \cdot V + 0.2 \cdot Ar)$ | $NA \cdot T$ | $0.3 \cdot (1 - R)$ |
-| **PROTECT** | $0.2$ | $0.2 + 0.1 \cdot Ar$ | $\max(0, 1.0 - NA)$ | $0.5 \cdot R$ |
+| **ENGAGE** | $`\max(0, G + 0.5)`$ | $`0.5 + 0.3 \cdot V + 0.2 \cdot Ar`$ | $`NA`$ | $`R`$ |
+| **COMFORT** | $`\max(0, -G + 0.5)`$ | $`\max(0, -V + 0.5) \cdot (1.2 - 0.4 \cdot Ar)`$ | $`NA`$ | $`0.8 \cdot R`$ |
+| **INFORM** | $`\max(0, 0.5 \cdot G + 0.3)`$ | $`0.4 + 0.2 \cdot Ar`$ | $`NA`$ | $`R \cdot N`$ |
+| **TEASE** | $`\max(0, 0.3 \cdot G)`$ | $`\max(0, 0.3 \cdot V + 0.2 \cdot Ar)`$ | $`NA \cdot T`$ | $`0.3 \cdot (1 - R)`$ |
+| **PROTECT** | $`0.2`$ | $`0.2 + 0.1 \cdot Ar`$ | $`\max(0, 1.0 - NA)`$ | $`0.5 \cdot R`$ |
 
 ### 3.2 Intent Persistence with Context Gating
-To prevent erratic goal switching during rapid dialogue turns, we implement temporal smoothing with a persistence rate $\rho = 0.15$ coupled with a hard context gating threshold $\theta_{\text{shift}} = 0.3$ (using Novelty $N$ as the shift proxy):
+To prevent erratic goal switching during rapid dialogue turns, we implement temporal smoothing with a persistence rate $`\rho = 0.15`$ coupled with a hard context gating threshold $`\theta_{\text{shift}} = 0.3`$ (using Novelty $`N`$ as the shift proxy):
 
 ```math
 U_{\text{final}}(g, t) = \begin{cases} 
@@ -228,22 +228,22 @@ g^*(t) = \arg\max_{g \in \mathcal{G}} U_{\text{final}}(g, t)
 To retrieve highly relevant episodic memory chunks from the Neo4j graph, we govern retrieval using the **ACT-R cognitive architecture's sub-symbolic activation theory (Anderson et al., 2004)**.
 
 ### 4.1 Base Activation Equation
-The total activation $A_i$ of a memory chunk $i$ at retrieval is formulated as:
+The total activation $`A_i`$ of a memory chunk $`i`$ at retrieval is formulated as:
 
 ```math
 A_i = \ln \left( \sum_{j=1}^{n} t_j^{-d} \right) + \sum_{k} W_k \cdot S_{ki} + C_{\text{emo}} \cdot \left(1 - \left\| \vec{PAD}_{\text{agent}} - \vec{PAD}_{\text{memory}} \right\|_2\right) + \epsilon
 ```
 
-*   **Temporal Logarithmic Decay:** $\ln \left( \sum_{j=1}^{n} t_j^{-d} \right)$ represents the power-law decay of availability. $t_j$ is the time elapsed (in seconds) since the $j$-th retrieval of the memory, and $d = 0.5$ is the standard ACT-R decay constant.
-*   **Associative Attentional Weighting:** $\sum_{k} W_k S_{ki}$ calculates retrieval cue association, where $W_k$ represents context attention weights and $S_{ki}$ is graph proximity (hop depth factor) of context keys.
+*   **Temporal Logarithmic Decay:** $`\ln \left( \sum_{j=1}^{n} t_j^{-d} \right)`$ represents the power-law decay of availability. $`t_j`$ is the time elapsed (in seconds) since the $`j`$-th retrieval of the memory, and $`d = 0.5`$ is the standard ACT-R decay constant.
+*   **Associative Attentional Weighting:** $`\sum_{k} W_k S_{ki}`$ calculates retrieval cue association, where $`W_k`$ represents context attention weights and $`S_{ki}`$ is graph proximity (hop depth factor) of context keys.
 *   **Emotional Congruency:** Mapped as the Euclidean distance between the active 3D PAD vector of the agent and the PAD vector stored at encoding:
 
 ```math
 \left\| \vec{PAD}_{\text{agent}} - \vec{PAD}_{\text{memory}} \right\|_2 = \sqrt{(V_{\text{agent}} - V_i)^2 + (Ar_{\text{agent}} - Ar_i)^2 + (D_{\text{agent}} - D_i)^2}
 ```
 
-    where $C_{\text{emo}} = 0.15$ acts as the affective scale modifier.
-*   **Cognitive Noise:** $\epsilon$ is a stochastic noise variable drawn from a normal distribution $\epsilon \sim \mathcal{N}(0, 0.02^2)$.
+    where $`C_{\text{emo}} = 0.15`$ acts as the affective scale modifier.
+*   **Cognitive Noise:** $`\epsilon`$ is a stochastic noise variable drawn from a normal distribution $`\epsilon \sim \mathcal{N}(0, 0.02^2)`$.
 
 ### 4.2 Gating and Retrieval Probability
 A memory chunk is eligible for injection into the prompt context if its activation exceeds the retrieval threshold:
@@ -252,13 +252,13 @@ A memory chunk is eligible for injection into the prompt context if its activati
 A_i > \theta_{\text{gating}} = -1.5
 ```
 
-The retrieval probability $P(i)$ follows the logistic Boltzmann distribution:
+The retrieval probability $`P(i)`$ follows the logistic Boltzmann distribution:
 
 ```math
 P(i) = \frac{1}{1 + \exp\left(-\frac{A_i - \theta_{\text{gating}}}{s}\right)}
 ```
 
-where $s = 0.05$ represents the stochastically scaled cognitive noise. Memory retrieval recall remains robust even under massive clutters, as evaluated dynamically:
+where $`s = 0.05`$ represents the stochastically scaled cognitive noise. Memory retrieval recall remains robust even under massive clutters, as evaluated dynamically:
 
 ![Memory Search Recall@K Curves](../plots/cognitive_rag_recall.png)
 
@@ -269,32 +269,32 @@ where $s = 0.05$ represents the stochastically scaled cognitive noise. Memory re
 CVS-3.0 manages low-latency, natural voice turn-taking through a dual-loop System 1 DSP hardware hook and System 2 semantic conflict resolver.
 
 ### 5.1 System 1 DSP Audio energy detection
-A continuous audio frame stream is processed inside a microsecond-level loop. We compute the Root-Mean-Square (RMS) energy of the incoming audio frame of size $N$:
+A continuous audio frame stream is processed inside a microsecond-level loop. We compute the Root-Mean-Square (RMS) energy of the incoming audio frame of size $`N`$:
 
 ```math
 \text{RMS} = \sqrt{\frac{1}{N} \sum_{k=1}^N x[k]^2}
 ```
 
-If $\text{RMS} > \text{Threshold}_{\text{silence}}$, a System 1 interruption is triggered. The active Text-to-Speech (TTS) engine immediately halts physical audio playback, capturing the exact epoch $t_{\text{stop}}$.
+If $`\text{RMS} > \text{Threshold}_{\text{silence}}`$, a System 1 interruption is triggered. The active Text-to-Speech (TTS) engine immediately halts physical audio playback, capturing the exact epoch $`t_{\text{stop}}`$.
 
 ### 5.2 System 2 Speculative Conflict Resolution
 To distinguish a genuine user turn from background room acoustics or conversational agreements (e.g. "I agree" or "Hmm"), a speculative System 2 background segmenter evaluates the early verbal transcript.
 If a semantic command or pivot word (e.g., "stop", "wait", "hold", "listen", "sunno") is matched at the beginning of the utterance, the interruption is **Confirmed**. If the early transcript indicates a conversational filler or buried query that does not represent a turn pivot, playback is **Unmuted gracefully** with a crossfade.
 
-### 5.3 Interruption Coherence Index ($ICI$)
+### 5.3 Interruption Coherence Index ($`ICI`$)
 The efficiency of turn-taking and physical stopping response speed is evaluated via the Interruption Coherence Index:
 
 ```math
 ICI = \gamma \cdot \left(1 - P_{\text{false\_trigger}}\right) \cdot \exp\left(-\frac{\left|t_{\text{stop}} - t_{\text{interject}}\right|}{\tau_{\text{overlap}}}\right)
 ```
 
-*   $\gamma \in [0, 1]$: Cosine similarity between user interjection embeddings and active agent goal intents.
+*   $`\gamma \in [0, 1]`$: Cosine similarity between user interjection embeddings and active agent goal intents.
 *   $`P_{\text{false\_trigger}}`$: Probability of false-triggering due to background acoustics.
-*   $t_{\text{stop}} - t_{\text{interject}}$: Turn response gap (in milliseconds) between when the user physically started speaking and when the TTS stopped.
-*   $\tau_{\text{overlap}} = 200.0\text{ ms}$: Human turn-taking overlap baseline constant.
+*   $`t_{\text{stop}} - t_{\text{interject}}`$: Turn response gap (in milliseconds) between when the user physically started speaking and when the TTS stopped.
+*   $`\tau_{\text{overlap}} = 200.0\text{ ms}`$: Human turn-taking overlap baseline constant.
 
 ### 5.4 Acoustic prosody crossfading (OLA Crossfade)
-To prevent phase discontinuities or popping noises when shifting voice styles dynamically, we apply a **10 ms linear Overlap-Add (OLA) crossfade** between the previous synthesis buffer $x_{\text{prev}}$ and the newly modified prosody buffer $x_{\text{curr}}$:
+To prevent phase discontinuities or popping noises when shifting voice styles dynamically, we apply a **10 ms linear Overlap-Add (OLA) crossfade** between the previous synthesis buffer $`x_{\text{prev}}`$ and the newly modified prosody buffer $`x_{\text{curr}}`$:
 
 ```math
 y[i] = \left(1 - \frac{i}{\text{fade\_len}}\right) \cdot x_{\text{prev}}[i] + \frac{i}{\text{fade\_len}} \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade\_len}
