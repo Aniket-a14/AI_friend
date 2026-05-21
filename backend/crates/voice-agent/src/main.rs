@@ -279,6 +279,74 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+fn load_vocalization_pcm(name: &str, sample_rate: u32) -> Vec<u8> {
+    let paths = [
+        format!("output/{}.wav", name),
+        format!("assets/{}.wav", name),
+        format!("{}.wav", name),
+    ];
+    for path in &paths {
+        if let Ok(data) = std::fs::read(path) {
+            if let Some(pcm) = extract_wav_data(&data) {
+                info!("Successfully loaded vocalization {} from {}", name, path);
+                return pcm;
+            } else {
+                warn!("WAV file at {} found, but missing data chunk or invalid format.", path);
+            }
+        }
+    }
+    warn!("Vocalization file not found: {}. Generating synthetic fallback.", name);
+    let num_samples = (sample_rate as f32 * 0.5) as usize;
+    let mut pcm = Vec::with_capacity(num_samples * 2);
+    for i in 0..num_samples {
+        let val = (((i * 1103515245 + 12345) / 65536) % 2001) as i32 - 1000;
+        pcm.extend_from_slice(&(val as i16).to_le_bytes());
+    }
+    pcm
+}
+
+fn extract_wav_data(data: &[u8]) -> Option<Vec<u8>> {
+    // Minimal RIFF/WAV parser: find "data" chunk and return its contents
+    if data.len() < 12 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
+        return None;
+    }
+    let mut pos = 12;
+    while pos + 8 <= data.len() {
+        let chunk_id = &data[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([
+            data[pos + 4],
+            data[pos + 5],
+            data[pos + 6],
+            data[pos + 7],
+        ]) as usize;
+        if chunk_id == b"data" {
+            let start = pos + 8;
+            let end = (start + chunk_size).min(data.len());
+            return Some(data[start..end].to_vec());
+        }
+        pos += 8 + chunk_size;
+        if chunk_size % 2 != 0 {
+            pos += 1; // RIFF chunks are word-aligned
+        }
+    }
+    None
+}
+
+fn generate_hesitation_pcm(duration_ms: u32, sample_rate: u32, pitch: f64) -> Vec<u8> {
+    let num_samples = (sample_rate as f64 * (duration_ms as f64 / 1000.0)) as usize;
+    let mut pcm = Vec::with_capacity(num_samples * 2);
+    let f0 = 150.0 * pitch;
+    let omega = 2.0 * std::f64::consts::PI * f0 / (sample_rate as f64);
+    
+    for i in 0..num_samples {
+        let sine = (omega * i as f64).sin() * 300.0;
+        let noise = (((i * 1103515245 + 12345) / 65536) % 201) as f64 - 100.0;
+        let val = (sine + noise) as i16;
+        pcm.extend_from_slice(&val.to_le_bytes());
+    }
+    pcm
+}
+
 async fn handle_chat_output(
     config: &VoiceConfig,
     http: &Client,
@@ -327,6 +395,18 @@ async fn handle_chat_output(
                 let pcm = contracts::silence_pcm(ms, config.sample_rate);
                 publish_pcm(jetstream, pcm, &event).await?;
             }
+            TemporalPart::Vocalization(name) => {
+                ola_filter.clear_history();
+                let mut pcm = load_vocalization_pcm(&name, config.sample_rate);
+                pcm = reverb_filter.process(&pcm, 0.1);
+                publish_pcm(jetstream, pcm, &event).await?;
+            }
+            TemporalPart::Hesitation(ms) => {
+                ola_filter.clear_history();
+                let pcm = generate_hesitation_pcm(ms, config.sample_rate, prosody.pitch);
+                let pcm = reverb_filter.process(&pcm, 0.1);
+                publish_pcm(jetstream, pcm, &event).await?;
+            }
             TemporalPart::Text(text) => {
                 let mut response = synthesize_stream(
                     config,
@@ -368,10 +448,12 @@ async fn handle_chat_output(
 enum TemporalPart {
     Text(String),
     Silence(u32),
+    Vocalization(String),
+    Hesitation(u32),
 }
 
 fn split_temporal_parts(text: &str) -> Result<Vec<TemporalPart>> {
-    let re = Regex::new(r"(<pause=\d+ms>|<hesitate>)")?;
+    let re = Regex::new(r"(<pause=\d+ms>|<hesitate>|<breath_fast>|<sigh_soft>)")?;
     let mut parts = Vec::new();
     let mut last = 0;
 
@@ -381,7 +463,11 @@ fn split_temporal_parts(text: &str) -> Result<Vec<TemporalPart>> {
         }
         let token = mat.as_str();
         if token == "<hesitate>" {
-            parts.push(TemporalPart::Silence(350));
+            parts.push(TemporalPart::Hesitation(350));
+        } else if token == "<breath_fast>" {
+            parts.push(TemporalPart::Vocalization("breath_fast".to_string()));
+        } else if token == "<sigh_soft>" {
+            parts.push(TemporalPart::Vocalization("sigh_soft".to_string()));
         } else {
             let ms = token
                 .trim_start_matches("<pause=")
@@ -504,7 +590,7 @@ mod tests {
                 TemporalPart::Text("hello".to_string()),
                 TemporalPart::Silence(20),
                 TemporalPart::Text("there".to_string()),
-                TemporalPart::Silence(350),
+                TemporalPart::Hesitation(350),
             ]
         );
     }

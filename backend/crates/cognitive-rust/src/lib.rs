@@ -291,6 +291,11 @@ pub fn compute_vector_delta(v1: Vec<f64>, v2: Vec<f64>) -> f64 {
     sum / v1.len() as f64
 }
 
+#[pyfunction]
+pub fn evaluate_acoustic_reflex(rms: f64, _zcr: f64, threshold: f64) -> bool {
+    rms > threshold
+}
+
 #[pymodule]
 fn cognitive_rust(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<AppraisalVector>()?;
@@ -302,6 +307,7 @@ fn cognitive_rust(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(apply_alma_decay, module)?)?;
     module.add_function(wrap_pyfunction!(update_fatigue, module)?)?;
     module.add_function(wrap_pyfunction!(compute_vector_delta, module)?)?;
+    module.add_function(wrap_pyfunction!(evaluate_acoustic_reflex, module)?)?;
     Ok(())
 }
 

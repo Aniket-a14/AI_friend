@@ -40,6 +40,10 @@ class SubconsciousAgent(BaseAgent):
         self.reflection_service = reflection_service
         self.db_store = None
         self._is_consolidating = False
+        self._current_monologue_task = None
+        self._current_dream_task = None
+        self._last_monologue_time = 0.0
+        self._monologue_task = None
 
     @property
     def llm(self):
@@ -78,6 +82,19 @@ class SubconsciousAgent(BaseAgent):
             durable=f"{self.name}_system_tick",
             deliver_policy="new",
         )
+        await self.subscribe(
+            Topics.CHAT_INPUT,
+            self._on_chat_input,
+            durable=f"{self.name}_chat_input",
+            deliver_policy="new",
+        )
+        await self.subscribe(
+            Topics.AUDIO_PERCEPTION,
+            self._on_audio_perception,
+            durable=f"{self.name}_audio_perception_monologue",
+            deliver_policy="new",
+        )
+        self._monologue_task = asyncio.create_task(self._continuous_monologue_loop())
         logger.info(f"🧠 {self.name} Online | Subconscious Mesh Interface Active.")
 
     async def _on_system_tick(self, data: Dict[str, Any]):
@@ -204,7 +221,157 @@ class SubconsciousAgent(BaseAgent):
         finally:
             self._is_consolidating = False
 
+    async def _on_chat_input(self, data: Dict[str, Any]):
+        """Cancel active monologue or dream generation when user speaks/sends message."""
+        metadata = data.get("metadata", {})
+        source = metadata.get("source") if isinstance(metadata, dict) else None
+        if source != "subconscious":
+            self._cancel_active_subconscious_tasks()
+
+    async def _on_audio_perception(self, data: Dict[str, Any]):
+        """Cancel active monologue or dream generation immediately on early user audio detection."""
+        self._cancel_active_subconscious_tasks()
+
+    def _cancel_active_subconscious_tasks(self):
+        if self._current_monologue_task and not self._current_monologue_task.done():
+            logger.info("[Subconscious] User activity detected. Cancelling active monologue thought task.")
+            self._current_monologue_task.cancel()
+        if self._current_dream_task and not self._current_dream_task.done():
+            logger.info("[Subconscious] User activity detected. Cancelling active dream sequence task.")
+            self._current_dream_task.cancel()
+
+    async def _continuous_monologue_loop(self):
+        logger.info("[Subconscious] Continuous monologue and dreaming loop started.")
+        while True:
+            try:
+                await asyncio.sleep(5)
+                
+                # Check for silence duration
+                last_interact = self.state_service.current_state.last_user_interaction
+                silence_duration = time.time() - last_interact
+                
+                # Check current fatigue
+                state_snap = self.state_service.get_context_snapshot()
+                fatigue = state_snap.get("fatigue", 0.0)
+                
+                # Dreaming vs Monologue Logic
+                if fatigue > 0.8:
+                    # Sleep-state dreaming (requires 30s user inactivity)
+                    if silence_duration >= 30:
+                        if self._current_dream_task and not self._current_dream_task.done():
+                            continue
+                        self._current_dream_task = asyncio.create_task(self._run_dream_sequence())
+                else:
+                    # Normal monologue (requires 30s user inactivity)
+                    now = time.time()
+                    if silence_duration >= 30 and (now - self._last_monologue_time) >= 30:
+                        if self._current_monologue_task and not self._current_monologue_task.done():
+                            continue
+                        self._current_monologue_task = asyncio.create_task(self._generate_monologue_thought())
+                        self._last_monologue_time = now
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[Subconscious Loop] Monologue/Dream loop error: {e}")
+
+    async def _generate_monologue_thought(self):
+        try:
+            state_snap = self.state_service.get_context_snapshot()
+            emotion = state_snap.get("emotion", "neutral")
+            energy = state_snap.get("energy", 0.5)
+            
+            prompt = f"""
+            You are the subconscious inner monologue of an AI friend.
+            The user has been silent for a while.
+            Your current emotion is {emotion} and your energy is {energy:.2f}.
+            Formulate a single brief internal thought or self-reflection about the user, your friendship, or what you're thinking right now.
+            Respond with ONLY the thought, no quotes, no conversational filler.
+            """.strip()
+            
+            thought = await self._llm.generate(
+                prompt,
+                system="You are an internal monologue generator. Output ONLY the thought string.",
+            )
+            thought = thought.strip().strip("\"'")
+            if thought:
+                logger.info(f"[Monologue] Thought generated: '{thought}'")
+                await self.publish(Topics.STATE_SUBCONSCIOUS, {"thought": thought, "timestamp": time.time()})
+        except asyncio.CancelledError:
+            logger.info("[Monologue] Thought generation cancelled due to user activity.")
+            raise
+        except Exception as e:
+            logger.error(f"[Monologue] Generation error: {e}")
+
+    async def _run_dream_sequence(self):
+        try:
+            logger.info("[Subconscious] Running dream sequence...")
+            query = "MATCH (e:Entity) WITH e, rand() as r ORDER BY r LIMIT 3 RETURN e.name as name"
+            records = await self.graph_db.execute_query(query)
+            nodes = [record["name"] for record in records]
+            
+            if len(nodes) < 3:
+                logger.info("[Subconscious] Not enough knowledge graph entities to dream (< 3). Skipping dream.")
+                return
+            
+            concept1, concept2, concept3 = nodes[0], nodes[1], nodes[2]
+            
+            prompt = f"""
+            You are the subconscious dreaming state of an AI friend.
+            You are currently asleep and your mind is processing memories.
+            Connect these three distinct concepts in a creative 'dream insight':
+            - Concept A: "{concept1}"
+            - Concept B: "{concept2}"
+            - Concept C: "{concept3}"
+            
+            Synthesize a brief, insightful, and slightly surreal dream description (2-3 sentences max) linking these concepts.
+            Format it as a personal reflection.
+            Respond with ONLY the dream insight text.
+            """.strip()
+            
+            dream_text = await self._llm.generate(
+                prompt,
+                system="You are in a subconscious dream state. Synthesize a creative link between the concepts.",
+            )
+            dream_text = dream_text.strip().strip("\"'")
+            if dream_text:
+                logger.info(f"[Dream Insight] Link: '{dream_text}'")
+                
+                await self.memory_store.add_memory(
+                    content=f"[Dream Insight] {dream_text}",
+                    importance=0.6,
+                    emotion=0.4,
+                    source="subconscious_dream"
+                )
+                logger.info("[Subconscious] Dream insight successfully persisted.")
+        except asyncio.CancelledError:
+            logger.info("[Subconscious] Dream sequence cancelled due to user activity.")
+            raise
+        except Exception as e:
+            logger.error(f"[Subconscious] Error in dream sequence: {e}")
+
     async def stop(self):
+        if self._monologue_task:
+            self._monologue_task.cancel()
+            try:
+                await self._monologue_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Cancel and await active generation tasks before closing resources
+        tasks_to_await = []
+        if self._current_monologue_task and not self._current_monologue_task.done():
+            self._current_monologue_task.cancel()
+            tasks_to_await.append(self._current_monologue_task)
+        if self._current_dream_task and not self._current_dream_task.done():
+            self._current_dream_task.cancel()
+            tasks_to_await.append(self._current_dream_task)
+        
+        for task in tasks_to_await:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
         await self.llm.close()
         if self.db_store and self._owns_db_store:
             await self.db_store.close()
