@@ -3,6 +3,7 @@ import json
 import time
 import nats
 
+
 async def run_injector():
     """
     Automated Research Injector.
@@ -12,35 +13,36 @@ async def run_injector():
     print("🚀 Research Injector starting...")
     nc = await nats.connect("nats://localhost:4222")
     js = nc.jetstream()
-    
+
     test_inputs = [
         "Hello! How are you today?",
         "I'm feeling a bit stressed about work.",
         "That's great to hear! Tell me more.",
         "I'm going to bed now. Goodnight.",
-        "Remember that we have a meeting tomorrow at 10 AM."
+        "Remember that we have a meeting tomorrow at 10 AM.",
     ]
-    
+
     print(f"--- Starting Benchmark Session ({len(test_inputs)} pulses) ---")
-    
+
     for i, text in enumerate(test_inputs):
         payload = {
             "text": text,
             "metadata": {
                 "benchmark_id": f"pulse_{i}",
                 "start_time": time.time(),
-                "research_mode": True
-            }
+                "research_mode": True,
+            },
         }
-        
+
         print(f"Pulse {i}: Sending '{text}'")
         await js.publish("chat.input", json.dumps(payload).encode())
-        
+
         # Wait for cognitive cooldown between pulses
-        await asyncio.sleep(15) 
+        await asyncio.sleep(15)
 
     print("--- Benchmark Session Complete ---")
     await nc.close()
+
 
 if __name__ == "__main__":
     asyncio.run(run_injector())

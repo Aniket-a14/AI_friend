@@ -280,12 +280,12 @@ class STTAgent(BaseAgent):
         if "audio_np" in perception_data:
             audio = perception_data["audio_np"]
             current_rms = np.sqrt(np.mean(audio**2)) if np is not None else 0.0
-            
+
             # If no speech or events detected, update the noise floor (EMA)
             if not perception_data.get("text") and not perception_data.get("events"):
                 # Smoothly track the noise floor (alpha=0.05)
                 self.noise_floor = 0.95 * self.noise_floor + 0.05 * current_rms
-            
+
             # SNR = 20 * log10(Signal_RMS / Noise_Floor)
             # Clamped to avoid log(0) and extreme spikes
             snr = 20 * np.log10(current_rms / (self.noise_floor + 1e-7) + 1e-7)

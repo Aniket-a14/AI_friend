@@ -182,10 +182,7 @@ class AppraisalEngine:
         return max(0.0, 1.0 - (violations * 0.2))
 
     async def appraise_semantic_drift(
-        self,
-        user_utterance: str,
-        llm_client,
-        current_pad: Dict[str, float]
+        self, user_utterance: str, llm_client, current_pad: Dict[str, float]
     ) -> Dict[str, float]:
         """
         System 2 deliberative appraisal using LLM.
@@ -207,35 +204,121 @@ class AppraisalEngine:
           "expectedness": 0.5
         }}
         """.strip()
-        
+
         try:
             from ..config import Config
-            response = await llm_client.generate(prompt, model=Config.LLM_FAST_MODEL)
-            match = re.search(r"\{.*\}", response, re.DOTALL)
-            if match:
-                data = json.loads(match.group(0))
-                gc = float(data.get("goal_congruence", 0.0))
-                na = float(data.get("norm_alignment", 1.0))
-                exp = float(data.get("expectedness", 0.5))
-                
-                target_p = max(-1.0, min(1.0, gc))
-                target_a = max(-1.0, min(1.0, -exp))
-                target_d = max(-1.0, min(1.0, na))
-                
-                drift_factor = 0.2
-                val = current_pad.get("valence", 0.0)
-                aro = current_pad.get("arousal", 0.5)
-                dom = current_pad.get("dominance", 0.5)
-                
-                new_p = val + drift_factor * (target_p - val)
-                new_a = aro + drift_factor * (target_a - aro)
-                new_d = dom + drift_factor * (target_d - dom)
-                
-                return {
-                    "valence": max(-1.0, min(1.0, new_p)),
-                    "arousal": max(0.0, min(1.0, new_a)),
-                    "dominance": max(0.0, min(1.0, new_d))
-                }
+
+            response = await llm_client.generate(
+                prompt,
+                model=Config.LLM_FAST_MODEL,
+                options_override={"num_predict": 128},
+            )
+
+            # Extract only the block that looks like our appraisal JSON
+            json_str = None
+            for m in re.finditer(r"\{.*?\}", response, re.DOTALL):
+                candidate = m.group(0)
+                if "goal_congruence" in candidate or "norm_alignment" in candidate:
+                    json_str = candidate
+                    break
+
+            if not json_str:
+                # Fallback to greedy matching if no specific block was found
+                match = re.search(r"\{.*\}", response, re.DOTALL)
+                if match:
+                    json_str = match.group(0)
+
+            if json_str:
+                data = None
+                try:
+                    data = json.loads(json_str)
+                except Exception:
+                    try:
+                        import ast
+
+                        data = ast.literal_eval(json_str)
+                    except Exception:
+                        cleaned = json_str
+                        cleaned = re.sub(
+                            r"'\s*([a-zA-Z_0-9]+)\s*'\s*:", r'"\1":', cleaned
+                        )
+                        cleaned = re.sub(r":\s*'\s*([^']*)\s*'", r': "\1"', cleaned)
+                        cleaned = re.sub(r",\s*}", "}", cleaned)
+                        try:
+                            data = json.loads(cleaned)
+                        except Exception as e2:
+                            logger.error(
+                                f"[System 2 Appraisal] Failed to sanitize and parse LLM response: {json_str}. Error: {e2}"
+                            )
+
+                # Sequential/float extraction fallback if dict structure was not successfully parsed
+                if not data:
+                    try:
+                        blocks = re.findall(r"\{([^\}]+)\}", response) + re.findall(
+                            r"\[([^\]]+)\]", response
+                        )
+                        for block in blocks:
+                            floats = [
+                                float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", block)
+                            ]
+                            if len(floats) == 3:
+                                data = {
+                                    "goal_congruence": floats[0],
+                                    "norm_alignment": floats[1],
+                                    "expectedness": floats[2],
+                                }
+                                logger.info(
+                                    f"[System 2 Appraisal] Extracted 3-float tuple from block: {data}"
+                                )
+                                break
+
+                        if not data:
+                            all_floats = [
+                                float(x)
+                                for x in re.findall(r"-?\d+(?:\.\d+)?", response)
+                            ]
+                            if len(all_floats) >= 3:
+                                floats_to_use = (
+                                    all_floats[-3:]
+                                    if len(all_floats) > 3
+                                    else all_floats
+                                )
+                                data = {
+                                    "goal_congruence": floats_to_use[0],
+                                    "norm_alignment": floats_to_use[1],
+                                    "expectedness": floats_to_use[2],
+                                }
+                                logger.info(
+                                    f"[System 2 Appraisal] Extracted sequential floats from response: {data}"
+                                )
+                    except Exception as seq_err:
+                        logger.error(
+                            f"[System 2 Appraisal] Sequence extraction fallback failed: {seq_err}"
+                        )
+
+                if data and isinstance(data, dict):
+                    gc = float(data.get("goal_congruence", 0.0))
+                    na = float(data.get("norm_alignment", 1.0))
+                    exp = float(data.get("expectedness", 0.5))
+
+                    target_p = max(-1.0, min(1.0, gc))
+                    target_a = max(-1.0, min(1.0, -exp))
+                    target_d = max(-1.0, min(1.0, na))
+
+                    drift_factor = 0.2
+                    val = current_pad.get("valence", 0.0)
+                    aro = current_pad.get("arousal", 0.5)
+                    dom = current_pad.get("dominance", 0.5)
+
+                    new_p = val + drift_factor * (target_p - val)
+                    new_a = aro + drift_factor * (target_a - aro)
+                    new_d = dom + drift_factor * (target_d - dom)
+
+                    return {
+                        "valence": max(-1.0, min(1.0, new_p)),
+                        "arousal": max(0.0, min(1.0, new_a)),
+                        "dominance": max(0.0, min(1.0, new_d)),
+                    }
         except Exception as e:
             logger.error(f"[System 2 Appraisal] Semantic drift evaluation failed: {e}")
         return current_pad

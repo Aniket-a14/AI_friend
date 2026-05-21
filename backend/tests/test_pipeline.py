@@ -106,10 +106,11 @@ async def test_pipeline_interruption_confirmed(pipeline, mock_components):
         results.append(chunk)
 
     # Verify
-    assert len(results) == 1
+    assert len(results) == 2
     assert results[0]["type"] == "mesh_signal"
     assert results[0]["subject"] == "audio.stop"
     assert results[0]["data"]["reason"] == "confirmed_command"
+    assert results[1]["type"] == "pipeline_telemetry"
 
     # Ensure rest of pipeline didn't run
     mock_components["perception"].perceive.assert_not_awaited()

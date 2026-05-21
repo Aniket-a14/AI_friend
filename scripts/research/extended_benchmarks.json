@@ -160,7 +160,7 @@
     "baseline_mean": 83.3
   },
   "theory_of_mind": {
-    "cvs_mae": 0.08,
+    "cvs_mae": 0.0397,
     "baseline_mae": 0.34
   },
   "turn_taking": {
@@ -179,7 +179,7 @@
     "cvs_recall": [
       92.5,
       97.8,
-      99.2,
+      100.0,
       100.0
     ],
     "baseline_recall": [
@@ -234,7 +234,7 @@
     ]
   },
   "reasoning": {
-    "cvs_accuracy": 98.2,
+    "cvs_accuracy": 97.0,
     "baseline_accuracy": 76.4
   },
   "cognitive_states": {
@@ -1572,7 +1572,7 @@
     }
   },
   "live_telemetry": {
-    "e2e_mean": 1646.95,
-    "ttft_mean": 703.36
+    "e2e_mean": 1589.99,
+    "ttft_mean": 703.26
   }
 }

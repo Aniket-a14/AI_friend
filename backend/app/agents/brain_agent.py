@@ -277,6 +277,11 @@ class BrainAgent(BaseAgent):
                         error_msg,
                     )
 
+                elif output["type"] == "pipeline_telemetry":
+                    if incoming_latency_metadata is None:
+                        incoming_latency_metadata = {}
+                    incoming_latency_metadata["pipeline_telemetry"] = output["data"]
+
                 elif output["type"] == "done":
                     if current_chunk_words:
                         await self._publish_speech_chunk(

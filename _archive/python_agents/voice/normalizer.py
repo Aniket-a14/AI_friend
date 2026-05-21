@@ -10,6 +10,7 @@ except ImportError:
 
 try:
     from numba import jit
+
     HAS_NUMBA = True
 except ImportError:
     HAS_NUMBA = False
@@ -18,6 +19,7 @@ except ImportError:
     def jit(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
 
@@ -92,15 +94,19 @@ class AudioNormalizer:
             if peak > 0:
                 scale_val = self.target_peak * 32767 / peak
                 clip_min, clip_max = -32768, 32767
-                
+
                 if HAS_NUMBA:
-                    scaled_list = _jit_scale_and_clip(list(samples), scale_val, clip_min, clip_max)
+                    scaled_list = _jit_scale_and_clip(
+                        list(samples), scale_val, clip_min, clip_max
+                    )
                     samples = array("h", scaled_list)
                 else:
                     samples = array(
                         "h",
                         [
-                            clip_min if (val := int(s * scale_val)) < clip_min else (clip_max if val > clip_max else val)
+                            clip_min
+                            if (val := int(s * scale_val)) < clip_min
+                            else (clip_max if val > clip_max else val)
                             for s in samples
                         ],
                     )
@@ -114,13 +120,18 @@ class AudioNormalizer:
 
             tail_len = int(0.1 * self.sample_rate)
             tail_samples = samples[-tail_len:] if len(samples) > tail_len else samples
-            
+
             if HAS_NUMBA:
-                self.last_tail_rms = _jit_rms(list(tail_samples)) if len(tail_samples) > 0 else current_rms
+                self.last_tail_rms = (
+                    _jit_rms(list(tail_samples))
+                    if len(tail_samples) > 0
+                    else current_rms
+                )
             else:
                 self.last_tail_rms = (
                     math.sqrt(
-                        sum([sample * sample for sample in tail_samples]) / len(tail_samples)
+                        sum([sample * sample for sample in tail_samples])
+                        / len(tail_samples)
                     )
                     if tail_samples
                     else current_rms

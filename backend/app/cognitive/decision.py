@@ -102,6 +102,7 @@ class DecisionService:
             event.metadata["preferred_model"] = Config.LLM_FAST_MODEL
         elif event.event_type == "USER_MESSAGE":
             self._apply_heuristic_intent_and_goal(event)
+            event.metadata["heuristic_intent"] = event.intent
             if Config.LLM_INTENT_CLASSIFICATION_ENABLED:
                 await self._classify_intent_and_goal(event, state_snapshot)
 
@@ -264,7 +265,11 @@ class DecisionService:
         """.strip()
 
         try:
-            response = await self.llm.generate(prompt, model=Config.LLM_FAST_MODEL)
+            response = await self.llm.generate(
+                prompt,
+                model=Config.LLM_FAST_MODEL,
+                options_override={"num_predict": 256},
+            )
 
             json_str = response
             if "</thought>" in response:
@@ -305,6 +310,10 @@ class DecisionService:
                 event.metadata["tom_inferences"] = tom_inferences
 
                 logger.info(f"[Decision] Fast Classified with ToM: {data}")
+            else:
+                logger.warning(
+                    f"[Decision] Failed to find JSON block in LLM response for intent classification. Raw response: {response!r}"
+                )
         except Exception as e:
             logger.error(f"Intent and ToM classification failed: {e}")
 

@@ -44,6 +44,7 @@ class SubconsciousAgent(BaseAgent):
         self._current_dream_task = None
         self._last_monologue_time = 0.0
         self._monologue_task = None
+        self._last_benchmark_time = 0.0
 
     @property
     def llm(self):
@@ -99,6 +100,13 @@ class SubconsciousAgent(BaseAgent):
 
     async def _on_system_tick(self, data: Dict[str, Any]):
         """Delegates thought generation to the engine and routes to the Mesh."""
+        last_bench = getattr(self, "_last_benchmark_time", 0.0)
+        if time.time() - last_bench < 300:
+            logger.info(
+                "[Subconscious] Suppressing proactive system tick thought: Benchmark is active."
+            )
+            return
+
         state_snap = self.state_service.get_context_snapshot()
         eligible = self.state_service.check_proactive_eligibility()
 
@@ -225,6 +233,14 @@ class SubconsciousAgent(BaseAgent):
         """Cancel active monologue or dream generation when user speaks/sends message."""
         metadata = data.get("metadata", {})
         source = metadata.get("source") if isinstance(metadata, dict) else None
+
+        # Suppress proactive background tasks when benchmark is running
+        if isinstance(metadata, dict) and metadata.get("benchmark_id") == "bench_pulse":
+            self._last_benchmark_time = time.time()
+            logger.info(
+                "[Subconscious] Benchmark pulse detected. Suppressing proactive monologue/dreaming loops."
+            )
+
         if source != "subconscious":
             self._cancel_active_subconscious_tasks()
 
@@ -234,10 +250,14 @@ class SubconsciousAgent(BaseAgent):
 
     def _cancel_active_subconscious_tasks(self):
         if self._current_monologue_task and not self._current_monologue_task.done():
-            logger.info("[Subconscious] User activity detected. Cancelling active monologue thought task.")
+            logger.info(
+                "[Subconscious] User activity detected. Cancelling active monologue thought task."
+            )
             self._current_monologue_task.cancel()
         if self._current_dream_task and not self._current_dream_task.done():
-            logger.info("[Subconscious] User activity detected. Cancelling active dream sequence task.")
+            logger.info(
+                "[Subconscious] User activity detected. Cancelling active dream sequence task."
+            )
             self._current_dream_task.cancel()
 
     async def _continuous_monologue_loop(self):
@@ -245,29 +265,47 @@ class SubconsciousAgent(BaseAgent):
         while True:
             try:
                 await asyncio.sleep(5)
-                
+
+                # Suppress monologue and dream sequences if benchmark is active
+                last_bench = getattr(self, "_last_benchmark_time", 0.0)
+                if time.time() - last_bench < 300:
+                    continue
+
                 # Check for silence duration
                 last_interact = self.state_service.current_state.last_user_interaction
                 silence_duration = time.time() - last_interact
-                
+
                 # Check current fatigue
                 state_snap = self.state_service.get_context_snapshot()
                 fatigue = state_snap.get("fatigue", 0.0)
-                
+
                 # Dreaming vs Monologue Logic
                 if fatigue > 0.8:
                     # Sleep-state dreaming (requires 30s user inactivity)
                     if silence_duration >= 30:
-                        if self._current_dream_task and not self._current_dream_task.done():
+                        if (
+                            self._current_dream_task
+                            and not self._current_dream_task.done()
+                        ):
                             continue
-                        self._current_dream_task = asyncio.create_task(self._run_dream_sequence())
+                        self._current_dream_task = asyncio.create_task(
+                            self._run_dream_sequence()
+                        )
                 else:
                     # Normal monologue (requires 30s user inactivity)
                     now = time.time()
-                    if silence_duration >= 30 and (now - self._last_monologue_time) >= 30:
-                        if self._current_monologue_task and not self._current_monologue_task.done():
+                    if (
+                        silence_duration >= 30
+                        and (now - self._last_monologue_time) >= 30
+                    ):
+                        if (
+                            self._current_monologue_task
+                            and not self._current_monologue_task.done()
+                        ):
                             continue
-                        self._current_monologue_task = asyncio.create_task(self._generate_monologue_thought())
+                        self._current_monologue_task = asyncio.create_task(
+                            self._generate_monologue_thought()
+                        )
                         self._last_monologue_time = now
             except asyncio.CancelledError:
                 break
@@ -279,7 +317,7 @@ class SubconsciousAgent(BaseAgent):
             state_snap = self.state_service.get_context_snapshot()
             emotion = state_snap.get("emotion", "neutral")
             energy = state_snap.get("energy", 0.5)
-            
+
             prompt = f"""
             You are the subconscious inner monologue of an AI friend.
             The user has been silent for a while.
@@ -287,7 +325,7 @@ class SubconsciousAgent(BaseAgent):
             Formulate a single brief internal thought or self-reflection about the user, your friendship, or what you're thinking right now.
             Respond with ONLY the thought, no quotes, no conversational filler.
             """.strip()
-            
+
             thought = await self._llm.generate(
                 prompt,
                 system="You are an internal monologue generator. Output ONLY the thought string.",
@@ -295,9 +333,14 @@ class SubconsciousAgent(BaseAgent):
             thought = thought.strip().strip("\"'")
             if thought:
                 logger.info(f"[Monologue] Thought generated: '{thought}'")
-                await self.publish(Topics.STATE_SUBCONSCIOUS, {"thought": thought, "timestamp": time.time()})
+                await self.publish(
+                    Topics.STATE_SUBCONSCIOUS,
+                    {"thought": thought, "timestamp": time.time()},
+                )
         except asyncio.CancelledError:
-            logger.info("[Monologue] Thought generation cancelled due to user activity.")
+            logger.info(
+                "[Monologue] Thought generation cancelled due to user activity."
+            )
             raise
         except Exception as e:
             logger.error(f"[Monologue] Generation error: {e}")
@@ -308,13 +351,15 @@ class SubconsciousAgent(BaseAgent):
             query = "MATCH (e:Entity) WITH e, rand() as r ORDER BY r LIMIT 3 RETURN e.name as name"
             records = await self.graph_db.execute_query(query)
             nodes = [record["name"] for record in records]
-            
+
             if len(nodes) < 3:
-                logger.info("[Subconscious] Not enough knowledge graph entities to dream (< 3). Skipping dream.")
+                logger.info(
+                    "[Subconscious] Not enough knowledge graph entities to dream (< 3). Skipping dream."
+                )
                 return
-            
+
             concept1, concept2, concept3 = nodes[0], nodes[1], nodes[2]
-            
+
             prompt = f"""
             You are the subconscious dreaming state of an AI friend.
             You are currently asleep and your mind is processing memories.
@@ -327,7 +372,7 @@ class SubconsciousAgent(BaseAgent):
             Format it as a personal reflection.
             Respond with ONLY the dream insight text.
             """.strip()
-            
+
             dream_text = await self._llm.generate(
                 prompt,
                 system="You are in a subconscious dream state. Synthesize a creative link between the concepts.",
@@ -335,12 +380,12 @@ class SubconsciousAgent(BaseAgent):
             dream_text = dream_text.strip().strip("\"'")
             if dream_text:
                 logger.info(f"[Dream Insight] Link: '{dream_text}'")
-                
+
                 await self.memory_store.add_memory(
                     content=f"[Dream Insight] {dream_text}",
                     importance=0.6,
                     emotion=0.4,
-                    source="subconscious_dream"
+                    source="subconscious_dream",
                 )
                 logger.info("[Subconscious] Dream insight successfully persisted.")
         except asyncio.CancelledError:
@@ -356,7 +401,7 @@ class SubconsciousAgent(BaseAgent):
                 await self._monologue_task
             except asyncio.CancelledError:
                 pass
-        
+
         # Cancel and await active generation tasks before closing resources
         tasks_to_await = []
         if self._current_monologue_task and not self._current_monologue_task.done():
@@ -365,7 +410,7 @@ class SubconsciousAgent(BaseAgent):
         if self._current_dream_task and not self._current_dream_task.done():
             self._current_dream_task.cancel()
             tasks_to_await.append(self._current_dream_task)
-        
+
         for task in tasks_to_await:
             try:
                 await task

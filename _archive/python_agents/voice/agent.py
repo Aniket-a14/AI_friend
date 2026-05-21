@@ -120,7 +120,9 @@ class VoiceAgent(BaseAgent):
             )
 
         # 4. Subscribe to Mesh Perception Channels
-        await self.subscribe(Topics.CHAT_OUTPUT, self._handle_input, deliver_policy="new")
+        await self.subscribe(
+            Topics.CHAT_OUTPUT, self._handle_input, deliver_policy="new"
+        )
         await self.subscribe(
             Topics.AUDIO_STOP,
             self._on_audio_stop,
@@ -204,9 +206,7 @@ class VoiceAgent(BaseAgent):
             return
 
         action = self.system.handle_stop(
-            is_speculative=is_speculative,
-            turn_id=turn_id,
-            utterance_id=utterance_id
+            is_speculative=is_speculative, turn_id=turn_id, utterance_id=utterance_id
         )
 
         if action == "speculative_pause":
@@ -227,7 +227,9 @@ class VoiceAgent(BaseAgent):
             logger.warning(f"Dropping invalid audio.resume message: {e}")
             return
         except Exception as e:
-            logger.error(f"Unexpected error processing audio.resume: {e}", exc_info=True)
+            logger.error(
+                f"Unexpected error processing audio.resume: {e}", exc_info=True
+            )
             return
 
         if self.system.handle_resume(utterance_id):
