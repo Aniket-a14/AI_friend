@@ -38,7 +38,7 @@ Validate the episodic recall mechanism.
 A_i = \ln \left( \sum_{j=1}^n t_j^{-d} \right)
 ```
 
-- **Validation**: Show how time-based decay ($`d`$) and frequency of access ($`n`$) accurately simulate human-like forgetting and retrieval.
+- **Validation**: Show how time-based decay ($d$) and frequency of access ($n$) accurately simulate human-like forgetting and retrieval.
 
 ---
 
@@ -115,7 +115,7 @@ To ensure reproducibility, your paper should cite the following system constants
 | `PSYCH_DELTA` | `0.1` | **Trust Change Rate**: Marsh Trust Model sensitivity. |
 | `PSYCH_EPSILON` | `0.03` | **Attachment Growth**: Bowlby Attachment coefficient. |
 | `PSYCH_LAMBDA_DECAY` | `0.05` | **ALMA Decay**: Return to neutral baseline. |
-| `ACTR_DECAY_RATE` | `0.5` | **Forgetting Rate** ($`d`$) in ACT-R. |
+| `ACTR_DECAY_RATE` | `0.5` | **Forgetting Rate** ($d$) in ACT-R. |
 | `ACTR_SPREAD_WEIGHT`| `1.0` | **Spreading Activation**: Semantic linkage strength. |
 | `MAUT_W_GOAL` | `0.35` | Decision weight: Goal Alignment. |
 | `MAUT_W_EMOTION` | `0.25` | Decision weight: Affective Fit. |
@@ -163,7 +163,7 @@ Extract the resulting trajectories from the persistent stores.
 
 ### Step 6: Mathematical Verification
 Apply the results to the formulas in Section 2.
-- Compare the actual observed drift against the theoretical ALMA exponential decay curve ($`I_0 \cdot e^{-\lambda t}`$).
+- Compare the actual observed drift against the theoretical ALMA exponential decay curve ($I_0 \cdot e^{-\lambda t}$).
 - Calculate the **Mean Squared Error (MSE)** between the system's output and the cognitive model's predictions.
 
 ---

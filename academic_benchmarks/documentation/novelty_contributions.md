@@ -40,7 +40,7 @@ The primary contributions of the CVS-3.0 sovereign mesh architecture are summari
 1.  **Decentralized Multi-Agent Edge Middleware:** We formulate a highly efficient, edge-native microservice mesh utilizing the zero-allocation **NATS Event Broker** as the central nervous system. This architecture reduces Inter-Process Communication (IPC) routing overhead to **0.045 ms**, running with a peak system memory footprint of only **1,079.58 MB** (8 container services).
 2.  **State-Accurate Endocrine and Affective Coupling:** We design a continuous homeostatic emotional system that simulates dynamic hormone fluxes (Cortisol, Dopamine, metabolic Fatigue) and 3D PAD mood shifts under environmental stressors. 
 3.  **Real-Time Autonomic Physiological Entrainment:** We establish an autonomic coupling layer that maps the agent's simulated emotional state directly onto human-robot coupling parameters, achieving coupled **Breathing Rate (RR)** and **Heart Rate (HR)** respiratory entrainment in high-stress HRI.
-4.  **Neurobiologically Inspired Graph Memory System:** We combine dense vector search with symbolic ACT-R graph traversals, achieving an empirical **$`99.2\%`$ Memory Recall@5** on multi-hop associative queries under macOS and Jetson hardware.
+4.  **Neurobiologically Inspired Graph Memory System:** We combine dense vector search with symbolic ACT-R graph traversals, achieving an empirical **$99.2\%$ Memory Recall@5** on multi-hop associative queries under macOS and Jetson hardware.
 
 ---
 

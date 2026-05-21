@@ -9,7 +9,7 @@ This document provides a highly rigorous, multi-dimensional empirical comparison
 The comparative matrix below evaluates **CVS-3.0** against 6 state-of-the-art and legacy conversational and mobile robotics platforms across 8 core metrics. 
 
 > [!NOTE]
-> All CVS-3.0 values represent validated empirical measurements from high-fidelity physical testing ($`N=5`$ local verification, $`N=50`$ interaction rounds) and massive accelerated simulation ($`N=100,000`$ iterations) compiled under macOS light-mode and Apple Metal GPU acceleration.
+> All CVS-3.0 values represent validated empirical measurements from high-fidelity physical testing ($N=5$ local verification, $N=50$ interaction rounds) and massive accelerated simulation ($N=100,000$ iterations) compiled under macOS light-mode and Apple Metal GPU acceleration.
 
 | Performance Metric | Humanoid: Furhat (Intel NUC / Win) [1] | Humanoid: Pepper (Atom CPU / ROS1) [2] | Traditional: Pure Vector RAG [22,23] | Traditional: Zero-Shot PAD [9] | Traditional: ROS2 Humble DDS [24] | **CVS-3.0 (Physical Mode)** | **CVS-3.0 (Accelerated Mode)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -87,15 +87,15 @@ Dynamic vocal filler insertion rates (`Words/Turn`) and acoustic markup parsing 
 ## 6. Detailed Academic Discussion of Metrics
 
 ### 6.1 Conversational Turn-Taking and Interruption (Barge-in)
-Prior cascaded turn-taking architectures suffer from turn gaps between $`700\text{ ms}`$ and $`2500\text{ ms}`$ due to silence-timeout voice activity detection (VAD). In contrast, CVS-3.0 implements a parallelized **System 1 VAD interrupt hook** operating directly on the DSP audio buffer. Under physical verification trials, CVS-3.0 interrupts itself and stops vocal playback within **$`114.9\text{ ms}`$** of user speech onset, which is well below the human turn-taking transition threshold of $`200.0\text{ ms}`$ (*Stivers et al., 2009*).
+Prior cascaded turn-taking architectures suffer from turn gaps between $700\text{ ms}$ and $2500\text{ ms}$ due to silence-timeout voice activity detection (VAD). In contrast, CVS-3.0 implements a parallelized **System 1 VAD interrupt hook** operating directly on the DSP audio buffer. Under physical verification trials, CVS-3.0 interrupts itself and stops vocal playback within **$114.9\text{ ms}$** of user speech onset, which is well below the human turn-taking transition threshold of $200.0\text{ ms}$ (*Stivers et al., 2009*).
 
 ### 6.2 Goal and Affect Classification Accuracy
 The classification accuracy of intent and goals under synthetic stress is plotted in the confusion matrices below:
 
 ![Intent Goal Classification Confusion Matrices](../plots/cognitive_confusion_matrix.png)
 
-CVS-3.0 maintains **$`97.2\%`$** classification accuracy across dynamic intent mapping, whereas standard cascaded LLM configurations experience prompt drift and decline under rapid conversational state transitions.
+CVS-3.0 maintains **$97.2\%$** classification accuracy across dynamic intent mapping, whereas standard cascaded LLM configurations experience prompt drift and decline under rapid conversational state transitions.
 
 ### 6.3 Memory Surfacing and Recall
 Standard RAG frameworks rely on static vector databases that are completely detached from conversational context, achieving low recall under dense loads. Under our neurobiologically inspired ACT-R graph architecture, episodic memories are dynamically weighted by **attentional weights, temporal power-law decay, and endocrine emotional congruence**. 
-As a result, CVS-3.0 achieves an empirical **$`99.2\%`$ memory recall accuracy at Recall@5** on dense graph search checks, resolving context omissions that lead to agentic confusion in legacy systems.
+As a result, CVS-3.0 achieves an empirical **$99.2\%$ memory recall accuracy at Recall@5** on dense graph search checks, resolving context omissions that lead to agentic confusion in legacy systems.
