@@ -59,7 +59,7 @@ Transform passive vector retrieval into an active, self-pruning working memory a
     MERGE (u)-[r:RELATION {type: $predicate}]->(e)
     ON MATCH SET r.weight = r.weight + 1
     ```
-5.  **ACT-R Decay & Pruning**: Apply $`A = \ln(\sum t_j^{-d})`$ to old transcripts. If activation $`A`$ falls below the retrieval threshold (e.g., -2.0), delete the raw transcript from `pgvector` to save LLM context window space, relying solely on the Neo4j graph for that memory.
+5.  **ACT-R Decay & Pruning**: Apply $A = \ln(\sum t_j^{-d})$ to old transcripts. If activation $A$ falls below the retrieval threshold (e.g., -2.0), delete the raw transcript from `pgvector` to save LLM context window space, relying solely on the Neo4j graph for that memory.
 
 ---
 
@@ -117,11 +117,11 @@ Instead of `if arousal > 0.5: speed = 1.2`, we will use continuous linear algebr
 ```
 
 *   **Constants Definition**:
-    *   $`\alpha = 0.05`$ (Pleasure slightly raises pitch for warmth)
-    *   $`\beta = 0.15`$ (Arousal heavily raises pitch for excitement/stress)
-    *   $`\gamma = 0.10`$ (Dominance lowers pitch for authority)
-    *   $`\delta = 0.20`$ (Arousal directly increases speaking speed)
-    *   $`\epsilon = 0.10`$ (Pleasure relaxes speaking speed)
+    *   $\alpha = 0.05$ (Pleasure slightly raises pitch for warmth)
+    *   $\beta = 0.15$ (Arousal heavily raises pitch for excitement/stress)
+    *   $\gamma = 0.10$ (Dominance lowers pitch for authority)
+    *   $\delta = 0.20$ (Arousal directly increases speaking speed)
+    *   $\epsilon = 0.10$ (Pleasure relaxes speaking speed)
 
 #### Audio Blending (Overlap-Add)
 When parameters change mid-sentence, the Rust `voice-agent` will apply a 10ms crossfade (OLA) between the previous PCM buffer state and the new PCM buffer state to prevent audible popping/clicking.

@@ -217,7 +217,7 @@ Every interaction follows a strictly governed loop through the mesh:
 The agent's emotional state is a 3D coordinate in **PAD Space** (Pleasure, Arousal, Dominance).
 
 * **Mood Pull**: Emotional events "pull" the current state toward target coordinates.
-* **Logarithmic Decay**: During idle periods, the state drifts back to a neutral baseline following the ALMA formula: $`I(t) = I_0 \cdot e^{-\lambda t}`$.
+* **Logarithmic Decay**: During idle periods, the state drifts back to a neutral baseline following the ALMA formula: $I(t) = I_0 \cdot e^{-\lambda t}$.
 
 ### 2. Neuromodulatory Memory Gating (CVS-3.0)
 
@@ -227,8 +227,8 @@ Semantic memory search incorporating dynamic physiological bias gates memory ret
 S_i = \text{CosineSimilarity} \cdot (1 + 0.1 \cdot \text{valence} \cdot \text{emotional-weight} - 0.2 \cdot \text{arousal} \cdot \text{cortisol})
 ```
 
-* **Positive reinforcement**: $`\text{valence} \cdot \text{emotional-weight}`$ increases matching scores for positive memories.
-* **Stress inhibition**: arousal $`\cdot`$ cortisol suppresses high-stress memories during hyper-arousal, avoiding repetitive trauma loops.
+* **Positive reinforcement**: $\text{valence} \cdot \text{emotional-weight}$ increases matching scores for positive memories.
+* **Stress inhibition**: arousal $\cdot$ cortisol suppresses high-stress memories during hyper-arousal, avoiding repetitive trauma loops.
 
 ```math
 A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
@@ -238,9 +238,9 @@ A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
 
 The agent's trust model deconstructs the legacy trust scalar into three distinct sub-dimensions:
 
-1. **Benevolence** ($`T_b`$): Direct relationship warmth, modulated by Relationship Impact ($`RI`$).
-2. **Competence** ($`T_c`$): Pragmatic task capability, modulated by Goal Congruence ($`G`$) and Relevance ($`R`$).
-3. **Integrity** ($`T_i`$): Moral/ethical alignments, modulated by Norm Alignment ($`NA`$).
+1. **Benevolence** ($T_b$): Direct relationship warmth, modulated by Relationship Impact ($RI$).
+2. **Competence** ($T_c$): Pragmatic task capability, modulated by Goal Congruence ($G$) and Relevance ($R$).
+3. **Integrity** ($T_i$): Moral/ethical alignments, modulated by Norm Alignment ($NA$).
 
 The overall trust score returned for backward compatibility is:
 
@@ -250,9 +250,9 @@ The overall trust score returned for backward compatibility is:
 
 Appraisal-driven trust evolution updates individual sub-dimensions:
 
-* $`T_b \leftarrow \text{clamp}(T_b + \delta \cdot RI)`$
-* $`T_c \leftarrow \text{clamp}(T_c + \delta \cdot (0.6 \cdot G + 0.4 \cdot R))`$
-* $`T_i \leftarrow \text{clamp}(T_i + \delta \cdot NA)`$
+* $T_b \leftarrow \text{clamp}(T_b + \delta \cdot RI)$
+* $T_c \leftarrow \text{clamp}(T_c + \delta \cdot (0.6 \cdot G + 0.4 \cdot R))$
+* $T_i \leftarrow \text{clamp}(T_i + \delta \cdot NA)$
 
 ### 4. Memory Activation & ACT-R Pruning (CVS-3.0)
 
@@ -262,16 +262,16 @@ The subconscious memory agent runs background reflection sweeps after 5 minutes 
 A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
 ```
 
-* **ACT-R Pruning**: Memories where base activation falls below the retention threshold ($`A_i < -2.0`$) are permanently pruned from local SQLite/PostgreSQL stores.
+* **ACT-R Pruning**: Memories where base activation falls below the retention threshold ($A_i < -2.0$) are permanently pruned from local SQLite/PostgreSQL stores.
 * **Decay**: Surviving memories have their importance scores scaled by `0.8` on each consolidation tick.
 
 ### 5. Endocrine LLM Parameter Modulation (CVS-3.0)
 
 Action execution dynamically modulates Ollama inference parameters independently:
 
-* **Cortisol (Stress)**: Controls `temperature` ($`0.9 - 0.6 \cdot \text{cortisol}`$).
-* **Dopamine (Reward)**: Controls exploration `top_p` ($`0.70 + 0.25 \cdot \text{dopamine}`$).
-* **Fatigue**: Truncates response length `num_predict` ($`40 - 25 \cdot \text{fatigue}`$ tokens, strictly bounded in $`[15, 40]`$).
+* **Cortisol (Stress)**: Controls `temperature` ($0.9 - 0.6 \cdot \text{cortisol}$).
+* **Dopamine (Reward)**: Controls exploration `top_p` ($0.70 + 0.25 \cdot \text{dopamine}$).
+* **Fatigue**: Truncates response length `num_predict` ($40 - 25 \cdot \text{fatigue}$ tokens, strictly bounded in $[15, 40]$).
 
 ### 6. Decision Utility (MAUT)
 
@@ -283,14 +283,14 @@ U(\text{Intent}) = w_{\text{goal}} \cdot G + w_{\text{emotion}} \cdot E + w_{\te
 
 ### 7. Dynamic Continuous Prosody Mapping & OLA Crossfade (CVS-3.0 / Phase 4)
 
-Vocal parameters (speaking rate, pitch, volume, and pause bias) are continuously modulated in Rust based on emotional PAD state, fatigue $`F`$, user distance $`d`$, and signal continuity window:
+Vocal parameters (speaking rate, pitch, volume, and pause bias) are continuously modulated in Rust based on emotional PAD state, fatigue $F$, user distance $d$, and signal continuity window:
 
-* **Fatigue Slowdown**: $`\text{fatigue-slow} = 0.25 \cdot F`$
-* **Fatigue Pitch Drop**: $`\text{fatigue-pitch-drop} = 0.1 \cdot F`$
+* **Fatigue Slowdown**: $\text{fatigue-slow} = 0.25 \cdot F$
+* **Fatigue Pitch Drop**: $\text{fatigue-pitch-drop} = 0.1 \cdot F$
 * **Distance Modifiers**:
-  * If $`d < 0.6\text{m}`$ (close range): $`\text{dist-vol-mod} = -0.15, \quad \text{dist-pitch-mod} = -0.05`$
-  * If $`d > 1.5\text{m}`$ (far range): $`\text{dist-vol-mod} = 0.2, \quad \text{dist-pitch-mod} = 0.1`$
-  * Otherwise: $`\text{dist-vol-mod} = 0.0, \quad \text{dist-pitch-mod} = 0.0`$
+  * If $d < 0.6\text{m}$ (close range): $\text{dist-vol-mod} = -0.15, \quad \text{dist-pitch-mod} = -0.05$
+  * If $d > 1.5\text{m}$ (far range): $\text{dist-vol-mod} = 0.2, \quad \text{dist-pitch-mod} = 0.1$
+  * Otherwise: $\text{dist-vol-mod} = 0.0, \quad \text{dist-pitch-mod} = 0.0$
 
 #### Prosody Equations
 
@@ -311,14 +311,14 @@ Vocal parameters (speaking rate, pitch, volume, and pause bias) are continuously
 ```
 
 #### Overlap-Add (OLA) Sample-Accurate Linear Crossfade
-During prosody-shift boundaries, a linear crossfade is applied over a **10ms window** ($`\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor`$ samples, i.e., 320 samples at 32kHz), blending the previous prosody segment into the new one to eliminate switching clicks:
+During prosody-shift boundaries, a linear crossfade is applied over a **10ms window** ($\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ samples, i.e., 320 samples at 32kHz), blending the previous prosody segment into the new one to eliminate switching clicks:
 
 ```math
 y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad t = \frac{i}{\text{fade-len}}, \quad 0 \le i < \text{fade-len}
 ```
 
 #### Spatial Reverb DSP Blend
-Acoustic environmental reflection utilizes a comb filter with a 50ms delay and 0.5 feedback gain, dynamically blended via $`\text{wet-gain}`$ linear interpolation based on user distance:
+Acoustic environmental reflection utilizes a comb filter with a 50ms delay and 0.5 feedback gain, dynamically blended via $\text{wet-gain}$ linear interpolation based on user distance:
 
 ```math
 \text{wet-gain} = \text{clamp}\left(\frac{d - 2.5}{3.5 - 2.5}, 0.0, 1.0\right)
@@ -628,7 +628,7 @@ Grouped by domain. Refer to `backend/app/config.py` for all 50+ tunable paramete
 | :--- | :--- | :--- |
 | `SYSTEM_TICK_INTERVAL` | `60s` | Frequency of mesh-wide identity maturation. |
 | `PSYCH_ALPHA` | `0.3` | **Valence Drift**: Rate of mood change toward target. |
-| `ACTR_DECAY_RATE` | `0.5` | **Forgetting Rate** ($`d`$) for episodic memory. |
+| `ACTR_DECAY_RATE` | `0.5` | **Forgetting Rate** ($d$) for episodic memory. |
 | `INTENT_THRESHOLD` | `0.75` | Required confidence for speculative interruption. |
 
 ---

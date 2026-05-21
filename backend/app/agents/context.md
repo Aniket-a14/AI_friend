@@ -10,13 +10,13 @@ The system models the agent's internal state as a high-dimensional vector combin
 
 | Parameter | Symbol | Range | Tracking Mechanism / Description |
 | :--- | :--- | :--- | :--- |
-| **Valence** | $`V`$ | $`[-1.0, 1.0]`$ | Pleasure/Mood dimension. Updated via goal congruence appraisal. |
-| **Arousal** | $`Ar`$ | $`[0.0, 1.0]`$ | Energy/Excitement. Drives speech rate and pitch dynamics. |
-| **Dominance** | $`D`$ | $`[0.0, 1.0]`$ | Sense of agency/control. Directly modulates vocal volume. |
-| **Trust** | $`T`$ | $`[0.0, 1.0]`$ | Long-term relational warmth. Composed of Benevolence, Competence, and Integrity. |
-| **Attachment** | $`At`$ | $`[0.0, 1.0]`$ | Long-term relational bond intensity. |
-| **Fatigue** | $`F`$ | $`[0.0, 1.0]`$ | Metabolic fatigue. Accumulates during active turns, decays during idle cycles. |
-| **User Distance** | $`d`$ | $`[0.0, \infty)`$ | Spatial distance in meters. Inferred via OpenCV Haar Cascade face detection width ($`d = \frac{0.15}{S}`$). |
+| **Valence** | $V$ | $[-1.0, 1.0]$ | Pleasure/Mood dimension. Updated via goal congruence appraisal. |
+| **Arousal** | $Ar$ | $[0.0, 1.0]$ | Energy/Excitement. Drives speech rate and pitch dynamics. |
+| **Dominance** | $D$ | $[0.0, 1.0]$ | Sense of agency/control. Directly modulates vocal volume. |
+| **Trust** | $T$ | $[0.0, 1.0]$ | Long-term relational warmth. Composed of Benevolence, Competence, and Integrity. |
+| **Attachment** | $At$ | $[0.0, 1.0]$ | Long-term relational bond intensity. |
+| **Fatigue** | $F$ | $[0.0, 1.0]$ | Metabolic fatigue. Accumulates during active turns, decays during idle cycles. |
+| **User Distance** | $d$ | $[0.0, \infty)$ | Spatial distance in meters. Inferred via OpenCV Haar Cascade face detection width ($d = \frac{0.15}{S}$). |
 
 ---
 
@@ -42,13 +42,13 @@ These equations are computed native in Rust (`backend/crates/contracts/src/lib.r
 ```
 
 2. **Distance Spatial Adaptation**:
-   * Close-range threshold ($`d < 0.6\text{m}`$, whisper configuration):
+   * Close-range threshold ($d < 0.6\text{m}$, whisper configuration):
 
 ```math
 \text{dist\_vol\_mod} = -0.15, \quad \text{dist\_pitch\_mod} = -0.05
 ```
 
-   * Far-range threshold ($`d > 1.5\text{m}`$, projection configuration):
+   * Far-range threshold ($d > 1.5\text{m}$, projection configuration):
 
 ```math
 \text{dist\_vol\_mod} = 0.20, \quad \text{dist\_pitch\_mod} = 0.10
@@ -62,7 +62,7 @@ These equations are computed native in Rust (`backend/crates/contracts/src/lib.r
 
 ### 2.2 Core Synthesis Parameters
 
-1. **Speaking Rate ($`R`$)**:
+1. **Speaking Rate ($R$)**:
    Modulated by arousal energy and valence, slowed down by metabolic fatigue, clamped to safety bounds:
 
 ```math
@@ -73,7 +73,7 @@ R = 1.0 + 0.20 \cdot Ar - 0.10 \cdot V - \text{fatigue\_slow}
 \text{SpeedFactor} = \text{clamp}(R, 0.6, 1.8)
 ```
 
-2. **Vocal Pitch ($`P`$)**:
+2. **Vocal Pitch ($P$)**:
    Jointly modulated by valence and arousal, tempered by dominance, and adjusted for fatigue and distance:
 
 ```math
@@ -84,7 +84,7 @@ P = 1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - \text{fatigue\_pitch\_dr
 \text{Pitch} = \text{clamp}(P, 0.5, 2.0)
 ```
 
-3. **Vocal Volume ($`V_{ol}`$)**:
+3. **Vocal Volume ($V_{ol}$)**:
    Modulated by interpersonal dominance (assertiveness) and adjusted for distance propagation:
 
 ```math
@@ -95,14 +95,14 @@ V_{ol} = 0.4 + 0.6 \cdot D + \text{dist\_vol\_mod}
 \text{Volume} = \text{clamp}(V_{ol}, 0.1, 1.0)
 ```
 
-4. **Pause Bias ($`B_{\text{pause}}`$)**:
+4. **Pause Bias ($B_{\text{pause}}$)**:
    Determines the baseline silent duration between speech segments. Higher arousal suppresses silence:
 
 ```math
 B_{\text{pause}} = 1.0 - Ar
 ```
 
-All parameters are rounded to exactly **two decimal places** ($`0.01`$ precision) prior to serialized delivery to the SoVITS inference pipeline.
+All parameters are rounded to exactly **two decimal places** ($0.01$ precision) prior to serialized delivery to the SoVITS inference pipeline.
 
 ---
 
@@ -118,23 +118,23 @@ When a prosody shift is detected between consecutive audio segments, the engine 
 \text{fade\_len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor
 ```
 
-For $`32,000\text{Hz}`$, the crossfade window contains exactly $`320`$ samples.
+For $32,000\text{Hz}$, the crossfade window contains exactly $320$ samples.
 
 ### 3.2 Signal Modulation
 
-For each sample index $`i`$ in the crossfade window ($`0 \le i < \text{fade\_len}`$), the blend factor $`t`$ is computed as:
+For each sample index $i$ in the crossfade window ($0 \le i < \text{fade\_len}$), the blend factor $t$ is computed as:
 
 ```math
 t = \frac{i}{\text{fade\_len}}
 ```
 
-The output blends the previous prosody segment buffer $`x_{\text{prev}}[i]`$ with the incoming segment $`x_{\text{curr}}[i]`$:
+The output blends the previous prosody segment buffer $x_{\text{prev}}[i]$ with the incoming segment $x_{\text{curr}}[i]$:
 
 ```math
 y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade\_len}
 ```
 
-For $`i \ge \text{fade\_len}`$, the signal passes through unmodified:
+For $i \ge \text{fade\_len}$, the signal passes through unmodified:
 
 ```math
 y[i] = x_{\text{curr}}[i]
@@ -159,11 +159,11 @@ y_{\text{pcm}}[i] = \lfloor y_{\text{clipped}}[i] \rceil
 
 ## 🌌 4. Spatial Proprioception & Reverb DSP
 
-When the physical distance $`d`$ increases, high-frequency elements decay, and atmospheric reflections introduce reverberation. The Voice Agent implements a real-time **Reverb Comb Filter** within its processing pipeline (`backend/crates/voice-agent/src/main.rs`).
+When the physical distance $d$ increases, high-frequency elements decay, and atmospheric reflections introduce reverberation. The Voice Agent implements a real-time **Reverb Comb Filter** within its processing pipeline (`backend/crates/voice-agent/src/main.rs`).
 
 ### 4.1 Wet/Dry Linear Interpolation
 
-Acoustic reverb gain ($`\text{wet\_gain}`$) is scaled dynamically as a function of distance:
+Acoustic reverb gain ($\text{wet\_gain}$) is scaled dynamically as a function of distance:
 
 ```math
 \text{wet\_gain} = \begin{cases} 
@@ -175,7 +175,7 @@ Acoustic reverb gain ($`\text{wet\_gain}`$) is scaled dynamically as a function 
 
 ### 4.2 Delay & Feedback Network
 
-The DSP reverb comb filter uses a **50ms circular delay line** with a $`0.5`$ feedback gain factor. For input samples $`x[n]`$ and delay buffer size $`M = \lfloor 0.050 \cdot \text{SampleRate} \rfloor`$ (1600 samples at 32kHz):
+The DSP reverb comb filter uses a **50ms circular delay line** with a $0.5$ feedback gain factor. For input samples $x[n]$ and delay buffer size $M = \lfloor 0.050 \cdot \text{SampleRate} \rfloor$ (1600 samples at 32kHz):
 
 1. Retrieve delayed sample:
 
@@ -206,15 +206,15 @@ To prevent generic and repetitive responses, the system implements a **Theory of
 ### 5.1 The User Mental Model (`UserMentalModel`)
 
 The user's perspective is decoupled from the agent's internal state and represented as:
-- **Inferred Valence ($`V_{\text{user}}`$)**: $`[-1.0, 1.0]`$. The user's pleasure/mood, drifted dynamically by SenseVoice acoustic appraisal signals and extracted by LLM classification.
-- **Inferred Arousal ($`Ar_{\text{user}}`$)**: $`[0.0, 1.0]`$. The user's emotional intensity/arousal, extracted via System 2 classification.
+- **Inferred Valence ($V_{\text{user}}$)**: $[-1.0, 1.0]$. The user's pleasure/mood, drifted dynamically by SenseVoice acoustic appraisal signals and extracted by LLM classification.
+- **Inferred Arousal ($Ar_{\text{user}}$)**: $[0.0, 1.0]$. The user's emotional intensity/arousal, extracted via System 2 classification.
 - **Implied Goals**: Inferred short-term desires of the user (e.g., `"seek_reassurance"`, `"express_frustration"`, `"learn_concept"`, `"chat_socially"`).
 - **Known Concepts**: A case-insensitive history of terms and concepts the user has active knowledge of.
 
 ### 5.2 Zero-Overhead Vocabulary Tracking
 
 To enforce knowledge boundaries without introducing dynamic LLM inference costs, raw user transcripts undergo pre-decision word indexing:
-- **Length Constraint**: Matches alphabetical words $`w`$ where $`4 \le |w| \le 15`$ characters.
+- **Length Constraint**: Matches alphabetical words $w$ where $4 \le |w| \le 15$ characters.
 - **Stop-Word Filtering**: Prunes common high-frequency English particles and pronouns (e.g. `them`, `their`, `there`, `with`, `from`, `your`).
 - **Deduplication**: Appends newly discovered concepts uniquely to `known_concepts`, preserving chronological order.
 
@@ -267,7 +267,7 @@ To support natural social HRI (Human-Robot Interaction) under strict local compu
   OLLAMA_REQUIRED_MODELS=llama3.2:1b,llama3.2:3b,nomic-embed-text
   ```
 
-### 6.3 Live iMac M3 Empirical Benchmarking Results ($`N=100`$)
+### 6.3 Live iMac M3 Empirical Benchmarking Results ($N=100$)
 Empirical performance profiling of the containerized cognitive mesh running locally on the Apple iMac (M3 Host Node) under Apple Metal GPU acceleration with the active `llama3.2:3b` model yielded high performance metrics:
 
 | Metric | Mean | p50 | p95 | p99 | Jitter |
