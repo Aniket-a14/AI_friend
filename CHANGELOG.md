@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] - 2026-05-21
+
+### Added
+- **Empirical Benchmarking Datasets**: Captured and compiled live local iMac M3 empirical performance results ($N=100$), measuring exact TTFT and End-to-End Thought latency distributions.
+
+### Changed
+- **Branding Migration (CVS-3.0)**: Completed project-wide global naming migration, deprecating CVS-2.0 across all subsystems and configs.
+- **Documentation Alignment**: Replaced theoretical calculations and placeholders in `README.md`, `context.md`, and `ROBOTICS_ANALYSIS.md` with high-fidelity, validated actual research results.
+
 ## [5.0.0] - 2026-05-18
 
 ### Added

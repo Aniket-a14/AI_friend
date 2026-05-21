@@ -1,4 +1,4 @@
-# 🔌 API & Messaging Specification (v5.0.0 / CVS-3.0 Rust Native Edition)
+# 🔌 API & Messaging Specification (v6.0.0 / CVS-3.0 Rust Native Edition)
 
 This document provides a technical exhaustive breakdown of the external and internal interfaces of the AI Friend **Cognitive Voice System**.
 
