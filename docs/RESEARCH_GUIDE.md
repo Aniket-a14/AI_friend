@@ -163,7 +163,7 @@ Extract the resulting trajectories from the persistent stores.
 
 ### Step 6: Mathematical Verification
 Apply the results to the formulas in Section 2.
-- Compare the actual observed drift against the theoretical ALMA exponential decay curve ($I_ 0 \cdot e^{-\lambda t}$).
+- Compare the actual observed drift against the theoretical ALMA exponential decay curve ($I_0 \cdot e^{-\lambda t}$).
 - Calculate the **Mean Squared Error (MSE)** between the system's output and the cognitive model's predictions.
 
 ---

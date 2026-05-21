@@ -27,8 +27,8 @@ R = \begin{cases}
 N = 1 - \max_{h \in \mathcal{H}} \frac{|\mathcal{W}_{\text{event}} \cap \mathcal{W}_h|}{|\mathcal{W}_{\text{event}} \cup \mathcal{W}_h|}
 ```
 
-    where $\mathcal{W}_ {\text{event}}$ is the set of lowercase keywords in the active utterance, and $\mathcal{W}_ h$ is the keyword set of historical turn $h$.
-*   **Goal Congruence ($G \in [-1, 1]$):** Represents how much the event advances or hinders the agent's core social goal. It maps directly from emotional bias $E_ b$ (extracted via acoustic pitch/sentiment trackers):
+    where $\mathcal{W}_{\text{event}}$ is the set of lowercase keywords in the active utterance, and $\mathcal{W}_h$ is the keyword set of historical turn $h$.
+*   **Goal Congruence ($G \in [-1, 1]$):** Represents how much the event advances or hinders the agent's core social goal. It maps directly from emotional bias $E_b$ (extracted via acoustic pitch/sentiment trackers):
 
 ```math
 G = \text{clamp}(E_b, -1.0, 1.0)
@@ -64,7 +64,7 @@ RI = \begin{cases}
 ```
 
 ### 1.3 System 2 Deliberative Reappraisal (LLM Hot-Path Drift)
-For deep semantic reasoning, CVS-3.0 runs an asynchronous deliberative reappraisal cycle. It queries the fast LLM to grade three dimensions on $[-1.0, 1.0]$: goal congruence ($G_ {\text{delib}}$), norm alignment ($NA_ {\text{delib}}$), and expectedness ($E_ {\text{delib}}$). These values act as coordinates pulling the active PAD emotional state via a drift coefficient $\eta = 0.2$:
+For deep semantic reasoning, CVS-3.0 runs an asynchronous deliberative reappraisal cycle. It queries the fast LLM to grade three dimensions on $[-1.0, 1.0]$: goal congruence ($G_{\text{delib}}$), norm alignment ($NA_{\text{delib}}$), and expectedness ($E_{\text{delib}}$). These values act as coordinates pulling the active PAD emotional state via a drift coefficient $\eta = 0.2$:
 
 ```math
 \vec{T}_{\text{PAD}} = \begin{bmatrix} G_{\text{delib}} \\ -E_{\text{delib}} \\ NA_{\text{delib}} \end{bmatrix}
@@ -105,19 +105,19 @@ D(t) = (1 - \gamma) \cdot D(t-1) + \gamma \cdot (0.6 \cdot A + 0.4 \cdot NA)
 To model secure human-robot bonds, we implement a multi-dimensional trust space based on **Marsh's Formal Trust Model (1994)** and secure attachment styles based on **Bowlby's Attachment Theory**:
 
 *   **Dimensional Trust:** Trust is decomposed into three components updating with rate $\delta = 0.1$:
-    *   **Trust Benevolence ($T_ b$):** Sensitivity to emotional relationship impact:
+    *   **Trust Benevolence ($T_b$):** Sensitivity to emotional relationship impact:
 
 ```math
 T_b(t) = \text{clamp}(T_b(t-1) + \delta \cdot RI, 0.0, 1.0)
 ```
 
-    *   **Trust Competence ($T_ c$):** Sensitivity to conversational helpfulness and goal congruence:
+    *   **Trust Competence ($T_c$):** Sensitivity to conversational helpfulness and goal congruence:
 
 ```math
 T_c(t) = \text{clamp}(T_c(t-1) + \delta \cdot (0.6 \cdot G + 0.4 \cdot R), 0.0, 1.0)
 ```
 
-    *   **Trust Integrity ($T_ i$):** Sensitivity to boundary adherence:
+    *   **Trust Integrity ($T_i$):** Sensitivity to boundary adherence:
 
 ```math
 T_i(t) = \text{clamp}(T_i(t-1) + \delta \cdot NA, 0.0, 1.0)
@@ -138,7 +138,7 @@ At(t) = \text{clamp}\left(At(t-1) + \epsilon \cdot T(t) \cdot \min\left(1.0, \fr
 ### 2.3 Endocrine Homeostasis & Hormonal Coupling
 Three continuous hormones modulate the LLM's generation hyperparameters (temperature, top_p, penalty) to model physical cognitive constraints:
 
-*   **Fatigue Cycle ($F \in [0, 1]$):** Metabolic wear-and-tear accumulated during active turns and recovered during idle intervals. Governed by a circadian multiplier $\mu_ {\text{circadian}}$ (set to $1.8$ at night $22:00\text{--}06:00$, otherwise $1.0$):
+*   **Fatigue Cycle ($F \in [0, 1]$):** Metabolic wear-and-tear accumulated during active turns and recovered during idle intervals. Governed by a circadian multiplier $\mu_{\text{circadian}}$ (set to $1.8$ at night $22:00\text{--}06:00$, otherwise $1.0$):
 
 ```math
 F(t) = \begin{cases} 
@@ -157,7 +157,7 @@ C(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right
 
     *Hyperparameter mapping:* High cortisol reduces LLM generation temperature to enforce strict, defensive responses; low cortisol increases temperature to support warm, creative responses.
 
-*   **Dopamine Coupling ($D_ {\text{dopamine}} \in [0, 1]$):** Represents reward tracking. Mapped from positive valence ($V > 0$) combined with fatigue-modulated arousal $Ar_ {\text{actual}}$:
+*   **Dopamine Coupling ($D_{\text{dopamine}} \in [0, 1]$):** Represents reward tracking. Mapped from positive valence ($V > 0$) combined with fatigue-modulated arousal $Ar_{\text{actual}}$:
 
 ```math
 Ar_{\text{actual}}(t) = \text{clamp}(Ar(t) + 0.2 \cdot F(t), 0.0, 1.0) \quad \text{(fatigue induces restlessness)}
@@ -170,7 +170,7 @@ D_{\text{dopamine}}(t) = \text{clamp}(\max(0.0, V(t)) \cdot Ar_{\text{actual}}(t
     *Hyperparameter mapping:* High dopamine increases LLM `top_p` to enable playful and exploratory phrasing.
 
 ### 2.4 Idle State Decay (ALMA Decay)
-During prolonged silence, internal mood converges back to the neutral baseline through exponential decay with decay coefficient $\lambda_ {\text{decay}} = 0.05 \text{ hr}^{-1}$:
+During prolonged silence, internal mood converges back to the neutral baseline through exponential decay with decay coefficient $\lambda_{\text{decay}} = 0.05 \text{ hr}^{-1}$:
 
 ```math
 V(t) = V(0) \cdot e^{-\lambda_{\text{decay}} \cdot \Delta t}
@@ -199,7 +199,7 @@ w_G = 0.3, \quad w_E = 0.3, \quad w_I = 0.2, \quad w_C = 0.2 \quad \left(\sum w_
 
 The scores $S$ for each attribute are defined dynamically based on the current state:
 
-| Goal ($g$) | Goal Congruence ($S_ G$) | Emotion Fit ($S_ E$) | Identity Fit ($S_ I$) | Context Relevance ($S_ C$) |
+| Goal ($g$) | Goal Congruence ($S_G$) | Emotion Fit ($S_E$) | Identity Fit ($S_I$) | Context Relevance ($S_C$) |
 | :--- | :--- | :--- | :--- | :--- |
 | **ENGAGE** | $\max(0, G + 0.5)$ | $0.5 + 0.3 \cdot V + 0.2 \cdot Ar$ | $NA$ | $R$ |
 | **COMFORT** | $\max(0, -G + 0.5)$ | $\max(0, -V + 0.5) \cdot (1.2 - 0.4 \cdot Ar)$ | $NA$ | $0.8 \cdot R$ |
@@ -208,7 +208,7 @@ The scores $S$ for each attribute are defined dynamically based on the current s
 | **PROTECT** | $0.2$ | $0.2 + 0.1 \cdot Ar$ | $\max(0, 1.0 - NA)$ | $0.5 \cdot R$ |
 
 ### 3.2 Intent Persistence with Context Gating
-To prevent erratic goal switching during rapid dialogue turns, we implement temporal smoothing with a persistence rate $\rho = 0.15$ coupled with a hard context gating threshold $\theta_ {\text{shift}} = 0.3$ (using Novelty $N$ as the shift proxy):
+To prevent erratic goal switching during rapid dialogue turns, we implement temporal smoothing with a persistence rate $\rho = 0.15$ coupled with a hard context gating threshold $\theta_{\text{shift}} = 0.3$ (using Novelty $N$ as the shift proxy):
 
 ```math
 U_{\text{final}}(g, t) = \begin{cases} 
@@ -230,21 +230,21 @@ g^*(t) = \arg\max_{g \in \mathcal{G}} U_{\text{final}}(g, t)
 To retrieve highly relevant episodic memory chunks from the Neo4j graph, we govern retrieval using the **ACT-R cognitive architecture's sub-symbolic activation theory (Anderson et al., 2004)**.
 
 ### 4.1 Base Activation Equation
-The total activation $A_ i$ of a memory chunk $i$ at retrieval is formulated as:
+The total activation $A_i$ of a memory chunk $i$ at retrieval is formulated as:
 
 ```math
 A_i = \ln \left( \sum_{j=1}^{n} t_j^{-d} \right) + \sum_{k} W_k \cdot S_{ki} + C_{\text{emo}} \cdot \left(1 - \left\| \vec{PAD}_{\text{agent}} - \vec{PAD}_{\text{memory}} \right\|_2\right) + \epsilon
 ```
 
-*   **Temporal Logarithmic Decay:** $\ln \left( \sum_ {j=1}^{n} t_ j^{-d} \right)$ represents the power-law decay of availability. $t_ j$ is the time elapsed (in seconds) since the $j$-th retrieval of the memory, and $d = 0.5$ is the standard ACT-R decay constant.
-*   **Associative Attentional Weighting:** $\sum_ {k} W_ k S_ {ki}$ calculates retrieval cue association, where $W_ k$ represents context attention weights and $S_ {ki}$ is graph proximity (hop depth factor) of context keys.
+*   **Temporal Logarithmic Decay:** $\ln \left( \sum_{j=1}^{n} t_j^{-d} \right)$ represents the power-law decay of availability. $t_j$ is the time elapsed (in seconds) since the $j$-th retrieval of the memory, and $d = 0.5$ is the standard ACT-R decay constant.
+*   **Associative Attentional Weighting:** $\sum_{k} W_k S_{ki}$ calculates retrieval cue association, where $W_k$ represents context attention weights and $S_{ki}$ is graph proximity (hop depth factor) of context keys.
 *   **Emotional Congruency:** Mapped as the Euclidean distance between the active 3D PAD vector of the agent and the PAD vector stored at encoding:
 
 ```math
 \left\| \vec{PAD}_{\text{agent}} - \vec{PAD}_{\text{memory}} \right\|_2 = \sqrt{(V_{\text{agent}} - V_i)^2 + (Ar_{\text{agent}} - Ar_i)^2 + (D_{\text{agent}} - D_i)^2}
 ```
 
-    where $C_ {\text{emo}} = 0.15$ acts as the affective scale modifier.
+    where $C_{\text{emo}} = 0.15$ acts as the affective scale modifier.
 *   **Cognitive Noise:** $\epsilon$ is a stochastic noise variable drawn from a normal distribution $\epsilon \sim \mathcal{N}(0, 0.02^2)$.
 
 ### 4.2 Gating and Retrieval Probability
@@ -277,7 +277,7 @@ A continuous audio frame stream is processed inside a microsecond-level loop. We
 \text{RMS} = \sqrt{\frac{1}{N} \sum_{k=1}^N x[k]^2}
 ```
 
-If $\text{RMS} > \text{Threshold}_ {\text{silence}}$, a System 1 interruption is triggered. The active Text-to-Speech (TTS) engine immediately halts physical audio playback, capturing the exact epoch $t_ {\text{stop}}$.
+If $\text{RMS} > \text{Threshold}_{\text{silence}}$, a System 1 interruption is triggered. The active Text-to-Speech (TTS) engine immediately halts physical audio playback, capturing the exact epoch $t_{\text{stop}}$.
 
 ### 5.2 System 2 Speculative Conflict Resolution
 To distinguish a genuine user turn from background room acoustics or conversational agreements (e.g. "I agree" or "Hmm"), a speculative System 2 background segmenter evaluates the early verbal transcript.
@@ -291,12 +291,12 @@ ICI = \gamma \cdot \left(1 - P_{\text{false\_trigger}}\right) \cdot \exp\left(-\
 ```
 
 *   $\gamma \in [0, 1]$: Cosine similarity between user interjection embeddings and active agent goal intents.
-*   $P_ {\text{false\_trigger}}$: Probability of false-triggering due to background acoustics.
-*   $t_ {\text{stop}} - t_ {\text{interject}}$: Turn response gap (in milliseconds) between when the user physically started speaking and when the TTS stopped.
-*   $\tau_ {\text{overlap}} = 200.0\text{ ms}$: Human turn-taking overlap baseline constant.
+*   $P_{\text{false\_trigger}}$: Probability of false-triggering due to background acoustics.
+*   $t_{\text{stop}} - t_{\text{interject}}$: Turn response gap (in milliseconds) between when the user physically started speaking and when the TTS stopped.
+*   $\tau_{\text{overlap}} = 200.0\text{ ms}$: Human turn-taking overlap baseline constant.
 
 ### 5.4 Acoustic prosody crossfading (OLA Crossfade)
-To prevent phase discontinuities or popping noises when shifting voice styles dynamically, we apply a **10 ms linear Overlap-Add (OLA) crossfade** between the previous synthesis buffer $x_ {\text{prev}}$ and the newly modified prosody buffer $x_ {\text{curr}}$:
+To prevent phase discontinuities or popping noises when shifting voice styles dynamically, we apply a **10 ms linear Overlap-Add (OLA) crossfade** between the previous synthesis buffer $x_{\text{prev}}$ and the newly modified prosody buffer $x_{\text{curr}}$:
 
 ```math
 y[i] = \left(1 - \frac{i}{\text{fade\_len}}\right) \cdot x_{\text{prev}}[i] + \frac{i}{\text{fade\_len}} \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade\_len}

@@ -217,7 +217,7 @@ Every interaction follows a strictly governed loop through the mesh:
 The agent's emotional state is a 3D coordinate in **PAD Space** (Pleasure, Arousal, Dominance).
 
 * **Mood Pull**: Emotional events "pull" the current state toward target coordinates.
-* **Logarithmic Decay**: During idle periods, the state drifts back to a neutral baseline following the ALMA formula: $I(t) = I_ 0 \cdot e^{-\lambda t}$.
+* **Logarithmic Decay**: During idle periods, the state drifts back to a neutral baseline following the ALMA formula: $I(t) = I_0 \cdot e^{-\lambda t}$.
 
 ### 2. Neuromodulatory Memory Gating (CVS-3.0)
 
@@ -238,9 +238,9 @@ A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
 
 The agent's trust model deconstructs the legacy trust scalar into three distinct sub-dimensions:
 
-1. **Benevolence** ($T_ b$): Direct relationship warmth, modulated by Relationship Impact ($RI$).
-2. **Competence** ($T_ c$): Pragmatic task capability, modulated by Goal Congruence ($G$) and Relevance ($R$).
-3. **Integrity** ($T_ i$): Moral/ethical alignments, modulated by Norm Alignment ($NA$).
+1. **Benevolence** ($T_b$): Direct relationship warmth, modulated by Relationship Impact ($RI$).
+2. **Competence** ($T_c$): Pragmatic task capability, modulated by Goal Congruence ($G$) and Relevance ($R$).
+3. **Integrity** ($T_i$): Moral/ethical alignments, modulated by Norm Alignment ($NA$).
 
 The overall trust score returned for backward compatibility is:
 
@@ -250,9 +250,9 @@ The overall trust score returned for backward compatibility is:
 
 Appraisal-driven trust evolution updates individual sub-dimensions:
 
-* $T_ b \leftarrow \text{clamp}(T_ b + \delta \cdot RI)$
-* $T_ c \leftarrow \text{clamp}(T_ c + \delta \cdot (0.6 \cdot G + 0.4 \cdot R))$
-* $T_ i \leftarrow \text{clamp}(T_ i + \delta \cdot NA)$
+* $T_b \leftarrow \text{clamp}(T_b + \delta \cdot RI)$
+* $T_c \leftarrow \text{clamp}(T_c + \delta \cdot (0.6 \cdot G + 0.4 \cdot R))$
+* $T_i \leftarrow \text{clamp}(T_i + \delta \cdot NA)$
 
 ### 4. Memory Activation & ACT-R Pruning (CVS-3.0)
 
@@ -262,7 +262,7 @@ The subconscious memory agent runs background reflection sweeps after 5 minutes 
 A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
 ```
 
-* **ACT-R Pruning**: Memories where base activation falls below the retention threshold ($A_ i < -2.0$) are permanently pruned from local SQLite/PostgreSQL stores.
+* **ACT-R Pruning**: Memories where base activation falls below the retention threshold ($A_i < -2.0$) are permanently pruned from local SQLite/PostgreSQL stores.
 * **Decay**: Surviving memories have their importance scores scaled by `0.8` on each consolidation tick.
 
 ### 5. Endocrine LLM Parameter Modulation (CVS-3.0)
