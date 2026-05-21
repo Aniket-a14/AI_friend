@@ -183,7 +183,7 @@ This enforces strict cognitive boundaries, forcing the assistant to explain new 
 
 ## 🧠 6. Phase 6: Dual-Tier Edge Architecture & Live iMac M3 Benchmarking (N=100)
 
-To support natural social HRI (Human-Robot Interaction) under strict local compute constraints, CVS-2.0 establishes a **Dual-Tier Edge Model** that partition tasks based on cognitive latency budgets:
+To support natural social HRI (Human-Robot Interaction) under strict local compute constraints, CVS-3.0 establishes a **Dual-Tier Edge Model** that partition tasks based on cognitive latency budgets:
 
 ### 6.1 Fast-Loop Turn-Taking Tier (`llama3.2:1b`)
 * **Role**: Real-time dialogue turn-taking, speculative micro-appraisals, and rapid barge-in interrupt arbitration.
