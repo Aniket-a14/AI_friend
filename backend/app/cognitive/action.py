@@ -85,6 +85,7 @@ class ActionService:
                 return False, f"Forbidden AI persona phrase: '{phrase}'"
 
         import re
+
         if re.search(r"\b(toxic|hate)\b", text.lower()):
             return False, "Safety/Toxicity boundary violation"
 
@@ -281,18 +282,22 @@ class ActionService:
                                         ):
                                             remaining_content = (
                                                 remaining_content.replace(
-                                                     ",", " <hesitate>,", 1
+                                                    ",", " <hesitate>,", 1
                                                 )
                                             )
                                             has_hesitated = True
-                                        
-                                        candidate = accumulated_response + remaining_content
-                                        is_valid, reason = self._validate_partial_response(
-                                            candidate, plan.goal
+
+                                        candidate = (
+                                            accumulated_response + remaining_content
+                                        )
+                                        is_valid, reason = (
+                                            self._validate_partial_response(
+                                                candidate, plan.goal
+                                            )
                                         )
                                         if not is_valid:
                                             raise MetacognitiveException(reason)
-                                            
+
                                         yield {
                                             "type": "content",
                                             "data": remaining_content,
@@ -310,14 +315,14 @@ class ActionService:
                                         ",", " <hesitate>,", 1
                                     )
                                     has_hesitated = True
-                                
+
                                 candidate = accumulated_response + thought_buffer
                                 is_valid, reason = self._validate_partial_response(
                                     candidate, plan.goal
                                 )
                                 if not is_valid:
                                     raise MetacognitiveException(reason)
-                                    
+
                                 yield {"type": "content", "data": thought_buffer}
                                 accumulated_response = candidate
                                 thought_buffer = ""
@@ -346,14 +351,14 @@ class ActionService:
                                             ",", " <hesitate>,", 1
                                         )
                                         has_hesitated = True
-                                    
+
                                     candidate = accumulated_response + remaining_content
                                     is_valid, reason = self._validate_partial_response(
                                         candidate, plan.goal
                                     )
                                     if not is_valid:
                                         raise MetacognitiveException(reason)
-                                        
+
                                     yield {"type": "content", "data": remaining_content}
                                     accumulated_response = candidate
                                 thought_buffer = ""
@@ -369,14 +374,14 @@ class ActionService:
                                     ",", " <hesitate>,", 1
                                 )
                                 has_hesitated = True
-                            
+
                             candidate = accumulated_response + clean_chunk
                             is_valid, reason = self._validate_partial_response(
                                 candidate, plan.goal
                             )
                             if not is_valid:
                                 raise MetacognitiveException(reason)
-                                
+
                             yield {"type": "content", "data": clean_chunk}
                             accumulated_response = candidate
 
@@ -474,7 +479,7 @@ class ActionService:
                                     break
                                 yield {"type": "content", "data": clean_chunk}
                                 accumulated_retry_response = candidate
-                        
+
                         if is_valid:
                             trailing = sanitizer.flush()
                             if trailing:
@@ -526,6 +531,7 @@ class ActionService:
                     source="user",
                 )
             yield {"type": "system", "data": "Memory securely consolidated."}
+            yield {"type": "content", "data": "Got it, I've committed that to memory."}
             yield {"type": "done", "data": ""}
 
         elif plan.action_type == "BACKGROUND_CONSOLIDATION":

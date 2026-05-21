@@ -66,3 +66,7 @@ models/
 **/*.bin
 **/*.onnx
 **/*.safe_tensors
+
+# Scratch & temporary research lexicons
+scratch/
+scripts/research/NRC-VAD-Lexicon/

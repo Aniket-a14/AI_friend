@@ -3,6 +3,7 @@ import sys
 from types import SimpleNamespace
 from archive.stt.agent import STTAgent
 
+
 def test_stt_rejects_non_pcm_payloads_and_downmixes_multichannel_pcm(monkeypatch):
     mock_vad = SimpleNamespace(
         create=lambda: object(),

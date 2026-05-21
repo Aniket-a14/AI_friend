@@ -111,6 +111,7 @@ class BaseAgent:
 
         # Resolve Enum subjects to their string values (e.g. Topics.CHAT_OUTPUT -> "chat.output")
         from enum import Enum
+
         if isinstance(subject, Enum):
             subject = subject.value
 
@@ -173,7 +174,6 @@ class BaseAgent:
             )
         except Exception as e:
             logger.error(f"Failed to publish to {subject}: {e}")
-
 
     def log_latency(self, data: Any, stage_name: str):
         """Utility to log current latency relative to start_time."""

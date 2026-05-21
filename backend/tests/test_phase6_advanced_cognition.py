@@ -54,8 +54,12 @@ async def test_subconscious_loop_abort():
     await asyncio.sleep(0.1)
 
     # Verify that tasks were cancelled
-    assert agent._current_monologue_task.cancelled() is True, "Monologue task should be cancelled on user input"
-    assert agent._current_dream_task.cancelled() is True, "Dream task should be cancelled on user input"
+    assert agent._current_monologue_task.cancelled() is True, (
+        "Monologue task should be cancelled on user input"
+    )
+    assert agent._current_dream_task.cancelled() is True, (
+        "Dream task should be cancelled on user input"
+    )
 
 
 @pytest.mark.asyncio

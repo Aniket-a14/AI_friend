@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 from app.config import Config
 from archive.voice.agent import VoiceAgent, VoicePlaybackState
 
+
 def test_voice_temporal_renderer_keeps_timing_tags_out_of_tts():
     agent = VoiceAgent()
     agent.playback_queue = asyncio.Queue()
@@ -54,7 +55,9 @@ def test_voice_final_stop_fences_old_synthesis_generation():
     asyncio.run(agent._on_audio_stop({"speculative": False, "turn_id": "turn-1"}))
 
     assert not agent._is_current_item(stale_item)
-    assert agent._is_current_item({"turn_id": "turn-2", "generation": agent.system.generation})
+    assert agent._is_current_item(
+        {"turn_id": "turn-2", "generation": agent.system.generation}
+    )
 
 
 def test_voice_resume_ignores_stale_utterance_id():

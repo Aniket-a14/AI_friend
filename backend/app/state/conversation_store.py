@@ -282,6 +282,16 @@ class ConversationHistoryStore:
 
         try:
             async with self.pool.acquire() as conn:
+                # Self-healing session insert to prevent foreign key violations (e.g. during DB resets)
+                await conn.execute(
+                    """
+                    INSERT INTO sessions (id, started_at)
+                    VALUES ($1, NOW())
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    self.current_session_id,
+                )
+
                 await conn.execute(
                     """
                     INSERT INTO messages (id, session_id, role, content, timestamp)

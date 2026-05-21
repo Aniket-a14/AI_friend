@@ -58,8 +58,8 @@ async def update_soul():
             VALUES (1, $1, $2, NOW())
             ON CONFLICT (id) 
             DO UPDATE SET 
-                personality = $1, 
-                background_history = $2,
+                personality = EXCLUDED.personality, 
+                background_history = EXCLUDED.background_history,
                 updated_at = NOW();
             """,
             personality_content,

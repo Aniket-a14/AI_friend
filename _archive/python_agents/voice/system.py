@@ -4,6 +4,7 @@ from typing import Dict, Any, Set, Optional
 
 logger = logging.getLogger(__name__)
 
+
 class VoicePlaybackState(Enum):
     IDLE = "IDLE"
     BUFFERING = "BUFFERING"
@@ -12,6 +13,7 @@ class VoicePlaybackState(Enum):
     INSERT_WINDOW = "INSERT_WINDOW"
     TRANSITION = "TRANSITION"
     COOLDOWN = "COOLDOWN"
+
 
 class VoiceSystem:
     """
@@ -25,7 +27,9 @@ class VoiceSystem:
         self.stopped_turn_ids: Set[str] = set()
         self.paused_utterance_id: Optional[str] = None
 
-    def handle_stop(self, is_speculative: bool, turn_id: Optional[str], utterance_id: Optional[str]):
+    def handle_stop(
+        self, is_speculative: bool, turn_id: Optional[str], utterance_id: Optional[str]
+    ):
         """Logic for cessation requests."""
         if is_speculative:
             self.paused_utterance_id = utterance_id
@@ -41,8 +45,11 @@ class VoiceSystem:
 
     def handle_resume(self, utterance_id: str) -> bool:
         """Logic for resumption requests. Returns True if state changed."""
-        if (self.paused_utterance_id and utterance_id 
-            and utterance_id != self.paused_utterance_id):
+        if (
+            self.paused_utterance_id
+            and utterance_id
+            and utterance_id != self.paused_utterance_id
+        ):
             return False
 
         if self.state == VoicePlaybackState.SPECULATIVE_PAUSE:

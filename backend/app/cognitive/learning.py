@@ -108,7 +108,9 @@ class ReflectionService:
 
             try:
                 fact_res = await self.llm.generate(
-                    fact_prompt, model=Config.LLM_REFLECTION_MODEL
+                    fact_prompt,
+                    model=Config.LLM_REFLECTION_MODEL,
+                    options_override={"num_predict": 256},
                 )
                 facts = self._extract_json(fact_res)
 
@@ -188,7 +190,9 @@ class ReflectionService:
             """
             try:
                 ident_res = await self.llm.generate(
-                    identity_prompt, model=Config.LLM_REFLECTION_MODEL
+                    identity_prompt,
+                    model=Config.LLM_REFLECTION_MODEL,
+                    options_override={"num_predict": 256},
                 )
                 suggestions = self._extract_json(ident_res)
 

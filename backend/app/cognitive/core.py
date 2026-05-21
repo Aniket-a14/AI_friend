@@ -9,6 +9,7 @@ Pipeline (psychological_layer.md System Principle):
 
 import logging
 import time
+import asyncio
 from typing import Dict, Any, AsyncGenerator
 
 from .perception import PerceptionService
@@ -155,6 +156,26 @@ class CognitiveService:
                 f"[Cognitive] Active Memory Influence: Surfaced '{memory_text[:30]}...'"
             )
 
+    def _wrap_reflection_task(self, task, episodes):
+        if not task or task.done():
+            return task
+
+        async def wrapped():
+            t_start = time.perf_counter()
+            try:
+                await task
+            finally:
+                elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+                logger.info(
+                    f"[Telemetry] Background reflection took {elapsed_ms:.2f} ms"
+                )
+                await self.publish(
+                    "telemetry.reflection",
+                    {"duration_ms": elapsed_ms, "episodes_count": len(episodes)},
+                )
+
+        return asyncio.create_task(wrapped())
+
     async def process_event(
         self, raw_event: Dict[str, Any]
     ) -> AsyncGenerator[Dict[str, Any], None]:
@@ -193,8 +214,9 @@ class CognitiveService:
 
             elif output["type"] == "reflection_needed":
                 episodes = output["data"]
-                self.last_reflection_task = await self.learning.trigger_reflection(
-                    episodes
+                raw_task = await self.learning.trigger_reflection(episodes)
+                self.last_reflection_task = self._wrap_reflection_task(
+                    raw_task, episodes
                 )
                 yield output
 
@@ -297,9 +319,8 @@ class CognitiveService:
                 "state": state_snapshot,
                 "response": full_response,
             }
-            self.last_reflection_task = await self.learning.trigger_reflection(
-                [episode]
-            )
+            raw_task = await self.learning.trigger_reflection([episode])
+            self.last_reflection_task = self._wrap_reflection_task(raw_task, [episode])
 
         logger.info(
             "[Cognitive] Proactive generation complete. Response length: %d",
