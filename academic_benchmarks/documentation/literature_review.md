@@ -310,7 +310,7 @@ graph TD
 
 *Verified Quantitative Findings*: The architecture demonstrates improved local AI execution capability on consumer-grade computing platforms.
 
-*Academic Link*: https://www.apple.com/mac/m3/
+*Academic Link*: https://www.apple.com/newsroom/2023/10/apple-unveils-m3-m3-pro-and-m3-max-the-most-advanced-chips-for-a-personal-computer/
 
 29. **Radford, A. et al. (2023)**
     *Title*: "Robust speech recognition via large-scale weak supervision"
