@@ -219,13 +219,17 @@ class AppraisalEngine:
                 exp = float(data.get("expectedness", 0.5))
                 
                 target_p = max(-1.0, min(1.0, gc))
-                target_a = max(-1.0, min(1.0, 1.0 - abs(exp)))
+                target_a = max(-1.0, min(1.0, -exp))
                 target_d = max(-1.0, min(1.0, na))
                 
                 drift_factor = 0.2
-                new_p = current_pad.get("valence", 0.0) + drift_factor * (target_p - current_pad.get("valence", 0.0))
-                new_a = current_pad.get("arousal", 0.5) + drift_factor * (target_a - current_pad.get("arousal", 0.5))
-                new_d = current_pad.get("dominance", 0.5) + drift_factor * (target_d - current_pad.get("dominance", 0.5))
+                val = current_pad.get("valence", 0.0)
+                aro = current_pad.get("arousal", 0.5)
+                dom = current_pad.get("dominance", 0.5)
+                
+                new_p = val + drift_factor * (target_p - val)
+                new_a = aro + drift_factor * (target_a - aro)
+                new_d = dom + drift_factor * (target_d - dom)
                 
                 return {
                     "valence": max(-1.0, min(1.0, new_p)),

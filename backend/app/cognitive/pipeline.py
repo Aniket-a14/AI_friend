@@ -24,6 +24,7 @@ class CognitivePipeline:
         self.learning = learning
         self.identity = identity
         self.llm = llm_service
+        self._system2_task = None
 
     async def execute(
         self, raw_event: Dict[str, Any], surfaced_memories: List[Dict[str, Any]] = None
@@ -105,7 +106,7 @@ class CognitivePipeline:
             # Trigger System 2 deep appraisal in background (non-blocking)
             if self.llm:
                 import asyncio
-                asyncio.create_task(self._async_system2_appraisal(event.raw_content))
+                self._system2_task = asyncio.create_task(self._async_system2_appraisal(event.raw_content))
 
             state_snapshot = self.state.get_context_snapshot()
             yield {

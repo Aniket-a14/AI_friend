@@ -84,7 +84,8 @@ class ActionService:
             if phrase in text.lower():
                 return False, f"Forbidden AI persona phrase: '{phrase}'"
 
-        if "toxic" in text.lower() or "hate" in text.lower():
+        import re
+        if re.search(r"\b(toxic|hate)\b", text.lower()):
             return False, "Safety/Toxicity boundary violation"
 
         return True, ""
@@ -260,10 +261,7 @@ class ActionService:
                         # CoT strip check
                         if not checked_start:
                             thought_buffer += clean_chunk
-                            if (
-                                thought_buffer.strip().startswith("<thought")
-                                or "<thought" in thought_buffer
-                            ):
+                            if "<thought" in thought_buffer:
                                 in_thought = True
                                 checked_start = True
                                 if "</thought>" in thought_buffer:
@@ -275,7 +273,6 @@ class ActionService:
                                         "<thought>", ""
                                     ).strip()
                                     logger.info(f"[CoT Thought] {thought_content}")
-
                                     if remaining_content:
                                         if (
                                             dominance < 0.4
@@ -284,22 +281,23 @@ class ActionService:
                                         ):
                                             remaining_content = (
                                                 remaining_content.replace(
-                                                    ",", " <hesitate>,", 1
+                                                     ",", " <hesitate>,", 1
                                                 )
                                             )
                                             has_hesitated = True
+                                        
+                                        candidate = accumulated_response + remaining_content
+                                        is_valid, reason = self._validate_partial_response(
+                                            candidate, plan.goal
+                                        )
+                                        if not is_valid:
+                                            raise MetacognitiveException(reason)
+                                            
                                         yield {
                                             "type": "content",
                                             "data": remaining_content,
                                         }
-                                        accumulated_response += remaining_content
-                                        is_valid, reason = (
-                                            self._validate_partial_response(
-                                                accumulated_response, plan.goal
-                                            )
-                                        )
-                                        if not is_valid:
-                                            raise MetacognitiveException(reason)
+                                        accumulated_response = candidate
                                     thought_buffer = ""
                                     in_thought = False
                             else:
@@ -312,13 +310,16 @@ class ActionService:
                                         ",", " <hesitate>,", 1
                                     )
                                     has_hesitated = True
-                                yield {"type": "content", "data": thought_buffer}
-                                accumulated_response += thought_buffer
+                                
+                                candidate = accumulated_response + thought_buffer
                                 is_valid, reason = self._validate_partial_response(
-                                    accumulated_response, plan.goal
+                                    candidate, plan.goal
                                 )
                                 if not is_valid:
                                     raise MetacognitiveException(reason)
+                                    
+                                yield {"type": "content", "data": thought_buffer}
+                                accumulated_response = candidate
                                 thought_buffer = ""
                                 checked_start = True
                                 continue
@@ -345,13 +346,16 @@ class ActionService:
                                             ",", " <hesitate>,", 1
                                         )
                                         has_hesitated = True
-                                    yield {"type": "content", "data": remaining_content}
-                                    accumulated_response += remaining_content
+                                    
+                                    candidate = accumulated_response + remaining_content
                                     is_valid, reason = self._validate_partial_response(
-                                        accumulated_response, plan.goal
+                                        candidate, plan.goal
                                     )
                                     if not is_valid:
                                         raise MetacognitiveException(reason)
+                                        
+                                    yield {"type": "content", "data": remaining_content}
+                                    accumulated_response = candidate
                                 thought_buffer = ""
                                 in_thought = False
                             continue
@@ -365,13 +369,16 @@ class ActionService:
                                     ",", " <hesitate>,", 1
                                 )
                                 has_hesitated = True
-                            yield {"type": "content", "data": clean_chunk}
-                            accumulated_response += clean_chunk
+                            
+                            candidate = accumulated_response + clean_chunk
                             is_valid, reason = self._validate_partial_response(
-                                accumulated_response, plan.goal
+                                candidate, plan.goal
                             )
                             if not is_valid:
                                 raise MetacognitiveException(reason)
+                                
+                            yield {"type": "content", "data": clean_chunk}
+                            accumulated_response = candidate
 
                     trailing = sanitizer.flush()
                     if trailing:
@@ -385,18 +392,30 @@ class ActionService:
                                 logger.info(f"[CoT Thought] {thought_content}")
                                 remaining_content = parts[1]
                                 if remaining_content:
+                                    candidate = accumulated_response + remaining_content
+                                    is_valid, reason = self._validate_partial_response(
+                                        candidate, plan.goal
+                                    )
+                                    if not is_valid:
+                                        raise MetacognitiveException(reason)
                                     yield {"type": "content", "data": remaining_content}
-                                    accumulated_response += remaining_content
+                                    accumulated_response = candidate
                         else:
+                            candidate = accumulated_response + trailing
+                            is_valid, reason = self._validate_partial_response(
+                                candidate, plan.goal
+                            )
+                            if not is_valid:
+                                raise MetacognitiveException(reason)
                             yield {"type": "content", "data": trailing}
-                            accumulated_response += trailing
+                            accumulated_response = candidate
                     yield {"type": "done", "data": "finished"}
 
                 except MetacognitiveException as me:
                     logger.warning(
                         f"[System 3] Metacognitive violation: {me.reason}. Triggering self-correction."
                     )
-                    if hasattr(self, "publish_cb") and self.publish_cb:
+                    if self.publish_cb:
                         try:
                             await self.publish_cb(
                                 "control.interrupt",
@@ -426,6 +445,8 @@ class ActionService:
                             options_override=endocrine_options,
                         ).__aiter__()
                         deadline = time.monotonic() + stream_budget
+                        accumulated_retry_response = ""
+                        is_valid = True
                         while True:
                             remaining = deadline - time.monotonic()
                             if remaining <= 0:
@@ -438,10 +459,39 @@ class ActionService:
                                 break
                             clean_chunk = sanitizer.feed(chunk)
                             if clean_chunk:
+                                candidate = accumulated_retry_response + clean_chunk
+                                is_valid, _ = self._validate_partial_response(
+                                    candidate, plan.goal
+                                )
+                                if not is_valid:
+                                    logger.warning(
+                                        "[System 3] Retry also violated constraints; yielding safe fallback."
+                                    )
+                                    yield {
+                                        "type": "content",
+                                        "data": "I need a moment to gather my thoughts...",
+                                    }
+                                    break
                                 yield {"type": "content", "data": clean_chunk}
-                        trailing = sanitizer.flush()
-                        if trailing:
-                            yield {"type": "content", "data": trailing}
+                                accumulated_retry_response = candidate
+                        
+                        if is_valid:
+                            trailing = sanitizer.flush()
+                            if trailing:
+                                candidate = accumulated_retry_response + trailing
+                                is_valid_trail, _ = self._validate_partial_response(
+                                    candidate, plan.goal
+                                )
+                                if not is_valid_trail:
+                                    logger.warning(
+                                        "[System 3] Retry trailing also violated constraints; yielding safe fallback."
+                                    )
+                                    yield {
+                                        "type": "content",
+                                        "data": "I need a moment to gather my thoughts...",
+                                    }
+                                else:
+                                    yield {"type": "content", "data": trailing}
                         yield {"type": "done", "data": "finished"}
                     except Exception as inner_e:
                         logger.error(

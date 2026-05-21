@@ -287,9 +287,11 @@ fn load_vocalization_pcm(name: &str, sample_rate: u32) -> Vec<u8> {
     ];
     for path in &paths {
         if let Ok(data) = std::fs::read(path) {
-            if data.len() > 44 {
+            if let Some(pcm) = extract_wav_data(&data) {
                 info!("Successfully loaded vocalization {} from {}", name, path);
-                return data[44..].to_vec();
+                return pcm;
+            } else {
+                warn!("WAV file at {} found, but missing data chunk or invalid format.", path);
             }
         }
     }
@@ -301,6 +303,33 @@ fn load_vocalization_pcm(name: &str, sample_rate: u32) -> Vec<u8> {
         pcm.extend_from_slice(&(val as i16).to_le_bytes());
     }
     pcm
+}
+
+fn extract_wav_data(data: &[u8]) -> Option<Vec<u8>> {
+    // Minimal RIFF/WAV parser: find "data" chunk and return its contents
+    if data.len() < 12 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
+        return None;
+    }
+    let mut pos = 12;
+    while pos + 8 <= data.len() {
+        let chunk_id = &data[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([
+            data[pos + 4],
+            data[pos + 5],
+            data[pos + 6],
+            data[pos + 7],
+        ]) as usize;
+        if chunk_id == b"data" {
+            let start = pos + 8;
+            let end = (start + chunk_size).min(data.len());
+            return Some(data[start..end].to_vec());
+        }
+        pos += 8 + chunk_size;
+        if chunk_size % 2 != 0 {
+            pos += 1; // RIFF chunks are word-aligned
+        }
+    }
+    None
 }
 
 fn generate_hesitation_pcm(duration_ms: u32, sample_rate: u32, pitch: f64) -> Vec<u8> {
@@ -367,11 +396,13 @@ async fn handle_chat_output(
                 publish_pcm(jetstream, pcm, &event).await?;
             }
             TemporalPart::Vocalization(name) => {
+                ola_filter.clear_history();
                 let mut pcm = load_vocalization_pcm(&name, config.sample_rate);
                 pcm = reverb_filter.process(&pcm, 0.1);
                 publish_pcm(jetstream, pcm, &event).await?;
             }
             TemporalPart::Hesitation(ms) => {
+                ola_filter.clear_history();
                 let pcm = generate_hesitation_pcm(ms, config.sample_rate, prosody.pitch);
                 let pcm = reverb_filter.process(&pcm, 0.1);
                 publish_pcm(jetstream, pcm, &event).await?;

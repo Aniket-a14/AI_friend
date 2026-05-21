@@ -295,7 +295,7 @@ class SubconsciousAgent(BaseAgent):
             thought = thought.strip().strip("\"'")
             if thought:
                 logger.info(f"[Monologue] Thought generated: '{thought}'")
-                await self.publish("state.subconscious", {"thought": thought, "timestamp": time.time()})
+                await self.publish(Topics.STATE_SUBCONSCIOUS, {"thought": thought, "timestamp": time.time()})
         except asyncio.CancelledError:
             logger.info("[Monologue] Thought generation cancelled due to user activity.")
             raise
@@ -356,7 +356,22 @@ class SubconsciousAgent(BaseAgent):
                 await self._monologue_task
             except asyncio.CancelledError:
                 pass
-        self._cancel_active_subconscious_tasks()
+        
+        # Cancel and await active generation tasks before closing resources
+        tasks_to_await = []
+        if self._current_monologue_task and not self._current_monologue_task.done():
+            self._current_monologue_task.cancel()
+            tasks_to_await.append(self._current_monologue_task)
+        if self._current_dream_task and not self._current_dream_task.done():
+            self._current_dream_task.cancel()
+            tasks_to_await.append(self._current_dream_task)
+        
+        for task in tasks_to_await:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
         await self.llm.close()
         if self.db_store and self._owns_db_store:
             await self.db_store.close()
