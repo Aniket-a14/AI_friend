@@ -20,7 +20,7 @@
 
 ## System Overview
 
-AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus. In the finalized **v5.0.0 (CVS-3.0 Rust Native Edition)**, the signal bus was expanded to include 9 core subjects covering system heartbeats, active memory recall, and identity synchronization.
+AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus. In the finalized **v6.0.0 (CVS-3.0 Rust Native Edition)**, the signal bus was expanded to include 9 core subjects covering system heartbeats, active memory recall, and identity synchronization.
 
 In **CVS-3.0**, we have achieved **Identity Continuity**. The system is no longer a reactive "Think-Speak" pipeline; it is now a **State-Driven Identity Mesh** coached by a continuous NATS heartbeat. It anticipates context through memory surfacing and expresses emotion through deterministic temporal markers.
 

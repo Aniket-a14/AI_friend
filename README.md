@@ -1,4 +1,4 @@
-# 🎙️ AI Friend: Cognitive Voice System (v5.0.0 / CVS-3.0 Rust Native Edition)
+# 🎙️ AI Friend: Cognitive Voice System (v6.0.0 / CVS-3.0 Rust Native Edition)
 
 **A high-fidelity, state-driven cognitive identity emulator built on a hardened Sovereign Mesh for ultra-low latency conversational realism.**
 
