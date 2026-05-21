@@ -376,7 +376,7 @@ def test_affective_prosody_mapping_benchmark(benchmark):
         arousal = 0.8
         dominance = 0.4
 
-        # CVS-2.0 Mapping Algorithm
+        # CVS-3.0 Mapping Algorithm
         speaking_rate = 1.0 + (arousal * 0.15) - (pleasure * 0.05)
         pitch_shift = (arousal * 0.1) + (dominance * 0.05)
         energy_scale = 1.0 + (dominance * 0.2)

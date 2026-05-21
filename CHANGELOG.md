@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **16-Metric Performance Suite**: Comprehensive benchmarking suite (`test_performance.py`) and logarithmic decade profile analytics (`scripts/diagnostics/human_readable_benchmarks.py`).
 
 ### Changed
-- **Rust Migration Finalized (CVS-2.0)**: The signaling API, audio playback rings, and NATS payload serialization are now fully migrated to high-performance Rust Native audio agents.
+- **Rust Migration Finalized (CVS-3.0)**: The signaling API, audio playback rings, and NATS payload serialization are now fully migrated to high-performance Rust Native audio agents.
 - **Binary NATS Serialization**: Swapped JSON with `orjson` inside `BaseAgent.publish` to write UTF-8 binary bytes directly, accelerating throughput to 80,000 OPS.
 - **PostgreSQL PL/pgSQL Offloading**: ACT-R memory decay formulas and emotional alignment evaluations are now compiled and executed directly inside database CPU registers (`surface_actr_memories`).
 - **Telemetry Logging**: Migrated the synchronous logging engine to a lock-free asynchronous background worker, dropping telemetry overhead from 661 µs to < 0.5 µs (1300x speedup).

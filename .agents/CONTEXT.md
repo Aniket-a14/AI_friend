@@ -270,7 +270,7 @@ Infrastructure changes:
 
 - **Phased Startup Mesh**: Implemented `depends_on` conditions with `service_healthy`. The mesh now graduates in stages (Infra -> Brain -> Sensory Agents) to eliminate startup race conditions.
 - **Mesh Surveillance**: Added `netcat-openbsd` to the base image. All agents now perform automated health probes (`nc -z nats_mesh 4222`) to monitor signal bus connectivity.
-- **Performance Exposure**: Mapped CVS-2.0 performance variables (`VOICE_SYNTH_CONCURRENCY`, `MAX_VOICE_QUEUE_SIZE`, `STT_WHISPER_QUEUE_SIZE`, `STATE_SENSORY_WEIGHT`) to the `.env` layer for production tuning.
+- **Performance Exposure**: Mapped CVS-3.0 performance variables (`VOICE_SYNTH_CONCURRENCY`, `MAX_VOICE_QUEUE_SIZE`, `STT_WHISPER_QUEUE_SIZE`, `STATE_SENSORY_WEIGHT`) to the `.env` layer for production tuning.
 - **Identity Persistence**: Synchronized weight volumes (`GPT_weights`, `SoVITS_weights`) across the agent mesh to support permanent voice identity.
 - **Resilience**: Orchestrated SoVITS API health diagnostics using `/docs` probes to ensure dependent agents only start when the inference engine is ready.
 
@@ -281,7 +281,7 @@ Verification:
 
 ## 2026-04-19 CI/CD Automation (Solid State Workflows)
 
-Added five specialized GitHub Actions workflows to protect CVS-2.0 architectural
+Added five specialized GitHub Actions workflows to protect CVS-3.0 architectural
 invariants. These are not generic linters — each one guards a specific failure
 mode encountered or identified during the infrastructure hardening session.
 
@@ -321,7 +321,7 @@ Verification:
 
 ## 2026-04-19 Modular Architectural Refactor
 
-Refactored the monolithic CVS-2.0 backend into a 4-layer decoupled architecture to improve maintainability and strictly enforce structural boundaries.
+Refactored the monolithic CVS-3.0 backend into a 4-layer decoupled architecture to improve maintainability and strictly enforce structural boundaries.
 
 Changed files:
 
@@ -654,9 +654,9 @@ Remaining risks:
 - CPU-only Ollama latency remains the primary bottleneck for sustained high-rate turn completion.
 - Final soak gate sign-off still requires a controlled run with strict turn-id filtering and stable background load.
  
-## 2026-04-21 CVS-2.0 Stabilization & Storage Optimization
+## 2026-04-21 CVS-3.0 Stabilization & Storage Optimization
  
-Finalized the transition to the hardened CVS-2.0 mesh on host Zenbook Duo (Laptop/CPU-fallback mode).
+Finalized the transition to the hardened CVS-3.0 mesh on host Zenbook Duo (Laptop/CPU-fallback mode).
  
 **Storage Optimization:**
 - Reclaimed **102.5GB of disk space** on the host `C:` drive via `diskpart` VHDX compaction. 
@@ -869,7 +869,7 @@ Verification:
 
 ## 2026-05-11 AI Mesh Contracts & Observability Hardening
 
-Completed infrastructure hardening and API compatibility fixes to move the project from "Experimental" to "Hardened CVS-2.0".
+Completed infrastructure hardening and API compatibility fixes to move the project from "Experimental" to "Hardened CVS-3.0".
 
 Changed files:
 - `backend/app/contracts.py`
@@ -995,7 +995,7 @@ Verification:
 
 The AI Friend cognitive pipeline has been successfully transitioned into a modular, production-grade, transport-agnostic architecture. This refactor eliminates significant technical debt and establishes a robust foundation for future robotic hardware integration.
 
-### 1. Architectural Transformation (CVS-2.0)
+### 1. Architectural Transformation (CVS-3.0)
 We have successfully decoupled all high-level agentic logic from the NATS/Mesh signaling layer. This was achieved by extracting pure logic "Engines" and "Systems" that operate without I/O side effects.
 
 - **`CognitivePipeline`** (`app/cognitive/pipeline.py`): Centralized the master cognitive loop (Perception → Appraisal → State → Decision → Action → Learning).
@@ -1138,9 +1138,9 @@ Established the formal workspace blueprint for high-performance Rust migration, 
 
 
 
-## 2026-05-18 CVS-2.0 Rust Migration Finalization & Advanced Benchmarking
+## 2026-05-18 CVS-3.0 Rust Migration Finalization & Advanced Benchmarking
 
-Validated the successful high-performance architectural transition to CVS-2.0 (Rust Native Edition) and established a comprehensive regression & benchmarking suite.
+Validated the successful high-performance architectural transition to CVS-3.0 (Rust Native Edition) and established a comprehensive regression & benchmarking suite.
 
 Changed files:
 - `backend/tests/test_performance.py`
@@ -1157,7 +1157,7 @@ Behavior/process changes:
 
 Verification:
 - `pytest tests/test_performance.py` ran warning-free, registering standard benchmark components under `1ms` (🟩 ULTRA) and extreme payload segmentations under `5ms` (🟦 FAST).
-- The completed `CVS-2.0` architecture and performance improvements have been pushed and synchronized to GitHub `main`.
+- The completed `CVS-3.0` architecture and performance improvements have been pushed and synchronized to GitHub `main`.
 
 ## 2026-05-19 CVS-3.0 Phase 1: SQLite Database Fallback & Offline Development
 
@@ -1223,3 +1223,48 @@ Details:
 Verification:
 - Checked syntax and LaTeX markdown block rendering in the modified markdown files.
 - Equations are intended to match the actual implementation in `backend/crates/contracts/src/lib.rs` and `backend/crates/voice-agent/src/main.rs`; see the 2026-05-20 correction entry below for the corrected formulas.
+
+
+## 2026-05-21 CVS-3.0 Phase 6: Advanced Cognition & Deep Integration
+
+Implemented core upgrades for Phase 6 Advanced Cognition, integrating real-time startle detection via Rust FFI, early-abort subconscious loops, paralinguistic tag synthesis, metacognitive self-correction, silent reasoning stripping, and Neo4j sleep dreaming cycles, alongside robust PR #46 resolutions.
+
+Changed files:
+- `backend/app/cognitive/action.py`
+- `backend/app/cognitive/appraisal.py`
+- `backend/app/cognitive/pipeline.py`
+- `backend/app/agents/subconscious_agent.py`
+- `backend/app/contracts.py`
+- `backend/crates/voice-agent/src/main.rs`
+- `backend/tests/test_phase6_advanced_cognition.py`
+
+### 1. Metacognitive Self-Correction Stream
+The system implements a real-time metacognitive supervisor in `ActionService` (`backend/app/cognitive/action.py`) to prevent toxic responses, hallucinations, or identity drift:
+- **Real-Time Validation**: Streaming output chunks are validated eagerly against `_validate_partial_response`. If semantic drift or safety boundary violation is detected (e.g. matching `\b(hate|toxic)\b`), the active stream is immediately aborted.
+- **Mesh Interruption**: The system publishes `control.interrupt` and `audio.stop` events to abort any ongoing vocalization playback immediately.
+- **Conversational Repair**: It launches a self-correction generation stream, prefixing the output with a conversational repair phrase: *"Wait, let me rephrase that..."*.
+- **Recursion Protection**: If the correction stream violates rules again, the system yields a safe fallback (*"I need a moment to gather my thoughts..."*) to prevent infinite retry loops.
+
+### 2. Subconscious Monologue & Dream Loops
+A continuous background loop in `SubconsciousAgent` handles autonomous cognitive maturity:
+- **Monologue Generation**: Active when user is silent (>30 seconds). Generates proactive self-reflective thoughts.
+- **Rapid Cancellation**: If the user interrupts by speaking or sending a message, NATS triggers immediately cancel the active monologue task (`_current_monologue_task` and `_current_dream_task`), clearing the channel.
+- **Neo4j Sleep dreaming**: When metabolic fatigue is extremely high (e.g. night-time ticks), the agent runs a dream cycle. It retrieves central entities from the Neo4j knowledge graph, synthesizes a symbolic narrative using the deep LLM, and logs it as a vector memory with `source="subconscious_dream"`.
+- **Race-free Shutdown**: Explicitly cancels and awaits all background futures on agent shutdown before database and LLM connections close.
+
+### 3. Paralinguistic Tag Injection
+Enables affect-aware paralinguistic tag synthesis to represent internal emotional-physiological dynamics:
+- **Fast Breathing**: If arousal is high ($Ar > 0.6$) and valence is negative ($V < -0.3$), pre-pend `<breath_fast>` to the LLM response.
+- **Soft Sighing**: If arousal is low ($Ar < 0.4$) and valence is negative ($V < 0.0$), pre-pend `<sigh_soft>` to the response.
+- **Vocalization Recovery**: Strips structural `<thought>...</thought>` chains from user-facing audio streaming outputs while persisting them in telemetry logs for inspection and observability.
+
+### 4. Acoustic Reflex (Rust FFI)
+Implements a safety reflex directly in the compiled audio client (`cognitive_rust`) to handle loud acoustic startles:
+- **Reflex Calculation**: Computes `evaluate_acoustic_reflex(rms: float, zcr: float, threshold: float) -> bool` at compile speed.
+- **Startle Interruption**: Triggered when decibels exceed safe conversational thresholds, instantly publishing stop flags across the signal mesh.
+
+### 5. PR #46 Review & Architecture Hardening
+Resolved key critical feedback to achieve 100% production stability:
+- **Eager Validation Bounds**: Eagerly checks both regular chunks and trailing sanitizations (`sanitizer.flush()`) against guardrails.
+- **Structured WAV Parser**: Avoided raw 44-byte WAV header slicing (`data[44..]`) in `voice-agent` (`main.rs`) in favor of a structured RIFF chunk parser that locates the `"data"` sub-chunk offset, preventing audio corruption on arbitrary WAV templates.
+- **Vocal Micro-click Prevention**: Injected `ola_filter.clear_history()` in Rust `playback.rs` before vocal/hesitation inserts to reset the crossfade/pitch fade filter, eliminating clicks and signal pops.

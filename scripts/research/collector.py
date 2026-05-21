@@ -6,7 +6,7 @@ import nats
 import os
 from datetime import datetime
 
-# Research-grade Event-Driven State Collector (CVS-2.0)
+# Research-grade Event-Driven State Collector (CVS-3.0)
 # Listens to NATS broadcasts for the current PAD state of the agent 
 # and logs it to a CSV for high-fidelity research trajectories.
 
@@ -62,7 +62,7 @@ async def run_collector():
     async def state_handler(msg):
         try:
             data = json.loads(msg.data.decode())
-            # CVS-2.0 uses direct fields: mood (P), energy (A), dominance (D)
+            # CVS-3.0 uses direct fields: mood (P), energy (A), dominance (D)
             p = data.get("mood", 0.0)
             a = data.get("energy", 0.5)
             d = data.get("dominance", 0.5)

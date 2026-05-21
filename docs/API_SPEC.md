@@ -1,4 +1,4 @@
-# 🔌 API & Messaging Specification (v5.0.0 / CVS-2.0 Rust Native Edition)
+# 🔌 API & Messaging Specification (v5.0.0 / CVS-3.0 Rust Native Edition)
 
 This document provides a technical exhaustive breakdown of the external and internal interfaces of the AI Friend **Cognitive Voice System**.
 
@@ -19,7 +19,7 @@ Health check and versioning info.
   ```json
   {
     "status": "healthy",
-    "version": "CVS-2.0",
+    "version": "CVS-3.0",
     "uptime": 1234.5,
     "runtime": "Perceptual Mastery"
   }
@@ -77,7 +77,7 @@ Broadcasts a vision source switch to the mesh.
 
 ## 🌊 Internal Messaging (NATS JetStream)
 
-The "Sovereign Mesh" communicates via a decentralized event bus. In the CVS-2.0 Rust Native Edition, all payloads are strictly validated using Pydantic models and serialized to binary via `orjson` to achieve sub-millisecond, 80,000 OPS network throughput.
+The "Sovereign Mesh" communicates via a decentralized event bus. In the CVS-3.0 Rust Native Edition, all payloads are strictly validated using Pydantic models and serialized to binary via `orjson` to achieve sub-millisecond, 80,000 OPS network throughput.
 
 ### Subject Dictionary
 
@@ -98,7 +98,7 @@ The "Sovereign Mesh" communicates via a decentralized event bus. In the CVS-2.0 
 
 ### Detailed Schemas
 
-#### `chat.output` (CVS-2.0 Cognitive Segment)
+#### `chat.output` (CVS-3.0 Cognitive Segment)
 
 Sent by the BrainAgent during cognitive streaming. Mapped to the `ChatOutput` Pydantic contract.
 
@@ -220,7 +220,7 @@ NATS metadata:
 }
 ```
 
-#### `audio.stream` (CVS-2.0 Raw 32kHz PCM)
+#### `audio.stream` (CVS-3.0 Raw 32kHz PCM)
 
 Sent by the VoiceAgent directly from the Signal Runtime. In the optimized path this is raw binary PCM, not JSON.
 

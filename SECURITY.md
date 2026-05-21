@@ -7,7 +7,7 @@ currently being supported with security updates.
 
 | Version | Status |
 | :--- | :--- |
-| 5.0.x (CVS-2.0) | :white_check_mark: |
+| 5.0.x (CVS-3.0) | :white_check_mark: |
 | < 5.0.0 | :x:                |
 
 ## Privacy-First Security
