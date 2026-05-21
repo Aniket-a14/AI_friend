@@ -205,8 +205,8 @@ Empirical performance profiling of the containerized cognitive mesh running loca
 
 | Metric | Mean | p50 | p95 | p99 | Jitter |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **End-to-End Thought Latency** | **819.24 ms** | 765.60 ms | 1284.03 ms | 1692.86 ms | 222.43 ms |
-| **Time-to-First-Token (TTFT)** | **212.44 ms** | 158.20 ms | 618.68 ms | 774.21 ms | 141.75 ms |
+| **End-to-End Thought Latency** | **1646.95 ms** | 1147.14 ms | 5169.28 ms | 13423.38 ms | 2156.00 ms |
+| **Time-to-First-Token (TTFT)** | **703.36 ms** | 230.02 ms | 4111.32 ms | 12512.93 ms | 2157.01 ms |
 
-* **Local Inference Efficiency**: Achieving a **8.7x reduction in TTFT** (212.44 ms vs. 1850.0 ms) compared to cloud humanoid baseline architectures.
-* **Lightweight Footprint**: The mesh operates fully in light-mode (with real-time voice and vision containers isolated via compose profiles), dropping the entire system memory footprint to only **1,079.58 MB** and maintaining average CPU utilization below **3.37%**.
+* **Local Inference Efficiency**: Achieving a **2.6x reduction in TTFT** (703.36 ms vs. 1850.0 ms) compared to cloud humanoid baseline architectures.
+* **Lightweight Footprint**: The mesh operates fully in light-mode (with real-time voice and vision containers isolated via compose profiles), dropping the entire system memory footprint to only **1,079.58 MB** and maintaining average CPU utilization below **8.19%**.
