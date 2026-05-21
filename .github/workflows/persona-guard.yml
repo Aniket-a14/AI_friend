@@ -41,6 +41,11 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-base.txt
           pip install pytest pytest-asyncio
+      - name: Build cognitive-rust extension
+        run: |
+          cd backend
+          pip install maturin
+          maturin develop --manifest-path crates/cognitive-rust/Cargo.toml
 
       - name: Wait for NATS
         run: |

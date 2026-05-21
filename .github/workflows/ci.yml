@@ -85,6 +85,11 @@ jobs:
         cd backend
         python -m pip install --upgrade pip
         pip install -r requirements-dev.txt
+    - name: Build cognitive-rust extension
+      run: |
+        cd backend
+        pip install maturin
+        maturin develop --manifest-path crates/cognitive-rust/Cargo.toml
     - name: Setup NATS Streams
       env:
         NATS_URL: nats://localhost:4222
@@ -139,6 +144,11 @@ jobs:
         cd backend
         python -m pip install --upgrade pip
         pip install -r requirements-dev.txt
+    - name: Build cognitive-rust extension
+      run: |
+        cd backend
+        pip install maturin
+        maturin develop --manifest-path crates/cognitive-rust/Cargo.toml
     - name: Setup NATS Streams
       env:
         NATS_URL: nats://localhost:4222
