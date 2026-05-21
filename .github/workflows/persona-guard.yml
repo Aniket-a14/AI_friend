@@ -45,7 +45,8 @@ jobs:
         run: |
           cd backend
           pip install maturin
-          maturin develop --manifest-path crates/cognitive-rust/Cargo.toml
+          maturin build --manifest-path crates/cognitive-rust/Cargo.toml --out target/wheels
+          pip install target/wheels/*.whl
 
       - name: Wait for NATS
         run: |
