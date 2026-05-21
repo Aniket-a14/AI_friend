@@ -124,15 +124,15 @@ graph TD
 
 *Academic Link*: https://doi.org/10.1007/BF02686918
 
-11. **Scherer, K. R. (2009)**
-    *Title*: "The Component Process Model of Emotion: Outline of a professional theory"
+11. **Scherer, K. R. (2005)**
+    *Title*: "What are emotions? And how can they be measured?"
     *Venue*: *Social Science Information*
 
 *Core Methodology*: Presenting the Component Process Model (CPM), describing emotion as a sequence of cognitive appraisal and physiological evaluation processes.
 
 *Verified Quantitative Findings*: The framework strongly influenced computational appraisal systems used in emotionally aware conversational agents and virtual humans.
 
-*Academic Link*: https://doi.org/10.1177/0539018409335796
+*Academic Link*: https://doi.org/10.1177/0539018405058216
 
 12. **Picard, R. W. (1997)**
     *Title*: "Affective Computing"
