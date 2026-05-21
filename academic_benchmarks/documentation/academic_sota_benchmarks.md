@@ -275,19 +275,21 @@ The $APRA$ quantifies the alignment between the agent's internal psychological a
 
 *   **Speaking Rate ($R$)**:
 
-    $$
-    R = \text{clamp}(1.0 + 0.20 \cdot Ar - 0.10 \cdot V - 0.25 \cdot F, 0.60, 1.80)
-    $$
+$$
+R = \text{clamp}(1.0 + 0.20 \cdot Ar - 0.10 \cdot V - 0.25 \cdot F, 0.60, 1.80)
+$$
+
 *   **Vocal Pitch ($P$)**:
 
-    $$
-    P = \text{clamp}(1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.10 \cdot F + \text{dist\_pitch\_mod}, 0.50, 2.00)
-    $$
+$$
+P = \text{clamp}(1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.10 \cdot F + \text{dist\_pitch\_mod}, 0.50, 2.00)
+$$
+
 *   **Vocal Volume ($V_{ol}$)**:
 
-    $$
-    V_{ol} = \text{clamp}(0.40 + 0.60 \cdot D + \text{dist\_vol\_mod}, 0.10, 1.00)
-    $$
+$$
+V_{ol} = \text{clamp}(0.40 + 0.60 \cdot D + \text{dist\_vol\_mod}, 0.10, 1.00)
+$$
 
 To guarantee acoustic continuity and prevent phase pops during rapid prosody transitions, the Voice Agent implements a **10 ms linear Overlap-Add (OLA) crossfade** sample window:
 
