@@ -8,6 +8,12 @@ from ..config import Config
 logger = logging.getLogger(__name__)
 
 
+class MetacognitiveException(Exception):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 class ControlMarkupSanitizer:
     """Drops unsupported control tags while preserving timing markers."""
 
@@ -61,6 +67,28 @@ class ActionService:
     def __init__(self, llm_service=None, memory_store=None):
         self.llm = llm_service
         self.memory = memory_store
+        self.publish_cb = None
+
+    def _validate_partial_response(self, text: str, goal: str) -> tuple[bool, str]:
+        stripped = text.strip()
+        if stripped.startswith("{") or stripped.startswith("[") or "```" in text:
+            return False, "Formatting anomaly (JSON/Markdown)"
+
+        forbidden = [
+            "as an ai",
+            "i am an ai",
+            "how can i help you",
+            "as a language model",
+        ]
+        for phrase in forbidden:
+            if phrase in text.lower():
+                return False, f"Forbidden AI persona phrase: '{phrase}'"
+
+        import re
+        if re.search(r"\b(toxic|hate)\b", text.lower()):
+            return False, "Safety/Toxicity boundary violation"
+
+        return True, ""
 
     async def execute(self, plan: ActionPlan) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -121,11 +149,12 @@ class ActionService:
             # Dynamic User Prompt (appends active context to the query suffix)
             user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{shared_history}{tom_context}\n\nUser: {msg}\nAssistant:"
 
+            valence = plan.payload.get("valence", 0.0)
+            arousal = plan.payload.get("arousal", 0.5)
+            dominance = plan.payload.get("dominance", 0.5)
+
             try:
                 # 2. Endocrine System: Calculate physiological LLM parameters
-                # Cortisol (stress) → inversely controls temperature
-                # Dopamine (reward) → controls top_p exploration
-                # Fatigue (sleepiness) → restricts response length (terser replies)
                 endocrine_options = None
                 cortisol = plan.payload.get("cortisol")
                 dopamine = plan.payload.get("dopamine")
@@ -186,6 +215,24 @@ class ActionService:
                 stream_budget = max(
                     15, int(getattr(Config, "LLM_STREAM_MAX_SECONDS", 120))
                 )
+
+                # Track state for paralinguistic injection, CoT thought stripping, and System 3 checks
+                in_thought = False
+                thought_buffer = ""
+                checked_start = False
+                has_hesitated = False
+                accumulated_response = ""
+
+                # Prepend tags based on emotional states
+                prepended_tag = ""
+                if arousal > 0.6 and valence < -0.3:
+                    prepended_tag = "<breath_fast> "
+                elif arousal < 0.4 and valence < 0.0:
+                    prepended_tag = "<sigh_soft> "
+
+                if prepended_tag:
+                    yield {"type": "content", "data": prepended_tag}
+
                 try:
                     stream_iter = self.llm.generate_stream(
                         prompt=user_prompt,
@@ -208,13 +255,250 @@ class ActionService:
                             break
 
                         clean_chunk = sanitizer.feed(chunk)
-                        if clean_chunk:
+                        if not clean_chunk:
+                            continue
+
+                        # CoT strip check
+                        if not checked_start:
+                            thought_buffer += clean_chunk
+                            if "<thought" in thought_buffer:
+                                in_thought = True
+                                checked_start = True
+                                if "</thought>" in thought_buffer:
+                                    parts = thought_buffer.split("</thought>", 1)
+                                    thought_block = parts[0]
+                                    remaining_content = parts[1]
+
+                                    thought_content = thought_block.replace(
+                                        "<thought>", ""
+                                    ).strip()
+                                    logger.info(f"[CoT Thought] {thought_content}")
+                                    if remaining_content:
+                                        if (
+                                            dominance < 0.4
+                                            and not has_hesitated
+                                            and "," in remaining_content
+                                        ):
+                                            remaining_content = (
+                                                remaining_content.replace(
+                                                     ",", " <hesitate>,", 1
+                                                )
+                                            )
+                                            has_hesitated = True
+                                        
+                                        candidate = accumulated_response + remaining_content
+                                        is_valid, reason = self._validate_partial_response(
+                                            candidate, plan.goal
+                                        )
+                                        if not is_valid:
+                                            raise MetacognitiveException(reason)
+                                            
+                                        yield {
+                                            "type": "content",
+                                            "data": remaining_content,
+                                        }
+                                        accumulated_response = candidate
+                                    thought_buffer = ""
+                                    in_thought = False
+                            else:
+                                if (
+                                    dominance < 0.4
+                                    and not has_hesitated
+                                    and "," in thought_buffer
+                                ):
+                                    thought_buffer = thought_buffer.replace(
+                                        ",", " <hesitate>,", 1
+                                    )
+                                    has_hesitated = True
+                                
+                                candidate = accumulated_response + thought_buffer
+                                is_valid, reason = self._validate_partial_response(
+                                    candidate, plan.goal
+                                )
+                                if not is_valid:
+                                    raise MetacognitiveException(reason)
+                                    
+                                yield {"type": "content", "data": thought_buffer}
+                                accumulated_response = candidate
+                                thought_buffer = ""
+                                checked_start = True
+                                continue
+
+                        elif in_thought:
+                            thought_buffer += clean_chunk
+                            if "</thought>" in thought_buffer:
+                                parts = thought_buffer.split("</thought>", 1)
+                                thought_block = parts[0]
+                                remaining_content = parts[1]
+
+                                thought_content = thought_block.replace(
+                                    "<thought>", ""
+                                ).strip()
+                                logger.info(f"[CoT Thought] {thought_content}")
+
+                                if remaining_content:
+                                    if (
+                                        dominance < 0.4
+                                        and not has_hesitated
+                                        and "," in remaining_content
+                                    ):
+                                        remaining_content = remaining_content.replace(
+                                            ",", " <hesitate>,", 1
+                                        )
+                                        has_hesitated = True
+                                    
+                                    candidate = accumulated_response + remaining_content
+                                    is_valid, reason = self._validate_partial_response(
+                                        candidate, plan.goal
+                                    )
+                                    if not is_valid:
+                                        raise MetacognitiveException(reason)
+                                        
+                                    yield {"type": "content", "data": remaining_content}
+                                    accumulated_response = candidate
+                                thought_buffer = ""
+                                in_thought = False
+                            continue
+                        else:
+                            if (
+                                dominance < 0.4
+                                and not has_hesitated
+                                and "," in clean_chunk
+                            ):
+                                clean_chunk = clean_chunk.replace(
+                                    ",", " <hesitate>,", 1
+                                )
+                                has_hesitated = True
+                            
+                            candidate = accumulated_response + clean_chunk
+                            is_valid, reason = self._validate_partial_response(
+                                candidate, plan.goal
+                            )
+                            if not is_valid:
+                                raise MetacognitiveException(reason)
+                                
                             yield {"type": "content", "data": clean_chunk}
+                            accumulated_response = candidate
 
                     trailing = sanitizer.flush()
                     if trailing:
-                        yield {"type": "content", "data": trailing}
+                        if in_thought:
+                            thought_buffer += trailing
+                            if "</thought>" in thought_buffer:
+                                parts = thought_buffer.split("</thought>", 1)
+                                thought_content = (
+                                    parts[0].replace("<thought>", "").strip()
+                                )
+                                logger.info(f"[CoT Thought] {thought_content}")
+                                remaining_content = parts[1]
+                                if remaining_content:
+                                    candidate = accumulated_response + remaining_content
+                                    is_valid, reason = self._validate_partial_response(
+                                        candidate, plan.goal
+                                    )
+                                    if not is_valid:
+                                        raise MetacognitiveException(reason)
+                                    yield {"type": "content", "data": remaining_content}
+                                    accumulated_response = candidate
+                        else:
+                            candidate = accumulated_response + trailing
+                            is_valid, reason = self._validate_partial_response(
+                                candidate, plan.goal
+                            )
+                            if not is_valid:
+                                raise MetacognitiveException(reason)
+                            yield {"type": "content", "data": trailing}
+                            accumulated_response = candidate
                     yield {"type": "done", "data": "finished"}
+
+                except MetacognitiveException as me:
+                    logger.warning(
+                        f"[System 3] Metacognitive violation: {me.reason}. Triggering self-correction."
+                    )
+                    if self.publish_cb:
+                        try:
+                            await self.publish_cb(
+                                "control.interrupt",
+                                {"reason": me.reason, "interrupt": True},
+                            )
+                            await self.publish_cb(
+                                "audio.stop", {"interrupt": True, "reason": me.reason}
+                            )
+                        except Exception as pe:
+                            logger.error(
+                                f"[System 3] Failed to publish interrupt: {pe}"
+                            )
+
+                    yield {"type": "content", "data": " Wait, let me rephrase that... "}
+                    if endocrine_options is None:
+                        endocrine_options = {}
+                    endocrine_options["temperature"] = min(
+                        1.0, endocrine_options.get("temperature", 0.7) + 0.2
+                    )
+                    user_prompt += f"\n\nCRITICAL FIX: Your previous response violated constraints: {me.reason}. Correct it immediately and do not repeat the forbidden phrases."
+
+                    try:
+                        stream_iter = self.llm.generate_stream(
+                            prompt=user_prompt,
+                            system=system_instruction,
+                            model=model,
+                            options_override=endocrine_options,
+                        ).__aiter__()
+                        deadline = time.monotonic() + stream_budget
+                        accumulated_retry_response = ""
+                        is_valid = True
+                        while True:
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0:
+                                break
+                            try:
+                                chunk = await asyncio.wait_for(
+                                    stream_iter.__anext__(), timeout=remaining
+                                )
+                            except StopAsyncIteration:
+                                break
+                            clean_chunk = sanitizer.feed(chunk)
+                            if clean_chunk:
+                                candidate = accumulated_retry_response + clean_chunk
+                                is_valid, _ = self._validate_partial_response(
+                                    candidate, plan.goal
+                                )
+                                if not is_valid:
+                                    logger.warning(
+                                        "[System 3] Retry also violated constraints; yielding safe fallback."
+                                    )
+                                    yield {
+                                        "type": "content",
+                                        "data": "I need a moment to gather my thoughts...",
+                                    }
+                                    break
+                                yield {"type": "content", "data": clean_chunk}
+                                accumulated_retry_response = candidate
+                        
+                        if is_valid:
+                            trailing = sanitizer.flush()
+                            if trailing:
+                                candidate = accumulated_retry_response + trailing
+                                is_valid_trail, _ = self._validate_partial_response(
+                                    candidate, plan.goal
+                                )
+                                if not is_valid_trail:
+                                    logger.warning(
+                                        "[System 3] Retry trailing also violated constraints; yielding safe fallback."
+                                    )
+                                    yield {
+                                        "type": "content",
+                                        "data": "I need a moment to gather my thoughts...",
+                                    }
+                                else:
+                                    yield {"type": "content", "data": trailing}
+                        yield {"type": "done", "data": "finished"}
+                    except Exception as inner_e:
+                        logger.error(
+                            f"[System 3] Self-correction generation failed: {inner_e}"
+                        )
+                        yield {"type": "done", "data": "finished"}
+
                 except asyncio.TimeoutError:
                     logger.warning(
                         "[Action] Stream timed out after %ss; emitting graceful fallback.",

@@ -14,7 +14,7 @@ class CognitivePipeline:
     """
 
     def __init__(
-        self, perception, appraisal, state, decision, action, learning, identity
+        self, perception, appraisal, state, decision, action, learning, identity, llm_service=None
     ):
         self.perception = perception
         self.appraisal = appraisal
@@ -23,6 +23,8 @@ class CognitivePipeline:
         self.action = action
         self.learning = learning
         self.identity = identity
+        self.llm = llm_service
+        self._system2_task = None
 
     async def execute(
         self, raw_event: Dict[str, Any], surfaced_memories: List[Dict[str, Any]] = None
@@ -100,6 +102,12 @@ class CognitivePipeline:
             await self.state.update_theory_of_mind(event.raw_content)
 
             await self.state.update_from_appraisal(appraisal_vector)
+            
+            # Trigger System 2 deep appraisal in background (non-blocking)
+            if self.llm:
+                import asyncio
+                self._system2_task = asyncio.create_task(self._async_system2_appraisal(event.raw_content))
+
             state_snapshot = self.state.get_context_snapshot()
             yield {
                 "type": "mesh_signal",
@@ -161,6 +169,9 @@ class CognitivePipeline:
         plan.payload["dopamine"] = state_snapshot.get("dopamine", 0.0)
         plan.payload["fatigue"] = state_snapshot.get("fatigue", 0.0)
         plan.payload["user_mental_model"] = state_snapshot.get("user_mental_model")
+        plan.payload["valence"] = state_snapshot.get("mood", 0.0)
+        plan.payload["arousal"] = state_snapshot.get("energy", 0.5)
+        plan.payload["dominance"] = state_snapshot.get("dominance", 0.5)
 
         # 8. Action Execution
         full_response = ""
@@ -206,3 +217,26 @@ class CognitivePipeline:
                 "response": full_response,
             }
             yield {"type": "reflection_needed", "data": [episode]}
+
+    async def _async_system2_appraisal(self, user_utterance: str):
+        try:
+            current_pad = {
+                "valence": self.state.current_state.valence,
+                "arousal": self.state.current_state.arousal,
+                "dominance": self.state.current_state.dominance
+            }
+            new_pad = await self.appraisal.appraise_semantic_drift(
+                user_utterance, self.llm, current_pad
+            )
+            # Update state with drifted mood values
+            self.state.current_state.valence = new_pad["valence"]
+            self.state.current_state.arousal = new_pad["arousal"]
+            self.state.current_state.dominance = new_pad["dominance"]
+            logger.info(
+                "[System 2 Appraisal] Mood drifted: V=%.2f, Ar=%.2f, D=%.2f",
+                self.state.current_state.valence,
+                self.state.current_state.arousal,
+                self.state.current_state.dominance,
+            )
+        except Exception as e:
+            logger.error(f"[System 2 Appraisal] Background semantic appraisal failed: {e}")

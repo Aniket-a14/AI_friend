@@ -40,6 +40,7 @@ class Topics(str, Enum):
     SYSTEM_TICK = "system.tick"
     MEMORY_SURFACED = "memory.surfaced"
     STATE_UPDATE = "state.update"
+    STATE_SUBCONSCIOUS = "state.subconscious"
 
 
 # ─── chat.input ──────────────────────────────────────────────

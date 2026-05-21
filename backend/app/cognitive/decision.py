@@ -252,7 +252,8 @@ class DecisionService:
         - inferred_arousal: float between 0.0 and 1.0 (arousal level of the user)
         - implied_goals: up to 2 implied immediate user goals (list of strings like "seek_reassurance", "express_frustration", "learn_concept", "chat_socially")
         
-        Output JSON ONLY:
+        First, output a brief chain-of-thought analysis enclosed in <thought>...</thought> (maximum 45 tokens) analyzing the input, intent, and ToM.
+        Then, output the JSON block:
         {{
           "intent": "...",
           "goal": "...",
@@ -266,7 +267,9 @@ class DecisionService:
             response = await self.llm.generate(prompt, model=Config.LLM_FAST_MODEL)
 
             json_str = response
-            if "<think>" in response:
+            if "</thought>" in response:
+                json_str = response.split("</thought>")[-1].strip()
+            elif "</think>" in response:
                 json_str = response.split("</think>")[-1].strip()
 
             match = re.search(r"\{.*\}", json_str, re.DOTALL)
