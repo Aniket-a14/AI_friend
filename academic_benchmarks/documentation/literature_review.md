@@ -92,12 +92,12 @@ graph TD
     *Extracted Quantitative Baseline*: Explains over **90%** of human emotional variance using three normalized variables restricted to the range $[-1.0, 1.0]$.  
     *Academic Link*: [DOI: 10.1007/BF02686918](https://doi.org/10.1007/BF02686918)
 
-11. **Scherer, K. R. (2009)**  
-    *Title*: "The Component Process Model of Emotion: Outline of a professional theory"  
+11. **Scherer, K. R. (2005)**  
+    *Title*: "What are emotions? And how can they be measured?"  
     *Venue*: *Social Science Information*  
     *Core Methodology*: Formulating the Component Process Model (CPM) mapping Stimulus Evaluation Checks (SECs) to somatic, expressive, and cognitive subsystems.  
     *Extracted Quantitative Baseline*: Sequential appraisal check sequences in biological cognition operate within a **100 ms to 300 ms** temporal window.  
-    *Academic Link*: [DOI: 10.1177/0539018409335796](https://doi.org/10.1177/0539018409335796)
+    *Academic Link*: [DOI: 10.1177/0539018405058216](https://doi.org/10.1177/0539018405058216)
 
 12. **Picard, R. W. (1997)**  
     *Title*: "Affective Computing"  
@@ -337,15 +337,15 @@ This BibTeX data is formatted to standard academic specifications and can be pas
   doi       = {10.1007/BF02686918}
 }
 
-@article{scherer2009component,
+@article{scherer2005what,
   author    = {Scherer, Klaus R.},
-  title     = {The Component Process Model of Emotion: Outline of a professional theory},
+  title     = {What are emotions? And how can they be measured?},
   journal   = {Social Science Information},
-  volume    = {48},
-  number    = {3},
-  pages     = {347--381},
-  year      = {2009},
-  doi       = {10.1177/0539018409335796}
+  volume    = {44},
+  number    = {4},
+  pages     = {695--729},
+  year      = {2005},
+  doi       = {10.1177/0539018405058216}
 }
 
 @book{picard1997affective,
