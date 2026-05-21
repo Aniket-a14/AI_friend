@@ -60,7 +60,9 @@ class CognitiveService:
             action=self.action,
             learning=self.learning,
             identity=self.identity,
+            llm_service=llm_service,
         )
+        self.action.publish_cb = self.publish
         self.surfaced_memories = []
         self.agent = None  # NATS Mesh connection
         self._last_appraisal: AppraisalVector = None  # Cache for downstream consumers
@@ -75,6 +77,10 @@ class CognitiveService:
             "audio.resume": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
         }
         self.last_reflection_task = None
+
+    async def publish(self, subject: str, data: Dict[str, Any]):
+        if self.agent:
+            await self.agent.publish(subject, data)
 
     async def initialize(self, agent: Any = None):
         """Load identity and hydrate states. Subscribes to Mesh heartbeats."""

@@ -12,6 +12,8 @@ Sources:
 """
 
 import logging
+import json
+import re
 from dataclasses import dataclass, asdict
 from typing import Dict, Any, List
 
@@ -178,3 +180,58 @@ class AppraisalEngine:
         if violations == 0:
             return 1.0
         return max(0.0, 1.0 - (violations * 0.2))
+
+    async def appraise_semantic_drift(
+        self,
+        user_utterance: str,
+        llm_client,
+        current_pad: Dict[str, float]
+    ) -> Dict[str, float]:
+        """
+        System 2 deliberative appraisal using LLM.
+        Drifts target mood via primary/secondary appraisal analysis.
+        """
+        prompt = f"""
+        Analyze the user's statement for deep appraisal dimensions:
+        User statement: "{user_utterance}"
+        
+        Evaluate on a scale of -1.0 to 1.0:
+        1. goal_congruence (Is this statement matching the friendly, helpful social goals? Positive if friendly, negative if hostile)
+        2. norm_alignment (Does this align with social norms? 1.0 if perfectly polite, lower if offensive/toxic)
+        3. expectedness (How expected is this statement? 1.0 if very standard, -1.0 if surprising)
+        
+        Output JSON ONLY:
+        {{
+          "goal_congruence": 0.0,
+          "norm_alignment": 1.0,
+          "expectedness": 0.5
+        }}
+        """.strip()
+        
+        try:
+            from ..config import Config
+            response = await llm_client.generate(prompt, model=Config.LLM_FAST_MODEL)
+            match = re.search(r"\{.*\}", response, re.DOTALL)
+            if match:
+                data = json.loads(match.group(0))
+                gc = float(data.get("goal_congruence", 0.0))
+                na = float(data.get("norm_alignment", 1.0))
+                exp = float(data.get("expectedness", 0.5))
+                
+                target_p = max(-1.0, min(1.0, gc))
+                target_a = max(-1.0, min(1.0, 1.0 - abs(exp)))
+                target_d = max(-1.0, min(1.0, na))
+                
+                drift_factor = 0.2
+                new_p = current_pad.get("valence", 0.0) + drift_factor * (target_p - current_pad.get("valence", 0.0))
+                new_a = current_pad.get("arousal", 0.5) + drift_factor * (target_a - current_pad.get("arousal", 0.5))
+                new_d = current_pad.get("dominance", 0.5) + drift_factor * (target_d - current_pad.get("dominance", 0.5))
+                
+                return {
+                    "valence": max(-1.0, min(1.0, new_p)),
+                    "arousal": max(0.0, min(1.0, new_a)),
+                    "dominance": max(0.0, min(1.0, new_d))
+                }
+        except Exception as e:
+            logger.error(f"[System 2 Appraisal] Semantic drift evaluation failed: {e}")
+        return current_pad
