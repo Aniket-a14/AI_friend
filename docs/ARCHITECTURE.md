@@ -64,7 +64,7 @@ The system anticipates conversational context through an asynchronous dual-chann
 - **`SurfacingAgent`**: Background process that alternates between two recall channels:
   - **Episodic Channel (pgvector)**: ACT-R scored, mood-congruent recall of past events using verbatim `raw_content` storage organized via the Wings/Rooms/Drawers spatial hierarchy.
   - **Semantic Channel (Neo4j)**: Structured facts and relationship extraction (e.g., "User -> LIKES -> Coffee").
-- **PostgreSQL PL/pgSQL Offloading**: Memory decay equations ($A = \ln(\sum t_ j^{-d})$) are computed directly inside the database via the `surface_actr_memories` function, eliminating Python transfer overhead.
+- **PostgreSQL PL/pgSQL Offloading**: Memory decay equations ($A = \ln(\sum t_j^{-d})$) are computed directly inside the database via the `surface_actr_memories` function, eliminating Python transfer overhead.
 - **O(1) L1 Memory Activation Cache**: An ultra-fast in-memory lookup table avoids Postgres queries for hot memories, reducing retrieval latency to < 1ms.
 
 ### ⏱️ 5. Perceptual Intelligence (STT Agent)
