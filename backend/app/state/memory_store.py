@@ -50,9 +50,9 @@ class MemoryStore:
         self.emotion_weight = Config.ACTR_EMOTION_WEIGHT  # w_emotion
 
         # 3-State activation thresholds (Eriksonian Cognitive Alignment)
-        self.recall_threshold = -1.5        # theta_recall
+        self.recall_threshold = -1.5  # theta_recall
         self.subconscious_threshold = -2.5  # theta_sub
-        self.pruning_threshold = -3.5       # theta_prune
+        self.pruning_threshold = -3.5  # theta_prune
 
         # L1 Memory Activation Cache
         self._l1_cache = {}  # key -> (timestamp, results)
@@ -312,14 +312,23 @@ class MemoryStore:
                         )
                         recall_count = max(1, row.get("recall_count") or 1)
 
-                        base_activation = _cached_ln(
-                            recall_count
-                        ) - self.decay_rate * _cached_ln(hours_since + 1)
-
                         memory_valence = row.get("valence") or 0.0
                         emotion_weight_row = row.get("emotional_weight") or 0.0
 
-                        # Neuromodulatory distance mapping
+                        # 2D/3D Emotional Distance matching the research simulator
+                        dist_emo = math.sqrt(
+                            (memory_valence - current_valence) ** 2
+                            + (emotion_weight_row - current_arousal) ** 2
+                        )
+
+                        base_activation = (
+                            _cached_ln(recall_count)
+                            - self.decay_rate * _cached_ln(hours_since + 1.0)
+                            + 1.5 * (row.get("importance_score") or 0.5)
+                            + 0.15 * (1.0 - dist_emo)
+                        )
+
+                        # Neuromodulatory distance mapping (gating remains untouched in backend)
                         effective_similarity = similarity * (
                             1.0
                             + 0.1 * memory_valence * emotion_weight_row
@@ -327,14 +336,10 @@ class MemoryStore:
                         )
 
                         spread_activation = self.spread_weight * effective_similarity
-                        alignment = math.exp(-abs(memory_valence - current_valence))
-                        emotion_boost = (
-                            self.emotion_weight * emotion_weight_row * alignment
-                        )
-                        score = base_activation + spread_activation + emotion_boost
+                        score = base_activation + spread_activation - 0.5 * dist_emo
 
-                        # Filter by relaxed threshold (threshold - 1.2)
-                        if score <= (threshold - 1.2):
+                        # Filter by relaxed threshold (threshold - 2.5)
+                        if score <= (threshold - 2.5):
                             continue
 
                         created = row.get("created_at")
@@ -409,7 +414,7 @@ class MemoryStore:
                             self.spread_weight,
                             self.emotion_weight,
                             current_valence,
-                            threshold - 1.2,
+                            threshold - 2.5,
                             max(20, limit * 3),
                         )
                     except Exception as pg_err:
@@ -441,7 +446,7 @@ class MemoryStore:
                             self.spread_weight,
                             self.emotion_weight,
                             current_valence,
-                            threshold - 1.2,
+                            threshold - 2.5,
                             max(20, limit * 3),
                         )
 
@@ -467,12 +472,21 @@ class MemoryStore:
                             0.001, (now - last_recall).total_seconds() / 3600.0
                         )
 
-                        base_activation = _cached_ln(
-                            recall_count
-                        ) - self.decay_rate * _cached_ln(hours_since + 1)
-
                         memory_valence = row.get("valence") or 0.0
                         emotion_weight_row = row.get("emotional_weight") or 0.0
+
+                        # 2D/3D Emotional Distance matching the research simulator
+                        dist_emo = math.sqrt(
+                            (memory_valence - current_valence) ** 2
+                            + (emotion_weight_row - current_arousal) ** 2
+                        )
+
+                        base_activation = (
+                            _cached_ln(recall_count)
+                            - self.decay_rate * _cached_ln(hours_since + 1.0)
+                            + 1.5 * (row.get("importance_score") or 0.5)
+                            + 0.15 * (1.0 - dist_emo)
+                        )
 
                         # Neuromodulatory distance mapping
                         effective_similarity = similarity * (
@@ -482,13 +496,9 @@ class MemoryStore:
                         )
 
                         spread_activation = self.spread_weight * effective_similarity
-                        alignment = math.exp(-abs(memory_valence - current_valence))
-                        emotion_boost = (
-                            self.emotion_weight * emotion_weight_row * alignment
-                        )
-                        score = base_activation + spread_activation + emotion_boost
+                        score = base_activation + spread_activation - 0.5 * dist_emo
 
-                        if score <= (threshold - 1.2):
+                        if score <= (threshold - 2.5):
                             continue
 
                         created = row.get("created_at")
@@ -525,7 +535,14 @@ class MemoryStore:
                         )
 
             # 3. Post-process candidate list in Python (Direct Cue Boost + Spreading Activation)
-            cues = ["kolkata", "bangalore", "priya", "rasgulla", "cognitive architectures", "affective"]
+            cues = [
+                "kolkata",
+                "bangalore",
+                "priya",
+                "rasgulla",
+                "cognitive architectures",
+                "affective",
+            ]
             matched_cues = [c for c in cues if c in query_text.lower()]
 
             direct_boosted_indices = set()
@@ -539,14 +556,21 @@ class MemoryStore:
                         direct_boosted_indices.add(idx)
 
                 # Spreading activation (+0.6) to connected nodes
-                entities = ["kolkata", "bangalore", "priya", "rasgulla", "cognitive architectures", "affective"]
+                entities = [
+                    "kolkata",
+                    "bangalore",
+                    "priya",
+                    "rasgulla",
+                    "cognitive architectures",
+                    "affective",
+                ]
                 import re
 
                 for idx in direct_boosted_indices:
                     direct_cand = raw_candidates[idx]
                     content_k = direct_cand["content"].lower()
                     found_entities_k = [e for e in entities if e in content_k]
-                    age_matches_k = re.findall(r'age (\d+)', content_k)
+                    age_matches_k = re.findall(r"age (\d+)", content_k)
 
                     for other_idx, other_cand in enumerate(raw_candidates):
                         if other_idx == idx or other_idx in direct_boosted_indices:
@@ -583,7 +607,9 @@ class MemoryStore:
                     "room": cand["room"],
                     "score": cand["score"],
                     "valence": cand["valence"],
-                    "created_at": cand["created_at"].isoformat() if cand["created_at"] else None,
+                    "created_at": cand["created_at"].isoformat()
+                    if cand["created_at"]
+                    else None,
                     "recall_count": cand["recall_count"],
                     "metadata": cand["metadata"],
                 }

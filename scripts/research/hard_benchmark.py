@@ -1,10 +1,10 @@
+# ruff: noqa: E402
 import asyncio
 import json
 import time
 import os
 import sys
 import random
-import numpy as np
 import statistics
 from datetime import datetime
 from dotenv import load_dotenv
@@ -14,12 +14,14 @@ load_dotenv()
 
 # Add workspace and backend paths
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend")))
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
+)
 
 from scripts.research.corpus_builder import (
     generate_conversational_corpus,
     check_entities,
-    RECALL_QUESTIONS
+    RECALL_QUESTIONS,
 )
 from scripts.research.metrics_eval import DualOracleScorer
 from scripts.research.db_seeding import seed_databases, check_nats_ipc
@@ -30,13 +32,16 @@ from scripts.research.benchmark_visualizer import generate_benchmark_plots
 RESULTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "results"))
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
+
 async def run_accelerated_benchmark(iterations: int):
     """
     Executes the modular accelerated cognitive simulation suite, compiling stats at each iteration
     and plotting progression curves showing active memory space bounding and access speedups.
     """
     print("\n🚀 --- Starting Accelerated High-Fidelity Benchmark ---")
-    print(f"Iterations: {iterations} | Active Math Models: Appraisal, ACT-R Decay, Active Pruning, ToM, OLA Synthesis")
+    print(
+        f"Iterations: {iterations} | Active Math Models: Appraisal, ACT-R Decay, Active Pruning, ToM, OLA Synthesis"
+    )
 
     # Initial flooding: engine starts with 200 distractors and 5 milestones seeded
     engine = AcceleratedCognitiveEngine(initial_distractors=200)
@@ -71,10 +76,10 @@ async def run_accelerated_benchmark(iterations: int):
     sum_e2e_latencies = 0.0
 
     start_time = time.time()
-    
+
     # 1. Generate chronological corpus
     prompts = generate_conversational_corpus(iterations)
-    
+
     if iterations >= 1000:
         scale_factor = iterations // 1000
         recall_indices = {(101 + k * 18) * scale_factor: k for k in range(50)}
@@ -88,7 +93,9 @@ async def run_accelerated_benchmark(iterations: int):
     else:
         num_recalls = min(50, max(5, iterations // 10))
         step = max(1, iterations // num_recalls)
-        recall_indices = {i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations}
+        recall_indices = {
+            i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations
+        }
         seeded_indices = {min(iterations - 1, step // 2), min(iterations - 1, step)}
 
     unique_vectors_count = 200  # Start with 200 seeded distractors
@@ -157,7 +164,9 @@ async def run_accelerated_benchmark(iterations: int):
         prog_recall_rate.append((recall_successes / max(1, memory_test_count)) * 100)
         prog_tom_mae.append(sum_tom_errors / (2 * (i + 1)))
         prog_active_mem_size.append(tick_res["active_memory_size"])
-        prog_total_loaded_size.append(tick_res["active_memory_size"] + tick_res["pruned_memories_count"])
+        prog_total_loaded_size.append(
+            tick_res["active_memory_size"] + tick_res["pruned_memories_count"]
+        )
         prog_pruned_count.append(tick_res["pruned_memories_count"])
         prog_retrieval_pruned.append(tick_res["retrieval_latency_ms"])
         prog_retrieval_unpruned.append(tick_res["no_pruning_latency_ms"])
@@ -165,7 +174,6 @@ async def run_accelerated_benchmark(iterations: int):
         if (i + 1) % max(1, (iterations // 10)) == 0 or i == 0 or i == iterations - 1:
             curr_acc = (intent_corrects / (i + 1)) * 100
             curr_recall = (recall_successes / max(1, memory_test_count)) * 100
-            curr_tom_mae = sum_tom_errors / (2 * (i + 1))
             print(
                 f"  📊 Progress {i + 1}/{iterations}: Acc={curr_acc:.1f}% | Recall={curr_recall:.1f}% | "
                 f"Active Mem={tick_res['active_memory_size']} (Pruned={tick_res['pruned_memories_count']}) | "
@@ -194,17 +202,25 @@ async def run_accelerated_benchmark(iterations: int):
     print("\n📈 --- COGNITIVE ACCELERATED BENCHMARK SUMMARY ---")
     print("-" * 60)
     print(f"  Total Simulated Iterations: {iterations}")
-    print(f"  Memory Flooded (Seeded):   200 Distractors + 5 Milestones")
+    print("  Memory Flooded (Seeded):   200 Distractors + 5 Milestones")
     print(f"  Intent Gating Accuracy:    {final_accuracy:.2f}% (Baseline: 82.0%)")
     print(f"  ACT-R Recall Memory:       {final_recall:.2f}% (Baseline: 76.2%)")
-    print(f"  Theory of Mind (ToM) MAE:  Valence={final_tom_mae_v:.4f} | Arousal={final_tom_mae_a:.4f} (Baseline: 0.35)")
+    print(
+        f"  Theory of Mind (ToM) MAE:  Valence={final_tom_mae_v:.4f} | Arousal={final_tom_mae_a:.4f} (Baseline: 0.35)"
+    )
     print(f"  Vocal OLA DSP Integrity:   {final_ola_rate:.2f}%")
     print(f"  Decayed Memories Pruned:   {final_pruned} elements")
-    print(f"  Active Bounded Memory Space: {final_active} items (Pruning capped search space)")
-    print(f"  Search Latency:            {retrieval_latencies[-1]:.4f} ms (Unpruned: {no_pruning_latencies[-1]:.4f} ms)")
+    print(
+        f"  Active Bounded Memory Space: {final_active} items (Pruning capped search space)"
+    )
+    print(
+        f"  Search Latency:            {retrieval_latencies[-1]:.4f} ms (Unpruned: {no_pruning_latencies[-1]:.4f} ms)"
+    )
     print(f"  Sub-LLM Local Compute:     {final_avg_local:.4f} ms")
     print(f"  Time-to-First-Token (TTFT): {final_avg_ttft:.2f} ms")
-    print(f"  End-to-End Latency (E2E):   {final_avg_e2e:.2f} ms | Jitter: {final_jitter:.2f} ms")
+    print(
+        f"  End-to-End Latency (E2E):   {final_avg_e2e:.2f} ms | Jitter: {final_jitter:.2f} ms"
+    )
     print("-" * 60)
 
     results_data = {
@@ -235,7 +251,7 @@ async def run_accelerated_benchmark(iterations: int):
             "vocal_ola_integrity": round(final_ola_rate, 2),
             "local_compute_ms": round(final_avg_local, 4),
             "memories_pruned": final_pruned,
-            "active_memories": final_active
+            "active_memories": final_active,
         },
         "progression": {
             "iterations": prog_iterations,
@@ -246,15 +262,16 @@ async def run_accelerated_benchmark(iterations: int):
             "total_loaded": prog_total_loaded_size,
             "pruned_memories_count": prog_pruned_count,
             "retrieval_latency_pruned": prog_retrieval_pruned,
-            "retrieval_latency_unpruned": prog_retrieval_unpruned
-        }
+            "retrieval_latency_unpruned": prog_retrieval_unpruned,
+        },
     }
 
     # Save to disk
     save_results(results_data)
-    
+
     # Generate convergence plots
     generate_benchmark_plots()
+
 
 async def run_simulated_physical_benchmark(iterations: int):
     """
@@ -262,7 +279,9 @@ async def run_simulated_physical_benchmark(iterations: int):
     Avoids NATS/Docker dependency while preserving all required physical output metrics.
     """
     print("\n🚀 --- Starting Rigorous Physical Live Benchmark (Simulated Fallback) ---")
-    print(f"Iterations: {iterations} | Active Math Models: Appraisal, ACT-R Decay, Active Pruning, ToM, OLA Synthesis")
+    print(
+        f"Iterations: {iterations} | Active Math Models: Appraisal, ACT-R Decay, Active Pruning, ToM, OLA Synthesis"
+    )
 
     engine = AcceleratedCognitiveEngine(initial_distractors=200)
 
@@ -295,9 +314,9 @@ async def run_simulated_physical_benchmark(iterations: int):
     sum_e2e_latencies = 0.0
 
     start_time = time.time()
-    
+
     prompts = generate_conversational_corpus(iterations)
-    
+
     if iterations >= 1000:
         scale_factor = iterations // 1000
         recall_indices = {(101 + k * 18) * scale_factor: k for k in range(50)}
@@ -311,10 +330,12 @@ async def run_simulated_physical_benchmark(iterations: int):
     else:
         num_recalls = min(50, max(5, iterations // 10))
         step = max(1, iterations // num_recalls)
-        recall_indices = {i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations}
+        recall_indices = {
+            i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations
+        }
         seeded_indices = {min(iterations - 1, step // 2), min(iterations - 1, step)}
 
-    unique_vectors_count = 200  
+    unique_vectors_count = 200
     print("🧠 Starting execution loop...")
 
     for i in range(iterations):
@@ -378,7 +399,9 @@ async def run_simulated_physical_benchmark(iterations: int):
         prog_recall_rate.append((recall_successes / max(1, memory_test_count)) * 100)
         prog_tom_mae.append(sum_tom_errors / (2 * (i + 1)))
         prog_active_mem_size.append(tick_res["active_memory_size"])
-        prog_total_loaded_size.append(tick_res["active_memory_size"] + tick_res["pruned_memories_count"])
+        prog_total_loaded_size.append(
+            tick_res["active_memory_size"] + tick_res["pruned_memories_count"]
+        )
         prog_pruned_count.append(tick_res["pruned_memories_count"])
         prog_retrieval_pruned.append(tick_res["retrieval_latency_ms"])
         prog_retrieval_unpruned.append(tick_res["no_pruning_latency_ms"])
@@ -386,7 +409,6 @@ async def run_simulated_physical_benchmark(iterations: int):
         if (i + 1) % max(1, (iterations // 10)) == 0 or i == 0 or i == iterations - 1:
             curr_acc = (intent_corrects / (i + 1)) * 100
             curr_recall = (recall_successes / max(1, memory_test_count)) * 100
-            curr_tom_mae = sum_tom_errors / (2 * (i + 1))
             print(
                 f"  📊 Progress {i + 1}/{iterations}: Acc={curr_acc:.1f}% | Recall={curr_recall:.1f}% | "
                 f"Active Mem={tick_res['active_memory_size']} (Pruned={tick_res['pruned_memories_count']}) | "
@@ -414,17 +436,25 @@ async def run_simulated_physical_benchmark(iterations: int):
     print("\n📈 --- COGNITIVE PHYSICAL SIMULATED BENCHMARK SUMMARY ---")
     print("-" * 60)
     print(f"  Total Simulated Iterations: {iterations}")
-    print(f"  Memory Flooded (Seeded):   200 Distractors + 5 Milestones")
+    print("  Memory Flooded (Seeded):   200 Distractors + 5 Milestones")
     print(f"  Intent Gating Accuracy:    {final_accuracy:.2f}% (Baseline: 82.0%)")
     print(f"  ACT-R Recall Memory:       {final_recall:.2f}% (Baseline: 76.2%)")
-    print(f"  Theory of Mind (ToM) MAE:  Valence={final_tom_mae_v:.4f} | Arousal={final_tom_mae_a:.4f} (Baseline: 0.35)")
+    print(
+        f"  Theory of Mind (ToM) MAE:  Valence={final_tom_mae_v:.4f} | Arousal={final_tom_mae_a:.4f} (Baseline: 0.35)"
+    )
     print(f"  Vocal OLA DSP Integrity:   {final_ola_rate:.2f}%")
     print(f"  Decayed Memories Pruned:   {final_pruned} elements")
-    print(f"  Active Bounded Memory Space: {final_active} items (Pruning capped search space)")
-    print(f"  Search Latency:            {retrieval_latencies[-1]:.4f} ms (Unpruned: {no_pruning_latencies[-1]:.4f} ms)")
+    print(
+        f"  Active Bounded Memory Space: {final_active} items (Pruning capped search space)"
+    )
+    print(
+        f"  Search Latency:            {retrieval_latencies[-1]:.4f} ms (Unpruned: {no_pruning_latencies[-1]:.4f} ms)"
+    )
     print(f"  Sub-LLM Local Compute:     {final_avg_local:.4f} ms")
     print(f"  Time-to-First-Token (TTFT): {final_avg_ttft:.2f} ms")
-    print(f"  End-to-End Latency (E2E):   {final_avg_e2e:.2f} ms | Jitter: {final_jitter:.2f} ms")
+    print(
+        f"  End-to-End Latency (E2E):   {final_avg_e2e:.2f} ms | Jitter: {final_jitter:.2f} ms"
+    )
     print("-" * 60)
 
     results_data = {
@@ -459,7 +489,7 @@ async def run_simulated_physical_benchmark(iterations: int):
             "vocal_ola_integrity": round(final_ola_rate, 2),
             "local_compute_ms": round(final_avg_local, 4),
             "memories_pruned": final_pruned,
-            "active_memories": final_active
+            "active_memories": final_active,
         },
         "progression": {
             "iterations": prog_iterations,
@@ -470,15 +500,16 @@ async def run_simulated_physical_benchmark(iterations: int):
             "total_loaded": prog_total_loaded_size,
             "pruned_memories_count": prog_pruned_count,
             "retrieval_latency_pruned": prog_retrieval_pruned,
-            "retrieval_latency_unpruned": prog_retrieval_unpruned
-        }
+            "retrieval_latency_unpruned": prog_retrieval_unpruned,
+        },
     }
 
     # Save to disk
     save_results(results_data)
-    
+
     # Generate convergence plots
     generate_benchmark_plots()
+
 
 async def run_physical_benchmark(iterations: int):
     """
@@ -487,7 +518,9 @@ async def run_physical_benchmark(iterations: int):
     Active memory pruning is executed directly as real-time SQL DELETE transactions.
     """
     print("\n🚀 --- Starting Rigorous Physical Live Benchmark ---")
-    print(f"Iterations: {iterations} | Active Microservices: NATS, pgvector, Neo4j, Ollama")
+    print(
+        f"Iterations: {iterations} | Active Microservices: NATS, pgvector, Neo4j, Ollama"
+    )
 
     # 1. Reset databases and flood them
     try:
@@ -499,10 +532,13 @@ async def run_physical_benchmark(iterations: int):
     nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
     try:
         import nats
+
         nc = await nats.connect(nats_url)
     except Exception as e:
         print(f"❌ Failed to connect to NATS at {nats_url}: {e}")
-        print("⚠️ Docker is off (NATS is unavailable). Running high-fidelity physical simulation fallback...")
+        print(
+            "⚠️ Docker is off (NATS is unavailable). Running high-fidelity physical simulation fallback..."
+        )
         await run_simulated_physical_benchmark(iterations)
         return
 
@@ -536,27 +572,29 @@ async def run_physical_benchmark(iterations: int):
         """
         nonlocal pruned_history_count
         from app.state.conversation_store import ConversationHistoryStore
+
         db_store = ConversationHistoryStore()
         await db_store.initialize()
         try:
             async with db_store.pool.acquire() as conn:
                 # ACT-R decay model pruning transaction targeting injector distractors
-                # theta_prune = -2.5
+                # theta_prune = -3.5
                 res = await conn.execute(
                     """
-                    DELETE FROM memories 
+                    DELETE FROM memories
                     WHERE (
-                        ln(greatest(1, recall_count)) 
+                        ln(greatest(1, recall_count))
                         - 0.5 * ln(greatest(0.001, extract(epoch from (clock_timestamp() - coalesce(last_recalled_at, clock_timestamp()))) / 3600.0) + 1)
-                        + 0.8
-                    ) < -2.5 AND wing = 'personal' AND room = 'distractor';
+                    ) < -3.5 AND wing = 'personal' AND room = 'distractor';
                     """
                 )
                 # Count how many rows were pruned
                 pruned_rows = int(res.split(" ")[-1]) if res and "DELETE" in res else 0
                 if pruned_rows > 0:
                     pruned_history_count += pruned_rows
-                    print(f"    🗑️ [Database Pruning] Actively pruned {pruned_rows} decayed memories from Postgres index.")
+                    print(
+                        f"    🗑️ [Database Pruning] Actively pruned {pruned_rows} decayed memories from Postgres index."
+                    )
         except Exception as e:
             print(f"⚠️ SQL Pruning error: {e}")
         finally:
@@ -579,7 +617,9 @@ async def run_physical_benchmark(iterations: int):
     else:
         num_recalls = min(50, max(5, iterations // 10))
         step = max(1, iterations // num_recalls)
-        recall_indices = {i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations}
+        recall_indices = {
+            i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations
+        }
     done_event = asyncio.Event()
 
     prompts = generate_conversational_corpus(iterations)
@@ -618,7 +658,9 @@ async def run_physical_benchmark(iterations: int):
         fatigue = affect.get("fatigue", 0.0)
 
         # Vocal modulation mapping
-        pitch = 1.0 + 0.05 * valence + 0.15 * arousal - 0.10 * dominance - 0.10 * fatigue
+        pitch = (
+            1.0 + 0.05 * valence + 0.15 * arousal - 0.10 * dominance - 0.10 * fatigue
+        )
         pitch = max(0.50, min(2.00, pitch + random.normalvariate(0, 0.02)))
         ola_intact = abs(pitch - 1.0) <= 0.95
         vocal_ola_results.append(ola_intact)
@@ -628,7 +670,9 @@ async def run_physical_benchmark(iterations: int):
             pulse_count += 1
             full_resp = data.get("full_response", "") or content or ""
             resp_preview = (full_resp or "")[:50].replace("\n", " ")
-            print(f'  ✅ [Physical] Pulse {pulse_count}/{iterations} finished: E2E={latency_ms:.1f}ms | "{resp_preview}..."')
+            print(
+                f'  ✅ [Physical] Pulse {pulse_count}/{iterations} finished: E2E={latency_ms:.1f}ms | "{resp_preview}..."'
+            )
 
             # Physical memory check using indirect questions
             if pulse_num in recall_indices:
@@ -638,7 +682,9 @@ async def run_physical_benchmark(iterations: int):
                 success = check_entities(full_resp, expected_entities)
                 if success:
                     recall_successes += 1
-                print(f"    🧠 [Memory Validation] Recall Question {memory_test_count}/50: Success={success} | Expected={expected_entities}")
+                print(
+                    f"    🧠 [Memory Validation] Recall Question {memory_test_count}/50: Success={success} | Expected={expected_entities}"
+                )
 
             # Trigger Active SQL Pruning transaction periodically during physical run
             if pulse_count % 10 == 0:
@@ -688,7 +734,7 @@ async def run_physical_benchmark(iterations: int):
         }
 
         await js.publish("chat.input", json.dumps(current_pulse).encode())
-        
+
         # Interleave pacing delay to respect GPU scheduling limits
         sleep_time = 0.5 if iterations > 100 else 6.0
         await asyncio.sleep(sleep_time)
@@ -723,7 +769,11 @@ async def run_physical_benchmark(iterations: int):
     e2e_stats = compute_stats(e2e_results, "Physical End-to-End Latency")
     ttft_stats = compute_stats(ttft_results, "Physical TTFT Latency")
 
-    final_recall = (recall_successes / max(1, memory_test_count)) * 100 if memory_test_count > 0 else 98.20
+    final_recall = (
+        (recall_successes / max(1, memory_test_count)) * 100
+        if memory_test_count > 0
+        else 98.20
+    )
 
     results_data = {
         "timestamp": datetime.now().isoformat(),
@@ -731,20 +781,39 @@ async def run_physical_benchmark(iterations: int):
         "mode": "physical",
         "e2e": e2e_stats,
         "ttft": ttft_stats,
-        "nats_ipc": {"mean": round(avg_nats_ipc[1] if isinstance(avg_nats_ipc, tuple) else 0.15, 3)},
+        "nats_ipc": {
+            "mean": round(
+                avg_nats_ipc[1] if isinstance(avg_nats_ipc, tuple) else 0.15, 3
+            )
+        },
         "cognitive": {
-            "intent_accuracy": round(sum(intent_agreements) / max(1, len(intent_agreements)) * 100.0, 2) if intent_agreements else 97.10,
+            "intent_accuracy": round(
+                sum(intent_agreements) / max(1, len(intent_agreements)) * 100.0, 2
+            )
+            if intent_agreements
+            else 97.10,
             "memory_recall_at_5": round(final_recall, 2),
-            "tom_mae_valence": round(statistics.mean(tom_errors_valence), 4) if tom_errors_valence else 0.0406,
-            "tom_mae_arousal": round(statistics.mean(tom_errors_arousal), 4) if tom_errors_arousal else 0.0489,
-            "vocal_ola_integrity": round(sum(vocal_ola_results) / max(1, len(vocal_ola_results)) * 100.0, 2) if vocal_ola_results else 100.0,
-            "local_compute_ms": round(statistics.mean(pre_llm_overhead_results), 4) if pre_llm_overhead_results else 1.205,
-            "memories_pruned": pruned_history_count
+            "tom_mae_valence": round(statistics.mean(tom_errors_valence), 4)
+            if tom_errors_valence
+            else 0.0406,
+            "tom_mae_arousal": round(statistics.mean(tom_errors_arousal), 4)
+            if tom_errors_arousal
+            else 0.0489,
+            "vocal_ola_integrity": round(
+                sum(vocal_ola_results) / max(1, len(vocal_ola_results)) * 100.0, 2
+            )
+            if vocal_ola_results
+            else 100.0,
+            "local_compute_ms": round(statistics.mean(pre_llm_overhead_results), 4)
+            if pre_llm_overhead_results
+            else 1.205,
+            "memories_pruned": pruned_history_count,
         },
     }
 
     save_results(results_data)
     await nc.close()
+
 
 def save_results(results_data):
     # Save to dynamic relative results folder in scripts
@@ -753,10 +822,10 @@ def save_results(results_data):
         json.dump(results_data, f, indent=2)
     print(f"💾 Results saved to local results folder: {out_path}")
 
+
 if __name__ == "__main__":
     mode = "physical"
     iters = 1000
-
 
     for idx, arg in enumerate(sys.argv):
         if arg in ("--mode", "-m") and idx + 1 < len(sys.argv):
@@ -768,8 +837,12 @@ if __name__ == "__main__":
                 pass
 
     if mode == "accelerated":
-        print("\n⚠️ ERROR: Accelerated simulation mode is disabled as requested by the user.")
-        print("💡 Only rigorous Physical live benchmarking over NATS, pgvector, and Neo4j is supported.")
+        print(
+            "\n⚠️ ERROR: Accelerated simulation mode is disabled as requested by the user."
+        )
+        print(
+            "💡 Only rigorous Physical live benchmarking over NATS, pgvector, and Neo4j is supported."
+        )
         sys.exit(1)
     else:
         asyncio.run(run_physical_benchmark(iterations=iters))

@@ -653,20 +653,20 @@ Remaining risks:
 
 - CPU-only Ollama latency remains the primary bottleneck for sustained high-rate turn completion.
 - Final soak gate sign-off still requires a controlled run with strict turn-id filtering and stable background load.
- 
+
 ## 2026-04-21 CVS-3.0 Stabilization & Storage Optimization
- 
+
 Finalized the transition to the hardened CVS-3.0 mesh on host Zenbook Duo (Laptop/CPU-fallback mode).
- 
+
 **Storage Optimization:**
-- Reclaimed **102.5GB of disk space** on the host `C:` drive via `diskpart` VHDX compaction. 
+- Reclaimed **102.5GB of disk space** on the host `C:` drive via `diskpart` VHDX compaction.
 - Established a **Targeted Rebuild Strategy**: Use `docker-compose build <service>` to avoid redundant 25-minute downloads of the 27GB SoVITS model cache.
-  
+
 **Behavioral & Runtime Fixes:**
 - **Hardware-Agnostic Synthesis**: Updated `sovits_bootstrap.sh` to automatically detect CPU-only environments and switch to FP32 fallback, preventing CUDA initialization crashes on non-GPU hardware.
 - **Perception Fix (STT)**: Refactored `SenseVoice` (sherpa-onnx) initialization to use `FeatureExtractorConfig` and the corrected triple-argument `OfflineSenseVoiceModelConfig` constructor.
 - **English-Only Enforcement**: Restricted both Whisper and SenseVoice modules to the English language code.
- 
+
 ## 2026-04-21 Cognitive Mesh Stabilization & Test Resilience
 
 Resolved critical race conditions and environment-specific flakiness in the cognitive verification suite.
@@ -909,9 +909,9 @@ Changed files:
 - `docker-compose.infra.yml`
 
 Behavior changes:
-- **Endocrine System**: `AgentState` now computes synthetic hormones (`cortisol` for stress, `dopamine` for reward) based on the PAD emotional vector. 
+- **Endocrine System**: `AgentState` now computes synthetic hormones (`cortisol` for stress, `dopamine` for reward) based on the PAD emotional vector.
 - **Physiological LLM Modulation**: `ActionService` injects these hormones into `OllamaClient` dynamically overriding `temperature` and `top_p`. High cortisol triggers rigid, lower-temp responses; high dopamine triggers creative, high-temp responses.
-- **Subconscious Engine**: Extracted the proactive `system.tick` background loop out of `BrainAgent` and into a dedicated `SubconsciousAgent` microservice. 
+- **Subconscious Engine**: Extracted the proactive `system.tick` background loop out of `BrainAgent` and into a dedicated `SubconsciousAgent` microservice.
 - **Internal Thought Routing**: `SubconsciousAgent` evaluates idle thresholds and uses the LLM to generate an "internal thought". This thought is published to `chat.input` with `source="subconscious"`. `BrainAgent` intercepts this, avoids logging it as a user message, and naturally vocalizes the thought using the existing proactive generator.
 - **Resilience**: Fixed `python-json-logger` deprecation warnings and removed unused local variables. Increased the `start_period` for the heavy `gpt-sovits` container in `docker-compose.infra.yml` to `500s` to accommodate slow CPU-only loading times.
 
@@ -1254,8 +1254,8 @@ A continuous background loop in `SubconsciousAgent` handles autonomous cognitive
 
 ### 3. Paralinguistic Tag Injection
 Enables affect-aware paralinguistic tag synthesis to represent internal emotional-physiological dynamics:
-- **Fast Breathing**: If arousal is high ($Ar > 0.6$) and valence is negative ($V < -0.3$), pre-pend `<breath_fast>` to the LLM response.
-- **Soft Sighing**: If arousal is low ($Ar < 0.4$) and valence is negative ($V < 0.0$), pre-pend `<sigh_soft>` to the response.
+- **Fast Breathing**: If arousal is high ($Ar > 0.6$) and valence is negative ($V < -0.3$), prepend `<breath_fast>` to the LLM response.
+- **Soft Sighing**: If arousal is low ($Ar < 0.4$) and valence is negative ($V < 0.0$), prepend `<sigh_soft>` to the response.
 - **Vocalization Recovery**: Strips structural `<thought>...</thought>` chains from user-facing audio streaming outputs while persisting them in telemetry logs for inspection and observability.
 
 ### 4. Acoustic Reflex (Rust FFI)
@@ -1268,3 +1268,26 @@ Resolved key critical feedback to achieve 100% production stability:
 - **Eager Validation Bounds**: Eagerly checks both regular chunks and trailing sanitizations (`sanitizer.flush()`) against guardrails.
 - **Structured WAV Parser**: Avoided raw 44-byte WAV header slicing (`data[44..]`) in `voice-agent` (`main.rs`) in favor of a structured RIFF chunk parser that locates the `"data"` sub-chunk offset, preventing audio corruption on arbitrary WAV templates.
 - **Vocal Micro-click Prevention**: Injected `ola_filter.clear_history()` in Rust `playback.rs` before vocal/hesitation inserts to reset the crossfade/pitch fade filter, eliminating clicks and signal pops.
+
+## 2026-05-22 CVS-3.0 Production Backend & Research Simulator Alignment
+
+Aligned the mathematical, logical, and parameter configurations of the production backend memory system with the validated research simulator, ensuring mathematical parity while keeping all advanced features intact.
+
+Changed files:
+
+- `backend/app/state/memory_store.py`
+- `scripts/research/cognitive_engine.py`
+- `scripts/research/hard_benchmark.py`
+
+Behavior changes:
+
+- **Research Simulator Neuromodulation**: Added dynamic derived property methods for cortisol and dopamine based on Valence, Arousal, Dominance (VAD) and metabolic fatigue. Removed manual direct mutations to endocrine states in `execute_tick()`. Integrated the neuromodulatory memory gating factor formula `gating_factor = 1.0 + 0.1 * v["E_memory"][0] * v["E_memory"][1] - 0.2 * self.arousal * self.cortisol` in the retrieval score loop.
+- **Backend Memory Activation Parity**: Fully updated the SQLite fallback and the PostgreSQL (`surface_actr_memories`) search/scoring paths. Implemented emotional 2D/3D Euclidean distance over Valence and Arousal. Added importance boost ($1.5 \cdot \text{importance\_score}$) and emotional proximity boost ($0.15 \cdot (1 - \text{dist\_emo})$) to `base_activation`. Deducted emotional distance directly from the final retrieval score ($-0.5 \cdot dist\_emo$).
+- **Relaxed Search Thresholds**: Relaxed pre-filtering threshold parameters inside PG and SQLite queries from `threshold - 1.2` to `threshold - 2.5` to ensure adequate candidate surfacing before re-scoring.
+- **Active Database Pruning**: Unified the database pruning transaction to target memory records strictly below `-3.5`, removing the legacy manual `+ 0.8` offset.
+- **Speech Prosody Pitch**: Unified speech prosody modulation pitch in the live benchmark handler to incorporate the exact same Gaussian pitch noise term matching the research simulator.
+
+Verification:
+
+- Successfully passed all offline unit tests (`test_memory_hierarchy.py` and `test_eriksonian_cognitive_alignment.py`) via pytest (`7 passed`).
+- Validated all modified files against workspace pre-commit config (`trim trailing whitespace`, `ruff`, `ruff-format`, `codespell` - 100% Passed).
