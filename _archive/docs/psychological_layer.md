@@ -343,9 +343,9 @@ variations in vocal parameters. However, Scherer emphasizes that acoustic profil
 
 | Parameter | Equation | Scherer's Prediction |
 |-----------|---------|---------------------|
-| **Pitch** | `BasePitch + tanh(k₁·V + k₂·Ar)` | High arousal → increased F0 mean and range ✅ |
-| **Rate** | `BaseRate + tanh(k₃·Ar − k₄·Hesitation)` | High arousal → faster speech rate ✅ |
-| **Volume** | `clamp(BaseVolume + k₅·D, min, max)` | High dominance → increased intensity ✅ |
+| **Pitch** | `1.0 + tanh(0.05·V + 0.15·Ar − 0.10·D − 0.05·F + dist_pitch_mod)` | High arousal → increased F0 mean and range ✅ |
+| **Rate** | `1.0 + tanh(0.20·Ar − 0.10·V − 0.15·F)` | High arousal → faster speech rate ✅ |
+| **Volume** | `0.40 + 0.60·D + dist_vol_mod` | High dominance → increased intensity ✅ |
 
 > **Source**: The *directions* (arousal↑ → pitch↑, rate↑; dominance↑ → volume↑) are
 > well-documented in Scherer (2003) and Bänziger & Scherer (2005).
