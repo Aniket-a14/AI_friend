@@ -14,7 +14,7 @@ load_dotenv()
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend")))
 
-from scripts.research.corpus_builder import DOMAINS, LIFE_FACTORS, CONDITIONS, PHASES_OF_LIFE
+from scripts.research.corpus_builder import generate_high_fidelity_distractors
 from scripts.research.reset_cognitive_db import reset_dbs
 
 # Expected milestone facts
@@ -99,27 +99,7 @@ async def seed_databases(num_distractors=200):
     print(f"🌱 Flooding pgvector database with {num_distractors} distractors + {len(MILESTONE_FACTS)} milestones...")
     
     # Compile distractors
-    distractor_facts = []
-    for idx in range(num_distractors):
-        phase = random.choice(PHASES_OF_LIFE)
-        domain = random.choice(DOMAINS)
-        life_factor = random.choice(LIFE_FACTORS)
-        condition = random.choice(CONDITIONS)
-        
-        # Interleave structured sentences
-        temp_idx = idx % 5
-        if temp_idx == 0:
-            prompt = f"During {phase}, I focused my efforts on {domain}, while managing my {life_factor} under a state of {condition}."
-        elif temp_idx == 1:
-            prompt = f"Reflecting on {phase}, the study of {domain} was deeply influenced by my {life_factor} and {condition}."
-        elif temp_idx == 2:
-            prompt = f"As I look back at {phase}, balancing {domain} with {life_factor} was challenging due to {condition}."
-        elif temp_idx == 3:
-            prompt = f"Throughout {phase}, my research in {domain} progressed alongside my {life_factor}, even when experiencing {condition}."
-        else:
-            prompt = f"In {phase}, integrating {domain} principles with daily {life_factor} required addressing {condition}."
-        
-        distractor_facts.append((prompt, phase, domain))
+    distractor_facts = generate_high_fidelity_distractors(num_distractors)
 
     # All seeded facts to write: Milestones have high importance and emotion
     seeding_tasks = []
