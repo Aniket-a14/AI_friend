@@ -362,7 +362,7 @@ A continuous audio frame stream is processed inside a microsecond-level loop. We
 \text{RMS} = \sqrt{\frac{1}{N} \sum_{k=1}^N x[k]^2}
 ```
 
-If $\text{RMS} > \text{Threshold}_{\text{silence}}$, a System 1 interruption is triggered. The active Text-to-Speech (TTS) engine immediately halts physical audio playback, capturing the exact epoch $t_{\text{stop}}$.
+If RMS exceeds the silence threshold, a System 1 interruption is triggered. The active Text-to-Speech (TTS) engine immediately halts physical audio playback, capturing the exact epoch of the stop event.
 
 ### 6.2 System 2 Speculative Conflict Resolution
 
