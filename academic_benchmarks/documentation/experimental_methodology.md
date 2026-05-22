@@ -25,7 +25,7 @@ graph TD
 ### 1.1 Pillar 1: Accelerated Mathematical Simulation (`--mode accelerated`)
 *   **Evaluation Scope:** $N = 100,000$ sequential dialogue iterations.
 *   **Testing Setup:** Evaluates the symbolic and sub-symbolic cognitive mathematics (such as ACT-R temporal power-law decay, threat scan triggers, and user Theory of Mind valence/arousal tracking) under high-throughput synthetic loads.
-*   **Execution Duration:** **9.09 seconds** total runtime (bypassing slow external I/O, network latency, and physical LLM generation) utilizing localized math models. With our $O(1)$ constant-time ACT-R queue optimization and running-average computation, all 100,000 iterations run smoothly with minimal CPU overhead, establishing high statistical significance for mathematical error convergence.
+*   **Execution Duration:** **[TBP]** total runtime (bypassing slow external I/O, network latency, and physical LLM generation) utilizing localized math models. With our $O(1)$ constant-time ACT-R queue optimization and running-average computation, all 100,000 iterations run smoothly with minimal CPU overhead, establishing high statistical significance for mathematical error convergence.
 
 ### 1.2 Pillar 2: Physical Real-Time Interaction (`--mode physical`)
 *   **Evaluation Scope:** $N = 5$ local verification rounds / $N = 50$ full human-in-the-loop trials.
@@ -40,33 +40,33 @@ graph TD
 The sequential diagram below traces the exact millisecond-level trajectory of an active conversational frame, showing the sub-LLM pre-processing and post-LLM prosody synthesis stages:
 
 ```
-[User Audio Ingest] (0.04 ms)
+[User Audio Ingest] ([TBP])
         │
         ▼
-[Hybrid ASR Segmenter] (0.59 ms) ───► [System 1 Fast VAD Interrupt Check]
+[Hybrid ASR Segmenter] ([TBP]) ───► [System 1 Fast VAD Interrupt Check]
         │
         ▼
-[Subconscious Threat Scan] (0.20 ms)
+[Subconscious Threat Scan] ([TBP])
         │
         ▼
-[ACT-R Graph Memory Search] (0.05 ms) ───► [Neo4j Cached Hop Query]
+[ACT-R Graph Memory Search] ([TBP]) ───► [Neo4j Cached Hop Query]
         │
         ▼
-[Hormonal Endocrine Appraisal] (0.33 ms)
+[Hormonal Endocrine Appraisal] ([TBP])
         │
         ▼
 ===================================================
-[Local LLM Inference: Llama-3.2 3B] (704.1 ms TTFT)
+[Local LLM Inference: Llama-3.2 3B] ([TBP] TTFT)
 ===================================================
         │
         ▼
-[Post-Response Prosody Modulator] (1.29 µs)
+[Post-Response Prosody Modulator] ([TBP])
         │
         ▼
 [Overlap-Add (OLA) Audio crossfader] (10 ms DSP Window)
         │
         ▼
-[NATS Published Response: chat.output] (0.04 ms IPC)
+[NATS Published Response: chat.output] ([TBP] IPC)
         │
         ├─────────────────────────────────────────────────┐
         ▼                                                 ▼

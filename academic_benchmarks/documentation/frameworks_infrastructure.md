@@ -39,18 +39,18 @@ The table below catalogs the audited memory allocations, central processing unit
 ### Table I: Active Container Resource Metrics
 | Component Services | Active Container Process | RAM Allocation | CPU Util. (Avg) | Power Footprint | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **NATS Event Broker** | `nats:latest` (Go-native pub-sub) | 22.05 MB | 0.82% | 0.20 W | Active |
-| **Neo4j Knowledge Mesh** | `neo4j:5-community` (graph DB) | 702.60 MB | 1.45% | 0.45 W | Cached |
-| **Redis Cache Server** | `redis:alpine` (fast-access cache) | 19.09 MB | 0.12% | 0.05 W | Active |
-| **PostgreSQL Fallback** | `postgres:15` (pgvector semantic) | 67.98 MB | 0.35% | 0.10 W | Idle |
-| **Brain Cognitive Agent** | `brain_agent.py` (decision/appraisal) | 82.36 MB | 2.10% | 0.65 W | Active |
-| **System State Agent** | `state_agent.py` (endocrine loop) | 33.92 MB | 0.95% | 0.30 W | Active |
-| **Memory Surfacing Agent** | `memory_agent.py` (ACT-R recall) | 75.42 MB | 1.25% | 0.40 W | Active |
-| **Subconscious Scan Agent**| `threat_scan.py` (barge-in segmenter) | 76.16 MB | 1.15% | 0.35 W | Active |
-| **Total Mesh Footprint** | **All 8 Core Services** | **1,079.58 MB**| **8.19%** | **2.50 W** | **Sovereign** |
-| Whisper STT (Edge) | `whisper-base` (local CPU ingest) | 120.00 MB | 14.50% | 5.50 W | Bursting |
-| Local Llama-3.2 3B | `llama3.2:3b` (Q4_K_M quantized) | 2.85 GB | 32.40% (GPU)| 14.80 W | Generating |
-| **Full Stack Total** | **Full Edge Stack** | **4,082.36 MB**| **55.09%** | **22.80 W** | **Stable** |
+| **NATS Event Broker** | `nats:latest` (Go-native pub-sub) | `[TBP]` | `[TBP]` | `[TBP]` | Active |
+| **Neo4j Knowledge Mesh** | `neo4j:5-community` (graph DB) | `[TBP]` | `[TBP]` | `[TBP]` | Cached |
+| **Redis Cache Server** | `redis:alpine` (fast-access cache) | `[TBP]` | `[TBP]` | `[TBP]` | Active |
+| **PostgreSQL Fallback** | `postgres:15` (pgvector semantic) | `[TBP]` | `[TBP]` | `[TBP]` | Idle |
+| **Brain Cognitive Agent** | `brain_agent.py` (decision/appraisal) | `[TBP]` | `[TBP]` | `[TBP]` | Active |
+| **System State Agent** | `state_agent.py` (endocrine loop) | `[TBP]` | `[TBP]` | `[TBP]` | Active |
+| **Memory Surfacing Agent** | `memory_agent.py` (ACT-R recall) | `[TBP]` | `[TBP]` | `[TBP]` | Active |
+| **Subconscious Scan Agent**| `threat_scan.py` (barge-in segmenter) | `[TBP]` | `[TBP]` | `[TBP]` | Active |
+| **Total Mesh Footprint** | **All 8 Core Services** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** | **Sovereign** |
+| Whisper STT (Edge) | `whisper-base` (local CPU ingest) | `[TBP]` | `[TBP]` | `[TBP]` | Bursting |
+| Local Llama-3.2 3B | `llama3.2:3b` (Q4_K_M quantized) | `[TBP]` | `[TBP]` | `[TBP]` | Generating |
+| **Full Stack Total** | **Full Edge Stack** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** | **Stable** |
 
 ---
 
@@ -78,7 +78,7 @@ The sovereign mesh has been fully verified and profiled across two primary low-p
 
 To prevent live performance bottlenecks, CVS-3.0 divides its operations into a **Fast-Loop (System 1)** and a **Deep-Loop (System 2)**:
 
-1.  **System 1 Fast-Loop (Turn-Taking / DSP):** Operates entirely inside the memory buffer and NATS network layers. It processes incoming audio, checks for voice interruptions, and halts TTS playback within **114.9 ms**.
+1.  **System 1 Fast-Loop (Turn-Taking / DSP):** Operates entirely inside the memory buffer and NATS network layers. It processes incoming audio, checks for voice interruptions, and halts TTS playback within **`[TBP]`**.
 2.  **System 2 Deep-Loop (Cognitive Appraisal / Graph Traversal):** Initiates background NATS events to query Neo4j multi-hop memories and evaluate Hormonal/PAD transitions.
 3.  **Asynchronous Background Consolidation (Post-Response Reflection):** Once the robot completes its conversational turn and publishes `chat.output`, the Brain agent triggers a background `telemetry.reflection` event. The system runs ACT-R memory indexing, endocrine appraisal decay calculations, and Neo4j graph insertions concurrently. This prevents the robot from pausing or showing lag during active conversation, allowing it to perform math consolidation asynchronously.
 

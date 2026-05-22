@@ -347,11 +347,12 @@ EREC = \frac{\theta_{\text{SLO}} \cdot \Omega_{\text{RAM\_limit}} \cdot \Phi_{\t
 ```
 
 *   $\theta_{\text{SLO}} = 15.0\text{ ms}$: Maximum end-to-end cognitive routing latency budget.
-*   $\text{Latency}_{\text{E2E}} = 1.208\text{ ms}$: Measured sub-LLM perception-appraisal-decision pathway latency.
+*   $\text{Latency}_{\text{E2E}} = \text{[TBP]}\text{ ms}$: Measured sub-LLM perception-appraisal-decision pathway latency.
 *   $\Omega_{\text{RAM\_limit}} = 4,096\text{ MB}$: Standard edge RAM allocation budget.
-*   $\text{Footprint}_{\text{RAM}} = 1,079.58\text{ MB}$: Total active memory footprint of all 8 container services in macOS light-mode.
+*   $\text{Footprint}_{\text{RAM}} = \text{[TBP]}\text{ MB}$: Total active memory footprint of all 8 container services in macOS light-mode.
 *   $\Phi_{\text{power\_limit}} = 35.0\text{ W}$: NVIDIA Jetson maximum edge TDP power budget.
-*   $\text{Power}_{\text{active}} = 2.50\text{ W}$: Measured active power draw of the decentralized mesh (excluding localized Llama inference GPU power).
+*   $\text{Power}_{\text{active}} = \text{[TBP]}\text{ W}$: Measured active power draw of the decentralized mesh (excluding localized Llama inference GPU power).
+
 
 ---
 
