@@ -114,25 +114,26 @@ D(t) = (1 - \gamma) \cdot D(t-1) + \gamma \cdot (0.6 \cdot A + 0.4 \cdot NA)
 To model secure human-agent bonds, we implement a multi-dimensional trust space based on **Marsh's Formal Trust Model (1994)** and secure attachment styles based on **Bowlby's Attachment Theory**:
 
 *   **Dimensional Trust:** Trust is decomposed into three components updating with rate $\delta = 0.1$:
-    *   **Trust Benevolence ($T_b$):** Sensitivity to emotional relationship impact:
+
+*   **Trust Benevolence ($T_b$):** Sensitivity to emotional relationship impact:
 
 ```math
 T_b(t) = \text{clamp}(T_b(t-1) + \delta \cdot RI, 0.0, 1.0)
 ```
 
-    *   **Trust Competence ($T_c$):** Sensitivity to conversational helpfulness and goal congruence:
+*   **Trust Competence ($T_c$):** Sensitivity to conversational helpfulness and goal congruence:
 
 ```math
 T_c(t) = \text{clamp}(T_c(t-1) + \delta \cdot (0.6 \cdot G + 0.4 \cdot R), 0.0, 1.0)
 ```
 
-    *   **Trust Integrity ($T_i$):** Sensitivity to boundary adherence:
+*   **Trust Integrity ($T_i$):** Sensitivity to boundary adherence:
 
 ```math
 T_i(t) = \text{clamp}(T_i(t-1) + \delta \cdot NA, 0.0, 1.0)
 ```
 
-    *   **Scalar Combined Trust ($T$):** The average of the three components:
+*   **Scalar Combined Trust ($T$):** The average of the three components:
 
 ```math
 T(t) = \frac{T_b(t) + T_c(t) + T_i(t)}{3.0}
