@@ -31,7 +31,7 @@ N = \begin{cases}
 \end{cases}
 ```
 
-where $\mathcal{W}_{\text{event}}$ is the set of lowercase keywords in the active utterance, and $\mathcal{W}_h$ is the keyword set of historical turn $h$.
+where $\mathcal{W}$ denotes the set of lowercase keywords extracted from the active utterance (event) or a historical turn $h$.
 
 *   **Goal Congruence ($G \in [-1, 1]$):** Represents how much the event advances or hinders the agent's core social goal. It maps directly from the emotional bias $E_b$ (extracted via acoustic pitch/sentiment trackers):
 
@@ -149,7 +149,7 @@ At(t) = \text{clamp}\left(At(t-1) + \epsilon \cdot T(t) \cdot \min\left(1.0, \fr
 
 Three continuous hormones modulate the LLM's generation hyperparameters (temperature, top_p, penalty) to model physical cognitive constraints:
 
-*   **Fatigue Cycle ($F \in [0, 1]$):** Metabolic wear-and-tear accumulated during active turns and recovered during idle intervals. Governed by a circadian multiplier $\mu_{\text{circadian}}$ (set to $1.8$ at night $22:00\text{--}06:00$, otherwise $1.0$):
+*   **Fatigue Cycle ($F \in [0, 1]$):** Metabolic wear-and-tear accumulated during active turns and recovered during idle intervals. Governed by a circadian multiplier (set to $1.8$ at night 22:00–06:00, otherwise $1.0$):
 
 ```math
 F(t) = \begin{cases}
@@ -168,7 +168,7 @@ C(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right
 
 *Hyperparameter mapping:* High cortisol reduces LLM generation temperature to enforce strict, defensive responses; low cortisol increases temperature to support warm, creative responses.
 
-*   **Dopamine Coupling ($D_{\text{dopamine}} \in [0, 1]$):** Represents reward tracking. Mapped from positive valence ($V > 0$) combined with fatigue-modulated arousal $Ar_{\text{actual}}$:
+*   **Dopamine Coupling ($D \in [0, 1]$):** Represents reward tracking. Mapped from positive valence ($V > 0$) combined with fatigue-modulated actual arousal:
 
 ```math
 Ar_{\text{actual}}(t) = \text{clamp}(Ar(t) + 0.2 \cdot F(t), 0.0, 1.0)
@@ -182,7 +182,7 @@ D_{\text{dopamine}}(t) = \text{clamp}(\max(0.0, V(t)) \cdot Ar_{\text{actual}}(t
 
 ### 2.4 Idle State Decay (ALMA Decay)
 
-During prolonged silence, internal mood converges back to the neutral baseline through exponential decay with decay coefficient $\lambda_{\text{decay}} = 0.05 \text{ hr}^{-1}$:
+During prolonged silence, internal mood converges back to the neutral baseline through exponential decay with decay coefficient $\lambda = 0.05$ per hour:
 
 ```math
 V(t) = V(0) \cdot e^{-\lambda_{\text{decay}} \cdot \Delta t}
@@ -269,7 +269,7 @@ The scores $S$ for each attribute are defined dynamically based on the current s
 
 ### 4.2 Intent Persistence with Context Gating
 
-To prevent erratic goal switching during rapid dialogue turns, we implement temporal smoothing with a persistence rate $\rho = 0.15$ coupled with a hard context gating threshold $\theta_{\text{shift}} = 0.3$ (using Novelty $N$ as the shift proxy):
+To prevent erratic goal switching during rapid dialogue turns, we implement temporal smoothing with a persistence rate $\rho = 0.15$ coupled with a hard context gating threshold $\theta = 0.3$ (using Novelty $N$ as the shift proxy):
 
 ```math
 U_{\text{final}}(g, t) = \begin{cases}
@@ -310,7 +310,7 @@ A_i = \ln(n) - d \cdot \ln(t + 1.0) + 1.5 \cdot \text{Importance}_i + 0.15 \cdot
 \text{dist-emo} = \sqrt{(V_{\text{memory}} - V_{\text{agent}})^2 + (Ar_{\text{memory}} - Ar_{\text{agent}})^2}
 ```
 
-*   **Effective Similarity ($\text{Similarity}_{\text{eff}}$):** Blends vector cosine similarity with hormone levels (cortisol stress dampening) and emotional valence:
+*   **Effective Similarity:** Blends vector cosine similarity with hormone levels (cortisol stress dampening) and emotional valence:
 
 ```math
 \text{Similarity}_{\text{eff}} = \text{Similarity} \cdot (1.0 + 0.1 \cdot V_{\text{memory}} \cdot Ar_{\text{memory}} - 0.2 \cdot Ar_{\text{agent}} \cdot C_{\text{cortisol}})
@@ -384,13 +384,13 @@ The efficiency of turn-taking and physical stopping response speed is evaluated 
 ```
 
 *   $\gamma \in [0, 1]$: Cosine similarity between user interjection embeddings and active agent goal intents.
-*   $P_{\text{false-trigger}}$: Probability of false-triggering due to background acoustics.
-*   $t_{\text{stop}} - t_{\text{interject}}$: Turn response gap (in milliseconds) between when the user physically started speaking and when the TTS stopped.
-*   $\tau_{\text{overlap}} = 200.0\text{ ms}$: Human turn-taking overlap baseline constant.
+*   $P$: Probability of false-triggering due to background acoustics.
+*   $t$ (stop − interject): Turn response gap (in milliseconds) between when the user physically started speaking and when the TTS stopped.
+*   $\tau = 200.0$ ms: Human turn-taking overlap baseline constant.
 
 ### 6.4 Acoustic Prosody Crossfading (OLA Crossfade)
 
-To prevent phase discontinuities or popping noises when shifting voice styles dynamically, we apply a **10 ms linear Overlap-Add (OLA) crossfade** between the previous synthesis buffer $x_{\text{prev}}$ and the newly modified prosody buffer $x_{\text{curr}}$:
+To prevent phase discontinuities or popping noises when shifting voice styles dynamically, we apply a **10 ms linear Overlap-Add (OLA) crossfade** between the previous and newly modified prosody synthesis buffers:
 
 ```math
 y[i] = \left(1 - \frac{i}{\text{fade-len}}\right) \cdot x_{\text{prev}}[i] + \frac{i}{\text{fade-len}} \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade-len}
@@ -406,7 +406,7 @@ To express continuous cognitive and endocrine states paralinguistically, CVS-3.0
 
 ### 7.1 Speech Rate (Pacing) Modulation
 
-The speech pacing rate factor ($R_{\text{pace}} \in [0.5, 2.0]$) is modulated by emotional arousal (positive scaling), valence (negative scaling for slow, sad vocalization), and fatigue-driven pace-dampening:
+The speech pacing rate factor ($R \in [0.5, 2.0]$) is modulated by emotional arousal (positive scaling), valence (negative scaling for slow, sad vocalization), and fatigue-driven pace-dampening:
 
 ```math
 R_{\text{pace}} = 1.0 + \tanh(0.20 \cdot Ar - 0.10 \cdot V - 0.15 \cdot F)
@@ -414,7 +414,7 @@ R_{\text{pace}} = 1.0 + \tanh(0.20 \cdot Ar - 0.10 \cdot V - 0.15 \cdot F)
 
 ### 7.2 Vocal Pitch (F0) Modulation
 
-The fundamental frequency scale factor ($P_{\text{vocal}} \in [0.5, 2.0]$) is pulled dynamically by valence and arousal (positive pitch shifts), dominance (defensive low-frequency pitch drops), metabolic fatigue, and volumetric distance:
+The fundamental frequency scale factor ($P \in [0.5, 2.0]$) is pulled dynamically by valence and arousal (positive pitch shifts), dominance (defensive low-frequency pitch drops), metabolic fatigue, and volumetric distance:
 
 ```math
 P_{\text{vocal}} = 1.0 + \tanh(0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.05 \cdot F + \text{dist-pitch-mod})
@@ -425,7 +425,7 @@ where:
 
 ### 7.3 Vocal Volume Modulation
 
-Vocal intensity ($V_{\text{vocal}} \in [0.1, 1.5]$) maps from dominance (confident louder speech) adjusted by inverse-square physical distance compensation:
+Vocal intensity ($V \in [0.1, 1.5]$) maps from dominance (confident louder speech) adjusted by inverse-square physical distance compensation:
 
 ```math
 V_{\text{vocal}} = 0.40 + 0.60 \cdot D + \text{dist-vol-mod}
@@ -713,4 +713,187 @@ async def _consolidate(self, episodes: list[dict]):
     finally:
         self.is_reflecting = False
         self.reflection_done.set()
+```
+
+### 9.5 Multi-Attribute Utility Theory (MAUT) Decision Engine & Intent Persistence
+
+The decision system scores each social goal dynamically and applies temporal intent persistence with a context gating threshold to prevent goal-switching:
+
+```python
+def _score_goals_maut(self, appraisal: Dict[str, float], state: Dict[str, Any]) -> str:
+    """
+    Algorithm 5: Multi-Attribute Utility Theory (MAUT) Goal Scoring and Intent Persistence
+    """
+    V = state.get("mood", 0.0)
+    Ar = state.get("energy", 0.5)
+    T = state.get("trust", 0.5)
+    R = appraisal.get("relevance", 0.5)
+    G = appraisal.get("goal_congruence", 0.0)
+    N = appraisal.get("novelty", 0.3)
+    NA = appraisal.get("norm_alignment", 1.0)
+
+    scores = {}
+
+    # ENGAGE: Best for neutral/positive states, high energy, novel topics
+    scores["ENGAGE"] = (
+        self.w_goal * max(0, G + 0.5)
+        + self.w_emotion * (0.5 + V * 0.3 + Ar * 0.2)
+        + self.w_identity * NA
+        + self.w_context * R
+    )
+
+    # COMFORT: Best when user seems distressed — favored at low arousal (calm tone)
+    scores["COMFORT"] = (
+        self.w_goal * max(0, -G + 0.5)
+        + self.w_emotion * max(0, -V + 0.5) * (1.2 - Ar * 0.4)
+        + self.w_identity * NA
+        + self.w_context * R * 0.8
+    )
+
+    # INFORM: Best for high relevance, novel content — arousal-neutral
+    scores["INFORM"] = (
+        self.w_goal * max(0, G * 0.5 + 0.3)
+        + self.w_emotion * (0.4 + Ar * 0.2)
+        + self.w_identity * NA
+        + self.w_context * R * N
+    )
+
+    # TEASE: Only when trust is high, mood positive, and energy high
+    scores["TEASE"] = (
+        self.w_goal * max(0, G * 0.3)
+        + self.w_emotion * max(0, V * 0.3 + Ar * 0.2)
+        + self.w_identity * NA * T
+        + self.w_context * (1 - R) * 0.3
+    )
+
+    # PROTECT: When norm alignment is low — arousal-neutral (boundary enforcement)
+    scores["PROTECT"] = (
+        self.w_goal * 0.2
+        + self.w_emotion * (0.2 + Ar * 0.1)
+        + self.w_identity * max(0, 1.0 - NA)
+        + self.w_context * R * 0.5
+    )
+
+    # Apply temporal smoothing for goal stability
+    new_goal = max(scores, key=scores.get)
+    context_shift = N
+
+    if self._previous_goal is not None and context_shift < self.shift_threshold:
+        rho = self.persistence_rate
+        for g in GOALS:
+            prev_score = self._goal_scores.get(g, 0.0)
+            scores[g] = (1 - rho) * prev_score + rho * scores[g]
+        new_goal = max(scores, key=scores.get)
+
+    self._previous_goal = new_goal
+    self._goal_scores = scores
+    return new_goal
+```
+
+### 9.6 Adaptive Emotion Regulation and Reappraisal Engine (Gross-Bosse Model)
+
+This engine evaluates the outcome of each conversation turn and adapts appraisal weights in the background:
+
+```python
+async def evaluate_outcome(
+    self,
+    actual_text_valence: float,
+    acoustic_delta: float = 0.0,
+    behavioral_signal: float = 0.5,
+):
+    """
+    Algorithm 6: Adaptive Reappraisal Weight Adaptation and Emotional Regulation
+    """
+    if not self.enabled:
+        return
+
+    if self._expected_valence is None or self._pre_response_state is None:
+        return
+
+    # Multi-signal outcome computation
+    actual_outcome = (
+        0.5 * actual_text_valence + 0.3 * acoustic_delta + 0.2 * behavioral_signal
+    )
+
+    # Prediction error
+    delta = self._expected_valence - actual_outcome
+
+    # Only adapt on significant mismatches
+    if abs(delta) < 0.1:
+        self._reset_turn_state()
+        return
+
+    # Confidence weighting based on intensity of actual valence
+    confidence = min(1.0, abs(actual_text_valence) + 0.3)
+    effective_lr = self.learning_rate * confidence
+
+    # Update valence-related appraisal weights
+    self.appraisal_weights["w1_g_to_v"] = self._clamp(
+        self.appraisal_weights["w1_g_to_v"] - effective_lr * delta
+    )
+    self.appraisal_weights["w2_ri_to_v"] = self._clamp(
+        self.appraisal_weights["w2_ri_to_v"] - effective_lr * delta * 0.5
+    )
+
+    self._reset_turn_state()
+```
+
+### 9.7 Continuous PAD-to-Prosody Speech Synthesis Coordinator
+
+Coordinates speech synthesis parameter ranges dynamically mapped from continuous affective and metabolic fatigue states:
+
+```python
+def map_affect_to_prosody(self, state_snap: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Algorithm 7: Continuous PAD-to-Prosody Speech Pacing, Intensity, and Pause Mapping
+    """
+    V = state_snap.get("valence", state_snap.get("mood", 0.0))
+    Ar = state_snap.get("arousal", state_snap.get("energy", 0.5))
+    F = state_snap.get("fatigue", 0.0)
+
+    # Continuous speech pacing rate modulation
+    speaking_rate = max(0.6, min(1.8, 1.0 + (0.20 * Ar) - (0.10 * V) - (0.25 * F)))
+    confidence = 0.9
+
+    # Emotional intensity scaling
+    intensity = abs(V) * Ar
+
+    # Speaking pause bias modulation
+    pause_bias = max(0.0, min(1.0, 1.0 - Ar))
+
+    return {
+        "speaking_rate": round(speaking_rate, 3),
+        "intensity": round(intensity, 3),
+        "pause_bias": round(pause_bias, 3),
+        "confidence": confidence,
+    }
+```
+
+### 9.8 Goldman-Eisler Semantic Speech Chunking Segmenter
+
+Uses punctuation cues, linguistic juncture markers, and target size boundaries to divide generated speech streams into natural, expressive chunks:
+
+```python
+def score_split_point(self, word: str, chunk_len: int) -> float:
+    """
+    Algorithm 8: Goldman-Eisler Semantic Speech Segmentation Engine
+    """
+    score = 0.0
+
+    # Punctuation is the strongest speech boundary cue
+    if word:
+        if "." in word or "?" in word or "!" in word:
+            score += 0.8
+        elif "," in word or ":" in word or ";" in word:
+            score += 0.4
+
+    # Length-based chunk pressure
+    if chunk_len >= self.target_size:
+        score += 0.3
+
+    # Hard boundary limit override
+    if chunk_len > 12:
+        score = 1.0
+
+    return score
 ```
