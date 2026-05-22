@@ -35,12 +35,12 @@ The radar and bar chart visualizations below demonstrate CVS-3.0's structural su
 ### 2.1 Full-Spectrum Radar Comparison
 The radar chart contrasts overall architectural scores (latency, accuracy, memory recall, resource footprint, and interruption capabilities) showing that CVS-3.0 establishes a new pareto-frontier.
 
-![Sovereign Cognitive Mind Radar Chart](../plots/extended_benchmarks_radar.png)
+[TBP]
 
 ### 2.2 Turn-Taking & Recall Baselines
 The bar charts evaluate CVS-3.0 against specific industry standards in speech response latency, emotion classification error, and context retrieval recall.
 
-![Industry Baseline Comparisons](../plots/human_realism_comparisons.png)
+[TBP]
 
 ---
 
@@ -95,7 +95,7 @@ Prior cascaded turn-taking architectures suffer from turn gaps between $700\text
 ### 6.2 Goal and Affect Classification Accuracy
 The classification accuracy of intent and goals under synthetic stress is plotted in the confusion matrices below:
 
-![Intent Goal Classification Confusion Matrices](../plots/cognitive_confusion_matrix.png)
+[TBP]
 
 CVS-3.0 maintains **`[TBP]`** classification accuracy across dynamic intent mapping, whereas standard cascaded LLM configurations experience prompt drift and decline under rapid conversational state transitions.
 

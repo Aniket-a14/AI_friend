@@ -83,9 +83,9 @@ The timelines below showcase the real-time performance profiles captured during 
 ### 3.1 100,000-Iteration Mathematical Convergence Timeline
 The plot below demonstrates how intent accuracy, Theory of Mind error coefficients, memory recall, and computed pre-LLM processing times converge across the 100,000-iteration accelerated run.
 
-![Hard Benchmark Progression Timeline](../plots/hard_benchmark_progression.png)
+[TBP]
 
 ### 3.2 Live Physiological Cardiorespiratory Entrainment
 The plot below documents the dynamic autonomic coupling of the social robot's breathing and heart rate to user stress prompts over a 90-second interactive sequence.
 
-![Physiological Entrainment Plot](../plots/human_realism_physiological.png)
+[TBP]
