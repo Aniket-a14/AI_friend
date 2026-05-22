@@ -1,6 +1,7 @@
 import subprocess
 import time
 import json
+import os
 from datetime import datetime
 
 # Sovereign Mesh: Resource Consumption Profiler
@@ -31,7 +32,15 @@ def run_profiler(duration_sec=60):
     all_snapshots = []
     start_time = time.time()
 
-    output_file = f"resource_profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    # Dynamic resolution of local scripts/results folder
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    RESULTS_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "results"))
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    output_file = os.path.join(
+        RESULTS_DIR, f"resource_profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )
+
 
     try:
         while time.time() - start_time < duration_sec:
