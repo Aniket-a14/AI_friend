@@ -294,25 +294,25 @@ To retrieve highly relevant episodic memory chunks from the Neo4j graph and vect
 The total activation $Score_i$ of a memory chunk $i$ at retrieval is formulated as a combination of sub-symbolic strength, effective semantic similarity, and emotional distance:
 
 ```math
-Score_i = A_i + W_{\text{spread}} \cdot \text{Similarity}_{\text{eff}} - 0.5 \cdot \texttt{dist\_emo}
+Score_i = A_i + W_{\text{spread}} \cdot \text{Similarity}_{\text{eff}} - 0.5 \cdot \text{dist-emo}
 ```
 
 *   **Sub-Symbolic Base Activation ($A_i$):** Represents the power-law decay of availability. $t$ is the time elapsed (in hours) since memory creation, $n$ is the recall count, and $d = 0.5$ is the standard ACT-R decay constant:
 
 ```math
-A_i = \ln(n) - d \cdot \ln(t + 1.0) + 1.5 \cdot \text{Importance}_i + 0.15 \cdot (1.0 - \texttt{dist\_emo})
+A_i = \ln(n) - d \cdot \ln(t + 1.0) + 1.5 \cdot \text{Importance}_i + 0.15 \cdot (1.0 - \text{dist-emo})
 ```
 
-*   **Emotional Distance ($\texttt{dist\_emo}$):** Mapped as the Euclidean distance between the active emotional parameters of the agent and those stored at encoding:
+*   **Emotional Distance ($\text{dist-emo}$):** Mapped as the Euclidean distance between the active emotional parameters of the agent and those stored at encoding:
 
 ```math
-\texttt{dist\_emo} = \sqrt{(V_{\text{memory}} - V_{\text{agent}})^2 + (Ar_{\text{memory}} - Ar_{\text{agent}})^2}
+\text{dist-emo} = \sqrt{(V_{\text{memory}} - V_{\text{agent}})^2 + (Ar_{\text{memory}} - Ar_{\text{agent}})^2}
 ```
 
 *   **Effective Similarity ($\text{Similarity}_{\text{eff}}$):** Blends vector cosine similarity with hormone levels (cortisol stress dampening) and emotional valence:
 
 ```math
-\text{Similarity}_{\text{eff}} = \text{Similarity} \cdot (1.0 + 0.1 \cdot V_{\text{memory}} \cdot Ar_{\text{memory}} - 0.2 \cdot Ar_{\text{agent}} \cdot C_{\texttt{cortisol}})
+\text{Similarity}_{\text{eff}} = \text{Similarity} \cdot (1.0 + 0.1 \cdot V_{\text{memory}} \cdot Ar_{\text{memory}} - 0.2 \cdot Ar_{\text{agent}} \cdot C_{\text{cortisol}})
 ```
 
 ### 5.2 Attentional Spreading & Direct Cue Boost
@@ -379,11 +379,11 @@ If these filters fail, playback is unmuted gracefully with a crossfade.
 The efficiency of turn-taking and physical stopping response speed is evaluated via the Interruption Coherence Index:
 
 ```math
-\text{ICI} = \gamma \cdot \left(1 - P_{\texttt{false\_trigger}}\right) \cdot \exp\left(-\frac{\left|t_{\text{stop}} - t_{\text{interject}}\right|}{\tau_{\text{overlap}}}\right)
+\text{ICI} = \gamma \cdot \left(1 - P_{\text{false-trigger}}\right) \cdot \exp\left(-\frac{\left|t_{\text{stop}} - t_{\text{interject}}\right|}{\tau_{\text{overlap}}}\right)
 ```
 
 *   $\gamma \in [0, 1]$: Cosine similarity between user interjection embeddings and active agent goal intents.
-*   $P_{\texttt{false\_trigger}}$: Probability of false-triggering due to background acoustics.
+*   $P_{\text{false-trigger}}$: Probability of false-triggering due to background acoustics.
 *   $t_{\text{stop}} - t_{\text{interject}}$: Turn response gap (in milliseconds) between when the user physically started speaking and when the TTS stopped.
 *   $\tau_{\text{overlap}} = 200.0\text{ ms}$: Human turn-taking overlap baseline constant.
 
@@ -392,10 +392,10 @@ The efficiency of turn-taking and physical stopping response speed is evaluated 
 To prevent phase discontinuities or popping noises when shifting voice styles dynamically, we apply a **10 ms linear Overlap-Add (OLA) crossfade** between the previous synthesis buffer $x_{\text{prev}}$ and the newly modified prosody buffer $x_{\text{curr}}$:
 
 ```math
-y[i] = \left(1 - \frac{i}{\texttt{fade\_len}}\right) \cdot x_{\text{prev}}[i] + \frac{i}{\texttt{fade\_len}} \cdot x_{\text{curr}}[i], \quad 0 \le i < \texttt{fade\_len}
+y[i] = \left(1 - \frac{i}{\text{fade-len}}\right) \cdot x_{\text{prev}}[i] + \frac{i}{\text{fade-len}} \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade-len}
 ```
 
-where $\texttt{fade\_len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ represents the blending window limit.
+where $\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ represents the blending window limit.
 
 ---
 
@@ -416,21 +416,21 @@ R_{\text{pace}} = 1.0 + \tanh(0.20 \cdot Ar - 0.10 \cdot V - 0.15 \cdot F)
 The fundamental frequency scale factor ($P_{\text{vocal}} \in [0.5, 2.0]$) is pulled dynamically by valence and arousal (positive pitch shifts), dominance (defensive low-frequency pitch drops), metabolic fatigue, and volumetric distance:
 
 ```math
-P_{\text{vocal}} = 1.0 + \tanh(0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.05 \cdot F + \texttt{dist\_pitch\_mod})
+P_{\text{vocal}} = 1.0 + \tanh(0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.05 \cdot F + \text{dist-pitch-mod})
 ```
 
 where:
-*   $\texttt{dist\_pitch\_mod} = \text{clamp}(0.05 \cdot (\text{distance} - 1.0), -0.10, 0.10)$
+*   $\text{dist-pitch-mod} = \text{clamp}(0.05 \cdot (\text{distance} - 1.0), -0.10, 0.10)$
 
 ### 7.3 Vocal Volume Modulation
 
 Vocal intensity ($V_{\text{vocal}} \in [0.1, 1.5]$) maps from dominance (confident louder speech) adjusted by inverse-square physical distance compensation:
 
 ```math
-V_{\text{vocal}} = 0.40 + 0.60 \cdot D + \texttt{dist\_vol\_mod}
+V_{\text{vocal}} = 0.40 + 0.60 \cdot D + \text{dist-vol-mod}
 ```
 
-where $\texttt{dist\_vol\_mod} = \text{clamp}(0.15 \cdot (\text{distance} - 1.0), -0.20, 0.30)$.
+where $\text{dist-vol-mod} = \text{clamp}(0.15 \cdot (\text{distance} - 1.0), -0.20, 0.30)$.
 
 ---
 
@@ -455,7 +455,7 @@ To achieve continuous learning without real-time latency, CVS-3.0 offloads episo
 Reflection is gated by standard system parameters. A minimum interval is enforced to prevent execution overlap:
 
 ```math
-\Delta t_{\text{reflection}} \ge \texttt{Config.REFLECTION\_MIN\_INTERVAL\_SECONDS}
+\Delta t_{\text{reflection}} \ge \text{REFLECTION-MIN-INTERVAL-SECONDS}
 ```
 
 ### 8.2 Fact Extraction & Graph Resolution
@@ -483,7 +483,7 @@ During consolidation, the LLM processes dialogue summaries to extract semantic t
 The agent's active social role and core personality traits are evaluated for potential growth based on recent interactions. Modifications are executed if the confidence of the proposed identity trajectory meets the gating criteria:
 
 ```math
-\text{Confidence}(\text{Evolution}) \ge 0.8 \implies \texttt{evolve\_persona}()
+\text{Confidence}(\text{Evolution}) \ge 0.8 \implies \text{evolve-persona}()
 ```
 
 ### 8.4 Episodic Memory Consolidation
