@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 
 # Absolute directory of this script — ensures all file I/O works regardless of CWD
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "results"))
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # Publication styling for figures (IEEE/IROS standards)
 plt.style.use("seaborn-v0_8-whitegrid")
@@ -27,7 +29,7 @@ plt.rcParams.update(
 
 
 def create_directories():
-    os.makedirs(SCRIPT_DIR, exist_ok=True)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
 
 
 def run_benchmarks():
@@ -40,7 +42,7 @@ def run_benchmarks():
     cvs_memory_recall_at_5 = 99.2
     cvs_reasoning_accuracy = 98.2
 
-    results_path = os.path.join(SCRIPT_DIR, "benchmark_results.json")
+    results_path = os.path.join(RESULTS_DIR, "benchmark_results.json")
     if os.path.exists(results_path):
         try:
             with open(results_path, "r") as f:
@@ -388,7 +390,7 @@ def generate_publication_charts(data):
     )
 
     plt.tight_layout()
-    radar_path = os.path.join(SCRIPT_DIR, "extended_benchmarks_radar.png")
+    radar_path = os.path.join(RESULTS_DIR, "extended_benchmarks_radar.png")
     plt.savefig(radar_path)
     plt.close()
 
@@ -489,7 +491,7 @@ def generate_publication_charts(data):
         )
 
     plt.tight_layout()
-    plt.savefig(os.path.join(SCRIPT_DIR, "extended_benchmarks_comparisons.png"))
+    plt.savefig(os.path.join(RESULTS_DIR, "extended_benchmarks_comparisons.png"))
     plt.close()
 
     # ------------------ Plot 3: Physiological Trajectory ------------------
@@ -599,7 +601,7 @@ def generate_publication_charts(data):
     axes[2].set_xlim(-2, 92)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(SCRIPT_DIR, "human_realism_physiological.png"))
+    plt.savefig(os.path.join(RESULTS_DIR, "human_realism_physiological.png"))
     plt.close()
 
     # ------------------ Plot 4: Industry Benchmark Comparisons ------------------
@@ -703,7 +705,7 @@ def generate_publication_charts(data):
     axes[2].grid(axis="x")
 
     plt.tight_layout()
-    plt.savefig(os.path.join(SCRIPT_DIR, "human_realism_comparisons.png"))
+    plt.savefig(os.path.join(RESULTS_DIR, "human_realism_comparisons.png"))
     plt.close()
 
     print("💾 Extended visual plots and realism comparisons exported successfully!")
@@ -784,7 +786,7 @@ def compile_pdf_report(data):
 
             self.restoreState()
 
-    pdf_path = os.path.join(SCRIPT_DIR, "CVS-3.0_Mind_Benchmarking_Report.pdf")
+    pdf_path = os.path.join(RESULTS_DIR, "CVS-3.0_Mind_Benchmarking_Report.pdf")
     doc = SimpleDocTemplate(
         pdf_path,
         pagesize=letter,
@@ -1398,7 +1400,7 @@ def compile_pdf_report(data):
 
     story.append(Spacer(1, 10))
     radar_img = Image(
-        os.path.join(SCRIPT_DIR, "extended_benchmarks_radar.png"), width=180, height=180
+        os.path.join(RESULTS_DIR, "extended_benchmarks_radar.png"), width=180, height=180
     )
     story.append(
         KeepTogether(
@@ -1494,17 +1496,17 @@ def compile_pdf_report(data):
     # 2x2 grid of visualizations side-by-side inside a table for compact, professional academic formatting
     # Proportionally scaled down to width=220 to prevent Page 4 content from overflowing to Page 5
     img_coherence = Image(
-        os.path.join(SCRIPT_DIR, "extended_benchmarks_comparisons.png"),
+        os.path.join(RESULTS_DIR, "extended_benchmarks_comparisons.png"),
         width=200,
         height=84,
     )
     img_phys = Image(
-        os.path.join(SCRIPT_DIR, "human_realism_physiological.png"),
+        os.path.join(RESULTS_DIR, "human_realism_physiological.png"),
         width=200,
         height=208,
     )
     img_realism = Image(
-        os.path.join(SCRIPT_DIR, "human_realism_comparisons.png"), width=200, height=67
+        os.path.join(RESULTS_DIR, "human_realism_comparisons.png"), width=200, height=67
     )
 
     # Layout Grid: Table with 2 columns, left col holds Fig 2 & 4, right col holds Fig 3
@@ -1633,41 +1635,10 @@ def main():
     compile_pdf_report(bench_data)
 
     # Save the data in a JSON file
-    json_path = os.path.join(SCRIPT_DIR, "extended_benchmarks.json")
+    json_path = os.path.join(RESULTS_DIR, "extended_benchmarks.json")
     with open(json_path, "w") as f:
         json.dump(bench_data, f, indent=2)
     print(f"💾 Full telemetry dataset written to: {json_path}")
-
-    # Copy PDF and PNGs to the artifacts directory
-    pdf_path = os.path.join(SCRIPT_DIR, "CVS-3.0_Mind_Benchmarking_Report.pdf")
-    artifact_dir = (
-        "/Users/student/.gemini/antigravity/brain/fa72a2b0-9b7c-49d3-87d3-98534108136e"
-    )
-    if os.path.exists(artifact_dir):
-        import shutil
-
-        shutil.copy(
-            pdf_path, os.path.join(artifact_dir, "CVS-3.0_Mind_Benchmarking_Report.pdf")
-        )
-        shutil.copy(
-            os.path.join(SCRIPT_DIR, "extended_benchmarks_radar.png"),
-            os.path.join(artifact_dir, "extended_benchmarks_radar.png"),
-        )
-        shutil.copy(
-            os.path.join(SCRIPT_DIR, "extended_benchmarks_comparisons.png"),
-            os.path.join(artifact_dir, "extended_benchmarks_comparisons.png"),
-        )
-        shutil.copy(
-            os.path.join(SCRIPT_DIR, "human_realism_physiological.png"),
-            os.path.join(artifact_dir, "human_realism_physiological.png"),
-        )
-        shutil.copy(
-            os.path.join(SCRIPT_DIR, "human_realism_comparisons.png"),
-            os.path.join(artifact_dir, "human_realism_comparisons.png"),
-        )
-        print(
-            "📦 Successfully copied report and all four plots to artifacts directory!"
-        )
 
     print(
         f"\n✨ Extended 12-Dimensional benchmarking complete in {time.time() - start_time:.2f} seconds."

@@ -1,3 +1,4 @@
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -62,8 +63,13 @@ def plot_sample_pad_trajectory():
 
     plt.tight_layout()
 
+    # Dynamic resolution of local scripts/results folder
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    RESULTS_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "results"))
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
     # Save the visualization
-    output_path = "affective_trajectory_sample.png"
+    output_path = os.path.join(RESULTS_DIR, "affective_trajectory_sample.png")
     plt.savefig(output_path, dpi=300)
     print(f"Visualization saved to: {output_path}")
 
@@ -74,3 +80,4 @@ if __name__ == "__main__":
     except ImportError:
         print("Error: matplotlib and numpy are required for visualization.")
         print("Run: pip install matplotlib numpy")
+

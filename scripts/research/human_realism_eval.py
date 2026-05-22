@@ -8,6 +8,8 @@ from datetime import datetime
 
 # Absolute directory of this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "results"))
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # Publication styling for figures (IEEE/IROS standards)
 plt.style.use("seaborn-v0_8-whitegrid")
@@ -28,7 +30,7 @@ plt.rcParams.update(
 
 
 def create_directories():
-    os.makedirs(SCRIPT_DIR, exist_ok=True)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
 
 
 def module1_computational_footprint():
@@ -419,7 +421,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
     axes[2].set_xlim(-2, 92)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(SCRIPT_DIR, "human_realism_physiological.png"))
+    plt.savefig(os.path.join(RESULTS_DIR, "human_realism_physiological.png"))
     plt.close()
 
     # ------------------ Plot 2: Industry Benchmark Comparisons ------------------
@@ -552,10 +554,10 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
     axes[2].grid(axis="x")
 
     plt.tight_layout()
-    plt.savefig(os.path.join(SCRIPT_DIR, "human_realism_comparisons.png"))
+    plt.savefig(os.path.join(RESULTS_DIR, "human_realism_comparisons.png"))
     plt.close()
 
-    print("💾 Figures successfully saved to scripts/research/ directory!")
+    print("💾 Figures successfully saved to local results directory!")
 
 
 def main():
@@ -620,7 +622,7 @@ def main():
         },
     }
 
-    out_path = os.path.join(SCRIPT_DIR, "human_realism_results.json")
+    out_path = os.path.join(RESULTS_DIR, "human_realism_results.json")
     with open(out_path, "w") as f:
         json.dump(final_json, f, indent=2)
 
@@ -628,24 +630,6 @@ def main():
     print(
         "📊 Dynamic trajectory CSV is fully compatible with latex pgfplots or pandas."
     )
-
-    # Copy files to artifacts directory so the user's viewer updates instantly
-    artifact_dir = (
-        "/Users/student/.gemini/antigravity/brain/fa72a2b0-9b7c-49d3-87d3-98534108136e"
-    )
-    if os.path.exists(artifact_dir):
-        import shutil
-
-        shutil.copy(
-            os.path.join(SCRIPT_DIR, "human_realism_physiological.png"),
-            os.path.join(artifact_dir, "human_realism_physiological.png"),
-        )
-        shutil.copy(
-            os.path.join(SCRIPT_DIR, "human_realism_comparisons.png"),
-            os.path.join(artifact_dir, "human_realism_comparisons.png"),
-        )
-        shutil.copy(out_path, os.path.join(artifact_dir, "human_realism_results.json"))
-        print("📦 Successfully copied realism plots and results JSON to artifacts!")
 
 
 if __name__ == "__main__":

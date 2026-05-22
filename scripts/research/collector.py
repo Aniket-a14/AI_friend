@@ -10,7 +10,12 @@ from datetime import datetime
 # Listens to NATS broadcasts for the current PAD state of the agent
 # and logs it to a CSV for high-fidelity research trajectories.
 
-LOG_FILE = "research_pad_trajectory.csv"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "results"))
+os.makedirs(RESULTS_DIR, exist_ok=True)
+
+LOG_FILE = os.path.join(RESULTS_DIR, "research_pad_trajectory.csv")
+
 
 
 async def run_collector():

@@ -7,6 +7,8 @@ import os
 
 # Absolute directory of this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "results"))
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 
 def generate_research_plots(csv_file=None):
@@ -18,7 +20,9 @@ def generate_research_plots(csv_file=None):
     3. Endocrine & Hormonal Dynamics (Cortisol, Dopamine, Fatigue)
     """
     if csv_file is None:
-        csv_file = os.path.join(SCRIPT_DIR, "research_pad_trajectory.csv")
+        csv_file = os.path.join(RESULTS_DIR, "research_pad_trajectory.csv")
+        if not os.path.exists(csv_file):
+            csv_file = os.path.join(SCRIPT_DIR, "research_pad_trajectory.csv")
 
     if not os.path.exists(csv_file):
         print(f"Error: {csv_file} not found. Run the collector first.")
@@ -196,27 +200,10 @@ def generate_research_plots(csv_file=None):
     # Spacing and layout
     plt.tight_layout(rect=[0, 0.02, 1, 0.95])
 
-    output_plot = os.path.join(SCRIPT_DIR, "research_trajectory_plot.png")
+    output_plot = os.path.join(RESULTS_DIR, "research_trajectory_plot.png")
     plt.savefig(output_plot, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"✅ Plot saved to {output_plot}")
-
-    # Copy to artifacts directory
-    artifacts_dir = (
-        "/Users/student/.gemini/antigravity/brain/fa72a2b0-9b7c-49d3-87d3-98534108136e"
-    )
-    if os.path.exists(artifacts_dir):
-        import shutil
-
-        shutil.copy(
-            output_plot, os.path.join(artifacts_dir, "research_trajectory_plot.png")
-        )
-        shutil.copy(
-            csv_file, os.path.join(artifacts_dir, "research_pad_trajectory.csv")
-        )
-        print(
-            "📦 Successfully copied research_trajectory_plot.png and research_pad_trajectory.csv to artifacts!"
-        )
 
 
 if __name__ == "__main__":

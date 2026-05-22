@@ -7,6 +7,8 @@ from datetime import datetime
 
 # Absolute directory of this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "results"))
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # Publication styling for figures (IEEE/IROS standards)
 plt.style.use("seaborn-v0_8-whitegrid")
@@ -27,7 +29,7 @@ plt.rcParams.update(
 
 
 def create_directories():
-    os.makedirs(SCRIPT_DIR, exist_ok=True)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
 
 
 def module1_intent_classification():
@@ -151,7 +153,7 @@ def module1_intent_classification():
     plot_matrix(axes[1], cvs_cm, "AI Friend CVS-3.0 Sovereign Mesh\nAccuracy: 97.0%")
 
     plt.tight_layout()
-    plt.savefig(os.path.join(SCRIPT_DIR, "cognitive_confusion_matrix.png"))
+    plt.savefig(os.path.join(RESULTS_DIR, "cognitive_confusion_matrix.png"))
     plt.close()
 
     return {
@@ -252,7 +254,7 @@ def module2_theory_of_mind():
             patch.set_alpha(0.8)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(SCRIPT_DIR, "cognitive_tom_errors.png"))
+    plt.savefig(os.path.join(RESULTS_DIR, "cognitive_tom_errors.png"))
     plt.close()
 
     return {
@@ -342,7 +344,7 @@ def module3_memory_actr():
     plt.ylim(50, 103)
     plt.legend(loc="lower right", frameon=True)
     plt.tight_layout()
-    plt.savefig(os.path.join(SCRIPT_DIR, "cognitive_rag_recall.png"))
+    plt.savefig(os.path.join(RESULTS_DIR, "cognitive_rag_recall.png"))
     plt.close()
 
     return {
@@ -436,36 +438,12 @@ def main():
         "module4_conflict_resolver_interruption": m4_results,
     }
 
-    out_path = os.path.join(SCRIPT_DIR, "cognitive_metrics_results.json")
+    out_path = os.path.join(RESULTS_DIR, "cognitive_metrics_results.json")
     with open(out_path, "w") as f:
         json.dump(final_results, f, indent=2)
 
     print(f"💾 Full evaluation results saved to: {out_path}")
-    print("📈 High-quality figures saved under scripts/research/")
-
-    # Copy to the artifacts directory so the user's viewer updates instantly
-    artifact_dir = (
-        "/Users/student/.gemini/antigravity/brain/fa72a2b0-9b7c-49d3-87d3-98534108136e"
-    )
-    if os.path.exists(artifact_dir):
-        import shutil
-
-        shutil.copy(
-            os.path.join(SCRIPT_DIR, "cognitive_confusion_matrix.png"),
-            os.path.join(artifact_dir, "cognitive_confusion_matrix.png"),
-        )
-        shutil.copy(
-            os.path.join(SCRIPT_DIR, "cognitive_tom_errors.png"),
-            os.path.join(artifact_dir, "cognitive_tom_errors.png"),
-        )
-        shutil.copy(
-            os.path.join(SCRIPT_DIR, "cognitive_rag_recall.png"),
-            os.path.join(artifact_dir, "cognitive_rag_recall.png"),
-        )
-        shutil.copy(
-            out_path, os.path.join(artifact_dir, "cognitive_metrics_results.json")
-        )
-        print("📦 Successfully copied all 3 cognitive plots to artifacts directory!")
+    print("📈 High-quality figures saved under local results directory!")
 
 
 if __name__ == "__main__":
