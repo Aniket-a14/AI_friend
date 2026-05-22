@@ -4,6 +4,9 @@
 
 This document serves as the comprehensive academic and technical walkthrough for the **AI Friend CVS-3.0 Sovereign Mind Mesh** (Rust Native & localized microservice architecture). The rigorous benchmarks documented here serve as the empirical validation for the double-column IEEE T-RO / IROS manuscript: *"Real-Time Adaptive Latency Hardening in Hybrid Social-Mesh Architectures for Humanoid Social Robots"*.
 
+> [!NOTE]
+> **Scope of Current Development**: The CVS-3.0 architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. All mathematical formulations, evaluations, and comparisons focus exclusively on the cognitive, conversational, and edge computational metrics of the humanoid brain.
+
 CVS-3.0 introduces a state-of-the-art decentralized cognitive mesh operating on active endocrine simulation (endocrine state mapping), a custom ACT-R cognitive memory search layer, and localized Theory of Mind (ToM) user-affective estimation. This walkthrough details the empirical verification of these subsystems and documents the resolution of crucial stale-asset rendering bugs.
 
 ---
@@ -63,7 +66,7 @@ The complete, publication-grade comparison matrix (Table II in the formal report
 
 | Architecture / Platform | E2E Latency (ms) | TTFT (ms) | Theory of Mind (ToM) MAE | Memory Recall@5 (%) | Barge-In Accuracy (F1) | Ram Footprint (MB) | CPU Peak Load (%) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **CVS-3.0 Sovereign (Ours)** | **1,590.2** | **703.4** | **0.039** | **100.0%** | **96.0%** | **1,079.6** | **8.2%** |
+| **CVS-3.0 Sovereign (Ours)** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** |
 | **CVS-2.0 Legacy** | 3,420.5 | 1,450.0 | 0.082 | 92.0% | 88.5% | 2,450.0 | 24.5% |
 | **Furhat Robotics [1]** | 4,200.0 | 1,800.0 | 0.350 | 78.0% | 75.0% | 8,192.0 | 45.0% |
 | **SoftBank Pepper [2]** | 5,500.0 | 2,200.0 | 0.420 | 65.0% | 62.0% | 4,096.0 | 85.0% |
@@ -74,17 +77,17 @@ The complete, publication-grade comparison matrix (Table II in the formal report
 > [!NOTE]
 > * **E2E Latency** represents standard local inference execution (using accelerated `llama3.2:3b` cognitive layers).
 > * **Theory of Mind (ToM) MAE** is the Mean Absolute Error across Valence and Arousal dimensions normalized to $[-1.0, 1.0]$.
-> * **CVS-3.0** outperforms standard cloud-based Zero-Shot LLMs by **2.6x in Time-to-First-Token (TTFT)** while requiring a fraction of the hardware footprint.
+> * All CVS-3.0 rows represent blank states awaiting the execution of live benchmarks to populate their performance parameters.
 
 ---
 
 ## ⚡ Sub-LLM Cognitive Pathway & Database Traversal
 
 ### 1. Pre-LLM and Post-LLM Pipeline Latencies
-To prevent turnaround bottlenecks, the sub-LLM pipeline executes in **1.21 milliseconds**, leaving the bulk of the cognitive frame time budget available for neural token generation.
+To prevent turnaround bottlenecks, the sub-LLM pipeline executes in a fraction of a millisecond, leaving the bulk of the cognitive frame time budget available for neural token generation.
 
 ```
-Incoming Turn -> [Audio Ingest: 0.04 ms] -> [Hybrid Segmenter: 0.59 ms] -> [Subconscious Threat Scan: 0.20 ms] -> [ACT-R Memory Search: 0.05 ms] -> [Endocrine Appraisal: 0.33 ms] -> Local LLM Inference -> Stripper / Post-Response Tagging
+Incoming Turn -> [Audio Ingest: `[TBP]` ms] -> [Hybrid Segmenter: `[TBP]` ms] -> [Subconscious Threat Scan: `[TBP]` ms] -> [ACT-R Memory Search: `[TBP]` ms] -> [Endocrine Appraisal: `[TBP]` ms] -> Local LLM Inference -> Stripper / Post-Response Tagging
 ```
 
 ### 2. Neo4j Knowledge DB Traversal Speed
@@ -92,27 +95,27 @@ The custom cached graph traversal mechanisms in CVS-3.0 bypass typical O(N) data
 
 | Traversal Hop Depth | CVS-3.0 Cached (ms) | CVS-3.0 Uncached (ms) | Standard Database (ms) | Performance Speedup |
 | :---: | :---: | :---: | :---: | :---: |
-| **1-Hop** | **0.05 ms** | 1.25 ms | 8.50 ms | **170.0x** |
-| **2-Hop** | **0.12 ms** | 3.42 ms | 24.20 ms | **201.7x** |
-| **3-Hop** | **0.28 ms** | 8.85 ms | 84.60 ms | **302.1x** |
+| **1-Hop** | **`[TBP]`** | `[TBP]` | 8.50 ms | **`[TBP]`** |
+| **2-Hop** | **`[TBP]`** | `[TBP]` | 24.20 ms | **`[TBP]`** |
+| **3-Hop** | **`[TBP]`** | `[TBP]` | 84.60 ms | **`[TBP]`** |
 
 ---
 
 ## 🧬 Physiological Autonomic Entrainment Dynamics
 
-Under high-stress dialogue scenarios (e.g., threat detection), CVS-3.0's endocrine core dynamically couples the robot's breathing rate and cardiac indicators to human interaction states:
+Under high-stress dialogue scenarios (e.g., threat detection), CVS-3.0's endocrine core dynamically couples the robot's simulated autonomic breathing rate and cardiac indicators to human interaction states:
 
-* **Heart Rate (HR)**: Base: 94.8 BPM $\rightarrow$ Peak Stress: **113.3 BPM** $\rightarrow$ Recovery: 91.8 BPM.
-* **Respiration Rate (RR)**: Base: 15.5 breaths/min $\rightarrow$ Peak Stress: **23.7 breaths/min** $\rightarrow$ Recovery: 16.7 breaths/min.
-* **HRV RMSSD**: Base: 47.7 ms $\rightarrow$ Stress Minimum: **38.3 ms** $\rightarrow$ Recovery: 43.7 ms.
+* **Heart Rate (HR)**: Base: `[TBP]` BPM $\rightarrow$ Peak Stress: **`[TBP]` BPM** $\rightarrow$ Recovery: `[TBP]` BPM.
+* **Respiration Rate (RR)**: Base: `[TBP]` breaths/min $\rightarrow$ Peak Stress: **`[TBP]` breaths/min** $\rightarrow$ Recovery: `[TBP]` breaths/min.
+* **HRV RMSSD**: Base: `[TBP]` ms $\rightarrow$ Stress Minimum: **`[TBP]` ms** $\rightarrow$ Recovery: `[TBP]` ms.
 
 ### Paralinguistic Sentiment Insertion Accuracies
 Dynamic vocal filler insertion rate (`Words/Turn`) and tag mapping accuracies:
 
 | State Scenario | CVS-3.0 Tag Precision | Filler Rate (Words/Turn) | Associated Generated Tags |
 | :--- | :---: | :---: | :--- |
-| **Low Stress / Calm** | **96.2%** | 0.08 | `[laughs]`, `[nods]` |
-| **High Stress / Threat** | **94.8%** | 0.42 | `[sighs]`, `[clears throat]`, `[voice cracks]` |
+| **Low Stress / Calm** | **`[TBP]`** | `[TBP]` | `[TBP]` |
+| **High Stress / Threat** | **`[TBP]`** | `[TBP]` | `[TBP]` |
 | **Standard Voice Baseline** | 71.4% | 1.85 | `None` (Static Text-to-Speech) |
 
 ---

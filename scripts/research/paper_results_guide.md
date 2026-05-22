@@ -2,6 +2,9 @@
 
 This directory contains the high-fidelity empirical datasets compiled from the **AI Friend CVS-3.0** edge social humanoid robot platform. These metrics represent the post-optimization state of your sovereign mesh subsystems and are fully formatted to be dropped directly into your LaTeX manuscript, parsed with pandas, or plotted in matplotlib.
 
+> [!NOTE]
+> **Scope of Current Development**: The CVS-3.0 architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. Therefore, all comparisons, evaluations, and hardware/computational metrics focus exclusively on the cognitive and conversational edge processing layers of the humanoid brain.
+
 ---
 
 ## 📁 Dataset Directory Contents
@@ -20,13 +23,13 @@ This directory contains the high-fidelity empirical datasets compiled from the *
 
 | Subsystem Component | Original Latency | Optimized Latency | Throughput | Budget Limit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Audio Ingest & Normalizer** | -- | 40.89 µs | 24,454 OPS | 5.00 ms | Optimized |
-| **Hybrid Text Segmenter** | 4.294 ms | 586.10 µs | 1,706 OPS | 10.00 ms | 7.3x Speedup |
-| **Subconscious Threat Scan** | -- | 200.00 µs | 5,000 OPS | 2.00 ms | Stable |
-| **Memory ACT-R Index Search** | -- | 50.00 µs | 20,000 OPS | 8.00 ms | High-Fidelity |
-| **Hormonal State Appraisal** | -- | 330.00 µs | 3,030 OPS | 5.00 ms | Active |
-| **LLM Temperature Modulation** | 2.30 µs | 1.29 µs | 775,193 OPS | 1.00 ms | 1.8x Speedup |
-| **End-to-End Pathway** | **--** | **1.207 ms** | **828 OPS** | **15.00 ms** | **92% Headroom** |
+| **Audio Ingest & Normalizer** | -- | `[TBP]` | `[TBP]` | 5.00 ms | `[TBP]` |
+| **Hybrid Text Segmenter** | 4.294 ms | `[TBP]` | `[TBP]` | 10.00 ms | `[TBP]` |
+| **Subconscious Threat Scan** | -- | `[TBP]` | `[TBP]` | 2.00 ms | `[TBP]` |
+| **Memory ACT-R Index Search** | -- | `[TBP]` | `[TBP]` | 8.00 ms | `[TBP]` |
+| **Hormonal State Appraisal** | -- | `[TBP]` | `[TBP]` | 5.00 ms | `[TBP]` |
+| **LLM Temperature Modulation** | 2.30 µs | `[TBP]` | `[TBP]` | 1.00 ms | `[TBP]` |
+| **End-to-End Pathway** | **--** | **`[TBP]`** | **`[TBP]`** | **15.00 ms** | **`[TBP]`** |
 
 ### LaTeX Table Template for Your Paper
 
@@ -40,13 +43,13 @@ You can copy-paste the LaTeX code below directly into your paper's **Results & E
 \begin{tabular}{lccccr}
 \hline
 \textbf{Subsystem Component} & \textbf{Original Latency} & \textbf{Optimized Latency} & \textbf{Throughput} & \textbf{Budget Limit} & \textbf{Status} \\ \hline
-Audio Ingest \& Normalizer   & --                       & 40.89 \(\mu\)s             & 24,454 OPS          & 5.00 ms               & Optimized       \\
-Hybrid Text Segmenter        & 4.294 ms                 & 586.10 \(\mu\)s            & 1,706 OPS           & 10.00 ms              & 7.3x Speedup    \\
-Subconscious Threat Scan     & --                       & 200.00 \(\mu\)s            & 5,000 OPS           & 2.00 ms               & Stable          \\
-Memory ACT-R Index Search    & --                       & 50.00 \(\mu\)s             & 20,000 OPS          & 8.00 ms               & High-Fidelity   \\
-Hormonal State Appraisal     & --                       & 330.00 \(\mu\)s            & 3,030 OPS           & 5.00 ms               & Active          \\
-LLM Temperature Modulation   & 2.30 \(\mu\)s            & 1.29 \(\mu\)s              & 775,193 OPS         & 1.00 ms               & 1.8x Speedup    \\ \hline
-\textbf{End-to-End Pathway}  & \textbf{--}              & \textbf{1.207 ms}          & \textbf{828 OPS}    & \textbf{15.00 ms}     & \textbf{92\% Headroom} \\ \hline
+Audio Ingest \& Normalizer   & --                       & [TBP]                      & [TBP]               & 5.00 ms               & [TBP]       \\
+Hybrid Text Segmenter        & 4.294 ms                 & [TBP]                      & [TBP]               & 10.00 ms              & [TBP]    \\
+Subconscious Threat Scan     & --                       & [TBP]                      & [TBP]               & 2.00 ms               & [TBP]          \\
+Memory ACT-R Index Search    & --                       & [TBP]                      & [TBP]               & 8.00 ms               & [TBP]   \\
+Hormonal State Appraisal     & --                       & [TBP]                      & [TBP]               & 5.00 ms               & [TBP]          \\
+LLM Temperature Modulation   & 2.30 \(\mu\)s            & [TBP]                      & [TBP]               & 1.00 ms               & [TBP]    \\ \hline
+\textbf{End-to-End Pathway}  & \textbf{--}              & \textbf{[TBP]}             & \textbf{[TBP]}      & \textbf{15.00 ms}     & \textbf{[TBP]} \\ \hline
 \end{tabular}
 \end{table}
 ```
@@ -98,14 +101,14 @@ plt.show()
 
 | Component Services | RAM Allocation | VRAM Allocation | CPU Util. (Avg) | Power Footprint |
 | :--- | :--- | :--- | :--- | :--- |
-| **NATS Event Broker** | 18.40 MB | 0.00 GB | 0.8% | 0.20 W |
-| **Neo4j Graph Database** | 240.00 MB | 0.00 GB | 4.5% | 2.80 W |
-| **Redis Cache Server** | 12.80 MB | 0.00 GB | 0.3% | 0.10 W |
-| **Python Cognitive Agents** | 45.20 MB | 0.00 GB | 2.8% | 1.10 W |
-| **Total Mesh Footprint** | **316.40 MB** | **0.00 GB** | **8.4%** | **4.20 W** |
-| Whisper STT (CPU edge) | -- | 0.00 GB | 14.5% | 5.50 W |
-| Local Llama 3B (Quantized) | -- | 2.85 GB | -- | 14.80 W |
-| **Full Stack Total** | **316.40 MB** | **2.85 GB** | **22.9%** | **24.50 W** |
+| **NATS Event Broker** | `[TBP]` | `[TBP]` | `[TBP]` | `[TBP]` |
+| **Neo4j Graph Database** | `[TBP]` | `[TBP]` | `[TBP]` | `[TBP]` |
+| **Redis Cache Server** | `[TBP]` | `[TBP]` | `[TBP]` | `[TBP]` |
+| **Python Cognitive Agents** | `[TBP]` | `[TBP]` | `[TBP]` | `[TBP]` |
+| **Total Mesh Footprint** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** |
+| Whisper STT (CPU edge) | `[TBP]` | `[TBP]` | `[TBP]` | `[TBP]` |
+| Local Llama 3B (Quantized) | `[TBP]` | `[TBP]` | `[TBP]` | `[TBP]` |
+| **Full Stack Total** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** | **`[TBP]`** |
 
 #### Copy LaTeX Code for Table 2:
 ```latex
@@ -116,14 +119,14 @@ plt.show()
 \begin{tabular}{lcccr}
 \hline
 \textbf{Component Services} & \textbf{RAM Allocation} & \textbf{VRAM Allocation} & \textbf{CPU Util. (Avg)} & \textbf{Power Footprint} \\ \hline
-NATS Event Broker           & 18.40 MB                & 0.00 GB                  & 0.8\%                    & 0.20 W                   \\
-Neo4j Graph Database        & 240.00 MB               & 0.00 GB                  & 4.5\%                    & 2.80 W                   \\
-Redis Cache Server          & 12.80 MB                & 0.00 GB                  & 0.3\%                    & 0.10 W                   \\
-Python Cognitive Agents     & 45.20 MB                & 0.00 GB                  & 2.8\%                    & 1.10 W                   \\ \hline
-\textbf{Total Mesh Footprint} & \textbf{316.40 MB}      & \textbf{0.00 GB}         & \textbf{8.4\%}           & \textbf{4.20 W}          \\ \hline
-Whisper STT (CPU edge)      & --                      & 0.00 GB                  & 14.5\%                   & 5.50 W                   \\
-Local Llama 3B (Quantized)   & --                      & 2.85 GB                  & --                       & 14.80 W                  \\ \hline
-\textbf{Full Stack Total}   & \textbf{316.40 MB}      & \textbf{2.85 GB}         & \textbf{22.9\%}          & \textbf{24.50 W}         \\ \hline
+NATS Event Broker           & [TBP]                   & [TBP]                    & [TBP]                    & [TBP]                    \\
+Neo4j Graph Database        & [TBP]                   & [TBP]                    & [TBP]                    & [TBP]                    \\
+Redis Cache Server          & [TBP]                   & [TBP]                    & [TBP]                    & [TBP]                    \\
+Python Cognitive Agents     & [TBP]                   & [TBP]                    & [TBP]                    & [TBP]                    \\ \hline
+\textbf{Total Mesh Footprint} & \textbf{[TBP]}         & \textbf{[TBP]}           & \textbf{[TBP]}           & \textbf{[TBP]}           \\ \hline
+Whisper STT (CPU edge)      & [TBP]                   & [TBP]                    & [TBP]                    & [TBP]                    \\
+Local Llama 3B (Quantized)   & [TBP]                   & [TBP]                    & [TBP]                    & [TBP]                    \\ \hline
+\textbf{Full Stack Total}   & \textbf{[TBP]}          & \textbf{[TBP]}           & \textbf{[TBP]}           & \textbf{[TBP]}           \\ \hline
 \end{tabular}
 \end{table}
 ```
@@ -132,11 +135,11 @@ Local Llama 3B (Quantized)   & --                      & 2.85 GB                
 
 | Mathematical Decay Metric | Measured Value | HRI Robustness Metric (N=500) | Measured Value |
 | :--- | :--- | :--- | :--- |
-| **Decay Constant (Tau)** | 15.80 sec | **Interruption Success Rate (Barge-In)** | 97.6% |
-| **Mood Fit (R2 Pleasure)** | 0.984 | **Interruption Latency (Stop Time)** | 115.00 ms |
-| **Energy Fit (R2 Arousal)** | 0.991 | **Ambient False Trigger Ratio** | 1.2% |
-| **Control Fit (R2 Dominance)** | 0.978 | **Knowledge RAG Recall@1** | 92.5% |
-| **Memory Search Recall@3** | 97.8% | **Knowledge RAG Recall@5** | 99.2% |
+| **Decay Constant (Tau)** | `[TBP]` | **Interruption Success Rate (Barge-In)** | `[TBP]` |
+| **Mood Fit (R2 Pleasure)** | `[TBP]` | **Interruption Latency (Stop Time)** | `[TBP]` |
+| **Energy Fit (R2 Arousal)** | `[TBP]` | **Ambient False Trigger Ratio** | `[TBP]` |
+| **Control Fit (R2 Dominance)** | `[TBP]` | **Knowledge RAG Recall@1** | `[TBP]` |
+| **Memory Search Recall@3** | `[TBP]` | **Knowledge RAG Recall@5** | `[TBP]` |
 
 #### Copy LaTeX Code for Table 3:
 ```latex
@@ -147,11 +150,11 @@ Local Llama 3B (Quantized)   & --                      & 2.85 GB                
 \begin{tabular}{lc|lc}
 \hline
 \textbf{Mathematical Decay Metric} & \textbf{Measured Value} & \textbf{HRI Robustness Metric (N=500)} & \textbf{Measured Value} \\ \hline
-Decay Constant (\(\tau\))         & 15.80 sec               & Interruption Success Rate (Barge-In)  & 97.6\%                  \\
-Mood Fit (\(R^2\) Pleasure)       & 0.984                   & Interruption Latency (Stop Time)     & 115.00 ms               \\
-Energy Fit (\(R^2\) Arousal)      & 0.991                   & Ambient False Trigger Ratio          & 1.2\%                   \\
-Control Fit (\(R^2\) Dominance)   & 0.978                   & Knowledge RAG Recall@1               & 92.5\%                  \\
-Memory Search Recall@3            & 97.8\%                  & Knowledge RAG Recall@5               & 99.2\%                  \\ \hline
+Decay Constant (\(\tau\))         & [TBP]                   & Interruption Success Rate (Barge-In)  & [TBP]                  \\
+Mood Fit (\(R^2\) Pleasure)       & [TBP]                   & Interruption Latency (Stop Time)     & [TBP]               \\
+Energy Fit (\(R^2\) Arousal)      & [TBP]                   & Ambient False Trigger Ratio          & [TBP]                   \\
+Control Fit (\(R^2\) Dominance)   & [TBP]                   & Knowledge RAG Recall@1               & [TBP]                   \\
+Memory Search Recall@3            & [TBP]                   & Knowledge RAG Recall@5               & [TBP]                   \\ \hline
 \end{tabular}
 \end{table}
 ```
