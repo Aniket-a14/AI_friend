@@ -82,9 +82,30 @@ class SQLiteConnection:
                 recall_count INTEGER DEFAULT 0,
                 last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                metadata TEXT DEFAULT '{}'
+                metadata TEXT DEFAULT '{}',
+                lifespan_stage TEXT,
+                crisis TEXT,
+                virtue TEXT,
+                relations TEXT,
+                relation_circles TEXT,
+                modality TEXT
             )
         """)
+
+        # Migration for existing memories table to add developmental stage columns
+        cursor.execute("PRAGMA table_info(memories)")
+        existing_mem_cols = {row[1] for row in cursor.fetchall()}
+        for col in [
+            "lifespan_stage",
+            "crisis",
+            "virtue",
+            "relations",
+            "relation_circles",
+            "modality",
+        ]:
+            if col not in existing_mem_cols:
+                cursor.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT")
+
         self.conn.commit()
 
     def _translate_query(self, query: str):

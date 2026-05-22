@@ -167,3 +167,28 @@ This document compiles the exhaustive academic bibliography for **AI Friend CVS-
     *Title*: "The Llama 3 Herd of Models"
     *Venue*: *arXiv preprint arXiv:2407.21783*
     *Link*: [arXiv:2407.21783](https://arxiv.org/abs/2407.21783)
+
+---
+
+## Pillar E: Lifespan Development & Neuromorphic Graph Memory
+
+31. **Erikson, E. H., & Erikson, J. M. (1997)**
+    *Title*: *The Life Cycle Completed (Extended Version)*
+    *Venue*: *W. W. Norton & Company*
+    *Link*: [W.W. Norton](https://wwnorton.com/books/9780393347722)
+
+32. **Anokhin, A. et al. (2024)**
+    *Title*: "AriGraph: Learning and Planning in Graph-Based Episodic Memory"
+    *Venue*: *arXiv preprint arXiv:2407.04363*
+    *Link*: [arXiv:2407.04363](https://arxiv.org/abs/2407.04363)
+
+33. **Teyler, T. J., & DiScenna, P. (1986)**
+    *Title*: "The hippocampal indexing theory"
+    *Venue*: *Behavioral Neuroscience*
+    *Link*: [DOI:10.1037/0735-7044.100.2.147](https://doi.org/10.1037/0735-7044.100.2.147)
+
+34. **McClelland, J. L., McNaughton, B. L., & O'Reilly, R. C. (1995)**
+    *Title*: "Why there are complementary learning systems in the hippocampus and neocortex: Insights from the successes and failures of connectionist models of learning and memory"
+    *Venue*: *Psychological Review*
+    *Link*: [DOI:10.1037/0033-295X.102.3.419](https://doi.org/10.1037/0033-295X.102.3.419)
+

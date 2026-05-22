@@ -18,8 +18,22 @@ create table if not exists memories (
   recall_count integer not null default 0,
   last_recalled_at timestamptz default now(),
   created_at timestamptz default now(),
-  metadata jsonb default '{}'::jsonb
+  metadata jsonb default '{}'::jsonb,
+  lifespan_stage varchar(100),
+  crisis varchar(100),
+  virtue varchar(100),
+  relations varchar(255),
+  relation_circles varchar(255),
+  modality varchar(255)
 );
+
+-- Schema migrations for existing tables
+alter table memories add column if not exists lifespan_stage varchar(100);
+alter table memories add column if not exists crisis varchar(100);
+alter table memories add column if not exists virtue varchar(100);
+alter table memories add column if not exists relations varchar(255);
+alter table memories add column if not exists relation_circles varchar(255);
+alter table memories add column if not exists modality varchar(255);
 
 create index if not exists memories_embedding_idx
   on memories using hnsw (embedding vector_cosine_ops);

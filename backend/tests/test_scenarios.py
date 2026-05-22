@@ -58,12 +58,17 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
     original_val = Config.LLM_INTENT_CLASSIFICATION_ENABLED
     Config.LLM_INTENT_CLASSIFICATION_ENABLED = False
 
-    mock_llm_service.generate.side_effect = [
-        # Reflection - Fact Extraction
-        "[]",
-        # Reflection - Identity Suggestion
-        '{"new_traits": ["Reserved"], "relationship": "Strained", "confidence": 0.9}',
-    ] * 5  # Repeat for 5 cycles
+    async def mock_generate(prompt, **kwargs):
+        if "deep appraisal" in prompt or "goal_congruence" in prompt:
+            return '{"goal_congruence": -0.8, "norm_alignment": -0.5, "expectedness": 0.2}'
+        elif "Determine if" in prompt and "evolve" in prompt:
+            return '{"new_traits": ["Reserved"], "relationship": "Strained", "confidence": 0.9}'
+        elif "People, Preferences" in prompt or "Facts about the User" in prompt:
+            return "[]"
+        return '{"intent": "CHAT", "goal": "ENGAGE", "confidence": 0.9}'
+
+    mock_llm_service.generate.side_effect = mock_generate
+
 
     # 2. Process 5 hostile events
     for _ in range(5):
