@@ -9,7 +9,7 @@ This document provides a highly rigorous, multi-dimensional empirical comparison
 
 ## 1. Master SOTA Comparative Matrix
 
-The comparative matrix below evaluates **CVS-3.0** against 6 state-of-the-art and legacy conversational and mobile robotics platforms across 8 core metrics. 
+The comparative matrix below evaluates **CVS-3.0** against 6 state-of-the-art and legacy conversational and mobile robotics platforms across 8 core metrics.
 
 > [!NOTE]
 > All CVS-3.0 values represent empty placeholder states (`[TBP]`) to be populated dynamically by executing the physical benchmarking script (`hard_benchmark.py`).
@@ -100,5 +100,5 @@ The classification accuracy of intent and goals under synthetic stress is plotte
 CVS-3.0 maintains **`[TBP]`** classification accuracy across dynamic intent mapping, whereas standard cascaded LLM configurations experience prompt drift and decline under rapid conversational state transitions.
 
 ### 6.3 Memory Surfacing and Recall
-Standard RAG frameworks rely on static vector databases that are completely detached from conversational context, achieving low recall under dense loads. Under our neurobiologically inspired ACT-R graph architecture, episodic memories are dynamically weighted by **attentional weights, temporal power-law decay, and endocrine emotional congruence**. 
+Standard RAG frameworks rely on static vector databases that are completely detached from conversational context, achieving low recall under dense loads. Under our neurobiologically inspired ACT-R graph architecture, episodic memories are dynamically weighted by **attentional weights, temporal power-law decay, and endocrine emotional congruence**.
 As a result, CVS-3.0 achieves an empirical **`[TBP]` memory recall accuracy at Recall@5** on dense graph search checks, resolving context omissions that lead to agentic confusion in legacy systems.

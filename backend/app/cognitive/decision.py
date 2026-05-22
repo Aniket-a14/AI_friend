@@ -243,16 +243,16 @@ class DecisionService:
         Analyze user input and current agent state.
         Input: "{event.raw_content}"
         Mood: {state["emotion"]} (Valence: {state["mood"]})
-        
+
         Classify into:
         - intent: REMEMBER, CHAT, COMMAND
         - goal: COMFORT, INFORM, ENGAGE, TEASE, PROTECT
-        
+
         Also infer Theory of Mind (ToM) details:
         - inferred_valence: float between -1.0 and 1.0 (mood valence of the user)
         - inferred_arousal: float between 0.0 and 1.0 (arousal level of the user)
         - implied_goals: up to 2 implied immediate user goals (list of strings like "seek_reassurance", "express_frustration", "learn_concept", "chat_socially")
-        
+
         First, output a brief chain-of-thought analysis enclosed in <thought>...</thought> (maximum 45 tokens) analyzing the input, intent, and ToM.
         Then, output the JSON block:
         {{

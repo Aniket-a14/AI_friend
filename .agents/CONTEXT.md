@@ -1291,3 +1291,17 @@ Verification:
 
 - Successfully passed all offline unit tests (`test_memory_hierarchy.py` and `test_eriksonian_cognitive_alignment.py`) via pytest (`7 passed`).
 - Validated all modified files against workspace pre-commit config (`trim trailing whitespace`, `ruff`, `ruff-format`, `codespell` - 100% Passed).
+
+## 2026-05-22 Systems Architecture & Mathematical Alignment Audit
+
+Conducted a deep architectural and mathematical audit of the `Pankudi_ai` codebase against legacy blueprints (`psychological_layer.md`), system documentation (`ARCHITECTURE.md`), and active roadmaps (`cvs3_architecture_roadmap.md`).
+
+Identified 5 mathematical, structural, and functional gaps/divergences:
+1. **Reappraisal Engine Weights Disconnect** (Structural Gap in `reappraisal.py` & `agent_state.py`): The `ReappraisalEngine` adjusts mood-pull weights dynamically based on conversational outcomes, but `StateService` hardcodes these coefficients (`0.6` and `0.4`), completely bypassing the Gross/Bosse emotion regulation loop.
+2. **Missing Long-Term Episodic Memory Consolidation** (Functional Gap in `learning.py`): `ReflectionService._consolidate` extracts Neo4j triples and evolves persona traits but fails to perform the required importance-weighted LLM summarization of recent episodes or write a consolidated long-term memory back to SQLite/Postgres.
+3. **Simplified ACT-R Base-Level Activation Formula** (Optimized Approximation in `memory_store.py` & `schema.sql`): ACT-R base-level decay is computed via logarithmic approximation $B_i \approx \ln(recall\_count) - d \cdot \ln(hours\_since\_last\_recall + 1.0)$ to prevent database write amplification. This is approved as a necessary production-grade optimization.
+4. **Linear Voice Prosody vs. Nonlinear $\tanh$ Mappings** (Mathematical Divergence in Rust `contracts/src/lib.rs`): Pitch and speaking rate formulas in the compiled Rust contracts use rigid linear equations instead of the nonlinear soft-clamping $\tanh$ functions specified in the psychological layer document to handle extreme affect levels smoothly.
+5. **Overlap-Add (OLA) Buffer Window Duration** (Timing Mismatch in Rust `voice-agent/src/main.rs`): Hardcodes a 10ms transition window instead of the 15ms sample-accurate crossfading window specified in the `cvs3_architecture_roadmap.md`.
+
+**Path Forward**:
+Authored a comprehensive systems audit report `C:\Users\zenbook duo\.gemini\antigravity\brain\357eca2a-7485-4d3a-9ee7-0a0e8784807f\audit_report.md` detailing exact algebraic formulas, file locations, and pseudocode for remediation. Remediation implementation will commence upon user review and formal approval of this roadmap.

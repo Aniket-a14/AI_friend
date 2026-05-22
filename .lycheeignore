@@ -74,3 +74,5 @@ nats.io
 benchmark_results.json
 raw_research_data.json
 
+# Codespell ignored words
+acii

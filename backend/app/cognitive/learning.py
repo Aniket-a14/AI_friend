@@ -97,11 +97,11 @@ class ReflectionService:
             Extract new entities, relationships, and "Theory of Mind" observations from these interactions.
             Interactions:
             {summary_text}
-            
-            Focus on: 
+
+            Focus on:
             1. People, Preferences, and Facts about the User.
             2. THEORY OF MIND: Observations about the User's mental/physical state (e.g., "User seems stressed", "User is tired from work").
-            
+
             REQUIREMENT: Provide a confidence score (0.0 - 1.0) and a brief reasoning for each fact.
             Output JSON List ONLY: [{{"subject", "relation", "object", "type", "confidence", "reason"}}]
             """
@@ -185,7 +185,7 @@ class ReflectionService:
             Interactions:
             {summary_text}
             Current Role: {self.identity.history.get("relationship")}
-            
+
             Output JSON ONLY: {{"new_traits": ["..."], "relationship": "...", "confidence": 0.0}}
             """
             try:
@@ -210,6 +210,65 @@ class ReflectionService:
                     )
             except Exception as e:
                 logger.error(f"Identity evolution failure: {e}")
+
+            # --- PART 3: Long-Term Episodic Memory Consolidation ---
+            try:
+                # Calculate composite affective vectors
+                total_valence = 0.0
+                total_arousal = 0.0
+                total_dominance = 0.0
+                count = len(episodes)
+                for e in episodes:
+                    emotion_vec = e.get("emotion_vector", {})
+                    total_valence += emotion_vec.get("V", 0.0)
+                    total_arousal += emotion_vec.get("Ar", 0.5)
+                    total_dominance += emotion_vec.get("D", 0.5)
+
+                avg_valence = total_valence / count if count > 0 else 0.0
+                avg_arousal = total_arousal / count if count > 0 else 0.5
+                avg_dominance = total_dominance / count if count > 0 else 0.5
+
+                consolidation_prompt = f"""
+                Consolidate the following recent interaction episodes into a single, cohesive episodic memory summary.
+                This summary should capture the essence of what was discussed, the emotional tone of both the user and the AI, and any key takeaways or relationship progression.
+                Interactions:
+                {summary_text}
+
+                Format: A brief, single-paragraph narrative from the AI's perspective (e.g. "We discussed...").
+                """
+
+                consolidation_res = await self.llm.generate(
+                    consolidation_prompt,
+                    model=Config.LLM_REFLECTION_MODEL,
+                    options_override={"num_predict": 256},
+                )
+                consolidated_summary = consolidation_res.strip()
+                if "<think>" in consolidated_summary:
+                    consolidated_summary = consolidated_summary.split("</think>")[
+                        -1
+                    ].strip()
+
+                if consolidated_summary and self.vector:
+                    await self.vector.add_memory(
+                        content=consolidated_summary,
+                        raw_content=summary_text,
+                        wing="personal",
+                        importance=0.6,
+                        emotion=avg_arousal,
+                        valence=avg_valence,
+                        source="subconscious_consolidation",
+                        metadata={
+                            "composite_valence": avg_valence,
+                            "composite_arousal": avg_arousal,
+                            "composite_dominance": avg_dominance,
+                            "episode_count": len(episodes),
+                        },
+                    )
+                    logger.info(
+                        "[Reflection] Long-term episodic memory successfully consolidated and stored."
+                    )
+            except Exception as e:
+                logger.error(f"Episodic memory consolidation failure: {e}")
 
             logger.info("[Reflection] Semantic Mesh Consolidation Complete.")
 

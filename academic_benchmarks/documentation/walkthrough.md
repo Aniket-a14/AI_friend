@@ -13,7 +13,7 @@ CVS-3.0 introduces a state-of-the-art decentralized cognitive mesh operating on 
 
 ## 🛠️ Defect Resolution: Stale Asset and Viewer Synchronization
 
-In previous benchmarking sessions, the user-facing visual plots and the compiled academic PDF report (`CVS-3.0_Mind_Benchmarking_Report.pdf`) displayed stale data or failed to reflect active script modifications in the conversational workspace. 
+In previous benchmarking sessions, the user-facing visual plots and the compiled academic PDF report (`CVS-3.0_Mind_Benchmarking_Report.pdf`) displayed stale data or failed to reflect active script modifications in the conversational workspace.
 
 ### 1. Root Cause Diagnostics
 * **Blocked Terminal Execution (`plt.show()`)**: The visualizer scripts utilized `plt.show()` at the end of their execution. When run via terminal commands in the agent's sandbox, this triggered blocked GUI backend processes waiting for display rendering, causing background tasks to hang indefinitely and fail to complete.
@@ -36,11 +36,11 @@ To satisfy rigorous academic review, the benchmarking framework separates valida
 graph TD
     A[CVS-3.0 Verification Framework] --> B[1. Accelerated Simulation]
     A --> C[2. Physical Real-Time Interaction]
-    
+
     B --> B1["High-Throughput Trial (N=100,000 Iterations)"]
     B --> B2["Mock-Cluttered Host Environment"]
     B --> B3["Validates: Memory Recall, Threat Scan, ToM MAE Error Convergence"]
-    
+
     C --> C1["Human-in-the-Loop trials (N=50 Cycles)"]
     C --> C2["Physical Hardware Mesh (NATS, Neo4j, iMac M3, AGX Jetson)"]
     C --> C3["Validates: Barge-In Latencies, Cardiovascular-Respiratory Entrainment"]
@@ -53,7 +53,7 @@ graph TD
 
 ### 💓 2. Physical Real-Time Interaction Benchmarks (Human Realism)
 * **Scope**: Live interactive trials (50 dialogue cycles) on a physical infrastructure mesh.
-* **Methodology**: Measures the real-time physical performance of the local multi-agent system. It runs NATS JetStream message passing, Neo4j graph queries, and CPU/RAM profiles under Apple iMac M3 Host (16 GB Unified Memory) and NVIDIA Jetson targets. 
+* **Methodology**: Measures the real-time physical performance of the local multi-agent system. It runs NATS JetStream message passing, Neo4j graph queries, and CPU/RAM profiles under Apple iMac M3 Host (16 GB Unified Memory) and NVIDIA Jetson targets.
 * **Key Visuals**: Captures real-time voice activity detection (VAD) barge-in response times, physiological cardiorespiratory entrainment coupling, and paralinguistic tag insertion rates under stress.
 
 ---

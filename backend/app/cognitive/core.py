@@ -14,6 +14,7 @@ from typing import Dict, Any, AsyncGenerator
 
 from .perception import PerceptionService
 from .appraisal import AppraisalEngine, AppraisalVector
+from .reappraisal import ReappraisalEngine
 from ..state import StateService
 from .decision import DecisionService
 from .action import ActionService
@@ -42,6 +43,7 @@ class CognitiveService:
         self.identity_store = identity_store
         self.perception = PerceptionService(llm_service=llm_service)
         self.appraisal = AppraisalEngine()  # §1: OCC/Lazarus/EMA
+        self.reappraisal = ReappraisalEngine()  # Gross/Bosse feedback loop
         self.state = StateService(graph_store=graph_db)
         self.decision = DecisionService(
             llm_service=llm_service, memory_store=memory_store
@@ -62,6 +64,7 @@ class CognitiveService:
             learning=self.learning,
             identity=self.identity,
             llm_service=llm_service,
+            reappraisal=self.reappraisal,
         )
         self.action.publish_cb = self.publish
         self.surfaced_memories = []

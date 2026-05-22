@@ -41,7 +41,6 @@ def run_profiler(duration_sec=60):
         RESULTS_DIR, f"resource_profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     )
 
-
     try:
         while time.time() - start_time < duration_sec:
             print(

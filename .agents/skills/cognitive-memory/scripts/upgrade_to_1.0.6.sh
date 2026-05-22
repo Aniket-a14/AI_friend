@@ -198,7 +198,7 @@ if [ -f "$DECAY_FILE" ]; then
     else
         # Backup original
         cp "$DECAY_FILE" "$DECAY_FILE.pre-upgrade"
-        
+
         # Use Python to safely update JSON (available on most systems)
         if command -v python3 &> /dev/null; then
             python3 << PYEOF

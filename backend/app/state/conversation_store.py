@@ -447,11 +447,11 @@ class ConversationHistoryStore:
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     """
-                    UPDATE sessions 
-                    SET ended_at = NOW(), 
-                        trust_benevolence = $2, 
-                        trust_competence = $3, 
-                        trust_integrity = $4 
+                    UPDATE sessions
+                    SET ended_at = NOW(),
+                        trust_benevolence = $2,
+                        trust_competence = $3,
+                        trust_integrity = $4
                     WHERE id = $1
                     """,
                     self.current_session_id,

@@ -12,21 +12,21 @@ CVS-3.0 replaces traditional, heavyweight monolithic robotic architectures with 
 graph TD
     User([User Speech]) --> STT[Whisper STT Service]
     STT -->|chat.input| NATS{NATS JetStream Event Broker}
-    
+
     NATS -->|chat.input| SubScan[Subconscious Scan Agent]
     NATS -->|chat.input| MemSurf[Memory Surfacing Agent]
     NATS -->|chat.input| Brain[Brain Cognitive Agent]
-    
+
     SubScan -->|telemetry.threat| Brain
     MemSurf -->|telemetry.memory| Brain
-    
+
     Brain -->|Neo4j Query| Graph[(Neo4j DB)]
     Brain -->|pgvector Query| Relational[(Postgres DB)]
     Brain -->|telemetry.appraisal| State[System State Agent]
-    
+
     State -->|telemetry.hormones| Brain
     Brain -->|chat.output| NATS
-    
+
     NATS -->|chat.output| TTS[Expressive TTS DSP Engine]
 ```
 
@@ -79,7 +79,7 @@ The sovereign mesh has been fully verified and profiled across two primary low-p
 To prevent live performance bottlenecks, CVS-3.0 divides its operations into a **Fast-Loop (System 1)** and a **Deep-Loop (System 2)**:
 
 1.  **System 1 Fast-Loop (Turn-Taking / DSP):** Operates entirely inside the memory buffer and NATS network layers. It processes incoming audio, checks for voice interruptions, and halts TTS playback within **114.9 ms**.
-2.  **System 2 Deep-Loop (Cognitive Appraisal / Graph Traversal):** Initiates background NATS events to query Neo4j multi-hop memories and evaluate Hormonal/PAD transitions. 
+2.  **System 2 Deep-Loop (Cognitive Appraisal / Graph Traversal):** Initiates background NATS events to query Neo4j multi-hop memories and evaluate Hormonal/PAD transitions.
 3.  **Asynchronous Background Consolidation (Post-Response Reflection):** Once the robot completes its conversational turn and publishes `chat.output`, the Brain agent triggers a background `telemetry.reflection` event. The system runs ACT-R memory indexing, endocrine appraisal decay calculations, and Neo4j graph insertions concurrently. This prevents the robot from pausing or showing lag during active conversation, allowing it to perform math consolidation asynchronously.
 
 The plot below illustrates the continuous trajectory of hormones and PAD coordinates during a 90-second conversational trial, showcasing the smooth, asynchronous endocrine appraisals executed by the mesh.

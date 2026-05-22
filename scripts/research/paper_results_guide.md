@@ -211,5 +211,5 @@ plt.show()
 ## 🛠️ Code Correction Note
 
 > [!IMPORTANT]
-> A critical `NameError` crash in `hard_benchmark.py` (which tried to write undefined statistics variables `avg`, `p50`, `p95`, `p99`, `jitter` to `benchmark_results.json`) has been **fully corrected**. 
+> A critical `NameError` crash in `hard_benchmark.py` (which tried to write undefined statistics variables `avg`, `p50`, `p95`, `p99`, `jitter` to `benchmark_results.json`) has been **fully corrected**.
 > The script now accurately calculates, logs, and outputs these values in high-precision floats automatically whenever ran.

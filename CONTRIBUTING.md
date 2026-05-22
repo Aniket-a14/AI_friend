@@ -137,5 +137,5 @@ await self.publish("my.raw.subject", {"raw": "data"})
 
 ---
 
-**Designed for Perception. Built for Identity.**  
+**Designed for Perception. Built for Identity.**
 *The Sovereign Mesh is a living organism. Treat its architecture with respect.* 🦾✨

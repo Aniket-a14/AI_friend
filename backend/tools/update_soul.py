@@ -56,9 +56,9 @@ async def update_soul():
             """
             INSERT INTO agent_configs (id, personality, background_history, updated_at)
             VALUES (1, $1, $2, NOW())
-            ON CONFLICT (id) 
-            DO UPDATE SET 
-                personality = EXCLUDED.personality, 
+            ON CONFLICT (id)
+            DO UPDATE SET
+                personality = EXCLUDED.personality,
                 background_history = EXCLUDED.background_history,
                 updated_at = NOW();
             """,

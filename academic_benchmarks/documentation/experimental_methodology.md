@@ -12,11 +12,11 @@ To satisfy rigorous peer-review guidelines, our testing framework segregates sys
 graph TD
     A[CVS-3.0 Verification Framework] --> B[1. Accelerated Simulation]
     A --> C[2. Physical Real-Time Interaction]
-    
+
     B --> B1["High-Throughput Trial (N=100,000 Iterations)"]
     B --> B2["Mock-Cluttered Host Environment"]
     B --> B3["Validates: Memory Recall, Threat Scan, ToM MAE Error Convergence"]
-    
+
     C --> C1["Human-in-the-Loop trials (N=50 Cycles)"]
     C --> C2["Physical Hardware Mesh (NATS, Neo4j, iMac M3, AGX Jetson)"]
     C --> C3["Validates: Barge-In Latencies, Cardiovascular-Respiratory Entrainment"]

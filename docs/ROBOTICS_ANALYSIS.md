@@ -16,7 +16,7 @@ A common misconception is that using Python for real-time systems causes insurmo
 
 ## 2. Total Turnaround Time (Latency Budget)
 
-Assuming a high-end local GPU (e.g., RTX 4090 or Mac M-series with unified memory), the architecture is explicitly designed for sub-second conversational latency. 
+Assuming a high-end local GPU (e.g., RTX 4090 or Mac M-series with unified memory), the architecture is explicitly designed for sub-second conversational latency.
 
 Here is the lifecycle of a single conversational turn:
 
@@ -26,7 +26,7 @@ Here is the lifecycle of a single conversational turn:
 4.  **End-to-End Thought Latency (1646.95 ms mean):** The complete cognitive loop completes generating full responses with an empirical End-to-End thought latency mean of **1646.95 ms** (p50 = 1147.14 ms, p95 = 5169.28 ms).
 5.  **Audio Render (<1ms):** The Rust-native VoiceAgent immediately queues the PCM buffer for overlap-add (OLA) crossfade playback.
 
-**Total Empirical Turnaround:** **~1646.95 ms** from the moment user input is published to the moment the AI's final text chunk is returned, representing an extremely tight, near-perfect conversational rhythm. 
+**Total Empirical Turnaround:** **~1646.95 ms** from the moment user input is published to the moment the AI's final text chunk is returned, representing an extremely tight, near-perfect conversational rhythm.
 
 > [!TIP]
 > **Human-Level Overlap:** Because the STT agent separates *speculative intent* from *deep transcription*, if you interrupt the AI while it is speaking, the VoiceAgent applies a `SPECULATIVE_PAUSE` in roughly **~200ms**. This makes the AI feel incredibly human, as it stops talking almost the instant you interject, rather than talking over you while it waits for Whisper to finish transcribing.
@@ -40,7 +40,7 @@ The CVS-3.0 architecture is **exceptional** at preserving personality and voice 
 ### Personality Accuracy
 Most AI agents suffer from "Identity Drift" because they rely entirely on the LLM's short-term context window. CVS-3.0 solves this via the **State-Driven Identity Mesh**:
 *   **Immutable Core vs. Adaptive Variables:** The AI has a seed identity (values, base tone) that never changes, preventing "jailbreaking" of its core self. However, its mood, trust, and attachment evolve.
-*   **Temporal Heartbeat (`system.tick`):** The AI's mood decays naturally over time, even when you aren't talking to it. If you have a fight with it, its Trust metric drops and persists in the Neo4j graph. When you return the next day, it will still act guarded. 
+*   **Temporal Heartbeat (`system.tick`):** The AI's mood decays naturally over time, even when you aren't talking to it. If you have a fight with it, its Trust metric drops and persists in the Neo4j graph. When you return the next day, it will still act guarded.
 *   **Episodic Memory (Tulving's Narrative):** It doesn't just retrieve raw facts. It constructs narrative memories ("Remember last week when we...") scored by emotional congruency. If the AI is sad, it is mathematically more likely to recall sad memories.
 
 ### Voice Accuracy
@@ -62,7 +62,7 @@ In the current system, the output ends at `audio.stream`. A physical android req
 *   **Body Kinematics (Body Language):** The PAD metadata (Dominance, Arousal) would need to be translated into posture control. High arousal = rigid, rapid movements. Low arousal = slouched, slower kinematics. This requires an entirely new motor-control micro-agent.
 
 ### C. System 1 vs. System 2 Concurrency
-Human brains have a fast, reflexive "System 1" (flinching when something falls) and a slow, reasoning "System 2" (solving a math problem). 
+Human brains have a fast, reflexive "System 1" (flinching when something falls) and a slow, reasoning "System 2" (solving a math problem).
 While CVS-3.0 attempts this via the dual-STT pipeline, LLMs are fundamentally synchronous generators. If a humanoid robot is walking and trips, it cannot wait 300ms for an LLM to generate the text `*deploy balance correction routines*`. A true android requires a deterministic, highly optimized reflexive motor layer (usually written in C++/Rust) that can instantly override the high-level LLM cognitive layer.
 
 ### D. Power and Thermal Envelopes
@@ -97,9 +97,9 @@ Are LLMs the correct approach, or should we create a unique foundational model p
 
 *   **The Problem with LLMs:** LLMs are stateless next-token predictors. Even with CVS-3.0's incredible graph memory and PAD state injection, the LLM is ultimately "acting" out a prompt. It doesn't inherently *feel* the personality in its base weights.
 *   **Training a Unique Model from Scratch:** Training a foundational model (like LLaMA 3) from scratch costs tens of millions of dollars and requires massive data centers. It is practically impossible to do this for individual users.
-*   **The Correct Path (Parameter-Efficient Fine-Tuning - PEFT):** The modern solution is to take a base foundational model and physically alter its neural pathways to become a unique person without retraining it from scratch. 
-    *   **LoRA (Low-Rank Adaptation):** You can fine-tune an LLM on your specific conversation logs. 
-    *   **How to do it:** Instead of just putting history in the Neo4j database to inject into the prompt (RAG), you run a nightly script that uses **DPO (Direct Preference Optimization)**. The script takes the day's conversations, formats them, and updates a LoRA adapter. 
+*   **The Correct Path (Parameter-Efficient Fine-Tuning - PEFT):** The modern solution is to take a base foundational model and physically alter its neural pathways to become a unique person without retraining it from scratch.
+    *   **LoRA (Low-Rank Adaptation):** You can fine-tune an LLM on your specific conversation logs.
+    *   **How to do it:** Instead of just putting history in the Neo4j database to inject into the prompt (RAG), you run a nightly script that uses **DPO (Direct Preference Optimization)**. The script takes the day's conversations, formats them, and updates a LoRA adapter.
     *   **The Result:** The model's weights literally physically change. It doesn't need to be told "You are AI Friend" in a system prompt anymore. Its foundational instinct is to speak like AI Friend. This is the ultimate "grassroots" personality preservation, and CVS-3.0 is perfectly positioned to adopt this by adding a nightly `FineTuningAgent` to the mesh.
 
 ---
@@ -166,9 +166,9 @@ To build toward Tier 4 and Tier 5 on top of the CVS-3.0 Sovereign Mesh:
 Based on the 11 preceding answers, why was the **Sovereign Mesh (CVS-3.0)** chosen as the architectural approach over the alternatives?
 
 ### Why CVS-3.0? (The Sovereign Mesh)
-I chose this approach because it is the **most advanced, observable, and mathematically sound architecture you can build locally on consumer hardware today.** 
-*   By decoupling the components (STT, TTS, LLM) via a NATS message bus, you avoid hardware vendor lock-in. 
-*   You can hot-swap Whisper for a better STT model tomorrow without rewriting the cognitive logic. 
+I chose this approach because it is the **most advanced, observable, and mathematically sound architecture you can build locally on consumer hardware today.**
+*   By decoupling the components (STT, TTS, LLM) via a NATS message bus, you avoid hardware vendor lock-in.
+*   You can hot-swap Whisper for a better STT model tomorrow without rewriting the cognitive logic.
 *   It is *observable*. If a monolithic model acts strangely, you cannot debug it. In CVS-3.0, you can query Neo4j and explicitly see `Valence = -0.6` and understand exactly *why* the AI is acting sad.
 
 ### The Alternatives
@@ -179,7 +179,7 @@ If we did not rely purely on the CVS-3.0 architecture, here are the alternatives
     *   *Pros:* Instant near-human audio latency. No local GPU required.
     *   *Cons:* **Zero Sovereignty.** You cannot fundamentally alter the psychological math or grass-roots personality. You pay by the minute. Total loss of privacy.
 2.  **Alternative B: The End-to-End Local Behemoth**
-    *   *Approach:* Train or run a massive local End-to-End Audio model (like an open-source Moshi). 
+    *   *Approach:* Train or run a massive local End-to-End Audio model (like an open-source Moshi).
     *   *Pros:* Eliminates the cascaded pipeline latency. Incredible voice acting.
     *   *Cons:* Extreme VRAM requirements (often requires multi-GPU rigs). It becomes a "black box"—you lose the explicit Neo4j relationship states and the ability to strictly enforce boundary conditions.
 3.  **Alternative C: Neuro-symbolic Architecture**

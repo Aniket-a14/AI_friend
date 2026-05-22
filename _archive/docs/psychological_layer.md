@@ -218,14 +218,14 @@ U(Intent) = w₁·GoalAlignment
 
 #### Motivation
 
-The base selection rule is **stateless** — it recomputes intent every turn.  
+The base selection rule is **stateless** — it recomputes intent every turn.
 Human behavior, however, is **goal-continuous**, where intentions persist and evolve over time.
 
 Without persistence, the system may exhibit:
 
-- abrupt tone shifts  
-- inconsistent conversational direction  
-- loss of perceived intentionality  
+- abrupt tone shifts
+- inconsistent conversational direction
+- loss of perceived intentionality
 
 ---
 
@@ -266,11 +266,11 @@ Where:
 
 This layer ensures:
 
-- continuity in conversational goals  
-- smoother emotional transitions  
-- responses reflect ongoing intent rather than isolated decisions  
+- continuity in conversational goals
+- smoother emotional transitions
+- responses reflect ongoing intent rather than isolated decisions
 
-Without this layer, the system behaves as a **stateless responder**.  
+Without this layer, the system behaves as a **stateless responder**.
 With it, the system behaves as a **persistent, goal-driven agent**.
 
 ---
@@ -279,7 +279,7 @@ With it, the system behaves as a **persistent, goal-driven agent**.
 
 ⚠️ Engineering design
 
-There is no direct published equation for conversational intent persistence.  
+There is no direct published equation for conversational intent persistence.
 This is derived from control theory (temporal smoothing) and observed human behavior.
 
 ---

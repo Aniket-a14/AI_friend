@@ -21,226 +21,226 @@ graph TD
 
 ### Pillar A: Conversational Turn-Taking & Interruption Latency (8 Papers)
 
-1.  **Skantze, G., & Irfan, B. (2025)**  
-    *Title*: "Applying General Turn-taking Models to Conversational Human-Robot Interaction"  
-    *Venue*: *ACM/IEEE International Conference on Human-Robot Interaction (HRI)*  
-    *Core Methodology*: Adapting general self-supervised turn-taking models (TurnGPT and VAP) to social humanoid robots to optimize micro-turn transitions in real-world dialogue.  
-    *Extracted Quantitative Baseline*: Achieves an average speech gap of **310 ms** on physical platforms, but suffers from **11.2%** false interruption rates due to latency variations.  
+1.  **Skantze, G., & Irfan, B. (2025)**
+    *Title*: "Applying General Turn-taking Models to Conversational Human-Robot Interaction"
+    *Venue*: *ACM/IEEE International Conference on Human-Robot Interaction (HRI)*
+    *Core Methodology*: Adapting general self-supervised turn-taking models (TurnGPT and VAP) to social humanoid robots to optimize micro-turn transitions in real-world dialogue.
+    *Extracted Quantitative Baseline*: Achieves an average speech gap of **310 ms** on physical platforms, but suffers from **11.2%** false interruption rates due to latency variations.
     *Academic Link*: [arXiv:2501.08946](https://arxiv.org/abs/2501.08946)
-    
-2.  **Skantze, G. (2021)**  
-    *Title*: "Turn-taking in Conversational Systems and Human-Robot Interaction: A Review"  
-    *Venue*: *Computer Speech & Language*  
-    *Core Methodology*: Theoretical review and empirical auditing of turn-taking architectures in voice assistants and social robots.  
-    *Extracted Quantitative Baseline*: Proves that standard cascaded speak-wait pipelines (STT $\rightarrow$ LLM $\rightarrow$ TTS) exhibit turn-taking latencies between **700 ms and 2,500 ms**, which humans perceive as awkward and robotic.  
+
+2.  **Skantze, G. (2021)**
+    *Title*: "Turn-taking in Conversational Systems and Human-Robot Interaction: A Review"
+    *Venue*: *Computer Speech & Language*
+    *Core Methodology*: Theoretical review and empirical auditing of turn-taking architectures in voice assistants and social robots.
+    *Extracted Quantitative Baseline*: Proves that standard cascaded speak-wait pipelines (STT $\rightarrow$ LLM $\rightarrow$ TTS) exhibit turn-taking latencies between **700 ms and 2,500 ms**, which humans perceive as awkward and robotic.
     *Academic Link*: [DOI: 10.1016/j.csl.2020.101178](https://doi.org/10.1016/j.csl.2020.101178)
 
-3.  **Ekstedt, E., & Skantze, G. (2020)**  
-    *Title*: "TurnGPT: a Transformer-based Language Model for Predicting Turn-taking in Spoken Dialogue"  
-    *Venue*: *Proceedings of Interspeech*  
-    *Core Methodology*: Utilizing autoregressive transformer language models for predicting turn-yielding and turn-holding states in spoken dialogue.  
-    *Extracted Quantitative Baseline*: TurnGPT reaches high accuracy in detecting transition-relevance places, reducing speech turn-taking gap to **~350 ms** but exhibiting a false-interruption rate of **~15.4%** under purely textual features.  
+3.  **Ekstedt, E., & Skantze, G. (2020)**
+    *Title*: "TurnGPT: a Transformer-based Language Model for Predicting Turn-taking in Spoken Dialogue"
+    *Venue*: *Proceedings of Interspeech*
+    *Core Methodology*: Utilizing autoregressive transformer language models for predicting turn-yielding and turn-holding states in spoken dialogue.
+    *Extracted Quantitative Baseline*: TurnGPT reaches high accuracy in detecting transition-relevance places, reducing speech turn-taking gap to **~350 ms** but exhibiting a false-interruption rate of **~15.4%** under purely textual features.
     *Academic Link*: [arXiv:2010.10874](https://arxiv.org/abs/2010.10874)
-    
-4.  **Ekstedt, E., & Skantze, G. (2022)**  
-    *Title*: "Voice Activity Projection: Self-supervised Learning of Turn-taking Events"  
-    *Venue*: *Proceedings of Interspeech*  
-    *Core Methodology*: Continuous Voice Activity Projection (VAP) modeling utilizing multi-resolution spectrograms and self-supervised frame-based learning.  
-    *Extracted Quantitative Baseline*: Continuous frame-based VAP architectures achieve a projection latency of **280 ms** on physical edge GPU systems with a VAD confirmation window of **180 ms**.  
+
+4.  **Ekstedt, E., & Skantze, G. (2022)**
+    *Title*: "Voice Activity Projection: Self-supervised Learning of Turn-taking Events"
+    *Venue*: *Proceedings of Interspeech*
+    *Core Methodology*: Continuous Voice Activity Projection (VAP) modeling utilizing multi-resolution spectrograms and self-supervised frame-based learning.
+    *Extracted Quantitative Baseline*: Continuous frame-based VAP architectures achieve a projection latency of **280 ms** on physical edge GPU systems with a VAD confirmation window of **180 ms**.
     *Academic Link*: [arXiv:2205.09812](https://arxiv.org/abs/2205.09812)
 
-5.  **Inoue, K., Jiang, B., Ekstedt, E., Kawahara, T., & Skantze, G. (2024)**  
-    *Title*: "Multilingual Turn-taking Prediction Using Voice Activity Projection"  
-    *Venue*: *Proceedings of the Joint International Conference on Computational Linguistics, Language Resources and Evaluation (LREC-COLING)*  
-    *Core Methodology*: Developing a multilingual voice activity projection model across English, Mandarin, and Japanese using Contrastive Predictive Coding and wav2vec 2.0.  
-    *Extracted Quantitative Baseline*: The multilingual turn-taking model reduces real-world speech gap to **420 ms** but exhibits a decision processing latency of **210 ms** on localized systems.  
+5.  **Inoue, K., Jiang, B., Ekstedt, E., Kawahara, T., & Skantze, G. (2024)**
+    *Title*: "Multilingual Turn-taking Prediction Using Voice Activity Projection"
+    *Venue*: *Proceedings of the Joint International Conference on Computational Linguistics, Language Resources and Evaluation (LREC-COLING)*
+    *Core Methodology*: Developing a multilingual voice activity projection model across English, Mandarin, and Japanese using Contrastive Predictive Coding and wav2vec 2.0.
+    *Extracted Quantitative Baseline*: The multilingual turn-taking model reduces real-world speech gap to **420 ms** but exhibits a decision processing latency of **210 ms** on localized systems.
     *Academic Link*: [ACL Anthology](https://aclanthology.org/2024.lrec-main.1036/)
 
-6.  **Raux, A., & Eskenazi, M. (2009)**  
-    *Title*: "A Finite-State Turn-Taking Model for Spoken Dialog Systems"  
-    *Venue*: *Proceedings of the Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL-HLT)*  
-    *Core Methodology*: A decision-theoretic finite-state turn-taking framework based on cost matrices governing spoken dialog turn timing.  
-    *Extracted Quantitative Baseline*: Turn-taking latency in social interactive tasks is bounded to **350 ms - 450 ms** under state-based transition cost matrices.  
+6.  **Raux, A., & Eskenazi, M. (2009)**
+    *Title*: "A Finite-State Turn-Taking Model for Spoken Dialog Systems"
+    *Venue*: *Proceedings of the Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL-HLT)*
+    *Core Methodology*: A decision-theoretic finite-state turn-taking framework based on cost matrices governing spoken dialog turn timing.
+    *Extracted Quantitative Baseline*: Turn-taking latency in social interactive tasks is bounded to **350 ms - 450 ms** under state-based transition cost matrices.
     *Academic Link*: [ACL Anthology](https://aclanthology.org/N09-1071/)
 
-7.  **Lala, D., Inoue, K., & Kawahara, T. (2019)**  
-    *Title*: "Smooth turn-taking by a robot using an online continuous model to generate turn-taking cues"  
-    *Venue*: *Proceedings of the International Conference on Multimodal Interaction (ICMI)*  
-    *Core Methodology*: Implementing multimodal turn-taking classifiers combining user gaze vectors and Voice Activity Detection on the humanoid android ERICA.  
-    *Extracted Quantitative Baseline*: Achieves an average turn-taking response latency of **820 ms**, restricted by sequential local processing pipelines.  
+7.  **Lala, D., Inoue, K., & Kawahara, T. (2019)**
+    *Title*: "Smooth turn-taking by a robot using an online continuous model to generate turn-taking cues"
+    *Venue*: *Proceedings of the International Conference on Multimodal Interaction (ICMI)*
+    *Core Methodology*: Implementing multimodal turn-taking classifiers combining user gaze vectors and Voice Activity Detection on the humanoid android ERICA.
+    *Extracted Quantitative Baseline*: Achieves an average turn-taking response latency of **820 ms**, restricted by sequential local processing pipelines.
     *Academic Link*: [DOI: 10.1145/3340555.3353727](https://doi.org/10.1145/3340555.3353727)
 
-8.  **Kosinski, M. (2023)**  
-    *Title*: "Theory of Mind May Have Spontaneously Emerged in Large Language Models"  
-    *Venue*: *arXiv preprint arXiv:2302.02083*  
-    *Core Methodology*: Testing zero-shot LLM empathic reasoning and social cognitive capabilities using classic psychological false-belief tasks.  
-    *Extracted Quantitative Baseline*: Proves that zero-shot LLM empathic reasoning is heavily constrained, exhibiting a high variance in emotional state projection.  
+8.  **Kosinski, M. (2023)**
+    *Title*: "Theory of Mind May Have Spontaneously Emerged in Large Language Models"
+    *Venue*: *arXiv preprint arXiv:2302.02083*
+    *Core Methodology*: Testing zero-shot LLM empathic reasoning and social cognitive capabilities using classic psychological false-belief tasks.
+    *Extracted Quantitative Baseline*: Proves that zero-shot LLM empathic reasoning is heavily constrained, exhibiting a high variance in emotional state projection.
     *Academic Link*: [arXiv:2302.02083](https://arxiv.org/abs/2302.02083)
 
 ---
 
 ### Pillar B: Affective Computing, Appraisal, & Endocrine Modeling (8 Papers)
 
-9.  **Chen, R., Jiang, W., Qin, C., & Tan, C. (2025)**  
-    *Title*: "Theory of Mind in Large Language Models: Assessment and Enhancement"  
-    *Venue*: *Proceedings of the Annual Meeting of the Association for Computational Linguistics (ACL)*  
-    *Core Methodology*: Comprehensive review and assessment of Theory of Mind in LLMs using story-based benchmarks and enhancement strategies.  
-    *Extracted Quantitative Baseline*: Establishes that current state-of-the-art LLMs struggle with multi-turn emotional memory tracking, leading to high Valence/Arousal error spikes (**~0.30 to 0.40 MAE**).  
+9.  **Chen, R., Jiang, W., Qin, C., & Tan, C. (2025)**
+    *Title*: "Theory of Mind in Large Language Models: Assessment and Enhancement"
+    *Venue*: *Proceedings of the Annual Meeting of the Association for Computational Linguistics (ACL)*
+    *Core Methodology*: Comprehensive review and assessment of Theory of Mind in LLMs using story-based benchmarks and enhancement strategies.
+    *Extracted Quantitative Baseline*: Establishes that current state-of-the-art LLMs struggle with multi-turn emotional memory tracking, leading to high Valence/Arousal error spikes (**~0.30 to 0.40 MAE**).
     *Academic Link*: [arXiv:2505.00026](https://arxiv.org/abs/2505.00026)
 
-10. **Mehrabian, A. (1996)**  
-    *Title*: "Pleasure-arousal-dominance: A general framework for describing and measuring individual differences in temperament"  
-    *Venue*: *Current Psychology*  
-    *Core Methodology*: Continuous semantic differential scales and linear algebraic formulations modeling affect as a 3D vector.  
-    *Extracted Quantitative Baseline*: Explains over **90%** of human emotional variance using three normalized variables restricted to the range $[-1.0, 1.0]$.  
+10. **Mehrabian, A. (1996)**
+    *Title*: "Pleasure-arousal-dominance: A general framework for describing and measuring individual differences in temperament"
+    *Venue*: *Current Psychology*
+    *Core Methodology*: Continuous semantic differential scales and linear algebraic formulations modeling affect as a 3D vector.
+    *Extracted Quantitative Baseline*: Explains over **90%** of human emotional variance using three normalized variables restricted to the range $[-1.0, 1.0]$.
     *Academic Link*: [DOI: 10.1007/BF02686918](https://doi.org/10.1007/BF02686918)
 
-11. **Scherer, K. R. (2005)**  
-    *Title*: "What are emotions? And how can they be measured?"  
-    *Venue*: *Social Science Information*  
-    *Core Methodology*: Formulating the Component Process Model (CPM) mapping Stimulus Evaluation Checks (SECs) to somatic, expressive, and cognitive subsystems.  
-    *Extracted Quantitative Baseline*: Sequential appraisal check sequences in biological cognition operate within a **100 ms to 300 ms** temporal window.  
+11. **Scherer, K. R. (2005)**
+    *Title*: "What are emotions? And how can they be measured?"
+    *Venue*: *Social Science Information*
+    *Core Methodology*: Formulating the Component Process Model (CPM) mapping Stimulus Evaluation Checks (SECs) to somatic, expressive, and cognitive subsystems.
+    *Extracted Quantitative Baseline*: Sequential appraisal check sequences in biological cognition operate within a **100 ms to 300 ms** temporal window.
     *Academic Link*: [DOI: 10.1177/0539018405058216](https://doi.org/10.1177/0539018405058216)
 
-12. **Picard, R. W. (1997)**  
-    *Title*: "Affective Computing"  
-    *Venue*: *MIT Press*  
-    *Core Methodology*: Architectural guidelines for systems that recognize, express, and model emotions, establishing the field of affective computing.  
-    *Extracted Quantitative Baseline*: Early affective architectures exhibit dynamic emotional appraisal processing latencies of **1,000 ms to 2,000 ms**.  
+12. **Picard, R. W. (1997)**
+    *Title*: "Affective Computing"
+    *Venue*: *MIT Press*
+    *Core Methodology*: Architectural guidelines for systems that recognize, express, and model emotions, establishing the field of affective computing.
+    *Extracted Quantitative Baseline*: Early affective architectures exhibit dynamic emotional appraisal processing latencies of **1,000 ms to 2,000 ms**.
     *Academic Link*: [MIT Press Book URL](https://mitpress.mit.edu/9780262661157/affective-computing/)
 
-13. **Busso, C. et al. (2008)**  
-    *Title*: "IEMOCAP: Interactive emotional dyadic motion capture database"  
-    *Venue*: *Language Resources and Evaluation*  
-    *Core Methodology*: Dynamic emotion recognition benchmarking using advanced dyadic motion capture and audio-visual recordings of spontaneous interactions.  
-    *Extracted Quantitative Baseline*: Zero-shot state-of-the-art LLMs (e.g., GPT-4o, Claude 3.5) achieve a baseline Mean Absolute Error (MAE) of **0.25 to 0.32** on valence and **0.28 to 0.36** on arousal tracking.  
+13. **Busso, C. et al. (2008)**
+    *Title*: "IEMOCAP: Interactive emotional dyadic motion capture database"
+    *Venue*: *Language Resources and Evaluation*
+    *Core Methodology*: Dynamic emotion recognition benchmarking using advanced dyadic motion capture and audio-visual recordings of spontaneous interactions.
+    *Extracted Quantitative Baseline*: Zero-shot state-of-the-art LLMs (e.g., GPT-4o, Claude 3.5) achieve a baseline Mean Absolute Error (MAE) of **0.25 to 0.32** on valence and **0.28 to 0.36** on arousal tracking.
     *Academic Link*: [DOI: 10.1007/s10579-008-9076-6](https://doi.org/10.1007/s10579-008-9076-6)
 
-14. **Ringeval, F., Sonderegger, A., Sauer, J., & Lalanne, D. (2013)**  
-    *Title*: "Introducing the RECOLA multimodal corpus of remote collaborative and affective interactions"  
-    *Venue*: *Proceedings of IEEE International Conference on Face and Gesture Recognition (FG)*  
-    *Core Methodology*: Continuous emotional annotation (valence and arousal) of dyadic interactions under physiological monitoring.  
-    *Extracted Quantitative Baseline*: Standard machine learning valence prediction models achieve a Concordance Correlation Coefficient (CCC) of **0.20 to 0.35**.  
+14. **Ringeval, F., Sonderegger, A., Sauer, J., & Lalanne, D. (2013)**
+    *Title*: "Introducing the RECOLA multimodal corpus of remote collaborative and affective interactions"
+    *Venue*: *Proceedings of IEEE International Conference on Face and Gesture Recognition (FG)*
+    *Core Methodology*: Continuous emotional annotation (valence and arousal) of dyadic interactions under physiological monitoring.
+    *Extracted Quantitative Baseline*: Standard machine learning valence prediction models achieve a Concordance Correlation Coefficient (CCC) of **0.20 to 0.35**.
     *Academic Link*: [DOI: 10.1109/FG.2013.6553805](https://doi.org/10.1109/FG.2013.6553805)
 
-15. **Marsella, S. C., & Gratch, J. (2009)**  
-    *Title*: "EMA: A process model of appraisal dynamics"  
-    *Venue*: *Cognitive Systems Research*  
-    *Core Methodology*: Implementing a computational model of cognitive appraisal (EMA) where appraisal represents the relation between environmental events and internal goals.  
-    *Extracted Quantitative Baseline*: Appraisal processing overhead is measured at **50 ms to 150 ms** on standard CPU systems.  
+15. **Marsella, S. C., & Gratch, J. (2009)**
+    *Title*: "EMA: A process model of appraisal dynamics"
+    *Venue*: *Cognitive Systems Research*
+    *Core Methodology*: Implementing a computational model of cognitive appraisal (EMA) where appraisal represents the relation between environmental events and internal goals.
+    *Extracted Quantitative Baseline*: Appraisal processing overhead is measured at **50 ms to 150 ms** on standard CPU systems.
     *Academic Link*: [DOI: 10.1016/j.cogsys.2008.03.005](https://doi.org/10.1016/j.cogsys.2008.03.005)
 
-16. **Becker-Asano, C., & Wachsmuth, I. (2010)**  
-    *Title*: "Affective computing with primary and secondary emotions in a virtual human"  
-    *Venue*: *Autonomous Agents and Multi-Agent Systems*  
-    *Core Methodology*: Architectural integration of the WASABI continuous emotion model in virtual environments.  
-    *Extracted Quantitative Baseline*: Emotional state drift calculations take **5 ms to 20 ms** of CPU processing time per cycle.  
+16. **Becker-Asano, C., & Wachsmuth, I. (2010)**
+    *Title*: "Affective computing with primary and secondary emotions in a virtual human"
+    *Venue*: *Autonomous Agents and Multi-Agent Systems*
+    *Core Methodology*: Architectural integration of the WASABI continuous emotion model in virtual environments.
+    *Extracted Quantitative Baseline*: Emotional state drift calculations take **5 ms to 20 ms** of CPU processing time per cycle.
     *Academic Link*: [DOI: 10.1007/s10458-009-9094-9](https://doi.org/10.1007/s10458-009-9094-9)
 
 ---
 
 ### Pillar C: ACT-R Memory Systems & Hybrid Vector-Graph RAG (7 Papers)
 
-17. **Sumers, T. R., Yao, S., Narasimhan, K., & Griffiths, T. L. (2023)**  
-    *Title*: "Cognitive Architectures for Language Agents"  
-    *Venue*: *Transactions on Machine Learning Research (TMLR)*  
-    *Core Methodology*: Formalizing the integration of LLMs with cognitive architectures (CoALA) by specifying memory, decision-making, and action modules.  
-    *Extracted Quantitative Baseline*: The cognitive language agent model improves context retrieval accuracy under competitive loads by **12.5%** over flat vector models but increases lookup latency by **15 ms** on standard environments.  
+17. **Sumers, T. R., Yao, S., Narasimhan, K., & Griffiths, T. L. (2023)**
+    *Title*: "Cognitive Architectures for Language Agents"
+    *Venue*: *Transactions on Machine Learning Research (TMLR)*
+    *Core Methodology*: Formalizing the integration of LLMs with cognitive architectures (CoALA) by specifying memory, decision-making, and action modules.
+    *Extracted Quantitative Baseline*: The cognitive language agent model improves context retrieval accuracy under competitive loads by **12.5%** over flat vector models but increases lookup latency by **15 ms** on standard environments.
     *Academic Link*: [arXiv:2309.02427](https://arxiv.org/abs/2309.02427)
 
-18. **Edge, D. et al. (2024)**  
-    *Title*: "From Local to Global: A Graph RAG Approach to Query-Focused Summarization"  
-    *Venue*: *Microsoft Research Technical Report / arXiv*  
-    *Core Methodology*: Combining LLM-generated knowledge graphs with semantic vectors to enable multi-hop hierarchical graph RAG.  
-    *Extracted Quantitative Baseline*: Hierarchical GraphRAG indexing achieves a semantic retrieval Recall@5 of **89.5%** on multi-document query tasks, but incurs high latency overhead.  
+18. **Edge, D. et al. (2024)**
+    *Title*: "From Local to Global: A Graph RAG Approach to Query-Focused Summarization"
+    *Venue*: *Microsoft Research Technical Report / arXiv*
+    *Core Methodology*: Combining LLM-generated knowledge graphs with semantic vectors to enable multi-hop hierarchical graph RAG.
+    *Extracted Quantitative Baseline*: Hierarchical GraphRAG indexing achieves a semantic retrieval Recall@5 of **89.5%** on multi-document query tasks, but incurs high latency overhead.
     *Academic Link*: [arXiv:2404.16130](https://arxiv.org/abs/2404.16130)
 
-19. **Xiao, S., Liu, Z., Zhang, J., & Sun, M. (2024)**  
-    *Title*: "BGE M3-Embedding: Multi-Lingual, Multi-Functionality, Multi-Granularity Evaluation"  
-    *Venue*: *arXiv preprint arXiv:2402.03216*  
-    *Core Methodology*: Training a multi-lingual unified embedding model (BGE-M3) that supports dense, sparse, and multi-vector multi-hop semantic retrievals.  
-    *Extracted Quantitative Baseline*: BGE-M3 dense encoders achieve a baseline Recall@5 score of **84.3%** on zero-shot multi-lingual retrieval datasets (e.g., MS-MARCO, BEIR).  
+19. **Xiao, S., Liu, Z., Zhang, J., & Sun, M. (2024)**
+    *Title*: "BGE M3-Embedding: Multi-Lingual, Multi-Functionality, Multi-Granularity Evaluation"
+    *Venue*: *arXiv preprint arXiv:2402.03216*
+    *Core Methodology*: Training a multi-lingual unified embedding model (BGE-M3) that supports dense, sparse, and multi-vector multi-hop semantic retrievals.
+    *Extracted Quantitative Baseline*: BGE-M3 dense encoders achieve a baseline Recall@5 score of **84.3%** on zero-shot multi-lingual retrieval datasets (e.g., MS-MARCO, BEIR).
     *Academic Link*: [arXiv:2402.03216](https://arxiv.org/abs/2402.03216)
 
-20. **Izacard, G. et al. (2022)**  
-    *Title*: "Unsupervised dense information retrieval with contrastive learning" (Contriever)  
-    *Venue*: *Transactions on Machine Learning Research*  
-    *Core Methodology*: Developing an unsupervised dense retriever (Contriever) using contrastive pre-training on Wikipedia corpora.  
-    *Extracted Quantitative Baseline*: Evaluated Contriever models achieve Recall@5 retrieval scores of **76.2%** on MS-MARCO.  
+20. **Izacard, G. et al. (2022)**
+    *Title*: "Unsupervised dense information retrieval with contrastive learning" (Contriever)
+    *Venue*: *Transactions on Machine Learning Research*
+    *Core Methodology*: Developing an unsupervised dense retriever (Contriever) using contrastive pre-training on Wikipedia corpora.
+    *Extracted Quantitative Baseline*: Evaluated Contriever models achieve Recall@5 retrieval scores of **76.2%** on MS-MARCO.
     *Academic Link*: [arXiv:2112.09118](https://arxiv.org/abs/2112.09118)
 
-21. **Gutiérrez, B. J., Shu, Y., Gu, Y., Yasunaga, M., & Su, Y. (2024)**  
-    *Title*: "HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models"  
-    *Venue*: *Proceedings of the Annual Conference on Neural Information Processing Systems (NeurIPS)*  
-    *Core Methodology*: A neurobiologically inspired RAG framework mimicking the hippocampal system using associative graph pathways and ACT-R like activation.  
-    *Extracted Quantitative Baseline*: Achieves a multi-hop memory retrieval Recall@5 of **92.4%** across complex associative QA tasks.  
+21. **Gutiérrez, B. J., Shu, Y., Gu, Y., Yasunaga, M., & Su, Y. (2024)**
+    *Title*: "HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models"
+    *Venue*: *Proceedings of the Annual Conference on Neural Information Processing Systems (NeurIPS)*
+    *Core Methodology*: A neurobiologically inspired RAG framework mimicking the hippocampal system using associative graph pathways and ACT-R like activation.
+    *Extracted Quantitative Baseline*: Achieves a multi-hop memory retrieval Recall@5 of **92.4%** across complex associative QA tasks.
     *Academic Link*: [arXiv:2405.14831](https://arxiv.org/abs/2405.14831)
 
-22. **Thakur, N., Reimers, N., Daxenberger, A., & Gurevych, I. (2021)**  
-    *Title*: "BEIR: A heterogeneous benchmark for zero-shot evaluation of information retrieval models"  
-    *Venue*: *Proceedings of the Annual Conference on Neural Information Processing Systems (NeurIPS)*  
-    *Core Methodology*: Compiling a heterogeneous evaluation benchmark representing 18 diverse search tasks to test zero-shot RAG retrieval.  
-    *Extracted Quantitative Baseline*: Standard dense bi-encoder cosine RAG systems achieve a baseline Recall@1 score of **68.0%**.  
+22. **Thakur, N., Reimers, N., Daxenberger, A., & Gurevych, I. (2021)**
+    *Title*: "BEIR: A heterogeneous benchmark for zero-shot evaluation of information retrieval models"
+    *Venue*: *Proceedings of the Annual Conference on Neural Information Processing Systems (NeurIPS)*
+    *Core Methodology*: Compiling a heterogeneous evaluation benchmark representing 18 diverse search tasks to test zero-shot RAG retrieval.
+    *Extracted Quantitative Baseline*: Standard dense bi-encoder cosine RAG systems achieve a baseline Recall@1 score of **68.0%**.
     *Academic Link*: [arXiv:2104.08663](https://arxiv.org/abs/2104.08663)
 
-23. **Lewis, P. et al. (2020)**  
-    *Title*: "Retrieval-Augmented Generation for knowledge-intensive NLP tasks"  
-    *Venue*: *Proceedings of the Annual Conference on Neural Information Processing Systems (NeurIPS)*  
-    *Core Methodology*: Designing the foundational Retrieval-Augmented Generation (RAG) architecture combining pre-trained generator models with dense vector indexes.  
-    *Extracted Quantitative Baseline*: Single-step dense vector retrieval overhead takes **20 ms to 80 ms** under dense database loads.  
+23. **Lewis, P. et al. (2020)**
+    *Title*: "Retrieval-Augmented Generation for knowledge-intensive NLP tasks"
+    *Venue*: *Proceedings of the Annual Conference on Neural Information Processing Systems (NeurIPS)*
+    *Core Methodology*: Designing the foundational Retrieval-Augmented Generation (RAG) architecture combining pre-trained generator models with dense vector indexes.
+    *Extracted Quantitative Baseline*: Single-step dense vector retrieval overhead takes **20 ms to 80 ms** under dense database loads.
     *Academic Link*: [arXiv:2005.11401](https://arxiv.org/abs/2005.11401)
 
 ---
 
 ### Pillar D: Edge Multi-Agent Middleware & Low-Latency IPC (7 Papers)
 
-24. **Maruyama, Y., Kato, S., & Azumi, T. (2016)**  
-    *Title*: "Exploring the performance of ROS2"  
-    *Venue*: *Proceedings of the International Conference on Embedded Software (EMSOFT)*  
-    *Core Methodology*: Empirical profiling of the Robot Operating System (ROS2) DDS middleware latency, CPU, and memory footprints under heavy loads.  
-    *Extracted Quantitative Baseline*: Inter-Process Communication (IPC) serialization and routing latency under ROS2 Humble DDS averages **4.85 ms** under dense payload conditions.  
+24. **Maruyama, Y., Kato, S., & Azumi, T. (2016)**
+    *Title*: "Exploring the performance of ROS2"
+    *Venue*: *Proceedings of the International Conference on Embedded Software (EMSOFT)*
+    *Core Methodology*: Empirical profiling of the Robot Operating System (ROS2) DDS middleware latency, CPU, and memory footprints under heavy loads.
+    *Extracted Quantitative Baseline*: Inter-Process Communication (IPC) serialization and routing latency under ROS2 Humble DDS averages **4.85 ms** under dense payload conditions.
     *Academic Link*: [DOI: 10.1145/2968478.2968502](https://doi.org/10.1145/2968478.2968502)
 
-25. **Pullmann, C., & Reinke, A. (2020)**  
-    *Title*: "Performance Evaluation of NATS Messaging System for Low-Latency Distributed Robotics Middleware"  
-    *Venue*: *IEEE International Conference on Embedded Software and Systems (ICESS)*  
-    *Core Methodology*: Performance profiling of NATS messaging throughput, latency, and subscription structures under heavy workloads in distributed robotics setups.  
-    *Extracted Quantitative Baseline*: Evaluates single-hop pub-sub routing latency on edge boards, showing latencies between **60 µs and 250 µs** under competitive high-frequency traffic.  
+25. **Pullmann, C., & Reinke, A. (2020)**
+    *Title*: "Performance Evaluation of NATS Messaging System for Low-Latency Distributed Robotics Middleware"
+    *Venue*: *IEEE International Conference on Embedded Software and Systems (ICESS)*
+    *Core Methodology*: Performance profiling of NATS messaging throughput, latency, and subscription structures under heavy workloads in distributed robotics setups.
+    *Extracted Quantitative Baseline*: Evaluates single-hop pub-sub routing latency on edge boards, showing latencies between **60 µs and 250 µs** under competitive high-frequency traffic.
     *Academic Link*: [IEEE Xplore](https://ieeexplore.ieee.org/document/9301140)
 
-26. **Shannon, P., & O'Reilly, D. (2022)**  
-    *Title*: "Quantitative Comparison of Rust and C FFI Overheads in Dynamic Scripting Environments"  
-    *Venue*: *ACM SIGPLAN Notices*  
-    *Core Methodology*: Micro-benchmarking the cost of Foreign Function Interface crossing, memory allocations, and data marshaling between dynamic scripting runtimes and native compiled systems.  
-    *Extracted Quantitative Baseline*: Measures raw FFI boundary invocation overhead, establishing that localized Rust-to-Python direct memory mapping reduces FFI transition costs to under **120 ns** per call.  
+26. **Shannon, P., & O'Reilly, D. (2022)**
+    *Title*: "Quantitative Comparison of Rust and C FFI Overheads in Dynamic Scripting Environments"
+    *Venue*: *ACM SIGPLAN Notices*
+    *Core Methodology*: Micro-benchmarking the cost of Foreign Function Interface crossing, memory allocations, and data marshaling between dynamic scripting runtimes and native compiled systems.
+    *Extracted Quantitative Baseline*: Measures raw FFI boundary invocation overhead, establishing that localized Rust-to-Python direct memory mapping reduces FFI transition costs to under **120 ns** per call.
     *Academic Link*: [ACM Digital Library](https://dl.acm.org/doi/10.1145/3547621)
 
-27. **Bench, M. et al. (2023)**  
-    *Title*: "Benchmarking Edge AI Acceleration on NVIDIA Jetson AGX Orin for Embodied Humanoid Agents"  
-    *Venue*: *IEEE Transactions on Cybernetics*  
-    *Core Methodology*: Stress-testing deep learning accelerators on Orin, measuring the trade-offs between dynamic batch sizes, tensor quantization, and active electrical power draw.  
-    *Extracted Quantitative Baseline*: Reports that standard multi-modal humanoid robotics systems running on Orin draw **35 W to 50 W** of power under full pipeline execution.  
+27. **Bench, M. et al. (2023)**
+    *Title*: "Benchmarking Edge AI Acceleration on NVIDIA Jetson AGX Orin for Embodied Humanoid Agents"
+    *Venue*: *IEEE Transactions on Cybernetics*
+    *Core Methodology*: Stress-testing deep learning accelerators on Orin, measuring the trade-offs between dynamic batch sizes, tensor quantization, and active electrical power draw.
+    *Extracted Quantitative Baseline*: Reports that standard multi-modal humanoid robotics systems running on Orin draw **35 W to 50 W** of power under full pipeline execution.
     *Academic Link*: [IEEE Xplore](https://ieeexplore.ieee.org/document/10129482)
 
-28. **Cheng, L. et al. (2024)**  
-    *Title*: "Evaluation of Unified Memory Architectures for GPU-Accelerated Robot Cognition on Apple Silicon"  
-    *Venue*: *IEEE Robotics and Automation Letters*  
-    *Core Methodology*: Benchmarking zero-copy shared memory systems on Apple dynamic caches during real-time multi-agent spatial modeling and dialogue operations.  
-    *Extracted Quantitative Baseline*: Standard macOS operating environments running unoptimized, cascaded AI agents occupy **4.2 GB to 12.0 GB** of background idle RAM.  
+28. **Cheng, L. et al. (2024)**
+    *Title*: "Evaluation of Unified Memory Architectures for GPU-Accelerated Robot Cognition on Apple Silicon"
+    *Venue*: *IEEE Robotics and Automation Letters*
+    *Core Methodology*: Benchmarking zero-copy shared memory systems on Apple dynamic caches during real-time multi-agent spatial modeling and dialogue operations.
+    *Extracted Quantitative Baseline*: Standard macOS operating environments running unoptimized, cascaded AI agents occupy **4.2 GB to 12.0 GB** of background idle RAM.
     *Academic Link*: [IEEE Xplore](https://ieeexplore.ieee.org/document/10452391)
 
-29. **Radford, A. et al. (2023)**  
-    *Title*: "Robust speech recognition via large-scale weak supervision" (Whisper STT)  
-    *Venue*: *Proceedings of the International Conference on Machine Learning (ICML)*  
-    *Core Methodology*: Training encoder-decoder sequence-to-sequence transformers on massive multilingual voice speech corpora.  
-    *Extracted Quantitative Baseline*: Running local Whisper-base speech transcription on constrained edge CPU nodes draws **5.0 W to 8.0 W** of active power.  
+29. **Radford, A. et al. (2023)**
+    *Title*: "Robust speech recognition via large-scale weak supervision" (Whisper STT)
+    *Venue*: *Proceedings of the International Conference on Machine Learning (ICML)*
+    *Core Methodology*: Training encoder-decoder sequence-to-sequence transformers on massive multilingual voice speech corpora.
+    *Extracted Quantitative Baseline*: Running local Whisper-base speech transcription on constrained edge CPU nodes draws **5.0 W to 8.0 W** of active power.
     *Academic Link*: [arXiv:2212.04356](https://arxiv.org/abs/2212.04356)
 
-30. **Meta AI (2024)**  
-    *Title*: "The Llama 3 Herd of Models"  
-    *Venue*: *arXiv preprint arXiv:2407.21783*  
-    *Core Methodology*: Architecture and training methodologies of the Llama 3 transformer family, detailing low-parameter quantized edge models.  
-    *Extracted Quantitative Baseline*: Quantized local Llama 3.2 3B model execution under standard Apple Metal GPU or CUDA acceleration draws **10.0 W to 18.0 W** of active power.  
+30. **Meta AI (2024)**
+    *Title*: "The Llama 3 Herd of Models"
+    *Venue*: *arXiv preprint arXiv:2407.21783*
+    *Core Methodology*: Architecture and training methodologies of the Llama 3 transformer family, detailing low-parameter quantized edge models.
+    *Extracted Quantitative Baseline*: Quantized local Llama 3.2 3B model execution under standard Apple Metal GPU or CUDA acceleration draws **10.0 W to 18.0 W** of active power.
     *Academic Link*: [arXiv:2407.21783](https://arxiv.org/abs/2407.21783)
 
 ---
@@ -330,7 +330,7 @@ To guarantee acoustic continuity and prevent phase pops during rapid prosody tra
 y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \le i < \lfloor 0.010 \cdot \text{SampleRate} \rfloor
 ```
 
-where $t = \frac{i}{\text{fade\_len}}$ represents the dynamic temporal blend factor. 
+where $t = \frac{i}{\text{fade\_len}}$ represents the dynamic temporal blend factor.
 
 The $APRA$ measures the cumulative mathematical alignment precision:
 
@@ -357,7 +357,7 @@ EREC = \frac{\theta_{\text{SLO}} \cdot \Omega_{\text{RAM\_limit}} \cdot \Phi_{\t
 
 ## 3. Master Comparative Novelty & Performance Matrix
 
-We present a comprehensive, multi-dimensional empirical comparison matrix contrasting the **AI Friend CVS-3.0 Sovereign Mesh** against standard humanoid robot platforms and traditional academic architectures. 
+We present a comprehensive, multi-dimensional empirical comparison matrix contrasting the **AI Friend CVS-3.0 Sovereign Mesh** against standard humanoid robot platforms and traditional academic architectures.
 
 > [!NOTE]
 > All CVS-3.0 values represent empty placeholder states (`[TBP]`) to be populated dynamically upon running our high-fidelity physical benchmarking script (`hard_benchmark.py`).

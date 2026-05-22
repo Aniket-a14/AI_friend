@@ -1,6 +1,6 @@
 import os
 import re
-import time
+
 
 def load_nrc_vad_lexicon():
     lexicon = {}
@@ -32,9 +32,11 @@ class DualOracleScorer:
     Implements a multi-dimensional emotional sentiment scorer mapping continuous Valence/Arousal
     using VADER compound scores merged with NRC-VAD valence/arousal averages.
     """
+
     def __init__(self):
         try:
             from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
             self.vader = SentimentIntensityAnalyzer()
         except ImportError:
             print("⚠️ vaderSentiment not found. Running with fallback sentiment model.")

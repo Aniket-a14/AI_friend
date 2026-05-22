@@ -164,11 +164,11 @@ sequenceDiagram
     Note over W, B: Stage 2 — Semantic Resolution
     W->>B: ChatInput (Typed Contract)
     B->>B: Multimodal Context Merge (Audio + Vision)
-    
+
     Note over B, V: Stage 3 — Cognitive Action
     B-->>V: audio.stop (confirmed) / audio.resume
     B->>V: ChatOutput (Segments + Affect Vector)
-    
+
     Note over V, U: Stage 4 — Signal Rendering
     V->>V: prosody.py → playback.py
     V->>T: 32kHz PCM → audio.stream

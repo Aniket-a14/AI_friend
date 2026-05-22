@@ -376,7 +376,7 @@ sudo apt install nginx certbot python3-certbot-nginx
 server {
     listen 80;
     server_name yourdomain.com;
-    
+
     location / {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
@@ -391,7 +391,7 @@ server {
 server {
     listen 80;
     server_name api.yourdomain.com;
-    
+
     location / {
         proxy_pass http://localhost:8000;
         proxy_http_version 1.1;
@@ -399,7 +399,7 @@ server {
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
         proxy_cache_bypass $http_upgrade;
-        
+
         # WebSocket specific
         proxy_read_timeout 86400;
     }
@@ -492,14 +492,14 @@ from logging.handlers import RotatingFileHandler
 def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
-    
+
     # File handler
     handler = RotatingFileHandler(
         'app.log',
         maxBytes=10485760,  # 10MB
         backupCount=5
     )
-    
+
     # Format
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

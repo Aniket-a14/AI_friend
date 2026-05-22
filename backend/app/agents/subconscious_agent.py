@@ -367,7 +367,7 @@ class SubconsciousAgent(BaseAgent):
             - Concept A: "{concept1}"
             - Concept B: "{concept2}"
             - Concept C: "{concept3}"
-            
+
             Synthesize a brief, insightful, and slightly surreal dream description (2-3 sentences max) linking these concepts.
             Format it as a personal reflection.
             Respond with ONLY the dream insight text.
