@@ -17,7 +17,6 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 LOG_FILE = os.path.join(RESULTS_DIR, "research_pad_trajectory.csv")
 
 
-
 async def run_collector():
     """
     Research State Collector.

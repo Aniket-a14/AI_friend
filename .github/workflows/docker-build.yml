@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-      
+
     - name: Build Backend Slim Image
       uses: docker/build-push-action@v6
       with:
@@ -36,7 +36,7 @@ jobs:
         tags: ai-friend/backend-full:ci
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        
+
     - name: Validate Production Compose Config
       run: |
         # Create dummy .env for config check (values don't matter for 'config' command)
@@ -46,6 +46,6 @@ jobs:
         echo "POSTGRES_PASSWORD=dummy" >> .env
         echo "NEO4J_AUTH=neo4j/dummy" >> .env
         echo "DATABASE_URL=postgresql://dummy" >> .env
-        
+
         # Verify the compose files parse correctly together
         docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config

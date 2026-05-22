@@ -46,13 +46,14 @@ def test_eriksonian_db_schema_attributes(temp_store):
     # Retrieve memory using search_memories
     with patch.object(temp_store, "get_embedding", return_value=[0.1] * 768):
         results = asyncio.run(
-            temp_store.search_memories(
-                "childhood in Kolkata", threshold=-5.0, limit=1
-            )
+            temp_store.search_memories("childhood in Kolkata", threshold=-5.0, limit=1)
         )
         assert len(results) == 1
         mem = results[0]
-        assert mem["content"] == "I spent my childhood in Kolkata, learning cognitive architectures."
+        assert (
+            mem["content"]
+            == "I spent my childhood in Kolkata, learning cognitive architectures."
+        )
         assert mem["lifespan_stage"] == "School Age"
         assert mem["crisis"] == "Industry vs Inferiority"
         assert mem["virtue"] == "Competence"
@@ -79,15 +80,15 @@ def test_cue_and_spreading_activation_boosts(temp_store):
             )
         )
         asyncio.run(
-            temp_store.add_memory(
-                content="An unrelated memory.", wing="personal"
-            )
+            temp_store.add_memory(content="An unrelated memory.", wing="personal")
         )
 
     # 1. Search with NO cues (baseline)
     with patch.object(temp_store, "get_embedding", return_value=[0.1] * 768):
         baseline_results = asyncio.run(
-            temp_store.search_memories("unrelated query", threshold=-5.0, limit=5, refresh_on_recall=False)
+            temp_store.search_memories(
+                "unrelated query", threshold=-5.0, limit=5, refresh_on_recall=False
+            )
         )
         # Store baseline scores
         baseline_scores = {r["content"]: r["score"] for r in baseline_results}
@@ -98,23 +99,33 @@ def test_cue_and_spreading_activation_boosts(temp_store):
     # 2. Search with "Priya" (matches cue 'priya')
     with patch.object(temp_store, "get_embedding", return_value=[0.1] * 768):
         cued_results = asyncio.run(
-            temp_store.search_memories("Query about Priya", threshold=-5.0, limit=5, refresh_on_recall=False)
+            temp_store.search_memories(
+                "Query about Priya", threshold=-5.0, limit=5, refresh_on_recall=False
+            )
         )
         cued_scores = {r["content"]: r["score"] for r in cued_results}
 
     # Verify boosts
     # Memory A contains 'priya' -> Direct Boost (+1.2)
     expected_a_boost = 1.2
-    actual_a_boost = cued_scores["Priya is my partner, she lives in Kolkata."] - baseline_scores["Priya is my partner, she lives in Kolkata."]
+    actual_a_boost = (
+        cued_scores["Priya is my partner, she lives in Kolkata."]
+        - baseline_scores["Priya is my partner, she lives in Kolkata."]
+    )
     assert math.isclose(actual_a_boost, expected_a_boost, abs_tol=1e-4)
 
     # Memory B contains 'kolkata', which is shared with Memory A (directly boosted) -> Spreading Boost (+0.6)
     expected_b_boost = 0.6
-    actual_b_boost = cued_scores["Kolkata is a beautiful city."] - baseline_scores["Kolkata is a beautiful city."]
+    actual_b_boost = (
+        cued_scores["Kolkata is a beautiful city."]
+        - baseline_scores["Kolkata is a beautiful city."]
+    )
     assert math.isclose(actual_b_boost, expected_b_boost, abs_tol=1e-4)
 
     # Memory C has no shared entities -> No Boost (0.0)
-    actual_c_boost = cued_scores["An unrelated memory."] - baseline_scores["An unrelated memory."]
+    actual_c_boost = (
+        cued_scores["An unrelated memory."] - baseline_scores["An unrelated memory."]
+    )
     assert math.isclose(actual_c_boost, 0.0, abs_tol=1e-4)
 
 
@@ -126,7 +137,7 @@ def test_pruning_threshold_decay(temp_store):
     # so we can control the exact hours_since decay calculation.
     # Memory A (Created 1000 hours ago) -> Activation: ln(1) - 0.5 * ln(1000 + 1) = -3.454 (Preserved)
     # Memory B (Created 2000 hours ago) -> Activation: ln(1) - 0.5 * ln(2000 + 1) = -3.800 (Pruned)
-    
+
     time_a = (now - timedelta(hours=1000)).strftime("%Y-%m-%d %H:%M:%S")
     time_b = (now - timedelta(hours=2000)).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -135,12 +146,16 @@ def test_pruning_threshold_decay(temp_store):
             # Insert Memory A
             await conn.execute(
                 "INSERT INTO memories (content, recall_count, created_at, last_recalled_at, wing) VALUES (?, 1, ?, ?, 'personal')",
-                "Memory A", time_a, time_a
+                "Memory A",
+                time_a,
+                time_a,
             )
             # Insert Memory B
             await conn.execute(
                 "INSERT INTO memories (content, recall_count, created_at, last_recalled_at, wing) VALUES (?, 1, ?, ?, 'personal')",
-                "Memory B", time_b, time_b
+                "Memory B",
+                time_b,
+                time_b,
             )
 
     asyncio.run(insert_helper())

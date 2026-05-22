@@ -111,18 +111,17 @@ impl OlaCrossfadeFilter {
         self.last_prosody = Some(prosody);
 
         if is_shift {
-            let n = (self.sample_rate * 10 / 1000) as usize; // 10ms of samples
             if !self.last_samples.is_empty() {
                 self.active_fade_buffer = self.last_samples.clone();
                 self.fade_in_progress = true;
                 self.fade_index = 0;
-                info!("Prosody shift detected! Initiating 10ms OLA crossfade.");
+                info!("Prosody shift detected! Initiating 15ms OLA crossfade.");
             }
         }
     }
 
     fn process(&mut self, bytes: &[u8]) -> Vec<u8> {
-        let n = (self.sample_rate * 10 / 1000) as usize;
+        let n = (self.sample_rate * 15 / 1000) as usize;
 
         let mut framed = Vec::with_capacity(bytes.len() + if self.pending_byte.is_some() { 1 } else { 0 });
         if let Some(byte) = self.pending_byte.take() {
@@ -337,7 +336,7 @@ fn generate_hesitation_pcm(duration_ms: u32, sample_rate: u32, pitch: f64) -> Ve
     let mut pcm = Vec::with_capacity(num_samples * 2);
     let f0 = 150.0 * pitch;
     let omega = 2.0 * std::f64::consts::PI * f0 / (sample_rate as f64);
-    
+
     for i in 0..num_samples {
         let sine = (omega * i as f64).sin() * 300.0;
         let noise = (((i * 1103515245 + 12345) / 65536) % 201) as f64 - 100.0;
@@ -653,8 +652,8 @@ mod tests {
 
     #[test]
     fn test_ola_crossfade_filter() {
-        let mut filter = OlaCrossfadeFilter::new(32_000); // 320 samples for 10ms
-        
+        let mut filter = OlaCrossfadeFilter::new(32_000); // 480 samples for 15ms
+
         // Initial state, no shift
         let p1 = contracts::Prosody {
             rate: 1.0,
@@ -663,20 +662,20 @@ mod tests {
             pause_bias: 0.5,
         };
         filter.notify_new_prosody(p1);
-        
-        let chunk1 = vec![100_i16; 400]; // 400 samples
+
+        let chunk1 = vec![100_i16; 600]; // 600 samples
         let mut chunk1_bytes = Vec::new();
         for &s in &chunk1 {
             chunk1_bytes.extend_from_slice(&s.to_le_bytes());
         }
-        
+
         let out1 = filter.process(&chunk1_bytes);
         assert_eq!(out1, chunk1_bytes); // Since there is no shift, it should be untouched
-        
-        // Let's check that rolling buffer is updated. The rolling buffer should contain the last 320 samples (all 100).
-        assert_eq!(filter.last_samples.len(), 320);
+
+        // Let's check that rolling buffer is updated. The rolling buffer should contain the last 480 samples (all 100).
+        assert_eq!(filter.last_samples.len(), 480);
         assert!(filter.last_samples.iter().all(|&s| s == 100));
-        
+
         // Shift prosody!
         let p2 = contracts::Prosody {
             rate: 1.2,
@@ -686,30 +685,30 @@ mod tests {
         };
         filter.notify_new_prosody(p2);
         assert!(filter.fade_in_progress);
-        
+
         // Process new chunk with different values, say 200_i16
-        let chunk2 = vec![200_i16; 400];
+        let chunk2 = vec![200_i16; 600];
         let mut chunk2_bytes = Vec::new();
         for &s in &chunk2 {
             chunk2_bytes.extend_from_slice(&s.to_le_bytes());
         }
-        
+
         let out2_bytes = filter.process(&chunk2_bytes);
         let out2_samples = out2_bytes
             .chunks_exact(2)
             .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<i16>>();
-            
+
         // First sample should be exactly equal to previous sample (100) because t=0
         assert_eq!(out2_samples[0], 100);
-        
+
         // As index progresses, the value should blend towards 200.
-        // At index 160 (halfway through 320 samples of crossfade): it should be around (100 + 200) / 2 = 150.
-        assert!((out2_samples[160] - 150).abs() <= 2);
-        
-        // At index 320, the crossfade has ended, so it should be exactly 200.
-        assert_eq!(out2_samples[320], 200);
-        
+        // At index 240 (halfway through 480 samples of crossfade): it should be around (100 + 200) / 2 = 150.
+        assert!((out2_samples[240] - 150).abs() <= 2);
+
+        // At index 480, the crossfade has ended, so it should be exactly 200.
+        assert_eq!(out2_samples[480], 200);
+
         // Fade in progress should now be false
         assert!(!filter.fade_in_progress);
     }

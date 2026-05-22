@@ -23,6 +23,7 @@ class CognitivePipeline:
         learning,
         identity,
         llm_service=None,
+        reappraisal=None,
     ):
         self.perception = perception
         self.appraisal = appraisal
@@ -32,6 +33,7 @@ class CognitivePipeline:
         self.learning = learning
         self.identity = identity
         self.llm = llm_service
+        self.reappraisal = reappraisal
         self._system2_task = None
 
     async def execute(
@@ -132,10 +134,37 @@ class CognitivePipeline:
         # 5. State Update via Appraisal (§2.3 — ALMA mood-pull)
         t_start = time.perf_counter()
         if event.event_type == "USER_MESSAGE":
+            # Reappraisal outcome evaluation
+            if self.reappraisal:
+                acoustic_delta = 0.0
+                if (
+                    isinstance(event_metadata, dict)
+                    and "acoustic_metadata" in event_metadata
+                ):
+                    acoustic_delta = event_metadata["acoustic_metadata"].get(
+                        "emotion_bias", 0.0
+                    )
+                elif "acoustic_metadata" in raw_event:
+                    acoustic_delta = raw_event["acoustic_metadata"].get(
+                        "emotion_bias", 0.0
+                    )
+
+                actual_text_valence = appraisal_vector.goal_congruence
+                tom = event.metadata.get("tom_inferences", {}) if event.metadata else {}
+                if isinstance(tom, dict) and "inferred_valence" in tom:
+                    actual_text_valence = tom["inferred_valence"]
+
+                await self.reappraisal.evaluate_outcome(
+                    actual_text_valence=actual_text_valence,
+                    acoustic_delta=acoustic_delta,
+                    behavioral_signal=0.5,
+                )
+
             # Pre-Decision Vocabulary Update (zero LLM overhead concepts indexing)
             await self.state.update_theory_of_mind(event.raw_content)
 
-            await self.state.update_from_appraisal(appraisal_vector)
+            weights = self.reappraisal.get_weights() if self.reappraisal else None
+            await self.state.update_from_appraisal(appraisal_vector, weights=weights)
 
             # Trigger System 2 deep appraisal in background (non-blocking)
             if self.llm:
@@ -179,6 +208,12 @@ class CognitivePipeline:
         event.metadata["appraisal"] = appraisal_vector.to_dict()
 
         plan = await self.decision.decide(event, state_snapshot)
+
+        if self.reappraisal:
+            self.reappraisal.record_pre_response_state(state_snapshot)
+            self.reappraisal.record_expected_outcome(
+                plan.goal, state_snapshot.get("mood", 0.0)
+            )
 
         # Post-Decision ToM Application: ingest LLM-inferred parameters to state
         if event.event_type == "USER_MESSAGE":

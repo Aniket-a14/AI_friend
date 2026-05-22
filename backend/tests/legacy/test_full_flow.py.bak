@@ -47,13 +47,13 @@ class TestFullFlow(unittest.IsolatedAsyncioTestCase):
         self.mock_stt.close = AsyncMock()
         self.mock_llm.generate_response = AsyncMock(return_value="Hello user")
         self.mock_tts.stream_audio = MagicMock(return_value=iter([b'audio']))
-        
+
         # Mock STT receive to yield a result then wait
         async def mock_receive():
             yield "Hello AI", True
             # Keep yielding nothing or wait to simulate open connection
-            # await asyncio.sleep(1) 
-        
+            # await asyncio.sleep(1)
+
         self.mock_stt.receive = mock_receive
 
     async def asyncTearDown(self):
@@ -68,39 +68,39 @@ class TestFullFlow(unittest.IsolatedAsyncioTestCase):
 
     async def test_wake_word_to_response(self):
         backend = AIBackend()
-        
+
         # Scenario:
         # 1. Frame 1: Silence
         # 2. Frame 2: Wake Word Detected
         # 3. Frame 3: Speech (VAD True)
         # 4. Frame 4: Silence (VAD False) -> triggers STT result processing in loop
         # But STT result comes from stt_loop task.
-        
-        # We need to control the loop. 
+
+        # We need to control the loop.
         # We can let it run for a short time and then stop it.
-        
+
         # Mock Audio Stream to return frames
-        # We use side_effect to return frames and then None to simulate wait, 
-        # but main loop waits for None. 
-        # Let's return a few frames then raise KeyboardInterrupt to stop the loop cleanly? 
+        # We use side_effect to return frames and then None to simulate wait,
+        # but main loop waits for None.
+        # Let's return a few frames then raise KeyboardInterrupt to stop the loop cleanly?
         # Or just set backend.running = False after some time.
-        
+
         frames = [b'silence', b'wake', b'speech', b'silence']
         frame_iter = iter(frames)
-        
+
         def get_frame_side_effect():
             try:
                 return next(frame_iter)
             except StopIteration:
                 return None
-        
+
         self.mock_audio_stream.get_frame.side_effect = get_frame_side_effect
-        
+
         # Mock Wake Word to detect on 2nd frame (b'wake')
         def wake_process(frame):
             return frame == b'wake'
         self.mock_wake_word.process.side_effect = wake_process
-        
+
         # Mock VAD to detect speech on 3rd frame
         def vad_process(frame):
             return frame == b'speech'
@@ -108,30 +108,30 @@ class TestFullFlow(unittest.IsolatedAsyncioTestCase):
 
         # Run backend in a task
         run_task = asyncio.create_task(backend.run())
-        
+
         # Wait for flow to happen
         await asyncio.sleep(0.5)
-        
+
         # Verify Wake Word detected
         self.mock_wake_word.process.assert_called()
         # Verify STT connected
         self.mock_stt.connect.assert_called()
-        
+
         # Verify STT received audio
-        # self.mock_stt.send_audio.assert_called_with(b'speech') 
+        # self.mock_stt.send_audio.assert_called_with(b'speech')
         # Note: send_audio is called when VAD is true AND state is ACTIVE_SESSION.
         # After wake word, state becomes ACTIVE_SESSION.
         # Next frame is b'speech', VAD is true -> send_audio called.
-        
+
         # Verify LLM called (triggered by stt_loop receiving "Hello AI")
         self.mock_llm.generate_response.assert_called_with("Hello AI")
-        
+
         # Verify TTS called
         self.mock_tts.stream_audio.assert_called_with("Hello user")
-        
+
         # Verify Audio Player called
         self.mock_audio_player.play_stream.assert_called()
-        
+
         # Stop backend
         backend.running = False
         await run_task

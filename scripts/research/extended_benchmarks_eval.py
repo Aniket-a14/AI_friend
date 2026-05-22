@@ -1400,7 +1400,9 @@ def compile_pdf_report(data):
 
     story.append(Spacer(1, 10))
     radar_img = Image(
-        os.path.join(RESULTS_DIR, "extended_benchmarks_radar.png"), width=180, height=180
+        os.path.join(RESULTS_DIR, "extended_benchmarks_radar.png"),
+        width=180,
+        height=180,
     )
     story.append(
         KeepTogether(

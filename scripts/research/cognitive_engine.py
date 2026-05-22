@@ -377,29 +377,33 @@ class AcceleratedCognitiveEngine:
         tom_err_a = abs(cvs_inferred_a - gt_arousal)
 
         # 7. OLA DSP Speech Synthesis Prosody Modulations
-        rate = max(
-            0.60,
-            min(
-                1.80,
-                1.0 + 0.20 * self.arousal - 0.10 * self.valence - 0.25 * self.fatigue,
-            ),
+        fatigue_slow = 0.25 * self.fatigue
+        fatigue_pitch_drop = 0.1 * self.fatigue
+
+        user_distance = getattr(self, "user_distance", 1.0)
+        if user_distance < 0.6:
+            dist_vol_mod, dist_pitch_mod = -0.15, -0.05
+        elif user_distance > 1.5:
+            dist_vol_mod, dist_pitch_mod = 0.2, 0.1
+        else:
+            dist_vol_mod, dist_pitch_mod = 0.0, 0.0
+
+        rate_input = 0.20 * self.arousal - 0.10 * self.valence - fatigue_slow
+        rate = 1.0 + math.tanh(rate_input)
+        rate = max(0.60, min(1.80, rate))
+
+        pitch_input = (
+            0.05 * self.valence
+            + 0.15 * self.arousal
+            - 0.10 * self.dominance
+            - fatigue_pitch_drop
+            + dist_pitch_mod
         )
-        pitch = max(
-            0.50,
-            min(
-                2.00,
-                1.0
-                + 0.05 * self.valence
-                + 0.15 * self.arousal
-                - 0.10 * self.dominance
-                - 0.10 * self.fatigue
-                + random.normalvariate(0, 0.02),
-            ),
-        )
-        volume = max(
-            0.10,
-            min(1.00, 0.40 + 0.60 * self.dominance + random.normalvariate(0, 0.01)),
-        )
+        pitch = 1.0 + math.tanh(pitch_input)
+        pitch = max(0.50, min(2.00, pitch + random.normalvariate(0, 0.02)))
+
+        volume = 0.40 + 0.60 * self.dominance + dist_vol_mod
+        volume = max(0.10, min(1.00, volume + random.normalvariate(0, 0.01)))
 
         ola_phase_pop_detected = False
         if abs(pitch - 1.0) > 0.95:

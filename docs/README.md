@@ -17,7 +17,7 @@ organic memory, and future robotics compatibility.
   agents, cognition, state, memory, voice, and feedback loops.
 - [API_SPEC.md](./API_SPEC.md) defines the REST endpoints and NATS subjects used
   by the runtime.
-- [ROBOTICS_ANALYSIS.md](./ROBOTICS_ANALYSIS.md) provides a deep-dive into the 
+- [ROBOTICS_ANALYSIS.md](./ROBOTICS_ANALYSIS.md) provides a deep-dive into the
   architectural performance and the roadmap for humanoid embodiment.
 
 ---

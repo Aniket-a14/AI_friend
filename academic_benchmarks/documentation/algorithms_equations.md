@@ -14,7 +14,7 @@ Primary appraisal evaluates the immediate significance of an event for the agent
 *   **Relevance ($R \in [0, 1]$):** Quantifies the attention weight of the event. User-initiated dialogue events are treated as high relevance, while autonomous internal ticks are low relevance:
 
 ```math
-R = \begin{cases} 
+R = \begin{cases}
   1.0 & \text{if event is } \texttt{USER\_MESSAGE} \\
   0.1 & \text{if event is } \texttt{SYSTEM\_TICK} \\
   0.5 & \text{otherwise}
@@ -40,7 +40,7 @@ Secondary appraisal evaluates the agent's coping potential, social norms, and re
 *   **Agency ($A \in [0, 1]$):** Attributes causal responsibility. For user messages, the agent holds high coping agency since it can generate a verbal response; for system ticks, agency is lower:
 
 ```math
-A = \begin{cases} 
+A = \begin{cases}
   0.8 & \text{if event is } \texttt{USER\_MESSAGE} \\
   0.3 & \text{otherwise}
 \end{cases}
@@ -57,7 +57,7 @@ NA = \max\left(0.0, 1.0 - 0.2 \cdot \sum_{b \in B} \mathbb{I}(\text{Violation}(b
 *   **Relationship Impact ($RI \in [-1, 1]$):** extension that projects the social valence of the interaction. Modulated by existing relational trust $T$:
 
 ```math
-RI = \begin{cases} 
+RI = \begin{cases}
   E_b \cdot 0.25 & \text{if } T < 0.3 \text{ (Low trust dampens positive impact)} \\
   E_b \cdot 0.50 & \text{otherwise}
 \end{cases}
@@ -141,9 +141,9 @@ Three continuous hormones modulate the LLM's generation hyperparameters (tempera
 *   **Fatigue Cycle ($F \in [0, 1]$):** Metabolic wear-and-tear accumulated during active turns and recovered during idle intervals. Governed by a circadian multiplier $\mu_{\text{circadian}}$ (set to $1.8$ at night $22:00\text{--}06:00$, otherwise $1.0$):
 
 ```math
-F(t) = \begin{cases} 
+F(t) = \begin{cases}
   \text{clamp}\left(F(t-1) + \frac{0.15 \cdot \Delta t \cdot \mu_{\text{circadian}}}{3600}, 0.0, 1.0\right) & \text{if active interaction} \\
-  \text{clamp}\left(F(t-1) - \frac{0.20 \cdot \Delta t}{\mu_{\text{circadian}} \cdot 3600}, 0.0, 1.0\right) & \text{if idle/resting} 
+  \text{clamp}\left(F(t-1) - \frac{0.20 \cdot \Delta t}{\mu_{\text{circadian}} \cdot 3600}, 0.0, 1.0\right) & \text{if idle/resting}
 \end{cases}
 ```
 
@@ -211,7 +211,7 @@ The scores $S$ for each attribute are defined dynamically based on the current s
 To prevent erratic goal switching during rapid dialogue turns, we implement temporal smoothing with a persistence rate $\rho = 0.15$ coupled with a hard context gating threshold $\theta_{\text{shift}} = 0.3$ (using Novelty $N$ as the shift proxy):
 
 ```math
-U_{\text{final}}(g, t) = \begin{cases} 
+U_{\text{final}}(g, t) = \begin{cases}
   (1 - \rho) \cdot U_{\text{final}}(g, t-1) + \rho \cdot U(g, t) & \text{if } N < \theta_{\text{shift}} \\
   U(g, t) \quad \text{(Hard Reset)} & \text{if } N \ge \theta_{\text{shift}}
 \end{cases}
@@ -319,21 +319,21 @@ def retrieve_episodic_memory(context_query, active_pad_vector, neo4j_driver):
     """
     # Step 1: dense vector extraction of context cues
     dense_vector = generate_dense_embeddings(context_query)
-    
+
     # Step 2: execute graph multi-hop search in Neo4j (structural search)
     retrieved_chunks = neo4j_driver.query_hops(dense_vector, max_depth=3)
-    
+
     max_activation = -float('inf')
     best_chunk = None
-    
+
     for chunk in retrieved_chunks:
         # Calculate sub-symbolic temporal logarithmic decay
         elapsed_sec = time.time() - chunk.creation_time
         base_decay = math.log(elapsed_sec ** -0.5)  # d = 0.5 ACT-R constant
-        
+
         # Calculate associative graph attentional weight
         attn_weight = chunk.attentional_cue_strength * chunk.hop_depth_factor
-        
+
         # Calculate PAD emotional congruence Euclidean distance
         emo_dist = math.sqrt(
             (active_pad_vector[0] - chunk.pad_valence) ** 2 +
@@ -341,18 +341,18 @@ def retrieve_episodic_memory(context_query, active_pad_vector, neo4j_driver):
             (active_pad_vector[2] - chunk.pad_dominance) ** 2
         )
         emo_congruency = 0.15 * (1.0 - emo_dist)
-        
+
         # Inject stochastic cognitive noise
         epsilon = random.normalvariate(0, 0.02)
-        
+
         # Compute total activation
         total_activation = base_decay + attn_weight + emo_congruency + epsilon
-        
+
         # Gating threshold check
         if total_activation > -1.50 and total_activation > max_activation:
             max_activation = total_activation
             best_chunk = chunk
-            
+
     return best_chunk
 ```
 
@@ -372,10 +372,10 @@ async def barge_in_gating_loop(audio_stream, active_tts_process):
             # Immediate physical audio halt
             active_tts_process.mute_playback()
             t_stop = time.time()
-            
+
             # Spawn speculative System 2 Segmenter in background
             is_valid_interruption = await system2_speculative_scan(frame)
-            
+
             if is_valid_interruption:
                 # True interruption: flush active dialogue pipelines and route user turn
                 publish_nats_event("chat.interrupted", {"t_stop": t_stop})

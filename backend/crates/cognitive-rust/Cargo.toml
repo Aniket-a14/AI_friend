@@ -12,4 +12,3 @@ crate-type = ["cdylib", "rlib"]
 pyo3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-

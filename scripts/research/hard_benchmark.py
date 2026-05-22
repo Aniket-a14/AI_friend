@@ -2,6 +2,7 @@
 import asyncio
 import json
 import time
+import math
 import os
 import sys
 import random
@@ -658,9 +659,24 @@ async def run_physical_benchmark(iterations: int):
         fatigue = affect.get("fatigue", 0.0)
 
         # Vocal modulation mapping
-        pitch = (
-            1.0 + 0.05 * valence + 0.15 * arousal - 0.10 * dominance - 0.10 * fatigue
+        user_distance = affect.get("user_distance", 1.0)
+        fatigue_pitch_drop = 0.1 * fatigue
+
+        if user_distance < 0.6:
+            dist_pitch_mod = -0.05
+        elif user_distance > 1.5:
+            dist_pitch_mod = 0.1
+        else:
+            dist_pitch_mod = 0.0
+
+        pitch_input = (
+            0.05 * valence
+            + 0.15 * arousal
+            - 0.10 * dominance
+            - fatigue_pitch_drop
+            + dist_pitch_mod
         )
+        pitch = 1.0 + math.tanh(pitch_input)
         pitch = max(0.50, min(2.00, pitch + random.normalvariate(0, 0.02)))
         ola_intact = abs(pitch - 1.0) <= 0.95
         vocal_ola_results.append(ola_intact)

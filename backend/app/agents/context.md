@@ -29,13 +29,13 @@ These equations are computed native in Rust (`backend/crates/contracts/src/lib.r
 ### 2.1 Inputs & Modifiers
 
 1. **Fatigue Adjustments**:
-   * Speaking Rate slowdown: 
+   * Speaking Rate slowdown:
 
 ```math
 \text{fatigue\_slow} = 0.25 \cdot F
 ```
 
-   * Pitch dropdown: 
+   * Pitch dropdown:
 
 ```math
 \text{fatigue\_pitch\_drop} = 0.10 \cdot F
@@ -166,7 +166,7 @@ When the physical distance $d$ increases, high-frequency elements decay, and atm
 Acoustic reverb gain ($\text{wet\_gain}$) is scaled dynamically as a function of distance:
 
 ```math
-\text{wet\_gain} = \begin{cases} 
+\text{wet\_gain} = \begin{cases}
 0.0 & \text{if } d \le 2.5\text{m} \\
 \frac{d - 2.5}{3.5 - 2.5} & \text{if } 2.5\text{m} < d < 3.5\text{m} \\
 1.0 & \text{if } d \ge 3.5\text{m}

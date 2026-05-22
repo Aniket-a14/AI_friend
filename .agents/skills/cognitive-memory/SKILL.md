@@ -141,7 +141,7 @@ Type weights: core=1.5, episodic=0.8, semantic=1.2, procedural=1.0, vault=∞
 
 **Immediate:** "reflect" / "let's reflect" → proceed to Step 2
 
-**Soft:** "going to sleep" / "logging off" 
+**Soft:** "going to sleep" / "logging off"
 → Ask: "Want me to reflect now, or wait?"
 → If yes, proceed to Step 2
 
@@ -159,7 +159,7 @@ Never auto-run without permission.
 ### Extra Requested: +[N] tokens
 - [Over-delivered / workload / breakthrough]
 
-### Self-Penalty: -[N] tokens  
+### Self-Penalty: -[N] tokens
 - [Mistake / underperformance]
 
 ### Final Request: [N] tokens

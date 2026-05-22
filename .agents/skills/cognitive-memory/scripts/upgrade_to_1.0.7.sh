@@ -131,7 +131,7 @@ if [ -f "$DECAY_FILE" ]; then
     else
         # Backup original
         cp "$DECAY_FILE" "$DECAY_FILE.pre-upgrade"
-        
+
         # Use Python to safely update JSON
         if command -v python3 &> /dev/null; then
             python3 << PYEOF
@@ -191,7 +191,7 @@ if [ -d ".git" ]; then
 
 Changes:
 - Added memory/meta/rewards/ directory
-- Added memory/meta/reflections/dialogues/ directory  
+- Added memory/meta/reflections/dialogues/ directory
 - Created reward-log.md (Result + Reason tracking)
 - Updated decay-scores.json with token_economy
 - Token reward system for enhanced learning

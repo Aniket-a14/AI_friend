@@ -14,18 +14,18 @@ async def test_brain():
     print("🚀 Connecting to NATS...")
     nc = await nats.connect("nats://localhost:4222")
     js = nc.jetstream()
-    
+
     print("📡 Sending test message to chat.input...")
     test_msg = {
         "text": "Hey! How are you doing today?",
         "session_id": "test_session"
     }
-    
+
     await js.publish("chat.input", json.dumps(test_msg).encode())
-    
+
     print("👂 Waiting for response on chat.output...")
     sub = await js.subscribe("chat.output")
-    
+
     response_received = False
     try:
         while True:
@@ -33,17 +33,17 @@ async def test_brain():
             data = json.loads(msg.data.decode())
             chunk = data.get("chunk", "")
             done = data.get("done", False)
-            
+
             if chunk:
                 print(chunk, end="", flush=True)
-            
+
             if done:
                 print("\n\n✅ Response complete!")
                 response_received = True
                 break
     except asyncio.TimeoutError:
         print("\n❌ Timeout waiting for response")
-    
+
     await nc.close()
     if not response_received:
         sys.exit(1)

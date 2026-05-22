@@ -513,14 +513,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     Observability logging has been migrated to an asynchronous queue thread, successfully dropping telemetry ingestion cost below <strong>0.5 microseconds</strong>. The voice stream segmenter and memory ACT-R structures remain within our sub-15ms conversation real-time budget bounds.
                 </p>
             </div>
-            
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                 <div style="background-color: var(--bg-card); padding: 1.25rem; border-radius: 0.75rem; border: 1px solid var(--border-color);">
                     <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Async Logging Overhead</div>
                     <div style="font-size: 1.5rem; font-weight: 700; color: var(--accent-success); font-family: 'JetBrains Mono';">0.02%</div>
                     <div style="font-size: 0.7rem; color: var(--accent-success);">🟩 OPTIMIZED</div>
                 </div>
-                
+
                 <div style="background-color: var(--bg-card); padding: 1.25rem; border-radius: 0.75rem; border: 1px solid var(--border-color);">
                     <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Realtime Voice Latency</div>
                     <div style="font-size: 1.5rem; font-weight: 700; color: var(--accent-warning); font-family: 'JetBrains Mono';">3.14 ms</div>
@@ -735,10 +735,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                             <canvas id="categoryChart"></canvas>
                         </div>
                     </div>
-                    
+
                     <div style="margin-top: 1.5rem; background: rgba(59, 130, 246, 0.04); border-left: 4px solid var(--accent-primary); padding: 1rem; border-radius: 0.35rem; font-size: 0.85rem; line-height: 1.45; color: var(--text-secondary);">
                         <strong style="color: var(--text-primary); font-weight: 600; display: block; margin-bottom: 0.25rem;">💡 System Data Science Guide: Logarithmic Axis</strong>
-                        This chart uses an industrial <strong>Logarithmic Decade Scale</strong> ($10^{-4}$ to $10^{2}$ ms). Rather than squashing microsecond telemetry loops (e.g. <code>0.45 μs</code>) onto a flat line relative to millisecond voice normalizers (e.g. <code>4.09 ms</code>), this scale preserves readable ratios across multiple magnitudes. Ticks below <code>1.0 ms</code> represent microseconds (<code>μs</code>); ticks above represent milliseconds (<code>ms</code>). 
+                        This chart uses an industrial <strong>Logarithmic Decade Scale</strong> ($10^{-4}$ to $10^{2}$ ms). Rather than squashing microsecond telemetry loops (e.g. <code>0.45 μs</code>) onto a flat line relative to millisecond voice normalizers (e.g. <code>4.09 ms</code>), this scale preserves readable ratios across multiple magnitudes. Ticks below <code>1.0 ms</code> represent microseconds (<code>μs</code>); ticks above represent milliseconds (<code>ms</code>).
                     </div>
                 </div>
 
@@ -835,7 +835,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             runData.forEach(item => { latest[item.test_name] = item; });
 
             // Calculate ratios relative to target budgets (higher score = closer to or exceeding targets)
-            const obs = latest['test_async_telemetry_queue_put_benchmark'] 
+            const obs = latest['test_async_telemetry_queue_put_benchmark']
                 ? Math.min(100, Math.max(10, 100 - (latest['test_async_telemetry_queue_put_benchmark'].mean * 100000))) : 90;
             const mem = latest['test_memory_semantic_retrieve_benchmark']
                 ? Math.min(100, Math.max(10, 100 * (1.0 - (latest['test_memory_semantic_retrieve_benchmark'].mean / 0.010)))) : 85;
@@ -899,10 +899,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             for (const [metric, run] of Object.entries(latest)) {
                 const cat = pipelineMap[metric] || 'cognitive';
                 const meanMs = run.mean * 1000;
-                
+
                 // Coefficient of variation (CV) as stability metric
                 const cv = run.mean > 0 ? (run.stddev / run.mean) : 0;
-                
+
                 // Bubble size normalized (lower CV = smaller more stable bubble, clamped between 5 and 30 px)
                 const radius = Math.min(30, Math.max(5, cv * 25));
 
@@ -950,7 +950,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                             min: 0.0001,
                             max: 100,
                             grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                            ticks: { 
+                            ticks: {
                                 color: '#9ca3af',
                                 font: { family: 'Outfit' },
                                 callback: function(value) { return value + ' ms'; }
@@ -962,7 +962,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                             min: 10,
                             max: 10000000,
                             grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                            ticks: { 
+                            ticks: {
                                 color: '#9ca3af',
                                 font: { family: 'Outfit' },
                                 callback: function(value) { return value.toLocaleString() + ' OPS'; }
@@ -993,8 +993,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 const valEl = document.getElementById('val-' + id);
                 if (el && valEl && run) {
                     const ms = run.mean * 1000;
-                    const displayVal = ms < 1.0 
-                        ? (run.mean * 1000000).toFixed(1) + ' μs' 
+                    const displayVal = ms < 1.0
+                        ? (run.mean * 1000000).toFixed(1) + ' μs'
                         : ms.toFixed(2) + ' ms';
                     valEl.innerText = displayVal;
 
@@ -1013,7 +1013,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             const run = latest[metricName];
             const panel = document.getElementById('inspectPanel');
-            
+
             document.querySelectorAll('.brain-node').forEach(node => node.classList.remove('active-inspect'));
 
             if (!run) return;
@@ -1033,50 +1033,50 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             panel.style.display = 'block';
             document.getElementById('inspectName').innerText = niceNames[metricName] || metricName;
-            
+
             const ms = run.mean * 1000;
-            const meanDisplay = ms < 1.0 
-                ? (run.mean * 1000000).toFixed(1) + ' μs' 
+            const meanDisplay = ms < 1.0
+                ? (run.mean * 1000000).toFixed(1) + ' μs'
                 : ms.toFixed(3) + ' ms';
             document.getElementById('inspectLatency').innerText = meanDisplay;
 
             document.getElementById('inspectOPS').innerText = run.ops.toLocaleString(undefined, {maximumFractionDigits: 0}) + ' OPS';
-            
+
             const stdMs = run.stddev * 1000;
-            const stdDisplay = stdMs < 1.0 
-                ? (run.stddev * 1000000).toFixed(1) + ' μs' 
+            const stdDisplay = stdMs < 1.0
+                ? (run.stddev * 1000000).toFixed(1) + ' μs'
                 : stdMs.toFixed(3) + ' ms';
             document.getElementById('inspectStdDev').innerText = stdDisplay;
 
             // Calculate Coefficient of Variation to score Stability
             const cv = run.mean > 0 ? (run.stddev / run.mean) : 0;
-            const stabEl = document.getElementById('inspectStability');
+            const stability_el = document.getElementById('inspectStability');
             if (stdMs < 0.3) {
-                stabEl.innerText = "Highly Stable (Microsecond Variance)";
-                stabEl.style.color = 'var(--accent-success)';
+                stability_el.innerText = "Highly Stable (Microsecond Variance)";
+                stability_el.style.color = 'var(--accent-success)';
             } else if (stdMs < 0.8) {
-                stabEl.innerText = "Highly Stable (Sub-millisecond Jitter)";
-                stabEl.style.color = 'var(--accent-success)';
+                stability_el.innerText = "Highly Stable (Sub-millisecond Jitter)";
+                stability_el.style.color = 'var(--accent-success)';
             } else if (cv < 0.1) {
-                stabEl.innerText = "Highly Stable (CV < 10%)";
-                stabEl.style.color = 'var(--accent-success)';
+                stability_el.innerText = "Highly Stable (CV < 10%)";
+                stability_el.style.color = 'var(--accent-success)';
             } else if (cv < 0.3) {
-                stabEl.innerText = "Nominal Stability";
-                stabEl.style.color = 'var(--accent-warning)';
+                stability_el.innerText = "Nominal Stability";
+                stability_el.style.color = 'var(--accent-warning)';
             } else {
-                stabEl.innerText = "Jittery / High Dispersion";
-                stabEl.style.color = 'var(--accent-critical)';
+                stability_el.innerText = "Jittery / High Dispersion";
+                stability_el.style.color = 'var(--accent-critical)';
             }
 
             // Advanced SOTA Metrics
             const p95Ms = (run.p95 || (run.mean * 1.12)) * 1000;
             const p99Ms = (run.p99 || (run.mean * 1.25)) * 1000;
 
-            const p95Display = p95Ms < 1.0 
-                ? (p95Ms * 1000).toFixed(1) + ' μs' 
+            const p95Display = p95Ms < 1.0
+                ? (p95Ms * 1000).toFixed(1) + ' μs'
                 : p95Ms.toFixed(3) + ' ms';
-            const p99Display = p99Ms < 1.0 
-                ? (p99Ms * 1000).toFixed(1) + ' μs' 
+            const p99Display = p99Ms < 1.0
+                ? (p99Ms * 1000).toFixed(1) + ' μs'
                 : p99Ms.toFixed(3) + ' ms';
 
             document.getElementById('inspectP95').innerText = p95Display;
@@ -1162,7 +1162,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             document.getElementById('chartTitle').innerText = categoryTitles[category];
 
             const filteredRuns = runData.filter(item => pipelineMap[item.test_name] === category);
-            
+
             const grouped = {};
             filteredRuns.forEach(item => {
                 if (!grouped[item.test_name]) {
@@ -1178,7 +1178,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             const allUniqueRunIds = [...new Set(runData.map(item => item.run_id))].sort((a, b) => a - b);
             const uniqueRunIds = allUniqueRunIds.slice(-10);
             const uniqueRuns = uniqueRunIds.map(id => `Run #${id}`);
-            
+
             const datasets = [];
             let colorIdx = 0;
 
@@ -1206,7 +1206,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }
 
             if (categoryChart) categoryChart.destroy();
-            
+
             const ctx = document.getElementById('categoryChart').getContext('2d');
             categoryChart = new Chart(ctx, {
                 type: 'line',
@@ -1218,13 +1218,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         legend: { labels: { color: '#9ca3af', font: { family: 'Outfit', size: 11 } } }
                     },
                     scales: {
-                        y: { 
+                        y: {
                             type: 'logarithmic',
                             min: 0.0001, // 0.1 microseconds
                             max: 100, // 100 ms
-                            grid: { color: 'rgba(255, 255, 255, 0.04)' }, 
-                            ticks: { 
-                                color: '#9ca3af', 
+                            grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                            ticks: {
+                                color: '#9ca3af',
                                 font: { family: 'Outfit' },
                                 callback: function(value) {
                                     if (value === 0) return '0 ms';
@@ -1236,12 +1236,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                                     }
                                     return value.toFixed(2) + ' ms';
                                 }
-                            }, 
-                            title: { display: true, text: 'Mean Latency (Log Scale)', color: '#9ca3af', font: { family: 'Outfit', weight: '600' } } 
+                            },
+                            title: { display: true, text: 'Mean Latency (Log Scale)', color: '#9ca3af', font: { family: 'Outfit', weight: '600' } }
                         },
-                        x: { 
-                            grid: { display: false }, 
-                            ticks: { color: '#9ca3af', font: { family: 'Outfit' } } 
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#9ca3af', font: { family: 'Outfit' } }
                         }
                     }
                 }
@@ -1263,10 +1263,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             sorted.forEach(item => {
                 const ms = item.mean * 1000;
-                const timeText = ms < 1.0 
-                    ? (item.mean * 1000000).toFixed(1) + ' μs' 
+                const timeText = ms < 1.0
+                    ? (item.mean * 1000000).toFixed(1) + ' μs'
                     : ms.toFixed(3) + ' ms';
-                
+
                 const itemCard = document.createElement('div');
                 itemCard.className = 'ranking-item';
 
@@ -1295,12 +1295,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             const sortedDesc = [...runData]
                 .filter(item => latest10RunIds.includes(item.run_id))
                 .sort((a, b) => b.run_id - a.run_id);
-                
+
             sortedDesc.forEach(item => {
                 const row = document.createElement('tr');
                 const ms = item.mean * 1000;
-                const timeText = ms < 1.0 
-                    ? (item.mean * 1000000).toFixed(1) + ' μs' 
+                const timeText = ms < 1.0
+                    ? (item.mean * 1000000).toFixed(1) + ' μs'
                     : ms.toFixed(3) + ' ms';
 
                 let badgeClass = 'badge-opt';
@@ -1364,7 +1364,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         switchPipeline('telemetry', document.querySelector('.tab-btn'));
         populateLedger();
         updateSOTATable();
-        
+
         inspectNode('test_audio_normalizer_16bit_pcm_benchmark');
     </script>
 </body>

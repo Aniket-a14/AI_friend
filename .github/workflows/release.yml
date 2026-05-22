@@ -28,17 +28,17 @@ jobs:
           git fetch --tags --force
           CURRENT_TAG=${{ github.ref_name }}
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 $CURRENT_TAG^ 2>/dev/null || echo "")
-          
+
           echo "### 🚀 Release $CURRENT_TAG - Release Notes" > release_notes.md
           echo "" >> release_notes.md
-          
+
           # Compute Git Logs
           if [ -z "$PREVIOUS_TAG" ]; then
             COMMITS=$(git log --oneline --pretty=format:"%s (%h)")
           else
             COMMITS=$(git log $PREVIOUS_TAG..$CURRENT_TAG --oneline --pretty=format:"%s (%h)")
           fi
-          
+
           # Initialize Categories
           FEATS=""
           FIXES=""
@@ -46,7 +46,7 @@ jobs:
           REFACTORS=""
           DOCS=""
           CHORES=""
-          
+
           # Parse and group commits
           IFS=$'\n'
           for commit in $COMMITS; do
@@ -64,7 +64,7 @@ jobs:
               CHORES="$CHORES* $commit\n"
             fi
           done
-          
+
           # Write Sections
           if [ ! -z "$FEATS" ]; then
             echo -e "### ✨ Features\n$FEATS" >> release_notes.md
@@ -84,7 +84,7 @@ jobs:
           if [ ! -z "$CHORES" ]; then
             echo -e "### ⚙️ Maintenance & Tooling\n$CHORES" >> release_notes.md
           fi
-          
+
           # Ensure trailing newline and pipe to GITHUB_OUTPUT
           echo "" >> release_notes.md
           EOF=$(dd if=/dev/urandom bs=15 count=1 2>/dev/null | base64 | tr -dc 'a-zA-Z0-9')
@@ -118,7 +118,7 @@ jobs:
         run: |
           mkdir -p build_dist/backend
           mkdir -p build_dist/frontend
-          
+
           # Copy source trees
           cp -r backend/app build_dist/backend/
           cp LICENSE build_dist/ 2>/dev/null || true
@@ -187,10 +187,10 @@ jobs:
           git fetch --tags --force
           CURRENT_TAG=${{ github.ref_name }}
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 $CURRENT_TAG^ 2>/dev/null || echo "")
-          
+
           echo "# Changelog - $CURRENT_TAG" > build_dist/CHANGELOG.md
           echo "" >> build_dist/CHANGELOG.md
-          
+
           if [ -z "$PREVIOUS_TAG" ]; then
             echo "Initial release of AI Friend!" >> build_dist/CHANGELOG.md
             echo "" >> build_dist/CHANGELOG.md
@@ -219,10 +219,10 @@ jobs:
           # Package zip for Windows
           cd build_dist
           zip -r ../ai-friend-windows.zip *
-          
+
           # Package zip for macOS
           zip -r ../ai-friend-macos.zip *
-          
+
           # Package tar.gz for Linux
           tar -czf ../ai-friend-linux.tar.gz *
           cd ..

@@ -35,7 +35,7 @@ checkpoint*/
 !package.json
 !tsconfig.json
 # re-include specific config jsons if needed, but exclude personal ones
-!app/agents/personality.json 
+!app/agents/personality.json
 # history.json is personal, keep ignored.
 
 history.json

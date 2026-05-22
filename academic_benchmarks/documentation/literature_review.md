@@ -1,6 +1,6 @@
 # 🔬 Sovereign Humanoid Brain: Literature Review & SOTA Empirical Comparison
 
-This document provides a highly rigorous, publication-grade academic literature review and empirical comparison analyzing **CVS-3.0 Sovereign Mind Mesh**—the cognitive **Humanoid Brain**—against other state-of-the-art embodied robotic architectures and conversational systems. 
+This document provides a highly rigorous, publication-grade academic literature review and empirical comparison analyzing **CVS-3.0 Sovereign Mind Mesh**—the cognitive **Humanoid Brain**—against other state-of-the-art embodied robotic architectures and conversational systems.
 
 > [!NOTE]
 > **Scope of Current Development**: The CVS-3.0 architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. Therefore, all comparisons focus on cognitive, conversational, and edge computational metrics.
@@ -9,7 +9,7 @@ This document provides a highly rigorous, publication-grade academic literature 
 
 ## 1. Direct System-to-System SOTA Benchmarks
 
-The comparative matrix below contrasts the cognitive humanoid brain of CVS-3.0 against similar systems described in key HRI and cognitive robotics literature. 
+The comparative matrix below contrasts the cognitive humanoid brain of CVS-3.0 against similar systems described in key HRI and cognitive robotics literature.
 
 *To ensure high-fidelity reproducibility, our columns are kept blank as placeholders (`[TBP]`) to be populated dynamically by executing the physical benchmarking scripts.*
 

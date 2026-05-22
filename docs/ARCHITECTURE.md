@@ -99,7 +99,7 @@ graph TB
     subgraph CVS_Mesh ["CVS-3.0 - Identity Mesh"]
         STT["STT Agent<br/>Temporal Intent"]
         VISION["Vision Agent<br/>Visual Appraisal"]
-        
+
         subgraph Brain_Core ["State & Identity"]
             SYSTEM_TICK["System Agent<br/>Mesh Heartbeat"]
             SUBCO["Subconscious Agent<br/>Idle Thoughts"]

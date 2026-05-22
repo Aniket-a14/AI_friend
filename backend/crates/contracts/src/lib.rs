@@ -284,13 +284,15 @@ pub fn vad_to_prosody(affect: Option<&ChatOutputAffect>) -> Prosody {
     };
 
     // Continuous formulas from CVS-3.0 Roadmap
-    // Sr = 1.0 + (0.20 * arousal) - (0.10 * valence) - fatigue_slow
-    let rate = 1.0 + (0.20 * affect.arousal) - (0.10 * affect.valence) - fatigue_slow;
-    
-    // Pm = 1.0 + (0.05 * valence) + (0.15 * arousal) - (0.10 * dominance) - fatigue_pitch_drop + dist_pitch_mod
-    let pitch = 1.0 + (0.05 * affect.valence) + (0.15 * affect.arousal) - (0.10 * affect.dominance) - fatigue_pitch_drop
+    // Sr = 1.0 + tanh(0.20 * arousal - 0.10 * valence - fatigue_slow)
+    let rate_input = (0.20 * affect.arousal) - (0.10 * affect.valence) - fatigue_slow;
+    let rate = 1.0 + rate_input.tanh();
+
+    // Pm = 1.0 + tanh(0.05 * valence + 0.15 * arousal - 0.10 * dominance - fatigue_pitch_drop + dist_pitch_mod)
+    let pitch_input = (0.05 * affect.valence) + (0.15 * affect.arousal) - (0.10 * affect.dominance) - fatigue_pitch_drop
         + dist_pitch_mod;
-        
+    let pitch = 1.0 + pitch_input.tanh();
+
     let volume = 0.4 + affect.dominance * 0.6 + dist_vol_mod;
 
     let v = 1.0 - affect.arousal;

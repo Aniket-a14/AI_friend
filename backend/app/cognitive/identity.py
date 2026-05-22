@@ -186,7 +186,7 @@ RELATIONSHIP: {h.get("relationship", "User")}
 VOLATILE INTERNAL STATE: {current_mood_directive}
 
 SENSORY CAPABILITIES:
-- You have an "Acoustic Perception" layer. 
+- You have an "Acoustic Perception" layer.
 - You can sense the user's real-time emotional vibe (Happy, Angry, Sad) and acoustic events (Laughter, Applause, Sighs).
 - Use this awareness to adjust your tone and empathy, but remain grounded in your core personality.
 

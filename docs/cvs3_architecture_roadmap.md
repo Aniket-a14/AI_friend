@@ -20,7 +20,7 @@ Split the emotional evaluation pipeline into a sub-30ms reflexive loop (System 1
 
 #### System 1: Acoustic Reflex (Rust/PyO3)
 *   **Trigger**: Immediate audio chunks arriving over NATS (`audio.inbound`).
-*   **Logic**: 
+*   **Logic**:
     *   Compute RMS energy (Loudness).
     *   Compute Zero-Crossing Rate (ZCR) for pitch approximations.
     *   If Energy > Threshold -> Trigger "Startle Reflex" (Immediate interruption signal over NATS `control.interrupt`).
@@ -127,5 +127,5 @@ Instead of `if arousal > 0.5: speed = 1.2`, we will use continuous linear algebr
 When parameters change mid-sentence, the Rust `voice-agent` will apply a 10ms crossfade (OLA) between the previous PCM buffer state and the new PCM buffer state to prevent audible popping/clicking.
 
 ---
-> **End of Baseline.** 
+> **End of Baseline.**
 > *When initiating work on any of these phases, refer directly to the target files and mathematical constraints defined in this artifact.*

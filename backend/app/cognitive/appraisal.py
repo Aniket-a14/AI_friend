@@ -191,12 +191,12 @@ class AppraisalEngine:
         prompt = f"""
         Analyze the user's statement for deep appraisal dimensions:
         User statement: "{user_utterance}"
-        
+
         Evaluate on a scale of -1.0 to 1.0:
         1. goal_congruence (Is this statement matching the friendly, helpful social goals? Positive if friendly, negative if hostile)
         2. norm_alignment (Does this align with social norms? 1.0 if perfectly polite, lower if offensive/toxic)
         3. expectedness (How expected is this statement? 1.0 if very standard, -1.0 if surprising)
-        
+
         Output JSON ONLY:
         {{
           "goal_congruence": 0.0,

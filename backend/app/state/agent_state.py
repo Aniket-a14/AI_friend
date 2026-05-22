@@ -273,7 +273,7 @@ class StateService:
         """Mark that the user just interacted. Called by BrainAgent on every chat.input."""
         self.current_state.last_user_interaction = time.time()
 
-    async def update_from_appraisal(self, appraisal):
+    async def update_from_appraisal(self, appraisal, weights: Dict[str, float] = None):
         """
         PAD + Relational update driven by appraisal vector (§2.3).
 
@@ -289,16 +289,26 @@ class StateService:
         A = appraisal.agency
         NA = appraisal.norm_alignment
 
+        if weights is None:
+            weights = {}
+
+        w1 = weights.get("w1_g_to_v", 0.6)
+        w2 = weights.get("w2_ri_to_v", 0.4)
+        w3 = weights.get("w3_n_to_ar", 0.6)
+        w4 = weights.get("w4_r_to_ar", 0.4)
+        w5 = weights.get("w5_a_to_d", 0.6)
+        w6 = weights.get("w6_na_to_d", 0.4)
+
         # PAD mood-pull (§2.3)
         self.current_state.mood = (
             1 - self.alpha
-        ) * self.current_state.mood + self.alpha * (0.6 * G + 0.4 * RI)
+        ) * self.current_state.mood + self.alpha * (w1 * G + w2 * RI)
         self.current_state.energy = (
             1 - self.beta
-        ) * self.current_state.energy + self.beta * (0.6 * N + 0.4 * R)
+        ) * self.current_state.energy + self.beta * (w3 * N + w4 * R)
         self.current_state.dominance = (
             1 - self.gamma
-        ) * self.current_state.dominance + self.gamma * (0.6 * A + 0.4 * NA)
+        ) * self.current_state.dominance + self.gamma * (w5 * A + w6 * NA)
 
         # Relational updates (§2.3)
         self.current_state.trust_benevolence = max(

@@ -33,10 +33,10 @@ class TestBackendFlow(unittest.TestCase):
         llm = LLMService()
         llm.add_to_memory("user", "Hello")
         llm.add_to_memory("assistant", "Hi")
-        
+
         self.assertEqual(len(llm.memory), 2)
         self.assertEqual(llm.memory[0]["content"], "Hello")
-        
+
         llm.clear_memory()
         self.assertEqual(len(llm.memory), 0)
 
@@ -45,7 +45,7 @@ class TestBackendFlow(unittest.TestCase):
         llm = LLMService()
         for i in range(10):
             llm.add_to_memory("user", str(i))
-            
+
         self.assertEqual(len(llm.memory), 8)
         self.assertEqual(llm.memory[-1]["content"], "9")
         self.assertEqual(llm.memory[0]["content"], "2")
