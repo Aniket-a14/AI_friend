@@ -71,5 +71,6 @@ https://nats.io
 nats.io
 
 # Dynamically generated runtime datasets
-**/benchmark_results.json
-**/raw_research_data.json
+benchmark_results.json
+raw_research_data.json
+
