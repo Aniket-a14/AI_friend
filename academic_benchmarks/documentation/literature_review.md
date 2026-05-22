@@ -43,7 +43,7 @@ The comparative matrix below contrasts the cognitive humanoid brain of CVS-3.0 a
 
 ### 2.3 Memory Surfacing, Decay, & Pruning
 *   **ACT-R/E Comparison**: Embodied cognitive architectures such as **ACT-R/E** (Trafton et al., 2013) use ACT-R's classic symbolic memory retrieval formulas. In ACT-R, each symbolic memory retrieval step has an empirical duration of **50 ms**. In cluttered vector or graph spaces (where thousands of facts are seeded), sequential memory searches can cascade, causing hundreds of milliseconds of cognitive overhead.
-*   **Our Humanoid Brain Solution**: CVS-3.0 implements a neurobiologically inspired **ACT-R power-law decay** model combined with an active **Database Pruning Equation**. Memories with activations falling below a pruning threshold ($\theta_{\text{prune}} = -2.5$) are purged from pgvector/Neo4j. This reduces the search space dynamically to active nodes, scaling memory lookup speed to $O(\log M_{\text{active}})$ rather than $O(\log M_{\text{total}})$. Running the benchmark suite dynamically computes and writes the **Recall@5** and **Active Memory** metrics.
+*   **Our Humanoid Brain Solution**: CVS-3.0 addresses this computational bottleneck by structuring its memory space into a developmental three-tier nested hierarchy grounded in psychosocial development stages (**Erikson & Erikson, 1997 [31]**), restricting the active graph search space to context-coherent paths. Memory decay, Temporal-Context Recall Score (TCRS) recall probability, and active forgetting/pruning dynamics are grounded in Complementary Learning Systems (CLS) theory (**McClelland et al., 1995 [34]**) and Hippocampal Indexing theory (**Teyler & DiScenna, 1986 [33]**). Additionally, it implements a spreading activation mechanism resembling HippoRAG (**Gutiérrez et al., 2024 [21]**) and a graph-based learning/planning framework based on AriGraph (**Anokhin et al., 2024 [32]**). Memories falling below a pruning threshold ($\theta_{\text{prune}} = -3.5$) are pruned to reduce working set size, scaling retrieval complexity to $O(\log M_{\text{active}})$ rather than $O(\log M_{\text{total}})$. Running the benchmark suite dynamically computes and writes the **Recall@5** and **Active Memory** metrics.
 
 ### 2.4 Distributed Multi-Agent IPC
 *   **ROS2 DDS Comparison**: Traditional distributed robotics systems utilize **ROS2 Humble DDS** (Maruyama et al., 2016) for node-to-node messaging, resulting in interprocess communication overhead of **4.85 ms** under standard configurations.
@@ -73,5 +73,10 @@ Every comparison drawn in this literature review maps directly to peer-reviewed 
 *   *Voice activity projection benchmarks*: **Ekstedt & Skantze (2022)** [4]
 *   *ERICA android turn-taking*: **Inoue et al. (2024)** [5], **Lala et al. (2019)** [7]
 *   *ACT-R/E cognitive memory search*: **Sumers et al. (2023)** [17]
+*   *HippoRAG neurobiological retrieval*: **Gutiérrez et al. (2024)** [21]
 *   *ROS2 DDS performance metrics*: **Maruyama et al. (2016)** [24]
 *   *NATS messaging performance*: **Pullmann & Reinke (2020)** [25]
+*   *Lifespan developmental stages*: **Erikson & Erikson (1997)** [31]
+*   *Graph-based episodic memory and planning*: **Anokhin et al. (2024)** [32]
+*   *Hippocampal indexing theory*: **Teyler & DiScenna (1986)** [33]
+*   *Complementary learning systems*: **McClelland et al. (1995)** [34]

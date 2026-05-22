@@ -318,11 +318,20 @@ CONDITIONS = [
 ]
 
 PHASES_OF_LIFE = [
+    # Infancy, Childhood, Play, School Age additions
+    "my infancy at age 1",
+    "my early childhood toddler years at age 2", "my early childhood at age 3",
+    "my preschool play age at age 4", "my kindergarten years at age 5",
+    "my early school age at age 7", "my elementary school years at age 9", "my pre-teen school age at age 11",
+    
+    # Adolescence
     "my early adolescence at age 15", "my developing years at age 16", "my high school transition at age 17",
     "my senior high school experience at age 18", "my freshman year of university at age 19",
+    # Young Adulthood
     "my sophomore college year at age 20", "my junior college research phase at age 21",
     "my senior college graduation milestone at age 22", "my early twenties job hunt at age 23",
     "my first entry-level position at age 24", "my initial professional growth at age 25",
+    # Adulthood
     "my career exploration phase at age 26", "my budding professional expertise at age 27",
     "my mid-twenties networking phase at age 28", "my early career stabilization at age 29",
     "my entrance into my thirties at age 30", "my early thirties skill expansion at age 31",
@@ -342,7 +351,9 @@ PHASES_OF_LIFE = [
     "my late-fifties spiritual awakening at age 58", "my serene life reflections at age 59",
     "my entrance into my sixties at age 60", "my early sixties leisure travels at age 61",
     "my retirement hobbies immersion at age 62", "my mid-sixties voluntary mentoring at age 63",
-    "my community legacy contribution at age 64", "my peaceful senior lifestyle at age 65",
+    "my community legacy contribution at age 64",
+    # Old Age
+    "my peaceful senior lifestyle at age 65",
     "my late-sixties local volunteering at age 66", "my home gardening explorations at age 67",
     "my childhood nostalgia reflections at age 68", "my family history documentation at age 69",
     "my entrance into my seventies at age 70", "my early seventies contemplation phase at age 71",
@@ -352,7 +363,14 @@ PHASES_OF_LIFE = [
     "my humorous storytelling to youngsters at age 78", "my deep quiet elder contentment at age 79",
     "my entrance into my eighties at age 80", "my early eighties family gatherings at age 81",
     "my quiet afternoon tea routines at age 82", "my complete inner peace milestone at age 83",
-    "my deep octogenarian reflection at age 84", "my late-teens hobby specialization at age 17",
+    "my deep octogenarian reflection at age 84",
+    
+    # Elderhood
+    "my elderhood reflections at age 86", "my quiet contemplation at age 88",
+    "my late elderhood years at age 92", "my centenarian milestone at age 100",
+    
+    # Extra epochs and phases to preserve all original entities
+    "my late-teens hobby specialization at age 17",
     "my first college internship trials at age 20", "my university thesis defense week at age 22",
     "my initial post-college residency at age 23", "my professional license certification at age 25",
     "my public speaking debut at age 27", "my promotion to team lead duties at age 29",
@@ -555,6 +573,248 @@ NATURAL_EXPOSURES = [
     "natural ambient lighting", "views of natural water features"
 ]
 
+ERIKSONIAN_MESH_SCAFFOLD = {
+    "Infancy (0-1)": {
+        "stage_name": "Infancy (0-1)",
+        "crisis": "Trust vs. Mistrust",
+        "virtue": "Hope",
+        "relations": "Maternal person",
+        "relation_circles": "Maternal person",
+        "modality": "To get, to give in return"
+    },
+    "Early Childhood (1-3)": {
+        "stage_name": "Early Childhood (1-3)",
+        "crisis": "Autonomy vs. Shame and Doubt",
+        "virtue": "Will",
+        "relations": "Parental persons",
+        "relation_circles": "Parental persons",
+        "modality": "To hold on, to let go"
+    },
+    "Play Age (3-6)": {
+        "stage_name": "Play Age (3-6)",
+        "crisis": "Initiative vs. Guilt",
+        "virtue": "Purpose",
+        "relations": "Basic family",
+        "relation_circles": "Basic family",
+        "modality": "To go after, to make"
+    },
+    "School Age (6-12)": {
+        "stage_name": "School Age (6-12)",
+        "crisis": "Industry vs. Inferiority",
+        "virtue": "Competence",
+        "relations": "Neighborhood and school",
+        "relation_circles": "Neighborhood and school",
+        "modality": "To make things, to make things together"
+    },
+    "Adolescence (12-19)": {
+        "stage_name": "Adolescence (12-19)",
+        "crisis": "Identity vs. Role Confusion",
+        "virtue": "Fidelity",
+        "relations": "Peer groups and outgroups",
+        "relation_circles": "Peer groups and outgroups",
+        "modality": "To define and share self"
+    },
+    "Young Adulthood (20-25)": {
+        "stage_name": "Young Adulthood (20-25)",
+        "crisis": "Intimacy vs. Isolation",
+        "virtue": "Love",
+        "relations": "Partners and friends",
+        "relation_circles": "Partners and friends",
+        "modality": "To lose and find oneself in another"
+    },
+    "Adulthood (26-64)": {
+        "stage_name": "Adulthood (26-64)",
+        "crisis": "Generativity vs. Stagnation",
+        "virtue": "Care",
+        "relations": "Divided labor and shared household",
+        "relation_circles": "Divided labor and shared household",
+        "modality": "To make be, to take care of"
+    },
+    "Old Age (65-85)": {
+        "stage_name": "Old Age (65-85)",
+        "crisis": "Integrity vs. Despair",
+        "virtue": "Wisdom",
+        "relations": "Mankind / My kind",
+        "relation_circles": "Mankind / My kind",
+        "modality": "To be, through having been, to face not being"
+    },
+    "Elderhood (85+)": {
+        "stage_name": "Elderhood (85+)",
+        "crisis": "Despair vs. Gerotranscendence",
+        "virtue": "Hope / Wisdom / Faith",
+        "relations": "All creation / All humankind",
+        "relation_circles": "All creation / All humankind",
+        "modality": "To let go, to transcend"
+    }
+}
+
+ERIKSONIAN_MESH_Scaffold = ERIKSONIAN_MESH_SCAFFOLD
+
+
+def get_eriksonian_stage_for_phase(phase_str: str) -> str:
+    match = re.search(r'age (\d+)', phase_str)
+    if match:
+        age = int(match.group(1))
+        if age <= 1:
+            return "Infancy (0-1)"
+        elif age <= 3:
+            return "Early Childhood (1-3)"
+        elif age <= 6:
+            return "Play Age (3-6)"
+        elif age <= 12:
+            return "School Age (6-12)"
+        elif age <= 19:
+            return "Adolescence (12-19)"
+        elif age <= 25:
+            return "Young Adulthood (20-25)"
+        elif age <= 64:
+            return "Adulthood (26-64)"
+        elif age <= 84:
+            return "Old Age (65-85)"
+        else:
+            return "Elderhood (85+)"
+    if "adolescence" in phase_str or "teen" in phase_str:
+        return "Adolescence (12-19)"
+    if "college" in phase_str or "twenties" in phase_str:
+        return "Young Adulthood (20-25)"
+    if "retirement" in phase_str or "sixties" in phase_str or "seventies" in phase_str or "elder" in phase_str or "octogenarian" in phase_str:
+        return "Old Age (65-85)"
+    return "Adulthood (26-64)"
+
+STAGE_COHERENT_LEAVES = {
+    "Infancy (0-1)": {
+        "primary_partner": ["a supportive childhood friend"],
+        "cognitive_mode": ["passive observational learning", "spontaneous intuitive insights"],
+        "financial_context": ["absolute budget security"],
+        "vocational_drive": ["solving real-world human challenges"],
+        "creative_outlet": ["journaling daily cognitive leaps"],
+        "primary_activity": ["reading academic research papers"],
+        "leisure_pursuit": ["walking through local historic neighborhoods"],
+        "social_setting": ["complete solitary isolation", "a festive family gathering"],
+        "domain": ["botanical taxonomy", "marine ecology", "avian biology"],
+        "timeline_epoch": ["my early formative childhood"]
+    },
+    "Early Childhood (1-3)": {
+        "primary_partner": ["a supportive childhood friend"],
+        "cognitive_mode": ["passive observational learning", "spontaneous intuitive insights", "creative brainstorming"],
+        "financial_context": ["absolute budget security"],
+        "vocational_drive": ["solving real-world human challenges"],
+        "creative_outlet": ["journaling daily cognitive leaps", "crafting intricate physical models"],
+        "primary_activity": ["reading academic research papers"],
+        "leisure_pursuit": ["walking through local historic neighborhoods", "gardening in a backyard plot"],
+        "social_setting": ["complete solitary isolation", "a festive family gathering"],
+        "domain": ["botanical taxonomy", "marine ecology", "avian biology"],
+        "timeline_epoch": ["my early formative childhood"]
+    },
+    "Play Age (3-6)": {
+        "primary_partner": ["a supportive childhood friend"],
+        "cognitive_mode": ["creative brainstorming", "spontaneous intuitive insights", "passive observational learning"],
+        "financial_context": ["absolute budget security"],
+        "vocational_drive": ["solving real-world human challenges"],
+        "creative_outlet": ["sketching architectural concepts", "composing atmospheric music", "crafting intricate physical models"],
+        "primary_activity": ["sketching hardware component layouts"],
+        "leisure_pursuit": ["playing complex strategy board games", "gardening in a backyard plot", "cooking elaborate traditional dishes"],
+        "social_setting": ["complete solitary isolation", "a festive family gathering", "a crowded public marketplace"],
+        "domain": ["botanical taxonomy", "marine ecology", "avian biology", "biodiversity conservation"],
+        "timeline_epoch": ["my early formative childhood"]
+    },
+    "School Age (6-12)": {
+        "primary_partner": ["a supportive childhood friend", "an eager junior university peer"],
+        "cognitive_mode": ["light recreational reading", "passive observational learning", "deep algorithmic deduction", "creative brainstorming", "spontaneous intuitive insights"],
+        "financial_context": ["absolute budget security", "conscious resource optimization"],
+        "vocational_drive": ["solving real-world human challenges", "seeking structural perfection"],
+        "creative_outlet": ["crafting intricate physical models", "programming beautiful user interfaces", "sketching architectural concepts"],
+        "primary_activity": ["solving discrete math equations", "reading academic research papers"],
+        "leisure_pursuit": ["playing complex strategy board games", "solving challenging crossword puzzles", "reading historical biography novels"],
+        "social_setting": ["a festive family gathering", "a quiet scholarly seminar", "a crowded public marketplace"],
+        "domain": ["botanical taxonomy", "marine ecology", "avian biology", "biodiversity conservation", "wildlife epidemiology"],
+        "timeline_epoch": ["my early formative childhood"]
+    },
+    "Adolescence (12-19)": {
+        "primary_partner": ["a supportive childhood friend", "an eager junior university peer"],
+        "cognitive_mode": ["light recreational reading", "creative brainstorming", "spontaneous intuitive insights", "deep algorithmic deduction", "philosophical meta-reflection"],
+        "financial_context": ["conscious resource optimization", "reviewing monthly budget constraints", "absolute budget security"],
+        "vocational_drive": ["intense research curiosity", "solving real-world human challenges", "seeking structural perfection"],
+        "creative_outlet": ["composing atmospheric music", "journaling daily cognitive leaps", "programming beautiful user interfaces", "writing philosophical essays"],
+        "primary_activity": ["solving discrete math equations", "reading academic research papers", "designing neural network layers"],
+        "leisure_pursuit": ["playing complex strategy board games", "solving challenging crossword puzzles", "reading historical biography novels", "building custom desktop rigs"],
+        "social_setting": ["a casual coffee with a colleague", "an intimate one-on-one dialogue", "a crowded public marketplace", "a festive family gathering"],
+        "timeline_epoch": ["my early formative childhood", "my early twenties transition"]
+    },
+    "Old Age (65-85)": {
+        "primary_partner": ["a supportive childhood friend", "a diverse group of global researchers", "a patient academic supervisor"],
+        "cognitive_mode": ["philosophical meta-reflection", "spontaneous intuitive insights", "light recreational reading", "passive observational learning"],
+        "financial_context": ["planning family inheritance legacy", "absolute budget security", "reviewing monthly budget constraints"],
+        "vocational_drive": ["mentoring future scientists", "a strong legacy creation drive", "solving real-world human challenges"],
+        "creative_outlet": ["writing philosophical essays", "journaling daily cognitive leaps", "photographing natural light patterns", "sketching architectural concepts"],
+        "primary_activity": ["reading academic research papers", "analyzing complex data graphs", "writing deep technical documentation"],
+        "leisure_pursuit": ["gardening in a backyard plot", "reading historical biography novels", "solving challenging crossword puzzles", "walking through local historic neighborhoods"],
+        "social_setting": ["complete solitary isolation", "an intimate one-on-one dialogue", "a festive family gathering", "a quiet scholarly seminar", "a casual coffee with a colleague"],
+        "timeline_epoch": ["my late-stage reflective years"]
+    },
+    "Elderhood (85+)": {
+        "primary_partner": ["a supportive childhood friend", "a diverse group of global researchers", "a patient academic supervisor"],
+        "cognitive_mode": ["philosophical meta-reflection", "spontaneous intuitive insights", "light recreational reading", "passive observational learning"],
+        "financial_context": ["planning family inheritance legacy", "absolute budget security"],
+        "vocational_drive": ["mentoring future scientists", "a strong legacy creation drive"],
+        "creative_outlet": ["writing philosophical essays", "journaling daily cognitive leaps", "photographing natural light patterns"],
+        "primary_activity": ["reading academic research papers", "writing deep technical documentation"],
+        "leisure_pursuit": ["gardening in a backyard plot", "reading historical biography novels", "walking through local historic neighborhoods"],
+        "social_setting": ["complete solitary isolation", "an intimate one-on-one dialogue", "a festive family gathering"],
+        "timeline_epoch": ["my late-stage reflective years"]
+    }
+}
+
+STAGE_TO_PHASES = {}
+for phase_str in PHASES_OF_LIFE:
+    stage_key = get_eriksonian_stage_for_phase(phase_str)
+    if stage_key not in STAGE_TO_PHASES:
+        STAGE_TO_PHASES[stage_key] = []
+    STAGE_TO_PHASES[stage_key].append(phase_str)
+
+STAGES_LIST = [
+    "Infancy (0-1)",
+    "Early Childhood (1-3)",
+    "Play Age (3-6)",
+    "School Age (6-12)",
+    "Adolescence (12-19)",
+    "Young Adulthood (20-25)",
+    "Adulthood (26-64)",
+    "Old Age (65-85)",
+    "Elderhood (85+)"
+]
+
+def select_deterministic_leaf(dim_key, global_list, stage_name, idx_formula):
+    restricted_dict = STAGE_COHERENT_LEAVES.get(stage_name, {})
+    restricted_list = restricted_dict.get(dim_key, None)
+    if restricted_list:
+        return restricted_list[idx_formula % len(restricted_list)]
+    return global_list[idx_formula % len(global_list)]
+
+
+def generate_cross_epoch_link(unique_idx: int, current_phase: str) -> str:
+    match = re.search(r'age (\d+)', current_phase)
+    current_age = int(match.group(1)) if match else 25
+    if current_age <= 19:
+        return ""
+    
+    links = []
+    if current_age >= 20:
+        links.append(f", triggering a memory of age 15 when I first felt the {SENSORY_INPUTS[unique_idx % len(SENSORY_INPUTS)]}")
+    if current_age >= 21:
+        links.append(f", evoking a memory of Kolkata when I was studying affective cognitive architectures at age 21")
+    if current_age >= 24:
+        links.append(f", which brings back the memory of my first job in Bangalore at age 24")
+    if current_age >= 26:
+        links.append(f", reminding me of Priya and the sweet rasgulla we shared at age 25")
+    if current_age >= 65:
+        links.append(f", linking back to my college research in Kolkata under {WEATHER[(unique_idx + 2) % len(WEATHER)]} at age 21")
+        links.append(f", mirroring my early twenties transition in Bangalore at age 24")
+        
+    if not links:
+        return ""
+    return links[unique_idx % len(links)]
+
 def generate_conversational_corpus(iterations: int = 1000):
     """
     Generates an upgraded high-dimensional conversational corpus representing structured human memories.
@@ -565,72 +825,81 @@ def generate_conversational_corpus(iterations: int = 1000):
     """
     unique_pool = []
     
-    # 10 rich natural-language templates weaving different subsets of the 40 dimensions
+    # 10 rich structured templates grouped by Memory Classes: Crisis, Social, Vocational, Somatic, Spiritual
     templates = [
-        # Template 0
-        "Weaving back to {timeline_epoch} in {environment}, under {weather} during {time_of_day}, I engaged in {cognitive_mode} while {primary_activity}, focused by {sensory_input} and dressed in {clothing_comfort}.",
-        # Template 1
-        "During {phase}, my efforts in {domain} were paired with {life_factor} while in a state of {condition}, experiencing {physical_status}, supported by {dietary_metabolism} in {ergonomic_posture} under {stress_metric}.",
-        # Template 2
-        "In {social_setting} with {primary_partner}, driven by {vocational_drive}, I explored {creative_outlet} with {motivation_level} at {pacing_rhythm}, referencing {info_source} within {clutter_level}.",
-        # Template 3
-        "Under {weather} at {time_of_day}, while {primary_activity}, I was {mobility_mode}, accompanied by {sensory_input}, keeping {hydration_level} in {temperature_comfort} amidst {acoustic_scape} with {visual_horizon}.",
-        # Template 4
-        "During {phase}, deep {spiritual_attunement} guided my {leisure_pursuit}, leading me to {ethical_stand} with {self_esteem} toward {goal_horizon}, feeling {somatic_comfort} in {natural_exposure}.",
-        # Template 5
-        "Reflecting on {timeline_epoch} in {domain}, situated inside {environment}, I adopted {cognitive_mode} with {physical_status} in search of {vocational_drive}, sustaining {stress_metric} in {clutter_level}.",
-        # Template 6
-        "In {phase}, navigating {social_setting} while {primary_activity}, I nurtured {relationship_tuning} at {pacing_rhythm}, enjoying {hydration_level} within {acoustic_scape} alongside {primary_partner}.",
-        # Template 7
-        "Inside {environment} during {weather}, my {cognitive_mode} allowed me to focus on {primary_activity}, stimulated by {sensory_input}, fueled by {dietary_metabolism} as I pursued {creative_outlet} overlooking {visual_horizon}.",
-        # Template 8
-        "Throughout {timeline_epoch}, balancing {life_factor} under a state of {condition} in {ergonomic_posture}, I integrated {spiritual_attunement} and {ethical_stand} towards {goal_horizon} with {somatic_comfort}.",
-        # Template 9
-        "In {social_setting}, balancing {financial_context} and {relationship_tuning}, I felt {motivation_level} during {leisure_pursuit} while {mobility_mode} in {temperature_comfort} surrounded by {natural_exposure}."
+        # Crisis Class
+        "During {phase}, facing the crisis of {crisis} while seeking the virtue of {virtue}, I was in {environment} under {weather} experiencing {condition} with {stress_metric}.",
+        "As I navigated {phase} and the psychosocial challenge of {crisis}, my {self_esteem} was shaped by {cognitive_mode} in {social_setting} while managing {financial_context}.",
+        
+        # Social Class
+        "In {social_setting} with {primary_partner}, my circle of relations revolved around {relations} during {phase}, pursuing {relationship_tuning} amid {acoustic_scape} with {motivation_level}.",
+        "During {phase}, our interactions within {relations} and {social_setting} were marked by {relationship_tuning} under {weather} while enjoying {leisure_pursuit} with {primary_partner}.",
+        
+        # Vocational Class
+        "Driven by my vocational drive to {vocational_drive} and modality to {modality}, my efforts in {domain} during {phase} were focused on {primary_activity} in {environment} referencing {info_source} with {clutter_level}.",
+        "Reflecting on my early {timeline_epoch} in {domain}, I applied {modality} to achieve {goal_horizon} while working in {environment} at {pacing_rhythm} stimulated by {sensory_input}.",
+        
+        # Somatic Class
+        "Experiencing {phase}, my somatic comfort was defined by {somatic_comfort} and {physical_status}, while supported by {dietary_metabolism} in {ergonomic_posture} and keeping {hydration_level}.",
+        "Under {weather} during {phase}, I noticed {somatic_comfort} while {mobility_mode} dressed in {clothing_comfort} under {temperature_comfort} with {life_factor}.",
+        
+        # Spiritual Class
+        "Guided by deep {spiritual_attunement} and {ethical_stand} during {phase}, I experienced {condition} overlooking {visual_horizon} surrounded by {natural_exposure}.",
+        "In the quiet of {time_of_day} during {phase}, {spiritual_attunement} led me to {ethical_stand} with a sense of {condition} experiencing {creative_outlet}."
     ]
 
     for unique_idx in range(iterations + 100):
         # Determine dimension selections deterministically using distinct prime progressions to avoid cycle alignment
-        phase = PHASES_OF_LIFE[unique_idx % len(PHASES_OF_LIFE)]
-        domain = DOMAINS[(unique_idx // 3) % len(DOMAINS)]
-        life_factor = LIFE_FACTORS[(unique_idx // 7) % len(LIFE_FACTORS)]
-        condition = CONDITIONS[(unique_idx // 11) % len(CONDITIONS)]
-        environment = ENVIRONMENTS[(unique_idx // 13) % len(ENVIRONMENTS)]
-        sensory_input = SENSORY_INPUTS[(unique_idx // 17) % len(SENSORY_INPUTS)]
-        weather = WEATHER[(unique_idx // 19) % len(WEATHER)]
-        time_of_day = TIME_OF_DAY[(unique_idx // 23) % len(TIME_OF_DAY)]
-        cognitive_mode = COGNITIVE_MODES[(unique_idx // 29) % len(COGNITIVE_MODES)]
-        physical_status = PHYSICAL_STATUS[(unique_idx // 31) % len(PHYSICAL_STATUS)]
-        social_setting = SOCIAL_SETTINGS[(unique_idx // 37) % len(SOCIAL_SETTINGS)]
-        primary_activity = PRIMARY_ACTIVITIES[(unique_idx // 41) % len(PRIMARY_ACTIVITIES)]
-        financial_context = FINANCIAL_CONTEXTS[(unique_idx // 43) % len(FINANCIAL_CONTEXTS)]
-        relationship_tuning = RELATIONSHIP_TUNINGS[(unique_idx // 47) % len(RELATIONSHIP_TUNINGS)]
-        dietary_metabolism = DIETARY_METABOLISM[(unique_idx // 53) % len(DIETARY_METABOLISM)]
-        ergonomic_posture = ERGONOMIC_POSTURES[(unique_idx // 59) % len(ERGONOMIC_POSTURES)]
-        vocational_drive = VOCATIONAL_DRIVES[(unique_idx // 61) % len(VOCATIONAL_DRIVES)]
-        creative_outlet = CREATIVE_OUTLETS[(unique_idx // 67) % len(CREATIVE_OUTLETS)]
-        spiritual_attunement = SPIRITUAL_ATTUNEMENTS[(unique_idx // 71) % len(SPIRITUAL_ATTUNEMENTS)]
-        stress_metric = STRESS_METRICS[(unique_idx // 73) % len(STRESS_METRICS)]
-        motivation_level = MOTIVATION_LEVELS[(unique_idx // 79) % len(MOTIVATION_LEVELS)]
-        leisure_pursuit = LEISURE_PURSUITS[(unique_idx // 83) % len(LEISURE_PURSUITS)]
-        mobility_mode = MOBILITY_MODES[(unique_idx // 89) % len(MOBILITY_MODES)]
-        clothing_comfort = CLOTHING_COMFORTS[(unique_idx // 97) % len(CLOTHING_COMFORTS)]
-        memory_trigger = MEMORY_TRIGGERS[(unique_idx // 101) % len(MEMORY_TRIGGERS)]
-        pacing_rhythm = PACING_RHYTHMS[(unique_idx // 103) % len(PACING_RHYTHMS)]
-        ethical_stand = ETHICAL_STANDS[(unique_idx // 107) % len(ETHICAL_STANDS)]
-        hydration_level = HYDRATION_LEVELS[(unique_idx // 109) % len(HYDRATION_LEVELS)]
-        temperature_comfort = TEMPERATURE_COMFORTS[(unique_idx // 113) % len(TEMPERATURE_COMFORTS)]
-        acoustic_scape = ACOUSTIC_SCAPES[(unique_idx // 127) % len(ACOUSTIC_SCAPES)]
-        visual_horizon = VISUAL_HORIZONS[(unique_idx // 131) % len(VISUAL_HORIZONS)]
-        metabolic_fatigue = METABOLIC_FATIGUE[(unique_idx // 137) % len(METABOLIC_FATIGUE)]
-        self_esteem = SELF_ESTEEMS[(unique_idx // 139) % len(SELF_ESTEEMS)]
-        timeline_epoch = TIMELINE_EPOCHS[(unique_idx // 149) % len(TIMELINE_EPOCHS)]
-        primary_partner = PRIMARY_PARTNERS[(unique_idx // 151) % len(PRIMARY_PARTNERS)]
-        goal_horizon = GOAL_HORIZONS[(unique_idx // 157) % len(GOAL_HORIZONS)]
-        somatic_comfort = SOMATIC_COMFORTS[(unique_idx // 163) % len(SOMATIC_COMFORTS)]
-        info_source = INFO_SOURCES[(unique_idx // 167) % len(INFO_SOURCES)]
-        clutter_level = CLUTTER_LEVELS[(unique_idx // 173) % len(CLUTTER_LEVELS)]
-        natural_exposure = NATURAL_EXPOSURES[(unique_idx // 179) % len(NATURAL_EXPOSURES)]
+        stage_name = STAGES_LIST[unique_idx % len(STAGES_LIST)]
+        valid_phases = STAGE_TO_PHASES[stage_name]
+        phase = valid_phases[(unique_idx // len(STAGES_LIST)) % len(valid_phases)]
+
+        domain = select_deterministic_leaf("domain", DOMAINS, stage_name, unique_idx // 3)
+        life_factor = select_deterministic_leaf("life_factor", LIFE_FACTORS, stage_name, unique_idx // 7)
+        condition = select_deterministic_leaf("condition", CONDITIONS, stage_name, unique_idx // 11)
+        environment = select_deterministic_leaf("environment", ENVIRONMENTS, stage_name, unique_idx // 13)
+        sensory_input = select_deterministic_leaf("sensory_input", SENSORY_INPUTS, stage_name, unique_idx // 17)
+        weather = select_deterministic_leaf("weather", WEATHER, stage_name, unique_idx // 19)
+        time_of_day = select_deterministic_leaf("time_of_day", TIME_OF_DAY, stage_name, unique_idx // 23)
+        cognitive_mode = select_deterministic_leaf("cognitive_mode", COGNITIVE_MODES, stage_name, unique_idx // 29)
+        physical_status = select_deterministic_leaf("physical_status", PHYSICAL_STATUS, stage_name, unique_idx // 31)
+        social_setting = select_deterministic_leaf("social_setting", SOCIAL_SETTINGS, stage_name, unique_idx // 37)
+        primary_activity = select_deterministic_leaf("primary_activity", PRIMARY_ACTIVITIES, stage_name, unique_idx // 41)
+        financial_context = select_deterministic_leaf("financial_context", FINANCIAL_CONTEXTS, stage_name, unique_idx // 43)
+        relationship_tuning = select_deterministic_leaf("relationship_tuning", RELATIONSHIP_TUNINGS, stage_name, unique_idx // 47)
+        dietary_metabolism = select_deterministic_leaf("dietary_metabolism", DIETARY_METABOLISM, stage_name, unique_idx // 53)
+        ergonomic_posture = select_deterministic_leaf("ergonomic_posture", ERGONOMIC_POSTURES, stage_name, unique_idx // 59)
+        vocational_drive = select_deterministic_leaf("vocational_drive", VOCATIONAL_DRIVES, stage_name, unique_idx // 61)
+        creative_outlet = select_deterministic_leaf("creative_outlet", CREATIVE_OUTLETS, stage_name, unique_idx // 67)
+        spiritual_attunement = select_deterministic_leaf("spiritual_attunement", SPIRITUAL_ATTUNEMENTS, stage_name, unique_idx // 71)
+        stress_metric = select_deterministic_leaf("stress_metric", STRESS_METRICS, stage_name, unique_idx // 73)
+        motivation_level = select_deterministic_leaf("motivation_level", MOTIVATION_LEVELS, stage_name, unique_idx // 79)
+        leisure_pursuit = select_deterministic_leaf("leisure_pursuit", LEISURE_PURSUITS, stage_name, unique_idx // 83)
+        mobility_mode = select_deterministic_leaf("mobility_mode", MOBILITY_MODES, stage_name, unique_idx // 89)
+        clothing_comfort = select_deterministic_leaf("clothing_comfort", CLOTHING_COMFORTS, stage_name, unique_idx // 97)
+        memory_trigger = select_deterministic_leaf("memory_trigger", MEMORY_TRIGGERS, stage_name, unique_idx // 101)
+        pacing_rhythm = select_deterministic_leaf("pacing_rhythm", PACING_RHYTHMS, stage_name, unique_idx // 103)
+        ethical_stand = select_deterministic_leaf("ethical_stand", ETHICAL_STANDS, stage_name, unique_idx // 107)
+        hydration_level = select_deterministic_leaf("hydration_level", HYDRATION_LEVELS, stage_name, unique_idx // 109)
+        temperature_comfort = select_deterministic_leaf("temperature_comfort", TEMPERATURE_COMFORTS, stage_name, unique_idx // 113)
+        acoustic_scape = select_deterministic_leaf("acoustic_scape", ACOUSTIC_SCAPES, stage_name, unique_idx // 127)
+        visual_horizon = select_deterministic_leaf("visual_horizon", VISUAL_HORIZONS, stage_name, unique_idx // 131)
+        metabolic_fatigue = select_deterministic_leaf("metabolic_fatigue", METABOLIC_FATIGUE, stage_name, unique_idx // 137)
+        self_esteem = select_deterministic_leaf("self_esteem", SELF_ESTEEMS, stage_name, unique_idx // 139)
+        timeline_epoch = select_deterministic_leaf("timeline_epoch", TIMELINE_EPOCHS, stage_name, unique_idx // 149)
+        primary_partner = select_deterministic_leaf("primary_partner", PRIMARY_PARTNERS, stage_name, unique_idx // 151)
+        goal_horizon = select_deterministic_leaf("goal_horizon", GOAL_HORIZONS, stage_name, unique_idx // 157)
+        somatic_comfort = select_deterministic_leaf("somatic_comfort", SOMATIC_COMFORTS, stage_name, unique_idx // 163)
+        info_source = select_deterministic_leaf("info_source", INFO_SOURCES, stage_name, unique_idx // 167)
+        clutter_level = select_deterministic_leaf("clutter_level", CLUTTER_LEVELS, stage_name, unique_idx // 173)
+        natural_exposure = select_deterministic_leaf("natural_exposure", NATURAL_EXPOSURES, stage_name, unique_idx // 179)
+
+        # Get Eriksonian scaffold values based on stage
+        stage_info = ERIKSONIAN_MESH_SCAFFOLD[stage_name]
+        crisis = stage_info["crisis"]
+        virtue = stage_info["virtue"]
+        relations = stage_info["relations"]
+        modality = stage_info["modality"]
 
         # Select template deterministically
         temp_idx = unique_idx % len(templates)
@@ -653,8 +922,15 @@ def generate_conversational_corpus(iterations: int = 1000):
             timeline_epoch=timeline_epoch, primary_partner=primary_partner,
             goal_horizon=goal_horizon, somatic_comfort=somatic_comfort,
             info_source=info_source, clutter_level=clutter_level,
-            natural_exposure=natural_exposure
+            natural_exposure=natural_exposure,
+            crisis=crisis, virtue=virtue, relations=relations, modality=modality
         )
+        
+        # Weave parent-child cross-epoch associative links (pointers to earlier lifecycle experiences)
+        cross_link = generate_cross_epoch_link(unique_idx, phase)
+        if cross_link:
+            prompt += cross_link
+            
         unique_pool.append(prompt)
 
     corpus = []
@@ -698,71 +974,82 @@ def generate_high_fidelity_distractors(count: int):
     Generates rich, 40-dimensional high-fidelity distractor tuples: (prompt_text, phase, domain)
     specifically designed for cognitive database seeding with maximum combinatorial coverage.
     """
+    # 10 rich structured templates grouped by Memory Classes: Crisis, Social, Vocational, Somatic, Spiritual
     templates = [
-        # Template 0
-        "Weaving back to {timeline_epoch} in {environment}, under {weather} during {time_of_day}, I engaged in {cognitive_mode} while {primary_activity}, focused by {sensory_input} and dressed in {clothing_comfort}.",
-        # Template 1
-        "During {phase}, my efforts in {domain} were paired with {life_factor} while in a state of {condition}, experiencing {physical_status}, supported by {dietary_metabolism} in {ergonomic_posture} under {stress_metric}.",
-        # Template 2
-        "In {social_setting} with {primary_partner}, driven by {vocational_drive}, I explored {creative_outlet} with {motivation_level} at {pacing_rhythm}, referencing {info_source} within {clutter_level}.",
-        # Template 3
-        "Under {weather} at {time_of_day}, while {primary_activity}, I was {mobility_mode}, accompanied by {sensory_input}, keeping {hydration_level} in {temperature_comfort} amidst {acoustic_scape} with {visual_horizon}.",
-        # Template 4
-        "During {phase}, deep {spiritual_attunement} guided my {leisure_pursuit}, leading me to {ethical_stand} with {self_esteem} toward {goal_horizon}, feeling {somatic_comfort} in {natural_exposure}.",
-        # Template 5
-        "Reflecting on {timeline_epoch} in {domain}, situated inside {environment}, I adopted {cognitive_mode} with {physical_status} in search of {vocational_drive}, sustaining {stress_metric} in {clutter_level}.",
-        # Template 6
-        "In {phase}, navigating {social_setting} while {primary_activity}, I nurtured {relationship_tuning} at {pacing_rhythm}, enjoying {hydration_level} within {acoustic_scape} alongside {primary_partner}.",
-        # Template 7
-        "Inside {environment} during {weather}, my {cognitive_mode} allowed me to focus on {primary_activity}, stimulated by {sensory_input}, fueled by {dietary_metabolism} as I pursued {creative_outlet} overlooking {visual_horizon}.",
-        # Template 8
-        "Throughout {timeline_epoch}, balancing {life_factor} under a state of {condition} in {ergonomic_posture}, I integrated {spiritual_attunement} and {ethical_stand} towards {goal_horizon} with {somatic_comfort}.",
-        # Template 9
-        "In {social_setting}, balancing {financial_context} and {relationship_tuning}, I felt {motivation_level} during {leisure_pursuit} while {mobility_mode} in {temperature_comfort} surrounded by {natural_exposure}."
+        # Crisis Class
+        "During {phase}, facing the crisis of {crisis} while seeking the virtue of {virtue}, I was in {environment} under {weather} experiencing {condition} with {stress_metric}.",
+        "As I navigated {phase} and the psychosocial challenge of {crisis}, my {self_esteem} was shaped by {cognitive_mode} in {social_setting} while managing {financial_context}.",
+        
+        # Social Class
+        "In {social_setting} with {primary_partner}, my circle of relations revolved around {relations} during {phase}, pursuing {relationship_tuning} amid {acoustic_scape} with {motivation_level}.",
+        "During {phase}, our interactions within {relations} and {social_setting} were marked by {relationship_tuning} under {weather} while enjoying {leisure_pursuit} with {primary_partner}.",
+        
+        # Vocational Class
+        "Driven by my vocational drive to {vocational_drive} and modality to {modality}, my efforts in {domain} during {phase} were focused on {primary_activity} in {environment} referencing {info_source} with {clutter_level}.",
+        "Reflecting on my early {timeline_epoch} in {domain}, I applied {modality} to achieve {goal_horizon} while working in {environment} at {pacing_rhythm} stimulated by {sensory_input}.",
+        
+        # Somatic Class
+        "Experiencing {phase}, my somatic comfort was defined by {somatic_comfort} and {physical_status}, while supported by {dietary_metabolism} in {ergonomic_posture} and keeping {hydration_level}.",
+        "Under {weather} during {phase}, I noticed {somatic_comfort} while {mobility_mode} dressed in {clothing_comfort} under {temperature_comfort} with {life_factor}.",
+        
+        # Spiritual Class
+        "Guided by deep {spiritual_attunement} and {ethical_stand} during {phase}, I experienced {condition} overlooking {visual_horizon} surrounded by {natural_exposure}.",
+        "In the quiet of {time_of_day} during {phase}, {spiritual_attunement} led me to {ethical_stand} with a sense of {condition} experiencing {creative_outlet}."
     ]
 
     distractors = []
     for unique_idx in range(count):
-        phase = PHASES_OF_LIFE[unique_idx % len(PHASES_OF_LIFE)]
-        domain = DOMAINS[(unique_idx // 3) % len(DOMAINS)]
-        life_factor = LIFE_FACTORS[(unique_idx // 7) % len(LIFE_FACTORS)]
-        condition = CONDITIONS[(unique_idx // 11) % len(CONDITIONS)]
-        environment = ENVIRONMENTS[(unique_idx // 13) % len(ENVIRONMENTS)]
-        sensory_input = SENSORY_INPUTS[(unique_idx // 17) % len(SENSORY_INPUTS)]
-        weather = WEATHER[(unique_idx // 19) % len(WEATHER)]
-        time_of_day = TIME_OF_DAY[(unique_idx // 23) % len(TIME_OF_DAY)]
-        cognitive_mode = COGNITIVE_MODES[(unique_idx // 29) % len(COGNITIVE_MODES)]
-        physical_status = PHYSICAL_STATUS[(unique_idx // 31) % len(PHYSICAL_STATUS)]
-        social_setting = SOCIAL_SETTINGS[(unique_idx // 37) % len(SOCIAL_SETTINGS)]
-        primary_activity = PRIMARY_ACTIVITIES[(unique_idx // 41) % len(PRIMARY_ACTIVITIES)]
-        financial_context = FINANCIAL_CONTEXTS[(unique_idx // 43) % len(FINANCIAL_CONTEXTS)]
-        relationship_tuning = RELATIONSHIP_TUNINGS[(unique_idx // 47) % len(RELATIONSHIP_TUNINGS)]
-        dietary_metabolism = DIETARY_METABOLISM[(unique_idx // 53) % len(DIETARY_METABOLISM)]
-        ergonomic_posture = ERGONOMIC_POSTURES[(unique_idx // 59) % len(ERGONOMIC_POSTURES)]
-        vocational_drive = VOCATIONAL_DRIVES[(unique_idx // 61) % len(VOCATIONAL_DRIVES)]
-        creative_outlet = CREATIVE_OUTLETS[(unique_idx // 67) % len(CREATIVE_OUTLETS)]
-        spiritual_attunement = SPIRITUAL_ATTUNEMENTS[(unique_idx // 71) % len(SPIRITUAL_ATTUNEMENTS)]
-        stress_metric = STRESS_METRICS[(unique_idx // 73) % len(STRESS_METRICS)]
-        motivation_level = MOTIVATION_LEVELS[(unique_idx // 79) % len(MOTIVATION_LEVELS)]
-        leisure_pursuit = LEISURE_PURSUITS[(unique_idx // 83) % len(LEISURE_PURSUITS)]
-        mobility_mode = MOBILITY_MODES[(unique_idx // 89) % len(MOBILITY_MODES)]
-        clothing_comfort = CLOTHING_COMFORTS[(unique_idx // 97) % len(CLOTHING_COMFORTS)]
-        memory_trigger = MEMORY_TRIGGERS[(unique_idx // 101) % len(MEMORY_TRIGGERS)]
-        pacing_rhythm = PACING_RHYTHMS[(unique_idx // 103) % len(PACING_RHYTHMS)]
-        ethical_stand = ETHICAL_STANDS[(unique_idx // 107) % len(ETHICAL_STANDS)]
-        hydration_level = HYDRATION_LEVELS[(unique_idx // 109) % len(HYDRATION_LEVELS)]
-        temperature_comfort = TEMPERATURE_COMFORTS[(unique_idx // 113) % len(TEMPERATURE_COMFORTS)]
-        acoustic_scape = ACOUSTIC_SCAPES[(unique_idx // 127) % len(ACOUSTIC_SCAPES)]
-        visual_horizon = VISUAL_HORIZONS[(unique_idx // 131) % len(VISUAL_HORIZONS)]
-        metabolic_fatigue = METABOLIC_FATIGUE[(unique_idx // 137) % len(METABOLIC_FATIGUE)]
-        self_esteem = SELF_ESTEEMS[(unique_idx // 139) % len(SELF_ESTEEMS)]
-        timeline_epoch = TIMELINE_EPOCHS[(unique_idx // 149) % len(TIMELINE_EPOCHS)]
-        primary_partner = PRIMARY_PARTNERS[(unique_idx // 151) % len(PRIMARY_PARTNERS)]
-        goal_horizon = GOAL_HORIZONS[(unique_idx // 157) % len(GOAL_HORIZONS)]
-        somatic_comfort = SOMATIC_COMFORTS[(unique_idx // 163) % len(SOMATIC_COMFORTS)]
-        info_source = INFO_SOURCES[(unique_idx // 167) % len(INFO_SOURCES)]
-        clutter_level = CLUTTER_LEVELS[(unique_idx // 173) % len(CLUTTER_LEVELS)]
-        natural_exposure = NATURAL_EXPOSURES[(unique_idx // 179) % len(NATURAL_EXPOSURES)]
+        # Determine dimension selections deterministically using distinct prime progressions to avoid cycle alignment
+        stage_name = STAGES_LIST[unique_idx % len(STAGES_LIST)]
+        valid_phases = STAGE_TO_PHASES[stage_name]
+        phase = valid_phases[(unique_idx // len(STAGES_LIST)) % len(valid_phases)]
+
+        domain = select_deterministic_leaf("domain", DOMAINS, stage_name, unique_idx // 3)
+        life_factor = select_deterministic_leaf("life_factor", LIFE_FACTORS, stage_name, unique_idx // 7)
+        condition = select_deterministic_leaf("condition", CONDITIONS, stage_name, unique_idx // 11)
+        environment = select_deterministic_leaf("environment", ENVIRONMENTS, stage_name, unique_idx // 13)
+        sensory_input = select_deterministic_leaf("sensory_input", SENSORY_INPUTS, stage_name, unique_idx // 17)
+        weather = select_deterministic_leaf("weather", WEATHER, stage_name, unique_idx // 19)
+        time_of_day = select_deterministic_leaf("time_of_day", TIME_OF_DAY, stage_name, unique_idx // 23)
+        cognitive_mode = select_deterministic_leaf("cognitive_mode", COGNITIVE_MODES, stage_name, unique_idx // 29)
+        physical_status = select_deterministic_leaf("physical_status", PHYSICAL_STATUS, stage_name, unique_idx // 31)
+        social_setting = select_deterministic_leaf("social_setting", SOCIAL_SETTINGS, stage_name, unique_idx // 37)
+        primary_activity = select_deterministic_leaf("primary_activity", PRIMARY_ACTIVITIES, stage_name, unique_idx // 41)
+        financial_context = select_deterministic_leaf("financial_context", FINANCIAL_CONTEXTS, stage_name, unique_idx // 43)
+        relationship_tuning = select_deterministic_leaf("relationship_tuning", RELATIONSHIP_TUNINGS, stage_name, unique_idx // 47)
+        dietary_metabolism = select_deterministic_leaf("dietary_metabolism", DIETARY_METABOLISM, stage_name, unique_idx // 53)
+        ergonomic_posture = select_deterministic_leaf("ergonomic_posture", ERGONOMIC_POSTURES, stage_name, unique_idx // 59)
+        vocational_drive = select_deterministic_leaf("vocational_drive", VOCATIONAL_DRIVES, stage_name, unique_idx // 61)
+        creative_outlet = select_deterministic_leaf("creative_outlet", CREATIVE_OUTLETS, stage_name, unique_idx // 67)
+        spiritual_attunement = select_deterministic_leaf("spiritual_attunement", SPIRITUAL_ATTUNEMENTS, stage_name, unique_idx // 71)
+        stress_metric = select_deterministic_leaf("stress_metric", STRESS_METRICS, stage_name, unique_idx // 73)
+        motivation_level = select_deterministic_leaf("motivation_level", MOTIVATION_LEVELS, stage_name, unique_idx // 79)
+        leisure_pursuit = select_deterministic_leaf("leisure_pursuit", LEISURE_PURSUITS, stage_name, unique_idx // 83)
+        mobility_mode = select_deterministic_leaf("mobility_mode", MOBILITY_MODES, stage_name, unique_idx // 89)
+        clothing_comfort = select_deterministic_leaf("clothing_comfort", CLOTHING_COMFORTS, stage_name, unique_idx // 97)
+        memory_trigger = select_deterministic_leaf("memory_trigger", MEMORY_TRIGGERS, stage_name, unique_idx // 101)
+        pacing_rhythm = select_deterministic_leaf("pacing_rhythm", PACING_RHYTHMS, stage_name, unique_idx // 103)
+        ethical_stand = select_deterministic_leaf("ethical_stand", ETHICAL_STANDS, stage_name, unique_idx // 107)
+        hydration_level = select_deterministic_leaf("hydration_level", HYDRATION_LEVELS, stage_name, unique_idx // 109)
+        temperature_comfort = select_deterministic_leaf("temperature_comfort", TEMPERATURE_COMFORTS, stage_name, unique_idx // 113)
+        acoustic_scape = select_deterministic_leaf("acoustic_scape", ACOUSTIC_SCAPES, stage_name, unique_idx // 127)
+        visual_horizon = select_deterministic_leaf("visual_horizon", VISUAL_HORIZONS, stage_name, unique_idx // 131)
+        metabolic_fatigue = select_deterministic_leaf("metabolic_fatigue", METABOLIC_FATIGUE, stage_name, unique_idx // 137)
+        self_esteem = select_deterministic_leaf("self_esteem", SELF_ESTEEMS, stage_name, unique_idx // 139)
+        timeline_epoch = select_deterministic_leaf("timeline_epoch", TIMELINE_EPOCHS, stage_name, unique_idx // 149)
+        primary_partner = select_deterministic_leaf("primary_partner", PRIMARY_PARTNERS, stage_name, unique_idx // 151)
+        goal_horizon = select_deterministic_leaf("goal_horizon", GOAL_HORIZONS, stage_name, unique_idx // 157)
+        somatic_comfort = select_deterministic_leaf("somatic_comfort", SOMATIC_COMFORTS, stage_name, unique_idx // 163)
+        info_source = select_deterministic_leaf("info_source", INFO_SOURCES, stage_name, unique_idx // 167)
+        clutter_level = select_deterministic_leaf("clutter_level", CLUTTER_LEVELS, stage_name, unique_idx // 173)
+        natural_exposure = select_deterministic_leaf("natural_exposure", NATURAL_EXPOSURES, stage_name, unique_idx // 179)
+
+        # Get Eriksonian scaffold values based on stage
+        stage_info = ERIKSONIAN_MESH_SCAFFOLD[stage_name]
+        crisis = stage_info["crisis"]
+        virtue = stage_info["virtue"]
+        relations = stage_info["relations"]
+        modality = stage_info["modality"]
 
         temp_idx = unique_idx % len(templates)
         prompt = templates[temp_idx].format(
@@ -783,8 +1070,14 @@ def generate_high_fidelity_distractors(count: int):
             timeline_epoch=timeline_epoch, primary_partner=primary_partner,
             goal_horizon=goal_horizon, somatic_comfort=somatic_comfort,
             info_source=info_source, clutter_level=clutter_level,
-            natural_exposure=natural_exposure
+            natural_exposure=natural_exposure,
+            crisis=crisis, virtue=virtue, relations=relations, modality=modality
         )
+        
+        cross_link = generate_cross_epoch_link(unique_idx, phase)
+        if cross_link:
+            prompt += cross_link
+            
         distractors.append((prompt, phase, domain))
     return distractors
 
