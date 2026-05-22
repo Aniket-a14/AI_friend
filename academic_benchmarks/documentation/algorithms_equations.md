@@ -304,11 +304,44 @@ y[i] = \left(1 - \frac{i}{\text{fade\_len}}\right) \cdot x_{\text{prev}}[i] + \f
 
 where $\text{fade\_len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ represents the blending window limit.
 
+## 6. Voice Prosody & Acoustic Parameter Mapping
+
+To express continuous cognitive and endocrine states paralinguistically, CVS-3.0 maps the internal PAD affect values, fatigue metrics, and physical distance variables directly into acoustic synthesis parameters (pacing speech rate, vocal pitch, and physical volume) using bounded non-linear activation functions:
+
+### 6.1 Speech Rate (Pacing) Modulation
+The speech pacing rate factor ($R_{\text{pace}} \in [0.5, 2.0]$) is modulated by emotional arousal (positive scaling), valence (negative scaling for slow, sad vocalization), and fatigue-driven pace-dampening:
+
+```math
+R_{\text{pace}} = 1.0 + \tanh(0.20 \cdot \text{arousal} - 0.10 \cdot \text{valence} - \text{fatigue\_slow})
+```
+
+where $\text{fatigue\_slow} = 0.15 \cdot \text{fatigue}$.
+
+### 6.2 Vocal Pitch (F0) Modulation
+The fundamental frequency scale factor ($P_{\text{vocal}} \in [0.5, 2.0]$) is pulled dynamically by valence and arousal (positive pitch shifts), dominance (defensive low-frequency pitch drops), metabolic fatigue, and volumetric distance:
+
+```math
+P_{\text{vocal}} = 1.0 + \tanh(0.05 \cdot \text{valence} + 0.15 \cdot \text{arousal} - 0.10 \cdot \text{dominance} - \text{fatigue\_pitch\_drop} + \text{dist\_pitch\_mod})
+```
+
+where:
+*   $\text{fatigue\_pitch\_drop} = 0.05 \cdot \text{fatigue}$
+*   $\text{dist\_pitch\_mod} = \text{clamp}(0.05 \cdot (\text{distance} - 1.0), -0.10, 0.10)$
+
+### 6.3 Vocal Volume Modulation
+Vocal intensity ($V_{\text{vocal}} \in [0.1, 1.5]$) maps from dominance (confident louder speech) adjusted by inverse-square physical distance compensation:
+
+```math
+V_{\text{vocal}} = 0.40 + 0.60 \cdot \text{dominance} + \text{dist\_vol\_mod}
+```
+
+where $\text{dist\_vol\_mod} = \text{clamp}(0.15 \cdot (\text{distance} - 1.0), -0.20, 0.30)$.
+
 ---
 
-## 6. Algorithmic Implementations
+## 7. Algorithmic Implementations
 
-### 6.1 Neurosymbolic ACT-R Memory Retrieval
+### 7.1 Neurosymbolic ACT-R Memory Retrieval
 
 The primary memory retrieval routine combines structural Graph search with cognitive ACT-R sub-symbolic gating:
 
