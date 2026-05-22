@@ -14,30 +14,30 @@ Primary appraisal evaluates the immediate significance of an event for the agent
 
 *   **Relevance ($R \in [0, 1]$):** Quantifies the attention weight of the incoming event. User-initiated dialogue events are treated as high relevance, while autonomous internal ticks are low relevance:
 
-    ```math
-    R = \begin{cases}
-      1.0 & \text{if event is } \texttt{USER\_MESSAGE} \\
-      0.1 & \text{if event is } \texttt{SYSTEM\_TICK} \\
-      0.5 & \text{otherwise}
-    \end{cases}
-    ```
+```math
+R = \begin{cases}
+  1.0 & \text{if event is } \texttt{USER\_MESSAGE} \\
+  0.1 & \text{if event is } \texttt{SYSTEM\_TICK} \\
+  0.5 & \text{otherwise}
+\end{cases}
+```
 
 *   **Novelty ($N \in [0, 1]$):** Measures semantic distance from recent dialogue history. Calculated as the Jaccard distance against a rolling queue of the $M = 20$ most recent conversational turns:
 
-    ```math
-    N = \begin{cases}
-      0.8 & \text{if } \mathcal{H} = \emptyset \\
-      1 - \max_{h \in \mathcal{H}} \frac{|\mathcal{W}_{\text{event}} \cap \mathcal{W}_h|}{|\mathcal{W}_{\text{event}} \cup \mathcal{W}_h|} & \text{otherwise}
-    \end{cases}
-    ```
+```math
+N = \begin{cases}
+  0.8 & \text{if } \mathcal{H} = \emptyset \\
+  1 - \max_{h \in \mathcal{H}} \frac{|\mathcal{W}_{\text{event}} \cap \mathcal{W}_h|}{|\mathcal{W}_{\text{event}} \cup \mathcal{W}_h|} & \text{otherwise}
+\end{cases}
+```
 
-    where $\mathcal{W}_{\text{event}}$ is the set of lowercase keywords in the active utterance, and $\mathcal{W}_h$ is the keyword set of historical turn $h$.
+where $\mathcal{W}_{\text{event}}$ is the set of lowercase keywords in the active utterance, and $\mathcal{W}_h$ is the keyword set of historical turn $h$.
 
 *   **Goal Congruence ($G \in [-1, 1]$):** Represents how much the event advances or hinders the agent's core social goal. It maps directly from the emotional bias $E_b$ (extracted via acoustic pitch/sentiment trackers):
 
-    ```math
-    G = \text{clamp}(E_b, -1.0, 1.0)
-    ```
+```math
+G = \text{clamp}(E_b, -1.0, 1.0)
+```
 
 ### 1.2 Secondary Appraisal (Lazarus/OCC/EMA)
 
@@ -45,27 +45,27 @@ Secondary appraisal evaluates the agent's coping potential, social norms, and re
 
 *   **Agency ($A \in [0, 1]$):** Attributes causal responsibility. For user messages, the agent holds high coping agency since it can generate a verbal response; for system ticks, agency is lower:
 
-    ```math
-    A = \begin{cases}
-      0.8 & \text{if event is } \texttt{USER\_MESSAGE} \\
-      0.3 & \text{otherwise}
-    \end{cases}
-    ```
+```math
+A = \begin{cases}
+  0.8 & \text{if event is } \texttt{USER\_MESSAGE} \\
+  0.3 & \text{otherwise}
+\end{cases}
+```
 
 *   **Norm Alignment ($NA \in [0, 1]$):** Represents social praiseworthiness and boundary respect. Evaluated by matching user input keywords against a configured set of identity boundaries, excluding standard skip words (e.g., *not*, *no*, *don't*, *never*, *without*, *isn't*). Every keyword violation decreases norm alignment:
 
-    ```math
-    NA = \max(0.0, 1.0 - 0.2 \cdot \text{violations})
-    ```
+```math
+NA = \max(0.0, 1.0 - 0.2 \cdot \text{violations})
+```
 
 *   **Relationship Impact ($RI \in [-1, 1]$):** Projects the social valence of the interaction, modulated by the existing relational trust $T$:
 
-    ```math
-    RI = \begin{cases}
-      E_b \cdot 0.25 & \text{if } T < 0.3 \text{ (Low trust dampens positive impact)} \\
-      E_b \cdot 0.50 & \text{otherwise}
-    \end{cases}
-    ```
+```math
+RI = \begin{cases}
+  E_b \cdot 0.25 & \text{if } T < 0.3 \text{ (Low trust dampens positive impact)} \\
+  E_b \cdot 0.50 & \text{otherwise}
+\end{cases}
+```
 
 ### 1.3 System 2 Deliberative Reappraisal & Semantic Mood Drift
 
@@ -93,21 +93,21 @@ Internal emotional states are modeled using Mehrabian & Russell's (1974) **3D PA
 
 *   **Valence ($V \in [-1.0, 1.0]$):** Governed by goal congruence and relationship impact, with drift rate $\alpha = 0.3$:
 
-    ```math
-    V(t) = (1 - \alpha) \cdot V(t-1) + \alpha \cdot (0.6 \cdot G + 0.4 \cdot RI)
-    ```
+```math
+V(t) = (1 - \alpha) \cdot V(t-1) + \alpha \cdot (0.6 \cdot G + 0.4 \cdot RI)
+```
 
 *   **Arousal ($Ar \in [0, 1]$):** Governed by event novelty and attention relevance, with drift rate $\beta = 0.5$:
 
-    ```math
-    Ar(t) = (1 - \beta) \cdot Ar(t-1) + \beta \cdot (0.6 \cdot N + 0.4 \cdot R)
-    ```
+```math
+Ar(t) = (1 - \beta) \cdot Ar(t-1) + \beta \cdot (0.6 \cdot N + 0.4 \cdot R)
+```
 
 *   **Dominance ($D \in [0, 1]$):** Governed by causal agency and norm boundaries, with drift rate $\gamma = 0.2$:
 
-    ```math
-    D(t) = (1 - \gamma) \cdot D(t-1) + \gamma \cdot (0.6 \cdot A + 0.4 \cdot NA)
-    ```
+```math
+D(t) = (1 - \gamma) \cdot D(t-1) + \gamma \cdot (0.6 \cdot A + 0.4 \cdot NA)
+```
 
 ### 2.2 Relational Trust & Attachment Dynamics
 
@@ -116,33 +116,33 @@ To model secure human-agent bonds, we implement a multi-dimensional trust space 
 *   **Dimensional Trust:** Trust is decomposed into three components updating with rate $\delta = 0.1$:
     *   **Trust Benevolence ($T_b$):** Sensitivity to emotional relationship impact:
 
-        ```math
-        T_b(t) = \text{clamp}(T_b(t-1) + \delta \cdot RI, 0.0, 1.0)
-        ```
+```math
+T_b(t) = \text{clamp}(T_b(t-1) + \delta \cdot RI, 0.0, 1.0)
+```
 
     *   **Trust Competence ($T_c$):** Sensitivity to conversational helpfulness and goal congruence:
 
-        ```math
-        T_c(t) = \text{clamp}(T_c(t-1) + \delta \cdot (0.6 \cdot G + 0.4 \cdot R), 0.0, 1.0)
-        ```
+```math
+T_c(t) = \text{clamp}(T_c(t-1) + \delta \cdot (0.6 \cdot G + 0.4 \cdot R), 0.0, 1.0)
+```
 
     *   **Trust Integrity ($T_i$):** Sensitivity to boundary adherence:
 
-        ```math
-        T_i(t) = \text{clamp}(T_i(t-1) + \delta \cdot NA, 0.0, 1.0)
-        ```
+```math
+T_i(t) = \text{clamp}(T_i(t-1) + \delta \cdot NA, 0.0, 1.0)
+```
 
     *   **Scalar Combined Trust ($T$):** The average of the three components:
 
-        ```math
-        T(t) = \frac{T_b(t) + T_c(t) + T_i(t)}{3.0}
-        ```
+```math
+T(t) = \frac{T_b(t) + T_c(t) + T_i(t)}{3.0}
+```
 
 *   **Bowlby Secure Attachment ($At \in [0, 1]$):** Attachment builds slowly over time based on interaction frequency and trust, with growth rate $\epsilon = 0.03$:
 
-    ```math
-    At(t) = \text{clamp}\left(At(t-1) + \epsilon \cdot T(t) \cdot \min\left(1.0, \frac{\text{Interactions}}{100}\right), 0.0, 1.0\right)
-    ```
+```math
+At(t) = \text{clamp}\left(At(t-1) + \epsilon \cdot T(t) \cdot \min\left(1.0, \frac{\text{Interactions}}{100}\right), 0.0, 1.0\right)
+```
 
 ### 2.3 Endocrine Homeostasis & Hormonal Coupling
 
@@ -150,34 +150,34 @@ Three continuous hormones modulate the LLM's generation hyperparameters (tempera
 
 *   **Fatigue Cycle ($F \in [0, 1]$):** Metabolic wear-and-tear accumulated during active turns and recovered during idle intervals. Governed by a circadian multiplier $\mu_{\text{circadian}}$ (set to $1.8$ at night $22:00\text{--}06:00$, otherwise $1.0$):
 
-    ```math
-    F(t) = \begin{cases}
-      \text{clamp}\left(F(t-1) + \frac{0.15 \cdot \Delta t \cdot \mu_{\text{circadian}}}{3600}, 0.0, 1.0\right) & \text{if active interaction} \\
-      \text{clamp}\left(F(t-1) - \frac{0.20 \cdot \Delta t}{\mu_{\text{circadian}} \cdot 3600}, 0.0, 1.0\right) & \text{if idle/resting}
-    \end{cases}
-    ```
+```math
+F(t) = \begin{cases}
+  \text{clamp}\left(F(t-1) + \frac{0.15 \cdot \Delta t \cdot \mu_{\text{circadian}}}{3600}, 0.0, 1.0\right) & \text{if active interaction} \\
+  \text{clamp}\left(F(t-1) - \frac{0.20 \cdot \Delta t}{\mu_{\text{circadian}} \cdot 3600}, 0.0, 1.0\right) & \text{if idle/resting}
+\end{cases}
+```
 
-    where $\Delta t$ is the elapsed time in seconds.
+where $\Delta t$ is the elapsed time in seconds.
 
 *   **Cortisol Coupling ($C \in [0, 1]$):** Represents stress levels. Spikes under negative valence ($V < 0$) and metabolic fatigue ($F$):
 
-    ```math
-    C(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right)
-    ```
+```math
+C(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right)
+```
 
-    *Hyperparameter mapping:* High cortisol reduces LLM generation temperature to enforce strict, defensive responses; low cortisol increases temperature to support warm, creative responses.
+*Hyperparameter mapping:* High cortisol reduces LLM generation temperature to enforce strict, defensive responses; low cortisol increases temperature to support warm, creative responses.
 
 *   **Dopamine Coupling ($D_{\text{dopamine}} \in [0, 1]$):** Represents reward tracking. Mapped from positive valence ($V > 0$) combined with fatigue-modulated arousal $Ar_{\text{actual}}$:
 
-    ```math
-    Ar_{\text{actual}}(t) = \text{clamp}(Ar(t) + 0.2 \cdot F(t), 0.0, 1.0)
-    ```
+```math
+Ar_{\text{actual}}(t) = \text{clamp}(Ar(t) + 0.2 \cdot F(t), 0.0, 1.0)
+```
 
-    ```math
-    D_{\text{dopamine}}(t) = \text{clamp}(\max(0.0, V(t)) \cdot Ar_{\text{actual}}(t), 0.0, 1.0)
-    ```
+```math
+D_{\text{dopamine}}(t) = \text{clamp}(\max(0.0, V(t)) \cdot Ar_{\text{actual}}(t), 0.0, 1.0)
+```
 
-    *Hyperparameter mapping:* High dopamine increases LLM `top_p` to enable playful and exploratory phrasing.
+*Hyperparameter mapping:* High dopamine increases LLM `top_p` to enable playful and exploratory phrasing.
 
 ### 2.4 Idle State Decay (ALMA Decay)
 
@@ -215,21 +215,21 @@ Nodes return a status $s \in \{ \text{SUCCESS}, \, \text{FAILURE}, \, \text{RUNN
 
 *   **Selector Nodes ($\lor$):** Fallback routers that tick their children sequentially. If any child succeeds or is running, the Selector propagates that status immediately. It returns `FAILURE` if and only if all children fail:
 
-    ```math
-    \text{Selector}(b) = \begin{cases}
-      s_i & \text{if } \exists i \text{ s.t. } \text{tick}(C_i, b) = s_i \in \{\text{SUCCESS}, \text{RUNNING}\} \\
-      \text{FAILURE} & \text{otherwise}
-    \end{cases}
-    ```
+```math
+\text{Selector}(b) = \begin{cases}
+  s_i & \text{if } \exists i \text{ s.t. } \text{tick}(C_i, b) = s_i \in \{\text{SUCCESS}, \text{RUNNING}\} \\
+  \text{FAILURE} & \text{otherwise}
+\end{cases}
+```
 
 *   **Sequence Nodes ($\land$):** Reactive pipelines that tick children sequentially. If any child fails or is running, the Sequence propagates that status immediately. It returns `SUCCESS` if and only if all children succeed:
 
-    ```math
-    \text{Sequence}(b) = \begin{cases}
-      s_i & \text{if } \exists i \text{ s.t. } \text{tick}(C_i, b) = s_i \in \{\text{FAILURE}, \text{RUNNING}\} \\
-      \text{SUCCESS} & \text{otherwise}
-    \end{cases}
-    ```
+```math
+\text{Sequence}(b) = \begin{cases}
+  s_i & \text{if } \exists i \text{ s.t. } \text{tick}(C_i, b) = s_i \in \{\text{FAILURE}, \text{RUNNING}\} \\
+  \text{SUCCESS} & \text{otherwise}
+\end{cases}
+```
 
 ### 3.2 Leaf Nodes (Actions & Conditions)
 
@@ -299,21 +299,21 @@ Score_i = A_i + W_{\text{spread}} \cdot \text{Similarity}_{\text{eff}} - 0.5 \cd
 
 *   **Sub-Symbolic Base Activation ($A_i$):** Represents the power-law decay of availability. $t$ is the time elapsed (in hours) since memory creation, $n$ is the recall count, and $d = 0.5$ is the standard ACT-R decay constant:
 
-    ```math
-    A_i = \ln(n) - d \cdot \ln(t + 1.0) + 1.5 \cdot \text{Importance}_i + 0.15 \cdot (1.0 - \text{dist\_emo})
-    ```
+```math
+A_i = \ln(n) - d \cdot \ln(t + 1.0) + 1.5 \cdot \text{Importance}_i + 0.15 \cdot (1.0 - \text{dist\_emo})
+```
 
 *   **Emotional Distance ($\text{dist\_emo}$):** Mapped as the Euclidean distance between the active emotional parameters of the agent and those stored at encoding:
 
-    ```math
-    \text{dist\_emo} = \sqrt{(V_{\text{memory}} - V_{\text{agent}})^2 + (Ar_{\text{memory}} - Ar_{\text{agent}})^2}
-    ```
+```math
+\text{dist\_emo} = \sqrt{(V_{\text{memory}} - V_{\text{agent}})^2 + (Ar_{\text{memory}} - Ar_{\text{agent}})^2}
+```
 
 *   **Effective Similarity ($\text{Similarity}_{\text{eff}}$):** Blends vector cosine similarity with hormone levels (cortisol stress dampening) and emotional valence:
 
-    ```math
-    \text{Similarity}_{\text{eff}} = \text{Similarity} \cdot (1.0 + 0.1 \cdot V_{\text{memory}} \cdot Ar_{\text{memory}} - 0.2 \cdot Ar_{\text{agent}} \cdot C_{\text{cortisol}})
-    ```
+```math
+\text{Similarity}_{\text{eff}} = \text{Similarity} \cdot (1.0 + 0.1 \cdot V_{\text{memory}} \cdot Ar_{\text{memory}} - 0.2 \cdot Ar_{\text{agent}} \cdot C_{\text{cortisol}})
+```
 
 ### 5.2 Attentional Spreading & Direct Cue Boost
 
@@ -321,15 +321,15 @@ CVS-3.0 extends standard ACT-R with dynamic, real-time associative spreading act
 
 *   **Direct Cue Boost:** If direct cues match key terms in the query text (e.g. *Kolkata*, *Bangalore*, *Priya*, *Rasgulla*, *Cognitive Architectures*, *Affective*), matching memories receive an instantaneous boost:
 
-    ```math
-    Score_i \leftarrow Score_i + 1.2
-    ```
+```math
+Score_i \leftarrow Score_i + 1.2
+```
 
 *   **Spreading Activation:** Memories receiving a direct cue boost propagate activation $+0.6$ to related candidate nodes in the pool sharing common entities or matching cross-epoch age attributes in content:
 
-    ```math
-    Score_j \leftarrow Score_j + 0.6 \quad \forall j \text{ connected to } i
-    ```
+```math
+Score_j \leftarrow Score_j + 0.6 \quad \forall j \text{ connected to } i
+```
 
 ### 5.3 Gating and Retrieval Probability
 
@@ -468,15 +468,15 @@ During consolidation, the LLM processes dialogue summaries to extract semantic t
 
 *   **Confidence Gating:** Triplets are discarded if extraction confidence falls below the reliability threshold:
 
-    ```math
-    \text{Confidence}(T_k) < \theta_{\text{confidence}} = 0.8
-    ```
+```math
+\text{Confidence}(T_k) < \theta_{\text{confidence}} = 0.8
+```
 
 *   **Graph Deduplication:** Triplet elements are sanitized. The system queries Neo4j to verify relationship uniqueness. If the triplet is a duplicate, the insertion is bypassed:
 
-    ```math
-    (s \xrightarrow{r} o) \in \mathcal{G}_{\text{graph}} \implies \text{Bypass Insertion}
-    ```
+```math
+(s \xrightarrow{r} o) \in \mathcal{G}_{\text{graph}} \implies \text{Bypass Insertion}
+```
 
 ### 8.3 Persona Evolution
 
@@ -492,9 +492,9 @@ Dialogue sequences are synthesized into a single narrative summary representing 
 
 *   **Composite Affective Compression:** The emotional attributes ($V, Ar, D$) of individual dialogue turns are compressed into composite coordinates:
 
-    ```math
-    \bar{V} = \frac{1}{K}\sum_{k=1}^K V_k, \quad \bar{Ar} = \frac{1}{K}\sum_{k=1}^K Ar_k, \quad \bar{D} = \frac{1}{K}\sum_{k=1}^K D_k
-    ```
+```math
+\bar{V} = \frac{1}{K}\sum_{k=1}^K V_k, \quad \bar{Ar} = \frac{1}{K}\sum_{k=1}^K Ar_k, \quad \bar{D} = \frac{1}{K}\sum_{k=1}^K D_k
+```
 
 *   **Vector Persistence:** The narrative text is embedded and persisted into `pg_vector` with a consolidated importance score of $0.6$ and associated with the computed composite PAD coordinates.
 
@@ -504,23 +504,23 @@ Over time, stored memories experience passive decay and structural pruning.
 
 *   **Activation Decay Evaluation:** On decay intervals, the sub-symbolic base activation is re-evaluated using decay constant $d = 0.5$:
 
-    ```math
-    A_i = \ln(n) - d \cdot \ln(t + 1.0)
-    ```
+```math
+A_i = \ln(n) - d \cdot \ln(t + 1.0)
+```
 
-    where $t$ is the hours since creation, and $n$ is the historical recall frequency.
+where $t$ is the hours since creation, and $n$ is the historical recall frequency.
 
 *   **Pruning Gating:** Memories are permanently pruned if their base activation drops below the decay threshold:
 
-    ```math
-    A_i < \theta_{\text{prune}} = -3.5 \implies \text{Delete Memory } i
-    ```
+```math
+A_i < \theta_{\text{prune}} = -3.5 \implies \text{Delete Memory } i
+```
 
 *   **Importance Score Decay:** Surviving memories have their importance score decayed by a factor of $0.8$ to represent natural cognitive decay:
 
-    ```math
-    \text{Importance}_i(t) = \max(0.01, \text{Importance}_i(t-1) \cdot 0.8)
-    ```
+```math
+\text{Importance}_i(t) = \max(0.01, \text{Importance}_i(t-1) \cdot 0.8)
+```
 
 ---
 
