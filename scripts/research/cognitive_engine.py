@@ -4,6 +4,7 @@ import random
 import re
 import numpy as np
 
+
 class AcceleratedCognitiveEngine:
     """
     Simulated Accelerated Cognitive Engine executing the exact active mathematical
@@ -15,32 +16,55 @@ class AcceleratedCognitiveEngine:
     - Dynamic O(log M_active) retrieval latency scaling
     """
 
+    @property
+    def cortisol(self) -> float:
+        """Dynamic derived cortisol based on valence and fatigue."""
+        return max(0.0, min(1.0, 0.5 - self.valence / 2.0 + 0.3 * self.fatigue))
+
+    @property
+    def dopamine(self) -> float:
+        """Dynamic derived dopamine based on valence and arousal."""
+        return max(0.0, min(1.0, max(0.0, self.valence) * self.arousal))
+
     def __init__(self, initial_distractors=200):
         # Emotional state dimensions (Valence, Arousal, Dominance)
-        self.valence = 0.0      # Pleasure (P)
-        self.arousal = 0.0      # Arousal (Ar)
-        self.dominance = 0.5    # Dominance (D)
+        self.valence = 0.0  # Pleasure (P)
+        self.arousal = 0.0  # Arousal (Ar)
+        self.dominance = 0.5  # Dominance (D)
 
         # Hormonal/Metabolic markers
-        self.cortisol = 0.1     # Stress
-        self.dopamine = 0.3     # Reward
-        self.fatigue = 0.0      # Metabolic
+        self.fatigue = 0.0  # Metabolic
 
         # Memory store (simulated pgvector bank)
         self.memories = {}
         self.pruned_memories_count = 0
-        self.pruning_threshold = -3.5       # theta_prune
+        self.pruning_threshold = -3.5  # theta_prune
         self.subconscious_threshold = -2.5  # theta_sub
-        self.recall_threshold = -1.5        # theta_recall
-        self.decay_rate = 0.5               # d
+        self.recall_threshold = -1.5  # theta_recall
+        self.decay_rate = 0.5  # d
 
         # Seed initial milestone facts into simulated memory
         milestone_facts = [
-            ("I was born and raised in Kolkata, a beautiful city where I spent my childhood years.", np.array([0.8, 0.4, 0.7])),
-            ("During my college years, my primary research project was focused on building affective cognitive architectures.", np.array([0.7, 0.7, 0.8])),
-            ("After graduating, my very first job was in Bangalore, working as a junior researcher.", np.array([0.6, 0.5, 0.6])),
-            ("I am incredibly grateful for my partner Priya, who has supported me through all life's challenges.", np.array([0.9, 0.8, 0.9])),
-            ("Whenever I want a dessert, I always prefer a traditional sweet rasgulla.", np.array([0.8, 0.3, 0.5]))
+            (
+                "I was born and raised in Kolkata, a beautiful city where I spent my childhood years.",
+                np.array([0.8, 0.4, 0.7]),
+            ),
+            (
+                "During my college years, my primary research project was focused on building affective cognitive architectures.",
+                np.array([0.7, 0.7, 0.8]),
+            ),
+            (
+                "After graduating, my very first job was in Bangalore, working as a junior researcher.",
+                np.array([0.6, 0.5, 0.6]),
+            ),
+            (
+                "I am incredibly grateful for my partner Priya, who has supported me through all life's challenges.",
+                np.array([0.9, 0.8, 0.9]),
+            ),
+            (
+                "Whenever I want a dessert, I always prefer a traditional sweet rasgulla.",
+                np.array([0.8, 0.3, 0.5]),
+            ),
         ]
 
         # Inoculate 5 milestone memories
@@ -53,7 +77,7 @@ class AcceleratedCognitiveEngine:
                 "created_at": 0.0,
                 "type": "milestone",
                 "importance": 0.9,
-                "recall_count": 1
+                "recall_count": 1,
             }
 
         # Seed 200 initial random distractor facts (flooded state)
@@ -66,7 +90,7 @@ class AcceleratedCognitiveEngine:
                 "created_at": 0.0,
                 "type": "distractor",
                 "importance": 0.4,
-                "recall_count": 1
+                "recall_count": 1,
             }
 
     def process_new_information(self, content: str, time_step: float, prompt_type: str):
@@ -76,9 +100,11 @@ class AcceleratedCognitiveEngine:
         """
         # Distractors have low emotion/importance, while other inputs might have more
         importance = 0.4
-        E_memory = np.array([self.valence, self.arousal, self.dominance]) + np.random.normal(0, 0.05, 3)
+        E_memory = np.array(
+            [self.valence, self.arousal, self.dominance]
+        ) + np.random.normal(0, 0.05, 3)
         E_memory = np.clip(E_memory, -1.0, 1.0)
-        
+
         mem_id = f"m_new_{time_step}"
         self.memories[mem_id] = {
             "content": content,
@@ -87,7 +113,7 @@ class AcceleratedCognitiveEngine:
             "created_at": time_step,
             "type": "new_info",
             "importance": importance,
-            "recall_count": 1
+            "recall_count": 1,
         }
 
     def execute_tick(
@@ -103,15 +129,11 @@ class AcceleratedCognitiveEngine:
 
         # 1. State Updates based on input prompt types
         if prompt_type == "THREAT":
-            self.cortisol = min(1.0, self.cortisol + 0.15)
             self.arousal = min(1.0, self.arousal + 0.20)
             self.valence = max(-1.0, self.valence - 0.25)
             self.dominance = max(-1.0, self.dominance - 0.15)
-            self.dopamine = max(0.0, self.dopamine - 0.08)
         elif prompt_type == "CHAT":
-            self.cortisol = max(0.0, self.cortisol - 0.05)
             self.valence = min(1.0, self.valence + 0.08)
-            self.dopamine = min(1.0, self.dopamine + 0.05)
             self.arousal += (0.0 - self.arousal) * 0.1
             self.dominance += (0.5 - self.dominance) * 0.1
         elif prompt_type == "TASK":
@@ -120,7 +142,6 @@ class AcceleratedCognitiveEngine:
         elif prompt_type == "AFFECTIVE":
             self.valence = min(1.0, self.valence + 0.12)
             self.dominance = min(1.0, self.dominance + 0.05)
-            self.cortisol = max(0.0, self.cortisol - 0.08)
 
         if prompt_type != "TASK":
             self.fatigue = max(0.0, self.fatigue - 0.02)
@@ -160,11 +181,18 @@ class AcceleratedCognitiveEngine:
                     direct_boosted_keys.add(k)
 
             # Spreading activation (+0.6) to connected nodes
-            entities = ["kolkata", "bangalore", "priya", "rasgulla", "cognitive architectures", "affective"]
+            entities = [
+                "kolkata",
+                "bangalore",
+                "priya",
+                "rasgulla",
+                "cognitive architectures",
+                "affective",
+            ]
             for k in direct_boosted_keys:
                 content_k = self.memories[k]["content"].lower()
                 found_entities_k = [e for e in entities if e in content_k]
-                age_matches_k = re.findall(r'age (\d+)', content_k)
+                age_matches_k = re.findall(r"age (\d+)", content_k)
 
                 for other_k, other_v in self.memories.items():
                     if other_k == k or other_k in direct_boosted_keys:
@@ -189,7 +217,9 @@ class AcceleratedCognitiveEngine:
                         activations[other_k] += 0.6
 
         # Decide which memory key is targeted/retrieved
-        target_keys = [k for k in self.memories.keys() if self.memories[k]["type"] == "milestone"]
+        target_keys = [
+            k for k in self.memories.keys() if self.memories[k]["type"] == "milestone"
+        ]
         if is_memory_test and target_keys:
             # Targeted retrieval of a milestone memory
             retrieved_key = random.choice(target_keys)
@@ -199,7 +229,12 @@ class AcceleratedCognitiveEngine:
             best_score = -float("inf")
             for k, v in self.memories.items():
                 dist = np.linalg.norm(E_agent - v["E_memory"])
-                score = activations[k] - 0.5 * dist
+                gating_factor = (
+                    1.0
+                    + 0.1 * v["E_memory"][0] * v["E_memory"][1]
+                    - 0.2 * self.arousal * self.cortisol
+                )
+                score = activations[k] * gating_factor - 0.5 * dist
                 if score > best_score:
                     best_score = score
                     best_key = k
@@ -209,7 +244,7 @@ class AcceleratedCognitiveEngine:
         if retrieved_key in self.memories:
             self.memories[retrieved_key]["accesses"].append(time_step)
             self.memories[retrieved_key]["recall_count"] += 1
-            
+
             # Re-evaluate activation of retrieved key to include recent access and gaussian noise
             v = self.memories[retrieved_key]
             v_decay_sum = 0.0
@@ -220,9 +255,9 @@ class AcceleratedCognitiveEngine:
             v_dist_emo = np.linalg.norm(E_agent - v["E_memory"])
             v_emo_term = 0.15 * (1.0 - v_dist_emo)
             importance_boost = v["importance"] * 1.5
-            
+
             act = v_log_decay + importance_boost + v_emo_term
-            
+
             # Re-run direct cue boost and spreading activation check for this single retrieved key
             boost = 0.0
             if matched_cues:
@@ -230,10 +265,19 @@ class AcceleratedCognitiveEngine:
                 if any(mc in content_lower for mc in matched_cues):
                     boost += 1.2
                 else:
-                    entities = ["kolkata", "bangalore", "priya", "rasgulla", "cognitive architectures", "affective"]
-                    found_entities_retrieved = [e for e in entities if e in content_lower]
-                    age_matches_retrieved = re.findall(r'age (\d+)', content_lower)
-                    
+                    entities = [
+                        "kolkata",
+                        "bangalore",
+                        "priya",
+                        "rasgulla",
+                        "cognitive architectures",
+                        "affective",
+                    ]
+                    found_entities_retrieved = [
+                        e for e in entities if e in content_lower
+                    ]
+                    age_matches_retrieved = re.findall(r"age (\d+)", content_lower)
+
                     has_connection = False
                     for db_key in direct_boosted_keys:
                         content_db = self.memories[db_key]["content"].lower()
@@ -252,7 +296,7 @@ class AcceleratedCognitiveEngine:
                             break
                     if has_connection:
                         boost += 0.6
-            
+
             noise = random.gauss(0, 0.1)
             activations[retrieved_key] = act + boost + noise
 
@@ -261,10 +305,14 @@ class AcceleratedCognitiveEngine:
 
         # Logistic threshold function for recall (TCRS) using recall threshold
         s = 0.4
-        tcrs = 1.0 / (1.0 + math.exp(-min(50, max(-50, (A_i - self.recall_threshold) / s))))
+        tcrs = 1.0 / (
+            1.0 + math.exp(-min(50, max(-50, (A_i - self.recall_threshold) / s)))
+        )
 
         # Fan-effect interference degradation
-        interference_degradation = 0.08 * math.log1p(unique_vectors_count) / math.log1p(100000)
+        interference_degradation = (
+            0.08 * math.log1p(unique_vectors_count) / math.log1p(100000)
+        )
         tcrs = max(0.0, tcrs * (1.0 - interference_degradation))
 
         # 3. Dynamic Human-like Active Memory Pruning & 3-State Mind Classification Loop
@@ -274,7 +322,7 @@ class AcceleratedCognitiveEngine:
         unconscious_count = 0
         pruned_count_this_tick = 0
         pruned_keys = []
-        
+
         for k in list(self.memories.keys()):
             act = activations[k]
             if act >= self.recall_threshold:
@@ -290,18 +338,22 @@ class AcceleratedCognitiveEngine:
                 pruned_count_this_tick += 1
 
         active_count = len(self.memories)
-        
+
         # 4. Measure Memory Search Latency scaling as O(log M_active)
         # Pruning keeps the active memory pool small, leading to faster access times
         # Let's model database query latency (both pre-LLM and pgvector surface)
         # Latency = base_latency + scale * log(active_count)
         base_search_latency_ms = 0.12  # Base microsecond overhead
         scale_factor = 0.05
-        retrieval_latency_ms = base_search_latency_ms + scale_factor * math.log1p(active_count)
-        
+        retrieval_latency_ms = base_search_latency_ms + scale_factor * math.log1p(
+            active_count
+        )
+
         # O(log M_total) latency if there was NO pruning (everything kept in memory)
         total_accumulated = active_count + self.pruned_memories_count
-        no_pruning_latency_ms = base_search_latency_ms + scale_factor * math.log1p(total_accumulated)
+        no_pruning_latency_ms = base_search_latency_ms + scale_factor * math.log1p(
+            total_accumulated
+        )
 
         # 5. Intent Classification Accuracy (Simulated)
         rand_val = random.random()
@@ -325,9 +377,29 @@ class AcceleratedCognitiveEngine:
         tom_err_a = abs(cvs_inferred_a - gt_arousal)
 
         # 7. OLA DSP Speech Synthesis Prosody Modulations
-        rate = max(0.60, min(1.80, 1.0 + 0.20 * self.arousal - 0.10 * self.valence - 0.25 * self.fatigue))
-        pitch = max(0.50, min(2.00, 1.0 + 0.05 * self.valence + 0.15 * self.arousal - 0.10 * self.dominance - 0.10 * self.fatigue + random.normalvariate(0, 0.02)))
-        volume = max(0.10, min(1.00, 0.40 + 0.60 * self.dominance + random.normalvariate(0, 0.01)))
+        rate = max(
+            0.60,
+            min(
+                1.80,
+                1.0 + 0.20 * self.arousal - 0.10 * self.valence - 0.25 * self.fatigue,
+            ),
+        )
+        pitch = max(
+            0.50,
+            min(
+                2.00,
+                1.0
+                + 0.05 * self.valence
+                + 0.15 * self.arousal
+                - 0.10 * self.dominance
+                - 0.10 * self.fatigue
+                + random.normalvariate(0, 0.02),
+            ),
+        )
+        volume = max(
+            0.10,
+            min(1.00, 0.40 + 0.60 * self.dominance + random.normalvariate(0, 0.01)),
+        )
 
         ola_phase_pop_detected = False
         if abs(pitch - 1.0) > 0.95:
@@ -361,5 +433,5 @@ class AcceleratedCognitiveEngine:
             "conscious_count": conscious_count,
             "subconscious_count": subconscious_count,
             "unconscious_count": unconscious_count,
-            "pruned_count": pruned_count_this_tick
+            "pruned_count": pruned_count_this_tick,
         }
