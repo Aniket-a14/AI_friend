@@ -1,31 +1,4 @@
 {
-  "timestamp": "2026-05-21T15:27:35.919651",
-  "iterations": 100000,
-  "mode": "accelerated",
-  "duration_seconds": 8.87,
-  "e2e": {
-    "samples": 100000,
-    "mean": 1589.99,
-    "p50": 1589.76,
-    "p95": 1729.15,
-    "p99": 1786.22,
-    "min": 1235.82,
-    "max": 1944.1,
-    "jitter": 84.76
-  },
-  "ttft": {
-    "samples": 100000,
-    "mean": 703.26,
-    "min": 504.19,
-    "max": 900.67,
-    "jitter": 45.06
-  },
-  "cognitive": {
-    "intent_accuracy": 97.0,
-    "memory_recall_at_5": 100.0,
-    "tom_mae_valence": 0.0397,
-    "tom_mae_arousal": 0.0478,
-    "vocal_ola_integrity": 100.0,
-    "local_compute_ms": 0.0855
-  }
+  "status": "TBP",
+  "message": "To Be Populated dynamically by executing hard_benchmark.py"
 }

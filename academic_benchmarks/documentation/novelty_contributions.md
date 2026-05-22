@@ -21,7 +21,7 @@ graph TD
 
 ### 1.1 The Turn-Taking & Interruption Blindspot
 Standard voice activity detectors (VAD) are based on static silence thresholds (typically 500 ms to 1,000 ms). While this prevents robots from clipping their own sentences, it introduces massive turnaround lag, causing turn-taking gaps to balloon to **700 ms - 2,500 ms** (*Skantze, 2021*).
-*   **The CVS-3.0 Resolution:** We introduce a **System 1 (Fast-loop VAD)** that operates directly on the DSP audio buffer to immediately pause vocal audio output within **114.9 ms** of user speech, combined with a **System 2 (Speculative Text Segmenter)** that analyzes the user's intent to distinguish a true interruption from ambient noise or backchannels.
+*   **The CVS-3.0 Resolution:** We introduce a **System 1 (Fast-loop VAD)** that operates directly on the DSP audio buffer to immediately pause vocal audio output within **`[TBP]`** of user speech, combined with a **System 2 (Speculative Text Segmenter)** that analyzes the user's intent to distinguish a true interruption from ambient noise or backchannels.
 
 ### 1.2 The Affective Computing Blindspot
 Computational models of emotion (e.g., WASABI, ALMA) calculate internal agent states as symbolic representations, but fail to translate them directly into real-time audio synthesis parameters. The resulting synthesized voice sounds flat, static, and detached from the robot's simulated psychological state.
@@ -37,10 +37,10 @@ Traditional Retrieval-Augmented Generation (RAG) models perform static semantic 
 
 The primary contributions of the CVS-3.0 sovereign mesh architecture are summarized below:
 
-1.  **Decentralized Multi-Agent Edge Middleware:** We formulate a highly efficient, edge-native microservice mesh utilizing the zero-allocation **NATS Event Broker** as the central nervous system. This architecture reduces Inter-Process Communication (IPC) routing overhead to **0.045 ms**, running with a peak system memory footprint of only **1,079.58 MB** (8 container services).
+1.  **Decentralized Multi-Agent Edge Middleware:** We formulate a highly efficient, edge-native microservice mesh utilizing the zero-allocation **NATS Event Broker** as the central nervous system. This architecture reduces Inter-Process Communication (IPC) routing overhead to **`[TBP]`**, running with a peak system memory footprint of only **`[TBP]`** (8 container services).
 2.  **State-Accurate Endocrine and Affective Coupling:** We design a continuous homeostatic emotional system that simulates dynamic hormone fluxes (Cortisol, Dopamine, metabolic Fatigue) and 3D PAD mood shifts under environmental stressors.
 3.  **Real-Time Autonomic Physiological Entrainment:** We establish an autonomic coupling layer that maps the agent's simulated emotional state directly onto human-robot coupling parameters, achieving coupled **Breathing Rate (RR)** and **Heart Rate (HR)** respiratory entrainment in high-stress HRI.
-4.  **Neurobiologically Inspired Graph Memory System:** We combine dense vector search with symbolic ACT-R graph traversals, achieving an empirical **$99.2\%$ Memory Recall@5** on multi-hop associative queries under macOS and Jetson hardware.
+4.  **Neurobiologically Inspired Graph Memory System:** We combine dense vector search with symbolic ACT-R graph traversals, achieving an empirical **`[TBP]` Memory Recall@5** on multi-hop associative queries under macOS and Jetson hardware.
 
 ---
 
@@ -58,9 +58,9 @@ To address these core scientific and engineering bottlenecks, we present the Cog
 
 Specifically, this paper presents the following key technical and empirical contributions:
 \begin{itemize}
-    \item \textbf{High-Performance Edge Middleware:} A lightweight, decentralized cognitive microservice mesh utilizing NATS pub-sub JetStream IPC that reduces cross-module message-passing latency to $0.045\text{ ms}$ while occupying a total system idle footprint of less than $1.1\text{ GB}$ of RAM.
-    \item \textbf{Dual-Gated Turn-Taking Gating:} A dual-loop turn-taking architecture combining a System 1 fast-loop DSP audio hook (interrupting robot playback within $114.9\text{ ms}$) with a speculative System 2 text segmenter to distinguish true semantic user interruptions from ambient background noise.
-    \item \textbf{Neurosymbolic ACT-R Graph Memory:} A long-term episodic memory system mapping dense embeddings to a Neo4j semantic graph database, governed by dynamic sub-symbolic ACT-R activation formulas, power-law decay, and emotional congruence, yielding a retrieval Recall@5 of $99.2\%$.
+    \item \textbf{High-Performance Edge Middleware:} A lightweight, decentralized cognitive microservice mesh utilizing NATS pub-sub JetStream IPC that reduces cross-module message-passing latency to $[TBP]$ while occupying a total system footprint of less than $[TBP]$ of RAM.
+    \item \textbf{Dual-Gated Turn-Taking Gating:} A dual-loop turn-taking architecture combining a System 1 fast-loop DSP audio hook (interrupting robot playback within $[TBP]$) with a speculative System 2 text segmenter to distinguish true semantic user interruptions from ambient background noise.
+    \item \textbf{Neurosymbolic ACT-R Graph Memory:} A long-term episodic memory system mapping dense embeddings to a Neo4j semantic graph database, governed by dynamic sub-symbolic ACT-R activation formulas, power-law decay, and emotional congruence, yielding a retrieval Recall@5 of $[TBP]$.
     \item \textbf{Autonomic Physiological Entrainment:} A continuous endocrine and Pleasure-Arousal-Dominance (PAD) appraisal system that couples internal hormone trajectories (Cortisol and Dopamine) directly to real-time cardiovascular-respiratory coupling variables, providing a highly realistic social robot presence.
 \end{itemize}
 ```
