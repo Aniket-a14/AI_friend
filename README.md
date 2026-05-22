@@ -295,19 +295,19 @@ Vocal parameters (speaking rate, pitch, volume, and pause bias) are continuously
 #### Prosody Equations
 
 ```math
-\text{SpeedFactor} = \text{clamp}(1.0 + 0.20 \cdot \text{arousal} - 0.10 \cdot \text{valence} - \text{fatigue-slow}, 0.6, 1.8)
+\text{SpeedFactor} = \text{clamp}(1.0 + \tanh(0.20 \cdot \text{arousal} - 0.10 \cdot \text{valence} - \text{fatigue-slow}), 0.6, 1.8)
 ```
 
 ```math
-\text{Pitch} = \text{clamp}(1.0 + 0.05 \cdot \text{valence} + 0.15 \cdot \text{arousal} - 0.10 \cdot \text{dominance} - \text{fatigue-pitch-drop} + \text{dist-pitch-mod}, 0.5, 2.0)
+\text{Pitch} = \text{clamp}(1.0 + \tanh(0.05 \cdot \text{valence} + 0.15 \cdot \text{arousal} - 0.10 \cdot \text{dominance} - \text{fatigue-pitch-drop} + \text{dist-pitch-mod}), 0.5, 2.0)
 ```
 
 ```math
-\text{Volume} = \text{clamp}(0.4 + 0.6 \cdot \text{dominance} + \text{dist-vol-mod}, 0.1, 1.0)
+\text{Volume} = \text{clamp}(0.40 + 0.60 \cdot \text{dominance} + \text{dist-vol-mod}, 0.1, 1.0)
 ```
 
 ```math
-\text{PauseBias} = 1.0 - \text{arousal}
+\text{PauseBias} = \text{clamp}(1.0 - \text{arousal}, 0.0, 1.0)
 ```
 
 #### Overlap-Add (OLA) Sample-Accurate Linear Crossfade
