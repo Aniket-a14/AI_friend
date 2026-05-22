@@ -84,4 +84,4 @@ To prevent live performance bottlenecks, CVS-3.0 divides its operations into a *
 
 The plot below illustrates the continuous trajectory of hormones and PAD coordinates during a 90-second conversational trial, showcasing the smooth, asynchronous endocrine appraisals executed by the mesh.
 
-![Cognitive Trajectory Plot](../plots/research_trajectory_plot.png)
+[TBP]
