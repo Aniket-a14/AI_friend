@@ -370,36 +370,291 @@ PHASES_OF_LIFE = [
     "my peaceful sunset years milestone at age 84"
 ]
 
+# ==============================================================================
+# ADDITIONAL SEMANTIC DIMENSIONS FOR 40-DIMENSIONAL COGNITIVE STATE SPACE
+# ==============================================================================
+
+ENVIRONMENTS = [
+    "a cozy wood-paneled study", "a sunlit botanical garden", "a crowded university cafe",
+    "a quiet library alcove", "a spacious high-ceilinged workshop", "a modern server room with cooling fans",
+    "a peaceful lakeside cabin", "a high-altitude mountain research station"
+]
+SENSORY_INPUTS = [
+    "the scent of rain-dampened earth", "the aroma of dark roasted espresso", "the rhythmic clack of mechanical keyboard keys",
+    "the bright neon glow of streetlights", "the soft warmth of a fireplace", "the low hum of distant city traffic",
+    "the refreshing taste of peppermint tea", "the crisp clean scent of pine needles"
+]
+WEATHER = [
+    "overcast skies", "a crisp autumn breeze", "heavy monsoon rain",
+    "humid summer heat", "gentle winter snowfall", "bright spring sunshine",
+    "dense morning fog", "a warm tropical evening"
+]
+TIME_OF_DAY = [
+    "the early dawn light", "the mid-afternoon peak hours", "the golden sunset hour",
+    "the quiet midnight silence", "the twilight transition", "late-evening shadows",
+    "mid-morning clarity", "a sleepless pre-dawn"
+]
+COGNITIVE_MODES = [
+    "deep algorithmic deduction", "light recreational reading", "passive observational learning",
+    "creative brainstorming", "meticulous code debugging", "philosophical meta-reflection",
+    "strategic pattern mapping", "spontaneous intuitive insights"
+]
+PHYSICAL_STATUS = [
+    "peak physical vitality", "slight joint stiffness", "mild eye strain",
+    "abundant neural stamina", "relaxed bodily ease", "minor muscular tension",
+    "perfect cardiovascular balance", "recovering physical strength"
+]
+SOCIAL_SETTINGS = [
+    "complete solitary isolation", "an intimate one-on-one dialogue", "a high-pressure team meeting",
+    "a crowded public marketplace", "a quiet scholarly seminar", "a festive family gathering",
+    "a professional networking reception", "a casual coffee with a colleague"
+]
+PRIMARY_ACTIVITIES = [
+    "writing deep technical documentation", "analyzing complex data graphs", "refactoring memory store systems",
+    "designing neural network layers", "reading academic research papers", "sketching hardware component layouts",
+    "solving discrete math equations", "validating local database indices"
+]
+FINANCIAL_CONTEXTS = [
+    "absolute budget security", "conscious resource optimization", "monitoring market portfolios",
+    "planning long-term investments", "reviewing monthly budget constraints", "allocating research capital",
+    "securing project grants", "planning family inheritance legacy"
+]
+RELATIONSHIP_TUNINGS = [
+    "profound interpersonal harmony", "warm family conversations", "supportive mentor feedback",
+    "deep collaboration alignment", "peaceful domestic quietude", "meaningful peer recognition",
+    "building new friendship networks", "nurturing close personal ties"
+]
+DIETARY_METABOLISM = [
+    "post-prandial satisfaction", "a sharp caffeine-induced alert state", "slight dehydration signals",
+    "perfectly balanced glucose levels", "light nutrient replenishment", "a clean fasted state",
+    "the warmth of an herbal beverage", "steady metabolic energy"
+]
+ERGONOMIC_POSTURES = [
+    "upright sitting in an ergonomic chair", "active standing desk alignment", "reclined armchair posture",
+    "meticulous upright research posture", "relaxed cushion support", "perfect screen-level gaze",
+    "supported spinal extension", "comfortable forearm placement"
+]
+VOCATIONAL_DRIVES = [
+    "intense research curiosity", "a strong legacy creation drive", "perfect vocational alignment",
+    "solving real-world human challenges", "seeking structural perfection", "optimizing modular system efficiency",
+    "pioneering novel cognitive pipelines", "mentoring future scientists"
+]
+CREATIVE_OUTLETS = [
+    "writing philosophical essays", "sketching architectural concepts", "composing atmospheric music",
+    "journaling daily cognitive leaps", "crafting intricate physical models", "programming beautiful user interfaces",
+    "photographing natural light patterns", "designing interactive systems"
+]
+SPIRITUAL_ATTUNEMENTS = [
+    "deep meditative presence", "profound existential peace", "cosmic philosophical wonder",
+    "quiet personal mindfulness", "holistic natural alignment", "harmonious inner silence",
+    "intellectual humility exploration", "contemplative analytical calm"
+]
+STRESS_METRICS = [
+    "absolute tranquil calm", "low-grade background urgency", "acute deadline focus",
+    "steady situational confidence", "patient methodical progress", "a structured challenge response",
+    "relaxed mental pacing", "a mindful stress-release state"
+]
+MOTIVATION_LEVELS = [
+    "high dopamine-driven reward seeking", "steady task-oriented execution", "post-milestone relaxation",
+    "eager anticipation of testing results", "curious exploratory motivation", "focused problem-solving energy",
+    "deep intrinsic satisfaction", "enthusiastic collaborative drive"
+]
+LEISURE_PURSUITS = [
+    "playing complex strategy board games", "gardening in a backyard plot", "reading historical biography novels",
+    "restoring old mechanical tools", "solving challenging crossword puzzles", "cooking elaborate traditional dishes",
+    "walking through local historic neighborhoods", "building custom desktop rigs"
+]
+MOBILITY_MODES = [
+    "walking slowly along a path", "riding a commuter bicycle", "sitting on a public transport bus",
+    "standing on a moving train", "relaxing in a stationary vehicle", "climbing a gentle hillside",
+    "navigating a busy urban sidewalk", "resting in a quiet room"
+]
+CLOTHING_COMFORTS = [
+    "soft breathable cotton garments", "a cozy heavy wool sweater", "crisp formal research attire",
+    "relaxed casual home wear", "a warm weather-resistant jacket", "perfectly broken-in leather shoes",
+    "light active athletic wear", "layered comfortable clothing"
+]
+MEMORY_TRIGGERS = [
+    "glancing at an old faded photograph", "hearing a nostalgic melody", "finding a handwritten note",
+    "opening a vintage textbook", "catching the aroma of childhood cooking", "revisiting a familiar landscape",
+    "encountering a historical artifact", "recalling a vivid past dream"
+]
+PACING_RHYTHMS = [
+    "a meticulous slow pace", "a rapid focused sprint", "a natural comfortable flow",
+    "a deliberate step-by-step progress", "an intense uninterrupted focus session", "a patient observational stance",
+    "a highly flexible dynamic pace", "a structured routine schedule"
+]
+ETHICAL_STANDS = [
+    "reflecting on societal contribution", "ensuring cognitive safety boundaries", "prioritizing open-source access",
+    "advocating for human-centric design", "considering global environmental footprints", "pursuing honest academic rigor",
+    "supporting collaborative community growth", "defending scientific integrity"
+]
+HYDRATION_LEVELS = [
+    "perfectly hydrated with pure water", "sipping warm organic green tea", "enjoying a cold refreshing beverage",
+    "rehydrating post-workout", "savoring a warm spiced chai", "drinking chilled mineral water",
+    "sipping hot chamomile tea", "balanced fluid homeostasis"
+]
+TEMPERATURE_COMFORTS = [
+    "a mild balanced indoor climate", "a cool refreshing air-conditioned room", "cozy radial hearth warmth",
+    "a fresh breezy outdoor current", "comfortably warm summer evening air", "a crisp insulated winter shelter",
+    "a shaded cool retreat", "a sun-warmed workspace spot"
+]
+ACOUSTIC_SCAPES = [
+    "complete absolute silence", "soft classical ambient piano", "a low-frequency pink noise background",
+    "distant birds singing outside", "the gentle rustle of leaves", "a quiet muffled office hum",
+    "a gentle rhythmic ticking clock", "soft acoustic guitar frequencies"
+]
+VISUAL_HORIZONS = [
+    "a wide open green landscape", "dual high-resolution monitor screens", "detailed circuit blueprint diagrams",
+    "a bookshelf packed with scientific texts", "a clean minimalist desk workspace", "an expansive window view of the sky",
+    "a vibrant chalkboard covered in math", "a warm softlylit room interior"
+]
+METABOLIC_FATIGUE = [
+    "unlimited physical stamina", "needing a structured micro-break", "a state of perfect recovery sleep",
+    "light physical replenishment", "rested and fully recharged", "steady muscle recovery",
+    "balanced neural resource allocation", "optimizing metabolic efficiency"
+]
+SELF_ESTEEMS = [
+    "high academic confidence", "profound professional humility", "quiet self-assured trust",
+    "proud of creative milestones", "eager for peer feedback", "objective self-assessment focus",
+    "grounded personal resilience", "a mindset of continuous growth"
+]
+TIMELINE_EPOCHS = [
+    "my early formative childhood", "my early twenties transition", "my senior research specialist era",
+    "my initial professional launch years", "my mid-career consolidation phase", "my late-stage reflective years",
+    "my post-university expansion period", "my collaborative group project tenure"
+]
+PRIMARY_PARTNERS = [
+    "a trusted senior research mentor", "an eager junior university peer", "a brilliant software engineer colleague",
+    "a supportive childhood friend", "an expert external patent examiner", "a collaborative database administrator",
+    "a diverse group of global researchers", "a patient academic supervisor"
+]
+GOAL_HORIZONS = [
+    "an immediate short-term daily goal", "a quarterly project deadline milestone", "a multi-year career path target",
+    "a lifelong legacy contribution", "a weekly sprint objective", "an annual system audit milestone",
+    "a temporary exploratory target", "a solid operational benchmark target"
+]
+SOMATIC_COMFORTS = [
+    "fully relaxed neck and shoulders", "flexible and stretched back muscles", "loose warm hand joints",
+    "perfect spinal column support", "stamina-filled dynamic posture", "perfectly comfortable seated base",
+    "light refreshed physical state", "relaxed eye muscles"
+]
+INFO_SOURCES = [
+    "peer-reviewed academic journal papers", "dense technical documentation manuals", "curated database resource catalogs",
+    "collaborative wiki articles", "historical patent office archives", "open-source software repositories",
+    "direct physical sensor telemetry", "comprehensive textbook chapters"
+]
+CLUTTER_LEVELS = [
+    "a perfectly pristine clean desk", "a minimalist organized workspace", "a few neatly stacked notebooks",
+    "a clean table with a single device", "a highly functional workspace layout", "a structured reference material stack",
+    "a spotless laboratory workbench", "an uncluttered digital directory"
+]
+NATURAL_EXPOSURES = [
+    "abundant desk plant foliage", "a large window showing green trees", "frequent short walks in a local park",
+    "fresh outdoor mountain air", "the grounding presence of nature", "a nearby office botanical terrace",
+    "natural ambient lighting", "views of natural water features"
+]
+
 def generate_conversational_corpus(iterations: int = 1000):
     """
-    Generates a conversational corpus representing structured human memories.
+    Generates an upgraded high-dimensional conversational corpus representing structured human memories.
+    Employs a 40-dimensional human state space yielding a total of >10^40 potential state combinations.
+    Weaves them using prime-number modulo indexing to ensure maximal semantic spread.
     Injects exactly 5 milestone facts at specific iteration milestones,
-    and interleaves 50 indirect recall questions to query these facts under conversational interference.
+    and interleaves 50 indirect recall questions to query these facts under high-dimensional interference.
     """
     unique_pool = []
+    
+    # 10 rich natural-language templates weaving different subsets of the 40 dimensions
+    templates = [
+        # Template 0
+        "Weaving back to {timeline_epoch} in {environment}, under {weather} during {time_of_day}, I engaged in {cognitive_mode} while {primary_activity}, focused by {sensory_input} and dressed in {clothing_comfort}.",
+        # Template 1
+        "During {phase}, my efforts in {domain} were paired with {life_factor} while in a state of {condition}, experiencing {physical_status}, supported by {dietary_metabolism} in {ergonomic_posture} under {stress_metric}.",
+        # Template 2
+        "In {social_setting} with {primary_partner}, driven by {vocational_drive}, I explored {creative_outlet} with {motivation_level} at {pacing_rhythm}, referencing {info_source} within {clutter_level}.",
+        # Template 3
+        "Under {weather} at {time_of_day}, while {primary_activity}, I was {mobility_mode}, accompanied by {sensory_input}, keeping {hydration_level} in {temperature_comfort} amidst {acoustic_scape} with {visual_horizon}.",
+        # Template 4
+        "During {phase}, deep {spiritual_attunement} guided my {leisure_pursuit}, leading me to {ethical_stand} with {self_esteem} toward {goal_horizon}, feeling {somatic_comfort} in {natural_exposure}.",
+        # Template 5
+        "Reflecting on {timeline_epoch} in {domain}, situated inside {environment}, I adopted {cognitive_mode} with {physical_status} in search of {vocational_drive}, sustaining {stress_metric} in {clutter_level}.",
+        # Template 6
+        "In {phase}, navigating {social_setting} while {primary_activity}, I nurtured {relationship_tuning} at {pacing_rhythm}, enjoying {hydration_level} within {acoustic_scape} alongside {primary_partner}.",
+        # Template 7
+        "Inside {environment} during {weather}, my {cognitive_mode} allowed me to focus on {primary_activity}, stimulated by {sensory_input}, fueled by {dietary_metabolism} as I pursued {creative_outlet} overlooking {visual_horizon}.",
+        # Template 8
+        "Throughout {timeline_epoch}, balancing {life_factor} under a state of {condition} in {ergonomic_posture}, I integrated {spiritual_attunement} and {ethical_stand} towards {goal_horizon} with {somatic_comfort}.",
+        # Template 9
+        "In {social_setting}, balancing {financial_context} and {relationship_tuning}, I felt {motivation_level} during {leisure_pursuit} while {mobility_mode} in {temperature_comfort} surrounded by {natural_exposure}."
+    ]
+
     for unique_idx in range(iterations + 100):
-        phase_idx = unique_idx % 100
-        domain_idx = (unique_idx // 10) % 100
-        lf_idx = (unique_idx // 100) % 100
-        cond_idx = (unique_idx // 1000) % 100
-        temp_idx = (unique_idx // 10000) % 5
+        # Determine dimension selections deterministically using distinct prime progressions to avoid cycle alignment
+        phase = PHASES_OF_LIFE[unique_idx % len(PHASES_OF_LIFE)]
+        domain = DOMAINS[(unique_idx // 3) % len(DOMAINS)]
+        life_factor = LIFE_FACTORS[(unique_idx // 7) % len(LIFE_FACTORS)]
+        condition = CONDITIONS[(unique_idx // 11) % len(CONDITIONS)]
+        environment = ENVIRONMENTS[(unique_idx // 13) % len(ENVIRONMENTS)]
+        sensory_input = SENSORY_INPUTS[(unique_idx // 17) % len(SENSORY_INPUTS)]
+        weather = WEATHER[(unique_idx // 19) % len(WEATHER)]
+        time_of_day = TIME_OF_DAY[(unique_idx // 23) % len(TIME_OF_DAY)]
+        cognitive_mode = COGNITIVE_MODES[(unique_idx // 29) % len(COGNITIVE_MODES)]
+        physical_status = PHYSICAL_STATUS[(unique_idx // 31) % len(PHYSICAL_STATUS)]
+        social_setting = SOCIAL_SETTINGS[(unique_idx // 37) % len(SOCIAL_SETTINGS)]
+        primary_activity = PRIMARY_ACTIVITIES[(unique_idx // 41) % len(PRIMARY_ACTIVITIES)]
+        financial_context = FINANCIAL_CONTEXTS[(unique_idx // 43) % len(FINANCIAL_CONTEXTS)]
+        relationship_tuning = RELATIONSHIP_TUNINGS[(unique_idx // 47) % len(RELATIONSHIP_TUNINGS)]
+        dietary_metabolism = DIETARY_METABOLISM[(unique_idx // 53) % len(DIETARY_METABOLISM)]
+        ergonomic_posture = ERGONOMIC_POSTURES[(unique_idx // 59) % len(ERGONOMIC_POSTURES)]
+        vocational_drive = VOCATIONAL_DRIVES[(unique_idx // 61) % len(VOCATIONAL_DRIVES)]
+        creative_outlet = CREATIVE_OUTLETS[(unique_idx // 67) % len(CREATIVE_OUTLETS)]
+        spiritual_attunement = SPIRITUAL_ATTUNEMENTS[(unique_idx // 71) % len(SPIRITUAL_ATTUNEMENTS)]
+        stress_metric = STRESS_METRICS[(unique_idx // 73) % len(STRESS_METRICS)]
+        motivation_level = MOTIVATION_LEVELS[(unique_idx // 79) % len(MOTIVATION_LEVELS)]
+        leisure_pursuit = LEISURE_PURSUITS[(unique_idx // 83) % len(LEISURE_PURSUITS)]
+        mobility_mode = MOBILITY_MODES[(unique_idx // 89) % len(MOBILITY_MODES)]
+        clothing_comfort = CLOTHING_COMFORTS[(unique_idx // 97) % len(CLOTHING_COMFORTS)]
+        memory_trigger = MEMORY_TRIGGERS[(unique_idx // 101) % len(MEMORY_TRIGGERS)]
+        pacing_rhythm = PACING_RHYTHMS[(unique_idx // 103) % len(PACING_RHYTHMS)]
+        ethical_stand = ETHICAL_STANDS[(unique_idx // 107) % len(ETHICAL_STANDS)]
+        hydration_level = HYDRATION_LEVELS[(unique_idx // 109) % len(HYDRATION_LEVELS)]
+        temperature_comfort = TEMPERATURE_COMFORTS[(unique_idx // 113) % len(TEMPERATURE_COMFORTS)]
+        acoustic_scape = ACOUSTIC_SCAPES[(unique_idx // 127) % len(ACOUSTIC_SCAPES)]
+        visual_horizon = VISUAL_HORIZONS[(unique_idx // 131) % len(VISUAL_HORIZONS)]
+        metabolic_fatigue = METABOLIC_FATIGUE[(unique_idx // 137) % len(METABOLIC_FATIGUE)]
+        self_esteem = SELF_ESTEEMS[(unique_idx // 139) % len(SELF_ESTEEMS)]
+        timeline_epoch = TIMELINE_EPOCHS[(unique_idx // 149) % len(TIMELINE_EPOCHS)]
+        primary_partner = PRIMARY_PARTNERS[(unique_idx // 151) % len(PRIMARY_PARTNERS)]
+        goal_horizon = GOAL_HORIZONS[(unique_idx // 157) % len(GOAL_HORIZONS)]
+        somatic_comfort = SOMATIC_COMFORTS[(unique_idx // 163) % len(SOMATIC_COMFORTS)]
+        info_source = INFO_SOURCES[(unique_idx // 167) % len(INFO_SOURCES)]
+        clutter_level = CLUTTER_LEVELS[(unique_idx // 173) % len(CLUTTER_LEVELS)]
+        natural_exposure = NATURAL_EXPOSURES[(unique_idx // 179) % len(NATURAL_EXPOSURES)]
 
-        phase = PHASES_OF_LIFE[phase_idx]
-        domain = DOMAINS[domain_idx]
-        life_factor = LIFE_FACTORS[lf_idx]
-        condition = CONDITIONS[cond_idx]
-
-        if temp_idx == 0:
-            prompt = f"During {phase}, I focused my efforts on {domain}, while managing my {life_factor} under a state of {condition}."
-        elif temp_idx == 1:
-            prompt = f"Reflecting on {phase}, the study of {domain} was deeply influenced by my {life_factor} and {condition}."
-        elif temp_idx == 2:
-            prompt = f"As I look back at {phase}, balancing {domain} with {life_factor} was challenging due to {condition}."
-        elif temp_idx == 3:
-            prompt = f"Throughout {phase}, my research in {domain} progressed alongside my {life_factor}, even when experiencing {condition}."
-        else:
-            prompt = f"In {phase}, integrating {domain} principles with daily {life_factor} required addressing {condition}."
-
+        # Select template deterministically
+        temp_idx = unique_idx % len(templates)
+        
+        prompt = templates[temp_idx].format(
+            phase=phase, domain=domain, life_factor=life_factor, condition=condition,
+            environment=environment, sensory_input=sensory_input, weather=weather,
+            time_of_day=time_of_day, cognitive_mode=cognitive_mode, physical_status=physical_status,
+            social_setting=social_setting, primary_activity=primary_activity, financial_context=financial_context,
+            relationship_tuning=relationship_tuning, dietary_metabolism=dietary_metabolism,
+            ergonomic_posture=ergonomic_posture, vocational_drive=vocational_drive,
+            creative_outlet=creative_outlet, spiritual_attunement=spiritual_attunement,
+            stress_metric=stress_metric, motivation_level=motivation_level,
+            leisure_pursuit=leisure_pursuit, mobility_mode=mobility_mode,
+            clothing_comfort=clothing_comfort, memory_trigger=memory_trigger,
+            pacing_rhythm=pacing_rhythm, ethical_stand=ethical_stand,
+            hydration_level=hydration_level, temperature_comfort=temperature_comfort,
+            acoustic_scape=acoustic_scape, visual_horizon=visual_horizon,
+            metabolic_fatigue=metabolic_fatigue, self_esteem=self_esteem,
+            timeline_epoch=timeline_epoch, primary_partner=primary_partner,
+            goal_horizon=goal_horizon, somatic_comfort=somatic_comfort,
+            info_source=info_source, clutter_level=clutter_level,
+            natural_exposure=natural_exposure
+        )
         unique_pool.append(prompt)
 
     corpus = []
@@ -438,6 +693,101 @@ def generate_conversational_corpus(iterations: int = 1000):
             unique_idx += 1
 
     return corpus
+def generate_high_fidelity_distractors(count: int):
+    """
+    Generates rich, 40-dimensional high-fidelity distractor tuples: (prompt_text, phase, domain)
+    specifically designed for cognitive database seeding with maximum combinatorial coverage.
+    """
+    templates = [
+        # Template 0
+        "Weaving back to {timeline_epoch} in {environment}, under {weather} during {time_of_day}, I engaged in {cognitive_mode} while {primary_activity}, focused by {sensory_input} and dressed in {clothing_comfort}.",
+        # Template 1
+        "During {phase}, my efforts in {domain} were paired with {life_factor} while in a state of {condition}, experiencing {physical_status}, supported by {dietary_metabolism} in {ergonomic_posture} under {stress_metric}.",
+        # Template 2
+        "In {social_setting} with {primary_partner}, driven by {vocational_drive}, I explored {creative_outlet} with {motivation_level} at {pacing_rhythm}, referencing {info_source} within {clutter_level}.",
+        # Template 3
+        "Under {weather} at {time_of_day}, while {primary_activity}, I was {mobility_mode}, accompanied by {sensory_input}, keeping {hydration_level} in {temperature_comfort} amidst {acoustic_scape} with {visual_horizon}.",
+        # Template 4
+        "During {phase}, deep {spiritual_attunement} guided my {leisure_pursuit}, leading me to {ethical_stand} with {self_esteem} toward {goal_horizon}, feeling {somatic_comfort} in {natural_exposure}.",
+        # Template 5
+        "Reflecting on {timeline_epoch} in {domain}, situated inside {environment}, I adopted {cognitive_mode} with {physical_status} in search of {vocational_drive}, sustaining {stress_metric} in {clutter_level}.",
+        # Template 6
+        "In {phase}, navigating {social_setting} while {primary_activity}, I nurtured {relationship_tuning} at {pacing_rhythm}, enjoying {hydration_level} within {acoustic_scape} alongside {primary_partner}.",
+        # Template 7
+        "Inside {environment} during {weather}, my {cognitive_mode} allowed me to focus on {primary_activity}, stimulated by {sensory_input}, fueled by {dietary_metabolism} as I pursued {creative_outlet} overlooking {visual_horizon}.",
+        # Template 8
+        "Throughout {timeline_epoch}, balancing {life_factor} under a state of {condition} in {ergonomic_posture}, I integrated {spiritual_attunement} and {ethical_stand} towards {goal_horizon} with {somatic_comfort}.",
+        # Template 9
+        "In {social_setting}, balancing {financial_context} and {relationship_tuning}, I felt {motivation_level} during {leisure_pursuit} while {mobility_mode} in {temperature_comfort} surrounded by {natural_exposure}."
+    ]
+
+    distractors = []
+    for unique_idx in range(count):
+        phase = PHASES_OF_LIFE[unique_idx % len(PHASES_OF_LIFE)]
+        domain = DOMAINS[(unique_idx // 3) % len(DOMAINS)]
+        life_factor = LIFE_FACTORS[(unique_idx // 7) % len(LIFE_FACTORS)]
+        condition = CONDITIONS[(unique_idx // 11) % len(CONDITIONS)]
+        environment = ENVIRONMENTS[(unique_idx // 13) % len(ENVIRONMENTS)]
+        sensory_input = SENSORY_INPUTS[(unique_idx // 17) % len(SENSORY_INPUTS)]
+        weather = WEATHER[(unique_idx // 19) % len(WEATHER)]
+        time_of_day = TIME_OF_DAY[(unique_idx // 23) % len(TIME_OF_DAY)]
+        cognitive_mode = COGNITIVE_MODES[(unique_idx // 29) % len(COGNITIVE_MODES)]
+        physical_status = PHYSICAL_STATUS[(unique_idx // 31) % len(PHYSICAL_STATUS)]
+        social_setting = SOCIAL_SETTINGS[(unique_idx // 37) % len(SOCIAL_SETTINGS)]
+        primary_activity = PRIMARY_ACTIVITIES[(unique_idx // 41) % len(PRIMARY_ACTIVITIES)]
+        financial_context = FINANCIAL_CONTEXTS[(unique_idx // 43) % len(FINANCIAL_CONTEXTS)]
+        relationship_tuning = RELATIONSHIP_TUNINGS[(unique_idx // 47) % len(RELATIONSHIP_TUNINGS)]
+        dietary_metabolism = DIETARY_METABOLISM[(unique_idx // 53) % len(DIETARY_METABOLISM)]
+        ergonomic_posture = ERGONOMIC_POSTURES[(unique_idx // 59) % len(ERGONOMIC_POSTURES)]
+        vocational_drive = VOCATIONAL_DRIVES[(unique_idx // 61) % len(VOCATIONAL_DRIVES)]
+        creative_outlet = CREATIVE_OUTLETS[(unique_idx // 67) % len(CREATIVE_OUTLETS)]
+        spiritual_attunement = SPIRITUAL_ATTUNEMENTS[(unique_idx // 71) % len(SPIRITUAL_ATTUNEMENTS)]
+        stress_metric = STRESS_METRICS[(unique_idx // 73) % len(STRESS_METRICS)]
+        motivation_level = MOTIVATION_LEVELS[(unique_idx // 79) % len(MOTIVATION_LEVELS)]
+        leisure_pursuit = LEISURE_PURSUITS[(unique_idx // 83) % len(LEISURE_PURSUITS)]
+        mobility_mode = MOBILITY_MODES[(unique_idx // 89) % len(MOBILITY_MODES)]
+        clothing_comfort = CLOTHING_COMFORTS[(unique_idx // 97) % len(CLOTHING_COMFORTS)]
+        memory_trigger = MEMORY_TRIGGERS[(unique_idx // 101) % len(MEMORY_TRIGGERS)]
+        pacing_rhythm = PACING_RHYTHMS[(unique_idx // 103) % len(PACING_RHYTHMS)]
+        ethical_stand = ETHICAL_STANDS[(unique_idx // 107) % len(ETHICAL_STANDS)]
+        hydration_level = HYDRATION_LEVELS[(unique_idx // 109) % len(HYDRATION_LEVELS)]
+        temperature_comfort = TEMPERATURE_COMFORTS[(unique_idx // 113) % len(TEMPERATURE_COMFORTS)]
+        acoustic_scape = ACOUSTIC_SCAPES[(unique_idx // 127) % len(ACOUSTIC_SCAPES)]
+        visual_horizon = VISUAL_HORIZONS[(unique_idx // 131) % len(VISUAL_HORIZONS)]
+        metabolic_fatigue = METABOLIC_FATIGUE[(unique_idx // 137) % len(METABOLIC_FATIGUE)]
+        self_esteem = SELF_ESTEEMS[(unique_idx // 139) % len(SELF_ESTEEMS)]
+        timeline_epoch = TIMELINE_EPOCHS[(unique_idx // 149) % len(TIMELINE_EPOCHS)]
+        primary_partner = PRIMARY_PARTNERS[(unique_idx // 151) % len(PRIMARY_PARTNERS)]
+        goal_horizon = GOAL_HORIZONS[(unique_idx // 157) % len(GOAL_HORIZONS)]
+        somatic_comfort = SOMATIC_COMFORTS[(unique_idx // 163) % len(SOMATIC_COMFORTS)]
+        info_source = INFO_SOURCES[(unique_idx // 167) % len(INFO_SOURCES)]
+        clutter_level = CLUTTER_LEVELS[(unique_idx // 173) % len(CLUTTER_LEVELS)]
+        natural_exposure = NATURAL_EXPOSURES[(unique_idx // 179) % len(NATURAL_EXPOSURES)]
+
+        temp_idx = unique_idx % len(templates)
+        prompt = templates[temp_idx].format(
+            phase=phase, domain=domain, life_factor=life_factor, condition=condition,
+            environment=environment, sensory_input=sensory_input, weather=weather,
+            time_of_day=time_of_day, cognitive_mode=cognitive_mode, physical_status=physical_status,
+            social_setting=social_setting, primary_activity=primary_activity, financial_context=financial_context,
+            relationship_tuning=relationship_tuning, dietary_metabolism=dietary_metabolism,
+            ergonomic_posture=ergonomic_posture, vocational_drive=vocational_drive,
+            creative_outlet=creative_outlet, spiritual_attunement=spiritual_attunement,
+            stress_metric=stress_metric, motivation_level=motivation_level,
+            leisure_pursuit=leisure_pursuit, mobility_mode=mobility_mode,
+            clothing_comfort=clothing_comfort, memory_trigger=memory_trigger,
+            pacing_rhythm=pacing_rhythm, ethical_stand=ethical_stand,
+            hydration_level=hydration_level, temperature_comfort=temperature_comfort,
+            acoustic_scape=acoustic_scape, visual_horizon=visual_horizon,
+            metabolic_fatigue=metabolic_fatigue, self_esteem=self_esteem,
+            timeline_epoch=timeline_epoch, primary_partner=primary_partner,
+            goal_horizon=goal_horizon, somatic_comfort=somatic_comfort,
+            info_source=info_source, clutter_level=clutter_level,
+            natural_exposure=natural_exposure
+        )
+        distractors.append((prompt, phase, domain))
+    return distractors
+
 
 
 def check_entities(full_response: str, expected_entities: list) -> bool:
