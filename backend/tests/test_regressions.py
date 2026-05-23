@@ -267,7 +267,7 @@ def test_signaling_lan_guard_allows_only_loopback_and_private_clients():
     from app.network import is_lan_client_allowed
 
     assert is_lan_client_allowed("127.0.0.1")
-    assert is_lan_client_allowed("localhost")
+    assert is_lan_client_allowed("::1")
     assert is_lan_client_allowed("192.168.1.42")
     assert is_lan_client_allowed("10.0.0.12")
     assert is_lan_client_allowed("172.16.5.10")

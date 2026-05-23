@@ -24,7 +24,7 @@ async def run_collector():
     """
     print(f"\n📊 [Sovereign Mesh] State Collector starting... logging to {LOG_FILE}")
 
-    nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
+    nats_url = os.getenv("NATS_URL", "nats://127.0.0.1:4222")
     nc = await nats.connect(nats_url)
 
     # Initialize CSV with high-fidelity headers

@@ -44,7 +44,7 @@ async def test_neuromodulatory_gating_and_actr_pruning():
     async with store.pool.acquire() as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id TEXT PRIMARY KEY,
                 content TEXT,
                 raw_content TEXT,
                 wing TEXT,
@@ -58,7 +58,13 @@ async def test_neuromodulatory_gating_and_actr_pruning():
                 metadata TEXT,
                 recall_count INTEGER,
                 last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                lifespan_stage TEXT,
+                crisis TEXT,
+                virtue TEXT,
+                relations TEXT,
+                relation_circles TEXT,
+                modality TEXT
             )
         """)
 
@@ -98,10 +104,12 @@ async def test_neuromodulatory_gating_and_actr_pruning():
     # 5. Test ACT-R Pruning (< -2.0)
     # Mock some existing memory that was created long ago and has recall_count = 1
     # decay_rate = 0.8
+    import uuid
     old_time = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d %H:%M:%S")
     async with store.pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO memories (content, importance_score, recall_count, created_at, metadata) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO memories (id, content, importance_score, recall_count, created_at, metadata) VALUES (?, ?, ?, ?, ?, ?)",
+            str(uuid.uuid4()),
             "ancient forgotten memory",
             0.9,
             1,

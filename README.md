@@ -1,10 +1,10 @@
-# 🎙️ AI Friend: Cognitive Voice System (v6.0.0 / CVS-3.0 Rust Native Edition)
+# 🎙️ AI Friend: Cognitive Voice System (v6.0.0 / CVS-3.5 Premium Edition)
 
 **A high-fidelity, state-driven cognitive identity emulator built on a hardened Sovereign Mesh for ultra-low latency conversational realism.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/license/MIT)
 [![Latency: Perceived <250ms](https://img.shields.io/badge/Latency-Perceived%20%3C250ms-green.svg)](#performance-perceived-slos)
-[![Architecture: CVS-3.0 Rust Native](https://img.shields.io/badge/Architecture-CVS--3.0--Rust--Native-orange.svg)](#architecture-cvs-20-rust-native)
+[![Architecture: CVS-3.5 Premium](https://img.shields.io/badge/Architecture-CVS--3.5--Premium-orange.svg)](#️-technical-architecture-the-sovereign-mesh)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](<https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb>)
 [![Continuous Integration](https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml>)
 [![🛡️ Mesh Integrity](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml>)
@@ -25,11 +25,11 @@
 
 ## 🌟 The Philosophy of Perceptual Mastery
 
-AI Friend is not a reactive "turn-based" chatbot. It is a **Sovereign Mesh** of specialized agents synchronized through a hardened signal bus. In the **CVS-3.0 (Rust Native Edition)** release, the architecture shifted from legacy Python audio loops to a **High-Performance Rust Signal Mesh**, guaranteeing sub-50ms deterministic execution and true temporal identity continuity.
+AI Friend is not a reactive "turn-based" chatbot. It is a **Sovereign Mesh** of specialized agents synchronized through a hardened signal bus. In the **CVS-3.5 (Premium Edition)** release, the architecture shifted from legacy Python audio loops to a **High-Performance Rust Signal Mesh**, guaranteeing sub-50ms deterministic execution and true temporal identity continuity.
 
 ### 🧠 Reactive vs. Sovereign Intelligence
 
-| Feature | Reactive Chatbot (Legacy) | Sovereign Mesh (CVS-3.0) |
+| Feature | Reactive Chatbot (Legacy) | Sovereign Mesh (CVS-3.5) |
 | :--- | :--- | :--- |
 | **Execution** | Python Interpreter | PyO3 FFI / Native Rust Crates |
 | **Cognitive Loop** | Synchronous Request-Response | Asynchronous Event-Driven |
@@ -121,7 +121,7 @@ graph TD
 
 ### 2. Perceptual Interruption Protocol
 
-CVS-3.0 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration protocol.
+CVS-3.5 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration protocol.
 
 > [!IMPORTANT]
 > **Protocol Description**:
@@ -186,7 +186,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | Agent | Technology | Primary Responsibility | NATS Subjects |
 | :--- | :--- | :--- | :--- |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
-| **Voice Agent** | Rust / PyO3 / SoVITS | CVS-3.0 Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
+| **Voice Agent** | Rust / PyO3 / SoVITS | CVS-3.5 Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
 | **STT Agent** | Rust / Whisper | Dual-path perception; fan-out transcription. | `audio.inbound`, `chat.input`, `audio.perception` |
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
@@ -219,7 +219,7 @@ The agent's emotional state is a 3D coordinate in **PAD Space** (Pleasure, Arous
 * **Mood Pull**: Emotional events "pull" the current state toward target coordinates.
 * **Logarithmic Decay**: During idle periods, the state drifts back to a neutral baseline following the ALMA formula: $I(t) = I_0 \cdot e^{-\lambda t}$.
 
-### 2. Neuromodulatory Memory Gating (CVS-3.0)
+### 2. Neuromodulatory Memory Gating (CVS-3.5)
 
 Semantic memory search incorporating dynamic physiological bias gates memory retrieval based on emotional relevance:
 
@@ -234,7 +234,7 @@ S_i = \text{CosineSimilarity} \cdot (1 + 0.1 \cdot \text{valence} \cdot \text{em
 A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
 ```
 
-### 3. Dimensional Trust Matrix (Marsh Model - CVS-3.0)
+### 3. Dimensional Trust Matrix (Marsh Model - CVS-3.5)
 
 The agent's trust model deconstructs the legacy trust scalar into three distinct sub-dimensions:
 
@@ -254,7 +254,7 @@ Appraisal-driven trust evolution updates individual sub-dimensions:
 * $T_c \leftarrow \text{clamp}(T_c + \delta \cdot (0.6 \cdot G + 0.4 \cdot R))$
 * $T_i \leftarrow \text{clamp}(T_i + \delta \cdot NA)$
 
-### 4. Memory Activation & ACT-R Pruning (CVS-3.0)
+### 4. Memory Activation & ACT-R Pruning (CVS-3.5)
 
 The subconscious memory agent runs background reflection sweeps after 5 minutes of user silence to apply ACT-R base activation decay:
 
@@ -265,7 +265,7 @@ A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
 * **ACT-R Pruning**: Memories where base activation falls below the retention threshold ($A_i < -2.0$) are permanently pruned from local SQLite/PostgreSQL stores.
 * **Decay**: Surviving memories have their importance scores scaled by `0.8` on each consolidation tick.
 
-### 5. Endocrine LLM Parameter Modulation (CVS-3.0)
+### 5. Endocrine LLM Parameter Modulation (CVS-3.5)
 
 Action execution dynamically modulates Ollama inference parameters independently:
 
@@ -281,7 +281,7 @@ The Decision Service uses Multi-Attribute Utility Theory to score intent candida
 U(\text{Intent}) = w_{\text{goal}} \cdot G + w_{\text{emotion}} \cdot E + w_{\text{identity}} \cdot I + w_{\text{context}} \cdot C
 ```
 
-### 7. Dynamic Continuous Prosody Mapping & OLA Crossfade (CVS-3.0 / Phase 4)
+### 7. Dynamic Continuous Prosody Mapping & OLA Crossfade (CVS-3.5 / Phase 4)
 
 Vocal parameters (speaking rate, pitch, volume, and pause bias) are continuously modulated in Rust based on emotional PAD state, fatigue $F$, user distance $d$, and signal continuity window:
 
@@ -330,9 +330,9 @@ y[n] = (1 - \text{wet-gain}) \cdot x[n] + \text{wet-gain} \cdot d_{\text{buffer}
 
 ### 8. SOTA Comparative Benchmarking Matrix & Academic Mappings
 
-CVS-3.0 is benchmarked against 7 other state-of-the-art and legacy humanoid, expressive, or cognitive systems across 8 core dimensions:
+CVS-3.5 is benchmarked against 7 other state-of-the-art and legacy humanoid, expressive, or cognitive systems across 8 core dimensions:
 
-| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [1] | SOTA Humanoid: Tesla Optimus Gen 2 [2] | Compact Humanoid: Unitree G1 [3] | SOTA Expressive: Ameca Gen 3 [4] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [6] | SOTA Embodied: ACT-R/E [7] | **Ours: CVS-3.0 (Physical)** | **Ours: CVS-3.0 (Accelerated)** |
+| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [1] | SOTA Humanoid: Tesla Optimus Gen 2 [2] | Compact Humanoid: Unitree G1 [3] | SOTA Expressive: Ameca Gen 3 [4] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [6] | SOTA Embodied: ACT-R/E [7] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** | **`[TBP]`** |
@@ -396,7 +396,7 @@ Communication is strictly governed by a **Typed Contract Mesh** (Pydantic). Ever
 
 ### 1. Solid State Signal Hardening
 
-In version **CVS-3.0**, the mesh implements "Solid State" principles to ensure portability and security:
+In version **CVS-3.5**, the mesh implements "Solid State" principles to ensure portability and security:
 
 * **Zero-Drift Persistence**: On-demand relational seeding via Prisma 7.7.0 ensures the "Identity Genome" is identical across container restarts.
 * **Health Surveillance**: Automated probes (`nc -z nats_mesh 4222`) trigger self-healing for disconnected agents.
@@ -454,7 +454,7 @@ AI_friend/
 | **STT Perception** | Latency | SenseVoice CPU Fan-out | <50ms | **`[TBP]`** | **Pending** |
 | **Cognitive Turn** | Turnaround | BDI Mesh + State Hydration | <120ms | **`[TBP]`** | **Pending** |
 | **First Audio** | Response | Streaming PCM Chunking | <180ms | **`[TBP]`** | **Pending** |
-| **Total Perceived** | **End-to-End**| **CVS-3.0 Rust Native Mesh** | **<250ms** | **`[TBP]`** | **Pending** |
+| **Total Perceived** | **End-to-End**| **CVS-3.5 Premium Mesh** | **<250ms** | **`[TBP]`** | **Pending** |
 
 *All "Actual" values will be populated dynamically by executing `scripts/research/hard_benchmark.py`.*
 
@@ -648,8 +648,8 @@ Grouped by domain. Refer to `backend/app/config.py` for all 50+ tunable paramete
 
 | Parameter | Default | Purpose |
 | :--- | :--- | :--- |
-| `NATS_URL` | `nats://localhost:4222` | Central signal bus endpoint. |
-| `NEO4J_URI` | `bolt://localhost:7687` | Knowledge graph endpoint. |
+| `NATS_URL` | `nats://127.0.0.1:4222` | Central signal bus endpoint. |
+| `NEO4J_URI` | `bolt://127.0.0.1:7687` | Knowledge graph endpoint. |
 | `DATABASE_URL` | `postgresql://...` | Identity and memory state store. |
 
 ### 🧠 Cognition & Affect

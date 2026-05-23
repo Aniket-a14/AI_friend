@@ -163,7 +163,7 @@ async def _ensure_ollama_models() -> None:
         )
         return
 
-    base_url = (Config.OLLAMA_URL or "http://localhost:11434").rstrip("/")
+    base_url = (Config.OLLAMA_URL or "http://127.0.0.1:11434").rstrip("/")
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         tags_response = await client.get(f"{base_url}/api/tags")

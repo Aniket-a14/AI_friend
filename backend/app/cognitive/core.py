@@ -44,7 +44,7 @@ class CognitiveService:
         self.perception = PerceptionService(llm_service=llm_service)
         self.appraisal = AppraisalEngine()  # §1: OCC/Lazarus/EMA
         self.reappraisal = ReappraisalEngine()  # Gross/Bosse feedback loop
-        self.state = StateService(graph_store=graph_db)
+        self.state = StateService(graph_store=graph_db, publish_cb=self.publish)
         self.decision = DecisionService(
             llm_service=llm_service, memory_store=memory_store
         )

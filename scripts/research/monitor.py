@@ -12,7 +12,7 @@ async def run_monitor():
     cognitive turnaround and multimodal jitter.
     """
     print("\n📡 Sovereign Mesh Research Monitor (Tier-4/5) online...")
-    nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
+    nats_url = os.getenv("NATS_URL", "nats://127.0.0.1:4222")
     nc = await nats.connect(nats_url)
 
     start_times = {}

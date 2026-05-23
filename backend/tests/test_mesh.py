@@ -14,7 +14,7 @@ class TestBaseAgent:
     @pytest.mark.asyncio
     async def test_agent_connection(self):
         """Verify agent can connect to NATS mesh."""
-        agent = BaseAgent(name="test_agent", nats_url="nats://localhost:4222")
+        agent = BaseAgent(name="test_agent", nats_url="nats://127.0.0.1:4222")
 
         try:
             await agent.connect()
@@ -62,13 +62,16 @@ class TestConfiguration:
 
     def test_config_environment_override(self, monkeypatch):
         """Verify environment variables override defaults."""
-        monkeypatch.setenv("NATS_URL", "nats://custom:4222")
-        # Re-import to pick up new env var
         from importlib import reload
         from app import config
 
+        with monkeypatch.context() as m:
+            m.setenv("NATS_URL", "nats://custom:4222")
+            reload(config)
+            assert config.Config.NATS_URL == "nats://custom:4222"
+
+        # Reload again after monkeypatch scope ends to restore original config
         reload(config)
-        assert config.Config.NATS_URL == "nats://custom:4222"
 
 
 if __name__ == "__main__":

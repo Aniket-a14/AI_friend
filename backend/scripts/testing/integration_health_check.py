@@ -34,7 +34,7 @@ async def check_postgres():
 
 
 async def check_neo4j():
-    uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7687")
     auth_str = os.getenv("NEO4J_AUTH", "neo4j/password123")
     user, password = (
         auth_str.split("/") if "/" in auth_str else ("neo4j", "password123")
@@ -54,7 +54,7 @@ async def check_neo4j():
 
 
 async def check_ollama():
-    ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
+    ollama_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
     logger.info(f"Checking Ollama connection at {ollama_url}...")
     try:
         async with AsyncClient() as client:
