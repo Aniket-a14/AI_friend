@@ -124,9 +124,9 @@ async def run_accelerated_benchmark(iterations: int):
 
         # Learn new information during non-recall/non-store pulses
         if not is_memory_test:
-            engine.process_new_information(prompt_text, i * 2.5, prompt_type)
+            engine.process_new_information(prompt_text, i * 80.0, prompt_type)
 
-        time_step = i * 2.5
+        time_step = i * 80.0
         tick_res = engine.execute_tick(
             i,
             prompt_type,
@@ -360,9 +360,9 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
                 prompt_type = "THREAT"
 
         if not is_memory_test:
-            engine.process_new_information(prompt_text, i * 2.5, prompt_type)
+            engine.process_new_information(prompt_text, i * 80.0, prompt_type)
 
-        time_step = i * 2.5
+        time_step = i * 80.0
         tick_res = engine.execute_tick(
             i,
             prompt_type,
@@ -512,7 +512,9 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
     generate_benchmark_plots()
 
 
-async def run_physical_benchmark(iterations: int, distractors: int = 200):
+async def run_physical_benchmark(
+    iterations: int, distractors: int = 200, skip_seed: bool = False
+):
     """
     Connects to the active microservice mesh via NATS and fires real prompts sequentially.
     Asynchronously resets databases and seeds distractors + 5 milestones before executing.
@@ -524,13 +526,16 @@ async def run_physical_benchmark(iterations: int, distractors: int = 200):
     )
 
     # 1. Reset databases and flood them
-    try:
-        print(
-            f"🧹 [Reset & Seeding] Flooding database index with {distractors} distractors..."
-        )
-        await seed_databases(num_distractors=distractors)
-    except Exception as e:
-        print(f"⚠️ Warning: Could not run direct DB reset/seeding: {e}")
+    if not skip_seed:
+        try:
+            print(
+                f"🧹 [Reset & Seeding] Flooding database index with {distractors} distractors..."
+            )
+            await seed_databases(num_distractors=distractors)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not run direct DB reset/seeding: {e}")
+    else:
+        print("⏭️ [Skip Seeding] Reusing pre-flooded database index.")
 
     nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
     try:
@@ -845,6 +850,7 @@ if __name__ == "__main__":
     mode = "physical"
     iters = 1000
     distractors = 200
+    skip_seed = False
 
     for idx, arg in enumerate(sys.argv):
         if arg in ("--mode", "-m") and idx + 1 < len(sys.argv):
@@ -859,6 +865,8 @@ if __name__ == "__main__":
                 distractors = int(sys.argv[idx + 1])
             except ValueError:
                 pass
+        if arg in ("--skip-seed", "-s"):
+            skip_seed = True
 
     if mode == "accelerated":
         print(
@@ -869,4 +877,8 @@ if __name__ == "__main__":
         )
         sys.exit(1)
     else:
-        asyncio.run(run_physical_benchmark(iterations=iters, distractors=distractors))
+        asyncio.run(
+            run_physical_benchmark(
+                iterations=iters, distractors=distractors, skip_seed=skip_seed
+            )
+        )

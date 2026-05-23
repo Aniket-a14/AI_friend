@@ -2,43 +2,61 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 
-# Standard, generic everyday conversation templates
-GENERIC_DISTRACTOR_TEMPLATES = [
-    "Hello, how is your day going?",
-    "I am currently working on a software engineering project.",
-    "The weather today is exceptionally clear and pleasant.",
-    "Can you help me verify the database connection parameters?",
-    "Let's schedule a meeting to discuss the system architecture.",
-    "I prefer using standard, structured JSON files for data storage.",
-    "What are the best practices for optimizing SQL query performance?",
-    "We need to write unit tests to validate the new modules.",
-    "The performance analysis shows a steady retrieval latency.",
-    "It is important to maintain clean, well-documented codebases.",
+# Rich, personal chitchat and distractor templates modeling Aniket's everyday life (0 to 19 years)
+ANIKET_DISTRACTOR_TEMPLATES = [
+    "Ma asked me to bring some fresh vegetables from the local market in Kolkata.",
+    "Discussing our high school mathematics project with my classmate in the afternoon.",
+    "Spending the evening coding a simple arcade game in Python in my study room.",
+    "We had a beautiful family dinner tonight celebrating my academic results.",
+    "Talking to my childhood friends about our weekend cricket match in the streets of Kolkata.",
+    "I tried making sweet rasgullas at home today, they turned out soft and spongy.",
+    "Walking through the crowded streets near Victoria Memorial, enjoying the cool breeze.",
+    "Ma is making delicious home-cooked meals, the whole house smells amazing.",
+    "Studying late into the night for my college entrance examinations, feeling focused.",
+    "Moving to Bangalore for my college was a major transition, the city is so vibrant.",
+    "Talking with Priya at the university cafe about our upcoming research presentation.",
+    "Discussing affective cognitive architectures and neural networks in the lab today.",
+    "Walking around Cubbon Park in Bangalore with Priya, talking about our future dreams.",
+    "I bought some traditional sweet rasgullas from a local Bengali sweet shop in Bangalore.",
+    "Reviewing database query optimization techniques with my research project teammates.",
+    "Listening to Ma's stories on the phone about our childhood home back in Kolkata.",
+    "Priya and I spent the afternoon studying in the quiet library alcove.",
+    "My high school friends and I are planning a reunion back in Kolkata during the holidays.",
+    "Debugging a tricky concurrent thread pool issue in my cognitive simulation module.",
+    "Enjoying a hot cup of tea while watching the rain wash over the streets of Bangalore.",
 ]
 
-# Structured technical milestone templates segmented into 4 developmental epochs (Ages 0 to 19)
+# Structured technical and autobiographical milestone templates distributed across 4 developmental stages
 EPOCH_0_5_TEMPLATES = [
-    "Bootstrap Parameter: Core memory index initialized successfully.",
-    "Bootstrap Parameter: Relational graph constraints verified.",
-    "Bootstrap Parameter: Secure network socket connection established.",
+    "Childhood Milestone: I took my first toddler steps in our warm home in Kolkata, surrounded by Ma and Baba's laughter.",
+    "Childhood Milestone: Tasting my first traditional sweet rasgulla, a delicious treat that became my absolute favorite.",
+    "Childhood Milestone: Playing with wooden toys in the sunlit balcony, listening to Ma's sweet Bengali lullabies.",
+    "Childhood Milestone: Drawing simple shapes with colorful crayons, feeling a spark of early cognitive curiosity.",
+    "Childhood Milestone: Baba taking me for a walk near the local park, looking up at the beautiful clear blue sky.",
 ]
 
 EPOCH_6_12_TEMPLATES = [
-    "Initialization Parameter: Default database connection pool allocated.",
-    "Initialization Parameter: Event broker topic subscription list updated.",
-    "Initialization Parameter: Context-gating decision thresholds calibrated.",
+    "School Milestone: Enrolling in primary school in Kolkata, wearing my new uniform and feeling exceptionally proud.",
+    "School Milestone: Winning a school mathematics puzzle competition, discovering my deep passion for logical reasoning.",
+    "School Milestone: Playing street cricket with my childhood neighborhood friends, celebrating a hard-fought victory.",
+    "School Milestone: A wonderful family summer holiday, eating fresh mangoes and visiting the grand Victoria Memorial.",
+    "School Milestone: Sitting in the school library reading my first science fiction book, dreaming of building intelligent machines.",
 ]
 
 EPOCH_13_18_TEMPLATES = [
-    "Optimization Parameter: Constants-time query cache limits enforced.",
-    "Optimization Parameter: Asynchronous thread pool bounds adjusted.",
-    "Optimization Parameter: High-precision embedding vector normalization verified.",
+    "Teenage Milestone: Writing my very first lines of Python code on Baba's old computer, watching the screen light up.",
+    "Teenage Milestone: Transitioning to senior high school in Kolkata, joining the science stream to study physics and math.",
+    "Teenage Milestone: Building a basic chat assistant model in my room, igniting my lifelong interest in computer science.",
+    "Teenage Milestone: Late-night study sessions with my school friends, sharing snacks and discussing our future college plans.",
+    "Teenage Milestone: Graduating high school with top honors, receiving congratulations from my proud family and teachers.",
 ]
 
 EPOCH_19_TEMPLATES = [
-    "Adulthood Parameter: Active memory decay coefficients dynamically stabilized.",
-    "Adulthood Parameter: Multi-hop graph belief cache invalidation complete.",
-    "Adulthood Parameter: Real-time SQL database active pruning transactions online.",
+    "Adulthood Milestone: Moving from Kolkata to Bangalore to start my freshman year of university, a major step forward.",
+    "Adulthood Milestone: Joining the university's advanced research lab focused on affective cognitive architectures.",
+    "Adulthood Milestone: Meeting Priya at the university cafe, starting a beautiful and deeply supportive relationship.",
+    "Adulthood Milestone: Celebrating my first successful research paper publication with Priya, sharing a sweet rasgulla.",
+    "Adulthood Milestone: Commencing my junior research internship in Bangalore, feeling completely aligned with my vocation.",
 ]
 
 
@@ -61,7 +79,7 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
     - 100,000 generic distractors backdated over a 19-year temporal timeline.
     - 10,000 structured system milestone records categorized into 4 epochs.
     """
-    print("📦 Generating 19-year developmental seeding corpus...")
+    print("📦 Generating 19-year developmental seeding corpus for Aniket...")
     print(f"   - Distractors: {num_distractors}")
     print(f"   - Milestones: {num_milestones}")
 
@@ -72,9 +90,9 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
     corpus = []
 
     # 1. Compile 100,000 backdated distractors
-    print("⏳ Backdating 100,000 daily distractors over 19 years...")
+    print("⏳ Backdating 100,000 chitchats over 19 years...")
     for i in range(num_distractors):
-        template = GENERIC_DISTRACTOR_TEMPLATES[i % len(GENERIC_DISTRACTOR_TEMPLATES)]
+        template = ANIKET_DISTRACTOR_TEMPLATES[i % len(ANIKET_DISTRACTOR_TEMPLATES)]
         content = f"{template} [Turn: {i}]"
 
         # Proportional backdating across a 19-year timeline
@@ -162,4 +180,4 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
 
 
 if __name__ == "__main__":
-    generate_corpus(200, 50)
+    generate_corpus(100000, 10000)
