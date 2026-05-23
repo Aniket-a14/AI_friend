@@ -19,3 +19,4 @@ repos:
     hooks:
       - id: codespell
         args: [--ignore-words=.lycheeignore]
+        exclude: (?x)^(.*package-lock\.json|.*schema\.prisma|\.agents/.*|.*test_identity\.py|.*test_performance\.py)$

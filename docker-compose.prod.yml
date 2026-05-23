@@ -1,7 +1,7 @@
 
 services:
   # ---------------------------------------------------------------------------
-  # INFRASTRUCTURE (From docker-compose.infra.yml - re-declared for linking)
+  # INFRASTRUCTURE (From docker-compose.infra.yml - redeclared for linking)
   # ---------------------------------------------------------------------------
   # In production, these might be external managed services.
   # For now, we assume they are running in the same network 'ai_mesh_network'

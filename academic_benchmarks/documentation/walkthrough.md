@@ -171,7 +171,7 @@ Below are representative citations corresponding to the comparative matrix:
 * **[3] Figure AI (2025)**, *"Figure 02 Technical Report: In-House End-to-End Embodied Humanoid AI System"*.
 * **[5] Inoue et al. (2024)**, *"Real-Time Turn-Taking Decision Making for a Humanoid Robot Using Multimodal Cues"*, in *Proceedings of LREC-COLING*.
 * **[12] Engineered Arts (2025)**, *"Tritium Software Orchestration Layer and Low-Latency Voice Streaming on Ameca Gen 3"*.
-* **[17] Wu et al. (2024)**, *"Integrating Cognitive Architectures with Large Language Models: A Neurosymbolic Framework"*, in *Journal of Neurosymbolic AI*.
-* **[21] Gutiérrez et al. (2024)**, *"HippoRAG: Neurobiologically Inspired Long-Term Memory Retrieval for Generative Agents"*, in *Proceedings of NeurIPS*.
+* **[17] Sumers et al. (2023)**, *"Cognitive Architectures for Language Agents"*, in *Transactions on Machine Learning Research (TMLR)*.
+* **[21] Gutiérrez et al. (2024)**, *"HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models"*, in *Proceedings of NeurIPS*.
 * **[28] Tesla Motors (2024)**, *"Tesla Bot (Optimus Gen 2) Visual-Motor End-to-End Deep Neural Networks"*.
 * **[29] Unitree Robotics (2024)**, *"Unitree G1 Humanoid Agent: Local VLMs and Reinforcement Learning Control"*.

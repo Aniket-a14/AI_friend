@@ -82,7 +82,7 @@ Every comparison drawn in this literature review maps directly to peer-reviewed 
 *   *ACT-R/E cognitive memory search*: **Sumers et al. (2023)** [17]
 *   *HippoRAG neurobiological retrieval*: **Gutiérrez et al. (2024)** [21]
 *   *ROS2 DDS performance metrics*: **Maruyama et al. (2016)** [24]
-*   *NATS messaging performance*: **Pullmann & Reinke (2020)** [25]
+*   *NATS messaging performance*: **Sharvari & Sowmya Nag (2019)** [25]
 *   *Lifespan developmental stages*: **Erikson & Erikson (1997)** [31]
 *   *Graph-based episodic memory and planning*: **Anokhin et al. (2024)** [32]
 *   *Hippocampal indexing theory*: **Teyler & DiScenna (1986)** [33]

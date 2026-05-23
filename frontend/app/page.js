@@ -137,7 +137,7 @@ export default function Home() {
                 >
                     {state === 'speaking' ? "Sourcing Neural Response..." :
                         state === 'thinking' ? "Processing Context..." :
-                            state === 'listening' ? "Awaiting Vocal Signature..." : "Synching Data..."}
+                            state === 'listening' ? "Awaiting Vocal Signature..." : "Syncing Data..."}
                 </motion.p>
             </div>
 

@@ -66,8 +66,8 @@ This document compiles the exhaustive academic bibliography for **AI Friend CVS-
     *Link*: [DOI:10.1177/0539018405058216](https://doi.org/10.1177/0539018405058216)
 
 12. **Picard, R. W. (1997)**
-    *Title*: "Affective Computing: Challenges and Foundations"
-    *Venue*: *MIT Press Monograph Series*
+    *Title*: "Affective Computing"
+    *Venue*: *MIT Press*
     *Link*: [MIT Press](https://direct.mit.edu/books/book/2585/Affective-Computing)
 
 13. **Busso, C. et al. (2008)**
@@ -138,25 +138,25 @@ This document compiles the exhaustive academic bibliography for **AI Friend CVS-
     *Venue*: *Proceedings of the International Conference on Embedded Software (EMSOFT)*
     *Link*: [DOI:10.1145/2968478.2968502](https://doi.org/10.1145/2968478.2968502)
 
-25. **Pullmann, C., & Reinke, A. (2020)**
-    *Title*: "Performance Evaluation of NATS Messaging System for Low-Latency Distributed Robotics Middleware"
-    *Venue*: *IEEE International Conference on Embedded Software and Systems (ICESS)*
-    *Link*: [IEEE Xplore](https://ieeexplore.ieee.org/document/9301140)
+25. **Sharvari, T., & Sowmya Nag, K. (2019)**
+    *Title*: "A Study on Modern Messaging Systems - Kafka, RabbitMQ and NATS Streaming"
+    *Venue*: *arXiv preprint arXiv:1912.03715*
+    *Link*: [arXiv:1912.03715](https://arxiv.org/abs/1912.03715)
 
-26. **Shannon, P., & O'Reilly, D. (2022)**
-    *Title*: "Quantitative Comparison of Rust and C FFI Overheads in Dynamic Scripting Environments"
-    *Venue*: *ACM SIGPLAN Notices*
-    *Link*: [ACM Digital Library](https://dl.acm.org/doi/10.1145/3547621)
+26. **Zhang, Y., Zhang, Y., Portokalidis, G., & Xu, J. (2022)**
+    *Title*: "Towards Understanding the Runtime Performance of Rust"
+    *Venue*: *Proceedings of the IEEE/ACM International Conference on Automated Software Engineering (ASE)*
+    *Link*: [DOI:10.1145/3551349.3556942](https://doi.org/10.1145/3551349.3556942)
 
-27. **Bench, M. et al. (2023)**
-    *Title*: "Benchmarking Edge AI Acceleration on NVIDIA Jetson AGX Orin for Embodied Humanoid Agents"
-    *Venue*: *IEEE Transactions on Cybernetics*
-    *Link*: [IEEE Xplore](https://ieeexplore.ieee.org/document/10129482)
+27. **Prashanthi, S. K. et al. (2022)**
+    *Title*: "Characterizing the Performance of Accelerated Jetson Edge Devices for Training Deep Learning Models"
+    *Venue*: *Proceedings of the ACM on Measurement and Analysis of Computing Systems (POMACS)*
+    *Link*: [arXiv:2209.05263](https://arxiv.org/abs/2209.05263)
 
-28. **Cheng, L. et al. (2024)**
-    *Title*: "Evaluation of Unified Memory Architectures for GPU-Accelerated Robot Cognition on Apple Silicon"
-    *Venue*: *IEEE Robotics and Automation Letters*
-    *Link*: [IEEE Xplore](https://ieeexplore.ieee.org/document/10452391)
+28. **Feng, D. (2025)**
+    *Title*: "Profiling Apple Silicon Performance for ML Training"
+    *Venue*: *arXiv preprint arXiv:2501.14925*
+    *Link*: [arXiv:2501.14925](https://arxiv.org/abs/2501.14925)
 
 29. **Radford, A. et al. (2023)**
     *Title*: "Robust speech recognition via large-scale weak supervision"
