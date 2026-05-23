@@ -15,7 +15,7 @@ jobs:
   ruff-reviewdog:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
@@ -30,7 +30,7 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Setup reviewdog
-        uses: reviewdog/action-setup@d8edfce3dd5e1ec6978745e801f9c50b5ef80252 # v1.4.0 Pin to secure commit SHA
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # v1.4.0 Pin to secure commit SHA
         with:
           reviewdog_version: latest
 

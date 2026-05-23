@@ -13,9 +13,9 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: '22'
         cache: 'npm'
@@ -26,7 +26,7 @@ jobs:
         npm ci
         npm run lint
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: '3.12'
     - name: Backend Lint (ruff)
@@ -40,9 +40,9 @@ jobs:
     needs: [lint]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: '22'
         cache: 'npm'
@@ -60,7 +60,7 @@ jobs:
     needs: [lint]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Start NATS Service
       run: |
         docker run -d --name nats -p 4222:4222 -p 8222:8222 nats:latest -js -m 8222
@@ -111,7 +111,7 @@ jobs:
 
     - name: Upload Coverage XML
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: backend-coverage
         path: backend/coverage.xml
@@ -121,7 +121,7 @@ jobs:
     needs: [lint]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Start NATS Service
       run: |
         docker run -d --name nats -p 4222:4222 -p 8222:8222 nats:latest -js -m 8222
@@ -165,7 +165,7 @@ jobs:
         pytest -q tests/test_performance.py --benchmark-json=.benchmarks.json
     - name: Upload benchmark results
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: backend-benchmarks
         path: backend/.benchmarks.json
