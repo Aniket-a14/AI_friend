@@ -267,6 +267,7 @@ async fn main() -> Result<()> {
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
 
     let mut ola_filter = OlaCrossfadeFilter::new(config.sample_rate);
+    let mut last_turn_id: Option<String> = None;
 
     while let Some(message) = subscriber.next().await {
         match serde_json::from_slice::<ChatOutput>(&message.payload) {
@@ -274,8 +275,22 @@ async fn main() -> Result<()> {
                 if event.done {
                     // End of current stream; safe point to clear interruption state.
                     abort_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                    last_turn_id = None;
                     continue;
                 }
+
+                // Detect start of a new stream/response by tracking turn_id changes
+                if let Some(ref current_turn_id) = event.turn_id {
+                    let is_new_stream = match last_turn_id {
+                        Some(ref prev_id) => prev_id != current_turn_id,
+                        None => true,
+                    };
+                    if is_new_stream {
+                        last_turn_id = Some(current_turn_id.clone());
+                        abort_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
+
                 if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
                     // Drop trailing chunks after interruption until stream completion.
                     continue;
