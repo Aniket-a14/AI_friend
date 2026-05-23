@@ -35,37 +35,35 @@ def create_directories():
 def run_benchmarks():
     print("🚀 Initiating Comprehensive 12-Dimensional Sovereign Mind Benchmarking...")
 
-    # Load live benchmark results if available (with defaults)
-    e2e_mean = 1590.09
-    ttft_mean = 828.00
-    cvs_tom_mae = 0.08
-    cvs_memory_recall_at_5 = 99.2
-    cvs_reasoning_accuracy = 98.2
-
     results_path = os.path.join(RESULTS_DIR, "benchmark_results.json")
-    if os.path.exists(results_path):
-        try:
-            with open(results_path, "r") as f:
-                res = json.load(f)
-                if "e2e" in res and "mean" in res["e2e"]:
-                    e2e_mean = res["e2e"]["mean"]
-                if "ttft" in res and "mean" in res["ttft"]:
-                    ttft_mean = res["ttft"]["mean"]
-                if "cognitive" in res:
-                    cog = res["cognitive"]
-                    if "tom_mae_valence" in cog:
-                        cvs_tom_mae = cog["tom_mae_valence"]
-                    if "memory_recall_at_5" in cog:
-                        cvs_memory_recall_at_5 = cog["memory_recall_at_5"]
-                    if "intent_accuracy" in cog:
-                        cvs_reasoning_accuracy = cog["intent_accuracy"]
-            print("  📊 Loaded live benchmark telemetry:")
-            print(f"     E2E Mean = {e2e_mean:.2f} ms | TTFT Mean = {ttft_mean:.2f} ms")
-            print(
-                f"     ToM MAE = {cvs_tom_mae:.4f} | Recall@5 = {cvs_memory_recall_at_5:.2f}% | Reasoning = {cvs_reasoning_accuracy:.2f}%"
-            )
-        except Exception as e:
-            print(f"  ⚠️ Failed to parse benchmark_results.json: {e}")
+    if not os.path.exists(results_path):
+        raise FileNotFoundError(
+            f"❌ ERROR: No physical live benchmark results found at '{results_path}'.\n"
+            "💡 You must first execute the physical benchmarking suite by running:\n"
+            "   python scripts/research/hard_benchmark.py\n"
+            "before trying to run the evaluation and PDF report compiler."
+        )
+
+    try:
+        with open(results_path, "r") as f:
+            res = json.load(f)
+            e2e_mean = res["e2e"]["mean"]
+            ttft_mean = res["ttft"]["mean"]
+            cog = res["cognitive"]
+            cvs_tom_mae = cog["tom_mae_valence"]
+            cvs_memory_recall_at_5 = cog["memory_recall_at_5"]
+            cvs_reasoning_accuracy = cog["intent_accuracy"]
+    except Exception as e:
+        raise ValueError(
+            f"❌ ERROR: Failed to extract required metrics from '{results_path}': {e}.\n"
+            "Ensure the benchmark script ran successfully and wrote valid JSON structured data."
+        )
+
+    print("  📊 Loaded live benchmark telemetry:")
+    print(f"     E2E Mean = {e2e_mean:.2f} ms | TTFT Mean = {ttft_mean:.2f} ms")
+    print(
+        f"     ToM MAE = {cvs_tom_mae:.4f} | Recall@5 = {cvs_memory_recall_at_5:.2f}% | Reasoning = {cvs_reasoning_accuracy:.2f}%"
+    )
 
     # ------------------ 1. Multi-Turn Coherence ------------------
     print("  Dimension 1: Multi-Turn Dialogue Coherence (N=50 turns)...")
