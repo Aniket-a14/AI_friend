@@ -101,6 +101,7 @@ class IdentityCoreStore:
                 return self._cached_identity
         except Exception as e:
             logger.error(f"Failed to load identity core from SQLite: {e}")
+            self._cached_identity = {}
         finally:
             self._release_connection(conn)
         return {}

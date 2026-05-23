@@ -128,6 +128,10 @@ class MemoryStore:
     ):
         """Adds a new memory with ACT-R metadata and hierarchical scope."""
         try:
+            import uuid
+            # Generate a single UUID for both stores to ensure correlation
+            memory_id = str(uuid.uuid4())
+
             vector = await self.get_embedding(content)
             if not vector:
                 return False
@@ -140,14 +144,15 @@ class MemoryStore:
                     await conn.execute(
                         """
                         INSERT INTO memories (
-                            content, raw_content, wing, room,
+                            id, content, raw_content, wing, room,
                             embedding, importance_score, emotional_weight,
                             valence, certainty, source, metadata,
                             lifespan_stage, crisis, virtue, relations, relation_circles, modality,
                             recall_count, last_recalled_at
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 1, CURRENT_TIMESTAMP)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 1, CURRENT_TIMESTAMP)
                         """,
+                        memory_id,
                         content,
                         raw_val,
                         wing,
@@ -173,13 +178,14 @@ class MemoryStore:
                     await conn.execute(
                         """
                         INSERT INTO memories (
-                            content, raw_content, wing, room,
+                            id, content, raw_content, wing, room,
                             embedding, importance_score, emotional_weight,
                             valence, certainty, source, metadata,
                             recall_count, last_recalled_at
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, CURRENT_TIMESTAMP)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, CURRENT_TIMESTAMP)
                         """,
+                        memory_id,
                         content,
                         raw_val,
                         wing,
@@ -192,10 +198,8 @@ class MemoryStore:
                         source,
                         orjson.dumps(metadata or {}).decode(),
                     )
-            # Upsert into Qdrant if online
+            # Upsert into Qdrant if online using the same memory_id
             if self.qdrant_store.client:
-                import uuid
-                memory_id = str(uuid.uuid4())
                 metadata_qdrant = {
                     "wing": wing,
                     "room": room or "",

@@ -107,8 +107,14 @@ class SubconsciousAgent(BaseAgent):
     async def _on_state_broadcast(self, data: Dict[str, Any]):
         """Asynchronously syncs state changes from NATS state.broadcast into Neo4j."""
         agent_name = data.get("agent_name", "my friend")
+
+        # Validate agent_name
+        if not agent_name or not isinstance(agent_name, str):
+            logger.error(f"[Subconscious] Invalid or missing agent_name in state broadcast. Payload: {data}")
+            return
+
         logger.info(f"[Subconscious] Received state broadcast for {agent_name}. Syncing to Neo4j...")
-        
+
         query = """
         MERGE (a:Agent {name: $name})
         SET a.mood = $mood,
@@ -154,10 +160,14 @@ class SubconsciousAgent(BaseAgent):
         }
         
         try:
-            await self.graph_db.execute_query(query, params, write=True)
-            if hasattr(self.graph_db, "invalidate_cache"):
-                await self.graph_db.invalidate_cache(agent_name)
-            logger.debug(f"[Subconscious] Asynchronously persisted state to Neo4j for {agent_name}.")
+            result = await self.graph_db.execute_query(query, params, write=True)
+            # Verify write succeeded by checking result is non-empty or has positive write counters
+            if result is not None and (isinstance(result, list) and len(result) > 0 or result):
+                if hasattr(self.graph_db, "invalidate_cache"):
+                    await self.graph_db.invalidate_cache(agent_name)
+                logger.debug(f"[Subconscious] Asynchronously persisted state to Neo4j for {agent_name}.")
+            else:
+                logger.warning(f"[Subconscious] Neo4j write returned empty result for {agent_name}. Write may have failed silently.")
         except Exception as e:
             logger.error(f"[Subconscious] Failed to sync state to Neo4j: {e}")
 

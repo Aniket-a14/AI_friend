@@ -104,55 +104,54 @@ async def test_state_hydration_persistence(mock_graph_db):
     import os
     import json
     import sqlite3
-    db_file = os.path.join(tempfile.gettempdir(), "test_tom_state.db")
-    if os.path.exists(db_file):
-        try:
-            os.remove(db_file)
-        except Exception:
-            pass
 
-    state_service = StateService(graph_store=mock_graph_db, db_path=db_file)
+    # Create unique temp file
+    fd, db_file = tempfile.mkstemp(suffix=".db", prefix="test_tom_state_")
+    os.close(fd)  # Close the file descriptor, we'll use the path
 
-    # 1. Test Persist State
-    state_service.current_state.user_mental_model.inferred_valence = -0.5
-    state_service.current_state.user_mental_model.inferred_arousal = 0.4
-    state_service.current_state.user_mental_model.implied_goals = ["vent"]
-    state_service.current_state.user_mental_model.known_concepts = [
-        "anger",
-        "frustration",
-    ]
+    try:
+        state_service = StateService(graph_store=mock_graph_db, db_path=db_file)
 
-    await state_service.persist_state("test_agent")
+        # 1. Test Persist State
+        state_service.current_state.user_mental_model.inferred_valence = -0.5
+        state_service.current_state.user_mental_model.inferred_arousal = 0.4
+        state_service.current_state.user_mental_model.implied_goals = ["vent"]
+        state_service.current_state.user_mental_model.known_concepts = [
+            "anger",
+            "frustration",
+        ]
 
-    # Query SQLite directly to assert it was saved successfully
-    conn = sqlite3.connect(db_file)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM agent_state WHERE agent_name = ?", ("test_agent",))
-    row = cursor.fetchone()
-    conn.close()
+        await state_service.persist_state("test_agent")
 
-    assert row is not None
-    assert row["inferred_valence"] == -0.5
-    assert row["inferred_arousal"] == 0.4
-    assert json.loads(row["implied_goals"]) == ["vent"]
-    assert json.loads(row["known_concepts"]) == ["anger", "frustration"]
+        # Query SQLite directly to assert it was saved successfully
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM agent_state WHERE agent_name = ?", ("test_agent",))
+        row = cursor.fetchone()
+        conn.close()
 
-    # 2. Test Hydrate State from SQLite cache
-    new_service = StateService(graph_store=mock_graph_db, db_path=db_file)
-    await new_service.hydrate_state("test_agent")
+        assert row is not None
+        assert row["inferred_valence"] == -0.5
+        assert row["inferred_arousal"] == 0.4
+        assert json.loads(row["implied_goals"]) == ["vent"]
+        assert json.loads(row["known_concepts"]) == ["anger", "frustration"]
 
-    assert new_service.current_state.user_mental_model.inferred_valence == -0.5
-    assert new_service.current_state.user_mental_model.inferred_arousal == 0.4
-    assert new_service.current_state.user_mental_model.implied_goals == ["vent"]
-    assert new_service.current_state.user_mental_model.known_concepts == ["anger", "frustration"]
+        # 2. Test Hydrate State from SQLite cache
+        new_service = StateService(graph_store=mock_graph_db, db_path=db_file)
+        await new_service.hydrate_state("test_agent")
 
-    # Clean up temp file
-    if os.path.exists(db_file):
-        try:
-            os.remove(db_file)
-        except Exception:
-            pass
+        assert new_service.current_state.user_mental_model.inferred_valence == -0.5
+        assert new_service.current_state.user_mental_model.inferred_arousal == 0.4
+        assert new_service.current_state.user_mental_model.implied_goals == ["vent"]
+        assert new_service.current_state.user_mental_model.known_concepts == ["anger", "frustration"]
+    finally:
+        # Guaranteed cleanup in finally block
+        if os.path.exists(db_file):
+            try:
+                os.remove(db_file)
+            except Exception:
+                pass
 
 
 @pytest.mark.asyncio

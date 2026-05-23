@@ -290,32 +290,31 @@ class StateService:
 
         # 2. Try SQLite
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM agent_state WHERE agent_name = ?", (agent_name,))
-            row = cursor.fetchone()
-            if row:
-                self.current_state.mood = row["mood"]
-                self.current_state.energy = row["energy"]
-                self.current_state.dominance = row["dominance"]
-                self.current_state.trust_benevolence = row["trust_benevolence"]
-                self.current_state.trust_competence = row["trust_competence"]
-                self.current_state.trust_integrity = row["trust_integrity"]
-                self.current_state.attachment = row["attachment"]
-                self.current_state.fatigue = row["fatigue"]
-                self.current_state.last_user_interaction = row["last_user_interaction"]
-                self.current_state.interaction_count = row["interaction_count"]
-                self.current_state.user_mental_model.inferred_valence = row["inferred_valence"]
-                self.current_state.user_mental_model.inferred_arousal = row["inferred_arousal"]
-                self.current_state.user_mental_model.implied_goals = json.loads(row["implied_goals"] or "[]")
-                self.current_state.user_mental_model.known_concepts = json.loads(row["known_concepts"] or "[]")
-                self.current_state.baseline_valence = row["baseline_valence"]
-                self.current_state.baseline_arousal = row["baseline_arousal"]
-                self.current_state.baseline_dominance = row["baseline_dominance"]
-                logger.debug("[State] Hydrated successfully from SQLite.")
-                return
-            conn.close()
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM agent_state WHERE agent_name = ?", (agent_name,))
+                row = cursor.fetchone()
+                if row:
+                    self.current_state.mood = row["mood"]
+                    self.current_state.energy = row["energy"]
+                    self.current_state.dominance = row["dominance"]
+                    self.current_state.trust_benevolence = row["trust_benevolence"]
+                    self.current_state.trust_competence = row["trust_competence"]
+                    self.current_state.trust_integrity = row["trust_integrity"]
+                    self.current_state.attachment = row["attachment"]
+                    self.current_state.fatigue = row["fatigue"]
+                    self.current_state.last_user_interaction = row["last_user_interaction"]
+                    self.current_state.interaction_count = row["interaction_count"]
+                    self.current_state.user_mental_model.inferred_valence = row["inferred_valence"]
+                    self.current_state.user_mental_model.inferred_arousal = row["inferred_arousal"]
+                    self.current_state.user_mental_model.implied_goals = json.loads(row["implied_goals"] or "[]")
+                    self.current_state.user_mental_model.known_concepts = json.loads(row["known_concepts"] or "[]")
+                    self.current_state.baseline_valence = row["baseline_valence"]
+                    self.current_state.baseline_arousal = row["baseline_arousal"]
+                    self.current_state.baseline_dominance = row["baseline_dominance"]
+                    logger.debug("[State] Hydrated successfully from SQLite.")
+                    return
         except Exception as e:
             logger.error(f"Failed to hydrate state from SQLite: {e}")
 
