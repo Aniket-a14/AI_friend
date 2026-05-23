@@ -15,17 +15,18 @@ The comparative matrix below contrasts the cognitive humanoid brain of CVS-3.0 a
 
 ### Table I: SOTA System-to-System Benchmarking Matrix
 
-| Performance Metric | Humanoid: Furhat (Al Moubayed et al., 2012) [7] | Humanoid: Pepper (Pandey & Gelin, 2018) [10] | Embodied Core: ACT-R/E (Trafton et al., 2013) [17] | Edge System: CORTEX (Romero-Garcés et al., 2017) [24] | Kyoto Android: ERICA (Inoue et al., 2020) [5] | **Ours: CVS-3.0 Humanoid Brain (Live Bench)** |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Speech Self-Interruption** | 800.0 ms | 1,200.0 ms | -- | -- | 200.0 ms (Mechanical Lip-Sync) | **`[TBP]`** (To Be Populated) |
-| **Cognitive Gating Latency** | 2,500.0 ms | 3,200.0 ms | -- | 10.0–25.0 ms (No NLP/ToM) | 100.0 ms (Continuous VAP frames) | **`[TBP]`** (To Be Populated) |
-| **Memory Recall (Recall@5)** | -- | -- | ~85.0% (Symbolic Steps) | -- | -- | **`[TBP]`** (To Be Populated) |
-| **Multi-Agent Message IPC** | 120.0 ms | 250.0 ms | -- | 4.85 ms (ROS2 DDS) | -- | **`[TBP]`** (To Be Populated) |
-| **System Idle Memory** | 6.20 GB | 4.10 GB | -- | 3.80 GB | -- | **`[TBP]`** (To Be Populated) |
-| **Active Edge Power** | 45.0 W (NUC Edge) | 60.0 W (Pepper Core) | -- | 35.0 W | -- | **`[TBP]`** (To Be Populated) |
-| **Barge-in False Trigger** | 18.5% | 22.0% | -- | -- | 14.0% | **`[TBP]`** (To Be Populated) |
-| **Theory of Mind (ToM) MAE** | -- | -- | 0.280 MAE | -- | -- | **`[TBP]`** (To Be Populated) |
-| **Structural Architecture** | Dynamic Face GUI | Rigid Actuators | Symbolic Decays | Shared Memory DDS | Attentive Frame VAP | **Live Localized Mind Mesh** |
+| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.0 Humanoid Brain (Live Bench)** |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** |
+| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** |
+| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** |
+| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | **`[TBP]`** |
+| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **`[TBP]`** |
+| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **`[TBP]`** |
+| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** |
+| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **`[TBP]`** |
+| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **`[TBP]`** |
+| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** |
 
 ---
 
