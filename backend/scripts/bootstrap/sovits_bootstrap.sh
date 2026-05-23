@@ -78,7 +78,7 @@ fi
 
 # 4. Identity Warmup (Populate BERT/HuBERT Latent Caches)
 # We perform a dummy synthesis with the neutral anchor to 'prime' the GPU
-if [ -f "$CUSTOM_GPT_PATH" ] && [ -f "$CUSTOM_SOVITS_PATH" ]; then
+if [ -n "${CUSTOM_GPT_PATH:-}" ] && [ -f "${CUSTOM_GPT_PATH:-}" ] && [ -n "${CUSTOM_SOVITS_PATH:-}" ] && [ -f "${CUSTOM_SOVITS_PATH:-}" ]; then
     echo "🔥 Performing Identity Warmup (BERT/HuBERT Cache)..."
     curl_retry -X POST "http://127.0.0.1:9871/tts" \
          -H "Content-Type: application/json" \

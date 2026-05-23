@@ -142,15 +142,17 @@ class WorkingMemoryStore:
             with self._get_sqlite_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT role, content, metadata FROM working_turns ORDER BY id ASC LIMIT ?",
+                    "SELECT role, content, metadata FROM working_turns ORDER BY id DESC LIMIT ?",
                     (limit,)
                 )
                 rows = cursor.fetchall()
+                # Reverse to restore chronological order (oldest to newest)
+                reversed_rows = list(reversed(rows))
                 return [{
                     "role": row["role"],
                     "content": row["content"],
                     "metadata": json.loads(row["metadata"])
-                } for row in rows]
+                } for row in reversed_rows]
         except Exception as e:
             logger.error(f"SQLite get_recent_turns failed: {e}")
             return []

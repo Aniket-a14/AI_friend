@@ -70,6 +70,9 @@ class TestConfiguration:
         reload(config)
         assert config.Config.NATS_URL == "nats://custom:4222"
 
+        # Reload again after monkeypatch scope ends to restore original config
+        reload(config)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

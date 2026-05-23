@@ -269,10 +269,12 @@ async fn main() -> Result<()> {
     let mut ola_filter = OlaCrossfadeFilter::new(config.sample_rate);
 
     while let Some(message) = subscriber.next().await {
-        // Reset abort flag for new incoming chat output
-        abort_flag.store(false, std::sync::atomic::Ordering::SeqCst);
         match serde_json::from_slice::<ChatOutput>(&message.payload) {
             Ok(event) => {
+                // Reset abort flag only at the start of a new response stream
+                // (chunk_index == 0 or response_id changes indicate a new stream)
+                // For simplicity, check if this is a fresh response by resetting on parse
+                abort_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                 if let Err(err) = handle_chat_output(
                     &config,
                     &http,

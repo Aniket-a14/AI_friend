@@ -66,7 +66,7 @@ class ConversationalRuntime:
 
         try:
             async for output in generator:
-                if output["type"] == "content":
+                if output.get("type") == "content":
                     first_token_received = True
                     if not filler_task.done():
                         filler_task.cancel()

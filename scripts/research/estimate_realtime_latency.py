@@ -95,8 +95,10 @@ async def run_latency_profile():
     print(f"  Turn Append Latency (p95):  {p95_append:.4f} ms")
     print(f"  Recent Turns Fetch (Avg):   {avg_fetch:.4f} ms")
     print(f"  Recent Turns Fetch (p95):   {p95_fetch:.4f} ms")
-    status_working = "✅ PASS" if avg_append < 10.0 else "⚠️ WARN"
-    print(f"  SLO Compliance (< 10ms):    {status_working}\n")
+    status_working_append = "✅ PASS" if avg_append < 10.0 else "⚠️ WARN"
+    status_working_fetch = "✅ PASS" if avg_fetch < 10.0 else "⚠️ WARN"
+    print(f"  SLO Compliance Append (< 10ms):  {status_working_append}")
+    print(f"  SLO Compliance Fetch (< 10ms):   {status_working_fetch}\n")
 
     # Cleanup temp SQLite fallback file if any
     if os.path.exists("test_working_memory.db"):
@@ -150,11 +152,14 @@ async def run_latency_profile():
         status_search = "✅ PASS" if avg_search < 10.0 else "⚠️ WARN"
         print(f"  SLO Compliance (< 10ms):     {status_search}\n")
     else:
-        print("  ⚠️ Qdrant server is offline. Real vector search bypassed. Injected default mock metric: 1.250 ms")
+        print("  ⚠️ Qdrant server is offline. Real vector search bypassed.")
         avg_upsert = 0.0
-        avg_search = 1.250
-        p95_search = 1.250
-        print("  SLO Compliance (< 10ms):     ✅ PASS (Bypass Mode)\n")
+        avg_search = float("inf")
+        p95_search = float("inf")
+        print(f"  Vector Upsert Latency (Avg): {avg_upsert:.4f} ms")
+        print(f"  Vector Search Latency (Avg): N/A (offline)")
+        print(f"  Vector Search Latency (p95): N/A (offline)")
+        print("  SLO Compliance (< 10ms):     ❌ UNKNOWN (Qdrant offline)\n")
 
     # --- 4. SUMMARY REPORT ---
     print("======================================================================")
@@ -162,10 +167,12 @@ async def run_latency_profile():
     print("======================================================================")
     print(f" {'Operation':<35} | {'Average (ms)':<15} | {'SLO Limit (ms)':<15} | {'Compliance':<10}")
     print("-" * 83)
+    search_avg_str = f"{avg_search:<15.4f}" if avg_search != float("inf") else f"{'N/A':<15}"
+    search_status = "✅ PASS" if avg_search < 10.0 else ("⚠️ WARN" if avg_search != float("inf") else "❌ UNKNOWN")
     print(f" {'Identity Cached Lookup':<35} | {avg_cached:<15.4f} | {'1.0000':<15} | {status_cached}")
-    print(f" {'Working Memory Append':<35} | {avg_append:<15.4f} | {'10.0000':<15} | {status_working}")
-    print(f" {'Working Memory Fetch':<35} | {avg_fetch:<15.4f} | {'10.0000':<15} | {status_working}")
-    print(f" {'Semantic Vector Search':<35} | {avg_search:<15.4f} | {'10.0000':<15} | {'✅ PASS' if avg_search < 10.0 else '⚠️ WARN'}")
+    print(f" {'Working Memory Append':<35} | {avg_append:<15.4f} | {'10.0000':<15} | {status_working_append}")
+    print(f" {'Working Memory Fetch':<35} | {avg_fetch:<15.4f} | {'10.0000':<15} | {status_working_fetch}")
+    print(f" {'Semantic Vector Search':<35} | {search_avg_str} | {'10.0000':<15} | {search_status}")
     print("======================================================================\n")
 
     # Write report as artifact
@@ -174,7 +181,7 @@ async def run_latency_profile():
         "identity_cached_lookup_avg_ms": avg_cached,
         "working_memory_append_avg_ms": avg_append,
         "working_memory_fetch_avg_ms": avg_fetch,
-        "semantic_vector_search_avg_ms": avg_search,
+        "semantic_vector_search_avg_ms": avg_search if avg_search != float("inf") else None,
     }
     
     os.makedirs("scripts/results", exist_ok=True)
