@@ -1,3 +1,4 @@
+import copy
 import os
 import sqlite3
 import json
@@ -116,8 +117,8 @@ class IdentityCoreStore:
         with self._cache_lock:
             cached = self._cached_identity
         if not cached:
-            return self.load_into_cache()
-        return cached
+            return copy.deepcopy(self.load_into_cache())
+        return copy.deepcopy(cached)
 
     def update_identity(self, data: Dict[str, Any]):
         """Persists identity mutations to SQLite and updates memory cache."""
