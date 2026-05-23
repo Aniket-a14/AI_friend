@@ -141,18 +141,21 @@ def test_pruning_threshold_decay(temp_store):
     time_a = (now - timedelta(hours=1000)).strftime("%Y-%m-%d %H:%M:%S")
     time_b = (now - timedelta(hours=2000)).strftime("%Y-%m-%d %H:%M:%S")
 
+    import uuid
     async def insert_helper():
         async with temp_store.pool.acquire() as conn:
             # Insert Memory A
             await conn.execute(
-                "INSERT INTO memories (content, recall_count, created_at, last_recalled_at, wing) VALUES (?, 1, ?, ?, 'personal')",
+                "INSERT INTO memories (id, content, recall_count, created_at, last_recalled_at, wing) VALUES (?, ?, 1, ?, ?, 'personal')",
+                str(uuid.uuid4()),
                 "Memory A",
                 time_a,
                 time_a,
             )
             # Insert Memory B
             await conn.execute(
-                "INSERT INTO memories (content, recall_count, created_at, last_recalled_at, wing) VALUES (?, 1, ?, ?, 'personal')",
+                "INSERT INTO memories (id, content, recall_count, created_at, last_recalled_at, wing) VALUES (?, ?, 1, ?, ?, 'personal')",
+                str(uuid.uuid4()),
                 "Memory B",
                 time_b,
                 time_b,

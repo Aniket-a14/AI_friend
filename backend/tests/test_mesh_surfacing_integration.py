@@ -16,15 +16,15 @@ class _FakeConn:
         normalized = " ".join(query.split()).lower()
 
         if normalized.startswith("insert into memories"):
-            # New Arg Order: content, raw_val, wing, room, vector_str, importance, emotion...
+            # New Arg Order with prepended memory_id at args[0]: content at args[1], raw_content at args[2], etc.
             self.rows.append(
                 {
-                    "content": args[0],
-                    "raw_content": args[1],
-                    "wing": args[2],
-                    "room": args[3],
-                    "importance_score": float(args[5]),
-                    "emotional_weight": float(args[6]),
+                    "content": args[1],
+                    "raw_content": args[2],
+                    "wing": args[3],
+                    "room": args[4],
+                    "importance_score": float(args[6]),
+                    "emotional_weight": float(args[7]),
                     "last_recalled_at": datetime.now(timezone.utc),
                 }
             )
