@@ -462,25 +462,26 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
     axes[0].set_ylim(0, 2500)
     axes[0].grid(axis="x")
 
-    # Load live benchmark results if available (with defaults)
-    cvs_tom_mae = 0.08
-    cvs_memory_recall_at_5 = 99.2
+    results_path = os.path.join(RESULTS_DIR, "benchmark_results.json")
+    if not os.path.exists(results_path):
+        raise FileNotFoundError(
+            f"❌ ERROR: No physical live benchmark results found at '{results_path}'.\n"
+            "💡 You must first execute the physical benchmarking suite by running:\n"
+            "   python scripts/research/hard_benchmark.py\n"
+            "before running human_realism_eval.py to generate realism figures."
+        )
 
-    results_path = os.path.join(SCRIPT_DIR, "benchmark_results.json")
-    if os.path.exists(results_path):
-        try:
-            with open(results_path, "r") as f:
-                res = json.load(f)
-                if "cognitive" in res:
-                    cog = res["cognitive"]
-                    if "tom_mae_valence" in cog:
-                        cvs_tom_mae = cog["tom_mae_valence"]
-                    if "memory_recall_at_5" in cog:
-                        cvs_memory_recall_at_5 = cog["memory_recall_at_5"]
-        except Exception as e:
-            print(
-                f"  ⚠️ Failed to parse benchmark_results.json in human_realism_eval.py: {e}"
-            )
+    try:
+        with open(results_path, "r") as f:
+            res = json.load(f)
+            cog = res["cognitive"]
+            cvs_tom_mae = cog["tom_mae_valence"]
+            cvs_memory_recall_at_5 = cog["memory_recall_at_5"]
+    except Exception as e:
+        raise ValueError(
+            f"❌ ERROR: Failed to extract required metrics from '{results_path}': {e}.\n"
+            "Ensure the benchmark script ran successfully and wrote valid JSON structured data."
+        )
 
     # Subplot 2: Theory of Mind (ToM) Emotion MAE
     labels_tom = [
