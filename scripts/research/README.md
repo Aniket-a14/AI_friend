@@ -90,30 +90,43 @@ Reset the backend pgvector tables and Neo4j graph nodes to establish a blank sla
 python scripts/research/reset_cognitive_db.py
 ```
 
-### Step 5: Verify with Dry Run (5 Iterations)
-Before embarking on the full benchmark, execute a quick 5-iteration dry run to verify that your NATS JetStream connectivity, PostgreSQL pgvector connection, and Neo4j graph nodes are working perfectly:
+### Step 5: Procedural Seeding Corpus Generation (The 19-Year Baseline)
+Compile Aniket's 19-year life timeline (Ages 0 to 19) procedurally. This generates exactly **100,000 everyday conversations** backdated over 19 years and **10,000 milestones** structured across four developmental epochs (infancy, middle school, high school, and Bangalore college research with Priya):
+```bash
+python scripts/research/generate_seeding_corpus.py
+```
+This writes the full baseline dataset to `scripts/research/flooded_seeding_corpus.json`.
+
+### Step 6: Verify with Dry Run (5 Iterations)
+Before embarking on the full benchmark, execute a quick 5-iteration dry run to verify NATS JetStream connectivity, PostgreSQL pgvector connection, and Neo4j graph nodes are working perfectly:
 ```bash
 # Execute dry run verification
 python scripts/research/hard_benchmark.py --iterations 5
 ```
 
-### Step 6: Post-Verification Database Reset
-Once the dry run successfully completes and verifies the system integration works without errors, reset the database again to ensure a pristine blank state before starting the full 1000-iteration benchmarking run:
+### Step 7: Post-Verification Database Reset & Re-seeding
+Once the dry run successfully completes, wipe the database and regenerate the seeding corpus to ensure a fresh, pristine baseline:
 ```bash
 python scripts/research/reset_cognitive_db.py
+python scripts/research/generate_seeding_corpus.py
 ```
 
-### Step 7: Run the Full Physical Live Benchmark (1000 Iterations)
-Execute the rigorous physical benchmark at full scale. This connects to live microservices, seeds the **5 key milestones**, floods the databases with **200 initial distractor memories**, and drives continuous loops under live JetStream load while triggering active ACT-R database pruning ticks:
+### Step 8: Run the Full 110,000-Memory Physical Stress Test (1000 Iterations)
+Execute the rigorous physical benchmark at full scale. This connects to live microservices, loads all 110,000 memories (100,000 chitchats and 10,000 milestones) from `flooded_seeding_corpus.json` into pgvector, seeds Neo4j with Aniket's relational trust circle, and runs exactly **1,000 conversational turn interactions between Aniket and a close friend, compressed entirely within a single day (his 20th birthday)** under live JetStream load while executing active database pruning:
 ```bash
-# Run the full physical benchmark (1000 iterations is the default)
-python scripts/research/hard_benchmark.py --iterations 1000
+# Run the full physical benchmark flooding 100,000 distractors
+python scripts/research/hard_benchmark.py --iterations 1000 --distractors 100000
+```
 
-# Note: Accelerated simulation mode is disabled in physical runs to preserve experimental integrity.
+### Step 9: Running Subsequent Tests Instantly (Bypassing Seeding)
+To execute additional evaluation runs without wiping and re-seeding the 110,000-memory database, use the `--skip-seed` (or `-s`) flag:
+```bash
+# Run subsequent conversational trials instantly
+python scripts/research/hard_benchmark.py --iterations 1000 --skip-seed
 ```
 
 
-### Step 8: Real-time Telemetry Logging & Interactive Testing (Passive Daemon Mode)
+### Step 10: Real-time Telemetry Logging & Interactive Testing (Passive Daemon Mode)
 To observe real-time physiological response changes and generate the publication affective trajectories, run the passive event listener alongside manual or automated interactive testing:
 ```bash
 # 1. Open a new terminal and launch the state collector daemon:
@@ -131,19 +144,19 @@ python scripts/research/visualizer.py
 python scripts/visualization/visualize_affect.py
 ```
 
-### Step 9: Compile Realism & Autonomic Curves
+### Step 11: Compile Realism & Autonomic Curves
 Process the benchmark's collected endocrine outputs to evaluate physiological entrainment, generating RMSSD HRV models and heart rate plots:
 ```bash
 python scripts/research/human_realism_eval.py
 ```
 
-### Step 10: Calculate Cognitive Metrics
+### Step 12: Calculate Cognitive Metrics
 Measure core user intent classification gate accuracy and Theory of Mind Mean Absolute Error (MAE) statistics:
 ```bash
 python scripts/research/cognitive_metrics_eval.py
 ```
 
-### Step 11: System Profiling & Report PDF Compilation
+### Step 13: System Profiling & Report PDF Compilation
 Measure graph search traversals, database size scaling, memory constraints, and compile the final academic PDF publication report embedding all generated figures:
 ```bash
 python scripts/research/extended_benchmarks_eval.py

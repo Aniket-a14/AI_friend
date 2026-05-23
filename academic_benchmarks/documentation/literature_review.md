@@ -59,8 +59,14 @@ To execute the physical benchmarking suite and dynamically populate the **Ours**
 # 1. Reset pgvector and Neo4j cognitive memory indexes
 python scripts/research/reset_cognitive_db.py
 
-# 2. Run the rigorous physical live benchmarking suite
-python scripts/research/hard_benchmark.py --mode physical --iterations 1000
+# 2. Compile Aniket's 19-year life timeline (110,000 memories)
+python scripts/research/generate_seeding_corpus.py
+
+# 3. Run the rigorous physical live benchmarking suite seeding 100,000 distractors
+python scripts/research/hard_benchmark.py --mode physical --iterations 1000 --distractors 100000
+
+# 4. Or run subsequent conversational trials instantly (bypassing database seeding)
+python scripts/research/hard_benchmark.py --mode physical --iterations 1000 --skip-seed
 ```
 Upon successful execution, the telemetry aggregates (Min, Mean, Median, Max, Jitter, p95, p99) are logged into `scripts/results/benchmark_results.json`, ready to be dropped into the LaTeX table drafts.
 
