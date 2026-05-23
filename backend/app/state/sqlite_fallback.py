@@ -106,6 +106,52 @@ class SQLiteConnection:
             if col not in existing_mem_cols:
                 cursor.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT")
 
+        # Migration for memories.id column type: ensure it's TEXT for UUID compatibility
+        cursor.execute("PRAGMA table_info(memories)")
+        id_col_info = [row for row in cursor.fetchall() if row[1] == "id"]
+        if id_col_info and id_col_info[0][2].upper() != "TEXT":
+            logger.info(
+                f"Migrating memories.id from {id_col_info[0][2]} to TEXT for UUID compatibility"
+            )
+            # Create temp table with correct schema
+            cursor.execute("""
+                CREATE TABLE memories_new (
+                    id TEXT PRIMARY KEY,
+                    content TEXT,
+                    raw_content TEXT,
+                    wing TEXT DEFAULT 'personal',
+                    room TEXT,
+                    embedding TEXT,
+                    importance_score REAL DEFAULT 0.5,
+                    emotional_weight REAL DEFAULT 0.0,
+                    valence REAL DEFAULT 0.0,
+                    certainty REAL DEFAULT 1.0,
+                    source TEXT DEFAULT 'user',
+                    recall_count INTEGER DEFAULT 0,
+                    last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    metadata TEXT DEFAULT '{}',
+                    lifespan_stage TEXT,
+                    crisis TEXT,
+                    virtue TEXT,
+                    relations TEXT,
+                    relation_circles TEXT,
+                    modality TEXT
+                )
+            """)
+            # Copy data, converting id to TEXT
+            cursor.execute("""
+                INSERT INTO memories_new
+                SELECT CAST(id AS TEXT), content, raw_content, wing, room, embedding,
+                       importance_score, emotional_weight, valence, certainty, source,
+                       recall_count, last_recalled_at, created_at, metadata,
+                       lifespan_stage, crisis, virtue, relations, relation_circles, modality
+                FROM memories
+            """)
+            # Drop old table and rename new one
+            cursor.execute("DROP TABLE memories")
+            cursor.execute("ALTER TABLE memories_new RENAME TO memories")
+
         self.conn.commit()
 
     def _translate_query(self, query: str):
