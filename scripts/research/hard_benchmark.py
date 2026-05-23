@@ -274,17 +274,17 @@ async def run_accelerated_benchmark(iterations: int):
     generate_benchmark_plots()
 
 
-async def run_simulated_physical_benchmark(iterations: int):
+async def run_simulated_physical_benchmark(iterations: int, distractors: int = 200):
     """
     Simulated physical live benchmark using local high-fidelity cognitive engine.
     Avoids NATS/Docker dependency while preserving all required physical output metrics.
     """
     print("\n🚀 --- Starting Rigorous Physical Live Benchmark (Simulated Fallback) ---")
     print(
-        f"Iterations: {iterations} | Active Math Models: Appraisal, ACT-R Decay, Active Pruning, ToM, OLA Synthesis"
+        f"Iterations: {iterations} | Distractors: {distractors} | Active Math Models: Appraisal, ACT-R Decay, Active Pruning, ToM, OLA Synthesis"
     )
 
-    engine = AcceleratedCognitiveEngine(initial_distractors=200)
+    engine = AcceleratedCognitiveEngine(initial_distractors=distractors)
 
     local_latencies = []
     e2e_latencies = []
@@ -512,21 +512,23 @@ async def run_simulated_physical_benchmark(iterations: int):
     generate_benchmark_plots()
 
 
-async def run_physical_benchmark(iterations: int):
+async def run_physical_benchmark(iterations: int, distractors: int = 200):
     """
     Connects to the active microservice mesh via NATS and fires real prompts sequentially.
-    Asynchronously resets databases and seeds 200 distractors + 5 milestones before executing.
+    Asynchronously resets databases and seeds distractors + 5 milestones before executing.
     Active memory pruning is executed directly as real-time SQL DELETE transactions.
     """
     print("\n🚀 --- Starting Rigorous Physical Live Benchmark ---")
     print(
-        f"Iterations: {iterations} | Active Microservices: NATS, pgvector, Neo4j, Ollama"
+        f"Iterations: {iterations} | Distractors: {distractors} | Active Microservices: NATS, pgvector, Neo4j, Ollama"
     )
 
     # 1. Reset databases and flood them
     try:
-        print("🧹 [Reset & Seeding] Flooding database index with 200 distractors...")
-        await seed_databases(num_distractors=200)
+        print(
+            f"🧹 [Reset & Seeding] Flooding database index with {distractors} distractors..."
+        )
+        await seed_databases(num_distractors=distractors)
     except Exception as e:
         print(f"⚠️ Warning: Could not run direct DB reset/seeding: {e}")
 
@@ -540,7 +542,7 @@ async def run_physical_benchmark(iterations: int):
         print(
             "⚠️ Docker is off (NATS is unavailable). Running high-fidelity physical simulation fallback..."
         )
-        await run_simulated_physical_benchmark(iterations)
+        await run_simulated_physical_benchmark(iterations, distractors)
         return
 
     # Measure NATS IPC round-trip latency
@@ -842,6 +844,7 @@ def save_results(results_data):
 if __name__ == "__main__":
     mode = "physical"
     iters = 1000
+    distractors = 200
 
     for idx, arg in enumerate(sys.argv):
         if arg in ("--mode", "-m") and idx + 1 < len(sys.argv):
@@ -849,6 +852,11 @@ if __name__ == "__main__":
         if arg in ("--iterations", "-i") and idx + 1 < len(sys.argv):
             try:
                 iters = int(sys.argv[idx + 1])
+            except ValueError:
+                pass
+        if arg in ("--distractors", "-d") and idx + 1 < len(sys.argv):
+            try:
+                distractors = int(sys.argv[idx + 1])
             except ValueError:
                 pass
 
@@ -861,4 +869,4 @@ if __name__ == "__main__":
         )
         sys.exit(1)
     else:
-        asyncio.run(run_physical_benchmark(iterations=iters))
+        asyncio.run(run_physical_benchmark(iterations=iters, distractors=distractors))
