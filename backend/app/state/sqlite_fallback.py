@@ -140,12 +140,46 @@ class SQLiteConnection:
                 )
             """)
             # Copy data, converting id to TEXT
-            cursor.execute("""
+            # Detect which columns exist in the source memories table
+            cursor.execute("PRAGMA table_info(memories)")
+            source_cols = {row[1] for row in cursor.fetchall()}
+
+            # Define expected columns with their default values for missing columns
+            column_defaults = {
+                "content": "''",
+                "raw_content": "''",
+                "wing": "'personal'",
+                "room": "NULL",
+                "embedding": "NULL",
+                "importance_score": "0.5",
+                "emotional_weight": "0.0",
+                "valence": "0.0",
+                "certainty": "1.0",
+                "source": "'user'",
+                "recall_count": "0",
+                "last_recalled_at": "CURRENT_TIMESTAMP",
+                "created_at": "CURRENT_TIMESTAMP",
+                "metadata": "'{}'",
+                "lifespan_stage": "NULL",
+                "crisis": "NULL",
+                "virtue": "NULL",
+                "relations": "NULL",
+                "relation_circles": "NULL",
+                "modality": "NULL"
+            }
+
+            # Build SELECT projection: use actual column if exists, otherwise use default
+            select_parts = ["CAST(id AS TEXT)"]
+            for col, default in column_defaults.items():
+                if col in source_cols:
+                    select_parts.append(col)
+                else:
+                    select_parts.append(f"{default} AS {col}")
+
+            select_clause = ", ".join(select_parts)
+            cursor.execute(f"""
                 INSERT INTO memories_new
-                SELECT CAST(id AS TEXT), content, raw_content, wing, room, embedding,
-                       importance_score, emotional_weight, valence, certainty, source,
-                       recall_count, last_recalled_at, created_at, metadata,
-                       lifespan_stage, crisis, virtue, relations, relation_circles, modality
+                SELECT {select_clause}
                 FROM memories
             """)
             # Drop old table and rename new one
