@@ -268,15 +268,17 @@ To support natural social HRI (Human-Robot Interaction) under strict local compu
   ```
 
 ### 6.3 Live iMac M3 Empirical Benchmarking Results ($N=100$)
-Empirical performance profiling of the containerized cognitive mesh running locally on the Apple iMac (M3 Host Node) under Apple Metal GPU acceleration with the active `llama3.2:3b` model yielded high performance metrics:
+Empirical performance profiling of the containerized cognitive mesh running locally on the Apple iMac (M3 Host Node) under Apple Metal GPU acceleration with the active `llama3.2:3b` model:
 
 | Metric | Mean | p50 | p95 | p99 | Jitter |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **End-to-End Thought Latency** | **1646.95 ms** | 1147.14 ms | 5169.28 ms | 13423.38 ms | 2156.00 ms |
-| **Time-to-First-Token (TTFT)** | **703.36 ms** | 230.02 ms | 4111.32 ms | 12512.93 ms | 2157.01 ms |
+| **End-to-End Thought Latency** | **`[TBP]`** | `[TBP]` | `[TBP]` | `[TBP]` | `[TBP]` |
+| **Time-to-First-Token (TTFT)** | **`[TBP]`** | `[TBP]` | `[TBP]` | `[TBP]` | `[TBP]` |
 
-* **Local Inference Efficiency**: Achieving a **2.6x reduction in TTFT** (703.36 ms vs. 1850.0 ms) compared to cloud humanoid baseline architectures.
-* **Lightweight Footprint**: The mesh operates fully in light-mode (with real-time voice and vision containers isolated via compose profiles), dropping the entire system memory footprint to only **1,079.58 MB** and maintaining average CPU utilization below **8.19%**.
+*All values will be populated dynamically by executing `scripts/research/hard_benchmark.py`.*
+
+* **Local Inference Efficiency**: `[TBP]` — to be compared against cloud humanoid baseline architectures upon benchmarking.
+* **Lightweight Footprint**: `[TBP]` — system memory footprint and CPU utilization to be measured under light-mode compose profiles.
 
 ---
 
