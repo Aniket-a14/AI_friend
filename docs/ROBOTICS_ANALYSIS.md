@@ -20,13 +20,13 @@ Assuming a high-end local GPU (e.g., RTX 4090 or Mac M-series with unified memor
 
 Here is the lifecycle of a single conversational turn:
 
-1.  **Fast Perception & Semantic Interruption Conflict Resolution (<115ms):** CVS-3.0's sub-cognitive VAD and semantic segmenter resolve conversational turn-taking boundaries in exactly **114.9 ms** (F1-Score = 96.0%).
-2.  **Sub-LLM Pathway Overhead (~1.21 ms):** The entire perception-appraisal-decision chain (including subconscious threat scanning, memory index lookup, and endocrine hormone appraisal calculation) completes in an ultra-low **1.21 ms**.
-3.  **Local LLM TTFT (703.36 ms mean):** The BrainAgent prompts Ollama using the active model (`llama3.2:3b`), yielding a live-measured Time-to-First-Token (TTFT) mean of **703.36 ms** (p50 = 230.02 ms, p95 = 4111.32 ms) under local iMac M3 Apple Metal acceleration.
-4.  **End-to-End Thought Latency (1646.95 ms mean):** The complete cognitive loop completes generating full responses with an empirical End-to-End thought latency mean of **1646.95 ms** (p50 = 1147.14 ms, p95 = 5169.28 ms).
+1.  **Fast Perception & Semantic Interruption Conflict Resolution:** CVS-3.0's sub-cognitive VAD and semantic segmenter resolve conversational turn-taking boundaries. Empirical latency: **`[TBP]`**.
+2.  **Sub-LLM Pathway Overhead:** The entire perception-appraisal-decision chain (including subconscious threat scanning, memory index lookup, and endocrine hormone appraisal calculation). Empirical latency: **`[TBP]`**.
+3.  **Local LLM TTFT:** The BrainAgent prompts Ollama using the active model (`llama3.2:3b`). Empirical Mean TTFT: **`[TBP]`** under local iMac M3 Apple Metal acceleration.
+4.  **End-to-End Thought Latency:** The complete cognitive loop completes generating full responses. Empirical Mean: **`[TBP]`**.
 5.  **Audio Render (<1ms):** The Rust-native VoiceAgent immediately queues the PCM buffer for overlap-add (OLA) crossfade playback.
 
-**Total Empirical Turnaround:** **~1646.95 ms** from the moment user input is published to the moment the AI's final text chunk is returned, representing an extremely tight, near-perfect conversational rhythm.
+**Total Empirical Turnaround:** **`[TBP]`** — to be populated by executing `scripts/research/hard_benchmark.py`.
 
 > [!TIP]
 > **Human-Level Overlap:** Because the STT agent separates *speculative intent* from *deep transcription*, if you interrupt the AI while it is speaking, the VoiceAgent applies a `SPECULATIVE_PAUSE` in roughly **~200ms**. This makes the AI feel incredibly human, as it stops talking almost the instant you interject, rather than talking over you while it waits for Whisper to finish transcribing.
@@ -119,7 +119,7 @@ CVS-3.0 has fully ascended to **Tier 5 (Predictive Continuous Simulation)**.
 ### When will it behave like a "Near-Perfect Human"?
 If we define "near-perfect human" strictly within the domain of a PC-based voice companion (like the movie *Her*):
 
-1.  **Conversational Cadence (Achieved / 6 Months):** With our sub-cognitive VAD and fast turn-taking arbitration, dialogue transitions complete in a near-instant **114.9 ms**.
+1.  **Conversational Cadence (Target / 6 Months):** With our sub-cognitive VAD and fast turn-taking arbitration, dialogue transition latency target: **<200 ms** (empirical: **`[TBP]`**).
 2.  **Contextual & Emotional Reality (Achieved):** Integrated 12-dimensional benchmarks (dialogue coherence, memory recall curves, theory of mind valence appraiser) ensure a self-maturing relationship state that never jailbreaks or forgets.
 3.  **Acoustic Affect (1-2 Years):** The VoiceAgent maps PAD states to prosody parameters. The integration of end-to-end local Audio-Language Models (ALMs) will finalize natural acoustic micro-tremors in the near future.
 
