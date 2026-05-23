@@ -39,7 +39,7 @@ class MemoryStore:
     def __init__(self, pool, ollama_base_url=None):
         self.pool = pool
         self.ollama_base_url = (
-            ollama_base_url or getattr(Config, "OLLAMA_URL", "http://localhost:11434")
+            ollama_base_url or getattr(Config, "OLLAMA_URL", "http://127.0.0.1:11434")
         ).rstrip("/")
         self.embedding_model = "nomic-embed-text"
         self._http_client = httpx.AsyncClient(timeout=30.0)
@@ -57,6 +57,9 @@ class MemoryStore:
         # L1 Memory Activation Cache
         self._l1_cache = {}  # key -> (timestamp, results)
         self._l1_cache_ttl = 15.0  # seconds
+
+        from .semantic_recall_store import SemanticRecallStore
+        self.qdrant_store = SemanticRecallStore()
 
     @property
     def is_sqlite(self) -> bool:
@@ -189,6 +192,38 @@ class MemoryStore:
                         source,
                         orjson.dumps(metadata or {}).decode(),
                     )
+            # Upsert into Qdrant if online
+            if self.qdrant_store.client:
+                import uuid
+                memory_id = str(uuid.uuid4())
+                metadata_qdrant = {
+                    "wing": wing,
+                    "room": room or "",
+                    "importance_score": importance,
+                    "emotional_weight": emotion,
+                    "valence": valence,
+                    "certainty": certainty,
+                    "source": source,
+                    "recall_count": 1,
+                    "last_recalled_at": str(time.time()),
+                    "created_at": str(time.time()),
+                    "lifespan_stage": lifespan_stage or "",
+                    "crisis": crisis or "",
+                    "virtue": virtue or "",
+                    "relations": relations or "",
+                    "relation_circles": relation_circles or "",
+                    "modality": modality or ""
+                }
+                if metadata:
+                    metadata_qdrant["custom_metadata"] = orjson.dumps(metadata).decode()
+
+                self.qdrant_store.add_vector_memory(
+                    memory_id=memory_id,
+                    vector=vector,
+                    content=content,
+                    metadata=metadata_qdrant
+                )
+
             logger.info(
                 f"🧠 Memory Stored [{wing}:{room or 'global'}]: {content[:50]}..."
             )
@@ -247,73 +282,39 @@ class MemoryStore:
             is_sqlite = self.is_sqlite
 
             raw_candidates = []
-            async with self.pool.acquire() as conn:
-                if is_sqlite:
-                    # SQLite fallback: fetch relevant memories and compute similarity in Python
-                    if room is not None:
-                        rows = await conn.fetch(
-                            "SELECT * FROM memories WHERE wing = ? AND room = ?",
-                            wing,
-                            room,
-                        )
-                    else:
-                        rows = await conn.fetch(
-                            "SELECT * FROM memories WHERE wing = ?", wing
-                        )
 
-                    # Manual cosine similarity and ACT-R scoring
-                    for row in rows:
-                        if row["content"] in excluded:
+            # 1. Qdrant Selective Vector Path
+            if self.qdrant_store.client:
+                try:
+                    candidates = self.qdrant_store.search_vector_memories(
+                        query_vector=query_vector,
+                        limit=max(20, limit * 3)
+                    )
+                    for cand in candidates:
+                        meta = cand["metadata"]
+                        c_wing = meta.get("wing")
+                        c_room = meta.get("room")
+                        if wing is not None and c_wing != wing:
+                            continue
+                        if room is not None and c_room != room:
                             continue
 
-                        # Parse embedding vector
+                        c_content = cand["content"]
+                        if c_content in excluded:
+                            continue
+
+                        memory_id = cand["id"]
+                        memory_valence = meta.get("valence", 0.0)
+                        emotion_weight_row = meta.get("emotional_weight", 0.0)
+                        importance_score = meta.get("importance_score", 0.5)
+                        recall_count = max(1, meta.get("recall_count", 1))
+
                         try:
-                            emb_str = row.get("embedding")
-                            if isinstance(emb_str, str):
-                                # Strip brackets and split
-                                emb_str = emb_str.strip("[]")
-                                emb_val = [
-                                    float(x) for x in emb_str.split(",") if x.strip()
-                                ]
-                            elif isinstance(emb_str, list):
-                                emb_val = emb_str
-                            else:
-                                emb_val = []
-                        except Exception:
-                            emb_val = []
+                            last_recall_time = float(meta.get("last_recalled_at", time.time()))
+                        except (ValueError, TypeError):
+                            last_recall_time = time.time()
 
-                        if len(emb_val) == len(query_vector) and len(query_vector) > 0:
-                            # Dot product
-                            dot = sum(x * y for x, y in zip(query_vector, emb_val))
-                            mag1 = math.sqrt(sum(x * x for x in query_vector))
-                            mag2 = math.sqrt(sum(x * x for x in emb_val))
-                            similarity = dot / (mag1 * mag2) if mag1 * mag2 > 0 else 0.0
-                        else:
-                            similarity = 0.5  # default similarity fallback
-
-                        last_recall = row.get("last_recalled_at")
-                        from datetime import datetime
-
-                        now = datetime.now(timezone.utc)
-
-                        if last_recall is None:
-                            last_recall = now
-                        elif isinstance(last_recall, str):
-                            try:
-                                last_recall = datetime.fromisoformat(last_recall)
-                            except Exception:
-                                last_recall = now
-
-                        if last_recall.tzinfo is None:
-                            last_recall = last_recall.replace(tzinfo=timezone.utc)
-
-                        hours_since = max(
-                            0.001, (now - last_recall).total_seconds() / 3600.0
-                        )
-                        recall_count = max(1, row.get("recall_count") or 1)
-
-                        memory_valence = row.get("valence") or 0.0
-                        emotion_weight_row = row.get("emotional_weight") or 0.0
+                        hours_since = max(0.001, (time.time() - last_recall_time) / 3600.0)
 
                         # 2D/3D Emotional Distance matching the research simulator
                         dist_emo = math.sqrt(
@@ -324,11 +325,11 @@ class MemoryStore:
                         base_activation = (
                             _cached_ln(recall_count)
                             - self.decay_rate * _cached_ln(hours_since + 1.0)
-                            + 1.5 * (row.get("importance_score") or 0.5)
+                            + 1.5 * importance_score
                             + 0.15 * (1.0 - dist_emo)
                         )
 
-                        # Neuromodulatory distance mapping (gating remains untouched in backend)
+                        similarity = cand["score"]
                         effective_similarity = similarity * (
                             1.0
                             + 0.1 * memory_valence * emotion_weight_row
@@ -338,202 +339,337 @@ class MemoryStore:
                         spread_activation = self.spread_weight * effective_similarity
                         score = base_activation + spread_activation - 0.5 * dist_emo
 
-                        # Filter by relaxed threshold (threshold - 2.5)
                         if score <= (threshold - 2.5):
                             continue
 
-                        created = row.get("created_at")
-                        if isinstance(created, str):
-                            try:
-                                created = datetime.fromisoformat(created)
-                            except Exception:
-                                created = now
-                        if created and created.tzinfo is None:
-                            created = created.replace(tzinfo=timezone.utc)
+                        from datetime import datetime
+                        created_val = meta.get("created_at")
+                        try:
+                            created = datetime.fromtimestamp(float(created_val), timezone.utc) if created_val else datetime.now(timezone.utc)
+                        except Exception:
+                            created = datetime.now(timezone.utc)
 
-                        raw_meta = row.get("metadata")
-                        if isinstance(raw_meta, str):
+                        custom_metadata = {}
+                        if "custom_metadata" in meta:
                             try:
-                                raw_meta = orjson.loads(raw_meta)
+                                custom_metadata = orjson.loads(meta["custom_metadata"])
                             except Exception:
-                                raw_meta = {}
+                                pass
 
                         raw_candidates.append(
                             {
-                                "content": row["content"],
-                                "raw_content": row.get("raw_content") or row["content"],
-                                "wing": row.get("wing", "personal"),
-                                "room": row.get("room"),
+                                "id": memory_id,
+                                "content": c_content,
+                                "raw_content": c_content,
+                                "wing": c_wing or "personal",
+                                "room": c_room,
                                 "score": score,
-                                "valence": row.get("valence") or 0.0,
+                                "valence": memory_valence,
                                 "created_at": created,
                                 "recall_count": recall_count,
-                                "metadata": raw_meta or {},
-                                "lifespan_stage": row.get("lifespan_stage"),
-                                "crisis": row.get("crisis"),
-                                "virtue": row.get("virtue"),
-                                "relations": row.get("relations"),
-                                "relation_circles": row.get("relation_circles"),
-                                "modality": row.get("modality"),
+                                "metadata": custom_metadata,
+                                "lifespan_stage": meta.get("lifespan_stage"),
+                                "crisis": meta.get("crisis"),
+                                "virtue": meta.get("virtue"),
+                                "relations": meta.get("relations"),
+                                "relation_circles": meta.get("relation_circles"),
+                                "modality": meta.get("modality"),
                                 "similarity": similarity,
-                                "last_recalled_at": last_recall,
+                                "last_recalled_at": datetime.fromtimestamp(last_recall_time, timezone.utc)
                             }
                         )
-                else:
-                    # PostgreSQL fast-path via custom C-level vector procedure
-                    try:
-                        rows = await conn.fetch(
-                            """
-                            SELECT
-                                s.content,
-                                s.raw_content,
-                                s.wing,
-                                s.room,
-                                s.importance_score,
-                                s.emotional_weight,
-                                s.valence,
-                                s.recall_count,
-                                s.last_recalled_at,
-                                s.created_at,
-                                s.metadata,
-                                s.similarity,
-                                s.score,
-                                m.lifespan_stage,
-                                m.crisis,
-                                m.virtue,
-                                m.relations,
-                                m.relation_circles,
-                                m.modality
-                            FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer) s
-                            LEFT JOIN memories m ON m.content = s.content AND m.wing = s.wing
-                            """,
-                            vector_str,
-                            wing,
-                            room,
-                            self.decay_rate,
-                            self.spread_weight,
-                            self.emotion_weight,
-                            current_valence,
-                            threshold - 2.5,
-                            max(20, limit * 3),
-                        )
-                    except Exception as pg_err:
-                        logger.warning(
-                            f"Eriksonian JOIN pg query failed, falling back to legacy schema: {pg_err}"
-                        )
-                        rows = await conn.fetch(
-                            """
-                            SELECT
-                                content,
-                                raw_content,
+                except Exception as qe:
+                    logger.error(f"Qdrant retrieval failed, falling back to database: {qe}")
+
+            # 2. Database Fallback (if Qdrant is offline or returned no candidates)
+            if not raw_candidates:
+                async with self.pool.acquire() as conn:
+                    if is_sqlite:
+                        # SQLite fallback: fetch relevant memories and compute similarity in Python
+                        if room is not None:
+                            rows = await conn.fetch(
+                                "SELECT * FROM memories WHERE wing = ? AND room = ?",
                                 wing,
                                 room,
-                                importance_score,
-                                emotional_weight,
-                                valence,
-                                recall_count,
-                                last_recalled_at,
-                                created_at,
-                                metadata,
-                                similarity,
-                                score
-                            FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer)
-                            """,
-                            vector_str,
-                            wing,
-                            room,
-                            self.decay_rate,
-                            self.spread_weight,
-                            self.emotion_weight,
-                            current_valence,
-                            threshold - 2.5,
-                            max(20, limit * 3),
-                        )
-
-                    for row in rows:
-                        if row["content"] in excluded:
-                            continue
-
-                        similarity = row.get("similarity") or 0.0
-                        recall_count = max(1, row.get("recall_count") or 1)
-
-                        # Recalculate score with neuromodulatory gating
-                        last_recall = row.get("last_recalled_at")
-                        from datetime import datetime
-
-                        now = datetime.now(timezone.utc)
-
-                        if last_recall is None:
-                            last_recall = now
-                        elif last_recall.tzinfo is None:
-                            last_recall = last_recall.replace(tzinfo=timezone.utc)
-
-                        hours_since = max(
-                            0.001, (now - last_recall).total_seconds() / 3600.0
-                        )
-
-                        memory_valence = row.get("valence") or 0.0
-                        emotion_weight_row = row.get("emotional_weight") or 0.0
-
-                        # 2D/3D Emotional Distance matching the research simulator
-                        dist_emo = math.sqrt(
-                            (memory_valence - current_valence) ** 2
-                            + (emotion_weight_row - current_arousal) ** 2
-                        )
-
-                        base_activation = (
-                            _cached_ln(recall_count)
-                            - self.decay_rate * _cached_ln(hours_since + 1.0)
-                            + 1.5 * (row.get("importance_score") or 0.5)
-                            + 0.15 * (1.0 - dist_emo)
-                        )
-
-                        # Neuromodulatory distance mapping
-                        effective_similarity = similarity * (
-                            1.0
-                            + 0.1 * memory_valence * emotion_weight_row
-                            - 0.2 * current_arousal * current_cortisol
-                        )
-
-                        spread_activation = self.spread_weight * effective_similarity
-                        score = base_activation + spread_activation - 0.5 * dist_emo
-
-                        if score <= (threshold - 2.5):
-                            continue
-
-                        created = row.get("created_at")
-                        if created and created.tzinfo is None:
-                            created = created.replace(tzinfo=timezone.utc)
-
-                        raw_meta = row.get("metadata")
-                        if isinstance(raw_meta, str):
+                            )
+                        else:
+                            rows = await conn.fetch(
+                                "SELECT * FROM memories WHERE wing = ?", wing
+                            )
+    
+                        # Manual cosine similarity and ACT-R scoring
+                        for row in rows:
+                            if row["content"] in excluded:
+                                continue
+    
+                            # Parse embedding vector
                             try:
-                                raw_meta = orjson.loads(raw_meta)
+                                emb_str = row.get("embedding")
+                                if isinstance(emb_str, str):
+                                    # Strip brackets and split
+                                    emb_str = emb_str.strip("[]")
+                                    emb_val = [
+                                        float(x) for x in emb_str.split(",") if x.strip()
+                                    ]
+                                elif isinstance(emb_str, list):
+                                    emb_val = emb_str
+                                else:
+                                    emb_val = []
                             except Exception:
-                                raw_meta = {}
-
-                        raw_candidates.append(
-                            {
-                                "content": row["content"],
-                                "raw_content": row.get("raw_content") or row["content"],
-                                "wing": row.get("wing", "personal"),
-                                "room": row.get("room"),
-                                "score": score,
-                                "valence": row.get("valence") or 0.0,
-                                "created_at": created,
-                                "recall_count": recall_count,
-                                "metadata": raw_meta or {},
-                                "lifespan_stage": row.get("lifespan_stage"),
-                                "crisis": row.get("crisis"),
-                                "virtue": row.get("virtue"),
-                                "relations": row.get("relations"),
-                                "relation_circles": row.get("relation_circles"),
-                                "modality": row.get("modality"),
-                                "similarity": similarity,
-                                "last_recalled_at": last_recall,
-                            }
-                        )
-
+                                emb_val = []
+    
+                            if len(emb_val) == len(query_vector) and len(query_vector) > 0:
+                                # Dot product
+                                dot = sum(x * y for x, y in zip(query_vector, emb_val))
+                                mag1 = math.sqrt(sum(x * x for x in query_vector))
+                                mag2 = math.sqrt(sum(x * x for x in emb_val))
+                                similarity = dot / (mag1 * mag2) if mag1 * mag2 > 0 else 0.0
+                            else:
+                                similarity = 0.5  # default similarity fallback
+    
+                            last_recall = row.get("last_recalled_at")
+                            from datetime import datetime
+    
+                            now = datetime.now(timezone.utc)
+    
+                            if last_recall is None:
+                                last_recall = now
+                            elif isinstance(last_recall, str):
+                                try:
+                                    last_recall = datetime.fromisoformat(last_recall)
+                                except Exception:
+                                    last_recall = now
+    
+                            if last_recall.tzinfo is None:
+                                last_recall = last_recall.replace(tzinfo=timezone.utc)
+    
+                            hours_since = max(
+                                0.001, (now - last_recall).total_seconds() / 3600.0
+                            )
+                            recall_count = max(1, row.get("recall_count") or 1)
+    
+                            memory_valence = row.get("valence") or 0.0
+                            emotion_weight_row = row.get("emotional_weight") or 0.0
+    
+                            # 2D/3D Emotional Distance matching the research simulator
+                            dist_emo = math.sqrt(
+                                (memory_valence - current_valence) ** 2
+                                + (emotion_weight_row - current_arousal) ** 2
+                            )
+    
+                            base_activation = (
+                                _cached_ln(recall_count)
+                                - self.decay_rate * _cached_ln(hours_since + 1.0)
+                                + 1.5 * (row.get("importance_score") or 0.5)
+                                + 0.15 * (1.0 - dist_emo)
+                            )
+    
+                            # Neuromodulatory distance mapping (gating remains untouched in backend)
+                            effective_similarity = similarity * (
+                                1.0
+                                + 0.1 * memory_valence * emotion_weight_row
+                                - 0.2 * current_arousal * current_cortisol
+                            )
+    
+                            spread_activation = self.spread_weight * effective_similarity
+                            score = base_activation + spread_activation - 0.5 * dist_emo
+    
+                            # Filter by relaxed threshold (threshold - 2.5)
+                            if score <= (threshold - 2.5):
+                                continue
+    
+                            created = row.get("created_at")
+                            if isinstance(created, str):
+                                try:
+                                    created = datetime.fromisoformat(created)
+                                except Exception:
+                                    created = now
+                            if created and created.tzinfo is None:
+                                created = created.replace(tzinfo=timezone.utc)
+    
+                            raw_meta = row.get("metadata")
+                            if isinstance(raw_meta, str):
+                                try:
+                                    raw_meta = orjson.loads(raw_meta)
+                                except Exception:
+                                    raw_meta = {}
+    
+                            raw_candidates.append(
+                                {
+                                    "content": row["content"],
+                                    "raw_content": row.get("raw_content") or row["content"],
+                                    "wing": row.get("wing", "personal"),
+                                    "room": row.get("room"),
+                                    "score": score,
+                                    "valence": row.get("valence") or 0.0,
+                                    "created_at": created,
+                                    "recall_count": recall_count,
+                                    "metadata": raw_meta or {},
+                                    "lifespan_stage": row.get("lifespan_stage"),
+                                    "crisis": row.get("crisis"),
+                                    "virtue": row.get("virtue"),
+                                    "relations": row.get("relations"),
+                                    "relation_circles": row.get("relation_circles"),
+                                    "modality": row.get("modality"),
+                                    "similarity": similarity,
+                                    "last_recalled_at": last_recall,
+                                }
+                            )
+                    else:
+                        # PostgreSQL fast-path via custom C-level vector procedure
+                        try:
+                            rows = await conn.fetch(
+                                """
+                                SELECT
+                                    s.content,
+                                    s.raw_content,
+                                    s.wing,
+                                    s.room,
+                                    s.importance_score,
+                                    s.emotional_weight,
+                                    s.valence,
+                                    s.recall_count,
+                                    s.last_recalled_at,
+                                    s.created_at,
+                                    s.metadata,
+                                    s.similarity,
+                                    s.score,
+                                    m.lifespan_stage,
+                                    m.crisis,
+                                    m.virtue,
+                                    m.relations,
+                                    m.relation_circles,
+                                    m.modality
+                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer) s
+                                LEFT JOIN memories m ON m.content = s.content AND m.wing = s.wing
+                                """,
+                                vector_str,
+                                wing,
+                                room,
+                                self.decay_rate,
+                                self.spread_weight,
+                                self.emotion_weight,
+                                current_valence,
+                                threshold - 2.5,
+                                max(20, limit * 3),
+                            )
+                        except Exception as pg_err:
+                            logger.warning(
+                                f"Eriksonian JOIN pg query failed, falling back to legacy schema: {pg_err}"
+                            )
+                            rows = await conn.fetch(
+                                """
+                                SELECT
+                                    content,
+                                    raw_content,
+                                    wing,
+                                    room,
+                                    importance_score,
+                                    emotional_weight,
+                                    valence,
+                                    recall_count,
+                                    last_recalled_at,
+                                    created_at,
+                                    metadata,
+                                    similarity,
+                                    score
+                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer)
+                                """,
+                                vector_str,
+                                wing,
+                                room,
+                                self.decay_rate,
+                                self.spread_weight,
+                                self.emotion_weight,
+                                current_valence,
+                                threshold - 2.5,
+                                max(20, limit * 3),
+                            )
+    
+                        for row in rows:
+                            if row["content"] in excluded:
+                                continue
+    
+                            similarity = row.get("similarity") or 0.0
+                            recall_count = max(1, row.get("recall_count") or 1)
+    
+                            # Recalculate score with neuromodulatory gating
+                            last_recall = row.get("last_recalled_at")
+                            from datetime import datetime
+    
+                            now = datetime.now(timezone.utc)
+    
+                            if last_recall is None:
+                                last_recall = now
+                            elif last_recall.tzinfo is None:
+                                last_recall = last_recall.replace(tzinfo=timezone.utc)
+    
+                            hours_since = max(
+                                0.001, (now - last_recall).total_seconds() / 3600.0
+                            )
+    
+                            memory_valence = row.get("valence") or 0.0
+                            emotion_weight_row = row.get("emotional_weight") or 0.0
+    
+                            # 2D/3D Emotional Distance matching the research simulator
+                            dist_emo = math.sqrt(
+                                (memory_valence - current_valence) ** 2
+                                + (emotion_weight_row - current_arousal) ** 2
+                            )
+    
+                            base_activation = (
+                                _cached_ln(recall_count)
+                                - self.decay_rate * _cached_ln(hours_since + 1.0)
+                                + 1.5 * (row.get("importance_score") or 0.5)
+                                + 0.15 * (1.0 - dist_emo)
+                            )
+    
+                            # Neuromodulatory distance mapping
+                            effective_similarity = similarity * (
+                                1.0
+                                + 0.1 * memory_valence * emotion_weight_row
+                                - 0.2 * current_arousal * current_cortisol
+                            )
+    
+                            spread_activation = self.spread_weight * effective_similarity
+                            score = base_activation + spread_activation - 0.5 * dist_emo
+    
+                            if score <= (threshold - 2.5):
+                                continue
+    
+                            created = row.get("created_at")
+                            if created and created.tzinfo is None:
+                                created = created.replace(tzinfo=timezone.utc)
+    
+                            raw_meta = row.get("metadata")
+                            if isinstance(raw_meta, str):
+                                try:
+                                    raw_meta = orjson.loads(raw_meta)
+                                except Exception:
+                                    raw_meta = {}
+    
+                            raw_candidates.append(
+                                {
+                                    "content": row["content"],
+                                    "raw_content": row.get("raw_content") or row["content"],
+                                    "wing": row.get("wing", "personal"),
+                                    "room": row.get("room"),
+                                    "score": score,
+                                    "valence": row.get("valence") or 0.0,
+                                    "created_at": created,
+                                    "recall_count": recall_count,
+                                    "metadata": raw_meta or {},
+                                    "lifespan_stage": row.get("lifespan_stage"),
+                                    "crisis": row.get("crisis"),
+                                    "virtue": row.get("virtue"),
+                                    "relations": row.get("relations"),
+                                    "relation_circles": row.get("relation_circles"),
+                                    "modality": row.get("modality"),
+                                    "similarity": similarity,
+                                    "last_recalled_at": last_recall,
+                                }
+                            )
+    
             # 3. Post-process candidate list in Python (Direct Cue Boost + Spreading Activation)
             cues = [
                 "kolkata",

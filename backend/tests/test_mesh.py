@@ -14,7 +14,7 @@ class TestBaseAgent:
     @pytest.mark.asyncio
     async def test_agent_connection(self):
         """Verify agent can connect to NATS mesh."""
-        agent = BaseAgent(name="test_agent", nats_url="nats://localhost:4222")
+        agent = BaseAgent(name="test_agent", nats_url="nats://127.0.0.1:4222")
 
         try:
             await agent.connect()

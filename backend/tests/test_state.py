@@ -5,7 +5,7 @@ from app.state.agent_state import StateService
 
 @pytest.fixture
 def state_service(mock_graph_db):
-    return StateService(graph_store=mock_graph_db)
+    return StateService(graph_store=mock_graph_db, db_path=":memory:")
 
 
 @pytest.mark.asyncio

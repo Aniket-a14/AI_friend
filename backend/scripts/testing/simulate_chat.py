@@ -6,8 +6,8 @@ import time
 
 async def main():
     try:
-        # Connect to NATS on localhost (bridged to Docker)
-        nc = await nats.connect("nats://localhost:4222")
+        # Connect to NATS on 127.0.0.1 (bridged to Docker)
+        nc = await nats.connect("nats://127.0.0.1:4222")
         js = nc.jetstream()
 
         print("🚀 Connected to NATS mesh. Simulating user input...")

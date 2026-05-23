@@ -537,7 +537,7 @@ async def run_physical_benchmark(
     else:
         print("⏭️ [Skip Seeding] Reusing pre-flooded database index.")
 
-    nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
+    nats_url = os.getenv("NATS_URL", "nats://127.0.0.1:4222")
     try:
         import nats
 

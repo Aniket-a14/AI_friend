@@ -11,7 +11,7 @@ async def run_injector():
     without human variability.
     """
     print("🚀 Research Injector starting...")
-    nc = await nats.connect("nats://localhost:4222")
+    nc = await nats.connect("nats://127.0.0.1:4222")
     js = nc.jetstream()
 
     test_inputs = [

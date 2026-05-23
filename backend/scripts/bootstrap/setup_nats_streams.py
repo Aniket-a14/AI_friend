@@ -16,7 +16,7 @@ if str(BACKEND_ROOT) not in sys.path:
 async def setup_streams(nats_url: str = None):
     from app.nats_streams import setup_streams as _setup_streams
 
-    nats_url = nats_url or os.getenv("NATS_URL", "nats://localhost:4222")
+    nats_url = nats_url or os.getenv("NATS_URL", "nats://127.0.0.1:4222")
     print(f"🚀 Connecting to NATS at {nats_url}...")
     await _setup_streams(nats_url=nats_url)
     print("✨ NATS mesh infrastructure ready!")

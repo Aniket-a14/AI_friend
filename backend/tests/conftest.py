@@ -2,9 +2,9 @@ import sys
 import os
 
 # Set fallback environment variables for testing before any app modules are loaded
-os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
+os.environ.setdefault("DATABASE_URL", "postgresql://test:test@127.0.0.1:5432/test")
 os.environ.setdefault("NEO4J_PASSWORD", "strong_ci_test_password")
-os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
+os.environ.setdefault("NEO4J_URI", "bolt://127.0.0.1:7687")
 os.environ.setdefault("LIVEKIT_API_KEY", "dummy_key")
 os.environ.setdefault("LIVEKIT_API_SECRET", "dummy_secret")
 

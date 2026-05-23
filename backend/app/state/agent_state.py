@@ -13,6 +13,11 @@ State updates: ALMA mood-pull + exponential decay (Gebhard, 2005)
 import logging
 import math
 import time
+import sqlite3
+import json
+import os
+import asyncio
+import redis
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, TYPE_CHECKING
 from datetime import datetime
@@ -60,6 +65,42 @@ class AgentState:
     user_mental_model: "UserMentalModel" = field(
         default_factory=_default_user_mental_model
     )
+
+    # Persistent baseline affect
+    baseline_valence: float = 0.0
+    baseline_arousal: float = 0.5
+    baseline_dominance: float = 0.5
+
+    # --- Affect Split Properties ---
+    @property
+    def personality_baseline_affect(self) -> Dict[str, float]:
+        """Persistent slow-evolving personality baseline affect."""
+        return {
+            "valence": self.baseline_valence,
+            "arousal": self.baseline_arousal,
+            "dominance": self.baseline_dominance
+        }
+
+    @personality_baseline_affect.setter
+    def personality_baseline_affect(self, value: Dict[str, float]):
+        self.baseline_valence = value.get("valence", self.baseline_valence)
+        self.baseline_arousal = value.get("arousal", self.baseline_arousal)
+        self.baseline_dominance = value.get("dominance", self.baseline_dominance)
+
+    @property
+    def short_term_affect(self) -> Dict[str, float]:
+        """Transient highly reactive short-term affect."""
+        return {
+            "valence": self.mood,
+            "arousal": self.energy,
+            "dominance": self.dominance
+        }
+
+    @short_term_affect.setter
+    def short_term_affect(self, value: Dict[str, float]):
+        self.mood = value.get("valence", self.mood)
+        self.energy = value.get("arousal", self.energy)
+        self.dominance = value.get("dominance", self.dominance)
 
     # --- PAD Property Aliases (§2.1) ---
     @property
@@ -140,10 +181,27 @@ class AgentState:
 class StateService:
     """Manages Internal State continuity and Neo4j persistence."""
 
-    def __init__(self, graph_store=None):
+    def __init__(self, graph_store=None, db_path="state_cache.db", redis_host="127.0.0.1", redis_port=6379, publish_cb=None):
         self.graph = graph_store
+        self.db_path = db_path
+        self.publish_cb = publish_cb
         self.current_state = AgentState()
         self.last_speculative_intent = None  # Transient sensory state
+
+        # Connect to Redis
+        try:
+            self.redis_client = redis.Redis(
+                host=redis_host,
+                port=redis_port,
+                db=0,
+                socket_connect_timeout=1.0,
+                decode_responses=True
+            )
+            self.redis_client.ping()
+        except Exception:
+            self.redis_client = None
+
+        self._initialize_sqlite()
 
         # --- Psychological Coefficients (§2.4) ---
         self.alpha = getattr(Config, "PSYCH_ALPHA", 0.3)  # Valence drift rate
@@ -167,106 +225,262 @@ class StateService:
         self._last_sensory_persist = 0.0
         self._last_proactive_attempt = 0.0
 
-    async def hydrate_state(self, agent_name: str = "my friend"):
-        """Loads state from Neo4j."""
-        if not self.graph:
-            return
-
-        logger.info(f"[State] Hydrating {agent_name} from Neo4j...")
-        query = "MATCH (a:Agent {name: $name}) RETURN a"
-        res = await self.graph.execute_query(
-            query, {"name": agent_name}, use_cache=False, strong_consistency=True
-        )
-        if res:
-            props = res[0]["a"]
-            self.current_state.mood = props.get("mood", 0.0)
-            self.current_state.energy = props.get("energy", 0.5)
-            self.current_state.dominance = props.get("dominance", 0.5)
-
-            # Dimensional trust hydration with legacy fallback
-            self.current_state.trust_benevolence = props.get(
-                "trust_benevolence", props.get("trust", 0.5)
-            )
-            self.current_state.trust_competence = props.get(
-                "trust_competence", props.get("trust", 0.5)
-            )
-            self.current_state.trust_integrity = props.get(
-                "trust_integrity", props.get("trust", 0.5)
-            )
-
-            self.current_state.attachment = props.get("attachment", 0.1)
-            self.current_state.fatigue = props.get("fatigue", 0.0)
-            self.current_state.last_user_interaction = props.get(
-                "last_user_interaction", self.current_state.last_user_interaction
-            )
-            self.current_state.interaction_count = props.get("interaction_count", 0)
-
-            # Hydrate Theory of Mind User Mental Model
-            self.current_state.user_mental_model.inferred_valence = float(
-                props.get("inferred_valence", 0.0)
-            )
-            self.current_state.user_mental_model.inferred_arousal = float(
-                props.get("inferred_arousal", 0.5)
-            )
-            implied_goals_raw = props.get("implied_goals", [])
-            if isinstance(implied_goals_raw, list):
-                self.current_state.user_mental_model.implied_goals = implied_goals_raw
-            else:
-                self.current_state.user_mental_model.implied_goals = []
-                logger.warning(
-                    f"[StateService] Unexpected type for implied_goals in props: {type(implied_goals_raw)}. Falling back to empty list."
+    def _initialize_sqlite(self):
+        if self.db_path != ":memory:":
+            db_dir = os.path.dirname(os.path.abspath(self.db_path))
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+        conn = sqlite3.connect(self.db_path)
+        with conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS agent_state (
+                    agent_name TEXT PRIMARY KEY,
+                    mood REAL,
+                    energy REAL,
+                    dominance REAL,
+                    trust_benevolence REAL,
+                    trust_competence REAL,
+                    trust_integrity REAL,
+                    trust REAL,
+                    attachment REAL,
+                    fatigue REAL,
+                    last_user_interaction REAL,
+                    interaction_count INTEGER,
+                    inferred_valence REAL,
+                    inferred_arousal REAL,
+                    implied_goals TEXT,
+                    known_concepts TEXT,
+                    baseline_valence REAL DEFAULT 0.0,
+                    baseline_arousal REAL DEFAULT 0.5,
+                    baseline_dominance REAL DEFAULT 0.5,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            self.current_state.user_mental_model.known_concepts = list(
-                props.get("known_concepts", [])
-            )
+            """)
+        conn.close()
+
+    async def hydrate_state(self, agent_name: str = "my friend"):
+        """Loads state from Redis or local SQLite cache."""
+        logger.info(f"[State] Hydrating {agent_name} from Redis/SQLite...")
+        # 1. Try Redis
+        if self.redis_client:
+            try:
+                data = self.redis_client.hgetall(f"state:{agent_name}")
+                if data:
+                    self.current_state.mood = float(data.get("mood", 0.0))
+                    self.current_state.energy = float(data.get("energy", 0.5))
+                    self.current_state.dominance = float(data.get("dominance", 0.5))
+                    self.current_state.trust_benevolence = float(data.get("trust_benevolence", 0.5))
+                    self.current_state.trust_competence = float(data.get("trust_competence", 0.5))
+                    self.current_state.trust_integrity = float(data.get("trust_integrity", 0.5))
+                    self.current_state.attachment = float(data.get("attachment", 0.1))
+                    self.current_state.fatigue = float(data.get("fatigue", 0.0))
+                    self.current_state.last_user_interaction = float(data.get("last_user_interaction", time.time()))
+                    self.current_state.interaction_count = int(data.get("interaction_count", 0))
+                    self.current_state.user_mental_model.inferred_valence = float(data.get("inferred_valence", 0.0))
+                    self.current_state.user_mental_model.inferred_arousal = float(data.get("inferred_arousal", 0.5))
+                    self.current_state.user_mental_model.implied_goals = json.loads(data.get("implied_goals", "[]"))
+                    self.current_state.user_mental_model.known_concepts = json.loads(data.get("known_concepts", "[]"))
+                    self.current_state.baseline_valence = float(data.get("baseline_valence", 0.0))
+                    self.current_state.baseline_arousal = float(data.get("baseline_arousal", 0.5))
+                    self.current_state.baseline_dominance = float(data.get("baseline_dominance", 0.5))
+                    logger.debug("[State] Hydrated successfully from Redis.")
+                    return
+            except Exception as e:
+                logger.warning(f"Failed to hydrate state from Redis: {e}")
+
+        # 2. Try SQLite
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM agent_state WHERE agent_name = ?", (agent_name,))
+            row = cursor.fetchone()
+            if row:
+                self.current_state.mood = row["mood"]
+                self.current_state.energy = row["energy"]
+                self.current_state.dominance = row["dominance"]
+                self.current_state.trust_benevolence = row["trust_benevolence"]
+                self.current_state.trust_competence = row["trust_competence"]
+                self.current_state.trust_integrity = row["trust_integrity"]
+                self.current_state.attachment = row["attachment"]
+                self.current_state.fatigue = row["fatigue"]
+                self.current_state.last_user_interaction = row["last_user_interaction"]
+                self.current_state.interaction_count = row["interaction_count"]
+                self.current_state.user_mental_model.inferred_valence = row["inferred_valence"]
+                self.current_state.user_mental_model.inferred_arousal = row["inferred_arousal"]
+                self.current_state.user_mental_model.implied_goals = json.loads(row["implied_goals"] or "[]")
+                self.current_state.user_mental_model.known_concepts = json.loads(row["known_concepts"] or "[]")
+                self.current_state.baseline_valence = row["baseline_valence"]
+                self.current_state.baseline_arousal = row["baseline_arousal"]
+                self.current_state.baseline_dominance = row["baseline_dominance"]
+                logger.debug("[State] Hydrated successfully from SQLite.")
+                return
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to hydrate state from SQLite: {e}")
+
+        # 3. Fallback to Neo4j graph_store if self.graph is available
+        if self.graph:
+            try:
+                query = "MATCH (a:Agent {name: $name}) RETURN a"
+                res = await self.graph.execute_query(query, {"name": agent_name})
+                if res and len(res) > 0:
+                    record = res[0]
+                    agent_node = record.get("a")
+                    if agent_node:
+                        self.current_state.mood = float(agent_node.get("mood", 0.0))
+                        self.current_state.energy = float(agent_node.get("energy", 0.5))
+                        self.current_state.dominance = float(agent_node.get("dominance", 0.5))
+                        self.current_state.trust_benevolence = float(agent_node.get("trust_benevolence", 0.5))
+                        self.current_state.trust_competence = float(agent_node.get("trust_competence", 0.5))
+                        self.current_state.trust_integrity = float(agent_node.get("trust_integrity", 0.5))
+                        self.current_state.attachment = float(agent_node.get("attachment", 0.1))
+                        self.current_state.fatigue = float(agent_node.get("fatigue", 0.0))
+                        self.current_state.last_user_interaction = float(agent_node.get("last_user_interaction", time.time()))
+                        self.current_state.interaction_count = int(agent_node.get("interaction_count", 0))
+                        self.current_state.user_mental_model.inferred_valence = float(agent_node.get("inferred_valence", 0.0))
+                        self.current_state.user_mental_model.inferred_arousal = float(agent_node.get("inferred_arousal", 0.5))
+                        
+                        goals = agent_node.get("implied_goals", [])
+                        if isinstance(goals, str):
+                            try:
+                                goals = json.loads(goals)
+                            except Exception:
+                                goals = []
+                        self.current_state.user_mental_model.implied_goals = goals if isinstance(goals, list) else []
+                        
+                        concepts = agent_node.get("known_concepts", [])
+                        if isinstance(concepts, str):
+                            try:
+                                concepts = json.loads(concepts)
+                            except Exception:
+                                concepts = []
+                        self.current_state.user_mental_model.known_concepts = concepts if isinstance(concepts, list) else []
+                        
+                        self.current_state.baseline_valence = float(agent_node.get("baseline_valence", 0.0))
+                        self.current_state.baseline_arousal = float(agent_node.get("baseline_arousal", 0.5))
+                        self.current_state.baseline_dominance = float(agent_node.get("baseline_dominance", 0.5))
+                        logger.debug("[State] Hydrated successfully from Neo4j fallback.")
+            except Exception as e:
+                logger.warning(f"Failed fallback hydration from Neo4j: {e}")
 
     async def persist_state(self, agent_name: str = "my friend"):
-        """Saves current state to Neo4j."""
-        if not self.graph:
-            return
+        """Saves current state to Redis and local SQLite cache, broadcasting updates asynchronously."""
+        # 1. Save to Redis
+        if self.redis_client:
+            try:
+                self.redis_client.hset(f"state:{agent_name}", mapping={
+                    "mood": str(self.current_state.mood),
+                    "energy": str(self.current_state.energy),
+                    "dominance": str(self.current_state.dominance),
+                    "trust_benevolence": str(self.current_state.trust_benevolence),
+                    "trust_competence": str(self.current_state.trust_competence),
+                    "trust_integrity": str(self.current_state.trust_integrity),
+                    "trust": str(self.current_state.trust),
+                    "attachment": str(self.current_state.attachment),
+                    "fatigue": str(self.current_state.fatigue),
+                    "last_user_interaction": str(self.current_state.last_user_interaction),
+                    "interaction_count": str(self.current_state.interaction_count),
+                    "inferred_valence": str(self.current_state.user_mental_model.inferred_valence),
+                    "inferred_arousal": str(self.current_state.user_mental_model.inferred_arousal),
+                    "implied_goals": json.dumps(self.current_state.user_mental_model.implied_goals),
+                    "known_concepts": json.dumps(self.current_state.user_mental_model.known_concepts),
+                    "baseline_valence": str(self.current_state.baseline_valence),
+                    "baseline_arousal": str(self.current_state.baseline_arousal),
+                    "baseline_dominance": str(self.current_state.baseline_dominance)
+                })
+            except Exception as e:
+                logger.warning(f"Failed to persist state to Redis: {e}")
 
-        query = """
-        MERGE (a:Agent {name: $name})
-        SET a.mood = $mood,
-            a.energy = $energy,
-            a.dominance = $dominance,
-            a.trust_benevolence = $trust_benevolence,
-            a.trust_competence = $trust_competence,
-            a.trust_integrity = $trust_integrity,
-            a.trust = $trust,
-            a.attachment = $attachment,
-            a.fatigue = $fatigue,
-            a.last_user_interaction = $last_user_interaction,
-            a.interaction_count = $interaction_count,
-            a.inferred_valence = $inferred_valence,
-            a.inferred_arousal = $inferred_arousal,
-            a.implied_goals = $implied_goals,
-            a.known_concepts = $known_concepts,
-            a.last_sync = datetime()
-        """
-        params = {
-            "name": agent_name,
-            "mood": self.current_state.mood,
-            "energy": self.current_state.energy,
-            "dominance": self.current_state.dominance,
-            "trust_benevolence": self.current_state.trust_benevolence,
-            "trust_competence": self.current_state.trust_competence,
-            "trust_integrity": self.current_state.trust_integrity,
-            "trust": self.current_state.trust,
-            "attachment": self.current_state.attachment,
-            "fatigue": self.current_state.fatigue,
-            "last_user_interaction": self.current_state.last_user_interaction,
-            "interaction_count": self.current_state.interaction_count,
-            "inferred_valence": self.current_state.user_mental_model.inferred_valence,
-            "inferred_arousal": self.current_state.user_mental_model.inferred_arousal,
-            "implied_goals": self.current_state.user_mental_model.implied_goals,
-            "known_concepts": self.current_state.user_mental_model.known_concepts,
-        }
-        await self.graph.execute_query(query, params, write=True)
-        if hasattr(self.graph, "invalidate_cache"):
-            await self.graph.invalidate_cache(agent_name)
+        # 2. Save to SQLite cache
+        try:
+            conn = sqlite3.connect(self.db_path)
+            with conn:
+                conn.execute("""
+                    INSERT INTO agent_state (
+                        agent_name, mood, energy, dominance, trust_benevolence, trust_competence,
+                        trust_integrity, trust, attachment, fatigue, last_user_interaction,
+                        interaction_count, inferred_valence, inferred_arousal, implied_goals,
+                        known_concepts, baseline_valence, baseline_arousal, baseline_dominance, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(agent_name) DO UPDATE SET
+                        mood = excluded.mood,
+                        energy = excluded.energy,
+                        dominance = excluded.dominance,
+                        trust_benevolence = excluded.trust_benevolence,
+                        trust_competence = excluded.trust_competence,
+                        trust_integrity = excluded.trust_integrity,
+                        trust = excluded.trust,
+                        attachment = excluded.attachment,
+                        fatigue = excluded.fatigue,
+                        last_user_interaction = excluded.last_user_interaction,
+                        interaction_count = excluded.interaction_count,
+                        inferred_valence = excluded.inferred_valence,
+                        inferred_arousal = excluded.inferred_arousal,
+                        implied_goals = excluded.implied_goals,
+                        known_concepts = excluded.known_concepts,
+                        baseline_valence = excluded.baseline_valence,
+                        baseline_arousal = excluded.baseline_arousal,
+                        baseline_dominance = excluded.baseline_dominance,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    agent_name,
+                    self.current_state.mood,
+                    self.current_state.energy,
+                    self.current_state.dominance,
+                    self.current_state.trust_benevolence,
+                    self.current_state.trust_competence,
+                    self.current_state.trust_integrity,
+                    self.current_state.trust,
+                    self.current_state.attachment,
+                    self.current_state.fatigue,
+                    self.current_state.last_user_interaction,
+                    self.current_state.interaction_count,
+                    self.current_state.user_mental_model.inferred_valence,
+                    self.current_state.user_mental_model.inferred_arousal,
+                    json.dumps(self.current_state.user_mental_model.implied_goals),
+                    json.dumps(self.current_state.user_mental_model.known_concepts),
+                    self.current_state.baseline_valence,
+                    self.current_state.baseline_arousal,
+                    self.current_state.baseline_dominance
+                ))
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to persist state to SQLite: {e}")
+
+        # 3. Publish asynchronous NATS broadcast
+        if self.publish_cb:
+            state_data = {
+                "agent_name": agent_name,
+                "mood": self.current_state.mood,
+                "energy": self.current_state.energy,
+                "dominance": self.current_state.dominance,
+                "trust_benevolence": self.current_state.trust_benevolence,
+                "trust_competence": self.current_state.trust_competence,
+                "trust_integrity": self.current_state.trust_integrity,
+                "trust": self.current_state.trust,
+                "attachment": self.current_state.attachment,
+                "fatigue": self.current_state.fatigue,
+                "last_user_interaction": self.current_state.last_user_interaction,
+                "interaction_count": self.current_state.interaction_count,
+                "inferred_valence": self.current_state.user_mental_model.inferred_valence,
+                "inferred_arousal": self.current_state.user_mental_model.inferred_arousal,
+                "implied_goals": self.current_state.user_mental_model.implied_goals,
+                "known_concepts": self.current_state.user_mental_model.known_concepts,
+                "baseline_valence": self.current_state.baseline_valence,
+                "baseline_arousal": self.current_state.baseline_arousal,
+                "baseline_dominance": self.current_state.baseline_dominance,
+                "timestamp": time.time()
+            }
+            try:
+                # Fire and forget publishing
+                asyncio.create_task(self.publish_cb("state.broadcast", state_data))
+            except Exception as e:
+                logger.warning(f"Failed to trigger NATS state broadcast task: {e}")
+
         logger.debug(
-            f"[State] Persisted to Neo4j: V={self.current_state.mood:.2f} Ar={self.current_state.energy:.2f} D={self.current_state.dominance:.2f}"
+            f"[State] Persisted to cache (non-blocking Neo4j): V={self.current_state.mood:.2f} Ar={self.current_state.energy:.2f} D={self.current_state.dominance:.2f}"
         )
 
     def record_user_interaction(self):
@@ -452,12 +666,14 @@ class StateService:
             )
             self._update_fatigue_python(now, dt_hours, is_night)
 
-        # ALMA Decay (§2.2): I(t) = I₀ · exp(−λ · t)
-        self.current_state.mood *= math.exp(-self.lambda_decay * dt_hours)
-        self.current_state.energy = min(
-            1.0, self.current_state.energy + (0.02 * dt_hours)
-        )
-        # Dominance does NOT decay — it's trait-like (Mehrabian)
+        # ALMA Decay (§2.2): short-term affect decays back to baseline
+        base_v = self.current_state.baseline_valence
+        base_ar = self.current_state.baseline_arousal
+        base_d = self.current_state.baseline_dominance
+
+        self.current_state.mood = base_v + (self.current_state.mood - base_v) * math.exp(-self.lambda_decay * dt_hours)
+        self.current_state.energy = base_ar + (self.current_state.energy - base_ar) * math.exp(-self.lambda_decay * dt_hours)
+        self.current_state.dominance = base_d + (self.current_state.dominance - base_d) * math.exp(-self.lambda_decay * dt_hours)
 
         tb_drift = (self.trust_baseline - self.current_state.trust_benevolence) * 0.01
         tc_drift = (self.trust_baseline - self.current_state.trust_competence) * 0.01
