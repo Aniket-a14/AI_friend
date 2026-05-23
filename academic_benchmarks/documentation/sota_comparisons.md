@@ -14,17 +14,18 @@ The comparative matrix below evaluates **CVS-3.0** against 6 state-of-the-art an
 > [!NOTE]
 > All CVS-3.0 values represent empty placeholder states (`[TBP]`) to be populated dynamically by executing the physical benchmarking script (`hard_benchmark.py`).
 
-| Performance Metric | Humanoid: Furhat (Intel NUC / Win) [1] | Humanoid: Pepper (Atom CPU / ROS1) [2] | Traditional: Pure Vector RAG [22,23] | Traditional: Zero-Shot PAD [9] | Traditional: ROS2 Humble DDS [24] | **Ours: CVS-3.0 (Physical)** | **Ours: CVS-3.0 (Accelerated)** |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Speech Barge-in Stop** | 800.0 ms | 1,200.0 ms | -- | -- | 480.0 ms | **`[TBP]`** | **`[TBP]`** |
-| **Thought/Decision Latency** | 2,500.0 ms | 3,200.0 ms | 85.0 ms | 600.0 ms | 450.0 ms | **`[TBP]`** | **`[TBP]`** |
-| **Memory Recall (Recall@5)** | -- | -- | 76.2% (Contriever) | -- | -- | **`[TBP]`** | **`[TBP]`** |
-| **Multi-Agent Routing IPC** | 120.0 ms | 250.0 ms | -- | -- | 4.85 ms (DDS) | **`[TBP]`** | **`[TBP]`** |
-| **System Idle Memory** | 6.20 GB | 4.10 GB | 1.80 GB | 2.50 GB | 3.80 GB | **`[TBP]`** | **`[TBP]`** |
-| **Active Edge Power** | 45.0 W | 60.0 W | -- | -- | 35.0 W | **`[TBP]`** | **`[TBP]`** |
-| **Barge-in False Trigger** | 18.5% | 22.0% | -- | -- | 14.0% | **`[TBP]`** | **`[TBP]`** |
-| **Theory of Mind Error** | -- | -- | -- | 0.35 MAE (Zero-Shot) | -- | **`[TBP]`** | **`[TBP]`** |
-| **Structural Novelties** | Dynamic Face GUI | Rigid Actuators | Flat Embeddings | Static Prompts | Multi-Node DDS | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
+| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.0 (Physical)** | **Ours: CVS-3.0 (Accelerated)** |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
+| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** | **`[TBP]`** |
+| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
+| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | **`[TBP]`** | **`[TBP]`** |
+| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **`[TBP]`** | **`[TBP]`** |
+| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **`[TBP]`** | **`[TBP]`** |
+| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
+| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
+| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
+| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
 
 ---
 
