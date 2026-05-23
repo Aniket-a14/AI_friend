@@ -6,4 +6,4 @@ pytest-benchmark
 ruff
 pre-commit
 codespell
-reportlab>=4.2.0
+reportlab>=4.5.1
