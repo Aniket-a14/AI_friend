@@ -55,6 +55,11 @@ class BrainAgent(BaseAgent):
         self.coordinator = SpeechCoordinator(
             segmenter=HybridSegmenter(target_size=8), formation_buffer_ms=0.030
         )
+        from ..utils.interruption_classifier import InterruptionClassifier
+        from ..utils.conversational_runtime import ConversationalRuntime
+        self.interruption_classifier = InterruptionClassifier()
+        self.conversational_runtime = ConversationalRuntime(publish_cb=self.publish)
+        self._active_generation_task = None
 
     async def start(self):
         await self.connect()
@@ -94,6 +99,12 @@ class BrainAgent(BaseAgent):
             Topics.VOICE_SEGMENTATION_FEEDBACK,
             self._on_voice_feedback,
             durable=f"{self.name}_voice_segmentation_feedback_live",
+            deliver_policy="new",
+        )
+        await self.subscribe(
+            Topics.AUDIO_PERCEPTION,
+            self._on_audio_perception,
+            durable=f"{self.name}_audio_perception_live",
             deliver_policy="new",
         )
         # Note: system.tick proactive engagement is now handled by SubconsciousAgent
@@ -146,15 +157,6 @@ class BrainAgent(BaseAgent):
 
         try:
             msg = ChatInput.model_validate(message)
-            user_text = msg.text
-            turn_id = msg.turn_id or msg.utterance_id or str(uuid.uuid4())
-            metadata = message.get("metadata")
-            if not isinstance(metadata, dict):
-                metadata = msg.metadata.model_dump() if msg.metadata else {}
-            latency_metadata = message.get("latency_metadata")
-            if not isinstance(latency_metadata, dict):
-                latency_metadata = {}
-            utterance_id = msg.utterance_id
             is_subconscious = msg.metadata.source == "subconscious"
         except ValidationError as e:
             logger.warning(f"Dropping invalid chat.input message: {e}")
@@ -163,8 +165,38 @@ class BrainAgent(BaseAgent):
             logger.error(f"Unexpected error processing chat.input: {e}", exc_info=True)
             return
 
+        # Start the flow task in background to allow cancellation on interruption
+        task = asyncio.create_task(self._process_chat_input_flow(msg, is_subconscious, message))
+        self._active_generation_task = task
+        try:
+            await task
+        except asyncio.CancelledError:
+            logger.info("Active generation flow task cancelled.")
+        finally:
+            if self._active_generation_task == task:
+                self._active_generation_task = None
+
+    async def _process_chat_input_flow(self, chat_input: ChatInput, is_subconscious: bool, message: Dict[str, Any]):
+        user_text = chat_input.text
+        turn_id = chat_input.turn_id or chat_input.utterance_id or str(uuid.uuid4())
+        metadata = message.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = chat_input.metadata.model_dump() if chat_input.metadata else {}
+        latency_metadata = message.get("latency_metadata")
+        if not isinstance(latency_metadata, dict):
+            latency_metadata = {}
+        utterance_id = chat_input.utterance_id
+
         if not user_text:
             return
+
+        # Pacing Conversational Turn: calculate silence duration and pause
+        state_snap = self.cognitive_core.state.get_context_snapshot()
+        pacing = self.conversational_runtime.calculate_pacing_parameters(state_snap)
+        silence_s = pacing["silence_duration_ms"] / 1000.0
+        
+        logger.info(f"Pacing conversational turn: sleeping {pacing['silence_duration_ms']:.1f}ms before starting response.")
+        await asyncio.sleep(silence_s)
 
         # Only update human interaction tracking if it's an actual user message
         if not is_subconscious:
@@ -193,8 +225,17 @@ class BrainAgent(BaseAgent):
         else:
             generator = self.cognitive_core.process_event(raw_event)
 
+        # Wrap generator to monitor TTFT and inject fillers
+        wrapped_generator = self.conversational_runtime.monitor_stream_and_fill(
+            generator=generator,
+            turn_id=turn_id,
+            state_snap=state_snap,
+            user_distance=self.last_user_distance,
+            is_proactive=is_subconscious
+        )
+
         full_response = await self._stream_to_speech(
-            generator,
+            wrapped_generator,
             turn_id=turn_id,
             is_proactive=is_subconscious,
             incoming_metadata=metadata,
@@ -205,6 +246,34 @@ class BrainAgent(BaseAgent):
             asyncio.create_task(
                 self.conversation_store.log_message("assistant", full_response)
             )
+
+    async def _on_audio_perception(self, data: Dict[str, Any]):
+        """Runs the semantic interruption classifier on partial speech hypotheses."""
+        metadata = data.get("metadata", {})
+        is_partial = metadata.get("is_partial", False)
+        text = data.get("text", "")
+
+        # Only run semantic classifier on partial transcripts
+        if is_partial and text:
+            if self.interruption_classifier.is_interruption(text):
+                logger.info(f"🚨 [Brain] Semantic interrupt detected on partial: '{text}'")
+
+                # Instantly publish audio.stop to silence playback
+                from ..contracts import AudioStop
+                stop_msg = AudioStop(
+                    interrupt=True,
+                    speculative=True,
+                    reason=f"semantic_interrupt: {text}",
+                    perception_text=text,
+                    intent="SPECULATIVE_STOP",
+                    utterance_id=data.get("utterance_id"),
+                )
+                await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
+
+                # Instantly cancel active LLM generation stream
+                if self._active_generation_task and not self._active_generation_task.done():
+                    logger.info("[Brain] Cancelling active LLM stream task due to semantic interrupt.")
+                    self._active_generation_task.cancel()
 
     async def _stream_to_speech(
         self,

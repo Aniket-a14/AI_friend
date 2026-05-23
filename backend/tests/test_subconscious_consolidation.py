@@ -73,7 +73,7 @@ async def test_sqlite_cosine_similarity_fallback(mock_llm_service):
         # We need to create memories table since it is part of pgvector
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id TEXT PRIMARY KEY,
                 content TEXT,
                 raw_content TEXT,
                 wing TEXT,
@@ -87,7 +87,13 @@ async def test_sqlite_cosine_similarity_fallback(mock_llm_service):
                 metadata TEXT,
                 recall_count INTEGER,
                 last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                lifespan_stage TEXT,
+                crisis TEXT,
+                virtue TEXT,
+                relations TEXT,
+                relation_circles TEXT,
+                modality TEXT
             )
         """)
 
@@ -136,7 +142,7 @@ async def test_memory_decay_loop(mock_llm_service):
     async with store.pool.acquire() as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id TEXT PRIMARY KEY,
                 content TEXT,
                 raw_content TEXT,
                 wing TEXT,
@@ -150,7 +156,13 @@ async def test_memory_decay_loop(mock_llm_service):
                 metadata TEXT,
                 recall_count INTEGER,
                 last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                lifespan_stage TEXT,
+                crisis TEXT,
+                virtue TEXT,
+                relations TEXT,
+                relation_circles TEXT,
+                modality TEXT
             )
         """)
 
@@ -184,7 +196,7 @@ async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_
         async with store.pool.acquire() as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS memories (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id TEXT PRIMARY KEY,
                     content TEXT,
                     raw_content TEXT,
                     wing TEXT,
@@ -198,7 +210,13 @@ async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_
                     metadata TEXT,
                     recall_count INTEGER,
                     last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    lifespan_stage TEXT,
+                    crisis TEXT,
+                    virtue TEXT,
+                    relations TEXT,
+                    relation_circles TEXT,
+                    modality TEXT
                 )
             """)
 

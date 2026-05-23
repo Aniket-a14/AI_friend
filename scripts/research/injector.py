@@ -10,8 +10,9 @@ async def run_injector():
     Sends standardized inputs to the mesh to measure cognitive turnaround
     without human variability.
     """
-    print("🚀 Research Injector starting...")
-    nc = await nats.connect("nats://localhost:4222")
+    import os
+    nats_url = os.environ.get("NATS_URL", "nats://127.0.0.1:4222")
+    nc = await nats.connect(nats_url)
     js = nc.jetstream()
 
     test_inputs = [

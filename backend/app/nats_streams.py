@@ -124,7 +124,7 @@ async def setup_streams(
     delay_seconds: Optional[float] = None,
 ) -> None:
     """Ensure core JetStream streams are available with startup-race tolerance."""
-    nats_url = nats_url or os.getenv("NATS_URL", "nats://localhost:4222")
+    nats_url = nats_url or os.getenv("NATS_URL", "nats://127.0.0.1:4222")
     retries = max(
         1,
         int(

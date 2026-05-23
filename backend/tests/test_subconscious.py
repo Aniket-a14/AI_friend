@@ -86,6 +86,12 @@ class TestBrainAgentSubconsciousRouting:
 
         agent = BrainAgent(graph_db=None, memory_store=None, conversation_store=None)
         agent.cognitive_core.state = MagicMock()
+        agent.cognitive_core.state.get_context_snapshot.return_value = {
+            "valence": 0.0,
+            "arousal": 0.5,
+            "dominance": 0.5,
+            "fatigue": 0.0,
+        }
         agent.cognitive_core.generate_proactive_response = MagicMock()
         agent.cognitive_core.process_event = MagicMock()
         agent._stream_to_speech = AsyncMock(return_value="Hello there.")

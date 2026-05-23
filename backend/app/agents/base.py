@@ -18,7 +18,7 @@ class BaseAgent:
 
     def __init__(self, name: str, nats_url: str = None):
         self.name = name
-        self.nats_url = nats_url or os.getenv("NATS_URL", "nats://localhost:4222")
+        self.nats_url = nats_url or os.getenv("NATS_URL", "nats://127.0.0.1:4222")
         self.nc = None
         self.js = None
         tracked_subjects_raw = os.getenv(

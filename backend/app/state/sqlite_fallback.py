@@ -68,7 +68,7 @@ class SQLiteConnection:
         # Memories Table (pgvector fallback storage in SQLite)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id TEXT PRIMARY KEY,
                 content TEXT,
                 raw_content TEXT,
                 wing TEXT DEFAULT 'personal',
@@ -105,6 +105,86 @@ class SQLiteConnection:
         ]:
             if col not in existing_mem_cols:
                 cursor.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT")
+
+        # Migration for memories.id column type: ensure it's TEXT for UUID compatibility
+        cursor.execute("PRAGMA table_info(memories)")
+        id_col_info = [row for row in cursor.fetchall() if row[1] == "id"]
+        if id_col_info and id_col_info[0][2].upper() != "TEXT":
+            logger.info(
+                f"Migrating memories.id from {id_col_info[0][2]} to TEXT for UUID compatibility"
+            )
+            # Create temp table with correct schema
+            cursor.execute("""
+                CREATE TABLE memories_new (
+                    id TEXT PRIMARY KEY,
+                    content TEXT,
+                    raw_content TEXT,
+                    wing TEXT DEFAULT 'personal',
+                    room TEXT,
+                    embedding TEXT,
+                    importance_score REAL DEFAULT 0.5,
+                    emotional_weight REAL DEFAULT 0.0,
+                    valence REAL DEFAULT 0.0,
+                    certainty REAL DEFAULT 1.0,
+                    source TEXT DEFAULT 'user',
+                    recall_count INTEGER DEFAULT 0,
+                    last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    metadata TEXT DEFAULT '{}',
+                    lifespan_stage TEXT,
+                    crisis TEXT,
+                    virtue TEXT,
+                    relations TEXT,
+                    relation_circles TEXT,
+                    modality TEXT
+                )
+            """)
+            # Copy data, converting id to TEXT
+            # Detect which columns exist in the source memories table
+            cursor.execute("PRAGMA table_info(memories)")
+            source_cols = {row[1] for row in cursor.fetchall()}
+
+            # Define expected columns with their default values for missing columns
+            column_defaults = {
+                "content": "''",
+                "raw_content": "''",
+                "wing": "'personal'",
+                "room": "NULL",
+                "embedding": "NULL",
+                "importance_score": "0.5",
+                "emotional_weight": "0.0",
+                "valence": "0.0",
+                "certainty": "1.0",
+                "source": "'user'",
+                "recall_count": "0",
+                "last_recalled_at": "CURRENT_TIMESTAMP",
+                "created_at": "CURRENT_TIMESTAMP",
+                "metadata": "'{}'",
+                "lifespan_stage": "NULL",
+                "crisis": "NULL",
+                "virtue": "NULL",
+                "relations": "NULL",
+                "relation_circles": "NULL",
+                "modality": "NULL"
+            }
+
+            # Build SELECT projection: use actual column if exists, otherwise use default
+            select_parts = ["CAST(id AS TEXT)"]
+            for col, default in column_defaults.items():
+                if col in source_cols:
+                    select_parts.append(col)
+                else:
+                    select_parts.append(f"{default} AS {col}")
+
+            select_clause = ", ".join(select_parts)
+            cursor.execute(f"""
+                INSERT INTO memories_new
+                SELECT {select_clause}
+                FROM memories
+            """)
+            # Drop old table and rename new one
+            cursor.execute("DROP TABLE memories")
+            cursor.execute("ALTER TABLE memories_new RENAME TO memories")
 
         self.conn.commit()
 

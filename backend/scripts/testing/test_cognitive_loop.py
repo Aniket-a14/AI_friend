@@ -23,7 +23,7 @@ async def test_cognitive_loop():
 
     # 1. Setup Mock/Local Dependencies
     # In a real test, we'd use a test DB. Here we use the local dev ones.
-    ollama = OllamaClient(base_url="http://localhost:11434")
+    ollama = OllamaClient(base_url="http://127.0.0.1:11434")
 
     # Note: MemoryStore and GraphDB usually need connections.
     # For this unit test, we'll see if they initialize.

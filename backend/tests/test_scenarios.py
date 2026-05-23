@@ -103,6 +103,8 @@ async def test_scenario_energy_exhaustion_rest(cognitive_service):
     Scenario: Many interactions drain energy, idle time restores it.
     """
     # 1. Drain energy via 10 interactions
+    cognitive_service.state.current_state.baseline_arousal = 0.8
+    cognitive_service.state.current_state.energy = 0.8
     initial_energy = cognitive_service.state.current_state.energy
     for _ in range(10):
         # Trigger an event
