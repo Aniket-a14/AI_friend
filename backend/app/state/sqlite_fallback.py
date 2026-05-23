@@ -68,7 +68,7 @@ class SQLiteConnection:
         # Memories Table (pgvector fallback storage in SQLite)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id TEXT PRIMARY KEY,
                 content TEXT,
                 raw_content TEXT,
                 wing TEXT DEFAULT 'personal',

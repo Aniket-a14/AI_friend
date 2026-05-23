@@ -271,10 +271,15 @@ async fn main() -> Result<()> {
     while let Some(message) = subscriber.next().await {
         match serde_json::from_slice::<ChatOutput>(&message.payload) {
             Ok(event) => {
-                // Reset abort flag only at the start of a new response stream
-                // (chunk_index == 0 or response_id changes indicate a new stream)
-                // For simplicity, check if this is a fresh response by resetting on parse
-                abort_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                if event.done {
+                    // End of current stream; safe point to clear interruption state.
+                    abort_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                    continue;
+                }
+                if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                    // Drop trailing chunks after interruption until stream completion.
+                    continue;
+                }
                 if let Err(err) = handle_chat_output(
                     &config,
                     &http,

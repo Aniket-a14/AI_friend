@@ -62,13 +62,13 @@ class TestConfiguration:
 
     def test_config_environment_override(self, monkeypatch):
         """Verify environment variables override defaults."""
-        monkeypatch.setenv("NATS_URL", "nats://custom:4222")
-        # Re-import to pick up new env var
         from importlib import reload
         from app import config
 
-        reload(config)
-        assert config.Config.NATS_URL == "nats://custom:4222"
+        with monkeypatch.context() as m:
+            m.setenv("NATS_URL", "nats://custom:4222")
+            reload(config)
+            assert config.Config.NATS_URL == "nats://custom:4222"
 
         # Reload again after monkeypatch scope ends to restore original config
         reload(config)

@@ -104,9 +104,9 @@ async def test_verbatim_storage_integrity(memory_store, mock_pool):
         call_args = conn.execute.call_args
         params = call_args[0][1:]
 
-        assert params[0] == "Processed narrative"
-        assert params[1] == "Raw verbatim transcript"
-        assert params[2] == "personal"
+        assert params[1] == "Processed narrative"
+        assert params[2] == "Raw verbatim transcript"
+        assert params[3] == "personal"
 
 
 @pytest.mark.asyncio
