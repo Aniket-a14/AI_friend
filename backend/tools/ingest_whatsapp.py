@@ -124,7 +124,7 @@ def extract_personality_data(messages, her_name, my_name):
             # Filters
             if len(her_text.split()) < 3:
                 i += 1
-                continue  # Skip very short like "Haa ok"
+                continue  # Skip very short like "Haan ok"
             if len(her_text.split()) > 40:
                 i += 1
                 continue  # Skip huge essays
