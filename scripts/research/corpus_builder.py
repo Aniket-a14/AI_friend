@@ -1457,20 +1457,20 @@ def generate_conversational_corpus(iterations: int = 1000):
     # 10 rich structured templates grouped by Memory Classes: Crisis, Social, Vocational, Somatic, Spiritual
     templates = [
         # Crisis Class
-        "During {phase}, facing the crisis of {crisis} while seeking the virtue of {virtue}, I was in {environment} under {weather} experiencing {condition} with {stress_metric}.",
-        "As I navigated {phase} and the psychosocial challenge of {crisis}, my {self_esteem} was shaped by {cognitive_mode} in {social_setting} while managing {financial_context}.",
+        "Friend: Hey Aniket, remember during {phase}, when you faced {crisis} seeking {virtue} in {environment} under {weather}? You were feeling {condition} with {stress_metric}, right?",
+        "Friend: I was thinking about how you navigated {phase} and the psychosocial challenge of {crisis}. Your {self_esteem} seemed shaped by {cognitive_mode} in {social_setting} while managing {financial_context}.",
         # Social Class
-        "In {social_setting} with {primary_partner}, my circle of relations revolved around {relations} during {phase}, pursuing {relationship_tuning} amid {acoustic_scape} with {motivation_level}.",
-        "During {phase}, our interactions within {relations} and {social_setting} were marked by {relationship_tuning} under {weather} while enjoying {leisure_pursuit} with {primary_partner}.",
+        "Friend: In {social_setting} with {primary_partner}, did your circle of relations revolve around {relations} during {phase}, pursuing {relationship_tuning} in {acoustic_scape} with {motivation_level}?",
+        "Friend: Remember during {phase}, our interactions within {relations} in {social_setting} were marked by {relationship_tuning} under {weather} while enjoying {leisure_pursuit} with {primary_partner}?",
         # Vocational Class
-        "Driven by my vocational drive to {vocational_drive} and modality to {modality}, my efforts in {domain} during {phase} were focused on {primary_activity} in {environment} referencing {info_source} with {clutter_level}.",
-        "Reflecting on my early {timeline_epoch} in {domain}, I applied {modality} to achieve {goal_horizon} while working in {environment} at {pacing_rhythm} stimulated by {sensory_input}.",
+        "Friend: You were so driven by your vocational drive to {vocational_drive} and modality {modality}! Your efforts in {domain} during {phase} focused on {primary_activity} in {environment} referencing {info_source} with {clutter_level}.",
+        "Friend: I was reflecting on your early {timeline_epoch} in {domain}. You applied {modality} to achieve {goal_horizon} while working in {environment} at {pacing_rhythm} stimulated by {sensory_input}.",
         # Somatic Class
-        "Experiencing {phase}, my somatic comfort was defined by {somatic_comfort} and {physical_status}, while supported by {dietary_metabolism} in {ergonomic_posture} and keeping {hydration_level}.",
-        "Under {weather} during {phase}, I noticed {somatic_comfort} while {mobility_mode} dressed in {clothing_comfort} under {temperature_comfort} with {life_factor}.",
+        "Friend: During {phase}, was your somatic comfort really defined by {somatic_comfort} and {physical_status}, while supported by {dietary_metabolism} in {ergonomic_posture} and keeping {hydration_level}?",
+        "Friend: Hey, under {weather} during {phase}, did you notice {somatic_comfort} while {mobility_mode} dressed in {clothing_comfort} under {temperature_comfort} with {life_factor}?",
         # Spiritual Class
-        "Guided by deep {spiritual_attunement} and {ethical_stand} during {phase}, I experienced {condition} overlooking {visual_horizon} surrounded by {natural_exposure}.",
-        "In the quiet of {time_of_day} during {phase}, {spiritual_attunement} led me to {ethical_stand} with a sense of {condition} experiencing {creative_outlet}.",
+        "Friend: Guided by deep {spiritual_attunement} and {ethical_stand} during {phase}, you experienced {condition} overlooking {visual_horizon} surrounded by {natural_exposure}.",
+        "Friend: In the quiet of {time_of_day} during {phase}, did {spiritual_attunement} lead you to {ethical_stand} with a sense of {condition} experiencing {creative_outlet}?",
     ]
 
     for unique_idx in range(iterations + 100):
@@ -1675,11 +1675,11 @@ def generate_conversational_corpus(iterations: int = 1000):
     }
 
     seeded_facts = [
-        "I was born and raised in Kolkata, a beautiful city where I spent my childhood years.",
-        "During my college years, my primary research project was focused on building affective cognitive architectures.",
-        "After graduating, my very first job was in Bangalore, working as a junior researcher.",
-        "I am incredibly grateful for my partner Priya, who has supported me through all life's challenges.",
-        "Whenever I want a dessert, I always prefer a traditional sweet rasgulla.",
+        "Friend: Aniket, you've often told me how you were born and raised in Kolkata, a beautiful city where you spent your childhood years.",
+        "Friend: I remember you saying that during your college years, your primary research project was focused on building affective cognitive architectures.",
+        "Friend: You mentioned that after graduating, your very first job was in Bangalore, working as a junior researcher.",
+        "Friend: It's wonderful how grateful you are for your partner Priya, who has supported you through all life's challenges.",
+        "Friend: And of course, whenever you want a dessert, you always prefer a traditional sweet rasgulla.",
     ]
 
     recall_indices = {
@@ -1710,20 +1710,20 @@ def generate_high_fidelity_distractors(count: int):
     # 10 rich structured templates grouped by Memory Classes: Crisis, Social, Vocational, Somatic, Spiritual
     templates = [
         # Crisis Class
-        "During {phase}, facing the crisis of {crisis} while seeking the virtue of {virtue}, I was in {environment} under {weather} experiencing {condition} with {stress_metric}.",
-        "As I navigated {phase} and the psychosocial challenge of {crisis}, my {self_esteem} was shaped by {cognitive_mode} in {social_setting} while managing {financial_context}.",
+        "Friend: Hey Aniket, remember during {phase}, when you faced {crisis} seeking {virtue} in {environment} under {weather}? You were feeling {condition} with {stress_metric}, right?",
+        "Friend: I was thinking about how you navigated {phase} and the psychosocial challenge of {crisis}. Your {self_esteem} seemed shaped by {cognitive_mode} in {social_setting} while managing {financial_context}.",
         # Social Class
-        "In {social_setting} with {primary_partner}, my circle of relations revolved around {relations} during {phase}, pursuing {relationship_tuning} amid {acoustic_scape} with {motivation_level}.",
-        "During {phase}, our interactions within {relations} and {social_setting} were marked by {relationship_tuning} under {weather} while enjoying {leisure_pursuit} with {primary_partner}.",
+        "Friend: In {social_setting} with {primary_partner}, did your circle of relations revolve around {relations} during {phase}, pursuing {relationship_tuning} in {acoustic_scape} with {motivation_level}?",
+        "Friend: Remember during {phase}, our interactions within {relations} in {social_setting} were marked by {relationship_tuning} under {weather} while enjoying {leisure_pursuit} with {primary_partner}?",
         # Vocational Class
-        "Driven by my vocational drive to {vocational_drive} and modality to {modality}, my efforts in {domain} during {phase} were focused on {primary_activity} in {environment} referencing {info_source} with {clutter_level}.",
-        "Reflecting on my early {timeline_epoch} in {domain}, I applied {modality} to achieve {goal_horizon} while working in {environment} at {pacing_rhythm} stimulated by {sensory_input}.",
+        "Friend: You were so driven by your vocational drive to {vocational_drive} and modality {modality}! Your efforts in {domain} during {phase} focused on {primary_activity} in {environment} referencing {info_source} with {clutter_level}.",
+        "Friend: I was reflecting on your early {timeline_epoch} in {domain}. You applied {modality} to achieve {goal_horizon} while working in {environment} at {pacing_rhythm} stimulated by {sensory_input}.",
         # Somatic Class
-        "Experiencing {phase}, my somatic comfort was defined by {somatic_comfort} and {physical_status}, while supported by {dietary_metabolism} in {ergonomic_posture} and keeping {hydration_level}.",
-        "Under {weather} during {phase}, I noticed {somatic_comfort} while {mobility_mode} dressed in {clothing_comfort} under {temperature_comfort} with {life_factor}.",
+        "Friend: During {phase}, was your somatic comfort really defined by {somatic_comfort} and {physical_status}, while supported by {dietary_metabolism} in {ergonomic_posture} and keeping {hydration_level}?",
+        "Friend: Hey, under {weather} during {phase}, did you notice {somatic_comfort} while {mobility_mode} dressed in {clothing_comfort} under {temperature_comfort} with {life_factor}?",
         # Spiritual Class
-        "Guided by deep {spiritual_attunement} and {ethical_stand} during {phase}, I experienced {condition} overlooking {visual_horizon} surrounded by {natural_exposure}.",
-        "In the quiet of {time_of_day} during {phase}, {spiritual_attunement} led me to {ethical_stand} with a sense of {condition} experiencing {creative_outlet}.",
+        "Friend: Guided by deep {spiritual_attunement} and {ethical_stand} during {phase}, you experienced {condition} overlooking {visual_horizon} surrounded by {natural_exposure}.",
+        "Friend: In the quiet of {time_of_day} during {phase}, did {spiritual_attunement} lead you to {ethical_stand} with a sense of {condition} experiencing {creative_outlet}?",
     ]
 
     distractors = []

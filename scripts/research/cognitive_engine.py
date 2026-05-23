@@ -2,6 +2,9 @@ import time
 import math
 import random
 import re
+import json
+import os
+from datetime import datetime, timezone
 import numpy as np
 
 
@@ -43,55 +46,133 @@ class AcceleratedCognitiveEngine:
         self.recall_threshold = -1.5  # theta_recall
         self.decay_rate = 0.5  # d
 
-        # Seed initial milestone facts into simulated memory
-        milestone_facts = [
-            (
-                "I was born and raised in Kolkata, a beautiful city where I spent my childhood years.",
-                np.array([0.8, 0.4, 0.7]),
-            ),
-            (
-                "During my college years, my primary research project was focused on building affective cognitive architectures.",
-                np.array([0.7, 0.7, 0.8]),
-            ),
-            (
-                "After graduating, my very first job was in Bangalore, working as a junior researcher.",
-                np.array([0.6, 0.5, 0.6]),
-            ),
-            (
-                "I am incredibly grateful for my partner Priya, who has supported me through all life's challenges.",
-                np.array([0.9, 0.8, 0.9]),
-            ),
-            (
-                "Whenever I want a dessert, I always prefer a traditional sweet rasgulla.",
-                np.array([0.8, 0.3, 0.5]),
-            ),
+        # Aniket autobiographical chitchat templates for fallback procedural generation
+        aniket_distractors = [
+            "Ma asked me to bring some fresh vegetables from the local market in Kolkata.",
+            "Discussing our high school mathematics project with my classmate in the afternoon.",
+            "Spending the evening coding a simple arcade game in Python in my study room.",
+            "We had a beautiful family dinner tonight celebrating my academic results.",
+            "Talking to my childhood friends about our weekend cricket match in the streets of Kolkata.",
+            "I tried making sweet rasgullas at home today, they turned out soft and spongy.",
+            "Walking through the crowded streets near Victoria Memorial, enjoying the cool breeze.",
+            "Ma is making delicious home-cooked meals, the whole house smells amazing.",
+            "Studying late into the night for my college entrance examinations, feeling focused.",
+            "Moving to Bangalore for my college was a major transition, the city is so vibrant.",
+            "Talking with Priya at the university cafe about our upcoming research presentation.",
+            "Discussing affective cognitive architectures and neural networks in the lab today.",
+            "Walking around Cubbon Park in Bangalore with Priya, talking about our future dreams.",
+            "I bought some traditional sweet rasgullas from a local Bengali sweet shop in Bangalore.",
+            "Reviewing database query optimization techniques with my research project teammates.",
+            "Listening to Ma's stories on the phone about our childhood home back in Kolkata.",
+            "Priya and I spent the afternoon studying in the quiet library alcove.",
+            "My high school friends and I are planning a reunion back in Kolkata during the holidays.",
+            "Debugging a tricky concurrent thread pool issue in my cognitive simulation module.",
+            "Enjoying a hot cup of tea while watching the rain wash over the streets of Bangalore.",
         ]
 
-        # Inoculate 5 milestone memories
-        for idx, (content, E_mem) in enumerate(milestone_facts):
-            key = f"m_milestone_{idx}"
-            self.memories[key] = {
-                "content": content,
-                "E_memory": E_mem,
-                "accesses": [0.0],
-                "created_at": 0.0,
-                "type": "milestone",
-                "importance": 0.9,
-                "recall_count": 1,
-            }
+        milestone_facts = [
+            "Childhood Milestone: I took my first toddler steps in our warm home in Kolkata, surrounded by Ma and Baba's laughter.",
+            "Childhood Milestone: Tasting my first traditional sweet rasgulla, a delicious treat that became my absolute favorite.",
+            "Childhood Milestone: Playing with wooden toys in the sunlit balcony, listening to Ma's sweet Bengali lullabies.",
+            "Childhood Milestone: Drawing simple shapes with colorful crayons, feeling a spark of early cognitive curiosity.",
+            "Childhood Milestone: Baba taking me for a walk near the local park, looking up at the beautiful clear blue sky.",
+            "School Milestone: Enrolling in primary school in Kolkata, wearing my new uniform and feeling exceptionally proud.",
+            "School Milestone: Winning a school mathematics puzzle competition, discovering my deep passion for logical reasoning.",
+            "School Milestone: Playing street cricket with my childhood neighborhood friends, celebrating a hard-fought victory.",
+            "School Milestone: A wonderful family summer holiday, eating fresh mangoes and visiting the grand Victoria Memorial.",
+            "School Milestone: Sitting in the school library reading my first science fiction book, dreaming of building intelligent machines.",
+            "Teenage Milestone: Writing my very first lines of Python code on Baba's old computer, watching the screen light up.",
+            "Teenage Milestone: Transitioning to senior high school in Kolkata, joining the science stream to study physics and math.",
+            "Teenage Milestone: Building a basic chat assistant model in my room, igniting my lifelong interest in computer science.",
+            "Teenage Milestone: Late-night study sessions with my school friends, sharing snacks and discussing our future college plans.",
+            "Teenage Milestone: Graduating high school with top honors, receiving congratulations from my proud family and teachers.",
+            "Adulthood Milestone: Moving from Kolkata to Bangalore to start my freshman year of university, a major step forward.",
+            "Adulthood Milestone: Joining the university's advanced research lab focused on affective cognitive architectures.",
+            "Adulthood Milestone: Meeting Priya at the university cafe, starting a beautiful and deeply supportive relationship.",
+            "Adulthood Milestone: Celebrating my first successful research paper publication with Priya, sharing a sweet rasgulla.",
+            "Adulthood Milestone: Commencing my junior research internship in Bangalore, feeling completely aligned with my vocation.",
+        ]
 
-        # Seed 200 initial random distractor facts (flooded state)
-        for idx in range(initial_distractors):
-            key = f"m_distractor_{idx}"
-            self.memories[key] = {
-                "content": f"Flooded distractor fact number {idx} regarding domain {idx % 100}.",
-                "E_memory": np.random.uniform(-0.5, 0.5, 3),
-                "accesses": [0.0],
-                "created_at": 0.0,
-                "type": "distractor",
-                "importance": 0.4,
-                "recall_count": 1,
-            }
+        # Load from flooded_seeding_corpus.json if available
+        corpus_path = os.path.join(
+            os.path.dirname(__file__), "flooded_seeding_corpus.json"
+        )
+        loaded_from_file = False
+        if os.path.exists(corpus_path):
+            try:
+                with open(corpus_path, "r") as f:
+                    corpus_data = json.load(f)
+                loaded_from_file = True
+            except Exception:
+                pass
+
+        if loaded_from_file:
+            distractor_count = 0
+            milestone_count = 0
+            for item in corpus_data:
+                room = item.get("room", "distractor")
+                content = item.get("content", "")
+                created_at_str = item.get("created_at")
+
+                # Proportional decay time steps matching simulation time bounds
+                created_time = datetime.fromisoformat(created_at_str)
+                now = datetime.now(timezone.utc)
+                elapsed_days = (now - created_time).total_seconds() / (3600.0 * 24.0)
+                simulated_created_at = -elapsed_days * (1000.0 * 2.5 / (19.0 * 365.0))
+
+                if room == "distractor":
+                    if distractor_count >= initial_distractors:
+                        continue
+                    distractor_count += 1
+                    key = f"m_distractor_{distractor_count}"
+                    self.memories[key] = {
+                        "content": content,
+                        "E_memory": np.random.uniform(-0.5, 0.5, 3),
+                        "accesses": [simulated_created_at],
+                        "created_at": simulated_created_at,
+                        "type": "distractor",
+                        "importance": 0.4,
+                        "recall_count": 1,
+                    }
+                else:
+                    milestone_count += 1
+                    key = f"m_milestone_{milestone_count}"
+                    self.memories[key] = {
+                        "content": content,
+                        "E_memory": np.array([0.8, 0.5, 0.7]),
+                        "accesses": [simulated_created_at],
+                        "created_at": simulated_created_at,
+                        "type": "milestone",
+                        "importance": 0.9,
+                        "recall_count": 1,
+                    }
+        else:
+            # Seed fallback milestones
+            for idx, content in enumerate(milestone_facts):
+                key = f"m_milestone_{idx}"
+                self.memories[key] = {
+                    "content": content,
+                    "E_memory": np.array([0.8, 0.5, 0.7]),
+                    "accesses": [0.0],
+                    "created_at": 0.0,
+                    "type": "milestone",
+                    "importance": 0.9,
+                    "recall_count": 1,
+                }
+
+            # Seed fallback distractors
+            for idx in range(initial_distractors):
+                key = f"m_distractor_{idx}"
+                template = aniket_distractors[idx % len(aniket_distractors)]
+                self.memories[key] = {
+                    "content": f"{template} [Fallback Turn: {idx}]",
+                    "E_memory": np.random.uniform(-0.5, 0.5, 3),
+                    "accesses": [0.0],
+                    "created_at": 0.0,
+                    "type": "distractor",
+                    "importance": 0.4,
+                    "recall_count": 1,
+                }
 
     def process_new_information(self, content: str, time_step: float, prompt_type: str):
         """
