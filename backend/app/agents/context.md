@@ -32,32 +32,32 @@ These equations are computed native in Rust (`backend/crates/contracts/src/lib.r
    * Speaking Rate slowdown:
 
 ```math
-\text{fatigue\_slow} = 0.25 \cdot F
+\text{fatigue-slow} = 0.25 \cdot F
 ```
 
    * Pitch dropdown:
 
 ```math
-\text{fatigue\_pitch\_drop} = 0.10 \cdot F
+\text{fatigue-pitch-drop} = 0.10 \cdot F
 ```
 
 2. **Distance Spatial Adaptation**:
    * Close-range threshold ($d < 0.6\text{m}$, whisper configuration):
 
 ```math
-\text{dist\_vol\_mod} = -0.15, \quad \text{dist\_pitch\_mod} = -0.05
+\text{dist-vol-mod} = -0.15, \quad \text{dist-pitch-mod} = -0.05
 ```
 
    * Far-range threshold ($d > 1.5\text{m}$, projection configuration):
 
 ```math
-\text{dist\_vol\_mod} = 0.20, \quad \text{dist\_pitch\_mod} = 0.10
+\text{dist-vol-mod} = 0.20, \quad \text{dist-pitch-mod} = 0.10
 ```
 
    * Intermediate baseline:
 
 ```math
-\text{dist\_vol\_mod} = 0.00, \quad \text{dist\_pitch\_mod} = 0.00
+\text{dist-vol-mod} = 0.00, \quad \text{dist-pitch-mod} = 0.00
 ```
 
 ### 2.2 Core Synthesis Parameters
@@ -66,7 +66,7 @@ These equations are computed native in Rust (`backend/crates/contracts/src/lib.r
    Modulated by arousal energy and valence, slowed down by metabolic fatigue, clamped to safety bounds:
 
 ```math
-R = 1.0 + 0.20 \cdot Ar - 0.10 \cdot V - \text{fatigue\_slow}
+R = 1.0 + 0.20 \cdot Ar - 0.10 \cdot V - \text{fatigue-slow}
 ```
 
 ```math
@@ -77,7 +77,7 @@ R = 1.0 + 0.20 \cdot Ar - 0.10 \cdot V - \text{fatigue\_slow}
    Jointly modulated by valence and arousal, tempered by dominance, and adjusted for fatigue and distance:
 
 ```math
-P = 1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - \text{fatigue\_pitch\_drop} + \text{dist\_pitch\_mod}
+P = 1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - \text{fatigue-pitch-drop} + \text{dist-pitch-mod}
 ```
 
 ```math
@@ -88,7 +88,7 @@ P = 1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - \text{fatigue\_pitch\_dr
    Modulated by interpersonal dominance (assertiveness) and adjusted for distance propagation:
 
 ```math
-V_{ol} = 0.4 + 0.6 \cdot D + \text{dist\_vol\_mod}
+V_{ol} = 0.4 + 0.6 \cdot D + \text{dist-vol-mod}
 ```
 
 ```math
@@ -115,26 +115,26 @@ To ensure seamless audio transitions, eliminate acoustic pops, and guarantee sig
 When a prosody shift is detected between consecutive audio segments, the engine computes a **10ms linear crossfade window** based on the configured sample rate (typically 32kHz):
 
 ```math
-\text{fade\_len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor
+\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor
 ```
 
 For $32,000\text{Hz}$, the crossfade window contains exactly $320$ samples.
 
 ### 3.2 Signal Modulation
 
-For each sample index $i$ in the crossfade window ($0 \le i < \text{fade\_len}$), the blend factor $t$ is computed as:
+For each sample index $i$ in the crossfade window ($0 \le i < \text{fade-len}$), the blend factor $t$ is computed as:
 
 ```math
-t = \frac{i}{\text{fade\_len}}
+t = \frac{i}{\text{fade-len}}
 ```
 
 The output blends the previous prosody segment buffer $x_{\text{prev}}[i]$ with the incoming segment $x_{\text{curr}}[i]$:
 
 ```math
-y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade\_len}
+y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade-len}
 ```
 
-For $i \ge \text{fade\_len}$, the signal passes through unmodified:
+For $i \ge \text{fade-len}$, the signal passes through unmodified:
 
 ```math
 y[i] = x_{\text{curr}}[i]
@@ -163,10 +163,10 @@ When the physical distance $d$ increases, high-frequency elements decay, and atm
 
 ### 4.1 Wet/Dry Linear Interpolation
 
-Acoustic reverb gain ($\text{wet\_gain}$) is scaled dynamically as a function of distance:
+Acoustic reverb gain ($\text{wet-gain}$) is scaled dynamically as a function of distance:
 
 ```math
-\text{wet\_gain} = \begin{cases}
+\text{wet-gain} = \begin{cases}
 0.0 & \text{if } d \le 2.5\text{m} \\
 \frac{d - 2.5}{3.5 - 2.5} & \text{if } 2.5\text{m} < d < 3.5\text{m} \\
 1.0 & \text{if } d \ge 3.5\text{m}
@@ -192,7 +192,7 @@ d_{\text{buffer}}[n \pmod M] = x[n] + 0.5 \cdot w[n]
 3. Blend dry and wet signals:
 
 ```math
-y[n] = (1.0 - \text{wet\_gain}) \cdot x[n] + \text{wet\_gain} \cdot d_{\text{buffer}}[n \pmod M]
+y[n] = (1.0 - \text{wet-gain}) \cdot x[n] + \text{wet-gain} \cdot d_{\text{buffer}}[n \pmod M]
 ```
 
 This ensures that the agent's spatial projection matches the visual distance of the user, achieving true sensory-motor loop integration.
