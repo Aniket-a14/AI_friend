@@ -2,8 +2,6 @@ import logging
 from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from qdrant_client.http.exceptions import UnexpectedResponse
-
 logger = logging.getLogger("semantic_recall_store")
 
 
