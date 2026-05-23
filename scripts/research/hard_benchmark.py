@@ -543,12 +543,12 @@ async def run_physical_benchmark(
 
         nc = await nats.connect(nats_url)
     except Exception as e:
-        print(f"❌ Failed to connect to NATS at {nats_url}: {e}")
-        print(
-            "⚠️ Docker is off (NATS is unavailable). Running high-fidelity physical simulation fallback..."
-        )
-        await run_simulated_physical_benchmark(iterations, distractors)
-        return
+        raise ConnectionError(
+            f"❌ ERROR: Failed to connect to NATS at {nats_url}: {e}.\n"
+            "💡 Physical benchmarking requires NATS and database microservices to be active (Docker compose).\n"
+            "Ensure that your Docker containers are running by executing 'docker compose up -d' "
+            "before initiating the physical benchmark suite."
+        ) from e
 
     # Measure NATS IPC round-trip latency
     avg_nats_ipc = await check_nats_ipc()
