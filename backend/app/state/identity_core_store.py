@@ -2,7 +2,7 @@ import os
 import sqlite3
 import json
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 logger = logging.getLogger("identity_core_store")
 
