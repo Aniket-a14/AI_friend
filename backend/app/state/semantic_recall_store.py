@@ -43,7 +43,7 @@ class SemanticRecallStore:
             exist = any(col.name == self.collection_name for col in collections.collections)
 
             if not exist:
-                logger.info(f"Creating Qdrant collection: {self.collection_name} (768 Dimensions, Cosine)")
+                logger.info(f"Creating Qdrant collection: {self.collection_name} ({self.vector_size} Dimensions, Cosine)")
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=models.VectorParams(

@@ -2,6 +2,7 @@ import os
 import sqlite3
 import json
 import logging
+import threading
 from typing import Dict, Any
 
 logger = logging.getLogger("identity_core_store")
@@ -15,6 +16,7 @@ class IdentityCoreStore:
 
     def __init__(self, db_path: str = "identity_core.db"):
         self.db_path = db_path
+        self._cache_lock = threading.Lock()
         self._cached_identity: Dict[str, Any] = {}
         if db_path == ":memory:":
             self._conn = sqlite3.connect(":memory:")
@@ -61,7 +63,7 @@ class IdentityCoreStore:
 
         # Seed initial defaults if empty
         self.load_into_cache()
-        if not self._cached_identity:
+        if not self.get_identity():
             self._seed_default_identity()
 
     def _seed_default_identity(self):
@@ -88,7 +90,7 @@ class IdentityCoreStore:
             cursor.execute("SELECT * FROM identity_core WHERE id = 1")
             row = cursor.fetchone()
             if row:
-                self._cached_identity = {
+                cached = {
                     "name": row["name"],
                     "values": json.loads(row["values_list"]),
                     "base_tone": row["base_tone"],
@@ -98,19 +100,24 @@ class IdentityCoreStore:
                     "avoid_rules": json.loads(row["avoid_rules"]),
                     "relationship": row["relationship"]
                 }
-                return self._cached_identity
+                with self._cache_lock:
+                    self._cached_identity = cached
+                return cached
         except Exception as e:
             logger.error(f"Failed to load identity core from SQLite: {e}")
-            self._cached_identity = {}
+            with self._cache_lock:
+                self._cached_identity = {}
         finally:
             self._release_connection(conn)
         return {}
 
     def get_identity(self) -> Dict[str, Any]:
         """Sub-millisecond memory-cached getter."""
-        if not self._cached_identity:
+        with self._cache_lock:
+            cached = self._cached_identity
+        if not cached:
             return self.load_into_cache()
-        return self._cached_identity
+        return cached
 
     def update_identity(self, data: Dict[str, Any]):
         """Persists identity mutations to SQLite and updates memory cache."""

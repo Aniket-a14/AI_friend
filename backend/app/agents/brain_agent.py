@@ -166,7 +166,7 @@ class BrainAgent(BaseAgent):
             return
 
         # Start the flow task in background to allow cancellation on interruption
-        task = asyncio.create_task(self._process_chat_input_flow(message, is_subconscious))
+        task = asyncio.create_task(self._process_chat_input_flow(msg, is_subconscious, message))
         self._active_generation_task = task
         try:
             await task
@@ -176,21 +176,16 @@ class BrainAgent(BaseAgent):
             if self._active_generation_task == task:
                 self._active_generation_task = None
 
-    async def _process_chat_input_flow(self, message: Dict[str, Any], is_subconscious: bool):
-        try:
-            msg = ChatInput.model_validate(message)
-            user_text = msg.text
-            turn_id = msg.turn_id or msg.utterance_id or str(uuid.uuid4())
-            metadata = message.get("metadata")
-            if not isinstance(metadata, dict):
-                metadata = msg.metadata.model_dump() if msg.metadata else {}
-            latency_metadata = message.get("latency_metadata")
-            if not isinstance(latency_metadata, dict):
-                latency_metadata = {}
-            utterance_id = msg.utterance_id
-        except Exception as e:
-            logger.error(f"Error parsing validation in flow: {e}")
-            return
+    async def _process_chat_input_flow(self, chat_input: ChatInput, is_subconscious: bool, message: Dict[str, Any]):
+        user_text = chat_input.text
+        turn_id = chat_input.turn_id or chat_input.utterance_id or str(uuid.uuid4())
+        metadata = message.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = chat_input.metadata.model_dump() if chat_input.metadata else {}
+        latency_metadata = message.get("latency_metadata")
+        if not isinstance(latency_metadata, dict):
+            latency_metadata = {}
+        utterance_id = chat_input.utterance_id
 
         if not user_text:
             return
