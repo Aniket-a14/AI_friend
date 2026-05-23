@@ -190,8 +190,8 @@ struct VoiceConfig {
 impl VoiceConfig {
     fn from_env() -> Self {
         Self {
-            nats_url: env_or("NATS_URL", "nats://localhost:4222"),
-            sovits_url: env_or("SOVITS_URL", "http://localhost:9871"),
+            nats_url: env_or("NATS_URL", "nats://127.0.0.1:4222"),
+            sovits_url: env_or("SOVITS_URL", "http://127.0.0.1:9871"),
             ref_audio_path: env_or("REF_AUDIO_PATH", "output/sample_en_gold.wav"),
             ref_text: env_or(
                 "REF_TEXT",
@@ -251,11 +251,26 @@ async fn main() -> Result<()> {
         warn!("Vision description subscription stream closed.");
     });
 
+    // Abort flag for immediate voice playback stop
+    let abort_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    // Subscribe to audio.stop and set abort flag
+    let abort_flag_stop = abort_flag.clone();
+    let mut stop_sub = client.subscribe(topics::AUDIO_STOP).await?;
+    tokio::spawn(async move {
+        while let Some(_msg) = stop_sub.next().await {
+            info!("Received AUDIO_STOP - aborting current voice generation/playback.");
+            abort_flag_stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    });
+
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
 
     let mut ola_filter = OlaCrossfadeFilter::new(config.sample_rate);
 
     while let Some(message) = subscriber.next().await {
+        // Reset abort flag for new incoming chat output
+        abort_flag.store(false, std::sync::atomic::Ordering::SeqCst);
         match serde_json::from_slice::<ChatOutput>(&message.payload) {
             Ok(event) => {
                 if let Err(err) = handle_chat_output(
@@ -265,6 +280,7 @@ async fn main() -> Result<()> {
                     event,
                     last_distance.clone(),
                     &mut ola_filter,
+                    abort_flag.clone(),
                 )
                 .await
                 {
@@ -353,6 +369,7 @@ async fn handle_chat_output(
     event: ChatOutput,
     last_distance: std::sync::Arc<std::sync::Mutex<f64>>,
     ola_filter: &mut OlaCrossfadeFilter,
+    abort_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<()> {
     if event.done {
         return Ok(());
@@ -388,6 +405,10 @@ async fn handle_chat_output(
         });
 
     for part in split_temporal_parts(content)? {
+        if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            info!("Aborting playback due to AUDIO_STOP event.");
+            break;
+        }
         match part {
             TemporalPart::Silence(ms) => {
                 ola_filter.clear_history();
@@ -417,6 +438,10 @@ async fn handle_chat_output(
                 )
                 .await?;
                 while let Some(chunk) = response.chunk().await? {
+                    if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                        info!("Aborting synthesis chunk stream due to AUDIO_STOP event.");
+                        break;
+                    }
                     if !chunk.is_empty() {
                         let mut pcm_bytes = chunk.to_vec();
 

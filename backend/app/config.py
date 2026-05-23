@@ -14,7 +14,7 @@ class AppSettings(BaseSettings):
     LAN_ONLY: bool = True
     LAN_CORS_ORIGIN_REGEX: str = (
         r"^https?://("
-        r"localhost|"
+        r"127\.0\.0\.1|"
         r"127(?:\.\d{1,3}){3}|"
         r"10(?:\.\d{1,3}){3}|"
         r"192\.168(?:\.\d{1,3}){2}|"
@@ -23,10 +23,10 @@ class AppSettings(BaseSettings):
     )
 
     # NATS Configuration
-    NATS_URL: str = "nats://localhost:4222"
+    NATS_URL: str = "nats://127.0.0.1:4222"
 
     # LiveKit Configuration
-    LIVEKIT_URL: str = "http://localhost:7880"
+    LIVEKIT_URL: str = "http://127.0.0.1:7880"
     LIVEKIT_API_KEY: Optional[str] = None
     LIVEKIT_API_SECRET: Optional[str] = None
 
@@ -42,7 +42,7 @@ class AppSettings(BaseSettings):
     NEO4J_AUTH: Optional[str] = None
 
     AI_NAME: str = "AI Friend"
-    OLLAMA_URL: str = "http://localhost:11434"
+    OLLAMA_URL: str = "http://127.0.0.1:11434"
 
     LLM_FAST_MODEL: str = "llama3.2:1b"
     LLM_CHAT_MODEL: Optional[str] = None
@@ -85,7 +85,7 @@ class AppSettings(BaseSettings):
     RUNTIME_BOOTSTRAP_RETRIES: int = 12
     OLLAMA_REQUIRED_MODELS_STR: str = Field(default="", alias="OLLAMA_REQUIRED_MODELS")
 
-    SOVITS_URL: str = "http://localhost:9871"
+    SOVITS_URL: str = "http://127.0.0.1:9871"
     STT_LANGUAGE: str = "en"
     TTS_LANGUAGE: str = "en"
 

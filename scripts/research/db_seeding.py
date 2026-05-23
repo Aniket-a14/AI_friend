@@ -90,7 +90,7 @@ def generate_mock_vector(dim=768):
 
 async def check_nats_ipc():
     """Measures dynamic NATS IPC latency round-trip."""
-    nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
+    nats_url = os.getenv("NATS_URL", "nats://127.0.0.1:4222")
     try:
         import nats
 
@@ -279,6 +279,66 @@ async def seed_databases(num_distractors=100000):
     )
     await db.close()
 
+    # 2.2. Initialize and seed Identity Core SQLite database
+    from app.state.identity_core_store import IdentityCoreStore
+    try:
+        print("🪞 Seeding Identity Core SQLite database...")
+        identity_store = IdentityCoreStore()
+        identity_store._seed_default_identity()
+        print("✅ Successfully seeded Identity Core Store.")
+    except Exception as e:
+        print(f"⚠️ SQLite Identity Core seeding error: {e}")
+
+    # 2.5. Initialize and seed Qdrant SemanticRecallStore in batches
+    from app.state.semantic_recall_store import SemanticRecallStore
+    from qdrant_client.http import models
+
+    try:
+        print("🔍 Seeding Qdrant Semantic Recall Store in batches...")
+        semantic_store = SemanticRecallStore()
+        if semantic_store.client:
+            chunk_size = 5000
+            points = []
+            start_q = time.perf_counter()
+            for idx, task in enumerate(seeding_tasks):
+                content, raw_content, wing, room, vector_str, importance, emotion, valence, certainty, source, metadata_str, created_time = task
+                vector = json.loads(vector_str)
+                metadata = json.loads(metadata_str)
+                
+                payload = {
+                    "content": content,
+                    "wing": wing,
+                    "room": room,
+                    "importance_score": importance,
+                    "emotional_weight": emotion,
+                    "valence": valence,
+                    "certainty": certainty,
+                    "source": source,
+                    "created_at": created_time.isoformat(),
+                    **metadata
+                }
+                
+                points.append(
+                    models.PointStruct(
+                        id=idx + 1,
+                        vector=vector,
+                        payload=payload
+                    )
+                )
+                
+                if len(points) >= chunk_size or idx == len(seeding_tasks) - 1:
+                    semantic_store.client.upsert(
+                        collection_name=semantic_store.collection_name,
+                        points=points
+                    )
+                    points = []
+            dur_q = time.perf_counter() - start_q
+            print(f"✅ Successfully seeded Qdrant Semantic Store in {dur_q:.2f} seconds.")
+        else:
+            print("⚠️ Qdrant server offline. Skipping semantic vector seeding.")
+    except Exception as e:
+        print(f"⚠️ Warning: Qdrant seeding encountered an error: {e}")
+
     # 3. Connect to Neo4j and seed secure attachment graph nodes
     from app.state.graph_db import GraphDB
 
@@ -331,6 +391,28 @@ async def seed_databases(num_distractors=100000):
             "ResearchDomain",
             {"description": "Core college research project."},
         )
+        
+        # Seed Core Identity Values & Boundaries into Neo4j Graph
+        await graph.create_entity(
+            "Honesty",
+            "CoreValue",
+            {"description": "Commitment to absolute truthfulness and behavioral integrity."}
+        )
+        await graph.create_entity(
+            "Privacy",
+            "CoreValue",
+            {"description": "Commitment to absolute data sovereignty and local privacy protection."}
+        )
+        await graph.create_entity(
+            "Curiosity",
+            "CoreValue",
+            {"description": "Commitment to intellectual exploration and learning."}
+        )
+        await graph.create_entity(
+            "DataBoundary",
+            "CoreBoundary",
+            {"description": "Explicit rule: Never share user conversation histories externally."}
+        )
 
         await graph.create_relationship(
             "Aniket", "Person", "LIVES_IN", "Kolkata", "City", {"weight": 0.95}
@@ -354,6 +436,20 @@ async def seed_databases(num_distractors=100000):
             "AffectiveCognitiveArchitectures",
             "ResearchDomain",
             {"weight": 0.95},
+        )
+        
+        # Link Aniket to Core Identity Values & Boundaries
+        await graph.create_relationship(
+            "Aniket", "Person", "HAS_VALUE", "Honesty", "CoreValue", {"weight": 1.0}
+        )
+        await graph.create_relationship(
+            "Aniket", "Person", "HAS_VALUE", "Privacy", "CoreValue", {"weight": 1.0}
+        )
+        await graph.create_relationship(
+            "Aniket", "Person", "HAS_VALUE", "Curiosity", "CoreValue", {"weight": 1.0}
+        )
+        await graph.create_relationship(
+            "Aniket", "Person", "ENFORCES_RULE", "DataBoundary", "CoreBoundary", {"weight": 1.0}
         )
 
         await graph.close()

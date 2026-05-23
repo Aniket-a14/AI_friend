@@ -37,7 +37,7 @@ async def run_human_fidelity_test():
         "Goal: Measure affective synchronization, Paralinguistic Alignment, and Memory Saliency."
     )
 
-    nats_url = os.getenv("NATS_URL", "nats://localhost:4222")
+    nats_url = os.getenv("NATS_URL", "nats://127.0.0.1:4222")
     nc = await nats.connect(nats_url)
     js = nc.jetstream()
 

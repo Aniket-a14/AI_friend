@@ -90,6 +90,12 @@ class SubconsciousAgent(BaseAgent):
             deliver_policy="new",
         )
         await self.subscribe(
+            "state.broadcast",
+            self._on_state_broadcast,
+            durable=f"{self.name}_state_broadcast",
+            deliver_policy="new",
+        )
+        await self.subscribe(
             Topics.AUDIO_PERCEPTION,
             self._on_audio_perception,
             durable=f"{self.name}_audio_perception_monologue",
@@ -97,6 +103,63 @@ class SubconsciousAgent(BaseAgent):
         )
         self._monologue_task = asyncio.create_task(self._continuous_monologue_loop())
         logger.info(f"🧠 {self.name} Online | Subconscious Mesh Interface Active.")
+
+    async def _on_state_broadcast(self, data: Dict[str, Any]):
+        """Asynchronously syncs state changes from NATS state.broadcast into Neo4j."""
+        agent_name = data.get("agent_name", "my friend")
+        logger.info(f"[Subconscious] Received state broadcast for {agent_name}. Syncing to Neo4j...")
+        
+        query = """
+        MERGE (a:Agent {name: $name})
+        SET a.mood = $mood,
+            a.energy = $energy,
+            a.dominance = $dominance,
+            a.trust_benevolence = $trust_benevolence,
+            a.trust_competence = $trust_competence,
+            a.trust_integrity = $trust_integrity,
+            a.trust = $trust,
+            a.attachment = $attachment,
+            a.fatigue = $fatigue,
+            a.last_user_interaction = $last_user_interaction,
+            a.interaction_count = $interaction_count,
+            a.inferred_valence = $inferred_valence,
+            a.inferred_arousal = $inferred_arousal,
+            a.implied_goals = $implied_goals,
+            a.known_concepts = $known_concepts,
+            a.baseline_valence = $baseline_valence,
+            a.baseline_arousal = $baseline_arousal,
+            a.baseline_dominance = $baseline_dominance,
+            a.last_sync = datetime()
+        """
+        params = {
+            "name": agent_name,
+            "mood": data.get("mood", 0.0),
+            "energy": data.get("energy", 0.5),
+            "dominance": data.get("dominance", 0.5),
+            "trust_benevolence": data.get("trust_benevolence", 0.5),
+            "trust_competence": data.get("trust_competence", 0.5),
+            "trust_integrity": data.get("trust_integrity", 0.5),
+            "trust": data.get("trust", 0.5),
+            "attachment": data.get("attachment", 0.1),
+            "fatigue": data.get("fatigue", 0.0),
+            "last_user_interaction": data.get("last_user_interaction", time.time()),
+            "interaction_count": data.get("interaction_count", 0),
+            "inferred_valence": data.get("inferred_valence", 0.0),
+            "inferred_arousal": data.get("inferred_arousal", 0.5),
+            "implied_goals": data.get("implied_goals", []),
+            "known_concepts": data.get("known_concepts", []),
+            "baseline_valence": data.get("baseline_valence", 0.0),
+            "baseline_arousal": data.get("baseline_arousal", 0.5),
+            "baseline_dominance": data.get("baseline_dominance", 0.5)
+        }
+        
+        try:
+            await self.graph_db.execute_query(query, params, write=True)
+            if hasattr(self.graph_db, "invalidate_cache"):
+                await self.graph_db.invalidate_cache(agent_name)
+            logger.debug(f"[Subconscious] Asynchronously persisted state to Neo4j for {agent_name}.")
+        except Exception as e:
+            logger.error(f"[Subconscious] Failed to sync state to Neo4j: {e}")
 
     async def _on_system_tick(self, data: Dict[str, Any]):
         """Delegates thought generation to the engine and routes to the Mesh."""

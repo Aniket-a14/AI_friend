@@ -21,7 +21,7 @@ struct SttConfig {
 impl SttConfig {
     fn from_env() -> Self {
         Self {
-            nats_url: env_or("NATS_URL", "nats://localhost:4222"),
+            nats_url: env_or("NATS_URL", "nats://127.0.0.1:4222"),
             target_sample_rate: env_or("STT_TARGET_SAMPLE_RATE", "16000")
                 .parse()
                 .unwrap_or(16_000),
@@ -89,6 +89,71 @@ async fn handle_audio_inbound(
         .context("RUST_STT_MOCK_TRANSCRIPT is empty and no live STT backend is configured")?;
 
     let utterance_id = Uuid::new_v4().to_string();
+
+    // Stream continuous partial transcript hypotheses onto audio.perception with is_partial: true
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut current_words = Vec::new();
+
+    for word in words {
+        current_words.push(word);
+        let partial_text = current_words.join(" ");
+
+        let mut metadata_map = JsonMap::new();
+        metadata_map.insert("text".to_string(), json!(partial_text));
+        metadata_map.insert("is_partial".to_string(), json!(true));
+
+        let speculative = build_speculative_intent(&partial_text, &utterance_id);
+        let intent = speculative.as_ref().map(|s| s.name.clone());
+        let keywords = speculative.as_ref().map(|s| s.keywords.clone()).unwrap_or_default();
+        let confidence = speculative.as_ref().map(|s| s.confidence).unwrap_or(0.9);
+
+        let perception = AudioPerception {
+            text: partial_text.clone(),
+            intent,
+            intent_type: "CONVERSATIONAL".to_string(),
+            keywords,
+            confidence,
+            snr: 0.0,
+            paralinguistic_events: Vec::new(),
+            speculative_intent: speculative.clone(),
+            metadata: metadata_map,
+            timestamp: now_seconds(),
+            utterance_id: Some(utterance_id.clone()),
+        };
+
+        jetstream
+            .publish(
+                topics::AUDIO_PERCEPTION,
+                Bytes::from(serde_json::to_vec(&perception)?),
+            )
+            .await?
+            .await?;
+
+        // Speculative Stop keyword check (emergency stop trigger)
+        if let Some(speculative_stop) = speculative {
+            let stop = AudioStop {
+                interrupt: true,
+                speculative: true,
+                reason: None,
+                command_text: None,
+                intent: Some(speculative_stop.name.clone()),
+                intent_type: "VOICE_INTERRUPTION".to_string(),
+                keywords: speculative_stop.keywords.clone(),
+                confidence: speculative_stop.confidence,
+                perception_text: Some(speculative_stop.text.clone()),
+                utterance_id: speculative_stop.utterance_id.clone(),
+                turn_id: None,
+            };
+            jetstream
+                .publish(topics::AUDIO_STOP, Bytes::from(serde_json::to_vec(&stop)?))
+                .await?
+                .await?;
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(80)).await;
+    }
+
+    // Final CHAT_INPUT message
     let latency_metadata = append_latency(metadata, topics::CHAT_INPUT);
     let chat = ChatInput {
         text: text.to_string(),
@@ -106,35 +171,6 @@ async fn handle_audio_inbound(
         .publish(topics::CHAT_INPUT, Bytes::from(serde_json::to_vec(&chat)?))
         .await?
         .await?;
-
-    if let Some(speculative) = build_speculative_intent(text, &utterance_id) {
-        let perception = build_audio_perception(text, &speculative);
-        jetstream
-            .publish(
-                topics::AUDIO_PERCEPTION,
-                Bytes::from(serde_json::to_vec(&perception)?),
-            )
-            .await?
-            .await?;
-
-        let stop = AudioStop {
-            interrupt: true,
-            speculative: true,
-            reason: None,
-            command_text: None,
-            intent: Some(speculative.name.clone()),
-            intent_type: "VOICE_INTERRUPTION".to_string(),
-            keywords: speculative.keywords.clone(),
-            confidence: speculative.confidence,
-            perception_text: Some(speculative.text.clone()),
-            utterance_id: speculative.utterance_id.clone(),
-            turn_id: None,
-        };
-        jetstream
-            .publish(topics::AUDIO_STOP, Bytes::from(serde_json::to_vec(&stop)?))
-            .await?
-            .await?;
-    }
 
     let _ = config.target_sample_rate;
     Ok(())

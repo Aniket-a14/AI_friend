@@ -14,7 +14,7 @@ async def run_stress_test(scenario="hostile"):
     Stress tests the Identity Simulator by sending a sequence of themed messages.
     """
     nc = NATS()
-    await nc.connect("nats://localhost:4222")
+    await nc.connect("nats://127.0.0.1:4222")
 
     messages = {
         "hostile": [

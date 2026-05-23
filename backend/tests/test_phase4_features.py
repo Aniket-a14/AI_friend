@@ -181,7 +181,7 @@ async def test_brain_agent_prosody_calculation_publishing():
     """Verify that BrainAgent correctly computes prosody and publishes compliant JSON to NATS."""
     # Instantiating a mock/stub BrainAgent
     agent = BrainAgent(
-        ollama_url="http://localhost:11434",
+        ollama_url="http://127.0.0.1:11434",
         graph_db=MagicMock(),
         memory_store=MagicMock(),
         conversation_store=MagicMock(),
