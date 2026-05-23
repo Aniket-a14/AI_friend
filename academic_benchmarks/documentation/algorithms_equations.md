@@ -16,8 +16,8 @@ Primary appraisal evaluates the immediate significance of an event for the agent
 
 ```math
 R = \begin{cases}
-  1.0 & \text{if event is } \texttt{USER\_MESSAGE} \\
-  0.1 & \text{if event is } \texttt{SYSTEM\_TICK} \\
+  1.0 & \text{if event is } \texttt{USER-MESSAGE} \\
+  0.1 & \text{if event is } \texttt{SYSTEM-TICK} \\
   0.5 & \text{otherwise}
 \end{cases}
 ```
@@ -47,7 +47,7 @@ Secondary appraisal evaluates the agent's coping potential, social norms, and re
 
 ```math
 A = \begin{cases}
-  0.8 & \text{if event is } \texttt{USER\_MESSAGE} \\
+  0.8 & \text{if event is } \texttt{USER-MESSAGE} \\
   0.3 & \text{otherwise}
 \end{cases}
 ```
