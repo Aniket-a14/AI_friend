@@ -402,22 +402,22 @@ where $\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ represen
 
 ## 7. Voice Prosody & Acoustic Parameter Mapping
 
-To express continuous cognitive and endocrine states paralinguistically, CVS-3.0 maps the internal PAD affect values, fatigue metrics, and physical distance variables directly into acoustic synthesis parameters (pacing speech rate, vocal pitch, and physical volume) using bounded non-linear activation functions:
+To express continuous cognitive and endocrine states paralinguistically, CVS-3.0 maps the internal PAD affect values, fatigue metrics, and physical distance variables directly into acoustic synthesis parameters (pacing speech rate, vocal pitch, and physical volume) using bounded linear activation functions:
 
 ### 7.1 Speech Rate (Pacing) Modulation
 
-The speech pacing rate factor ($R \in [0.5, 2.0]$) is modulated by emotional arousal (positive scaling), valence (negative scaling for slow, sad vocalization), and fatigue-driven pace-dampening:
+The speech pacing rate factor ($R \in [0.60, 1.80]$) is modulated by emotional arousal (positive scaling), valence (negative scaling for slow, sad vocalization), and fatigue-driven pace-dampening:
 
 ```math
-R_{\text{pace}} = 1.0 + \tanh(0.20 \cdot Ar - 0.10 \cdot V - 0.15 \cdot F)
+R_{\text{pace}} = \text{clamp}(1.0 + 0.20 \cdot Ar - 0.10 \cdot V - 0.25 \cdot F, 0.60, 1.80)
 ```
 
 ### 7.2 Vocal Pitch (F0) Modulation
 
-The fundamental frequency scale factor ($P \in [0.5, 2.0]$) is pulled dynamically by valence and arousal (positive pitch shifts), dominance (defensive low-frequency pitch drops), metabolic fatigue, and volumetric distance:
+The fundamental frequency scale factor ($P \in [0.50, 2.00]$) is pulled dynamically by valence and arousal (positive pitch shifts), dominance (defensive low-frequency pitch drops), metabolic fatigue, and volumetric distance:
 
 ```math
-P_{\text{vocal}} = 1.0 + \tanh(0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.05 \cdot F + \text{dist-pitch-mod})
+P_{\text{vocal}} = \text{clamp}(1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.10 \cdot F + \text{dist-pitch-mod}, 0.50, 2.00)
 ```
 
 where:
@@ -425,11 +425,12 @@ where:
 
 ### 7.3 Vocal Volume Modulation
 
-Vocal intensity ($V \in [0.1, 1.5]$) maps from dominance (confident louder speech) adjusted by inverse-square physical distance compensation:
+Vocal intensity ($V \in [0.10, 1.00]$) maps from dominance (confident louder speech) adjusted by inverse-square physical distance compensation:
 
 ```math
-V_{\text{vocal}} = 0.40 + 0.60 \cdot D + \text{dist-vol-mod}
+V_{\text{vocal}} = \text{clamp}(0.40 + 0.60 \cdot D + \text{dist-vol-mod}, 0.10, 1.00)
 ```
+
 
 where $\text{dist-vol-mod} = \text{clamp}(0.15 \cdot (\text{distance} - 1.0), -0.20, 0.30)$.
 

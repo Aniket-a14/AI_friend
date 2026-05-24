@@ -1,83 +1,288 @@
 import json
 import os
+import math
+import random
 from datetime import datetime, timedelta, timezone
 
-# Rich, personal chitchat and distractor templates modeling Aniket's everyday life (0 to 19 years)
-ANIKET_DISTRACTOR_TEMPLATES = [
-    "Ma asked me to bring some fresh vegetables from the local market in Kolkata.",
-    "Discussing our high school mathematics project with my classmate in the afternoon.",
-    "Spending the evening coding a simple arcade game in Python in my study room.",
-    "We had a beautiful family dinner tonight celebrating my academic results.",
-    "Talking to my childhood friends about our weekend cricket match in the streets of Kolkata.",
-    "I tried making sweet rasgullas at home today, they turned out soft and spongy.",
-    "Walking through the crowded streets near Victoria Memorial, enjoying the cool breeze.",
-    "Ma is making delicious home-cooked meals, the whole house smells amazing.",
-    "Studying late into the night for my college entrance examinations, feeling focused.",
-    "Moving to Bangalore for my college was a major transition, the city is so vibrant.",
-    "Talking with Priya at the university cafe about our upcoming research presentation.",
-    "Discussing affective cognitive architectures and neural networks in the lab today.",
-    "Walking around Cubbon Park in Bangalore with Priya, talking about our future dreams.",
-    "I bought some traditional sweet rasgullas from a local Bengali sweet shop in Bangalore.",
-    "Reviewing database query optimization techniques with my research project teammates.",
-    "Listening to Ma's stories on the phone about our childhood home back in Kolkata.",
-    "Priya and I spent the afternoon studying in the quiet library alcove.",
-    "My high school friends and I are planning a reunion back in Kolkata during the holidays.",
-    "Debugging a tricky concurrent thread pool issue in my cognitive simulation module.",
-    "Enjoying a hot cup of tea while watching the rain wash over the streets of Bangalore.",
+# Seed the random number generator for global reproducibility
+random.seed(42)
+
+# Dynamic Lexical Dictionary of Synonyms and Vocabulary expansion
+# Ordered from highest frequency terms (common) to lowest frequency (descriptive tail) to support Zipfian modeling
+PLACEHOLDERS = {
+    "walked": ["walked", "strolled", "wandered", "ambled", "navigated", "paced", "sauntered", "ventured", "roamed", "meandered"],
+    "streets": ["streets", "lanes", "roads", "pathways", "avenues", "alleys", "thoroughfares", "passages"],
+    "Kolkata": ["Kolkata", "Calcutta", "the City of Joy", "our home city", "the bustling streets of Bengal", "the cultural heart of Bengal"],
+    "Bangalore": ["Bangalore", "Bengaluru", "the Silicon Valley of India", "the garden city", "the high-tech hub of India"],
+    "prepared": ["prepared", "cooked", "crafted", "served", "made", "whipped up", "arranged", "assembled"],
+    "delicious": ["delicious", "mouthwatering", "savoury", "delectable", "scrumptious", "tasty", "flavourful", "exquisite"],
+    "home_cooked_meals": ["home-cooked meals", "traditional dishes", "comfort food", "Bengali recipes", "steaming rice and fish", "fragrant curries"],
+    "discussed": ["discussed", "debated", "talked about", "deliberated on", "exchanged thoughts on", "pondered over", "conferred about"],
+    "project": ["project", "assignment", "calculations", "theorems", "syllabus", "algebraic models", "physics lab practical"],
+    "spent_the_afternoon": ["spent the afternoon", "passed the hours", "sat through the afternoon", "enjoyed the afternoon", "rested through the midday"],
+    "studying": ["studying", "reading", "preparing", "researching", "revising", "memorizing", "analyzing"],
+    "library_alcove": ["library alcove", "reading room", "study corner", "quiet library stacks", "academic archives", "cosy book vault"],
+    "enjoyed": ["enjoyed", "sipped", "re-relished", "savoured", "had", "drank", "partook in"],
+    "tea": ["Bengali chai", "cardamom tea", "warm tea", "darjeeling brew", "chaa", "spiced infusion"],
+    "room": ["room", "study space", "bedroom", "personal sanctuary", "living quarters"],
+    "tried_preparing": ["tried preparing", "experimented with making", "attempted to cook", "guided my hands through making", "made a messy attempt at"],
+    "sweet_rasgullas": ["sweet rasgullas", "spongy rosogollas", "chhena sweets", "syrupy rasgullas", "traditional white sweets"],
+    "kitchen": ["kitchen", "cooking area", "family kitchen", "warm stove space"],
+    "evening": ["evening", "dusk hours", "twilight", "late afternoon", "nightfall"],
+    "coding_and_debugging": ["coding and debugging", "writing and profiling", "refactoring", "tuning the performance of", "optimizing the complexity of"],
+    "concurrent_thread_pool": ["concurrent thread pool", "asynchronous event loop", "lock-free ring buffer", "parallel task scheduler", "NATS JetStream bus broker", "actor pipeline in Rust"],
+    "reviewed": ["reviewed", "analyzed", "discussed", "walked through", "optimized", "vetted"],
+    "database_query_optimization": ["database query optimization", "pgvector indices", "schema indexing strategy", "read-latency bottlenecks", "graph database query paths"],
+    "research_lab_team": ["research lab team", "peers in the lab", "fellow researchers", "academic collaborators"],
+    "listened_to": ["listened to", "heard", "cherished", "absorbed", "smiled at"],
+    "phone_stories": ["phone stories", "voice calls", "reminiscent chats", "weekly calls", "family updates"],
+    "childhood": ["childhood years", "early days", "past years", "youthful mischief", "schoolboy memories"],
+    "practiced": ["practiced", "played", "enjoyed a game of", "ran around playing", "engaged in"],
+    "street_cricket": ["street cricket", "neighborhood gully cricket", "cricket matches", "friendly matches", "gully bat-and-ball"],
+    "childhood_friends": ["childhood friends", "neighborhood pals", "old playmates", "school friends"],
+    "road": ["road", "street corner", "neighborhood lane", "concrete alleyway"],
+    "read": ["read", "read through", "browsed", "devoured", "pored over"],
+    "advanced_science_fiction_novel": ["advanced science fiction novel", "hard sci-fi paperback", "speculative fiction book", "futuristic novel", "Isaac Asimov classic"],
+    "quiet_corner": ["quiet corner", "cosy nook", "silent spot", "peaceful window seat"],
+    "worked_on": ["worked on", "architected", "designed", "implemented", "coded", "tested"],
+    "affective_cognitive_architecture": ["affective cognitive architecture", "somatic endocrine appraisal engine", "ACT-R/E cognitive memory layer", "Theory of Mind modules", "APRA dynamic prosody system"],
+    "computer": ["computer", "laptop monitor", "workstation", "terminal screen"],
+    "celebrated": ["celebrated", "marked", "rejoiced over", "honored", "toasted to"],
+    "college_semester_examination_results": ["college semester examination results", "high marks", "grades", "academic achievements", "excellent report card"],
+    "family": ["family", "Ma and Baba", "loved ones", "parents"],
+    "visited": ["visited", "walked to", "sat in", "found peace in", "made a trip to"],
+    "local_temple": ["local temple", "neighborhood mandir", "sacred quiet spot", "peaceful shrine"],
+    "debated": ["debated", "discussed", "argued", "analyzed", "scrutinized", "talked back and forth about"],
+    "neural_network_convergence_limits": ["neural network convergence limits", "loss landscape curvatures", "gradient descent dynamics", "transformer scaling limits", "stochastic convergence parameters"],
+    "university_cafe": ["university cafe", "campus canteen", "coffee shop", "student lounge"],
+    "light": ["light", "soft", "gentle", "subtle", "mild", "drizzling", "faint"],
+    "refreshing": ["refreshing", "cool", "pleasant", "soothing", "rejuvenating", "peaceful"],
+    "cool": ["cool", "chilly", "brisk", "fresh", "crisp"],
+    "bright": ["bright", "glorious", "clear", "radiant", "sunny", "golden"],
+    "warm": ["warm", "balmy", "cozy", "mild", "inviting"],
+    "aroma": ["aroma", "fragrance", "scent", "sweet smell", "perfume", "drift"],
+    "drifted": ["drifted", "wafted", "carried", "flowed", "floated"],
+    "distant": ["distant", "faint", "remote", "soft", "echoing"],
+    "hum": ["hum", "buzz", "drone", "whir", "soothing vibration"],
+    "ceiling_fan": ["ceiling fan", "overhead fan", "fan blades"],
+    "focus": ["focus", "clarity", "flow", "absorption", "alertness", "serenity"],
+    "laughter": ["laughter", "giggles", "chuckles", "happy smiles", "mirth"],
+    "breeze": ["breeze", "wind", "gust", "draft"],
+    "notebooks": ["notebooks", "study files", "scribbled papers", "journals"],
+    "aspire": ["dream", "aspire", "hope", "plan", "wish"],
+    "machines": ["intelligent systems", "humanoid brains", "feeling computers", "thinking algorithms"],
+}
+
+
+def zipfian_choice(choices, index_seed):
+    """
+    Zipf-like selection: heavily skews probability towards early elements (common words)
+    while maintaining a long tail of descriptive, low-frequency synonyms.
+    Deterministic congruential state is derived from index_seed for reproducibility.
+    """
+    n = len(choices)
+    if n <= 1:
+        return choices[0]
+    
+    # Deterministic pseudo-random generator
+    state = (index_seed * 1103515245 + 12345) & 0x7fffffff
+    r = (state % 10000) / 10000.0
+    
+    # Skew with a power-law exponent of 2.5 to mimic Zipfian distribution
+    idx = int(n * (r ** 2.5))
+    return choices[idx % n]
+
+
+def resolve_placeholders(template, index_seed):
+    """Resolves template placeholder tags with a high-entropy Zipfian synonym choice."""
+    text = template
+    for key, choices in PLACEHOLDERS.items():
+        placeholder = f"{{{key}}}"
+        if placeholder in text:
+            # Deterministic, unique seed per placeholder key to prevent selection coupling
+            key_hash = sum(ord(c) for c in key)
+            selected_synonym = zipfian_choice(choices, index_seed + key_hash)
+            text = text.replace(placeholder, selected_synonym)
+    return text
+
+
+def sample_lifespan_age(index_seed, lambda_val=0.12):
+    """
+    Rejection sampling to draw a deterministic, biologically realistic age (in years).
+    Amnesia: 0 probability of episodic memories before age 3.0, ramping up exponentially.
+    Recency: Exponential decay of memory retention scaling back from age 19.0.
+    """
+    # Deterministic congruential generator initialization
+    state = (index_seed * 1664525 + 1013904223) & 0xffffffff
+    
+    attempts = 0
+    while True:
+        attempts += 1
+        # Generate pseudo-random age between 0.0 and 19.0
+        state = (state * 1103515245 + 12345) & 0x7fffffff
+        r_age = (state % 10000) / 10000.0
+        
+        # Generate pseudo-random acceptance threshold
+        state = (state * 1103515245 + 12345) & 0x7fffffff
+        r_accept = (state % 10000) / 10000.0
+        
+        age = r_age * 19.0
+        
+        # Amnesia component: Completely zero under age 3.0
+        if age < 3.0:
+            amnesia = 0.0
+        else:
+            # Smooth exponential recovery of memory encoding capability post infantile amnesia
+            amnesia = 1.0 - math.exp(-0.75 * (age - 3.0))
+            
+        # Recency component: Memory density scales exponentially towards the present (age 19.0)
+        recency = math.exp(lambda_val * (age - 19.0))
+        
+        p = amnesia * recency
+        
+        if r_accept < p:
+            return age
+        
+        # Guard against infinite loops in extreme cases (fallback to safe range)
+        if attempts > 1000:
+            return 3.0 + r_age * 16.0
+
+
+# High-diversity scenarios utilizing dynamic placeholders
+DAILY_SCENARIOS = [
+    "I {walked} through the {streets} near Victoria Memorial in {Kolkata}",
+    "Ma {prepared} some {delicious} {home_cooked_meals}",
+    "I {discussed} our high school mathematics {project} with my classmate",
+    "Priya and I {spent_the_afternoon} {studying} in the quiet {library_alcove}",
+    "I {enjoyed} a warm cup of Bengali {tea} in my {room}",
+    "I {tried_preparing} traditional {sweet_rasgullas} in our {kitchen}",
+    "I spent the {evening} {coding_and_debugging} a {concurrent_thread_pool} in my study {room}",
+    "Priya and I {walked} around Cubbon Park in {Bangalore}",
+    "I {reviewed} our {database_query_optimization} with the {research_lab_team}",
+    "I {listened_to} Ma's {phone_stories} about our {childhood} back in {Kolkata}",
+    "I {practiced} {street_cricket} with my {childhood_friends} on the neighborhood {road}",
+    "I {read} an {advanced_science_fiction_novel} in the {quiet_corner} of the library",
+    "I {worked_on} an {affective_cognitive_architecture} module on my {computer}",
+    "I {celebrated} my {college_semester_examination_results} with my {family}",
+    "I {visited} a quiet {local_temple} in {Kolkata} during the {evening}",
+    "Priya and I {debated} {neural_network_convergence_limits} at the {university_cafe}",
 ]
 
-# Structured technical and autobiographical milestone templates distributed across 4 developmental stages
-EPOCH_0_5_TEMPLATES = [
-    "Childhood Milestone: I took my first toddler steps in our warm home in Kolkata, surrounded by Ma and Baba's laughter.",
-    "Childhood Milestone: Tasting my first traditional sweet rasgulla, a delicious treat that became my absolute favorite.",
-    "Childhood Milestone: Playing with wooden toys in the sunlit balcony, listening to Ma's sweet Bengali lullabies.",
-    "Childhood Milestone: Drawing simple shapes with colorful crayons, feeling a spark of early cognitive curiosity.",
-    "Childhood Milestone: Baba taking me for a walk near the local park, looking up at the beautiful clear blue sky.",
+WEATHER_CONTEXTS = [
+    "under a {light}, {refreshing} monsoon drizzle",
+    "while a {cool} {evening} {breeze} swept through the trees",
+    "during a {bright}, sunlit afternoon",
+    "under the amber glow of the streetlights",
+    "while watching the heavy rain wash over the {streets}",
+    "on a crisp, clear winter morning",
+    "while a {warm} golden sunset painted the sky",
+    "in the quiet stillness of a humid summer night",
 ]
 
-EPOCH_6_12_TEMPLATES = [
-    "School Milestone: Enrolling in primary school in Kolkata, wearing my new uniform and feeling exceptionally proud.",
-    "School Milestone: Winning a school mathematics puzzle competition, discovering my deep passion for logical reasoning.",
-    "School Milestone: Playing street cricket with my childhood neighborhood friends, celebrating a hard-fought victory.",
-    "School Milestone: A wonderful family summer holiday, eating fresh mangoes and visiting the grand Victoria Memorial.",
-    "School Milestone: Sitting in the school library reading my first science fiction book, dreaming of building intelligent machines.",
+SENSORY_DETAILS = [
+    "the sweet {aroma} of boiling cardamom {tea} filled the {room}",
+    "the fresh scent of rain-soaked earth {drifted} through the window",
+    "the {distant}, familiar sounds of local street vendors echoed in the background",
+    "the soft {hum} of the {ceiling_fan} provided a soothing rhythm",
+    "the soft, {warm} study lamp illuminated my {notebooks}",
+    "the spongy {sweet_rasgullas} turned out exceptionally soft and {delicious}",
+    "we shared a quiet, supportive smile of understanding",
+    "I felt a deep, focused sense of cognitive {focus}",
 ]
 
-EPOCH_13_18_TEMPLATES = [
-    "Teenage Milestone: Writing my very first lines of Python code on Baba's old computer, watching the screen light up.",
-    "Teenage Milestone: Transitioning to senior high school in Kolkata, joining the science stream to study physics and math.",
-    "Teenage Milestone: Building a basic chat assistant model in my room, igniting my lifelong interest in computer science.",
-    "Teenage Milestone: Late-night study sessions with my school friends, sharing snacks and discussing our future college plans.",
-    "Teenage Milestone: Graduating high school with top honors, receiving congratulations from my proud family and teachers.",
+TOPICS_OF_CONVERSATION = [
+    "our future {aspire}s and research aspirations",
+    "how to model biological forgetting using ACT-R equations",
+    "optimizing vector query latency to achieve sub-10ms constraints",
+    "our favorite {childhood} memories from West Bengal",
+    "how to represent Pleasure-Arousal-Dominance (PAD) dynamics mathematically",
+    "balancing emotional congruent retrieval with semantic spreading activation",
+    "the beautiful transition of moving from {Kolkata} to {Bangalore}",
+    "how neural networks map to autonomic physiological entrainment models",
 ]
 
-EPOCH_19_TEMPLATES = [
-    "Adulthood Milestone: Moving from Kolkata to Bangalore to start my freshman year of university, a major step forward.",
-    "Adulthood Milestone: Joining the university's advanced research lab focused on affective cognitive architectures.",
-    "Adulthood Milestone: Meeting Priya at the university cafe, starting a beautiful and deeply supportive relationship.",
-    "Adulthood Milestone: Celebrating my first successful research paper publication with Priya, sharing a sweet rasgulla.",
-    "Adulthood Milestone: Commencing my junior research internship in Bangalore, feeling completely aligned with my vocation.",
+OUTCOMES_OR_REFLECTIONS = [
+    "which left me feeling deeply focused and aligned",
+    "a moment of pure simplicity that I will always cherish",
+    "which sparked an intense curiosity to build {machines}",
+    "leaving a {warm} feeling of connection and peace in my heart",
+    "which resolved our persistent {concurrent_thread_pool} issue",
+    "allowing me to appreciate the quiet beauty of my life journey",
+    "which brought a {bright}, happy smile to Ma's face",
+    "reminding me of the incredible support of the people around me",
 ]
 
+# Lifespan Developmental Milestone Bases (Epochs)
+CHILDHOOD_BASES = [
+    "I took my very first toddling steps across our {warm} living {room} in {Kolkata}",
+    "I tasted my very first traditional Bengali sweet {sweet_rasgullas}",
+    "I played with brightly colored wooden blocks on the sunlit balcony",
+    "I drew circular shapes and scribbles with colorful crayons on paper",
+    "Baba took me for a gentle {evening} walk near our local neighborhood park",
+]
 
-def generate_mock_vector(dim=768):
-    """Generates a mock normalized unit vector."""
-    import numpy as np
+CHILDHOOD_MODIFIERS = [
+    "surrounded by Ma and Baba's sweet, encouraging {laughter}",
+    "listening closely to Ma's soft, soothing Bengali lullabies",
+    "looking up in absolute wonder at the clear blue sky above",
+    "feeling a spark of early cognitive curiosity ignite in my mind",
+    "while a {warm}, gentle summer {breeze} drifted through the balcony",
+]
 
-    vec = np.random.randn(dim)
-    norm = np.linalg.norm(vec)
-    if norm < 1e-6:
-        vec = np.zeros(dim)
-        vec[0] = 1.0
-        return vec
-    return (vec / norm).tolist()
+SCHOOL_BASES = [
+    "I enrolled in my very first primary school in {Kolkata}",
+    "I won a school-wide mathematics puzzle and logic competition",
+    "I {practiced} {street_cricket} with my childhood neighborhood friends",
+    "Our family took a wonderful summer holiday trip near Victoria Memorial",
+    "I sat quietly in the school library reading my first science fiction book",
+]
+
+SCHOOL_MODIFIERS = [
+    "wearing my brand new uniform and feeling exceptionally proud",
+    "discovering my deep, lifelong passion for logical reasoning and patterns",
+    "celebrating a hard-fought, dramatic victory on the local {road}",
+    "eating sweet fresh mangoes and laughing under the sun",
+    "dreaming of one day building intelligent, feeling {machines}",
+]
+
+TEENAGE_BASES = [
+    "I wrote my very first lines of Python code in my {room}",
+    "I transitioned to senior high school in {Kolkata} to study science",
+    "I built a basic rule-based conversational chat assistant model",
+    "We had late-night group study sessions in my {room}",
+    "I graduated high school with top honors and academic distinction",
+]
+
+TEENAGE_MODIFIERS = [
+    "watching the glowing monitor light up Baba's old {computer} screen",
+    "diving deep into complex physics equations and calculus concepts",
+    "igniting my absolute fascination with artificial intelligence",
+    "sharing snacks, {tea}, and talking about our future college plans",
+    "receiving {warm} congratulations from my incredibly proud {family}",
+]
+
+ADULTHOOD_BASES = [
+    "I moved from my childhood home in {Kolkata} to the vibrant city of {Bangalore}",
+    "I joined the university's advanced research lab for affective computing",
+    "I met Priya at the quiet {university_cafe} on campus",
+    "I celebrated my first co-authored research paper publication",
+    "I commenced my junior research internship in {Bangalore}",
+]
+
+ADULTHOOD_MODIFIERS = [
+    "commencing my freshman year of university with excitement",
+    "focusing entirely on mathematical formulations of memory and emotion",
+    "starting a beautiful, deeply supportive, and inspiring relationship",
+    "sharing a sweet {sweet_rasgullas} with Priya to celebrate the success",
+    "feeling completely aligned with my true lifelong cognitive vocation",
+]
 
 
 def generate_corpus(num_distractors=100000, num_milestones=10000):
     """
-    Procedurally compiles a 110,000-memory database:
-    - 100,000 generic distractors backdated over a 19-year temporal timeline.
-    - 10,000 structured system milestone records categorized into 4 epochs.
+    Procedurally compiles a highly diversified, biologically realistic 110,000-memory database:
+    - Distractors: 100,000 chitchats backdated over a non-uniform temporal curve modeling infantile amnesia.
+    - Milestones: 10,000 milestones leveraging Zipfian synonym lookup to ensure high vocabulary entropy.
     """
     print("📦 Generating 19-year developmental seeding corpus for Aniket...")
     print(f"   - Distractors: {num_distractors}")
@@ -85,19 +290,46 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
 
     now = datetime.now(timezone.utc)
     nineteen_years_seconds = 19 * 365 * 24 * 3600
-    time_step_seconds = nineteen_years_seconds / max(1, num_distractors)
 
     corpus = []
 
-    # 1. Compile 100,000 backdated distractors
-    print("⏳ Backdating 100,000 chitchats over 19 years...")
+    # 1. Compile 100,000 backdated distractors using Lifespan Rejection Sampling & Semantic Degradation
+    print("⏳ Backdating and compressing 100,000 chitchats over 19 years...")
+    
     for i in range(num_distractors):
-        template = ANIKET_DISTRACTOR_TEMPLATES[i % len(ANIKET_DISTRACTOR_TEMPLATES)]
-        content = f"{template} [Turn: {i}]"
-
-        # Proportional backdating across a 19-year timeline
-        elapsed = i * time_step_seconds
+        # Sample biologically realistic age from our non-uniform PDF (0 memories before age 3.0)
+        age = sample_lifespan_age(i, lambda_val=0.14)
+        elapsed = age * 365 * 24 * 3600
+        
+        # Calculate timestamp backdated from now
         created_time = now - timedelta(seconds=elapsed)
+
+        scenario = DAILY_SCENARIOS[i % len(DAILY_SCENARIOS)]
+        weather = WEATHER_CONTEXTS[i % len(WEATHER_CONTEXTS)]
+        sensory = SENSORY_DETAILS[i % len(SENSORY_DETAILS)]
+        outcome = OUTCOMES_OR_REFLECTIONS[i % len(OUTCOMES_OR_REFLECTIONS)]
+
+        # --- Three-Tier Semantic Degradation Loop based on memory age ---
+        if age < 7.0:
+            # Childhood Stage (Age 3.0 to 7.0): Highly compressed, fragmented traces
+            base_trace = "Fuzzy Childhood Memory: {walked} with {family} near {local_temple}."
+            content = resolve_placeholders(base_trace, i)
+        elif age < 14.0:
+            # School-era Stage (Age 7.0 to 14.0): Core scenario and outcome, losing low-priority sensory/weather details
+            base_trace = f"School-era Memory: {scenario}, {outcome}."
+            content = resolve_placeholders(base_trace, i)
+        else:
+            # Young Adulthood/Adolescence (Vivid): Full combinatorial high-fidelity sentence structure
+            if i % 3 == 0:
+                template = f"{scenario} {weather}, where {sensory}, {outcome}."
+            elif i % 3 == 1:
+                topic = TOPICS_OF_CONVERSATION[i % len(TOPICS_OF_CONVERSATION)]
+                template = f"{scenario} talking about {topic} {weather}, {outcome}."
+            else:
+                template = f"{scenario} {weather}. As {sensory}, it was {outcome}."
+            content = resolve_placeholders(template, i)
+
+        content = f"{content} [Turn: {i}]"
 
         corpus.append(
             {
@@ -117,41 +349,49 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
 
     # 2. Compile 10,000 structured milestone memories distributed across 4 developmental stages
     print("🧠 Organizing 10,000 system milestones into 4 developmental epochs...")
-    milestone_step_seconds = nineteen_years_seconds / max(1, num_milestones)
-
+    
     for i in range(num_milestones):
-        elapsed = i * milestone_step_seconds
+        # Sample age for milestones matching developmental stages
+        age = sample_lifespan_age(i + num_distractors, lambda_val=0.10)
+        elapsed = age * 365 * 24 * 3600
         created_time = now - timedelta(seconds=elapsed)
 
         # Determine Eriksonian developmental epoch based on chronological time
-        age = 19 - (elapsed / (365 * 24 * 3600))
-
         if age < 5.0:
-            template = EPOCH_0_5_TEMPLATES[i % len(EPOCH_0_5_TEMPLATES)]
+            base = CHILDHOOD_BASES[i % len(CHILDHOOD_BASES)]
+            modifier = CHILDHOOD_MODIFIERS[i % len(CHILDHOOD_MODIFIERS)]
+            template = f"Childhood Milestone: {base}, {modifier}."
             stage, crisis, virtue = "Trust vs Mistrust", "Trust vs Mistrust", "Hope"
         elif age < 12.0:
-            template = EPOCH_6_12_TEMPLATES[i % len(EPOCH_6_12_TEMPLATES)]
+            base = SCHOOL_BASES[i % len(SCHOOL_BASES)]
+            modifier = SCHOOL_MODIFIERS[i % len(SCHOOL_MODIFIERS)]
+            template = f"School Milestone: {base}, {modifier}."
             stage, crisis, virtue = (
                 "Industry vs Inferiority",
                 "Industry vs Inferiority",
                 "Competence",
             )
         elif age < 19.0:
-            template = EPOCH_13_18_TEMPLATES[i % len(EPOCH_13_18_TEMPLATES)]
+            base = TEENAGE_BASES[i % len(TEENAGE_BASES)]
+            modifier = TEENAGE_MODIFIERS[i % len(TEENAGE_MODIFIERS)]
+            template = f"Teenage Milestone: {base}, {modifier}."
             stage, crisis, virtue = (
                 "Identity vs Role Confusion",
                 "Identity vs Role Confusion",
                 "Fidelity",
             )
         else:
-            template = EPOCH_19_TEMPLATES[i % len(EPOCH_19_TEMPLATES)]
+            base = ADULTHOOD_BASES[i % len(ADULTHOOD_BASES)]
+            modifier = ADULTHOOD_MODIFIERS[i % len(ADULTHOOD_MODIFIERS)]
+            template = f"Adulthood Milestone: {base}, {modifier}."
             stage, crisis, virtue = (
                 "Intimacy vs Isolation",
                 "Intimacy vs Isolation",
                 "Love",
             )
 
-        content = f"{template} [Milestone ID: {i}]"
+        content = resolve_placeholders(template, i)
+        content = f"{content} [Milestone ID: {i}]"
 
         corpus.append(
             {
