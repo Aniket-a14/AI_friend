@@ -3,7 +3,7 @@ use async_nats::Message;
 use bytes::Bytes;
 use contracts::{
     topics, AudioPerception, AudioStop, ChatInput, ChatInputMetadata, JsonMap, LatencyHop,
-    LatencyMetadata, SpeculativeIntent, HEADER_LATENCY_META,
+    LatencyMetadata, SpeculativeIntent, UserVoiceProperties, HEADER_LATENCY_META,
 };
 use futures_util::StreamExt;
 use serde_json::json;
@@ -79,7 +79,84 @@ async fn handle_audio_inbound(
 ) -> Result<()> {
     let metadata = metadata_from_headers(&message);
     let channels = metadata.as_ref().and_then(|m| m.channels).unwrap_or(1);
-    let _pcm_16k_mono = normalize_pcm_i16(&message.payload, channels.max(1));
+    let pcm_16k_mono = normalize_pcm_i16(&message.payload, channels.max(1));
+
+    let num_samples = pcm_16k_mono.len();
+
+    // 1. Root-Mean-Square (RMS) Energy Calculation
+    let energy_rms = if num_samples > 0 {
+        let sum_sq: f64 = pcm_16k_mono.iter()
+            .map(|&s| {
+                let norm = s as f64 / i16::MAX as f64;
+                norm * norm
+            })
+            .sum();
+        (sum_sq / num_samples as f64).sqrt()
+    } else {
+        0.0
+    };
+
+    // 2. Fundamental Frequency (F0 Pitch) Autocorrelation
+    let pitch_f0 = if num_samples > 400 {
+        let min_lag = 40;  // 16000 / 400Hz
+        let max_lag = 200; // 16000 / 80Hz
+        let mut best_lag = 0;
+        let mut best_corr = -1.0;
+
+        for lag in min_lag..=max_lag {
+            let mut corr = 0.0;
+            let mut norm1 = 0.0;
+            let mut norm2 = 0.0;
+            let limit = num_samples - lag;
+            for i in 0..limit {
+                let x = pcm_16k_mono[i] as f64;
+                let y = pcm_16k_mono[i + lag] as f64;
+                corr += x * y;
+                norm1 += x * x;
+                norm2 += y * y;
+            }
+            if norm1 > 0.0 && norm2 > 0.0 {
+                let normalized_corr = corr / (norm1 * norm2).sqrt();
+                if normalized_corr > best_corr {
+                    best_corr = normalized_corr;
+                    best_lag = lag;
+                }
+            }
+        }
+        if best_corr > 0.3 && best_lag > 0 {
+            16000.0 / best_lag as f64
+        } else {
+            150.0
+        }
+    } else {
+        150.0
+    };
+
+    // 3. Simple speech rate/tempo estimation via Zero Crossing Rate (ZCR)
+    let mut zero_crossings = 0;
+    for i in 1..num_samples {
+        if (pcm_16k_mono[i - 1] >= 0 && pcm_16k_mono[i] < 0) || (pcm_16k_mono[i - 1] < 0 && pcm_16k_mono[i] >= 0) {
+            zero_crossings += 1;
+        }
+    }
+    let zcr = if num_samples > 0 { zero_crossings as f64 / num_samples as f64 } else { 0.0 };
+    let tempo_wpm = 120.0 + (zcr * 200.0).min(60.0);
+
+    // Publish user voice properties
+    let voice_properties = UserVoiceProperties {
+        pitch_f0,
+        energy_rms,
+        tempo_wpm,
+        timestamp: now_seconds(),
+    };
+
+    jetstream
+        .publish(
+            topics::USER_VOICE_PROPERTIES,
+            Bytes::from(serde_json::to_vec(&voice_properties)?),
+        )
+        .await?
+        .await?;
 
     let text = config
         .mock_transcript

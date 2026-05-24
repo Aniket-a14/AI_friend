@@ -105,6 +105,7 @@ async def test_neuromodulatory_gating_and_actr_pruning():
     # Mock some existing memory that was created long ago and has recall_count = 1
     # decay_rate = 0.8
     import uuid
+
     old_time = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d %H:%M:%S")
     async with store.pool.acquire() as conn:
         await conn.execute(

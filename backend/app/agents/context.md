@@ -307,3 +307,24 @@ To establish rigorous scientific boundaries, CVS-3.0 is actively compared agains
 * **[5] Inoue et al. (2024)**, *"Real-Time Turn-Taking Decision Making for a Humanoid Robot Using Multimodal Cues"*, in *Proceedings of LREC-COLING*.
 * **[6] Gutiérrez et al. (2024)**, *"HippoRAG: Neurobiologically Inspired Long-Term Memory Retrieval for Generative Agents"*, in *Proceedings of NeurIPS*.
 * **[7] Wu et al. (2024)**, *"Integrating Cognitive Architectures with Large Language Models: A Neurosymbolic Framework"*, in *Journal of Neurosymbolic AI*.
+
+---
+
+## 🔊 8. Hybrid Brain Architecture (Native Speech features & Dynamic OLA Prosody)
+
+In CVS-3.5, the system incorporates three specialized messaging topics on the solid-state NATS bus to bridge System 1 raw voice sensors directly with System 2 symbolic reasoning:
+
+### 8.1 user.voice.properties
+Emitted by the **STT Agent** (`backend/crates/stt-agent`) during raw PCM ingest:
+- **Pitch ($F_0$)**: Extracted via real-time autocorrelation ($F_0 = \frac{\text{SampleRate}}{\text{lag}}$).
+- **Energy (RMS)**: Continuous Root-Mean-Square calculation of audio frame amplitude normalized to $[-1.0, 1.0]$.
+- **Tempo (WPM)**: Speed estimation via Zero-Crossing Rate (ZCR).
+
+### 8.2 agent.voice.modulation
+Emitted by the **Surfacing Agent** (`backend/app/agents/surfacing_agent.py`) upon receiving a `state.update` event:
+- Translates active Pleasure-Arousal-Dominance (PAD) and metabolic fatigue parameters into targeted speaking rate ($R$), pitch ($P$), and volume ($V_{ol}$) shifts.
+- Applied dynamically to active playback blocks using a **10ms-15ms Overlap-Add (OLA) linear crossfade** window.
+
+### 8.3 audio.playback.visemes
+Emitted by the **Voice Agent** (`backend/crates/voice-agent`) dynamically during audio output:
+- Maps active playback energy levels into viseme target amplitudes (`target_level` $\in [0.0, 1.0]$) and standard viseme phonetic identifiers (`AA`, `O`, `AH`, `sil`) to enable sample-accurate robotic lip-sync expressions.

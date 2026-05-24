@@ -59,6 +59,7 @@ class MemoryStore:
         self._l1_cache_ttl = 15.0  # seconds
 
         from .semantic_recall_store import SemanticRecallStore
+
         self.qdrant_store = SemanticRecallStore()
 
     @property
@@ -129,6 +130,7 @@ class MemoryStore:
         """Adds a new memory with ACT-R metadata and hierarchical scope."""
         try:
             import uuid
+
             # Generate a single UUID for both stores to ensure correlation
             memory_id = str(uuid.uuid4())
 
@@ -216,7 +218,7 @@ class MemoryStore:
                     "virtue": virtue or "",
                     "relations": relations or "",
                     "relation_circles": relation_circles or "",
-                    "modality": modality or ""
+                    "modality": modality or "",
                 }
                 if metadata:
                     metadata_qdrant["custom_metadata"] = orjson.dumps(metadata).decode()
@@ -225,7 +227,7 @@ class MemoryStore:
                     memory_id=memory_id,
                     vector=vector,
                     content=content,
-                    metadata=metadata_qdrant
+                    metadata=metadata_qdrant,
                 )
 
             logger.info(
@@ -291,8 +293,7 @@ class MemoryStore:
             if self.qdrant_store.client:
                 try:
                     candidates = self.qdrant_store.search_vector_memories(
-                        query_vector=query_vector,
-                        limit=max(20, limit * 3)
+                        query_vector=query_vector, limit=max(20, limit * 3)
                     )
                     for cand in candidates:
                         meta = cand["metadata"]
@@ -314,11 +315,15 @@ class MemoryStore:
                         recall_count = max(1, meta.get("recall_count", 1))
 
                         try:
-                            last_recall_time = float(meta.get("last_recalled_at", time.time()))
+                            last_recall_time = float(
+                                meta.get("last_recalled_at", time.time())
+                            )
                         except (ValueError, TypeError):
                             last_recall_time = time.time()
 
-                        hours_since = max(0.001, (time.time() - last_recall_time) / 3600.0)
+                        hours_since = max(
+                            0.001, (time.time() - last_recall_time) / 3600.0
+                        )
 
                         # 2D/3D Emotional Distance matching the research simulator
                         dist_emo = math.sqrt(
@@ -347,9 +352,14 @@ class MemoryStore:
                             continue
 
                         from datetime import datetime
+
                         created_val = meta.get("created_at")
                         try:
-                            created = datetime.fromtimestamp(float(created_val), timezone.utc) if created_val else datetime.now(timezone.utc)
+                            created = (
+                                datetime.fromtimestamp(float(created_val), timezone.utc)
+                                if created_val
+                                else datetime.now(timezone.utc)
+                            )
                         except Exception:
                             created = datetime.now(timezone.utc)
 
@@ -379,11 +389,15 @@ class MemoryStore:
                                 "relation_circles": meta.get("relation_circles"),
                                 "modality": meta.get("modality"),
                                 "similarity": similarity,
-                                "last_recalled_at": datetime.fromtimestamp(last_recall_time, timezone.utc)
+                                "last_recalled_at": datetime.fromtimestamp(
+                                    last_recall_time, timezone.utc
+                                ),
                             }
                         )
                 except Exception as qe:
-                    logger.error(f"Qdrant retrieval failed, falling back to database: {qe}")
+                    logger.error(
+                        f"Qdrant retrieval failed, falling back to database: {qe}"
+                    )
 
             # 2. Database Fallback (if Qdrant is offline or returned no candidates)
             if not raw_candidates:
@@ -400,12 +414,12 @@ class MemoryStore:
                             rows = await conn.fetch(
                                 "SELECT * FROM memories WHERE wing = ?", wing
                             )
-    
+
                         # Manual cosine similarity and ACT-R scoring
                         for row in rows:
                             if row["content"] in excluded:
                                 continue
-    
+
                             # Parse embedding vector
                             try:
                                 emb_str = row.get("embedding")
@@ -413,7 +427,9 @@ class MemoryStore:
                                     # Strip brackets and split
                                     emb_str = emb_str.strip("[]")
                                     emb_val = [
-                                        float(x) for x in emb_str.split(",") if x.strip()
+                                        float(x)
+                                        for x in emb_str.split(",")
+                                        if x.strip()
                                     ]
                                 elif isinstance(emb_str, list):
                                     emb_val = emb_str
@@ -421,21 +437,26 @@ class MemoryStore:
                                     emb_val = []
                             except Exception:
                                 emb_val = []
-    
-                            if len(emb_val) == len(query_vector) and len(query_vector) > 0:
+
+                            if (
+                                len(emb_val) == len(query_vector)
+                                and len(query_vector) > 0
+                            ):
                                 # Dot product
                                 dot = sum(x * y for x, y in zip(query_vector, emb_val))
                                 mag1 = math.sqrt(sum(x * x for x in query_vector))
                                 mag2 = math.sqrt(sum(x * x for x in emb_val))
-                                similarity = dot / (mag1 * mag2) if mag1 * mag2 > 0 else 0.0
+                                similarity = (
+                                    dot / (mag1 * mag2) if mag1 * mag2 > 0 else 0.0
+                                )
                             else:
                                 similarity = 0.5  # default similarity fallback
-    
+
                             last_recall = row.get("last_recalled_at")
                             from datetime import datetime
-    
+
                             now = datetime.now(timezone.utc)
-    
+
                             if last_recall is None:
                                 last_recall = now
                             elif isinstance(last_recall, str):
@@ -443,45 +464,47 @@ class MemoryStore:
                                     last_recall = datetime.fromisoformat(last_recall)
                                 except Exception:
                                     last_recall = now
-    
+
                             if last_recall.tzinfo is None:
                                 last_recall = last_recall.replace(tzinfo=timezone.utc)
-    
+
                             hours_since = max(
                                 0.001, (now - last_recall).total_seconds() / 3600.0
                             )
                             recall_count = max(1, row.get("recall_count") or 1)
-    
+
                             memory_valence = row.get("valence") or 0.0
                             emotion_weight_row = row.get("emotional_weight") or 0.0
-    
+
                             # 2D/3D Emotional Distance matching the research simulator
                             dist_emo = math.sqrt(
                                 (memory_valence - current_valence) ** 2
                                 + (emotion_weight_row - current_arousal) ** 2
                             )
-    
+
                             base_activation = (
                                 _cached_ln(recall_count)
                                 - self.decay_rate * _cached_ln(hours_since + 1.0)
                                 + 1.5 * (row.get("importance_score") or 0.5)
                                 + 0.15 * (1.0 - dist_emo)
                             )
-    
+
                             # Neuromodulatory distance mapping (gating remains untouched in backend)
                             effective_similarity = similarity * (
                                 1.0
                                 + 0.1 * memory_valence * emotion_weight_row
                                 - 0.2 * current_arousal * current_cortisol
                             )
-    
-                            spread_activation = self.spread_weight * effective_similarity
+
+                            spread_activation = (
+                                self.spread_weight * effective_similarity
+                            )
                             score = base_activation + spread_activation - 0.5 * dist_emo
-    
+
                             # Filter by relaxed threshold (threshold - 2.5)
                             if score <= (threshold - 2.5):
                                 continue
-    
+
                             created = row.get("created_at")
                             if isinstance(created, str):
                                 try:
@@ -490,18 +513,19 @@ class MemoryStore:
                                     created = now
                             if created and created.tzinfo is None:
                                 created = created.replace(tzinfo=timezone.utc)
-    
+
                             raw_meta = row.get("metadata")
                             if isinstance(raw_meta, str):
                                 try:
                                     raw_meta = orjson.loads(raw_meta)
                                 except Exception:
                                     raw_meta = {}
-    
+
                             raw_candidates.append(
                                 {
                                     "content": row["content"],
-                                    "raw_content": row.get("raw_content") or row["content"],
+                                    "raw_content": row.get("raw_content")
+                                    or row["content"],
                                     "wing": row.get("wing", "personal"),
                                     "room": row.get("room"),
                                     "score": score,
@@ -589,73 +613,76 @@ class MemoryStore:
                                 threshold - 2.5,
                                 max(20, limit * 3),
                             )
-    
+
                         for row in rows:
                             if row["content"] in excluded:
                                 continue
-    
+
                             similarity = row.get("similarity") or 0.0
                             recall_count = max(1, row.get("recall_count") or 1)
-    
+
                             # Recalculate score with neuromodulatory gating
                             last_recall = row.get("last_recalled_at")
                             from datetime import datetime
-    
+
                             now = datetime.now(timezone.utc)
-    
+
                             if last_recall is None:
                                 last_recall = now
                             elif last_recall.tzinfo is None:
                                 last_recall = last_recall.replace(tzinfo=timezone.utc)
-    
+
                             hours_since = max(
                                 0.001, (now - last_recall).total_seconds() / 3600.0
                             )
-    
+
                             memory_valence = row.get("valence") or 0.0
                             emotion_weight_row = row.get("emotional_weight") or 0.0
-    
+
                             # 2D/3D Emotional Distance matching the research simulator
                             dist_emo = math.sqrt(
                                 (memory_valence - current_valence) ** 2
                                 + (emotion_weight_row - current_arousal) ** 2
                             )
-    
+
                             base_activation = (
                                 _cached_ln(recall_count)
                                 - self.decay_rate * _cached_ln(hours_since + 1.0)
                                 + 1.5 * (row.get("importance_score") or 0.5)
                                 + 0.15 * (1.0 - dist_emo)
                             )
-    
+
                             # Neuromodulatory distance mapping
                             effective_similarity = similarity * (
                                 1.0
                                 + 0.1 * memory_valence * emotion_weight_row
                                 - 0.2 * current_arousal * current_cortisol
                             )
-    
-                            spread_activation = self.spread_weight * effective_similarity
+
+                            spread_activation = (
+                                self.spread_weight * effective_similarity
+                            )
                             score = base_activation + spread_activation - 0.5 * dist_emo
-    
+
                             if score <= (threshold - 2.5):
                                 continue
-    
+
                             created = row.get("created_at")
                             if created and created.tzinfo is None:
                                 created = created.replace(tzinfo=timezone.utc)
-    
+
                             raw_meta = row.get("metadata")
                             if isinstance(raw_meta, str):
                                 try:
                                     raw_meta = orjson.loads(raw_meta)
                                 except Exception:
                                     raw_meta = {}
-    
+
                             raw_candidates.append(
                                 {
                                     "content": row["content"],
-                                    "raw_content": row.get("raw_content") or row["content"],
+                                    "raw_content": row.get("raw_content")
+                                    or row["content"],
                                     "wing": row.get("wing", "personal"),
                                     "room": row.get("room"),
                                     "score": score,
@@ -673,7 +700,7 @@ class MemoryStore:
                                     "last_recalled_at": last_recall,
                                 }
                             )
-    
+
             # 3. Post-process candidate list in Python (Direct Cue Boost + Spreading Activation)
             cues = [
                 "kolkata",

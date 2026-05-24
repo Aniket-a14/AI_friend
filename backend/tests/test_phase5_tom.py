@@ -127,7 +127,9 @@ async def test_state_hydration_persistence(mock_graph_db):
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM agent_state WHERE agent_name = ?", ("test_agent",))
+        cursor.execute(
+            "SELECT * FROM agent_state WHERE agent_name = ?", ("test_agent",)
+        )
         row = cursor.fetchone()
         conn.close()
 
@@ -144,7 +146,10 @@ async def test_state_hydration_persistence(mock_graph_db):
         assert new_service.current_state.user_mental_model.inferred_valence == -0.5
         assert new_service.current_state.user_mental_model.inferred_arousal == 0.4
         assert new_service.current_state.user_mental_model.implied_goals == ["vent"]
-        assert new_service.current_state.user_mental_model.known_concepts == ["anger", "frustration"]
+        assert new_service.current_state.user_mental_model.known_concepts == [
+            "anger",
+            "frustration",
+        ]
     finally:
         # Guaranteed cleanup in finally block
         if os.path.exists(db_file):
