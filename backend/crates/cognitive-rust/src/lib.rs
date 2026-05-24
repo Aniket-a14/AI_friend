@@ -347,10 +347,29 @@ pub fn score_memories_actr_sqlite(
                     Vec::new()
                 } else if let Ok(s) = val.extract::<String>() {
                     let s_trimmed = s.trim_matches(|c| c == '[' || c == ']');
-                    s_trimmed
+                    let mut parsed_ok = true;
+                    let parsed: Vec<f64> = s_trimmed
                         .split(',')
-                        .map(|x| x.trim().parse::<f64>().unwrap_or(0.0))
-                        .collect()
+                        .map(|x| {
+                            let trimmed = x.trim();
+                            if trimmed.is_empty() {
+                                return 0.0;
+                            }
+                            match trimmed.parse::<f64>() {
+                                Ok(v) => v,
+                                Err(_) => {
+                                    eprintln!("[Rust SQLite Fallback] Warning: Failed to parse float token {:?} in embedding database field.", trimmed);
+                                    parsed_ok = false;
+                                    0.0
+                                }
+                            }
+                        })
+                        .collect();
+                    if parsed_ok {
+                        parsed
+                    } else {
+                        Vec::new()
+                    }
                 } else if let Ok(v) = val.extract::<Vec<f64>>() {
                     v
                 } else {
