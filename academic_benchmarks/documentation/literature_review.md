@@ -92,4 +92,3 @@ Every comparison drawn in this literature review maps directly to peer-reviewed 
 *   *EPBench episodic memory generation*: **Huet et al. (2025)** [35]
 *   *KnowMeBench person-centric narratives*: **Wu et al. (2026)** [36]
 *   *LMEB standardized memory protocols*: **LMEB Consortium (2026)** [37]
-
