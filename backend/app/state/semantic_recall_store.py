@@ -2,6 +2,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
+
 logger = logging.getLogger("semantic_recall_store")
 
 
@@ -17,7 +18,7 @@ class SemanticRecallStore:
         qdrant_host: str = "127.0.0.1",
         qdrant_port: int = 6333,
         collection_name: str = "ai_friend_memories",
-        vector_size: int = 768
+        vector_size: int = 768,
     ):
         self.collection_name = collection_name
         self.vector_size = vector_size
@@ -26,7 +27,9 @@ class SemanticRecallStore:
         try:
             self.client = QdrantClient(host=qdrant_host, port=qdrant_port, timeout=2.0)
             self._ensure_collection_exists()
-            logger.info(f"Connected to Qdrant Semantic Store on {qdrant_host}:{qdrant_port}")
+            logger.info(
+                f"Connected to Qdrant Semantic Store on {qdrant_host}:{qdrant_port}"
+            )
         except Exception as e:
             self.client = None
             logger.warning(
@@ -40,16 +43,19 @@ class SemanticRecallStore:
         try:
             # Check if collection exists
             collections = self.client.get_collections()
-            exist = any(col.name == self.collection_name for col in collections.collections)
+            exist = any(
+                col.name == self.collection_name for col in collections.collections
+            )
 
             if not exist:
-                logger.info(f"Creating Qdrant collection: {self.collection_name} ({self.vector_size} Dimensions, Cosine)")
+                logger.info(
+                    f"Creating Qdrant collection: {self.collection_name} ({self.vector_size} Dimensions, Cosine)"
+                )
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=models.VectorParams(
-                        size=self.vector_size,
-                        distance=models.Distance.COSINE
-                    )
+                        size=self.vector_size, distance=models.Distance.COSINE
+                    ),
                 )
         except Exception as e:
             logger.error(f"Failed to verify/create Qdrant collection: {e}")
@@ -60,7 +66,7 @@ class SemanticRecallStore:
         memory_id: str,
         vector: List[float],
         content: str,
-        metadata: Dict[str, Any]
+        metadata: Dict[str, Any],
     ) -> bool:
         """Upsert memory vector and content payload into Qdrant."""
         if not self.client:
@@ -73,22 +79,15 @@ class SemanticRecallStore:
             )
             return False
 
-        payload = {
-            "content": content,
-            **metadata
-        }
+        payload = {"content": content, **metadata}
 
         try:
             # Convert string memory_id (like UUID) to a format Qdrant accepts (UUID string or integer)
             self.client.upsert(
                 collection_name=self.collection_name,
                 points=[
-                    models.PointStruct(
-                        id=memory_id,
-                        vector=vector,
-                        payload=payload
-                    )
-                ]
+                    models.PointStruct(id=memory_id, vector=vector, payload=payload)
+                ],
             )
             return True
         except Exception as e:
@@ -99,7 +98,7 @@ class SemanticRecallStore:
         self,
         query_vector: List[float],
         limit: int = 5,
-        filter_dict: Optional[Dict[str, Any]] = None
+        filter_dict: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Search similar memories with option to filter by metadata criteria."""
         if not self.client:
@@ -112,10 +111,7 @@ class SemanticRecallStore:
             conditions = []
             for key, val in filter_dict.items():
                 conditions.append(
-                    models.FieldCondition(
-                        key=key,
-                        match=models.MatchValue(value=val)
-                    )
+                    models.FieldCondition(key=key, match=models.MatchValue(value=val))
                 )
             if conditions:
                 qdrant_filter = models.Filter(must=conditions)
@@ -126,18 +122,22 @@ class SemanticRecallStore:
                 query_vector=query_vector,
                 limit=limit,
                 query_filter=qdrant_filter,
-                with_payload=True
+                with_payload=True,
             )
 
             matched_memories = []
             for res in results:
                 payload = res.payload or {}
-                matched_memories.append({
-                    "id": res.id,
-                    "content": payload.get("content", ""),
-                    "score": res.score,
-                    "metadata": {k: v for k, v in payload.items() if k != "content"}
-                })
+                matched_memories.append(
+                    {
+                        "id": res.id,
+                        "content": payload.get("content", ""),
+                        "score": res.score,
+                        "metadata": {
+                            k: v for k, v in payload.items() if k != "content"
+                        },
+                    }
+                )
             return matched_memories
 
         except Exception as e:

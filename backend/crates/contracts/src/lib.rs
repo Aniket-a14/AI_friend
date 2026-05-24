@@ -10,6 +10,9 @@ pub mod topics {
     pub const AUDIO_INBOUND: &str = "audio.inbound";
     pub const AUDIO_STREAM: &str = "audio.stream";
     pub const VISION_DESCRIPTION: &str = "vision.description";
+    pub const USER_VOICE_PROPERTIES: &str = "user.voice.properties";
+    pub const AGENT_VOICE_MODULATION: &str = "agent.voice.modulation";
+    pub const AUDIO_PLAYBACK_VISEMES: &str = "audio.playback.visemes";
 }
 
 pub const HEADER_LATENCY_META: &str = "X-Latency-Meta";
@@ -256,6 +259,29 @@ pub struct AudioResume {
 
 fn default_conflict_rejected() -> String {
     "conflict_rejected".to_string()
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UserVoiceProperties {
+    pub pitch_f0: f64,
+    pub energy_rms: f64,
+    pub tempo_wpm: f64,
+    pub timestamp: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentVoiceModulation {
+    pub rate: f64,
+    pub pitch: f64,
+    pub volume: f64,
+    pub timestamp: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlaybackVisemes {
+    pub target_level: f64,
+    pub viseme_id: String,
+    pub timestamp: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

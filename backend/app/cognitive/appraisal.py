@@ -68,6 +68,7 @@ class AppraisalEngine:
         emotional_bias: float,
         state_snapshot: Dict[str, Any],
         identity_boundaries: List[str] = None,
+        user_voice_properties: Dict[str, Any] = None,
     ) -> AppraisalVector:
         """
         Heuristic appraisal for the real-time cognitive loop.
@@ -107,6 +108,21 @@ class AppraisalEngine:
         ri = emotional_bias * 0.5
         if trust < 0.3:
             ri *= 0.5  # Low trust dampens positive impact
+
+        # Integrate System 1 user voice properties into appraisal (e.g. yelling/panicked shifts)
+        if user_voice_properties:
+            pitch = user_voice_properties.get("pitch_f0", 150.0)
+            energy = user_voice_properties.get("energy_rms", 0.0)
+
+            # High energy yells (energy > 0.15) or extremely high pitch (F0 > 250Hz) shifts appraisal
+            if energy > 0.15 or pitch > 250.0:
+                logger.info(
+                    f"🎙️ [Appraisal] High arousal user vocal cues detected (energy={energy:.3f}, pitch={pitch:.1f}Hz). Raising threat level."
+                )
+                # We decrease goal congruence because yelling/stress is incongruent with stable social goals
+                goal_congruence = max(-1.0, min(1.0, goal_congruence - 0.3))
+                # Relationship impact becomes more negative / less positive
+                ri = max(-1.0, min(1.0, ri - 0.2))
 
         # Track content for novelty computation
         self._recent_contents.append(event_content[:100])

@@ -8,6 +8,7 @@ logger = logging.getLogger("conversational_runtime")
 
 FILLERS = ["hmm", "let's see", "well", "ah", "right"]
 
+
 class ConversationalRuntime:
     """
     Manages turn pacing, latency filler injection, and turn-taking distributions.
@@ -23,7 +24,7 @@ class ConversationalRuntime:
         turn_id: str,
         state_snap: Dict[str, Any],
         user_distance: float = 1.0,
-        is_proactive: bool = False
+        is_proactive: bool = False,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Monitors TTFT. If first token takes > 400ms, sends an early hesitation filler.
@@ -38,8 +39,10 @@ class ConversationalRuntime:
             if not first_token_received and not is_proactive and self.publish_cb:
                 filler_sent = True
                 filler = random.choice(FILLERS)
-                logger.info(f"⏱️ [ConversationalRuntime] TTFT exceeded 400ms. Dispatching filler: '{filler}'")
-                
+                logger.info(
+                    f"⏱️ [ConversationalRuntime] TTFT exceeded 400ms. Dispatching filler: '{filler}'"
+                )
+
                 # Setup affect payload
                 affect_msg = ChatOutputAffect(
                     valence=state_snap.get("valence", 0.0),
@@ -51,14 +54,14 @@ class ConversationalRuntime:
                     fatigue=state_snap.get("fatigue", 0.0),
                     user_distance=user_distance,
                 )
-                
+
                 payload = ChatOutput(
                     content=f"<hesitate> {filler}<pause=200ms>",
                     done=False,
                     turn_id=turn_id,
                     affect=affect_msg,
                 )
-                
+
                 await self.publish_cb(Topics.CHAT_OUTPUT, payload.model_dump())
 
         # Start background timer task for filler
@@ -83,20 +86,23 @@ class ConversationalRuntime:
         Ar = state_snap.get("arousal", 0.5)
         D = state_snap.get("dominance", 0.5)
         F = state_snap.get("fatigue", 0.0)
-        
+
         # High arousal -> quicker response. High fatigue -> slower response. Low dominance -> hesitant/longer silence.
         base_silence = 300.0  # ms
         arousal_modifier = (1.0 - Ar) * 400.0
         dominance_modifier = (1.0 - D) * 200.0
         fatigue_modifier = F * 500.0
-        
-        silence_ms = max(50.0, base_silence + arousal_modifier + dominance_modifier + fatigue_modifier)
-        
+
+        silence_ms = max(
+            50.0,
+            base_silence + arousal_modifier + dominance_modifier + fatigue_modifier,
+        )
+
         # Turn-taking probability: high dominance -> higher probability to take turn, low dominance -> lower.
         turn_probability = 0.5 + 0.3 * D - 0.1 * F + 0.2 * V
         turn_probability = max(0.1, min(0.99, turn_probability))
-        
+
         return {
             "silence_duration_ms": silence_ms,
-            "turn_taking_probability": turn_probability
+            "turn_taking_probability": turn_probability,
         }

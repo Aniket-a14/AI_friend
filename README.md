@@ -127,8 +127,8 @@ CVS-3.5 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration 
 > **Protocol Description**:
 > Audio arriving via WebRTC is fanned out to two paths: **SenseVoice** (optimized for CPU-based temporal intent) and **Whisper** (optimized for GPU-based semantic accuracy).
 >
-> * **Stage 1 (Speculative)**: SenseVoice detects interruption markers in <100ms and publishes a speculative `audio.stop` message. The Voice Agent immediately enters a reversible pause.
-> * **Stage 2 (Validation)**: The Brain Agent evaluates the speculative perception. If confirmed, it commits the stop. If rejected as noise, it publishes `audio.resume`, causing the Voice Agent to resume playback from its OLA buffer.
+> * **Stage 1 (Reflexive Soft-Attenuation)**: SenseVoice detects interruption markers in <100ms and publishes a speculative `audio.stop` message. The Voice Agent immediately executes a **System 1 soft-attenuation**, ducking the volume by 70% within 10ms to allow duplex listening.
+> * **Stage 2 (Symbolic Interruption Validation)**: The Brain Agent evaluates the speculative perception text. If confirmed, it commits a hard `audio.stop` (aborting playback and LLM generation). If rejected as noise or a non-interruption, it publishes `audio.resume`, causing the Voice Agent to smoothly ramp output volume back to 100%.
 > * **Stage 3 (Resolution)**: Once Whisper produces the final transcript, the Brain Agent performs a deep cognitive turn to update state and generate the response.
 
 ```mermaid
@@ -389,6 +389,9 @@ Communication is strictly governed by a **Typed Contract Mesh** (Pydantic). Ever
 | `state.update` | `StateUpdate` | Broadcast of PAD/Relational coordinate shifts. |
 | `memory.surfaced` | `MemoryEvent` | Proactive episodic or semantic recall triggers. |
 | `system.tick` | `PulseEvent` | The 60s mesh-wide maturation heartbeat. |
+| `user.voice.properties` | `UserVoiceProperties` | Real-time user pitch, energy, and speech rate telemetry. |
+| `agent.voice.modulation` | `AgentVoiceModulation` | Continuous prosody shifts driven by the emotional appraisal loop. |
+| `audio.playback.visemes` | `PlaybackVisemes` | Sample-accurate mouth shape triggers for synchronized rendering. |
 
 ---
 

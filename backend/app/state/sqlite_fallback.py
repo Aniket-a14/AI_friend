@@ -165,7 +165,7 @@ class SQLiteConnection:
                 "virtue": "NULL",
                 "relations": "NULL",
                 "relation_circles": "NULL",
-                "modality": "NULL"
+                "modality": "NULL",
             }
 
             # Build SELECT projection: use actual column if exists, otherwise use default
