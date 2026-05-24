@@ -78,8 +78,16 @@ class AppraisalEngine:
         pitch = None
         energy = None
         if user_voice_properties:
-            pitch = float(user_voice_properties.get("pitch_f0", 150.0))
-            energy = float(user_voice_properties.get("energy_rms", 0.0))
+            pitch_raw = user_voice_properties.get("pitch_f0")
+            energy_raw = user_voice_properties.get("energy_rms")
+            try:
+                pitch = float(pitch_raw) if pitch_raw is not None else 150.0
+            except (ValueError, TypeError):
+                pitch = 150.0
+            try:
+                energy = float(energy_raw) if energy_raw is not None else 0.0
+            except (ValueError, TypeError):
+                energy = 0.0
 
             # High energy yells (energy > 0.15) or extremely high pitch (F0 > 250Hz) shifts appraisal
             if energy > 0.15 or pitch > 250.0:
@@ -113,12 +121,21 @@ class AppraisalEngine:
             vector.norm_alignment,
             vector.relationship_impact,
         )
-        return vector
+        return AppraisalVector(
+            relevance=vector.relevance,
+            novelty=vector.novelty,
+            goal_congruence=vector.goal_congruence,
+            agency=vector.agency,
+            norm_alignment=vector.norm_alignment,
+            relationship_impact=vector.relationship_impact,
+        )
 
     def _compute_novelty(self, content: str) -> float:
         """
-        Simplified novelty via Jaccard distance against recent contents.
+        [DEPRECATED] Simplified novelty via Jaccard distance against recent contents.
         N = 1 - max_overlap  (§1.1: N = 1 − max(cosine_sim(event, past)))
+
+        @deprecated: This method is now handled natively in Rust.
         """
         if not self._recent_contents:
             return 0.8  # First message is inherently novel
@@ -141,8 +158,10 @@ class AppraisalEngine:
 
     def _check_norm_alignment(self, content: str, boundaries: List[str]) -> float:
         """
-        Check if content respects identity boundaries (§1.2 — Praiseworthiness / OCC).
+        [DEPRECATED] Check if content respects identity boundaries (§1.2 — Praiseworthiness / OCC).
         Returns 1.0 for full alignment, decreasing with violations.
+
+        @deprecated: This method is now handled natively in Rust.
         """
         if not boundaries:
             return 1.0
