@@ -57,17 +57,18 @@ In addition to the software pipeline, the container mesh is hardened for zero-la
 
 ---
 
-## 📊 Latency Benchmarks (CVS-1.0 on RTX 4090)
+## 📊 Latency Benchmarks (CVS-3.5 on RTX 4090)
 
 | Stage | Method | Latency (ms) | Perceptual Impact |
 | :--- | :--- | :--- | :--- |
+| **System 1 DSP**| Real-time Energy & Pitch | 0.5-2ms | Sub-cognitive Feature Extraction |
 | **STT** | Whisper Turbo (Streaming) | 40-70ms | Real-time |
 | **Brain** | Qwen 2.5 7B (BDI Mesh) | 80-120ms | Thinking phase |
 | **Segmenter** | Hybrid Heuristic | 0-30ms | Adaptive Formation Buffer |
 | **First Audio** | GPT-SoVITS V4 Streaming PCM | 120-180ms | Starts before full synthesis completes |
 | **Controller** | Priority Scheduler | 5-15ms | Adaptive Jitter |
 | **Cognitive Timing**| `<pause>` / `<hesitate>` | **(Variable)** | **Believability Layer** |
-| **Total (Raw)** | Pipeline Sum | **275-415ms** | Theoretical |
+| **Total (Raw)** | Pipeline Sum | **276-417ms** | Theoretical |
 | **User Perceived** | **Silence-to-Audio** | **< 280ms** | **Elite-Level** |
 
 ---

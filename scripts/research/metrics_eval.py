@@ -7,8 +7,9 @@ def load_nrc_vad_lexicon():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     lexicon_path = os.path.join(script_dir, "NRC-VAD-Lexicon", "NRC-VAD-Lexicon.txt")
     if not os.path.exists(lexicon_path):
-        print(f"⚠️ Warning: NRC-VAD Lexicon not found at {lexicon_path}")
-        return lexicon
+        raise FileNotFoundError(
+            f"❌ ERROR: NRC-VAD Lexicon not found at {lexicon_path}. Live evaluation requires the VAD Lexicon."
+        )
     try:
         with open(lexicon_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -34,13 +35,9 @@ class DualOracleScorer:
     """
 
     def __init__(self):
-        try:
-            from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-            self.vader = SentimentIntensityAnalyzer()
-        except ImportError:
-            print("⚠️ vaderSentiment not found. Running with fallback sentiment model.")
-            self.vader = None
+        self.vader = SentimentIntensityAnalyzer()
         self.nrc_lexicon = load_nrc_vad_lexicon()
 
     def get_ground_truth(self, text: str) -> tuple:

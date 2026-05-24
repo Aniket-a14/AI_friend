@@ -281,6 +281,7 @@ async def seed_databases(num_distractors=100000):
 
     # 2.2. Initialize and seed Identity Core SQLite database
     from app.state.identity_core_store import IdentityCoreStore
+
     try:
         print("🪞 Seeding Identity Core SQLite database...")
         identity_store = IdentityCoreStore()
@@ -301,10 +302,23 @@ async def seed_databases(num_distractors=100000):
             points = []
             start_q = time.perf_counter()
             for idx, task in enumerate(seeding_tasks):
-                content, raw_content, wing, room, vector_str, importance, emotion, valence, certainty, source, metadata_str, created_time = task
+                (
+                    content,
+                    raw_content,
+                    wing,
+                    room,
+                    vector_str,
+                    importance,
+                    emotion,
+                    valence,
+                    certainty,
+                    source,
+                    metadata_str,
+                    created_time,
+                ) = task
                 vector = json.loads(vector_str)
                 metadata = json.loads(metadata_str)
-                
+
                 payload = {
                     "content": content,
                     "wing": wing,
@@ -315,25 +329,22 @@ async def seed_databases(num_distractors=100000):
                     "certainty": certainty,
                     "source": source,
                     "created_at": created_time.isoformat(),
-                    **metadata
+                    **metadata,
                 }
-                
+
                 points.append(
-                    models.PointStruct(
-                        id=idx + 1,
-                        vector=vector,
-                        payload=payload
-                    )
+                    models.PointStruct(id=idx + 1, vector=vector, payload=payload)
                 )
-                
+
                 if len(points) >= chunk_size or idx == len(seeding_tasks) - 1:
                     semantic_store.client.upsert(
-                        collection_name=semantic_store.collection_name,
-                        points=points
+                        collection_name=semantic_store.collection_name, points=points
                     )
                     points = []
             dur_q = time.perf_counter() - start_q
-            print(f"✅ Successfully seeded Qdrant Semantic Store in {dur_q:.2f} seconds.")
+            print(
+                f"✅ Successfully seeded Qdrant Semantic Store in {dur_q:.2f} seconds."
+            )
         else:
             print("⚠️ Qdrant server offline. Skipping semantic vector seeding.")
     except Exception as e:
@@ -391,27 +402,33 @@ async def seed_databases(num_distractors=100000):
             "ResearchDomain",
             {"description": "Core college research project."},
         )
-        
+
         # Seed Core Identity Values & Boundaries into Neo4j Graph
         await graph.create_entity(
             "Honesty",
             "CoreValue",
-            {"description": "Commitment to absolute truthfulness and behavioral integrity."}
+            {
+                "description": "Commitment to absolute truthfulness and behavioral integrity."
+            },
         )
         await graph.create_entity(
             "Privacy",
             "CoreValue",
-            {"description": "Commitment to absolute data sovereignty and local privacy protection."}
+            {
+                "description": "Commitment to absolute data sovereignty and local privacy protection."
+            },
         )
         await graph.create_entity(
             "Curiosity",
             "CoreValue",
-            {"description": "Commitment to intellectual exploration and learning."}
+            {"description": "Commitment to intellectual exploration and learning."},
         )
         await graph.create_entity(
             "DataBoundary",
             "CoreBoundary",
-            {"description": "Explicit rule: Never share user conversation histories externally."}
+            {
+                "description": "Explicit rule: Never share user conversation histories externally."
+            },
         )
 
         await graph.create_relationship(
@@ -437,7 +454,7 @@ async def seed_databases(num_distractors=100000):
             "ResearchDomain",
             {"weight": 0.95},
         )
-        
+
         # Link Aniket to Core Identity Values & Boundaries
         await graph.create_relationship(
             "Aniket", "Person", "HAS_VALUE", "Honesty", "CoreValue", {"weight": 1.0}
@@ -449,7 +466,12 @@ async def seed_databases(num_distractors=100000):
             "Aniket", "Person", "HAS_VALUE", "Curiosity", "CoreValue", {"weight": 1.0}
         )
         await graph.create_relationship(
-            "Aniket", "Person", "ENFORCES_RULE", "DataBoundary", "CoreBoundary", {"weight": 1.0}
+            "Aniket",
+            "Person",
+            "ENFORCES_RULE",
+            "DataBoundary",
+            "CoreBoundary",
+            {"weight": 1.0},
         )
 
         await graph.close()

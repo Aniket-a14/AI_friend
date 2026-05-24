@@ -121,12 +121,14 @@ class CognitivePipeline:
         t_start = time.perf_counter()
         state_snapshot = self.state.get_context_snapshot()
         emotional_bias = state_snapshot.get("mood", 0.0)
+        user_voice_properties = raw_event.get("user_voice_properties")
         appraisal_vector = self.appraisal.appraise(
             event_content=event.raw_content,
             event_type=event.event_type,
             emotional_bias=emotional_bias,
             state_snapshot=state_snapshot,
             identity_boundaries=self.identity.personality.get("boundaries", []),
+            user_voice_properties=user_voice_properties,
         )
         stage_times["stage_4_appraisal_ms"] = (time.perf_counter() - t_start) * 1000.0
         yield {"type": "appraisal", "data": appraisal_vector}

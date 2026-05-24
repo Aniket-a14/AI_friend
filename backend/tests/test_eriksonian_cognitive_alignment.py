@@ -142,6 +142,7 @@ def test_pruning_threshold_decay(temp_store):
     time_b = (now - timedelta(hours=2000)).strftime("%Y-%m-%d %H:%M:%S")
 
     import uuid
+
     async def insert_helper():
         async with temp_store.pool.acquire() as conn:
             # Insert Memory A

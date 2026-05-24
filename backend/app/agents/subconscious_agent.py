@@ -110,10 +110,14 @@ class SubconsciousAgent(BaseAgent):
 
         # Validate agent_name
         if not agent_name or not isinstance(agent_name, str):
-            logger.error(f"[Subconscious] Invalid or missing agent_name in state broadcast. Payload: {data}")
+            logger.error(
+                f"[Subconscious] Invalid or missing agent_name in state broadcast. Payload: {data}"
+            )
             return
 
-        logger.info(f"[Subconscious] Received state broadcast for {agent_name}. Syncing to Neo4j...")
+        logger.info(
+            f"[Subconscious] Received state broadcast for {agent_name}. Syncing to Neo4j..."
+        )
 
         query = """
         MERGE (a:Agent {name: $name})
@@ -156,18 +160,24 @@ class SubconsciousAgent(BaseAgent):
             "known_concepts": data.get("known_concepts", []),
             "baseline_valence": data.get("baseline_valence", 0.0),
             "baseline_arousal": data.get("baseline_arousal", 0.5),
-            "baseline_dominance": data.get("baseline_dominance", 0.5)
+            "baseline_dominance": data.get("baseline_dominance", 0.5),
         }
-        
+
         try:
             result = await self.graph_db.execute_query(query, params, write=True)
             # Verify write succeeded by checking result is non-empty or has positive write counters
-            if result is not None and (isinstance(result, list) and len(result) > 0 or result):
+            if result is not None and (
+                isinstance(result, list) and len(result) > 0 or result
+            ):
                 if hasattr(self.graph_db, "invalidate_cache"):
                     await self.graph_db.invalidate_cache(agent_name)
-                logger.debug(f"[Subconscious] Asynchronously persisted state to Neo4j for {agent_name}.")
+                logger.debug(
+                    f"[Subconscious] Asynchronously persisted state to Neo4j for {agent_name}."
+                )
             else:
-                logger.warning(f"[Subconscious] Neo4j write returned empty result for {agent_name}. Write may have failed silently.")
+                logger.warning(
+                    f"[Subconscious] Neo4j write returned empty result for {agent_name}. Write may have failed silently."
+                )
         except Exception as e:
             logger.error(f"[Subconscious] Failed to sync state to Neo4j: {e}")
 

@@ -50,6 +50,7 @@ class BrainAgent(BaseAgent):
         self.last_interaction_time = datetime.now()
         self.last_visual_context = "No visual data available."
         self.last_user_distance = 1.0
+        self.last_user_voice_properties = None
 
         # CVS-1.0 Segmentation Config
         self.coordinator = SpeechCoordinator(
@@ -57,6 +58,7 @@ class BrainAgent(BaseAgent):
         )
         from ..utils.interruption_classifier import InterruptionClassifier
         from ..utils.conversational_runtime import ConversationalRuntime
+
         self.interruption_classifier = InterruptionClassifier()
         self.conversational_runtime = ConversationalRuntime(publish_cb=self.publish)
         self._active_generation_task = None
@@ -105,6 +107,12 @@ class BrainAgent(BaseAgent):
             Topics.AUDIO_PERCEPTION,
             self._on_audio_perception,
             durable=f"{self.name}_audio_perception_live",
+            deliver_policy="new",
+        )
+        await self.subscribe(
+            Topics.USER_VOICE_PROPERTIES,
+            self._on_user_voice_properties,
+            durable=f"{self.name}_user_voice_properties_live",
             deliver_policy="new",
         )
         # Note: system.tick proactive engagement is now handled by SubconsciousAgent
@@ -165,8 +173,29 @@ class BrainAgent(BaseAgent):
             logger.error(f"Unexpected error processing chat.input: {e}", exc_info=True)
             return
 
+        # Cancel any previous generation task if running
+        if self._active_generation_task and not self._active_generation_task.done():
+            logger.info("Cancelling active task due to new incoming speech turn.")
+            self._active_generation_task.cancel()
+
+        # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio
+        if not is_subconscious:
+            from ..contracts import AudioStop
+
+            stop_msg = AudioStop(
+                interrupt=True,
+                speculative=False,
+                reason="confirmed_user_speech",
+                perception_text=msg.text,
+                intent="CONFIRMED_STOP",
+                utterance_id=msg.utterance_id,
+            )
+            await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
+
         # Start the flow task in background to allow cancellation on interruption
-        task = asyncio.create_task(self._process_chat_input_flow(msg, is_subconscious, message))
+        task = asyncio.create_task(
+            self._process_chat_input_flow(msg, is_subconscious, message)
+        )
         self._active_generation_task = task
         try:
             await task
@@ -176,7 +205,9 @@ class BrainAgent(BaseAgent):
             if self._active_generation_task == task:
                 self._active_generation_task = None
 
-    async def _process_chat_input_flow(self, chat_input: ChatInput, is_subconscious: bool, message: Dict[str, Any]):
+    async def _process_chat_input_flow(
+        self, chat_input: ChatInput, is_subconscious: bool, message: Dict[str, Any]
+    ):
         user_text = chat_input.text
         turn_id = chat_input.turn_id or chat_input.utterance_id or str(uuid.uuid4())
         metadata = message.get("metadata")
@@ -194,18 +225,27 @@ class BrainAgent(BaseAgent):
         state_snap = self.cognitive_core.state.get_context_snapshot()
         pacing = self.conversational_runtime.calculate_pacing_parameters(state_snap)
         silence_s = pacing["silence_duration_ms"] / 1000.0
-        
-        logger.info(f"Pacing conversational turn: sleeping {pacing['silence_duration_ms']:.1f}ms before starting response.")
+
+        logger.info(
+            f"Pacing conversational turn: sleeping {pacing['silence_duration_ms']:.1f}ms before starting response."
+        )
         await asyncio.sleep(silence_s)
 
         # Only update human interaction tracking if it's an actual user message
         if not is_subconscious:
             self.cognitive_core.state.record_user_interaction()
 
+        # Ingest the latest user voice properties (System 1 feature stream) into the raw_event
+        user_voice_properties = None
+        if self.last_user_voice_properties:
+            user_voice_properties = self.last_user_voice_properties.model_dump()
+            self.last_user_voice_properties = None
+
         raw_event = {
             "id": str(uuid.uuid4()),
             "type": "USER_MESSAGE",
             "content": user_text,
+            "user_voice_properties": user_voice_properties,
             "metadata": {
                 **metadata,
                 "visuals": self.last_visual_context,
@@ -231,7 +271,7 @@ class BrainAgent(BaseAgent):
             turn_id=turn_id,
             state_snap=state_snap,
             user_distance=self.last_user_distance,
-            is_proactive=is_subconscious
+            is_proactive=is_subconscious,
         )
 
         full_response = await self._stream_to_speech(
@@ -256,24 +296,55 @@ class BrainAgent(BaseAgent):
         # Only run semantic classifier on partial transcripts
         if is_partial and text:
             if self.interruption_classifier.is_interruption(text):
-                logger.info(f"🚨 [Brain] Semantic interrupt detected on partial: '{text}'")
+                logger.info(
+                    f"🚨 [Brain] Semantic interrupt detected on partial: '{text}'"
+                )
 
-                # Instantly publish audio.stop to silence playback
+                # Instantly publish confirmed audio.stop to silence playback
                 from ..contracts import AudioStop
+
                 stop_msg = AudioStop(
                     interrupt=True,
-                    speculative=True,
+                    speculative=False,
                     reason=f"semantic_interrupt: {text}",
                     perception_text=text,
-                    intent="SPECULATIVE_STOP",
+                    intent="CONFIRMED_STOP",
                     utterance_id=data.get("utterance_id"),
                 )
                 await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
 
                 # Instantly cancel active LLM generation stream
-                if self._active_generation_task and not self._active_generation_task.done():
-                    logger.info("[Brain] Cancelling active LLM stream task due to semantic interrupt.")
+                if (
+                    self._active_generation_task
+                    and not self._active_generation_task.done()
+                ):
+                    logger.info(
+                        "[Brain] Cancelling active LLM stream task due to semantic interrupt."
+                    )
                     self._active_generation_task.cancel()
+            else:
+                # Not a valid semantic interruption! Send an audio resume to restore volume.
+                from ..contracts import AudioResume
+
+                resume_msg = AudioResume(
+                    reason="not_interruption",
+                    perception_text=text,
+                    utterance_id=data.get("utterance_id"),
+                )
+                await self.publish(Topics.AUDIO_RESUME, resume_msg.model_dump())
+
+    async def _on_user_voice_properties(self, data: Dict[str, Any]):
+        """Ingest real-time user voice properties (System 1 feature stream)."""
+        try:
+            from ..contracts import UserVoiceProperties
+
+            props = UserVoiceProperties.model_validate(data)
+            self.last_user_voice_properties = props
+            logger.debug(
+                f"🎙️ Ingested User Voice | Pitch: {props.pitch_f0:.1f}Hz | Energy: {props.energy_rms:.3f} | Tempo: {props.tempo_wpm:.1f}WPM"
+            )
+        except Exception as e:
+            logger.error(f"Error parsing user voice properties: {e}")
 
     async def _stream_to_speech(
         self,

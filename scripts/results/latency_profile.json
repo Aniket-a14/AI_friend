@@ -1,7 +1,10 @@
 {
-  "timestamp": 1779519548.7858815,
-  "identity_cached_lookup_avg_ms": 0.000283999543171376,
-  "working_memory_append_avg_ms": 6.2524440011475235,
-  "working_memory_fetch_avg_ms": 0.6921420054277405,
-  "semantic_vector_search_avg_ms": 1.25
+  "timestamp": 1779587753.661759,
+  "identity_cached_lookup_avg_ms": 0.00035299992305226624,
+  "working_memory_append_avg_ms": 6.999531999172177,
+  "working_memory_fetch_avg_ms": 0.44404599961126223,
+  "semantic_vector_search_avg_ms": null,
+  "dsp_extraction_avg_ms": 0.13173499930417165,
+  "viseme_latency_avg_ms": 0.008419000514550135,
+  "soft_ducking_latency_avg_ms": 0.05358800015528686
 }

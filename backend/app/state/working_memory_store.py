@@ -20,7 +20,7 @@ class WorkingMemoryStore:
         redis_host: str = "127.0.0.1",
         redis_port: int = 6379,
         db_path: str = "working_memory.db",
-        max_turns: int = 8
+        max_turns: int = 8,
     ):
         self.max_turns = max_turns
         self.db_path = db_path
@@ -33,11 +33,13 @@ class WorkingMemoryStore:
                 port=redis_port,
                 db=0,
                 socket_connect_timeout=1.0,
-                decode_responses=True
+                decode_responses=True,
             )
             # Ping to confirm live connection
             self.redis_client.ping()
-            logger.info(f"Connected to Redis Working Memory on {redis_host}:{redis_port}")
+            logger.info(
+                f"Connected to Redis Working Memory on {redis_host}:{redis_port}"
+            )
         except Exception as e:
             self.redis_client = None
             logger.warning(
@@ -81,7 +83,9 @@ class WorkingMemoryStore:
 
     # --- Real-Time Turns Playout (Last 5–8 turns) ---
 
-    def add_turn(self, role: str, content: str, metadata: Optional[Dict[str, Any]] = None):
+    def add_turn(
+        self, role: str, content: str, metadata: Optional[Dict[str, Any]] = None
+    ):
         """Append a dialogue turn, immediately trimming excess turns to prevent context bloat."""
         meta_json = json.dumps(metadata or {})
         turn_data = {"role": role, "content": content, "metadata": meta_json}
@@ -103,18 +107,21 @@ class WorkingMemoryStore:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO working_turns (role, content, metadata) VALUES (?, ?, ?)",
-                    (role, content, meta_json)
+                    (role, content, meta_json),
                 )
                 conn.commit()
 
                 # Trim SQLite table to keep only the last max_turns
-                cursor.execute("""
+                cursor.execute(
+                    """
                     DELETE FROM working_turns
                     WHERE id NOT IN (
                         SELECT id FROM working_turns
                         ORDER BY id DESC LIMIT ?
                     )
-                """, (self.max_turns,))
+                """,
+                    (self.max_turns,),
+                )
                 conn.commit()
         except Exception as e:
             logger.error(f"SQLite add_turn failed: {e}")
@@ -128,14 +135,18 @@ class WorkingMemoryStore:
                 turns = []
                 for rt in raw_turns:
                     t = json.loads(rt)
-                    turns.append({
-                        "role": t["role"],
-                        "content": t["content"],
-                        "metadata": json.loads(t["metadata"])
-                    })
+                    turns.append(
+                        {
+                            "role": t["role"],
+                            "content": t["content"],
+                            "metadata": json.loads(t["metadata"]),
+                        }
+                    )
                 return turns
             except Exception as e:
-                logger.error(f"Redis get_recent_turns failed: {e}. Falling back to SQLite.")
+                logger.error(
+                    f"Redis get_recent_turns failed: {e}. Falling back to SQLite."
+                )
 
         # SQLite Fallback
         try:
@@ -143,16 +154,19 @@ class WorkingMemoryStore:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT role, content, metadata FROM working_turns ORDER BY id DESC LIMIT ?",
-                    (limit,)
+                    (limit,),
                 )
                 rows = cursor.fetchall()
                 # Reverse to restore chronological order (oldest to newest)
                 reversed_rows = list(reversed(rows))
-                return [{
-                    "role": row["role"],
-                    "content": row["content"],
-                    "metadata": json.loads(row["metadata"])
-                } for row in reversed_rows]
+                return [
+                    {
+                        "role": row["role"],
+                        "content": row["content"],
+                        "metadata": json.loads(row["metadata"]),
+                    }
+                    for row in reversed_rows
+                ]
         except Exception as e:
             logger.error(f"SQLite get_recent_turns failed: {e}")
             return []
@@ -184,14 +198,16 @@ class WorkingMemoryStore:
                 self.redis_client.hset("working:state", key, val_str)
                 return
             except Exception as e:
-                logger.error(f"Redis set_state_var failed: {e}. Falling back to SQLite.")
+                logger.error(
+                    f"Redis set_state_var failed: {e}. Falling back to SQLite."
+                )
 
         try:
             with self._get_sqlite_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO working_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    (key, val_str)
+                    (key, val_str),
                 )
                 conn.commit()
         except Exception as e:
@@ -206,7 +222,9 @@ class WorkingMemoryStore:
                     return json.loads(val_str)
                 return default
             except Exception as e:
-                logger.error(f"Redis get_state_var failed: {e}. Falling back to SQLite.")
+                logger.error(
+                    f"Redis get_state_var failed: {e}. Falling back to SQLite."
+                )
 
         try:
             with self._get_sqlite_connection() as conn:

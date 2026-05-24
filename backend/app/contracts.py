@@ -41,6 +41,9 @@ class Topics(str, Enum):
     MEMORY_SURFACED = "memory.surfaced"
     STATE_UPDATE = "state.update"
     STATE_SUBCONSCIOUS = "state.subconscious"
+    USER_VOICE_PROPERTIES = "user.voice.properties"
+    AGENT_VOICE_MODULATION = "agent.voice.modulation"
+    AUDIO_PLAYBACK_VISEMES = "audio.playback.visemes"
 
 
 # ─── chat.input ──────────────────────────────────────────────
@@ -217,3 +220,32 @@ class StateUpdate(BaseModel):
     dopamine: float = 0.0
     fatigue: float = 0.0
     user_mental_model: Optional[Dict[str, Any]] = None
+
+
+# ─── user.voice.properties ───────────────────────────────────
+class UserVoiceProperties(BaseModel):
+    model_config = {"extra": "allow"}
+
+    pitch_f0: float
+    energy_rms: float
+    tempo_wpm: float
+    timestamp: float = Field(default_factory=time.time)
+
+
+# ─── agent.voice.modulation ───────────────────────────────────
+class AgentVoiceModulation(BaseModel):
+    model_config = {"extra": "allow"}
+
+    rate: float
+    pitch: float
+    volume: float
+    timestamp: float = Field(default_factory=time.time)
+
+
+# ─── audio.playback.visemes ───────────────────────────────────
+class PlaybackVisemes(BaseModel):
+    model_config = {"extra": "allow"}
+
+    target_level: float
+    viseme_id: str
+    timestamp: float = Field(default_factory=time.time)

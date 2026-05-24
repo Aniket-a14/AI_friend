@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use async_nats::HeaderMap;
 use bytes::Bytes;
 use contracts::{
-    topics, vad_to_prosody, ChatOutput, HEADER_LATENCY_META, HEADER_PAYLOAD_FORMAT,
+    topics, vad_to_prosody, ChatOutput, PlaybackVisemes, HEADER_LATENCY_META, HEADER_PAYLOAD_FORMAT,
     PAYLOAD_FORMAT_RAW_PCM,
 };
 use futures_util::StreamExt;
@@ -253,14 +253,63 @@ async fn main() -> Result<()> {
 
     // Abort flag for immediate voice playback stop
     let abort_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let attenuation_factor = std::sync::Arc::new(std::sync::Mutex::new(1.0f64));
+    let dynamic_prosody = std::sync::Arc::new(std::sync::Mutex::new(None::<contracts::Prosody>));
 
-    // Subscribe to audio.stop and set abort flag
+    // Subscribe to audio.stop and set abort flag or duck volume (attenuate)
     let abort_flag_stop = abort_flag.clone();
+    let attenuation_stop = attenuation_factor.clone();
     let mut stop_sub = client.subscribe(topics::AUDIO_STOP).await?;
     tokio::spawn(async move {
-        while let Some(_msg) = stop_sub.next().await {
-            info!("Received AUDIO_STOP - aborting current voice generation/playback.");
-            abort_flag_stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        while let Some(msg) = stop_sub.next().await {
+            match serde_json::from_slice::<contracts::AudioStop>(&msg.payload) {
+                Ok(stop) => {
+                    if stop.speculative {
+                        info!("Received SPECULATIVE AUDIO_STOP - ducking current voice playback.");
+                        if let Ok(mut guard) = attenuation_stop.lock() {
+                            *guard = 0.30;
+                        }
+                    } else {
+                        info!("Received CONFIRMED AUDIO_STOP - aborting current voice playback.");
+                        abort_flag_stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
+                Err(_) => {
+                    info!("Received generic AUDIO_STOP - aborting current voice playback.");
+                    abort_flag_stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+            }
+        }
+    });
+
+    // Subscribe to audio.resume and restore volume (attenuation_factor = 1.0)
+    let attenuation_resume = attenuation_factor.clone();
+    let mut resume_sub = client.subscribe(topics::AUDIO_RESUME).await?;
+    tokio::spawn(async move {
+        while let Some(_msg) = resume_sub.next().await {
+            info!("Received AUDIO_RESUME - restoring voice playback volume.");
+            if let Ok(mut guard) = attenuation_resume.lock() {
+                *guard = 1.0;
+            }
+        }
+    });
+
+    // Subscribe to agent.voice.modulation and update dynamic prosody overrides
+    let dynamic_prosody_clone = dynamic_prosody.clone();
+    let mut modulation_sub = client.subscribe(topics::AGENT_VOICE_MODULATION).await?;
+    tokio::spawn(async move {
+        while let Some(msg) = modulation_sub.next().await {
+            if let Ok(mod_payload) = serde_json::from_slice::<contracts::AgentVoiceModulation>(&msg.payload) {
+                info!("Received AGENT_VOICE_MODULATION: rate={}, pitch={}, volume={}", mod_payload.rate, mod_payload.pitch, mod_payload.volume);
+                if let Ok(mut guard) = dynamic_prosody_clone.lock() {
+                    *guard = Some(contracts::Prosody {
+                        rate: mod_payload.rate,
+                        pitch: mod_payload.pitch,
+                        volume: mod_payload.volume,
+                        pause_bias: 1.0,
+                    });
+                }
+            }
         }
     });
 
@@ -275,6 +324,9 @@ async fn main() -> Result<()> {
                 if event.done {
                     // End of current stream; safe point to clear interruption state.
                     abort_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                    if let Ok(mut guard) = attenuation_factor.lock() {
+                        *guard = 1.0;
+                    }
                     last_turn_id = None;
                     continue;
                 }
@@ -288,6 +340,9 @@ async fn main() -> Result<()> {
                     if is_new_stream {
                         last_turn_id = Some(current_turn_id.clone());
                         abort_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                        if let Ok(mut guard) = attenuation_factor.lock() {
+                            *guard = 1.0;
+                        }
                     }
                 }
 
@@ -303,6 +358,8 @@ async fn main() -> Result<()> {
                     last_distance.clone(),
                     &mut ola_filter,
                     abort_flag.clone(),
+                    attenuation_factor.clone(),
+                    dynamic_prosody.clone(),
                 )
                 .await
                 {
@@ -384,6 +441,86 @@ fn generate_hesitation_pcm(duration_ms: u32, sample_rate: u32, pitch: f64) -> Ve
     pcm
 }
 
+fn apply_attenuation(pcm: &mut [u8], current_val: &mut f64, target_val: f64) {
+    if pcm.len() < 2 {
+        return;
+    }
+    let mut samples = pcm
+        .chunks_exact(2)
+        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<i16>>();
+
+    let num_samples = samples.len();
+    let step = (target_val - *current_val) / num_samples as f64;
+
+    for sample in samples.iter_mut() {
+        *current_val += step;
+        let val = *sample as f64 * (*current_val);
+        *sample = val.clamp(i16::MIN as f64, i16::MAX as f64) as i16;
+    }
+
+    *current_val = target_val; // Ensure we land exactly at target
+
+    let mut idx = 0;
+    for s in samples {
+        let bytes = s.to_le_bytes();
+        pcm[idx] = bytes[0];
+        pcm[idx + 1] = bytes[1];
+        idx += 2;
+    }
+}
+
+fn generate_and_publish_visemes(
+    jetstream: &async_nats::jetstream::Context,
+    pcm: &[u8],
+) -> Result<()> {
+    if pcm.is_empty() {
+        return Ok(());
+    }
+    let samples = pcm
+        .chunks_exact(2)
+        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<i16>>();
+    let num_samples = samples.len();
+    if num_samples == 0 {
+        return Ok(());
+    }
+    let sum_sq: f64 = samples.iter()
+        .map(|&s| {
+            let norm = s as f64 / i16::MAX as f64;
+            norm * norm
+        })
+        .sum();
+    let rms = (sum_sq / num_samples as f64).sqrt();
+    let target_level = (rms * 10.0).min(1.0); // scale up for visualization
+
+    let viseme_id = if target_level < 0.05 {
+        "sil".to_string()
+    } else if target_level < 0.3 {
+        "AA".to_string()
+    } else if target_level < 0.6 {
+        "O".to_string()
+    } else {
+        "AH".to_string()
+    };
+
+    let viseme = PlaybackVisemes {
+        target_level,
+        viseme_id,
+        timestamp: now_seconds(),
+    };
+
+    let jetstream = jetstream.clone();
+    tokio::spawn(async move {
+        let _ = jetstream.publish(
+            topics::AUDIO_PLAYBACK_VISEMES,
+            Bytes::from(serde_json::to_vec(&viseme).unwrap()),
+        ).await;
+    });
+
+    Ok(())
+}
+
 async fn handle_chat_output(
     config: &VoiceConfig,
     http: &Client,
@@ -392,6 +529,8 @@ async fn handle_chat_output(
     last_distance: std::sync::Arc<std::sync::Mutex<f64>>,
     ola_filter: &mut OlaCrossfadeFilter,
     abort_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    attenuation_factor: std::sync::Arc<std::sync::Mutex<f64>>,
+    dynamic_prosody: std::sync::Arc<std::sync::Mutex<Option<contracts::Prosody>>>,
 ) -> Result<()> {
     if event.done {
         return Ok(());
@@ -411,7 +550,11 @@ async fn handle_chat_output(
         return Ok(());
     };
 
-    let prosody = vad_to_prosody(event.affect.as_ref());
+    let prosody = if let Ok(guard) = dynamic_prosody.lock() {
+        guard.clone().unwrap_or_else(|| vad_to_prosody(event.affect.as_ref()))
+    } else {
+        vad_to_prosody(event.affect.as_ref())
+    };
     ola_filter.notify_new_prosody(prosody);
 
     let distance = event
@@ -426,6 +569,8 @@ async fn handle_chat_output(
             }
         });
 
+    let mut current_attenuation_val = 1.0f64;
+
     for part in split_temporal_parts(content)? {
         if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
             info!("Aborting playback due to AUDIO_STOP event.");
@@ -435,18 +580,31 @@ async fn handle_chat_output(
             TemporalPart::Silence(ms) => {
                 ola_filter.clear_history();
                 let pcm = contracts::silence_pcm(ms, config.sample_rate);
+                if let Ok(guard) = attenuation_factor.lock() {
+                    current_attenuation_val = *guard;
+                }
                 publish_pcm(jetstream, pcm, &event).await?;
             }
             TemporalPart::Vocalization(name) => {
                 ola_filter.clear_history();
                 let mut pcm = load_vocalization_pcm(&name, config.sample_rate);
                 pcm = reverb_filter.process(&pcm, 0.1);
+
+                let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
+                apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
+                let _ = generate_and_publish_visemes(jetstream, &pcm);
+
                 publish_pcm(jetstream, pcm, &event).await?;
             }
             TemporalPart::Hesitation(ms) => {
                 ola_filter.clear_history();
-                let pcm = generate_hesitation_pcm(ms, config.sample_rate, prosody.pitch);
-                let pcm = reverb_filter.process(&pcm, 0.1);
+                let mut pcm = generate_hesitation_pcm(ms, config.sample_rate, prosody.pitch);
+                pcm = reverb_filter.process(&pcm, 0.1);
+
+                let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
+                apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
+                let _ = generate_and_publish_visemes(jetstream, &pcm);
+
                 publish_pcm(jetstream, pcm, &event).await?;
             }
             TemporalPart::Text(text) => {
@@ -480,6 +638,11 @@ async fn handle_chat_output(
 
                         pcm_bytes = reverb_filter.process(&pcm_bytes, wet_gain);
                         pcm_bytes = ola_filter.process(&pcm_bytes);
+
+                        let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
+                        apply_attenuation(&mut pcm_bytes, &mut current_attenuation_val, target_att);
+                        let _ = generate_and_publish_visemes(jetstream, &pcm_bytes);
+
                         publish_pcm(jetstream, pcm_bytes, &event).await?;
                     }
                 }
