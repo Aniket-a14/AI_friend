@@ -10,53 +10,295 @@ random.seed(42)
 # Dynamic Lexical Dictionary of Synonyms and Vocabulary expansion
 # Ordered from highest frequency terms (common) to lowest frequency (descriptive tail) to support Zipfian modeling
 PLACEHOLDERS = {
-    "walked": ["walked", "strolled", "wandered", "ambled", "navigated", "paced", "sauntered", "ventured", "roamed", "meandered"],
-    "streets": ["streets", "lanes", "roads", "pathways", "avenues", "alleys", "thoroughfares", "passages"],
-    "Kolkata": ["Kolkata", "Calcutta", "the City of Joy", "our home city", "the bustling streets of Bengal", "the cultural heart of Bengal"],
-    "Bangalore": ["Bangalore", "Bengaluru", "the Silicon Valley of India", "the garden city", "the high-tech hub of India"],
-    "prepared": ["prepared", "cooked", "crafted", "served", "made", "whipped up", "arranged", "assembled"],
-    "delicious": ["delicious", "mouthwatering", "savoury", "delectable", "scrumptious", "tasty", "flavourful", "exquisite"],
-    "home_cooked_meals": ["home-cooked meals", "traditional dishes", "comfort food", "Bengali recipes", "steaming rice and fish", "fragrant curries"],
-    "discussed": ["discussed", "debated", "talked about", "deliberated on", "exchanged thoughts on", "pondered over", "conferred about"],
-    "project": ["project", "assignment", "calculations", "theorems", "syllabus", "algebraic models", "physics lab practical"],
-    "spent_the_afternoon": ["spent the afternoon", "passed the hours", "sat through the afternoon", "enjoyed the afternoon", "rested through the midday"],
-    "studying": ["studying", "reading", "preparing", "researching", "revising", "memorizing", "analyzing"],
-    "library_alcove": ["library alcove", "reading room", "study corner", "quiet library stacks", "academic archives", "cosy book vault"],
-    "enjoyed": ["enjoyed", "sipped", "re-relished", "savoured", "had", "drank", "partook in"],
-    "tea": ["Bengali chai", "cardamom tea", "warm tea", "darjeeling brew", "chaa", "spiced infusion"],
+    "walked": [
+        "walked",
+        "strolled",
+        "wandered",
+        "ambled",
+        "navigated",
+        "paced",
+        "sauntered",
+        "ventured",
+        "roamed",
+        "meandered",
+    ],
+    "streets": [
+        "streets",
+        "lanes",
+        "roads",
+        "pathways",
+        "avenues",
+        "alleys",
+        "thoroughfares",
+        "passages",
+    ],
+    "Kolkata": [
+        "Kolkata",
+        "Calcutta",
+        "the City of Joy",
+        "our home city",
+        "the bustling streets of Bengal",
+        "the cultural heart of Bengal",
+    ],
+    "Bangalore": [
+        "Bangalore",
+        "Bengaluru",
+        "the Silicon Valley of India",
+        "the garden city",
+        "the high-tech hub of India",
+    ],
+    "prepared": [
+        "prepared",
+        "cooked",
+        "crafted",
+        "served",
+        "made",
+        "whipped up",
+        "arranged",
+        "assembled",
+    ],
+    "delicious": [
+        "delicious",
+        "mouthwatering",
+        "savoury",
+        "delectable",
+        "scrumptious",
+        "tasty",
+        "flavourful",
+        "exquisite",
+    ],
+    "home_cooked_meals": [
+        "home-cooked meals",
+        "traditional dishes",
+        "comfort food",
+        "Bengali recipes",
+        "steaming rice and fish",
+        "fragrant curries",
+    ],
+    "discussed": [
+        "discussed",
+        "debated",
+        "talked about",
+        "deliberated on",
+        "exchanged thoughts on",
+        "pondered over",
+        "conferred about",
+    ],
+    "project": [
+        "project",
+        "assignment",
+        "calculations",
+        "theorems",
+        "syllabus",
+        "algebraic models",
+        "physics lab practical",
+    ],
+    "spent_the_afternoon": [
+        "spent the afternoon",
+        "passed the hours",
+        "sat through the afternoon",
+        "enjoyed the afternoon",
+        "rested through the midday",
+    ],
+    "studying": [
+        "studying",
+        "reading",
+        "preparing",
+        "researching",
+        "revising",
+        "memorizing",
+        "analyzing",
+    ],
+    "library_alcove": [
+        "library alcove",
+        "reading room",
+        "study corner",
+        "quiet library stacks",
+        "academic archives",
+        "cosy book vault",
+    ],
+    "enjoyed": [
+        "enjoyed",
+        "sipped",
+        "re-relished",
+        "savoured",
+        "had",
+        "drank",
+        "partook in",
+    ],
+    "tea": [
+        "Bengali chai",
+        "cardamom tea",
+        "warm tea",
+        "darjeeling brew",
+        "chaa",
+        "spiced infusion",
+    ],
     "room": ["room", "study space", "bedroom", "personal sanctuary", "living quarters"],
-    "tried_preparing": ["tried preparing", "experimented with making", "attempted to cook", "guided my hands through making", "made a messy attempt at"],
-    "sweet_rasgullas": ["sweet rasgullas", "spongy rosogollas", "chhena sweets", "syrupy rasgullas", "traditional white sweets"],
+    "tried_preparing": [
+        "tried preparing",
+        "experimented with making",
+        "attempted to cook",
+        "guided my hands through making",
+        "made a messy attempt at",
+    ],
+    "sweet_rasgullas": [
+        "sweet rasgullas",
+        "spongy rosogollas",
+        "chhena sweets",
+        "syrupy rasgullas",
+        "traditional white sweets",
+    ],
     "kitchen": ["kitchen", "cooking area", "family kitchen", "warm stove space"],
     "evening": ["evening", "dusk hours", "twilight", "late afternoon", "nightfall"],
-    "coding_and_debugging": ["coding and debugging", "writing and profiling", "refactoring", "tuning the performance of", "optimizing the complexity of"],
-    "concurrent_thread_pool": ["concurrent thread pool", "asynchronous event loop", "lock-free ring buffer", "parallel task scheduler", "NATS JetStream bus broker", "actor pipeline in Rust"],
-    "reviewed": ["reviewed", "analyzed", "discussed", "walked through", "optimized", "vetted"],
-    "database_query_optimization": ["database query optimization", "pgvector indices", "schema indexing strategy", "read-latency bottlenecks", "graph database query paths"],
-    "research_lab_team": ["research lab team", "peers in the lab", "fellow researchers", "academic collaborators"],
+    "coding_and_debugging": [
+        "coding and debugging",
+        "writing and profiling",
+        "refactoring",
+        "tuning the performance of",
+        "optimizing the complexity of",
+    ],
+    "concurrent_thread_pool": [
+        "concurrent thread pool",
+        "asynchronous event loop",
+        "lock-free ring buffer",
+        "parallel task scheduler",
+        "NATS JetStream bus broker",
+        "actor pipeline in Rust",
+    ],
+    "reviewed": [
+        "reviewed",
+        "analyzed",
+        "discussed",
+        "walked through",
+        "optimized",
+        "vetted",
+    ],
+    "database_query_optimization": [
+        "database query optimization",
+        "pgvector indices",
+        "schema indexing strategy",
+        "read-latency bottlenecks",
+        "graph database query paths",
+    ],
+    "research_lab_team": [
+        "research lab team",
+        "peers in the lab",
+        "fellow researchers",
+        "academic collaborators",
+    ],
     "listened_to": ["listened to", "heard", "cherished", "absorbed", "smiled at"],
-    "phone_stories": ["phone stories", "voice calls", "reminiscent chats", "weekly calls", "family updates"],
-    "childhood": ["childhood years", "early days", "past years", "youthful mischief", "schoolboy memories"],
-    "practiced": ["practiced", "played", "enjoyed a game of", "ran around playing", "engaged in"],
-    "street_cricket": ["street cricket", "neighborhood gully cricket", "cricket matches", "friendly matches", "gully bat-and-ball"],
-    "childhood_friends": ["childhood friends", "neighborhood pals", "old playmates", "school friends"],
+    "phone_stories": [
+        "phone stories",
+        "voice calls",
+        "reminiscent chats",
+        "weekly calls",
+        "family updates",
+    ],
+    "childhood": [
+        "childhood years",
+        "early days",
+        "past years",
+        "youthful mischief",
+        "schoolboy memories",
+    ],
+    "practiced": [
+        "practiced",
+        "played",
+        "enjoyed a game of",
+        "ran around playing",
+        "engaged in",
+    ],
+    "street_cricket": [
+        "street cricket",
+        "neighborhood gully cricket",
+        "cricket matches",
+        "friendly matches",
+        "gully bat-and-ball",
+    ],
+    "childhood_friends": [
+        "childhood friends",
+        "neighborhood pals",
+        "old playmates",
+        "school friends",
+    ],
     "road": ["road", "street corner", "neighborhood lane", "concrete alleyway"],
     "read": ["read", "read through", "browsed", "devoured", "pored over"],
-    "advanced_science_fiction_novel": ["advanced science fiction novel", "hard sci-fi paperback", "speculative fiction book", "futuristic novel", "Isaac Asimov classic"],
-    "quiet_corner": ["quiet corner", "cosy nook", "silent spot", "peaceful window seat"],
-    "worked_on": ["worked on", "architected", "designed", "implemented", "coded", "tested"],
-    "affective_cognitive_architecture": ["affective cognitive architecture", "somatic endocrine appraisal engine", "ACT-R/E cognitive memory layer", "Theory of Mind modules", "APRA dynamic prosody system"],
+    "advanced_science_fiction_novel": [
+        "advanced science fiction novel",
+        "hard sci-fi paperback",
+        "speculative fiction book",
+        "futuristic novel",
+        "Isaac Asimov classic",
+    ],
+    "quiet_corner": [
+        "quiet corner",
+        "cosy nook",
+        "silent spot",
+        "peaceful window seat",
+    ],
+    "worked_on": [
+        "worked on",
+        "architected",
+        "designed",
+        "implemented",
+        "coded",
+        "tested",
+    ],
+    "affective_cognitive_architecture": [
+        "affective cognitive architecture",
+        "somatic endocrine appraisal engine",
+        "ACT-R/E cognitive memory layer",
+        "Theory of Mind modules",
+        "APRA dynamic prosody system",
+    ],
     "computer": ["computer", "laptop monitor", "workstation", "terminal screen"],
     "celebrated": ["celebrated", "marked", "rejoiced over", "honored", "toasted to"],
-    "college_semester_examination_results": ["college semester examination results", "high marks", "grades", "academic achievements", "excellent report card"],
+    "college_semester_examination_results": [
+        "college semester examination results",
+        "high marks",
+        "grades",
+        "academic achievements",
+        "excellent report card",
+    ],
     "family": ["family", "Ma and Baba", "loved ones", "parents"],
     "visited": ["visited", "walked to", "sat in", "found peace in", "made a trip to"],
-    "local_temple": ["local temple", "neighborhood mandir", "sacred quiet spot", "peaceful shrine"],
-    "debated": ["debated", "discussed", "argued", "analyzed", "scrutinized", "talked back and forth about"],
-    "neural_network_convergence_limits": ["neural network convergence limits", "loss landscape curvatures", "gradient descent dynamics", "transformer scaling limits", "stochastic convergence parameters"],
-    "university_cafe": ["university cafe", "campus canteen", "coffee shop", "student lounge"],
+    "local_temple": [
+        "local temple",
+        "neighborhood mandir",
+        "sacred quiet spot",
+        "peaceful shrine",
+    ],
+    "debated": [
+        "debated",
+        "discussed",
+        "argued",
+        "analyzed",
+        "scrutinized",
+        "talked back and forth about",
+    ],
+    "neural_network_convergence_limits": [
+        "neural network convergence limits",
+        "loss landscape curvatures",
+        "gradient descent dynamics",
+        "transformer scaling limits",
+        "stochastic convergence parameters",
+    ],
+    "university_cafe": [
+        "university cafe",
+        "campus canteen",
+        "coffee shop",
+        "student lounge",
+    ],
     "light": ["light", "soft", "gentle", "subtle", "mild", "drizzling", "faint"],
-    "refreshing": ["refreshing", "cool", "pleasant", "soothing", "rejuvenating", "peaceful"],
+    "refreshing": [
+        "refreshing",
+        "cool",
+        "pleasant",
+        "soothing",
+        "rejuvenating",
+        "peaceful",
+    ],
     "cool": ["cool", "chilly", "brisk", "fresh", "crisp"],
     "bright": ["bright", "glorious", "clear", "radiant", "sunny", "golden"],
     "warm": ["warm", "balmy", "cozy", "mild", "inviting"],
@@ -70,7 +312,12 @@ PLACEHOLDERS = {
     "breeze": ["breeze", "wind", "gust", "draft"],
     "notebooks": ["notebooks", "study files", "scribbled papers", "journals"],
     "aspire": ["dream", "aspire", "hope", "plan", "wish"],
-    "machines": ["intelligent systems", "humanoid brains", "feeling computers", "thinking algorithms"],
+    "machines": [
+        "intelligent systems",
+        "humanoid brains",
+        "feeling computers",
+        "thinking algorithms",
+    ],
 }
 
 
@@ -83,13 +330,13 @@ def zipfian_choice(choices, index_seed):
     n = len(choices)
     if n <= 1:
         return choices[0]
-    
+
     # Deterministic pseudo-random generator
-    state = (index_seed * 1103515245 + 12345) & 0x7fffffff
+    state = (index_seed * 1103515245 + 12345) & 0x7FFFFFFF
     r = (state % 10000) / 10000.0
-    
+
     # Skew with a power-law exponent of 2.5 to mimic Zipfian distribution
-    idx = int(n * (r ** 2.5))
+    idx = int(n * (r**2.5))
     return choices[idx % n]
 
 
@@ -113,36 +360,36 @@ def sample_lifespan_age(index_seed, lambda_val=0.12):
     Recency: Exponential decay of memory retention scaling back from age 19.0.
     """
     # Deterministic congruential generator initialization
-    state = (index_seed * 1664525 + 1013904223) & 0xffffffff
-    
+    state = (index_seed * 1664525 + 1013904223) & 0xFFFFFFFF
+
     attempts = 0
     while True:
         attempts += 1
         # Generate pseudo-random age between 0.0 and 19.0
-        state = (state * 1103515245 + 12345) & 0x7fffffff
+        state = (state * 1103515245 + 12345) & 0x7FFFFFFF
         r_age = (state % 10000) / 10000.0
-        
+
         # Generate pseudo-random acceptance threshold
-        state = (state * 1103515245 + 12345) & 0x7fffffff
+        state = (state * 1103515245 + 12345) & 0x7FFFFFFF
         r_accept = (state % 10000) / 10000.0
-        
+
         age = r_age * 19.0
-        
+
         # Amnesia component: Completely zero under age 3.0
         if age < 3.0:
             amnesia = 0.0
         else:
             # Smooth exponential recovery of memory encoding capability post infantile amnesia
             amnesia = 1.0 - math.exp(-0.75 * (age - 3.0))
-            
+
         # Recency component: Memory density scales exponentially towards the present (age 19.0)
         recency = math.exp(lambda_val * (age - 19.0))
-        
+
         p = amnesia * recency
-        
+
         if r_accept < p:
             return age
-        
+
         # Guard against infinite loops in extreme cases (fallback to safe range)
         if attempts > 1000:
             return 3.0 + r_age * 16.0
@@ -289,18 +536,17 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
     print(f"   - Milestones: {num_milestones}")
 
     now = datetime.now(timezone.utc)
-    nineteen_years_seconds = 19 * 365 * 24 * 3600
 
     corpus = []
 
     # 1. Compile 100,000 backdated distractors using Lifespan Rejection Sampling & Semantic Degradation
     print("⏳ Backdating and compressing 100,000 chitchats over 19 years...")
-    
+
     for i in range(num_distractors):
         # Sample biologically realistic age from our non-uniform PDF (0 memories before age 3.0)
         age = sample_lifespan_age(i, lambda_val=0.14)
         elapsed = age * 365 * 24 * 3600
-        
+
         # Calculate timestamp backdated from now
         created_time = now - timedelta(seconds=elapsed)
 
@@ -312,7 +558,9 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
         # --- Three-Tier Semantic Degradation Loop based on memory age ---
         if age < 7.0:
             # Childhood Stage (Age 3.0 to 7.0): Highly compressed, fragmented traces
-            base_trace = "Fuzzy Childhood Memory: {walked} with {family} near {local_temple}."
+            base_trace = (
+                "Fuzzy Childhood Memory: {walked} with {family} near {local_temple}."
+            )
             content = resolve_placeholders(base_trace, i)
         elif age < 14.0:
             # School-era Stage (Age 7.0 to 14.0): Core scenario and outcome, losing low-priority sensory/weather details
@@ -349,7 +597,7 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
 
     # 2. Compile 10,000 structured milestone memories distributed across 4 developmental stages
     print("🧠 Organizing 10,000 system milestones into 4 developmental epochs...")
-    
+
     for i in range(num_milestones):
         # Sample age for milestones matching developmental stages
         age = sample_lifespan_age(i + num_distractors, lambda_val=0.10)

@@ -322,8 +322,9 @@ Emitted by the **STT Agent** (`backend/crates/stt-agent`) during raw PCM ingest:
 
 ### 8.2 agent.voice.modulation
 Emitted by the **Surfacing Agent** (`backend/app/agents/surfacing_agent.py`) upon receiving a `state.update` event:
-- Translates active Pleasure-Arousal-Dominance (PAD) and metabolic fatigue parameters into targeted speaking rate ($R$), pitch ($P$), and volume ($V_{ol}$) shifts.
-- Applied dynamically to active playback blocks using a **10ms-15ms Overlap-Add (OLA) linear crossfade** window.
+- Employs the **APRA v2** Continuous Frame-wise Prosody Engine to generate a 3.0-second trajectory consisting of 60 frames spaced at 50ms intervals.
+- Translates active Pleasure-Arousal-Dominance (PAD) and metabolic fatigue parameters into continuous Speaking Rate ($R$), Pitch ($P$), and Volume ($V_{ol}$) trajectories, enriched with organic human features such as a 6Hz micro-vibratory ripple (pitch vibrato) and start/end breathing/volumetric envelopes.
+- Employs a type-safe `List[ProsodyFrame]` payload to feed the downstream OLA DSP system.
 
 ### 8.3 audio.playback.visemes
 Emitted by the **Voice Agent** (`backend/crates/voice-agent`) dynamically during audio output:
