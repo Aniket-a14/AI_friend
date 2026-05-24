@@ -300,18 +300,21 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         while let Some(msg) = modulation_sub.next().await {
             if let Ok(mod_payload) = serde_json::from_slice::<contracts::AgentVoiceModulation>(&msg.payload) {
-                info!("Received AGENT_VOICE_MODULATION: rate={}, pitch={}, volume={}", mod_payload.rate, mod_payload.pitch, mod_payload.volume);
-                if let Ok(mut guard) = dynamic_prosody_clone.lock() {
-                    *guard = Some(contracts::Prosody {
-                        rate: mod_payload.rate,
-                        pitch: mod_payload.pitch,
-                        volume: mod_payload.volume,
-                        pause_bias: 1.0,
-                    });
+                if let Some(first_frame) = mod_payload.trajectory.first() {
+                    info!("Received AGENT_VOICE_MODULATION: rate={}, pitch={}, volume={}", first_frame.rate, first_frame.pitch, first_frame.volume);
+                    if let Ok(mut guard) = dynamic_prosody_clone.lock() {
+                        *guard = Some(contracts::Prosody {
+                            rate: first_frame.rate,
+                            pitch: first_frame.pitch,
+                            volume: first_frame.volume,
+                            pause_bias: 1.0,
+                        });
+                    }
                 }
             }
         }
     });
+
 
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
 

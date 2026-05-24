@@ -233,12 +233,19 @@ class UserVoiceProperties(BaseModel):
 
 
 # ─── agent.voice.modulation ───────────────────────────────────
-class AgentVoiceModulation(BaseModel):
+class ProsodyFrame(BaseModel):
     model_config = {"extra": "allow"}
 
+    time_offset_ms: int
     rate: float
     pitch: float
     volume: float
+
+
+class AgentVoiceModulation(BaseModel):
+    model_config = {"extra": "allow"}
+
+    trajectory: List[ProsodyFrame]
     timestamp: float = Field(default_factory=time.time)
 
 
