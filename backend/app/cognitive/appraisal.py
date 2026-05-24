@@ -16,6 +16,7 @@ import json
 import re
 from dataclasses import dataclass, asdict
 from typing import Dict, Any, List
+import cognitive_rust
 
 logger = logging.getLogger(__name__)
 
@@ -74,69 +75,34 @@ class AppraisalEngine:
         Heuristic appraisal for the real-time cognitive loop.
         Returns an AppraisalVector without requiring LLM or embedding calls.
         """
-        # --- Primary Appraisal (§1.1) ---
-
-        # R — Relevance: User messages are always relevant
-        if event_type == "USER_MESSAGE":
-            relevance = 1.0
-        elif event_type == "SYSTEM_TICK":
-            relevance = 0.1
-        else:
-            relevance = 0.5
-
-        # N — Novelty: Word-overlap similarity against recent messages
-        novelty = self._compute_novelty(event_content)
-
-        # G — Goal Congruence: Positive emotional bias → congruent with social goals
-        goal_congruence = max(-1.0, min(1.0, emotional_bias))
-
-        # --- Secondary Appraisal (§1.2) ---
-
-        # A — Agency: Can the agent do something about this?
-        if event_type == "USER_MESSAGE":
-            agency = 0.8  # Agent can respond
-        else:
-            agency = 0.3  # Limited control over system events
-
-        # NA — Norm Alignment: Check content against identity boundaries
-        norm_alignment = self._check_norm_alignment(
-            event_content, identity_boundaries or []
-        )
-
-        # RI — Relationship Impact: Emotional tone → trust direction
-        trust = state_snapshot.get("trust", 0.5)
-        ri = emotional_bias * 0.5
-        if trust < 0.3:
-            ri *= 0.5  # Low trust dampens positive impact
-
-        # Integrate System 1 user voice properties into appraisal (e.g. yelling/panicked shifts)
+        pitch = None
+        energy = None
         if user_voice_properties:
-            pitch = user_voice_properties.get("pitch_f0", 150.0)
-            energy = user_voice_properties.get("energy_rms", 0.0)
+            pitch = float(user_voice_properties.get("pitch_f0", 150.0))
+            energy = float(user_voice_properties.get("energy_rms", 0.0))
 
             # High energy yells (energy > 0.15) or extremely high pitch (F0 > 250Hz) shifts appraisal
             if energy > 0.15 or pitch > 250.0:
                 logger.info(
                     f"🎙️ [Appraisal] High arousal user vocal cues detected (energy={energy:.3f}, pitch={pitch:.1f}Hz). Raising threat level."
                 )
-                # We decrease goal congruence because yelling/stress is incongruent with stable social goals
-                goal_congruence = max(-1.0, min(1.0, goal_congruence - 0.3))
-                # Relationship impact becomes more negative / less positive
-                ri = max(-1.0, min(1.0, ri - 0.2))
+
+        # Delegate to Rust
+        vector = cognitive_rust.compute_appraisal(
+            event_content,
+            event_type,
+            emotional_bias,
+            state_snapshot.get("trust", 0.5),
+            self._recent_contents,
+            identity_boundaries or [],
+            pitch,
+            energy,
+        )
 
         # Track content for novelty computation
         self._recent_contents.append(event_content[:100])
         if len(self._recent_contents) > self._max_recent:
             self._recent_contents = self._recent_contents[-self._max_recent :]
-
-        vector = AppraisalVector(
-            relevance=relevance,
-            novelty=novelty,
-            goal_congruence=goal_congruence,
-            agency=agency,
-            norm_alignment=norm_alignment,
-            relationship_impact=ri,
-        )
 
         logger.debug(
             "[Appraisal] R=%.2f N=%.2f G=%.2f A=%.2f NA=%.2f RI=%.2f",

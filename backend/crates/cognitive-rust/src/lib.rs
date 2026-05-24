@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::PyModule;
+use pyo3::types::{PyModule, PyDict};
 
 #[pyclass(skip_from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +37,16 @@ impl AppraisalVector {
             norm_alignment,
             relationship_impact,
         }
+    }
+    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let dict = PyDict::new(py);
+        dict.set_item("relevance", self.relevance)?;
+        dict.set_item("novelty", self.novelty)?;
+        dict.set_item("goal_congruence", self.goal_congruence)?;
+        dict.set_item("agency", self.agency)?;
+        dict.set_item("norm_alignment", self.norm_alignment)?;
+        dict.set_item("relationship_impact", self.relationship_impact)?;
+        Ok(dict.unbind())
     }
 }
 
@@ -99,6 +109,7 @@ impl PsychWeights {
 }
 
 #[pyfunction]
+#[pyo3(signature = (event_content, event_type, emotional_bias, trust, recent_contents, identity_boundaries, pitch_f0=None, energy_rms=None))]
 pub fn compute_appraisal(
     event_content: &str,
     event_type: &str,
@@ -106,6 +117,8 @@ pub fn compute_appraisal(
     trust: f64,
     recent_contents: Vec<String>,
     identity_boundaries: Vec<String>,
+    pitch_f0: Option<f64>,
+    energy_rms: Option<f64>,
 ) -> AppraisalVector {
     let relevance = match event_type {
         "USER_MESSAGE" => 1.0,
@@ -113,7 +126,7 @@ pub fn compute_appraisal(
         _ => 0.5,
     };
     let novelty = compute_novelty(event_content, &recent_contents);
-    let goal_congruence = emotional_bias.clamp(-1.0, 1.0);
+    let mut goal_congruence = emotional_bias.clamp(-1.0, 1.0);
     let agency = if event_type == "USER_MESSAGE" {
         0.8
     } else {
@@ -123,6 +136,14 @@ pub fn compute_appraisal(
     let mut relationship_impact = emotional_bias * 0.5;
     if trust < 0.3 {
         relationship_impact *= 0.5;
+    }
+
+    // High energy yells (energy > 0.15) or extremely high pitch (F0 > 250Hz) shifts appraisal
+    let pitch = pitch_f0.unwrap_or(150.0);
+    let energy = energy_rms.unwrap_or(0.0);
+    if energy > 0.15 || pitch > 250.0 {
+        goal_congruence = (goal_congruence - 0.3).clamp(-1.0, 1.0);
+        relationship_impact = (relationship_impact - 0.2).clamp(-1.0, 1.0);
     }
 
     AppraisalVector {
@@ -296,6 +317,199 @@ pub fn evaluate_acoustic_reflex(rms: f64, _zcr: f64, threshold: f64) -> bool {
     rms > threshold
 }
 
+#[pyfunction]
+pub fn score_memories_actr_sqlite(
+    query_vector: Vec<f64>,
+    rows: Vec<Bound<'_, PyDict>>,
+    excluded: std::collections::HashSet<String>,
+    current_valence: f64,
+    current_arousal: f64,
+    current_cortisol: f64,
+    decay_rate: f64,
+    spread_weight: f64,
+    threshold: f64,
+    now_ts: f64,
+) -> PyResult<Vec<(usize, f64, f64)>> {
+    let mut results = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        let content: String = match row.get_item("content")? {
+            Some(val) => val.extract::<String>().unwrap_or_default(),
+            None => String::new(),
+        };
+        if excluded.contains(&content) {
+            continue;
+        }
+
+        // Get embedding
+        let emb_val: Vec<f64> = match row.get_item("embedding")? {
+            Some(val) => {
+                if val.is_none() {
+                    Vec::new()
+                } else if let Ok(s) = val.extract::<String>() {
+                    let s_trimmed = s.trim_matches(|c| c == '[' || c == ']');
+                    s_trimmed
+                        .split(',')
+                        .map(|x| x.trim().parse::<f64>().unwrap_or(0.0))
+                        .collect()
+                } else if let Ok(v) = val.extract::<Vec<f64>>() {
+                    v
+                } else {
+                    Vec::new()
+                }
+            }
+            None => Vec::new(),
+        };
+
+        if emb_val.len() != query_vector.len() || query_vector.is_empty() {
+            continue;
+        }
+
+        // Cosine similarity
+        let dot: f64 = query_vector.iter().zip(emb_val.iter()).map(|(x, y)| x * y).sum();
+        let mag1 = query_vector.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let mag2 = emb_val.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let similarity = if mag1 * mag2 > 0.0 { dot / (mag1 * mag2) } else { 0.0 };
+
+        let recall_count = match row.get_item("recall_count")? {
+            Some(val) => {
+                if val.is_none() {
+                    1.0
+                } else {
+                    val.extract::<i64>().unwrap_or(1).max(1) as f64
+                }
+            }
+            None => 1.0,
+        };
+
+        let last_recall_ts = match row.get_item("_last_recall_ts")? {
+            Some(val) => {
+                if val.is_none() {
+                    now_ts
+                } else {
+                    val.extract::<f64>().unwrap_or(now_ts)
+                }
+            }
+            None => now_ts,
+        };
+
+        let valence = match row.get_item("valence")? {
+            Some(val) => {
+                if val.is_none() {
+                    0.0
+                } else {
+                    val.extract::<f64>().unwrap_or(0.0)
+                }
+            }
+            None => 0.0,
+        };
+
+        let emotional_weight = match row.get_item("emotional_weight")? {
+            Some(val) => {
+                if val.is_none() {
+                    0.0
+                } else {
+                    val.extract::<f64>().unwrap_or(0.0)
+                }
+            }
+            None => 0.0,
+        };
+
+        let importance_score = match row.get_item("importance_score")? {
+            Some(val) => {
+                if val.is_none() {
+                    0.5
+                } else {
+                    val.extract::<f64>().unwrap_or(0.5)
+                }
+            }
+            None => 0.5,
+        };
+
+        let hours_since = ((now_ts - last_recall_ts) / 3600.0).max(0.001);
+
+        // 2D/3D Emotional Distance
+        let dist_emo = ((valence - current_valence).powi(2)
+            + (emotional_weight - current_arousal).powi(2))
+            .sqrt();
+
+        // ACT-R base activation: ln(recall_count) - decay_rate * ln(hours_since + 1.0) + 1.5 * importance_score + 0.15 * (1.0 - dist_emo)
+        let base_activation = recall_count.ln()
+            - decay_rate * (hours_since + 1.0).ln()
+            + 1.5 * importance_score
+            + 0.15 * (1.0 - dist_emo);
+
+        // Neuromodulatory distance mapping
+        let effective_similarity = similarity
+            * (1.0 + 0.1 * valence * emotional_weight - 0.2 * current_arousal * current_cortisol);
+
+        let spread_activation = spread_weight * effective_similarity;
+        let score = base_activation + spread_activation - 0.5 * dist_emo;
+
+        if score > (threshold - 2.5) {
+            results.push((index, score, similarity));
+        }
+    }
+    Ok(results)
+}
+
+#[pyfunction]
+pub fn generate_apra_trajectory(
+    valence: f64,
+    arousal: f64,
+    dominance: f64,
+    fatigue: f64,
+) -> Vec<(u32, f64, f64, f64)> {
+    let mut trajectory = Vec::with_capacity(60);
+    for step in 0..60 {
+        let t_ms = step * 50;
+
+        // Dynamic Breathing & Pacing modulation (dip at start and end for natural breathing)
+        let breathing_dampening = if t_ms < 200 {
+            -0.15 * (1.0 - (t_ms as f64 / 200.0))
+        } else if t_ms > 2700 {
+            -0.15 * ((t_ms as f64 - 2700.0) / 300.0)
+        } else {
+            0.0
+        };
+
+        let step_rate = (1.0
+            + 0.20 * arousal
+            - 0.10 * valence
+            - 0.25 * fatigue
+            + breathing_dampening)
+            .clamp(0.60, 1.80);
+
+        // Sinusoidal micro-vibratory ripple to pitch (6Hz organic human vocal vibrato)
+        let vibrato_ripple = 0.02 * (2.0 * std::f64::consts::PI * 6.0 * (t_ms as f64 / 1000.0)).sin();
+        let step_pitch = (1.0
+            + 0.05 * valence
+            + 0.15 * arousal
+            - 0.10 * dominance
+            - 0.10 * fatigue
+            + vibrato_ripple)
+            .clamp(0.50, 2.00);
+
+        // Volumetric envelope (smooth fade-in and fade-out near endpoints)
+        let vol_envelope = if t_ms < 150 {
+            t_ms as f64 / 150.0
+        } else if t_ms > 2850 {
+            (3000.0 - t_ms as f64) / 150.0
+        } else {
+            1.0
+        };
+
+        let step_volume = ((0.40 + 0.60 * dominance) * vol_envelope).clamp(0.10, 1.00);
+
+        trajectory.push((
+            t_ms,
+            (step_rate * 100.0).round() / 100.0,
+            (step_pitch * 100.0).round() / 100.0,
+            (step_volume * 100.0).round() / 100.0,
+        ));
+    }
+    trajectory
+}
+
 #[pymodule]
 fn cognitive_rust(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<AppraisalVector>()?;
@@ -303,6 +517,8 @@ fn cognitive_rust(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PsychWeights>()?;
     module.add_class::<FatigueState>()?;
     module.add_function(wrap_pyfunction!(compute_appraisal, module)?)?;
+    module.add_function(wrap_pyfunction!(score_memories_actr_sqlite, module)?)?;
+    module.add_function(wrap_pyfunction!(generate_apra_trajectory, module)?)?;
     module.add_function(wrap_pyfunction!(update_pad_from_appraisal, module)?)?;
     module.add_function(wrap_pyfunction!(apply_alma_decay, module)?)?;
     module.add_function(wrap_pyfunction!(update_fatigue, module)?)?;

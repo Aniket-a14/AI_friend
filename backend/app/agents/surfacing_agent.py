@@ -10,9 +10,9 @@ The agent alternates between channels to provide the cognitive core with both
 """
 
 import asyncio
+import cognitive_rust
 import logging
 import time
-import math
 from typing import Dict, Any, Optional, List
 from .base import BaseAgent
 from ..state import ConversationHistoryStore, MemoryStore, GraphDB
@@ -116,71 +116,17 @@ class SurfacingAgent(BaseAgent):
             dominance = data.get("dominance", 0.5)
             fatigue = data.get("fatigue", 0.0)
 
-            # R = clamp(1.0 + 0.20 * arousal - 0.10 * valence - 0.25 * fatigue, 0.60, 1.80)
-            # P = clamp(1.0 + 0.05 * valence + 0.15 * arousal - 0.10 * dominance - 0.10 * fatigue, 0.50, 2.00)
-            # Vol = clamp(0.40 + 0.60 * dominance, 0.10, 1.00)
             from ..contracts import AgentVoiceModulation, ProsodyFrame, Topics
 
-            # Generate a continuous time-series trajectory (60 frames at 50ms intervals representing 3.0 seconds)
-            trajectory = []
-            for step in range(60):
-                t_ms = step * 50
+            # Generate continuous trajectory using Rust PyO3
+            trajectory_tuples = cognitive_rust.generate_apra_trajectory(
+                valence, arousal, dominance, fatigue
+            )
 
-                # Dynamic Breathing & Pacing modulation (dip at start and end for natural breathing)
-                breathing_dampening = 0.0
-                if t_ms < 200:
-                    # Fade-in rate dampening during initial breath
-                    breathing_dampening = -0.15 * (1.0 - (t_ms / 200.0))
-                elif t_ms > 2700:
-                    # Fade-out rate dampening near terminal silence
-                    breathing_dampening = -0.15 * ((t_ms - 2700.0) / 300.0)
-
-                step_rate = max(
-                    0.60,
-                    min(
-                        1.80,
-                        1.0
-                        + 0.20 * arousal
-                        - 0.10 * valence
-                        - 0.25 * fatigue
-                        + breathing_dampening,
-                    ),
-                )
-
-                # Sinusoidal micro-vibratory ripple to pitch (6Hz organic human vocal vibrato)
-                vibrato_ripple = 0.02 * math.sin(2.0 * math.pi * 6.0 * (t_ms / 1000.0))
-                step_pitch = max(
-                    0.50,
-                    min(
-                        2.00,
-                        1.0
-                        + 0.05 * valence
-                        + 0.15 * arousal
-                        - 0.10 * dominance
-                        - 0.10 * fatigue
-                        + vibrato_ripple,
-                    ),
-                )
-
-                # Volumetric envelope (smooth fade-in and fade-out near endpoints)
-                vol_envelope = 1.0
-                if t_ms < 150:
-                    vol_envelope = t_ms / 150.0
-                elif t_ms > 2850:
-                    vol_envelope = (3000.0 - t_ms) / 150.0
-
-                step_volume = max(
-                    0.10, min(1.00, (0.40 + 0.60 * dominance) * vol_envelope)
-                )
-
-                trajectory.append(
-                    ProsodyFrame(
-                        time_offset_ms=t_ms,
-                        rate=round(step_rate, 2),
-                        pitch=round(step_pitch, 2),
-                        volume=round(step_volume, 2),
-                    )
-                )
+            trajectory = [
+                ProsodyFrame(time_offset_ms=t_ms, rate=r, pitch=p, volume=v)
+                for t_ms, r, p, v in trajectory_tuples
+            ]
 
             modulation = AgentVoiceModulation(
                 trajectory=trajectory,
