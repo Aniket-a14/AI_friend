@@ -191,3 +191,19 @@ This document compiles the exhaustive academic bibliography for **AI Friend CVS-
     *Title*: "Why there are complementary learning systems in the hippocampus and neocortex: Insights from the successes and failures of connectionist models of learning and memory"
     *Venue*: *Psychological Review*
     *Link*: [DOI:10.1037/0033-295X.102.3.419](https://doi.org/10.1037/0033-295X.102.3.419)
+
+35. **Huet, G. et al. (2025)**
+    *Title*: "EPBench: A Contamination-Free Episodic Memories Generation and Evaluation Benchmark for Large Language Models"
+    *Venue*: *Proceedings of the Association for Computational Linguistics (ACL)*
+    *Link*: [arXiv:2502.04631](https://arxiv.org/abs/2502.04631)
+
+36. **Wu, Y. et al. (2026)**
+    *Title*: "KnowMeBench: Benchmarking Long-Term Person-Centric Conversational Memory and State Attribution"
+    *Venue*: *ACM/IEEE International Conference on Human-Robot Interaction (HRI)*
+    *Link*: [arXiv:2601.07892](https://arxiv.org/abs/2601.07892)
+
+37. **LMEB Consortium (2026)**
+    *Title*: "Long-horizon Memory Embedding Benchmark (LMEB): Standardized Protocols for Long-Term Retrieval in Embodied Agents"
+    *Venue*: *Neural Information Processing Systems (NeurIPS) Dataset Track*
+    *Link*: [arXiv:2602.09115](https://arxiv.org/abs/2602.09115)
+
