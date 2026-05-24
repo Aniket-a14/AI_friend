@@ -142,64 +142,124 @@ class MemoryStore:
             raw_val = raw_content or content
 
             async with self.pool.acquire() as conn:
-                try:
-                    await conn.execute(
-                        """
-                        INSERT INTO memories (
-                            id, content, raw_content, wing, room,
-                            embedding, importance_score, emotional_weight,
-                            valence, certainty, source, metadata,
-                            lifespan_stage, crisis, virtue, relations, relation_circles, modality,
-                            recall_count, last_recalled_at
+                if self.is_sqlite:
+                    try:
+                        await conn.execute(
+                            """
+                            INSERT INTO memories (
+                                id, content, raw_content, wing, room,
+                                embedding, importance_score, emotional_weight,
+                                valence, certainty, source, metadata,
+                                lifespan_stage, crisis, virtue, relations, relation_circles, modality,
+                                recall_count, last_recalled_at
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+                            """,
+                            memory_id,
+                            content,
+                            raw_val,
+                            wing,
+                            room,
+                            vector_str,
+                            importance,
+                            emotion,
+                            valence,
+                            certainty,
+                            source,
+                            orjson.dumps(metadata or {}).decode(),
+                            lifespan_stage,
+                            crisis,
+                            virtue,
+                            relations,
+                            relation_circles,
+                            modality,
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 1, CURRENT_TIMESTAMP)
-                        """,
-                        memory_id,
-                        content,
-                        raw_val,
-                        wing,
-                        room,
-                        vector_str,
-                        importance,
-                        emotion,
-                        valence,
-                        certainty,
-                        source,
-                        orjson.dumps(metadata or {}).decode(),
-                        lifespan_stage,
-                        crisis,
-                        virtue,
-                        relations,
-                        relation_circles,
-                        modality,
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Eriksonian insert failed, falling back to legacy schema: {e}"
-                    )
-                    await conn.execute(
-                        """
-                        INSERT INTO memories (
-                            id, content, raw_content, wing, room,
-                            embedding, importance_score, emotional_weight,
-                            valence, certainty, source, metadata,
-                            recall_count, last_recalled_at
+                    except Exception as e:
+                        logger.warning(
+                            f"Eriksonian insert failed, falling back to legacy schema: {e}"
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, CURRENT_TIMESTAMP)
-                        """,
-                        memory_id,
-                        content,
-                        raw_val,
-                        wing,
-                        room,
-                        vector_str,
-                        importance,
-                        emotion,
-                        valence,
-                        certainty,
-                        source,
-                        orjson.dumps(metadata or {}).decode(),
-                    )
+                        await conn.execute(
+                            """
+                            INSERT INTO memories (
+                                id, content, raw_content, wing, room,
+                                embedding, importance_score, emotional_weight,
+                                valence, certainty, source, metadata,
+                                recall_count, last_recalled_at
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+                            """,
+                            memory_id,
+                            content,
+                            raw_val,
+                            wing,
+                            room,
+                            vector_str,
+                            importance,
+                            emotion,
+                            valence,
+                            certainty,
+                            source,
+                            orjson.dumps(metadata or {}).decode(),
+                        )
+                else:
+                    try:
+                        await conn.execute(
+                            """
+                            INSERT INTO memories (
+                                id, content, raw_content, wing, room,
+                                embedding, importance_score, emotional_weight,
+                                valence, certainty, source, metadata,
+                                lifespan_stage, crisis, virtue, relations, relation_circles, modality,
+                                recall_count, last_recalled_at
+                            )
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 1, CURRENT_TIMESTAMP)
+                            """,
+                            memory_id,
+                            content,
+                            raw_val,
+                            wing,
+                            room,
+                            vector_str,
+                            importance,
+                            emotion,
+                            valence,
+                            certainty,
+                            source,
+                            orjson.dumps(metadata or {}).decode(),
+                            lifespan_stage,
+                            crisis,
+                            virtue,
+                            relations,
+                            relation_circles,
+                            modality,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Eriksonian insert failed, falling back to legacy schema: {e}"
+                        )
+                        await conn.execute(
+                            """
+                            INSERT INTO memories (
+                                id, content, raw_content, wing, room,
+                                embedding, importance_score, emotional_weight,
+                                valence, certainty, source, metadata,
+                                recall_count, last_recalled_at
+                            )
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, CURRENT_TIMESTAMP)
+                            """,
+                            memory_id,
+                            content,
+                            raw_val,
+                            wing,
+                            room,
+                            vector_str,
+                            importance,
+                            emotion,
+                            valence,
+                            certainty,
+                            source,
+                            orjson.dumps(metadata or {}).decode(),
+                        )
             # Upsert into Qdrant if online using the same memory_id
             if self.qdrant_store.client:
                 metadata_qdrant = {

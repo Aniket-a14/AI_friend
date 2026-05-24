@@ -17,11 +17,29 @@ class WorkingMemoryStore:
 
     def __init__(
         self,
-        redis_host: str = "127.0.0.1",
-        redis_port: int = 6379,
+        redis_host: str = None,
+        redis_port: int = None,
         db_path: str = "working_memory.db",
         max_turns: int = 8,
     ):
+        from ..config import Config
+
+        r_url = getattr(Config, "REDIS_URL", "redis://127.0.0.1:6379")
+        default_host = "127.0.0.1"
+        default_port = 6379
+        if r_url.startswith("redis://"):
+            parts = r_url[8:].split(":")
+            if len(parts) > 0:
+                default_host = parts[0]
+            if len(parts) > 1:
+                try:
+                    default_port = int(parts[1].split("/")[0])
+                except ValueError:
+                    pass
+
+        r_host = redis_host or default_host
+        r_port = redis_port or default_port
+
         self.max_turns = max_turns
         self.db_path = db_path
         self.redis_client: Optional[redis.Redis] = None
@@ -29,8 +47,8 @@ class WorkingMemoryStore:
         # 1. Attempt Redis Connection
         try:
             self.redis_client = redis.Redis(
-                host=redis_host,
-                port=redis_port,
+                host=r_host,
+                port=r_port,
                 db=0,
                 socket_connect_timeout=1.0,
                 decode_responses=True,
@@ -38,7 +56,7 @@ class WorkingMemoryStore:
             # Ping to confirm live connection
             self.redis_client.ping()
             logger.info(
-                f"Connected to Redis Working Memory on {redis_host}:{redis_port}"
+                f"Connected to Redis Working Memory on {r_host}:{r_port}"
             )
         except Exception as e:
             self.redis_client = None

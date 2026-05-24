@@ -35,17 +35,57 @@ class BaseAgent:
             1, int(os.getenv("SUBJECT_METRICS_LOG_EVERY", "25"))
         )
 
+    async def _on_nats_disconnected(self):
+        logger.warning(f"⚠️ Agent '{self.name}' NATS connection disconnected! Attempting automatic recovery...")
+
+    async def _on_nats_reconnected(self):
+        logger.info(f"✅ Agent '{self.name}' NATS connection successfully re-established.")
+
+    async def _on_nats_error(self, err):
+        logger.error(f"❌ Agent '{self.name}' NATS connection error: {err}")
+
+    async def _on_nats_closed(self):
+        logger.info(f"🔌 Agent '{self.name}' NATS connection closed.")
+
     async def connect(self):
         """Connect to the NATS Mesh and bootstrap streams."""
         try:
-            # Add timeout to prevent indefinite hangs if NATS is down
-            self.nc = await nats.connect(self.nats_url, connect_timeout=10)
+            # Connect with infinite auto-reconnection parameters for maximum reliability
+            self.nc = await nats.connect(
+                self.nats_url,
+                connect_timeout=10,
+                max_reconnect_attempts=-1,
+                reconnect_time_wait=2.0,
+                disconnected_cb=self._on_nats_disconnected,
+                reconnected_cb=self._on_nats_reconnected,
+                error_cb=self._on_nats_error,
+                closed_cb=self._on_nats_closed,
+            )
             self.js = self.nc.jetstream()
             await self._bootstrap_mesh()
             logger.info(f"Agent '{self.name}' connected to mesh at {self.nats_url}")
+
+            # Auto-subscribe active agents to cache synchronization broadcasts
+            if self.name != "test_publisher" and not self.name.startswith("test_"):
+                try:
+                    await self.subscribe("cache.sync", self._on_cache_sync_received)
+                except Exception as se:
+                    logger.debug(f"Cache sync auto-subscribe skipped: {se}")
         except Exception as e:
             logger.error(f"Failed to connect agent '{self.name}': {e}")
             raise
+
+    async def _on_cache_sync_received(self, data: Dict[str, Any]):
+        """Receives cross-process cache invalidation broadcast signals."""
+        try:
+            store_name = data.get("store")
+            action = data.get("action")
+            if store_name == "identity_core" and action == "invalidate":
+                logger.info(f"🔄 [CacheSync] Invalidation signal received for {store_name}. Reloading local caches.")
+                from ..state.identity_core_store import IdentityCoreStore
+                IdentityCoreStore.invalidate_all_local_caches()
+        except Exception as e:
+            logger.warning(f"Error handling cache sync: {e}")
 
     async def _bootstrap_mesh(self):
         """Ensure core streams exist on the mesh (CVS-1.0 Hardened)."""
