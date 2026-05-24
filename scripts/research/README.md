@@ -71,6 +71,13 @@ pip install matplotlib numpy pandas reportlab nats-py python-dotenv scipy asyncp
 ### Step 1b: NRC-VAD Lexicon Dataset Setup (Mandatory for Sentiment Scorer)
 The evaluation scoring engine (`metrics_eval.py`) relies on Dr. Saif M. Mohammad's official NRC Valence, Arousal, and Dominance (VAD) Lexicon to validate emotional appraisal accuracy. Due to distribution licensing, this file is excluded from Git tracking via `.gitignore` and must be set up locally:
 
+#### Option A: Programmatic Setup (Recommended for AI Agents & CLI)
+Run this single Python command to automatically download, extract, and place the lexicon file in the correct location:
+```bash
+python -c "import urllib.request, zipfile, io, os; url = 'https://saifmohammad.com/WebDocs/Lexicons/NRC-VAD-Lexicon.zip'; headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9'}; req = urllib.request.Request(url, headers=headers); target_dir = 'scripts/research/NRC-VAD-Lexicon'; os.makedirs(target_dir, exist_ok=True); print('Downloading (44MB)...'); response = urllib.request.urlopen(req); zip_data = response.read(); print('Extracting...'); z = zipfile.ZipFile(io.BytesIO(zip_data)); [open(os.path.join(target_dir, 'NRC-VAD-Lexicon.txt'), 'wb').write(z.read(n)) for n in z.namelist() if n.endswith('NRC-VAD-Lexicon.txt')]; print('Lexicon set up successfully!')"
+```
+
+#### Option B: Manual Setup
 1. **Download the Lexicon Zip**:
    Download the archive directly from the official webpage:
    `https://saifmohammad.com/WebDocs/Lexicons/NRC-VAD-Lexicon.zip`
