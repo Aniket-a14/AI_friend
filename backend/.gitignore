@@ -17,3 +17,5 @@ app/history.json
 wake_up_file/
 *.ppn
 **/voice_samples/
+*.db
+

@@ -4,6 +4,7 @@ Thumbs.db
 *.log
 tmp/
 temp/
+*.db
 
 # IDEs
 .vscode/
