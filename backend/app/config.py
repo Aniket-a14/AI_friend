@@ -25,6 +25,13 @@ class AppSettings(BaseSettings):
     # NATS Configuration
     NATS_URL: str = "nats://127.0.0.1:4222"
 
+    # Redis Configuration
+    REDIS_URL: str = "redis://127.0.0.1:6379"
+
+    # Qdrant Configuration
+    QDRANT_HOST: str = "127.0.0.1"
+    QDRANT_PORT: int = 6333
+
     # LiveKit Configuration
     LIVEKIT_URL: str = "http://127.0.0.1:7880"
     LIVEKIT_API_KEY: Optional[str] = None

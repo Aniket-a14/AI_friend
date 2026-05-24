@@ -14,11 +14,15 @@ class IdentityCoreStore:
     Tier-1 SQLite Store for Persistent and Immutable Identity Core.
     Guarantees sub-millisecond local cached lookups for real-time speech paths.
     """
+    _instances = []
 
-    def __init__(self, db_path: str = "identity_core.db"):
+    def __init__(self, db_path: str = "identity_core.db", publish_cb=None):
         self.db_path = db_path
         self._cache_lock = threading.Lock()
         self._cached_identity: Dict[str, Any] = {}
+        self.publish_cb = publish_cb
+        IdentityCoreStore._instances.append(self)
+
         if db_path == ":memory:":
             self._conn = sqlite3.connect(":memory:")
             self._conn.row_factory = sqlite3.Row
@@ -166,8 +170,34 @@ class IdentityCoreStore:
             conn.commit()
             self.load_into_cache()
             logger.info("Identity Core Store updated and cached.")
+
+            # Broadcast cache invalidation to other processes via NATS if registered
+            if self.publish_cb:
+                try:
+                    import asyncio
+                    if asyncio.iscoroutinefunction(self.publish_cb):
+                        asyncio.create_task(self.publish_cb("cache.sync", {
+                            "store": "identity_core",
+                            "action": "invalidate"
+                        }))
+                    else:
+                        self.publish_cb("cache.sync", {
+                            "store": "identity_core",
+                            "action": "invalidate"
+                        })
+                except Exception as sync_err:
+                    logger.warning(f"Failed to publish cache sync broadcast: {sync_err}")
         except Exception as e:
             logger.error(f"Failed to update identity core in SQLite: {e}")
             raise
         finally:
             self._release_connection(conn)
+
+    @classmethod
+    def invalidate_all_local_caches(cls):
+        """Invalidates and reloads the cached identities on all local active store instances."""
+        for inst in cls._instances:
+            try:
+                inst.load_into_cache()
+            except Exception as e:
+                logger.warning(f"Failed to invalidate local cache instance: {e}")

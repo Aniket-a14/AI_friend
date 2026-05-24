@@ -15,20 +15,25 @@ class SemanticRecallStore:
 
     def __init__(
         self,
-        qdrant_host: str = "127.0.0.1",
-        qdrant_port: int = 6333,
+        qdrant_host: str = None,
+        qdrant_port: int = None,
         collection_name: str = "ai_friend_memories",
         vector_size: int = 768,
     ):
+        from ..config import Config
+
+        q_host = qdrant_host or getattr(Config, "QDRANT_HOST", "127.0.0.1")
+        q_port = qdrant_port or getattr(Config, "QDRANT_PORT", 6333)
+
         self.collection_name = collection_name
         self.vector_size = vector_size
         self.client: Optional[QdrantClient] = None
 
         try:
-            self.client = QdrantClient(host=qdrant_host, port=qdrant_port, timeout=2.0)
+            self.client = QdrantClient(host=q_host, port=q_port, timeout=2.0)
             self._ensure_collection_exists()
             logger.info(
-                f"Connected to Qdrant Semantic Store on {qdrant_host}:{qdrant_port}"
+                f"Connected to Qdrant Semantic Store on {q_host}:{q_port}"
             )
         except Exception as e:
             self.client = None
