@@ -16,6 +16,7 @@ import json
 import re
 from dataclasses import dataclass, asdict
 from typing import Dict, Any, List
+import cognitive_rust
 
 logger = logging.getLogger(__name__)
 
@@ -74,69 +75,42 @@ class AppraisalEngine:
         Heuristic appraisal for the real-time cognitive loop.
         Returns an AppraisalVector without requiring LLM or embedding calls.
         """
-        # --- Primary Appraisal (§1.1) ---
-
-        # R — Relevance: User messages are always relevant
-        if event_type == "USER_MESSAGE":
-            relevance = 1.0
-        elif event_type == "SYSTEM_TICK":
-            relevance = 0.1
-        else:
-            relevance = 0.5
-
-        # N — Novelty: Word-overlap similarity against recent messages
-        novelty = self._compute_novelty(event_content)
-
-        # G — Goal Congruence: Positive emotional bias → congruent with social goals
-        goal_congruence = max(-1.0, min(1.0, emotional_bias))
-
-        # --- Secondary Appraisal (§1.2) ---
-
-        # A — Agency: Can the agent do something about this?
-        if event_type == "USER_MESSAGE":
-            agency = 0.8  # Agent can respond
-        else:
-            agency = 0.3  # Limited control over system events
-
-        # NA — Norm Alignment: Check content against identity boundaries
-        norm_alignment = self._check_norm_alignment(
-            event_content, identity_boundaries or []
-        )
-
-        # RI — Relationship Impact: Emotional tone → trust direction
-        trust = state_snapshot.get("trust", 0.5)
-        ri = emotional_bias * 0.5
-        if trust < 0.3:
-            ri *= 0.5  # Low trust dampens positive impact
-
-        # Integrate System 1 user voice properties into appraisal (e.g. yelling/panicked shifts)
+        pitch = None
+        energy = None
         if user_voice_properties:
-            pitch = user_voice_properties.get("pitch_f0", 150.0)
-            energy = user_voice_properties.get("energy_rms", 0.0)
+            pitch_raw = user_voice_properties.get("pitch_f0")
+            energy_raw = user_voice_properties.get("energy_rms")
+            try:
+                pitch = float(pitch_raw) if pitch_raw is not None else 150.0
+            except (ValueError, TypeError):
+                pitch = 150.0
+            try:
+                energy = float(energy_raw) if energy_raw is not None else 0.0
+            except (ValueError, TypeError):
+                energy = 0.0
 
             # High energy yells (energy > 0.15) or extremely high pitch (F0 > 250Hz) shifts appraisal
             if energy > 0.15 or pitch > 250.0:
                 logger.info(
                     f"🎙️ [Appraisal] High arousal user vocal cues detected (energy={energy:.3f}, pitch={pitch:.1f}Hz). Raising threat level."
                 )
-                # We decrease goal congruence because yelling/stress is incongruent with stable social goals
-                goal_congruence = max(-1.0, min(1.0, goal_congruence - 0.3))
-                # Relationship impact becomes more negative / less positive
-                ri = max(-1.0, min(1.0, ri - 0.2))
+
+        # Delegate to Rust
+        vector = cognitive_rust.compute_appraisal(
+            event_content,
+            event_type,
+            emotional_bias,
+            state_snapshot.get("trust", 0.5),
+            self._recent_contents,
+            identity_boundaries or [],
+            pitch,
+            energy,
+        )
 
         # Track content for novelty computation
         self._recent_contents.append(event_content[:100])
         if len(self._recent_contents) > self._max_recent:
             self._recent_contents = self._recent_contents[-self._max_recent :]
-
-        vector = AppraisalVector(
-            relevance=relevance,
-            novelty=novelty,
-            goal_congruence=goal_congruence,
-            agency=agency,
-            norm_alignment=norm_alignment,
-            relationship_impact=ri,
-        )
 
         logger.debug(
             "[Appraisal] R=%.2f N=%.2f G=%.2f A=%.2f NA=%.2f RI=%.2f",
@@ -147,55 +121,14 @@ class AppraisalEngine:
             vector.norm_alignment,
             vector.relationship_impact,
         )
-        return vector
-
-    def _compute_novelty(self, content: str) -> float:
-        """
-        Simplified novelty via Jaccard distance against recent contents.
-        N = 1 - max_overlap  (§1.1: N = 1 − max(cosine_sim(event, past)))
-        """
-        if not self._recent_contents:
-            return 0.8  # First message is inherently novel
-
-        content_words = set(content.lower().split())
-        if not content_words:
-            return 0.5
-
-        max_overlap = 0.0
-        for recent in self._recent_contents:
-            recent_words = set(recent.lower().split())
-            if not recent_words:
-                continue
-            intersection = content_words & recent_words
-            union = content_words | recent_words
-            overlap = len(intersection) / len(union) if union else 0.0
-            max_overlap = max(max_overlap, overlap)
-
-        return max(0.0, min(1.0, 1.0 - max_overlap))
-
-    def _check_norm_alignment(self, content: str, boundaries: List[str]) -> float:
-        """
-        Check if content respects identity boundaries (§1.2 — Praiseworthiness / OCC).
-        Returns 1.0 for full alignment, decreasing with violations.
-        """
-        if not boundaries:
-            return 1.0
-
-        content_lower = content.lower()
-        violations = 0
-        skip_words = {"not", "no", "don't", "never", "without", "isn't"}
-
-        for boundary in boundaries:
-            boundary_keywords = [
-                w for w in boundary.lower().split() if w not in skip_words
-            ]
-            for kw in boundary_keywords:
-                if len(kw) > 3 and kw in content_lower:
-                    violations += 1
-
-        if violations == 0:
-            return 1.0
-        return max(0.0, 1.0 - (violations * 0.2))
+        return AppraisalVector(
+            relevance=vector.relevance,
+            novelty=vector.novelty,
+            goal_congruence=vector.goal_congruence,
+            agency=vector.agency,
+            norm_alignment=vector.norm_alignment,
+            relationship_impact=vector.relationship_impact,
+        )
 
     async def appraise_semantic_drift(
         self, user_utterance: str, llm_client, current_pad: Dict[str, float]

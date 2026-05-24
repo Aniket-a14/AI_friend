@@ -415,48 +415,54 @@ class MemoryStore:
                                 "SELECT * FROM memories WHERE wing = ?", wing
                             )
 
-                        # Manual cosine similarity and ACT-R scoring
+                        # Manual cosine similarity and ACT-R scoring (Delegated to Rust PyO3)
+                        import cognitive_rust
+                        from datetime import datetime
+
+                        now = datetime.now(timezone.utc)
+                        now_ts = now.timestamp()
+
+                        # Preprocess timestamps for Rust
                         for row in rows:
-                            if row["content"] in excluded:
-                                continue
-
-                            # Parse embedding vector
-                            try:
-                                emb_str = row.get("embedding")
-                                if isinstance(emb_str, str):
-                                    # Strip brackets and split
-                                    emb_str = emb_str.strip("[]")
-                                    emb_val = [
-                                        float(x)
-                                        for x in emb_str.split(",")
-                                        if x.strip()
-                                    ]
-                                elif isinstance(emb_str, list):
-                                    emb_val = emb_str
-                                else:
-                                    emb_val = []
-                            except Exception:
-                                emb_val = []
-
-                            if (
-                                len(emb_val) == len(query_vector)
-                                and len(query_vector) > 0
-                            ):
-                                # Dot product
-                                dot = sum(x * y for x, y in zip(query_vector, emb_val))
-                                mag1 = math.sqrt(sum(x * x for x in query_vector))
-                                mag2 = math.sqrt(sum(x * x for x in emb_val))
-                                similarity = (
-                                    dot / (mag1 * mag2) if mag1 * mag2 > 0 else 0.0
-                                )
-                            else:
-                                similarity = 0.5  # default similarity fallback
-
                             last_recall = row.get("last_recalled_at")
-                            from datetime import datetime
+                            if last_recall is None:
+                                row["_last_recall_ts"] = now_ts
+                            elif isinstance(last_recall, datetime):
+                                row["_last_recall_ts"] = last_recall.timestamp()
+                            elif isinstance(last_recall, (int, float)):
+                                row["_last_recall_ts"] = float(last_recall)
+                            elif isinstance(last_recall, str):
+                                try:
+                                    row["_last_recall_ts"] = float(last_recall)
+                                except ValueError:
+                                    try:
+                                        dt = datetime.fromisoformat(
+                                            last_recall.replace(" ", "T")
+                                        )
+                                        if dt.tzinfo is None:
+                                            dt = dt.replace(tzinfo=timezone.utc)
+                                        row["_last_recall_ts"] = dt.timestamp()
+                                    except Exception:
+                                        row["_last_recall_ts"] = now_ts
+                            else:
+                                row["_last_recall_ts"] = now_ts
 
-                            now = datetime.now(timezone.utc)
+                        scored_indices = cognitive_rust.score_memories_actr_sqlite(
+                            query_vector,
+                            rows,
+                            excluded,
+                            current_valence,
+                            current_arousal,
+                            current_cortisol,
+                            self.decay_rate,
+                            self.spread_weight,
+                            threshold,
+                            now_ts,
+                        )
 
+                        for idx, score, similarity in scored_indices:
+                            row = rows[idx]
+                            last_recall = row.get("last_recalled_at")
                             if last_recall is None:
                                 last_recall = now
                             elif isinstance(last_recall, str):
@@ -464,46 +470,8 @@ class MemoryStore:
                                     last_recall = datetime.fromisoformat(last_recall)
                                 except Exception:
                                     last_recall = now
-
                             if last_recall.tzinfo is None:
                                 last_recall = last_recall.replace(tzinfo=timezone.utc)
-
-                            hours_since = max(
-                                0.001, (now - last_recall).total_seconds() / 3600.0
-                            )
-                            recall_count = max(1, row.get("recall_count") or 1)
-
-                            memory_valence = row.get("valence") or 0.0
-                            emotion_weight_row = row.get("emotional_weight") or 0.0
-
-                            # 2D/3D Emotional Distance matching the research simulator
-                            dist_emo = math.sqrt(
-                                (memory_valence - current_valence) ** 2
-                                + (emotion_weight_row - current_arousal) ** 2
-                            )
-
-                            base_activation = (
-                                _cached_ln(recall_count)
-                                - self.decay_rate * _cached_ln(hours_since + 1.0)
-                                + 1.5 * (row.get("importance_score") or 0.5)
-                                + 0.15 * (1.0 - dist_emo)
-                            )
-
-                            # Neuromodulatory distance mapping (gating remains untouched in backend)
-                            effective_similarity = similarity * (
-                                1.0
-                                + 0.1 * memory_valence * emotion_weight_row
-                                - 0.2 * current_arousal * current_cortisol
-                            )
-
-                            spread_activation = (
-                                self.spread_weight * effective_similarity
-                            )
-                            score = base_activation + spread_activation - 0.5 * dist_emo
-
-                            # Filter by relaxed threshold (threshold - 2.5)
-                            if score <= (threshold - 2.5):
-                                continue
 
                             created = row.get("created_at")
                             if isinstance(created, str):
@@ -531,7 +499,9 @@ class MemoryStore:
                                     "score": score,
                                     "valence": row.get("valence") or 0.0,
                                     "created_at": created,
-                                    "recall_count": recall_count,
+                                    "recall_count": max(
+                                        1, row.get("recall_count") or 1
+                                    ),
                                     "metadata": raw_meta or {},
                                     "lifespan_stage": row.get("lifespan_stage"),
                                     "crisis": row.get("crisis"),
