@@ -52,6 +52,18 @@ To prevent performance profiling overhead from introducing latency into live con
 
 ---
 
+## 💻 Concurrent Script Orchestration Matrix
+
+To compile meaningful data, certain scripts **must** run concurrently in separate terminals. Use this matrix to orchestrate your benchmarking sessions:
+
+| Primary Task | Active Run Script (Terminal 1) | Background Daemon (Terminal 2) | Purpose / Goal |
+| :--- | :--- | :--- | :--- |
+| **Physical Stress Test** | `python scripts/research/hard_benchmark.py --iterations 1000` | `python scripts/research/collector.py` | Logs the real-time PAD and endocrine trajectories during high-throughput message stress testing. |
+| **Autonomic Entrainment** | `python scripts/research/human_fidelity_test.py` | `python scripts/research/collector.py` | Evaluates heart rate, breathing rate, and RMSSD HRV response curves during structured human-like interactions. |
+| **Active Live Injector** | `python scripts/research/injector.py` | `python scripts/research/monitor.py` | Profiles network-level hop latencies (NATS IPC) using standardized timestamped payload injections. |
+
+---
+
 ## 🛠️ Step-by-Step Benchmarking Workflow
 
 This is a comprehensive, end-to-end execution guide for AI agents and human developers to run the entire evaluation suite.
