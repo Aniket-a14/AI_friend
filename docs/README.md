@@ -1,6 +1,6 @@
 # 📚 AI Friend Documentation Map
 
-This folder is the technical documentation suite for **AI Friend CVS-3.0**, a
+This folder is the technical documentation suite for **AI Friend CVS-3.5**, a
 local-first Cognitive Voice System designed to simulate a persistent, human-like
 conversation partner.
 
@@ -25,7 +25,7 @@ organic memory, and future robotics compatibility.
 ## Voice and Training
 
 - [GPT_SOVITS_INSTALL.md](./GPT_SOVITS_INSTALL.md) covers local GPT-SoVITS setup
-  and CVS-3.0 hardening requirements.
+  and CVS-3.5 hardening requirements.
 - [COLAB_PATHS_CHEATSHEET.md](./COLAB_PATHS_CHEATSHEET.md) helps map Colab
   training artifacts back into the local project.
 
@@ -34,13 +34,13 @@ organic memory, and future robotics compatibility.
 ## Operations and Research Archive
 
 - **[RESEARCH_GUIDE.md](./RESEARCH_GUIDE.md)**: Comprehensive guide for training, testing, observing, and visualizing the Tier-5 Sovereign Mesh for research purposes.
-- **[ARCHIVE_TOC.md](./ARCHIVE_TOC.md)**: Centralized index for archived CVS-3.0 technical documentation, historical research, and baseline optimizations.
+- **[ARCHIVE_TOC.md](./ARCHIVE_TOC.md)**: Centralized index for archived CVS-3.5 technical documentation, historical research, and baseline optimizations.
 
 ---
 
 ## Roadmap & Future Architecture
 
-- **[cvs3_architecture_roadmap.md](./cvs3_architecture_roadmap.md)**: The foundational baseline and planned architecture for **CVS-3.0**, encompassing Dual-Process Kahneman Engines, Hermetic SQLite Mocking, and Continuous Prosody Mapping.
+- **[cvs3_architecture_roadmap.md](./cvs3_architecture_roadmap.md)**: The foundational baseline and planned architecture for **CVS-3.5**, encompassing Dual-Process Kahneman Engines, Hermetic SQLite Mocking, and Continuous Prosody Mapping.
 
 ---
 

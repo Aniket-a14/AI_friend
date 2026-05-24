@@ -1,3 +1,7 @@
+> [!NOTE]
+> **LEGACY ARCHIVE FOR REFERENCE - CVS-3.0 BASELINE**
+> This document is maintained for historical context and architectural reference. The current live production runtime implements **CVS-3.5 Premium Edition** featuring Rust FFI acceleration and a 4-tier storage mesh.
+
 # CVS-1.0 — Research Feedback Gap Analysis
 
 > **Purpose**: Evaluate the current system against the four feedback themes derived from the ACL Anthology appraisal-agent paper, the Google Patent on affective interaction, the stateful-memory-augmented-transformer paper, and the Amory narrative-memory paper.

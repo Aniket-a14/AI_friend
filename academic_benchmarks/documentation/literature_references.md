@@ -1,6 +1,6 @@
 # 📚 Sovereign Humanoid Brain: Pure Academic References & Bibliography
 
-This document compiles the exhaustive academic bibliography for **AI Friend CVS-3.0 Sovereign Mind Mesh**. It contains exactly 30 verified peer-reviewed research papers, academic journals, and patents. All general software documentation and hardware spec sheets have been replaced with authentic peer-reviewed publications.
+This document compiles the exhaustive academic bibliography for **AI Friend CVS-3.5 Sovereign Mind Mesh**. It contains exactly 30 verified peer-reviewed research papers, academic journals, and patents. All general software documentation and hardware spec sheets have been replaced with authentic peer-reviewed publications.
 
 ---
 

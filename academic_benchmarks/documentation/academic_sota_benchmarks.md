@@ -1,9 +1,9 @@
-# Standardizing Human-Robot Conversational Realism: SOTA Audits and the CVS-3.0 Decentralized Cognitive Mesh
+# Standardizing Human-Robot Conversational Realism: SOTA Audits and the CVS-3.5 Decentralized Cognitive Mesh
 
-This document provides a highly rigorous, publication-grade academic literature review, audited HRI benchmarking framework, and comparative performance matrix for the **Cognitive Voice System (CVS-3.0) Decentralized Cognitive Mesh**. It serves as a drop-in asset for the **Related Work**, **Mathematical Evaluation Framework**, and **Experimental Results** sections of a peer-reviewed robotics journal manuscript (e.g., *IEEE Transactions on Robotics*, *IEEE Transactions on Cognitive and Developmental Systems*, or *ACM Transactions on Human-Robot Interaction*).
+This document provides a highly rigorous, publication-grade academic literature review, audited HRI benchmarking framework, and comparative performance matrix for the **Cognitive Voice System (CVS-3.5) Decentralized Cognitive Mesh**. It serves as a drop-in asset for the **Related Work**, **Mathematical Evaluation Framework**, and **Experimental Results** sections of a peer-reviewed robotics journal manuscript (e.g., *IEEE Transactions on Robotics*, *IEEE Transactions on Cognitive and Developmental Systems*, or *ACM Transactions on Human-Robot Interaction*).
 
 > [!NOTE]
-> **Scope of Current Development**: The CVS-3.0 architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. Therefore, all mathematical formulations, evaluations, and comparisons focus exclusively on the cognitive, conversational, and edge computational metrics of the humanoid brain.
+> **Scope of Current Development**: The CVS-3.5 architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. Therefore, all mathematical formulations, evaluations, and comparisons focus exclusively on the cognitive, conversational, and edge computational metrics of the humanoid brain.
 
 ---
 
@@ -256,7 +256,7 @@ To bridge these gaps, we formulate **four new audited HRI benchmarks** defined b
 
 ```mermaid
 graph TD
-    A[CVS-3.0 Audited Benchmarks] --> B["Interruption Coherence Index (ICI)"]
+    A[CVS-3.5 Audited Benchmarks] --> B["Interruption Coherence Index (ICI)"]
     A --> C["Temporal Context Retention Score (TCRS)"]
     A --> D["Affective Prosody Realism Alignment (APRA)"]
     A --> E["Edge Resource Execution Coefficient (EREC)"]
@@ -384,12 +384,12 @@ EREC = \frac{\theta_{\text{SLO}} \cdot \Omega_{\text{RAM-limit}} \cdot \Phi_{\te
 
 ## 3. Master Comparative Novelty & Performance Matrix
 
-We present a comprehensive, multi-dimensional empirical comparison matrix contrasting the **AI Friend CVS-3.0 Sovereign Mesh** against the latest state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures.
+We present a comprehensive, multi-dimensional empirical comparison matrix contrasting the **AI Friend CVS-3.5 Sovereign Mesh** against the latest state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures.
 
 > [!NOTE]
-> All CVS-3.0 values represent empty placeholder states (`[TBP]`) to be populated dynamically upon running our high-fidelity physical benchmarking script (`hard_benchmark.py`).
+> All CVS-3.5 values represent empty placeholder states (`[TBP]`) to be populated dynamically upon running our high-fidelity physical benchmarking script (`hard_benchmark.py`).
 
-| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.0 (Physical)** | **Ours: CVS-3.0 (Accelerated)** |
+| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** | **`[TBP]`** |
@@ -713,12 +713,12 @@ LLM Temperature Modulation   & 2.30 \(\mu\)s            & [TBP]                 
 
 ```latex
 \begin{table*}[htbp]
-\caption{Multi-Dimensional Benchmarking Matrix: CVS-3.0 vs. Modern Humanoid Platforms and Advanced Cognitive Architectures}
+\caption{Multi-Dimensional Benchmarking Matrix: CVS-3.5 vs. Modern Humanoid Platforms and Advanced Cognitive Architectures}
 \label{tab:comparative_benchmarks}
 \centering
 \begin{tabular}{lcccccccc}
 \hline
-\textbf{Performance Axis} & \textbf{Figure 02} & \textbf{Optimus Gen 2} & \textbf{Unitree G1} & \textbf{Ameca Gen 3} & \textbf{Kyoto ERICA} & \textbf{HippoRAG} & \textbf{CVS-3.0 (Phys)} & \textbf{CVS-3.0 (Accel)} \\ \hline
+\textbf{Performance Axis} & \textbf{Figure 02} & \textbf{Optimus Gen 2} & \textbf{Unitree G1} & \textbf{Ameca Gen 3} & \textbf{Kyoto ERICA} & \textbf{HippoRAG} & \textbf{CVS-3.5 (Phys)} & \textbf{CVS-3.5 (Accel)} \\ \hline
 Speech Barge-in Stop      & ~300.0 ms          & --                     & ~400.0 ms           & ~250.0 ms            & 200.0 ms             & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
 Cognitive Gating Lat      & Cloud VLM          & Onboard                & Cloud LLM           & Cloud LLM            & 100.0 ms             & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
 Speech-to-Speech TTFT     & ~350.0 ms          & Cloud                  & ~500.0 ms           & ~400.0 ms            & 200.0 ms             & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\

@@ -1,6 +1,6 @@
 # 🗄️ Legacy Documentation Archive (TOC)
 
-This document serves as a centralized Table of Contents for technical documentation that has been archived as part of the transition to the Sovereign Mesh architecture. These documents represent the foundational history and baseline optimizations of the CVS-3.0 system.
+This document serves as a centralized Table of Contents for technical documentation that has been archived as part of the transition to the Sovereign Mesh architecture. These documents represent the foundational history and baseline optimizations of the CVS-3.5 system.
 
 ---
 
@@ -18,7 +18,7 @@ This document serves as a centralized Table of Contents for technical documentat
 - **[VOICE_CLONING.md](../_archive/docs/VOICE_CLONING.md)**: Identity layer setup and real-time voice synthesis assumptions.
 - **[TRAINING_GUIDE.md](../_archive/docs/TRAINING_GUIDE.md)**: Step-by-step guide for fine-tuning custom V4 voice models.
 
-## 🗃️ Archived Python Codebase (CVS-3.0 Legacy)
+## 🗃️ Archived Python Codebase (CVS-3.5 Legacy)
 - **[_archive/python_agents/](../_archive/python_agents)**: Original Python-based STT (SenseVoice/Whisper) and Voice (VAD/Prosody/Playback) agents.
 - **[_archive/python_agents/tests/](../_archive/python_agents/tests)**: Corresponding voice paralinguistics and STT perception regression test suites.
 

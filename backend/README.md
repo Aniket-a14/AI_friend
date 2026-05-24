@@ -2,7 +2,7 @@
 
 The decentralized, high-performance core of the AI Friend platform. This service orchestrates a mesh of specialized micro-agents through a **NATS JetStream** event bus.
 
-## 🏗️ Architecture: Sovereign Mesh v3.0
+## 🏗️ Architecture: Sovereign Mesh v3.5
 
 The backend has evolved from a monolith into a **distributed agent mesh**. Each capability is a dedicated agent running as an independent process or container.
 
@@ -88,4 +88,4 @@ pre-commit run --all-files
 - `tools/`: Dynamic tool registry for the Brain agent.
 
 ---
-**Standardized on Sovereign Mesh v3.0 Pattern.**
+**Standardized on Sovereign Mesh v3.5 Pattern.**

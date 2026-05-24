@@ -1,3 +1,7 @@
+> [!NOTE]
+> **LEGACY ARCHIVE FOR REFERENCE - CVS-3.0 BASELINE**
+> This document is maintained for historical context and architectural reference. The current live production runtime implements **CVS-3.5 Premium Edition** featuring Rust FFI acceleration and a 4-tier storage mesh.
+
 # 🎙️ CVS-1.0: Real-time Voice Identity
 
 > **Engineering human-like vocal presence through V4 architecture and Signal Mastery.**

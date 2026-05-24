@@ -1,13 +1,13 @@
-# 🏗️ Architecture Documentation - CVS-3.0
+# 🏗️ Architecture Documentation - CVS-3.5
 
-> **Deep dive into the AI Friend platform architecture, design decisions, and the Cognitive Voice System (CVS-3.0)**
+> **Deep dive into the AI Friend platform architecture, design decisions, and the Cognitive Voice System (CVS-3.5)**
 
 ---
 
 ## Table of Contents
 
 1. [System Overview](#system-overview)
-2. [CVS-3.0 Architecture (Perceptual Mastery)](#cvs-20-hardened-architecture)
+2. [CVS-3.5 Architecture (Perceptual Mastery)](#cvs-20-hardened-architecture)
 3. [Cognitive Layer (Identity & State)](#1-cognitive-layer-identity--state)
 4. [Subconscious Engine (Tier-5 Autonomy)](#2-subconscious-engine-tier-5-autonomy)
 5. [Visual Appraisal (Tier-4 Multimodal)](#3-visual-appraisal-tier-4-multimodal)
@@ -20,15 +20,15 @@
 
 ## System Overview
 
-AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus. In the finalized **v6.0.0 (CVS-3.0 Rust Native Edition)**, the signal bus was expanded to include 9 core subjects covering system heartbeats, active memory recall, and identity synchronization.
+AI Friend is built on the **Sovereign Mesh Architecture**. It uses a decentralized ecosystem of specialized micro-agents coordinated via a high-performance **NATS JetStream** event bus. In the finalized **v6.0.0 (CVS-3.5 Rust Native Edition)**, the signal bus was expanded to include 9 core subjects covering system heartbeats, active memory recall, and identity synchronization.
 
-In **CVS-3.0**, we have achieved **Identity Continuity**. The system is no longer a reactive "Think-Speak" pipeline; it is now a **State-Driven Identity Mesh** coached by a continuous NATS heartbeat. It anticipates context through memory surfacing and expresses emotion through deterministic temporal markers.
+In **CVS-3.5**, we have achieved **Identity Continuity**. The system is no longer a reactive "Think-Speak" pipeline; it is now a **State-Driven Identity Mesh** coached by a continuous NATS heartbeat. It anticipates context through memory surfacing and expresses emotion through deterministic temporal markers.
 
 The architecture should be evaluated by conversational realism rather than only by model intelligence. A technically correct answer that arrives with unnatural timing, forgets recent emotional state, repeats memories mechanically, or fails to recover from a false interruption is considered a behavioral failure. Every layer exists to preserve the illusion of a continuous person: perception, state, memory, decision, and voice all contribute to that outcome.
 
 ---
 
-## 🏗️ CVS-3.0 Hardened Architecture
+## 🏗️ CVS-3.5 Hardened Architecture
 
 ### 🧠 1. Cognitive Layer (Identity & State)
 
@@ -57,15 +57,23 @@ Introduced the **Vision Agent** to provide spatial and visual grounding for the 
 - **Host-Native Bridge**: Screen and camera processing operate outside Docker constraints using a native Windows/macOS bridge to bypass container limitations.
 - **Visual Appraisal**: The VisionAgent captures frames and queries local `moondream:latest` via Ollama. It publishes `vision.description` back to the BrainAgent for context-aware grounding without sending raw image blobs over the mesh.
 
-### 📖 4. Sovereign Memory Surfacing
+### 📖 4. Sovereign Memory Surfacing & 4-Tier Hybrid Storage
 
-The system anticipates conversational context through an asynchronous dual-channel recall layer that merges Relational (Postgres) and Graph (Neo4j) knowledge.
+CVS-3.5 Premium Edition structures its memory across a **4-Tier Hybrid Storage System** that balances ultra-fast cached access, relational episodic retention, and structured long-term reflection:
 
-- **`SurfacingAgent`**: Background process that alternates between two recall channels:
-  - **Episodic Channel (pgvector)**: ACT-R scored, mood-congruent recall of past events using verbatim `raw_content` storage organized via the Wings/Rooms/Drawers spatial hierarchy.
-  - **Semantic Channel (Neo4j)**: Structured facts and relationship extraction (e.g., "User -> LIKES -> Coffee").
-- **PostgreSQL PL/pgSQL Offloading**: Memory decay equations ($A = \ln(\sum t_j^{-d})$) are computed directly inside the database via the `surface_actr_memories` function, eliminating Python transfer overhead.
-- **O(1) L1 Memory Activation Cache**: An ultra-fast in-memory lookup table avoids Postgres queries for hot memories, reducing retrieval latency to < 1ms.
+1.  **Tier 1: Dynamic Working Memory & Identity Cache**:
+    *   *Identity cache*: Fast-access SQLite database managed via `IdentityCoreStore` which holds immutable core parameters.
+    *   *Dynamic session cache*: Active dialogue turns, VAD parameters, and recent conversational history are kept in a Redis key-value cache (`WorkingMemoryStore`) for sub-millisecond dynamic session retrieval.
+2.  **Tier 2: Relational Episodic Memory (PostgreSQL / SQLite fallback)**:
+    *   Episodic memories are scored using **ACT-R base activation decay** ($A = \ln(\sum t_j^{-d})$) and emotional PAD congruence.
+    *   To eliminate Python overhead, memory decay math is offloaded directly to database queries.
+    *   *SQL Dialect Abstraction*: The database engine integrates a dual-dialect routing layer (`sqlite_fallback.py`) which translates Postgres `pgvector` operators to SQLite fallback queries automatically when running in offline/local dev modes.
+3.  **Tier 3: Semantic Recall Index (Qdrant Vector DB)**:
+    *   The `SemanticRecallStore` manages a dense vector representation of knowledge points inside **Qdrant**, allowing fast semantic distance searches.
+4.  **Tier 4: Subconscious Knowledge Graph (Neo4j)**:
+    *   Long-term facts and associative graph relationships are managed in **Neo4j** (e.g., `User -[LIKES]-> Coffee`). The subconscious reflection agent executes idle sweeps to build associative paths.
+
+- **O(1) L1 Memory Activation Cache**: An ultra-fast local dictionary cache intercepts hot memory hits, bypassing vector database calls when memory is requested within short temporal windows (<15s TTL).
 
 ### ⏱️ 5. Perceptual Intelligence (STT Agent)
 
@@ -96,7 +104,7 @@ graph TB
         PCM_PLAYER["PCM Stream Player"]
     end
 
-    subgraph CVS_Mesh ["CVS-3.0 - Identity Mesh"]
+    subgraph CVS_Mesh ["CVS-3.5 - Identity Mesh"]
         STT["STT Agent<br/>Temporal Intent"]
         VISION["Vision Agent<br/>Visual Appraisal"]
 
@@ -127,6 +135,23 @@ graph TB
     AUDIO_ENGINE -->|audio.stream (PCM)| PCM_PLAYER
 ```
 
+## 🛡️ Sovereign Mesh Hardening & High Availability
+
+To ensure resilient operations in production and distributed environments, the core event mesh incorporates the following stability enhancements:
+
+### 1. Zero-Crash NATS IPC Auto-Reconnection
+All dynamic micro-agents subclassing the `BaseAgent` connection lifecycle are hardened with infinite auto-reconnection settings (`max_reconnect_attempts=-1`) and a 2.0-second delay sleep interval (`reconnect_time_wait=2.0`). This guarantees that if the NATS event broker goes down temporarily during heavy load or container reboots, active Python agents will seamlessly suspend operations and restore state/subscriptions automatically upon recovery, without crash-looping Python threads.
+
+### 2. Multi-Process Cache Synchronization (`cache.sync`)
+CVS-3.5 Premium incorporates cross-process cache invalidation on the `cache.sync` channel. When changes are written to the static identity parameters (`IdentityCoreStore`), a broadcast payload is dispatched to NATS:
+```json
+{
+  "store": "identity_core",
+  "action": "invalidate"
+}
+```
+All connected ASGI processes and agent runners handle this NATS message and instantly reload database values into their memory cache (`load_into_cache()`), eliminating state-drift across multiple Python-worker processes.
+
 ---
 
 ## 🔁 Real-Time Turn-Taking Flow
@@ -146,7 +171,7 @@ This is closer to human overlap behavior: people often pause briefly when anothe
 
 Future agents should read [../.agents/CONTEXT.md](../.agents/CONTEXT.md) before changing the architecture. It records durable project intent, recent runtime changes, verification commands, and next recommended work. Update it after architecture, behavior, or test changes so context survives beyond any single conversation window.
 
-## ⚙️ Resource Matrix (CVS-3.0)
+## ⚙️ Resource Matrix (CVS-3.5)
 
 | Agent | Context | CPU (Min) | RAM (Target) | Notes |
 | :--- | :--- | :--- | :--- | :--- |
