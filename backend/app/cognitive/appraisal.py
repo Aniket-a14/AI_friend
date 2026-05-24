@@ -130,58 +130,6 @@ class AppraisalEngine:
             relationship_impact=vector.relationship_impact,
         )
 
-    def _compute_novelty(self, content: str) -> float:
-        """
-        [DEPRECATED] Simplified novelty via Jaccard distance against recent contents.
-        N = 1 - max_overlap  (§1.1: N = 1 − max(cosine_sim(event, past)))
-
-        @deprecated: This method is now handled natively in Rust.
-        """
-        if not self._recent_contents:
-            return 0.8  # First message is inherently novel
-
-        content_words = set(content.lower().split())
-        if not content_words:
-            return 0.5
-
-        max_overlap = 0.0
-        for recent in self._recent_contents:
-            recent_words = set(recent.lower().split())
-            if not recent_words:
-                continue
-            intersection = content_words & recent_words
-            union = content_words | recent_words
-            overlap = len(intersection) / len(union) if union else 0.0
-            max_overlap = max(max_overlap, overlap)
-
-        return max(0.0, min(1.0, 1.0 - max_overlap))
-
-    def _check_norm_alignment(self, content: str, boundaries: List[str]) -> float:
-        """
-        [DEPRECATED] Check if content respects identity boundaries (§1.2 — Praiseworthiness / OCC).
-        Returns 1.0 for full alignment, decreasing with violations.
-
-        @deprecated: This method is now handled natively in Rust.
-        """
-        if not boundaries:
-            return 1.0
-
-        content_lower = content.lower()
-        violations = 0
-        skip_words = {"not", "no", "don't", "never", "without", "isn't"}
-
-        for boundary in boundaries:
-            boundary_keywords = [
-                w for w in boundary.lower().split() if w not in skip_words
-            ]
-            for kw in boundary_keywords:
-                if len(kw) > 3 and kw in content_lower:
-                    violations += 1
-
-        if violations == 0:
-            return 1.0
-        return max(0.0, 1.0 - (violations * 0.2))
-
     async def appraise_semantic_drift(
         self, user_utterance: str, llm_client, current_pad: Dict[str, float]
     ) -> Dict[str, float]:
