@@ -264,7 +264,7 @@ graph TD
 
 ### 2.1 Interruption Coherence Index ($ICI$)
 
-The $ICI$ measures the cognitive precision of conversational barge-in interruption. In a natural dialogue, when a user interrupts the robot, a System 1 fast-loop (sub-cognitive VAD) must immediately pause physical playback, while a System 2 deep-loop (speculative segmenter) validates whether the interruption is a true semantic interjection or merely background ambient noise.
+The $ICI$ measures the cognitive precision of conversational barge-in interruption. In a natural dialogue, when a user interrupts the robot, a System 1 fast-loop (sub-cognitive VAD) immediately ducks output playback volume by 70% to enable speculative duplex listening. Simultaneously, a System 2 deep-loop (speculative segmenter) validates whether the interruption is a true semantic interjection (committing a hard stop) or merely background ambient noise (restoring volume to 100%).
 
 ```math
 ICI = \gamma \cdot \left(1 - P_{\text{false-trigger}}\right) \cdot \exp\left(-\frac{\left|t_{\text{stop}} - t_{\text{interject}}\right|}{\tau_{\text{overlap}}}\right)
@@ -671,12 +671,14 @@ Save the following content directly as `bibliography.bib` in your LaTeX project 
 \hline
 \textbf{Subsystem Component} & \textbf{Original Latency} & \textbf{Optimized Latency} & \textbf{Throughput} & \textbf{Real-Time Budget} & \textbf{Status} \\ \hline
 Audio Ingest \& Normalizer   & --                       & [TBP]                      & [TBP]               & 5.00 ms                   & [TBP]           \\
+System 1 DSP Feature Extraction & --                    & [TBP]                      & [TBP]               & 1.00 ms                   & [TBP]           \\
+Soft-Attenuation Volume Ducking & --                    & [TBP]                      & [TBP]               & 1.00 ms                   & [TBP]           \\
 Hybrid Text Segmenter        & 4.294 ms                 & [TBP]                      & [TBP]               & 10.00 ms                  & [TBP]           \\
 Subconscious Threat Scan     & --                       & [TBP]                      & [TBP]               & 2.00 ms                   & [TBP]           \\
 Memory ACT-R Index Search    & --                       & [TBP]                      & [TBP]               & 8.00 ms                   & [TBP]           \\
 Hormonal State Appraisal     & --                       & [TBP]                      & [TBP]               & 5.00 ms                   & [TBP]           \\
 LLM Temperature Modulation   & 2.30 \(\mu\)s            & [TBP]                      & [TBP]               & 1.00 ms                   & [TBP]           \\ \hline
-\textbf{End-to-End Pathway}  & \textbf{--}              & \textbf{[TBP]}             & \textbf{[TBP]}      & \textbf{15.00 ms}         & \textbf{[TBP]}  \\ \hline
+\textbf{End-to-End Pathway}  & \textbf{--}              & \textbf{[TBP]}             & \textbf{[TBP]}      & \textbf{17.00 ms}         & \textbf{[TBP]}  \\ \hline
 \end{tabular}
 \end{table*}
 ```

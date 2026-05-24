@@ -99,7 +99,7 @@ class SurfacingAgent(BaseAgent):
             await self._run_sweep_now(source_metadata=data.get("latency_metadata"))
 
     async def _on_agent_state(self, data: Dict[str, Any]):
-        """Track current valence, arousal, and cortisol for mood-congruent episodic retrieval (Bower, 1981)."""
+        """Track current valence, arousal, and cortisol, and calculate APRA vocal modulations."""
         if isinstance(data, dict):
             self._current_valence = data.get(
                 "valence", data.get("mood", self._current_valence)
@@ -108,6 +108,45 @@ class SurfacingAgent(BaseAgent):
                 "arousal", data.get("energy", self._current_arousal)
             )
             self._current_cortisol = data.get("cortisol", self._current_cortisol)
+
+            # Map PAD scores to voice parameters (APRA Formulas)
+            valence = self._current_valence
+            arousal = self._current_arousal
+            dominance = data.get("dominance", 0.5)
+            fatigue = data.get("fatigue", 0.0)
+
+            # R = clamp(1.0 + 0.20 * arousal - 0.10 * valence - 0.25 * fatigue, 0.60, 1.80)
+            rate = max(
+                0.60, min(1.80, 1.0 + 0.20 * arousal - 0.10 * valence - 0.25 * fatigue)
+            )
+            # P = clamp(1.0 + 0.05 * valence + 0.15 * arousal - 0.10 * dominance - 0.10 * fatigue, 0.50, 2.00)
+            pitch = max(
+                0.50,
+                min(
+                    2.00,
+                    1.0
+                    + 0.05 * valence
+                    + 0.15 * arousal
+                    - 0.10 * dominance
+                    - 0.10 * fatigue,
+                ),
+            )
+            # Vol = clamp(0.40 + 0.60 * dominance, 0.10, 1.00)
+            volume = max(0.10, min(1.00, 0.40 + 0.60 * dominance))
+
+            from ..contracts import AgentVoiceModulation, Topics
+
+            modulation = AgentVoiceModulation(
+                rate=round(rate, 2),
+                pitch=round(pitch, 2),
+                volume=round(volume, 2),
+                timestamp=time.time(),
+            )
+            asyncio.create_task(
+                self.publish(
+                    Topics.AGENT_VOICE_MODULATION.value, modulation.model_dump()
+                )
+            )
 
     async def _run_sweep_now(self, source_metadata: Optional[Dict[str, Any]] = None):
         """Run a sweep inline (used by low-frequency control channels like system.tick)."""

@@ -53,12 +53,14 @@ To prevent turn-taking bottlenecks, the sub-LLM pre-processing and emotional app
 | Subsystem Component | Original Latency | Optimized Latency | Throughput | Real-Time Budget Limit | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Audio Ingest & Normalizer** | -- | `[TBP]` | `[TBP]` | 5.00 ms | `[TBP]` |
+| **System 1 DSP Feature Extraction** | -- | `[TBP]` | `[TBP]` | 1.00 ms | `[TBP]` |
+| **Soft-Attenuation Volume Ducking** | -- | `[TBP]` | `[TBP]` | 1.00 ms | `[TBP]` |
 | **Hybrid Text Segmenter** | 4.294 ms | `[TBP]` | `[TBP]` | 10.00 ms | `[TBP]` |
 | **Subconscious Threat Scan** | -- | `[TBP]` | `[TBP]` | 2.00 ms | `[TBP]` |
 | **Memory ACT-R Index Search** | -- | `[TBP]` | `[TBP]` | 8.00 ms | `[TBP]` |
 | **Hormonal State Appraisal** | -- | `[TBP]` | `[TBP]` | 5.00 ms | `[TBP]` |
 | **LLM Temperature Modulation** | 2.30 µs | `[TBP]` | `[TBP]` | 1.00 ms | `[TBP]` |
-| **End-to-End Pathway** | **--** | **`[TBP]`** | **`[TBP]`** | **15.00 ms** | **`[TBP]`** |
+| **End-to-End Pathway** | **--** | **`[TBP]`** | **`[TBP]`** | **17.00 ms** | **`[TBP]`** |
 
 ---
 

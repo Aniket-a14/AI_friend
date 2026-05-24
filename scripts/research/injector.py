@@ -11,6 +11,7 @@ async def run_injector():
     without human variability.
     """
     import os
+
     nats_url = os.environ.get("NATS_URL", "nats://127.0.0.1:4222")
     nc = await nats.connect(nats_url)
     js = nc.jetstream()

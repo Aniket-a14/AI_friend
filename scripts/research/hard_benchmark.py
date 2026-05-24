@@ -572,6 +572,11 @@ async def run_physical_benchmark(
     reflection_durations = []
     pruned_history_count = 0
 
+    # New voice properties tracking
+    voice_properties_count = 0
+    voice_modulation_count = 0
+    visemes_count = 0
+
     # Dynamic SQL Database Active Pruning transaction
     async def perform_database_pruning():
         """
@@ -618,6 +623,30 @@ async def run_physical_benchmark(
             print(f"⚠️ Error parsing reflection telemetry: {e}")
 
     await nc.subscribe("telemetry.reflection", cb=reflection_handler)
+
+    from app.contracts import Topics
+
+    async def user_voice_properties_handler(msg):
+        nonlocal voice_properties_count
+        voice_properties_count += 1
+
+    async def agent_voice_modulation_handler(msg):
+        nonlocal voice_modulation_count
+        voice_modulation_count += 1
+
+    async def audio_playback_visemes_handler(msg):
+        nonlocal visemes_count
+        visemes_count += 1
+
+    await nc.subscribe(
+        Topics.USER_VOICE_PROPERTIES.value, cb=user_voice_properties_handler
+    )
+    await nc.subscribe(
+        Topics.AGENT_VOICE_MODULATION.value, cb=agent_voice_modulation_handler
+    )
+    await nc.subscribe(
+        Topics.AUDIO_PLAYBACK_VISEMES.value, cb=audio_playback_visemes_handler
+    )
 
     if iterations >= 1000:
         scale_factor = iterations // 1000
@@ -760,6 +789,44 @@ async def run_physical_benchmark(
 
         # Interleave pacing delay to respect GPU scheduling limits
         sleep_time = 0.5 if iterations > 100 else 6.0
+
+        # Simulating speculative barge-in interruptions periodically
+        if i % 10 == 0 and i > 0:
+            await asyncio.sleep(1.0)
+            print(
+                "    🔊 [Barge-in Simulation] Simulating speculative user interruption..."
+            )
+            speculative_stop = {
+                "interrupt": True,
+                "speculative": True,
+                "reason": "speculative_vad",
+                "intent_type": "VOICE_INTERRUPTION",
+            }
+            await js.publish("audio.stop", json.dumps(speculative_stop).encode())
+
+            # After 0.5 seconds, simulate the System 2 confirmation or resume.
+            await asyncio.sleep(0.5)
+            if i % 20 == 0:
+                print(
+                    "    🔊 [Barge-in Simulation] System 2 confirmed interruption - sending hard stop."
+                )
+                hard_stop = {
+                    "interrupt": True,
+                    "speculative": False,
+                    "reason": "confirmed_stop",
+                    "intent_type": "VOICE_INTERRUPTION",
+                }
+                await js.publish("audio.stop", json.dumps(hard_stop).encode())
+            else:
+                print(
+                    "    🔊 [Barge-in Simulation] System 2 rejected interruption - sending resume."
+                )
+                resume_signal = {"reason": "conflict_rejected"}
+                await js.publish("audio.resume", json.dumps(resume_signal).encode())
+
+            # Deduct the elapsed 1.5 seconds from the pacing sleep_time to keep timing consistent
+            sleep_time = max(0.1, sleep_time - 1.5)
+
         await asyncio.sleep(sleep_time)
 
     print("\n⏳ Waiting for physical responses to settle...")
@@ -798,6 +865,13 @@ async def run_physical_benchmark(
         else 98.20
     )
 
+    print("\n📊 --- VOICE & PROSODY MESH TELEMETRY ---")
+    print("-" * 60)
+    print(f"  User Voice Properties Published:  {voice_properties_count} messages")
+    print(f"  Agent Voice Modulation Pulses:    {voice_modulation_count} messages")
+    print(f"  Audio Playback Visemes Emitted:   {visemes_count} messages")
+    print("-" * 60)
+
     results_data = {
         "timestamp": datetime.now().isoformat(),
         "iterations": iterations,
@@ -831,6 +905,11 @@ async def run_physical_benchmark(
             if pre_llm_overhead_results
             else 1.205,
             "memories_pruned": pruned_history_count,
+        },
+        "vocal_telemetry": {
+            "user_voice_properties_count": voice_properties_count,
+            "agent_voice_modulation_count": voice_modulation_count,
+            "audio_playback_visemes_count": visemes_count,
         },
     }
 

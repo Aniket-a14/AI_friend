@@ -23,6 +23,7 @@ INTERRUPT_PATTERNS = [
     r"\bhold\s*up\b",
 ]
 
+
 class InterruptionClassifier:
     """
     Lightweight regex-based semantic intent classifier for early speech interruption detection.
@@ -38,6 +39,8 @@ class InterruptionClassifier:
             return False
         for pattern in self.patterns:
             if pattern.search(text_clean):
-                logger.debug(f"Interruption pattern matched: {pattern.pattern} in '{text_clean}'")
+                logger.debug(
+                    f"Interruption pattern matched: {pattern.pattern} in '{text_clean}'"
+                )
                 return True
         return False

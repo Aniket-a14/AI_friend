@@ -73,12 +73,12 @@ class IdentityCoreStore:
             "base_tone": "Warm, intellectual, and slightly protective",
             "boundaries": [
                 "Will never share user data",
-                "Will not adopt toxic behavior"
+                "Will not adopt toxic behavior",
             ],
             "speaking_style_pace": "natural",
             "speaking_style_verbosity": "balanced",
             "avoid_rules": [],
-            "relationship": "Friend"
+            "relationship": "Friend",
         }
         self.update_identity(default_data)
 
@@ -98,7 +98,7 @@ class IdentityCoreStore:
                     "speaking_style_pace": row["speaking_style_pace"],
                     "speaking_style_verbosity": row["speaking_style_verbosity"],
                     "avoid_rules": json.loads(row["avoid_rules"]),
-                    "relationship": row["relationship"]
+                    "relationship": row["relationship"],
                 }
                 with self._cache_lock:
                     self._cached_identity = cached
@@ -133,7 +133,8 @@ class IdentityCoreStore:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO identity_core (
                     id, name, values_list, base_tone, boundaries,
                     speaking_style_pace, speaking_style_verbosity, avoid_rules, relationship, updated_at
@@ -149,16 +150,18 @@ class IdentityCoreStore:
                     avoid_rules = excluded.avoid_rules,
                     relationship = excluded.relationship,
                     updated_at = CURRENT_TIMESTAMP
-            """, (
-                name,
-                json.dumps(values),
-                base_tone,
-                json.dumps(boundaries),
-                pace,
-                verbosity,
-                json.dumps(avoid),
-                rel
-            ))
+            """,
+                (
+                    name,
+                    json.dumps(values),
+                    base_tone,
+                    json.dumps(boundaries),
+                    pace,
+                    verbosity,
+                    json.dumps(avoid),
+                    rel,
+                ),
+            )
             conn.commit()
             self.load_into_cache()
             logger.info("Identity Core Store updated and cached.")
