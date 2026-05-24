@@ -27,8 +27,8 @@ To prevent performance profiling overhead from introducing latency into live con
 ## 📊 Comprehensive Metrics Mapped
 
 ### 1. Active Memory Bounding & Latency Scaling
-*   **Active Memory Size ($M_{\text{active}}$):** Measures the bounded search space size. Active forgetting uses an ACT-R decay model ($\theta_{\text{prune}} = -2.5$) to transactionally delete decayed distractors, capping active memory while standard databases grow linearly ($M_{\text{total}}$).
-*   **Retrieval Speedup ($O(\log M_{\text{active}})$):** Quantifies lookup latency differences between unpruned search spaces and pruned bounded spaces, achieving an asymptotic $\sim30\%$ speedup over long conversational sessions.
+*   **Active Memory Size** ($M_{\text{active}}$): Measures the bounded search space size. Active forgetting uses an ACT-R decay model ($\theta_{\text{prune}} = -2.5$) to transactionally delete decayed distractors, capping active memory while standard databases grow linearly ($M_{\text{total}}$).
+*   **Retrieval Speedup** ($O(\log M_{\text{active}})$): Quantifies lookup latency differences between unpruned search spaces and pruned bounded spaces, achieving an asymptotic $\sim30\%$ speedup over long conversational sessions.
 
 ### 2. Autonomic Physiological Entrainment
 *   **Coupled Heart Rate (HR):** Spikes under conversational threat and stress, driven by dynamic endocrine coupling:
