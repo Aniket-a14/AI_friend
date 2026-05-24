@@ -300,13 +300,32 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         while let Some(msg) = modulation_sub.next().await {
             if let Ok(mod_payload) = serde_json::from_slice::<contracts::AgentVoiceModulation>(&msg.payload) {
-                if let Some(first_frame) = mod_payload.trajectory.first() {
-                    info!("Received AGENT_VOICE_MODULATION: rate={}, pitch={}, volume={}", first_frame.rate, first_frame.pitch, first_frame.volume);
+                if !mod_payload.trajectory.is_empty() {
+                    let steady_frames: Vec<&contracts::ProsodyFrame> = mod_payload.trajectory.iter()
+                        .filter(|f| f.time_offset_ms >= 200 && f.time_offset_ms <= 2700)
+                        .collect();
+
+                    let target_frames = if !steady_frames.is_empty() {
+                        steady_frames
+                    } else {
+                        mod_payload.trajectory.iter().collect()
+                    };
+
+                    let count = target_frames.len() as f64;
+                    let sum_rate: f64 = target_frames.iter().map(|f| f.rate).sum();
+                    let sum_pitch: f64 = target_frames.iter().map(|f| f.pitch).sum();
+                    let sum_volume: f64 = target_frames.iter().map(|f| f.volume).sum();
+
+                    let rep_rate = sum_rate / count;
+                    let rep_pitch = sum_pitch / count;
+                    let rep_volume = sum_volume / count;
+
+                    info!("Received AGENT_VOICE_MODULATION (steady-state): rate={:.2}, pitch={:.2}, volume={:.2}", rep_rate, rep_pitch, rep_volume);
                     if let Ok(mut guard) = dynamic_prosody_clone.lock() {
                         *guard = Some(contracts::Prosody {
-                            rate: first_frame.rate,
-                            pitch: first_frame.pitch,
-                            volume: first_frame.volume,
+                            rate: rep_rate,
+                            pitch: rep_pitch,
+                            volume: rep_volume,
                             pause_bias: 1.0,
                         });
                     }

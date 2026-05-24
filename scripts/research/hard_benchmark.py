@@ -636,7 +636,7 @@ async def run_physical_benchmark(
             payload = json.loads(msg.data.decode())
             if "trajectory" in payload and isinstance(payload["trajectory"], list):
                 trajectory = payload["trajectory"]
-                valid = True
+                valid = len(trajectory) > 0
                 for frame in trajectory:
                     if not all(
                         k in frame

@@ -316,7 +316,7 @@ async def run_latency_profile():
 
     print(f"  Prosody Trajectory Gen (Avg): {avg_prosody:.4f} ms")
     print(f"  Prosody Trajectory Gen (p95): {p95_prosody:.4f} ms")
-    status_prosody = "✅ PASS" if avg_prosody < 1.0 else "⚠️ WARN"
+    status_prosody = "✅ PASS" if avg_prosody < 1.0 and p95_prosody < 1.0 else "⚠️ WARN"
     print(f"  SLO Compliance (< 1.0ms):      {status_prosody}\n")
 
     # --- 5. SUMMARY REPORT ---

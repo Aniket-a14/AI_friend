@@ -271,7 +271,7 @@ pub struct UserVoiceProperties {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProsodyFrame {
-    pub time_offset_ms: i32,
+    pub time_offset_ms: u32,
     pub rate: f64,
     pub pitch: f64,
     pub volume: f64,

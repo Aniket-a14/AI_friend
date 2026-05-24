@@ -1,6 +1,6 @@
 # 🔬 Literature Critique: Synthetic Lifespan Seeding & Cognitive Memory Benchmarks
 
-This document provides a highly rigorous, publication-grade academic critique evaluating the **CVS-3.5 Combinatorial Seeding Engine** against contemporary state-of-the-art literature in synthetic memory generation and long-horizon agent evaluation. 
+This document provides a highly rigorous, publication-grade academic critique evaluating the **CVS-3.5 Combinatorial Seeding Engine** against contemporary state-of-the-art literature in synthetic memory generation and long-horizon agent evaluation.
 
 Specifically, we compare our methodology to recent benchmarks:
 1. **EPBench (Episodic Memories Generation & Evaluation Benchmark)** (Huet et al., 2025) [35]
@@ -32,7 +32,7 @@ We critically evaluate our seeding architecture compared to biological cognitive
   * This limited the unique semantic frame combinations to under $24,576$ sentences.
   * In a dataset of 100,000 memories, each unique sentence was repeated over 4 times.
   * The active vocabulary was under $1,000$ tokens, leading to artificial similarity clusters and search collisions.
-* **The Resolved Implementation**: We introduced a **Zipfian Lexical Synonym Substitution Engine**. 
+* **The Resolved Implementation**: We introduced a **Zipfian Lexical Synonym Substitution Engine**.
   * Words are selected from a highly expanded synonymous dictionary using a deterministic power-law choice distribution ($f(\text{rank}) \propto 1/\text{rank}^{2.5}$).
   * This mimics natural human word-frequency distributions, raising the active vocabulary entropy to **over 5,000+ unique words** and ensuring no two daily chitchats share identical lexical spans.
 
@@ -56,7 +56,7 @@ We critically evaluate our seeding architecture compared to biological cognitive
 
 ## 3. Active Implementation: Resolved Critique Gaps
 
-All three identified literature gaps are now **fully resolved** in the active codebase of [generate_seeding_corpus.py](../../scripts/research/generate_seeding_corpus.py). 
+All three identified literature gaps are now **fully resolved** in the active codebase of [generate_seeding_corpus.py](../../scripts/research/generate_seeding_corpus.py).
 
 The generated dataset is saved locally at `flooded_seeding_corpus.json`, fully prepared for academic database seeding and physical performance benchmarks.
 
