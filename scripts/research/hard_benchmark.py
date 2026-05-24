@@ -632,7 +632,34 @@ async def run_physical_benchmark(
 
     async def agent_voice_modulation_handler(msg):
         nonlocal voice_modulation_count
-        voice_modulation_count += 1
+        try:
+            payload = json.loads(msg.data.decode())
+            if "trajectory" in payload and isinstance(payload["trajectory"], list):
+                trajectory = payload["trajectory"]
+                valid = len(trajectory) > 0
+                for frame in trajectory:
+                    if not all(
+                        k in frame
+                        for k in ("time_offset_ms", "rate", "pitch", "volume")
+                    ):
+                        valid = False
+                        break
+                    if not (
+                        isinstance(frame["time_offset_ms"], (int, float))
+                        and isinstance(frame["rate"], (int, float))
+                        and isinstance(frame["pitch"], (int, float))
+                        and isinstance(frame["volume"], (int, float))
+                    ):
+                        valid = False
+                        break
+                if valid:
+                    voice_modulation_count += 1
+                else:
+                    print("⚠️ Invalid ProsodyFrame structure in trajectory payload.")
+            else:
+                print("⚠️ Missing trajectory list in AgentVoiceModulation payload.")
+        except Exception as e:
+            print(f"⚠️ Failed to parse AgentVoiceModulation message: {e}")
 
     async def audio_playback_visemes_handler(msg):
         nonlocal visemes_count

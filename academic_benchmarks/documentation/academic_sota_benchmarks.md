@@ -304,24 +304,50 @@ TCRS = P_i = \frac{1}{1 + \exp\left(-\frac{A_i - \theta}{s}\right)}
 
 ### 2.3 Affective Prosody Realism Alignment ($APRA$)
 
-The $APRA$ quantifies the alignment between the agent's internal psychological affect states and the sample-accurate DSP audio synthesis parameters. We translate continuous Valence ($V$), Arousal ($Ar$), Dominance ($D$), and metabolic Fatigue ($F$) into synthesis factors rounded to two decimal places:
+The $APRA$ quantifies the alignment between the agent's internal psychological affect states and the sample-accurate DSP audio synthesis parameters. Version **CVS-3.5** upgrades this model to **APRA v2**, representing prosody parameters as continuous time-varying trajectories $R(t)$, $P(t)$, and $V_{ol}(t)$ rather than static multipliers. We translate continuous Valence ($V$), Arousal ($Ar$), Dominance ($D$), and metabolic Fatigue ($F$) into synthesis factors spaced at 50ms interval frames:
 
-*   **Speaking Rate ($R$)**:
+*   **Continuous Speaking Rate ($R(t)$)**:
 
 ```math
-R = \text{clamp}(1.0 + 0.20 \cdot Ar - 0.10 \cdot V - 0.25 \cdot F, 0.60, 1.80)
+R(t) = \text{clamp}(1.0 + 0.20 \cdot Ar - 0.10 \cdot V - 0.25 \cdot F + B(t), 0.60, 1.80)
 ```
 
-*   **Vocal Pitch ($P$)**:
+where $B(t)$ represents the dynamic pacing breathing curve factor:
 
 ```math
-P = \text{clamp}(1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.10 \cdot F + \text{dist-pitch-mod}, 0.50, 2.00)
+B(t) = \begin{cases}
+-0.15 \cdot \left(1.0 - \frac{t}{200}\right), & \text{if } t < 200 \text{ ms} \\
+0.0, & \text{if } 200 \le t \le 2700 \text{ ms} \\
+-0.15 \cdot \left(\frac{t - 2700}{300}\right), & \text{if } t > 2700 \text{ ms}
+\end{cases}
 ```
 
-*   **Vocal Volume ($V_{ol}$)**:
+*   **Continuous Vocal Pitch ($P(t)$)**:
 
 ```math
-V_{ol} = \text{clamp}(0.40 + 0.60 \cdot D + \text{dist-vol-mod}, 0.10, 1.00)
+P(t) = \text{clamp}(1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.10 \cdot F + \text{dist-pitch-mod} + \nu(t), 0.50, 2.00)
+```
+
+where $\nu(t)$ represents organic 6Hz sinusoidal vocal cord vibrato ripple:
+
+```math
+\nu(t) = 0.02 \cdot \sin\left(2\pi \cdot 6.0 \cdot \frac{t}{1000}\right)
+```
+
+*   **Continuous Vocal Volume ($V_{ol}(t)$)**:
+
+```math
+V_{ol}(t) = \text{clamp}\left((0.40 + 0.60 \cdot D + \text{dist-vol-mod}) \cdot E(t), 0.10, 1.00\right)
+```
+
+where $E(t)$ is the volumetric envelope:
+
+```math
+E(t) = \begin{cases}
+\frac{t}{150}, & \text{if } t < 150 \text{ ms} \\
+1.0, & \text{if } 150 \le t \le 2850 \text{ ms} \\
+\frac{3000 - t}{150}, & \text{if } t > 2850 \text{ ms}
+\end{cases}
 ```
 
 To guarantee acoustic continuity and prevent phase pops during rapid prosody transitions, the Voice Agent implements a **10 ms linear Overlap-Add (OLA) crossfade** sample window:
@@ -332,10 +358,10 @@ y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \l
 
 where $t = \frac{i}{\text{fade-len}}$ represents the dynamic temporal blend factor.
 
-The $APRA$ measures the cumulative mathematical alignment precision:
+The $APRA$ measures the cumulative mathematical alignment precision over the trajectory length $T$:
 
 ```math
-APRA = 1.0 - \frac{1}{3} \left( \left|\frac{R - R_{\text{target}}}{R_{\text{target}}}\right| + \left|\frac{P - P_{\text{target}}}{P_{\text{target}}}\right| + \left|\frac{V_{ol} - V_{\text{ol-target}}}{V_{\text{ol-target}}}\right| \right)
+APRA = 1.0 - \frac{1}{3T} \sum_{k=0}^{T-1} \left( \left|\frac{R(t_k) - R_{\text{target}}(t_k)}{R_{\text{target}}(t_k)}\right| + \left|\frac{P(t_k) - P_{\text{target}}(t_k)}{P_{\text{target}}(t_k)}\right| + \left|\frac{V_{ol}(t_k) - V_{\text{ol-target}}(t_k)}{V_{\text{ol-target}}(t_k)}\right| \right)
 ```
 
 ### 2.4 Edge Resource Execution Coefficient ($EREC$)

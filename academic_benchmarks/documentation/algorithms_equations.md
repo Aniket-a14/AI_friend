@@ -400,39 +400,62 @@ where $\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ represen
 
 ---
 
-## 7. Voice Prosody & Acoustic Parameter Mapping
+## 7. Voice Prosody & Acoustic Parameter Mapping (APRA v2)
 
-To express continuous cognitive and endocrine states paralinguistically, CVS-3.0 maps the internal PAD affect values, fatigue metrics, and physical distance variables directly into acoustic synthesis parameters (pacing speech rate, vocal pitch, and physical volume) using bounded linear activation functions:
+To express continuous cognitive and endocrine states paralinguistically, CVS-3.5 upgrades the voice modulation to a dynamic continuous frame-wise trajectory model (**APRA v2**). Instead of static sentence-level values, the internal Pleasure-Arousal-Dominance (PAD) affect values, fatigue metrics, and physical distance variables are mapped into continuous, time-varying functions representing acoustic prosody trajectory parameters (pacing speech rate, vocal pitch, and volume) across 50ms interval frames:
 
-### 7.1 Speech Rate (Pacing) Modulation
+### 7.1 Speech Rate (Pacing) Trajectory Modulation
 
-The speech pacing rate factor ($R \in [0.60, 1.80]$) is modulated by emotional arousal (positive scaling), valence (negative scaling for slow, sad vocalization), and fatigue-driven pace-dampening:
-
-```math
-R_{\text{pace}} = \text{clamp}(1.0 + 0.20 \cdot Ar - 0.10 \cdot V - 0.25 \cdot F, 0.60, 1.80)
-```
-
-### 7.2 Vocal Pitch (F0) Modulation
-
-The fundamental frequency scale factor ($P \in [0.50, 2.00]$) is pulled dynamically by valence and arousal (positive pitch shifts), dominance (defensive low-frequency pitch drops), metabolic fatigue, and volumetric distance:
+The continuous speech pacing rate factor ($R(t) \in [0.60, 1.80]$) is modulated by emotional arousal (positive scaling), valence (negative scaling), metabolic fatigue, and a dynamic pacing breathing curve factor $B(t)$ simulating natural breathing pauses near endpoints:
 
 ```math
-P_{\text{vocal}} = \text{clamp}(1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.10 \cdot F + \text{dist-pitch-mod}, 0.50, 2.00)
+R(t) = \text{clamp}(1.0 + 0.20 \cdot Ar - 0.10 \cdot V - 0.25 \cdot F + B(t), 0.60, 1.80)
 ```
 
-where:
+where the dynamic breathing dampening $B(t)$ is defined as:
+
+```math
+B(t) = \begin{cases}
+-0.15 \cdot \left(1.0 - \frac{t}{200}\right), & \text{if } t < 200 \text{ ms} \\
+0.0, & \text{if } 200 \le t \le 2700 \text{ ms} \\
+-0.15 \cdot \left(\frac{t - 2700}{300}\right), & \text{if } t > 2700 \text{ ms}
+\end{cases}
+```
+
+### 7.2 Vocal Pitch (F0) Trajectory Modulation
+
+The continuous fundamental frequency scale trajectory ($P(t) \in [0.50, 2.00]$) is pulled dynamically by valence and arousal (positive pitch shifts), dominance (defensive low-frequency pitch drops), metabolic fatigue, physical distance, and an organic 6Hz sinusoidal human vocal cord vibrato ripple $\nu(t)$:
+
+```math
+P(t) = \text{clamp}(1.0 + 0.05 \cdot V + 0.15 \cdot Ar - 0.10 \cdot D - 0.10 \cdot F + \text{dist-pitch-mod} + \nu(t), 0.50, 2.00)
+```
+
+where the vocal vibrato ripple $\nu(t)$ is modeled at 6Hz as:
+
+```math
+\nu(t) = 0.02 \cdot \sin\left(2\pi \cdot 6.0 \cdot \frac{t}{1000}\right)
+```
+
+and the distance modifier is defined as:
 *   $\text{dist-pitch-mod} = \text{clamp}(0.05 \cdot (\text{distance} - 1.0), -0.10, 0.10)$
 
-### 7.3 Vocal Volume Modulation
+### 7.3 Vocal Volume Trajectory Modulation
 
-Vocal intensity ($V \in [0.10, 1.00]$) maps from dominance (confident louder speech) adjusted by inverse-square physical distance compensation:
+Vocal intensity trajectory ($V(t) \in [0.10, 1.00]$) is mapped from dominance adjusted by distance compensation and a smooth volumetric envelope $E(t)$ at the utterance boundaries:
 
 ```math
-V_{\text{vocal}} = \text{clamp}(0.40 + 0.60 \cdot D + \text{dist-vol-mod}, 0.10, 1.00)
+V(t) = \text{clamp}\left((0.40 + 0.60 \cdot D + \text{dist-vol-mod}) \cdot E(t), 0.10, 1.00\right)
 ```
 
+where $\text{dist-vol-mod} = \text{clamp}(0.15 \cdot (\text{distance} - 1.0), -0.20, 0.30)$, and the boundary volumetric envelope $E(t)$ is defined as:
 
-where $\text{dist-vol-mod} = \text{clamp}(0.15 \cdot (\text{distance} - 1.0), -0.20, 0.30)$.
+```math
+E(t) = \begin{cases}
+\frac{t}{150}, & \text{if } t < 150 \text{ ms} \\
+1.0, & \text{if } 150 \le t \le 2850 \text{ ms} \\
+\frac{3000 - t}{150}, & \text{if } t > 2850 \text{ ms}
+\end{cases}
+```
 
 ---
 

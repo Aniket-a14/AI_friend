@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import time
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 from enum import Enum
@@ -233,13 +233,36 @@ class UserVoiceProperties(BaseModel):
 
 
 # ─── agent.voice.modulation ───────────────────────────────────
-class AgentVoiceModulation(BaseModel):
+class ProsodyFrame(BaseModel):
     model_config = {"extra": "allow"}
 
+    time_offset_ms: int = Field(..., ge=0)
     rate: float
     pitch: float
     volume: float
+
+
+class AgentVoiceModulation(BaseModel):
+    model_config = {"extra": "allow"}
+
+    trajectory: List[ProsodyFrame] = Field(..., min_length=1)
     timestamp: float = Field(default_factory=time.time)
+
+    @field_validator("trajectory")
+    @classmethod
+    def validate_trajectory(cls, v: List[ProsodyFrame]) -> List[ProsodyFrame]:
+        if not v:
+            raise ValueError("Trajectory must not be empty.")
+        if v[0].time_offset_ms < 0:
+            raise ValueError("First offset must be >= 0.")
+        for i in range(1, len(v)):
+            if v[i].time_offset_ms < v[i - 1].time_offset_ms:
+                raise ValueError(
+                    "Trajectory must be ordered by time_offset_ms ascending."
+                )
+            if v[i].time_offset_ms - v[i - 1].time_offset_ms != 50:
+                raise ValueError("Consecutive frames must differ by exactly 50 ms.")
+        return v
 
 
 # ─── audio.playback.visemes ───────────────────────────────────
