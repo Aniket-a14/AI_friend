@@ -68,6 +68,16 @@ source .venv/bin/activate    # On macOS/Linux
 pip install matplotlib numpy pandas reportlab nats-py python-dotenv scipy asyncpg neo4j vaderSentiment
 ```
 
+### Step 1b: NRC-VAD Lexicon Dataset Setup (Mandatory for Sentiment Scorer)
+The evaluation scoring engine (`metrics_eval.py`) relies on Dr. Saif M. Mohammad's official NRC Valence, Arousal, and Dominance (VAD) Lexicon to validate emotional appraisal accuracy. Due to distribution licensing, this file is excluded from Git tracking via `.gitignore` and must be set up locally:
+
+1. **Download the Lexicon Zip**:
+   Download the archive directly from the official webpage:
+   `https://saifmohammad.com/WebDocs/Lexicons/NRC-VAD-Lexicon.zip`
+2. **Extract and Place in Directory**:
+   Extract the zip and place the **`NRC-VAD-Lexicon.txt`** file into:
+   `scripts/research/NRC-VAD-Lexicon/NRC-VAD-Lexicon.txt`
+
 ### Step 2: Infrastructure Activation
 Ensure the local service mesh and databases are fully active:
 ```bash
