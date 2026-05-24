@@ -13,6 +13,7 @@ import asyncio
 import cognitive_rust
 import logging
 import time
+import math
 from typing import Dict, Any, Optional, List
 from .base import BaseAgent
 from ..state import ConversationHistoryStore, MemoryStore, GraphDB
