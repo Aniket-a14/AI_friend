@@ -402,27 +402,33 @@ async def seed_databases(num_distractors=100000):
             "ResearchDomain",
             {"description": "Core college research project."},
         )
-        
+
         # Seed Core Identity Values & Boundaries into Neo4j Graph
         await graph.create_entity(
             "Honesty",
             "CoreValue",
-            {"description": "Commitment to absolute truthfulness and behavioral integrity."}
+            {
+                "description": "Commitment to absolute truthfulness and behavioral integrity."
+            },
         )
         await graph.create_entity(
             "Privacy",
             "CoreValue",
-            {"description": "Commitment to absolute data sovereignty and local privacy protection."}
+            {
+                "description": "Commitment to absolute data sovereignty and local privacy protection."
+            },
         )
         await graph.create_entity(
             "Curiosity",
             "CoreValue",
-            {"description": "Commitment to intellectual exploration and learning."}
+            {"description": "Commitment to intellectual exploration and learning."},
         )
         await graph.create_entity(
             "DataBoundary",
             "CoreBoundary",
-            {"description": "Explicit rule: Never share user conversation histories externally."}
+            {
+                "description": "Explicit rule: Never share user conversation histories externally."
+            },
         )
 
         # Seed Core Identity Values & Boundaries into Neo4j Graph
@@ -476,7 +482,7 @@ async def seed_databases(num_distractors=100000):
             "ResearchDomain",
             {"weight": 0.95},
         )
-        
+
         # Link Aniket to Core Identity Values & Boundaries
         await graph.create_relationship(
             "Aniket", "Person", "HAS_VALUE", "Honesty", "CoreValue", {"weight": 1.0}
@@ -488,7 +494,12 @@ async def seed_databases(num_distractors=100000):
             "Aniket", "Person", "HAS_VALUE", "Curiosity", "CoreValue", {"weight": 1.0}
         )
         await graph.create_relationship(
-            "Aniket", "Person", "ENFORCES_RULE", "DataBoundary", "CoreBoundary", {"weight": 1.0}
+            "Aniket",
+            "Person",
+            "ENFORCES_RULE",
+            "DataBoundary",
+            "CoreBoundary",
+            {"weight": 1.0},
         )
 
         # Link Aniket to Core Identity Values & Boundaries
