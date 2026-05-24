@@ -246,7 +246,7 @@ async def run_latency_profile():
 
     # --- 4.5. COGNITIVE PROSODY TRAJECTORY GENERATION PIPELINE ---
     print("--- [System 2] Cognitive Prosody Trajectory Generation (APRA v2) ---")
-    import math
+    import cognitive_rust
     from app.contracts import ProsodyFrame
 
     arousal = 0.5
@@ -257,58 +257,13 @@ async def run_latency_profile():
     prosody_runs = []
     for _ in range(100):
         start_t = time.perf_counter()
-        trajectory = []
-        for step in range(60):
-            t_ms = step * 50
-
-            breathing_dampening = 0.0
-            if t_ms < 200:
-                breathing_dampening = -0.15 * (1.0 - (t_ms / 200.0))
-            elif t_ms > 2700:
-                breathing_dampening = -0.15 * ((t_ms - 2700.0) / 300.0)
-
-            step_rate = max(
-                0.60,
-                min(
-                    1.80,
-                    1.0
-                    + 0.20 * arousal
-                    - 0.10 * valence
-                    - 0.25 * fatigue
-                    + breathing_dampening,
-                ),
-            )
-
-            vibrato_ripple = 0.02 * math.sin(2.0 * math.pi * 6.0 * (t_ms / 1000.0))
-            step_pitch = max(
-                0.50,
-                min(
-                    2.00,
-                    1.0
-                    + 0.05 * valence
-                    + 0.15 * arousal
-                    - 0.10 * dominance
-                    - 0.10 * fatigue
-                    + vibrato_ripple,
-                ),
-            )
-
-            vol_envelope = 1.0
-            if t_ms < 150:
-                vol_envelope = t_ms / 150.0
-            elif t_ms > 2850:
-                vol_envelope = (3000.0 - t_ms) / 150.0
-
-            step_volume = max(0.10, min(1.00, (0.40 + 0.60 * dominance) * vol_envelope))
-
-            trajectory.append(
-                ProsodyFrame(
-                    time_offset_ms=t_ms,
-                    rate=round(step_rate, 2),
-                    pitch=round(step_pitch, 2),
-                    volume=round(step_volume, 2),
-                )
-            )
+        trajectory_tuples = cognitive_rust.generate_apra_trajectory(
+            valence, arousal, dominance, fatigue
+        )
+        trajectory = [
+            ProsodyFrame(time_offset_ms=t_ms, rate=r, pitch=p, volume=v)
+            for t_ms, r, p, v in trajectory_tuples
+        ]
         prosody_runs.append((time.perf_counter() - start_t) * 1000.0)
 
     avg_prosody = np.mean(prosody_runs)
