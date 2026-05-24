@@ -1,4 +1,4 @@
-# 🚀 AI Friend CVS-3.0: Architectural Roadmap & Baseline
+# 🚀 AI Friend CVS-3.5: Architectural Roadmap & Baseline
 
 This document serves as the foundational technical baseline for the next major evolution of the AI Friend Sovereign Mesh. It details the file structures, algorithms, and architectural blueprints required to implement the four key cognitive improvements.
 

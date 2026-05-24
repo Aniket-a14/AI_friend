@@ -250,7 +250,7 @@ This enforces strict cognitive boundaries, forcing the assistant to explain new 
 
 ## 🧠 6. Phase 6: Dual-Tier Edge Architecture & Live iMac M3 Benchmarking (N=100)
 
-To support natural social HRI (Human-Robot Interaction) under strict local compute constraints, CVS-3.0 establishes a **Dual-Tier Edge Model** that partition tasks based on cognitive latency budgets:
+To support natural social HRI (Human-Robot Interaction) under strict local compute constraints, CVS-3.5 establishes a **Dual-Tier Edge Model** that partition tasks based on cognitive latency budgets:
 
 ### 6.1 Fast-Loop Turn-Taking Tier (`llama3.2:1b`)
 * **Role**: Real-time dialogue turn-taking, speculative micro-appraisals, and rapid barge-in interrupt arbitration.
@@ -284,9 +284,9 @@ Empirical performance profiling of the containerized cognitive mesh running loca
 
 ## 🏆 7. SOTA Comparative Benchmarking Matrix & Academic Mappings
 
-To establish rigorous scientific boundaries, CVS-3.0 is actively compared against the latest state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures:
+To establish rigorous scientific boundaries, CVS-3.5 is actively compared against the latest state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures:
 
-| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [1] | SOTA Humanoid: Tesla Optimus Gen 2 [2] | Compact Humanoid: Unitree G1 [3] | SOTA Expressive: Ameca Gen 3 [4] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [6] | SOTA Embodied: ACT-R/E [7] | **Ours: CVS-3.0 (Physical)** | **Ours: CVS-3.0 (Accelerated)** |
+| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [1] | SOTA Humanoid: Tesla Optimus Gen 2 [2] | Compact Humanoid: Unitree G1 [3] | SOTA Expressive: Ameca Gen 3 [4] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [6] | SOTA Embodied: ACT-R/E [7] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** | **`[TBP]`** |

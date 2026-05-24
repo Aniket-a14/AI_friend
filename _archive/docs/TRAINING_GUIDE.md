@@ -1,3 +1,7 @@
+> [!NOTE]
+> **LEGACY ARCHIVE FOR REFERENCE - CVS-3.0 BASELINE**
+> This document is maintained for historical context and architectural reference. The current live production runtime implements **CVS-3.5 Premium Edition** featuring Rust FFI acceleration and a 4-tier storage mesh.
+
 # GPT-SoVITS Training Guide: AI Friend Custom Voice
 
 This guide provides step-by-step instructions for fine-tuning a dedicated **V4 (32kHz)** model for your AI Friend. Unlike zero-shot cloning, fine-tuning "bakes" your voice into the model weights, providing the fastest performance and native compatibility with the **CVS-1.0** temporal engine.

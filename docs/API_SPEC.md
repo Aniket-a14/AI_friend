@@ -95,6 +95,8 @@ The "Sovereign Mesh" communicates via a decentralized event bus. In the CVS-3.5 
 | `vision.control` | Signaling | Vision Agent | `{"command": "string", "source": "string"}` |
 | `vision.description` | Vision Agent | Brain Agent | `{"description": "string", "objects": [], "latency_ms": int}` |
 | `state.update` | BaseAgent | UI / Logs | `{"agent": "string", "state": "string"}` |
+| `cache.sync` | BaseAgent | Spawner / ASGI | `{"store": "string", "action": "string"}` |
+| `agent.voice.modulation` | Brain Agent | Voice Agent | `{"frames": [{"time_offset_ms": int, "rate": float, "pitch": float, "volume": float}]}` |
 
 ### Detailed Schemas
 
@@ -244,6 +246,40 @@ Real-time telemetry used by the BrainAgent to adjust semantic chunking.
   "temporal_drift": 0.002,
   "queue_depth": 1,
   "override_triggered": false
+}
+```
+
+#### `cache.sync` (Cross-Process Cache Invalidation)
+
+Broadcast when static identity parameters or system credentials change in the SQLite database.
+
+```json
+{
+  "store": "identity_core",
+  "action": "invalidate"
+}
+```
+
+#### `agent.voice.modulation` (Continuous Prosody Modulation Trajectory)
+
+A time-series trajectory of prosody parameters published at exactly 50ms intervals by the BrainAgent to feed fine-grained emotional pitch/energy values to the VoiceAgent's signal mixer.
+
+```json
+{
+  "frames": [
+    {
+      "time_offset_ms": 0,
+      "rate": 1.05,
+      "pitch": 0.95,
+      "volume": 0.8
+    },
+    {
+      "time_offset_ms": 50,
+      "rate": 1.05,
+      "pitch": 0.95,
+      "volume": 0.8
+    }
+  ]
 }
 ```
 

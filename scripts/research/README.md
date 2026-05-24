@@ -1,6 +1,6 @@
-# 🧪 CVS-3.0 Cognitive & Physical Benchmarking Suite
+# 🧪 CVS-3.5 Cognitive & Physical Benchmarking Suite
 
-This directory contains the standardized, modular evaluation suite designed to validate the math, cognitive dynamics, and physical performance of the **CVS-3.0 Affective Cognitive Architecture** for academic publication.
+This directory contains the standardized, modular evaluation suite designed to validate the math, cognitive dynamics, and physical performance of the **CVS-3.5 Affective Cognitive Architecture** for academic publication.
 
 ---
 
@@ -10,7 +10,7 @@ To prevent performance profiling overhead from introducing latency into live con
 
 ```
                   ┌──────────────────────────────────────────────┐
-                  │          CVS-3.0 BENCHMARKING SUITE          │
+                  │          CVS-3.5 BENCHMARKING SUITE          │
                   └──────────────────────┬───────────────────────┘
                                          │
                   ┌──────────────────────┴──────────────────────┐
@@ -218,4 +218,4 @@ All generated telemetry logs, high-resolution plots, and LaTeX-grade academic re
     *   `scripts/results/affective_trajectory_sample.png` (sample Pleasure-Arousal-Dominance (PAD) curve tracking)
 
 *   **LaTeX-Grade Compilation Report:**
-    *   `scripts/results/CVS-3.0_Mind_Benchmarking_Report.pdf` (fully compiled, multi-page, double-column academic evaluation paper with embedded visual telemetry)
+    *   `scripts/results/CVS-3.5_Mind_Benchmarking_Report.pdf` (fully compiled, multi-page, double-column academic evaluation paper with embedded visual telemetry)

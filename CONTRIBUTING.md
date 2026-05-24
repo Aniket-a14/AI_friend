@@ -1,6 +1,6 @@
-# 🤝 Contributing to AI Friend (v6.0.0 / CVS-3.0 Rust Native Edition)
+# 🤝 Contributing to AI Friend (v6.5.0 / CVS-3.5 Premium Edition)
 
-Thank you for contributing to the **Sovereign Mesh**. This project is a high-fidelity cognitive identity emulator designed for 100% local, ultra-low latency execution. We value precision, architectural integrity, and behavioral realism.
+Thank you for contributing to the **Sovereign Mesh**. This project is a high-fidelity, state-driven cognitive identity emulator designed for 100% local, ultra-low latency execution. We value precision, architectural integrity, and behavioral realism.
 
 ---
 

@@ -1,3 +1,7 @@
+> [!NOTE]
+> **LEGACY ARCHIVE FOR REFERENCE - CVS-3.0 BASELINE**
+> This document is maintained for historical context and architectural reference. The current live production runtime implements **CVS-3.5 Premium Edition** featuring Rust FFI acceleration and a 4-tier storage mesh.
+
 # 🐳 Sovereign Mesh: Docker Verification Guide (CVS-1.0)
 
 This guide provides the technical procedures for verifying that the **AI Friend Sovereign Mesh** and **CVS-1.0 runtime** are correctly orchestrated, healthy, and communicating with sub-280ms performance.

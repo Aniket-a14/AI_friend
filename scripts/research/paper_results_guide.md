@@ -1,9 +1,9 @@
 # 🔬 Latency Hardening & Cognitive Decay: Research Results Data Guide
 
-This directory contains the high-fidelity empirical datasets compiled from the **AI Friend CVS-3.0** edge social humanoid robot platform. These metrics represent the post-optimization state of your sovereign mesh subsystems and are fully formatted to be dropped directly into your LaTeX manuscript, parsed with pandas, or plotted in matplotlib.
+This directory contains the high-fidelity empirical datasets compiled from the **AI Friend CVS-3.5** edge social humanoid robot platform. These metrics represent the post-optimization state of your sovereign mesh subsystems and are fully formatted to be dropped directly into your LaTeX manuscript, parsed with pandas, or plotted in matplotlib.
 
 > [!NOTE]
-> **Scope of Current Development**: The CVS-3.0 architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. Therefore, all comparisons, evaluations, and hardware/computational metrics focus exclusively on the cognitive and conversational edge processing layers of the humanoid brain.
+> **Scope of Current Development**: The CVS-3.5 architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. Therefore, all comparisons, evaluations, and hardware/computational metrics focus exclusively on the cognitive and conversational edge processing layers of the humanoid brain.
 
 ---
 

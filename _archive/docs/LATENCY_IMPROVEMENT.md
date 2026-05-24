@@ -1,3 +1,7 @@
+> [!NOTE]
+> **LEGACY ARCHIVE FOR REFERENCE - CVS-3.0 BASELINE**
+> This document is maintained for historical context and architectural reference. The current live production runtime implements **CVS-3.5 Premium Edition** featuring Rust FFI acceleration and a 4-tier storage mesh.
+
 # ⏱️ Latency Optimization - CVS-1.0
 
 > **Achieving sub-300ms perceived response latency through Temporal Orchestration and Perception-Aligned Timing.**

@@ -1,3 +1,7 @@
+> [!NOTE]
+> **LEGACY ARCHIVE FOR REFERENCE - CVS-3.0 BASELINE**
+> This document is maintained for historical context and architectural reference. The current live production runtime implements **CVS-3.5 Premium Edition** featuring Rust FFI acceleration and a 4-tier storage mesh.
+
 # 🚀 Deployment Guide (CVS-1.0: Perceptual Mastery)
 
 Production deployment strategies for the AI Friend platform, optimized for the **Cognitive Voice System (CVS-1.0)**.

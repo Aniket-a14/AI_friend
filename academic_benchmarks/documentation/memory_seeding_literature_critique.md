@@ -47,7 +47,7 @@ We critically evaluate our seeding architecture compared to biological cognitive
 
 ### 2.3 Static Seeding vs. Dynamic Forgetting and Consolidation
 * **The Baseline Constraint**: Importing 110,000 pristine, high-resolution sentences backdated 19 years bypassed the biological decay of Complementary Learning Systems (McClelland et al., 1995).
-* **The Resolved Implementation**: We implemented **Three-Tier Semantic Forgetting & Compression**:
+* **The Resolved Implementation**: We implemented **four-tier Semantic Forgetting & Compression**:
   * *Ages 3.0 to 7.0 (Childhood)*: Compresses memories to short, fuzzy sensory traces (e.g. `"Fuzzy Childhood Memory: walked with family near local temple."`).
   * *Ages 7.0 to 14.0 (School-era)*: Truncates low-priority sensory and weather details, keeping only the core scenario and outcome.
   * *Ages 14.0 to 19.0 (Adulthood)*: Retains full, high-fidelity combinatorial sentences.
