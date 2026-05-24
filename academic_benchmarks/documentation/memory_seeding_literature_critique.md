@@ -56,9 +56,9 @@ We critically evaluate our seeding architecture compared to biological cognitive
 
 ## 3. Active Implementation: Resolved Critique Gaps
 
-All three identified literature gaps are now **fully resolved** in the active codebase of [generate_seeding_corpus.py](file:///c:/3rd_Year/Development/Projects/Pankudi_ai/scripts/research/generate_seeding_corpus.py). 
+All three identified literature gaps are now **fully resolved** in the active codebase of [generate_seeding_corpus.py](../../scripts/research/generate_seeding_corpus.py). 
 
-The generated dataset is saved locally at [flooded_seeding_corpus.json](file:///c:/3rd_Year/Development/Projects/Pankudi_ai/scripts/research/flooded_seeding_corpus.json), fully prepared for academic database seeding and physical performance benchmarks.
+The generated dataset is saved locally at `flooded_seeding_corpus.json`, fully prepared for academic database seeding and physical performance benchmarks.
 
 ---
 
