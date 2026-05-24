@@ -270,12 +270,19 @@ pub struct UserVoiceProperties {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AgentVoiceModulation {
+pub struct ProsodyFrame {
+    pub time_offset_ms: u32,
     pub rate: f64,
     pub pitch: f64,
     pub volume: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentVoiceModulation {
+    pub trajectory: Vec<ProsodyFrame>,
     pub timestamp: f64,
 }
+
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaybackVisemes {

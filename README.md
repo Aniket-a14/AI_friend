@@ -390,7 +390,7 @@ Communication is strictly governed by a **Typed Contract Mesh** (Pydantic). Ever
 | `memory.surfaced` | `MemoryEvent` | Proactive episodic or semantic recall triggers. |
 | `system.tick` | `PulseEvent` | The 60s mesh-wide maturation heartbeat. |
 | `user.voice.properties` | `UserVoiceProperties` | Real-time user pitch, energy, and speech rate telemetry. |
-| `agent.voice.modulation` | `AgentVoiceModulation` | Continuous prosody shifts driven by the emotional appraisal loop. |
+| `agent.voice.modulation` | `AgentVoiceModulation` | Continuous frame-wise time-series trajectory of `ProsodyFrame`s (ordered ascending by `time_offset_ms` [integer, ms >= 0] at exactly 50ms intervals, containing `rate` [float], `pitch` [float], and `volume` [float]) representing fine-grained vocal dynamics driven by the emotional appraisal loop. |
 | `audio.playback.visemes` | `PlaybackVisemes` | Sample-accurate mouth shape triggers for synchronized rendering. |
 
 ---

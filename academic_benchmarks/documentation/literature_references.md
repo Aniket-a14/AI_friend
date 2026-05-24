@@ -206,4 +206,3 @@ This document compiles the exhaustive academic bibliography for **AI Friend CVS-
     *Title*: "Long-horizon Memory Embedding Benchmark (LMEB): Standardized Protocols for Long-Term Retrieval in Embodied Agents"
     *Venue*: *Neural Information Processing Systems (NeurIPS) Dataset Track*
     *Link*: [arXiv:2602.09115](https://arxiv.org/abs/2602.09115)
-
