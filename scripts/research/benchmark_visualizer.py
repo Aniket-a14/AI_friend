@@ -141,7 +141,7 @@ def generate_benchmark_plots(results_json_path=None):
     )
     axes[0, 0].set_xlabel("Iteration Pulse", fontsize=9)
     axes[0, 0].set_ylabel("Accuracy %", fontsize=9)
-    axes[0, 0].set_ylim(min(prog_intent_acc) - 5, 105)
+    axes[0, 0].set_ylim(min(prog_intent_acc) - 5 if prog_intent_acc else 0, 105)
     axes[0, 0].grid(True, which="both", linestyle=":", alpha=0.5, color="#BDC3C7")
     axes[0, 0].legend(
         loc="lower right",
@@ -203,7 +203,7 @@ def generate_benchmark_plots(results_json_path=None):
     )
     axes[1, 0].set_xlabel("Iteration Pulse", fontsize=9)
     axes[1, 0].set_ylabel("Recall Rate %", fontsize=9)
-    axes[1, 0].set_ylim(min(prog_recall_rate) - 5, 105)
+    axes[1, 0].set_ylim(min(prog_recall_rate) - 5 if prog_recall_rate else 0, 105)
     axes[1, 0].grid(True, which="both", linestyle=":", alpha=0.5, color="#BDC3C7")
     axes[1, 0].legend(
         loc="lower right",

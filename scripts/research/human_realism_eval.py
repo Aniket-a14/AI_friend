@@ -474,23 +474,22 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
     try:
         with open(results_path, "r") as f:
             res = json.load(f)
-            cog = res["cognitive"]
-            cvs_tom_mae = cog["tom_mae_valence"]
-            cvs_memory_recall_at_5 = cog["memory_recall_at_5"]
+            cog = res.get("cognitive") or {}
+            cvs_tom_mae = cog.get("tom_mae_valence")
+            cvs_memory_recall_at_5 = cog.get("memory_recall_at_5")
     except Exception as e:
         raise ValueError(
             f"❌ ERROR: Failed to extract required metrics from '{results_path}': {e}.\n"
             "Ensure the benchmark script ran successfully and wrote valid JSON structured data."
         )
 
-    # Subplot 2: Theory of Mind (ToM) Emotion MAE
     labels_tom = [
         "Claude 3.5\n(Zero-Shot) [13]",
         "GPT-4o\n(Zero-Shot) [13]",
         "Standard LLM\n(Zero-Shot) [9]",
         "CVS-3.0\n(Ours)",
     ]
-    values_tom = [0.32, 0.28, 0.38, cvs_tom_mae]
+    values_tom = [0.32, 0.28, 0.38, cvs_tom_mae if cvs_tom_mae is not None else 0.0]
     colors_tom = ["#f8d7da", "#f8d7da", "#f8d7da", "#28a745"]
 
     axes[1].bar(
@@ -506,7 +505,10 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
         "Theory of Mind Emotion Inference MAE", fontweight="bold", fontsize=10
     )
     for idx, val in enumerate(values_tom):
-        lbl = f"{val:.4f}" if idx == 3 else f"{val:.2f}"
+        if idx == 3 and cvs_tom_mae is None:
+            lbl = "N/A"
+        else:
+            lbl = f"{val:.4f}" if idx == 3 else f"{val:.2f}"
         axes[1].text(
             idx,
             val + 0.01,
@@ -519,14 +521,13 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
     axes[1].set_ylim(0, 0.48)
     axes[1].grid(axis="x")
 
-    # Subplot 3: Knowledge Retrieval (Recall@5)
     labels_ret = [
         "Contriever\n(Unsupervised) [20]",
         "BGE-M3 Dense\n(Supervised) [19]",
         "HippoRAG\n(Neuro-Inspired) [21]",
         "CVS-3.0 ACT-R\n(Sovereign)",
     ]
-    values_ret = [76.2, 84.3, 92.4, cvs_memory_recall_at_5]
+    values_ret = [76.2, 84.3, 92.4, cvs_memory_recall_at_5 if cvs_memory_recall_at_5 is not None else 0.0]
     colors_ret = ["#f8d7da", "#f8d7da", "#cce5ff", "#28a745"]
 
     axes[2].bar(
@@ -542,10 +543,14 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
         "Memory Retrieval Performance (Recall@5)", fontweight="bold", fontsize=10
     )
     for idx, val in enumerate(values_ret):
+        if idx == 3 and cvs_memory_recall_at_5 is None:
+            lbl = "N/A"
+        else:
+            lbl = f"{val:.1f}%"
         axes[2].text(
             idx,
             val + 1.5,
-            f"{val:.1f}%",
+            lbl,
             ha="center",
             va="bottom",
             fontsize=8,

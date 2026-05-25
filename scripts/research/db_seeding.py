@@ -102,7 +102,7 @@ async def check_nats_ipc():
         await nc.close()
         return True, dur
     except Exception:
-        return False, 0.15
+        return False, None
 
 
 async def seed_databases(num_distractors=100000):

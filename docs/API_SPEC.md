@@ -97,6 +97,8 @@ The "Sovereign Mesh" communicates via a decentralized event bus. In the CVS-3.5 
 | `state.update` | BaseAgent | UI / Logs | `{"agent": "string", "state": "string"}` |
 | `cache.sync` | BaseAgent | Spawner / ASGI | `{"store": "string", "action": "string"}` |
 | `agent.voice.modulation` | Brain Agent | Voice Agent | `{"frames": [{"time_offset_ms": int, "rate": float, "pitch": float, "volume": float}]}` |
+| `audio.playback.progress` | Client / Player | Brain Agent | `{"utterance_id": "string", "character_offset": int, "word_index": int, "completed": bool}` |
+| `ambient.noise.telemetry` | STT Agent | Voice Agent | `{"rms_energy": float, "noise_floor_db": float, "timestamp": float}` |
 
 ### Detailed Schemas
 
@@ -280,6 +282,32 @@ A time-series trajectory of prosody parameters published at exactly 50ms interva
       "volume": 0.8
     }
   ]
+}
+```
+
+#### `audio.playback.progress` (Real-Time Playback Telemetry)
+
+Published by the media playback client to report progress. Used by the Brain Agent to determine dialogue truncation boundaries upon user interruption.
+
+```json
+{
+  "utterance_id": "turn-12345",
+  "character_offset": 30,
+  "word_index": 6,
+  "completed": false,
+  "timestamp": 1713330005.1
+}
+```
+
+#### `ambient.noise.telemetry` (Acoustic Noise Floor Telemetry)
+
+Published by the STT Agent to notify other components of the current environment's noise level.
+
+```json
+{
+  "rms_energy": 0.015,
+  "noise_floor_db": -36.4,
+  "timestamp": 1713330005.0
 }
 ```
 

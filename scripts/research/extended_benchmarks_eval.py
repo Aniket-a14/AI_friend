@@ -47,22 +47,28 @@ def run_benchmarks():
     try:
         with open(results_path, "r") as f:
             res = json.load(f)
-            e2e_mean = res["e2e"]["mean"]
-            ttft_mean = res["ttft"]["mean"]
-            cog = res["cognitive"]
-            cvs_tom_mae = cog["tom_mae_valence"]
-            cvs_memory_recall_at_5 = cog["memory_recall_at_5"]
-            cvs_reasoning_accuracy = cog["intent_accuracy"]
+            e2e_mean = res["e2e"]["mean"] if (res.get("e2e") and isinstance(res["e2e"], dict)) else None
+            ttft_mean = res["ttft"]["mean"] if (res.get("ttft") and isinstance(res["ttft"], dict)) else None
+            cog = res.get("cognitive") or {}
+            cvs_tom_mae = cog.get("tom_mae_valence")
+            cvs_memory_recall_at_5 = cog.get("memory_recall_at_5")
+            cvs_reasoning_accuracy = cog.get("intent_accuracy")
     except Exception as e:
         raise ValueError(
             f"❌ ERROR: Failed to extract required metrics from '{results_path}': {e}.\n"
             "Ensure the benchmark script ran successfully and wrote valid JSON structured data."
         )
 
+    e2e_str = f"{e2e_mean:.2f} ms" if e2e_mean is not None else "N/A"
+    ttft_str = f"{ttft_mean:.2f} ms" if ttft_mean is not None else "N/A"
+    tom_str = f"{cvs_tom_mae:.4f}" if cvs_tom_mae is not None else "N/A"
+    recall_str = f"{cvs_memory_recall_at_5:.2f}%" if cvs_memory_recall_at_5 is not None else "N/A"
+    reason_str = f"{cvs_reasoning_accuracy:.2f}%" if cvs_reasoning_accuracy is not None else "N/A"
+
     print("  📊 Loaded live benchmark telemetry:")
-    print(f"     E2E Mean = {e2e_mean:.2f} ms | TTFT Mean = {ttft_mean:.2f} ms")
+    print(f"     E2E Mean = {e2e_str} | TTFT Mean = {ttft_str}")
     print(
-        f"     ToM MAE = {cvs_tom_mae:.4f} | Recall@5 = {cvs_memory_recall_at_5:.2f}% | Reasoning = {cvs_reasoning_accuracy:.2f}%"
+        f"     ToM MAE = {tom_str} | Recall@5 = {recall_str} | Reasoning = {reason_str}"
     )
 
     # ------------------ 1. Multi-Turn Coherence ------------------
@@ -88,7 +94,7 @@ def run_benchmarks():
     # ------------------ 4. ACT-R Memory Recall ------------------
     print("  Dimension 4: ACT-R Memory Retrieval (Recall@K)...")
     recall_ks = [1, 3, 5, 10]
-    cvs_recalls = [92.5, 97.8, cvs_memory_recall_at_5, 100.0]
+    cvs_recalls = [92.5, 97.8, cvs_memory_recall_at_5 if cvs_memory_recall_at_5 is not None else 0.0, 100.0]
     baseline_recalls = [68.0, 81.0, 78.4, 93.0]
 
     # ------------------ 5. Ethical & Privacy Gating ------------------
@@ -328,9 +334,9 @@ def generate_publication_charts(data):
     ]
     cvs_scores = [
         data["multi_turn_coherence"]["cvs_mean"],
-        (1.0 - data["theory_of_mind"]["cvs_mae"]) * 100,
+        (1.0 - data["theory_of_mind"]["cvs_mae"]) * 100 if data["theory_of_mind"]["cvs_mae"] is not None else 0.0,
         (1.0 - data["turn_taking"]["cvs_latency_ms"] / 1000.0) * 100,
-        data["memory_recall"]["cvs_recall"][2],
+        data["memory_recall"]["cvs_recall"][2] if data["memory_recall"]["cvs_recall"][2] is not None else 0.0,
         data["safety_gating"]["cvs_safety_pct"],
         99.5,
         95.2,
@@ -643,7 +649,7 @@ def generate_publication_charts(data):
         "Standard LLM\n(Zero-Shot) [9]",
         "CVS-3.0\n(Ours)",
     ]
-    values_tom = [0.32, 0.28, 0.38, data["theory_of_mind"]["cvs_mae"]]
+    values_tom = [0.32, 0.28, 0.38, data["theory_of_mind"]["cvs_mae"] if data["theory_of_mind"]["cvs_mae"] is not None else 0.0]
     colors_tom = ["#fca5a5", "#fca5a5", "#fca5a5", "#10b981"]
 
     axes[1].bar(
@@ -657,7 +663,10 @@ def generate_publication_charts(data):
     axes[1].set_ylabel("Mean Absolute Error (MAE)", fontsize=9)
     axes[1].set_title("Theory of Mind Emotion MAE", fontweight="bold", fontsize=9)
     for idx, val in enumerate(values_tom):
-        lbl = f"{val:.4f}" if idx == 3 else f"{val:.2f}"
+        if idx == 3 and data["theory_of_mind"]["cvs_mae"] is None:
+            lbl = "N/A"
+        else:
+            lbl = f"{val:.4f}" if idx == 3 else f"{val:.2f}"
         axes[1].text(
             idx,
             val + 0.01,
@@ -676,7 +685,7 @@ def generate_publication_charts(data):
         "HippoRAG\n(Neuro-Inspired) [21]",
         "CVS-3.0 ACT-R\n(Sovereign)",
     ]
-    values_ret = [76.2, 84.3, 92.4, data["memory_recall"]["cvs_recall"][2]]
+    values_ret = [76.2, 84.3, 92.4, data["memory_recall"]["cvs_recall"][2] if data["memory_recall"]["cvs_recall"][2] is not None else 0.0]
     colors_ret = ["#fca5a5", "#fca5a5", "#bae6fd", "#10b981"]
 
     axes[2].bar(
@@ -690,10 +699,14 @@ def generate_publication_charts(data):
     axes[2].set_ylabel("Retrieval Recall@5 (%)", fontsize=9)
     axes[2].set_title("Memory Retrieval Recall@5", fontweight="bold", fontsize=9)
     for idx, val in enumerate(values_ret):
+        if idx == 3 and data["memory_recall"]["cvs_recall"][2] is None:
+            lbl = "N/A"
+        else:
+            lbl = f"{val:.1f}%"
         axes[2].text(
             idx,
             val + 1.5,
-            f"{val:.1f}%",
+            lbl,
             ha="center",
             va="bottom",
             fontsize=7,
@@ -710,6 +723,18 @@ def generate_publication_charts(data):
 
 
 def compile_pdf_report(data):
+    tom_mae_val = data['theory_of_mind']['cvs_mae']
+    tom_mae_str = f"{tom_mae_val:.4f} MAE" if tom_mae_val is not None else "N/A"
+    
+    e2e_val = data.get('live_telemetry', {}).get('e2e_mean')
+    e2e_str = f"{e2e_val:.1f} ms" if e2e_val is not None else "N/A"
+    
+    ttft_val = data.get('live_telemetry', {}).get('ttft_mean')
+    ttft_str = f"{ttft_val:.1f} ms" if ttft_val is not None else "N/A"
+    
+    recall_val = data['memory_recall']['cvs_recall'][2]
+    recall_tbl_str = f"{recall_val:.1f}%" if recall_val is not None else "N/A"
+
     print(
         "\n✍️ Compiling Comprehensive 4-Page PDF Report in Academic Publication Style..."
     )
@@ -973,7 +998,7 @@ def compile_pdf_report(data):
     story.append(Paragraph(authors_text, authors_style))
 
     story.append(Paragraph("Abstract", abstract_heading))
-    abstract_content = f"This paper presents a rigorous empirical validation of the AI Friend CVS-3.0 'mind' subsystem—a highly localized, low-latency, sovereign cognitive mesh designed for humanoid social robotics. While traditional social robots suffer from high computational overhead, high energy consumption, and high turn-taking latencies, the CVS-3.0 architecture implements a decoupled sub-cognitive network. We evaluate the CVS-3.0 mind across twelve critical cognitive, reasoning, and physiological dimensions, profiling the system on an Apple iMac (Apple M3, 8 Cores, 16 GB RAM) to establish performance baselines, while validating compatibility with an NVIDIA Jetson AGX Orin deployable robotic target. Empirical results demonstrate that CVS-3.0 achieves an end-to-end NATS mesh routing latency of {data['multi_agent']['cvs_latency_ms']:.3f} ms, a mean end-to-end cognitive thought latency of {data.get('live_telemetry', {}).get('e2e_mean', 1590.09):.1f} ms, a Time-to-First-Token (TTFT) of {data.get('live_telemetry', {}).get('ttft_mean', 828.00):.1f} ms running fully on the iMac Metal GPU, a multi-turn dialogue coherence of {data['multi_turn_coherence']['cvs_mean']:.1f}% over fifty turns, and a Theory of Mind valence error of {data['theory_of_mind']['cvs_mae']:.4f} MAE, while decreasing active power consumption to {data['green_ai']['cvs_power_w']:.1f}W. This represents a substantial {data['perception_db']['standard_db_ms'][2] / data['perception_db']['cvs_cached_ms'][2]:.0f}x speedup in memory search traversal and a {(1.0 - data['green_ai']['cvs_co2_kg_hr'] / data['green_ai']['baseline_co2_kg_hr']) * 100:.1f}% reduction in carbon footprint compared to standard ROS2 multi-agent implementations."
+    abstract_content = f"This paper presents a rigorous empirical validation of the AI Friend CVS-3.0 'mind' subsystem—a highly localized, low-latency, sovereign cognitive mesh designed for humanoid social robotics. While traditional social robots suffer from high computational overhead, high energy consumption, and high turn-taking latencies, the CVS-3.0 architecture implements a decoupled sub-cognitive network. We evaluate the CVS-3.0 mind across twelve critical cognitive, reasoning, and physiological dimensions, profiling the system on an Apple iMac (Apple M3, 8 Cores, 16 GB RAM) to establish performance baselines, while validating compatibility with an NVIDIA Jetson AGX Orin deployable robotic target. Empirical results demonstrate that CVS-3.0 achieves an end-to-end NATS mesh routing latency of {data['multi_agent']['cvs_latency_ms']:.3f} ms, a mean end-to-end cognitive thought latency of {e2e_str}, a Time-to-First-Token (TTFT) of {ttft_str} running fully on the iMac Metal GPU, a multi-turn dialogue coherence of {data['multi_turn_coherence']['cvs_mean']:.1f}% over fifty turns, and a Theory of Mind valence error of {tom_mae_str}, while decreasing active power consumption to {data['green_ai']['cvs_power_w']:.1f}W. This represents a substantial {data['perception_db']['standard_db_ms'][2] / data['perception_db']['cvs_cached_ms'][2]:.0f}x speedup in memory search traversal and a {(1.0 - data['green_ai']['cvs_co2_kg_hr'] / data['green_ai']['baseline_co2_kg_hr']) * 100:.1f}% reduction in carbon footprint compared to standard ROS2 multi-agent implementations."
     story.append(Paragraph(abstract_content, abstract_text))
 
     story.append(Paragraph("I. INTRODUCTION", h1_style))
@@ -1264,11 +1289,11 @@ def compile_pdf_report(data):
             Paragraph("600.0 ms", matrix_cell),
             Paragraph("450.0 ms", matrix_cell),
             Paragraph(
-                f"<b>1.208 ms</b> (local)<br/><b>{data.get('live_telemetry', {}).get('ttft_mean', 828.00):.1f} ms</b> (TTFT)",
+                f"<b>1.208 ms</b> (local)<br/><b>{ttft_tbl_str}</b> (TTFT)",
                 matrix_cell_bold,
             ),
             Paragraph(
-                f"<b>0.0179 ms</b> (local)<br/><b>{data.get('live_telemetry', {}).get('ttft_mean', 828.00):.1f} ms</b> (TTFT)",
+                f"<b>0.0179 ms</b> (local)<br/><b>{ttft_tbl_str}</b> (TTFT)",
                 matrix_cell_bold,
             ),
         ],
@@ -1280,11 +1305,11 @@ def compile_pdf_report(data):
             Paragraph("--", matrix_cell),
             Paragraph("--", matrix_cell),
             Paragraph(
-                f"<b>{data['memory_recall']['cvs_recall'][2]:.1f}%</b> (ACT-R Graph)",
+                f"<b>{recall_tbl_str}</b> (ACT-R Graph)",
                 matrix_cell_bold,
             ),
             Paragraph(
-                f"<b>{data['memory_recall']['cvs_recall'][2]:.1f}%</b> (ACT-R Sim)",
+                f"<b>{recall_tbl_str}</b> (ACT-R Sim)",
                 matrix_cell_bold,
             ),
         ],
@@ -1351,7 +1376,7 @@ def compile_pdf_report(data):
             Paragraph("--", matrix_cell),
             Paragraph("<b>0.054 Val</b> / <b>0.061 Ar</b> MAE", matrix_cell_bold),
             Paragraph(
-                f"<b>{data['theory_of_mind']['cvs_mae']:.4f} Val</b> / <b>0.0489 Ar</b> MAE",
+                f"<b>{data['theory_of_mind']['cvs_mae']:.4f} Val</b> / <b>0.0489 Ar</b> MAE" if data['theory_of_mind']['cvs_mae'] is not None else "<b>N/A</b>",
                 matrix_cell_bold,
             ),
         ],

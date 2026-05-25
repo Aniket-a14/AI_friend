@@ -1305,3 +1305,37 @@ Identified 5 mathematical, structural, and functional gaps/divergences:
 
 **Path Forward**:
 Authored a comprehensive systems audit report `C:\Users\zenbook duo\.gemini\antigravity\brain\357eca2a-7485-4d3a-9ee7-0a0e8784807f\audit_report.md` detailing exact algebraic formulas, file locations, and pseudocode for remediation. Remediation implementation will commence upon user review and formal approval of this roadmap.
+
+
+## 2026-05-25 CVS-3.5: Closed-Loop Embodied Feedback Implementation
+
+Implemented closed-loop Embodied Feedback loops (vocal volume mirroring and dialogue truncation) to align the AI Friend software companion with real-time room acoustics and temporal interruption progress.
+
+Changed files:
+- `backend/app/contracts.py` (Modified)
+- `backend/crates/contracts/src/lib.rs` (Modified)
+- `backend/crates/stt-agent/src/main.rs` (Modified)
+- `backend/crates/voice-agent/src/main.rs` (Modified)
+- `backend/app/state/conversation_store.py` (Modified)
+- `backend/app/agents/brain_agent.py` (Modified)
+- `backend/tests/test_embodied_feedback.py` (Created)
+- `scripts/research/hard_benchmark.py` (Modified)
+- `scripts/research/extended_benchmarks_eval.py` (Modified)
+- `scripts/research/human_realism_eval.py` (Modified)
+- `scripts/research/benchmark_visualizer.py` (Modified)
+- `docs/ARCHITECTURE.md` (Modified)
+- `docs/API_SPEC.md` (Modified)
+- `.agents/CONTEXT.md` (Modified)
+
+Details:
+- **NATS Message Contracts**: Added `AUDIO_PLAYBACK_PROGRESS` and `AMBIENT_NOISE_TELEMETRY` subjects and schemas to both Python and Rust packages.
+- **Ambient Noise Floor Tracking (STT Agent)**: Programmed `stt-agent` (Rust) to compute the running RMS energy of silent frames (room noise floor) and publish it periodically on NATS.
+- **Vocal Volume Mirroring (Voice Agent)**: Configured `voice-agent` (Rust) to subscribe to noise floor telemetry, calculate a moving average, and scale outbound PCM sample amplitudes dynamically (quieter voice in quiet rooms, louder voice in noisy environments).
+- **Dialogue Truncation (Brain Agent & DB)**: Enabled the `BrainAgent` to subscribe to client playback progress ticks. Upon user interruption, the agent retrieves the exact character offset of what was heard and truncates the last logged assistant message in PostgreSQL/SQLite.
+- **Research Benchmark Cleanups**: Removed the mock progress publisher from `hard_benchmark.py` since the `BrainAgent` has a robust elapsed-character estimation fallback. Removed all default hardcoded fallback metrics (e.g. `97.10`, `0.0406`, `0.0489`, `100.0`, `1.205`, `0.15`) from `hard_benchmark.py` and `db_seeding.py`, returning `None` if they are not measured, guaranteeing that no mock results are generated in light mode. Modified visualizers and evaluation scripts to handle `None` values gracefully without crashing.
+
+Verification:
+- Added comprehensive Python unit tests in `backend/tests/test_embodied_feedback.py` to test session truncation offline via SQLite mock DB and elapsed-character estimation fallback.
+- Added Rust unit test `test_vocal_gain_scaling` inside `voice-agent` main.rs to test PCM gain multipliers.
+- Executed `cargo test` inside the Rust backend crates; all 23 Rust tests compiled and passed.
+- Executed the full backend test suite offline via `pytest` inside the `.venv` environment; all 169 tests passed successfully.

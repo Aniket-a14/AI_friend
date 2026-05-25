@@ -13,6 +13,8 @@ pub mod topics {
     pub const USER_VOICE_PROPERTIES: &str = "user.voice.properties";
     pub const AGENT_VOICE_MODULATION: &str = "agent.voice.modulation";
     pub const AUDIO_PLAYBACK_VISEMES: &str = "audio.playback.visemes";
+    pub const AUDIO_PLAYBACK_PROGRESS: &str = "audio.playback.progress";
+    pub const AMBIENT_NOISE_TELEMETRY: &str = "ambient.noise.telemetry";
 }
 
 pub const HEADER_LATENCY_META: &str = "X-Latency-Meta";
@@ -288,6 +290,22 @@ pub struct AgentVoiceModulation {
 pub struct PlaybackVisemes {
     pub target_level: f64,
     pub viseme_id: String,
+    pub timestamp: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AudioPlaybackProgress {
+    pub utterance_id: String,
+    pub character_offset: usize,
+    pub word_index: usize,
+    pub completed: bool,
+    pub timestamp: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AmbientNoiseTelemetry {
+    pub rms_energy: f64,
+    pub noise_floor_db: f64,
     pub timestamp: f64,
 }
 

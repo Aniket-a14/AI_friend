@@ -44,6 +44,8 @@ class Topics(str, Enum):
     USER_VOICE_PROPERTIES = "user.voice.properties"
     AGENT_VOICE_MODULATION = "agent.voice.modulation"
     AUDIO_PLAYBACK_VISEMES = "audio.playback.visemes"
+    AUDIO_PLAYBACK_PROGRESS = "audio.playback.progress"
+    AMBIENT_NOISE_TELEMETRY = "ambient.noise.telemetry"
 
 
 # ─── chat.input ──────────────────────────────────────────────
@@ -271,4 +273,24 @@ class PlaybackVisemes(BaseModel):
 
     target_level: float
     viseme_id: str
+    timestamp: float = Field(default_factory=time.time)
+
+
+# ─── audio.playback.progress ───────────────────────────────────
+class AudioPlaybackProgress(BaseModel):
+    model_config = {"extra": "allow"}
+
+    utterance_id: str
+    character_offset: int
+    word_index: int
+    completed: bool
+    timestamp: float = Field(default_factory=time.time)
+
+
+# ─── ambient.noise.telemetry ───────────────────────────────────
+class AmbientNoiseTelemetry(BaseModel):
+    model_config = {"extra": "allow"}
+
+    rms_energy: float
+    noise_floor_db: float
     timestamp: float = Field(default_factory=time.time)

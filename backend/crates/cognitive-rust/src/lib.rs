@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn appraisal_matches_python_heuristic_defaults() {
-        let appraisal = compute_appraisal("hello friend", "USER_MESSAGE", 0.4, 0.5, vec![], vec![]);
+        let appraisal = compute_appraisal("hello friend", "USER_MESSAGE", 0.4, 0.5, vec![], vec![], None, None);
 
         assert_eq!(appraisal.relevance, 1.0);
         assert_eq!(appraisal.novelty, 0.8);
