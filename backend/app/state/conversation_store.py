@@ -470,28 +470,32 @@ class ConversationHistoryStore:
 
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
+                result = await conn.execute(
                     """
-                    SELECT id FROM messages
-                    WHERE session_id = $1 AND role = 'assistant'
-                    ORDER BY timestamp DESC
-                    LIMIT 1
+                    UPDATE messages
+                    SET content = $1
+                    WHERE id = (
+                        SELECT id FROM messages
+                        WHERE session_id = $2 AND role = 'assistant'
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    )
                     """,
+                    content,
                     self.current_session_id,
                 )
-                if row:
-                    msg_id = row["id"]
-                    await conn.execute(
-                        """
-                        UPDATE messages
-                        SET content = $1
-                        WHERE id = $2
-                        """,
-                        content,
-                        msg_id,
-                    )
+                # Check rowcount attribute if available (backend-agnostic)
+                rowcount = getattr(result, 'rowcount', None)
+                if rowcount is None:
+                    # Fallback: parse string result for PostgreSQL "UPDATE n" format
+                    try:
+                        rowcount = int(result.split()[-1]) if result and isinstance(result, str) else 0
+                    except (ValueError, IndexError, AttributeError):
+                        rowcount = 0
+
+                if rowcount > 0:
                     logger.info(
-                        f"Updated last assistant message (ID: {msg_id}) to: '{content}'"
+                        f"Updated last assistant message to {len(content)} characters"
                     )
         except Exception as e:
             logger.error(f"Failed to update last assistant message: {e}")

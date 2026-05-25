@@ -36,7 +36,7 @@ pub struct LatencyMetadata {
     pub hops: Vec<LatencyHop>,
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channels: Option<usize>,
+    pub channels: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sample_rate: Option<u32>,
 }
@@ -296,8 +296,8 @@ pub struct PlaybackVisemes {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AudioPlaybackProgress {
     pub utterance_id: String,
-    pub character_offset: usize,
-    pub word_index: usize,
+    pub character_offset: u64,
+    pub word_index: u64,
     pub completed: bool,
     pub timestamp: f64,
 }

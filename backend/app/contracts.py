@@ -281,8 +281,8 @@ class AudioPlaybackProgress(BaseModel):
     model_config = {"extra": "allow"}
 
     utterance_id: str
-    character_offset: int
-    word_index: int
+    character_offset: int = Field(..., ge=0)
+    word_index: int = Field(..., ge=0)
     completed: bool
     timestamp: float = Field(default_factory=time.time)
 
