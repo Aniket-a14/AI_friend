@@ -345,4 +345,4 @@ The character offset ($C$) at the moment of interruption ($t_{\text{stop}}$) is 
 C = \lfloor \text{speech-rate} \cdot (t_{\text{stop}} - t_{\text{start}}) \rfloor
 ```
 
-The logged assistant message is truncated exactly to $C$ characters at the word boundary to match the user's auditory experience of the interruption.
+The logged assistant message is truncated to at most $C$ characters while respecting word boundaries (i.e., cut at the last full word that keeps length $\le C$) to match the user's auditory experience of the interruption.

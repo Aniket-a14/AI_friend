@@ -1320,6 +1320,7 @@ Changed files:
 - `backend/app/agents/brain_agent.py` (Modified)
 - `backend/tests/test_embodied_feedback.py` (Created)
 - `scripts/research/hard_benchmark.py` (Modified)
+- `scripts/research/db_seeding.py` (Modified)
 - `scripts/research/extended_benchmarks_eval.py` (Modified)
 - `scripts/research/human_realism_eval.py` (Modified)
 - `scripts/research/benchmark_visualizer.py` (Modified)
