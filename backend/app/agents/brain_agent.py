@@ -290,6 +290,10 @@ class BrainAgent(BaseAgent):
             is_proactive=is_subconscious,
         )
 
+        if not is_subconscious:
+            self.last_assistant_response = ""
+            self.assistant_response_start_time = time.time()
+
         full_response = await self._stream_to_speech(
             wrapped_generator,
             turn_id=turn_id,
@@ -300,7 +304,6 @@ class BrainAgent(BaseAgent):
 
         if not is_subconscious:
             self.last_assistant_response = full_response
-            self.assistant_response_start_time = time.time()
 
         if self.conversation_store and full_response:
             asyncio.create_task(
@@ -380,8 +383,10 @@ class BrainAgent(BaseAgent):
                     offset = progress.character_offset
                     if 0 < offset < len(self.last_assistant_response):
                         truncated_text = self.last_assistant_response[:offset].strip()
+                        original_length = len(self.last_assistant_response)
+                        truncated_length = len(truncated_text)
                         logger.info(
-                            f"Truncating history (via progress): '{self.last_assistant_response}' -> '{truncated_text}'"
+                            f"Truncating history (via progress): original_length={original_length}, truncated_length={truncated_length}, offset={offset}"
                         )
                         if self.conversation_store:
                             await self.conversation_store.update_last_assistant_message(
@@ -399,8 +404,10 @@ class BrainAgent(BaseAgent):
                     offset = int(elapsed * 15)
                     if 0 < offset < len(self.last_assistant_response):
                         truncated_text = self.last_assistant_response[:offset].strip()
+                        original_length = len(self.last_assistant_response)
+                        truncated_length = len(truncated_text)
                         logger.info(
-                            f"Truncating history (via estimation, elapsed={elapsed:.2f}s): '{self.last_assistant_response}' -> '{truncated_text}'"
+                            f"Truncating history (via estimation): original_length={original_length}, truncated_length={truncated_length}, offset={offset}, elapsed={elapsed:.2f}s"
                         )
                         if self.conversation_store:
                             await self.conversation_store.update_last_assistant_message(
@@ -445,6 +452,8 @@ class BrainAgent(BaseAgent):
                     await self.set_state("speaking")
                     chunk_text = output["data"]
                     full_response += chunk_text
+                    if not is_proactive:
+                        self.last_assistant_response = full_response
 
                     now_monotonic = time.perf_counter()
                     if (

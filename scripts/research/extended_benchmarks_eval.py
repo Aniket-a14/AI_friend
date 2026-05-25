@@ -47,14 +47,16 @@ def run_benchmarks():
     try:
         with open(results_path, "r") as f:
             res = json.load(f)
+            e2e_dict = res.get("e2e")
             e2e_mean = (
-                res["e2e"]["mean"]
-                if (res.get("e2e") and isinstance(res["e2e"], dict))
+                e2e_dict.get("mean", None)
+                if (e2e_dict and isinstance(e2e_dict, dict))
                 else None
             )
+            ttft_dict = res.get("ttft")
             ttft_mean = (
-                res["ttft"]["mean"]
-                if (res.get("ttft") and isinstance(res["ttft"], dict))
+                ttft_dict.get("mean", None)
+                if (ttft_dict and isinstance(ttft_dict, dict))
                 else None
             )
             cog = res.get("cognitive") or {}
