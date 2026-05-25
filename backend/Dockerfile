@@ -26,20 +26,14 @@ RUN maturin build --release --manifest-path crates/cognitive-rust/Cargo.toml --o
 
 # 2. SLIM BUILDER: Core dependencies only
 FROM base AS slim-builder
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential portaudio19-dev curl \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential portaudio19-dev \
     && rm -rf /var/lib/apt/lists/*
-ENV PATH="/root/.cargo/bin:${PATH}"
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements-base.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip maturin && \
+    pip install --upgrade pip && \
     pip install -r requirements-base.txt
-COPY Cargo.toml Cargo.lock ./
-COPY crates/ ./crates/
-RUN maturin build --release --manifest-path crates/cognitive-rust/Cargo.toml --out dist \
-    && pip install dist/*.whl
 
 # Copy and install the cognitive-rust wheel built in the Rust stage
 COPY --from=rust-wheel-builder /build/target/wheels/ /tmp/wheels/

@@ -96,23 +96,9 @@ class BaseAgent:
 
     async def _bootstrap_mesh(self):
         """Ensure core streams exist on the mesh (CVS-1.0 Hardened)."""
-        core_streams = {
-            "AI_MESSAGES": [
-                "chat.>",
-                "vision.>",
-                "state.>",
-                "agent.>",
-                "cmd.>",
-                "voice.>",
-                "system.>",
-                "memory.>",
-                "identity.>",
-                "knowledge.>",
-                "cache.>",
-                "user.>",
-            ],
-            "AI_AUDIO": ["audio.>"],
-        }
+        from ..nats_streams import CORE_STREAMS
+
+        core_streams = {name: list(subjects) for name, subjects in CORE_STREAMS.items()}
 
         try:
             # Modern nats-py pattern
