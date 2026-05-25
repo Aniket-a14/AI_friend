@@ -55,9 +55,7 @@ class WorkingMemoryStore:
             )
             # Ping to confirm live connection
             self.redis_client.ping()
-            logger.info(
-                f"Connected to Redis Working Memory on {r_host}:{r_port}"
-            )
+            logger.info(f"Connected to Redis Working Memory on {r_host}:{r_port}")
         except Exception as e:
             self.redis_client = None
             logger.warning(

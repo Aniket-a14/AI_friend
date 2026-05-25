@@ -190,7 +190,7 @@ graph TD
     BA --> CS[CognitivePipeline]
     CS --> PG[(Postgres/SQLite)]
     CS --> NEO[(Neo4j)]
-    CS --> OLL[Ollama]
+    CS --> OLLAMA[Ollama]
     BA -->|chat.output| NATS
     NATS --> VA[Rust voice-agent]
     VA --> SOVITS[GPT-SoVITS]

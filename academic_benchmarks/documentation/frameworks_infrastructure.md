@@ -104,4 +104,3 @@ To ensure absolute dynamic state consistency across all concurrent dynamic agent
 1. **Static Store Mutation**: When identity or core variables are updated in SQLite via the `IdentityCoreStore` API, the database write triggers a cache synchronization event.
 2. **NATS Broadcast Invalidation**: A telemetry message containing the payload `{"store": "identity_core", "action": "invalidate"}` is published to the NATS JetStream `cache.sync` channel.
 3. **Cluster-Wide Hydration**: All running processes subscribe to `cache.sync`. Upon receiving the invalidation message, they immediately execute `load_into_cache()`. This forces all distributed processes to reload the cached parameters from the database, preventing memory drift or stale cache lookups across the cluster.
-

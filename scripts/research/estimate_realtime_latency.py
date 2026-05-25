@@ -260,7 +260,7 @@ async def run_latency_profile():
         trajectory_tuples = cognitive_rust.generate_apra_trajectory(
             valence, arousal, dominance, fatigue
         )
-        trajectory = [
+        _ = [
             ProsodyFrame(time_offset_ms=t_ms, rate=r, pitch=p, volume=v)
             for t_ms, r, p, v in trajectory_tuples
         ]

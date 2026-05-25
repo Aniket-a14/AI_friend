@@ -906,7 +906,13 @@ async def run_physical_benchmark(
         "e2e": e2e_stats,
         "ttft": ttft_stats,
         "nats_ipc": {
-            "mean": round(avg_nats_ipc[1], 3) if (isinstance(avg_nats_ipc, tuple) and avg_nats_ipc[0] and avg_nats_ipc[1] is not None) else None
+            "mean": round(avg_nats_ipc[1], 3)
+            if (
+                isinstance(avg_nats_ipc, tuple)
+                and avg_nats_ipc[0]
+                and avg_nats_ipc[1] is not None
+            )
+            else None
         },
         "cognitive": {
             "intent_accuracy": round(
@@ -914,7 +920,9 @@ async def run_physical_benchmark(
             )
             if intent_agreements
             else None,
-            "memory_recall_at_5": round(final_recall, 2) if final_recall is not None else None,
+            "memory_recall_at_5": round(final_recall, 2)
+            if final_recall is not None
+            else None,
             "tom_mae_valence": round(statistics.mean(tom_errors_valence), 4)
             if tom_errors_valence
             else None,

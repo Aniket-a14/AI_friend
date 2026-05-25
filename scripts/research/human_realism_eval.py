@@ -527,7 +527,12 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
         "HippoRAG\n(Neuro-Inspired) [21]",
         "CVS-3.0 ACT-R\n(Sovereign)",
     ]
-    values_ret = [76.2, 84.3, 92.4, cvs_memory_recall_at_5 if cvs_memory_recall_at_5 is not None else 0.0]
+    values_ret = [
+        76.2,
+        84.3,
+        92.4,
+        cvs_memory_recall_at_5 if cvs_memory_recall_at_5 is not None else 0.0,
+    ]
     colors_ret = ["#f8d7da", "#f8d7da", "#cce5ff", "#28a745"]
 
     axes[2].bar(
