@@ -26,14 +26,20 @@ RUN maturin build --release --manifest-path crates/cognitive-rust/Cargo.toml --o
 
 # 2. SLIM BUILDER: Core dependencies only
 FROM base AS slim-builder
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential portaudio19-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential portaudio19-dev curl \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     && rm -rf /var/lib/apt/lists/*
+ENV PATH="/root/.cargo/bin:${PATH}"
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements-base.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip && \
+    pip install --upgrade pip maturin && \
     pip install -r requirements-base.txt
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ ./crates/
+RUN maturin build --release --manifest-path crates/cognitive-rust/Cargo.toml --out dist \
+    && pip install dist/*.whl
 
 # Copy and install the cognitive-rust wheel built in the Rust stage
 COPY --from=rust-wheel-builder /build/target/wheels/ /tmp/wheels/
@@ -50,7 +56,8 @@ FROM base AS slim
 COPY --from=slim-builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 # Create a non-root user
-RUN groupadd -g 1001 appgroup && useradd -m -u 1001 -g appgroup appuser
+RUN groupadd -g 1001 appgroup && useradd -m -u 1001 -g appgroup appuser \
+    && chown -R appuser:appgroup /app
 USER appuser
 COPY --chown=appuser:appgroup . .
 EXPOSE 8000
@@ -62,7 +69,8 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 FROM base AS full
 COPY --from=full-builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN groupadd -g 1001 appgroup && useradd -m -u 1001 -g appgroup appuser
+RUN groupadd -g 1001 appgroup && useradd -m -u 1001 -g appgroup appuser \
+    && chown -R appuser:appgroup /app
 USER appuser
 COPY --chown=appuser:appgroup . .
 CMD ["python", "main.py"]

@@ -562,8 +562,8 @@ class SurfacingAgent(BaseAgent):
         MATCH (s)-[r]->(t)
         WHERE s.name IN $names OR t.name IN $names
         RETURN s.name AS subject, type(r) AS relation, t.name AS object,
-               r.confidence AS confidence
-        ORDER BY r.confidence DESC
+               coalesce(r.confidence, 1.0) AS confidence
+        ORDER BY coalesce(r.confidence, 1.0) DESC
         LIMIT 5
         """
         results = await self.graph.execute_query(

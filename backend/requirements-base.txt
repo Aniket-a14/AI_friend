@@ -18,5 +18,5 @@ livekit-api>=1.1.0,<2.0.0
 livekit>=1.1.8,<2.0.0
 python-json-logger>=4.1.0,<5.0.0
 orjson>=3.10.0,<4.0.0
-qdrant-client>=1.9.0,<2.0.0
+qdrant-client==1.9.0
 redis>=5.0.0,<6.0.0
