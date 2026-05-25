@@ -83,6 +83,7 @@ Interruption is now handled as a **Temporal Intent Problem** powered by binary P
 - **Paralinguistic Perception**: Non-speech events (laughter, coughs) are captured and added to PAD metadata to influence emotional trajectories.
 - **Speculative Intent Object**: SenseVoice publishes a structured hypothesis with intent name, keywords, confidence, text, timestamp, and utterance id.
 - **Whisper Validation**: Whisper final transcript confirms or rejects the speculative stop. Rejected false positives publish `audio.resume`; confirmed commands publish final `audio.stop`.
+- **Ambient Noise Floor Telemetry**: In between speech chunks, the STT Agent calculates the baseline RMS energy of silent frames and publishes it to `ambient.noise.telemetry` at 500ms intervals.
 
 ### 🔊 6. Signal Rendering (Voice Agent)
 
@@ -92,6 +93,8 @@ A persistent synthesis runtime with direct binary transport and expressive behav
 - **Direct Binary Bus**: Publishes raw PCM bytes via `orjson` serialization at 80,000 OPS.
 - **Expressive Temporal Layer**: Interprets `<pause=300ms>` and `<hesitate>` tags by injecting silent PCM buffers directly into the 32kHz stream.
 - **Streaming First Audio**: GPT-SoVITS chunks are queued as they arrive rather than buffered until full synthesis completion.
+- **Adaptive Gain Control (Volume Mirroring)**: The Voice Agent subscribes to `ambient.noise.telemetry` and tracks a moving average of the background noise. It dynamically scales the amplitude of outgoing PCM samples (ducking in quiet rooms and boosting in noisy ones).
+- **Dialogue Truncation**: When playback progress is reported by the client on `audio.playback.progress`, the Brain Agent tracks exactly how much content was spoken. Upon receiving a confirmed interruption, the Brain Agent truncates the database dialogue record to match what the user actually heard before interrupting.
 
 ---
 
@@ -124,6 +127,7 @@ graph TB
     MIC -->|audio.captured| STT
     STT -->|audio.perception| DECISION
     STT -->|audio.stop speculative| VOICE_CONTROLLER
+    STT -->|ambient.noise.telemetry| VOICE_CONTROLLER
     STT -->|chat.input| DECISION
     VISION -->|vision.description| DECISION
     SYSTEM_TICK -->|system.tick| DECISION
@@ -133,6 +137,7 @@ graph TB
     DECISION -->|audio.resume / final audio.stop| VOICE_CONTROLLER
     VOICE_CONTROLLER --> AUDIO_ENGINE
     AUDIO_ENGINE -->|audio.stream (PCM)| PCM_PLAYER
+    PCM_PLAYER -->|audio.playback.progress| DECISION
 ```
 
 ## 🛡️ Sovereign Mesh Hardening & High Availability

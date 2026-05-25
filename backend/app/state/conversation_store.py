@@ -463,6 +463,37 @@ class ConversationHistoryStore:
         except Exception as e:
             logger.error(f"Failed to end session: {e}")
 
+    async def update_last_assistant_message(self, content: str):
+        """Update/truncate the content of the very last assistant message in the current session."""
+        if not self.pool or not self.current_session_id:
+            return
+
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT id FROM messages
+                    WHERE session_id = $1 AND role = 'assistant'
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                    """,
+                    self.current_session_id,
+                )
+                if row:
+                    msg_id = row["id"]
+                    await conn.execute(
+                        """
+                        UPDATE messages
+                        SET content = $1
+                        WHERE id = $2
+                        """,
+                        content,
+                        msg_id,
+                    )
+                    logger.info(f"Updated last assistant message (ID: {msg_id}) to: '{content}'")
+        except Exception as e:
+            logger.error(f"Failed to update last assistant message: {e}")
+
     async def close(self):
         """Close the database connection pool."""
         if self.pool:

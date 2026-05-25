@@ -2,10 +2,16 @@ use anyhow::{Context, Result};
 use async_nats::Message;
 use bytes::Bytes;
 use contracts::{
-    topics, AudioPerception, AudioStop, ChatInput, ChatInputMetadata, JsonMap, LatencyHop,
+    topics, AmbientNoiseTelemetry, AudioPerception, AudioStop, ChatInput, ChatInputMetadata, JsonMap, LatencyHop,
     LatencyMetadata, SpeculativeIntent, UserVoiceProperties, HEADER_LATENCY_META,
 };
 use futures_util::StreamExt;
+
+#[derive(Debug)]
+struct SttState {
+    last_noise_publish: f64,
+    noise_floor_rms: f64,
+}
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info};
@@ -63,8 +69,13 @@ async fn main() -> Result<()> {
 
     info!("rust stt-agent subscribed to {}", topics::AUDIO_INBOUND);
 
+    let state = std::sync::Arc::new(tokio::sync::Mutex::new(SttState {
+        last_noise_publish: 0.0,
+        noise_floor_rms: 0.01,
+    }));
+
     while let Some(message) = subscriber.next().await {
-        if let Err(err) = handle_audio_inbound(&config, &jetstream, message).await {
+        if let Err(err) = handle_audio_inbound(&config, &jetstream, message, state.clone()).await {
             error!("stt-agent failed to process audio.inbound: {err:#}");
         }
     }
@@ -76,6 +87,7 @@ async fn handle_audio_inbound(
     config: &SttConfig,
     jetstream: &async_nats::jetstream::Context,
     message: Message,
+    state: std::sync::Arc<tokio::sync::Mutex<SttState>>,
 ) -> Result<()> {
     let metadata = metadata_from_headers(&message);
     let channels = metadata.as_ref().and_then(|m| m.channels).unwrap_or(1);
@@ -95,6 +107,41 @@ async fn handle_audio_inbound(
     } else {
         0.0
     };
+
+    // Update running noise floor
+    {
+        let mut state_guard = state.lock().await;
+        let now = now_seconds();
+        
+        if energy_rms < state_guard.noise_floor_rms {
+            state_guard.noise_floor_rms = energy_rms;
+        } else {
+            state_guard.noise_floor_rms = state_guard.noise_floor_rms * 0.995 + energy_rms * 0.005;
+        }
+        
+        if now - state_guard.last_noise_publish >= 0.5 {
+            state_guard.last_noise_publish = now;
+            let noise_floor_db = if state_guard.noise_floor_rms > 0.0 {
+                20.0 * state_guard.noise_floor_rms.log10()
+            } else {
+                -100.0
+            };
+            
+            let noise_telemetry = AmbientNoiseTelemetry {
+                rms_energy: state_guard.noise_floor_rms,
+                noise_floor_db,
+                timestamp: now,
+            };
+            
+            jetstream
+                .publish(
+                    topics::AMBIENT_NOISE_TELEMETRY,
+                    Bytes::from(serde_json::to_vec(&noise_telemetry)?),
+                )
+                .await?
+                .await?;
+        }
+    }
 
     // 2. Fundamental Frequency (F0 Pitch) Autocorrelation
     let pitch_f0 = if num_samples > 400 {

@@ -889,7 +889,7 @@ async def run_physical_benchmark(
     final_recall = (
         (recall_successes / max(1, memory_test_count)) * 100
         if memory_test_count > 0
-        else 98.20
+        else None
     )
 
     print("\n📊 --- VOICE & PROSODY MESH TELEMETRY ---")
@@ -906,31 +906,29 @@ async def run_physical_benchmark(
         "e2e": e2e_stats,
         "ttft": ttft_stats,
         "nats_ipc": {
-            "mean": round(
-                avg_nats_ipc[1] if isinstance(avg_nats_ipc, tuple) else 0.15, 3
-            )
+            "mean": round(avg_nats_ipc[1], 3) if (isinstance(avg_nats_ipc, tuple) and avg_nats_ipc[0] and avg_nats_ipc[1] is not None) else None
         },
         "cognitive": {
             "intent_accuracy": round(
                 sum(intent_agreements) / max(1, len(intent_agreements)) * 100.0, 2
             )
             if intent_agreements
-            else 97.10,
-            "memory_recall_at_5": round(final_recall, 2),
+            else None,
+            "memory_recall_at_5": round(final_recall, 2) if final_recall is not None else None,
             "tom_mae_valence": round(statistics.mean(tom_errors_valence), 4)
             if tom_errors_valence
-            else 0.0406,
+            else None,
             "tom_mae_arousal": round(statistics.mean(tom_errors_arousal), 4)
             if tom_errors_arousal
-            else 0.0489,
+            else None,
             "vocal_ola_integrity": round(
                 sum(vocal_ola_results) / max(1, len(vocal_ola_results)) * 100.0, 2
             )
             if vocal_ola_results
-            else 100.0,
+            else None,
             "local_compute_ms": round(statistics.mean(pre_llm_overhead_results), 4)
             if pre_llm_overhead_results
-            else 1.205,
+            else None,
             "memories_pruned": pruned_history_count,
         },
         "vocal_telemetry": {

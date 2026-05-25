@@ -62,6 +62,8 @@ class BrainAgent(BaseAgent):
         self.interruption_classifier = InterruptionClassifier()
         self.conversational_runtime = ConversationalRuntime(publish_cb=self.publish)
         self._active_generation_task = None
+        self.last_audio_progress = None
+        self.last_assistant_response = None
 
     async def start(self):
         await self.connect()
@@ -113,6 +115,18 @@ class BrainAgent(BaseAgent):
             Topics.USER_VOICE_PROPERTIES,
             self._on_user_voice_properties,
             durable=f"{self.name}_user_voice_properties_live",
+            deliver_policy="new",
+        )
+        await self.subscribe(
+            Topics.AUDIO_PLAYBACK_PROGRESS,
+            self._on_audio_playback_progress,
+            durable=f"{self.name}_audio_playback_progress_live",
+            deliver_policy="new",
+        )
+        await self.subscribe(
+            Topics.AUDIO_STOP,
+            self._on_audio_stop,
+            durable=f"{self.name}_audio_stop_live",
             deliver_policy="new",
         )
         # Note: system.tick proactive engagement is now handled by SubconsciousAgent
@@ -177,6 +191,9 @@ class BrainAgent(BaseAgent):
         if self._active_generation_task and not self._active_generation_task.done():
             logger.info("Cancelling active task due to new incoming speech turn.")
             self._active_generation_task.cancel()
+
+        self.last_assistant_response = None
+        self.last_audio_progress = None
 
         # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio
         if not is_subconscious:
@@ -282,6 +299,10 @@ class BrainAgent(BaseAgent):
             incoming_latency_metadata=latency_metadata,
         )
 
+        if not is_subconscious:
+            self.last_assistant_response = full_response
+            self.assistant_response_start_time = time.time()
+
         if self.conversation_store and full_response:
             asyncio.create_task(
                 self.conversation_store.log_message("assistant", full_response)
@@ -332,6 +353,48 @@ class BrainAgent(BaseAgent):
                     utterance_id=data.get("utterance_id"),
                 )
                 await self.publish(Topics.AUDIO_RESUME, resume_msg.model_dump())
+
+    async def _on_audio_playback_progress(self, data: Dict[str, Any]):
+        """Tracks the current word/character progress of the audio playback."""
+        try:
+            from ..contracts import AudioPlaybackProgress
+            progress = AudioPlaybackProgress.model_validate(data)
+            self.last_audio_progress = progress
+            logger.debug(
+                f"🔊 Audio Playback Progress | Word Index: {progress.word_index} | Offset: {progress.character_offset} | Completed: {progress.completed}"
+            )
+        except Exception as e:
+            logger.error(f"Error parsing audio playback progress: {e}")
+
+    async def _on_audio_stop(self, data: Dict[str, Any]):
+        """Handles confirmed audio stops to truncate the last played utterance in history."""
+        try:
+            from ..contracts import AudioStop
+            stop_msg = AudioStop.model_validate(data)
+            
+            # Truncation only happens on confirmed (non-speculative) interrupts
+            if not stop_msg.speculative:
+                progress = self.last_audio_progress
+                if progress and not progress.completed and self.last_assistant_response:
+                    offset = progress.character_offset
+                    if 0 < offset < len(self.last_assistant_response):
+                        truncated_text = self.last_assistant_response[:offset].strip()
+                        logger.info(f"Truncating history (via progress): '{self.last_assistant_response}' -> '{truncated_text}'")
+                        if self.conversation_store:
+                            await self.conversation_store.update_last_assistant_message(truncated_text)
+                        self.last_audio_progress = None
+                elif not progress and self.last_assistant_response and hasattr(self, "assistant_response_start_time"):
+                    # Fallback: estimate progress using average word/character duration
+                    elapsed = time.time() - self.assistant_response_start_time
+                    # Average speech rate: ~15 characters per second (approx 150 WPM)
+                    offset = int(elapsed * 15)
+                    if 0 < offset < len(self.last_assistant_response):
+                        truncated_text = self.last_assistant_response[:offset].strip()
+                        logger.info(f"Truncating history (via estimation, elapsed={elapsed:.2f}s): '{self.last_assistant_response}' -> '{truncated_text}'")
+                        if self.conversation_store:
+                            await self.conversation_store.update_last_assistant_message(truncated_text)
+        except Exception as e:
+            logger.error(f"Error handling audio stop truncation: {e}")
 
     async def _on_user_voice_properties(self, data: Dict[str, Any]):
         """Ingest real-time user voice properties (System 1 feature stream)."""

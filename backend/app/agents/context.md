@@ -329,3 +329,20 @@ Emitted by the **Surfacing Agent** (`backend/app/agents/surfacing_agent.py`) upo
 ### 8.3 audio.playback.visemes
 Emitted by the **Voice Agent** (`backend/crates/voice-agent`) dynamically during audio output:
 - Maps active playback energy levels into viseme target amplitudes (`target_level` $\in [0.0, 1.0]$) and standard viseme phonetic identifiers (`AA`, `O`, `AH`, `sil`) to enable sample-accurate robotic lip-sync expressions.
+
+---
+
+## 🧠 9. Dialogue Truncation on User Interruption (Embodied Feedback Loop)
+
+To prevent cognitive dissonance and enable realistic social interaction, the system supports real-time dialogue history truncation when a user interrupts the agent.
+
+### 9.1 Character-Count Speech Rate Fallback Model
+If progress telemetry (`audio.playback.progress`) is absent (e.g. running offline, in lightweight development environments, or during benchmark runs without active voice client loops), the system falls back to a **Time-based Speech Rate Fallback Model**.
+
+The character offset ($C$) at the moment of interruption ($t_{\text{stop}}$) is estimated based on elapsed time since speech onset ($t_{\text{start}}$) and average speaking rate ($\text{speech-rate}$ = 15 characters per second):
+
+```math
+C = \lfloor \text{speech-rate} \cdot (t_{\text{stop}} - t_{\text{start}}) \rfloor
+```
+
+The logged assistant message is truncated exactly to $C$ characters at the word boundary to match the user's auditory experience of the interruption.

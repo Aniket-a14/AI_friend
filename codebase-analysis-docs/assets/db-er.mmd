@@ -1,0 +1,44 @@
+erDiagram
+    sessions ||--o{ messages : contains
+    agent_configs ||--|| runtime_identity : hydrates
+    memories ||--o{ surfaced_memories : recalls
+    neo4j_entities ||--o{ neo4j_relationships : link
+
+    sessions {
+        uuid id PK
+        timestamptz started_at
+        timestamptz ended_at
+        float trust_benevolence
+        float trust_competence
+        float trust_integrity
+        jsonb metadata
+    }
+    messages {
+        uuid id PK
+        uuid session_id FK
+        varchar role
+        text content
+        timestamptz timestamp
+        boolean consolidated
+    }
+    memories {
+        uuid id PK
+        text content
+        text raw_content
+        text wing
+        text room
+        vector embedding
+        float importance_score
+        float emotional_weight
+        float valence
+        integer recall_count
+        timestamptz last_recalled_at
+        jsonb metadata
+    }
+    agent_configs {
+        integer id PK
+        jsonb personality
+        jsonb background_history
+        text evolved_learnings
+        timestamptz updated_at
+    }

@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use async_nats::HeaderMap;
 use bytes::Bytes;
 use contracts::{
-    topics, vad_to_prosody, ChatOutput, PlaybackVisemes, HEADER_LATENCY_META, HEADER_PAYLOAD_FORMAT,
+    topics, vad_to_prosody, AmbientNoiseTelemetry, ChatOutput, PlaybackVisemes, HEADER_LATENCY_META, HEADER_PAYLOAD_FORMAT,
     PAYLOAD_FORMAT_RAW_PCM,
 };
 use futures_util::StreamExt;
@@ -226,6 +226,32 @@ async fn main() -> Result<()> {
         .context("build reqwest client with timeouts")?;
 
     let last_distance = std::sync::Arc::new(std::sync::Mutex::new(1.0));
+    let noise_scale_factor = std::sync::Arc::new(std::sync::Mutex::new(1.0f64));
+    let noise_floor_moving_avg = std::sync::Arc::new(std::sync::Mutex::new(0.01f64));
+
+    // Subscribe to ambient noise telemetry and track noise floor dynamically
+    let noise_scale_clone = noise_scale_factor.clone();
+    let noise_avg_clone = noise_floor_moving_avg.clone();
+    let mut noise_sub = client.subscribe(topics::AMBIENT_NOISE_TELEMETRY).await?;
+    tokio::spawn(async move {
+        while let Some(msg) = noise_sub.next().await {
+            if let Ok(telemetry) = serde_json::from_slice::<AmbientNoiseTelemetry>(&msg.payload) {
+                if let Ok(mut avg_guard) = noise_avg_clone.lock() {
+                    *avg_guard = *avg_guard * 0.8 + telemetry.rms_energy * 0.2;
+                    let avg = *avg_guard;
+                    let scale = if avg < 0.01 {
+                        0.7 + (avg / 0.01) * 0.3
+                    } else {
+                        let excess = (avg - 0.01) / 0.02;
+                        1.0 + (excess * 0.5).min(0.5)
+                    };
+                    if let Ok(mut scale_guard) = noise_scale_clone.lock() {
+                        *scale_guard = scale;
+                    }
+                }
+            }
+        }
+    });
 
     // Subscribe to vision description and track user distance dynamically
     let last_distance_clone = last_distance.clone();
@@ -382,6 +408,7 @@ async fn main() -> Result<()> {
                     abort_flag.clone(),
                     attenuation_factor.clone(),
                     dynamic_prosody.clone(),
+                    noise_scale_factor.clone(),
                 )
                 .await
                 {
@@ -553,7 +580,13 @@ async fn handle_chat_output(
     abort_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     attenuation_factor: std::sync::Arc<std::sync::Mutex<f64>>,
     dynamic_prosody: std::sync::Arc<std::sync::Mutex<Option<contracts::Prosody>>>,
+    noise_scale_factor: std::sync::Arc<std::sync::Mutex<f64>>,
 ) -> Result<()> {
+    let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
+        *guard
+    } else {
+        1.0
+    };
     if event.done {
         return Ok(());
     }
@@ -605,7 +638,7 @@ async fn handle_chat_output(
                 if let Ok(guard) = attenuation_factor.lock() {
                     current_attenuation_val = *guard;
                 }
-                publish_pcm(jetstream, pcm, &event).await?;
+                publish_pcm(jetstream, pcm, &event, noise_scale).await?;
             }
             TemporalPart::Vocalization(name) => {
                 ola_filter.clear_history();
@@ -616,7 +649,7 @@ async fn handle_chat_output(
                 apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
                 let _ = generate_and_publish_visemes(jetstream, &pcm);
 
-                publish_pcm(jetstream, pcm, &event).await?;
+                publish_pcm(jetstream, pcm, &event, noise_scale).await?;
             }
             TemporalPart::Hesitation(ms) => {
                 ola_filter.clear_history();
@@ -627,7 +660,7 @@ async fn handle_chat_output(
                 apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
                 let _ = generate_and_publish_visemes(jetstream, &pcm);
 
-                publish_pcm(jetstream, pcm, &event).await?;
+                publish_pcm(jetstream, pcm, &event, noise_scale).await?;
             }
             TemporalPart::Text(text) => {
                 let mut response = synthesize_stream(
@@ -665,7 +698,7 @@ async fn handle_chat_output(
                         apply_attenuation(&mut pcm_bytes, &mut current_attenuation_val, target_att);
                         let _ = generate_and_publish_visemes(jetstream, &pcm_bytes);
 
-                        publish_pcm(jetstream, pcm_bytes, &event).await?;
+                        publish_pcm(jetstream, pcm_bytes, &event, noise_scale).await?;
                     }
                 }
             }
@@ -759,9 +792,30 @@ async fn synthesize_stream(
 
 async fn publish_pcm(
     jetstream: &async_nats::jetstream::Context,
-    pcm: Vec<u8>,
+    mut pcm: Vec<u8>,
     event: &ChatOutput,
+    noise_scale: f64,
 ) -> Result<()> {
+    if noise_scale != 1.0 && pcm.len() >= 2 {
+        let mut samples = pcm
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<i16>>();
+            
+        for sample in samples.iter_mut() {
+            let val = *sample as f64 * noise_scale;
+            *sample = val.clamp(i16::MIN as f64, i16::MAX as f64) as i16;
+        }
+        
+        let mut idx = 0;
+        for s in samples {
+            let bytes = s.to_le_bytes();
+            pcm[idx] = bytes[0];
+            pcm[idx + 1] = bytes[1];
+            idx += 2;
+        }
+    }
+
     let mut headers = HeaderMap::new();
     headers.insert(HEADER_PAYLOAD_FORMAT, PAYLOAD_FORMAT_RAW_PCM);
     headers.insert(
@@ -943,5 +997,73 @@ mod tests {
 
         // Fade in progress should now be false
         assert!(!filter.fade_in_progress);
+    }
+
+    #[test]
+    fn test_vocal_gain_scaling() {
+        // Test that noise scaling correctly shifts sample amplitudes
+        let input_pcm = vec![1000_i16, -2000, 3000];
+        let mut bytes = Vec::new();
+        for &s in &input_pcm {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+
+        // Test scaling down (quiet environment, multiplier < 1.0)
+        let mut scale_down_bytes = bytes.clone();
+        let scale_down = 0.7;
+        if scale_down != 1.0 && scale_down_bytes.len() >= 2 {
+            let mut samples = scale_down_bytes
+                .chunks_exact(2)
+                .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+                .collect::<Vec<i16>>();
+            for sample in samples.iter_mut() {
+                *sample = (*sample as f64 * scale_down).clamp(i16::MIN as f64, i16::MAX as f64) as i16;
+            }
+            let mut idx = 0;
+            for s in samples {
+                let s_bytes = s.to_le_bytes();
+                scale_down_bytes[idx] = s_bytes[0];
+                scale_down_bytes[idx + 1] = s_bytes[1];
+                idx += 2;
+            }
+        }
+
+        let scaled_down_samples = scale_down_bytes
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<i16>>();
+
+        assert_eq!(scaled_down_samples[0], 700);
+        assert_eq!(scaled_down_samples[1], -1400);
+        assert_eq!(scaled_down_samples[2], 2100);
+
+        // Test scaling up (noisy environment, multiplier > 1.0)
+        let mut scale_up_bytes = bytes.clone();
+        let scale_up = 1.4;
+        if scale_up != 1.0 && scale_up_bytes.len() >= 2 {
+            let mut samples = scale_up_bytes
+                .chunks_exact(2)
+                .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+                .collect::<Vec<i16>>();
+            for sample in samples.iter_mut() {
+                *sample = (*sample as f64 * scale_up).clamp(i16::MIN as f64, i16::MAX as f64) as i16;
+            }
+            let mut idx = 0;
+            for s in samples {
+                let s_bytes = s.to_le_bytes();
+                scale_up_bytes[idx] = s_bytes[0];
+                scale_up_bytes[idx + 1] = s_bytes[1];
+                idx += 2;
+            }
+        }
+
+        let scaled_up_samples = scale_up_bytes
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<i16>>();
+
+        assert_eq!(scaled_up_samples[0], 1400);
+        assert_eq!(scaled_up_samples[1], -2800);
+        assert_eq!(scaled_up_samples[2], 4200);
     }
 }
