@@ -108,7 +108,7 @@ class BrainAgent(BaseAgent):
         await self.subscribe(
             Topics.AUDIO_PERCEPTION,
             self._on_audio_perception,
-            durable=f"{self.name}_audio_perception_live",
+            durable=f"{self.name}_brain_audio_perception_live",
             deliver_policy="new",
         )
         await self.subscribe(

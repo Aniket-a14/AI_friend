@@ -108,6 +108,8 @@ class BaseAgent:
                 "memory.>",
                 "identity.>",
                 "knowledge.>",
+                "cache.>",
+                "user.>",
             ],
             "AI_AUDIO": ["audio.>"],
         }

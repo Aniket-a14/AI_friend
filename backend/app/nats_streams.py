@@ -22,6 +22,8 @@ CORE_STREAMS: Dict[str, Sequence[str]] = {
         "memory.>",
         "identity.>",
         "knowledge.>",
+        "cache.>",
+        "user.>",
     ],
     "AI_AUDIO": ["audio.>"],
 }
