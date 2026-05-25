@@ -140,6 +140,7 @@ class SubconsciousAgent(BaseAgent):
             a.baseline_arousal = $baseline_arousal,
             a.baseline_dominance = $baseline_dominance,
             a.last_sync = datetime()
+        RETURN a.name as name
         """
         params = {
             "name": agent_name,
