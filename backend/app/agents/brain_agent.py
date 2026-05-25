@@ -192,9 +192,6 @@ class BrainAgent(BaseAgent):
             logger.info("Cancelling active task due to new incoming speech turn.")
             self._active_generation_task.cancel()
 
-        self.last_assistant_response = None
-        self.last_audio_progress = None
-
         # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio
         if not is_subconscious:
             from ..contracts import AudioStop
@@ -280,6 +277,8 @@ class BrainAgent(BaseAgent):
                 thought_prompt=user_text
             )
         else:
+            self.last_assistant_response = None
+            self.last_audio_progress = None
             generator = self.cognitive_core.process_event(raw_event)
 
         # Wrap generator to monitor TTFT and inject fillers
