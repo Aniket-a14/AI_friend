@@ -47,8 +47,16 @@ def run_benchmarks():
     try:
         with open(results_path, "r") as f:
             res = json.load(f)
-            e2e_mean = res["e2e"]["mean"] if (res.get("e2e") and isinstance(res["e2e"], dict)) else None
-            ttft_mean = res["ttft"]["mean"] if (res.get("ttft") and isinstance(res["ttft"], dict)) else None
+            e2e_mean = (
+                res["e2e"]["mean"]
+                if (res.get("e2e") and isinstance(res["e2e"], dict))
+                else None
+            )
+            ttft_mean = (
+                res["ttft"]["mean"]
+                if (res.get("ttft") and isinstance(res["ttft"], dict))
+                else None
+            )
             cog = res.get("cognitive") or {}
             cvs_tom_mae = cog.get("tom_mae_valence")
             cvs_memory_recall_at_5 = cog.get("memory_recall_at_5")
@@ -62,8 +70,16 @@ def run_benchmarks():
     e2e_str = f"{e2e_mean:.2f} ms" if e2e_mean is not None else "N/A"
     ttft_str = f"{ttft_mean:.2f} ms" if ttft_mean is not None else "N/A"
     tom_str = f"{cvs_tom_mae:.4f}" if cvs_tom_mae is not None else "N/A"
-    recall_str = f"{cvs_memory_recall_at_5:.2f}%" if cvs_memory_recall_at_5 is not None else "N/A"
-    reason_str = f"{cvs_reasoning_accuracy:.2f}%" if cvs_reasoning_accuracy is not None else "N/A"
+    recall_str = (
+        f"{cvs_memory_recall_at_5:.2f}%"
+        if cvs_memory_recall_at_5 is not None
+        else "N/A"
+    )
+    reason_str = (
+        f"{cvs_reasoning_accuracy:.2f}%"
+        if cvs_reasoning_accuracy is not None
+        else "N/A"
+    )
 
     print("  📊 Loaded live benchmark telemetry:")
     print(f"     E2E Mean = {e2e_str} | TTFT Mean = {ttft_str}")
@@ -94,7 +110,12 @@ def run_benchmarks():
     # ------------------ 4. ACT-R Memory Recall ------------------
     print("  Dimension 4: ACT-R Memory Retrieval (Recall@K)...")
     recall_ks = [1, 3, 5, 10]
-    cvs_recalls = [92.5, 97.8, cvs_memory_recall_at_5 if cvs_memory_recall_at_5 is not None else 0.0, 100.0]
+    cvs_recalls = [
+        92.5,
+        97.8,
+        cvs_memory_recall_at_5 if cvs_memory_recall_at_5 is not None else 0.0,
+        100.0,
+    ]
     baseline_recalls = [68.0, 81.0, 78.4, 93.0]
 
     # ------------------ 5. Ethical & Privacy Gating ------------------
@@ -334,9 +355,13 @@ def generate_publication_charts(data):
     ]
     cvs_scores = [
         data["multi_turn_coherence"]["cvs_mean"],
-        (1.0 - data["theory_of_mind"]["cvs_mae"]) * 100 if data["theory_of_mind"]["cvs_mae"] is not None else 0.0,
+        (1.0 - data["theory_of_mind"]["cvs_mae"]) * 100
+        if data["theory_of_mind"]["cvs_mae"] is not None
+        else 0.0,
         (1.0 - data["turn_taking"]["cvs_latency_ms"] / 1000.0) * 100,
-        data["memory_recall"]["cvs_recall"][2] if data["memory_recall"]["cvs_recall"][2] is not None else 0.0,
+        data["memory_recall"]["cvs_recall"][2]
+        if data["memory_recall"]["cvs_recall"][2] is not None
+        else 0.0,
         data["safety_gating"]["cvs_safety_pct"],
         99.5,
         95.2,
@@ -649,7 +674,14 @@ def generate_publication_charts(data):
         "Standard LLM\n(Zero-Shot) [9]",
         "CVS-3.0\n(Ours)",
     ]
-    values_tom = [0.32, 0.28, 0.38, data["theory_of_mind"]["cvs_mae"] if data["theory_of_mind"]["cvs_mae"] is not None else 0.0]
+    values_tom = [
+        0.32,
+        0.28,
+        0.38,
+        data["theory_of_mind"]["cvs_mae"]
+        if data["theory_of_mind"]["cvs_mae"] is not None
+        else 0.0,
+    ]
     colors_tom = ["#fca5a5", "#fca5a5", "#fca5a5", "#10b981"]
 
     axes[1].bar(
@@ -685,7 +717,14 @@ def generate_publication_charts(data):
         "HippoRAG\n(Neuro-Inspired) [21]",
         "CVS-3.0 ACT-R\n(Sovereign)",
     ]
-    values_ret = [76.2, 84.3, 92.4, data["memory_recall"]["cvs_recall"][2] if data["memory_recall"]["cvs_recall"][2] is not None else 0.0]
+    values_ret = [
+        76.2,
+        84.3,
+        92.4,
+        data["memory_recall"]["cvs_recall"][2]
+        if data["memory_recall"]["cvs_recall"][2] is not None
+        else 0.0,
+    ]
     colors_ret = ["#fca5a5", "#fca5a5", "#bae6fd", "#10b981"]
 
     axes[2].bar(
@@ -723,16 +762,17 @@ def generate_publication_charts(data):
 
 
 def compile_pdf_report(data):
-    tom_mae_val = data['theory_of_mind']['cvs_mae']
+    tom_mae_val = data["theory_of_mind"]["cvs_mae"]
     tom_mae_str = f"{tom_mae_val:.4f} MAE" if tom_mae_val is not None else "N/A"
-    
-    e2e_val = data.get('live_telemetry', {}).get('e2e_mean')
+
+    e2e_val = data.get("live_telemetry", {}).get("e2e_mean")
     e2e_str = f"{e2e_val:.1f} ms" if e2e_val is not None else "N/A"
-    
-    ttft_val = data.get('live_telemetry', {}).get('ttft_mean')
+
+    ttft_val = data.get("live_telemetry", {}).get("ttft_mean")
     ttft_str = f"{ttft_val:.1f} ms" if ttft_val is not None else "N/A"
-    
-    recall_val = data['memory_recall']['cvs_recall'][2]
+    ttft_tbl_str = f"{ttft_val:.1f} ms" if ttft_val is not None else "N/A"
+
+    recall_val = data["memory_recall"]["cvs_recall"][2]
     recall_tbl_str = f"{recall_val:.1f}%" if recall_val is not None else "N/A"
 
     print(
@@ -1376,7 +1416,9 @@ def compile_pdf_report(data):
             Paragraph("--", matrix_cell),
             Paragraph("<b>0.054 Val</b> / <b>0.061 Ar</b> MAE", matrix_cell_bold),
             Paragraph(
-                f"<b>{data['theory_of_mind']['cvs_mae']:.4f} Val</b> / <b>0.0489 Ar</b> MAE" if data['theory_of_mind']['cvs_mae'] is not None else "<b>N/A</b>",
+                f"<b>{data['theory_of_mind']['cvs_mae']:.4f} Val</b> / <b>0.0489 Ar</b> MAE"
+                if data["theory_of_mind"]["cvs_mae"] is not None
+                else "<b>N/A</b>",
                 matrix_cell_bold,
             ),
         ],

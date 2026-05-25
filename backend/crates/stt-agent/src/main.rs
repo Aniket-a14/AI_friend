@@ -112,13 +112,13 @@ async fn handle_audio_inbound(
     {
         let mut state_guard = state.lock().await;
         let now = now_seconds();
-        
+
         if energy_rms < state_guard.noise_floor_rms {
             state_guard.noise_floor_rms = energy_rms;
         } else {
             state_guard.noise_floor_rms = state_guard.noise_floor_rms * 0.995 + energy_rms * 0.005;
         }
-        
+
         if now - state_guard.last_noise_publish >= 0.5 {
             state_guard.last_noise_publish = now;
             let noise_floor_db = if state_guard.noise_floor_rms > 0.0 {
@@ -126,13 +126,13 @@ async fn handle_audio_inbound(
             } else {
                 -100.0
             };
-            
+
             let noise_telemetry = AmbientNoiseTelemetry {
                 rms_energy: state_guard.noise_floor_rms,
                 noise_floor_db,
                 timestamp: now,
             };
-            
+
             jetstream
                 .publish(
                     topics::AMBIENT_NOISE_TELEMETRY,

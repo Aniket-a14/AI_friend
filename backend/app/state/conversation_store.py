@@ -490,7 +490,9 @@ class ConversationHistoryStore:
                         content,
                         msg_id,
                     )
-                    logger.info(f"Updated last assistant message (ID: {msg_id}) to: '{content}'")
+                    logger.info(
+                        f"Updated last assistant message (ID: {msg_id}) to: '{content}'"
+                    )
         except Exception as e:
             logger.error(f"Failed to update last assistant message: {e}")
 

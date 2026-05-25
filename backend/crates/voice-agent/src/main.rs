@@ -801,12 +801,12 @@ async fn publish_pcm(
             .chunks_exact(2)
             .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<i16>>();
-            
+
         for sample in samples.iter_mut() {
             let val = *sample as f64 * noise_scale;
             *sample = val.clamp(i16::MIN as f64, i16::MAX as f64) as i16;
         }
-        
+
         let mut idx = 0;
         for s in samples {
             let bytes = s.to_le_bytes();

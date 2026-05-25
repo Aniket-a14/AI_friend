@@ -358,6 +358,7 @@ class BrainAgent(BaseAgent):
         """Tracks the current word/character progress of the audio playback."""
         try:
             from ..contracts import AudioPlaybackProgress
+
             progress = AudioPlaybackProgress.model_validate(data)
             self.last_audio_progress = progress
             logger.debug(
@@ -370,8 +371,9 @@ class BrainAgent(BaseAgent):
         """Handles confirmed audio stops to truncate the last played utterance in history."""
         try:
             from ..contracts import AudioStop
+
             stop_msg = AudioStop.model_validate(data)
-            
+
             # Truncation only happens on confirmed (non-speculative) interrupts
             if not stop_msg.speculative:
                 progress = self.last_audio_progress
@@ -379,20 +381,32 @@ class BrainAgent(BaseAgent):
                     offset = progress.character_offset
                     if 0 < offset < len(self.last_assistant_response):
                         truncated_text = self.last_assistant_response[:offset].strip()
-                        logger.info(f"Truncating history (via progress): '{self.last_assistant_response}' -> '{truncated_text}'")
+                        logger.info(
+                            f"Truncating history (via progress): '{self.last_assistant_response}' -> '{truncated_text}'"
+                        )
                         if self.conversation_store:
-                            await self.conversation_store.update_last_assistant_message(truncated_text)
+                            await self.conversation_store.update_last_assistant_message(
+                                truncated_text
+                            )
                         self.last_audio_progress = None
-                elif not progress and self.last_assistant_response and hasattr(self, "assistant_response_start_time"):
+                elif (
+                    not progress
+                    and self.last_assistant_response
+                    and hasattr(self, "assistant_response_start_time")
+                ):
                     # Fallback: estimate progress using average word/character duration
                     elapsed = time.time() - self.assistant_response_start_time
                     # Average speech rate: ~15 characters per second (approx 150 WPM)
                     offset = int(elapsed * 15)
                     if 0 < offset < len(self.last_assistant_response):
                         truncated_text = self.last_assistant_response[:offset].strip()
-                        logger.info(f"Truncating history (via estimation, elapsed={elapsed:.2f}s): '{self.last_assistant_response}' -> '{truncated_text}'")
+                        logger.info(
+                            f"Truncating history (via estimation, elapsed={elapsed:.2f}s): '{self.last_assistant_response}' -> '{truncated_text}'"
+                        )
                         if self.conversation_store:
-                            await self.conversation_store.update_last_assistant_message(truncated_text)
+                            await self.conversation_store.update_last_assistant_message(
+                                truncated_text
+                            )
         except Exception as e:
             logger.error(f"Error handling audio stop truncation: {e}")
 

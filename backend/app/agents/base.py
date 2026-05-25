@@ -36,10 +36,14 @@ class BaseAgent:
         )
 
     async def _on_nats_disconnected(self):
-        logger.warning(f"⚠️ Agent '{self.name}' NATS connection disconnected! Attempting automatic recovery...")
+        logger.warning(
+            f"⚠️ Agent '{self.name}' NATS connection disconnected! Attempting automatic recovery..."
+        )
 
     async def _on_nats_reconnected(self):
-        logger.info(f"✅ Agent '{self.name}' NATS connection successfully re-established.")
+        logger.info(
+            f"✅ Agent '{self.name}' NATS connection successfully re-established."
+        )
 
     async def _on_nats_error(self, err):
         logger.error(f"❌ Agent '{self.name}' NATS connection error: {err}")
@@ -81,8 +85,11 @@ class BaseAgent:
             store_name = data.get("store")
             action = data.get("action")
             if store_name == "identity_core" and action == "invalidate":
-                logger.info(f"🔄 [CacheSync] Invalidation signal received for {store_name}. Reloading local caches.")
+                logger.info(
+                    f"🔄 [CacheSync] Invalidation signal received for {store_name}. Reloading local caches."
+                )
                 from ..state.identity_core_store import IdentityCoreStore
+
                 IdentityCoreStore.invalidate_all_local_caches()
         except Exception as e:
             logger.warning(f"Error handling cache sync: {e}")

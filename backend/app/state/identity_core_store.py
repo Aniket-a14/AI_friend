@@ -14,6 +14,7 @@ class IdentityCoreStore:
     Tier-1 SQLite Store for Persistent and Immutable Identity Core.
     Guarantees sub-millisecond local cached lookups for real-time speech paths.
     """
+
     _instances = []
 
     def __init__(self, db_path: str = "identity_core.db", publish_cb=None):
@@ -175,18 +176,23 @@ class IdentityCoreStore:
             if self.publish_cb:
                 try:
                     import asyncio
+
                     if asyncio.iscoroutinefunction(self.publish_cb):
-                        asyncio.create_task(self.publish_cb("cache.sync", {
-                            "store": "identity_core",
-                            "action": "invalidate"
-                        }))
+                        asyncio.create_task(
+                            self.publish_cb(
+                                "cache.sync",
+                                {"store": "identity_core", "action": "invalidate"},
+                            )
+                        )
                     else:
-                        self.publish_cb("cache.sync", {
-                            "store": "identity_core",
-                            "action": "invalidate"
-                        })
+                        self.publish_cb(
+                            "cache.sync",
+                            {"store": "identity_core", "action": "invalidate"},
+                        )
                 except Exception as sync_err:
-                    logger.warning(f"Failed to publish cache sync broadcast: {sync_err}")
+                    logger.warning(
+                        f"Failed to publish cache sync broadcast: {sync_err}"
+                    )
         except Exception as e:
             logger.error(f"Failed to update identity core in SQLite: {e}")
             raise

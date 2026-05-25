@@ -32,9 +32,7 @@ class SemanticRecallStore:
         try:
             self.client = QdrantClient(host=q_host, port=q_port, timeout=2.0)
             self._ensure_collection_exists()
-            logger.info(
-                f"Connected to Qdrant Semantic Store on {q_host}:{q_port}"
-            )
+            logger.info(f"Connected to Qdrant Semantic Store on {q_host}:{q_port}")
         except Exception as e:
             self.client = None
             logger.warning(

@@ -11,7 +11,7 @@ graph TD
     BA --> CS[CognitiveService and CognitivePipeline]
     CS --> PG[(Postgres or SQLite fallback)]
     CS --> NEO[(Neo4j)]
-    CS --> OLL[Ollama]
+    CS --> Ollama[Ollama]
     BA -->|chat.output chunks| NATS
     NATS --> VA[Rust voice-agent]
     VA --> SOVITS[GPT-SoVITS API]
