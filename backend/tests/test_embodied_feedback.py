@@ -66,7 +66,7 @@ async def test_dialogue_truncation_on_interruption(
 
 @pytest.mark.asyncio
 async def test_dialogue_truncation_via_estimation_fallback(
-    mock_llm_service, mock_graph_db, mock_memory_store
+    mock_llm_service, mock_graph_db, mock_memory_store, monkeypatch
 ):
     store = ConversationHistoryStore()
     await store.initialize()
@@ -84,8 +84,11 @@ async def test_dialogue_truncation_via_estimation_fallback(
 
     agent.last_assistant_response = original_text
     import time
+    
+    fixed_time = 1713330000.0
+    monkeypatch.setattr(time, "time", lambda: fixed_time)
 
-    agent.assistant_response_start_time = time.time() - 2.0
+    agent.assistant_response_start_time = fixed_time - 2.0
 
     assert agent.last_audio_progress is None
 
