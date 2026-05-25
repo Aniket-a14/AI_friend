@@ -582,11 +582,6 @@ async fn handle_chat_output(
     dynamic_prosody: std::sync::Arc<std::sync::Mutex<Option<contracts::Prosody>>>,
     noise_scale_factor: std::sync::Arc<std::sync::Mutex<f64>>,
 ) -> Result<()> {
-    let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
-        *guard
-    } else {
-        1.0
-    };
     if event.done {
         return Ok(());
     }
@@ -638,6 +633,11 @@ async fn handle_chat_output(
                 if let Ok(guard) = attenuation_factor.lock() {
                     current_attenuation_val = *guard;
                 }
+                let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
+                    *guard
+                } else {
+                    1.0
+                };
                 publish_pcm(jetstream, pcm, &event, noise_scale).await?;
             }
             TemporalPart::Vocalization(name) => {
@@ -649,6 +649,11 @@ async fn handle_chat_output(
                 apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
                 let _ = generate_and_publish_visemes(jetstream, &pcm);
 
+                let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
+                    *guard
+                } else {
+                    1.0
+                };
                 publish_pcm(jetstream, pcm, &event, noise_scale).await?;
             }
             TemporalPart::Hesitation(ms) => {
@@ -660,6 +665,11 @@ async fn handle_chat_output(
                 apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
                 let _ = generate_and_publish_visemes(jetstream, &pcm);
 
+                let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
+                    *guard
+                } else {
+                    1.0
+                };
                 publish_pcm(jetstream, pcm, &event, noise_scale).await?;
             }
             TemporalPart::Text(text) => {
@@ -679,6 +689,12 @@ async fn handle_chat_output(
                     }
                     if !chunk.is_empty() {
                         let mut pcm_bytes = chunk.to_vec();
+
+                        let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
+                            *guard
+                        } else {
+                            1.0
+                        };
 
                         const REVERB_DRY_LIMIT: f64 = 2.5;
                         const REVERB_WET_LIMIT: f64 = 3.5;
