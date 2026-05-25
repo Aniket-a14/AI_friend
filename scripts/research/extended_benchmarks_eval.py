@@ -113,7 +113,7 @@ def run_benchmarks():
     cvs_recalls = [
         92.5,
         97.8,
-        cvs_memory_recall_at_5 if cvs_memory_recall_at_5 is not None else 0.0,
+        cvs_memory_recall_at_5,
         100.0,
     ]
     baseline_recalls = [68.0, 81.0, 78.4, 93.0]

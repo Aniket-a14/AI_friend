@@ -97,7 +97,7 @@ The "Sovereign Mesh" communicates via a decentralized event bus. In the CVS-3.5 
 | `state.update` | BaseAgent | UI / Logs | `{"agent": "string", "state": "string"}` |
 | `cache.sync` | BaseAgent | Spawner / ASGI | `{"store": "string", "action": "string"}` |
 | `agent.voice.modulation` | Brain Agent | Voice Agent | `{"frames": [{"time_offset_ms": int, "rate": float, "pitch": float, "volume": float}]}` |
-| `audio.playback.progress` | Client / Player | Brain Agent | `{"utterance_id": "string", "character_offset": int, "word_index": int, "completed": bool}` |
+| `audio.playback.progress` | Client / Player | Brain Agent | `{"utterance_id": "string", "character_offset": int, "word_index": int, "completed": bool, "timestamp": float}` |
 | `ambient.noise.telemetry` | STT Agent | Voice Agent | `{"rms_energy": float, "noise_floor_db": float, "timestamp": float}` |
 
 ### Detailed Schemas

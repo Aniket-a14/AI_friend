@@ -790,12 +790,7 @@ async fn synthesize_stream(
     Ok(response)
 }
 
-async fn publish_pcm(
-    jetstream: &async_nats::jetstream::Context,
-    mut pcm: Vec<u8>,
-    event: &ChatOutput,
-    noise_scale: f64,
-) -> Result<()> {
+fn scale_pcm_in_place(pcm: &mut [u8], noise_scale: f64) {
     if noise_scale != 1.0 && pcm.len() >= 2 {
         let mut samples = pcm
             .chunks_exact(2)
@@ -815,6 +810,15 @@ async fn publish_pcm(
             idx += 2;
         }
     }
+}
+
+async fn publish_pcm(
+    jetstream: &async_nats::jetstream::Context,
+    mut pcm: Vec<u8>,
+    event: &ChatOutput,
+    noise_scale: f64,
+) -> Result<()> {
+    scale_pcm_in_place(&mut pcm, noise_scale);
 
     let mut headers = HeaderMap::new();
     headers.insert(HEADER_PAYLOAD_FORMAT, PAYLOAD_FORMAT_RAW_PCM);
@@ -1010,23 +1014,7 @@ mod tests {
 
         // Test scaling down (quiet environment, multiplier < 1.0)
         let mut scale_down_bytes = bytes.clone();
-        let scale_down = 0.7;
-        if scale_down != 1.0 && scale_down_bytes.len() >= 2 {
-            let mut samples = scale_down_bytes
-                .chunks_exact(2)
-                .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-                .collect::<Vec<i16>>();
-            for sample in samples.iter_mut() {
-                *sample = (*sample as f64 * scale_down).clamp(i16::MIN as f64, i16::MAX as f64) as i16;
-            }
-            let mut idx = 0;
-            for s in samples {
-                let s_bytes = s.to_le_bytes();
-                scale_down_bytes[idx] = s_bytes[0];
-                scale_down_bytes[idx + 1] = s_bytes[1];
-                idx += 2;
-            }
-        }
+        scale_pcm_in_place(&mut scale_down_bytes, 0.7);
 
         let scaled_down_samples = scale_down_bytes
             .chunks_exact(2)
@@ -1039,23 +1027,7 @@ mod tests {
 
         // Test scaling up (noisy environment, multiplier > 1.0)
         let mut scale_up_bytes = bytes.clone();
-        let scale_up = 1.4;
-        if scale_up != 1.0 && scale_up_bytes.len() >= 2 {
-            let mut samples = scale_up_bytes
-                .chunks_exact(2)
-                .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-                .collect::<Vec<i16>>();
-            for sample in samples.iter_mut() {
-                *sample = (*sample as f64 * scale_up).clamp(i16::MIN as f64, i16::MAX as f64) as i16;
-            }
-            let mut idx = 0;
-            for s in samples {
-                let s_bytes = s.to_le_bytes();
-                scale_up_bytes[idx] = s_bytes[0];
-                scale_up_bytes[idx + 1] = s_bytes[1];
-                idx += 2;
-            }
-        }
+        scale_pcm_in_place(&mut scale_up_bytes, 1.4);
 
         let scaled_up_samples = scale_up_bytes
             .chunks_exact(2)
