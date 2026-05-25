@@ -472,21 +472,28 @@ class ConversationHistoryStore:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
                     """
-                    WITH latest AS (
+                    UPDATE messages
+                    SET content = $1
+                    WHERE id = (
                         SELECT id FROM messages
                         WHERE session_id = $2 AND role = 'assistant'
                         ORDER BY timestamp DESC
                         LIMIT 1
                     )
-                    UPDATE messages
-                    SET content = $1
-                    FROM latest
-                    WHERE messages.id = latest.id
                     """,
                     content,
                     self.current_session_id,
                 )
-                if result and result.split()[-1] != '0':
+                # Check rowcount attribute if available (backend-agnostic)
+                rowcount = getattr(result, 'rowcount', None)
+                if rowcount is None:
+                    # Fallback: parse string result for PostgreSQL "UPDATE n" format
+                    try:
+                        rowcount = int(result.split()[-1]) if result and isinstance(result, str) else 0
+                    except (ValueError, IndexError, AttributeError):
+                        rowcount = 0
+
+                if rowcount > 0:
                     logger.info(
                         f"Updated last assistant message to {len(content)} characters"
                     )
