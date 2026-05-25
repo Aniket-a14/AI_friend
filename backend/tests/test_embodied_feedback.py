@@ -84,7 +84,7 @@ async def test_dialogue_truncation_via_estimation_fallback(
 
     agent.last_assistant_response = original_text
     import time
-    
+
     fixed_time = 1713330000.0
     monkeypatch.setattr(time, "time", lambda: fixed_time)
 
