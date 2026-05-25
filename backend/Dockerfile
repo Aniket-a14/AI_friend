@@ -13,6 +13,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# 1.5. RUST WHEEL BUILDER: Builds the Python extension wheel
+FROM rust:1-bookworm AS rust-wheel-builder
+WORKDIR /build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip3 install --break-system-packages maturin
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+RUN maturin build --release --manifest-path crates/cognitive-rust/Cargo.toml --out target/wheels
+
 # 2. SLIM BUILDER: Core dependencies only
 FROM base AS slim-builder
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential portaudio19-dev \
@@ -23,6 +34,10 @@ COPY requirements-base.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install -r requirements-base.txt
+
+# Copy and install the cognitive-rust wheel built in the Rust stage
+COPY --from=rust-wheel-builder /build/target/wheels/ /tmp/wheels/
+RUN pip install /tmp/wheels/*.whl
 
 # 3. FULL BUILDER: Includes heavy AI/Vision dependencies
 FROM slim-builder AS full-builder
