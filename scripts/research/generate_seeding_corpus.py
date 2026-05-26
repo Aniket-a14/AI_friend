@@ -745,10 +745,10 @@ def generate_corpus(num_distractors=10000, num_anecdotes=20000, num_milestones=1
                 "raw_content": content,
                 "wing": "personal",
                 "room": "distractor",
-                "importance": 0.4,
-                "emotion": 0.1,
-                "valence": 0.0,
-                "certainty": 0.9,
+                "importance": round(rng.uniform(0.10, 0.49), 4),
+                "emotion": round(rng.uniform(0.01, 0.20), 4),
+                "valence": round(rng.uniform(-0.10, 0.10), 4),
+                "certainty": round(rng.uniform(0.80, 0.95), 4),
                 "source": "system_seeder",
                 "created_at": created_time.isoformat(),
                 "epoch": "daily_chitchat",
@@ -785,10 +785,10 @@ def generate_corpus(num_distractors=10000, num_anecdotes=20000, num_milestones=1
                 "raw_content": content,
                 "wing": "personal",
                 "room": "anecdote",
-                "importance": 0.6,
-                "emotion": 0.3,
-                "valence": 0.2,
-                "certainty": 0.9,
+                "importance": round(rng.uniform(0.50, 0.69), 4),
+                "emotion": round(rng.uniform(0.21, 0.49), 4),
+                "valence": round(rng.uniform(-0.30, 0.40), 4),
+                "certainty": round(rng.uniform(0.80, 0.95), 4),
                 "source": "system_seeder",
                 "created_at": created_time.isoformat(),
                 "epoch": "daily_anecdote",
@@ -859,16 +859,23 @@ def generate_corpus(num_distractors=10000, num_anecdotes=20000, num_milestones=1
         content = resolve_placeholders(template, i)
         content = f"{content} [Milestone ID: {i}]"
 
+        # Crises have negative valence (psychosocial stress), other milestones are positive/neutral
+        m_valence = (
+            round(rng.uniform(-0.80, -0.20), 4)
+            if category == "crisis"
+            else round(rng.uniform(0.40, 0.95), 4)
+        )
+
         corpus.append(
             {
                 "content": content,
                 "raw_content": content,
                 "wing": "personal",
                 "room": category,
-                "importance": 0.9,
-                "emotion": 0.8,
-                "valence": 0.8,
-                "certainty": 1.0,
+                "importance": round(rng.uniform(0.70, 0.99), 4),
+                "emotion": round(rng.uniform(0.60, 0.95), 4),
+                "valence": m_valence,
+                "certainty": round(rng.uniform(0.90, 1.00), 4),
                 "source": "system_seeder",
                 "created_at": created_time.isoformat(),
                 "epoch": stage,
