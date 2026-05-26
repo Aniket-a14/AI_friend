@@ -9,17 +9,17 @@ This directory contains the standardized, modular evaluation suite designed to v
 To prevent performance profiling overhead from introducing latency into live conversational pathways, the benchmarking suite is structured into two decoupled, synergistic layers:
 
 ```
-                  ┌──────────────────────────────────────────────┐
-                  │          CVS-3.5 BENCHMARKING SUITE          │
-                  └──────────────────────┬───────────────────────┘
-                                         │
-                  ┌──────────────────────┴──────────────────────┐
-                  ▼                                             ▼
-     [L1: Continuous Telemetry]                    [L2: High-Res Evaluations]
-     - hard_benchmark.py (1000 iters)              - human_realism_eval.py
-     - Live NATS JetStream Pulses                  - extended_benchmarks_eval.py
-     - pgvector & Neo4j Active Pruning             - Autonomic Physiological Curves
-     - Latency, ToM, & Recall Averages             - CPU, RAM, & Power Footprints
+                   ┌──────────────────────────────────────────────┐
+                   │          CVS-3.5 BENCHMARKING SUITE          │
+                   └──────────────────────┬───────────────────────┘
+                                          │
+                   ┌──────────────────────┴──────────────────────┐
+                   ▼                                             ▼
+      [L1: Continuous Telemetry]                    [L2: High-Res Evaluations]
+      - hard_benchmark.py (2000 iters)              - human_realism_eval.py
+      - Live NATS JetStream Pulses                  - extended_benchmarks_eval.py
+      - pgvector & Neo4j Active Pruning             - Autonomic Physiological Curves
+      - Latency, ToM, & Recall Averages             - CPU, RAM, & Power Footprints
 ```
 
 ---
@@ -27,7 +27,10 @@ To prevent performance profiling overhead from introducing latency into live con
 ## 📊 Comprehensive Metrics Mapped
 
 ### 1. Active Memory Bounding & Latency Scaling
-*   **Active Memory Size** ($M_{\text{active}}$): Measures the bounded search space size. Active forgetting uses an ACT-R decay model ($\theta_{\text{prune}} = -2.5$) to transactionally delete decayed distractors, capping active memory while standard databases grow linearly ($M_{\text{total}}$).
+*   **Active Memory Size** ($M_{\text{active}}$): Measures the bounded search space size. Active forgetting uses an ACT-R decay model to transactionally delete decayed memories based on a dynamic dual-threshold forgetting curve:
+    *   **Distractors** ($I < 0.5$, continuous range `[0.10, 0.49]`): pruned when activation drops below **$-3.5$**.
+    *   **Anecdotes** ($0.5 \le I < 0.7$, continuous range `[0.50, 0.69]`): pruned when activation drops below **$-4.5$**.
+    *   **Milestones** ($I \ge 0.7$, continuous range `[0.70, 0.99]`): permanently protected from decay and pruning.
 *   **Retrieval Speedup** ($O(\log M_{\text{active}})$): Quantifies lookup latency differences between unpruned search spaces and pruned bounded spaces, achieving an asymptotic $\sim30\%$ speedup over long conversational sessions.
 
 ### 2. Autonomic Physiological Entrainment
@@ -43,7 +46,7 @@ To prevent performance profiling overhead from introducing latency into live con
 *   **Theory of Mind (ToM) MAE:** Mean Absolute Error of our real-time user emotional state inferences against a dual-oracle sentiment appraisal model (Target MAE $< 0.05$).
 
 ### 4. Behavioral & Paralinguistic Realism
-*   **Emotional Tag Precision:** Dynamic insertion accuracy of paralinguistic tag metadata (e.g., `[sighs]`, `[clears throat]`, `[voice cracks]`) matching conversational stress.
+*   **Emotional Tag Precision:** Dynamic insertion accuracy of paralinguistic tag metadata (e.g., `<breath_fast>`, `<sigh_soft>`, `<hesitate>`) matching conversational stress.
 *   **Vocal Filler Rate:** Mimics human verbal hesitation under cognitive load (e.g., raising filler rate from $0.08$ to $0.42$ words/turn during stress).
 
 ### 5. Physical System Performance
@@ -58,7 +61,7 @@ To compile meaningful data, certain scripts **must** run concurrently in separat
 
 | Primary Task | Active Run Script (Terminal 1) | Background Daemon (Terminal 2) | Purpose / Goal |
 | :--- | :--- | :--- | :--- |
-| **Physical Stress Test** | `python scripts/research/hard_benchmark.py --iterations 1000` | `python scripts/research/collector.py` | Logs the real-time PAD and endocrine trajectories during high-throughput message stress testing. |
+| **Physical Stress Test** | `python scripts/research/hard_benchmark.py --iterations 2000` | `python scripts/research/collector.py` | Logs the real-time PAD and endocrine trajectories during high-throughput message stress testing. |
 | **Autonomic Entrainment** | `python scripts/research/human_fidelity_test.py` | `python scripts/research/collector.py` | Evaluates heart rate, breathing rate, and RMSSD HRV response curves during structured human-like interactions. |
 | **Active Live Injector** | `python scripts/research/injector.py` | `python scripts/research/monitor.py` | Profiles network-level hop latencies (NATS IPC) using standardized timestamped payload injections. |
 
@@ -84,7 +87,7 @@ pip install matplotlib numpy pandas reportlab nats-py python-dotenv scipy asyncp
 The evaluation scoring engine (`metrics_eval.py`) relies on Dr. Saif M. Mohammad's official NRC Valence, Arousal, and Dominance (VAD) Lexicon to validate emotional appraisal accuracy. Due to distribution licensing, this file is excluded from Git tracking via `.gitignore` and must be set up locally:
 
 #### Option A: Programmatic Setup (Recommended for AI Agents & CLI)
-Run this single Python command to automatically download, extract, and place the lexicon file in the correct location:
+Run this Python command to automatically download, extract, and place the lexicon file in the correct location:
 ```bash
 python -c "import urllib.request, zipfile, io, os; url = 'https://saifmohammad.com/WebDocs/Lexicons/NRC-VAD-Lexicon.zip'; headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9'}; req = urllib.request.Request(url, headers=headers); target_dir = 'scripts/research/NRC-VAD-Lexicon'; os.makedirs(target_dir, exist_ok=True); print('Downloading (44MB)...'); response = urllib.request.urlopen(req); zip_data = response.read(); print('Extracting...'); z = zipfile.ZipFile(io.BytesIO(zip_data)); [open(os.path.join(target_dir, 'NRC-VAD-Lexicon.txt'), 'wb').write(z.read(n)) for n in z.namelist() if n.endswith('NRC-VAD-Lexicon.txt')]; print('Lexicon set up successfully!')"
 ```
@@ -120,7 +123,7 @@ python scripts/research/reset_cognitive_db.py
 ```
 
 ### Step 5: Procedural Seeding Corpus Generation (The 19-Year Baseline)
-Compile Aniket's 19-year life timeline (Ages 0 to 19) procedurally. This generates exactly **100,000 everyday conversations** backdated over 19 years and **10,000 milestones** structured across four developmental epochs (infancy, middle school, high school, and Bangalore college research with Priya):
+Compile the persona's 19-year life timeline (Ages 0 to 19) procedurally. This generates exactly **10,000 distractors**, **20,000 anecdotes**, and **10,000 milestones** (40,000 total memories) backdated over 19 years and structured across four Eriksonian developmental epochs:
 ```bash
 python scripts/research/generate_seeding_corpus.py
 ```
@@ -140,20 +143,19 @@ python scripts/research/reset_cognitive_db.py
 python scripts/research/generate_seeding_corpus.py
 ```
 
-### Step 8: Run the Full 110,000-Memory Physical Stress Test (1000 Iterations)
-Execute the rigorous physical benchmark at full scale. This connects to live microservices, loads all 110,000 memories (100,000 chitchats and 10,000 milestones) from `flooded_seeding_corpus.json` into pgvector, seeds Neo4j with Aniket's relational trust circle, and runs exactly **1,000 conversational turn interactions between Aniket and a close friend, compressed entirely within a single day (his 20th birthday)** under live JetStream load while executing active database pruning:
+### Step 8: Run the Full 40,000-Memory Physical Stress Test (2000 Iterations)
+Execute the rigorous physical benchmark at full scale. This connects to live microservices, loads all 40,000 memories (10,000 distractors, 20,000 anecdotes, and 10,000 milestones) from `flooded_seeding_corpus.json` into pgvector, seeds Neo4j with the persona's relational trust circle, and runs exactly **2,000 conversational turn interactions** under live JetStream load while executing active database pruning:
 ```bash
-# Run the full physical benchmark flooding 100,000 distractors
-python scripts/research/hard_benchmark.py --iterations 1000 --distractors 100000
+# Run the full physical benchmark flooding 40,000 memories
+python scripts/research/hard_benchmark.py --iterations 2000
 ```
 
 ### Step 9: Running Subsequent Tests Instantly (Bypassing Seeding)
-To execute additional evaluation runs without wiping and re-seeding the 110,000-memory database, use the `--skip-seed` (or `-s`) flag:
+To execute additional evaluation runs without wiping and re-seeding the 40,000-memory database, use the `--skip-seed` (or `-s`) flag:
 ```bash
 # Run subsequent conversational trials instantly
-python scripts/research/hard_benchmark.py --iterations 1000 --skip-seed
+python scripts/research/hard_benchmark.py --iterations 2000 --skip-seed
 ```
-
 
 ### Step 10: Real-time Telemetry Logging & Interactive Testing (Passive Daemon Mode)
 To observe real-time physiological response changes and generate the publication affective trajectories, run the passive event listener alongside manual or automated interactive testing:
@@ -164,7 +166,7 @@ python scripts/research/collector.py
 # 2. In your primary terminal, execute the automated human realism stimuli scenario runner:
 python scripts/research/human_fidelity_test.py
 
-# 3. Once complete, stop the collector daemon (Ctrl+C). The telemetry is saved in scripts/results/research_pad_trajectory.csv.
+# 3. Once complete, stop the collector daemon (Ctrl+C). Telemetry is saved in scripts/results/research_pad_trajectory.csv.
 
 # 4. Generate the publication-grade 3-panel affective arc tracking chart:
 python scripts/research/visualizer.py
@@ -190,7 +192,6 @@ Measure graph search traversals, database size scaling, memory constraints, and 
 ```bash
 python scripts/research/extended_benchmarks_eval.py
 ```
-
 
 ---
 
