@@ -11,9 +11,7 @@ ENV/
 # Environment Variables
 .env
 
-# Project Specific
-app/personality.json
-app/history.json
+# Project Specific (Excluding templates)
 wake_up_file/
 *.ppn
 **/voice_samples/

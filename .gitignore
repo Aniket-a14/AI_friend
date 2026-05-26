@@ -40,8 +40,6 @@ yarn-error.log
 target/
 
 # Project Specific (Personal Data)
-**/personality.json
-**/history.json
 **/voice_samples/
 **/wake_up_file/
 **/*.ppn
