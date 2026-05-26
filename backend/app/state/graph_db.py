@@ -234,11 +234,9 @@ class GraphDB:
         # Cypher query with ON CREATE and ON MATCH logic for weight consolidation
         query = (
             f"MERGE (s:Entity {{name: $s_name}}) "
-            f"MERGE (s:{s_lbl}) "
-            f"MERGE (s:{cat_lbl}) "
+            f"SET s:{s_lbl}:{cat_lbl} "
             f"MERGE (t:Entity {{name: $t_name}}) "
-            f"MERGE (t:{t_lbl}) "
-            f"MERGE (t:{cat_lbl}) "
+            f"SET t:{t_lbl}:{cat_lbl} "
             f"MERGE (s)-[r:{rel_type}]->(t) "
             "ON CREATE SET r += $props, r.weight = 1 "
             "ON MATCH SET r.weight = coalesce(r.weight, 1) + 1, r.certainty = $props.certainty, r += $props "
