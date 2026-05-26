@@ -690,11 +690,11 @@ ADULTHOOD_MODIFIERS = [
 ]
 
 
-def generate_corpus(num_distractors=15000, num_anecdotes=15000, num_milestones=10000):
+def generate_corpus(num_distractors=10000, num_anecdotes=20000, num_milestones=10000):
     """
     Procedurally compiles a highly diversified, biologically realistic 40,000-memory database:
-    - Distractors: 15,000 pure chitchats (weather, transit, casual layout) -> room = 'distractor', importance = 0.4
-    - Anecdotes: 15,000 meaningful everyday experiences (cricket, tea, study corner) -> room = 'anecdote', importance = 0.6
+    - Distractors: 10,000 pure chitchats (weather, transit, casual layout) -> room = 'distractor', importance = 0.4
+    - Anecdotes: 20,000 meaningful everyday experiences (cricket, tea, study corner) -> room = 'anecdote', importance = 0.6
     - Milestones: 10,000 milestones leveraging Zipfian synonym lookup -> room = flat categories, importance = 0.9
     """
     print("📦 Generating 19-year developmental seeding corpus for Aniket...")
@@ -888,4 +888,4 @@ def generate_corpus(num_distractors=15000, num_anecdotes=15000, num_milestones=1
 
 
 if __name__ == "__main__":
-    generate_corpus(15000, 15000, 10000)
+    generate_corpus(10000, 20000, 10000)
