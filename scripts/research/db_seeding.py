@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import json
+import argparse
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
@@ -40,6 +41,29 @@ ANIKET_DISTRACTOR_TEMPLATES = [
     "My high school friends and I are planning a reunion back in Kolkata during the holidays.",
     "Debugging a tricky concurrent thread pool issue in my cognitive simulation module.",
     "Enjoying a hot cup of tea while watching the rain wash over the streets of Bangalore.",
+]
+
+ANIKET_DISTRACTOR_CATEGORIES = [
+    "somatic",  # 0: market
+    "vocational",  # 1: math project
+    "vocational",  # 2: coding arcade
+    "social",  # 3: family dinner
+    "social",  # 4: cricket match
+    "somatic",  # 5: sweet rasgullas
+    "somatic",  # 6: Victoria Memorial
+    "social",  # 7: meals
+    "vocational",  # 8: examinations
+    "social",  # 9: moving to Bangalore
+    "social",  # 10: Priya
+    "vocational",  # 11: architectures
+    "social",  # 12: Cubbon Park
+    "somatic",  # 13: rasgullas
+    "vocational",  # 14: query optimization
+    "social",  # 15: phone stories
+    "social",  # 16: quiet library
+    "social",  # 17: reunion
+    "vocational",  # 18: concurrent thread pool
+    "somatic",  # 19: tea
 ]
 
 EPOCH_0_5_TEMPLATES = [
@@ -105,7 +129,7 @@ async def check_nats_ipc():
         return False, None
 
 
-async def seed_databases(num_distractors=100000):
+async def seed_databases(num_distractors=30000):
     """
     Resets databases and bulk-loads a generic, temporally backdated conversational corpus:
     - Reads from flooded_seeding_corpus.json if available, to seed the exact 19-year developmental history.
@@ -145,18 +169,20 @@ async def seed_databases(num_distractors=100000):
         milestone_count = 0
 
         for item in corpus_data:
-            room = item.get("room", "distractor")
-            if room == "distractor":
+            importance = item.get("importance", 0.4)
+            is_dist = importance < 0.5
+
+            if is_dist:
                 if distractor_count >= num_distractors:
                     continue
                 distractor_count += 1
             else:
                 milestone_count += 1
 
+            room = item.get("room", "social")
             content = item.get("content", "")
             raw_content = item.get("raw_content", content)
             wing = item.get("wing", "personal")
-            importance = item.get("importance", 0.4)
             emotion = item.get("emotion", 0.1)
             valence = item.get("valence", 0.0)
             certainty = item.get("certainty", 0.9)
@@ -202,7 +228,9 @@ async def seed_databases(num_distractors=100000):
 
         # Compile chitchat distractors
         for i in range(num_distractors):
-            template = ANIKET_DISTRACTOR_TEMPLATES[i % len(ANIKET_DISTRACTOR_TEMPLATES)]
+            t_idx = i % len(ANIKET_DISTRACTOR_TEMPLATES)
+            template = ANIKET_DISTRACTOR_TEMPLATES[t_idx]
+            category = ANIKET_DISTRACTOR_CATEGORIES[t_idx]
             content = f"{template} [Turn: {i}]"
 
             elapsed_seconds = i * time_step_seconds
@@ -215,7 +243,7 @@ async def seed_databases(num_distractors=100000):
                     content,
                     content,
                     "personal",
-                    "distractor",
+                    category,
                     vector_str,
                     0.4,
                     0.1,
@@ -228,32 +256,64 @@ async def seed_databases(num_distractors=100000):
             )
 
         # Compile milestones
-        all_milestones = (
-            EPOCH_0_5_TEMPLATES
-            + EPOCH_6_12_TEMPLATES
-            + EPOCH_13_18_TEMPLATES
-            + EPOCH_19_TEMPLATES
-        )
-        for i, template in enumerate(all_milestones):
-            content = f"{template} [Milestone ID: {i}]"
-            vector = generate_mock_vector(768)
-            vector_str = str(vector)
-            seeding_tasks.append(
-                (
-                    content,
-                    content,
-                    "personal",
-                    "milestone",
-                    vector_str,
-                    0.9,
-                    0.8,
-                    0.8,
-                    1.0,
-                    "system_seeder",
-                    "{}",
-                    now,
+        epochs_templates = [
+            (
+                EPOCH_0_5_TEMPLATES,
+                ["somatic", "social", "spiritual", "crisis"],
+                "Trust vs Mistrust",
+                "Trust vs Mistrust",
+                "Hope",
+            ),
+            (
+                EPOCH_6_12_TEMPLATES,
+                ["vocational", "social", "somatic", "milestone"],
+                "Industry vs Inferiority",
+                "Industry vs Inferiority",
+                "Competence",
+            ),
+            (
+                EPOCH_13_18_TEMPLATES,
+                ["vocational", "social", "crisis", "milestone"],
+                "Identity vs Role Confusion",
+                "Identity vs Role Confusion",
+                "Fidelity",
+            ),
+            (
+                EPOCH_19_TEMPLATES,
+                ["vocational", "social", "somatic", "milestone"],
+                "Intimacy vs Isolation",
+                "Intimacy vs Isolation",
+                "Love",
+            ),
+        ]
+
+        milestone_idx = 0
+        for templates, cats, epoch, crisis, virtue in epochs_templates:
+            for template in templates:
+                content = f"{template} [Milestone ID: {milestone_idx}]"
+                category = cats[milestone_idx % len(cats)]
+                vector = generate_mock_vector(768)
+                vector_str = str(vector)
+
+                seeding_tasks.append(
+                    (
+                        content,
+                        content,
+                        "personal",
+                        category,
+                        vector_str,
+                        0.9,
+                        0.8,
+                        0.8,
+                        1.0,
+                        "system_seeder",
+                        json.dumps(
+                            {"epoch": epoch, "crisis": crisis, "virtue": virtue}
+                        ),
+                        now,
+                    )
                 )
-            )
+                milestone_idx += 1
 
     print(f"💾 Bulk-loading {len(seeding_tasks)} records into pgvector...")
 
@@ -355,174 +415,765 @@ async def seed_databases(num_distractors=100000):
 
     try:
         print(
-            "🕸️ Seeding Neo4j Knowledge Graph with Aniket's relational trust network..."
+            "🕸️ Seeding Neo4j Knowledge Graph with Aniket's relational trust network (150+ Entities)..."
         )
         graph = GraphDB()
 
-        await graph.create_entity(
-            "Aniket",
-            "Person",
-            {"description": "The central cognitive system, developing since birth."},
-        )
-        await graph.create_entity(
-            "Priya",
-            "Person",
-            {
-                "description": "Aniket's romantic partner and primary source of secure attachment."
-            },
-        )
-        await graph.create_entity(
-            "Ma",
-            "Person",
-            {
-                "description": "Aniket's mother, supporting emotional stability since childhood."
-            },
-        )
-        await graph.create_entity(
-            "Baba",
-            "Person",
-            {"description": "Aniket's father, supporting vocational growth and logic."},
-        )
-        await graph.create_entity(
+        # Define 150+ nodes programmatically
+        friends_names = [
+            "Amit",
+            "Sneha",
+            "Rahul",
+            "Pooja",
+            "Marcus",
+            "Neha",
+            "Vikram",
+            "Elena",
+            "Sandeep",
+            "Riya",
+            "Abhishek",
+            "Tanvi",
+            "Arjun",
+            "Ishita",
+            "Raj",
+            "Simran",
+            "Manoj",
+            "Kavita",
+            "Theo",
+            "Preeti",
+            "Deepak",
+            "Shreya",
+            "Sanjay",
+            "Aditi",
+            "Nitin",
+            "Payal",
+            "Alok",
+            "Divya",
+            "Vivek",
+            "Megha",
+            "Gaurav",
+            "Swati",
+            "Akash",
+            "Ritu",
+            "Sid",
+            "Kriti",
+            "Rohan",
+            "Shruti",
+            "Dev",
+            "Tina",
+        ]
+        relatives_names = [
+            "Dida",
+            "Dadu",
+            "Kaku",
+            "Kaki",
+            "Mama",
+            "Mami",
+            "Pishi",
+            "Pishe",
+            "Borodi",
+            "Chhotodi",
+            "Chhotoda",
+            "Mejoda",
+            "Mejodi",
+            "Mashimoni",
+            "Meshomoshai",
+        ]
+        colleagues_names = [
+            "Sameer",
+            "Karthik",
+            "Divya",
+            "Vinay",
+            "Harish",
+            "Priya_C",
+            "Anand",
+            "Swapna",
+            "Nupur",
+            "Abhay",
+            "Jyothi",
+            "Varun",
+            "Shalini",
+            "Rakesh",
+            "Deepa",
+            "Suresh",
+            "Rekha",
+            "Vijay",
+            "Lakshmi",
+            "Rajesh",
+        ]
+        mentors_names = [
+            "Dr. Sen",
+            "Prof. Rao",
+            "Dr. Mukherjee",
+            "Prof. Das",
+            "Dr. Banerjee",
+            "Prof. Nair",
+            "Dr. Hegde",
+            "Prof. Chatterjee",
+            "Dr. Reddy",
+            "Prof. Srinivasan",
+            "Dr. Mehta",
+            "Prof. Joshi",
+            "Dr. Bhat",
+            "Prof. Kulkarni",
+            "Dr. Deshmukh",
+        ]
+        topics_names = [
+            "transformer scaling",
+            "vector database indexing",
+            "affective cognitive architecture",
+            "Pleasure Arousal Dominance",
+            "ACT-R memory activation",
+            "semantic spreading activation",
+            "homeostatic endocrine coupling",
+            "Jaccard novelty appraisal",
+            "linear algebraic prosody",
+            "neural network convergence",
+            "reinforcement learning",
+            "speech synthesis",
+            "text to speech",
+            "automatic speech recognition",
+            "cognitive appraisal systems",
+            "theory of mind modeling",
+            "natural language processing",
+            "vector search acceleration",
+            "database index pruning",
+            "hierarchical memory consolidation",
+        ]
+        academics_names = [
+            "Jadavpur University",
+            "Indian Institute of Science",
+            "Research Lab",
+            "University Cafe",
+            "Library Alcove",
+        ]
+        cities_names = [
             "Kolkata",
-            "City",
-            {
-                "description": "Aniket's birthplace, home to childhood memories and sweet rasgullas."
-            },
-        )
-        await graph.create_entity(
             "Bangalore",
-            "City",
-            {
-                "description": "The city of college education, research, and meeting Priya."
-            },
-        )
-        await graph.create_entity(
-            "AffectiveCognitiveArchitectures",
-            "ResearchDomain",
-            {"description": "Core college research project."},
-        )
+            "Delhi",
+            "Mumbai",
+            "Chennai",
+            "Hyderabad",
+            "Pune",
+            "Noida",
+            "Gurgaon",
+            "Ahmedabad",
+            "Jaipur",
+            "Kochi",
+            "Mysore",
+            "Ooty",
+            "Darjeeling",
+        ]
+        neighborhoods_names = [
+            "Jadavpur",
+            "Salt Lake",
+            "Ballygunge",
+            "Gariahat",
+            "Indiranagar",
+            "Koramangala",
+            "Whitefield",
+            "HSR Layout",
+            "Malleshwaram",
+            "Jayanagar",
+            "Sadashivanagar",
+            "Marathahalli",
+            "Bellandur",
+            "Rajajinagar",
+            "Banashankari",
+            "Hebbal",
+            "Yelahanka",
+            "Electronic City",
+            "Basavanagudi",
+            "Ulsoor",
+            "BTM Layout",
+            "Domlur",
+            "Cooke Town",
+            "Fraser Town",
+            "Richards Town",
+        ]
+        comforts_names = [
+            "sweet rasgulla",
+            "cardamom tea",
+            "street cricket alley",
+            "Victoria Memorial",
+            "Cubbon Park",
+            "home kitchen",
+            "local vegetable market",
+            "study room",
+            "balcony garden",
+            "lakeside walk",
+        ]
+        values_names = ["Honesty", "Privacy", "Curiosity"]
+        boundaries_names = ["DataBoundary", "CognitiveSovereignty"]
+        sacred_names = [
+            "Dakshineswar Mandir",
+            "Belur Math",
+            "local temple",
+            "quiet meditation garden",
+            "Ganges ghats",
+        ]
+        crises_names = [
+            "Trust vs Mistrust",
+            "Industry vs Inferiority",
+            "Identity vs Role Confusion",
+            "Intimacy vs Isolation",
+        ]
+        virtues_names = ["Hope", "Competence", "Fidelity", "Love"]
+        states_names = [
+            "existential doubt",
+            "exam stress",
+            "relocation anxiety",
+            "attachment security",
+            "identity formation",
+        ]
+        milestones_names = [
+            "high school graduation",
+            "moving to Bangalore",
+            "joining research lab",
+            "first research publication",
+            "meeting Priya",
+            "starting primary school",
+            "learning Python programming",
+            "junior research internship",
+            "first toddler steps",
+            "sweet rasgulla tasting",
+        ]
 
-        # Seed Core Identity Values & Boundaries into Neo4j Graph
-        await graph.create_entity(
-            "Honesty",
-            "CoreValue",
+        nodes = [
             {
-                "description": "Commitment to absolute truthfulness and behavioral integrity."
+                "name": "Aniket",
+                "type": "Person",
+                "category": "Social",
+                "props": {
+                    "description": "The central cognitive system.",
+                    "importance": 0.9,
+                },
             },
-        )
-        await graph.create_entity(
-            "Privacy",
-            "CoreValue",
             {
-                "description": "Commitment to absolute data sovereignty and local privacy protection."
+                "name": "Priya",
+                "type": "Person",
+                "category": "Social",
+                "props": {
+                    "description": "Aniket's romantic partner.",
+                    "importance": 0.9,
+                },
             },
-        )
-        await graph.create_entity(
-            "Curiosity",
-            "CoreValue",
-            {"description": "Commitment to intellectual exploration and learning."},
-        )
-        await graph.create_entity(
-            "DataBoundary",
-            "CoreBoundary",
             {
-                "description": "Explicit rule: Never share user conversation histories externally."
+                "name": "Ma",
+                "type": "Person",
+                "category": "Social",
+                "props": {"description": "Aniket's mother.", "importance": 0.9},
             },
-        )
+            {
+                "name": "Baba",
+                "type": "Person",
+                "category": "Social",
+                "props": {"description": "Aniket's father.", "importance": 0.9},
+            },
+        ]
 
-        # Seed Core Identity Values & Boundaries into Neo4j Graph
-        await graph.create_entity(
-            "Honesty",
-            "CoreValue",
-            {
-                "description": "Commitment to absolute truthfulness and behavioral integrity."
-            },
-        )
-        await graph.create_entity(
-            "Privacy",
-            "CoreValue",
-            {
-                "description": "Commitment to absolute data sovereignty and local privacy protection."
-            },
-        )
-        await graph.create_entity(
-            "Curiosity",
-            "CoreValue",
-            {"description": "Commitment to intellectual exploration and learning."},
-        )
-        await graph.create_entity(
-            "DataBoundary",
-            "CoreBoundary",
-            {
-                "description": "Explicit rule: Never share user conversation histories externally."
-            },
-        )
+        for name in friends_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "Person",
+                    "category": "Social",
+                    "props": {"description": "Aniket's friend.", "importance": 0.9},
+                }
+            )
+        for name in relatives_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "Person",
+                    "category": "Social",
+                    "props": {"description": "Aniket's relative.", "importance": 0.9},
+                }
+            )
+        for name in colleagues_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "Person",
+                    "category": "Social",
+                    "props": {"description": "Aniket's colleague.", "importance": 0.9},
+                }
+            )
+        for name in mentors_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "Person",
+                    "category": "Vocational",
+                    "props": {"description": "Aniket's mentor.", "importance": 0.9},
+                }
+            )
+        for name in topics_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "Concept",
+                    "category": "Vocational",
+                    "props": {
+                        "description": f"Research Domain: {name}.",
+                        "importance": 0.9,
+                    },
+                }
+            )
+        for name in academics_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "Academic",
+                    "category": "Vocational",
+                    "props": {
+                        "description": f"Academic entity: {name}.",
+                        "importance": 0.9,
+                    },
+                }
+            )
+        for name in cities_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "City",
+                    "category": "Somatic",
+                    "props": {"description": "City in India.", "importance": 0.9},
+                }
+            )
+        for name in neighborhoods_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "Neighborhood",
+                    "category": "Somatic",
+                    "props": {"description": "Neighborhood.", "importance": 0.9},
+                }
+            )
+        for name in comforts_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "SensoryItem",
+                    "category": "Somatic",
+                    "props": {"description": "Sensory comfort.", "importance": 0.9},
+                }
+            )
+        for name in values_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "CoreValue",
+                    "category": "Spiritual",
+                    "props": {
+                        "description": f"Aniket's core value: {name}.",
+                        "importance": 0.9,
+                    },
+                }
+            )
+        for name in boundaries_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "CoreBoundary",
+                    "category": "Spiritual",
+                    "props": {
+                        "description": f"Boundary rule: {name}.",
+                        "importance": 0.9,
+                    },
+                }
+            )
+        for name in sacred_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "SacredSpace",
+                    "category": "Spiritual",
+                    "props": {
+                        "description": f"Sacred space: {name}.",
+                        "importance": 0.9,
+                    },
+                }
+            )
+        for name in crises_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "Crisis",
+                    "category": "Crisis",
+                    "props": {
+                        "description": f"Eriksonian crisis: {name}.",
+                        "importance": 0.9,
+                    },
+                }
+            )
+        for name in virtues_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "Virtue",
+                    "category": "Crisis",
+                    "props": {
+                        "description": f"Developed virtue: {name}.",
+                        "importance": 0.9,
+                    },
+                }
+            )
+        for name in states_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "EmotionalState",
+                    "category": "Crisis",
+                    "props": {
+                        "description": f"Emotional state: {name}.",
+                        "importance": 0.9,
+                    },
+                }
+            )
+        for name in milestones_names:
+            nodes.append(
+                {
+                    "name": name,
+                    "type": "Milestone",
+                    "category": "Milestone",
+                    "props": {
+                        "description": f"Biographical milestone: {name}.",
+                        "importance": 0.9,
+                    },
+                }
+            )
 
-        await graph.create_relationship(
-            "Aniket", "Person", "LIVES_IN", "Kolkata", "City", {"weight": 0.95}
-        )
-        await graph.create_relationship(
-            "Aniket", "Person", "MOVED_TO", "Bangalore", "City", {"weight": 0.95}
-        )
-        await graph.create_relationship(
-            "Aniket", "Person", "PARTNER_WITH", "Priya", "Person", {"weight": 0.99}
-        )
-        await graph.create_relationship(
-            "Aniket", "Person", "CHILD_OF", "Ma", "Person", {"weight": 0.98}
-        )
-        await graph.create_relationship(
-            "Aniket", "Person", "CHILD_OF", "Baba", "Person", {"weight": 0.98}
-        )
-        await graph.create_relationship(
-            "Aniket",
-            "Person",
-            "RESEARCHES",
-            "AffectiveCognitiveArchitectures",
-            "ResearchDomain",
-            {"weight": 0.95},
-        )
+        # Seed all nodes
+        for node in nodes:
+            label = node["type"]
+            cat = node["category"]
+            name = node["name"]
+            props = node["props"]
+            props["category"] = cat.lower()
+            query = f"MERGE (e:Entity {{name: $name}}) MERGE (e:{label}) MERGE (e:{cat}) SET e += $props"
+            await graph.execute_query(query, {"name": name, "props": props}, write=True)
 
-        # Link Aniket to Core Identity Values & Boundaries
-        await graph.create_relationship(
-            "Aniket", "Person", "HAS_VALUE", "Honesty", "CoreValue", {"weight": 1.0}
-        )
-        await graph.create_relationship(
-            "Aniket", "Person", "HAS_VALUE", "Privacy", "CoreValue", {"weight": 1.0}
-        )
-        await graph.create_relationship(
-            "Aniket", "Person", "HAS_VALUE", "Curiosity", "CoreValue", {"weight": 1.0}
-        )
-        await graph.create_relationship(
-            "Aniket",
-            "Person",
-            "ENFORCES_RULE",
-            "DataBoundary",
-            "CoreBoundary",
-            {"weight": 1.0},
-        )
+        # Build relationships programmatically
+        relationships = [
+            {
+                "subject": "Aniket",
+                "subject_type": "Person",
+                "subject_category": "Social",
+                "relation": "CHILD_OF",
+                "properties": {"weight": 0.98, "category": "social", "importance": 0.9},
+                "object": "Ma",
+                "object_type": "Person",
+                "object_category": "Social",
+            },
+            {
+                "subject": "Aniket",
+                "subject_type": "Person",
+                "subject_category": "Social",
+                "relation": "CHILD_OF",
+                "properties": {"weight": 0.98, "category": "social", "importance": 0.9},
+                "object": "Baba",
+                "object_type": "Person",
+                "object_category": "Social",
+            },
+            {
+                "subject": "Aniket",
+                "subject_type": "Person",
+                "subject_category": "Social",
+                "relation": "PARTNER_WITH",
+                "properties": {"weight": 0.99, "category": "social", "importance": 0.9},
+                "object": "Priya",
+                "object_type": "Person",
+                "object_category": "Social",
+            },
+        ]
 
-        # Link Aniket to Core Identity Values & Boundaries
-        await graph.create_relationship(
-            "Aniket", "Person", "HAS_VALUE", "Honesty", "CoreValue", {"weight": 1.0}
-        )
-        await graph.create_relationship(
-            "Aniket", "Person", "HAS_VALUE", "Privacy", "CoreValue", {"weight": 1.0}
-        )
-        await graph.create_relationship(
-            "Aniket", "Person", "HAS_VALUE", "Curiosity", "CoreValue", {"weight": 1.0}
-        )
-        await graph.create_relationship(
-            "Aniket",
-            "Person",
-            "ENFORCES_RULE",
-            "DataBoundary",
-            "CoreBoundary",
-            {"weight": 1.0},
-        )
+        # Link Friends
+        for name in friends_names:
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": "FRIEND_OF",
+                    "properties": {
+                        "weight": 0.8,
+                        "category": "social",
+                        "importance": 0.9,
+                    },
+                    "object": name,
+                    "object_type": "Person",
+                    "object_category": "Social",
+                }
+            )
+        # Link Relatives
+        for name in relatives_names:
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": "FAMILY_OF",
+                    "properties": {
+                        "weight": 0.9,
+                        "category": "social",
+                        "importance": 0.9,
+                    },
+                    "object": name,
+                    "object_type": "Person",
+                    "object_category": "Social",
+                }
+            )
+        # Link Colleagues
+        for name in colleagues_names:
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": "COLLEAGUE_OF",
+                    "properties": {
+                        "weight": 0.8,
+                        "category": "social",
+                        "importance": 0.9,
+                    },
+                    "object": name,
+                    "object_type": "Person",
+                    "object_category": "Social",
+                }
+            )
+        # Link Mentors
+        for name in mentors_names:
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": "STUDIED_UNDER",
+                    "properties": {
+                        "weight": 0.9,
+                        "category": "vocational",
+                        "importance": 0.9,
+                    },
+                    "object": name,
+                    "object_type": "Person",
+                    "object_category": "Vocational",
+                }
+            )
+        # Link Topics
+        for name in topics_names:
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": "RESEARCHED",
+                    "properties": {
+                        "weight": 0.9,
+                        "category": "vocational",
+                        "importance": 0.9,
+                    },
+                    "object": name,
+                    "object_type": "Concept",
+                    "object_category": "Vocational",
+                }
+            )
+        # Link Cities
+        for name in cities_names:
+            rel = "LIVES_IN" if name in ["Kolkata", "Bangalore"] else "VISITED"
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": rel,
+                    "properties": {
+                        "weight": 0.95 if rel == "LIVES_IN" else 0.6,
+                        "category": "somatic",
+                        "importance": 0.9,
+                    },
+                    "object": name,
+                    "object_type": "City",
+                    "object_category": "Somatic",
+                }
+            )
+        # Link Neighborhoods
+        for name in neighborhoods_names:
+            city_target = (
+                "Bangalore"
+                if name
+                in [
+                    "Indiranagar",
+                    "Koramangala",
+                    "Whitefield",
+                    "HSR Layout",
+                    "Malleshwaram",
+                    "Jayanagar",
+                    "Sadashivanagar",
+                    "Marathahalli",
+                    "Bellandur",
+                    "Rajajinagar",
+                    "Banashankari",
+                    "Hebbal",
+                    "Yelahanka",
+                    "Electronic City",
+                    "Basavanagudi",
+                    "Ulsoor",
+                    "BTM Layout",
+                    "Domlur",
+                    "Cooke Town",
+                    "Fraser Town",
+                    "Richards Town",
+                ]
+                else "Kolkata"
+            )
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": "RESIDES_IN",
+                    "properties": {"category": "somatic", "importance": 0.9},
+                    "object": name,
+                    "object_type": "Neighborhood",
+                    "object_category": "Somatic",
+                }
+            )
+            relationships.append(
+                {
+                    "subject": name,
+                    "subject_type": "Neighborhood",
+                    "subject_category": "Somatic",
+                    "relation": "LOCATED_IN",
+                    "properties": {"category": "somatic", "importance": 0.9},
+                    "object": city_target,
+                    "object_type": "City",
+                    "object_category": "Somatic",
+                }
+            )
+        # Link Core Values and Boundaries
+        for name in values_names:
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": "HAS_VALUE",
+                    "properties": {
+                        "weight": 1.0,
+                        "category": "spiritual",
+                        "importance": 0.9,
+                    },
+                    "object": name,
+                    "object_type": "CoreValue",
+                    "object_category": "Spiritual",
+                }
+            )
+        for name in boundaries_names:
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": "ENFORCES_RULE",
+                    "properties": {
+                        "weight": 1.0,
+                        "category": "spiritual",
+                        "importance": 0.9,
+                    },
+                    "object": name,
+                    "object_type": "CoreBoundary",
+                    "object_category": "Spiritual",
+                }
+            )
+        # Link Crises and Virtues
+        crisis_virtue_pairs = [
+            ("Trust vs Mistrust", "Hope"),
+            ("Industry vs Inferiority", "Competence"),
+            ("Identity vs Role Confusion", "Fidelity"),
+            ("Intimacy vs Isolation", "Love"),
+        ]
+        for crisis, virtue in crisis_virtue_pairs:
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": "EXPERIENCES",
+                    "properties": {
+                        "weight": 0.85,
+                        "category": "crisis",
+                        "importance": 0.9,
+                    },
+                    "object": crisis,
+                    "object_type": "Crisis",
+                    "object_category": "Crisis",
+                }
+            )
+            relationships.append(
+                {
+                    "subject": crisis,
+                    "subject_type": "Crisis",
+                    "subject_category": "Crisis",
+                    "relation": "DEVELOPED_VIRTUE",
+                    "properties": {
+                        "weight": 0.9,
+                        "category": "crisis",
+                        "importance": 0.9,
+                    },
+                    "object": virtue,
+                    "object_type": "Virtue",
+                    "object_category": "Crisis",
+                }
+            )
+        # Link Milestones
+        for name in milestones_names:
+            relationships.append(
+                {
+                    "subject": "Aniket",
+                    "subject_type": "Person",
+                    "subject_category": "Social",
+                    "relation": "ACHIEVED",
+                    "properties": {
+                        "weight": 0.95,
+                        "category": "milestone",
+                        "importance": 0.9,
+                    },
+                    "object": name,
+                    "object_type": "Milestone",
+                    "object_category": "Milestone",
+                }
+            )
+
+        # Seed all relationships
+        for rel in relationships:
+            s_name = rel["subject"]
+            s_type = rel["subject_type"]
+            s_cat = rel["subject_category"]
+
+            t_name = rel["object"]
+            t_type = rel["object_type"]
+            t_cat = rel["object_category"]
+
+            relation = rel["relation"]
+            props = rel["properties"]
+
+            query = (
+                f"MERGE (s:Entity {{name: $s_name}}) "
+                f"MERGE (s:{s_cat}) "
+                f"MERGE (s:{s_type}) "
+                f"MERGE (t:Entity {{name: $t_name}}) "
+                f"MERGE (t:{t_cat}) "
+                f"MERGE (t:{t_type}) "
+                f"MERGE (s)-[r:{relation}]->(t) "
+                f"SET r += $props"
+            )
+            await graph.execute_query(
+                query, {"s_name": s_name, "t_name": t_name, "props": props}, write=True
+            )
 
         await graph.close()
-        print("✅ Successfully seeded Neo4j graph nodes.")
+        print("✅ Successfully seeded Neo4j graph nodes and relationships.")
     except Exception as e:
         print(
             f"⚠️ Neo4j seeding skipped or encountered an error (normal if offline): {e}"
@@ -532,4 +1183,7 @@ async def seed_databases(num_distractors=100000):
 
 
 if __name__ == "__main__":
-    asyncio.run(seed_databases(200))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--distractors", type=int, default=30000)
+    args = parser.parse_args()
+    asyncio.run(seed_databases(args.distractors))

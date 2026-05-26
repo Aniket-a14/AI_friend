@@ -147,7 +147,7 @@ def test_pruning_threshold_decay(temp_store):
         async with temp_store.pool.acquire() as conn:
             # Insert Memory A
             await conn.execute(
-                "INSERT INTO memories (id, content, recall_count, created_at, last_recalled_at, wing) VALUES (?, ?, 1, ?, ?, 'personal')",
+                "INSERT INTO memories (id, content, recall_count, created_at, last_recalled_at, wing, importance_score) VALUES (?, ?, 1, ?, ?, 'personal', 0.4)",
                 str(uuid.uuid4()),
                 "Memory A",
                 time_a,
@@ -155,7 +155,7 @@ def test_pruning_threshold_decay(temp_store):
             )
             # Insert Memory B
             await conn.execute(
-                "INSERT INTO memories (id, content, recall_count, created_at, last_recalled_at, wing) VALUES (?, ?, 1, ?, ?, 'personal')",
+                "INSERT INTO memories (id, content, recall_count, created_at, last_recalled_at, wing, importance_score) VALUES (?, ?, 1, ?, ?, 'personal', 0.4)",
                 str(uuid.uuid4()),
                 "Memory B",
                 time_b,

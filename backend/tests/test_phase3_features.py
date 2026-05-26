@@ -72,7 +72,7 @@ async def test_neuromodulatory_gating_and_actr_pruning():
     res1 = await mem_store.add_memory(
         "aligned emotional memory",
         wing="personal",
-        importance=0.8,
+        importance=0.6,
         valence=0.5,
         emotion=0.8,
     )
@@ -112,7 +112,7 @@ async def test_neuromodulatory_gating_and_actr_pruning():
             "INSERT INTO memories (id, content, importance_score, recall_count, created_at, metadata) VALUES (?, ?, ?, ?, ?, ?)",
             str(uuid.uuid4()),
             "ancient forgotten memory",
-            0.9,
+            0.4,
             1,
             old_time,
             '{"decay_rate": 0.8}',
@@ -123,7 +123,7 @@ async def test_neuromodulatory_gating_and_actr_pruning():
         ["ancient forgotten memory", "aligned emotional memory"]
     )
 
-    # Verify that the ancient memory (activation = ln(1) - 0.8 * ln(240+1) = -4.38 < -2.0) was pruned/deleted
+    # Verify that the ancient memory (activation = ln(1) - 0.8 * ln(240+1) = -4.38 < -3.5) was pruned/deleted
     async with store.pool.acquire() as conn:
         row_ancient = await conn.fetchrow(
             "SELECT * FROM memories WHERE content = 'ancient forgotten memory'"
@@ -134,8 +134,8 @@ async def test_neuromodulatory_gating_and_actr_pruning():
 
         assert row_ancient is None
         assert row_recent is not None
-        # Recent memory survived and was decayed by 0.8
-        assert abs(row_recent["importance_score"] - 0.64) < 1e-5
+        # Recent memory survived and was decayed by 0.8 (from 0.6 to 0.48)
+        assert abs(row_recent["importance_score"] - 0.48) < 1e-5
 
     await store.close()
     await mem_store.close()

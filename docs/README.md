@@ -40,7 +40,7 @@ organic memory, and future robotics compatibility.
 
 ## Roadmap & Future Architecture
 
-- **[cvs3_architecture_roadmap.md](./cvs3_architecture_roadmap.md)**: The foundational baseline and planned architecture for **CVS-3.5**, encompassing Dual-Process Kahneman Engines, Hermetic SQLite Mocking, and Continuous Prosody Mapping.
+- **[cvs4_architecture_roadmap.md](./cvs4_architecture_roadmap.md)**: The foundational baseline and planned architecture for **CVS v4.0**, encompassing the E2E Parametric Cognitive Adapter, Single-Pass Appraisal streams, and the offline Subconscious REM Sleep Consolidation Loop.
 
 ---
 
