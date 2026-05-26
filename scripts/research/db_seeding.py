@@ -1160,11 +1160,9 @@ async def seed_databases(num_distractors=30000):
 
             query = (
                 f"MERGE (s:Entity {{name: $s_name}}) "
-                f"MERGE (s:{s_cat}) "
-                f"MERGE (s:{s_type}) "
+                f"SET s:{s_cat}:{s_type} "
                 f"MERGE (t:Entity {{name: $t_name}}) "
-                f"MERGE (t:{t_cat}) "
-                f"MERGE (t:{t_type}) "
+                f"SET t:{t_cat}:{t_type} "
                 f"MERGE (s)-[r:{relation}]->(t) "
                 f"SET r += $props"
             )
