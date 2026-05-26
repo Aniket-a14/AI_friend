@@ -166,7 +166,7 @@ async def test_memory_decay_loop(mock_llm_service):
             )
         """)
 
-    await mem_store.add_memory("Test memory to decay", importance=0.8)
+    await mem_store.add_memory("Test memory to decay", importance=0.6)
 
     # Decay the memory
     await mem_store.apply_actr_decay(["Test memory to decay"])
@@ -176,7 +176,7 @@ async def test_memory_decay_loop(mock_llm_service):
         row = await conn.fetchrow(
             "SELECT importance_score FROM memories WHERE content = 'Test memory to decay'"
         )
-        assert abs(row["importance_score"] - 0.64) < 1e-5
+        assert abs(row["importance_score"] - 0.48) < 1e-5
 
     await store.close()
     await mem_store.close()

@@ -318,6 +318,171 @@ PLACEHOLDERS = {
         "feeling computers",
         "thinking algorithms",
     ],
+    # 150+ Entity Placeholders
+    "friend_name": [
+        "Amit",
+        "Sneha",
+        "Rahul",
+        "Pooja",
+        "Rohit",
+        "Neha",
+        "Vikram",
+        "Anjali",
+        "Sandeep",
+        "Riya",
+        "Abhishek",
+        "Tanvi",
+        "Arjun",
+        "Ishita",
+        "Raj",
+        "Simran",
+        "Manoj",
+        "Kavita",
+        "Kunal",
+        "Preeti",
+        "Deepak",
+        "Shreya",
+        "Sanjay",
+        "Aditi",
+        "Nitin",
+        "Payal",
+        "Alok",
+        "Divya",
+        "Vivek",
+        "Megha",
+        "Gaurav",
+        "Swati",
+        "Akash",
+        "Ritu",
+        "Sid",
+        "Kriti",
+        "Rohan",
+        "Shruti",
+        "Dev",
+        "Tina",
+    ],
+    "mentor_name": [
+        "Dr. Sen",
+        "Prof. Rao",
+        "Dr. Mukherjee",
+        "Prof. Das",
+        "Dr. Banerjee",
+        "Prof. Nair",
+        "Dr. Hegde",
+        "Prof. Chatterjee",
+        "Dr. Reddy",
+        "Prof. Srinivasan",
+        "Dr. Mehta",
+        "Prof. Joshi",
+        "Dr. Bhat",
+        "Prof. Kulkarni",
+        "Dr. Deshmukh",
+    ],
+    "colleague_name": [
+        "Sameer",
+        "Karthik",
+        "Divya",
+        "Vinay",
+        "Harish",
+        "Priya_C",
+        "Anand",
+        "Swapna",
+        "Nupur",
+        "Abhay",
+        "Jyothi",
+        "Varun",
+        "Shalini",
+        "Rakesh",
+        "Deepa",
+        "Suresh",
+        "Rekha",
+        "Vijay",
+        "Lakshmi",
+        "Rajesh",
+    ],
+    "relative_name": [
+        "Dida",
+        "Dadu",
+        "Kaku",
+        "Kaki",
+        "Mama",
+        "Mami",
+        "Pishi",
+        "Pishe",
+        "Borodi",
+        "Chhotodi",
+        "Chhotoda",
+        "Mejoda",
+        "Mejodi",
+        "Mashimoni",
+        "Meshomoshai",
+    ],
+    "neighborhood": [
+        "Jadavpur",
+        "Salt Lake",
+        "Ballygunge",
+        "Gariahat",
+        "Indiranagar",
+        "Koramangala",
+        "Whitefield",
+        "HSR Layout",
+        "Malleshwaram",
+        "Jayanagar",
+        "Sadashivanagar",
+        "Marathahalli",
+        "Bellandur",
+        "Rajajinagar",
+        "Banashankari",
+        "Hebbal",
+        "Yelahanka",
+        "Electronic City",
+        "Basavanagudi",
+        "Ulsoor",
+        "BTM Layout",
+        "Domlur",
+        "Cooke Town",
+        "Fraser Town",
+        "Richards Town",
+    ],
+    "city_name": [
+        "Kolkata",
+        "Bangalore",
+        "Delhi",
+        "Mumbai",
+        "Chennai",
+        "Hyderabad",
+        "Pune",
+        "Noida",
+        "Gurgaon",
+        "Ahmedabad",
+        "Jaipur",
+        "Kochi",
+        "Mysore",
+        "Ooty",
+        "Darjeeling",
+    ],
+    "scientific_topic": [
+        "transformer scaling",
+        "vector database indexing",
+        "affective cognitive architecture",
+        "Pleasure Arousal Dominance",
+        "ACT-R memory activation",
+        "semantic spreading activation",
+        "homeostatic endocrine coupling",
+        "Jaccard novelty appraisal",
+        "linear algebraic prosody",
+        "neural network convergence",
+        "reinforcement learning",
+        "speech synthesis",
+        "text to speech",
+        "automatic speech recognition",
+        "cognitive appraisal systems",
+        "theory of mind modeling",
+        "natural language processing",
+        "vector search acceleration",
+        "database index pruning",
+        "hierarchical memory consolidation",
+    ],
 }
 
 
@@ -397,22 +562,22 @@ def sample_lifespan_age(index_seed, lambda_val=0.12):
 
 # High-diversity scenarios utilizing dynamic placeholders
 DAILY_SCENARIOS = [
-    "I {walked} through the {streets} near Victoria Memorial in {Kolkata}",
-    "Ma {prepared} some {delicious} {home_cooked_meals}",
-    "I {discussed} our high school mathematics {project} with my classmate",
+    "I {walked} through the {streets} near Victoria Memorial with {friend_name} in {city_name}",
+    "Ma {prepared} some {delicious} {home_cooked_meals} for our family",
+    "I {discussed} our high school mathematics {project} with {friend_name}",
     "Priya and I {spent_the_afternoon} {studying} in the quiet {library_alcove}",
-    "I {enjoyed} a warm cup of Bengali {tea} in my {room}",
-    "I {tried_preparing} traditional {sweet_rasgullas} in our {kitchen}",
+    "I {enjoyed} a warm cup of Bengali {tea} in my {room} with {friend_name}",
+    "I {tried_preparing} traditional {sweet_rasgullas} in our {kitchen} with {relative_name}",
     "I spent the {evening} {coding_and_debugging} a {concurrent_thread_pool} in my study {room}",
-    "Priya and I {walked} around Cubbon Park in {Bangalore}",
-    "I {reviewed} our {database_query_optimization} with the {research_lab_team}",
-    "I {listened_to} Ma's {phone_stories} about our {childhood} back in {Kolkata}",
-    "I {practiced} {street_cricket} with my {childhood_friends} on the neighborhood {road}",
-    "I {read} an {advanced_science_fiction_novel} in the {quiet_corner} of the library",
-    "I {worked_on} an {affective_cognitive_architecture} module on my {computer}",
-    "I {celebrated} my {college_semester_examination_results} with my {family}",
-    "I {visited} a quiet {local_temple} in {Kolkata} during the {evening}",
-    "Priya and I {debated} {neural_network_convergence_limits} at the {university_cafe}",
+    "Priya and I {walked} around Cubbon Park in {city_name}",
+    "I {reviewed} our {database_query_optimization} with {mentor_name} and {colleague_name} in {city_name}",
+    "I {listened_to} Ma's {phone_stories} about our {childhood} in {neighborhood}",
+    "I {practiced} {street_cricket} with {friend_name} on the neighborhood {road} in {neighborhood}",
+    "I {read} an {advanced_science_fiction_novel} in the {quiet_corner} of the library in {city_name}",
+    "I {worked_on} an {affective_cognitive_architecture} module with {colleague_name} on my {computer}",
+    "I {celebrated} my {college_semester_examination_results} with {relative_name} and my {family}",
+    "I {visited} a quiet {local_temple} in {neighborhood} during the {evening}",
+    "Priya and I {debated} {neural_network_convergence_limits} with {colleague_name} at the {university_cafe}",
 ]
 
 WEATHER_CONTEXTS = [
@@ -461,11 +626,11 @@ OUTCOMES_OR_REFLECTIONS = [
 
 # Lifespan Developmental Milestone Bases (Epochs)
 CHILDHOOD_BASES = [
-    "I took my very first toddling steps across our {warm} living {room} in {Kolkata}",
+    "I took my very first toddling steps across our {warm} living {room} in {city_name}",
     "I tasted my very first traditional Bengali sweet {sweet_rasgullas}",
-    "I played with brightly colored wooden blocks on the sunlit balcony",
-    "I drew circular shapes and scribbles with colorful crayons on paper",
-    "Baba took me for a gentle {evening} walk near our local neighborhood park",
+    "I played with brightly colored wooden blocks with {friend_name} on the sunlit balcony",
+    "I drew circular shapes and scribbles with colorful crayons in our home in {neighborhood}",
+    "Baba took me for a gentle {evening} walk with {friend_name} near the local neighborhood park",
 ]
 
 CHILDHOOD_MODIFIERS = [
@@ -477,11 +642,11 @@ CHILDHOOD_MODIFIERS = [
 ]
 
 SCHOOL_BASES = [
-    "I enrolled in my very first primary school in {Kolkata}",
-    "I won a school-wide mathematics puzzle and logic competition",
-    "I {practiced} {street_cricket} with my childhood neighborhood friends",
-    "Our family took a wonderful summer holiday trip near Victoria Memorial",
-    "I sat quietly in the school library reading my first science fiction book",
+    "I enrolled in my very first primary school in {city_name}",
+    "I won a school-wide mathematics puzzle and logic competition with help from {mentor_name}",
+    "I {practiced} {street_cricket} with {friend_name} in {neighborhood}",
+    "Our family took a wonderful summer holiday trip with {relative_name} near Victoria Memorial",
+    "I sat quietly in the school library reading my first science fiction book with {friend_name}",
 ]
 
 SCHOOL_MODIFIERS = [
@@ -493,11 +658,11 @@ SCHOOL_MODIFIERS = [
 ]
 
 TEENAGE_BASES = [
-    "I wrote my very first lines of Python code in my {room}",
-    "I transitioned to senior high school in {Kolkata} to study science",
+    "I wrote my very first lines of Python code on my {computer} in {city_name}",
+    "I transitioned to senior high school in {city_name} to study science under {mentor_name}",
     "I built a basic rule-based conversational chat assistant model",
-    "We had late-night group study sessions in my {room}",
-    "I graduated high school with top honors and academic distinction",
+    "We had late-night group study sessions with {friend_name} in my {room}",
+    "I graduated high school with top honors and academic distinction in {city_name}",
 ]
 
 TEENAGE_MODIFIERS = [
@@ -509,11 +674,11 @@ TEENAGE_MODIFIERS = [
 ]
 
 ADULTHOOD_BASES = [
-    "I moved from my childhood home in {Kolkata} to the vibrant city of {Bangalore}",
-    "I joined the university's advanced research lab for affective computing",
-    "I met Priya at the quiet {university_cafe} on campus",
-    "I celebrated my first co-authored research paper publication",
-    "I commenced my junior research internship in {Bangalore}",
+    "I moved from my childhood home in {city_name} to the vibrant city of {city_name}",
+    "I joined the university's advanced research lab for affective computing under {mentor_name}",
+    "I met Priya at the quiet {university_cafe} near {neighborhood}",
+    "I celebrated my first co-authored research paper on {scientific_topic} publication",
+    "I commenced my junior research internship under {mentor_name} in {city_name}",
 ]
 
 ADULTHOOD_MODIFIERS = [
@@ -525,57 +690,52 @@ ADULTHOOD_MODIFIERS = [
 ]
 
 
-def generate_corpus(num_distractors=100000, num_milestones=10000):
+def generate_corpus(num_distractors=15000, num_anecdotes=15000, num_milestones=10000):
     """
-    Procedurally compiles a highly diversified, biologically realistic 110,000-memory database:
-    - Distractors: 100,000 chitchats backdated over a non-uniform temporal curve modeling infantile amnesia.
-    - Milestones: 10,000 milestones leveraging Zipfian synonym lookup to ensure high vocabulary entropy.
+    Procedurally compiles a highly diversified, biologically realistic 40,000-memory database:
+    - Distractors: 15,000 pure chitchats (weather, transit, casual layout) -> room = 'distractor', importance = 0.4
+    - Anecdotes: 15,000 meaningful everyday experiences (cricket, tea, study corner) -> room = 'anecdote', importance = 0.6
+    - Milestones: 10,000 milestones leveraging Zipfian synonym lookup -> room = flat categories, importance = 0.9
     """
     print("📦 Generating 19-year developmental seeding corpus for Aniket...")
     print(f"   - Distractors: {num_distractors}")
+    print(f"   - Anecdotes: {num_anecdotes}")
     print(f"   - Milestones: {num_milestones}")
 
     now = datetime.now(timezone.utc)
-
     corpus = []
 
-    # 1. Compile 100,000 backdated distractors using Lifespan Rejection Sampling & Semantic Degradation
-    print("⏳ Backdating and compressing 100,000 chitchats over 19 years...")
-
+    # 1. Compile 15,000 backdated distractors (Weather, transit, casual layout)
+    print(
+        f"⏳ Backdating and compressing {num_distractors} pure distractors over 19 years..."
+    )
     for i in range(num_distractors):
-        # Sample biologically realistic age from our non-uniform PDF (0 memories before age 3.0)
         age = sample_lifespan_age(i, lambda_val=0.14)
         elapsed = age * 365 * 24 * 3600
-
-        # Calculate timestamp backdated from now
         created_time = now - timedelta(seconds=elapsed)
 
-        scenario = DAILY_SCENARIOS[i % len(DAILY_SCENARIOS)]
-        weather = WEATHER_CONTEXTS[i % len(WEATHER_CONTEXTS)]
-        sensory = SENSORY_DETAILS[i % len(SENSORY_DETAILS)]
-        outcome = OUTCOMES_OR_REFLECTIONS[i % len(OUTCOMES_OR_REFLECTIONS)]
+        rng = random.Random(i)
+        weather = rng.choice(WEATHER_CONTEXTS)
+        sensory = rng.choice(SENSORY_DETAILS)
 
-        # --- Three-Tier Semantic Degradation Loop based on memory age ---
+        # Pure trivial chitchats
+        casual_templates = [
+            "I checked the local weather forecasts for {city_name} today",
+            "The {ceiling_fan} was spinning slowly in my study {room}",
+            "I noticed the daily transit times on the streets of {city_name}",
+            "I rearranged the study files and notebooks on my desk in the {room}",
+            "The distant hum of street traffic was slightly louder than usual in {neighborhood}",
+        ]
+        template = rng.choice(casual_templates)
+
         if age < 7.0:
-            # Childhood Stage (Age 3.0 to 7.0): Highly compressed, fragmented traces
             base_trace = (
-                "Fuzzy Childhood Memory: {walked} with {family} near {local_temple}."
+                "Fuzzy Childhood Detail: I heard the {hum} of the {ceiling_fan}."
             )
             content = resolve_placeholders(base_trace, i)
-        elif age < 14.0:
-            # School-era Stage (Age 7.0 to 14.0): Core scenario and outcome, losing low-priority sensory/weather details
-            base_trace = f"School-era Memory: {scenario}, {outcome}."
-            content = resolve_placeholders(base_trace, i)
         else:
-            # Young Adulthood/Adolescence (Vivid): Full combinatorial high-fidelity sentence structure
-            if i % 3 == 0:
-                template = f"{scenario} {weather}, where {sensory}, {outcome}."
-            elif i % 3 == 1:
-                topic = TOPICS_OF_CONVERSATION[i % len(TOPICS_OF_CONVERSATION)]
-                template = f"{scenario} talking about {topic} {weather}, {outcome}."
-            else:
-                template = f"{scenario} {weather}. As {sensory}, it was {outcome}."
-            content = resolve_placeholders(template, i)
+            full_template = f"{template} {weather}, where {sensory}."
+            content = resolve_placeholders(full_template, i)
 
         content = f"{content} [Turn: {i}]"
 
@@ -595,48 +755,106 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
             }
         )
 
-    # 2. Compile 10,000 structured milestone memories distributed across 4 developmental stages
-    print("🧠 Organizing 10,000 system milestones into 4 developmental epochs...")
-
-    for i in range(num_milestones):
-        # Sample age for milestones matching developmental stages
-        age = sample_lifespan_age(i + num_distractors, lambda_val=0.10)
+    # 2. Compile 15,000 backdated anecdotes (Meaningful daily events)
+    print(
+        f"⏳ Backdating and compressing {num_anecdotes} everyday anecdotes over 19 years..."
+    )
+    for i in range(num_anecdotes):
+        age = sample_lifespan_age(i + num_distractors, lambda_val=0.14)
         elapsed = age * 365 * 24 * 3600
         created_time = now - timedelta(seconds=elapsed)
 
+        rng = random.Random(i + num_distractors)
+        scenario = rng.choice(DAILY_SCENARIOS)
+        weather = rng.choice(WEATHER_CONTEXTS)
+        sensory = rng.choice(SENSORY_DETAILS)
+        outcome = rng.choice(OUTCOMES_OR_REFLECTIONS)
+
+        if age < 7.0:
+            base_trace = "Fuzzy Childhood Memory: {walked} near {local_temple}."
+            content = resolve_placeholders(base_trace, i)
+        else:
+            full_template = f"{scenario} {weather}. As {sensory}, it was {outcome}."
+            content = resolve_placeholders(full_template, i)
+
+        content = f"{content} [Anecdote ID: {i}]"
+
+        corpus.append(
+            {
+                "content": content,
+                "raw_content": content,
+                "wing": "personal",
+                "room": "anecdote",
+                "importance": 0.6,
+                "emotion": 0.3,
+                "valence": 0.2,
+                "certainty": 0.9,
+                "source": "system_seeder",
+                "created_at": created_time.isoformat(),
+                "epoch": "daily_anecdote",
+            }
+        )
+
+    # 3. Compile 10,000 structured milestone memories distributed across 4 developmental stages
+    print(
+        f"🧠 Organizing {num_milestones} system milestones into developmental categories..."
+    )
+    for i in range(num_milestones):
+        age = sample_lifespan_age(i + num_distractors + num_anecdotes, lambda_val=0.10)
+        elapsed = age * 365 * 24 * 3600
+        created_time = now - timedelta(seconds=elapsed)
+
+        rng = random.Random(i + num_distractors + num_anecdotes)
+
         # Determine Eriksonian developmental epoch based on chronological time
         if age < 5.0:
-            base = CHILDHOOD_BASES[i % len(CHILDHOOD_BASES)]
-            modifier = CHILDHOOD_MODIFIERS[i % len(CHILDHOOD_MODIFIERS)]
+            base = rng.choice(CHILDHOOD_BASES)
+            modifier = rng.choice(CHILDHOOD_MODIFIERS)
             template = f"Childhood Milestone: {base}, {modifier}."
             stage, crisis, virtue = "Trust vs Mistrust", "Trust vs Mistrust", "Hope"
+
+            # Childhood: somatic, social, spiritual, crisis
+            milestone_categories = ["somatic", "social", "spiritual", "crisis"]
+            category = milestone_categories[i % len(milestone_categories)]
         elif age < 12.0:
-            base = SCHOOL_BASES[i % len(SCHOOL_BASES)]
-            modifier = SCHOOL_MODIFIERS[i % len(SCHOOL_MODIFIERS)]
+            base = rng.choice(SCHOOL_BASES)
+            modifier = rng.choice(SCHOOL_MODIFIERS)
             template = f"School Milestone: {base}, {modifier}."
             stage, crisis, virtue = (
                 "Industry vs Inferiority",
                 "Industry vs Inferiority",
                 "Competence",
             )
+
+            # School: vocational, social, somatic, milestone
+            milestone_categories = ["vocational", "social", "somatic", "milestone"]
+            category = milestone_categories[i % len(milestone_categories)]
         elif age < 19.0:
-            base = TEENAGE_BASES[i % len(TEENAGE_BASES)]
-            modifier = TEENAGE_MODIFIERS[i % len(TEENAGE_MODIFIERS)]
+            base = rng.choice(TEENAGE_BASES)
+            modifier = rng.choice(TEENAGE_MODIFIERS)
             template = f"Teenage Milestone: {base}, {modifier}."
             stage, crisis, virtue = (
                 "Identity vs Role Confusion",
                 "Identity vs Role Confusion",
                 "Fidelity",
             )
+
+            # Teenage: vocational, social, crisis, milestone
+            milestone_categories = ["vocational", "social", "crisis", "milestone"]
+            category = milestone_categories[i % len(milestone_categories)]
         else:
-            base = ADULTHOOD_BASES[i % len(ADULTHOOD_BASES)]
-            modifier = ADULTHOOD_MODIFIERS[i % len(ADULTHOOD_MODIFIERS)]
+            base = rng.choice(ADULTHOOD_BASES)
+            modifier = rng.choice(ADULTHOOD_MODIFIERS)
             template = f"Adulthood Milestone: {base}, {modifier}."
             stage, crisis, virtue = (
                 "Intimacy vs Isolation",
                 "Intimacy vs Isolation",
                 "Love",
             )
+
+            # Adulthood: vocational, social, somatic, milestone
+            milestone_categories = ["vocational", "social", "somatic", "milestone"]
+            category = milestone_categories[i % len(milestone_categories)]
 
         content = resolve_placeholders(template, i)
         content = f"{content} [Milestone ID: {i}]"
@@ -646,7 +864,7 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
                 "content": content,
                 "raw_content": content,
                 "wing": "personal",
-                "room": "milestone",
+                "room": category,
                 "importance": 0.9,
                 "emotion": 0.8,
                 "valence": 0.8,
@@ -660,7 +878,9 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
         )
 
     # Save to disk
-    out_path = os.path.join(os.path.dirname(__file__), "flooded_seeding_corpus.json")
+    out_path = os.path.join(
+        out_path := os.path.dirname(__file__), "flooded_seeding_corpus.json"
+    )
     print(f"💾 Saving compiled corpus to disk: {out_path}...")
     with open(out_path, "w") as f:
         json.dump(corpus, f, indent=2)
@@ -668,4 +888,4 @@ def generate_corpus(num_distractors=100000, num_milestones=10000):
 
 
 if __name__ == "__main__":
-    generate_corpus(100000, 10000)
+    generate_corpus(15000, 15000, 10000)

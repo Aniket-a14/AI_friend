@@ -1009,12 +1009,22 @@ class MemoryStore:
                         else self.decay_rate
                     )
 
+                    # Shield recent memories created in the last 24 hours from pruning (deletion)
+                    is_shielded = hours_since < 24.0
+
+                    # Milestones (importance >= 0.7) are NEVER pruned or decayed
+                    if importance_score >= 0.7:
+                        continue
+
                     # Calculate base activation: A_i = ln(recall_count) - d * ln(hours_since + 1.0)
                     activation = math.log(n_recalls) - decay_rate * math.log(
                         hours_since + 1.0
                     )
 
-                    if activation < self.pruning_threshold:
+                    # Dual-threshold active pruning:
+                    # Distractors (< 0.5) pruned below -3.5, Anecdotes (0.5 to 0.7) pruned below -4.5
+                    threshold = -3.5 if importance_score < 0.5 else -4.5
+                    if activation < threshold and not is_shielded:
                         to_delete.append(mem_id)
                     else:
                         # Decay importance score slightly

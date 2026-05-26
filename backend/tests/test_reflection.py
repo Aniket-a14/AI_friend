@@ -24,7 +24,12 @@ async def test_fact_consolidation(reflection_service, mock_llm_service, mock_gra
 
     # Updated assertion to handle dynamic properties (extracted_at, confidence)
     mock_graph_db.create_triplet.assert_called_with(
-        "User", "LOVES", "Coding", properties=ANY
+        "User",
+        "LOVES",
+        "Coding",
+        properties=ANY,
+        subject_label="Entity",
+        target_label="Entity",
     )
 
 

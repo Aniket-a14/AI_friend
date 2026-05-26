@@ -214,23 +214,34 @@ class GraphDB:
         relation: str,
         target_name: str,
         properties: Dict[str, Any] = None,
+        subject_label: str = "Entity",
+        target_label: str = "Entity",
     ):
         """
         Consolidates a relationship, incrementing weight on match or setting default properties.
         """
         await self._invalidate_cache(subject_name)
         rel_type = self._safe_relation(relation)
+        s_lbl = self._safe_label(subject_label)
+        t_lbl = self._safe_label(target_label)
 
         props = properties or {}
         props.setdefault("certainty", 1.0)
 
+        category = props.get("category", "social").lower()
+        cat_lbl = self._safe_label(category.capitalize())
+
         # Cypher query with ON CREATE and ON MATCH logic for weight consolidation
         query = (
             f"MERGE (s:Entity {{name: $s_name}}) "
+            f"MERGE (s:{s_lbl}) "
+            f"MERGE (s:{cat_lbl}) "
             f"MERGE (t:Entity {{name: $t_name}}) "
+            f"MERGE (t:{t_lbl}) "
+            f"MERGE (t:{cat_lbl}) "
             f"MERGE (s)-[r:{rel_type}]->(t) "
             "ON CREATE SET r += $props, r.weight = 1 "
-            "ON MATCH SET r.weight = coalesce(r.weight, 1) + 1, r.certainty = $props.certainty "
+            "ON MATCH SET r.weight = coalesce(r.weight, 1) + 1, r.certainty = $props.certainty, r += $props "
             "RETURN s, r, t"
         )
         await self.execute_query(
@@ -248,6 +259,8 @@ class GraphDB:
         relation: str,
         target: str,
         properties: Dict[str, Any] = None,
+        subject_label: str = "Entity",
+        target_label: str = "Entity",
     ):
         """High-level transactional helper to write a semantic triplet directly with weight consolidation."""
         await self.consolidate_relationship(
@@ -255,4 +268,6 @@ class GraphDB:
             relation=relation,
             target_name=target,
             properties=properties,
+            subject_label=subject_label,
+            target_label=target_label,
         )

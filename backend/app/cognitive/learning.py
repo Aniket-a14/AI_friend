@@ -102,8 +102,8 @@ class ReflectionService:
             1. People, Preferences, and Facts about the User.
             2. THEORY OF MIND: Observations about the User's mental/physical state (e.g., "User seems stressed", "User is tired from work").
 
-            REQUIREMENT: Provide a confidence score (0.0 - 1.0) and a brief reasoning for each fact.
-            Output JSON List ONLY: [{{"subject", "relation", "object", "type", "confidence", "reason"}}]
+            REQUIREMENT: Provide a confidence score (0.0 - 1.0), the appropriate category (one of: social, vocational, somatic, spiritual, crisis, milestone), and a brief reasoning for each fact.
+            Output JSON List ONLY: [{{"subject", "subject_type", "relation", "object", "object_type", "category", "confidence", "reason"}}]
             """
 
             try:
@@ -136,12 +136,35 @@ class ReflectionService:
                     subject = f.get("subject")
                     object_val = f.get("object")
                     relation = f.get("relation")
+                    subject_type = f.get("subject_type", "Entity")
+                    object_type = f.get("object_type", "Entity")
+                    category = f.get("category", "social").lower()
 
                     if not subject or not object_val or not relation:
                         continue
+
+                    # Neo4j must NOT have distractors
+                    if category == "distractor":
+                        logger.debug(
+                            "Fact REJECTED (Distractors are excluded from Neo4j)"
+                        )
+                        continue
+
+                    if category not in [
+                        "social",
+                        "vocational",
+                        "somatic",
+                        "spiritual",
+                        "crisis",
+                        "milestone",
+                    ]:
+                        category = "social"
+
                     try:
                         rel_type = GraphDB._safe_relation(relation)
-                        GraphDB._safe_label(f.get("type", "Entity"))
+                        GraphDB._safe_label(subject_type)
+                        GraphDB._safe_label(object_type)
+                        GraphDB._safe_label(category.capitalize())
                     except ValueError:
                         logger.warning(
                             "Skipping unsafe graph fact from reflection: %r", f
@@ -173,7 +196,10 @@ class ReflectionService:
                         properties={
                             "confidence": confidence,
                             "extracted_at": str(time.time()),
+                            "category": category,
                         },
+                        subject_label=subject_type,
+                        target_label=object_type,
                     )
             except Exception as e:
                 logger.error(f"Fact consolidation failure: {e}")

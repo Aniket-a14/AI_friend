@@ -51,7 +51,7 @@ class AppSettings(BaseSettings):
     AI_NAME: str = "AI Friend"
     OLLAMA_URL: str = "http://127.0.0.1:11434"
 
-    LLM_FAST_MODEL: str = "llama3.2:1b"
+    LLM_FAST_MODEL: str = "llama3.2:3b"
     LLM_CHAT_MODEL: Optional[str] = None
     LLM_REFLECTION_MODEL: Optional[str] = None
 

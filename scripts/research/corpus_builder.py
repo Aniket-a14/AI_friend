@@ -655,6 +655,10 @@ ENVIRONMENTS = [
     "a modern server room with cooling fans",
     "a peaceful lakeside cabin",
     "a high-altitude mountain research station",
+    "a bustling city square",
+    "a quiet rooftop terrace",
+    "a glass-walled laboratory",
+    "a high-speed train compartment",
 ]
 SENSORY_INPUTS = [
     "the scent of rain-dampened earth",
@@ -665,6 +669,10 @@ SENSORY_INPUTS = [
     "the low hum of distant city traffic",
     "the refreshing taste of peppermint tea",
     "the crisp clean scent of pine needles",
+    "the crisp rustle of autumn leaves",
+    "the distant chime of church bells",
+    "the faint smell of ozone",
+    "the soothing warmth of sunlight on skin",
 ]
 WEATHER = [
     "overcast skies",
@@ -675,6 +683,10 @@ WEATHER = [
     "bright spring sunshine",
     "dense morning fog",
     "a warm tropical evening",
+    "a raging thunderstorm",
+    "a quiet overcast afternoon",
+    "a biting winter wind",
+    "a humid tropical night",
 ]
 TIME_OF_DAY = [
     "the early dawn light",
@@ -685,6 +697,10 @@ TIME_OF_DAY = [
     "late-evening shadows",
     "mid-morning clarity",
     "a sleepless pre-dawn",
+    "the hazy mid-morning hours",
+    "the late-night quietness",
+    "the post-lunch slump",
+    "the brisk pre-dawn chill",
 ]
 COGNITIVE_MODES = [
     "deep algorithmic deduction",
@@ -695,6 +711,10 @@ COGNITIVE_MODES = [
     "philosophical meta-reflection",
     "strategic pattern mapping",
     "spontaneous intuitive insights",
+    "intuitive pattern mapping",
+    "focused document synthesis",
+    "intense mathematical modeling",
+    "creative outline drafting",
 ]
 PHYSICAL_STATUS = [
     "peak physical vitality",
@@ -705,6 +725,10 @@ PHYSICAL_STATUS = [
     "minor muscular tension",
     "perfect cardiovascular balance",
     "recovering physical strength",
+    "mild physical exhaustion",
+    "restless mental alertness",
+    "deep physical relaxation",
+    "heightened sensory focus",
 ]
 SOCIAL_SETTINGS = [
     "complete solitary isolation",
@@ -715,6 +739,10 @@ SOCIAL_SETTINGS = [
     "a festive family gathering",
     "a professional networking reception",
     "a casual coffee with a colleague",
+    "a lively group discussion",
+    "a quiet one-on-one meeting",
+    "a busy networking event",
+    "a solitary park bench",
 ]
 PRIMARY_ACTIVITIES = [
     "writing deep technical documentation",
@@ -725,6 +753,10 @@ PRIMARY_ACTIVITIES = [
     "sketching hardware component layouts",
     "solving discrete math equations",
     "validating local database indices",
+    "writing system architecture docs",
+    "sketching UI wireframes",
+    "optimizing database indices",
+    "reviewing mathematical proofs",
 ]
 FINANCIAL_CONTEXTS = [
     "absolute budget security",
@@ -735,6 +767,10 @@ FINANCIAL_CONTEXTS = [
     "allocating research capital",
     "securing project grants",
     "planning family inheritance legacy",
+    "strict expense budgeting",
+    "long-term investment planning",
+    "checking minor receipts",
+    "optimizing server costs",
 ]
 RELATIONSHIP_TUNINGS = [
     "profound interpersonal harmony",
@@ -745,6 +781,10 @@ RELATIONSHIP_TUNINGS = [
     "meaningful peer recognition",
     "building new friendship networks",
     "nurturing close personal ties",
+    "deep empathetic alignment",
+    "friendly intellectual debate",
+    "shared quiet understanding",
+    "collaborative problem solving",
 ]
 DIETARY_METABOLISM = [
     "post-prandial satisfaction",
@@ -755,6 +795,10 @@ DIETARY_METABOLISM = [
     "a clean fasted state",
     "the warmth of an herbal beverage",
     "steady metabolic energy",
+    "a high-protein meal",
+    "a light fruit snack",
+    "a steaming bowl of noodles",
+    "a refreshing cold drink",
 ]
 ERGONOMIC_POSTURES = [
     "upright sitting in an ergonomic chair",
@@ -765,6 +809,10 @@ ERGONOMIC_POSTURES = [
     "perfect screen-level gaze",
     "supported spinal extension",
     "comfortable forearm placement",
+    "sitting at a standing desk",
+    "reclined in a mesh chair",
+    "pacing slowly in a circle",
+    "leaning against a whiteboard",
 ]
 VOCATIONAL_DRIVES = [
     "intense research curiosity",
@@ -775,6 +823,10 @@ VOCATIONAL_DRIVES = [
     "optimizing modular system efficiency",
     "pioneering novel cognitive pipelines",
     "mentoring future scientists",
+    "architecting local sovereignty",
+    "optimizing latency boundaries",
+    "expanding cognitive capacities",
+    "perfecting user interfaces",
 ]
 CREATIVE_OUTLETS = [
     "writing philosophical essays",
@@ -785,6 +837,10 @@ CREATIVE_OUTLETS = [
     "programming beautiful user interfaces",
     "photographing natural light patterns",
     "designing interactive systems",
+    "writing technical blogs",
+    "sketching architectural diagrams",
+    "recording voice modulations",
+    "journaling system designs",
 ]
 SPIRITUAL_ATTUNEMENTS = [
     "deep meditative presence",
@@ -795,6 +851,10 @@ SPIRITUAL_ATTUNEMENTS = [
     "harmonious inner silence",
     "intellectual humility exploration",
     "contemplative analytical calm",
+    "alignment with truthfulness",
+    "respect for local sovereignty",
+    "intellectual humility",
+    "pursuit of mathematical beauty",
 ]
 STRESS_METRICS = [
     "absolute tranquil calm",
@@ -805,6 +865,10 @@ STRESS_METRICS = [
     "a structured challenge response",
     "relaxed mental pacing",
     "a mindful stress-release state",
+    "minor CPU latency pressure",
+    "tight release timeline stress",
+    "complex integration debugging anxiety",
+    "calm baseline focus",
 ]
 MOTIVATION_LEVELS = [
     "high dopamine-driven reward seeking",
@@ -815,6 +879,10 @@ MOTIVATION_LEVELS = [
     "focused problem-solving energy",
     "deep intrinsic satisfaction",
     "enthusiastic collaborative drive",
+    "intense creative flow",
+    "persistent analytical drive",
+    "steady routine execution",
+    "focused curiosity-driven urge",
 ]
 LEISURE_PURSUITS = [
     "playing complex strategy board games",
@@ -825,6 +893,10 @@ LEISURE_PURSUITS = [
     "cooking elaborate traditional dishes",
     "walking through local historic neighborhoods",
     "building custom desktop rigs",
+    "reading speculative fiction",
+    "taking photos of nature",
+    "playing chess online",
+    "brewing artisanal coffee",
 ]
 MOBILITY_MODES = [
     "walking slowly along a path",
@@ -835,6 +907,10 @@ MOBILITY_MODES = [
     "climbing a gentle hillside",
     "navigating a busy urban sidewalk",
     "resting in a quiet room",
+    "walking briskly",
+    "riding a bicycle",
+    "sitting stationary",
+    "pacing slowly",
 ]
 CLOTHING_COMFORTS = [
     "soft breathable cotton garments",
@@ -845,6 +921,10 @@ CLOTHING_COMFORTS = [
     "perfectly broken-in leather shoes",
     "light active athletic wear",
     "layered comfortable clothing",
+    "a loose cotton shirt",
+    "a comfortable warm hoodie",
+    "light athletic wear",
+    "a simple casual jacket",
 ]
 MEMORY_TRIGGERS = [
     "glancing at an old faded photograph",
@@ -855,6 +935,10 @@ MEMORY_TRIGGERS = [
     "revisiting a familiar landscape",
     "encountering a historical artifact",
     "recalling a vivid past dream",
+    "a sudden keyword match",
+    "a familiar sensory smell",
+    "an associated name mention",
+    "a specific time-of-day query",
 ]
 PACING_RHYTHMS = [
     "a meticulous slow pace",
@@ -865,6 +949,10 @@ PACING_RHYTHMS = [
     "a patient observational stance",
     "a highly flexible dynamic pace",
     "a structured routine schedule",
+    "a slow contemplative crawl",
+    "a rapid flow-state sprint",
+    "a steady rhythmic stride",
+    "an irregular experimental pace",
 ]
 ETHICAL_STANDS = [
     "reflecting on societal contribution",
@@ -875,6 +963,10 @@ ETHICAL_STANDS = [
     "pursuing honest academic rigor",
     "supporting collaborative community growth",
     "defending scientific integrity",
+    "protecting user sovereignty",
+    "ensuring absolute transparency",
+    "demanding rigorous validation",
+    "supporting local execution",
 ]
 HYDRATION_LEVELS = [
     "perfectly hydrated with pure water",
@@ -885,6 +977,10 @@ HYDRATION_LEVELS = [
     "drinking chilled mineral water",
     "sipping hot chamomile tea",
     "balanced fluid homeostasis",
+    "a full glass of cold water",
+    "a warm spiced chai",
+    "a fresh coconut water",
+    "a cup of green tea",
 ]
 TEMPERATURE_COMFORTS = [
     "a mild balanced indoor climate",
@@ -895,6 +991,10 @@ TEMPERATURE_COMFORTS = [
     "a crisp insulated winter shelter",
     "a shaded cool retreat",
     "a sun-warmed workspace spot",
+    "a cool air-conditioned draft",
+    "the warm afternoon sun",
+    "a cozy heated room",
+    "the brisk evening air",
 ]
 ACOUSTIC_SCAPES = [
     "complete absolute silence",
@@ -905,6 +1005,10 @@ ACOUSTIC_SCAPES = [
     "a quiet muffled office hum",
     "a gentle rhythmic ticking clock",
     "soft acoustic guitar frequencies",
+    "the steady hum of server fans",
+    "the quiet rustle of paper",
+    "soft ambient music",
+    "the distant chatter of a cafe",
 ]
 VISUAL_HORIZONS = [
     "a wide open green landscape",
@@ -915,6 +1019,10 @@ VISUAL_HORIZONS = [
     "an expansive window view of the sky",
     "a vibrant chalkboard covered in math",
     "a warm softlylit room interior",
+    "a monitor filled with code",
+    "a window looking over trees",
+    "a whiteboard full of equations",
+    "a quiet sunlit room",
 ]
 METABOLIC_FATIGUE = [
     "unlimited physical stamina",
@@ -925,6 +1033,10 @@ METABOLIC_FATIGUE = [
     "steady muscle recovery",
     "balanced neural resource allocation",
     "optimizing metabolic efficiency",
+    "light cognitive tiredness",
+    "fresh morning energy",
+    "post-lunch drowsiness",
+    "rested mental clarity",
 ]
 SELF_ESTEEMS = [
     "high academic confidence",
@@ -935,6 +1047,10 @@ SELF_ESTEEMS = [
     "objective self-assessment focus",
     "grounded personal resilience",
     "a mindset of continuous growth",
+    "confidence in architecture",
+    "academic pride",
+    "humble curiosity",
+    "analytical certainty",
 ]
 TIMELINE_EPOCHS = [
     "my early formative childhood",
@@ -945,6 +1061,10 @@ TIMELINE_EPOCHS = [
     "my late-stage reflective years",
     "my post-university expansion period",
     "my collaborative group project tenure",
+    "my late high school days",
+    "my early coding years",
+    "my university research era",
+    "my internship transition",
 ]
 PRIMARY_PARTNERS = [
     "a trusted senior research mentor",
@@ -955,6 +1075,10 @@ PRIMARY_PARTNERS = [
     "a collaborative database administrator",
     "a diverse group of global researchers",
     "a patient academic supervisor",
+    "a trusted research colleague",
+    "a senior lab advisor",
+    "an old school classmate",
+    "a quiet study partner",
 ]
 GOAL_HORIZONS = [
     "an immediate short-term daily goal",
@@ -965,6 +1089,10 @@ GOAL_HORIZONS = [
     "an annual system audit milestone",
     "a temporary exploratory target",
     "a solid operational benchmark target",
+    "sub-10ms latency scaling",
+    "robust multi-agent consensus",
+    "perfect affective alignment",
+    "sovereign local deployment",
 ]
 SOMATIC_COMFORTS = [
     "fully relaxed neck and shoulders",
@@ -975,6 +1103,10 @@ SOMATIC_COMFORTS = [
     "perfectly comfortable seated base",
     "light refreshed physical state",
     "relaxed eye muscles",
+    "perfect physical comfort",
+    "slight eye strain",
+    "cozy warm hands",
+    "cool fresh breathing",
 ]
 INFO_SOURCES = [
     "peer-reviewed academic journal papers",
@@ -985,6 +1117,10 @@ INFO_SOURCES = [
     "open-source software repositories",
     "direct physical sensor telemetry",
     "comprehensive textbook chapters",
+    "an academic journal paper",
+    "a system log trace",
+    "a git diff history",
+    "a design specification doc",
 ]
 CLUTTER_LEVELS = [
     "a perfectly pristine clean desk",
@@ -995,6 +1131,10 @@ CLUTTER_LEVELS = [
     "a structured reference material stack",
     "a spotless laboratory workbench",
     "an uncluttered digital directory",
+    "a clean organized desk",
+    "a chaotic whiteboard",
+    "multiple open tabs",
+    "a single active window",
 ]
 NATURAL_EXPOSURES = [
     "abundant desk plant foliage",
@@ -1005,6 +1145,10 @@ NATURAL_EXPOSURES = [
     "a nearby office botanical terrace",
     "natural ambient lighting",
     "views of natural water features",
+    "a potted plant on the desk",
+    "sunlight filtering through leaves",
+    "a view of the sky",
+    "the sound of rain outside",
 ]
 
 ERIKSONIAN_MESH_SCAFFOLD = {
@@ -1684,7 +1828,7 @@ def generate_conversational_corpus(iterations: int = 1000):
 
     recall_indices = {
         (101 + k * 18) * scale_factor: k
-        for k in range(min(50, (iterations - 101) // 18 + 1))
+        for k in range(min(100, (iterations - 101) // 18 + 1))
     }
 
     unique_idx = 0
@@ -1693,7 +1837,7 @@ def generate_conversational_corpus(iterations: int = 1000):
             fact_idx = seeded_indices[idx]
             corpus.append(seeded_facts[fact_idx])
         elif idx in recall_indices:
-            req_idx = recall_indices[idx]
+            req_idx = recall_indices[idx] % len(RECALL_QUESTIONS)
             corpus.append(RECALL_QUESTIONS[req_idx]["question"])
         else:
             corpus.append(unique_pool[unique_idx])

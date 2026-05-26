@@ -485,11 +485,15 @@ class ConversationHistoryStore:
                     self.current_session_id,
                 )
                 # Check rowcount attribute if available (backend-agnostic)
-                rowcount = getattr(result, 'rowcount', None)
+                rowcount = getattr(result, "rowcount", None)
                 if rowcount is None:
                     # Fallback: parse string result for PostgreSQL "UPDATE n" format
                     try:
-                        rowcount = int(result.split()[-1]) if result and isinstance(result, str) else 0
+                        rowcount = (
+                            int(result.split()[-1])
+                            if result and isinstance(result, str)
+                            else 0
+                        )
                     except (ValueError, IndexError, AttributeError):
                         rowcount = 0
 

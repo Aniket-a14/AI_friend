@@ -82,8 +82,11 @@ async def run_accelerated_benchmark(iterations: int):
     prompts = generate_conversational_corpus(iterations)
 
     if iterations >= 1000:
-        scale_factor = iterations // 1000
-        recall_indices = {(101 + k * 18) * scale_factor: k for k in range(50)}
+        scale_factor = max(1, iterations // 1000)
+        step = max(9, (iterations - 120) // 100)
+        recall_indices = {
+            (101 + k * step): k for k in range(min(100, (iterations - 101) // step))
+        }
         seeded_indices = {
             20 * scale_factor,
             40 * scale_factor,
@@ -319,8 +322,11 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
     prompts = generate_conversational_corpus(iterations)
 
     if iterations >= 1000:
-        scale_factor = iterations // 1000
-        recall_indices = {(101 + k * 18) * scale_factor: k for k in range(50)}
+        scale_factor = max(1, iterations // 1000)
+        step = max(9, (iterations - 120) // 100)
+        recall_indices = {
+            (101 + k * step): k for k in range(min(100, (iterations - 101) // step))
+        }
         seeded_indices = {
             20 * scale_factor,
             40 * scale_factor,
@@ -596,9 +602,18 @@ async def run_physical_benchmark(
                     """
                     DELETE FROM memories
                     WHERE (
-                        ln(greatest(1, recall_count))
-                        - 0.5 * ln(greatest(0.001, extract(epoch from (clock_timestamp() - coalesce(last_recalled_at, clock_timestamp()))) / 3600.0) + 1)
-                    ) < -3.5 AND wing = 'personal' AND room = 'distractor';
+                        (importance_score < 0.5 AND (
+                            ln(greatest(1, recall_count))
+                            - 0.5 * ln(greatest(0.001, extract(epoch from (clock_timestamp() - coalesce(last_recalled_at, clock_timestamp()))) / 3600.0) + 1)
+                        ) < -3.5)
+                        OR
+                        (importance_score >= 0.5 AND importance_score < 0.7 AND (
+                            ln(greatest(1, recall_count))
+                            - 0.5 * ln(greatest(0.001, extract(epoch from (clock_timestamp() - coalesce(last_recalled_at, clock_timestamp()))) / 3600.0) + 1)
+                        ) < -4.5)
+                    )
+                    AND wing = 'personal'
+                    AND created_at < clock_timestamp() - interval '24 hours';
                     """
                 )
                 # Count how many rows were pruned
@@ -676,8 +691,10 @@ async def run_physical_benchmark(
     )
 
     if iterations >= 1000:
-        scale_factor = iterations // 1000
-        recall_indices = {(101 + k * 18) * scale_factor: k for k in range(50)}
+        step = max(9, (iterations - 120) // 100)
+        recall_indices = {
+            (101 + k * step): k for k in range(min(100, (iterations - 101) // step))
+        }
     else:
         num_recalls = min(50, max(5, iterations // 10))
         step = max(1, iterations // num_recalls)
@@ -756,13 +773,13 @@ async def run_physical_benchmark(
             # Physical memory check using indirect questions
             if pulse_num in recall_indices:
                 memory_test_count += 1
-                q_idx = recall_indices[pulse_num]
+                q_idx = recall_indices[pulse_num] % len(RECALL_QUESTIONS)
                 expected_entities = RECALL_QUESTIONS[q_idx]["entities"]
                 success = check_entities(full_resp, expected_entities)
                 if success:
                     recall_successes += 1
                 print(
-                    f"    🧠 [Memory Validation] Recall Question {memory_test_count}/50: Success={success} | Expected={expected_entities}"
+                    f"    🧠 [Memory Validation] Recall Question {memory_test_count}/{len(recall_indices)}: Success={success} | Expected={expected_entities}"
                 )
 
             # Trigger Active SQL Pruning transaction periodically during physical run
@@ -960,8 +977,8 @@ def save_results(results_data):
 
 if __name__ == "__main__":
     mode = "physical"
-    iters = 1000
-    distractors = 200
+    iters = 2000
+    distractors = 30000
     skip_seed = False
 
     for idx, arg in enumerate(sys.argv):
