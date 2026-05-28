@@ -1,4 +1,4 @@
-# 🎙️ AI Friend: Cognitive Voice System (v6.0.0 / CVS-3.5 Premium Edition)
+# 🎙️ AI Friend: Cognitive Voice System (v6.5.0 / CVS-3.5 Premium Edition)
 
 **A high-fidelity, state-driven cognitive identity emulator built on a hardened Sovereign Mesh for ultra-low latency conversational realism.**
 
