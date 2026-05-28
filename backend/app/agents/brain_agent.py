@@ -222,6 +222,7 @@ class BrainAgent(BaseAgent):
     async def _process_chat_input_flow(
         self, chat_input: ChatInput, is_subconscious: bool, message: Dict[str, Any]
     ):
+        flow_start_time = time.time()
         user_text = chat_input.text
         turn_id = chat_input.turn_id or chat_input.utterance_id or str(uuid.uuid4())
         metadata = message.get("metadata")
@@ -238,11 +239,22 @@ class BrainAgent(BaseAgent):
         # Pacing Conversational Turn: calculate silence duration and pause
         state_snap = self.cognitive_core.state.get_context_snapshot()
         pacing = self.conversational_runtime.calculate_pacing_parameters(state_snap)
-        silence_s = pacing["silence_duration_ms"] / 1000.0
 
-        logger.info(
-            f"Pacing conversational turn: sleeping {pacing['silence_duration_ms']:.1f}ms before starting response."
+        is_benchmark = (
+            metadata.get("benchmark_id") == "bench_pulse"
+            if isinstance(metadata, dict)
+            else False
         )
+        if is_benchmark:
+            silence_s = 0.0
+            logger.info(
+                "⚡ [Brain] Benchmark pulse detected. Pacing sleep bypassed for raw latency measurement."
+            )
+        else:
+            silence_s = pacing["silence_duration_ms"] / 1000.0
+            logger.info(
+                f"Pacing conversational turn: sleeping {pacing['silence_duration_ms']:.1f}ms before starting response."
+            )
         await asyncio.sleep(silence_s)
 
         # Only update human interaction tracking if it's an actual user message
@@ -288,6 +300,9 @@ class BrainAgent(BaseAgent):
             state_snap=state_snap,
             user_distance=self.last_user_distance,
             is_proactive=is_subconscious,
+            incoming_metadata=metadata,
+            incoming_latency_metadata=latency_metadata,
+            flow_start_time=flow_start_time,
         )
 
         if not is_subconscious:

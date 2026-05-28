@@ -17,6 +17,7 @@ def temp_store():
     # SQLitePool with :memory: provides an isolated, full-schema SQLite database for each test.
     pool = SQLitePool(":memory:")
     store = MemoryStore(pool)
+    store.qdrant_store.client = None
     return store
 
 
@@ -87,7 +88,10 @@ def test_cue_and_spreading_activation_boosts(temp_store):
     with patch.object(temp_store, "get_embedding", return_value=[0.1] * 768):
         baseline_results = asyncio.run(
             temp_store.search_memories(
-                "unrelated query", threshold=-5.0, limit=5, refresh_on_recall=False
+                "completely different query",
+                threshold=-5.0,
+                limit=5,
+                refresh_on_recall=False,
             )
         )
         # Store baseline scores

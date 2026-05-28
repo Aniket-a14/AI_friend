@@ -145,6 +145,26 @@ class CognitiveService:
     async def _on_memory_surfaced(self, data: Dict[str, Any]):
         """Proactive memory recall (Active influence)."""
         self._record_subject_metric("memory.surfaced", data)
+
+        # Support both the contract shape (list of memories) and direct content fallback
+        memories_list = data.get("memories", [])
+        if isinstance(memories_list, list):
+            for mem_item in memories_list:
+                if isinstance(mem_item, dict):
+                    memory_text = mem_item.get("content", "")
+                    if memory_text:
+                        self.surfaced_memories.append(
+                            {
+                                "content": memory_text,
+                                "timestamp": mem_item.get(
+                                    "created_at", data.get("timestamp", 0)
+                                ),
+                                "relevance": mem_item.get(
+                                    "score", data.get("relevance", 1.0)
+                                ),
+                            }
+                        )
+
         memory_text = data.get("content", "")
         if memory_text:
             self.surfaced_memories.append(
@@ -154,9 +174,11 @@ class CognitiveService:
                     "relevance": data.get("relevance", 1.0),
                 }
             )
-            self.surfaced_memories = self.surfaced_memories[-5:]
-            logger.debug(
-                f"[Cognitive] Active Memory Influence: Surfaced '{memory_text[:30]}...'"
+
+        self.surfaced_memories = self.surfaced_memories[-5:]
+        if self.surfaced_memories:
+            logger.info(
+                f"[Cognitive] Active Memory Influence: Surfaced {len(self.surfaced_memories)} memories. Latest: '{self.surfaced_memories[-1]['content'][:40]}...'"
             )
 
     def _wrap_reflection_task(self, task, episodes):

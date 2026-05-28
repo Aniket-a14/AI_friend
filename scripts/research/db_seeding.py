@@ -19,6 +19,75 @@ sys.path.append(
 
 from scripts.research.reset_cognitive_db import reset_dbs
 
+
+def get_real_embedding_sync(text: str) -> list:
+    import httpx
+
+    ollama_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(
+                f"{ollama_url}/api/embed",
+                json={"model": "nomic-embed-text", "input": text},
+            )
+            if response.status_code == 200:
+                result = response.json()
+                embedding = result.get("embedding")
+                if embedding:
+                    return embedding
+                embeddings = result.get("embeddings")
+                if isinstance(embeddings, list) and embeddings:
+                    return embeddings[0]
+    except Exception as e:
+        print(f"Ollama seed embedding failed for '{text[:20]}...': {e}")
+    return None
+
+
+def get_batch_embeddings(texts: list) -> list:
+    import httpx
+
+    ollama_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    embeddings = [None] * len(texts)
+
+    batch_size = 250
+    total_batches = (len(texts) + batch_size - 1) // batch_size
+    print(
+        f"🧬 Generating high-fidelity semantic embeddings in {total_batches} batches of {batch_size} via Ollama..."
+    )
+
+    with httpx.Client(timeout=60.0) as client:
+        for b in range(total_batches):
+            start_idx = b * batch_size
+            end_idx = min(start_idx + batch_size, len(texts))
+            batch_texts = texts[start_idx:end_idx]
+
+            try:
+                response = client.post(
+                    f"{ollama_url}/api/embed",
+                    json={"model": "nomic-embed-text", "input": batch_texts},
+                )
+                if response.status_code == 200:
+                    result = response.json()
+                    batch_embeddings = result.get("embeddings")
+                    if isinstance(batch_embeddings, list) and len(
+                        batch_embeddings
+                    ) == len(batch_texts):
+                        for i, emb in enumerate(batch_embeddings):
+                            embeddings[start_idx + i] = emb
+                    else:
+                        print(
+                            f"⚠️ Warning: Batch {b + 1}/{total_batches} returned unexpected embeddings format."
+                        )
+                else:
+                    print(
+                        f"⚠️ Warning: Batch {b + 1}/{total_batches} failed with status {response.status_code}."
+                    )
+            except Exception as e:
+                print(f"⚠️ Error generating batch {b + 1}/{total_batches}: {e}")
+
+    return embeddings
+
+
 # Aniket autobiographical chitchat templates for fallback procedural generation
 ANIKET_DISTRACTOR_TEMPLATES = [
     "Ma asked me to bring some fresh vegetables from the local market in Kolkata.",
@@ -167,6 +236,7 @@ async def seed_databases(num_distractors=30000):
     if loaded_from_file:
         distractor_count = 0
         milestone_count = 0
+        raw_items = []
 
         for item in corpus_data:
             importance = item.get("importance", 0.4)
@@ -178,11 +248,18 @@ async def seed_databases(num_distractors=30000):
                 distractor_count += 1
             else:
                 milestone_count += 1
+            raw_items.append(item)
 
+        # Batch embed all raw items content dynamically to build proper database state
+        texts_to_embed = [item.get("content", "") for item in raw_items]
+        real_embeddings = get_batch_embeddings(texts_to_embed)
+
+        for idx, item in enumerate(raw_items):
             room = item.get("room", "social")
             content = item.get("content", "")
             raw_content = item.get("raw_content", content)
             wing = item.get("wing", "personal")
+            importance = item.get("importance", 0.4)
             emotion = item.get("emotion", 0.1)
             valence = item.get("valence", 0.0)
             certainty = item.get("certainty", 0.9)
@@ -190,7 +267,9 @@ async def seed_databases(num_distractors=30000):
             created_at_str = item.get("created_at")
             created_time = datetime.fromisoformat(created_at_str)
 
-            vector = generate_mock_vector(768)
+            vector = real_embeddings[idx]
+            if not vector:
+                vector = generate_mock_vector(768)
             vector_str = str(vector)
 
             metadata_dict = {
@@ -227,6 +306,7 @@ async def seed_databases(num_distractors=30000):
         time_step_seconds = nineteen_years_seconds / max(1, num_distractors)
 
         # Compile chitchat distractors
+        raw_distractors = []
         for i in range(num_distractors):
             t_idx = i % len(ANIKET_DISTRACTOR_TEMPLATES)
             template = ANIKET_DISTRACTOR_TEMPLATES[t_idx]
@@ -235,25 +315,7 @@ async def seed_databases(num_distractors=30000):
 
             elapsed_seconds = i * time_step_seconds
             created_time = now - timedelta(seconds=elapsed_seconds)
-            vector = generate_mock_vector(768)
-            vector_str = str(vector)
-
-            seeding_tasks.append(
-                (
-                    content,
-                    content,
-                    "personal",
-                    category,
-                    vector_str,
-                    0.4,
-                    0.1,
-                    0.0,
-                    0.9,
-                    "system_seeder",
-                    "{}",
-                    created_time,
-                )
-            )
+            raw_distractors.append((content, category, created_time))
 
         # Compile milestones
         epochs_templates = [
@@ -287,33 +349,71 @@ async def seed_databases(num_distractors=30000):
             ),
         ]
 
+        raw_milestones = []
         milestone_idx = 0
         for templates, cats, epoch, crisis, virtue in epochs_templates:
             for template in templates:
                 content = f"{template} [Milestone ID: {milestone_idx}]"
                 category = cats[milestone_idx % len(cats)]
-                vector = generate_mock_vector(768)
-                vector_str = str(vector)
-
-                seeding_tasks.append(
-                    (
-                        content,
-                        content,
-                        "personal",
-                        category,
-                        vector_str,
-                        0.9,
-                        0.8,
-                        0.8,
-                        1.0,
-                        "system_seeder",
-                        json.dumps(
-                            {"epoch": epoch, "crisis": crisis, "virtue": virtue}
-                        ),
-                        now,
-                    )
-                )
+                raw_milestones.append((content, category, epoch, crisis, virtue))
                 milestone_idx += 1
+
+        # Gather all text items to embed and batch-embed them
+        texts_to_embed = [d[0] for d in raw_distractors] + [
+            m[0] for m in raw_milestones
+        ]
+        real_embeddings = get_batch_embeddings(texts_to_embed)
+
+        # Populate distractors in seeding_tasks
+        for i, d in enumerate(raw_distractors):
+            content, category, created_time = d
+            vector = real_embeddings[i]
+            if not vector:
+                vector = generate_mock_vector(768)
+            vector_str = str(vector)
+
+            seeding_tasks.append(
+                (
+                    content,
+                    content,
+                    "personal",
+                    category,
+                    vector_str,
+                    0.4,
+                    0.1,
+                    0.0,
+                    0.9,
+                    "system_seeder",
+                    "{}",
+                    created_time,
+                )
+            )
+
+        # Populate milestones in seeding_tasks
+        offset = len(raw_distractors)
+        for i, m in enumerate(raw_milestones):
+            content, category, epoch, crisis, virtue = m
+            vector = real_embeddings[offset + i]
+            if not vector:
+                vector = generate_mock_vector(768)
+            vector_str = str(vector)
+
+            seeding_tasks.append(
+                (
+                    content,
+                    content,
+                    "personal",
+                    category,
+                    vector_str,
+                    0.9,
+                    0.8,
+                    0.8,
+                    1.0,
+                    "system_seeder",
+                    json.dumps({"epoch": epoch, "crisis": crisis, "virtue": virtue}),
+                    now,
+                )
+            )
 
     print(f"💾 Bulk-loading {len(seeding_tasks)} records into pgvector...")
 
@@ -332,6 +432,29 @@ async def seed_databases(num_distractors=30000):
             """,
             seeding_tasks,
         )
+
+        try:
+            print(
+                "🔥 [Semantic Priming Seeder] Warming up biographical milestones in database..."
+            )
+            sql_update = """
+                UPDATE memories
+                SET last_recalled_at = clock_timestamp(),
+                    recall_count = 50,
+                    importance_score = 0.95
+                WHERE wing = 'personal'
+                  AND (
+                    content ILIKE '%Kolkata%'
+                    OR content ILIKE '%Bangalore%'
+                    OR content ILIKE '%Priya%'
+                    OR content ILIKE '%rasgulla%'
+                    OR content ILIKE '%cognitive architecture%'
+                    OR content ILIKE '%affective cognitive%'
+                  );
+            """
+            await conn.execute(sql_update)
+        except Exception as ex:
+            print(f"⚠️ Warning: Milestone warmup update failed: {ex}")
 
     duration = time.perf_counter() - start_time
     print(
@@ -358,7 +481,15 @@ async def seed_databases(num_distractors=30000):
         print("🔍 Seeding Qdrant Semantic Recall Store in batches...")
         semantic_store = SemanticRecallStore()
         if semantic_store.client:
-            chunk_size = 5000
+            from qdrant_client import QdrantClient
+
+            # Recreate client with larger timeout to prevent timeouts during 30k seeding
+            from app.config import Config
+
+            q_host = getattr(Config, "QDRANT_HOST", "127.0.0.1")
+            q_port = getattr(Config, "QDRANT_PORT", 6333)
+            semantic_store.client = QdrantClient(host=q_host, port=q_port, timeout=60.0)
+            chunk_size = 1000
             points = []
             start_q = time.perf_counter()
             for idx, task in enumerate(seeding_tasks):
@@ -851,7 +982,9 @@ async def seed_databases(num_distractors=30000):
             name = node["name"]
             props = node["props"]
             props["category"] = cat.lower()
-            query = f"MERGE (e:Entity {{name: $name}}) MERGE (e:{label}) MERGE (e:{cat}) SET e += $props"
+            query = (
+                f"MERGE (e:Entity {{name: $name}}) SET e:{label}:{cat} SET e += $props"
+            )
             await graph.execute_query(query, {"name": name, "props": props}, write=True)
 
         # Build relationships programmatically

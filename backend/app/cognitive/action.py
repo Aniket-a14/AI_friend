@@ -145,7 +145,7 @@ class ActionService:
 
             # 1. Prepare Identity-Aware System and User Prompts
             # Static System Prompt (cached by inference engines like Ollama/vLLM)
-            system_instruction = f"{identity_prompt}\n\nGuideline:\n- Maintain your identity rules at all times.\n- Focus on short, natural conversational phrases.\n- Respond only in English. Do not use Hindi, Hinglish, or any other language for now.\n- The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.\n- You may use <pause=300ms> or <hesitate> when it improves natural timing."
+            system_instruction = f"{identity_prompt}\n\nGuideline:\n- Maintain your identity rules at all times.\n- Focus on natural conversational phrases.\n- IMPORTANT: If the SHARED HISTORY / RECENT CONTEXT contains relevant biographical facts, partner details, childhood milestones, or personal preferences, you MUST integrate them explicitly and accurately to answer the user's question.\n- Respond only in English. Do not use Hindi, Hinglish, or any other language for now.\n- The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.\n- You may use <pause=300ms> or <hesitate> when it improves natural timing."
 
             # Dynamic User Prompt (appends active context to the query suffix)
             user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{shared_history}{tom_context}\n\nUser: {msg}\nAssistant:"
@@ -195,9 +195,9 @@ class ActionService:
                     except (ValueError, TypeError):
                         fatigue_val = 0.0
 
-                    # Bounded num_predict strictly between 15 (exhausted) and 40 (fresh)
+                    # Bounded num_predict strictly between 100 (exhausted) and 250 (fresh)
                     endo_num_predict = int(
-                        max(15, min(40, int(40 - (fatigue_val * 25))))
+                        max(100, min(250, int(250 - (fatigue_val * 150))))
                     )
                     endocrine_options["num_predict"] = endo_num_predict
 

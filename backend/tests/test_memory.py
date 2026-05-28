@@ -24,7 +24,9 @@ def mock_pool():
 @pytest.fixture
 def memory_store(mock_pool):
     pool, _ = mock_pool
-    return MemoryStore(pool)
+    store = MemoryStore(pool)
+    store.qdrant_store.client = None
+    return store
 
 
 def _make_row(

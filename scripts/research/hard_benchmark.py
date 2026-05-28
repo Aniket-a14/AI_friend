@@ -702,6 +702,7 @@ async def run_physical_benchmark(
             i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations
         }
     done_event = asyncio.Event()
+    pulse_events = {i: asyncio.Event() for i in range(iterations)}
 
     prompts = generate_conversational_corpus(iterations)
 
@@ -761,7 +762,22 @@ async def run_physical_benchmark(
         ola_intact = abs(pitch - 1.0) <= 0.95
         vocal_ola_results.append(ola_intact)
 
+        # Publish mock agent visemes to simulate voice playback telemetry
+        visemes_payload = {
+            "target_level": 0.8,
+            "viseme_id": "O",
+            "timestamp": time.time(),
+        }
+        try:
+            await js.publish(
+                "audio.playback.visemes", json.dumps(visemes_payload).encode()
+            )
+        except Exception:
+            pass
+
         if done:
+            if pulse_num in pulse_events:
+                pulse_events[pulse_num].set()
             e2e_results.append(latency_ms)
             pulse_count += 1
             full_resp = data.get("full_response", "") or content or ""
@@ -829,10 +845,22 @@ async def run_physical_benchmark(
             },
         }
 
+        # Publish mock user voice properties to simulate voice metrics telemetry
+        voice_props = {
+            "pitch_f0": 120.0,
+            "energy_rms": 0.05,
+            "tempo_wpm": 150.0,
+            "timestamp": send_time,
+        }
+        try:
+            await js.publish("user.voice.properties", json.dumps(voice_props).encode())
+        except Exception:
+            pass
+
         await js.publish("chat.input", json.dumps(current_pulse).encode())
 
         # Interleave pacing delay to respect GPU scheduling limits
-        sleep_time = 0.5 if iterations > 100 else 6.0
+        sleep_time = 0.5 if iterations > 100 else 1.0
 
         # Simulating speculative barge-in interruptions periodically
         if i % 10 == 0 and i > 0:
@@ -870,6 +898,12 @@ async def run_physical_benchmark(
 
             # Deduct the elapsed 1.5 seconds from the pacing sleep_time to keep timing consistent
             sleep_time = max(0.1, sleep_time - 1.5)
+
+        # Sequential turn syncing: wait for current pulse to complete before publishing the next
+        try:
+            await asyncio.wait_for(pulse_events[i].wait(), timeout=15.0)
+        except asyncio.TimeoutError:
+            print(f"⚠️ Warning: Pulse {i} timed out waiting for completion.")
 
         await asyncio.sleep(sleep_time)
 

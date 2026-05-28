@@ -25,6 +25,9 @@ class ConversationalRuntime:
         state_snap: Dict[str, Any],
         user_distance: float = 1.0,
         is_proactive: bool = False,
+        incoming_metadata: Dict[str, Any] = None,
+        incoming_latency_metadata: Dict[str, Any] = None,
+        flow_start_time: float = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Monitors TTFT. If first token takes > 400ms, sends an early hesitation filler.
@@ -34,8 +37,15 @@ class ConversationalRuntime:
 
         async def send_filler():
             nonlocal filler_sent
-            # Wait 400ms before sending filler
-            await asyncio.sleep(0.4)
+            # Wait up to 400ms since the conversational turn started
+            import time
+
+            sleep_dur = 0.4
+            if flow_start_time:
+                elapsed = time.time() - flow_start_time
+                sleep_dur = max(0.01, 0.4 - elapsed)
+
+            await asyncio.sleep(sleep_dur)
             if not first_token_received and not is_proactive and self.publish_cb:
                 filler_sent = True
                 filler = random.choice(FILLERS)
@@ -60,6 +70,8 @@ class ConversationalRuntime:
                     done=False,
                     turn_id=turn_id,
                     affect=affect_msg,
+                    metadata=incoming_metadata,
+                    latency_metadata=incoming_latency_metadata,
                 )
 
                 await self.publish_cb(Topics.CHAT_OUTPUT, payload.model_dump())
