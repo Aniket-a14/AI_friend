@@ -1806,17 +1806,32 @@ def generate_conversational_corpus(iterations: int = 1000):
         unique_pool.append(prompt)
 
     corpus = []
-    if iterations < 105:
-        return unique_pool[:iterations]
-
-    scale_factor = max(1, iterations // 1000)
-    seeded_indices = {
-        20 * scale_factor: 0,
-        40 * scale_factor: 1,
-        60 * scale_factor: 2,
-        80 * scale_factor: 3,
-        100 * scale_factor: 4,
-    }
+    # Dynamically align indices with hard_benchmark.py configurations
+    if iterations >= 1000:
+        scale_factor = max(1, iterations // 1000)
+        step = max(9, (iterations - 120) // 100)
+        recall_indices = {
+            (101 + k * step): k for k in range(min(100, (iterations - 101) // step))
+        }
+        seeded_indices = {
+            20 * scale_factor: 0,
+            40 * scale_factor: 1,
+            60 * scale_factor: 2,
+            80 * scale_factor: 3,
+            100 * scale_factor: 4,
+        }
+    else:
+        num_recalls = min(50, max(5, iterations // 10))
+        step = max(1, iterations // num_recalls)
+        recall_indices = {
+            i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations
+        }
+        raw_seeds = [min(iterations - 1, step // 2), min(iterations - 1, step)]
+        # Map each index to a unique fact index to prevent overlaps
+        seeded_indices = {}
+        for k, idx in enumerate(raw_seeds):
+            if idx not in recall_indices:
+                seeded_indices[idx] = k % 5
 
     seeded_facts = [
         "Friend: Aniket, you've often told me how you were born and raised in Kolkata, a beautiful city where you spent your childhood years.",
@@ -1825,11 +1840,6 @@ def generate_conversational_corpus(iterations: int = 1000):
         "Friend: It's wonderful how grateful you are for your partner Priya, who has supported you through all life's challenges.",
         "Friend: And of course, whenever you want a dessert, you always prefer a traditional sweet rasgulla.",
     ]
-
-    recall_indices = {
-        (101 + k * 18) * scale_factor: k
-        for k in range(min(100, (iterations - 101) // 18 + 1))
-    }
 
     unique_idx = 0
     for idx in range(iterations):

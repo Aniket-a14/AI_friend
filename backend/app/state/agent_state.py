@@ -367,8 +367,7 @@ class StateService:
                 query = "MATCH (a:Agent {name: $name}) RETURN a"
                 res = await self.graph.execute_query(query, {"name": agent_name})
                 if res and len(res) > 0:
-                    record = res[0]
-                    agent_node = record.get("a")
+                    agent_node = res[0].get("a")
                     if agent_node:
                         self.current_state.mood = float(agent_node.get("mood", 0.0))
                         self.current_state.energy = float(agent_node.get("energy", 0.5))

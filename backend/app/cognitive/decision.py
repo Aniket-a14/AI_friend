@@ -120,7 +120,14 @@ class DecisionService:
             return blackboard["plan"]
 
         fallback_goal = event.metadata.get("suggested_goal", "ENGAGE")
-        return ActionPlan("RESPOND_CHAT", {"message": event.raw_content}, fallback_goal)
+        return ActionPlan(
+            "RESPOND_CHAT",
+            {
+                "message": event.raw_content,
+                "surfaced_memories": event.metadata.get("surfaced_memories", []),
+            },
+            fallback_goal,
+        )
 
     def _score_goals_maut(
         self, appraisal: Dict[str, float], state: Dict[str, Any]
@@ -223,9 +230,30 @@ class DecisionService:
 
     def _apply_heuristic_intent_and_goal(self, event: CognitiveEvent):
         """Cheap intent defaults to avoid unnecessary LLM calls on every turn."""
-        text = (event.raw_content or "").lower()
+        text = (event.raw_content or "").lower().strip()
 
-        if "remember" in text or "memorize" in text:
+        # Only classify as REMEMBER if it contains remember/memorize and is NOT a question
+        is_question = text.endswith("?") or any(
+            text.startswith(w)
+            for w in [
+                "what",
+                "where",
+                "how",
+                "why",
+                "who",
+                "when",
+                "did",
+                "is",
+                "can",
+                "do you",
+                "do",
+                "are",
+                "have you",
+                "has",
+            ]
+        )
+
+        if ("remember" in text or "memorize" in text) and not is_question:
             event.intent = "REMEMBER"
             event.metadata.setdefault("suggested_goal", "RECALL")
             event.metadata.setdefault("preferred_model", Config.LLM_FAST_MODEL)
@@ -246,6 +274,9 @@ class DecisionService:
 
         Classify into:
         - intent: REMEMBER, CHAT, COMMAND
+          * REMEMBER: ONLY when the user explicitly instructs you to memorize or store a new fact (e.g., "remember that my cat's name is Lily").
+          * CHAT: When the user is conversing, sharing, or asking a question (e.g., "do you remember my hometown?", "is my favorite dessert sweet?", "hey there").
+          * COMMAND: Explicit control instructions.
         - goal: COMFORT, INFORM, ENGAGE, TEASE, PROTECT
 
         Also infer Theory of Mind (ToM) details:
@@ -280,7 +311,15 @@ class DecisionService:
             match = re.search(r"\{.*\}", json_str, re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
-                event.intent = data.get("intent", event.intent)
+
+                # Sanitize/normalize intent: must be CHAT, REMEMBER, or COMMAND
+                raw_intent = data.get("intent", "").upper().strip()
+                if raw_intent in ["CHAT", "REMEMBER", "COMMAND"]:
+                    event.intent = raw_intent
+                else:
+                    # If it's a goal or invalid value, fall back to CHAT
+                    event.intent = "CHAT"
+
                 event.metadata["suggested_goal"] = data.get("goal", "ENGAGE")
                 event.metadata["preferred_model"] = (
                     Config.LLM_CHAT_MODEL
