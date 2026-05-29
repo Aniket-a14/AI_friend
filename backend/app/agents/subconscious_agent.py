@@ -66,7 +66,9 @@ class SubconsciousAgent(BaseAgent):
 
             self.db_store = ConversationHistoryStore()
             await self.db_store.initialize()
-            self.memory_store = MemoryStore(pool=self.db_store.pool)
+            self.memory_store = MemoryStore(
+                pool=self.db_store.pool, graph_db=self.graph_db
+            )
 
         if not self.reflection_service:
             from app.cognitive.learning import ReflectionService

@@ -7,7 +7,7 @@ import asyncio
 import pytest
 import math
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from app.state.sqlite_fallback import SQLitePool
 from app.state.memory_store import MemoryStore
 
@@ -16,7 +16,15 @@ from app.state.memory_store import MemoryStore
 def temp_store():
     # SQLitePool with :memory: provides an isolated, full-schema SQLite database for each test.
     pool = SQLitePool(":memory:")
-    store = MemoryStore(pool)
+    mock_graph = MagicMock()
+
+    async def mock_execute_query(query, *args, **kwargs):
+        if "MATCH (e:Entity)" in query:
+            return [{"name": "Kolkata"}, {"name": "Priya"}]
+        return []
+
+    mock_graph.execute_query = mock_execute_query
+    store = MemoryStore(pool, mock_graph)
     store.qdrant_store.client = None
     return store
 

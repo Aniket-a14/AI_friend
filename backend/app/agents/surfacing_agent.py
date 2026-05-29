@@ -660,8 +660,8 @@ async def main():
     conversation_store = ConversationHistoryStore()
     await conversation_store.initialize()
 
-    memory_store = MemoryStore(pool=conversation_store.pool)
     graph_db = GraphDB()
+    memory_store = MemoryStore(pool=conversation_store.pool, graph_db=graph_db)
 
     agent = SurfacingAgent(
         memory_store=memory_store,

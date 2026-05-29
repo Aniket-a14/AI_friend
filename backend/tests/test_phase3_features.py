@@ -24,7 +24,9 @@ async def test_neuromodulatory_gating_and_actr_pruning():
     store = ConversationHistoryStore()
     await store.initialize()
 
-    mem_store = MemoryStore(pool=store.pool)
+    mock_graph = MagicMock()
+    mock_graph.execute_query = AsyncMock(return_value=[])
+    mem_store = MemoryStore(pool=store.pool, graph_db=mock_graph)
 
     # 1. Mock embeddings to be close to query
     query_vector = [1.0, 0.0] + [0.0] * 766
@@ -208,7 +210,9 @@ async def test_subconscious_agent_silence_check_and_24h_window():
     store = ConversationHistoryStore()
     await store.initialize()
 
-    mem_store = MemoryStore(pool=store.pool)
+    mock_graph = MagicMock()
+    mock_graph.execute_query = AsyncMock(return_value=[])
+    mem_store = MemoryStore(pool=store.pool, graph_db=mock_graph)
     mem_store.get_embedding = AsyncMock(return_value=[0.1] * 768)
 
     # 1. Log two messages: one very recent, one > 24 hours old

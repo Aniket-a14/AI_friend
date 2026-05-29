@@ -24,7 +24,9 @@ def mock_pool():
 @pytest.fixture
 def memory_store(mock_pool):
     pool, _ = mock_pool
-    store = MemoryStore(pool)
+    mock_graph = MagicMock()
+    mock_graph.execute_query = AsyncMock(return_value=[])
+    store = MemoryStore(pool, mock_graph)
     store.qdrant_store.client = None
     return store
 
@@ -123,3 +125,36 @@ def test_recall_frequency_boost(memory_store, mock_pool):
         )
         # ln(50) >> ln(1), so frequent recall should win despite lower similarity
         assert results[0]["content"] == "Frequently recalled"
+
+
+def test_neo4j_spreading_activation(mock_pool):
+    pool, conn = mock_pool
+    # First memory gets direct cue boost (contains "cricket"), second does not but mentions Priya
+    rows = [
+        _make_row("Aniket played cricket yesterday.", similarity=0.9, hours_ago=1),
+        _make_row("Priya loves coding.", similarity=0.6, hours_ago=1),
+    ]
+    conn.fetch.return_value = rows
+
+    mock_graph = MagicMock()
+
+    # Mock Neo4j execute_query to return a relationship between Aniket and Priya
+    async def mock_execute_query(query, *args, **kwargs):
+        if "MATCH (e:Entity)" in query:
+            return [{"name": "Aniket"}, {"name": "Priya"}]
+        elif "MATCH (s:Entity)-[r]-(t:Entity)" in query:
+            return [{"source": "Aniket", "target": "Priya"}]
+        return []
+
+    mock_graph.execute_query = mock_execute_query
+
+    store = MemoryStore(pool, mock_graph)
+    store.qdrant_store.client = None
+
+    with patch.object(store, "get_embedding", return_value=[0.1] * 768):
+        results = asyncio.run(
+            store.search_memories("cricket", threshold=-10.0, limit=2)
+        )
+        assert len(results) == 2
+        priya_mem = next(r for r in results if "Priya" in r["content"])
+        assert "Priya" in priya_mem["content"]

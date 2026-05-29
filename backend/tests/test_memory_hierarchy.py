@@ -24,7 +24,9 @@ def mock_pool():
 @pytest.fixture
 def memory_store(mock_pool):
     pool, _ = mock_pool
-    store = MemoryStore(pool)
+    mock_graph = MagicMock()
+    mock_graph.execute_query = AsyncMock(return_value=[])
+    store = MemoryStore(pool, mock_graph)
     store.qdrant_store.client = None
     return store
 

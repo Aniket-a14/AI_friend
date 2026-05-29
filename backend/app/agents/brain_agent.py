@@ -643,9 +643,9 @@ async def main():
     conversation_store = ConversationHistoryStore()
     await conversation_store.initialize()  # Creates the database pool
 
-    # Inject the established pool into MemoryStore
-    memory_store = MemoryStore(pool=conversation_store.pool)
     graph_db = GraphDB()
+    # Inject the established pool and graph_db into MemoryStore
+    memory_store = MemoryStore(pool=conversation_store.pool, graph_db=graph_db)
 
     # 2. Instantiate Brain Agent with injected dependencies
     agent = BrainAgent(

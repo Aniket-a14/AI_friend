@@ -4,7 +4,7 @@ Unit Tests for Subconscious Memory Consolidation & ACT-R Offline Fallbacks.
 
 import pytest
 import time
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from app.state.conversation_store import ConversationHistoryStore
 from app.state.memory_store import MemoryStore
 from app.agents.subconscious_agent import SubconsciousAgent
@@ -31,7 +31,7 @@ async def test_sqlite_in_memory_persistence(mock_llm_service, mock_graph_db):
     )
 
     # 3. Retrieve recent unconsolidated messages via MemoryStore
-    mem_store = MemoryStore(pool=store.pool)
+    mem_store = MemoryStore(pool=store.pool, graph_db=mock_graph_db)
     mem_store.get_embedding = AsyncMock(return_value=[0.1] * 768)
 
     episodes = await mem_store.get_recent_unconsolidated_episodes(limit=5)
@@ -50,7 +50,9 @@ async def test_sqlite_cosine_similarity_fallback(mock_llm_service):
     store = ConversationHistoryStore()
     await store.initialize()
 
-    mem_store = MemoryStore(pool=store.pool)
+    mock_graph = MagicMock()
+    mock_graph.execute_query = AsyncMock(return_value=[])
+    mem_store = MemoryStore(pool=store.pool, graph_db=mock_graph)
 
     # Seed embeddings manually
     # Memory 1: Vector aligned with query
@@ -135,7 +137,9 @@ async def test_memory_decay_loop(mock_llm_service):
     store = ConversationHistoryStore()
     await store.initialize()
 
-    mem_store = MemoryStore(pool=store.pool)
+    mock_graph = MagicMock()
+    mock_graph.execute_query = AsyncMock(return_value=[])
+    mem_store = MemoryStore(pool=store.pool, graph_db=mock_graph)
     mem_store.get_embedding = AsyncMock(return_value=[0.1] * 768)
 
     # Create the memories table
@@ -220,7 +224,7 @@ async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_
                 )
             """)
 
-        mem_store = MemoryStore(pool=store.pool)
+        mem_store = MemoryStore(pool=store.pool, graph_db=mock_graph_db)
         mem_store.get_embedding = AsyncMock(return_value=[0.1] * 768)
 
         # Seed a conversation episode
