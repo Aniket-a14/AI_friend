@@ -135,6 +135,31 @@ class MemoryStore:
             # Generate a single UUID for both stores to ensure correlation
             memory_id = str(uuid.uuid4())
 
+            # Pre-link entities from graph to metadata
+            present_entities = []
+            if self.graph_db:
+                try:
+                    entity_records = await self.graph_db.execute_query(
+                        "MATCH (e:Entity) RETURN e.name AS name", use_cache=True
+                    )
+                    entity_names = [r["name"] for r in entity_records]
+                    import re
+
+                    content_lower = content.lower()
+                    for name in entity_names:
+                        name_lower = name.lower()
+                        pattern = rf"\b{re.escape(name_lower)}\b"
+                        if re.search(pattern, content_lower):
+                            present_entities.append(name)
+                except Exception as ge:
+                    logger.debug(
+                        f"Failed to fetch entities for pre-linking in add_memory: {ge}"
+                    )
+
+            if metadata is None:
+                metadata = {}
+            metadata["entities"] = present_entities
+
             vector = await self.get_embedding(content)
             if not vector:
                 return False
@@ -280,6 +305,7 @@ class MemoryStore:
                     "relations": relations or "",
                     "relation_circles": relation_circles or "",
                     "modality": modality or "",
+                    "entities": present_entities,
                 }
                 if metadata:
                     metadata_qdrant["custom_metadata"] = orjson.dumps(metadata).decode()
@@ -352,12 +378,48 @@ class MemoryStore:
 
             raw_candidates = []
 
-            # 1. Qdrant Selective Vector Path
-            if self.qdrant_store.client:
+            # Non-blocking wrapper to query Qdrant via a thread pool
+            async def safe_qdrant_search():
                 try:
-                    candidates = self.qdrant_store.search_vector_memories(
-                        query_vector=query_vector, limit=max(20, limit * 3)
-                    )
+                    if self.qdrant_store.client:
+                        return await asyncio.to_thread(
+                            self.qdrant_store.search_vector_memories,
+                            query_vector=query_vector,
+                            limit=max(20, limit * 3),
+                        )
+                except Exception as qe:
+                    logger.error(f"Qdrant retrieval failed: {qe}")
+                return []
+
+            async def _dummy_list():
+                return []
+
+            # Concurrently fetch vector candidates and Neo4j graph data
+            candidates, entity_records, relation_records = await asyncio.gather(
+                safe_qdrant_search(),
+                self.graph_db.execute_query(
+                    "MATCH (e:Entity) RETURN e.name AS name, e.description AS description",
+                    use_cache=True,
+                )
+                if self.graph_db
+                else _dummy_list(),
+                self.graph_db.execute_query(
+                    "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target",
+                    use_cache=True,
+                )
+                if self.graph_db
+                else _dummy_list(),
+            )
+
+            # Defensive type checks
+            if not isinstance(entity_records, list):
+                entity_records = []
+            if not isinstance(relation_records, list):
+                relation_records = []
+
+            # 1. Qdrant Selective Vector Path
+            if self.qdrant_store.client and candidates:
+                try:
                     for cand in candidates:
                         meta = cand["metadata"]
                         c_wing = meta.get("wing")
@@ -945,21 +1007,11 @@ class MemoryStore:
             direct_boosted_indices = set()
 
             entity_names = []
-            relation_records = []
             adj = {}
             user_node_name = None
 
-            # Fetch entities and relationships from Neo4j to resolve user node and map pronouns
+            # Process entity and relationship records fetched in the parallel task
             try:
-                entity_records = await self.graph_db.execute_query(
-                    "MATCH (e:Entity) RETURN e.name AS name, e.description AS description",
-                    use_cache=True,
-                )
-                relation_records = await self.graph_db.execute_query(
-                    "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target",
-                    use_cache=True,
-                )
-
                 entity_names = [r["name"] for r in entity_records]
 
                 # Build adjacency list/set for fast connection lookup
@@ -968,6 +1020,25 @@ class MemoryStore:
                     tgt = r["target"]
                     adj.setdefault(src, set()).add(tgt)
                     adj.setdefault(tgt, set()).add(src)
+
+                # Add co-occurrence connections from candidate memories
+                for cand in raw_candidates:
+                    payload_meta = cand.get("metadata") or {}
+                    cand_ents = payload_meta.get("entities", [])
+                    if not cand_ents:
+                        content_lower = cand["content"].lower()
+                        cand_ents = []
+                        for name in entity_names:
+                            pattern = rf"\b{re.escape(name.lower())}\b"
+                            if re.search(pattern, content_lower):
+                                cand_ents.append(name)
+
+                    for i in range(len(cand_ents)):
+                        for j in range(i + 1, len(cand_ents)):
+                            e1 = cand_ents[i]
+                            e2 = cand_ents[j]
+                            adj.setdefault(e1, set()).add(e2)
+                            adj.setdefault(e2, set()).add(e1)
 
                 # Try to discover the user node dynamically from descriptions or degree
                 for r in entity_records:
@@ -982,21 +1053,21 @@ class MemoryStore:
                     if hasattr(Config, "AI_NAME") and Config.AI_NAME:
                         ai_names.add(Config.AI_NAME.lower())
 
-                    candidates = [
+                    candidates_names = [
                         name for name in entity_names if name.lower() not in ai_names
                     ]
-                    if candidates:
+                    if candidates_names:
                         # Sort by degree descending
-                        candidates.sort(
+                        candidates_names.sort(
                             key=lambda name: len(adj.get(name, set())), reverse=True
                         )
-                        user_node_name = candidates[0]
+                        user_node_name = candidates_names[0]
 
                 if user_node_name:
                     user_aliases.add(user_node_name.lower())
 
             except Exception as e:
-                logger.debug(f"Failed to fetch entities for query resolution: {e}")
+                logger.debug(f"Failed to process entities: {e}")
 
             # Map query pronouns to the user node if present in graph to support self-referential queries
             query_words_all = re.findall(r"\b\w+\b", query_text.lower())
@@ -1012,10 +1083,78 @@ class MemoryStore:
                         cand["score"] += 1.2
                         direct_boosted_indices.add(idx)
 
-            # Apply Spreading activation boost to connected nodes via Neo4j Graph
-            if matched_cues and entity_names:
+            # HippoRAG-Inspired Personalized PageRank (PPR) Engine
+            if entity_names:
                 try:
-                    # Helper to find which entities are present in a memory content
+                    # Identify query/context seed nodes
+                    seeds = set()
+
+                    # 1. Query cues that match entity names
+                    for cue in matched_cues:
+                        for idx, name in enumerate(entity_names):
+                            if name.lower() == cue.lower():
+                                seeds.add(idx)
+
+                    # 2. If no direct query seeds, use entities from directly cued memories (for vector-guided associative recall)
+                    if not seeds:
+                        for idx in direct_boosted_indices:
+                            cand = raw_candidates[idx]
+                            payload_meta = cand.get("metadata") or {}
+                            cand_ents = payload_meta.get("entities", [])
+                            if not cand_ents:
+                                content_lower = cand["content"].lower()
+                                for e_idx, name in enumerate(entity_names):
+                                    pattern = rf"\b{re.escape(name.lower())}\b"
+                                    if re.search(pattern, content_lower):
+                                        seeds.add(e_idx)
+                            else:
+                                for ent in cand_ents:
+                                    for e_idx, name in enumerate(entity_names):
+                                        if name.lower() == ent.lower():
+                                            seeds.add(e_idx)
+
+                    # Compute Personalized PageRank Vector
+                    N = len(entity_names)
+                    if not seeds:
+                        ppr = {}
+                    else:
+                        p_0 = [0.0] * N
+                        val = 1.0 / len(seeds)
+                        for s_idx in seeds:
+                            p_0[s_idx] = val
+
+                        p = list(p_0)
+                        node_to_idx = {
+                            name: idx for idx, name in enumerate(entity_names)
+                        }
+
+                        # Damping factor aligned to scale 1-hop spreading activation expectation to exactly 0.6
+                        d = 0.647798871
+
+                        # 3-iteration power method PPR propagation
+                        for _ in range(3):
+                            p_next = [0.0] * N
+                            for i in range(N):
+                                node_name = entity_names[i]
+                                neighbors = adj.get(node_name, set())
+                                if neighbors:
+                                    val = p[i] / len(neighbors)
+                                    for n in neighbors:
+                                        n_idx = node_to_idx.get(n)
+                                        if n_idx is not None:
+                                            p_next[n_idx] += val
+                                else:
+                                    # Dangling node distributes to seeds
+                                    for idx in seeds:
+                                        p_next[idx] += p[i] / len(seeds)
+
+                            for i in range(N):
+                                p_next[i] = d * p_next[i] + (1 - d) * p_0[i]
+                            p = p_next
+
+                        ppr = {entity_names[i]: p[i] for i in range(N)}
+
+                    # Helper to find which entities are present in a memory content (fallback scanning)
                     def get_present_entities(content: str) -> set[str]:
                         content_lower = content.lower()
                         present = set()
@@ -1025,10 +1164,9 @@ class MemoryStore:
                             if re.search(pattern, content_lower):
                                 present.add(name)
 
-                        # Map memory content pronouns to the user node
                         if user_node_name and any(
-                            re.search(rf"\b{re.escape(p)}\b", content_lower)
-                            for p in user_pronouns
+                            re.search(rf"\b{re.escape(pr)}\b", content_lower)
+                            for pr in user_pronouns
                         ):
                             present.add(user_node_name)
                         return present
@@ -1036,41 +1174,37 @@ class MemoryStore:
                     # Map candidate indices to their present entities
                     cand_entities = {}
                     for idx, cand in enumerate(raw_candidates):
-                        cand_entities[idx] = get_present_entities(cand["content"])
+                        payload_meta = cand.get("metadata") or {}
+                        if "entities" in payload_meta and isinstance(
+                            payload_meta["entities"], list
+                        ):
+                            cand_entities[idx] = set(payload_meta["entities"])
+                            if user_node_name and any(
+                                re.search(
+                                    rf"\b{re.escape(pr)}\b", cand["content"].lower()
+                                )
+                                for pr in user_pronouns
+                            ):
+                                cand_entities[idx].add(user_node_name)
+                        else:
+                            cand_entities[idx] = get_present_entities(cand["content"])
 
-                    for idx in direct_boosted_indices:
-                        entities_k = cand_entities[idx]
-
-                        for other_idx, other_cand in enumerate(raw_candidates):
-                            if other_idx == idx or other_idx in direct_boosted_indices:
-                                continue
-
-                            entities_other = cand_entities[other_idx]
-                            has_connection = False
-                            connecting_node = None
-
-                            # Check for shared or linked entities in Neo4j
-                            for e1 in entities_k:
-                                if e1 in entities_other:
-                                    has_connection = True
-                                    connecting_node = e1
-                                    break
-                                for e2 in entities_other:
-                                    if e2 in adj.get(e1, set()):
-                                        has_connection = True
-                                        connecting_node = e1
-                                        break
-                                if has_connection:
-                                    break
-
-                            if has_connection and connecting_node:
-                                # ACT-R Degree Scaling (§6.2)
-                                deg = len(adj.get(connecting_node, set()))
-                                boost = 0.6 / (1.0 + math.log(max(1, deg)))
-                                other_cand["score"] += boost
+                    # Apply spreading activation boost to all candidate memories based on PPR probability
+                    for idx, cand in enumerate(raw_candidates):
+                        if idx in direct_boosted_indices:
+                            continue
+                        boost_sum = 0.0
+                        for ent in cand_entities[idx]:
+                            if ent in ppr:
+                                deg = len(adj.get(ent, set()))
+                                # HippoRAG-inspired degree-scaled activation boost
+                                boost = (1.2 * ppr[ent]) / (1.0 + math.log(max(1, deg)))
+                                boost_sum += boost
+                        if boost_sum > 0:
+                            cand["score"] += boost_sum
 
                 except Exception as ne_err:
-                    logger.error(f"Neo4j spreading activation query failed: {ne_err}")
+                    logger.error(f"PPR spreading activation failed: {ne_err}")
 
             # 4. Filter by final threshold, format and return results
             results = []
