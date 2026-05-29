@@ -1,6 +1,6 @@
 import time
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -104,7 +104,11 @@ class _InMemoryMesh:
 @pytest.mark.asyncio
 async def test_surfacing_mesh_regression_emits_system_tick_and_memory_surfaced():
     pool = _FakePool()
-    memory_store = MemoryStore(pool=pool, ollama_base_url="http://mock-ollama")
+    mock_graph = MagicMock()
+    mock_graph.execute_query = AsyncMock(return_value=[])
+    memory_store = MemoryStore(
+        pool=pool, graph_db=mock_graph, ollama_base_url="http://mock-ollama"
+    )
     memory_store.get_embedding = AsyncMock(return_value=[0.1, 0.2, 0.3])
 
     seeded = await memory_store.add_memory(

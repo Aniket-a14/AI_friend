@@ -36,8 +36,9 @@ def _cached_ln(x: float) -> float:
 
 
 class MemoryStore:
-    def __init__(self, pool, ollama_base_url=None):
+    def __init__(self, pool, graph_db, ollama_base_url=None):
         self.pool = pool
+        self.graph_db = graph_db
         self.ollama_base_url = (
             ollama_base_url or getattr(Config, "OLLAMA_URL", "http://127.0.0.1:11434")
         ).rstrip("/")
@@ -943,38 +944,71 @@ class MemoryStore:
                         cand["score"] += 1.2
                         direct_boosted_indices.add(idx)
 
-                # Spreading activation (+0.6) to connected nodes
-                for idx in direct_boosted_indices:
-                    direct_cand = raw_candidates[idx]
-                    content_k = direct_cand["content"].lower()
-                    found_entities_k = [
-                        w
-                        for w in re.findall(r"\b\w{3,}\b", content_k)
-                        if w not in stop_words
-                    ]
-                    age_matches_k = re.findall(r"age (\d+)", content_k)
+                # Spreading activation (+0.6) to connected nodes via Neo4j Graph
+                try:
+                    # 1. Fetch all entity names and relationships from Neo4j (utilizing TTL cache)
+                    entity_records = await self.graph_db.execute_query(
+                        "MATCH (e:Entity) RETURN e.name AS name", use_cache=True
+                    )
+                    relation_records = await self.graph_db.execute_query(
+                        "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target",
+                        use_cache=True,
+                    )
 
-                    for other_idx, other_cand in enumerate(raw_candidates):
-                        if other_idx == idx or other_idx in direct_boosted_indices:
-                            continue
-                        content_other = other_cand["content"].lower()
-                        has_connection = False
+                    entity_names = [r["name"] for r in entity_records]
 
-                        # Shared entities
-                        for ent in found_entities_k:
-                            if ent in content_other:
-                                has_connection = True
-                                break
+                    # Build adjacency list/set for fast connection lookup
+                    adj = {}
+                    for r in relation_records:
+                        src = r["source"]
+                        tgt = r["target"]
+                        adj.setdefault(src, set()).add(tgt)
+                        adj.setdefault(tgt, set()).add(src)
 
-                        # Cross-epoch age match
-                        if not has_connection and age_matches_k:
-                            for age in age_matches_k:
-                                if f"age {age}" in content_other:
+                    # Helper to find which entities are present in a memory content
+                    def get_present_entities(content: str) -> set[str]:
+                        content_lower = content.lower()
+                        present = set()
+                        for name in entity_names:
+                            name_lower = name.lower()
+                            # Word boundary match for names
+                            pattern = rf"\b{re.escape(name_lower)}\b"
+                            if re.search(pattern, content_lower):
+                                present.add(name)
+                        return present
+
+                    # Map candidate indices to their present entities
+                    cand_entities = {}
+                    for idx, cand in enumerate(raw_candidates):
+                        cand_entities[idx] = get_present_entities(cand["content"])
+
+                    for idx in direct_boosted_indices:
+                        entities_k = cand_entities[idx]
+
+                        for other_idx, other_cand in enumerate(raw_candidates):
+                            if other_idx == idx or other_idx in direct_boosted_indices:
+                                continue
+
+                            entities_other = cand_entities[other_idx]
+                            has_connection = False
+
+                            # Check for shared or linked entities in Neo4j
+                            for e1 in entities_k:
+                                if e1 in entities_other:
                                     has_connection = True
                                     break
+                                for e2 in entities_other:
+                                    if e2 in adj.get(e1, set()):
+                                        has_connection = True
+                                        break
+                                if has_connection:
+                                    break
 
-                        if has_connection:
-                            other_cand["score"] += 0.6
+                            if has_connection:
+                                other_cand["score"] += 0.6
+
+                except Exception as ne_err:
+                    logger.error(f"Neo4j spreading activation query failed: {ne_err}")
 
             # 4. Filter by final threshold, format and return results
             results = []
