@@ -228,7 +228,7 @@ class SurfacingAgent(BaseAgent):
         mood-congruent recall (Bower, 1981 — §6.4).
 
         Surfaces memories as narrative episodes (Tulving, 1972):
-        not just "Aniket likes coding" but "Late night debugging session,
+        not just "User likes coding" but "Late night debugging session,
         felt stressed but bonded over solving the routing issue."
         """
         if not self.memory:

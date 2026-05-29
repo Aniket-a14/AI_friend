@@ -311,6 +311,7 @@ class MemoryStore:
         current_valence: float = 0.0,
         current_arousal: float = 0.5,
         current_cortisol: float = 0.0,
+        user_id: str = None,
     ):
         """
         ACT-R Based Retrieval with Hierarchical Scoping & Neuromodulatory Gating:
@@ -329,6 +330,7 @@ class MemoryStore:
             current_arousal,
             current_cortisol,
             tuple(sorted(exclude_contents or [])),
+            user_id,
         )
         now_ts = time.time()
         if cache_key in self._l1_cache:
@@ -934,47 +936,101 @@ class MemoryStore:
             query_words = re.findall(r"\b\w{3,}\b", query_text.lower())
             matched_cues = [w for w in query_words if w not in stop_words]
 
+            # Spreading activation initialization & user pronoun resolution
+            user_pronouns = {"i", "me", "my", "myself", "we", "our", "us"}
+            user_aliases = {"user"}
+            if user_id:
+                user_aliases.add(user_id.lower())
+
             direct_boosted_indices = set()
 
+            entity_names = []
+            relation_records = []
+            adj = {}
+            user_node_name = None
+
+            # Fetch entities and relationships from Neo4j to resolve user node and map pronouns
+            try:
+                entity_records = await self.graph_db.execute_query(
+                    "MATCH (e:Entity) RETURN e.name AS name, e.description AS description",
+                    use_cache=True,
+                )
+                relation_records = await self.graph_db.execute_query(
+                    "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target",
+                    use_cache=True,
+                )
+
+                entity_names = [r["name"] for r in entity_records]
+
+                # Build adjacency list/set for fast connection lookup
+                for r in relation_records:
+                    src = r["source"]
+                    tgt = r["target"]
+                    adj.setdefault(src, set()).add(tgt)
+                    adj.setdefault(tgt, set()).add(src)
+
+                # Try to discover the user node dynamically from descriptions or degree
+                for r in entity_records:
+                    desc = r.get("description") or ""
+                    if "central cognitive system" in desc.lower():
+                        user_node_name = r["name"]
+                        break
+
+                if not user_node_name and entity_names:
+                    # Filter out AI name if present
+                    ai_names = {"ai friend", "my friend"}
+                    if hasattr(Config, "AI_NAME") and Config.AI_NAME:
+                        ai_names.add(Config.AI_NAME.lower())
+
+                    candidates = [
+                        name for name in entity_names if name.lower() not in ai_names
+                    ]
+                    if candidates:
+                        # Sort by degree descending
+                        candidates.sort(
+                            key=lambda name: len(adj.get(name, set())), reverse=True
+                        )
+                        user_node_name = candidates[0]
+
+                if user_node_name:
+                    user_aliases.add(user_node_name.lower())
+
+            except Exception as e:
+                logger.debug(f"Failed to fetch entities for query resolution: {e}")
+
+            # Map query pronouns to the user node if present in graph to support self-referential queries
+            query_words_all = re.findall(r"\b\w+\b", query_text.lower())
+            if any(p in query_words_all for p in user_pronouns.union(user_aliases)):
+                if user_node_name:
+                    matched_cues.append(user_node_name.lower())
+
+            # Apply Direct cue boost (+1.2)
             if matched_cues:
-                # Direct cue boost (+1.2)
                 for idx, cand in enumerate(raw_candidates):
                     content_lower = cand["content"].lower()
                     if any(mc in content_lower for mc in matched_cues):
                         cand["score"] += 1.2
                         direct_boosted_indices.add(idx)
 
-                # Spreading activation (+0.6) to connected nodes via Neo4j Graph
+            # Apply Spreading activation boost to connected nodes via Neo4j Graph
+            if matched_cues and entity_names:
                 try:
-                    # 1. Fetch all entity names and relationships from Neo4j (utilizing TTL cache)
-                    entity_records = await self.graph_db.execute_query(
-                        "MATCH (e:Entity) RETURN e.name AS name", use_cache=True
-                    )
-                    relation_records = await self.graph_db.execute_query(
-                        "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target",
-                        use_cache=True,
-                    )
-
-                    entity_names = [r["name"] for r in entity_records]
-
-                    # Build adjacency list/set for fast connection lookup
-                    adj = {}
-                    for r in relation_records:
-                        src = r["source"]
-                        tgt = r["target"]
-                        adj.setdefault(src, set()).add(tgt)
-                        adj.setdefault(tgt, set()).add(src)
-
                     # Helper to find which entities are present in a memory content
                     def get_present_entities(content: str) -> set[str]:
                         content_lower = content.lower()
                         present = set()
                         for name in entity_names:
                             name_lower = name.lower()
-                            # Word boundary match for names
                             pattern = rf"\b{re.escape(name_lower)}\b"
                             if re.search(pattern, content_lower):
                                 present.add(name)
+
+                        # Map memory content pronouns to the user node
+                        if user_node_name and any(
+                            re.search(rf"\b{re.escape(p)}\b", content_lower)
+                            for p in user_pronouns
+                        ):
+                            present.add(user_node_name)
                         return present
 
                     # Map candidate indices to their present entities
@@ -991,21 +1047,27 @@ class MemoryStore:
 
                             entities_other = cand_entities[other_idx]
                             has_connection = False
+                            connecting_node = None
 
                             # Check for shared or linked entities in Neo4j
                             for e1 in entities_k:
                                 if e1 in entities_other:
                                     has_connection = True
+                                    connecting_node = e1
                                     break
                                 for e2 in entities_other:
                                     if e2 in adj.get(e1, set()):
                                         has_connection = True
+                                        connecting_node = e1
                                         break
                                 if has_connection:
                                     break
 
-                            if has_connection:
-                                other_cand["score"] += 0.6
+                            if has_connection and connecting_node:
+                                # ACT-R Degree Scaling (§6.2)
+                                deg = len(adj.get(connecting_node, set()))
+                                boost = 0.6 / (1.0 + math.log(max(1, deg)))
+                                other_cand["score"] += boost
 
                 except Exception as ne_err:
                     logger.error(f"Neo4j spreading activation query failed: {ne_err}")
