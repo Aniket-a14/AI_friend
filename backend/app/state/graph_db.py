@@ -1,3 +1,5 @@
+# pyrefly: ignore [missing-import]
+
 from neo4j import AsyncGraphDatabase
 import logging
 import re
@@ -24,13 +26,14 @@ class GraphDB:
 
         if not password or password in ["password", "neo4j", "placeholder"]:
             logger.error(
-                "🛑 Security Violation: Weak or Placeholder Neo4j Password Detected."
+                " Security Violation: Weak or Placeholder Neo4j Password Detected."
             )
             raise ValueError(
                 "A strong, non-default NEO4J_PASSWORD must be provided in your .env file."
             )
 
         self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
+        self._bootstrap_task = None
 
         # Perceptual Belief Cache
         self._belief_cache = {}
@@ -40,7 +43,7 @@ class GraphDB:
         try:
             loop = asyncio.get_running_loop()
             if loop.is_running():
-                loop.create_task(self.bootstrap_constraints())
+                self._bootstrap_task = loop.create_task(self.bootstrap_constraints())
         except RuntimeError:
             # If no running event loop (e.g. mock setup), bootstrap will run on first query or be skipped
             pass
@@ -82,6 +85,12 @@ class GraphDB:
         return rel_type
 
     async def close(self):
+        if self._bootstrap_task and not self._bootstrap_task.done():
+            self._bootstrap_task.cancel()
+            try:
+                await self._bootstrap_task
+            except asyncio.CancelledError:
+                pass
         await self.driver.close()
 
     async def invalidate_cache(self, affected_entity: str = None):
