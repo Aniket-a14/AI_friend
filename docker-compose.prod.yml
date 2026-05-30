@@ -41,6 +41,7 @@ services:
       - PROACTIVE_MIN_ENERGY=${PROACTIVE_MIN_ENERGY:-0.2}
       - LOG_LEVEL=INFO
       - QDRANT_HOST=brain_vectors
+      - MOCK_LLM_TEXT=${MOCK_LLM_TEXT:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -106,6 +107,7 @@ services:
       - PROACTIVE_MIN_ENERGY=${PROACTIVE_MIN_ENERGY:-0.2}
       - LOG_LEVEL=INFO
       - QDRANT_HOST=brain_vectors
+      - MOCK_LLM_TEXT=${MOCK_LLM_TEXT:-false}
     networks:
       - ai_mesh_network
     depends_on:
@@ -139,6 +141,7 @@ services:
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
       - QDRANT_HOST=brain_vectors
+      - MOCK_LLM_TEXT=${MOCK_LLM_TEXT:-false}
     networks:
       - ai_mesh_network
     depends_on:
