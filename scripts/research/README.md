@@ -33,13 +33,13 @@ To prevent performance profiling overhead from introducing latency into live con
     *   **Milestones** ($I \ge 0.7$, continuous range `[0.70, 0.99]`): permanently protected from decay and pruning.
 *   **Retrieval Speedup** ($O(\log M_{\text{active}})$): Quantifies lookup latency differences between unpruned search spaces and pruned bounded spaces, achieving an asymptotic $\sim30\%$ speedup over long conversational sessions.
 
-### 2. Autonomic Physiological Entrainment
-*   **Coupled Heart Rate (HR):** Spikes under conversational threat and stress, driven by dynamic endocrine coupling:
-    $$\text{HR (BPM)} = 70 + 40 \times \text{Cortisol} + 10 \times \text{Arousal} + \epsilon_{\text{noise}}$$
-*   **Respiration Rate (RR):** Models breathing rate dynamics under stress:
-    $$\text{RR (Breaths/Min)} = 12 + 10 \times \text{Arousal} + 4 \times \text{Cortisol} + \epsilon_{\text{noise}}$$
-*   **Heart Rate Variability (HRV - RMSSD):** Models autonomic regulation decline under stress and fatigue:
-    $$\text{HRV (ms)} = 65 - 35 \times \text{Cortisol} - 15 \times \text{Fatigue} + \epsilon_{\text{noise}}$$
+### 2. Speech Prosody & Paralinguistic Modulation
+*   **Vocal Speaking Rate (R):** Modulates the pacing of speech dynamically under stress and cognitive load:
+    $$R(t) = \text{clamp}(1.0 + 0.20 \times \text{Arousal} - 0.10 \times \text{Valence} - 0.25 \times \text{Fatigue} + B(t), 0.60, 1.80)$$
+*   **Vocal Pitch (P):** Captures emotional pitch fluctuations and vibrato ripple:
+    $$P(t) = \text{clamp}(1.0 + 0.05 \times \text{Valence} + 0.15 \times \text{Arousal} - 0.10 \times \text{Dominance} - 0.10 \times \text{Fatigue} + \nu(t), 0.50, 2.00)$$
+*   **Vocal Volume ($V_{\text{ol}}$):** Dynamically scales volume envelopes based on dominances and interaction bounds:
+    $$V_{\text{ol}}(t) = \text{clamp}((0.40 + 0.60 \times \text{Dominance}) \times E(t), 0.10, 1.00)$$
 
 ### 3. Cognitive & Endocrine (Hormonal) States
 *   **Cortisol & Dopamine:** Internal stress and reward appraisals mapped to Pleasure-Arousal-Dominance (PAD) dynamics.
@@ -62,7 +62,7 @@ To compile meaningful data, certain scripts **must** run concurrently in separat
 | Primary Task | Active Run Script (Terminal 1) | Background Daemon (Terminal 2) | Purpose / Goal |
 | :--- | :--- | :--- | :--- |
 | **Physical Stress Test** | `python scripts/research/hard_benchmark.py --iterations 2000` | `python scripts/research/collector.py` | Logs the real-time PAD and endocrine trajectories during high-throughput message stress testing. |
-| **Autonomic Entrainment** | `python scripts/research/human_fidelity_test.py` | `python scripts/research/collector.py` | Evaluates heart rate, breathing rate, and RMSSD HRV response curves during structured human-like interactions. |
+| **Paralinguistic Sync** | `python scripts/research/human_fidelity_test.py` | `python scripts/research/collector.py` | Evaluates Pleasure-Arousal-Dominance (PAD) trajectories, paralinguistic tag precision, and response curves during structured human-like interactions. |
 | **Active Live Injector** | `python scripts/research/injector.py` | `python scripts/research/monitor.py` | Profiles network-level hop latencies (NATS IPC) using standardized timestamped payload injections. |
 
 ---
@@ -175,8 +175,8 @@ python scripts/research/visualizer.py
 python scripts/visualization/visualize_affect.py
 ```
 
-### Step 11: Compile Realism & Autonomic Curves
-Process the benchmark's collected endocrine outputs to evaluate physiological entrainment, generating RMSSD HRV models and heart rate plots:
+### Step 11: Compile Realism & Paralinguistic Curves
+Process the benchmark's collected outputs to evaluate paralinguistic and prosody entrainment:
 ```bash
 python scripts/research/human_realism_eval.py
 ```
@@ -208,8 +208,7 @@ All generated telemetry logs, high-resolution plots, and LaTeX-grade academic re
 
 *   **Publication-Grade Figures:**
     *   `scripts/results/hard_benchmark_progression.png` (4-panel visualizer showing search space stabilization, $O(\log M_{\text{active}})$ speedups, and intent convergence)
-    *   `scripts/results/human_realism_physiological.png` (coupled heart rate, breathing rate, and RMSSD HRV trajectories)
-    *   `scripts/results/human_realism_comparisons.png` (appraisal valence vs. baseline physiological comparisons)
+    *   `scripts/results/human_realism_comparisons.png` (appraisal valence vs. baseline paralinguistic comparisons)
     *   `scripts/results/extended_benchmarks_comparisons.png` (graph database search latencies vs. memory usage)
     *   `scripts/results/extended_benchmarks_radar.png` (radar diagram comparing multi-axis performance limits)
     *   `scripts/results/cognitive_confusion_matrix.png` (confusion matrix plotting classification accuracy)

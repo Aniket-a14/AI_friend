@@ -18,7 +18,7 @@ class SpeechCoordinator:
         Ar = state_snap.get("arousal", state_snap.get("energy", 0.5))
         F = state_snap.get("fatigue", 0.0)
 
-        # Continuous formulas from CVS-3.0 Roadmap:
+        # Continuous formulas from CVS-3.5 Roadmap:
         # Sr = 1.0 + (0.20 * arousal) - (0.10 * valence) - (0.25 * fatigue)
         speaking_rate = max(0.6, min(1.8, 1.0 + (0.20 * Ar) - (0.10 * V) - (0.25 * F)))
         confidence = 0.9  # Baseline
