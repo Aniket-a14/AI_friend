@@ -153,7 +153,7 @@ The following carousels display the fully updated, dynamically synchronized visu
 
 All physical files generated, audited, and compiled during this verification round have been successfully mirrored in the active Brain folder:
 
-1. **Academic Publication PDF**: [CVS-3.5_Mind_Benchmarking_Report.pdf](../../_archive/academic_benchmarks/reports/CVS-3.5_Mind_Benchmarking_Report.pdf) (exactly 4 pages, double-column letter, includes running headers/footers, Table II SOTA Comparative Matrix, Table III Paralinguistics, and embedded visual charts).
+1. **Academic Publication PDF**: [CVS-3.5_Mind_Benchmarking_Report.pdf](../../_archive/academic_benchmarks/reports/CVS-3.0_Mind_Benchmarking_Report.pdf) (exactly 4 pages, double-column letter, includes running headers/footers, Table II SOTA Comparative Matrix, Table III Paralinguistics, and embedded visual charts).
 2. **Master SOTA Review**: [academic_sota_benchmarks.md](./academic_sota_benchmarks.md) (extensive review compiling 30 peer-reviewed paper references, LaTeX templates, and detailed BibTeX listings).
 3. **Core Telemetry JSON**: [benchmark_results.json](../datasets/benchmark_results.json) (100,000-iteration dynamic run telemetry).
 4. **Paralinguistic Telemetry JSON**: [human_realism_results.json](../datasets/human_realism_results.json) (computational footprint, Neo4j traversals, and paralinguistic tag precision).
