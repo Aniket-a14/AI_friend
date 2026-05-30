@@ -269,3 +269,32 @@ class GraphDB:
             subject_label=subject_label,
             target_label=target_label,
         )
+
+    async def decay_relationships(
+        self, decay_factor: float = 0.95, prune_threshold: float = 0.25
+    ):
+        """
+        Hebbian decay for all relationship edges.
+        Reduces weight by decay_factor, and prunes edges falling below prune_threshold.
+        """
+        await self._invalidate_cache()
+
+        # 1. Decay all weights
+        decay_query = (
+            "MATCH ()-[r]->() SET r.weight = coalesce(r.weight, 1.0) * $decay_factor"
+        )
+        await self.execute_query(
+            decay_query, {"decay_factor": decay_factor}, write=True
+        )
+
+        # 2. Prune edges below threshold
+        prune_query = (
+            "MATCH ()-[r]->() WHERE coalesce(r.weight, 0.0) < $prune_threshold DELETE r"
+        )
+        await self.execute_query(
+            prune_query, {"prune_threshold": prune_threshold}, write=True
+        )
+
+        logger.info(
+            f"Graph Store: Decayed relationship weights (factor: {decay_factor}) and pruned edges below {prune_threshold}"
+        )

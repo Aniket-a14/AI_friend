@@ -296,6 +296,15 @@ class ReflectionService:
             except Exception as e:
                 logger.error(f"Episodic memory consolidation failure: {e}")
 
+            # --- PART 4: Hebbian Graph Decay ---
+            if self.graph:
+                try:
+                    await self.graph.decay_relationships(
+                        decay_factor=0.95, prune_threshold=0.25
+                    )
+                except Exception as e:
+                    logger.error(f"[Reflection] Graph decay failed: {e}")
+
             logger.info("[Reflection] Semantic Mesh Consolidation Complete.")
 
         except Exception as e:
