@@ -18,9 +18,10 @@ async def test_neo4j_relationship_decay():
 
     with patch("neo4j.AsyncGraphDatabase.driver", return_value=mock_driver):
         # Instantiate GraphDB with dummy credentials to avoid default validations
-        db = GraphDB(
-            uri="bolt://localhost:7687", user="neo4j", password="strong_password_123"
-        )
+        import os
+
+        dummy_pass = os.environ.get("NEO4J_PASSWORD", "TEST_SECRET_MOCK_PASSWORD")
+        db = GraphDB(uri="bolt://localhost:7687", user="neo4j", password=dummy_pass)
 
         # Capture queries executed
         queries_run = []
