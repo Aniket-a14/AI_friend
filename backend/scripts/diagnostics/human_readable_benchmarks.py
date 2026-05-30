@@ -25,7 +25,7 @@ def print_human_readable_table(filepath):
         return
 
     print("=" * 85)
-    print(f"{'🧠 AI FRIEND CVS-3.0 CORE LATENCY BENCHMARKS':^85}")
+    print(f"{'🧠 AI FRIEND CVS-3.5 CORE LATENCY BENCHMARKS':^85}")
     print("=" * 85)
     print(
         f"{'Subsystem Component':<45} | {'Mean Latency':<12} | {'p99 Tail':<10} | {'Status':<10}"
