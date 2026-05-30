@@ -31,6 +31,15 @@ class IdentityManager:
         # CVS-1.0: Immutable Core Trait seeding
         self._refresh_immutable_core()
 
+        # Homeostatic Adaptive Trait Cap: maximum 5 active adaptive traits
+        adaptive_traits = self.personality.get("core_personality", {}).get(
+            "adaptive_traits", []
+        )
+        if len(adaptive_traits) > 5:
+            self.personality["core_personality"]["adaptive_traits"] = adaptive_traits[
+                -5:
+            ]
+
         # Buffer for adaptive variable evolution
         self.evolution_buffer = {}
 
@@ -79,6 +88,14 @@ class IdentityManager:
                 loaded_personality = json.loads(personality_raw)
                 if loaded_personality:
                     self.personality = loaded_personality
+                    # Enforce homeostatic cap of 5 adaptive traits
+                    adaptive_traits = self.personality.get("core_personality", {}).get(
+                        "adaptive_traits", []
+                    )
+                    if len(adaptive_traits) > 5:
+                        self.personality["core_personality"]["adaptive_traits"] = (
+                            adaptive_traits[-5:]
+                        )
 
             if history_raw:
                 loaded_history = json.loads(history_raw)
@@ -151,6 +168,12 @@ class IdentityManager:
             for trait in suggestions["new_traits"]:
                 if trait not in adaptive_traits:
                     adaptive_traits.append(trait)
+            # Enforce homeostatic cap of 5 adaptive traits
+            if len(adaptive_traits) > 5:
+                adaptive_traits = adaptive_traits[-5:]
+                self.personality["core_personality"]["adaptive_traits"] = (
+                    adaptive_traits
+                )
 
         # 2. Update Relationship Context
         if "relationship" in suggestions:

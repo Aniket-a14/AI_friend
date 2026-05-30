@@ -363,7 +363,9 @@ class MemoryStore:
             ts, cached_results = self._l1_cache[cache_key]
             if now_ts - ts < self._l1_cache_ttl:
                 if cached_results and refresh_on_recall:
-                    await self._refresh_memories(cached_results)
+                    await self._refresh_memories(
+                        cached_results, current_valence=current_valence
+                    )
                 return cached_results
 
         try:
@@ -420,6 +422,29 @@ class MemoryStore:
             # 1. Qdrant Selective Vector Path
             if self.qdrant_store.client and candidates:
                 try:
+                    db_metadata = {}
+                    try:
+                        cand_ids = [c["id"] for c in candidates if c.get("id")]
+                        if cand_ids:
+                            async with self.pool.acquire() as conn:
+                                if self.is_sqlite:
+                                    placeholders = ",".join("?" for _ in cand_ids)
+                                    rows = await conn.fetch(
+                                        f"SELECT id, importance_score, emotional_weight, valence, recall_count, last_recalled_at FROM memories WHERE id IN ({placeholders})",
+                                        *cand_ids,
+                                    )
+                                else:
+                                    rows = await conn.fetch(
+                                        "SELECT id, importance_score, emotional_weight, valence, recall_count, last_recalled_at FROM memories WHERE id = ANY($1)",
+                                        cand_ids,
+                                    )
+                                for r in rows:
+                                    db_metadata[str(r["id"])] = r
+                    except Exception as db_err:
+                        logger.warning(
+                            f"Failed to fetch updated memory metadata from SQL DB for Qdrant candidates: {db_err}"
+                        )
+
                     for cand in candidates:
                         meta = cand["metadata"]
                         c_wing = meta.get("wing")
@@ -434,15 +459,51 @@ class MemoryStore:
                             continue
 
                         memory_id = cand["id"]
-                        memory_valence = meta.get("valence", 0.0)
-                        emotion_weight_row = meta.get("emotional_weight", 0.0)
-                        importance_score = meta.get("importance_score", 0.5)
-                        recall_count = max(1, meta.get("recall_count", 1))
+                        db_meta = db_metadata.get(str(memory_id))
+
+                        memory_valence = (
+                            db_meta.get("valence")
+                            if (db_meta and db_meta.get("valence") is not None)
+                            else meta.get("valence", 0.0)
+                        )
+                        emotion_weight_row = (
+                            db_meta.get("emotional_weight")
+                            if (db_meta and db_meta.get("emotional_weight") is not None)
+                            else meta.get("emotional_weight", 0.0)
+                        )
+                        importance_score = (
+                            db_meta.get("importance_score")
+                            if (db_meta and db_meta.get("importance_score") is not None)
+                            else meta.get("importance_score", 0.5)
+                        )
+                        recall_count = max(
+                            1,
+                            db_meta.get("recall_count")
+                            if (db_meta and db_meta.get("recall_count") is not None)
+                            else meta.get("recall_count", 1),
+                        )
 
                         try:
-                            last_recall_time = float(
-                                meta.get("last_recalled_at", time.time())
-                            )
+                            if db_meta and db_meta.get("last_recalled_at"):
+                                last_recall_time = db_meta.get("last_recalled_at")
+                                if isinstance(last_recall_time, (int, float)):
+                                    last_recall_time = float(last_recall_time)
+                                else:
+                                    from datetime import datetime
+
+                                    if hasattr(last_recall_time, "timestamp"):
+                                        last_recall_time = last_recall_time.timestamp()
+                                    else:
+                                        dt = datetime.fromisoformat(
+                                            str(last_recall_time).replace(" ", "T")
+                                        )
+                                        if dt.tzinfo is None:
+                                            dt = dt.replace(tzinfo=timezone.utc)
+                                        last_recall_time = dt.timestamp()
+                            else:
+                                last_recall_time = float(
+                                    meta.get("last_recalled_at", time.time())
+                                )
                         except (ValueError, TypeError):
                             last_recall_time = time.time()
 
@@ -1254,7 +1315,9 @@ class MemoryStore:
                     except Exception as e:
                         logger.error(f"Background Memory Refresh Failed: {e}")
 
-                task = asyncio.create_task(self._refresh_memories(results))
+                task = asyncio.create_task(
+                    self._refresh_memories(results, current_valence=current_valence)
+                )
                 task.add_done_callback(_done_callback)
 
             # Cache results in L1 memory cache before returning
@@ -1265,10 +1328,13 @@ class MemoryStore:
             logger.error(f"Memory search failed: {e}")
             return []
 
-    async def _refresh_memories(self, memories: list[dict]):
+    async def _refresh_memories(
+        self, memories: list[dict], current_valence: float = 0.0
+    ):
         """
         Updates last_recalled_at and increments recall_count (ACT-R frequency).
         This strengthens the base-level activation for recently accessed memories.
+        Also performs emotional habituation / PTSD extinction decay under neutral/positive context.
         """
         try:
             contents = [
@@ -1279,25 +1345,71 @@ class MemoryStore:
             async with self.pool.acquire() as conn:
                 if self.is_sqlite:
                     placeholders = ",".join("?" for _ in contents)
-                    await conn.execute(
-                        f"""
-                        UPDATE memories
-                        SET last_recalled_at = CURRENT_TIMESTAMP,
-                             recall_count = recall_count + 1
-                        WHERE content IN ({placeholders})
-                        """,
-                        *contents,
-                    )
+                    try:
+                        params = [current_valence, current_valence] + contents
+                        await conn.execute(
+                            f"""
+                            UPDATE memories
+                            SET last_recalled_at = CURRENT_TIMESTAMP,
+                                 recall_count = recall_count + 1,
+                                 emotional_weight = CASE
+                                     WHEN valence < -0.4 AND ? >= 0.0 THEN emotional_weight * 0.95
+                                     ELSE emotional_weight
+                                 END,
+                                 importance_score = CASE
+                                     WHEN valence < -0.4 AND ? >= 0.0 THEN importance_score * 0.98
+                                     ELSE importance_score
+                                 END
+                            WHERE content IN ({placeholders})
+                            """,
+                            *params,
+                        )
+                    except Exception as sq_err:
+                        logger.warning(
+                            f"Decay refresh failed, falling back to legacy: {sq_err}"
+                        )
+                        await conn.execute(
+                            f"""
+                            UPDATE memories
+                            SET last_recalled_at = CURRENT_TIMESTAMP,
+                                 recall_count = recall_count + 1
+                            WHERE content IN ({placeholders})
+                            """,
+                            *contents,
+                        )
                 else:
-                    await conn.execute(
-                        """
-                        UPDATE memories
-                        SET last_recalled_at = CURRENT_TIMESTAMP,
-                             recall_count = recall_count + 1
-                        WHERE content = ANY($1)
-                        """,
-                        contents,
-                    )
+                    try:
+                        await conn.execute(
+                            """
+                            UPDATE memories
+                            SET last_recalled_at = CURRENT_TIMESTAMP,
+                                 recall_count = recall_count + 1,
+                                 emotional_weight = CASE
+                                     WHEN valence < -0.4 AND $2 >= 0.0 THEN emotional_weight * 0.95
+                                     ELSE emotional_weight
+                                 END,
+                                 importance_score = CASE
+                                     WHEN valence < -0.4 AND $2 >= 0.0 THEN importance_score * 0.98
+                                     ELSE importance_score
+                                 END
+                            WHERE content = ANY($1)
+                            """,
+                            contents,
+                            current_valence,
+                        )
+                    except Exception as pg_err:
+                        logger.warning(
+                            f"Decay refresh failed, falling back to legacy: {pg_err}"
+                        )
+                        await conn.execute(
+                            """
+                            UPDATE memories
+                            SET last_recalled_at = CURRENT_TIMESTAMP,
+                                 recall_count = recall_count + 1
+                            WHERE content = ANY($1)
+                            """,
+                            contents,
+                        )
         except Exception as e:
             logger.error(f"Failed to refresh memories: {e}")
 
