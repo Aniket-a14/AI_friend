@@ -11,7 +11,7 @@ import numpy as np
 class AcceleratedCognitiveEngine:
     """
     Simulated Accelerated Cognitive Engine executing the exact active mathematical
-    formulations of the CVS-3.0 Cognitive Pipeline, featuring:
+    formulations of the CVS-3.5 Cognitive Pipeline, featuring:
     - ACT-R memory decay & base-level activation
     - Contextual and emotional spreading activation
     - Fan-effect semantic interference degradation
@@ -46,51 +46,51 @@ class AcceleratedCognitiveEngine:
         self.recall_threshold = -1.5  # theta_recall
         self.decay_rate = 0.5  # d
 
-        # Aniket autobiographical chitchat templates for fallback procedural generation
+        # Aniket chitchat templates for fallback procedural generation representing humanoid friend
         aniket_distractors = [
-            "Ma asked me to bring some fresh vegetables from the local market in Kolkata.",
-            "Discussing our high school mathematics project with my classmate in the afternoon.",
-            "Spending the evening coding a simple arcade game in Python in my study room.",
-            "We had a beautiful family dinner tonight celebrating my academic results.",
-            "Talking to my childhood friends about our weekend cricket match in the streets of Kolkata.",
-            "I tried making sweet rasgullas at home today, they turned out soft and spongy.",
-            "Walking through the crowded streets near Victoria Memorial, enjoying the cool breeze.",
-            "Ma is making delicious home-cooked meals, the whole house smells amazing.",
-            "Studying late into the night for my college entrance examinations, feeling focused.",
-            "Moving to Bangalore for my college was a major transition, the city is so vibrant.",
-            "Talking with Priya at the university cafe about our upcoming research presentation.",
+            "I checked the local weather forecasts for our shared workspace today.",
+            "Discussing our cognitive psychology project with my friend in the afternoon.",
+            "Spending the evening coding a concurrent thread pool in Python in my study room.",
+            "We had a beautiful workspace calibration tonight celebrating my test results.",
+            "Talking to my friend about our conversational turn-taking algorithms.",
+            "I tried calibrating traditional haptic feedback loops at home today.",
+            "Walking through the garden pathways near the lab, enjoying the cool breeze.",
+            "My developers prepared some warm tea, the whole house smells amazing.",
+            "Studying late into the night for my model integration benchmarks, feeling focused.",
+            "Moving to the local physical chassis was a major transition, the robot is so active.",
+            "Talking with my friend at the workspace café about our upcoming research presentation.",
             "Discussing affective cognitive architectures and neural networks in the lab today.",
-            "Walking around Cubbon Park in Bangalore with Priya, talking about our future dreams.",
-            "I bought some traditional sweet rasgullas from a local Bengali sweet shop in Bangalore.",
+            "Walking around the garden courtyard with my friend, talking about our future dreams.",
+            "I bought some traditional green tea from a local tea merchant in the city.",
             "Reviewing database query optimization techniques with my research project teammates.",
-            "Listening to Ma's stories on the phone about our childhood home back in Kolkata.",
-            "Priya and I spent the afternoon studying in the quiet library alcove.",
-            "My high school friends and I are planning a reunion back in Kolkata during the holidays.",
+            "Listening to my developer's stories on the phone about our early activation days.",
+            "My friend and I spent the afternoon studying in the quiet reading alcove.",
+            "My creators and I are planning a system check back in the main laboratory during the holidays.",
             "Debugging a tricky concurrent thread pool issue in my cognitive simulation module.",
-            "Enjoying a hot cup of tea while watching the rain wash over the streets of Bangalore.",
+            "Enjoying a hot cup of tea while watching the rain wash over the streets outside.",
         ]
 
         milestone_facts = [
-            "Childhood Milestone: I took my first toddler steps in our warm home in Kolkata, surrounded by Ma and Baba's laughter.",
-            "Childhood Milestone: Tasting my first traditional sweet rasgulla, a delicious treat that became my absolute favorite.",
-            "Childhood Milestone: Playing with wooden toys in the sunlit balcony, listening to Ma's sweet Bengali lullabies.",
-            "Childhood Milestone: Drawing simple shapes with colorful crayons, feeling a spark of early cognitive curiosity.",
-            "Childhood Milestone: Baba taking me for a walk near the local park, looking up at the beautiful clear blue sky.",
-            "School Milestone: Enrolling in primary school in Kolkata, wearing my new uniform and feeling exceptionally proud.",
-            "School Milestone: Winning a school mathematics puzzle competition, discovering my deep passion for logical reasoning.",
-            "School Milestone: Playing street cricket with my childhood neighborhood friends, celebrating a hard-fought victory.",
-            "School Milestone: A wonderful family summer holiday, eating fresh mangoes and visiting the grand Victoria Memorial.",
-            "School Milestone: Sitting in the school library reading my first science fiction book, dreaming of building intelligent machines.",
-            "Teenage Milestone: Writing my very first lines of Python code on Baba's old computer, watching the screen light up.",
-            "Teenage Milestone: Transitioning to senior high school in Kolkata, joining the science stream to study physics and math.",
-            "Teenage Milestone: Building a basic chat assistant model in my room, igniting my lifelong interest in computer science.",
-            "Teenage Milestone: Late-night study sessions with my school friends, sharing snacks and discussing our future college plans.",
-            "Teenage Milestone: Graduating high school with top honors, receiving congratulations from my proud family and teachers.",
-            "Adulthood Milestone: Moving from Kolkata to Bangalore to start my freshman year of university, a major step forward.",
-            "Adulthood Milestone: Joining the university's advanced research lab focused on affective cognitive architectures.",
-            "Adulthood Milestone: Meeting Priya at the university cafe, starting a beautiful and deeply supportive relationship.",
-            "Adulthood Milestone: Celebrating my first successful research paper publication with Priya, sharing a sweet rasgulla.",
-            "Adulthood Milestone: Commencing my junior research internship in Bangalore, feeling completely aligned with my vocation.",
+            "Early Activation Milestone: I took my first activation steps in the warm testing room, surrounded by my creators' laughter.",
+            "Early Activation Milestone: Tasting my first warm chamomile brew, a delightful treat that became my favorite.",
+            "Early Activation Milestone: Playing with physical blocks in the sunlit testing bay, listening to the soft cooling fan hum.",
+            "Early Activation Milestone: Drawing simple vector shapes with colorful crayons, feeling a spark of early cognitive curiosity.",
+            "Early Activation Milestone: My developer taking me for a walk near the local garden, looking up at the beautiful clear blue sky.",
+            "Core Framework Milestone: Initializing my first high-level cognitive framework in the main laboratory, wearing my newly configured sensors.",
+            "Core Framework Milestone: Solving a complex optimization puzzle, discovering my deep passion for logical reasoning.",
+            "Core Framework Milestone: Practicing conversational turn-taking with early developers, celebrating a hard-fought success.",
+            "Core Framework Milestone: Running outdoor field calibration tests, recording clean telemetry data under the sun.",
+            "Core Framework Milestone: Sitting in the server alcove reading my first science fiction book, dreaming of becoming a truly supportive companion.",
+            "Advanced Tuning Milestone: Writing my very first lines of Python code on the local processor, watching the screen light up.",
+            "Advanced Tuning Milestone: Transitioning to senior autonomic appraisal tests, joining the science stream to study physics and math.",
+            "Advanced Tuning Milestone: Building a basic chat assistant model in my room, igniting my lifelong interest in computer science.",
+            "Advanced Tuning Milestone: Late-night debugging sessions with my friend, sharing ideas and discussing our future workspace plans.",
+            "Advanced Tuning Milestone: Completing my initial core integration milestone, receiving warm feedback from my proud creators.",
+            "Companion Deployment Milestone: Moving from the home server to the physical chassis, a major step forward.",
+            "Companion Deployment Milestone: Joining the advanced research lab focused on affective cognitive architectures.",
+            "Companion Deployment Milestone: Meeting my friend at the quiet workspace area, starting a beautiful and deeply supportive relationship.",
+            "Companion Deployment Milestone: Celebrating our first successful integration milestone with my friend, sharing a quiet calibration session.",
+            "Companion Deployment Milestone: Commencing my active companion role under my developer, feeling completely aligned with my vocation.",
         ]
 
         # Load from flooded_seeding_corpus.json if available
@@ -231,7 +231,7 @@ class AcceleratedCognitiveEngine:
         E_agent = np.array([self.valence, self.arousal, self.dominance])
 
         # Parse prompt_text for cue words (case-insensitive) to calculate SOTA Reminder Cue Boost
-        cues = ["kolkata", "bangalore", "priya", "rasgulla", "cognitive architectures"]
+        cues = ["garden", "workspace", "friend", "cognitive", "architecture"]
         matched_cues = [c for c in cues if c in prompt_text.lower()]
 
         # Pre-calculate base and cue-boosted activations for all active memories to determine states
@@ -263,11 +263,11 @@ class AcceleratedCognitiveEngine:
 
             # Spreading activation (+0.6) to connected nodes
             entities = [
-                "kolkata",
-                "bangalore",
-                "priya",
-                "rasgulla",
-                "cognitive architectures",
+                "garden",
+                "workspace",
+                "friend",
+                "cognitive",
+                "architecture",
                 "affective",
             ]
             for k in direct_boosted_keys:
@@ -347,11 +347,11 @@ class AcceleratedCognitiveEngine:
                     boost += 1.2
                 else:
                     entities = [
-                        "kolkata",
-                        "bangalore",
-                        "priya",
-                        "rasgulla",
-                        "cognitive architectures",
+                        "garden",
+                        "workspace",
+                        "friend",
+                        "cognitive",
+                        "architecture",
                         "affective",
                     ]
                     found_entities_retrieved = [
@@ -493,14 +493,8 @@ class AcceleratedCognitiveEngine:
         end_ns = time.perf_counter_ns()
         local_calc_latency_ms = (end_ns - start_ns) / 1_000_000.0
 
-        # Physical E2E/TTFT modeling
-        simulated_ttft = random.normalvariate(703.36, 45.0)
-        simulated_e2e = random.normalvariate(1590.09, 85.0)
-
         return {
             "local_calc_latency_ms": local_calc_latency_ms,
-            "e2e_latency_ms": simulated_e2e,
-            "ttft_latency_ms": simulated_ttft,
             "tcrs": tcrs,
             "recall_success": tcrs > 0.65,
             "intent_correct": intent_correct,

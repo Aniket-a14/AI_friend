@@ -57,6 +57,7 @@ class AppSettings(BaseSettings):
 
     LLM_STREAM_MAX_SECONDS: int = 120
     LLM_INTENT_CLASSIFICATION_ENABLED: bool = True
+    MOCK_LLM_TEXT: bool = False
 
     REFLECTION_ENABLED: bool = True
     REFLECTION_MIN_INTERVAL_SECONDS: float = 0.0

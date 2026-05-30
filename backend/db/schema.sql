@@ -27,6 +27,30 @@ create table if not exists memories (
   modality varchar(255)
 );
 
+-- Create a table to store cold archived decayed memories
+create table if not exists archived_memories (
+  id uuid primary key default gen_random_uuid(),
+  content text not null,
+  raw_content text,
+  wing text not null default 'personal',
+  room text,
+  importance_score double precision not null default 0.5,
+  emotional_weight double precision not null default 0.0,
+  valence double precision not null default 0.0,
+  certainty double precision not null default 1.0,
+  source text not null default 'user',
+  recall_count integer not null default 0,
+  last_recalled_at timestamptz default now(),
+  created_at timestamptz default now(),
+  metadata jsonb default '{}'::jsonb,
+  lifespan_stage varchar(100),
+  crisis varchar(100),
+  virtue varchar(100),
+  relations varchar(255),
+  relation_circles varchar(255),
+  modality varchar(255)
+);
+
 -- Schema migrations for existing tables
 alter table memories add column if not exists lifespan_stage varchar(100);
 alter table memories add column if not exists crisis varchar(100);

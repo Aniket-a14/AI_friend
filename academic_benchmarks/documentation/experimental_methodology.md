@@ -19,7 +19,7 @@ graph TD
 
     C --> C1["Human-in-the-Loop trials (N=50 Cycles)"]
     C --> C2["Physical Hardware Mesh (NATS, Neo4j, iMac M3, AGX Jetson)"]
-    C --> C3["Validates: Barge-In Latencies, Cardiovascular-Respiratory Entrainment"]
+    C --> C3["Validates: Barge-In Latencies, Paralinguistic Filler Rates"]
 ```
 
 ### 1.1 Pillar 1: Accelerated Mathematical Simulation (`--mode accelerated`)
@@ -56,7 +56,7 @@ The sequential diagram below traces the exact millisecond-level trajectory of an
         │
         ▼
 ===================================================
-[Local LLM Inference: Llama-3.2 3B] ([TBP] TTFT)
+[Local LLM Inference: Llama-3.2 3B]
 ===================================================
         │
         ▼
@@ -85,7 +85,7 @@ The plot below demonstrates how intent accuracy, Theory of Mind error coefficien
 
 [TBP]
 
-### 3.2 Live Physiological Cardiorespiratory Entrainment
-The plot below documents the dynamic autonomic coupling of the social robot's breathing and heart rate to user stress prompts over a 90-second interactive sequence.
+### 3.2 Speech Turn-Taking and Interruption (Barge-In) Dynamics
+The plot below documents the latency distributions of user interrupt events and S1 fast VAD trigger timings during a live interaction sequence.
 
 [TBP]

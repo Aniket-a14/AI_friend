@@ -43,7 +43,7 @@ graph TD
 
     C --> C1["Human-in-the-Loop trials (N=50 Cycles)"]
     C --> C2["Physical Hardware Mesh (NATS, Neo4j, iMac M3, AGX Jetson)"]
-    C --> C3["Validates: Barge-In Latencies, Cardiovascular-Respiratory Entrainment"]
+    C --> C3["Validates: Barge-In Latencies, Paralinguistic Filler Rates"]
 ```
 
 ### 🧠 1. Accelerated Simulation Benchmarks
@@ -54,7 +54,7 @@ graph TD
 ### 💓 2. Physical Real-Time Interaction Benchmarks (Human Realism)
 * **Scope**: Live interactive trials (50 dialogue cycles) on a physical infrastructure mesh.
 * **Methodology**: Measures the real-time physical performance of the local multi-agent system. It runs NATS JetStream message passing, Neo4j graph queries, and CPU/RAM profiles under Apple iMac M3 Host (16 GB Unified Memory) and NVIDIA Jetson targets.
-* **Key Visuals**: Captures real-time voice activity detection (VAD) barge-in response times, physiological cardiorespiratory entrainment coupling, and paralinguistic tag insertion rates under stress.
+* **Key Visuals**: Captures real-time voice activity detection (VAD) barge-in response times and paralinguistic tag insertion rates under stress.
 
 ---
 
@@ -68,11 +68,11 @@ The complete, publication-grade comparison matrix (Table II in the formal report
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** | **`[TBP]`** |
-| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
+| **Local Compute Latency** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | **`[TBP]`** | **`[TBP]`** |
 | **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **`[TBP]`** | **`[TBP]`** |
 | **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **`[TBP]`** | **`[TBP]`** |
-| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
+| **Paralinguistic Precision** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
@@ -104,13 +104,9 @@ The custom cached graph traversal mechanisms in CVS-3.5 bypass typical O(N) data
 
 ---
 
-## 🧬 Physiological Autonomic Entrainment Dynamics
+## 🧬 Paralinguistic & Affective Coupling Dynamics
 
-Under high-stress dialogue scenarios (e.g., threat detection), CVS-3.5's endocrine core dynamically couples the robot's simulated autonomic breathing rate and cardiac indicators to human interaction states:
-
-* **Heart Rate (HR)**: Base: `[TBP]` BPM $\rightarrow$ Peak Stress: **`[TBP]` BPM** $\rightarrow$ Recovery: `[TBP]` BPM.
-* **Respiration Rate (RR)**: Base: `[TBP]` breaths/min $\rightarrow$ Peak Stress: **`[TBP]` breaths/min** $\rightarrow$ Recovery: `[TBP]` breaths/min.
-* **HRV RMSSD**: Base: `[TBP]` ms $\rightarrow$ Stress Minimum: **`[TBP]` ms** $\rightarrow$ Recovery: `[TBP]` ms.
+Under high-stress dialogue scenarios (e.g., threat detection), CVS-3.5's endocrine core dynamically couples the robot's simulated mood variables directly into expressive paralinguistic tag selection and Speech synthesis prosody rate, pitch, and volume envelopes.
 
 ### Paralinguistic Sentiment Insertion Accuracies
 Dynamic vocal filler insertion rate (`Words/Turn`) and tag mapping accuracies:
@@ -141,7 +137,7 @@ The following carousels display the fully updated, dynamically synchronized visu
 [TBP]
 ````
 
-### 💓 Carousel 2: Physiological Entrainment & Interaction Trajectories
+### 💓 Carousel 2: Speech Turn-Taking & Interruption Trajectories
 
 ````carousel
 [TBP]
@@ -157,10 +153,10 @@ The following carousels display the fully updated, dynamically synchronized visu
 
 All physical files generated, audited, and compiled during this verification round have been successfully mirrored in the active Brain folder:
 
-1. **Academic Publication PDF**: [CVS-3.5_Mind_Benchmarking_Report.pdf](../../_archive/academic_benchmarks/reports/CVS-3.0_Mind_Benchmarking_Report.pdf) (exactly 4 pages, double-column letter, includes running headers/footers, Table II SOTA Comparative Matrix, Table III Paralinguistics, and embedded visual charts).
+1. **Academic Publication PDF**: [CVS-3.5_Mind_Benchmarking_Report.pdf](../../_archive/academic_benchmarks/reports/CVS-3.5_Mind_Benchmarking_Report.pdf) (exactly 4 pages, double-column letter, includes running headers/footers, Table II SOTA Comparative Matrix, Table III Paralinguistics, and embedded visual charts).
 2. **Master SOTA Review**: [academic_sota_benchmarks.md](./academic_sota_benchmarks.md) (extensive review compiling 30 peer-reviewed paper references, LaTeX templates, and detailed BibTeX listings).
 3. **Core Telemetry JSON**: [benchmark_results.json](../datasets/benchmark_results.json) (100,000-iteration dynamic run telemetry).
-4. **Physiological Telemetry JSON**: [human_realism_results.json](../datasets/human_realism_results.json) (computational footprint, Neo4j traversals, and cardiovascular coupling).
+4. **Paralinguistic Telemetry JSON**: [human_realism_results.json](../datasets/human_realism_results.json) (computational footprint, Neo4j traversals, and paralinguistic tag precision).
 5. **Dynamic Trajectory CSV**: [research_pad_trajectory.csv](../datasets/research_pad_trajectory.csv) (raw timeseries mapping cortisol, dopamine, and PAD vectors over 90 seconds).
 
 ---
