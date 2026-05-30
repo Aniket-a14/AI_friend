@@ -371,6 +371,9 @@ async def seed_databases(num_distractors=30000):
 
     # Prepare active tasks
     for idx, item in enumerate(active_raw_items):
+        import uuid
+
+        memory_id = str(uuid.uuid4())
         room = item.get("room", "social")
         content = item.get("content", "")
         raw_content = item.get("raw_content", content)
@@ -396,6 +399,7 @@ async def seed_databases(num_distractors=30000):
 
         active_seeding_tasks.append(
             (
+                memory_id,
                 content,
                 raw_content,
                 wing,
@@ -413,6 +417,9 @@ async def seed_databases(num_distractors=30000):
 
     # Prepare cold tasks
     for item in cold_raw_items:
+        import uuid
+
+        memory_id = str(uuid.uuid4())
         room = item.get("room", "social")
         content = item.get("content", "")
         raw_content = item.get("raw_content", content)
@@ -433,6 +440,7 @@ async def seed_databases(num_distractors=30000):
 
         cold_seeding_tasks.append(
             (
+                memory_id,
                 content,
                 raw_content,
                 wing,
@@ -455,12 +463,12 @@ async def seed_databases(num_distractors=30000):
         await conn.executemany(
             """
             INSERT INTO memories (
-                content, raw_content, wing, room,
+                id, content, raw_content, wing, room,
                 embedding, importance_score, emotional_weight,
                 valence, certainty, source, metadata,
                 recall_count, last_recalled_at, created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, $13, $13)
             """,
             active_seeding_tasks,
         )
@@ -472,12 +480,12 @@ async def seed_databases(num_distractors=30000):
             await conn.executemany(
                 """
                 INSERT INTO archived_memories (
-                    content, raw_content, wing, room,
+                    id, content, raw_content, wing, room,
                     importance_score, emotional_weight,
                     valence, certainty, source, metadata,
                     recall_count, last_recalled_at, created_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $11)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $12)
                 """,
                 cold_seeding_tasks,
             )
@@ -538,6 +546,7 @@ async def seed_databases(num_distractors=30000):
             start_q = time.perf_counter()
             for idx, task in enumerate(active_seeding_tasks):
                 (
+                    memory_id,
                     content,
                     raw_content,
                     wing,
@@ -568,7 +577,7 @@ async def seed_databases(num_distractors=30000):
                 }
 
                 points.append(
-                    models.PointStruct(id=idx + 1, vector=vector, payload=payload)
+                    models.PointStruct(id=memory_id, vector=vector, payload=payload)
                 )
 
                 if len(points) >= chunk_size or idx == len(active_seeding_tasks) - 1:
