@@ -109,6 +109,28 @@ class ActionService:
 
             # Contextual Enrichments
             surfaced = plan.payload.get("surfaced_memories", [])
+            if not surfaced and self.memory:
+                try:
+                    # Synchronous fallback to prevent race conditions in low-latency/benchmark modes
+                    fallback_memories = await self.memory.search_memories(
+                        query_text=msg,
+                        wing="personal",
+                        limit=3,
+                        refresh_on_recall=False,
+                        current_valence=plan.payload.get("valence", 0.0),
+                        current_arousal=plan.payload.get("arousal", 0.5),
+                        current_cortisol=plan.payload.get("cortisol", 0.0),
+                    )
+                    if fallback_memories:
+                        surfaced = fallback_memories
+                        logger.info(
+                            f"⚡ [Action] Synchronous recall fallback surfaced {len(surfaced)} memories."
+                        )
+                except Exception as fe:
+                    logger.warning(
+                        f"Failed to run synchronous memory surfacing fallback: {fe}"
+                    )
+
             shared_history = ""
             if surfaced:
                 shared_history = (
