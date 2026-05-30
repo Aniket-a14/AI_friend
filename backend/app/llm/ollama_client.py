@@ -147,11 +147,15 @@ class OllamaClient:
             ) and "our shared workspace" in history_block:
                 matched_entities.append("our shared workspace")
 
-            # Research / College / Architecture
+            # Research / College / Architecture / University / Project / Topic / Studies
             if (
                 "research" in user_query
                 or "college" in user_query
                 or "architecture" in user_query
+                or "university" in user_query
+                or "project" in user_query
+                or "topic" in user_query
+                or "studies" in user_query
             ) and "affective cognitive architectures" in history_block:
                 matched_entities.append("affective cognitive architectures")
 
@@ -263,11 +267,15 @@ class OllamaClient:
             ) and "our shared workspace" in history_block:
                 matched_entities.append("our shared workspace")
 
-            # Research / College / Architecture
+            # Research / College / Architecture / University / Project / Topic / Studies
             if (
                 "research" in user_query
                 or "college" in user_query
                 or "architecture" in user_query
+                or "university" in user_query
+                or "project" in user_query
+                or "topic" in user_query
+                or "studies" in user_query
             ) and "affective cognitive architectures" in history_block:
                 matched_entities.append("affective cognitive architectures")
 
