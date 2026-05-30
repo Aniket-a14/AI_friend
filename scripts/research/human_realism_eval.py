@@ -38,7 +38,7 @@ def module1_computational_footprint():
         "\n⚡ Evaluating Module 1: Computational Resource Footprint & Latency Pathway"
     )
 
-    # Quantitative measurements of AI Friend CVS-3.0 Mesh (based on Docker stats & profiler data)
+    # Quantitative measurements of AI Friend CVS-3.5 Mesh (based on Docker stats & profiler data)
     mesh_components = {
         "NATS Event Broker": {"ram_mb": 22.05, "cpu_avg": 0.82, "power_w": 0.20},
         "Neo4j Knowledge Mesh": {"ram_mb": 702.60, "cpu_avg": 1.45, "power_w": 0.45},
@@ -65,8 +65,8 @@ def module1_computational_footprint():
     }
     e2e_pathway_ms = sum(latencies.values())
 
-    print(f"  Total CVS-3.0 Memory Footprint: {total_ram:.2f} MB")
-    print(f"  Total CVS-3.0 Average CPU Load: {total_cpu:.2f}% (iMac M3 Host Node)")
+    print(f"  Total CVS-3.5 Memory Footprint: {total_ram:.2f} MB")
+    print(f"  Total CVS-3.5 Average CPU Load: {total_cpu:.2f}% (iMac M3 Host Node)")
     print(
         f"  End-to-End Cognitive Pathway Latency: {e2e_pathway_ms:.3f} ms (Budget: 15.0 ms)"
     )
@@ -88,7 +88,7 @@ def module2_perception_knowledge():
 
     # Simulating 1000 nodes representing complex semantic memory mesh
     # Measuring query traversal time as a function of depth (1-hop, 2-hop, 3-hop)
-    # CVS-3.0 (with O(1) unique constraints + Belief Cache) vs. Standard Un-indexed DB
+    # CVS-3.5 (with O(1) unique constraints + Belief Cache) vs. Standard Un-indexed DB
 
     depths = [1, 2, 3]
 
@@ -98,7 +98,7 @@ def module2_perception_knowledge():
     standard_db_latencies = [8.50, 24.20, 84.60]  # O(N) un-indexed slow traversals
 
     print(
-        f"  CVS-3.0 Cached Traversal Depth 1-hop: {cvs_cached_latencies[0]:.3f} ms | 3-hop: {cvs_cached_latencies[2]:.3f} ms"
+        f"  CVS-3.5 Cached Traversal Depth 1-hop: {cvs_cached_latencies[0]:.3f} ms | 3-hop: {cvs_cached_latencies[2]:.3f} ms"
     )
     print(
         f"  Standard DB Traversal Depth  1-hop: {standard_db_latencies[0]:.3f} ms | 3-hop: {standard_db_latencies[2]:.3f} ms"
@@ -242,42 +242,10 @@ def module3_cognitive_states_endocrine():
 
 
 def module4_physiological_entrainment(cognitive_data):
-    print(
-        "\n💓 Evaluating Module 4: Physiological Entrainment & Paralinguistic Realism"
-    )
+    print("\n💓 Evaluating Module 4: Paralinguistic Realism")
 
-    # We couple physiological variables directly to the endocrine & affective states simulated in Module 3
-    time_steps = np.array(cognitive_data["time_steps"])
-    cortisol = np.array(cognitive_data["cortisol"])
-    arousal = np.array(cognitive_data["arousal"])
-    fatigue = np.array(cognitive_data["fatigue"])
-    np.array(cognitive_data["pleasure"])
-
-    np.random.seed(101)
-
-    # Coupling Equations:
-    # HR = 70 + 40 * Cortisol + 10 * Arousal + Noise
-    # RR = 12 + 10 * Arousal + 4 * Cortisol + Noise
-    # HRV (RMSSD in ms) = 65 - 35 * Cortisol - 15 * Fatigue + Noise
-
-    hr = 70 + 40 * cortisol + 10 * arousal + np.random.normal(0, 1.2, len(time_steps))
-    rr = 12 + 10 * arousal + 4 * cortisol + np.random.normal(0, 0.3, len(time_steps))
-    hrv = 65 - 35 * cortisol - 15 * fatigue + np.random.normal(0, 1.8, len(time_steps))
-
-    # Ensure physical limits
-    hr = np.clip(hr, 55.0, 130.0)
-    rr = np.clip(rr, 10.0, 30.0)
-    hrv = np.clip(hrv, 10.0, 85.0)
-
-    print(
-        f"  Physiological Baseline (t=0s):  HR={hr[0]:.1f} BPM | RR={rr[0]:.1f} Breaths/Min | HRV={hrv[0]:.1f} ms"
-    )
-    print(
-        f"  Stressed Physiological (t=5s):  HR={hr[5]:.1f} BPM | RR={rr[5]:.1f} Breaths/Min | HRV={hrv[5]:.1f} ms (High Stress)"
-    )
-    print(
-        f"  Recovered Homeostasis (t=80s):  HR={hr[80]:.1f} BPM | RR={rr[80]:.1f} Breaths/Min | HRV={hrv[80]:.1f} ms (Relaxed)"
-    )
+    # Physiological coupling equations removed to align with core CVS-3.5 specifications.
+    # Evaluating paralinguistic tag insertion correctness and conversational filler rates.
 
     # Paralinguistic tags and fillers accuracy comparison under Low vs. High Stress
     paralinguistic_metrics = {
@@ -299,16 +267,13 @@ def module4_physiological_entrainment(cognitive_data):
     }
 
     print(
-        f"  Paralinguistic Sentiment Mapping Precision (CVS-3.0): {paralinguistic_metrics['high_stress']['tag_precision'] * 100:.1f}%"
+        f"  Paralinguistic Sentiment Mapping Precision (CVS-3.5): {paralinguistic_metrics['high_stress']['tag_precision'] * 100:.1f}%"
     )
     print(
         f"  Industry Baseline Speech-Pipeline Tag Precision:      {paralinguistic_metrics['industry_baseline_standard_voice']['tag_precision'] * 100:.1f}%"
     )
 
     return {
-        "heart_rate_bpm": hr.tolist(),
-        "respiration_rate_breaths_min": rr.tolist(),
-        "hrv_rmssd_ms": hrv.tolist(),
         "paralinguistics": paralinguistic_metrics,
     }
 
@@ -316,115 +281,7 @@ def module4_physiological_entrainment(cognitive_data):
 def generate_visualizations(comp_data, db_data, cog_data, phys_data):
     print("\n📈 Plotting Publication-Grade Figures (IEEE/IROS Standards)")
 
-    time_steps = np.array(cog_data["time_steps"])
-
-    # ------------------ Plot 1: Physiological Entrainment Subplots ------------------
-    fig, axes = plt.subplots(3, 1, figsize=(8, 9), dpi=300, sharex=True)
-
-    # Subplot 1: Affective & Endocrine Drivers
-    axes[0].plot(
-        time_steps,
-        cog_data["arousal"],
-        label="Affective Arousal (Ar)",
-        color="#e83e8c",
-        linewidth=2,
-    )
-    axes[0].plot(
-        time_steps,
-        cog_data["cortisol"],
-        label="Endocrine Cortisol",
-        color="#fd7e14",
-        linewidth=2,
-        linestyle="--",
-    )
-    axes[0].plot(
-        time_steps,
-        cog_data["dopamine"],
-        label="Endocrine Dopamine",
-        color="#20c997",
-        linewidth=2,
-        linestyle="-.",
-    )
-    axes[0].axvline(x=2, color="#dc3545", linestyle=":", alpha=0.8)
-    axes[0].text(
-        2.5, 0.85, "Threat Injected", color="#dc3545", fontweight="bold", fontsize=8
-    )
-    axes[0].set_ylabel("Normalized Range [0.0, 1.0]", fontsize=9)
-    axes[0].set_title(
-        "A: Affective & Endocrine Homeostatic Dynamics under Stressor",
-        fontweight="bold",
-        fontsize=10,
-    )
-    axes[0].legend(loc="upper right", frameon=True, facecolor="white", framealpha=0.9)
-    axes[0].set_ylim(-0.05, 1.05)
-
-    # Subplot 2: Heart Rate Entrainment
-    axes[1].plot(
-        time_steps,
-        phys_data["heart_rate_bpm"],
-        label="Coupled Heart Rate (HR)",
-        color="#dc3545",
-        linewidth=2,
-    )
-    axes[1].axvline(x=2, color="#dc3545", linestyle=":", alpha=0.8)
-    axes[1].set_ylabel("Heart Rate (BPM)", fontsize=9)
-    axes[1].set_title(
-        "B: Physiologic Entrainment: Coupled Heart Rate (HR) Response",
-        fontweight="bold",
-        fontsize=10,
-    )
-    axes[1].legend(loc="upper right", frameon=True, facecolor="white", framealpha=0.9)
-    axes[1].set_ylim(50, 135)
-
-    # Subplot 3: Breathing Rate and HRV RMSSD
-    ax3_twin = axes[2].twinx()
-    p1 = axes[2].plot(
-        time_steps,
-        phys_data["respiration_rate_breaths_min"],
-        label="Breathing Rate (RR)",
-        color="#007bff",
-        linewidth=2,
-    )
-    p2 = ax3_twin.plot(
-        time_steps,
-        phys_data["hrv_rmssd_ms"],
-        label="Heart Rate Variability (HRV)",
-        color="#6f42c1",
-        linewidth=2,
-        linestyle="--",
-    )
-
-    axes[2].axvline(x=2, color="#dc3545", linestyle=":", alpha=0.8)
-    axes[2].set_ylabel("Respiration Rate (Breaths/Min)", color="#007bff", fontsize=9)
-    axes[2].tick_params(axis="y", labelcolor="#007bff")
-    ax3_twin.set_ylabel("HRV RMSSD (ms)", color="#6f42c1", fontsize=9)
-    ax3_twin.tick_params(axis="y", labelcolor="#6f42c1")
-
-    # Consolidated legend for twin-axes
-    plots = p1 + p2
-    labels = [p.get_label() for p in plots]
-    axes[2].legend(
-        plots,
-        labels,
-        loc="upper right",
-        frameon=True,
-        facecolor="white",
-        framealpha=0.9,
-    )
-
-    axes[2].set_xlabel("Elapsed Time (Seconds)", fontsize=10)
-    axes[2].set_title(
-        "C: Physiologic Entrainment: Respiration & Autonomic HRV Coupling",
-        fontweight="bold",
-        fontsize=10,
-    )
-    axes[2].set_xlim(-2, 92)
-
-    plt.tight_layout()
-    plt.savefig(os.path.join(RESULTS_DIR, "human_realism_physiological.png"))
-    plt.close()
-
-    # ------------------ Plot 2: Industry Benchmark Comparisons ------------------
+    # ------------------ Plot: Industry Benchmark Comparisons ------------------
     fig, axes = plt.subplots(1, 3, figsize=(12, 4.2), dpi=300)
 
     # Subplot 1: Response / Turn-Taking Latencies
@@ -432,7 +289,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
         "Siri / Alexa\n(Silence VAD) [2]",
         "Pepper / Furhat\n(Cascaded) [1,7]",
         "SOTA VAP Target\n(Ekstedt) [4]",
-        "CVS-3.0\n(Sovereign)",
+        "CVS-3.5\n(Sovereign)",
     ]
     values_lat = [2100, 1000, 350, 115]
     colors_lat = ["#f8d7da", "#f8d7da", "#cce5ff", "#28a745"]
@@ -487,7 +344,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
         "Claude 3.5\n(Zero-Shot) [13]",
         "GPT-4o\n(Zero-Shot) [13]",
         "Standard LLM\n(Zero-Shot) [9]",
-        "CVS-3.0\n(Ours)",
+        "CVS-3.5\n(Ours)",
     ]
     values_tom = [0.32, 0.28, 0.38, cvs_tom_mae if cvs_tom_mae is not None else 0.0]
     colors_tom = ["#f8d7da", "#f8d7da", "#f8d7da", "#28a745"]
@@ -525,7 +382,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
         "Contriever\n(Unsupervised) [20]",
         "BGE-M3 Dense\n(Supervised) [19]",
         "HippoRAG\n(Neuro-Inspired) [21]",
-        "CVS-3.0 ACT-R\n(Sovereign)",
+        "CVS-3.5 ACT-R\n(Sovereign)",
     ]
     values_ret = [
         76.2,
@@ -572,9 +429,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
 
 
 def main():
-    print(
-        "🚀 Starting AI Friend CVS-3.0 Human Realism & Physiological Entrainment Benchmarks..."
-    )
+    print("🚀 Starting AI Friend CVS-3.5 Human Realism & Paralinguistic Benchmarks...")
     create_directories()
 
     start_time = time.time()
@@ -591,7 +446,7 @@ def main():
 
     final_json = {
         "timestamp": datetime.now().isoformat(),
-        "platform": "AI Friend CVS-3.0 Sovereign Human-Realism Mesh",
+        "platform": "AI Friend CVS-3.5 Sovereign Human-Realism Mesh",
         "benchmark_duration_seconds": round(elapsed, 4),
         "module1_computational_efficiency": m1_results,
         "module2_perception_knowledge_traversal": m2_results,
@@ -601,34 +456,7 @@ def main():
             "dopamine_peak": round(float(max(m3_results["dopamine"])), 4),
             "fatigue_accumulated": round(float(max(m3_results["fatigue"])), 4),
         },
-        "module4_physiological_coupling": {
-            "heart_rate_bpm": {
-                "baseline": round(
-                    _phys_mean := float(np.mean(m4_results["heart_rate_bpm"][:3])), 2
-                ),
-                "peak_stress": round(float(np.max(m4_results["heart_rate_bpm"])), 2),
-                "recovery_average": round(
-                    float(np.mean(m4_results["heart_rate_bpm"][60:])), 2
-                ),
-            },
-            "respiration_breaths_min": {
-                "baseline": round(
-                    float(np.mean(m4_results["respiration_rate_breaths_min"][:3])), 2
-                ),
-                "peak_stress": round(
-                    float(np.max(m4_results["respiration_rate_breaths_min"])), 2
-                ),
-                "recovery_average": round(
-                    float(np.mean(m4_results["respiration_rate_breaths_min"][60:])), 2
-                ),
-            },
-            "hrv_rmssd_ms": {
-                "baseline": round(float(np.mean(m4_results["hrv_rmssd_ms"][:3])), 2),
-                "minimum_stress": round(float(np.min(m4_results["hrv_rmssd_ms"])), 2),
-                "recovery_average": round(
-                    float(np.mean(m4_results["hrv_rmssd_ms"][60:])), 2
-                ),
-            },
+        "module4_paralinguistic_coupling": {
             "paralinguistics": m4_results["paralinguistics"],
         },
     }

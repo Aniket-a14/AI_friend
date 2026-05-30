@@ -7,7 +7,7 @@ import os
 
 async def run_monitor():
     """
-    Mesh Latency Monitor (CVS-3.0 Multimodal).
+    Mesh Latency Monitor (CVS-3.5 Multimodal).
     Subscribes to input, output, and perceptual subjects to calculate precise
     cognitive turnaround and multimodal jitter.
     """

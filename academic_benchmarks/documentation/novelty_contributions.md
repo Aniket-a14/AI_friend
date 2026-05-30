@@ -39,7 +39,7 @@ The primary contributions of the CVS-3.5 sovereign mesh architecture are summari
 
 1.  **Decentralized Multi-Agent Edge Middleware:** We formulate a highly efficient, edge-native microservice mesh utilizing the zero-allocation **NATS Event Broker** as the central nervous system. This architecture reduces Inter-Process Communication (IPC) routing overhead to **`[TBP]`**, running with a peak system memory footprint of only **`[TBP]`** (8 container services).
 2.  **State-Accurate Endocrine and Affective Coupling:** We design a continuous homeostatic emotional system that simulates dynamic hormone fluxes (Cortisol, Dopamine, metabolic Fatigue) and 3D PAD mood shifts under environmental stressors.
-3.  **Real-Time Autonomic Physiological Entrainment:** We establish an autonomic coupling layer that maps the agent's simulated emotional state directly onto human-robot coupling parameters, achieving coupled **Breathing Rate (RR)** and **Heart Rate (HR)** respiratory entrainment in high-stress HRI.
+3.  **Dynamic Vocal Paralinguistic Prosody Modulator:** We establish a sample-accurate digital signal processing (DSP) modification layer that maps the agent's simulated internal emotional state directly onto vocal modifiers (Pitch, speaking Rate, Volume), achieving expressive paralinguistic tag insertion and natural conversational flow without static TTS flatlines.
 4.  **Neurobiologically Inspired Graph Memory System:** We combine dense vector search with symbolic ACT-R graph traversals, achieving an empirical **`[TBP]` Memory Recall@5** on multi-hop associative queries under macOS and Jetson hardware.
 
 ---
@@ -61,6 +61,6 @@ Specifically, this paper presents the following key technical and empirical cont
     \item \textbf{High-Performance Edge Middleware:} A lightweight, decentralized cognitive microservice mesh utilizing NATS pub-sub JetStream IPC that reduces cross-module message-passing latency to $[TBP]$ while occupying a total system footprint of less than $[TBP]$ of RAM.
     \item \textbf{Dual-Gated Turn-Taking Gating:} A dual-loop turn-taking architecture combining a System 1 fast-loop DSP audio hook (interrupting robot playback within $[TBP]$) with a speculative System 2 text segmenter to distinguish true semantic user interruptions from ambient background noise.
     \item \textbf{Neurosymbolic ACT-R Graph Memory:} A long-term episodic memory system mapping dense embeddings to a Neo4j semantic graph database, governed by dynamic sub-symbolic ACT-R activation formulas, power-law decay, and emotional congruence, yielding a retrieval Recall@5 of $[TBP]$.
-    \item \textbf{Autonomic Physiological Entrainment:} A continuous endocrine and Pleasure-Arousal-Dominance (PAD) appraisal system that couples internal hormone trajectories (Cortisol and Dopamine) directly to real-time cardiovascular-respiratory coupling variables, providing a highly realistic social robot presence.
+    \item \textbf{Dynamic Paralinguistic Prosody Control:} A continuous endocrine and Pleasure-Arousal-Dominance (PAD) appraisal system that couples internal hormone trajectories (Cortisol and Dopamine) directly to real-time paralinguistic prosody adjustments (Pitch, speaking Rate, Volume) and tag insertions, enhancing the natural conversational realism of the humanoid friend.
 \end{itemize}
 ```

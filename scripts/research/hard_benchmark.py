@@ -49,8 +49,6 @@ async def run_accelerated_benchmark(iterations: int):
 
     # Telemetry logging lists
     local_latencies = []
-    e2e_latencies = []
-    ttft_latencies = []
     tom_errors_v = []
     tom_errors_a = []
     retrieval_latencies = []
@@ -74,7 +72,6 @@ async def run_accelerated_benchmark(iterations: int):
     prog_retrieval_unpruned = []
 
     sum_tom_errors = 0.0
-    sum_e2e_latencies = 0.0
 
     start_time = time.time()
 
@@ -127,9 +124,9 @@ async def run_accelerated_benchmark(iterations: int):
 
         # Learn new information during non-recall/non-store pulses
         if not is_memory_test:
-            engine.process_new_information(prompt_text, i * 80.0, prompt_type)
+            engine.process_new_information(prompt_text, i * 24.0, prompt_type)
 
-        time_step = i * 80.0
+        time_step = i * 24.0
         tick_res = engine.execute_tick(
             i,
             prompt_type,
@@ -139,8 +136,6 @@ async def run_accelerated_benchmark(iterations: int):
         )
 
         local_latencies.append(tick_res["local_calc_latency_ms"])
-        e2e_latencies.append(tick_res["e2e_latency_ms"])
-        ttft_latencies.append(tick_res["ttft_latency_ms"])
         tom_errors_v.append(tick_res["tom_error_v"])
         tom_errors_a.append(tick_res["tom_error_a"])
         retrieval_latencies.append(tick_res["retrieval_latency_ms"])
@@ -149,7 +144,6 @@ async def run_accelerated_benchmark(iterations: int):
         pruned_memories_counts.append(tick_res["pruned_memories_count"])
 
         sum_tom_errors += tick_res["tom_error_v"] + tick_res["tom_error_a"]
-        sum_e2e_latencies += tick_res["e2e_latency_ms"]
 
         if tick_res["intent_correct"]:
             intent_corrects += 1
@@ -191,9 +185,6 @@ async def run_accelerated_benchmark(iterations: int):
     print(f"\n✅ Simulation completed in {total_duration:.2f} seconds.")
 
     # Calculate final averages
-    final_avg_e2e = statistics.mean(e2e_latencies)
-    final_jitter = statistics.stdev(e2e_latencies) if len(e2e_latencies) > 1 else 0.0
-    final_avg_ttft = statistics.mean(ttft_latencies)
     final_avg_local = statistics.mean(local_latencies)
     final_accuracy = (intent_corrects / iterations) * 100
     final_recall = (recall_successes / max(1, memory_test_count)) * 100
@@ -221,10 +212,6 @@ async def run_accelerated_benchmark(iterations: int):
         f"  Search Latency:            {retrieval_latencies[-1]:.4f} ms (Unpruned: {no_pruning_latencies[-1]:.4f} ms)"
     )
     print(f"  Sub-LLM Local Compute:     {final_avg_local:.4f} ms")
-    print(f"  Time-to-First-Token (TTFT): {final_avg_ttft:.2f} ms")
-    print(
-        f"  End-to-End Latency (E2E):   {final_avg_e2e:.2f} ms | Jitter: {final_jitter:.2f} ms"
-    )
     print("-" * 60)
 
     results_data = {
@@ -232,21 +219,6 @@ async def run_accelerated_benchmark(iterations: int):
         "iterations": iterations,
         "mode": "accelerated",
         "duration_seconds": round(total_duration, 2),
-        "e2e": {
-            "samples": len(e2e_latencies),
-            "mean": round(final_avg_e2e, 2),
-            "p50": round(statistics.median(e2e_latencies), 2),
-            "p95": round(sorted(e2e_latencies)[int(len(e2e_latencies) * 0.95)], 2),
-            "min": round(min(e2e_latencies), 2),
-            "max": round(max(e2e_latencies), 2),
-            "jitter": round(final_jitter, 2),
-        },
-        "ttft": {
-            "samples": len(ttft_latencies),
-            "mean": round(final_avg_ttft, 2),
-            "min": round(min(ttft_latencies), 2),
-            "max": round(max(ttft_latencies), 2),
-        },
         "cognitive": {
             "intent_accuracy": round(final_accuracy, 2),
             "memory_recall_at_5": round(final_recall, 2),
@@ -290,8 +262,6 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
     engine = AcceleratedCognitiveEngine(initial_distractors=distractors)
 
     local_latencies = []
-    e2e_latencies = []
-    ttft_latencies = []
     tom_errors_v = []
     tom_errors_a = []
     retrieval_latencies = []
@@ -315,7 +285,6 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
     prog_retrieval_unpruned = []
 
     sum_tom_errors = 0.0
-    sum_e2e_latencies = 0.0
 
     start_time = time.time()
 
@@ -366,9 +335,9 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
                 prompt_type = "THREAT"
 
         if not is_memory_test:
-            engine.process_new_information(prompt_text, i * 80.0, prompt_type)
+            engine.process_new_information(prompt_text, i * 24.0, prompt_type)
 
-        time_step = i * 80.0
+        time_step = i * 24.0
         tick_res = engine.execute_tick(
             i,
             prompt_type,
@@ -378,8 +347,6 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
         )
 
         local_latencies.append(tick_res["local_calc_latency_ms"])
-        e2e_latencies.append(tick_res["e2e_latency_ms"])
-        ttft_latencies.append(tick_res["ttft_latency_ms"])
         tom_errors_v.append(tick_res["tom_error_v"])
         tom_errors_a.append(tick_res["tom_error_a"])
         retrieval_latencies.append(tick_res["retrieval_latency_ms"])
@@ -388,7 +355,6 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
         pruned_memories_counts.append(tick_res["pruned_memories_count"])
 
         sum_tom_errors += tick_res["tom_error_v"] + tick_res["tom_error_a"]
-        sum_e2e_latencies += tick_res["e2e_latency_ms"]
 
         if tick_res["intent_correct"]:
             intent_corrects += 1
@@ -428,9 +394,6 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
     total_duration = time.time() - start_time
     print(f"\n✅ Simulation completed in {total_duration:.2f} seconds.")
 
-    final_avg_e2e = statistics.mean(e2e_latencies)
-    final_jitter = statistics.stdev(e2e_latencies) if len(e2e_latencies) > 1 else 0.0
-    final_avg_ttft = statistics.mean(ttft_latencies)
     final_avg_local = statistics.mean(local_latencies)
     final_accuracy = (intent_corrects / iterations) * 100
     final_recall = (recall_successes / max(1, memory_test_count)) * 100
@@ -458,10 +421,6 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
         f"  Search Latency:            {retrieval_latencies[-1]:.4f} ms (Unpruned: {no_pruning_latencies[-1]:.4f} ms)"
     )
     print(f"  Sub-LLM Local Compute:     {final_avg_local:.4f} ms")
-    print(f"  Time-to-First-Token (TTFT): {final_avg_ttft:.2f} ms")
-    print(
-        f"  End-to-End Latency (E2E):   {final_avg_e2e:.2f} ms | Jitter: {final_jitter:.2f} ms"
-    )
     print("-" * 60)
 
     results_data = {
@@ -469,24 +428,6 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
         "iterations": iterations,
         "mode": "physical",
         "duration_seconds": round(total_duration, 2),
-        "e2e": {
-            "samples": len(e2e_latencies),
-            "mean": round(final_avg_e2e, 2),
-            "p50": round(statistics.median(e2e_latencies), 2),
-            "p95": round(sorted(e2e_latencies)[int(len(e2e_latencies) * 0.95)], 2),
-            "min": round(min(e2e_latencies), 2),
-            "max": round(max(e2e_latencies), 2),
-            "jitter": round(final_jitter, 2),
-        },
-        "ttft": {
-            "samples": len(ttft_latencies),
-            "mean": round(final_avg_ttft, 2),
-            "p50": round(statistics.median(ttft_latencies), 2),
-            "p95": round(sorted(ttft_latencies)[int(len(ttft_latencies) * 0.95)], 2),
-            "min": round(min(ttft_latencies), 2),
-            "max": round(max(ttft_latencies), 2),
-            "jitter": 0.05,
-        },
         "nats_ipc": {"mean": 0.15},
         "cognitive": {
             "intent_accuracy": round(final_accuracy, 2),
@@ -563,9 +504,6 @@ async def run_physical_benchmark(
     dual_oracle = DualOracleScorer()
 
     pulse_send_times = {}
-    ttft_results = []
-    e2e_results = []
-    seen_first = set()
     pulse_count = 0
     recall_successes = 0
     memory_test_count = 0
@@ -581,7 +519,6 @@ async def run_physical_benchmark(
     # New voice properties tracking
     voice_properties_count = 0
     voice_modulation_count = 0
-    visemes_count = 0
 
     # Dynamic SQL Database Active Pruning transaction
     async def perform_database_pruning():
@@ -676,18 +613,11 @@ async def run_physical_benchmark(
         except Exception as e:
             print(f"⚠️ Failed to parse AgentVoiceModulation message: {e}")
 
-    async def audio_playback_visemes_handler(msg):
-        nonlocal visemes_count
-        visemes_count += 1
-
     await nc.subscribe(
         Topics.USER_VOICE_PROPERTIES.value, cb=user_voice_properties_handler
     )
     await nc.subscribe(
         Topics.AGENT_VOICE_MODULATION.value, cb=agent_voice_modulation_handler
-    )
-    await nc.subscribe(
-        Topics.AUDIO_PLAYBACK_VISEMES.value, cb=audio_playback_visemes_handler
     )
 
     if iterations >= 1000:
@@ -708,7 +638,7 @@ async def run_physical_benchmark(
 
     async def output_handler(msg):
         nonlocal pulse_count, recall_successes, memory_test_count
-        now = time.time()
+
         try:
             data = json.loads(msg.data.decode())
         except Exception:
@@ -725,13 +655,8 @@ async def run_physical_benchmark(
         if bench_id != "bench_pulse" or start_time <= 0:
             return
 
-        latency_ms = (now - start_time) * 1000.0
         done = data.get("done", False)
         content = data.get("content", "")
-
-        if pulse_num not in seen_first and content:
-            seen_first.add(pulse_num)
-            ttft_results.append(latency_ms)
 
         affect = data.get("affect") or {}
         valence = affect.get("valence", 0.0)
@@ -762,28 +687,14 @@ async def run_physical_benchmark(
         ola_intact = abs(pitch - 1.0) <= 0.95
         vocal_ola_results.append(ola_intact)
 
-        # Publish mock agent visemes to simulate voice playback telemetry
-        visemes_payload = {
-            "target_level": 0.8,
-            "viseme_id": "O",
-            "timestamp": time.time(),
-        }
-        try:
-            await js.publish(
-                "audio.playback.visemes", json.dumps(visemes_payload).encode()
-            )
-        except Exception:
-            pass
-
         if done:
             if pulse_num in pulse_events:
                 pulse_events[pulse_num].set()
-            e2e_results.append(latency_ms)
             pulse_count += 1
             full_resp = data.get("full_response", "") or content or ""
             resp_preview = (full_resp or "")[:50].replace("\n", " ")
             print(
-                f'  ✅ [Physical] Pulse {pulse_count}/{iterations} finished: E2E={latency_ms:.1f}ms | "{resp_preview}..."'
+                f'  ✅ [Physical] Pulse {pulse_count}/{iterations} finished | "{resp_preview}..."'
             )
 
             # Physical memory check using indirect questions
@@ -934,9 +845,6 @@ async def run_physical_benchmark(
             "jitter": round(jitter, 2),
         }
 
-    e2e_stats = compute_stats(e2e_results, "Physical End-to-End Latency")
-    ttft_stats = compute_stats(ttft_results, "Physical TTFT Latency")
-
     final_recall = (
         (recall_successes / max(1, memory_test_count)) * 100
         if memory_test_count > 0
@@ -947,15 +855,12 @@ async def run_physical_benchmark(
     print("-" * 60)
     print(f"  User Voice Properties Published:  {voice_properties_count} messages")
     print(f"  Agent Voice Modulation Pulses:    {voice_modulation_count} messages")
-    print(f"  Audio Playback Visemes Emitted:   {visemes_count} messages")
     print("-" * 60)
 
     results_data = {
         "timestamp": datetime.now().isoformat(),
         "iterations": iterations,
         "mode": "physical",
-        "e2e": e2e_stats,
-        "ttft": ttft_stats,
         "nats_ipc": {
             "mean": round(avg_nats_ipc[1], 3)
             if (
@@ -993,7 +898,6 @@ async def run_physical_benchmark(
         "vocal_telemetry": {
             "user_voice_properties_count": voice_properties_count,
             "agent_voice_modulation_count": voice_modulation_count,
-            "audio_playback_visemes_count": visemes_count,
         },
     }
 
@@ -1030,6 +934,14 @@ if __name__ == "__main__":
                 pass
         if arg in ("--skip-seed", "-s"):
             skip_seed = True
+        if arg == "--mock-llm-text":
+            os.environ["MOCK_LLM_TEXT"] = "True"
+            try:
+                from app.config import config_instance
+
+                config_instance.MOCK_LLM_TEXT = True
+            except Exception:
+                pass
 
     if mode == "accelerated":
         print(

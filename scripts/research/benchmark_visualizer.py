@@ -110,7 +110,7 @@ def generate_benchmark_plots(results_json_path=None):
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 9), dpi=300)
     fig.suptitle(
-        "CVS-3.0 Sovereign Mind Benchmarking: 1000-Iteration Mathematical Convergence\n"
+        "CVS-3.5 Humanoid Friend 30-Year Lifespan Simulation: 1000-Iteration Mathematical Convergence\n"
         "Featuring Human-like Active ACT-R Memory Pruning & Search Space Bounding",
         fontsize=14,
         fontweight="bold",
@@ -124,7 +124,7 @@ def generate_benchmark_plots(results_json_path=None):
         prog_intent_acc,
         color="#1e3d59",
         linewidth=2.0,
-        label="CVS-3.0 Intent Gating",
+        label="CVS-3.5 Intent Gating",
     )
     axes[0, 0].axhline(
         y=82.0,
@@ -189,7 +189,7 @@ def generate_benchmark_plots(results_json_path=None):
         prog_recall_rate,
         color="#8b5a2b",
         linewidth=2.0,
-        label="CVS-3.0 ACT-R Context-Aware",
+        label="CVS-3.5 ACT-R Context-Aware",
     )
     axes[1, 0].axhline(
         y=76.2,

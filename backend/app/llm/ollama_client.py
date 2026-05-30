@@ -4,6 +4,7 @@ import asyncio
 import httpx
 import random
 from typing import AsyncGenerator, Any, Dict, List, Optional, Tuple
+from app.config import Config
 
 logger = logging.getLogger("ollama_client")
 
@@ -118,6 +119,10 @@ class OllamaClient:
         model: str = None,
         options_override: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
+        if getattr(Config, "MOCK_LLM_TEXT", False):
+            yield "I'm thinking about our conversation, my friend."
+            return
+
         payload_attempts = self._build_payload_attempts(
             prompt=prompt,
             system=system,
@@ -173,6 +178,61 @@ class OllamaClient:
         model: str = None,
         options_override: Optional[Dict[str, Any]] = None,
     ) -> str:
+        if getattr(Config, "MOCK_LLM_TEXT", False):
+            lower_prompt = prompt.lower()
+            if (
+                "subject_type" in lower_prompt
+                or "output json list only" in lower_prompt
+            ):
+                return json.dumps(
+                    [
+                        {
+                            "subject": "User",
+                            "subject_type": "person",
+                            "relation": "likes",
+                            "object": "reading sci-fi",
+                            "object_type": "activity",
+                            "category": "social",
+                            "confidence": 0.9,
+                            "reason": "User mentioned reading sci-fi and we had a warm discussion about it.",
+                        }
+                    ]
+                )
+            elif "new_traits" in lower_prompt or "relationship" in lower_prompt:
+                return json.dumps(
+                    {"new_traits": [], "relationship": "friend", "confidence": 0.9}
+                )
+            elif (
+                "goal_congruence" in lower_prompt
+                or "appraisal dimensions" in lower_prompt
+            ):
+                return json.dumps(
+                    {"goal_congruence": 0.0, "norm_alignment": 1.0, "expectedness": 0.5}
+                )
+            elif "inferred_valence" in lower_prompt or "implied_goals" in lower_prompt:
+                return json.dumps(
+                    {
+                        "intent": "CHAT",
+                        "goal": "socialize",
+                        "inferred_valence": 0.5,
+                        "inferred_arousal": 0.3,
+                        "implied_goals": ["chat_socially"],
+                    }
+                )
+            elif (
+                "consolidate" in lower_prompt
+                or "episodic memory summary" in lower_prompt
+            ):
+                return "We discussed our shared interests, including sci-fi books and coding algorithms, and enjoyed a friendly conversation."
+            elif "dream" in lower_prompt:
+                return "Processing memories of my friend, feeling a deep sense of connection through shared projects and programming ideas."
+            elif "thought" in lower_prompt or "inner monologue" in lower_prompt:
+                return "I appreciate my friend. I wonder what they are coding today."
+            else:
+                return (
+                    "I am glad we are chatting, my friend. What should we work on next?"
+                )
+
         payload_attempts = self._build_payload_attempts(
             prompt=prompt,
             system=system,
@@ -213,6 +273,11 @@ class OllamaClient:
         prompt: str = "What do you see?",
         model: str = None,
     ) -> str:
+        if getattr(Config, "MOCK_LLM_TEXT", False):
+            return (
+                "A user sitting at a desk pair-programming with their AI friend Aniket."
+            )
+
         target_model = model or self.model
         payload = {
             "model": target_model,

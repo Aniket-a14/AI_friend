@@ -393,11 +393,11 @@ We present a comprehensive, multi-dimensional empirical comparison matrix contra
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** | **`[TBP]`** |
-| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
+| **Local Compute Latency** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | **`[TBP]`** | **`[TBP]`** |
 | **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **`[TBP]`** | **`[TBP]`** |
 | **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **`[TBP]`** | **`[TBP]`** |
-| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
+| **Paralinguistic Precision** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
@@ -721,10 +721,10 @@ LLM Temperature Modulation   & 2.30 \(\mu\)s            & [TBP]                 
 \textbf{Performance Axis} & \textbf{Figure 02} & \textbf{Optimus Gen 2} & \textbf{Unitree G1} & \textbf{Ameca Gen 3} & \textbf{Kyoto ERICA} & \textbf{HippoRAG} & \textbf{CVS-3.5 (Phys)} & \textbf{CVS-3.5 (Accel)} \\ \hline
 Speech Barge-in Stop      & ~300.0 ms          & --                     & ~400.0 ms           & ~250.0 ms            & 200.0 ms             & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
 Cognitive Gating Lat      & Cloud VLM          & Onboard                & Cloud LLM           & Cloud LLM            & 100.0 ms             & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
-Speech-to-Speech TTFT     & ~350.0 ms          & Cloud                  & ~500.0 ms           & ~400.0 ms            & 200.0 ms             & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
+Local Compute Latency     & ~350.0 ms          & Cloud                  & ~500.0 ms           & ~400.0 ms            & 200.0 ms             & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
 Memory Recall (Recall@5)  & --                 & --                     & --                  & --                   & --                   & 92.4\%            & \textbf{[TBP]}          & \textbf{[TBP]}           \\
 Theory of Mind MAE        & --                 & --                     & --                  & --                   & --                   & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
-Autonomic Somatic State   & Static             & Static                 & Static              & Static               & Static               & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\ \hline
+Paralinguistic Precision  & Static             & Static                 & Static              & Static               & Static               & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\ \hline
 \end{tabular}
 \end{table*}
 ```

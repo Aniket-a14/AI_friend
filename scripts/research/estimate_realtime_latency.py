@@ -196,23 +196,7 @@ async def run_latency_profile():
     avg_dsp = np.mean(dsp_runs)
     p95_dsp = np.percentile(dsp_runs, 95)
 
-    # Viseme Stream Sync latency profiling
-    viseme_runs = []
-    for _ in range(100):
-        start = time.perf_counter()
-        rms = np.sqrt(np.mean((dummy_pcm / 32767.0) ** 2))
-        viseme_level = min(15.0, rms * 150.0)
-        _ = {
-            "timestamp": time.time(),
-            "visemes": [
-                {"id": 0, "value": viseme_level},
-                {"id": 1, "value": viseme_level * 0.5},
-            ],
-        }
-        viseme_runs.append((time.perf_counter() - start) * 1000.0)
-
-    avg_viseme = np.mean(viseme_runs)
-    p95_viseme = np.percentile(viseme_runs, 95)
+    # Viseme profiling removed to comply with CVS-3.5 core metrics (no physiological markers)
 
     # Soft-attenuation volume ducking transition window simulation
     ducking_runs = []
@@ -235,10 +219,7 @@ async def run_latency_profile():
     print(f"  DSP Feature Extraction (p95): {p95_dsp:.4f} ms")
     status_dsp = "✅ PASS" if avg_dsp < 1.0 else "⚠️ WARN"
     print(f"  SLO Compliance (< 1.0ms):      {status_dsp}\n")
-    print(f"  Viseme Stream Sync (Avg):     {avg_viseme:.4f} ms")
-    print(f"  Viseme Stream Sync (p95):     {p95_viseme:.4f} ms")
-    status_viseme = "✅ PASS" if avg_viseme < 5.0 else "⚠️ WARN"
-    print(f"  SLO Compliance (< 5.0ms):      {status_viseme}\n")
+
     print(f"  Soft Ducking Transition (Avg): {avg_ducking:.4f} ms")
     print(f"  Soft Ducking Transition (p95): {p95_ducking:.4f} ms")
     status_ducking = "✅ PASS" if avg_ducking < 1.0 else "⚠️ WARN"
@@ -305,9 +286,7 @@ async def run_latency_profile():
     print(
         f" {'DSP Audio Feature Extraction':<35} | {avg_dsp:<15.4f} | {'1.0000':<15} | {status_dsp}"
     )
-    print(
-        f" {'Viseme Stream Sync':<35} | {avg_viseme:<15.4f} | {'5.0000':<15} | {status_viseme}"
-    )
+
     print(
         f" {'Soft Ducking Transition':<35} | {avg_ducking:<15.4f} | {'1.0000':<15} | {status_ducking}"
     )
@@ -326,7 +305,6 @@ async def run_latency_profile():
         if avg_search != float("inf")
         else None,
         "dsp_extraction_avg_ms": avg_dsp,
-        "viseme_latency_avg_ms": avg_viseme,
         "soft_ducking_latency_avg_ms": avg_ducking,
         "prosody_trajectory_generation_avg_ms": avg_prosody,
     }

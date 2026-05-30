@@ -34,7 +34,7 @@ async def reset_dbs():
             # Drop the episodic memories and dialogue message stores cascade to force clean schema
             print("💥 Dropping old PostgreSQL tables cascade...")
             await conn.execute(
-                "DROP TABLE IF EXISTS memories, messages, sessions, agent_configs CASCADE;"
+                "DROP TABLE IF EXISTS memories, archived_memories, messages, sessions, agent_configs CASCADE;"
             )
 
             # Read schema file

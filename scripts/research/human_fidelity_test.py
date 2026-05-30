@@ -88,7 +88,7 @@ async def run_human_fidelity_test():
             ).encode(),
         )
 
-        await asyncio.sleep(8)  # Allow time for full cognitive pipeline + LLM
+        await asyncio.sleep(1.0)  # Allow time for full cognitive pipeline + LLM
 
         print(f"📈 Trend: {scenario['trend']}")
         print(f"🎭 Tags Detected:  {captured_tags if captured_tags else 'None'}")

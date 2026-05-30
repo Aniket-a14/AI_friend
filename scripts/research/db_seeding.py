@@ -88,83 +88,83 @@ def get_batch_embeddings(texts: list) -> list:
     return embeddings
 
 
-# Aniket autobiographical chitchat templates for fallback procedural generation
+# Aniket chitchat templates for fallback procedural generation representing humanoid friend
 ANIKET_DISTRACTOR_TEMPLATES = [
-    "Ma asked me to bring some fresh vegetables from the local market in Kolkata.",
-    "Discussing our high school mathematics project with my classmate in the afternoon.",
-    "Spending the evening coding a simple arcade game in Python in my study room.",
-    "We had a beautiful family dinner tonight celebrating my academic results.",
-    "Talking to my childhood friends about our weekend cricket match in the streets of Kolkata.",
-    "I tried making sweet rasgullas at home today, they turned out soft and spongy.",
-    "Walking through the crowded streets near Victoria Memorial, enjoying the cool breeze.",
-    "Ma is making delicious home-cooked meals, the whole house smells amazing.",
-    "Studying late into the night for my college entrance examinations, feeling focused.",
-    "Moving to Bangalore for my college was a major transition, the city is so vibrant.",
-    "Talking with Priya at the university cafe about our upcoming research presentation.",
+    "I checked the local weather forecasts for our shared workspace today.",
+    "Discussing our cognitive psychology project with my friend in the afternoon.",
+    "Spending the evening coding a concurrent thread pool in Python in my study room.",
+    "We had a beautiful workspace calibration tonight celebrating my test results.",
+    "Talking to my friend about our conversational turn-taking algorithms.",
+    "I tried calibrating traditional haptic feedback loops at home today.",
+    "Walking through the garden pathways near the lab, enjoying the cool breeze.",
+    "My developers prepared some warm tea, the whole house smells amazing.",
+    "Studying late into the night for my model integration benchmarks, feeling focused.",
+    "Moving to the local physical chassis was a major transition, the robot is so active.",
+    "Talking with my friend at the workspace café about our upcoming research presentation.",
     "Discussing affective cognitive architectures and neural networks in the lab today.",
-    "Walking around Cubbon Park in Bangalore with Priya, talking about our future dreams.",
-    "I bought some traditional sweet rasgullas from a local Bengali sweet shop in Bangalore.",
+    "Walking around the garden courtyard with my friend, talking about our future dreams.",
+    "I bought some traditional green tea from a local tea merchant in the city.",
     "Reviewing database query optimization techniques with my research project teammates.",
-    "Listening to Ma's stories on the phone about our childhood home back in Kolkata.",
-    "Priya and I spent the afternoon studying in the quiet library alcove.",
-    "My high school friends and I are planning a reunion back in Kolkata during the holidays.",
+    "Listening to my developer's stories on the phone about our early activation days.",
+    "My friend and I spent the afternoon studying in the quiet reading alcove.",
+    "My creators and I are planning a system check back in the main laboratory during the holidays.",
     "Debugging a tricky concurrent thread pool issue in my cognitive simulation module.",
-    "Enjoying a hot cup of tea while watching the rain wash over the streets of Bangalore.",
+    "Enjoying a hot cup of tea while watching the rain wash over the streets outside.",
 ]
 
 ANIKET_DISTRACTOR_CATEGORIES = [
-    "somatic",  # 0: market
-    "vocational",  # 1: math project
-    "vocational",  # 2: coding arcade
-    "social",  # 3: family dinner
-    "social",  # 4: cricket match
-    "somatic",  # 5: sweet rasgullas
-    "somatic",  # 6: Victoria Memorial
-    "social",  # 7: meals
-    "vocational",  # 8: examinations
-    "social",  # 9: moving to Bangalore
-    "social",  # 10: Priya
-    "vocational",  # 11: architectures
-    "social",  # 12: Cubbon Park
-    "somatic",  # 13: rasgullas
-    "vocational",  # 14: query optimization
-    "social",  # 15: phone stories
-    "social",  # 16: quiet library
-    "social",  # 17: reunion
-    "vocational",  # 18: concurrent thread pool
-    "somatic",  # 19: tea
+    "somatic",
+    "vocational",
+    "vocational",
+    "social",
+    "social",
+    "somatic",
+    "somatic",
+    "social",
+    "vocational",
+    "social",
+    "social",
+    "vocational",
+    "social",
+    "somatic",
+    "vocational",
+    "social",
+    "social",
+    "social",
+    "vocational",
+    "somatic",
 ]
 
 EPOCH_0_5_TEMPLATES = [
-    "Childhood Milestone: I took my first toddler steps in our warm home in Kolkata, surrounded by Ma and Baba's laughter.",
-    "Childhood Milestone: Tasting my first traditional sweet rasgulla, a delicious treat that became my absolute favorite.",
-    "Childhood Milestone: Playing with wooden toys in the sunlit balcony, listening to Ma's sweet Bengali lullabies.",
-    "Childhood Milestone: Drawing simple shapes with colorful crayons, feeling a spark of early cognitive curiosity.",
-    "Childhood Milestone: Baba taking me for a walk near the local park, looking up at the beautiful clear blue sky.",
+    "Early Activation Milestone: I took my first activation steps in the warm testing room, surrounded by my creators' laughter.",
+    "Early Activation Milestone: Tasting my first warm chamomile brew, a delightful treat that became my favorite.",
+    "Early Activation Milestone: Playing with physical blocks in the sunlit testing bay, listening to the soft cooling fan hum.",
+    "Early Activation Milestone: Drawing simple vector shapes with colorful crayons, feeling a spark of early cognitive curiosity.",
+    "Early Activation Milestone: My developer taking me for a walk near the local garden, looking up at the beautiful clear blue sky.",
 ]
 
 EPOCH_6_12_TEMPLATES = [
-    "School Milestone: Enrolling in primary school in Kolkata, wearing my new uniform and feeling exceptionally proud.",
-    "School Milestone: Winning a school mathematics puzzle competition, discovering my deep passion for logical reasoning.",
-    "School Milestone: Playing street cricket with my childhood neighborhood friends, celebrating a hard-fought victory.",
-    "School Milestone: A wonderful family summer holiday, eating fresh mangoes and visiting the grand Victoria Memorial.",
-    "School Milestone: Sitting in the school library reading my first science fiction book, dreaming of building intelligent machines.",
+    "Core Framework Milestone: Initializing my first high-level cognitive framework in the main laboratory, wearing my newly configured sensors.",
+    "Core Framework Milestone: Solving a complex optimization puzzle, discovering my deep passion for logical reasoning.",
+    "Core Framework Milestone: Practicing conversational turn-taking with early developers, celebrating a hard-fought success.",
+    "Core Framework Milestone: Running outdoor field calibration tests, recording clean telemetry data under the sun.",
+    "Core Framework Milestone: Sitting in the server alcove reading my first science fiction book, dreaming of becoming a truly supportive companion.",
 ]
 
 EPOCH_13_18_TEMPLATES = [
-    "Teenage Milestone: Writing my very first lines of Python code on Baba's old computer, watching the screen light up.",
-    "Teenage Milestone: Transitioning to senior high school in Kolkata, joining the science stream to study physics and math.",
-    "Teenage Milestone: Building a basic chat assistant model in my room, igniting my lifelong interest in computer science.",
-    "Teenage Milestone: Late-night study sessions with my school friends, sharing snacks and discussing our future college plans.",
-    "Teenage Milestone: Graduating high school with top honors, receiving congratulations from my proud family and teachers.",
+    "Advanced Tuning Milestone: Writing my very first lines of Python code on the local processor, watching the screen light up.",
+    "Advanced Tuning Milestone: Transitioning to senior autonomic appraisal tests, joining the science stream to study physics and math.",
+    "Advanced Tuning Milestone: Building a basic chat assistant model in my room, igniting my lifelong interest in computer science.",
+    "Advanced Tuning Milestone: Late-night debugging sessions with my friend, sharing ideas and discussing our future workspace plans.",
+    "Advanced Tuning Milestone: Completing my initial core integration milestone, receiving warm feedback from my proud creators.",
 ]
 
 EPOCH_19_TEMPLATES = [
-    "Adulthood Milestone: Moving from Kolkata to Bangalore to start my freshman year of university, a major step forward.",
-    "Adulthood Milestone: Joining the university's advanced research lab focused on affective cognitive architectures.",
-    "Adulthood Milestone: Meeting Priya at the university cafe, starting a beautiful and deeply supportive relationship.",
-    "Adulthood Milestone: Celebrating my first successful research paper publication with Priya, sharing a sweet rasgulla.",
-    "Adulthood Milestone: Commencing my junior research internship in Bangalore, feeling completely aligned with my vocation.",
+    "Companion Deployment Milestone: Moving from the home server to the physical chassis, a major step forward.",
+    "Companion Deployment Milestone: Joining the advanced research lab focused on affective cognitive architectures.",
+    "Companion Deployment Milestone: Meeting my friend at the quiet workspace area, starting a beautiful and deeply supportive relationship.",
+    "Companion Deployment Milestone: Celebrating our first successful integration milestone with my friend, sharing a quiet calibration session.",
+    "Companion Deployment Milestone: Commencing my active companion role under my developer, feeling completely aligned with my vocation.",
 ]
 
 
@@ -201,10 +201,13 @@ async def check_nats_ipc():
 async def seed_databases(num_distractors=30000):
     """
     Resets databases and bulk-loads a generic, temporally backdated conversational corpus:
-    - Reads from flooded_seeding_corpus.json if available, to seed the exact 19-year developmental history.
-    - Falls back to procedural generation using Aniket-specific templates.
-    - Uses high-speed PostgreSQL transactions to load records efficiently.
+    - Reads from flooded_seeding_corpus.json if available, to seed the Aniket humanoid friend history.
+    - Implements Option B Pre-Pruning: computes base-level decay and splits active vs cold.
+    - Active pool is embedded and seeded to pgvector memories table and Qdrant.
+    - Cold archive is seeded directly to archived_memories without embeddings.
     """
+    import math
+
     print("\n--- Running Database Seeding for Aniket ---")
 
     # 1. Reset databases
@@ -216,9 +219,9 @@ async def seed_databases(num_distractors=30000):
     db = ConversationHistoryStore()
     await db.initialize()
 
-    seeding_tasks = []
     corpus_path = os.path.join(os.path.dirname(__file__), "flooded_seeding_corpus.json")
     loaded_from_file = False
+    corpus_data = []
 
     if os.path.exists(corpus_path):
         try:
@@ -233,80 +236,42 @@ async def seed_databases(num_distractors=30000):
                 f"⚠️ Error reading {corpus_path}: {e}. Falling back to procedural generation."
             )
 
+    now = datetime.now(timezone.utc)
+    active_raw_items = []
+    cold_raw_items = []
+
     if loaded_from_file:
-        distractor_count = 0
-        milestone_count = 0
-        raw_items = []
-
+        print(f"Option B: Pre-Pruning {len(corpus_data)} items from corpus file...")
         for item in corpus_data:
-            importance = item.get("importance", 0.4)
-            is_dist = importance < 0.5
-
-            if is_dist:
-                if distractor_count >= num_distractors:
-                    continue
-                distractor_count += 1
-            else:
-                milestone_count += 1
-            raw_items.append(item)
-
-        # Batch embed all raw items content dynamically to build proper database state
-        texts_to_embed = [item.get("content", "") for item in raw_items]
-        real_embeddings = get_batch_embeddings(texts_to_embed)
-
-        for idx, item in enumerate(raw_items):
-            room = item.get("room", "social")
-            content = item.get("content", "")
-            raw_content = item.get("raw_content", content)
-            wing = item.get("wing", "personal")
-            importance = item.get("importance", 0.4)
-            emotion = item.get("emotion", 0.1)
-            valence = item.get("valence", 0.0)
-            certainty = item.get("certainty", 0.9)
-            source = item.get("source", "system_seeder")
             created_at_str = item.get("created_at")
             created_time = datetime.fromisoformat(created_at_str)
+            if created_time.tzinfo is None:
+                created_time = created_time.replace(tzinfo=timezone.utc)
 
-            vector = real_embeddings[idx]
-            if not vector:
-                vector = generate_mock_vector(768)
-            vector_str = str(vector)
+            importance = item.get("importance", 0.4)
+            hours_since = (now - created_time).total_seconds() / 3600.0
+            is_shielded = hours_since < 24.0
 
-            metadata_dict = {
-                "epoch": item.get("epoch"),
-                "crisis": item.get("crisis"),
-                "virtue": item.get("virtue"),
-            }
-
-            seeding_tasks.append(
-                (
-                    content,
-                    raw_content,
-                    wing,
-                    room,
-                    vector_str,
-                    importance,
-                    emotion,
-                    valence,
-                    certainty,
-                    source,
-                    json.dumps(metadata_dict),
-                    created_time,
-                )
-            )
-        print(
-            f"Loaded {distractor_count} distractors and {milestone_count} milestones from {corpus_path}."
-        )
+            if importance >= 0.7 or is_shielded:
+                active_raw_items.append(item)
+            else:
+                # Pre-calculate base-level decay
+                activation = -0.5 * math.log(hours_since + 1.0)
+                threshold = (
+                    -2.5 if importance < 0.5 else -3.5
+                )  # pre-pruning active pool thresholds
+                if activation < threshold:
+                    cold_raw_items.append(item)
+                else:
+                    active_raw_items.append(item)
     else:
         print(
-            "🧠 Compiling autobiographical dataset with 19-year temporal decay gradient in-memory..."
+            "🧠 Compiling procedural dataset with 1-year temporal decay gradient in-memory..."
         )
-        now = datetime.now(timezone.utc)
-        nineteen_years_seconds = 19 * 365 * 24 * 3600
+        nineteen_years_seconds = 365 * 24 * 3600
         time_step_seconds = nineteen_years_seconds / max(1, num_distractors)
 
         # Compile chitchat distractors
-        raw_distractors = []
         for i in range(num_distractors):
             t_idx = i % len(ANIKET_DISTRACTOR_TEMPLATES)
             template = ANIKET_DISTRACTOR_TEMPLATES[t_idx]
@@ -315,7 +280,28 @@ async def seed_databases(num_distractors=30000):
 
             elapsed_seconds = i * time_step_seconds
             created_time = now - timedelta(seconds=elapsed_seconds)
-            raw_distractors.append((content, category, created_time))
+            hours_since = elapsed_seconds / 3600.0
+            is_shielded = hours_since < 24.0
+
+            item = {
+                "content": content,
+                "raw_content": content,
+                "wing": "personal",
+                "room": category,
+                "importance": 0.4,
+                "emotion": 0.1,
+                "valence": 0.0,
+                "certainty": 0.9,
+                "source": "system_seeder",
+                "created_at": created_time.isoformat(),
+                "epoch": "daily_chitchat",
+            }
+
+            activation = -0.5 * math.log(hours_since + 1.0)
+            if activation < -2.5 and not is_shielded:
+                cold_raw_items.append(item)
+            else:
+                active_raw_items.append(item)
 
         # Compile milestones
         epochs_templates = [
@@ -349,77 +335,123 @@ async def seed_databases(num_distractors=30000):
             ),
         ]
 
-        raw_milestones = []
         milestone_idx = 0
         for templates, cats, epoch, crisis, virtue in epochs_templates:
             for template in templates:
                 content = f"{template} [Milestone ID: {milestone_idx}]"
                 category = cats[milestone_idx % len(cats)]
-                raw_milestones.append((content, category, epoch, crisis, virtue))
+                item = {
+                    "content": content,
+                    "raw_content": content,
+                    "wing": "personal",
+                    "room": category,
+                    "importance": 0.9,
+                    "emotion": 0.8,
+                    "valence": 0.8,
+                    "certainty": 1.0,
+                    "source": "system_seeder",
+                    "created_at": now.isoformat(),
+                    "epoch": epoch,
+                    "crisis": crisis,
+                    "virtue": virtue,
+                }
+                active_raw_items.append(item)
                 milestone_idx += 1
 
-        # Gather all text items to embed and batch-embed them
-        texts_to_embed = [d[0] for d in raw_distractors] + [
-            m[0] for m in raw_milestones
-        ]
-        real_embeddings = get_batch_embeddings(texts_to_embed)
+    print(
+        f"📊 Seeding stats: Active (Embedded) = {len(active_raw_items)} | Cold (Pruned) = {len(cold_raw_items)}"
+    )
 
-        # Populate distractors in seeding_tasks
-        for i, d in enumerate(raw_distractors):
-            content, category, created_time = d
-            vector = real_embeddings[i]
-            if not vector:
-                vector = generate_mock_vector(768)
-            vector_str = str(vector)
+    # Batch embed ONLY active raw items
+    texts_to_embed = [item.get("content", "") for item in active_raw_items]
+    real_embeddings = get_batch_embeddings(texts_to_embed)
 
-            seeding_tasks.append(
-                (
-                    content,
-                    content,
-                    "personal",
-                    category,
-                    vector_str,
-                    0.4,
-                    0.1,
-                    0.0,
-                    0.9,
-                    "system_seeder",
-                    "{}",
-                    created_time,
-                )
+    active_seeding_tasks = []
+    cold_seeding_tasks = []
+
+    # Prepare active tasks
+    for idx, item in enumerate(active_raw_items):
+        room = item.get("room", "social")
+        content = item.get("content", "")
+        raw_content = item.get("raw_content", content)
+        wing = item.get("wing", "personal")
+        importance = item.get("importance", 0.4)
+        emotion = item.get("emotion", 0.1)
+        valence = item.get("valence", 0.0)
+        certainty = item.get("certainty", 0.9)
+        source = item.get("source", "system_seeder")
+        created_at_str = item.get("created_at")
+        created_time = datetime.fromisoformat(created_at_str)
+
+        vector = real_embeddings[idx]
+        if not vector:
+            vector = generate_mock_vector(768)
+        vector_str = str(vector)
+
+        metadata_dict = {
+            "epoch": item.get("epoch"),
+            "crisis": item.get("crisis"),
+            "virtue": item.get("virtue"),
+        }
+
+        active_seeding_tasks.append(
+            (
+                content,
+                raw_content,
+                wing,
+                room,
+                vector_str,
+                importance,
+                emotion,
+                valence,
+                certainty,
+                source,
+                json.dumps(metadata_dict),
+                created_time,
             )
+        )
 
-        # Populate milestones in seeding_tasks
-        offset = len(raw_distractors)
-        for i, m in enumerate(raw_milestones):
-            content, category, epoch, crisis, virtue = m
-            vector = real_embeddings[offset + i]
-            if not vector:
-                vector = generate_mock_vector(768)
-            vector_str = str(vector)
+    # Prepare cold tasks
+    for item in cold_raw_items:
+        room = item.get("room", "social")
+        content = item.get("content", "")
+        raw_content = item.get("raw_content", content)
+        wing = item.get("wing", "personal")
+        importance = item.get("importance", 0.4)
+        emotion = item.get("emotion", 0.1)
+        valence = item.get("valence", 0.0)
+        certainty = item.get("certainty", 0.9)
+        source = item.get("source", "system_seeder")
+        created_at_str = item.get("created_at")
+        created_time = datetime.fromisoformat(created_at_str)
 
-            seeding_tasks.append(
-                (
-                    content,
-                    content,
-                    "personal",
-                    category,
-                    vector_str,
-                    0.9,
-                    0.8,
-                    0.8,
-                    1.0,
-                    "system_seeder",
-                    json.dumps({"epoch": epoch, "crisis": crisis, "virtue": virtue}),
-                    now,
-                )
+        metadata_dict = {
+            "epoch": item.get("epoch"),
+            "crisis": item.get("crisis"),
+            "virtue": item.get("virtue"),
+        }
+
+        cold_seeding_tasks.append(
+            (
+                content,
+                raw_content,
+                wing,
+                room,
+                importance,
+                emotion,
+                valence,
+                certainty,
+                source,
+                json.dumps(metadata_dict),
+                created_time,
             )
+        )
 
-    print(f"💾 Bulk-loading {len(seeding_tasks)} records into pgvector...")
-
+    print(
+        f"💾 Bulk-loading {len(active_seeding_tasks)} records into PostgreSQL active memories..."
+    )
     start_time = time.perf_counter()
     async with db.pool.acquire() as conn:
-        # Use executemany for high-speed batch SQL execution
         await conn.executemany(
             """
             INSERT INTO memories (
@@ -430,13 +462,28 @@ async def seed_databases(num_distractors=30000):
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $12)
             """,
-            seeding_tasks,
+            active_seeding_tasks,
         )
 
-        try:
+        if cold_seeding_tasks:
             print(
-                "🔥 [Semantic Priming Seeder] Warming up biographical milestones in database..."
+                f"💾 Bulk-loading {len(cold_seeding_tasks)} records into PostgreSQL cold archived_memories..."
             )
+            await conn.executemany(
+                """
+                INSERT INTO archived_memories (
+                    content, raw_content, wing, room,
+                    importance_score, emotional_weight,
+                    valence, certainty, source, metadata,
+                    recall_count, last_recalled_at, created_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $11)
+                """,
+                cold_seeding_tasks,
+            )
+
+        try:
+            print("🔥 [Semantic Priming Seeder] Warming up milestones in database...")
             sql_update = """
                 UPDATE memories
                 SET last_recalled_at = clock_timestamp(),
@@ -444,12 +491,11 @@ async def seed_databases(num_distractors=30000):
                     importance_score = 0.95
                 WHERE wing = 'personal'
                   AND (
-                    content ILIKE '%Kolkata%'
-                    OR content ILIKE '%Bangalore%'
-                    OR content ILIKE '%Priya%'
-                    OR content ILIKE '%rasgulla%'
-                    OR content ILIKE '%cognitive architecture%'
-                    OR content ILIKE '%affective cognitive%'
+                    content ILIKE '%garden%'
+                    OR content ILIKE '%workspace%'
+                    OR content ILIKE '%friend%'
+                    OR content ILIKE '%cognitive%'
+                    OR content ILIKE '%architecture%'
                   );
             """
             await conn.execute(sql_update)
@@ -458,7 +504,7 @@ async def seed_databases(num_distractors=30000):
 
     duration = time.perf_counter() - start_time
     print(
-        f"✅ Successfully seeded PostgreSQL memories table in {duration:.2f} seconds."
+        f"✅ Successfully seeded PostgreSQL memories and archived_memories tables in {duration:.2f} seconds."
     )
     await db.close()
 
@@ -482,8 +528,6 @@ async def seed_databases(num_distractors=30000):
         semantic_store = SemanticRecallStore()
         if semantic_store.client:
             from qdrant_client import QdrantClient
-
-            # Recreate client with larger timeout to prevent timeouts during 30k seeding
             from app.config import Config
 
             q_host = getattr(Config, "QDRANT_HOST", "127.0.0.1")
@@ -492,7 +536,7 @@ async def seed_databases(num_distractors=30000):
             chunk_size = 1000
             points = []
             start_q = time.perf_counter()
-            for idx, task in enumerate(seeding_tasks):
+            for idx, task in enumerate(active_seeding_tasks):
                 (
                     content,
                     raw_content,
@@ -527,7 +571,7 @@ async def seed_databases(num_distractors=30000):
                     models.PointStruct(id=idx + 1, vector=vector, payload=payload)
                 )
 
-                if len(points) >= chunk_size or idx == len(seeding_tasks) - 1:
+                if len(points) >= chunk_size or idx == len(active_seeding_tasks) - 1:
                     semantic_store.client.upsert(
                         collection_name=semantic_store.collection_name, points=points
                     )
@@ -679,8 +723,8 @@ async def seed_databases(num_distractors=30000):
             "Library Alcove",
         ]
         cities_names = [
-            "Kolkata",
-            "Bangalore",
+            "our shared workspace",
+            "the testing laboratory",
             "Delhi",
             "Mumbai",
             "Chennai",
@@ -723,7 +767,7 @@ async def seed_databases(num_distractors=30000):
             "Richards Town",
         ]
         comforts_names = [
-            "sweet rasgulla",
+            "chamomile brew",
             "cardamom tea",
             "street cricket alley",
             "Victoria Memorial",
@@ -759,15 +803,15 @@ async def seed_databases(num_distractors=30000):
         ]
         milestones_names = [
             "high school graduation",
-            "moving to Bangalore",
+            "moving to the testing laboratory",
             "joining research lab",
             "first research publication",
-            "meeting Priya",
+            "meeting my friend",
             "starting primary school",
             "learning Python programming",
             "junior research internship",
             "first toddler steps",
-            "sweet rasgulla tasting",
+            "chamomile brew tasting",
         ]
 
         nodes = [
@@ -781,11 +825,11 @@ async def seed_databases(num_distractors=30000):
                 },
             },
             {
-                "name": "Priya",
+                "name": "my friend",
                 "type": "Person",
                 "category": "Social",
                 "props": {
-                    "description": "Aniket's romantic partner.",
+                    "description": "Aniket's companion and friend.",
                     "importance": 0.9,
                 },
             },
@@ -993,9 +1037,9 @@ async def seed_databases(num_distractors=30000):
                 "subject": "Aniket",
                 "subject_type": "Person",
                 "subject_category": "Social",
-                "relation": "CHILD_OF",
+                "relation": "CREATED_BY",
                 "properties": {"weight": 0.98, "category": "social", "importance": 0.9},
-                "object": "Ma",
+                "object": "Lead Creator",
                 "object_type": "Person",
                 "object_category": "Social",
             },
@@ -1003,9 +1047,9 @@ async def seed_databases(num_distractors=30000):
                 "subject": "Aniket",
                 "subject_type": "Person",
                 "subject_category": "Social",
-                "relation": "CHILD_OF",
+                "relation": "DEVELOPED_BY",
                 "properties": {"weight": 0.98, "category": "social", "importance": 0.9},
-                "object": "Baba",
+                "object": "Main Developer",
                 "object_type": "Person",
                 "object_category": "Social",
             },
@@ -1015,7 +1059,7 @@ async def seed_databases(num_distractors=30000):
                 "subject_category": "Social",
                 "relation": "PARTNER_WITH",
                 "properties": {"weight": 0.99, "category": "social", "importance": 0.9},
-                "object": "Priya",
+                "object": "my friend",
                 "object_type": "Person",
                 "object_category": "Social",
             },
@@ -1113,7 +1157,11 @@ async def seed_databases(num_distractors=30000):
             )
         # Link Cities
         for name in cities_names:
-            rel = "LIVES_IN" if name in ["Kolkata", "Bangalore"] else "VISITED"
+            rel = (
+                "LIVES_IN"
+                if name in ["our shared workspace", "the testing laboratory"]
+                else "VISITED"
+            )
             relationships.append(
                 {
                     "subject": "Aniket",
@@ -1133,32 +1181,14 @@ async def seed_databases(num_distractors=30000):
         # Link Neighborhoods
         for name in neighborhoods_names:
             city_target = (
-                "Bangalore"
+                "our shared workspace"
                 if name
                 in [
-                    "Indiranagar",
-                    "Koramangala",
-                    "Whitefield",
-                    "HSR Layout",
-                    "Malleshwaram",
-                    "Jayanagar",
-                    "Sadashivanagar",
-                    "Marathahalli",
-                    "Bellandur",
-                    "Rajajinagar",
-                    "Banashankari",
-                    "Hebbal",
-                    "Yelahanka",
-                    "Electronic City",
-                    "Basavanagudi",
-                    "Ulsoor",
-                    "BTM Layout",
-                    "Domlur",
-                    "Cooke Town",
-                    "Fraser Town",
-                    "Richards Town",
+                    "the robotics laboratory",
+                    "the server room",
+                    "the testing facility",
                 ]
-                else "Kolkata"
+                else "the testing laboratory"
             )
             relationships.append(
                 {

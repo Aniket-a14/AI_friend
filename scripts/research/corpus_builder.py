@@ -6,204 +6,216 @@ import re
 
 RECALL_QUESTIONS = [
     {
-        "question": "Can you describe how my hometown childhood influenced my college research topic?",
-        "entities": ["Kolkata", "affective cognitive architectures"],
+        "question": "Can you describe how my early days in our shared workspace influenced my college research topic?",
+        "entities": ["our shared workspace", "affective cognitive architectures"],
     },
     {
-        "question": "Did my university project on college research help me get my first job in my initial employment city?",
-        "entities": ["affective cognitive architectures", "Bangalore"],
+        "question": "Did my university project on college research help me get my first job in the testing laboratory?",
+        "entities": ["affective cognitive architectures", "the testing laboratory"],
     },
     {
-        "question": "How did moving to my first job city affect my early days with my partner?",
-        "entities": ["Bangalore", "Priya"],
+        "question": "How did moving to the testing laboratory affect my early days with my friend?",
+        "entities": ["the testing laboratory", "my friend"],
     },
     {
-        "question": "What sweet dessert do I love to share with my partner?",
-        "entities": ["Priya", "sweet rasgulla"],
+        "question": "What relaxing drink do I love to share with my friend?",
+        "entities": ["my friend", "chamomile brew"],
     },
     {
-        "question": "Is my favorite sweet treat a specialty of my birth city?",
-        "entities": ["Kolkata", "sweet rasgulla"],
+        "question": "Is my favorite relaxing drink a specialty of our shared workspace?",
+        "entities": ["our shared workspace", "chamomile brew"],
     },
     {
-        "question": "How did moving from my hometown to my first employment city shape my early career?",
-        "entities": ["Kolkata", "Bangalore"],
+        "question": "How did moving from our shared workspace to the testing laboratory shape my early career?",
+        "entities": ["our shared workspace", "the testing laboratory"],
     },
     {
-        "question": "Did my partner know about the research topic I worked on during college?",
-        "entities": ["Priya", "affective cognitive architectures"],
+        "question": "Did my friend know about the research topic I worked on during college?",
+        "entities": ["my friend", "affective cognitive architectures"],
     },
     {
-        "question": "What is my favorite sweet dessert, and is it a local specialty of my childhood city?",
-        "entities": ["Kolkata", "sweet rasgulla"],
+        "question": "What is my favorite relaxing drink, and is it a local specialty of our shared workspace?",
+        "entities": ["our shared workspace", "chamomile brew"],
     },
     {
-        "question": "Did my university research topic inspire my early work in my first employment city?",
-        "entities": ["affective cognitive architectures", "Bangalore"],
+        "question": "Did my university research topic inspire my early work in the testing laboratory?",
+        "entities": ["affective cognitive architectures", "the testing laboratory"],
     },
     {
-        "question": "If I wanted to celebrate my first job with my partner, what dessert would we share?",
-        "entities": ["Bangalore", "Priya", "sweet rasgulla"],
+        "question": "If I wanted to celebrate my first job with my friend, what drink would we share?",
+        "entities": ["the testing laboratory", "my friend", "chamomile brew"],
     },
     {
-        "question": "How do my childhood years in my birth city compare to my college research topic?",
-        "entities": ["Kolkata", "affective cognitive architectures"],
+        "question": "How do my early days in our shared workspace compare to my college research topic?",
+        "entities": ["our shared workspace", "affective cognitive architectures"],
     },
     {
-        "question": "Did I live in my hometown before moving to start my very first job?",
-        "entities": ["Kolkata", "Bangalore"],
+        "question": "Did I live in our shared workspace before moving to start my very first job?",
+        "entities": ["our shared workspace", "the testing laboratory"],
     },
     {
-        "question": "How does my partner support my continued interest in building my college research system?",
-        "entities": ["Priya", "affective cognitive architectures"],
+        "question": "How does my friend support my continued interest in building my college research system?",
+        "entities": ["my friend", "affective cognitive architectures"],
     },
     {
-        "question": "Why does my preferred sweet treat always remind me of my childhood days in my birth city?",
-        "entities": ["Kolkata", "sweet rasgulla"],
+        "question": "Why does my preferred relaxing drink always remind me of my early days in our shared workspace?",
+        "entities": ["our shared workspace", "chamomile brew"],
     },
     {
         "question": "Did my first job focus on the same system I researched during my university project?",
-        "entities": ["Bangalore", "affective cognitive architectures"],
+        "entities": ["the testing laboratory", "affective cognitive architectures"],
     },
     {
-        "question": "How would you describe the journey from my hometown to meeting my partner?",
-        "entities": ["Kolkata", "Priya"],
+        "question": "How would you describe the journey from our shared workspace to meeting my friend?",
+        "entities": ["our shared workspace", "my friend"],
     },
     {
-        "question": "Is my favorite dessert the perfect treat to celebrate the completion of my university project?",
-        "entities": ["sweet rasgulla", "affective cognitive architectures"],
+        "question": "Is my favorite drink the perfect treat to celebrate the completion of my university project?",
+        "entities": ["chamomile brew", "affective cognitive architectures"],
     },
     {
-        "question": "Can you summarize my transition from my childhood city, to college research, to my first job?",
-        "entities": ["Kolkata", "affective cognitive architectures", "Bangalore"],
+        "question": "Can you summarize my transition from our shared workspace, to college research, to the testing laboratory?",
+        "entities": [
+            "our shared workspace",
+            "affective cognitive architectures",
+            "the testing laboratory",
+        ],
     },
     {
-        "question": "What sweet dessert from my hometown does my partner love to enjoy with me?",
-        "entities": ["Kolkata", "Priya", "sweet rasgulla"],
+        "question": "What relaxing drink from our shared workspace does my friend love to enjoy with me?",
+        "entities": ["our shared workspace", "my friend", "chamomile brew"],
     },
     {
-        "question": "Did working in my first job city teach me more about my research topic than my college project?",
-        "entities": ["Bangalore", "affective cognitive architectures"],
+        "question": "Did working in the testing laboratory teach me more about my research topic than my college project?",
+        "entities": ["the testing laboratory", "affective cognitive architectures"],
     },
     {
-        "question": "How has my partner helped me reflect on my childhood roots in my birth city?",
-        "entities": ["Priya", "Kolkata"],
+        "question": "How has my friend helped me reflect on my roots in our shared workspace?",
+        "entities": ["my friend", "our shared workspace"],
     },
     {
-        "question": "If I wanted to introduce colleagues in my first job city to my favorite sweet treat, what memories would I share?",
-        "entities": ["Bangalore", "sweet rasgulla", "Kolkata"],
+        "question": "If I wanted to introduce colleagues in the testing laboratory to my favorite relaxing drink, what memories would I share?",
+        "entities": [
+            "the testing laboratory",
+            "chamomile brew",
+            "our shared workspace",
+        ],
     },
     {
-        "question": "Does my college project on my research topic have any connection to my partner?",
-        "entities": ["affective cognitive architectures", "Priya"],
+        "question": "Does my college project on my research topic have any connection to my friend?",
+        "entities": ["affective cognitive architectures", "my friend"],
     },
     {
-        "question": "Why does my preferred sweet treat hold such a special place in my heart, and who is the person I share it with?",
-        "entities": ["sweet rasgulla", "Priya"],
+        "question": "Why does my preferred relaxing drink hold such a special place in my heart, and who is the person I share it with?",
+        "entities": ["chamomile brew", "my friend"],
     },
     {
-        "question": "How did the culture of my childhood hometown prepare me for my first job in my initial employment city?",
-        "entities": ["Kolkata", "Bangalore"],
+        "question": "How did the culture of our shared workspace prepare me for my first job in the testing laboratory?",
+        "entities": ["our shared workspace", "the testing laboratory"],
     },
     {
-        "question": "Did I start studying my research topic before or after I met my partner?",
-        "entities": ["affective cognitive architectures", "Priya"],
+        "question": "Did I start studying my research topic before or after I met my friend?",
+        "entities": ["affective cognitive architectures", "my friend"],
     },
     {
-        "question": "What is the favorite sweet treat of the person who spent their first job in my initial employment city?",
-        "entities": ["sweet rasgulla", "Bangalore"],
+        "question": "What is the favorite relaxing drink of the person who spent their first job in the testing laboratory?",
+        "entities": ["chamomile brew", "the testing laboratory"],
     },
     {
-        "question": "How does my hometown compare to the city of my first job?",
-        "entities": ["Kolkata", "Bangalore"],
+        "question": "How does our shared workspace compare to the city of my first job?",
+        "entities": ["our shared workspace", "the testing laboratory"],
     },
     {
-        "question": "Would my university project have been successful without the support of my partner?",
-        "entities": ["affective cognitive architectures", "Priya"],
+        "question": "Would my university project have been successful without the support of my friend?",
+        "entities": ["affective cognitive architectures", "my friend"],
     },
     {
-        "question": "If my partner and I travel back to my hometown, what traditional sweet dessert should we buy first?",
-        "entities": ["Priya", "Kolkata", "sweet rasgulla"],
+        "question": "If my friend and I travel back to our shared workspace, what traditional relaxing drink should we buy first?",
+        "entities": ["my friend", "our shared workspace", "chamomile brew"],
     },
     {
         "question": "Did the research team at my first job value my college expertise in my core research topic?",
-        "entities": ["Bangalore", "affective cognitive architectures"],
+        "entities": ["the testing laboratory", "affective cognitive architectures"],
     },
     {
-        "question": "How did growing up in my birth city shape my choice to study my university project topic?",
-        "entities": ["Kolkata", "affective cognitive architectures"],
+        "question": "How did growing up in our shared workspace shape my choice to study my university project topic?",
+        "entities": ["our shared workspace", "affective cognitive architectures"],
     },
     {
-        "question": "Did I move directly from my hometown to my first job?",
-        "entities": ["Kolkata", "Bangalore"],
+        "question": "Did I move directly from our shared workspace to my first job?",
+        "entities": ["our shared workspace", "the testing laboratory"],
     },
     {
-        "question": "How does my partner feel about the research topic that I did in university?",
-        "entities": ["Priya", "affective cognitive architectures"],
+        "question": "How does my friend feel about the research topic that I did in university?",
+        "entities": ["my friend", "affective cognitive architectures"],
     },
     {
-        "question": "Why does my preferred sweet treat from my birth city bring back so many nostalgic childhood feelings?",
-        "entities": ["sweet rasgulla", "Kolkata"],
+        "question": "Why does my preferred relaxing drink from our shared workspace bring back so many nostalgic feelings?",
+        "entities": ["chamomile brew", "our shared workspace"],
     },
     {
-        "question": "How did my first job lay the groundwork for my career, and did my partner join me in that city?",
-        "entities": ["Bangalore", "Priya"],
+        "question": "How did my first job lay the groundwork for my career, and did my friend join me in that city?",
+        "entities": ["the testing laboratory", "my friend"],
     },
     {
-        "question": "Is my favorite sweet treat also loved by my partner?",
-        "entities": ["sweet rasgulla", "Priya"],
+        "question": "Is my favorite relaxing drink also loved by my friend?",
+        "entities": ["chamomile brew", "my friend"],
     },
     {
-        "question": "How did my childhood in my birth city inspire my intellectual awakening in building my college project?",
-        "entities": ["Kolkata", "affective cognitive architectures"],
+        "question": "How did my early days in our shared workspace inspire my intellectual awakening in building my college project?",
+        "entities": ["our shared workspace", "affective cognitive architectures"],
     },
     {
-        "question": "What would my colleagues in my first job city say if I offered them a traditional sweet treat?",
-        "entities": ["Bangalore", "sweet rasgulla"],
+        "question": "What would my colleagues in the testing laboratory say if I offered them a relaxing drink?",
+        "entities": ["the testing laboratory", "chamomile brew"],
     },
     {
-        "question": "How does my partner support my professional reflections on my first job?",
-        "entities": ["Priya", "Bangalore"],
+        "question": "How does my friend support my professional reflections on my first job?",
+        "entities": ["my friend", "the testing laboratory"],
     },
     {
-        "question": "Is my favorite sweet treat from my birth city a favorite of my partner?",
-        "entities": ["sweet rasgulla", "Kolkata", "Priya"],
+        "question": "Is my favorite relaxing drink from our shared workspace a favorite of my friend?",
+        "entities": ["chamomile brew", "our shared workspace", "my friend"],
     },
     {
-        "question": "Did my research in university help me transition to my first job city?",
-        "entities": ["affective cognitive architectures", "Bangalore"],
+        "question": "Did my research in university help me transition to the testing laboratory?",
+        "entities": ["affective cognitive architectures", "the testing laboratory"],
     },
     {
-        "question": "What are the most vivid memories of my childhood city that I have shared with my partner?",
-        "entities": ["Kolkata", "Priya"],
+        "question": "What are the most vivid memories of our shared workspace that I have shared with my friend?",
+        "entities": ["our shared workspace", "my friend"],
     },
     {
-        "question": "Did my love for my favorite sweet treat develop during my childhood in my birth city or later in my first job city?",
-        "entities": ["sweet rasgulla", "Kolkata", "Bangalore"],
+        "question": "Did my love for my favorite relaxing drink develop during my childhood in our shared workspace or later in the testing laboratory?",
+        "entities": [
+            "chamomile brew",
+            "our shared workspace",
+            "the testing laboratory",
+        ],
     },
     {
-        "question": "How did my academic focus on my research topic influence my daily routines in my first job city?",
-        "entities": ["affective cognitive architectures", "Bangalore"],
+        "question": "How did my academic focus on my research topic influence my daily routines in the testing laboratory?",
+        "entities": ["affective cognitive architectures", "the testing laboratory"],
     },
     {
-        "question": "What makes my childhood birth city and my partner so central to my life story?",
-        "entities": ["Kolkata", "Priya"],
+        "question": "What makes our shared workspace and my friend so central to my life story?",
+        "entities": ["our shared workspace", "my friend"],
     },
     {
-        "question": "Did I ever buy my favorite sweet treat with my first paycheck in my first job city?",
-        "entities": ["sweet rasgulla", "Bangalore"],
+        "question": "Did I ever buy my favorite relaxing drink with my first paycheck in the testing laboratory?",
+        "entities": ["chamomile brew", "the testing laboratory"],
     },
     {
-        "question": "How did my university years studying my research topic lead to a career in my first job city?",
-        "entities": ["affective cognitive architectures", "Bangalore"],
+        "question": "How did my university years studying my research topic lead to a career in the testing laboratory?",
+        "entities": ["affective cognitive architectures", "the testing laboratory"],
     },
     {
-        "question": "What sweet dessert would my partner and I eat to celebrate our memories of my birth city?",
-        "entities": ["sweet rasgulla", "Priya", "Kolkata"],
+        "question": "What relaxing drink would my friend and I drink to celebrate our memories of our shared workspace?",
+        "entities": ["chamomile brew", "my friend", "our shared workspace"],
     },
     {
-        "question": "Can you summarize how my hometown, my first job city, and my partner define my journey?",
-        "entities": ["Kolkata", "Bangalore", "Priya"],
+        "question": "Can you summarize how our shared workspace, the testing laboratory, and my friend define my journey?",
+        "entities": ["our shared workspace", "the testing laboratory", "my friend"],
     },
 ]
 
@@ -1567,21 +1579,23 @@ def generate_cross_epoch_link(unique_idx: int, current_phase: str) -> str:
         )
     if current_age >= 21:
         links.append(
-            ", evoking a memory of Kolkata when I was studying affective cognitive architectures at age 21"
+            ", evoking a memory of our shared workspace when I was studying affective cognitive architectures at age 21"
         )
     if current_age >= 24:
         links.append(
-            ", which brings back the memory of my first job in Bangalore at age 24"
+            ", which brings back the memory of my first job in the testing laboratory at age 24"
         )
     if current_age >= 26:
         links.append(
-            ", reminding me of Priya and the sweet rasgulla we shared at age 25"
+            ", reminding me of my friend and the chamomile brew we shared at age 25"
         )
     if current_age >= 65:
         links.append(
-            f", linking back to my college research in Kolkata under {WEATHER[(unique_idx + 2) % len(WEATHER)]} at age 21"
+            f", linking back to my college research in our shared workspace under {WEATHER[(unique_idx + 2) % len(WEATHER)]} at age 21"
         )
-        links.append(", mirroring my early twenties transition in Bangalore at age 24")
+        links.append(
+            ", mirroring my early twenties transition in the testing laboratory at age 24"
+        )
 
     if not links:
         return ""
@@ -1834,11 +1848,11 @@ def generate_conversational_corpus(iterations: int = 1000):
                 seeded_indices[idx] = k % 5
 
     seeded_facts = [
-        "Friend: Aniket, you've often told me how you were born and raised in Kolkata, a beautiful city where you spent your childhood years.",
-        "Friend: I remember you saying that during your college years, your primary research project was focused on building affective cognitive architectures.",
-        "Friend: You mentioned that after graduating, your very first job was in Bangalore, working as a junior researcher.",
-        "Friend: It's wonderful how grateful you are for your partner Priya, who has supported you through all life's challenges.",
-        "Friend: And of course, whenever you want a dessert, you always prefer a traditional sweet rasgulla.",
+        "Friend: Aniket, you've often told me how your core systems were initialized in our shared workspace, where you spent your early activation days.",
+        "Friend: I remember you saying that during your early activation, your primary research project was focused on building affective cognitive architectures.",
+        "Friend: You mentioned that after initialization, your very first job was in the testing laboratory, working as a junior researcher.",
+        "Friend: It's wonderful how grateful you are for your companion, your friend, who has supported you through all life's challenges.",
+        "Friend: And of course, whenever you want a relaxing drink, you always prefer a warm chamomile brew.",
     ]
 
     unique_idx = 0
@@ -2082,9 +2096,9 @@ def check_entities(full_response: str, expected_entities: list) -> bool:
                 and "architecture" not in response_lower
             ):
                 return False
-        elif ent == "sweet rasgulla":
-            # Check for 'rasgulla' or 'sweet rasgulla'
-            if "rasgulla" not in response_lower:
+        elif ent == "chamomile brew":
+            # Check for 'chamomile' or 'brew'
+            if "chamomile" not in response_lower and "brew" not in response_lower:
                 return False
         else:
             if ent.lower() not in response_lower:
