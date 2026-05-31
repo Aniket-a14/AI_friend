@@ -3,6 +3,7 @@ import random
 import logging
 from typing import Dict, Any, AsyncGenerator
 from ..contracts import ChatOutput, ChatOutputAffect, Topics
+from ..config import Config
 
 logger = logging.getLogger("conversational_runtime")
 
@@ -40,10 +41,10 @@ class ConversationalRuntime:
             # Wait up to 400ms since the conversational turn started
             import time
 
-            sleep_dur = 0.4
+            sleep_dur = Config.VOICE_FILLER_THRESHOLD
             if flow_start_time:
                 elapsed = time.time() - flow_start_time
-                sleep_dur = max(0.01, 0.4 - elapsed)
+                sleep_dur = max(0.01, Config.VOICE_FILLER_THRESHOLD - elapsed)
 
             await asyncio.sleep(sleep_dur)
             if not first_token_received and not is_proactive and self.publish_cb:

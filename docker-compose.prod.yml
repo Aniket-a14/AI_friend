@@ -172,6 +172,7 @@ services:
     command: [ "voice-agent" ]
     volumes:
       - voice_samples_data:/app/output
+      - ./models:/app/models
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - SOVITS_URL=http://local_voice:9871

@@ -1359,3 +1359,27 @@ Details:
 Verification:
 - Executed targeted and full test suites via `pytest backend/ -vv`. All 182 tests passed successfully, including `test_cue_and_spreading_activation_boosts` and `test_neo4j_spreading_activation`.
 - Validated formatting and quality rules via `pre-commit run --all-files` (`ruff`, `ruff-format`, `end-of-file-fixer`, `trailing-whitespace` - 100% Passed).
+
+## 2026-05-31 CVS-3.5: Local Voice Synthesis Acceleration & Quality-Prioritized Look-Ahead (Scenario B)
+
+Implemented Scenario B (local voice synthesis, ONNX/TensorRT native execution, dynamic execution provider selection, and quality-prioritized look-ahead streaming) to eliminate containerized HTTP API bottlenecks while maintaining high-fidelity emotional expression.
+
+Changed files:
+- `backend/crates/voice-agent/Cargo.toml` (Modified)
+- `backend/crates/voice-agent/src/main.rs` (Modified)
+- `backend/app/config.py` (Modified)
+- `backend/app/utils/conversational_runtime.py` (Modified)
+- `backend/app/agents/brain_agent.py` (Modified)
+- `scripts/research/export_models.py` (New)
+- `backend/Dockerfile.rust` (Modified)
+- `docker-compose.prod.yml` (Modified)
+- `backend/app/agents/context.md` (Modified)
+- `.agents/CONTEXT.md` (Modified)
+
+Details:
+- **Model Provisioning & Fallback Configuration (`export_models.py`)**: Created a standalone Python utility to manage models. If custom weights are missing, it downloads a pre-compiled VITS voice model (`vits-piper-en_US-amy-low`) into `models/base/` as a fallback.
+- **Native Rust ONNX Engine (`voice-agent` Upgrades)**: Integrated the `ort` library with dynamic hardware execution providers (TensorRT -> CUDA -> CoreML -> CPU fallback) into `Cargo.toml` and `main.rs`. Replaced remote `/tts` REST API calls with local compiled forward passes on the ONNX VITS model.
+- **Dynamic Linking Resolution in Container**: Updated `Dockerfile.rust` to copy `libonnxruntime.so*` from the builder stage target directory to `/usr/local/lib/` in the runtime stage, and run `ldconfig` to resolve dynamic linker constraints.
+- **Volume Mounting in Compose**: Added `./models:/app/models` volume mapping to the `voice_agent` container inside `docker-compose.prod.yml` to expose local models to the binary.
+- **Speculative Pause Filler Threshold**: Added `VOICE_FILLER_THRESHOLD: float = 0.25` (250ms) to `config.py` and modified `conversational_runtime.py` to fetch it dynamically, allowing early speculative vocal fillers (hmm, accha) to mask start-of-turn latency.
+- **Quality-Priority Look-Ahead Segmentation**: Set the segmenter target size in `brain_agent.py` to `7` words to preserve context for natural, rich emotional prosody inflections.

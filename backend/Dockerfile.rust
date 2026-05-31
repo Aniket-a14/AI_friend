@@ -1,4 +1,10 @@
-FROM rust:1-bookworm AS builder
+FROM rust:1-trixie AS builder
+
+# Install python3 and dev headers required by pyo3 (used in the workspace Cargo structure)
+RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY Cargo.toml ./Cargo.toml
@@ -7,13 +13,16 @@ COPY crates ./crates
 
 RUN cargo build --release --package voice-agent --package stt-agent
 
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 
-RUN apt-get update \
+RUN apt-get -o Acquire::Check-Valid-Until=false update \
     && apt-get install -y --no-install-recommends ca-certificates netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/voice-agent /usr/local/bin/voice-agent
 COPY --from=builder /app/target/release/stt-agent /usr/local/bin/stt-agent
+# Copy ONNX Runtime shared library from builder stage to prevent dynamic linking failure
+COPY --from=builder /app/target/release/libonnxruntime.so* /usr/local/lib/
+RUN ldconfig
 
 USER nobody:nogroup
