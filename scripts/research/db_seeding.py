@@ -223,7 +223,7 @@ async def seed_databases(num_distractors=30000):
     loaded_from_file = False
     corpus_data = []
 
-    if os.path.exists(corpus_path):
+    if os.path.exists(corpus_path) and not os.getenv("SKIP_CORPUS_FILE"):
         try:
             print(
                 f"📖 Found compiled seeding corpus file. Loading records from {corpus_path}..."
