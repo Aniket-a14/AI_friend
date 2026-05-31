@@ -246,6 +246,14 @@ Your Inferred Perspective of the User (Theory of Mind):
 
 This enforces strict cognitive boundaries, forcing the assistant to explain new topics using only vocabulary matching the user's inferred familiarity, and directly prevents repetitive or overly generic responses.
 
+### 5.5 Multi-User Relational Context & Gated Memory Routing
+
+To support social scaling in shared environments (such as a multi-user household or workspace):
+- **Dynamic Turn Attribution**: The `BrainAgent` extracts the active speaker's ID (`user_id`, e.g., `"Raj"`, `"Priya"`) from incoming interaction packets, logging conversation turns with explicit user roles in the database instead of a static `"user"` string.
+- **Gated Memory Queries**: Vector searches and graph spreading activation queries use the dynamic `user_id` context to restrict semantic activation mapping. Relational memory retrieval is gated such that private user contexts (e.g., Raj's childhood memories of Kolkata sweet rasgullas or Priya's memory of Bangalore filter coffee) do not leak across users.
+- **Biographical Milestone Scale**: Benchmarked using a 20-milestone structure (6 Shared, 7 Raj-specific, 7 Priya-specific) and 60 corresponding recall questions (3 per milestone) to stress-test relational separation under high-density semantic interference.
+- **Attributed Dialogue Consolidation**: Reflective consolidation compiles offline conversation logs using speaker-prefixed lines (e.g., `Raj: content`, `Priya: content`), allowing the system to form clean episodic nodes mapped to the correct user in the Neo4j graph.
+
 ---
 
 ## 🧠 6. Phase 6: Dual-Tier Edge Architecture & Live iMac M3 Benchmarking (N=100)
