@@ -54,7 +54,7 @@ class BrainAgent(BaseAgent):
 
         # CVS-1.0 Segmentation Config
         self.coordinator = SpeechCoordinator(
-            segmenter=HybridSegmenter(target_size=8), formation_buffer_ms=0.030
+            segmenter=HybridSegmenter(target_size=7), formation_buffer_ms=0.030
         )
         from ..utils.interruption_classifier import InterruptionClassifier
         from ..utils.conversational_runtime import ConversationalRuntime

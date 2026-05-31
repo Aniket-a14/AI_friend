@@ -90,7 +90,7 @@ async fn handle_audio_inbound(
     state: std::sync::Arc<tokio::sync::Mutex<SttState>>,
 ) -> Result<()> {
     let metadata = metadata_from_headers(&message);
-    let channels = metadata.as_ref().and_then(|m| m.channels).unwrap_or(1);
+    let channels = metadata.as_ref().and_then(|m| m.channels).unwrap_or(1) as usize;
     let pcm_16k_mono = normalize_pcm_i16(&message.payload, channels.max(1));
 
     let num_samples = pcm_16k_mono.len();
@@ -373,6 +373,7 @@ fn build_speculative_intent(text: &str, utterance_id: &str) -> Option<Speculativ
     })
 }
 
+#[allow(dead_code)]
 fn build_audio_perception(text: &str, speculative: &SpeculativeIntent) -> AudioPerception {
     let mut metadata = JsonMap::new();
     metadata.insert("text".to_string(), json!(text));

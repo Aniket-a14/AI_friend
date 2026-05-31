@@ -87,14 +87,17 @@ Interruption is now handled as a **Temporal Intent Problem** powered by binary P
 
 ### 🔊 6. Signal Rendering (Voice Agent)
 
-A persistent synthesis runtime with direct binary transport and expressive behavior.
+A persistent synthesis runtime with direct binary transport, accelerated local synthesis, and expressive behavior.
 
-- **Rust Native Audio**: The serialization and PyO3 FFI layer handles pure PCM payloads.
+- **Rust Native Audio & Hybrid TTS Core**: The FFI layer handles pure PCM payloads. The Voice Agent dynamically coordinates speech synthesis using an ONNX-based **LocalTtsEngine** with fallback capability.
+- **Dual-Model Fallback Resolution**: If custom voice models are present under `models/custom/`, they are loaded. Otherwise, the engine seamlessly falls back to a base Piper VITS model (`vits-piper-en_US-amy-low`) under `models/base/`, or routes to the HTTP REST endpoint if local models are unprovisioned.
+- **Hardware-Accelerated Execution Providers**: Initializes ONNX Runtime sessions by dynamically binding to the most performant execution provider (TensorRT or CUDA on NVIDIA hardware, CoreML on Apple Silicon, or optimized multi-threaded CPU execution).
+- **Quality-Prioritized Look-Ahead Pacing**: The `BrainAgent` groups generated text into chunks of **7 words** (or splits on clause punctuation), allowing the VITS acoustic model to capture semantic context and produce natural, expressive prosody contours.
+- **Speculative Filler Interruption Masking**: Under quality-prioritized segmentation, to hide compilation/synthesis latency, the system utilizes a **250ms speculative pause filler threshold** (`VOICE_FILLER_THRESHOLD`). If the first audio chunk is not generated within 250ms, immediate vocal fillers (e.g. *"Hmm"*, *"Accha"*) are dispatched to maintain turn flow.
 - **Direct Binary Bus**: Publishes raw PCM bytes via `orjson` serialization at 80,000 OPS.
 - **Expressive Temporal Layer**: Interprets `<pause=300ms>` and `<hesitate>` tags by injecting silent PCM buffers directly into the 32kHz stream.
-- **Streaming First Audio**: GPT-SoVITS chunks are queued as they arrive rather than buffered until full synthesis completion.
-- **Adaptive Gain Control (Volume Mirroring)**: The Voice Agent subscribes to `ambient.noise.telemetry` and tracks a moving average of the background noise. It dynamically scales the amplitude of outgoing PCM samples (ducking in quiet rooms and boosting in noisy ones).
-- **Dialogue Truncation**: When playback progress is reported by the client on `audio.playback.progress`, the Brain Agent tracks exactly how much content was spoken. Upon receiving a confirmed interruption, the Brain Agent truncates the database dialogue record to match what the user actually heard before interrupting.
+- **Adaptive Gain Control (Volume Mirroring)**: The Voice Agent subscribes to `ambient.noise.telemetry` and tracks a moving average of the background noise. It dynamically scales the amplitude of outgoing PCM samples.
+- **Dialogue Truncation**: When playback progress is reported on `audio.playback.progress`, the Brain Agent tracks spoken length and truncates database logs on interruption.
 
 ---
 

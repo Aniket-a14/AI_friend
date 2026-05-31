@@ -37,6 +37,17 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+    - name: Build Backend Rust Image
+      uses: docker/build-push-action@v6
+      with:
+        context: ./backend
+        file: ./backend/Dockerfile.rust
+        target: runtime
+        push: false
+        tags: ai-friend/backend-rust:ci
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
     - name: Validate Production Compose Config
       run: |
         # Create dummy .env for config check (values don't matter for 'config' command)

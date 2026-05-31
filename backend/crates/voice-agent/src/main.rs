@@ -11,6 +11,130 @@ use reqwest::Client;
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
+use std::collections::HashMap;
+use std::path::Path;
+use ort::session::Session;
+use ort::value::Tensor;
+
+
+struct Phonemizer {
+    lexicon: HashMap<String, Vec<String>>,
+    tokens: HashMap<String, i64>,
+}
+
+impl Phonemizer {
+    fn load(lexicon_path: &Path, tokens_path: &Path) -> Result<Self> {
+        let mut lexicon = HashMap::new();
+        if let Ok(content) = std::fs::read_to_string(lexicon_path) {
+            for line in content.lines() {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.len() >= 2 {
+                    let word = parts[0].to_lowercase();
+                    let phonemes: Vec<String> = parts[1].split(' ').map(String::from).collect();
+                    lexicon.insert(word, phonemes);
+                }
+            }
+        }
+
+        let mut tokens = HashMap::new();
+        if let Ok(content) = std::fs::read_to_string(tokens_path) {
+            for line in content.lines() {
+                let parts: Vec<&str> = line.split(' ').collect();
+                if parts.len() >= 2 {
+                    if let Ok(id) = parts[1].parse::<i64>() {
+                        tokens.insert(parts[0].to_string(), id);
+                    }
+                }
+            }
+        }
+
+        Ok(Self { lexicon, tokens })
+    }
+
+    fn phonemize(&self, text: &str) -> Vec<i64> {
+        let mut ids = Vec::new();
+        if let Some(&id) = self.tokens.get("^") {
+            ids.push(id);
+        }
+
+        for word in text.split_whitespace() {
+            let clean_word: String = word.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase();
+            if let Some(phonemes) = self.lexicon.get(&clean_word) {
+                for p in phonemes {
+                    if let Some(&id) = self.tokens.get(p) {
+                        ids.push(id);
+                        ids.push(0); // Separator
+                    }
+                }
+            }
+        }
+
+        if let Some(&id) = self.tokens.get("$") {
+            ids.push(id);
+        }
+
+        ids
+    }
+}
+
+struct LocalTtsEngine {
+    session: std::sync::Mutex<Session>,
+    phonemizer: Phonemizer,
+}
+
+impl LocalTtsEngine {
+    fn load(model_path: &Path, lexicon_path: &Path, tokens_path: &Path) -> Result<Self> {
+        let mut builder = Session::builder()?
+            .with_execution_providers([
+                ort::ep::TensorRT::default().build(),
+                ort::ep::CUDA::default().build(),
+                ort::ep::CoreML::default().build(),
+            ])
+            .map_err(|e| anyhow::anyhow!("failed to configure execution providers: {:?}", e))?;
+
+        let session = builder.commit_from_file(model_path)?;
+        let phonemizer = Phonemizer::load(lexicon_path, tokens_path)?;
+
+        Ok(Self { session: std::sync::Mutex::new(session), phonemizer })
+    }
+
+    fn synthesize(&self, text: &str, speed: f32) -> Result<Vec<u8>> {
+        let ids = self.phonemizer.phonemize(text);
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let num_phonemes = ids.len();
+        let length_scale = 1.0 / speed;
+
+        let input_array = ndarray::Array2::from_shape_vec((1, num_phonemes), ids)?;
+        let input_lengths_array = ndarray::Array1::from_vec(vec![num_phonemes as i64]);
+        let scales_array = ndarray::Array1::from_vec(vec![0.667f32, length_scale, 0.8f32]);
+
+        let input_tensor = Tensor::from_array(input_array)?;
+        let input_lengths_tensor = Tensor::from_array(input_lengths_array)?;
+        let scales_tensor = Tensor::from_array(scales_array)?;
+
+        let inputs = ort::inputs![
+            "input" => input_tensor,
+            "input_lengths" => input_lengths_tensor,
+            "scales" => scales_tensor,
+        ];
+
+        let mut session_guard = self.session.lock().map_err(|e| anyhow::anyhow!("mutex poisoned: {e}"))?;
+        let outputs = session_guard.run(inputs)?;
+        let output_value = outputs.get("output").context("missing output audio tensor")?;
+        let (_dimensions, audio_data) = output_value.try_extract_tensor::<f32>()?;
+
+        let mut pcm_bytes = Vec::with_capacity(audio_data.len() * 2);
+        for &sample in audio_data {
+            let clamped = (sample * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+            pcm_bytes.extend_from_slice(&clamped.to_le_bytes());
+        }
+
+        Ok(pcm_bytes)
+    }
+}
 
 #[derive(Debug, Clone, serde::Deserialize)]
 struct VisionDescriptionMsg {
@@ -225,6 +349,32 @@ async fn main() -> Result<()> {
         .build()
         .context("build reqwest client with timeouts")?;
 
+    let custom_model = Path::new("models/custom/custom_vits.onnx");
+    let base_model = Path::new("models/base/model.onnx");
+    let base_lexicon = Path::new("models/base/lexicon.txt");
+    let base_tokens = Path::new("models/base/tokens.txt");
+
+    let local_engine = if custom_model.exists() {
+        info!("Loading CUSTOM local voice weights...");
+        LocalTtsEngine::load(
+            custom_model,
+            Path::new("models/custom/lexicon.txt"),
+            Path::new("models/custom/tokens.txt"),
+        ).ok()
+    } else if base_model.exists() {
+        info!("Loading BASE local voice weights...");
+        LocalTtsEngine::load(
+            base_model,
+            base_lexicon,
+            base_tokens,
+        ).ok()
+    } else {
+        warn!("No local voice weights found. Local ONNX engine offline.");
+        None
+    };
+
+    let local_engine = std::sync::Arc::new(local_engine);
+
     let last_distance = std::sync::Arc::new(std::sync::Mutex::new(1.0));
     let noise_scale_factor = std::sync::Arc::new(std::sync::Mutex::new(1.0f64));
     let noise_floor_moving_avg = std::sync::Arc::new(std::sync::Mutex::new(0.01f64));
@@ -409,6 +559,7 @@ async fn main() -> Result<()> {
                     attenuation_factor.clone(),
                     dynamic_prosody.clone(),
                     noise_scale_factor.clone(),
+                    local_engine.clone(),
                 )
                 .await
                 {
@@ -581,6 +732,7 @@ async fn handle_chat_output(
     attenuation_factor: std::sync::Arc<std::sync::Mutex<f64>>,
     dynamic_prosody: std::sync::Arc<std::sync::Mutex<Option<contracts::Prosody>>>,
     noise_scale_factor: std::sync::Arc<std::sync::Mutex<f64>>,
+    local_engine: std::sync::Arc<Option<LocalTtsEngine>>,
 ) -> Result<()> {
     if event.done {
         return Ok(());
@@ -673,48 +825,86 @@ async fn handle_chat_output(
                 publish_pcm(jetstream, pcm, &event, noise_scale).await?;
             }
             TemporalPart::Text(text) => {
-                let mut response = synthesize_stream(
-                    config,
-                    http,
-                    &text,
-                    prosody.rate,
-                    prosody.pitch,
-                    prosody.volume,
-                )
-                .await?;
-                while let Some(chunk) = response.chunk().await? {
-                    if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
-                        info!("Aborting synthesis chunk stream due to AUDIO_STOP event.");
-                        break;
+                if let Some(engine) = local_engine.as_ref() {
+                    match engine.synthesize(&text, prosody.rate as f32) {
+                        Ok(pcm_bytes) => {
+                            for chunk in pcm_bytes.chunks(4096) {
+                                if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                                    info!("Aborting playback due to AUDIO_STOP event.");
+                                    break;
+                                }
+                                let mut chunk_vec = chunk.to_vec();
+
+                                const REVERB_DRY_LIMIT: f64 = 2.5;
+                                const REVERB_WET_LIMIT: f64 = 3.5;
+                                let wet_gain = if distance <= REVERB_DRY_LIMIT {
+                                    0.0
+                                } else if distance >= REVERB_WET_LIMIT {
+                                    1.0
+                                } else {
+                                    ((distance - REVERB_DRY_LIMIT) / (REVERB_WET_LIMIT - REVERB_DRY_LIMIT))
+                                        as f32
+                                };
+
+                                chunk_vec = reverb_filter.process(&chunk_vec, wet_gain);
+                                chunk_vec = ola_filter.process(&chunk_vec);
+
+                                let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
+                                apply_attenuation(&mut chunk_vec, &mut current_attenuation_val, target_att);
+                                let _ = generate_and_publish_visemes(jetstream, &chunk_vec);
+
+                                let noise_scale = if let Ok(guard) = noise_scale_factor.lock() { *guard } else { 1.0 };
+                                publish_pcm(jetstream, chunk_vec, &event, noise_scale).await?;
+                            }
+                        }
+                        Err(e) => {
+                            error!("Local ONNX synthesis failed: {:?}", e);
+                        }
                     }
-                    if !chunk.is_empty() {
-                        let mut pcm_bytes = chunk.to_vec();
+                } else {
+                    let mut response = synthesize_stream(
+                        config,
+                        http,
+                        &text,
+                        prosody.rate,
+                        prosody.pitch,
+                        prosody.volume,
+                    )
+                    .await?;
+                    while let Some(chunk) = response.chunk().await? {
+                        if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                            info!("Aborting synthesis chunk stream due to AUDIO_STOP event.");
+                            break;
+                        }
+                        if !chunk.is_empty() {
+                            let mut pcm_bytes = chunk.to_vec();
 
-                        let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
-                            *guard
-                        } else {
-                            1.0
-                        };
+                            let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
+                                *guard
+                            } else {
+                                1.0
+                            };
 
-                        const REVERB_DRY_LIMIT: f64 = 2.5;
-                        const REVERB_WET_LIMIT: f64 = 3.5;
-                        let wet_gain = if distance <= REVERB_DRY_LIMIT {
-                            0.0
-                        } else if distance >= REVERB_WET_LIMIT {
-                            1.0
-                        } else {
-                            ((distance - REVERB_DRY_LIMIT) / (REVERB_WET_LIMIT - REVERB_DRY_LIMIT))
-                                as f32
-                        };
+                            const REVERB_DRY_LIMIT: f64 = 2.5;
+                            const REVERB_WET_LIMIT: f64 = 3.5;
+                            let wet_gain = if distance <= REVERB_DRY_LIMIT {
+                                0.0
+                            } else if distance >= REVERB_WET_LIMIT {
+                                1.0
+                            } else {
+                                ((distance - REVERB_DRY_LIMIT) / (REVERB_WET_LIMIT - REVERB_DRY_LIMIT))
+                                    as f32
+                            };
 
-                        pcm_bytes = reverb_filter.process(&pcm_bytes, wet_gain);
-                        pcm_bytes = ola_filter.process(&pcm_bytes);
+                            pcm_bytes = reverb_filter.process(&pcm_bytes, wet_gain);
+                            pcm_bytes = ola_filter.process(&pcm_bytes);
 
-                        let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
-                        apply_attenuation(&mut pcm_bytes, &mut current_attenuation_val, target_att);
-                        let _ = generate_and_publish_visemes(jetstream, &pcm_bytes);
+                            let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
+                            apply_attenuation(&mut pcm_bytes, &mut current_attenuation_val, target_att);
+                            let _ = generate_and_publish_visemes(jetstream, &pcm_bytes);
 
-                        publish_pcm(jetstream, pcm_bytes, &event, noise_scale).await?;
+                            publish_pcm(jetstream, pcm_bytes, &event, noise_scale).await?;
+                        }
                     }
                 }
             }

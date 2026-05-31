@@ -354,3 +354,22 @@ C = \lfloor \text{speech-rate} \cdot (t_{\text{stop}} - t_{\text{start}}) \rfloo
 ```
 
 The logged assistant message is truncated to at most $C$ characters while respecting word boundaries (i.e., cut at the last full word that keeps length $\le C$) to match the user's auditory experience of the interruption.
+
+---
+
+## 🧠 10. Scenario B: Local Voice Synthesis Acceleration & Quality-Prioritized Look-Ahead (May 31, 2026)
+
+CVS-3.5 introduces an accelerated local synthesis pipeline (**Scenario B**) to eliminate containerized HTTP API bottlenecks while maintaining high-quality emotional expression.
+
+### 10.1 Native Local Synthesis Core (`LocalTtsEngine`)
+The voice agent embeds the `ort` library (ONNX Runtime) directly inside the Rust compiled executable.
+- **Dynamic Provider Selection**: At initialization, the engine programmatically polls and binds to the most performant execution provider available on the host platform:
+  * **NVIDIA GPU (Windows/Linux)**: Binds to the TensorRT or CUDA Execution Providers.
+  * **Apple Silicon (macOS)**: Binds to the CoreML Execution Provider.
+  * **Generic**: Falls back to multi-threaded CPU execution.
+- **Fallback Weight Resolution**: If custom weights are missing from `./models/custom/`, the engine logs a warning and dynamically loads the base English VITS voice model (`vits-piper-en_US-amy-low`) from `./models/base/`, guaranteeing robust startup stability.
+
+### 10.2 Quality-Latency Balanced Pacing
+To prevent fragmented or robotic speech (which occurs when chunk sizes are too small), the system implements a quality-prioritized look-ahead configuration:
+- **Speech Segmentation**: The `brain_agent` buffers words and groups them into chunks of **7 words** (or splits on clause punctuation markers like commas, semicolons, and dashes). This provides the VITS acoustic model with sufficient semantic context to synthesize natural emotional inflections and pitch contours.
+- **Speculative Filler Invalidation**: Because a 7-word chunk takes longer to generate than a 3-word chunk, the system uses a faster **250ms speculative pause filler threshold** (configured via `Config.VOICE_FILLER_THRESHOLD`). If the LLM has not emitted the first chunk within 250ms of turn onset, an immediate vocal filler (e.g. *"Hmm"*, *"Accha"*) is injected to seize the turn, while the local ONNX engine synthesizes the quality-priority audio chunk in the background.

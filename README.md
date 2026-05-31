@@ -115,7 +115,7 @@ graph TD
         Brain <--> Neo4j[("Neo4j: Knowledge Graph")]
         Brain <--> Postgres[("Postgres + pgvector")]
         Action --> Ollama["Ollama: Local LLM"]
-        Voice --> SoVITS["GPT-SoVITS API"]
+        Voice --> LocalONNX["Local ONNX TTS / GPT-SoVITS fallback"]
     end
 ```
 
@@ -186,7 +186,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | Agent | Technology | Primary Responsibility | NATS Subjects |
 | :--- | :--- | :--- | :--- |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
-| **Voice Agent** | Rust / PyO3 / SoVITS | CVS-3.5 Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
+| **Voice Agent** | Rust / ORT (ONNX) / SoVITS | CVS-3.5 Local Synthesis Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
 | **STT Agent** | Rust / Whisper | Dual-path perception; fan-out transcription. | `audio.inbound`, `chat.input`, `audio.perception` |
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
@@ -409,9 +409,11 @@ In version **CVS-3.5**, the mesh implements "Solid State" principles to ensure p
 
 The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
 
-* **Prosody Mapping**: Converts PAD state into acoustic parameters (pitch, pace, volume).
+* **Local Synthesis Core (ONNX)**: Embeds ONNX Runtime (`ort`) with dynamic execution provider binding (TensorRT/CUDA for NVIDIA GPUs, CoreML for Apple Silicon, CPU fallback) to eliminate containerized HTTP API bottlenecks.
+* **Dual-Model Fallback**: Loads custom weights if present, falling back to a base Piper VITS model or HTTP routing to guarantee initialization safety.
+* **Quality-Prioritized Look-Ahead**: Segments speech into 7-word chunks to preserve prosodic context and emotional inflection quality.
+* **Speculative Pause Fillers**: Injects early speculative fillers (hmm, um, accha) if decision generation latency exceeds 250ms, keeping the conversation alive while high-fidelity audio chunks are prepared in the background.
 * **OLA Signal Continuity**: Uses Overlap-Add (OLA) algorithms to ensure zero-click transitions between streaming PCM chunks.
-* **Filler Resilience**: Injects pre-synthesized "Social Mesh" fillers if the cognitive path exceeds 350ms.
 
 ---
 
