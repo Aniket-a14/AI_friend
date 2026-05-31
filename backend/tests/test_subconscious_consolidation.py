@@ -53,6 +53,7 @@ async def test_sqlite_cosine_similarity_fallback(mock_llm_service):
     mock_graph = MagicMock()
     mock_graph.execute_query = AsyncMock(return_value=[])
     mem_store = MemoryStore(pool=store.pool, graph_db=mock_graph)
+    mem_store.qdrant_store.client = None
 
     # Seed embeddings manually
     # Memory 1: Vector aligned with query
@@ -98,6 +99,7 @@ async def test_sqlite_cosine_similarity_fallback(mock_llm_service):
                 modality TEXT
             )
         """)
+        await conn.execute("DELETE FROM memories;")
 
     # Store memories
     res1 = await mem_store.add_memory(

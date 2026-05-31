@@ -78,24 +78,23 @@ async def run_accelerated_benchmark(iterations: int):
 
     if iterations >= 1000:
         scale_factor = max(1, iterations // 1000)
-        step = max(9, (iterations - 120) // 100)
+        step = max(9, (iterations - 220) // 100)
         recall_indices = {
-            (101 + k * step): k for k in range(min(100, (iterations - 101) // step))
+            (201 + k * step): k for k in range(min(100, (iterations - 201) // step))
         }
-        seeded_indices = {
-            20 * scale_factor,
-            40 * scale_factor,
-            60 * scale_factor,
-            80 * scale_factor,
-            100 * scale_factor,
-        }
+        seeded_indices = {(10 * k * scale_factor): (k - 1) for k in range(1, 21)}
     else:
         num_recalls = min(50, max(5, iterations // 10))
         step = max(1, iterations // num_recalls)
         recall_indices = {
-            i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations
+            i * step: i for i in range(1, num_recalls + 1) if i * step < iterations
         }
-        seeded_indices = {min(iterations - 1, step // 2), min(iterations - 1, step)}
+        seeded_indices = {}
+        fact_idx = 0
+        for idx in range(1, iterations):
+            if idx not in recall_indices and fact_idx < 20:
+                seeded_indices[idx] = fact_idx
+                fact_idx += 1
 
     unique_vectors_count = 200  # Start with 200 seeded distractors
     print("🧠 Starting execution loop...")
@@ -290,24 +289,23 @@ async def run_simulated_physical_benchmark(iterations: int, distractors: int = 2
 
     if iterations >= 1000:
         scale_factor = max(1, iterations // 1000)
-        step = max(9, (iterations - 120) // 100)
+        step = max(9, (iterations - 220) // 100)
         recall_indices = {
-            (101 + k * step): k for k in range(min(100, (iterations - 101) // step))
+            (201 + k * step): k for k in range(min(100, (iterations - 201) // step))
         }
-        seeded_indices = {
-            20 * scale_factor,
-            40 * scale_factor,
-            60 * scale_factor,
-            80 * scale_factor,
-            100 * scale_factor,
-        }
+        seeded_indices = {(10 * k * scale_factor): (k - 1) for k in range(1, 21)}
     else:
         num_recalls = min(50, max(5, iterations // 10))
         step = max(1, iterations // num_recalls)
         recall_indices = {
-            i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations
+            i * step: i for i in range(1, num_recalls + 1) if i * step < iterations
         }
-        seeded_indices = {min(iterations - 1, step // 2), min(iterations - 1, step)}
+        seeded_indices = {}
+        fact_idx = 0
+        for idx in range(1, iterations):
+            if idx not in recall_indices and fact_idx < 20:
+                seeded_indices[idx] = fact_idx
+                fact_idx += 1
 
     unique_vectors_count = 200
     print("🧠 Starting execution loop...")
@@ -618,29 +616,28 @@ async def run_physical_benchmark(
     }
 
     if iterations >= 1000:
-        step = max(9, (iterations - 120) // 100)
-        recall_indices = {
-            (101 + k * step): k for k in range(min(100, (iterations - 101) // step))
-        }
         scale_factor = max(1, iterations // 1000)
-        seeded_indices = {
-            20 * scale_factor: 0,
-            40 * scale_factor: 1,
-            60 * scale_factor: 2,
-            80 * scale_factor: 3,
-            100 * scale_factor: 4,
+        step = max(9, (iterations - 220) // 100)
+        recall_indices = {
+            (201 + k * step): k for k in range(min(100, (iterations - 201) // step))
         }
+        seeded_indices = {(10 * k * scale_factor): (k - 1) for k in range(1, 21)}
     else:
         num_recalls = min(50, max(5, iterations // 10))
         step = max(1, iterations // num_recalls)
         recall_indices = {
-            i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations
+            i * step: i for i in range(1, num_recalls + 1) if i * step < iterations
         }
-        raw_seeds = [min(iterations - 1, step // 2), min(iterations - 1, step)]
         seeded_indices = {}
-        for k, idx in enumerate(raw_seeds):
-            if idx not in recall_indices:
-                seeded_indices[idx] = k % 5
+        fact_idx = 0
+        for idx in range(1, iterations):
+            if idx not in recall_indices and fact_idx < 20:
+                seeded_indices[idx] = fact_idx
+                fact_idx += 1
+
+    from datetime import datetime, timedelta, timezone
+
+    simulated_clock = datetime.now(timezone.utc)
 
     prompts = generate_conversational_corpus(iterations)
 
@@ -651,8 +648,29 @@ async def run_physical_benchmark(
     for i in range(iterations):
         prompt_text = prompts[i]
 
+        current_simulated_time = simulated_clock + timedelta(hours=12 * i)
+        users = ["my friend", "Raj", "Priya"]
         is_store = i in seeded_indices
         is_recall = i in recall_indices
+
+        if is_store:
+            fact_index = seeded_indices[i]
+            if 0 <= fact_index <= 5:
+                current_user = "my friend"
+            elif 6 <= fact_index <= 12:
+                current_user = "Raj"
+            else:
+                current_user = "Priya"
+        elif is_recall:
+            q_idx = recall_indices[i] % len(RECALL_QUESTIONS)
+            if 0 <= q_idx <= 17:
+                current_user = "my friend"
+            elif 18 <= q_idx <= 38:
+                current_user = "Raj"
+            else:
+                current_user = "Priya"
+        else:
+            current_user = users[i % len(users)]
         is_memory_test = is_store or is_recall
 
         # Simulate voice properties telemetry
@@ -671,6 +689,7 @@ async def run_physical_benchmark(
                 wing="personal",
                 room="milestone",
                 importance=0.95,
+                current_time=current_simulated_time,
             )
         elif not is_memory_test:
             # Store distractors / daily chitchat to Postgres memories
@@ -679,6 +698,7 @@ async def run_physical_benchmark(
                 wing="personal",
                 room="social" if "friend" in prompt_text.lower() else "somatic",
                 importance=0.4,
+                current_time=current_simulated_time,
             )
 
         # 2. Vector Embedding & Retrieval (Sequential & Synchronous)
@@ -687,8 +707,10 @@ async def run_physical_benchmark(
         retrieved_memories = await memory_store.search_memories(
             query_text=prompt_text,
             wing="personal",
+            user_id=current_user,
             limit=20 if is_recall else 3,
             refresh_on_recall=is_recall,
+            current_time=current_simulated_time,
         )
         search_duration_ms = (time.perf_counter() - search_started) * 1000.0
         pre_llm_overhead_results.append(search_duration_ms)
@@ -776,15 +798,27 @@ async def run_physical_benchmark(
         # 7. Perform DB pruning every 10 iterations
         if pulse_count % 10 == 0:
             try:
+                prune_cutoff = current_simulated_time - timedelta(hours=24)
                 # Direct pgvector pruning
                 async with conversation_store.pool.acquire() as conn:
-                    res = await conn.execute(
-                        """
-                        DELETE FROM memories
-                        WHERE (importance_score < 0.5 AND created_at < clock_timestamp() - interval '24 hours')
-                        AND wing = 'personal';
-                        """
-                    )
+                    if memory_store.is_sqlite:
+                        res = await conn.execute(
+                            """
+                            DELETE FROM memories
+                            WHERE (importance_score < 0.5 AND created_at < ?)
+                            AND wing = 'personal';
+                            """,
+                            prune_cutoff,
+                        )
+                    else:
+                        res = await conn.execute(
+                            """
+                            DELETE FROM memories
+                            WHERE (importance_score < 0.5 AND created_at < $1)
+                            AND wing = 'personal';
+                            """,
+                            prune_cutoff,
+                        )
                     pruned_rows = (
                         int(res.split(" ")[-1]) if res and "DELETE" in res else 0
                     )
@@ -793,8 +827,8 @@ async def run_physical_benchmark(
                         print(
                             f"    🗑️ [Database Pruning] Actively pruned {pruned_rows} decayed memories."
                         )
-            except Exception:
-                pass
+            except Exception as pe:
+                print(f"⚠️ Warning: Pruning failed: {pe}")
 
         # 8. Record Progression Telemetry
         prog_iterations.append(pulse_count)

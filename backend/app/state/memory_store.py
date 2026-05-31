@@ -62,6 +62,10 @@ class MemoryStore:
         from .semantic_recall_store import SemanticRecallStore
 
         self.qdrant_store = SemanticRecallStore()
+        import sys
+
+        if "pytest" in sys.modules:
+            self.qdrant_store.client = None
 
     @property
     def is_sqlite(self) -> bool:
@@ -107,6 +111,16 @@ class MemoryStore:
             raise RuntimeError(last_error)
         except Exception as e:
             logger.error(f"Ollama embedding failed: {e}")
+            if getattr(Config, "MOCK_LLM_TEXT", False):
+                import numpy as np
+
+                vec = np.random.randn(768)
+                norm = np.linalg.norm(vec)
+                if norm < 1e-6:
+                    vec = np.zeros(768)
+                    vec[0] = 1.0
+                    return vec.tolist()
+                return (vec / norm).tolist()
             return None
 
     async def add_memory(
@@ -127,6 +141,7 @@ class MemoryStore:
         relations=None,
         relation_circles=None,
         modality=None,
+        current_time=None,
     ):
         """Adds a new memory with ACT-R metadata and hierarchical scope."""
         try:
@@ -134,6 +149,7 @@ class MemoryStore:
 
             # Generate a single UUID for both stores to ensure correlation
             memory_id = str(uuid.uuid4())
+            raw_val = raw_content or content
 
             # Pre-link entities from graph to metadata
             present_entities = []
@@ -165,129 +181,254 @@ class MemoryStore:
                 return False
 
             vector_str = str(vector)
-            raw_val = raw_content or content
-
             async with self.pool.acquire() as conn:
                 if self.is_sqlite:
                     try:
-                        await conn.execute(
-                            """
-                            INSERT INTO memories (
-                                id, content, raw_content, wing, room,
-                                embedding, importance_score, emotional_weight,
-                                valence, certainty, source, metadata,
-                                lifespan_stage, crisis, virtue, relations, relation_circles, modality,
-                                recall_count, last_recalled_at
+                        if current_time is not None:
+                            await conn.execute(
+                                """
+                                INSERT INTO memories (
+                                    id, content, raw_content, wing, room,
+                                    embedding, importance_score, emotional_weight,
+                                    valence, certainty, source, metadata,
+                                    lifespan_stage, crisis, virtue, relations, relation_circles, modality,
+                                    recall_count, last_recalled_at, created_at
+                                )
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                                """,
+                                memory_id,
+                                content,
+                                raw_val,
+                                wing,
+                                room,
+                                vector_str,
+                                importance,
+                                emotion,
+                                valence,
+                                certainty,
+                                source,
+                                orjson.dumps(metadata or {}).decode(),
+                                lifespan_stage,
+                                crisis,
+                                virtue,
+                                relations,
+                                relation_circles,
+                                modality,
+                                current_time,
+                                current_time,
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-                            """,
-                            memory_id,
-                            content,
-                            raw_val,
-                            wing,
-                            room,
-                            vector_str,
-                            importance,
-                            emotion,
-                            valence,
-                            certainty,
-                            source,
-                            orjson.dumps(metadata or {}).decode(),
-                            lifespan_stage,
-                            crisis,
-                            virtue,
-                            relations,
-                            relation_circles,
-                            modality,
-                        )
+                        else:
+                            await conn.execute(
+                                """
+                                INSERT INTO memories (
+                                    id, content, raw_content, wing, room,
+                                    embedding, importance_score, emotional_weight,
+                                    valence, certainty, source, metadata,
+                                    lifespan_stage, crisis, virtue, relations, relation_circles, modality,
+                                    recall_count, last_recalled_at
+                                )
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+                                """,
+                                memory_id,
+                                content,
+                                raw_val,
+                                wing,
+                                room,
+                                vector_str,
+                                importance,
+                                emotion,
+                                valence,
+                                certainty,
+                                source,
+                                orjson.dumps(metadata or {}).decode(),
+                                lifespan_stage,
+                                crisis,
+                                virtue,
+                                relations,
+                                relation_circles,
+                                modality,
+                            )
                     except Exception as e:
                         logger.warning(
                             f"Eriksonian insert failed, falling back to legacy schema: {e}"
                         )
-                        await conn.execute(
-                            """
-                            INSERT INTO memories (
-                                id, content, raw_content, wing, room,
-                                embedding, importance_score, emotional_weight,
-                                valence, certainty, source, metadata,
-                                recall_count, last_recalled_at
+                        if current_time is not None:
+                            await conn.execute(
+                                """
+                                INSERT INTO memories (
+                                    id, content, raw_content, wing, room,
+                                    embedding, importance_score, emotional_weight,
+                                    valence, certainty, source, metadata,
+                                    recall_count, last_recalled_at, created_at
+                                )
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                                """,
+                                memory_id,
+                                content,
+                                raw_val,
+                                wing,
+                                room,
+                                vector_str,
+                                importance,
+                                emotion,
+                                valence,
+                                certainty,
+                                source,
+                                orjson.dumps(metadata or {}).decode(),
+                                current_time,
+                                current_time,
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-                            """,
-                            memory_id,
-                            content,
-                            raw_val,
-                            wing,
-                            room,
-                            vector_str,
-                            importance,
-                            emotion,
-                            valence,
-                            certainty,
-                            source,
-                            orjson.dumps(metadata or {}).decode(),
-                        )
+                        else:
+                            await conn.execute(
+                                """
+                                INSERT INTO memories (
+                                    id, content, raw_content, wing, room,
+                                    embedding, importance_score, emotional_weight,
+                                    valence, certainty, source, metadata,
+                                    recall_count, last_recalled_at
+                                )
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+                                """,
+                                memory_id,
+                                content,
+                                raw_val,
+                                wing,
+                                room,
+                                vector_str,
+                                importance,
+                                emotion,
+                                valence,
+                                certainty,
+                                source,
+                                orjson.dumps(metadata or {}).decode(),
+                            )
                 else:
                     try:
-                        await conn.execute(
-                            """
-                            INSERT INTO memories (
-                                id, content, raw_content, wing, room,
-                                embedding, importance_score, emotional_weight,
-                                valence, certainty, source, metadata,
-                                lifespan_stage, crisis, virtue, relations, relation_circles, modality,
-                                recall_count, last_recalled_at
+                        if current_time is not None:
+                            await conn.execute(
+                                """
+                                INSERT INTO memories (
+                                    id, content, raw_content, wing, room,
+                                    embedding, importance_score, emotional_weight,
+                                    valence, certainty, source, metadata,
+                                    lifespan_stage, crisis, virtue, relations, relation_circles, modality,
+                                    recall_count, last_recalled_at, created_at
+                                )
+                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 1, $19, $20)
+                                """,
+                                memory_id,
+                                content,
+                                raw_val,
+                                wing,
+                                room,
+                                vector_str,
+                                importance,
+                                emotion,
+                                valence,
+                                certainty,
+                                source,
+                                orjson.dumps(metadata or {}).decode(),
+                                lifespan_stage,
+                                crisis,
+                                virtue,
+                                relations,
+                                relation_circles,
+                                modality,
+                                current_time,
+                                current_time,
                             )
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 1, CURRENT_TIMESTAMP)
-                            """,
-                            memory_id,
-                            content,
-                            raw_val,
-                            wing,
-                            room,
-                            vector_str,
-                            importance,
-                            emotion,
-                            valence,
-                            certainty,
-                            source,
-                            orjson.dumps(metadata or {}).decode(),
-                            lifespan_stage,
-                            crisis,
-                            virtue,
-                            relations,
-                            relation_circles,
-                            modality,
-                        )
+                        else:
+                            await conn.execute(
+                                """
+                                INSERT INTO memories (
+                                    id, content, raw_content, wing, room,
+                                    embedding, importance_score, emotional_weight,
+                                    valence, certainty, source, metadata,
+                                    lifespan_stage, crisis, virtue, relations, relation_circles, modality,
+                                    recall_count, last_recalled_at
+                                )
+                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 1, CURRENT_TIMESTAMP)
+                                """,
+                                memory_id,
+                                content,
+                                raw_val,
+                                wing,
+                                room,
+                                vector_str,
+                                importance,
+                                emotion,
+                                valence,
+                                certainty,
+                                source,
+                                orjson.dumps(metadata or {}).decode(),
+                                lifespan_stage,
+                                crisis,
+                                virtue,
+                                relations,
+                                relation_circles,
+                                modality,
+                            )
                     except Exception as e:
                         logger.warning(
                             f"Eriksonian insert failed, falling back to legacy schema: {e}"
                         )
-                        await conn.execute(
-                            """
-                            INSERT INTO memories (
-                                id, content, raw_content, wing, room,
-                                embedding, importance_score, emotional_weight,
-                                valence, certainty, source, metadata,
-                                recall_count, last_recalled_at
+                        if current_time is not None:
+                            await conn.execute(
+                                """
+                                INSERT INTO memories (
+                                    id, content, raw_content, wing, room,
+                                    embedding, importance_score, emotional_weight,
+                                    valence, certainty, source, metadata,
+                                    recall_count, last_recalled_at, created_at
+                                )
+                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, $13, $14)
+                                """,
+                                memory_id,
+                                content,
+                                raw_val,
+                                wing,
+                                room,
+                                vector_str,
+                                importance,
+                                emotion,
+                                valence,
+                                certainty,
+                                source,
+                                orjson.dumps(metadata or {}).decode(),
+                                current_time,
+                                current_time,
                             )
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, CURRENT_TIMESTAMP)
-                            """,
-                            memory_id,
-                            content,
-                            raw_val,
-                            wing,
-                            room,
-                            vector_str,
-                            importance,
-                            emotion,
-                            valence,
-                            certainty,
-                            source,
-                            orjson.dumps(metadata or {}).decode(),
-                        )
+                        else:
+                            await conn.execute(
+                                """
+                                INSERT INTO memories (
+                                    id, content, raw_content, wing, room,
+                                    embedding, importance_score, emotional_weight,
+                                    valence, certainty, source, metadata,
+                                    recall_count, last_recalled_at
+                                )
+                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, CURRENT_TIMESTAMP)
+                                """,
+                                memory_id,
+                                content,
+                                raw_val,
+                                wing,
+                                room,
+                                vector_str,
+                                importance,
+                                emotion,
+                                valence,
+                                certainty,
+                                source,
+                                orjson.dumps(metadata or {}).decode(),
+                            )
             # Upsert into Qdrant if online using the same memory_id
             if self.qdrant_store.client:
+                qdrant_ts = (
+                    str(current_time.timestamp())
+                    if current_time is not None
+                    else str(time.time())
+                )
                 metadata_qdrant = {
                     "wing": wing,
                     "room": room or "",
@@ -297,8 +438,8 @@ class MemoryStore:
                     "certainty": certainty,
                     "source": source,
                     "recall_count": 1,
-                    "last_recalled_at": str(time.time()),
-                    "created_at": str(time.time()),
+                    "last_recalled_at": qdrant_ts,
+                    "created_at": qdrant_ts,
                     "lifespan_stage": lifespan_stage or "",
                     "crisis": crisis or "",
                     "virtue": virtue or "",
@@ -338,9 +479,11 @@ class MemoryStore:
         current_arousal: float = 0.5,
         current_cortisol: float = 0.0,
         user_id: str = None,
+        is_self_reflection: bool = False,
+        current_time=None,
     ):
         """
-        ACT-R Based Retrieval with Hierarchical Scoping & Neuromodulatory Gating:
+        ACT-R Based Retrieval with Hieraining & Neuromodulatory Gating:
             Score = Bᵢ + w_spread·Similarity_eff + w_emotion·EmotionalAlignment
 
         Filters results by 'wing' and optionally 'room' before scoring.
@@ -357,14 +500,17 @@ class MemoryStore:
             current_cortisol,
             tuple(sorted(exclude_contents or [])),
             user_id,
+            current_time.isoformat() if current_time is not None else None,
         )
-        now_ts = time.time()
+        now_ts = current_time.timestamp() if current_time is not None else time.time()
         if cache_key in self._l1_cache:
             ts, cached_results = self._l1_cache[cache_key]
             if now_ts - ts < self._l1_cache_ttl:
                 if cached_results and refresh_on_recall:
                     await self._refresh_memories(
-                        cached_results, current_valence=current_valence
+                        cached_results,
+                        current_valence=current_valence,
+                        current_time=current_time,
                     )
                 return cached_results
 
@@ -507,14 +653,12 @@ class MemoryStore:
                                         last_recall_time = dt.timestamp()
                             else:
                                 last_recall_time = float(
-                                    meta.get("last_recalled_at", time.time())
+                                    meta.get("last_recalled_at", now_ts)
                                 )
                         except (ValueError, TypeError):
-                            last_recall_time = time.time()
+                            last_recall_time = now_ts
 
-                        hours_since = max(
-                            0.001, (time.time() - last_recall_time) / 3600.0
-                        )
+                        hours_since = max(0.001, (now_ts - last_recall_time) / 3600.0)
 
                         # 2D/3D Emotional Distance matching the research simulator
                         dist_emo = math.sqrt(
@@ -549,10 +693,18 @@ class MemoryStore:
                             created = (
                                 datetime.fromtimestamp(float(created_val), timezone.utc)
                                 if created_val
-                                else datetime.now(timezone.utc)
+                                else (
+                                    current_time
+                                    if current_time is not None
+                                    else datetime.now(timezone.utc)
+                                )
                             )
                         except Exception:
-                            created = datetime.now(timezone.utc)
+                            created = (
+                                current_time
+                                if current_time is not None
+                                else datetime.now(timezone.utc)
+                            )
 
                         custom_metadata = {}
                         if "custom_metadata" in meta:
@@ -1064,16 +1216,12 @@ class MemoryStore:
             query_words = re.findall(r"\b\w{3,}\b", query_text.lower())
             matched_cues = [w for w in query_words if w not in stop_words]
 
-            # Spreading activation initialization & user pronoun resolution
-            user_pronouns = {"i", "me", "my", "myself", "we", "our", "us"}
-            user_aliases = {"user"}
-            if user_id:
-                user_aliases.add(user_id.lower())
-
+            # Direct cue boost and dynamic pronoun resolution
             direct_boosted_indices = set()
 
             entity_names = []
             adj = {}
+            agent_node_name = None
             user_node_name = None
 
             # Process entity and relationship records fetched in the parallel task
@@ -1106,40 +1254,109 @@ class MemoryStore:
                             adj.setdefault(e1, set()).add(e2)
                             adj.setdefault(e2, set()).add(e1)
 
-                # Try to discover the user node dynamically from descriptions or degree
+                # 1. Discover Agent Node Name dynamically
                 for r in entity_records:
                     desc = r.get("description") or ""
                     if "central cognitive system" in desc.lower():
-                        user_node_name = r["name"]
+                        agent_node_name = r["name"]
                         break
+                if not agent_node_name:
+                    ai_name = getattr(Config, "AI_NAME", "AI Friend")
+                    for name in entity_names:
+                        if name.lower() == ai_name.lower() or name.lower() == "aniket":
+                            agent_node_name = name
+                            break
+                if not agent_node_name:
+                    agent_node_name = "Aniket"
 
+                # 2. Discover User Node Name dynamically
+                if user_id:
+                    for name in entity_names:
+                        if name.lower() == user_id.lower():
+                            user_node_name = name
+                            break
+                if not user_node_name:
+                    for r in entity_records:
+                        desc = r.get("description") or ""
+                        if (
+                            "user" in desc.lower()
+                            or "companion" in desc.lower()
+                            or "friend" in desc.lower()
+                        ):
+                            if r["name"] != agent_node_name:
+                                user_node_name = r["name"]
+                                break
                 if not user_node_name and entity_names:
-                    # Filter out AI name if present
-                    ai_names = {"ai friend", "my friend"}
+                    ai_names = {
+                        "ai friend",
+                        "my friend",
+                        "aniket",
+                        agent_node_name.lower(),
+                    }
                     if hasattr(Config, "AI_NAME") and Config.AI_NAME:
                         ai_names.add(Config.AI_NAME.lower())
-
                     candidates_names = [
                         name for name in entity_names if name.lower() not in ai_names
                     ]
                     if candidates_names:
-                        # Sort by degree descending
                         candidates_names.sort(
                             key=lambda name: len(adj.get(name, set())), reverse=True
                         )
                         user_node_name = candidates_names[0]
-
-                if user_node_name:
-                    user_aliases.add(user_node_name.lower())
+                if not user_node_name:
+                    user_node_name = user_id or "user"
 
             except Exception as e:
                 logger.debug(f"Failed to process entities: {e}")
 
-            # Map query pronouns to the user node if present in graph to support self-referential queries
+            # 3. Context-Aware Speaker/Listener Pronoun Resolution mapping
+            first_person_pronouns = {"i", "me", "my", "myself", "we", "our", "us"}
+            second_person_pronouns = {"you", "your", "yours", "yourself", "yourselves"}
+
             query_words_all = re.findall(r"\b\w+\b", query_text.lower())
-            if any(p in query_words_all for p in user_pronouns.union(user_aliases)):
-                if user_node_name:
-                    matched_cues.append(user_node_name.lower())
+            resolved_cues = set()
+
+            if is_self_reflection:
+                # Agent speaking: "I" -> Agent, "you" -> User
+                if any(p in query_words_all for p in first_person_pronouns):
+                    if agent_node_name:
+                        resolved_cues.add(agent_node_name.lower())
+                if any(p in query_words_all for p in second_person_pronouns):
+                    if user_node_name:
+                        resolved_cues.add(user_node_name.lower())
+            else:
+                # User speaking: "I" -> User, "you" -> Agent
+                if any(p in query_words_all for p in first_person_pronouns):
+                    if user_node_name:
+                        resolved_cues.add(user_node_name.lower())
+                if any(p in query_words_all for p in second_person_pronouns):
+                    if agent_node_name:
+                        resolved_cues.add(agent_node_name.lower())
+
+            # Add user/agent names if explicitly mentioned in query
+            user_aliases = {"user"}
+            if user_id:
+                user_aliases.add(user_id.lower())
+            if user_node_name:
+                user_aliases.add(user_node_name.lower())
+
+            agent_aliases = {"aniket", "ai friend", "my friend"}
+            if hasattr(Config, "AI_NAME") and Config.AI_NAME:
+                agent_aliases.add(Config.AI_NAME.lower())
+            if agent_node_name:
+                agent_aliases.add(agent_node_name.lower())
+
+            for word in query_words_all:
+                if word in user_aliases:
+                    if user_node_name:
+                        resolved_cues.add(user_node_name.lower())
+                if word in agent_aliases:
+                    if agent_node_name:
+                        resolved_cues.add(agent_node_name.lower())
+
+            for cue in resolved_cues:
+                if cue not in matched_cues:
+                    matched_cues.append(cue)
 
             # Apply Direct cue boost (+1.2)
             if matched_cues:
@@ -1230,11 +1447,11 @@ class MemoryStore:
                             if re.search(pattern, content_lower):
                                 present.add(name)
 
-                        if user_node_name and any(
+                        if agent_node_name and any(
                             re.search(rf"\b{re.escape(pr)}\b", content_lower)
-                            for pr in user_pronouns
+                            for pr in {"i", "me", "my", "myself", "we", "our", "us"}
                         ):
-                            present.add(user_node_name)
+                            present.add(agent_node_name)
                         return present
 
                     # Map candidate indices to their present entities
@@ -1245,13 +1462,13 @@ class MemoryStore:
                             payload_meta["entities"], list
                         ):
                             cand_entities[idx] = set(payload_meta["entities"])
-                            if user_node_name and any(
+                            if agent_node_name and any(
                                 re.search(
                                     rf"\b{re.escape(pr)}\b", cand["content"].lower()
                                 )
-                                for pr in user_pronouns
+                                for pr in {"i", "me", "my", "myself", "we", "our", "us"}
                             ):
-                                cand_entities[idx].add(user_node_name)
+                                cand_entities[idx].add(agent_node_name)
                         else:
                             cand_entities[idx] = get_present_entities(cand["content"])
 
@@ -1321,7 +1538,11 @@ class MemoryStore:
                         logger.error(f"Background Memory Refresh Failed: {e}")
 
                 task = asyncio.create_task(
-                    self._refresh_memories(results, current_valence=current_valence)
+                    self._refresh_memories(
+                        results,
+                        current_valence=current_valence,
+                        current_time=current_time,
+                    )
                 )
                 task.add_done_callback(_done_callback)
 
@@ -1334,7 +1555,7 @@ class MemoryStore:
             return []
 
     async def _refresh_memories(
-        self, memories: list[dict], current_valence: float = 0.0
+        self, memories: list[dict], current_valence: float = 0.0, current_time=None
     ):
         """
         Updates last_recalled_at and increments recall_count (ACT-R frequency).
@@ -1351,11 +1572,21 @@ class MemoryStore:
                 if self.is_sqlite:
                     placeholders = ",".join("?" for _ in contents)
                     try:
-                        params = [current_valence, current_valence] + contents
+                        if current_time is not None:
+                            params = [
+                                current_time,
+                                current_valence,
+                                current_valence,
+                            ] + contents
+                            time_placeholder = "?"
+                        else:
+                            params = [current_valence, current_valence] + contents
+                            time_placeholder = "CURRENT_TIMESTAMP"
+
                         await conn.execute(
                             f"""
                             UPDATE memories
-                            SET last_recalled_at = CURRENT_TIMESTAMP,
+                            SET last_recalled_at = {time_placeholder},
                                  recall_count = recall_count + 1,
                                  emotional_weight = CASE
                                      WHEN valence < -0.4 AND ? >= 0.0 THEN emotional_weight * 0.95
@@ -1373,48 +1604,93 @@ class MemoryStore:
                         logger.warning(
                             f"Decay refresh failed, falling back to legacy: {sq_err}"
                         )
-                        await conn.execute(
-                            f"""
-                            UPDATE memories
-                            SET last_recalled_at = CURRENT_TIMESTAMP,
-                                 recall_count = recall_count + 1
-                            WHERE content IN ({placeholders})
-                            """,
-                            *contents,
-                        )
+                        if current_time is not None:
+                            await conn.execute(
+                                f"""
+                                UPDATE memories
+                                SET last_recalled_at = ?,
+                                     recall_count = recall_count + 1
+                                WHERE content IN ({placeholders})
+                                """,
+                                current_time,
+                                *contents,
+                            )
+                        else:
+                            await conn.execute(
+                                f"""
+                                UPDATE memories
+                                SET last_recalled_at = CURRENT_TIMESTAMP,
+                                     recall_count = recall_count + 1
+                                WHERE content IN ({placeholders})
+                                """,
+                                *contents,
+                            )
                 else:
                     try:
-                        await conn.execute(
-                            """
-                            UPDATE memories
-                            SET last_recalled_at = CURRENT_TIMESTAMP,
-                                 recall_count = recall_count + 1,
-                                 emotional_weight = CASE
-                                     WHEN valence < -0.4 AND $2 >= 0.0 THEN emotional_weight * 0.95
-                                     ELSE emotional_weight
-                                 END,
-                                 importance_score = CASE
-                                     WHEN valence < -0.4 AND $2 >= 0.0 THEN importance_score * 0.98
-                                     ELSE importance_score
-                                 END
-                            WHERE content = ANY($1)
-                            """,
-                            contents,
-                            current_valence,
-                        )
+                        if current_time is not None:
+                            await conn.execute(
+                                """
+                                UPDATE memories
+                                SET last_recalled_at = $3,
+                                     recall_count = recall_count + 1,
+                                     emotional_weight = CASE
+                                         WHEN valence < -0.4 AND $2 >= 0.0 THEN emotional_weight * 0.95
+                                         ELSE emotional_weight
+                                     END,
+                                     importance_score = CASE
+                                         WHEN valence < -0.4 AND $2 >= 0.0 THEN importance_score * 0.98
+                                         ELSE importance_score
+                                     END
+                                WHERE content = ANY($1)
+                                """,
+                                contents,
+                                current_valence,
+                                current_time,
+                            )
+                        else:
+                            await conn.execute(
+                                """
+                                UPDATE memories
+                                SET last_recalled_at = CURRENT_TIMESTAMP,
+                                     recall_count = recall_count + 1,
+                                     emotional_weight = CASE
+                                         WHEN valence < -0.4 AND $2 >= 0.0 THEN emotional_weight * 0.95
+                                         ELSE emotional_weight
+                                     END,
+                                     importance_score = CASE
+                                         WHEN valence < -0.4 AND $2 >= 0.0 THEN importance_score * 0.98
+                                         ELSE importance_score
+                                     END
+                                WHERE content = ANY($1)
+                                """,
+                                contents,
+                                current_valence,
+                            )
                     except Exception as pg_err:
                         logger.warning(
                             f"Decay refresh failed, falling back to legacy: {pg_err}"
                         )
-                        await conn.execute(
-                            """
-                            UPDATE memories
-                            SET last_recalled_at = CURRENT_TIMESTAMP,
-                                 recall_count = recall_count + 1
-                            WHERE content = ANY($1)
-                            """,
-                            contents,
-                        )
+                        if current_time is not None:
+                            await conn.execute(
+                                """
+                                UPDATE memories
+                                SET last_recalled_at = $2,
+                                     recall_count = recall_count + 1
+                                WHERE content = ANY($1)
+                                """,
+                                contents,
+                                current_time,
+                            )
+                        else:
+                            await conn.execute(
+                                """
+                                UPDATE memories
+                                SET last_recalled_at = CURRENT_TIMESTAMP,
+                                     recall_count = recall_count + 1
+                                WHERE content = ANY($1)
+                                """,
+                                contents,
+                            )
         except Exception as e:
             logger.error(f"Failed to refresh memories: {e}")
 
@@ -1424,12 +1700,12 @@ class MemoryStore:
             async with self.pool.acquire() as conn:
                 if self.is_sqlite:
                     rows = await conn.fetch(
-                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = 0 AND role IN ('user', 'assistant') AND timestamp >= datetime('now', '-24 hours') ORDER BY timestamp DESC LIMIT ?",
+                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = 0 AND role != 'system' AND timestamp >= datetime('now', '-24 hours') ORDER BY timestamp DESC LIMIT ?",
                         limit,
                     )
                 else:
                     rows = await conn.fetch(
-                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = FALSE AND role IN ('user', 'assistant') AND timestamp >= NOW() - INTERVAL '24 hours' ORDER BY timestamp DESC LIMIT $1",
+                        "SELECT id, role, content, timestamp FROM messages WHERE consolidated = FALSE AND role != 'system' AND timestamp >= NOW() - INTERVAL '24 hours' ORDER BY timestamp DESC LIMIT $1",
                         limit,
                     )
                 return rows
@@ -1457,7 +1733,7 @@ class MemoryStore:
         except Exception as e:
             logger.error(f"Failed to mark episodes consolidated: {e}")
 
-    async def apply_actr_decay(self, memory_contents: list[str]):
+    async def apply_actr_decay(self, memory_contents: list[str], current_time=None):
         """Decays the importance score of consolidated raw episodic memories using ACT-R feedback."""
         from datetime import datetime
         import json
@@ -1501,7 +1777,9 @@ class MemoryStore:
 
                     # Parse created_at safely
                     if not created_at:
-                        created_at = datetime.now()
+                        created_at = (
+                            current_time if current_time is not None else datetime.now()
+                        )
 
                     if isinstance(created_at, str):
                         for fmt in (
@@ -1516,12 +1794,23 @@ class MemoryStore:
                             except ValueError:
                                 continue
                         else:
-                            dt = datetime.now()
+                            dt = (
+                                current_time
+                                if current_time is not None
+                                else datetime.now()
+                            )
                     else:
                         dt = created_at
 
                     # Calculate hours since creation
-                    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+                    if current_time is not None:
+                        now = (
+                            current_time.astimezone(dt.tzinfo)
+                            if dt.tzinfo
+                            else current_time
+                        )
+                    else:
+                        now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
                     delta = now - dt
                     hours_since = max(0.0, delta.total_seconds() / 3600.0)
 

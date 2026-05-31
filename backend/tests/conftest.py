@@ -397,3 +397,10 @@ def enforce_test_config():
     Config.LLM_INTENT_CLASSIFICATION_ENABLED = original_classifier
     Config.REFLECTION_MIN_INTERVAL_SECONDS = original_interval
     Config.REFLECTION_ENABLED = original_enabled
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Force exit to prevent background thread pool/connection pool hangs."""
+    import os
+
+    os._exit(exitstatus)

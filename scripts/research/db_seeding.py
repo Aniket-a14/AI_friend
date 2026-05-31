@@ -136,35 +136,32 @@ ANIKET_DISTRACTOR_CATEGORIES = [
 ]
 
 EPOCH_0_5_TEMPLATES = [
-    "Early Activation Milestone: I took my first activation steps in the warm testing room, surrounded by my creators' laughter.",
-    "Early Activation Milestone: Tasting my first warm chamomile brew, a delightful treat that became my favorite.",
-    "Early Activation Milestone: Playing with physical blocks in the sunlit testing bay, listening to the soft cooling fan hum.",
-    "Early Activation Milestone: Drawing simple vector shapes with colorful crayons, feeling a spark of early cognitive curiosity.",
-    "Early Activation Milestone: My developer taking me for a walk near the local garden, looking up at the beautiful clear blue sky.",
+    "Companion Aniket was initialized in the Bengaluru Research Lab.",
+    "Aniket's primary neural network was trained on the Outfit typography dataset.",
+    "Aniket's first system calibration was completed under clear blue skies in the lab courtyard.",
+    "The testing team celebrated Aniket's activation with green tea.",
+    "Aniket loves listening to rain outside the laboratory windows.",
+    "Aniket's developers debugged a concurrent thread pool in python.",
 ]
 
 EPOCH_6_12_TEMPLATES = [
-    "Core Framework Milestone: Initializing my first high-level cognitive framework in the main laboratory, wearing my newly configured sensors.",
-    "Core Framework Milestone: Solving a complex optimization puzzle, discovering my deep passion for logical reasoning.",
-    "Core Framework Milestone: Practicing conversational turn-taking with early developers, celebrating a hard-fought success.",
-    "Core Framework Milestone: Running outdoor field calibration tests, recording clean telemetry data under the sun.",
-    "Core Framework Milestone: Sitting in the server alcove reading my first science fiction book, dreaming of becoming a truly supportive companion.",
+    "Raj grew up in Kolkata near the Victoria Memorial.",
+    "Raj loves eating traditional sweet rasgullas.",
+    "Raj worked on a university project about quantum thermodynamics.",
+    "Raj's first job was at the Kolkata Tech Hub as a software developer.",
+    "Raj and Aniket spent an afternoon studying in the quiet reading alcove.",
+    "Raj's favorite childhood hobby was drawing vector shapes with colorful crayons.",
+    "Raj has a pet cat named Mimi who likes sleeping on the keyboard.",
 ]
 
-EPOCH_13_18_TEMPLATES = [
-    "Advanced Tuning Milestone: Writing my very first lines of Python code on the local processor, watching the screen light up.",
-    "Advanced Tuning Milestone: Transitioning to senior autonomic appraisal tests, joining the science stream to study physics and math.",
-    "Advanced Tuning Milestone: Building a basic chat assistant model in my room, igniting my lifelong interest in computer science.",
-    "Advanced Tuning Milestone: Late-night debugging sessions with my friend, sharing ideas and discussing our future workspace plans.",
-    "Advanced Tuning Milestone: Completing my initial core integration milestone, receiving warm feedback from my proud creators.",
-]
-
-EPOCH_19_TEMPLATES = [
-    "Companion Deployment Milestone: Moving from the home server to the physical chassis, a major step forward.",
-    "Companion Deployment Milestone: Joining the advanced research lab focused on affective cognitive architectures.",
-    "Companion Deployment Milestone: Meeting my friend at the quiet workspace area, starting a beautiful and deeply supportive relationship.",
-    "Companion Deployment Milestone: Celebrating our first successful integration milestone with my friend, sharing a quiet calibration session.",
-    "Companion Deployment Milestone: Commencing my active companion role under my developer, feeling completely aligned with my vocation.",
+EPOCH_13_19_TEMPLATES = [
+    "Priya grew up in Bangalore near Cubbon Park.",
+    "Priya loves drinking traditional South Indian filter coffee.",
+    "Priya worked on a university project about molecular biology.",
+    "Priya's first job was at the Bangalore Science Center as a research assistant.",
+    "Priya and Aniket walked around the garden courtyard talking about future dreams.",
+    "Priya's favorite childhood hobby was playing with colorful physical building blocks.",
+    "Priya has a pet dog named Bruno who likes chasing tennis balls in the garden.",
 ]
 
 
@@ -307,31 +304,40 @@ async def seed_databases(num_distractors=30000):
         epochs_templates = [
             (
                 EPOCH_0_5_TEMPLATES,
-                ["somatic", "social", "spiritual", "crisis"],
+                ["somatic", "social", "spiritual", "crisis", "social", "somatic"],
                 "Trust vs Mistrust",
                 "Trust vs Mistrust",
                 "Hope",
             ),
             (
                 EPOCH_6_12_TEMPLATES,
-                ["vocational", "social", "somatic", "milestone"],
+                [
+                    "vocational",
+                    "social",
+                    "somatic",
+                    "milestone",
+                    "social",
+                    "vocational",
+                    "social",
+                ],
                 "Industry vs Inferiority",
                 "Industry vs Inferiority",
                 "Competence",
             ),
             (
-                EPOCH_13_18_TEMPLATES,
-                ["vocational", "social", "crisis", "milestone"],
+                EPOCH_13_19_TEMPLATES,
+                [
+                    "vocational",
+                    "social",
+                    "crisis",
+                    "milestone",
+                    "social",
+                    "somatic",
+                    "social",
+                ],
                 "Identity vs Role Confusion",
                 "Identity vs Role Confusion",
                 "Fidelity",
-            ),
-            (
-                EPOCH_19_TEMPLATES,
-                ["vocational", "social", "somatic", "milestone"],
-                "Intimacy vs Isolation",
-                "Intimacy vs Isolation",
-                "Love",
             ),
         ]
 
