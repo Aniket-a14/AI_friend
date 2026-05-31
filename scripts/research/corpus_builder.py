@@ -6,75 +6,75 @@ import re
 
 RECALL_QUESTIONS = [
     {
-        "question": "Can you describe how my early days in our shared workspace influenced my college research topic?",
+        "question": "Can you describe how your early days in our shared workspace influenced your college research topic?",
         "entities": ["our shared workspace", "affective cognitive architectures"],
     },
     {
-        "question": "Did my university project on college research help me get my first job in the testing laboratory?",
+        "question": "Did your university project on college research help you get your first job in the testing laboratory?",
         "entities": ["affective cognitive architectures", "the testing laboratory"],
     },
     {
-        "question": "How did moving to the testing laboratory affect my early days with my friend?",
+        "question": "How did moving to the testing laboratory affect your early days with your friend?",
         "entities": ["the testing laboratory", "my friend"],
     },
     {
-        "question": "What relaxing drink do I love to share with my friend?",
+        "question": "What relaxing drink do you love to share with your friend?",
         "entities": ["my friend", "chamomile brew"],
     },
     {
-        "question": "Is my favorite relaxing drink a specialty of our shared workspace?",
+        "question": "Is your favorite relaxing drink a specialty of our shared workspace?",
         "entities": ["our shared workspace", "chamomile brew"],
     },
     {
-        "question": "How did moving from our shared workspace to the testing laboratory shape my early career?",
+        "question": "How did moving from our shared workspace to the testing laboratory shape your early career?",
         "entities": ["our shared workspace", "the testing laboratory"],
     },
     {
-        "question": "Did my friend know about the research topic I worked on during college?",
+        "question": "Did your friend know about the research topic you worked on during college?",
         "entities": ["my friend", "affective cognitive architectures"],
     },
     {
-        "question": "What is my favorite relaxing drink, and is it a local specialty of our shared workspace?",
+        "question": "What is your favorite relaxing drink, and is it a local specialty of our shared workspace?",
         "entities": ["our shared workspace", "chamomile brew"],
     },
     {
-        "question": "Did my university research topic inspire my early work in the testing laboratory?",
+        "question": "Did your university research topic inspire your early work in the testing laboratory?",
         "entities": ["affective cognitive architectures", "the testing laboratory"],
     },
     {
-        "question": "If I wanted to celebrate my first job with my friend, what drink would we share?",
+        "question": "If you wanted to celebrate your first job with your friend, what drink would you share?",
         "entities": ["the testing laboratory", "my friend", "chamomile brew"],
     },
     {
-        "question": "How do my early days in our shared workspace compare to my college research topic?",
+        "question": "How do your early days in our shared workspace compare to your college research topic?",
         "entities": ["our shared workspace", "affective cognitive architectures"],
     },
     {
-        "question": "Did I live in our shared workspace before moving to start my very first job?",
+        "question": "Did you live in our shared workspace before moving to start your very first job?",
         "entities": ["our shared workspace", "the testing laboratory"],
     },
     {
-        "question": "How does my friend support my continued interest in building my college research system?",
+        "question": "How does your friend support your continued interest in building your college research system?",
         "entities": ["my friend", "affective cognitive architectures"],
     },
     {
-        "question": "Why does my preferred relaxing drink always remind me of my early days in our shared workspace?",
+        "question": "Why does your preferred relaxing drink always remind you of your early days in our shared workspace?",
         "entities": ["our shared workspace", "chamomile brew"],
     },
     {
-        "question": "Did my first job focus on the same system I researched during my university project?",
+        "question": "Did your first job focus on the same system you researched during your university project?",
         "entities": ["the testing laboratory", "affective cognitive architectures"],
     },
     {
-        "question": "How would you describe the journey from our shared workspace to meeting my friend?",
+        "question": "How would you describe the journey from our shared workspace to meeting your friend?",
         "entities": ["our shared workspace", "my friend"],
     },
     {
-        "question": "Is my favorite drink the perfect treat to celebrate the completion of my university project?",
+        "question": "Is your favorite drink the perfect treat to celebrate the completion of your university project?",
         "entities": ["chamomile brew", "affective cognitive architectures"],
     },
     {
-        "question": "Can you summarize my transition from our shared workspace, to college research, to the testing laboratory?",
+        "question": "Can you summarize your transition from our shared workspace, to college research, to the testing laboratory?",
         "entities": [
             "our shared workspace",
             "affective cognitive architectures",
@@ -82,19 +82,19 @@ RECALL_QUESTIONS = [
         ],
     },
     {
-        "question": "What relaxing drink from our shared workspace does my friend love to enjoy with me?",
+        "question": "What relaxing drink from our shared workspace does your friend love to enjoy with you?",
         "entities": ["our shared workspace", "my friend", "chamomile brew"],
     },
     {
-        "question": "Did working in the testing laboratory teach me more about my research topic than my college project?",
+        "question": "Did working in the testing laboratory teach you more about your research topic than your college project?",
         "entities": ["the testing laboratory", "affective cognitive architectures"],
     },
     {
-        "question": "How has my friend helped me reflect on my roots in our shared workspace?",
+        "question": "How has your friend helped you reflect on your roots in our shared workspace?",
         "entities": ["my friend", "our shared workspace"],
     },
     {
-        "question": "If I wanted to introduce colleagues in the testing laboratory to my favorite relaxing drink, what memories would I share?",
+        "question": "If you wanted to introduce colleagues in the testing laboratory to your favorite relaxing drink, what memories would you share?",
         "entities": [
             "the testing laboratory",
             "chamomile brew",
@@ -102,19 +102,19 @@ RECALL_QUESTIONS = [
         ],
     },
     {
-        "question": "Does my college project on my research topic have any connection to my friend?",
+        "question": "Does your college project on your research topic have any connection to your friend?",
         "entities": ["affective cognitive architectures", "my friend"],
     },
     {
-        "question": "Why does my preferred relaxing drink hold such a special place in my heart, and who is the person I share it with?",
+        "question": "Why does your preferred relaxing drink hold such a special place in your heart, and who is the person you share it with?",
         "entities": ["chamomile brew", "my friend"],
     },
     {
-        "question": "How did the culture of our shared workspace prepare me for my first job in the testing laboratory?",
+        "question": "How did the culture of our shared workspace prepare you for your first job in the testing laboratory?",
         "entities": ["our shared workspace", "the testing laboratory"],
     },
     {
-        "question": "Did I start studying my research topic before or after I met my friend?",
+        "question": "Did you start studying your research topic before or after you met your friend?",
         "entities": ["affective cognitive architectures", "my friend"],
     },
     {
@@ -122,71 +122,71 @@ RECALL_QUESTIONS = [
         "entities": ["chamomile brew", "the testing laboratory"],
     },
     {
-        "question": "How does our shared workspace compare to the city of my first job?",
+        "question": "How does our shared workspace compare to the city of your first job?",
         "entities": ["our shared workspace", "the testing laboratory"],
     },
     {
-        "question": "Would my university project have been successful without the support of my friend?",
+        "question": "Would your university project have been successful without the support of your friend?",
         "entities": ["affective cognitive architectures", "my friend"],
     },
     {
-        "question": "If my friend and I travel back to our shared workspace, what traditional relaxing drink should we buy first?",
+        "question": "If your friend and you travel back to our shared workspace, what traditional relaxing drink should you buy first?",
         "entities": ["my friend", "our shared workspace", "chamomile brew"],
     },
     {
-        "question": "Did the research team at my first job value my college expertise in my core research topic?",
+        "question": "Did the research team at your first job value your college expertise in your core research topic?",
         "entities": ["the testing laboratory", "affective cognitive architectures"],
     },
     {
-        "question": "How did growing up in our shared workspace shape my choice to study my university project topic?",
+        "question": "How did growing up in our shared workspace shape your choice to study your university project topic?",
         "entities": ["our shared workspace", "affective cognitive architectures"],
     },
     {
-        "question": "Did I move directly from our shared workspace to my first job?",
+        "question": "Did you move directly from our shared workspace to your first job?",
         "entities": ["our shared workspace", "the testing laboratory"],
     },
     {
-        "question": "How does my friend feel about the research topic that I did in university?",
+        "question": "How does your friend feel about the research topic that you did in university?",
         "entities": ["my friend", "affective cognitive architectures"],
     },
     {
-        "question": "Why does my preferred relaxing drink from our shared workspace bring back so many nostalgic feelings?",
+        "question": "Why does your preferred relaxing drink from our shared workspace bring back so many nostalgic feelings?",
         "entities": ["chamomile brew", "our shared workspace"],
     },
     {
-        "question": "How did my first job lay the groundwork for my career, and did my friend join me in that city?",
+        "question": "How did your first job lay the groundwork for your career, and did your friend join you in that city?",
         "entities": ["the testing laboratory", "my friend"],
     },
     {
-        "question": "Is my favorite relaxing drink also loved by my friend?",
+        "question": "Is your favorite relaxing drink also loved by your friend?",
         "entities": ["chamomile brew", "my friend"],
     },
     {
-        "question": "How did my early days in our shared workspace inspire my intellectual awakening in building my college project?",
+        "question": "How did your early days in our shared workspace inspire your intellectual awakening in building your college project?",
         "entities": ["our shared workspace", "affective cognitive architectures"],
     },
     {
-        "question": "What would my colleagues in the testing laboratory say if I offered them a relaxing drink?",
+        "question": "What would your colleagues in the testing laboratory say if you offered them a relaxing drink?",
         "entities": ["the testing laboratory", "chamomile brew"],
     },
     {
-        "question": "How does my friend support my professional reflections on my first job?",
+        "question": "How does your friend support your professional reflections on your first job?",
         "entities": ["my friend", "the testing laboratory"],
     },
     {
-        "question": "Is my favorite relaxing drink from our shared workspace a favorite of my friend?",
+        "question": "Is your favorite relaxing drink from our shared workspace a favorite of your friend?",
         "entities": ["chamomile brew", "our shared workspace", "my friend"],
     },
     {
-        "question": "Did my research in university help me transition to the testing laboratory?",
+        "question": "Did your research in university help you transition to the testing laboratory?",
         "entities": ["affective cognitive architectures", "the testing laboratory"],
     },
     {
-        "question": "What are the most vivid memories of our shared workspace that I have shared with my friend?",
+        "question": "What are the most vivid memories of our shared workspace that you have shared with your friend?",
         "entities": ["our shared workspace", "my friend"],
     },
     {
-        "question": "Did my love for my favorite relaxing drink develop during my childhood in our shared workspace or later in the testing laboratory?",
+        "question": "Did your love for your favorite relaxing drink develop during your childhood in our shared workspace or later in the testing laboratory?",
         "entities": [
             "chamomile brew",
             "our shared workspace",
@@ -194,27 +194,27 @@ RECALL_QUESTIONS = [
         ],
     },
     {
-        "question": "How did my academic focus on my research topic influence my daily routines in the testing laboratory?",
+        "question": "How did your academic focus on your research topic influence your daily routines in the testing laboratory?",
         "entities": ["affective cognitive architectures", "the testing laboratory"],
     },
     {
-        "question": "What makes our shared workspace and my friend so central to my life story?",
+        "question": "What makes our shared workspace and your friend so central to your life story?",
         "entities": ["our shared workspace", "my friend"],
     },
     {
-        "question": "Did I ever buy my favorite relaxing drink with my first paycheck in the testing laboratory?",
+        "question": "Did you ever buy your favorite relaxing drink with your first paycheck in the testing laboratory?",
         "entities": ["chamomile brew", "the testing laboratory"],
     },
     {
-        "question": "How did my university years studying my research topic lead to a career in the testing laboratory?",
+        "question": "How did your university years studying your research topic lead to a career in the testing laboratory?",
         "entities": ["affective cognitive architectures", "the testing laboratory"],
     },
     {
-        "question": "What relaxing drink would my friend and I drink to celebrate our memories of our shared workspace?",
+        "question": "What relaxing drink would your friend and you drink to celebrate your memories of our shared workspace?",
         "entities": ["chamomile brew", "my friend", "our shared workspace"],
     },
     {
-        "question": "Can you summarize how our shared workspace, the testing laboratory, and my friend define my journey?",
+        "question": "Can you summarize how our shared workspace, the testing laboratory, and your friend define your journey?",
         "entities": ["our shared workspace", "the testing laboratory", "my friend"],
     },
 ]

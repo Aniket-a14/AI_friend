@@ -442,8 +442,8 @@ AI_friend/
 ├── notebooks/                       # Experimental notebooks
 ├── docker-compose.infra.yml         # Shared infra services
 ├── docker-compose.prod.yml          # Production composition
-├── docker-compose.macos.light.yml   # macOS light profile
-└── docker-compose.macos.heavy.yml   # macOS heavy profile
+├── docker-compose.light.yml         # Platform-agnostic Light profile (Windows/Linux/macOS)
+└── docker-compose.heavy.yml         # Platform-agnostic Heavy profile (Windows/Linux/macOS)
 ```
 
 ---
@@ -561,22 +561,22 @@ This command boots up the entire 14-container real-time voice, STT, and voice cl
 docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build
 ```
 
-#### **B. macOS Apple Silicon Launch**
+#### **B. Platform-Agnostic Light & Heavy Launch (Windows / Linux / macOS)**
 
-On Apple Silicon MacBooks (M1/M2/M3/M4), real-time CUDA-based voice cloning is bypassed in favor of local performance profiles. Choose between **Light** and **Heavy** modes:
+For Apple Silicon MacBooks (M1/M2/M3/M4) or Windows/Linux systems that want to bypass heavy real-time CUDA-based voice cloning (saving RAM/CPU/GPU overhead), you can choose between **Light** (Cognitive-Only) and **Heavy** (Local Cognitive + STT) modes:
 
-* **🍎 macOS Light Mode** (Cognitive-Only):
-  Focuses strictly on cognitive RAG, memory graph, and text agents. Excludes heavy real-time WebRTC media streams, Whisper STT, and voice synthesis to conserve battery and CPU:
+* **⚡ Universal Light Mode** (Cognitive-Only):
+  Focuses strictly on cognitive processing, memory graphs, and text agents. Excludes heavy real-time WebRTC media streams, Whisper STT, and voice synthesis:
 
   ```bash
-  docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.light.yml up -d --build
+  docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.light.yml up -d --build
   ```
 
-* **🍎 macOS Heavy Mode** (Local RAG & Whisper STT):
-  Enables the advanced cognitive mesh and local real-time audio Whisper STT, optimized for M-series CPU cores with a memory constraint limit of 6G:
+* **⚡ Universal Heavy Mode** (Cognitive + Whisper STT):
+  Enables the advanced cognitive mesh and local real-time audio Whisper STT, optimized for CPU/host-Ollama performance:
 
   ```bash
-  docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.heavy.yml up -d --build
+  docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.heavy.yml up -d --build
   ```
 
 ##### **Solving macOS compilation bottlenecks via layered builds**
