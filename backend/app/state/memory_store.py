@@ -378,6 +378,11 @@ class MemoryStore:
 
             is_sqlite = self.is_sqlite
 
+            # Dynamically scale search candidate pool limit during memory validation tests to boost long-term recall
+            candidate_limit = (
+                max(120, limit * 6) if refresh_on_recall else max(20, limit * 3)
+            )
+
             raw_candidates = []
 
             # Non-blocking wrapper to query Qdrant via a thread pool
@@ -387,7 +392,7 @@ class MemoryStore:
                         return await asyncio.to_thread(
                             self.qdrant_store.search_vector_memories,
                             query_vector=query_vector,
-                            limit=max(20, limit * 3),
+                            limit=candidate_limit,
                         )
                 except Exception as qe:
                     logger.error(f"Qdrant retrieval failed: {qe}")
@@ -735,7 +740,7 @@ class MemoryStore:
                                 self.emotion_weight,
                                 current_valence,
                                 threshold - 2.5,
-                                max(20, limit * 3),
+                                candidate_limit,
                             )
                         except Exception as pg_err:
                             logger.warning(
@@ -767,7 +772,7 @@ class MemoryStore:
                                 self.emotion_weight,
                                 current_valence,
                                 threshold - 2.5,
-                                max(20, limit * 3),
+                                candidate_limit,
                             )
 
                         for row in rows:

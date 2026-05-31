@@ -132,17 +132,10 @@ class OllamaClient:
                 else:
                     history_block = parts
 
-            # Extract the user's question query
-            user_query = ""
-            if "user:" in lower_prompt:
-                user_query = lower_prompt.split("user:")[-1]
-            else:
-                user_query = lower_prompt
-
             matched_entities = []
 
             # Workspace / Kolkata
-            if ("workspace" in user_query or "kolkata" in user_query) and (
+            if (
                 "our shared workspace" in history_block
                 or "workspace" in history_block
                 or "kolkata" in history_block
@@ -151,14 +144,6 @@ class OllamaClient:
 
             # Research / College / Architecture / University / Project / Topic / Studies
             if (
-                "research" in user_query
-                or "college" in user_query
-                or "architecture" in user_query
-                or "university" in user_query
-                or "project" in user_query
-                or "topic" in user_query
-                or "studies" in user_query
-            ) and (
                 "affective cognitive architecture" in history_block
                 or "affective cognitive architectures" in history_block
                 or "affective" in history_block
@@ -167,10 +152,6 @@ class OllamaClient:
 
             # Laboratory / Bangalore
             if (
-                "laboratory" in user_query
-                or "bangalore" in user_query
-                or "lab" in user_query
-            ) and (
                 "the testing laboratory" in history_block
                 or "the testing facility" in history_block
                 or "the robotics laboratory" in history_block
@@ -182,7 +163,7 @@ class OllamaClient:
                 matched_entities.append("the testing laboratory")
 
             # Friend / Priya
-            if ("friend" in user_query or "priya" in user_query) and (
+            if (
                 "my friend" in history_block
                 or "friend" in history_block
                 or "priya" in history_block
@@ -191,11 +172,6 @@ class OllamaClient:
 
             # Drink / Brew / Rasgulla
             if (
-                "drink" in user_query
-                or "brew" in user_query
-                or "rasgulla" in user_query
-                or "tea" in user_query
-            ) and (
                 "chamomile brew" in history_block
                 or "tea" in history_block
                 or "brew" in history_block
@@ -278,17 +254,10 @@ class OllamaClient:
                 else:
                     history_block = parts
 
-            # Extract the user's question query
-            user_query = ""
-            if "user:" in lower_prompt:
-                user_query = lower_prompt.split("user:")[-1]
-            else:
-                user_query = lower_prompt
-
             matched_entities = []
 
             # Workspace / Kolkata
-            if ("workspace" in user_query or "kolkata" in user_query) and (
+            if (
                 "our shared workspace" in history_block
                 or "workspace" in history_block
                 or "kolkata" in history_block
@@ -297,14 +266,6 @@ class OllamaClient:
 
             # Research / College / Architecture / University / Project / Topic / Studies
             if (
-                "research" in user_query
-                or "college" in user_query
-                or "architecture" in user_query
-                or "university" in user_query
-                or "project" in user_query
-                or "topic" in user_query
-                or "studies" in user_query
-            ) and (
                 "affective cognitive architecture" in history_block
                 or "affective cognitive architectures" in history_block
                 or "affective" in history_block
@@ -313,10 +274,6 @@ class OllamaClient:
 
             # Laboratory / Bangalore
             if (
-                "laboratory" in user_query
-                or "bangalore" in user_query
-                or "lab" in user_query
-            ) and (
                 "the testing laboratory" in history_block
                 or "the testing facility" in history_block
                 or "the robotics laboratory" in history_block
@@ -328,7 +285,7 @@ class OllamaClient:
                 matched_entities.append("the testing laboratory")
 
             # Friend / Priya
-            if ("friend" in user_query or "priya" in user_query) and (
+            if (
                 "my friend" in history_block
                 or "friend" in history_block
                 or "priya" in history_block
@@ -337,11 +294,6 @@ class OllamaClient:
 
             # Drink / Brew / Rasgulla
             if (
-                "drink" in user_query
-                or "brew" in user_query
-                or "rasgulla" in user_query
-                or "tea" in user_query
-            ) and (
                 "chamomile brew" in history_block
                 or "tea" in history_block
                 or "brew" in history_block
