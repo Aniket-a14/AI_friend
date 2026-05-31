@@ -27,6 +27,7 @@ async def test_neuromodulatory_gating_and_actr_pruning():
     mock_graph = MagicMock()
     mock_graph.execute_query = AsyncMock(return_value=[])
     mem_store = MemoryStore(pool=store.pool, graph_db=mock_graph)
+    mem_store.qdrant_store.client = None
 
     # 1. Mock embeddings to be close to query
     query_vector = [1.0, 0.0] + [0.0] * 766

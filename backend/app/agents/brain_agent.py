@@ -267,9 +267,22 @@ class BrainAgent(BaseAgent):
             user_voice_properties = self.last_user_voice_properties.model_dump()
             self.last_user_voice_properties = None
 
+        user_id = (
+            message.get("user_id")
+            or (metadata.get("user_id") if isinstance(metadata, dict) else None)
+            or getattr(chat_input, "user_id", None)
+            or (
+                chat_input.metadata.model_dump().get("user_id")
+                if chat_input.metadata
+                else None
+            )
+            or "User"
+        )
+
         raw_event = {
             "id": str(uuid.uuid4()),
             "type": "USER_MESSAGE",
+            "user_id": user_id,
             "content": user_text,
             "user_voice_properties": user_voice_properties,
             "metadata": {
@@ -281,7 +294,7 @@ class BrainAgent(BaseAgent):
         }
 
         if self.conversation_store and not is_subconscious:
-            asyncio.create_task(self.conversation_store.log_message("user", user_text))
+            asyncio.create_task(self.conversation_store.log_message(user_id, user_text))
 
         if is_subconscious:
             logger.info("💭 [Brain] Processing subconscious thought: %s", user_text)

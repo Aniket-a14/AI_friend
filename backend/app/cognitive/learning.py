@@ -84,9 +84,10 @@ class ReflectionService:
                 D = emotion_vec.get("D", 0.5)
                 ctx = e.get("context", "")
                 ri = e.get("relationship_delta", 0.0)
+                speaker_name = e.get("speaker") or "User"
                 summary_parts.append(
                     f"Context: {ctx}\n"
-                    f"User: {e.get('content', e.get('event', ''))}\n"
+                    f"{speaker_name}: {e.get('content', e.get('event', ''))}\n"
                     f"AI: {e.get('response', '')}\n"
                     f"[Emotion V={V:.2f} Ar={Ar:.2f} D={D:.2f} | RelDelta={ri:.2f}]"
                 )

@@ -324,6 +324,7 @@ class CognitivePipeline:
             episode = {
                 "id": event.event_id,
                 "event": event.raw_content,
+                "speaker": raw_event.get("user_id") or "User",
                 "context": state_directive,
                 "emotion_vector": {
                     "V": self.state.current_state.valence,

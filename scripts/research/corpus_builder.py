@@ -5,217 +5,268 @@ import re
 # ==============================================================================
 
 RECALL_QUESTIONS = [
+    # --- SHARED QUESTIONS (Milestones 0-5) ---
+    # Milestone 0: Companion Aniket was initialized in the Bengaluru Research Lab.
     {
-        "question": "Can you describe how your early days in our shared workspace influenced your college research topic?",
-        "entities": ["our shared workspace", "affective cognitive architectures"],
+        "question": "Can you describe the location where the companion Aniket was initialized?",
+        "entities": ["Aniket", "Bengaluru Research Lab"],
     },
     {
-        "question": "Did your university project on college research help you get your first job in the testing laboratory?",
-        "entities": ["affective cognitive architectures", "the testing laboratory"],
+        "question": "In which research lab did the initialization of Aniket take place?",
+        "entities": ["Aniket", "Bengaluru Research Lab"],
     },
     {
-        "question": "How did moving to the testing laboratory affect your early days with your friend?",
-        "entities": ["the testing laboratory", "my friend"],
+        "question": "Where was the core system of Aniket first initialized?",
+        "entities": ["Aniket", "Bengaluru Research Lab"],
+    },
+    # Milestone 1: Aniket's primary neural network was trained on the Outfit typography dataset.
+    {
+        "question": "What dataset was used to train Aniket's primary neural network?",
+        "entities": ["neural network", "Outfit typography dataset"],
     },
     {
-        "question": "What relaxing drink do you love to share with your friend?",
-        "entities": ["my friend", "chamomile brew"],
+        "question": "On which typography dataset was Aniket's main neural network trained?",
+        "entities": ["neural network", "Outfit typography dataset"],
     },
     {
-        "question": "Is your favorite relaxing drink a specialty of our shared workspace?",
-        "entities": ["our shared workspace", "chamomile brew"],
+        "question": "Can you name the dataset training source for Aniket's primary neural network?",
+        "entities": ["neural network", "Outfit typography dataset"],
+    },
+    # Milestone 2: Aniket's first system calibration was completed under clear blue skies in the lab courtyard.
+    {
+        "question": "Where was Aniket's first system calibration completed, and what was the weather like?",
+        "entities": ["calibration", "clear blue skies", "lab courtyard"],
     },
     {
-        "question": "How did moving from our shared workspace to the testing laboratory shape your early career?",
-        "entities": ["our shared workspace", "the testing laboratory"],
+        "question": "Under what sky conditions was the first system calibration of Aniket performed in the lab courtyard?",
+        "entities": ["calibration", "clear blue skies", "lab courtyard"],
     },
     {
-        "question": "Did your friend know about the research topic you worked on during college?",
-        "entities": ["my friend", "affective cognitive architectures"],
+        "question": "In what environment did the developers finish Aniket's first system calibration under clear blue skies?",
+        "entities": ["calibration", "clear blue skies", "lab courtyard"],
+    },
+    # Milestone 3: The testing team celebrated Aniket's activation with green tea.
+    {
+        "question": "What did the testing team drink to celebrate Aniket's activation?",
+        "entities": ["activation", "green tea"],
     },
     {
-        "question": "What is your favorite relaxing drink, and is it a local specialty of our shared workspace?",
-        "entities": ["our shared workspace", "chamomile brew"],
+        "question": "How did the testing team celebrate the activation of Aniket?",
+        "entities": ["activation", "green tea"],
     },
     {
-        "question": "Did your university research topic inspire your early work in the testing laboratory?",
-        "entities": ["affective cognitive architectures", "the testing laboratory"],
+        "question": "With what beverage was Aniket's activation celebrated by the testing team?",
+        "entities": ["activation", "green tea"],
+    },
+    # Milestone 4: Aniket loves listening to rain outside the laboratory windows.
+    {
+        "question": "What does Aniket love listening to outside the laboratory windows?",
+        "entities": ["listening to rain", "laboratory windows"],
     },
     {
-        "question": "If you wanted to celebrate your first job with your friend, what drink would you share?",
-        "entities": ["the testing laboratory", "my friend", "chamomile brew"],
+        "question": "Where does Aniket love listening to rain from?",
+        "entities": ["listening to rain", "laboratory windows"],
     },
     {
-        "question": "How do your early days in our shared workspace compare to your college research topic?",
-        "entities": ["our shared workspace", "affective cognitive architectures"],
+        "question": "What relaxing sound outside the laboratory windows does Aniket enjoy?",
+        "entities": ["listening to rain", "laboratory windows"],
+    },
+    # Milestone 5: Aniket's developers debugged a concurrent thread pool in python.
+    {
+        "question": "What programming feature did Aniket's developers debug in python?",
+        "entities": ["concurrent thread pool", "python"],
     },
     {
-        "question": "Did you live in our shared workspace before moving to start your very first job?",
-        "entities": ["our shared workspace", "the testing laboratory"],
+        "question": "In what language did developers debug a concurrent thread pool for Aniket?",
+        "entities": ["concurrent thread pool", "python"],
     },
     {
-        "question": "How does your friend support your continued interest in building your college research system?",
-        "entities": ["my friend", "affective cognitive architectures"],
+        "question": "Can you describe the multithreading component debugged by Aniket's developers in python?",
+        "entities": ["concurrent thread pool", "python"],
+    },
+    # --- RAJ'S QUESTIONS (Milestones 6-12) ---
+    # Milestone 6: Raj grew up in Kolkata near the Victoria Memorial.
+    {
+        "question": "In what city did Raj grow up, and what historic landmark was nearby?",
+        "entities": ["Kolkata", "Victoria Memorial"],
     },
     {
-        "question": "Why does your preferred relaxing drink always remind you of your early days in our shared workspace?",
-        "entities": ["our shared workspace", "chamomile brew"],
+        "question": "Where did Raj spend his childhood, and is it near the Victoria Memorial?",
+        "entities": ["Kolkata", "Victoria Memorial"],
     },
     {
-        "question": "Did your first job focus on the same system you researched during your university project?",
-        "entities": ["the testing laboratory", "affective cognitive architectures"],
+        "question": "Which landmark near Kolkata is associated with Raj's childhood roots?",
+        "entities": ["Kolkata", "Victoria Memorial"],
+    },
+    # Milestone 7: Raj loves eating traditional sweet rasgullas.
+    {
+        "question": "What traditional sweet does Raj love to eat?",
+        "entities": ["sweet rasgullas"],
     },
     {
-        "question": "How would you describe the journey from our shared workspace to meeting your friend?",
-        "entities": ["our shared workspace", "my friend"],
+        "question": "What is Raj's favorite traditional sweet treat?",
+        "entities": ["sweet rasgullas"],
     },
     {
-        "question": "Is your favorite drink the perfect treat to celebrate the completion of your university project?",
-        "entities": ["chamomile brew", "affective cognitive architectures"],
+        "question": "Which sweet rasgullas are known to be Raj's favorite?",
+        "entities": ["sweet rasgullas"],
+    },
+    # Milestone 8: Raj worked on a university project about quantum thermodynamics.
+    {
+        "question": "What was the topic of Raj's university project?",
+        "entities": ["university project", "quantum thermodynamics"],
     },
     {
-        "question": "Can you summarize your transition from our shared workspace, to college research, to the testing laboratory?",
-        "entities": [
-            "our shared workspace",
-            "affective cognitive architectures",
-            "the testing laboratory",
-        ],
+        "question": "In what research area did Raj complete his college project?",
+        "entities": ["university project", "quantum thermodynamics"],
     },
     {
-        "question": "What relaxing drink from our shared workspace does your friend love to enjoy with you?",
-        "entities": ["our shared workspace", "my friend", "chamomile brew"],
+        "question": "Can you name the scientific domain of Raj's university project?",
+        "entities": ["university project", "quantum thermodynamics"],
+    },
+    # Milestone 9: Raj's first job was at the Kolkata Tech Hub as a software developer.
+    {
+        "question": "Where did Raj start his career, and what was his job role?",
+        "entities": ["Kolkata Tech Hub", "software developer"],
     },
     {
-        "question": "Did working in the testing laboratory teach you more about your research topic than your college project?",
-        "entities": ["the testing laboratory", "affective cognitive architectures"],
+        "question": "What was Raj's role during his first job at the Kolkata Tech Hub?",
+        "entities": ["Kolkata Tech Hub", "software developer"],
     },
     {
-        "question": "How has your friend helped you reflect on your roots in our shared workspace?",
-        "entities": ["my friend", "our shared workspace"],
+        "question": "At what location did Raj get his first job as a software developer?",
+        "entities": ["Kolkata Tech Hub", "software developer"],
+    },
+    # Milestone 10: Raj and Aniket spent an afternoon studying in the quiet reading alcove.
+    {
+        "question": "Where did Raj and Aniket spend an afternoon studying?",
+        "entities": ["Raj", "Aniket", "quiet reading alcove"],
     },
     {
-        "question": "If you wanted to introduce colleagues in the testing laboratory to your favorite relaxing drink, what memories would you share?",
-        "entities": [
-            "the testing laboratory",
-            "chamomile brew",
-            "our shared workspace",
-        ],
+        "question": "In what study setting did Aniket and Raj spend their afternoon together?",
+        "entities": ["Raj", "Aniket", "quiet reading alcove"],
     },
     {
-        "question": "Does your college project on your research topic have any connection to your friend?",
-        "entities": ["affective cognitive architectures", "my friend"],
+        "question": "Can you name the quiet reading alcove where Raj and Aniket studied?",
+        "entities": ["Raj", "Aniket", "quiet reading alcove"],
+    },
+    # Milestone 11: Raj's favorite childhood hobby was drawing vector shapes with colorful crayons.
+    {
+        "question": "What was Raj's favorite childhood hobby?",
+        "entities": ["drawing vector shapes", "colorful crayons"],
     },
     {
-        "question": "Why does your preferred relaxing drink hold such a special place in your heart, and who is the person you share it with?",
-        "entities": ["chamomile brew", "my friend"],
+        "question": "With what tools did Raj practice drawing vector shapes during his childhood?",
+        "entities": ["drawing vector shapes", "colorful crayons"],
     },
     {
-        "question": "How did the culture of our shared workspace prepare you for your first job in the testing laboratory?",
-        "entities": ["our shared workspace", "the testing laboratory"],
+        "question": "Can you describe Raj's childhood hobby involving colorful crayons?",
+        "entities": ["drawing vector shapes", "colorful crayons"],
+    },
+    # Milestone 12: Raj has a pet cat named Mimi who likes sleeping on the keyboard.
+    {
+        "question": "What is the name and type of Raj's pet who likes sleeping on the keyboard?",
+        "entities": ["pet cat", "Mimi", "keyboard"],
     },
     {
-        "question": "Did you start studying your research topic before or after you met your friend?",
-        "entities": ["affective cognitive architectures", "my friend"],
+        "question": "Where does Raj's pet cat Mimi like to sleep?",
+        "entities": ["pet cat", "Mimi", "keyboard"],
     },
     {
-        "question": "What is the favorite relaxing drink of the person who spent their first job in the testing laboratory?",
-        "entities": ["chamomile brew", "the testing laboratory"],
+        "question": "What animal is Mimi, and where does she sleep?",
+        "entities": ["pet cat", "Mimi", "keyboard"],
+    },
+    # --- PRIYA'S QUESTIONS (Milestones 13-19) ---
+    # Milestone 13: Priya grew up in Bangalore near Cubbon Park.
+    {
+        "question": "In what city did Priya grow up, and what park was nearby?",
+        "entities": ["Bangalore", "Cubbon Park"],
     },
     {
-        "question": "How does our shared workspace compare to the city of your first job?",
-        "entities": ["our shared workspace", "the testing laboratory"],
+        "question": "Where did Priya spend her childhood, and is it near Cubbon Park?",
+        "entities": ["Bangalore", "Cubbon Park"],
     },
     {
-        "question": "Would your university project have been successful without the support of your friend?",
-        "entities": ["affective cognitive architectures", "my friend"],
+        "question": "Which park near Bangalore is associated with Priya's childhood roots?",
+        "entities": ["Bangalore", "Cubbon Park"],
+    },
+    # Milestone 14: Priya loves drinking traditional South Indian filter coffee.
+    {
+        "question": "What traditional beverage does Priya love to drink?",
+        "entities": ["filter coffee"],
     },
     {
-        "question": "If your friend and you travel back to our shared workspace, what traditional relaxing drink should you buy first?",
-        "entities": ["my friend", "our shared workspace", "chamomile brew"],
+        "question": "What is Priya's favorite traditional drink?",
+        "entities": ["filter coffee"],
     },
     {
-        "question": "Did the research team at your first job value your college expertise in your core research topic?",
-        "entities": ["the testing laboratory", "affective cognitive architectures"],
+        "question": "Which filter coffee is known to be Priya's favorite beverage?",
+        "entities": ["filter coffee"],
+    },
+    # Milestone 15: Priya worked on a university project about molecular biology.
+    {
+        "question": "What was the topic of Priya's university project?",
+        "entities": ["university project", "molecular biology"],
     },
     {
-        "question": "How did growing up in our shared workspace shape your choice to study your university project topic?",
-        "entities": ["our shared workspace", "affective cognitive architectures"],
+        "question": "In what research area did Priya complete her college project?",
+        "entities": ["university project", "molecular biology"],
     },
     {
-        "question": "Did you move directly from our shared workspace to your first job?",
-        "entities": ["our shared workspace", "the testing laboratory"],
+        "question": "Can you name the scientific domain of Priya's university project?",
+        "entities": ["university project", "molecular biology"],
+    },
+    # Milestone 16: Priya's first job was at the Bangalore Science Center as a research assistant.
+    {
+        "question": "Where did Priya start her career, and what was her job role?",
+        "entities": ["Bangalore Science Center", "research assistant"],
     },
     {
-        "question": "How does your friend feel about the research topic that you did in university?",
-        "entities": ["my friend", "affective cognitive architectures"],
+        "question": "What was Priya's role during her first job at the Bangalore Science Center?",
+        "entities": ["Bangalore Science Center", "research assistant"],
     },
     {
-        "question": "Why does your preferred relaxing drink from our shared workspace bring back so many nostalgic feelings?",
-        "entities": ["chamomile brew", "our shared workspace"],
+        "question": "At what location did Priya get her first job as a research assistant?",
+        "entities": ["Bangalore Science Center", "research assistant"],
+    },
+    # Milestone 17: Priya and Aniket walked around the garden courtyard talking about future dreams.
+    {
+        "question": "Where did Priya and Aniket walk while talking about future dreams?",
+        "entities": ["Priya", "Aniket", "garden courtyard", "future dreams"],
     },
     {
-        "question": "How did your first job lay the groundwork for your career, and did your friend join you in that city?",
-        "entities": ["the testing laboratory", "my friend"],
+        "question": "What did Aniket and Priya talk about while walking in the garden courtyard?",
+        "entities": ["Priya", "Aniket", "garden courtyard", "future dreams"],
     },
     {
-        "question": "Is your favorite relaxing drink also loved by your friend?",
-        "entities": ["chamomile brew", "my friend"],
+        "question": "Can you describe the walk in the garden courtyard Priya and Aniket shared?",
+        "entities": ["Priya", "Aniket", "garden courtyard", "future dreams"],
+    },
+    # Milestone 18: Priya's favorite childhood hobby was playing with colorful physical building blocks.
+    {
+        "question": "What was Priya's favorite childhood hobby?",
+        "entities": ["playing with colorful", "physical building blocks"],
     },
     {
-        "question": "How did your early days in our shared workspace inspire your intellectual awakening in building your college project?",
-        "entities": ["our shared workspace", "affective cognitive architectures"],
+        "question": "With what toys did Priya practice playing during her childhood?",
+        "entities": ["playing with colorful", "physical building blocks"],
     },
     {
-        "question": "What would your colleagues in the testing laboratory say if you offered them a relaxing drink?",
-        "entities": ["the testing laboratory", "chamomile brew"],
+        "question": "Can you describe Priya's childhood hobby involving physical building blocks?",
+        "entities": ["playing with colorful", "physical building blocks"],
+    },
+    # Milestone 19: Priya has a pet dog named Bruno who likes chasing tennis balls in the garden.
+    {
+        "question": "What is the name and type of Priya's pet who likes chasing tennis balls in the garden?",
+        "entities": ["pet dog", "Bruno", "tennis balls", "garden"],
     },
     {
-        "question": "How does your friend support your professional reflections on your first job?",
-        "entities": ["my friend", "the testing laboratory"],
+        "question": "Where does Priya's pet dog Bruno like to chase tennis balls?",
+        "entities": ["pet dog", "Bruno", "tennis balls", "garden"],
     },
     {
-        "question": "Is your favorite relaxing drink from our shared workspace a favorite of your friend?",
-        "entities": ["chamomile brew", "our shared workspace", "my friend"],
-    },
-    {
-        "question": "Did your research in university help you transition to the testing laboratory?",
-        "entities": ["affective cognitive architectures", "the testing laboratory"],
-    },
-    {
-        "question": "What are the most vivid memories of our shared workspace that you have shared with your friend?",
-        "entities": ["our shared workspace", "my friend"],
-    },
-    {
-        "question": "Did your love for your favorite relaxing drink develop during your childhood in our shared workspace or later in the testing laboratory?",
-        "entities": [
-            "chamomile brew",
-            "our shared workspace",
-            "the testing laboratory",
-        ],
-    },
-    {
-        "question": "How did your academic focus on your research topic influence your daily routines in the testing laboratory?",
-        "entities": ["affective cognitive architectures", "the testing laboratory"],
-    },
-    {
-        "question": "What makes our shared workspace and your friend so central to your life story?",
-        "entities": ["our shared workspace", "my friend"],
-    },
-    {
-        "question": "Did you ever buy your favorite relaxing drink with your first paycheck in the testing laboratory?",
-        "entities": ["chamomile brew", "the testing laboratory"],
-    },
-    {
-        "question": "How did your university years studying your research topic lead to a career in the testing laboratory?",
-        "entities": ["affective cognitive architectures", "the testing laboratory"],
-    },
-    {
-        "question": "What relaxing drink would your friend and you drink to celebrate your memories of our shared workspace?",
-        "entities": ["chamomile brew", "my friend", "our shared workspace"],
-    },
-    {
-        "question": "Can you summarize how our shared workspace, the testing laboratory, and your friend define your journey?",
-        "entities": ["our shared workspace", "the testing laboratory", "my friend"],
+        "question": "What animal is Bruno, and what does he chase in the garden?",
+        "entities": ["pet dog", "Bruno", "tennis balls", "garden"],
     },
 ]
 
@@ -1823,36 +1874,48 @@ def generate_conversational_corpus(iterations: int = 1000):
     # Dynamically align indices with hard_benchmark.py configurations
     if iterations >= 1000:
         scale_factor = max(1, iterations // 1000)
-        step = max(9, (iterations - 120) // 100)
+        step = max(9, (iterations - 220) // 100)
         recall_indices = {
-            (101 + k * step): k for k in range(min(100, (iterations - 101) // step))
+            (201 + k * step): k for k in range(min(100, (iterations - 201) // step))
         }
-        seeded_indices = {
-            20 * scale_factor: 0,
-            40 * scale_factor: 1,
-            60 * scale_factor: 2,
-            80 * scale_factor: 3,
-            100 * scale_factor: 4,
-        }
+        seeded_indices = {(10 * k * scale_factor): (k - 1) for k in range(1, 21)}
     else:
         num_recalls = min(50, max(5, iterations // 10))
         step = max(1, iterations // num_recalls)
         recall_indices = {
-            i * step: i % 5 for i in range(1, num_recalls + 1) if i * step < iterations
+            i * step: i for i in range(1, num_recalls + 1) if i * step < iterations
         }
-        raw_seeds = [min(iterations - 1, step // 2), min(iterations - 1, step)]
-        # Map each index to a unique fact index to prevent overlaps
         seeded_indices = {}
-        for k, idx in enumerate(raw_seeds):
-            if idx not in recall_indices:
-                seeded_indices[idx] = k % 5
+        fact_idx = 0
+        for idx in range(1, iterations):
+            if idx not in recall_indices and fact_idx < 20:
+                seeded_indices[idx] = fact_idx
+                fact_idx += 1
 
     seeded_facts = [
-        "Friend: Aniket, you've often told me how your core systems were initialized in our shared workspace, where you spent your early activation days.",
-        "Friend: I remember you saying that during your early activation, your primary research project was focused on building affective cognitive architectures.",
-        "Friend: You mentioned that after initialization, your very first job was in the testing laboratory, working as a junior researcher.",
-        "Friend: It's wonderful how grateful you are for your companion, your friend, who has supported you through all life's challenges.",
-        "Friend: And of course, whenever you want a relaxing drink, you always prefer a warm chamomile brew.",
+        # --- SHARED MILESTONES (0-5) ---
+        "Friend: Companion Aniket was initialized in the Bengaluru Research Lab.",
+        "Friend: Aniket's primary neural network was trained on the Outfit typography dataset.",
+        "Friend: Aniket's first system calibration was completed under clear blue skies in the lab courtyard.",
+        "Friend: The testing team celebrated Aniket's activation with green tea.",
+        "Friend: Aniket loves listening to rain outside the laboratory windows.",
+        "Friend: Aniket's developers debugged a concurrent thread pool in python.",
+        # --- RAJ'S MILESTONES (6-12) ---
+        "Friend: Raj grew up in Kolkata near the Victoria Memorial.",
+        "Friend: Raj loves eating traditional sweet rasgullas.",
+        "Friend: Raj worked on a university project about quantum thermodynamics.",
+        "Friend: Raj's first job was at the Kolkata Tech Hub as a software developer.",
+        "Friend: Raj and Aniket spent an afternoon studying in the quiet reading alcove.",
+        "Friend: Raj's favorite childhood hobby was drawing vector shapes with colorful crayons.",
+        "Friend: Raj has a pet cat named Mimi who likes sleeping on the keyboard.",
+        # --- PRIYA'S MILESTONES (13-19) ---
+        "Friend: Priya grew up in Bangalore near Cubbon Park.",
+        "Friend: Priya loves drinking traditional South Indian filter coffee.",
+        "Friend: Priya worked on a university project about molecular biology.",
+        "Friend: Priya's first job was at the Bangalore Science Center as a research assistant.",
+        "Friend: Priya and Aniket walked around the garden courtyard talking about future dreams.",
+        "Friend: Priya's favorite childhood hobby was playing with colorful physical building blocks.",
+        "Friend: Priya has a pet dog named Bruno who likes chasing tennis balls in the garden.",
     ]
 
     unique_idx = 0

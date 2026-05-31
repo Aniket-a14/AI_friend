@@ -162,12 +162,8 @@ class OllamaClient:
             ):
                 matched_entities.append("the testing laboratory")
 
-            # Friend / Priya
-            if (
-                "my friend" in history_block
-                or "friend" in history_block
-                or "priya" in history_block
-            ):
+            # Friend
+            if "my friend" in history_block or "friend" in history_block:
                 matched_entities.append("my friend")
 
             # Drink / Brew / Rasgulla
@@ -284,12 +280,8 @@ class OllamaClient:
             ):
                 matched_entities.append("the testing laboratory")
 
-            # Friend / Priya
-            if (
-                "my friend" in history_block
-                or "friend" in history_block
-                or "priya" in history_block
-            ):
+            # Friend
+            if "my friend" in history_block or "friend" in history_block:
                 matched_entities.append("my friend")
 
             # Drink / Brew / Rasgulla
@@ -400,9 +392,8 @@ class OllamaClient:
         model: str = None,
     ) -> str:
         if getattr(Config, "MOCK_LLM_TEXT", False):
-            return (
-                "A user sitting at a desk pair-programming with their AI friend Aniket."
-            )
+            ai_name = getattr(Config, "AI_NAME", "AI Friend")
+            return f"A user sitting at a desk pair-programming with their AI friend {ai_name}."
 
         target_model = model or self.model
         payload = {

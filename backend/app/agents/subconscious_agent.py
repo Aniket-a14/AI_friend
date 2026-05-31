@@ -246,7 +246,7 @@ class SubconsciousAgent(BaseAgent):
                     role = ep.get("role")
                     content = ep.get("content", "")
 
-                    if role == "user":
+                    if role != "assistant":
                         # Check if the next message is from the assistant to pair them
                         assistant_content = ""
                         if (
@@ -264,6 +264,7 @@ class SubconsciousAgent(BaseAgent):
                             {
                                 "id": ep.get("id"),
                                 "event": content,
+                                "speaker": role,
                                 "response": assistant_content,
                                 "context": "Session conversation message",
                                 "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
@@ -277,6 +278,7 @@ class SubconsciousAgent(BaseAgent):
                             {
                                 "id": ep.get("id"),
                                 "event": "",
+                                "speaker": "assistant",
                                 "response": content,
                                 "context": "Session conversation message",
                                 "emotion_vector": {"V": 0.0, "Ar": 0.5, "D": 0.5},
@@ -303,7 +305,7 @@ class SubconsciousAgent(BaseAgent):
                     contents = [
                         ep.get("content")
                         for ep in episodes
-                        if ep.get("role") == "user" and ep.get("content")
+                        if ep.get("role") != "assistant" and ep.get("content")
                     ]
                     await self.memory_store.apply_actr_decay(contents)
 
