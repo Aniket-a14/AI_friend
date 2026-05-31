@@ -1,6 +1,21 @@
 services:
-  # Heavy mode enables STT/voice runtime tuning for macOS.
-  # GPT-SoVITS remains excluded here because its current image is CUDA-oriented.
+  # Light mode focuses on cognitive/state services and keeps expensive
+  # real-time media services disabled unless explicitly requested.
+  livekit:
+    profiles: ["heavy"]
+
+  transport_agent:
+    profiles: ["heavy"]
+
+  stt_agent:
+    profiles: ["heavy"]
+
+  gpt-sovits:
+    profiles: ["heavy"]
+
+  voice_agent:
+    profiles: ["heavy"]
+
   ollama:
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
@@ -25,9 +40,3 @@ services:
       OLLAMA_URL: http://host.docker.internal:11434
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-  gpt-sovits:
-    profiles: ["linux-gpu"]
-
-  voice_agent:
-    profiles: ["linux-gpu"]

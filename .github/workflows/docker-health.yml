@@ -109,6 +109,6 @@ jobs:
       - name: Validate Phased Startup Config
         run: |
           docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config --quiet
-          docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.light.yml config --quiet
-          docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.macos.heavy.yml config --quiet
+          docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.light.yml config --quiet
+          docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.heavy.yml config --quiet
           echo "✅ Unified compose config is valid"
