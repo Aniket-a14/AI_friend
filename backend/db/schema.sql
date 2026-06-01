@@ -118,7 +118,7 @@ as $$
 $$;
 
 -- Create a high-performance ACT-R Based memory surfacing function
--- usage: select * from surface_actr_memories(query_embedding, wing, room, decay_rate, spread_weight, emotion_weight, current_valence, threshold, limit)
+-- usage: select * from surface_actr_memories(query_embedding, wing, room, decay_rate, spread_weight, emotion_weight, current_valence, threshold, limit, simulated_time)
 create or replace function surface_actr_memories (
   query_embedding vector(768),
   p_wing text,
@@ -128,7 +128,8 @@ create or replace function surface_actr_memories (
   p_emotion_weight double precision,
   p_current_valence double precision,
   p_threshold double precision,
-  p_limit int
+  p_limit int,
+  p_simulated_time timestamptz default null
 )
 returns table (
   content text,
@@ -148,7 +149,7 @@ returns table (
 language plpgsql stable
 as $$
 declare
-  now_ts timestamptz := clock_timestamp();
+  now_ts timestamptz := coalesce(p_simulated_time, clock_timestamp());
 begin
   return query
   select

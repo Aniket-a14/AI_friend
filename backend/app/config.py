@@ -1,11 +1,14 @@
+from pathlib import Path
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 
+_env_file = Path(__file__).resolve().parent.parent.parent / ".env"
+
 
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file="../.env", env_file_encoding="utf-8", extra="ignore"
+        env_file=str(_env_file), env_file_encoding="utf-8", extra="ignore"
     )
 
     DEBUG: bool = False
