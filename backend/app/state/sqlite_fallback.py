@@ -219,6 +219,12 @@ class SQLiteConnection:
             translated,
             flags=re.IGNORECASE,
         )
+        translated = re.sub(
+            r"\bhalfvec\(\d+\)\b", "TEXT", translated, flags=re.IGNORECASE
+        )
+        translated = re.sub(
+            r"\bvector\(\d+\)\b", "TEXT", translated, flags=re.IGNORECASE
+        )
         translated = re.sub(r"\bJSONB\b", "TEXT", translated, flags=re.IGNORECASE)
         translated = re.sub(
             r"\bALTER TABLE messages ADD COLUMN IF NOT EXISTS consolidated.*",

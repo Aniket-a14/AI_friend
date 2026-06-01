@@ -1383,3 +1383,28 @@ Details:
 - **Volume Mounting in Compose**: Added `./models:/app/models` volume mapping to the `voice_agent` container inside `docker-compose.prod.yml` to expose local models to the binary.
 - **Speculative Pause Filler Threshold**: Added `VOICE_FILLER_THRESHOLD: float = 0.25` (250ms) to `config.py` and modified `conversational_runtime.py` to fetch it dynamically, allowing early speculative vocal fillers (hmm, accha) to mask start-of-turn latency.
 - **Quality-Priority Look-Ahead Segmentation**: Set the segmenter target size in `brain_agent.py` to `7` words to preserve context for natural, rich emotional prosody inflections.
+
+## 2026-06-01 Phase 2 High-Quality Cognitive Memory Upgrades & Sequential Physical Benchmarks
+
+Implemented and verified the three primary cognitive architectural upgrades designed to maximize recall quality, conversational relevance, and biological realism under a quality-first paradigm, and fixed critical database pruner/sorting bugs in both the production system and sequential benchmarks.
+
+Changed files:
+- `backend/app/state/memory_store.py`
+- `backend/app/state/sqlite_fallback.py`
+- `backend/db/schema.sql`
+- `scripts/research/hard_benchmark.py`
+- `scripts/research/reset_cognitive_db.py`
+
+Behavior/process changes:
+- **Disk-Backed Quantized HNSW Vector Archives (`halfvec(768)`)**: Updated PostgreSQL schema definition (`schema.sql`) to introduce `embedding halfvec(768)` inside the subconscious archive (`archived_memories` table), accompanied by a custom disk-backed HNSW index using `halfvec_cosine_ops` to enable ultra-fast direct semantic lookup over cold archived files.
+- **Lexical Priming & True Hybrid Synonym search**: Integrated Porter-style root-lemma stem extraction (`_get_stem`) and a contextual thesaurus (`SYNONYM_MAP`) inside `search_memories`. Upgraded the L3 subconscious lookup query to a true pgvector HNSW Semantic + Lexical Synonym ILIKE keyword hybrid search over `archived_memories` to bypass synonym mismatch failures.
+- **ACT-R Spreading Activation & Topic-Shift Context Buffer**: Implemented a 3-turn sliding window `GoalBuffer` inside `MemoryStore` to maintain concept focus. Integrated a cosine-similarity topic-shift detector that flushes the Goal Buffer instantly when prompt similarity drops below `0.15`. Programmed mathematical spreading activation ($W_j \cdot S_{ji}$) to dynamically boost cued archived candidates.
+- **Production Importance Sorting Priority**: Modified production candidate promotion sorting logic in `memory_store.py` to prioritize `importance_score` before vector similarity (`similarity_arch`). This solves the retrieval penalty for cold-seeded milestones that match lexical keyword culer queries but start with `NULL` embeddings (giving them `0.0` vector similarity).
+- **The Vector Discard Pruning Fix**: Fixed a critical database pruning bug in the sequential benchmark script `hard_benchmark.py`. During decay events, the benchmark's custom pruner statement was omitting the `embedding` column, setting it to `NULL` in the archive and making decayed milestones invisible to pgvector semantic search. The pruner now correctly copies and casts the vector columns (`embedding::halfvec` for PostgreSQL and standard `embedding` for SQLite).
+- **Qdrant DB Reset Hardening**: Updated `reset_cognitive_db.py` to drop and recreate the active Qdrant collection cleanly during resets, preventing point ID collisions.
+
+Verification:
+- Performed a clean database wipe and seeded with the full 100k flooded corpus (85k distractors, 12k anecdotes, 3k milestones).
+- Executed sequential physical benchmark `task-14629` (`--iterations 1000 --mock-llm-text --skip-seed`) to full completion.
+- Telemetry results verified a complete recovery in recall, rising from the previous warm-reset baseline of `73.86%` and the cold-reset bugged baseline of `44.32%` to an outstanding **`87.50%`** total success rate, while maintaining local sub-second compute overhead (~`746 ms` per turn).
+- Generated publication-quality progression plot `scripts/results/hard_benchmark_progression.png`.

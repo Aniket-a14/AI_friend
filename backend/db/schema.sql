@@ -48,7 +48,8 @@ create table if not exists archived_memories (
   virtue varchar(100),
   relations varchar(255),
   relation_circles varchar(255),
-  modality varchar(255)
+  modality varchar(255),
+  embedding halfvec(768)
 );
 
 -- Schema migrations for existing tables
@@ -61,6 +62,9 @@ alter table memories add column if not exists modality varchar(255);
 
 create index if not exists memories_embedding_idx
   on memories using hnsw (embedding vector_cosine_ops);
+
+create index if not exists archived_memories_embedding_idx
+  on archived_memories using hnsw (embedding halfvec_cosine_ops);
 
 create table if not exists sessions (
   id uuid primary key,

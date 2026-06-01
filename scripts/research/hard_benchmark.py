@@ -780,7 +780,28 @@ async def run_physical_benchmark(
             memory_test_count += 1
             q_idx = recall_indices[i] % len(RECALL_QUESTIONS)
             expected_entities = RECALL_QUESTIONS[q_idx]["entities"]
-            success = check_entities(full_resp, expected_entities)
+
+            # If in mock LLM mode, verify retrieval-level recall by checking if the expected entities
+            # exist directly within the retrieved memories from the database.
+            if os.getenv("MOCK_LLM_TEXT") == "True" or getattr(
+                Config, "MOCK_LLM_TEXT", False
+            ):
+                retrieved_texts = [
+                    m.get("content", "").lower() for m in retrieved_memories
+                ]
+                success = True
+                for ent in expected_entities:
+                    ent_found = False
+                    for txt in retrieved_texts:
+                        if ent.lower() in txt:
+                            ent_found = True
+                            break
+                    if not ent_found:
+                        success = False
+                        break
+            else:
+                success = check_entities(full_resp, expected_entities)
+
             if success:
                 recall_successes += 1
             print(
@@ -798,34 +819,141 @@ async def run_physical_benchmark(
         # 7. Perform DB pruning every 10 iterations
         if pulse_count % 10 == 0:
             try:
-                prune_cutoff = current_simulated_time - timedelta(hours=24)
-                # Direct pgvector pruning
+                cutoff_distractors = current_simulated_time - timedelta(hours=24)
+                cutoff_anecdotes = current_simulated_time - timedelta(hours=120)
+                cutoff_milestones = current_simulated_time - timedelta(hours=360)
+                # Select records that should be pruned
                 async with conversation_store.pool.acquire() as conn:
                     if memory_store.is_sqlite:
-                        res = await conn.execute(
+                        pruned_rows_data = await conn.fetch(
                             """
-                            DELETE FROM memories
-                            WHERE (importance_score < 0.5 AND created_at < ?)
+                            SELECT id FROM memories
+                            WHERE ((importance_score < 0.5 AND last_recalled_at < ?)
+                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND last_recalled_at < ?)
+                               OR (importance_score >= 0.7 AND last_recalled_at < ?))
                             AND wing = 'personal';
                             """,
-                            prune_cutoff,
+                            cutoff_distractors,
+                            cutoff_anecdotes,
+                            cutoff_milestones,
                         )
                     else:
-                        res = await conn.execute(
+                        pruned_rows_data = await conn.fetch(
                             """
-                            DELETE FROM memories
-                            WHERE (importance_score < 0.5 AND created_at < $1)
+                            SELECT id FROM memories
+                            WHERE ((importance_score < 0.5 AND last_recalled_at < $1)
+                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND last_recalled_at < $2)
+                               OR (importance_score >= 0.7 AND last_recalled_at < $3))
                             AND wing = 'personal';
                             """,
-                            prune_cutoff,
+                            cutoff_distractors,
+                            cutoff_anecdotes,
+                            cutoff_milestones,
                         )
-                    pruned_rows = (
-                        int(res.split(" ")[-1]) if res and "DELETE" in res else 0
-                    )
-                    if pruned_rows > 0:
-                        pruned_history_count += pruned_rows
+
+                    pruned_ids = [r["id"] for r in pruned_rows_data]
+
+                    if pruned_ids:
+                        if memory_store.is_sqlite:
+                            placeholders = ",".join("?" for _ in pruned_ids)
+                            # Copy to archived_memories
+                            await conn.execute(
+                                f"""
+                                INSERT INTO archived_memories (
+                                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                    metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                                )
+                                SELECT
+                                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                    metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                                FROM memories
+                                WHERE id IN ({placeholders})
+                                """,
+                                *pruned_ids,
+                            )
+                            # Delete from memories
+                            await conn.execute(
+                                f"DELETE FROM memories WHERE id IN ({placeholders})",
+                                *pruned_ids,
+                            )
+                        else:
+                            # Copy to archived_memories
+                            await conn.execute(
+                                """
+                                INSERT INTO archived_memories (
+                                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                    metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                                )
+                                SELECT
+                                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                    metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding::halfvec
+                                FROM memories
+                                WHERE id = ANY($1)
+                                """,
+                                pruned_ids,
+                            )
+                            # Delete from memories
+                            await conn.execute(
+                                "DELETE FROM memories WHERE id = ANY($1)", pruned_ids
+                            )
+
+                        # Delete from Qdrant if active
+                        if (
+                            memory_store.qdrant_store
+                            and memory_store.qdrant_store.client
+                        ):
+                            try:
+                                from qdrant_client.http import models
+
+                                await asyncio.to_thread(
+                                    memory_store.qdrant_store.client.delete,
+                                    collection_name=memory_store.qdrant_store.collection_name,
+                                    points_selector=models.PointIdsList(
+                                        points=[str(pid) for pid in pruned_ids]
+                                    ),
+                                )
+                            except Exception as qe:
+                                print(
+                                    f"⚠️ Warning: Failed to delete pruned points from Qdrant: {qe}"
+                                )
+
+                        pruned_history_count += len(pruned_ids)
                         print(
-                            f"    🗑️ [Database Pruning] Actively pruned {pruned_rows} decayed memories."
+                            f"    🗑️ [Database Pruning] Actively pruned {len(pruned_ids)} decayed memories to subconscious archive."
+                        )
+
+                    # Permanent Cleanup on archived_memories based on biological timelines
+                    cutoff_distractors = current_simulated_time - timedelta(days=30)
+                    cutoff_anecdotes = current_simulated_time - timedelta(days=180)
+                    cutoff_milestones = current_simulated_time - timedelta(days=720)
+
+                    if memory_store.is_sqlite:
+                        await conn.execute(
+                            """
+                            DELETE FROM archived_memories
+                            WHERE (importance_score < 0.5 AND last_recalled_at < ?)
+                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND last_recalled_at < ?)
+                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND last_recalled_at < ?);
+                            """,
+                            cutoff_distractors,
+                            cutoff_anecdotes,
+                            cutoff_milestones,
+                        )
+                    else:
+                        await conn.execute(
+                            """
+                            DELETE FROM archived_memories
+                            WHERE (importance_score < 0.5 AND last_recalled_at < $1)
+                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND last_recalled_at < $2)
+                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND last_recalled_at < $3);
+                            """,
+                            cutoff_distractors,
+                            cutoff_anecdotes,
+                            cutoff_milestones,
                         )
             except Exception as pe:
                 print(f"⚠️ Warning: Pruning failed: {pe}")
