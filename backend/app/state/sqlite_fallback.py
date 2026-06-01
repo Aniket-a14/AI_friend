@@ -92,6 +92,33 @@ class SQLiteConnection:
             )
         """)
 
+        # Archived Memories Table (pgvector fallback storage in SQLite)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS archived_memories (
+                id TEXT PRIMARY KEY,
+                content TEXT,
+                raw_content TEXT,
+                wing TEXT DEFAULT 'personal',
+                room TEXT,
+                embedding TEXT,
+                importance_score REAL DEFAULT 0.5,
+                emotional_weight REAL DEFAULT 0.0,
+                valence REAL DEFAULT 0.0,
+                certainty REAL DEFAULT 1.0,
+                source TEXT DEFAULT 'user',
+                recall_count INTEGER DEFAULT 0,
+                last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                metadata TEXT DEFAULT '{}',
+                lifespan_stage TEXT,
+                crisis TEXT,
+                virtue TEXT,
+                relations TEXT,
+                relation_circles TEXT,
+                modality TEXT
+            )
+        """)
+
         # Migration for existing memories table to add developmental stage columns
         cursor.execute("PRAGMA table_info(memories)")
         existing_mem_cols = {row[1] for row in cursor.fetchall()}
@@ -105,6 +132,20 @@ class SQLiteConnection:
         ]:
             if col not in existing_mem_cols:
                 cursor.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT")
+
+        # Migration for existing archived_memories table to add developmental stage columns
+        cursor.execute("PRAGMA table_info(archived_memories)")
+        existing_arch_cols = {row[1] for row in cursor.fetchall()}
+        for col in [
+            "lifespan_stage",
+            "crisis",
+            "virtue",
+            "relations",
+            "relation_circles",
+            "modality",
+        ]:
+            if col not in existing_arch_cols:
+                cursor.execute(f"ALTER TABLE archived_memories ADD COLUMN {col} TEXT")
 
         # Migration for memories.id column type: ensure it's TEXT for UUID compatibility
         cursor.execute("PRAGMA table_info(memories)")

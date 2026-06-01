@@ -671,7 +671,9 @@ class MemoryStore:
 
             # Dynamically scale search candidate pool limit during memory validation tests to boost long-term recall
             candidate_limit = (
-                max(120, limit * 6) if refresh_on_recall else max(20, limit * 3)
+                max(120, limit * 6 if limit is not None else 120)
+                if refresh_on_recall
+                else max(20, limit * 3 if limit is not None else 20)
             )
 
             raw_candidates = []
@@ -974,6 +976,7 @@ class MemoryStore:
 
                             raw_candidates.append(
                                 {
+                                    "id": row.get("id"),
                                     "content": row["content"],
                                     "raw_content": row.get("raw_content")
                                     or row["content"],
@@ -1002,6 +1005,7 @@ class MemoryStore:
                             rows = await conn.fetch(
                                 """
                                 SELECT
+                                    m.id AS id,
                                     s.content,
                                     s.raw_content,
                                     s.wing,
@@ -1041,20 +1045,22 @@ class MemoryStore:
                             rows = await conn.fetch(
                                 """
                                 SELECT
-                                    content,
-                                    raw_content,
-                                    wing,
-                                    room,
-                                    importance_score,
-                                    emotional_weight,
-                                    valence,
-                                    recall_count,
-                                    last_recalled_at,
-                                    created_at,
-                                    metadata,
-                                    similarity,
-                                    score
-                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer)
+                                    m.id AS id,
+                                    s.content,
+                                    s.raw_content,
+                                    s.wing,
+                                    s.room,
+                                    s.importance_score,
+                                    s.emotional_weight,
+                                    s.valence,
+                                    s.recall_count,
+                                    s.last_recalled_at,
+                                    s.created_at,
+                                    s.metadata,
+                                    s.similarity,
+                                    s.score
+                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer) s
+                                LEFT JOIN memories m ON m.content = s.content AND m.wing = s.wing
                                 """,
                                 vector_str,
                                 wing,
@@ -1131,6 +1137,7 @@ class MemoryStore:
 
                             raw_candidates.append(
                                 {
+                                    "id": row.get("id"),
                                     "content": row["content"],
                                     "raw_content": row.get("raw_content")
                                     or row["content"],
@@ -1668,7 +1675,7 @@ class MemoryStore:
                         boost = match_count * w_j * 1.2
                         cand["score"] += boost
                         logger.debug(
-                            f"GoalBuffer Prime: Added +{boost:.3f} spreading activation to memory {cand['id']}"
+                            f"GoalBuffer Prime: Added +{boost:.3f} spreading activation to memory {cand.get('id') or cand.get('content', 'N/A')}"
                         )
 
             # 4. Filter by final threshold, format and return results
@@ -1752,9 +1759,19 @@ class MemoryStore:
                     logger.error(f"Archived memories hybrid lookup failed: {arch_err}")
 
                 if archive_rows:
+                    active_contents = {res["content"] for res in results}
+                    archive_rows = [
+                        r
+                        for r in archive_rows
+                        if r.get("content")
+                        and r["content"] not in active_contents
+                        and r["content"] not in excluded
+                    ]
+
+                if archive_rows:
                     # Sort archive_rows by number of matched cues in Python
                     def get_match_count(row):
-                        content_lower = row["content"].lower()
+                        content_lower = row.get("content", "").lower()
                         return sum(1 for cue in expanded_cues if cue in content_lower)
 
                     def get_timestamp(row):
@@ -1849,7 +1866,9 @@ class MemoryStore:
 
                     # Only promote if it passes the threshold
                     if score > (threshold - 2.5):
-                        mem_id = str(row["id"])
+                        import uuid
+
+                        mem_id = str(row.get("id") or uuid.uuid4())
                         raw_meta = row.get("metadata")
                         import json
 
@@ -1929,7 +1948,7 @@ class MemoryStore:
                                             metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
                                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
                                         """,
-                                        row["id"],
+                                        mem_id,
                                         content,
                                         row.get("raw_content"),
                                         row.get("wing"),
@@ -1953,7 +1972,7 @@ class MemoryStore:
                                     )
                                     await conn.execute(
                                         "DELETE FROM archived_memories WHERE id = $1",
-                                        row["id"],
+                                        mem_id,
                                     )
 
                             # Upsert Qdrant
@@ -2047,6 +2066,9 @@ class MemoryStore:
             return results
 
         except Exception as e:
+            import traceback
+
+            traceback.print_exc()
             logger.error(f"Memory search failed: {e}")
             return []
 

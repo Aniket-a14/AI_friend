@@ -82,10 +82,16 @@ async def test_scoped_search_query_generation(memory_store, mock_pool):
         # 1. Test search in specific room
         await memory_store.search_memories("query", wing="identity", room="reflections")
 
-        # Capture the call to fetch
-        call_args = conn.fetch.call_args
-        query_sql = call_args[0][0]
-        params = call_args[0][1:]
+        # Capture the call to fetch containing surface_actr_memories
+        found_call = None
+        for call in conn.fetch.call_args_list:
+            if "surface_actr_memories" in call[0][0]:
+                found_call = call
+                break
+
+        assert found_call is not None
+        query_sql = found_call[0][0]
+        params = found_call[0][1:]
 
         assert "surface_actr_memories" in query_sql
         assert "identity" in params

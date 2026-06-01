@@ -154,17 +154,22 @@ async def test_qdrant_dynamic_metadata_sync(mock_pool):
         results = await store.search_memories("outdated", threshold=-10.0, limit=1)
 
         # Verify database query was made with candidate ID
-        fetch_args = conn.fetch.call_args
-        assert fetch_args is not None
+        fetch_calls = conn.fetch.call_args_list
+        assert len(fetch_calls) > 0
 
-        # Check that 'mem-uuid-1234' is present in the arguments passed to fetch
-        args_flat = []
-        for arg in fetch_args[0]:
-            if isinstance(arg, list):
-                args_flat.extend(arg)
-            else:
-                args_flat.append(arg)
-        assert any("mem-uuid-1234" in str(x) for x in args_flat)
+        # Check that 'mem-uuid-1234' is present in the arguments passed to fetch in any call
+        found_cand_id = False
+        for call in fetch_calls:
+            args_flat = []
+            for arg in call[0]:
+                if isinstance(arg, list):
+                    args_flat.extend(arg)
+                else:
+                    args_flat.append(arg)
+            if any("mem-uuid-1234" in str(x) for x in args_flat):
+                found_cand_id = True
+                break
+        assert found_cand_id
 
         # Verify results contained the merged DB properties instead of static Qdrant metadata
         assert len(results) == 1
