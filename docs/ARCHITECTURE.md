@@ -64,9 +64,11 @@ CVS-3.5 Premium Edition structures its memory across a **4-Tier Hybrid Storage S
 1.  **Tier 1: Dynamic Working Memory & Identity Cache**:
     *   *Identity cache*: Fast-access SQLite database managed via `IdentityCoreStore` which holds immutable core parameters.
     *   *Dynamic session cache*: Active dialogue turns, VAD parameters, and recent conversational history are kept in a Redis key-value cache (`WorkingMemoryStore`) for sub-millisecond dynamic session retrieval.
-2.  **Tier 2: Relational Episodic Memory (PostgreSQL / SQLite fallback)**:
-    *   Episodic memories are scored using **ACT-R base activation decay** ($A = \ln(\sum t_j^{-d})$) and emotional PAD congruence.
-    *   To eliminate Python overhead, memory decay math is offloaded directly to database queries.
+2.  **Tier 2: Relational Episodic Memory & Subconscious HSL Hybrid Archive**:
+    *   Episodic memories are scored using **ACT-R base activation decay** ($A = \ln(\sum t_j^{-d})$) and emotional PAD congruence. To eliminate Python overhead, memory decay math is offloaded directly to database queries.
+    *   *Subconscious pgvector Archive (`halfvec(768)`)*: As memories decay from active storage, they are pruned to `archived_memories`. To enable sub-millisecond similarity scans on this cold pool, PostgreSQL compiles vector embeddings using a quantized `halfvec(768)` type, indexed by a disk-backed `HNSW` using `halfvec_cosine_ops`.
+    *   *HSL Hybrid Retrieval (Semantic + Lexical + Synonym)*: To bypass synonym-mismatch failures, subconscious lookup uses a true hybrid query combining HNSW semantic proximity with Porter-style root-lemma stem extraction (`_get_stem`) and a contextual thesaurus map (`SYNONYM_MAP`) executing ILIKE keyword lookups.
+    *   *ACT-R Spreading Activation & Goal Buffer*: Maintains concepts across a 3-turn sliding window `GoalBuffer`. Subconscious cueing applies a mathematical spreading activation boost ($W_j \cdot S_{ji}$) to associated candidates. If the cosine similarity between consecutive user prompts drops below `0.15`, the Goal Buffer flushes instantly to model organic attention shifts.
     *   *SQL Dialect Abstraction*: The database engine integrates a dual-dialect routing layer (`sqlite_fallback.py`) which translates Postgres `pgvector` operators to SQLite fallback queries automatically when running in offline/local dev modes.
 3.  **Tier 3: Semantic Recall Index (Qdrant Vector DB)**:
     *   The `SemanticRecallStore` manages a dense vector representation of knowledge points inside **Qdrant**, allowing fast semantic distance searches.

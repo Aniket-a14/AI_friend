@@ -73,6 +73,26 @@ async def reset_dbs():
     except Exception as e:
         print(f"⚠️ Neo4j Reset skipped or encountered an error: {e}")
 
+    # 4. Reset Qdrant Collection
+    from app.state.semantic_recall_store import SemanticRecallStore
+
+    print("🔍 Connecting to Qdrant...")
+    try:
+        store = SemanticRecallStore()
+        if store.client:
+            print(f"🗑️ Recreating Qdrant collection: {store.collection_name}...")
+            try:
+                store.client.delete_collection(store.collection_name)
+                print(f"✅ Deleted Qdrant collection: {store.collection_name}")
+            except Exception as de:
+                print(f"⚠️ Warning: Could not delete Qdrant collection: {de}")
+            store._ensure_collection_exists()
+            print(f"✅ Recreated Qdrant collection: {store.collection_name}")
+        else:
+            print("⚠️ Qdrant client offline. Skipping Qdrant reset.")
+    except Exception as qe:
+        print(f"⚠️ Qdrant Reset skipped or encountered an error: {qe}")
+
     print("✨ --- Cognitive Database Reset Complete ---\n")
 
 

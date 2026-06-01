@@ -17,7 +17,7 @@ import asyncio
 import httpx
 import orjson
 import math
-from datetime import timezone
+from datetime import datetime, timezone, timedelta
 from typing import Iterable
 from ..config import Config
 
@@ -33,6 +33,71 @@ def _cached_ln(x: float) -> float:
     if key not in _LN_CACHE:
         _LN_CACHE[key] = math.log(x)
     return _LN_CACHE[key]
+
+
+def _get_stem(word: str) -> str:
+    w = word.lower()
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith("s") and not w.endswith("ss") and len(w) > 3:
+        w = w[:-1]
+    if w.endswith("ed") and len(w) > 4:
+        if w.endswith("ated"):
+            w = w[:-3] + "e"  # calibrated -> calibrate
+        else:
+            w = w[:-2]
+    if w.endswith("ing") and len(w) > 5:
+        if w.endswith("ating"):
+            w = w[:-5] + "e"  # activating -> activate
+        else:
+            w = w[:-3]
+    return w
+
+
+SYNONYM_MAP = {
+    "cat": ["feline", "mimi", "kitty", "pet"],
+    "dog": ["canine", "bruno", "pup", "pet"],
+    "rain": ["shower", "precipitation", "storm"],
+    "laboratory": ["lab", "research", "facility", "courtyard"],
+    "work": ["job", "project", "task", "develop"],
+    "university": ["college", "academics", "school"],
+    "sweet": ["rasgulla", "dessert", "food", "sugar"],
+    "calibrating": ["calibration", "calibrate", "tune", "setup"],
+    "activating": ["activation", "activate", "initialize", "start"],
+    "developer": ["programmer", "engineer", "coder"],
+}
+
+
+class GoalBuffer:
+    def __init__(self, capacity=5):
+        self.concepts = []  # List of tuples: (concept_word, turn_added)
+        self.capacity = capacity
+        self.current_turn = 0
+
+    def update_buffer(self, query_text, dynamic_stop_words):
+        self.current_turn += 1
+
+        # Extract clean keywords
+        import re
+
+        new_words = re.findall(r"\b\w{3,}\b", query_text.lower())
+        filtered_words = [w for w in new_words if w not in dynamic_stop_words]
+
+        # Add to buffer if not already present
+        for w in filtered_words:
+            # Update turn to keep it fresh
+            self.concepts = [c for c in self.concepts if c[0] != w]
+            self.concepts.append((w, self.current_turn))
+
+        # Retain concepts active for a 3-turn window
+        self.concepts = [c for c in self.concepts if self.current_turn - c[1] <= 3]
+
+        # Cap to capacity
+        if len(self.concepts) > self.capacity:
+            self.concepts = self.concepts[-self.capacity :]
+
+    def flush(self):
+        self.concepts = []
 
 
 class MemoryStore:
@@ -59,9 +124,14 @@ class MemoryStore:
         self._l1_cache = {}  # key -> (timestamp, results)
         self._l1_cache_ttl = 15.0  # seconds
 
+        self._db_stop_words = set()
+        self._last_stop_words_update = 0.0
+
         from .semantic_recall_store import SemanticRecallStore
 
         self.qdrant_store = SemanticRecallStore()
+        self.goal_buffer = GoalBuffer(capacity=5)
+        self._last_query_vector = None
         import sys
 
         if "pytest" in sys.modules:
@@ -466,6 +536,53 @@ class MemoryStore:
             logger.error(f"Failed to add memory: {e}")
             return False
 
+    async def _update_dynamic_stop_words(self):
+        """Fetches high-frequency words from active memories to use as stop words."""
+        try:
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    # SQLite fallback: since SQLite doesn't have regexp_split_to_table,
+                    # we can just fetch content and count in Python
+                    rows = await conn.fetch("SELECT content FROM memories LIMIT 500")
+                    from collections import Counter
+                    import re
+
+                    words = []
+                    for r in rows:
+                        words.extend(re.findall(r"\b\w{3,}\b", r["content"].lower()))
+                    counter = Counter(words)
+                    # Any word appearing in more than 15% of records
+                    cutoff = max(5, int(len(rows) * 0.15))
+                    self._db_stop_words = {
+                        w for w, count in counter.items() if count > cutoff
+                    }
+                else:
+                    # Postgres pgvector: fetch words appearing in > 10% of memories
+                    total = await conn.fetchval("SELECT count(*) FROM memories")
+                    if total and total > 50:
+                        cutoff = max(20, int(total * 0.10))
+                        rows = await conn.fetch(
+                            """
+                            SELECT word, count(*) as cnt
+                            FROM (
+                                SELECT regexp_replace(regexp_split_to_table(lower(content), '\\s+'), '[^\\w]', '', 'g') AS word
+                                FROM memories
+                            ) AS words
+                            WHERE length(word) >= 3
+                            GROUP BY word
+                            HAVING count(*) > $1
+                            ORDER BY cnt DESC
+                            LIMIT 50
+                            """,
+                            cutoff,
+                        )
+                        self._db_stop_words = {r["word"] for r in rows}
+                    else:
+                        self._db_stop_words = set()
+        except Exception as e:
+            logger.debug(f"Failed to load dynamic stop words: {e}")
+            self._db_stop_words = set()
+
     async def search_memories(
         self,
         query_text,
@@ -515,9 +632,37 @@ class MemoryStore:
                 return cached_results
 
         try:
+            # Periodically refresh database-derived stop words (TTL = 5 minutes)
+            if (
+                not hasattr(self, "_last_stop_words_update")
+                or now_ts - self._last_stop_words_update > 300.0
+            ):
+                await self._update_dynamic_stop_words()
+                self._last_stop_words_update = now_ts
+
             query_vector = await self.get_embedding(query_text)
             if not query_vector:
                 return []
+
+            # Topic-Shift check:
+            if self._last_query_vector is not None:
+                try:
+                    dot = sum(
+                        a * b for a, b in zip(query_vector, self._last_query_vector)
+                    )
+                    norm1 = math.sqrt(sum(a * a for a in query_vector))
+                    norm2 = math.sqrt(sum(b * b for b in self._last_query_vector))
+                    sim = (
+                        dot / (norm1 * norm2) if norm1 > 1e-9 and norm2 > 1e-9 else 1.0
+                    )
+                    if sim < 0.15:
+                        logger.info(
+                            f"🔄 Topic Shift Detected (similarity {sim:.3f} < 0.15). Flushing Goal Buffer."
+                        )
+                        self.goal_buffer.flush()
+                except Exception as ts_err:
+                    logger.debug(f"Topic-shift calculation failed: {ts_err}")
+            self._last_query_vector = query_vector
 
             vector_str = str(query_vector)
             excluded = {content for content in (exclude_contents or []) if content}
@@ -640,8 +785,6 @@ class MemoryStore:
                                 if isinstance(last_recall_time, (int, float)):
                                     last_recall_time = float(last_recall_time)
                                 else:
-                                    from datetime import datetime
-
                                     if hasattr(last_recall_time, "timestamp"):
                                         last_recall_time = last_recall_time.timestamp()
                                     else:
@@ -685,8 +828,6 @@ class MemoryStore:
 
                         if score <= (threshold - 2.5):
                             continue
-
-                        from datetime import datetime
 
                         created_val = meta.get("created_at")
                         try:
@@ -760,7 +901,6 @@ class MemoryStore:
 
                         # Manual cosine similarity and ACT-R scoring (Delegated to Rust PyO3)
                         import cognitive_rust
-                        from datetime import datetime
 
                         now = datetime.now(timezone.utc)
                         now_ts = now.timestamp()
@@ -936,8 +1076,6 @@ class MemoryStore:
 
                             # Recalculate score with neuromodulatory gating
                             last_recall = row.get("last_recalled_at")
-                            from datetime import datetime
-
                             now = datetime.now(timezone.utc)
 
                             if last_recall is None:
@@ -1209,12 +1347,42 @@ class MemoryStore:
                 "compare",
                 "influence",
                 "influenced",
+                "friend",
+                "companion",
+                "robot",
+                "human",
+                "development",
+                "developer",
+                "developers",
+                "project",
+                "workspace",
+                "shared",
+                "recall",
+                "recalled",
+                "experience",
+                "experiences",
+                "about",
+                "related",
             }
 
             import re
 
             query_words = re.findall(r"\b\w{3,}\b", query_text.lower())
-            matched_cues = [w for w in query_words if w not in stop_words]
+
+            # Dynamic stop words resolution to avoid hardcoding production names
+            dynamic_stop_words = set(stop_words)
+            if hasattr(self, "_db_stop_words") and self._db_stop_words:
+                dynamic_stop_words.update(self._db_stop_words)
+            ai_name_cfg = getattr(Config, "AI_NAME", None)
+            if ai_name_cfg:
+                for w in re.findall(r"\b\w{3,}\b", ai_name_cfg.lower()):
+                    dynamic_stop_words.add(w)
+            if user_id:
+                for w in re.findall(r"\b\w{3,}\b", user_id.lower()):
+                    dynamic_stop_words.add(w)
+
+            matched_cues = [w for w in query_words if w not in dynamic_stop_words]
+            self.goal_buffer.update_buffer(query_text, dynamic_stop_words)
 
             # Direct cue boost and dynamic pronoun resolution
             direct_boosted_indices = set()
@@ -1340,7 +1508,7 @@ class MemoryStore:
             if user_node_name:
                 user_aliases.add(user_node_name.lower())
 
-            agent_aliases = {"aniket", "ai friend", "my friend"}
+            agent_aliases = {"ai friend", "my friend"}
             if hasattr(Config, "AI_NAME") and Config.AI_NAME:
                 agent_aliases.add(Config.AI_NAME.lower())
             if agent_node_name:
@@ -1363,7 +1531,7 @@ class MemoryStore:
                 for idx, cand in enumerate(raw_candidates):
                     content_lower = cand["content"].lower()
                     if any(mc in content_lower for mc in matched_cues):
-                        cand["score"] += 1.2
+                        cand["score"] += 3.5
                         direct_boosted_indices.add(idx)
 
             # HippoRAG-Inspired Personalized PageRank (PPR) Engine
@@ -1489,6 +1657,20 @@ class MemoryStore:
                 except Exception as ne_err:
                     logger.error(f"PPR spreading activation failed: {ne_err}")
 
+            # Native Goal Buffer Spreading Activation
+            active_concepts = [c[0] for c in self.goal_buffer.concepts]
+            if active_concepts:
+                for cand in raw_candidates:
+                    content_lower = cand["content"].lower()
+                    match_count = sum(1 for c in active_concepts if c in content_lower)
+                    if match_count > 0:
+                        w_j = 1.5 / len(active_concepts)
+                        boost = match_count * w_j * 1.2
+                        cand["score"] += boost
+                        logger.debug(
+                            f"GoalBuffer Prime: Added +{boost:.3f} spreading activation to memory {cand['id']}"
+                        )
+
             # 4. Filter by final threshold, format and return results
             results = []
             for cand in raw_candidates:
@@ -1518,6 +1700,320 @@ class MemoryStore:
                 res_dict["modality"] = cand.get("modality")
 
                 results.append(res_dict)
+
+            # L3 Sub-conscious Search and Promotion
+            if matched_cues:
+                # 1. Fetch top candidates from archived_memories
+                archive_rows = []
+
+                # Apply lexical priming/synonym expansion to cues
+                expanded_cues = set()
+                for cue in matched_cues:
+                    expanded_cues.add(cue)
+                    stem = _get_stem(cue)
+                    expanded_cues.add(stem)
+                    if stem in SYNONYM_MAP:
+                        expanded_cues.update(SYNONYM_MAP[stem])
+                    if cue in SYNONYM_MAP:
+                        expanded_cues.update(SYNONYM_MAP[cue])
+
+                expanded_cues_list = list(expanded_cues)
+                patterns = [f"%{cue}%" for cue in expanded_cues_list]
+                archive_limit = 50  # Fetch more candidates to rank by keyword match count and ACT-R score
+
+                try:
+                    async with self.pool.acquire() as conn:
+                        if self.is_sqlite:
+                            where_clause = " OR ".join(
+                                "lower(content) LIKE ?" for _ in expanded_cues_list
+                            )
+                            query = f"""
+                                SELECT * FROM archived_memories
+                                WHERE wing = ? AND ({where_clause})
+                                ORDER BY importance_score DESC, last_recalled_at DESC
+                                LIMIT ?
+                            """
+                            archive_rows = await conn.fetch(
+                                query, wing, *patterns, archive_limit
+                            )
+                        else:
+                            # Postgres pgvector: Hybrid Semantic + Lexical Synonym search using HNSW index over halfvec
+                            query = """
+                                SELECT *, (1 - (embedding <=> $2::halfvec))::double precision AS similarity_arch
+                                FROM archived_memories
+                                WHERE wing = $1 AND (embedding <=> $2::halfvec < 0.45 OR content ILIKE ANY($3))
+                                ORDER BY similarity_arch DESC, importance_score DESC
+                                LIMIT $4
+                            """
+                            archive_rows = await conn.fetch(
+                                query, wing, vector_str, patterns, archive_limit
+                            )
+                except Exception as arch_err:
+                    logger.error(f"Archived memories hybrid lookup failed: {arch_err}")
+
+                if archive_rows:
+                    # Sort archive_rows by number of matched cues in Python
+                    def get_match_count(row):
+                        content_lower = row["content"].lower()
+                        return sum(1 for cue in expanded_cues if cue in content_lower)
+
+                    def get_timestamp(row):
+                        val = row.get("last_recalled_at")
+                        if not val:
+                            return 0
+                        if isinstance(val, (int, float)):
+                            return float(val)
+                        if hasattr(val, "timestamp"):
+                            return val.timestamp()
+                        try:
+                            return datetime.fromisoformat(
+                                str(val).replace(" ", "T")
+                            ).timestamp()
+                        except Exception:
+                            return 0
+
+                    # Rank by match count descending, then by importance score descending, then by similarity_arch descending, then by last_recalled_at descending
+                    archive_rows = sorted(
+                        archive_rows,
+                        key=lambda r: (
+                            get_match_count(r),
+                            r.get("importance_score") or 0.5,
+                            r.get("similarity_arch") or 0.0,
+                            get_timestamp(r),
+                        ),
+                        reverse=True,
+                    )
+                    # Limit the actual promotion list to prevent flooding and excessive embedding calls
+                    promote_limit = min(5, limit) if limit else 5
+                    archive_rows = archive_rows[:promote_limit]
+
+                # 2. Score and promote candidates
+                promoted_results = []
+                for row in archive_rows:
+                    content = row["content"]
+                    # Generate embedding on-the-fly
+                    emb = await self.get_embedding(content)
+                    if not emb:
+                        continue
+
+                    # Calculate similarity
+                    import numpy as np
+
+                    q_arr = np.array(query_vector)
+                    emb_arr = np.array(emb)
+                    norm_q = np.linalg.norm(q_arr)
+                    norm_emb = np.linalg.norm(emb_arr)
+                    if norm_q > 0 and norm_emb > 0:
+                        similarity = float(np.dot(q_arr, emb_arr) / (norm_q * norm_emb))
+                    else:
+                        similarity = 0.0
+
+                    recall_count = max(1, row.get("recall_count") or 1)
+                    last_recall = row.get("last_recalled_at")
+                    now = (
+                        current_time
+                        if current_time is not None
+                        else datetime.now(timezone.utc)
+                    )
+                    if last_recall is None:
+                        last_recall = now
+                    elif last_recall.tzinfo is None:
+                        last_recall = last_recall.replace(tzinfo=timezone.utc)
+
+                    hours_since = max(
+                        0.001, (now - last_recall).total_seconds() / 3600.0
+                    )
+                    memory_valence = row.get("valence") or 0.0
+                    emotion_weight_row = row.get("emotional_weight") or 0.0
+
+                    dist_emo = math.sqrt(
+                        (memory_valence - current_valence) ** 2
+                        + (emotion_weight_row - current_arousal) ** 2
+                    )
+
+                    base_activation = (
+                        _cached_ln(recall_count)
+                        - self.decay_rate * _cached_ln(hours_since + 1.0)
+                        + 1.5 * (row.get("importance_score") or 0.5)
+                        + 0.15 * (1.0 - dist_emo)
+                    )
+
+                    effective_similarity = similarity * (
+                        1.0
+                        + 0.1 * memory_valence * emotion_weight_row
+                        - 0.2 * current_arousal * current_cortisol
+                    )
+
+                    spread_activation = self.spread_weight * effective_similarity
+                    score = base_activation + spread_activation - 0.5 * dist_emo
+
+                    # Only promote if it passes the threshold
+                    if score > (threshold - 2.5):
+                        mem_id = str(row["id"])
+                        raw_meta = row.get("metadata")
+                        import json
+
+                        if isinstance(raw_meta, str):
+                            try:
+                                raw_meta = json.loads(raw_meta)
+                            except Exception:
+                                raw_meta = {}
+                        elif not isinstance(raw_meta, dict):
+                            raw_meta = {}
+
+                        # Ensure entities are computed
+                        payload_meta = {
+                            "wing": row.get("wing", "personal"),
+                            "room": row.get("room") or "",
+                            "importance_score": row.get("importance_score"),
+                            "emotional_weight": row.get("emotional_weight"),
+                            "valence": row.get("valence"),
+                            "certainty": row.get("certainty"),
+                            "source": row.get("source"),
+                            "created_at": row.get("created_at").isoformat()
+                            if row.get("created_at")
+                            else None,
+                            "lifespan_stage": row.get("lifespan_stage") or "",
+                            "crisis": row.get("crisis") or "",
+                            "virtue": row.get("virtue") or "",
+                            "relations": row.get("relations") or "",
+                            "relation_circles": row.get("relation_circles") or "",
+                            "modality": row.get("modality") or "",
+                            **(raw_meta or {}),
+                        }
+
+                        # SQLite vs Postgres insert
+                        try:
+                            async with self.pool.acquire() as conn:
+                                if self.is_sqlite:
+                                    await conn.execute(
+                                        """
+                                        INSERT INTO memories (
+                                            id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
+                                            valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                            metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
+                                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        """,
+                                        mem_id,
+                                        content,
+                                        row.get("raw_content"),
+                                        row.get("wing"),
+                                        row.get("room"),
+                                        str(emb),
+                                        row.get("importance_score"),
+                                        row.get("emotional_weight"),
+                                        row.get("valence"),
+                                        row.get("certainty"),
+                                        row.get("source"),
+                                        recall_count + 1,
+                                        now,
+                                        row.get("created_at"),
+                                        json.dumps(payload_meta),
+                                        row.get("lifespan_stage"),
+                                        row.get("crisis"),
+                                        row.get("virtue"),
+                                        row.get("relations"),
+                                        row.get("relation_circles"),
+                                        row.get("modality"),
+                                    )
+                                    await conn.execute(
+                                        "DELETE FROM archived_memories WHERE id = ?",
+                                        mem_id,
+                                    )
+                                else:
+                                    await conn.execute(
+                                        """
+                                        INSERT INTO memories (
+                                            id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
+                                            valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                            metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
+                                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                                        """,
+                                        row["id"],
+                                        content,
+                                        row.get("raw_content"),
+                                        row.get("wing"),
+                                        row.get("room"),
+                                        str(emb),
+                                        row.get("importance_score"),
+                                        row.get("emotional_weight"),
+                                        row.get("valence"),
+                                        row.get("certainty"),
+                                        row.get("source"),
+                                        recall_count + 1,
+                                        now,
+                                        row.get("created_at"),
+                                        json.dumps(payload_meta),
+                                        row.get("lifespan_stage"),
+                                        row.get("crisis"),
+                                        row.get("virtue"),
+                                        row.get("relations"),
+                                        row.get("relation_circles"),
+                                        row.get("modality"),
+                                    )
+                                    await conn.execute(
+                                        "DELETE FROM archived_memories WHERE id = $1",
+                                        row["id"],
+                                    )
+
+                            # Upsert Qdrant
+                            if self.qdrant_store and self.qdrant_store.client:
+                                await asyncio.to_thread(
+                                    self.qdrant_store.add_vector_memory,
+                                    mem_id,
+                                    emb,
+                                    content,
+                                    payload_meta,
+                                )
+
+                            logger.info(
+                                f"📥 [Memory Promotion] Promoted memory '{content[:40]}...' from archive back to active storage."
+                            )
+                        except Exception as prom_err:
+                            logger.error(
+                                f"Failed to promote memory {mem_id}: {prom_err}"
+                            )
+
+                        created = row.get("created_at")
+                        if created and created.tzinfo is None:
+                            created = created.replace(tzinfo=timezone.utc)
+
+                        # Recalculate active score since it is now promoted and last_recalled_at is set to now (hours_since = 0.001)
+                        # We use recall_count + 1 since the recall_count has been incremented upon recall/promotion
+                        base_activation_active = (
+                            _cached_ln(recall_count + 1)
+                            - self.decay_rate * _cached_ln(0.001 + 1.0)
+                            + 1.5 * (row.get("importance_score") or 0.5)
+                            + 0.15 * (1.0 - dist_emo)
+                        )
+                        score_active = (
+                            base_activation_active + spread_activation - 0.5 * dist_emo
+                        )
+                        # Apply direct cue boost (+3.5) since it was promoted due to keyword matches
+                        score_active += 3.5
+
+                        promoted_results.append(
+                            {
+                                "content": content,
+                                "raw_content": row.get("raw_content") or content,
+                                "wing": row.get("wing", "personal"),
+                                "room": row.get("room"),
+                                "score": score_active,
+                                "valence": row.get("valence") or 0.0,
+                                "created_at": created.isoformat() if created else None,
+                                "recall_count": recall_count + 1,
+                                "metadata": raw_meta or {},
+                                "lifespan_stage": row.get("lifespan_stage"),
+                                "crisis": row.get("crisis"),
+                                "virtue": row.get("virtue"),
+                                "relations": row.get("relations"),
+                                "relation_circles": row.get("relation_circles"),
+                                "modality": row.get("modality"),
+                            }
+                        )
+
+                if promoted_results:
+                    results.extend(promoted_results)
 
             if results:
                 # Sort and limit results to maintain full compatibility with offline tests
@@ -1735,7 +2231,6 @@ class MemoryStore:
 
     async def apply_actr_decay(self, memory_contents: list[str], current_time=None):
         """Decays the importance score of consolidated raw episodic memories using ACT-R feedback."""
-        from datetime import datetime
         import json
 
         try:
@@ -1833,39 +2328,88 @@ class MemoryStore:
                     # Shield recent memories created in the last 24 hours from pruning (deletion)
                     is_shielded = hours_since < 24.0
 
-                    # Milestones (importance >= 0.7) are NEVER pruned or decayed
-                    if importance_score >= 0.7:
-                        continue
-
-                    # Calculate base activation: A_i = ln(recall_count) - d * ln(hours_since + 1.0)
+                    # Milestones (importance >= 0.7) are protected from active importance decay,
+                    # but they are allowed to decay and be pruned to the archive when inactive.
                     activation = math.log(n_recalls) - decay_rate * math.log(
                         hours_since + 1.0
                     )
 
                     # Dual-threshold active pruning:
-                    # Distractors (< 0.5) pruned below -3.5, Anecdotes (0.5 to 0.7) pruned below -4.5
+                    # Distractors (< 0.5) pruned below -3.5, Anecdotes/Milestones (>= 0.5) pruned below -4.5
                     threshold = -3.5 if importance_score < 0.5 else -4.5
                     if activation < threshold and not is_shielded:
                         to_delete.append(mem_id)
-                    else:
-                        # Decay importance score slightly
+                    elif importance_score < 0.7:
+                        # Decay importance score slightly for non-milestones
                         new_importance = max(0.01, importance_score * 0.8)
                         to_update.append((new_importance, mem_id))
 
-                # 2. Execute Deletions and Updates
+                # 2. Execute Archiving, Deletions and Updates
                 if to_delete:
                     if self.is_sqlite:
                         placeholders = ",".join("?" for _ in to_delete)
+                        # Copy to archived_memories
+                        await conn.execute(
+                            f"""
+                            INSERT INTO archived_memories (
+                                id, content, raw_content, wing, room, importance_score, emotional_weight,
+                                valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                            )
+                            SELECT
+                                id, content, raw_content, wing, room, importance_score, emotional_weight,
+                                valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                            FROM memories
+                            WHERE id IN ({placeholders})
+                            """,
+                            *to_delete,
+                        )
+                        # Delete from memories
                         await conn.execute(
                             f"DELETE FROM memories WHERE id IN ({placeholders})",
                             *to_delete,
                         )
                     else:
+                        # Copy to archived_memories
+                        await conn.execute(
+                            """
+                            INSERT INTO archived_memories (
+                                id, content, raw_content, wing, room, importance_score, emotional_weight,
+                                valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                            )
+                            SELECT
+                                id, content, raw_content, wing, room, importance_score, emotional_weight,
+                                valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding::halfvec
+                            FROM memories
+                            WHERE id = ANY($1)
+                            """,
+                            to_delete,
+                        )
+                        # Delete from memories
                         await conn.execute(
                             "DELETE FROM memories WHERE id = ANY($1)", to_delete
                         )
+
+                    # Delete from Qdrant if active
+                    if self.qdrant_store and self.qdrant_store.client:
+                        try:
+                            from qdrant_client.http import models
+
+                            await asyncio.to_thread(
+                                self.qdrant_store.client.delete,
+                                collection_name=self.qdrant_store.collection_name,
+                                points_selector=models.PointIdsList(
+                                    points=[str(pid) for pid in to_delete]
+                                ),
+                            )
+                        except Exception as qe:
+                            logger.error(f"Failed to delete points from Qdrant: {qe}")
+
                     logger.info(
-                        f"🗑️ Pruned {len(to_delete)} memories with base activation below {self.pruning_threshold}."
+                        f"🗑️ Pruned {len(to_delete)} memories with base activation below {self.pruning_threshold} to subconscious archive."
                     )
 
                 if to_update:
@@ -1882,6 +2426,47 @@ class MemoryStore:
                             "UPDATE memories SET importance_score = $1 WHERE id = $2",
                             to_update,
                         )
+
+                # 3. Permanent Cleanup on archived_memories based on biological timelines
+                now_cleanup = (
+                    current_time
+                    if current_time is not None
+                    else datetime.now(timezone.utc)
+                )
+                cutoff_distractors = now_cleanup - timedelta(days=30)
+                cutoff_anecdotes = now_cleanup - timedelta(days=180)
+                cutoff_milestones = now_cleanup - timedelta(days=720)
+
+                try:
+                    if self.is_sqlite:
+                        await conn.execute(
+                            """
+                            DELETE FROM archived_memories
+                            WHERE (importance_score < 0.5 AND last_recalled_at < ?)
+                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND last_recalled_at < ?)
+                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND last_recalled_at < ?);
+                            """,
+                            cutoff_distractors,
+                            cutoff_anecdotes,
+                            cutoff_milestones,
+                        )
+                    else:
+                        await conn.execute(
+                            """
+                            DELETE FROM archived_memories
+                            WHERE (importance_score < 0.5 AND last_recalled_at < $1)
+                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND last_recalled_at < $2)
+                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND last_recalled_at < $3);
+                            """,
+                            cutoff_distractors,
+                            cutoff_anecdotes,
+                            cutoff_milestones,
+                        )
+                    logger.info(
+                        "🗑️ Completed permanent cleanup on subconscious archived memories."
+                    )
+                except Exception as clean_err:
+                    logger.error(f"Failed subconscious archive cleanup: {clean_err}")
 
             logger.info(
                 f"📉 Checked and decayed {len(rows)} memories (pruned: {len(to_delete)})."
