@@ -7,7 +7,8 @@ from app.llm.ollama_client import OllamaClient
 
 @pytest.fixture
 def ollama_client():
-    return OllamaClient(base_url="http://mock-ollama:11434")
+    with patch("app.llm.ollama_client.Config.MOCK_LLM_TEXT", False):
+        yield OllamaClient(base_url="http://mock-ollama:11434")
 
 
 class AsyncIterator:

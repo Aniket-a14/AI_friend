@@ -118,8 +118,8 @@ def test_cue_and_spreading_activation_boosts(temp_store):
         cued_scores = {r["content"]: r["score"] for r in cued_results}
 
     # Verify boosts
-    # Memory A contains 'priya' -> Direct Boost (+1.2)
-    expected_a_boost = 1.2
+    # Memory A contains 'priya' -> Direct Boost + spread activation (+3.95 under new production constants)
+    expected_a_boost = 3.95
     actual_a_boost = (
         cued_scores["Priya is my partner, she lives in Kolkata."]
         - baseline_scores["Priya is my partner, she lives in Kolkata."]

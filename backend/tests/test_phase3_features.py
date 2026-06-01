@@ -70,6 +70,31 @@ async def test_neuromodulatory_gating_and_actr_pruning():
                 modality TEXT
             )
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS archived_memories (
+                id TEXT PRIMARY KEY,
+                content TEXT,
+                raw_content TEXT,
+                wing TEXT,
+                room TEXT,
+                embedding TEXT,
+                importance_score REAL,
+                emotional_weight REAL,
+                valence REAL,
+                certainty REAL,
+                source TEXT,
+                metadata TEXT,
+                recall_count INTEGER,
+                last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                lifespan_stage TEXT,
+                crisis TEXT,
+                virtue TEXT,
+                relations TEXT,
+                relation_circles TEXT,
+                modality TEXT
+            )
+        """)
 
     # 3. Add personal memories with different emotional weights
     res1 = await mem_store.add_memory(
