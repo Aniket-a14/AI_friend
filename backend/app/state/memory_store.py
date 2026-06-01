@@ -904,7 +904,11 @@ class MemoryStore:
                         # Manual cosine similarity and ACT-R scoring (Delegated to Rust PyO3)
                         import cognitive_rust
 
-                        now = datetime.now(timezone.utc)
+                        now = (
+                            current_time
+                            if current_time is not None
+                            else datetime.now(timezone.utc)
+                        )
                         now_ts = now.timestamp()
 
                         # Preprocess timestamps for Rust
@@ -1025,7 +1029,7 @@ class MemoryStore:
                                     m.relations,
                                     m.relation_circles,
                                     m.modality
-                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer) s
+                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer, $10::timestamptz) s
                                 LEFT JOIN memories m ON m.content = s.content AND m.wing = s.wing
                                 """,
                                 vector_str,
@@ -1037,6 +1041,7 @@ class MemoryStore:
                                 current_valence,
                                 threshold - 2.5,
                                 candidate_limit,
+                                current_time,
                             )
                         except Exception as pg_err:
                             logger.warning(
@@ -1059,7 +1064,7 @@ class MemoryStore:
                                     s.metadata,
                                     s.similarity,
                                     s.score
-                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer) s
+                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer, $10::timestamptz) s
                                 LEFT JOIN memories m ON m.content = s.content AND m.wing = s.wing
                                 """,
                                 vector_str,
@@ -1071,6 +1076,7 @@ class MemoryStore:
                                 current_valence,
                                 threshold - 2.5,
                                 candidate_limit,
+                                current_time,
                             )
 
                         for row in rows:
@@ -1082,7 +1088,11 @@ class MemoryStore:
 
                             # Recalculate score with neuromodulatory gating
                             last_recall = row.get("last_recalled_at")
-                            now = datetime.now(timezone.utc)
+                            now = (
+                                current_time
+                                if current_time is not None
+                                else datetime.now(timezone.utc)
+                            )
 
                             if last_recall is None:
                                 last_recall = now
@@ -1749,7 +1759,7 @@ class MemoryStore:
                                 SELECT *, (1 - (embedding <=> $2::halfvec))::double precision AS similarity_arch
                                 FROM archived_memories
                                 WHERE wing = $1 AND (embedding <=> $2::halfvec < 0.45 OR content ILIKE ANY($3))
-                                ORDER BY similarity_arch DESC, importance_score DESC
+                                ORDER BY importance_score DESC, similarity_arch DESC
                                 LIMIT $4
                             """
                             archive_rows = await conn.fetch(
@@ -1789,12 +1799,12 @@ class MemoryStore:
                         except Exception:
                             return 0
 
-                    # Rank by match count descending, then by importance score descending, then by similarity_arch descending, then by last_recalled_at descending
+                    # Rank by importance score descending, then by match count descending, then by similarity_arch descending, then by last_recalled_at descending
                     archive_rows = sorted(
                         archive_rows,
                         key=lambda r: (
-                            get_match_count(r),
                             r.get("importance_score") or 0.5,
+                            get_match_count(r),
                             r.get("similarity_arch") or 0.0,
                             get_timestamp(r),
                         ),
