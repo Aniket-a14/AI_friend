@@ -127,6 +127,8 @@ create or replace function surface_actr_memories (
   p_spread_weight double precision,
   p_emotion_weight double precision,
   p_current_valence double precision,
+  p_current_arousal double precision,
+  p_current_cortisol double precision,
   p_threshold double precision,
   p_limit int,
   p_simulated_time timestamptz default null
@@ -167,21 +169,40 @@ begin
     (1 - (m.embedding <=> query_embedding))::double precision as similarity,
     (
       -- ACT-R Base-Level Activation (B_i)
-      ln(greatest(1, m.recall_count)) - p_decay_rate * ln(greatest(0.001, extract(epoch from (now_ts - coalesce(m.last_recalled_at, now_ts))) / 3600.0) + 1)
-      -- Spreading Activation (Similarity)
-      + p_spread_weight * (1 - (m.embedding <=> query_embedding))
-      -- Emotional Alignment (Bower)
-      + p_emotion_weight * exp(-abs(coalesce(m.valence, 0.0) - p_current_valence))
+      -- ln(greatest(1, recall_count)) - decay * ln(hours_since + 1) + 1.5 * importance_score + 0.15 * (1 - dist_emo)
+      ln(greatest(1, m.recall_count))
+      - p_decay_rate * ln(greatest(0.001, extract(epoch from (now_ts - coalesce(m.last_recalled_at, now_ts))) / 3600.0) + 1)
+      + 1.5 * coalesce(m.importance_score, 0.5)
+      + 0.15 * (1.0 - sqrt(power(coalesce(m.valence, 0.0) - p_current_valence, 2) + power(coalesce(m.emotional_weight, 0.0) - p_current_arousal, 2)))
+
+      -- Spreading Activation (Similarity with neuromodulatory gating)
+      -- spread_weight * similarity * (1.0 + 0.1 * valence * emotional_weight - 0.2 * current_arousal * current_cortisol)
+      + p_spread_weight * (1.0 - (m.embedding <=> query_embedding)) * (
+        1.0
+        + 0.1 * coalesce(m.valence, 0.0) * coalesce(m.emotional_weight, 0.0)
+        - 0.2 * p_current_arousal * p_current_cortisol
+      )
+
+      -- Bower Emotional Proximity adjustment: -0.5 * dist_emo
+      - 0.5 * sqrt(power(coalesce(m.valence, 0.0) - p_current_valence, 2) + power(coalesce(m.emotional_weight, 0.0) - p_current_arousal, 2))
     )::double precision as score
   from memories m
   where m.wing = p_wing
     and (p_room is null or m.room = p_room)
     and (
       (
-        ln(greatest(1, m.recall_count)) - p_decay_rate * ln(greatest(0.001, extract(epoch from (now_ts - coalesce(m.last_recalled_at, now_ts))) / 3600.0) + 1)
-        + p_spread_weight * (1 - (m.embedding <=> query_embedding))
-        + p_emotion_weight * exp(-abs(coalesce(m.valence, 0.0) - p_current_valence))
+        ln(greatest(1, m.recall_count))
+        - p_decay_rate * ln(greatest(0.001, extract(epoch from (now_ts - coalesce(m.last_recalled_at, now_ts))) / 3600.0) + 1)
+        + 1.5 * coalesce(m.importance_score, 0.5)
+        + 0.15 * (1.0 - sqrt(power(coalesce(m.valence, 0.0) - p_current_valence, 2) + power(coalesce(m.emotional_weight, 0.0) - p_current_arousal, 2)))
+        + p_spread_weight * (1.0 - (m.embedding <=> query_embedding)) * (
+          1.0
+          + 0.1 * coalesce(m.valence, 0.0) * coalesce(m.emotional_weight, 0.0)
+          - 0.2 * p_current_arousal * p_current_cortisol
+        )
+        - 0.5 * sqrt(power(coalesce(m.valence, 0.0) - p_current_valence, 2) + power(coalesce(m.emotional_weight, 0.0) - p_current_arousal, 2))
       ) > p_threshold
+      or m.importance_score >= 0.7
     )
   order by score desc
   limit p_limit;

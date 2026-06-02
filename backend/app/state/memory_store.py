@@ -65,6 +65,14 @@ SYNONYM_MAP = {
     "calibrating": ["calibration", "calibrate", "tune", "setup"],
     "activating": ["activation", "activate", "initialize", "start"],
     "developer": ["programmer", "engineer", "coder"],
+    "grew": ["grow", "growth", "growing"],
+    "grow": ["grew", "growth", "growing"],
+    "spent": ["spend", "spending"],
+    "spend": ["spent", "spending"],
+    "slept": ["sleep", "sleeping"],
+    "sleep": ["slept", "sleeping"],
+    "sipped": ["sip", "sipping"],
+    "sip": ["sipped", "sipping"],
 }
 
 
@@ -828,7 +836,7 @@ class MemoryStore:
                         spread_activation = self.spread_weight * effective_similarity
                         score = base_activation + spread_activation - 0.5 * dist_emo
 
-                        if score <= (threshold - 2.5):
+                        if score <= (threshold - 2.5) and importance_score < 0.7:
                             continue
 
                         created_val = meta.get("created_at")
@@ -1029,7 +1037,7 @@ class MemoryStore:
                                     m.relations,
                                     m.relation_circles,
                                     m.modality
-                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer, $10::timestamptz) s
+                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::double precision, $10::double precision, $11::integer, $12::timestamptz) s
                                 LEFT JOIN memories m ON m.content = s.content AND m.wing = s.wing
                                 """,
                                 vector_str,
@@ -1039,6 +1047,8 @@ class MemoryStore:
                                 self.spread_weight,
                                 self.emotion_weight,
                                 current_valence,
+                                current_arousal,
+                                current_cortisol,
                                 threshold - 2.5,
                                 candidate_limit,
                                 current_time,
@@ -1064,7 +1074,7 @@ class MemoryStore:
                                     s.metadata,
                                     s.similarity,
                                     s.score
-                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::integer, $10::timestamptz) s
+                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::double precision, $10::double precision, $11::integer, $12::timestamptz) s
                                 LEFT JOIN memories m ON m.content = s.content AND m.wing = s.wing
                                 """,
                                 vector_str,
@@ -1074,6 +1084,8 @@ class MemoryStore:
                                 self.spread_weight,
                                 self.emotion_weight,
                                 current_valence,
+                                current_arousal,
+                                current_cortisol,
                                 threshold - 2.5,
                                 candidate_limit,
                                 current_time,
@@ -1131,7 +1143,10 @@ class MemoryStore:
                             )
                             score = base_activation + spread_activation - 0.5 * dist_emo
 
-                            if score <= (threshold - 2.5):
+                            if (
+                                score <= (threshold - 2.5)
+                                and (row.get("importance_score") or 0.5) < 0.7
+                            ):
                                 continue
 
                             created = row.get("created_at")
@@ -1448,11 +1463,11 @@ class MemoryStore:
                 if not agent_node_name:
                     ai_name = getattr(Config, "AI_NAME", "AI Friend")
                     for name in entity_names:
-                        if name.lower() == ai_name.lower() or name.lower() == "aniket":
+                        if name.lower() == ai_name.lower():
                             agent_node_name = name
                             break
                 if not agent_node_name:
-                    agent_node_name = "Aniket"
+                    agent_node_name = getattr(Config, "AI_NAME", "AI Friend")
 
                 # 2. Discover User Node Name dynamically
                 if user_id:
@@ -1475,7 +1490,6 @@ class MemoryStore:
                     ai_names = {
                         "ai friend",
                         "my friend",
-                        "aniket",
                         agent_node_name.lower(),
                     }
                     if hasattr(Config, "AI_NAME") and Config.AI_NAME:
@@ -1723,9 +1737,24 @@ class MemoryStore:
                 # 1. Fetch top candidates from archived_memories
                 archive_rows = []
 
+                # Use query words except standard/dynamic stop words, but preserve user_id names for L3 search
+                archive_stop_words = set(dynamic_stop_words)
+                if user_id:
+                    for w in re.findall(r"\b\w{3,}\b", user_id.lower()):
+                        archive_stop_words.discard(w)
+                archive_cues = [w for w in query_words if w not in archive_stop_words]
+
+                # Also include any resolved cues (like agent name / resolved user name)
+                for cue in resolved_cues:
+                    if cue not in archive_cues:
+                        archive_cues.append(cue)
+
+                if not archive_cues:
+                    archive_cues = list(matched_cues)
+
                 # Apply lexical priming/synonym expansion to cues
                 expanded_cues = set()
-                for cue in matched_cues:
+                for cue in archive_cues:
                     expanded_cues.add(cue)
                     stem = _get_stem(cue)
                     expanded_cues.add(stem)
@@ -1736,7 +1765,7 @@ class MemoryStore:
 
                 expanded_cues_list = list(expanded_cues)
                 patterns = [f"%{cue}%" for cue in expanded_cues_list]
-                archive_limit = 50  # Fetch more candidates to rank by keyword match count and ACT-R score
+                archive_limit = 250  # Fetch more candidates to rank by keyword match count and ACT-R score
 
                 try:
                     async with self.pool.acquire() as conn:
@@ -1759,7 +1788,7 @@ class MemoryStore:
                                 SELECT *, (1 - (embedding <=> $2::halfvec))::double precision AS similarity_arch
                                 FROM archived_memories
                                 WHERE wing = $1 AND (embedding <=> $2::halfvec < 0.45 OR content ILIKE ANY($3))
-                                ORDER BY importance_score DESC, similarity_arch DESC
+                                ORDER BY coalesce((1 - (embedding <=> $2::halfvec)), 0.0) DESC, importance_score DESC, last_recalled_at DESC
                                 LIMIT $4
                             """
                             archive_rows = await conn.fetch(
@@ -1779,270 +1808,366 @@ class MemoryStore:
                     ]
 
                 if archive_rows:
-                    # Sort archive_rows by number of matched cues in Python
-                    def get_match_count(row):
-                        content_lower = row.get("content", "").lower()
-                        return sum(1 for cue in expanded_cues if cue in content_lower)
+                    # Sort archive_rows by score and keyword matches
+                    # Rank candidates by matching cues and ACT-R score calculated in Python
+                    scored_archive_rows = []
+                    for row in archive_rows:
+                        content = row.get("content", "")
 
-                    def get_timestamp(row):
-                        val = row.get("last_recalled_at")
-                        if not val:
-                            return 0
-                        if isinstance(val, (int, float)):
-                            return float(val)
-                        if hasattr(val, "timestamp"):
-                            return val.timestamp()
-                        try:
-                            return datetime.fromisoformat(
-                                str(val).replace(" ", "T")
-                            ).timestamp()
-                        except Exception:
-                            return 0
+                        # Get similarity
+                        similarity = row.get("similarity_arch")
+                        if similarity is None:
+                            # Fallback: parse embedding and compute similarity
+                            emb_val = row.get("embedding")
+                            emb = None
+                            if emb_val:
+                                if isinstance(emb_val, str):
+                                    try:
+                                        import json
 
-                    # Rank by importance score descending, then by match count descending, then by similarity_arch descending, then by last_recalled_at descending
-                    archive_rows = sorted(
-                        archive_rows,
-                        key=lambda r: (
-                            r.get("importance_score") or 0.5,
-                            get_match_count(r),
-                            r.get("similarity_arch") or 0.0,
-                            get_timestamp(r),
-                        ),
-                        reverse=True,
-                    )
-                    # Limit the actual promotion list to prevent flooding and excessive embedding calls
-                    promote_limit = min(5, limit) if limit else 5
-                    archive_rows = archive_rows[:promote_limit]
+                                        emb = json.loads(emb_val)
+                                    except Exception:
+                                        import re
 
-                # 2. Score and promote candidates
-                promoted_results = []
-                for row in archive_rows:
-                    content = row["content"]
-                    # Generate embedding on-the-fly
-                    emb = await self.get_embedding(content)
-                    if not emb:
-                        continue
+                                        try:
+                                            emb = [
+                                                float(x)
+                                                for x in re.findall(
+                                                    r"[-+]?\d*\.\d+|\d+e[-+]?\d+|[-+]?\d+",
+                                                    emb_val,
+                                                )
+                                            ]
+                                        except Exception:
+                                            pass
+                                elif isinstance(emb_val, list):
+                                    emb = emb_val
+                            if emb and query_vector:
+                                import numpy as np
 
-                    # Calculate similarity
-                    import numpy as np
-
-                    q_arr = np.array(query_vector)
-                    emb_arr = np.array(emb)
-                    norm_q = np.linalg.norm(q_arr)
-                    norm_emb = np.linalg.norm(emb_arr)
-                    if norm_q > 0 and norm_emb > 0:
-                        similarity = float(np.dot(q_arr, emb_arr) / (norm_q * norm_emb))
-                    else:
-                        similarity = 0.0
-
-                    recall_count = max(1, row.get("recall_count") or 1)
-                    last_recall = row.get("last_recalled_at")
-                    now = (
-                        current_time
-                        if current_time is not None
-                        else datetime.now(timezone.utc)
-                    )
-                    if last_recall is None:
-                        last_recall = now
-                    elif last_recall.tzinfo is None:
-                        last_recall = last_recall.replace(tzinfo=timezone.utc)
-
-                    hours_since = max(
-                        0.001, (now - last_recall).total_seconds() / 3600.0
-                    )
-                    memory_valence = row.get("valence") or 0.0
-                    emotion_weight_row = row.get("emotional_weight") or 0.0
-
-                    dist_emo = math.sqrt(
-                        (memory_valence - current_valence) ** 2
-                        + (emotion_weight_row - current_arousal) ** 2
-                    )
-
-                    base_activation = (
-                        _cached_ln(recall_count)
-                        - self.decay_rate * _cached_ln(hours_since + 1.0)
-                        + 1.5 * (row.get("importance_score") or 0.5)
-                        + 0.15 * (1.0 - dist_emo)
-                    )
-
-                    effective_similarity = similarity * (
-                        1.0
-                        + 0.1 * memory_valence * emotion_weight_row
-                        - 0.2 * current_arousal * current_cortisol
-                    )
-
-                    spread_activation = self.spread_weight * effective_similarity
-                    score = base_activation + spread_activation - 0.5 * dist_emo
-
-                    # Only promote if it passes the threshold
-                    if score > (threshold - 2.5):
-                        import uuid
-
-                        mem_id = str(row.get("id") or uuid.uuid4())
-                        raw_meta = row.get("metadata")
-                        import json
-
-                        if isinstance(raw_meta, str):
-                            try:
-                                raw_meta = json.loads(raw_meta)
-                            except Exception:
-                                raw_meta = {}
-                        elif not isinstance(raw_meta, dict):
-                            raw_meta = {}
-
-                        # Ensure entities are computed
-                        payload_meta = {
-                            "wing": row.get("wing", "personal"),
-                            "room": row.get("room") or "",
-                            "importance_score": row.get("importance_score"),
-                            "emotional_weight": row.get("emotional_weight"),
-                            "valence": row.get("valence"),
-                            "certainty": row.get("certainty"),
-                            "source": row.get("source"),
-                            "created_at": row.get("created_at").isoformat()
-                            if row.get("created_at")
-                            else None,
-                            "lifespan_stage": row.get("lifespan_stage") or "",
-                            "crisis": row.get("crisis") or "",
-                            "virtue": row.get("virtue") or "",
-                            "relations": row.get("relations") or "",
-                            "relation_circles": row.get("relation_circles") or "",
-                            "modality": row.get("modality") or "",
-                            **(raw_meta or {}),
-                        }
-
-                        # SQLite vs Postgres insert
-                        try:
-                            async with self.pool.acquire() as conn:
-                                if self.is_sqlite:
-                                    await conn.execute(
-                                        """
-                                        INSERT INTO memories (
-                                            id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
-                                            valence, certainty, source, recall_count, last_recalled_at, created_at,
-                                            metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
-                                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                        """,
-                                        mem_id,
-                                        content,
-                                        row.get("raw_content"),
-                                        row.get("wing"),
-                                        row.get("room"),
-                                        str(emb),
-                                        row.get("importance_score"),
-                                        row.get("emotional_weight"),
-                                        row.get("valence"),
-                                        row.get("certainty"),
-                                        row.get("source"),
-                                        recall_count + 1,
-                                        now,
-                                        row.get("created_at"),
-                                        json.dumps(payload_meta),
-                                        row.get("lifespan_stage"),
-                                        row.get("crisis"),
-                                        row.get("virtue"),
-                                        row.get("relations"),
-                                        row.get("relation_circles"),
-                                        row.get("modality"),
-                                    )
-                                    await conn.execute(
-                                        "DELETE FROM archived_memories WHERE id = ?",
-                                        mem_id,
+                                q_arr = np.array(query_vector)
+                                emb_arr = np.array(emb)
+                                norm_q = np.linalg.norm(q_arr)
+                                norm_emb = np.linalg.norm(emb_arr)
+                                if norm_q > 0 and norm_emb > 0:
+                                    similarity = float(
+                                        np.dot(q_arr, emb_arr) / (norm_q * norm_emb)
                                     )
                                 else:
-                                    await conn.execute(
-                                        """
-                                        INSERT INTO memories (
-                                            id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
-                                            valence, certainty, source, recall_count, last_recalled_at, created_at,
-                                            metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
-                                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-                                        """,
-                                        mem_id,
-                                        content,
-                                        row.get("raw_content"),
-                                        row.get("wing"),
-                                        row.get("room"),
-                                        str(emb),
-                                        row.get("importance_score"),
-                                        row.get("emotional_weight"),
-                                        row.get("valence"),
-                                        row.get("certainty"),
-                                        row.get("source"),
-                                        recall_count + 1,
-                                        now,
-                                        row.get("created_at"),
-                                        json.dumps(payload_meta),
-                                        row.get("lifespan_stage"),
-                                        row.get("crisis"),
-                                        row.get("virtue"),
-                                        row.get("relations"),
-                                        row.get("relation_circles"),
-                                        row.get("modality"),
-                                    )
-                                    await conn.execute(
-                                        "DELETE FROM archived_memories WHERE id = $1",
-                                        mem_id,
-                                    )
+                                    similarity = 0.0
+                            else:
+                                similarity = 0.0
 
-                            # Upsert Qdrant
-                            if self.qdrant_store and self.qdrant_store.client:
-                                await asyncio.to_thread(
-                                    self.qdrant_store.add_vector_memory,
-                                    mem_id,
-                                    emb,
-                                    content,
-                                    payload_meta,
-                                )
+                        recall_count = max(1, row.get("recall_count") or 1)
+                        last_recall = row.get("last_recalled_at")
+                        now = (
+                            current_time
+                            if current_time is not None
+                            else datetime.now(timezone.utc)
+                        )
+                        if last_recall is None:
+                            last_recall = now
+                        elif last_recall.tzinfo is None:
+                            last_recall = last_recall.replace(tzinfo=timezone.utc)
 
-                            logger.info(
-                                f"📥 [Memory Promotion] Promoted memory '{content[:40]}...' from archive back to active storage."
-                            )
-                        except Exception as prom_err:
-                            logger.error(
-                                f"Failed to promote memory {mem_id}: {prom_err}"
-                            )
+                        hours_since = max(
+                            0.001, (now - last_recall).total_seconds() / 3600.0
+                        )
+                        memory_valence = row.get("valence") or 0.0
+                        emotion_weight_row = row.get("emotional_weight") or 0.0
 
-                        created = row.get("created_at")
-                        if created and created.tzinfo is None:
-                            created = created.replace(tzinfo=timezone.utc)
+                        dist_emo = math.sqrt(
+                            (memory_valence - current_valence) ** 2
+                            + (emotion_weight_row - current_arousal) ** 2
+                        )
 
-                        # Recalculate active score since it is now promoted and last_recalled_at is set to now (hours_since = 0.001)
-                        # We use recall_count + 1 since the recall_count has been incremented upon recall/promotion
-                        base_activation_active = (
-                            _cached_ln(recall_count + 1)
-                            - self.decay_rate * _cached_ln(0.001 + 1.0)
+                        base_activation = (
+                            _cached_ln(recall_count)
+                            - self.decay_rate * _cached_ln(hours_since + 1.0)
                             + 1.5 * (row.get("importance_score") or 0.5)
                             + 0.15 * (1.0 - dist_emo)
                         )
-                        score_active = (
-                            base_activation_active + spread_activation - 0.5 * dist_emo
-                        )
-                        # Apply direct cue boost (+3.5) since it was promoted due to keyword matches
-                        score_active += 3.5
 
-                        promoted_results.append(
-                            {
-                                "content": content,
-                                "raw_content": row.get("raw_content") or content,
+                        effective_similarity = similarity * (
+                            1.0
+                            + 0.1 * memory_valence * emotion_weight_row
+                            - 0.2 * current_arousal * current_cortisol
+                        )
+
+                        spread_activation = self.spread_weight * effective_similarity
+                        score = base_activation + spread_activation - 0.5 * dist_emo
+
+                        # Lexical match count boost to ensure direct query matches sort higher
+                        content_lower = content.lower()
+                        match_count = sum(
+                            1 for cue in expanded_cues if cue in content_lower
+                        )
+
+                        # Massive ranking boost for keyword match count ( HippoRAG key relevance )
+                        ranking_score = score + 5.0 * match_count
+
+                        scored_archive_rows.append(
+                            (ranking_score, score, similarity, row)
+                        )
+
+                    # Sort scored candidates by ranking score descending
+                    scored_archive_rows.sort(key=lambda x: x[0], reverse=True)
+
+                    # Limit the actual promotion list to prevent flooding
+                    promote_limit = min(5, limit) if limit else 5
+                    scored_archive_rows = scored_archive_rows[:promote_limit]
+
+                # 2. Score and promote candidates
+                promoted_results = []
+                if archive_rows:
+                    for ranking_score, score, similarity, row in scored_archive_rows:
+                        content = row["content"]
+
+                        # Parse or retrieve the embedding
+                        emb_val = row.get("embedding")
+                        emb = None
+                        if emb_val:
+                            if isinstance(emb_val, str):
+                                try:
+                                    import json
+
+                                    emb = json.loads(emb_val)
+                                except Exception:
+                                    import re
+
+                                    try:
+                                        emb = [
+                                            float(x)
+                                            for x in re.findall(
+                                                r"[-+]?\d*\.\d+|\d+e[-+]?\d+|[-+]?\d+",
+                                                emb_val,
+                                            )
+                                        ]
+                                    except Exception:
+                                        pass
+                            elif isinstance(emb_val, list):
+                                emb = emb_val
+
+                        # Fallback to call embedding API if missing
+                        if not emb:
+                            emb = await self.get_embedding(content)
+                            if not emb:
+                                continue
+
+                        recall_count = max(1, row.get("recall_count") or 1)
+                        last_recall = row.get("last_recalled_at")
+                        now = (
+                            current_time
+                            if current_time is not None
+                            else datetime.now(timezone.utc)
+                        )
+                        if last_recall is None:
+                            last_recall = now
+                        elif last_recall.tzinfo is None:
+                            last_recall = last_recall.replace(tzinfo=timezone.utc)
+
+                        hours_since = max(
+                            0.001, (now - last_recall).total_seconds() / 3600.0
+                        )
+                        memory_valence = row.get("valence") or 0.0
+                        emotion_weight_row = row.get("emotional_weight") or 0.0
+
+                        dist_emo = math.sqrt(
+                            (memory_valence - current_valence) ** 2
+                            + (emotion_weight_row - current_arousal) ** 2
+                        )
+
+                        effective_similarity = similarity * (
+                            1.0
+                            + 0.1 * memory_valence * emotion_weight_row
+                            - 0.2 * current_arousal * current_cortisol
+                        )
+
+                        spread_activation = self.spread_weight * effective_similarity
+
+                        # Only promote if it passes the threshold or is a milestone (importance_score >= 0.7)
+                        if (
+                            score > (threshold - 2.5)
+                            or (row.get("importance_score") or 0.5) >= 0.7
+                        ):
+                            import uuid
+
+                            mem_id = str(row.get("id") or uuid.uuid4())
+                            raw_meta = row.get("metadata")
+                            import json
+
+                            if isinstance(raw_meta, str):
+                                try:
+                                    raw_meta = json.loads(raw_meta)
+                                except Exception:
+                                    raw_meta = {}
+                            elif not isinstance(raw_meta, dict):
+                                raw_meta = {}
+
+                            # Ensure entities are computed
+                            payload_meta = {
                                 "wing": row.get("wing", "personal"),
-                                "room": row.get("room"),
-                                "score": score_active,
-                                "valence": row.get("valence") or 0.0,
-                                "created_at": created.isoformat() if created else None,
-                                "recall_count": recall_count + 1,
-                                "metadata": raw_meta or {},
-                                "lifespan_stage": row.get("lifespan_stage"),
-                                "crisis": row.get("crisis"),
-                                "virtue": row.get("virtue"),
-                                "relations": row.get("relations"),
-                                "relation_circles": row.get("relation_circles"),
-                                "modality": row.get("modality"),
+                                "room": row.get("room") or "",
+                                "importance_score": row.get("importance_score"),
+                                "emotional_weight": row.get("emotional_weight"),
+                                "valence": row.get("valence"),
+                                "certainty": row.get("certainty"),
+                                "source": row.get("source"),
+                                "created_at": row.get("created_at").isoformat()
+                                if row.get("created_at")
+                                else None,
+                                "lifespan_stage": row.get("lifespan_stage") or "",
+                                "crisis": row.get("crisis") or "",
+                                "virtue": row.get("virtue") or "",
+                                "relations": row.get("relations") or "",
+                                "relation_circles": row.get("relation_circles") or "",
+                                "modality": row.get("modality") or "",
+                                **(raw_meta or {}),
                             }
-                        )
 
-                if promoted_results:
-                    results.extend(promoted_results)
+                            # SQLite vs Postgres insert
+                            try:
+                                async with self.pool.acquire() as conn:
+                                    if self.is_sqlite:
+                                        await conn.execute(
+                                            """
+                                            INSERT INTO memories (
+                                                id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
+                                                valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
+                                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                            ON CONFLICT(id) DO UPDATE SET
+                                                recall_count = excluded.recall_count,
+                                                last_recalled_at = excluded.last_recalled_at,
+                                                importance_score = excluded.importance_score
+                                            """,
+                                            mem_id,
+                                            content,
+                                            row.get("raw_content"),
+                                            row.get("wing"),
+                                            row.get("room"),
+                                            str(emb),
+                                            row.get("importance_score"),
+                                            row.get("emotional_weight"),
+                                            row.get("valence"),
+                                            row.get("certainty"),
+                                            row.get("source"),
+                                            recall_count + 1,
+                                            now,
+                                            row.get("created_at"),
+                                            json.dumps(payload_meta),
+                                            row.get("lifespan_stage"),
+                                            row.get("crisis"),
+                                            row.get("virtue"),
+                                            row.get("relations"),
+                                            row.get("relation_circles"),
+                                            row.get("modality"),
+                                        )
+                                        await conn.execute(
+                                            "DELETE FROM archived_memories WHERE id = ?",
+                                            mem_id,
+                                        )
+                                    else:
+                                        await conn.execute(
+                                            """
+                                            INSERT INTO memories (
+                                                id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
+                                                valence, certainty, source, recall_count, last_recalled_at, created_at,
+                                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
+                                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                                            ON CONFLICT(id) DO UPDATE SET
+                                                recall_count = EXCLUDED.recall_count,
+                                                last_recalled_at = EXCLUDED.last_recalled_at,
+                                                importance_score = EXCLUDED.importance_score
+                                            """,
+                                            mem_id,
+                                            content,
+                                            row.get("raw_content"),
+                                            row.get("wing"),
+                                            row.get("room"),
+                                            str(emb),
+                                            row.get("importance_score"),
+                                            row.get("emotional_weight"),
+                                            row.get("valence"),
+                                            row.get("certainty"),
+                                            row.get("source"),
+                                            recall_count + 1,
+                                            now,
+                                            row.get("created_at"),
+                                            json.dumps(payload_meta),
+                                            row.get("lifespan_stage"),
+                                            row.get("crisis"),
+                                            row.get("virtue"),
+                                            row.get("relations"),
+                                            row.get("relation_circles"),
+                                            row.get("modality"),
+                                        )
+                                        await conn.execute(
+                                            "DELETE FROM archived_memories WHERE id = $1",
+                                            mem_id,
+                                        )
+
+                                # Upsert Qdrant
+                                if self.qdrant_store and self.qdrant_store.client:
+                                    await asyncio.to_thread(
+                                        self.qdrant_store.add_vector_memory,
+                                        mem_id,
+                                        emb,
+                                        content,
+                                        payload_meta,
+                                    )
+
+                                logger.info(
+                                    f"📥 [Memory Promotion] Promoted memory '{content[:40]}...' from archive back to active storage."
+                                )
+                            except Exception as prom_err:
+                                logger.error(
+                                    f"Failed to promote memory {mem_id}: {prom_err}"
+                                )
+
+                            created = row.get("created_at")
+                            if created and created.tzinfo is None:
+                                created = created.replace(tzinfo=timezone.utc)
+
+                            # Recalculate active score since it is now promoted and last_recalled_at is set to now (hours_since = 0.001)
+                            # We use recall_count + 1 since the recall_count has been incremented upon recall/promotion
+                            base_activation_active = (
+                                _cached_ln(recall_count + 1)
+                                - self.decay_rate * _cached_ln(0.001 + 1.0)
+                                + 1.5 * (row.get("importance_score") or 0.5)
+                                + 0.15 * (1.0 - dist_emo)
+                            )
+                            score_active = (
+                                base_activation_active
+                                + spread_activation
+                                - 0.5 * dist_emo
+                            )
+                            # Apply direct cue boost (+3.5) since it was promoted due to keyword matches
+                            score_active += 3.5
+
+                            promoted_results.append(
+                                {
+                                    "content": content,
+                                    "raw_content": row.get("raw_content") or content,
+                                    "wing": row.get("wing", "personal"),
+                                    "room": row.get("room"),
+                                    "score": score_active,
+                                    "valence": row.get("valence") or 0.0,
+                                    "created_at": created.isoformat()
+                                    if created
+                                    else None,
+                                    "recall_count": recall_count + 1,
+                                    "metadata": raw_meta or {},
+                                    "lifespan_stage": row.get("lifespan_stage"),
+                                    "crisis": row.get("crisis"),
+                                    "virtue": row.get("virtue"),
+                                    "relations": row.get("relations"),
+                                    "relation_circles": row.get("relation_circles"),
+                                    "modality": row.get("modality"),
+                                }
+                            )
+
+                    if promoted_results:
+                        results.extend(promoted_results)
 
             if results:
                 # Sort and limit results to maintain full compatibility with offline tests
@@ -2394,6 +2519,10 @@ class MemoryStore:
                                 metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
                             FROM memories
                             WHERE id IN ({placeholders})
+                            ON CONFLICT(id) DO UPDATE SET
+                                recall_count = excluded.recall_count,
+                                last_recalled_at = excluded.last_recalled_at,
+                                importance_score = excluded.importance_score
                             """,
                             *to_delete,
                         )
@@ -2417,6 +2546,10 @@ class MemoryStore:
                                 metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding::halfvec
                             FROM memories
                             WHERE id = ANY($1)
+                            ON CONFLICT(id) DO UPDATE SET
+                                recall_count = EXCLUDED.recall_count,
+                                last_recalled_at = EXCLUDED.last_recalled_at,
+                                importance_score = EXCLUDED.importance_score
                             """,
                             to_delete,
                         )
