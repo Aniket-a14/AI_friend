@@ -245,7 +245,20 @@ async def seed_databases(num_distractors=30000):
             if created_time.tzinfo is None:
                 created_time = created_time.replace(tzinfo=timezone.utc)
 
-            importance = item.get("importance", 0.4)
+            # Re-calculate importance score dynamically based on simulated time
+            t_hour = created_time.hour
+            diurnal = 0.5 + 0.5 * math.sin(2 * math.pi * (t_hour - 8) / 24.0)
+
+            orig_room = item.get("room", "")
+            orig_imp = item.get("importance", 0.4)
+            if orig_imp < 0.5 or orig_room in ("distractor", "daily_chitchat"):
+                item["importance"] = round(0.10 + 0.39 * diurnal, 4)
+            elif orig_imp < 0.7 or orig_room in ("anecdote", "daily_anecdote"):
+                item["importance"] = round(0.50 + 0.19 * diurnal, 4)
+            else:
+                item["importance"] = round(0.75 + 0.24 * diurnal, 4)
+
+            importance = item["importance"]
             hours_since = (now - created_time).total_seconds() / 3600.0
             is_shielded = hours_since < 24.0
 
@@ -280,12 +293,17 @@ async def seed_databases(num_distractors=30000):
             hours_since = elapsed_seconds / 3600.0
             is_shielded = hours_since < 24.0
 
+            # Dynamic time simulation importance
+            t_hour = created_time.hour
+            diurnal = 0.5 + 0.5 * math.sin(2 * math.pi * (t_hour - 8) / 24.0)
+            importance = round(0.10 + 0.39 * diurnal, 4)
+
             item = {
                 "content": content,
                 "raw_content": content,
                 "wing": "personal",
                 "room": category,
-                "importance": 0.4,
+                "importance": importance,
                 "emotion": 0.1,
                 "valence": 0.0,
                 "certainty": 0.9,
@@ -346,17 +364,25 @@ async def seed_databases(num_distractors=30000):
             for template in templates:
                 content = f"{template} [Milestone ID: {milestone_idx}]"
                 category = cats[milestone_idx % len(cats)]
+
+                # Dynamic time-simulation importance for milestone (spread creation times over a year)
+                elapsed_seconds = (milestone_idx * (365.0 * 24.0 * 3600.0)) / 20.0
+                created_time = now - timedelta(seconds=elapsed_seconds)
+                t_hour = created_time.hour
+                diurnal = 0.5 + 0.5 * math.sin(2 * math.pi * (t_hour - 8) / 24.0)
+                importance = round(0.75 + 0.24 * diurnal, 4)
+
                 item = {
                     "content": content,
                     "raw_content": content,
                     "wing": "personal",
                     "room": category,
-                    "importance": 0.9,
+                    "importance": importance,
                     "emotion": 0.8,
                     "valence": 0.8,
                     "certainty": 1.0,
                     "source": "system_seeder",
-                    "created_at": now.isoformat(),
+                    "created_at": created_time.isoformat(),
                     "epoch": epoch,
                     "crisis": crisis,
                     "virtue": virtue,

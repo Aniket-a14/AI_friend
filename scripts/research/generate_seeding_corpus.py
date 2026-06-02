@@ -562,13 +562,18 @@ def generate_corpus(num_distractors=25000, num_anecdotes=50000, num_milestones=2
         content = resolve_placeholders(full_template, i)
         content = f"{content} [Turn: {i}]"
 
+        # Calculate diurnal time simulation factor
+        t_hour = created_time.hour
+        diurnal = 0.5 + 0.5 * math.sin(2 * math.pi * (t_hour - 8) / 24.0)
+        importance_score = round(0.10 + 0.39 * diurnal, 4)
+
         corpus.append(
             {
                 "content": content,
                 "raw_content": content,
                 "wing": "personal",
                 "room": "distractor",
-                "importance": round(rng.uniform(0.10, 0.49), 4),
+                "importance": importance_score,
                 "emotion": round(rng.uniform(0.01, 0.20), 4),
                 "valence": round(rng.uniform(-0.10, 0.10), 4),
                 "certainty": round(rng.uniform(0.80, 0.95), 4),
@@ -596,13 +601,18 @@ def generate_corpus(num_distractors=25000, num_anecdotes=50000, num_milestones=2
         content = resolve_placeholders(full_template, i)
         content = f"{content} [Anecdote ID: {i}]"
 
+        # Calculate diurnal time simulation factor
+        t_hour = created_time.hour
+        diurnal = 0.5 + 0.5 * math.sin(2 * math.pi * (t_hour - 8) / 24.0)
+        importance_score = round(0.50 + 0.19 * diurnal, 4)
+
         corpus.append(
             {
                 "content": content,
                 "raw_content": content,
                 "wing": "personal",
                 "room": "anecdote",
-                "importance": round(rng.uniform(0.50, 0.69), 4),
+                "importance": importance_score,
                 "emotion": round(rng.uniform(0.21, 0.49), 4),
                 "valence": round(rng.uniform(-0.30, 0.40), 4),
                 "certainty": round(rng.uniform(0.80, 0.95), 4),
@@ -674,13 +684,18 @@ def generate_corpus(num_distractors=25000, num_anecdotes=50000, num_milestones=2
             else round(rng.uniform(0.40, 0.95), 4)
         )
 
+        # Calculate diurnal time simulation factor
+        t_hour = created_time.hour
+        diurnal = 0.5 + 0.5 * math.sin(2 * math.pi * (t_hour - 8) / 24.0)
+        importance_score = round(0.75 + 0.24 * diurnal, 4)
+
         corpus.append(
             {
                 "content": content,
                 "raw_content": content,
                 "wing": "personal",
                 "room": category,
-                "importance": round(rng.uniform(0.70, 0.99), 4),
+                "importance": importance_score,
                 "emotion": round(rng.uniform(0.60, 0.95), 4),
                 "valence": m_valence,
                 "certainty": round(rng.uniform(0.90, 1.00), 4),

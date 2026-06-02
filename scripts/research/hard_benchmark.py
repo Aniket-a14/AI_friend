@@ -465,16 +465,28 @@ async def run_physical_benchmark(
     synchronously in a single coordinated loop.
     """
     print("\n🚀 --- Starting Rigorous Physical Live Benchmark (Sequential Edition) ---")
+
+    corpus_path = os.path.join(os.path.dirname(__file__), "flooded_seeding_corpus.json")
+    if os.path.exists(corpus_path):
+        initial_count = 100000
+    else:
+        initial_count = distractors
+
     print(
-        f"Iterations: {iterations} | Distractors: {distractors} | Direct DB/Ollama Integration"
+        f"Iterations: {iterations} | Distractors: {initial_count} | Direct DB/Ollama Integration"
     )
 
     # 1. Reset databases and flood them
     if not skip_seed:
         try:
-            print(
-                f"🧹 [Reset & Seeding] Flooding database index with {distractors} distractors..."
-            )
+            if os.path.exists(corpus_path):
+                print(
+                    "🧹 [Reset & Seeding] Seeding database with full 100k+ flooded corpus from file..."
+                )
+            else:
+                print(
+                    f"🧹 [Reset & Seeding] Flooding database index with {distractors} distractors..."
+                )
             await seed_databases(num_distractors=distractors)
         except Exception as e:
             print(f"⚠️ Warning: Could not run direct DB reset/seeding: {e}")
@@ -684,20 +696,39 @@ async def run_physical_benchmark(
             print(
                 f"    📥 [Memory Storage] Storing milestone fact at index {i}: '{prompt_text[:60]}...'"
             )
+            import math
+
+            t_hour = current_simulated_time.hour
+            diurnal = 0.5 + 0.5 * math.sin(2 * math.pi * (t_hour - 8) / 24.0)
+            importance = round(0.75 + 0.24 * diurnal, 4)
+
             await memory_store.add_memory(
                 content=prompt_text,
                 wing="personal",
                 room="milestone",
-                importance=0.95,
+                importance=importance,
                 current_time=current_simulated_time,
             )
         elif not is_memory_test:
             # Store distractors / daily chitchat to Postgres memories
+            import math
+
+            t_hour = current_simulated_time.hour
+            diurnal = 0.5 + 0.5 * math.sin(2 * math.pi * (t_hour - 8) / 24.0)
+
+            # Every 10th non-memory test turn, dynamically classify as anecdote
+            if i % 10 == 3:
+                importance = round(0.50 + 0.19 * diurnal, 4)
+                room = "anecdote"
+            else:
+                importance = round(0.10 + 0.39 * diurnal, 4)
+                room = "social" if "friend" in prompt_text.lower() else "somatic"
+
             await memory_store.add_memory(
                 content=prompt_text,
                 wing="personal",
-                room="social" if "friend" in prompt_text.lower() else "somatic",
-                importance=0.4,
+                room=room,
+                importance=importance,
                 current_time=current_simulated_time,
             )
 
@@ -870,6 +901,10 @@ async def run_physical_benchmark(
                                     metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
                                 FROM memories
                                 WHERE id IN ({placeholders})
+                                ON CONFLICT(id) DO UPDATE SET
+                                    recall_count = excluded.recall_count,
+                                    last_recalled_at = excluded.last_recalled_at,
+                                    importance_score = excluded.importance_score
                                 """,
                                 *pruned_ids,
                             )
@@ -893,6 +928,10 @@ async def run_physical_benchmark(
                                     metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding::halfvec
                                 FROM memories
                                 WHERE id = ANY($1)
+                                ON CONFLICT(id) DO UPDATE SET
+                                    recall_count = EXCLUDED.recall_count,
+                                    last_recalled_at = EXCLUDED.last_recalled_at,
+                                    importance_score = EXCLUDED.importance_score
                                 """,
                                 pruned_ids,
                             )
@@ -973,7 +1012,7 @@ async def run_physical_benchmark(
         ) * 100.0
         prog_recall_rate.append(curr_recall_rate)
         # Bounded and loaded memory sizes
-        curr_loaded = distractors + pulse_count
+        curr_loaded = initial_count + pulse_count
         curr_active = curr_loaded - pruned_history_count
         prog_active_mem_size.append(curr_active)
         prog_total_loaded_size.append(curr_loaded)

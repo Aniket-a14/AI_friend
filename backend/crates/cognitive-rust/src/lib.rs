@@ -464,7 +464,7 @@ pub fn score_memories_actr_sqlite(
         let spread_activation = spread_weight * effective_similarity;
         let score = base_activation + spread_activation - 0.5 * dist_emo;
 
-        if score > (threshold - 2.5) {
+        if score > (threshold - 2.5) || importance_score >= 0.7 {
             results.push((index, score, similarity));
         }
     }
