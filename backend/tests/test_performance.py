@@ -98,18 +98,34 @@ def test_identity_appraisal_benchmark(benchmark):
 
 @pytest.mark.benchmark
 def test_reappraisal_cognitive_benchmark(benchmark):
-    """Profiles secondary cognitive reappraisal triggers adjusting emotional coping valence."""
-    from app.state.agent_state import AgentState
+    """Profiles secondary cognitive reappraisal triggers adjusting emotional coping valence using production logic."""
+    from app.cognitive.reappraisal import ReappraisalEngine
 
-    state = AgentState(mood=0.2, energy=0.5)
+    engine = ReappraisalEngine()
+    engine.enabled = True
+
+    # Pre-populate turn state to bypass return early checks
+    state_snap = {"mood": 0.2, "energy": 0.5, "dominance": 0.5, "trust": 0.5}
 
     def run():
-        # Evaluate emotional coping shift from bad inputs
-        valence_shift = (state.mood * 0.1) + (state.energy * 0.05)
-        return valence_shift
+        # Benchmark the full pre-response tracking and outcome evaluation logic
+        engine.record_pre_response_state(state_snap)
+        engine.record_expected_outcome("COMFORT", 0.2)
+        # Bypassing the 2.0s rate limiting by resetting last_evaluation_time to 0
+        engine._last_evaluation_time = 0.0
 
-    val = benchmark(run)
-    assert val > 0.0
+        # Run actual_text_valence evaluation
+        import asyncio
+
+        asyncio.run(
+            engine.evaluate_outcome(
+                actual_text_valence=-0.4, acoustic_delta=-0.2, behavioral_signal=0.1
+            )
+        )
+        return engine.appraisal_weights["w1_g_to_v"]
+
+    w1 = benchmark(run)
+    assert w1 > 0.0
 
 
 # ==========================================
@@ -119,41 +135,46 @@ def test_reappraisal_cognitive_benchmark(benchmark):
 
 @pytest.mark.benchmark
 def test_subconscious_threat_scan_benchmark(benchmark):
-    """Profiles dynamic threat appraisal scanning metrics inside perceptual inputs."""
+    """Profiles dynamic threat appraisal scanning metrics inside perceptual inputs using production AppraisalEngine."""
+    from app.cognitive.appraisal import AppraisalEngine
+
+    engine = AppraisalEngine(identity_core_values=["no hate", "no violence"])
+    state_snapshot = {"trust": 0.6}
+    user_voice_properties = {"pitch_f0": 260.0, "energy_rms": 0.2}
 
     def run():
-        threat_index = 0.0
-        # Simulated scan of perceptual queues for triggers
-        perceptions = ["hello", "danger", "fire", "happy", "calm"] * 10
-        for p in perceptions:
-            if p in ["danger", "fire"]:
-                threat_index += 0.4
-            else:
-                threat_index -= 0.05
-        return max(0.0, min(1.0, threat_index))
+        # Profile actual production appraisal calculation (calling Rust extension)
+        vector = engine.appraise(
+            event_content="This is toxic and dangerous fire",
+            event_type="USER_MESSAGE",
+            emotional_bias=-0.8,
+            state_snapshot=state_snapshot,
+            identity_boundaries=["fire is bad", "stop danger"],
+            user_voice_properties=user_voice_properties,
+        )
+        return vector.goal_congruence
 
-    threat = benchmark(run)
-    assert threat >= 0.0
+    goal_congruence = benchmark(run)
+    assert -1.0 <= goal_congruence <= 1.0
 
 
 @pytest.mark.benchmark
 def test_arbitration_layer_benchmark(benchmark):
-    """Profiles behavioral node arbitration resolving conflicting state values."""
+    """Profiles behavioral node arbitration resolving conflicting state values using DecisionService conflict resolver."""
+    from app.cognitive.decision import DecisionService
+
+    decision_service = DecisionService(llm_service=None, memory_store=None)
 
     def run():
-        # Arbitrate active speaking node between speech parameters
-        endocrine_active = True
-        arousal = 0.8
-        dominance = 0.4
+        # Call actual production conflict resolver (speculative stop arbitration)
+        confirmed = decision_service.is_speculative_stop_confirmed(
+            backbone_text="Wait, I actually agree with your point.",
+            perception_keywords=["wait"],
+        )
+        return confirmed
 
-        # Conflict weighting arbitration algorithm
-        weight = (arousal * 0.5) + (dominance * 0.3)
-        if endocrine_active:
-            weight += 0.2
-        return "proactive_speak" if weight > 0.6 else "wait"
-
-    decision = benchmark(run)
-    assert decision in ["proactive_speak", "wait"]
+    confirmed = benchmark(run)
+    assert confirmed is False
 
 
 # ==========================================
@@ -177,19 +198,23 @@ def test_endocrine_state_decay_benchmark(benchmark):
 
 @pytest.mark.benchmark
 def test_personality_modulation_benchmark(benchmark):
-    """Profiles real-time temperature/top_p logic modulation based on endocrine state."""
+    """Profiles real-time temperature/top_p/num_predict logic modulation based on endocrine state."""
 
     def run():
         cortisol = 0.8
         dopamine = 0.2
-        # Modulation algorithm
-        temperature = max(0.2, min(1.0, 0.7 - (cortisol * 0.3) + (dopamine * 0.2)))
-        top_p = max(0.5, min(1.0, 0.9 - (cortisol * 0.1) + (dopamine * 0.05)))
-        return temperature, top_p
+        fatigue = 0.5
 
-    temp, top_p = benchmark(run)
-    assert 0.2 <= temp <= 1.0
-    assert 0.5 <= top_p <= 1.0
+        # Production modulation algorithm matching ActionService exactly
+        endo_temperature = max(0.0, min(1.0, round(0.9 - (cortisol * 0.6), 3)))
+        endo_top_p = max(0.0, min(1.0, round(0.70 + (dopamine * 0.25), 3)))
+        endo_num_predict = int(max(100, min(250, int(250 - (fatigue * 150)))))
+        return endo_temperature, endo_top_p, endo_num_predict
+
+    temp, top_p, num_predict = benchmark(run)
+    assert 0.0 <= temp <= 1.0
+    assert 0.0 <= top_p <= 1.0
+    assert 100 <= num_predict <= 250
 
 
 # ==========================================
@@ -199,20 +224,59 @@ def test_personality_modulation_benchmark(benchmark):
 
 @pytest.mark.benchmark
 def test_memory_semantic_retrieve_benchmark(benchmark):
-    """Benchmarks ACT-R semantic memory retrieval scoring (recency/frequency weights)."""
+    """Benchmarks ACT-R semantic memory retrieval scoring (recency/frequency weights) using production formulas."""
     rows = [
-        _make_mock_row("Fact #%d" % i, similarity=0.8 - (i * 0.01), recall_count=i)
+        _make_mock_row(
+            "Fact #%d" % i, similarity=0.8 - (i * 0.01), recall_count=max(1, i)
+        )
         for i in range(50)
     ]
+    import math
+
+    decay_rate = 0.5
+    spread_weight = 2.0
+    current_valence = 0.2
+    current_arousal = 0.5
+    current_cortisol = 0.3
 
     def run():
-        # Manually invoke activation calculations to isolate computational load
         scored = []
+        now_ts = time.time()
         for row in rows:
-            # ACT-R formula: base_level + similarity + emotional_boost
-            base = 0.5 * (row["recall_count"] / 10.0)
-            score = base + row["similarity"]
+            memory_valence = row["valence"]
+            emotion_weight_row = row["emotional_weight"]
+            recall_count = row["recall_count"]
+            last_recall_time = row["last_recalled_at"]
+            importance_score = row["importance_score"]
+            similarity = row["similarity"]
+
+            hours_since = max(0.001, (now_ts - last_recall_time) / 3600.0)
+
+            # 2D/3D Emotional Distance
+            dist_emo = math.sqrt(
+                (memory_valence - current_valence) ** 2
+                + (emotion_weight_row - current_arousal) ** 2
+            )
+
+            # Production base_activation
+            base_activation = (
+                math.log(recall_count)
+                - decay_rate * math.log(hours_since + 1.0)
+                + 1.5 * importance_score
+                + 0.15 * (1.0 - dist_emo)
+            )
+
+            # Effective similarity with hormonal gating
+            effective_similarity = similarity * (
+                1.0
+                + 0.1 * memory_valence * emotion_weight_row
+                - 0.2 * current_arousal * current_cortisol
+            )
+
+            spread_activation = spread_weight * effective_similarity
+            score = base_activation + spread_activation - 0.5 * dist_emo
             scored.append((row["content"], score))
+
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[0]
 
@@ -369,23 +433,29 @@ def test_vision_frame_encode_benchmark(benchmark):
 
 @pytest.mark.benchmark
 def test_affective_prosody_mapping_benchmark(benchmark):
-    """Profiles mapping PAD emotional state variables to GPT-SoVITS prosody parameters."""
+    """Profiles mapping PAD emotional state variables to GPT-SoVITS prosody parameters using production Rust implementation."""
+    import cognitive_rust
 
     def run():
         pleasure = 0.6
         arousal = 0.8
         dominance = 0.4
+        fatigue = 0.0
 
-        # CVS-3.5 Mapping Algorithm
-        speaking_rate = 1.0 + (arousal * 0.15) - (pleasure * 0.05)
-        pitch_shift = (arousal * 0.1) + (dominance * 0.05)
-        energy_scale = 1.0 + (dominance * 0.2)
+        # Call production Rust PyO3 implementation for prosody trajectory generation
+        trajectory = cognitive_rust.generate_apra_trajectory(
+            pleasure, arousal, dominance, fatigue
+        )
+        return trajectory
 
-        return speaking_rate, pitch_shift, energy_scale
-
-    sr, ps, es = benchmark(run)
-    assert sr > 0
-    assert es > 0
+    trajectory = benchmark(run)
+    assert len(trajectory) == 60
+    # First frame checks
+    t_ms, rate, pitch, volume = trajectory[0]
+    assert t_ms == 0
+    assert rate > 0.0
+    assert pitch > 0.0
+    assert volume > 0.0
 
 
 # ==========================================
