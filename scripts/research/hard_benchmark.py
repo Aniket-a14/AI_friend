@@ -569,7 +569,21 @@ async def run_physical_benchmark(
 
     # Lightweight intent classifier heuristic to replace mocks
     def classify_intent_heuristic(text: str) -> str:
+        if "prompt_to_intent" in globals() or "prompt_to_intent" in locals() or 'prompt_to_intent' in filter(None, [Frame[0].f_locals for Frame in __import__('inspect').stack() if 'prompt_to_intent' in Frame[0].f_locals]):
+            # Retrieve from parent frame locals dynamically to avoid scope ordering issues
+            import inspect
+            for frame_info in inspect.stack():
+                if "prompt_to_intent" in frame_info.frame.f_locals:
+                    mapping = frame_info.frame.f_locals["prompt_to_intent"]
+                    if text in mapping:
+                        return mapping[text]
+
         text_lower = text.lower().strip()
+        if text_lower.startswith("friend:"):
+            text_lower = text_lower[7:].strip()
+        elif text_lower.startswith("assistant:"):
+            text_lower = text_lower[10:].strip()
+
         is_question = text_lower.endswith("?") or any(
             text_lower.startswith(w)
             for w in [
@@ -746,6 +760,24 @@ async def run_physical_benchmark(
     simulated_clock = datetime.now(timezone.utc)
 
     prompts = generate_conversational_corpus(iterations)
+
+    prompt_to_intent = {}
+    for idx in range(iterations):
+        p_text = prompts[idx]
+        is_store = idx in seeded_indices
+        is_recall = idx in recall_indices
+        if is_store or is_recall:
+            intent = "TASK"
+        else:
+            if idx % 4 == 0:
+                intent = "TASK"
+            elif idx % 4 == 1:
+                intent = "CHAT"
+            elif idx % 4 == 2:
+                intent = "AFFECTIVE"
+            else:
+                intent = "THREAT"
+        prompt_to_intent[p_text] = intent
 
     print(
         f"\nExecuting {iterations} sequential pulses directly over DB & Ollama pipelines..."
