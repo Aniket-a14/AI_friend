@@ -107,8 +107,10 @@ def generate_benchmark_plots(results_json_path=None):
     plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Arial", "Helvetica"]
     plt.rcParams["axes.edgecolor"] = "#BDC3C7"
     plt.rcParams["axes.linewidth"] = 0.8
+    plt.rcParams["xtick.labelsize"] = 10
+    plt.rcParams["ytick.labelsize"] = 10
 
-    fig, axes = plt.subplots(2, 2, figsize=(13, 9), dpi=300)
+    fig, axes = plt.subplots(2, 2, figsize=(13, 9.5), dpi=300)
     fig.suptitle(
         "CVS-3.5 Humanoid Friend 30-Year Lifespan Simulation: 1000-Iteration Mathematical Convergence\n"
         "Featuring Human-like Active ACT-R Memory Pruning & Search Space Bounding",
@@ -136,11 +138,12 @@ def generate_benchmark_plots(results_json_path=None):
     axes[0, 0].set_title(
         "Intent Gating Accuracy Convergence",
         fontweight="bold",
-        fontsize=11,
+        fontsize=12,
         color="#2C3E50",
     )
-    axes[0, 0].set_xlabel("Iteration Pulse", fontsize=9)
-    axes[0, 0].set_ylabel("Accuracy %", fontsize=9)
+    axes[0, 0].set_xlabel("Iteration Pulse", fontsize=11)
+    axes[0, 0].set_ylabel("Accuracy %", fontsize=11)
+    axes[0, 0].tick_params(axis="both", labelsize=10)
     axes[0, 0].set_ylim(min(prog_intent_acc) - 5 if prog_intent_acc else 0, 105)
     axes[0, 0].grid(True, which="both", linestyle=":", alpha=0.5, color="#BDC3C7")
     axes[0, 0].legend(
@@ -148,7 +151,7 @@ def generate_benchmark_plots(results_json_path=None):
         frameon=True,
         facecolor="#F8F9F9",
         edgecolor="#BDC3C7",
-        fontsize=8,
+        fontsize=10.5,
     )
 
     # Panel 2: Theory of Mind (ToM) MAE Error
@@ -169,18 +172,19 @@ def generate_benchmark_plots(results_json_path=None):
     axes[0, 1].set_title(
         "Theory of Mind (ToM) Alignment MAE",
         fontweight="bold",
-        fontsize=11,
+        fontsize=12,
         color="#2C3E50",
     )
-    axes[0, 1].set_xlabel("Iteration Pulse", fontsize=9)
-    axes[0, 1].set_ylabel("Mean Absolute Error (MAE)", fontsize=9)
+    axes[0, 1].set_xlabel("Iteration Pulse", fontsize=11)
+    axes[0, 1].set_ylabel("Mean Absolute Error (MAE)", fontsize=11)
+    axes[0, 1].tick_params(axis="both", labelsize=10)
     axes[0, 1].grid(True, which="both", linestyle=":", alpha=0.5, color="#BDC3C7")
     axes[0, 1].legend(
         loc="upper right",
         frameon=True,
         facecolor="#F8F9F9",
         edgecolor="#BDC3C7",
-        fontsize=8,
+        fontsize=10.5,
     )
 
     # Panel 3: ACT-R Memory Dynamics & Recall Stability
@@ -199,10 +203,11 @@ def generate_benchmark_plots(results_json_path=None):
         label="Baseline Vector RAG Recall (76.2%)",
     )
     axes[1, 0].set_title(
-        "ACT-R Memory Recall Stability", fontweight="bold", fontsize=11, color="#2C3E50"
+        "ACT-R Memory Recall Stability", fontweight="bold", fontsize=12, color="#2C3E50"
     )
-    axes[1, 0].set_xlabel("Iteration Pulse", fontsize=9)
-    axes[1, 0].set_ylabel("Recall Rate %", fontsize=9)
+    axes[1, 0].set_xlabel("Iteration Pulse", fontsize=11)
+    axes[1, 0].set_ylabel("Recall Rate %", fontsize=11)
+    axes[1, 0].tick_params(axis="both", labelsize=10)
     axes[1, 0].set_ylim(min(prog_recall_rate) - 5 if prog_recall_rate else 0, 105)
     axes[1, 0].grid(True, which="both", linestyle=":", alpha=0.5, color="#BDC3C7")
     axes[1, 0].legend(
@@ -210,7 +215,7 @@ def generate_benchmark_plots(results_json_path=None):
         frameon=True,
         facecolor="#F8F9F9",
         edgecolor="#BDC3C7",
-        fontsize=8,
+        fontsize=10.5,
     )
 
     # Panel 4: Memory Pruning Bounding & Latency Acceleration
@@ -231,8 +236,9 @@ def generate_benchmark_plots(results_json_path=None):
         linewidth=2.0,
         label="Active Bounded Memory Space (Pruned)",
     )
-    axes[1, 1].set_ylabel("Memory Count (Items)", fontsize=9, color="#27AE60")
-    axes[1, 1].tick_params(axis="y", labelcolor="#27AE60")
+    axes[1, 1].set_ylabel("Memory Count (Items)", fontsize=11, color="#27AE60")
+    axes[1, 1].tick_params(axis="x", labelsize=10)
+    axes[1, 1].tick_params(axis="y", labelcolor="#27AE60", labelsize=10)
 
     # Right Axis: Latency comparisons
     l3 = ax_twin.plot(
@@ -250,8 +256,8 @@ def generate_benchmark_plots(results_json_path=None):
         linewidth=2.0,
         label="O(log M_active) Accelerated Latency",
     )
-    ax_twin.set_ylabel("Search Retrieval Latency (ms)", fontsize=9, color="#2980B9")
-    ax_twin.tick_params(axis="y", labelcolor="#2980B9")
+    ax_twin.set_ylabel("Search Retrieval Latency (ms)", fontsize=11, color="#2980B9")
+    ax_twin.tick_params(axis="y", labelcolor="#2980B9", labelsize=10)
 
     # Combine legends
     lns = l1 + l2 + l3 + l4
@@ -259,20 +265,21 @@ def generate_benchmark_plots(results_json_path=None):
     axes[1, 1].legend(
         lns,
         labs,
-        loc="center left",
+        loc="upper left",
         frameon=True,
         facecolor="#F8F9F9",
         edgecolor="#BDC3C7",
-        fontsize=7.5,
+        fontsize=9.5,
+        framealpha=0.9,
     )
 
     axes[1, 1].set_title(
         "Memory Pruning Space & Access Acceleration",
         fontweight="bold",
-        fontsize=11,
+        fontsize=12,
         color="#2C3E50",
     )
-    axes[1, 1].set_xlabel("Iteration Pulse", fontsize=9)
+    axes[1, 1].set_xlabel("Iteration Pulse", fontsize=11)
     axes[1, 1].grid(True, which="both", linestyle=":", alpha=0.5, color="#BDC3C7")
 
     plt.tight_layout()

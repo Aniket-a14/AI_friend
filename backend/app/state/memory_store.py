@@ -1561,8 +1561,9 @@ class MemoryStore:
             if matched_cues:
                 for idx, cand in enumerate(raw_candidates):
                     content_lower = cand["content"].lower()
-                    if any(mc in content_lower for mc in matched_cues):
-                        cand["score"] += 3.5
+                    match_count = sum(1 for mc in matched_cues if mc in content_lower)
+                    if match_count > 0:
+                        cand["score"] += 5.0 * match_count
                         direct_boosted_indices.add(idx)
 
             # HippoRAG-Inspired Personalized PageRank (PPR) Engine
@@ -2141,8 +2142,11 @@ class MemoryStore:
                                 + spread_activation
                                 - 0.5 * dist_emo
                             )
-                            # Apply direct cue boost (+3.5) since it was promoted due to keyword matches
-                            score_active += 3.5
+                            # Apply direct cue boost since it was promoted due to keyword matches
+                            match_count = sum(
+                                1 for mc in matched_cues if mc in content.lower()
+                            )
+                            score_active += 5.0 * match_count
 
                             promoted_results.append(
                                 {

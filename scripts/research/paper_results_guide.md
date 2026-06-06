@@ -52,7 +52,7 @@ Below is a complete matrix mapping every performance, system, and behavioral met
 | **1. Memory Retrieval Recall** | Recall@5 / Recall@K ($K=1..10$) | Contriever (76.2%), BGE-M3 (84.3%), HippoRAG (92.4%) | **92.5%** | `cognitive_metrics_eval.py`<br/>`hard_benchmark.py` |
 | **2. Retrieval Latency** | DB lookup path query time | Standard un-indexed depth-3 query (84.60 ms) | **0.28 ms** (cached)<br/>**8.85 ms** (uncached) | `human_realism_eval.py`<br/>`estimate_realtime_latency.py` |
 | **3. Theory of Mind Error** | Mean Absolute Error (MAE) Valence/Arousal | GPT-4o (0.280 MAE), Claude 3.5 (0.320 MAE), Baseline (0.35 MAE) | **0.054 Valence MAE**<br/>**0.048 Arousal MAE** | `cognitive_metrics_eval.py`<br/>`hard_benchmark.py` |
-| **4. Speech Turn-Taking** | Barge-In stop latency (ms) | Siri/Alexa (2100 ms), Pepper (1000 ms), SOTA VAP (350 ms) | **115.0 ms** | `cognitive_metrics_eval.py`<br/>`extended_benchmarks_eval.py` |
+| **4. Speech Turn-Taking** | Barge-In stop latency (ms) | Siri/Alexa (2100 ms), Pepper (1000 ms), SOTA VAP (350 ms) | **103.98 ms** (organic) | `cognitive_metrics_eval.py`<br/>`extended_benchmarks_eval.py` |
 | **5. Barge-In False Triggers** | False positive interruption rate | Industry baseline (18.5%) | **1.8%** | `cognitive_metrics_eval.py`<br/>`extended_benchmarks_eval.py` |
 | **6. Computational Footprint** | RAM consumption (MB) & CPU (%) | Standard ROS2 microservices over DDS IPC | **242 MB RAM** (mesh total)<br/>**1079.58 MB** (8 services) | `human_realism_eval.py`<br/>`resource_profiler.py` |
 | **7. Power Footprint** | Active system power draw | Standard ROS2 desktop PC (35.0 W) | **2.50 Watts** (edge mesh)<br/>**24.50 W** (iMac M3 total) | `human_realism_eval.py`<br/>`extended_benchmarks_eval.py` |
