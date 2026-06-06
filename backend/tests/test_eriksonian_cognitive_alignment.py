@@ -72,7 +72,7 @@ def test_eriksonian_db_schema_attributes(temp_store):
 
 
 def test_cue_and_spreading_activation_boosts(temp_store):
-    """Validate that matching cue words in query gives +1.2 direct boost and +0.6 spreading boost to connected memories."""
+    """Validate that matching cue words in query gives direct boost (+5.0 per cue match) and +0.6 spreading boost to connected memories."""
     # Insert three test memories
     # Memory A (Contains entities 'priya' and 'kolkata')
     # Memory B (Contains entity 'kolkata')
@@ -118,8 +118,8 @@ def test_cue_and_spreading_activation_boosts(temp_store):
         cued_scores = {r["content"]: r["score"] for r in cued_results}
 
     # Verify boosts
-    # Memory A contains 'priya' -> Direct Boost + spread activation (+3.95 under new production constants)
-    expected_a_boost = 3.95
+    # Memory A contains 'priya' -> Direct Boost + spread activation (+5.45 under new production constants)
+    expected_a_boost = 5.45
     actual_a_boost = (
         cued_scores["Priya is my partner, she lives in Kolkata."]
         - baseline_scores["Priya is my partner, she lives in Kolkata."]
