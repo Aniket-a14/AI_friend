@@ -100,7 +100,7 @@ def generate_research_plots(csv_file=None):
         frameon=True,
         facecolor="#F8F9F9",
         edgecolor="#BDC3C7",
-        fontsize=9,
+        fontsize=10.5,
     )
 
     # 2. Panel 2: Theory of Mind (ToM) Alignment
@@ -150,7 +150,7 @@ def generate_research_plots(csv_file=None):
         frameon=True,
         facecolor="#F8F9F9",
         edgecolor="#BDC3C7",
-        fontsize=9,
+        fontsize=10.5,
     )
 
     # 3. Panel 3: Endocrine & Hormonal Dynamics
@@ -194,7 +194,7 @@ def generate_research_plots(csv_file=None):
         frameon=True,
         facecolor="#F8F9F9",
         edgecolor="#BDC3C7",
-        fontsize=9,
+        fontsize=10.5,
     )
 
     # Spacing and layout
