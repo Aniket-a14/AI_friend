@@ -5,7 +5,7 @@ implied goals, and known concepts.
 """
 
 import re
-from typing import List
+from typing import List, Dict
 from pydantic import BaseModel
 
 
@@ -18,9 +18,27 @@ class UserMentalModel(BaseModel):
     inferred_valence: float = 0.0  # -1.0 (negative) to 1.0 (positive)
     inferred_arousal: float = 0.5  # 0.0 (calm) to 1.0 (excited/angry)
     implied_goals: List[str] = []  # List of user's inferred immediate goals
-    known_concepts: List[
-        str
-    ] = []  # Unique case-insensitive list of concepts user knows/mentioned
+    known_concepts: List[str] = []  # Unique case-insensitive list of concepts user knows/mentioned
+    user_beliefs: Dict[str, str] = {}  # Concept name -> user's subjective belief/understanding
+
+
+def extract_belief_discrepancies(
+    user_beliefs: Dict[str, str], ground_truth: Dict[str, str]
+) -> Dict[str, Dict[str, str]]:
+    """
+    Compares user beliefs with ground truth facts to identify discrepancies/misconceptions.
+    Returns a dictionary of discrepancies:
+    {concept: {"user_belief": ..., "ground_truth": ...}}
+    """
+    discrepancies = {}
+    for concept, belief in user_beliefs.items():
+        truth = ground_truth.get(concept)
+        if truth and truth.lower() != belief.lower():
+            discrepancies[concept] = {
+                "user_belief": belief,
+                "ground_truth": truth
+            }
+    return discrepancies
 
 
 def update_known_concepts(current_concepts: List[str], user_input: str) -> List[str]:

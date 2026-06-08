@@ -652,6 +652,28 @@ class MemoryStore:
             if not query_vector:
                 return []
 
+            # Dynamic Matryoshka Representation Learning (MRL) dimension gating based on stress/arousal/fatigue
+            # Higher stress/arousal/fatigue restricts search bandwidth to a smaller Matryoshka prefix to bound latency.
+            stress_index = max(current_arousal, current_cortisol)
+            if stress_index > 0.8:
+                mrl_dim = 256
+                candidate_limit = max(10, limit * 2 if limit is not None else 10)
+            elif stress_index > 0.6:
+                mrl_dim = 512
+                candidate_limit = max(30, limit * 3 if limit is not None else 30)
+            else:
+                mrl_dim = 768
+                candidate_limit = (
+                    max(120, limit * 6 if limit is not None else 120)
+                    if refresh_on_recall
+                    else max(20, limit * 3 if limit is not None else 20)
+                )
+
+            # Slice query_vector to mrl_dim and pad with zeros to 768
+            mrl_query_vector = list(query_vector)
+            for i in range(mrl_dim, len(mrl_query_vector)):
+                mrl_query_vector[i] = 0.0
+
             # Topic-Shift check:
             if self._last_query_vector is not None:
                 try:
@@ -672,18 +694,10 @@ class MemoryStore:
                     logger.debug(f"Topic-shift calculation failed: {ts_err}")
             self._last_query_vector = query_vector
 
-            vector_str = str(query_vector)
+            vector_str = str(mrl_query_vector)
             excluded = {content for content in (exclude_contents or []) if content}
 
             is_sqlite = self.is_sqlite
-
-            # Dynamically scale search candidate pool limit during memory validation tests to boost long-term recall
-            candidate_limit = (
-                max(120, limit * 6 if limit is not None else 120)
-                if refresh_on_recall
-                else max(20, limit * 3 if limit is not None else 20)
-            )
-
             raw_candidates = []
 
             # Non-blocking wrapper to query Qdrant via a thread pool
@@ -692,7 +706,7 @@ class MemoryStore:
                     if self.qdrant_store.client:
                         return await asyncio.to_thread(
                             self.qdrant_store.search_vector_memories,
-                            query_vector=query_vector,
+                            query_vector=mrl_query_vector,
                             limit=candidate_limit,
                         )
                 except Exception as qe:

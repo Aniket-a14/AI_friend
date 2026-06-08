@@ -55,6 +55,28 @@ class CognitivePipeline:
             event_metadata = {}
         stage_times["stage_1_extraction_ms"] = (time.perf_counter() - t_start) * 1000.0
 
+        # VAP Turn Planning / Speculative Pre-Generation
+        is_partial = raw_event.get("is_partial", False)
+        vap_prob = raw_event.get("vap_probability", event_metadata.get("vap_probability", 0.0))
+        is_vap_event = (raw_event_type == "VAP_SIGNAL")
+
+        if is_partial or is_vap_event:
+            if vap_prob < 0.7:
+                logger.debug(f"[Pipeline] Partial input/VAP but probability {vap_prob:.2f} < 0.7. Skipping speculative pre-generation.")
+                return
+            else:
+                logger.info(f"[Pipeline] VAP threshold met ({vap_prob:.2f} >= 0.7). Triggering speculative pre-generation.")
+                event_metadata["speculative"] = True
+                yield {
+                    "type": "mesh_signal",
+                    "subject": "audio.pre_generate",
+                    "data": {
+                        "speculative": True,
+                        "partial_content": raw_event.get("content", ""),
+                        "vap_probability": vap_prob,
+                    }
+                }
+
         # 2. Conflict Resolution (Turn-Taking Stability)
         t_start = time.perf_counter()
         conflict_resolved = False
@@ -116,6 +138,10 @@ class CognitivePipeline:
         t_start = time.perf_counter()
         event = await self.perception.perceive(raw_event)
         stage_times["stage_3_perception_ms"] = (time.perf_counter() - t_start) * 1000.0
+        if event_metadata.get("speculative"):
+            if event.metadata is None:
+                event.metadata = {}
+            event.metadata["speculative"] = True
 
         # 4. Appraisal (§1 — OCC/Lazarus/EMA)
         t_start = time.perf_counter()
@@ -256,6 +282,7 @@ class CognitivePipeline:
         plan.payload["valence"] = state_snapshot.get("mood", 0.0)
         plan.payload["arousal"] = state_snapshot.get("energy", 0.5)
         plan.payload["dominance"] = state_snapshot.get("dominance", 0.5)
+        plan.payload["speculative"] = event.metadata.get("speculative", False) if event.metadata else False
         stage_times["stage_7_action_prep_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # Calculate Pre-LLM total time
@@ -283,7 +310,10 @@ class CognitivePipeline:
         t_start = time.perf_counter()
         full_response = ""
         done_chunk = None
+        is_spec = plan.payload.get("speculative", False)
         async for chunk in self.action.execute(plan):
+            if is_spec:
+                chunk["speculative"] = True
             if chunk["type"] == "content":
                 full_response += chunk["data"]
             if chunk["type"] == "done":
@@ -346,9 +376,11 @@ class CognitivePipeline:
 
         # Yield the saved done chunk at the very end
         if done_chunk:
+            if is_spec:
+                done_chunk["speculative"] = True
             yield done_chunk
         else:
-            yield {"type": "done", "data": "finished"}
+            yield {"type": "done", "data": "finished", "speculative": is_spec}
 
     async def _async_system2_appraisal(self, user_utterance: str):
         try:

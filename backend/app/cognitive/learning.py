@@ -75,6 +75,25 @@ class ReflectionService:
         """
         self.is_reflecting = True
         try:
+            # Calculate Episodic Saliency Index (ESI = 0.6 * arousal + 0.4 * cortisol)
+            for e in episodes:
+                emotion_vec = e.get("emotion_vector", {})
+                arousal = emotion_vec.get("Ar", emotion_vec.get("arousal", 0.5))
+                # Cortisol may be stored in emotion_vector or metadata
+                cortisol = emotion_vec.get("cortisol", e.get("metadata", {}).get("cortisol", 0.5))
+                saliency = 0.6 * arousal + 0.4 * cortisol
+                e["saliency_index"] = saliency
+
+            # Sort episodes by saliency in descending order
+            episodes = sorted(episodes, key=lambda x: x["saliency_index"], reverse=True)
+
+            # Filter unconsolidated episodes to prioritize high-saliency events (threshold >= 0.4 or top 50%)
+            threshold = 0.4
+            filtered = [e for e in episodes if e["saliency_index"] >= threshold]
+            if not filtered:
+                filtered = episodes[:max(1, len(episodes) // 2)]
+            episodes = filtered
+
             # Build enriched summary from episodic schema
             summary_parts = []
             for e in episodes:

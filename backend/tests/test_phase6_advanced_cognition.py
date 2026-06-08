@@ -239,3 +239,174 @@ async def test_sleep_dreaming_neo4j():
         emotion=0.4,
         source="subconscious_dream",
     )
+
+
+@pytest.mark.asyncio
+async def test_mrl_dimension_gating():
+    # Test that MRL dimension gating handles stress/arousal/fatigue scaling
+    from app.state.memory_store import MemoryStore
+    
+    # Initialize MemoryStore with mock parameters
+    store = MemoryStore(MagicMock(), MagicMock())
+    store.get_embedding = AsyncMock(return_value=[0.1] * 768)
+    store.qdrant_store = MagicMock()
+    store.qdrant_store.search_vector_memories = MagicMock(return_value=[])
+    store.graph_db = MagicMock()
+    store.graph_db.execute_query = AsyncMock(return_value=[])
+
+    # Case 1: High stress/arousal/fatigue -> mrl_dim = 256
+    results = await store.search_memories("hello", current_arousal=0.9, current_cortisol=0.9)
+    # Extract the query vector sent to qdrant
+    called_args = store.qdrant_store.search_vector_memories.call_args[1]
+    q_vec = called_args["query_vector"]
+    assert q_vec[255] == 0.1
+    assert q_vec[256] == 0.0
+    assert len(q_vec) == 768
+
+    # Case 2: Relaxed -> mrl_dim = 768
+    results_relaxed = await store.search_memories("hello", current_arousal=0.2, current_cortisol=0.2)
+    called_args_relaxed = store.qdrant_store.search_vector_memories.call_args[1]
+    q_vec_relaxed = called_args_relaxed["query_vector"]
+    assert q_vec_relaxed[256] == 0.1
+    assert q_vec_relaxed[767] == 0.1
+
+
+@pytest.mark.asyncio
+async def test_actr_goal_utility_rl():
+    # Test ACT-R Goal Utility Reinforcement Learning updates in DecisionService
+    from app.cognitive.decision import DecisionService
+    from app.cognitive.perception import CognitiveEvent
+    
+    decision_service = DecisionService()
+    event = CognitiveEvent("ev-1", "USER_MESSAGE", "hello", {"gaze": 0.8, "appraisal": {"relevance": 0.5}}, "CHAT")
+    
+    # Simulate selecting ENGAGE goal first
+    decision_service._previous_goal = "ENGAGE"
+    # Execute decide (which triggers _score_goals_maut and TD-learning updates)
+    state = {"mood": 0.5, "energy": 0.5, "trust": 0.5, "inferred_valence": 0.8, "emotion": "neutral"}
+    await decision_service.decide(event, state)
+    
+    # The utility of the previous goal "ENGAGE" should have been updated from 1.0
+    # Reward = 0.7 * norm_valence + 0.3 * gaze = 0.7 * 0.9 + 0.3 * 0.8 = 0.63 + 0.24 = 0.87
+    # U = 1.0 + 0.1 * (0.87 - 1.0) = 0.987
+    assert decision_service.goal_utilities["ENGAGE"] == pytest.approx(0.987, abs=1e-3)
+
+
+@pytest.mark.asyncio
+async def test_emotionally_gated_consolidation():
+    # Test that ReflectionService filters unconsolidated episodes based on the saliency index
+    from app.cognitive.learning import ReflectionService
+
+    reflection_service = ReflectionService(llm_service=MagicMock(), graph_store=MagicMock())
+    
+    # Mock LLM and Graph
+    reflection_service.llm.generate = AsyncMock(return_value="[]")
+    reflection_service.graph.decay_relationships = AsyncMock()
+    
+    # 3 episodes: low, medium, high saliency
+    episodes = [
+        {"event": "EventApple", "emotion_vector": {"Ar": 0.1, "cortisol": 0.1}}, # ESI = 0.1
+        {"event": "EventBanana", "emotion_vector": {"Ar": 0.5, "cortisol": 0.4}}, # ESI = 0.46
+        {"event": "EventCherry", "emotion_vector": {"Ar": 0.9, "cortisol": 0.8}}, # ESI = 0.86
+    ]
+    
+    # Run consolidate
+    await reflection_service._consolidate(episodes)
+    # The llm.generate call should receive a summary consisting only of prioritized events (B & C)
+    for call in reflection_service.llm.generate.call_args_list:
+        called_prompt = call[0][0]
+        assert "EventBanana" in called_prompt
+        assert "EventCherry" in called_prompt
+        assert "EventApple" not in called_prompt  # EventApple should have been filtered out (low saliency)
+
+
+@pytest.mark.asyncio
+async def test_tom_belief_tracking_and_neo4j():
+    # Test UserMentalModel user_beliefs tracking and extract_belief_discrepancies helper
+    from app.cognitive.tom import UserMentalModel, extract_belief_discrepancies
+    
+    model = UserMentalModel(
+        inferred_valence=0.5,
+        user_beliefs={"sky": "green", "grass": "green"}
+    )
+    
+    ground_truth = {"sky": "blue", "grass": "green"}
+    discrepancies = extract_belief_discrepancies(model.user_beliefs, ground_truth)
+    
+    assert "sky" in discrepancies
+    assert discrepancies["sky"]["user_belief"] == "green"
+    assert discrepancies["sky"]["ground_truth"] == "blue"
+    assert "grass" not in discrepancies
+
+
+@pytest.mark.asyncio
+async def test_vap_predictive_pre_generation():
+    # Test that CognitivePipeline handles VAP turn projection and triggers speculative pre-generation
+    from app.cognitive.pipeline import CognitivePipeline
+    
+    mock_perception = MagicMock()
+    # Mock perceive returning a mock CognitiveEvent
+    mock_event = MagicMock()
+    mock_event.event_type = "USER_MESSAGE"
+    mock_event.raw_content = "hello"
+    mock_event.metadata = {"speculative": False}
+    mock_perception.perceive = AsyncMock(return_value=mock_event)
+    
+    mock_appraisal = MagicMock()
+    mock_appraisal_vector = MagicMock()
+    mock_appraisal_vector.to_dict.return_value = {}
+    mock_appraisal_vector.relationship_impact = 0.0
+    mock_appraisal.appraise.return_value = mock_appraisal_vector
+    
+    mock_state = MagicMock()
+    mock_state.get_context_snapshot.return_value = {"mood": 0.5, "energy": 0.5}
+    mock_state.get_behavioral_directive.return_value = "neutral"
+    # Mock async methods
+    mock_state.update_theory_of_mind = AsyncMock()
+    mock_state.update_from_appraisal = AsyncMock()
+    
+    mock_decision = MagicMock()
+    mock_plan = MagicMock()
+    mock_plan.goal = "ENGAGE"
+    mock_plan.payload = {}
+    mock_decision.decide = AsyncMock(return_value=mock_plan)
+    
+    mock_action = MagicMock()
+    mock_action.execute = MagicMock(return_value=MagicMock())
+    # Create an async generator mock
+    async def mock_action_generator(*args, **kwargs):
+        yield {"type": "content", "data": "Hi"}
+        yield {"type": "done", "data": "finished"}
+    mock_action.execute.side_effect = mock_action_generator
+    
+    mock_identity = MagicMock()
+    mock_identity.validate_response = AsyncMock(return_value=(True, ""))
+    
+    pipeline = CognitivePipeline(
+        perception=mock_perception,
+        appraisal=mock_appraisal,
+        state=mock_state,
+        decision=mock_decision,
+        action=mock_action,
+        learning=MagicMock(),
+        identity=mock_identity,
+    )
+    
+    # Case 1: Partial event, low VAP -> should discard early and return nothing
+    partial_low = {"event_type": "USER_MESSAGE", "is_partial": True, "vap_probability": 0.3}
+    outputs_low = [out async for out in pipeline.execute(partial_low)]
+    assert len(outputs_low) == 0
+    
+    # Case 2: Partial event, high VAP -> should pre-generate speculatively
+    partial_high = {"event_type": "USER_MESSAGE", "is_partial": True, "vap_probability": 0.85}
+    outputs_high = [out async for out in pipeline.execute(partial_high)]
+    
+    # Check that audio.pre_generate signal was yielded
+    pre_gen_signals = [o for o in outputs_high if o.get("type") == "mesh_signal" and o.get("subject") == "audio.pre_generate"]
+    assert len(pre_gen_signals) == 1
+    assert pre_gen_signals[0]["data"]["speculative"] is True
+    
+    # Check that content chunks have speculative flag set to True
+    content_chunks = [o for o in outputs_high if o.get("type") == "content"]
+    assert len(content_chunks) > 0
+    assert all(c.get("speculative") is True for c in content_chunks)
