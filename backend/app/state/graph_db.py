@@ -307,3 +307,51 @@ class GraphDB:
         logger.info(
             f"Graph Store: Decayed relationship weights (factor: {decay_factor}) and pruned edges below {prune_threshold}"
         )
+
+    async def create_user_belief(
+        self,
+        user_name: str,
+        concept: str,
+        belief_value: str,
+        properties: Dict[str, Any] = None,
+    ):
+        """
+        Creates a BELIEVES relationship between a User/Agent and a concept node representing
+        the user's subjective understanding, distinct from standard ontological relationships.
+        """
+        await self._invalidate_cache(user_name)
+        props = properties or {}
+        props.setdefault("belief_value", belief_value)
+        props.setdefault("updated_at", time.time())
+
+        # MERGE the user node, MERGE the concept node, and link with a BELIEVES relation
+        query = (
+            "MERGE (u:User {name: $user_name}) "
+            "MERGE (c:Concept {name: $concept}) "
+            "MERGE (u)-[r:BELIEVES]->(c) "
+            "SET r += $props "
+            "RETURN u, r, c"
+        )
+        await self.execute_query(
+            query,
+            {"user_name": user_name, "concept": concept, "props": props},
+            write=True,
+        )
+        logger.info(
+            f"Graph Store: Recorded user belief: {user_name} -[BELIEVES]-> {concept} = '{belief_value}'"
+        )
+
+    async def get_user_beliefs(self, user_name: str) -> Dict[str, str]:
+        """
+        Retrieves all beliefs stored for a given user.
+        """
+        query = (
+            "MATCH (u:User {name: $user_name})-[r:BELIEVES]->(c:Concept) "
+            "RETURN c.name AS concept, r.belief_value AS belief_value"
+        )
+        records = await self.execute_query(
+            query,
+            {"user_name": user_name},
+            use_cache=True,
+        )
+        return {record["concept"]: record["belief_value"] for record in records}

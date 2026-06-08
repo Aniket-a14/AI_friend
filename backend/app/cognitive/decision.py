@@ -49,6 +49,10 @@ class DecisionService:
         self.w_identity = Config.MAUT_W_IDENTITY
         self.w_context = Config.MAUT_W_CONTEXT
 
+        # ACT-R Goal Utility Reinforcement Learning
+        self.goal_utilities = {g: 1.0 for g in GOALS}
+        self.alpha_rl = 0.1  # TD learning rate
+
         # Intent Persistence (§3.2)
         self.persistence_rate = Config.INTENT_PERSISTENCE_RATE  # ρ
         self.shift_threshold = Config.CONTEXT_SHIFT_THRESHOLD  # θ_shift
@@ -109,7 +113,7 @@ class DecisionService:
         # 2. MAUT Goal Scoring (§3.1) — replaces raw keyword goal
         appraisal = event.metadata.get("appraisal", {})
         if appraisal and event.intent == "CHAT":
-            maut_goal = self._score_goals_maut(appraisal, state_snapshot)
+            maut_goal = self._score_goals_maut(appraisal, state_snapshot, event.metadata)
             event.metadata["suggested_goal"] = maut_goal
 
         # 3. Tick BT
@@ -130,11 +134,12 @@ class DecisionService:
         )
 
     def _score_goals_maut(
-        self, appraisal: Dict[str, float], state: Dict[str, Any]
+        self, appraisal: Dict[str, float], state: Dict[str, Any], event_metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Multi-Attribute Utility Theory (§3.1).
         Scores each goal and applies temporal persistence (§3.2).
+        Includes dynamic ACT-R Goal Utility Reinforcement Learning updates.
         """
         V = state.get("mood", 0.0)
         Ar = state.get("energy", 0.5)
@@ -144,6 +149,22 @@ class DecisionService:
         N = appraisal.get("novelty", 0.3)
         NA = appraisal.get("norm_alignment", 1.0)
 
+        # 1. Update utility of previous goal if it exists (TD learning: U_g(t) = U_g(t-1) + alpha * [Reward - U_g(t-1)])
+        V_user = state.get("inferred_valence", 0.0)
+        if not V_user and "user_mental_model" in state:
+            V_user = state["user_mental_model"].get("inferred_valence", 0.0)
+
+        gaze = 0.5
+        if event_metadata:
+            gaze = event_metadata.get("gaze", event_metadata.get("gaze_duration", event_metadata.get("user_gaze", 0.5)))
+
+        norm_valence = (V_user + 1.0) / 2.0
+        reward = 0.7 * norm_valence + 0.3 * gaze
+
+        if self._previous_goal in self.goal_utilities:
+            prev_u = self.goal_utilities[self._previous_goal]
+            self.goal_utilities[self._previous_goal] = prev_u + self.alpha_rl * (reward - prev_u)
+
         scores = {}
 
         # ENGAGE: Best for neutral/positive states, high energy, novel topics
@@ -152,6 +173,7 @@ class DecisionService:
             + self.w_emotion * (0.5 + V * 0.3 + Ar * 0.2)
             + self.w_identity * NA
             + self.w_context * R
+            + self.goal_utilities["ENGAGE"]
         )
 
         # COMFORT: Best when user seems distressed — favored at low arousal (calm tone)
@@ -160,6 +182,7 @@ class DecisionService:
             + self.w_emotion * max(0, -V + 0.5) * (1.2 - Ar * 0.4)
             + self.w_identity * NA
             + self.w_context * R * 0.8
+            + self.goal_utilities["COMFORT"]
         )
 
         # INFORM: Best for high relevance, novel content — arousal-neutral
@@ -168,6 +191,7 @@ class DecisionService:
             + self.w_emotion * (0.4 + Ar * 0.2)
             + self.w_identity * NA
             + self.w_context * R * N
+            + self.goal_utilities["INFORM"]
         )
 
         # TEASE: Only when trust is high, mood positive, and energy high
@@ -176,6 +200,7 @@ class DecisionService:
             + self.w_emotion * max(0, V * 0.3 + Ar * 0.2)
             + self.w_identity * NA * T
             + self.w_context * (1 - R) * 0.3
+            + self.goal_utilities["TEASE"]
         )
 
         # PROTECT: When norm alignment is low — arousal-neutral (boundary enforcement)
@@ -184,6 +209,7 @@ class DecisionService:
             + self.w_emotion * (0.2 + Ar * 0.1)
             + self.w_identity * max(0, 1.0 - NA)
             + self.w_context * R * 0.5
+            + self.goal_utilities["PROTECT"]
         )
 
         # §3.2: Intent Persistence with Context Gating

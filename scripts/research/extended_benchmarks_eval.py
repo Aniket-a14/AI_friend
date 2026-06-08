@@ -768,10 +768,10 @@ def generate_publication_charts(data):
     fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.5), dpi=300)
 
     labels_lat = [
-        "Siri / Alexa\n(Silence VAD) [2]",
-        "Pepper / Furhat\n(Cascaded) [1,7]",
-        "SOTA VAP Target\n(Ekstedt) [4]",
-        "CVS-3.5\n(Sovereign)",
+        "Siri/Alexa\n(VAD) [2]",
+        "Pepper/Furhat\n(Casc.) [1,7]",
+        "SOTA VAP\n(Ekstedt) [4]",
+        "CVS-3.5\n(Ours)",
     ]
     values_lat = [2100, 1000, 350, int(round(data["turn_taking"]["cvs_latency_ms"]))]
     colors_lat = ["#fca5a5", "#fca5a5", "#bae6fd", "#10b981"]
@@ -784,6 +784,7 @@ def generate_publication_charts(data):
         alpha=0.85,
         width=0.55,
     )
+    plt.setp(axes[0].get_xticklabels(), rotation=15, ha="right")
     axes[0].set_ylabel("Latency (Milliseconds)", fontsize=9)
     axes[0].set_title("Speech Turn-Taking / Barge-in", fontweight="bold", fontsize=9)
     for idx, val in enumerate(values_lat):
@@ -800,9 +801,9 @@ def generate_publication_charts(data):
     axes[0].grid(axis="x")
 
     labels_tom = [
-        "Claude 3.5\n(Zero-Shot) [13]",
-        "GPT-4o\n(Zero-Shot) [13]",
-        "Standard LLM\n(Zero-Shot) [9]",
+        "Claude 3.5\n[13]",
+        "GPT-4o\n[13]",
+        "Standard LLM\n[9]",
         "CVS-3.5\n(Ours)",
     ]
     values_tom = [
@@ -823,6 +824,7 @@ def generate_publication_charts(data):
         alpha=0.85,
         width=0.55,
     )
+    plt.setp(axes[1].get_xticklabels(), rotation=15, ha="right")
     axes[1].set_ylabel("Mean Absolute Error (MAE)", fontsize=9)
     axes[1].set_title("Theory of Mind Emotion MAE", fontweight="bold", fontsize=9)
     for idx, val in enumerate(values_tom):
