@@ -8,12 +8,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 
+
 def is_port_open(host, port, timeout=0.1):
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
     except Exception:
         return False
+
 
 # Add workspace and backend paths
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

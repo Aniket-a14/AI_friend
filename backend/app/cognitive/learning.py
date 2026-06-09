@@ -80,7 +80,9 @@ class ReflectionService:
                 emotion_vec = e.get("emotion_vector", {})
                 arousal = emotion_vec.get("Ar", emotion_vec.get("arousal", 0.5))
                 # Cortisol may be stored in emotion_vector or metadata
-                cortisol = emotion_vec.get("cortisol", e.get("metadata", {}).get("cortisol", 0.5))
+                cortisol = emotion_vec.get(
+                    "cortisol", e.get("metadata", {}).get("cortisol", 0.5)
+                )
                 saliency = 0.6 * arousal + 0.4 * cortisol
                 e["saliency_index"] = saliency
 
@@ -91,7 +93,7 @@ class ReflectionService:
             threshold = 0.4
             filtered = [e for e in episodes if e["saliency_index"] >= threshold]
             if not filtered:
-                filtered = episodes[:max(1, len(episodes) // 2)]
+                filtered = episodes[: max(1, len(episodes) // 2)]
             episodes = filtered
 
             # Build enriched summary from episodic schema

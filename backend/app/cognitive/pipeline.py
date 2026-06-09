@@ -57,15 +57,21 @@ class CognitivePipeline:
 
         # VAP Turn Planning / Speculative Pre-Generation
         is_partial = raw_event.get("is_partial", False)
-        vap_prob = raw_event.get("vap_probability", event_metadata.get("vap_probability", 0.0))
-        is_vap_event = (raw_event_type == "VAP_SIGNAL")
+        vap_prob = raw_event.get(
+            "vap_probability", event_metadata.get("vap_probability", 0.0)
+        )
+        is_vap_event = raw_event_type == "VAP_SIGNAL"
 
         if is_partial or is_vap_event:
             if vap_prob < 0.7:
-                logger.debug(f"[Pipeline] Partial input/VAP but probability {vap_prob:.2f} < 0.7. Skipping speculative pre-generation.")
+                logger.debug(
+                    f"[Pipeline] Partial input/VAP but probability {vap_prob:.2f} < 0.7. Skipping speculative pre-generation."
+                )
                 return
             else:
-                logger.info(f"[Pipeline] VAP threshold met ({vap_prob:.2f} >= 0.7). Triggering speculative pre-generation.")
+                logger.info(
+                    f"[Pipeline] VAP threshold met ({vap_prob:.2f} >= 0.7). Triggering speculative pre-generation."
+                )
                 event_metadata["speculative"] = True
                 yield {
                     "type": "mesh_signal",
@@ -74,7 +80,7 @@ class CognitivePipeline:
                         "speculative": True,
                         "partial_content": raw_event.get("content", ""),
                         "vap_probability": vap_prob,
-                    }
+                    },
                 }
 
         # 2. Conflict Resolution (Turn-Taking Stability)
@@ -282,7 +288,9 @@ class CognitivePipeline:
         plan.payload["valence"] = state_snapshot.get("mood", 0.0)
         plan.payload["arousal"] = state_snapshot.get("energy", 0.5)
         plan.payload["dominance"] = state_snapshot.get("dominance", 0.5)
-        plan.payload["speculative"] = event.metadata.get("speculative", False) if event.metadata else False
+        plan.payload["speculative"] = (
+            event.metadata.get("speculative", False) if event.metadata else False
+        )
         stage_times["stage_7_action_prep_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # Calculate Pre-LLM total time
