@@ -113,7 +113,9 @@ class DecisionService:
         # 2. MAUT Goal Scoring (§3.1) — replaces raw keyword goal
         appraisal = event.metadata.get("appraisal", {})
         if appraisal and event.intent == "CHAT":
-            maut_goal = self._score_goals_maut(appraisal, state_snapshot, event.metadata)
+            maut_goal = self._score_goals_maut(
+                appraisal, state_snapshot, event.metadata
+            )
             event.metadata["suggested_goal"] = maut_goal
 
         # 3. Tick BT
@@ -134,7 +136,10 @@ class DecisionService:
         )
 
     def _score_goals_maut(
-        self, appraisal: Dict[str, float], state: Dict[str, Any], event_metadata: Optional[Dict[str, Any]] = None
+        self,
+        appraisal: Dict[str, float],
+        state: Dict[str, Any],
+        event_metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Multi-Attribute Utility Theory (§3.1).
@@ -156,14 +161,21 @@ class DecisionService:
 
         gaze = 0.5
         if event_metadata:
-            gaze = event_metadata.get("gaze", event_metadata.get("gaze_duration", event_metadata.get("user_gaze", 0.5)))
+            gaze = event_metadata.get(
+                "gaze",
+                event_metadata.get(
+                    "gaze_duration", event_metadata.get("user_gaze", 0.5)
+                ),
+            )
 
         norm_valence = (V_user + 1.0) / 2.0
         reward = 0.7 * norm_valence + 0.3 * gaze
 
         if self._previous_goal in self.goal_utilities:
             prev_u = self.goal_utilities[self._previous_goal]
-            self.goal_utilities[self._previous_goal] = prev_u + self.alpha_rl * (reward - prev_u)
+            self.goal_utilities[self._previous_goal] = prev_u + self.alpha_rl * (
+                reward - prev_u
+            )
 
         scores = {}
 
