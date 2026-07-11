@@ -1,0 +1,102 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'background': '#ffffff', 'canvasBackground': '#ffffff', 'primaryColor': '#ffffff', 'lineColor': '#475569', 'textColor': '#1e293b', 'mainBkg': '#ffffff', 'nodeBorder': '#cbd5e1' }}}%%
+graph LR
+    %% Styling definitions
+    classDef inputNode fill:#E0F2FE,stroke:#3B82F6,stroke-width:1.5px,rx:5px,ry:5px,color:#1E3A8A;
+    classDef busNode fill:#F5F3FF,stroke:#8B5CF6,stroke-width:2px,rx:5px,ry:5px,color:#4C1D95;
+    classDef reflexiveNode fill:#FFE4E6,stroke:#F43F5E,stroke-width:1.5px,rx:5px,ry:5px,color:#881337;
+    classDef deliberativeNode fill:#E0E7FF,stroke:#6366F1,stroke-width:1.5px,rx:5px,ry:5px,color:#312E81;
+    classDef memoryNode fill:#D1FAE5,stroke:#10B981,stroke-width:1.5px,rx:5px,ry:5px,color:#064E3B;
+    classDef ttsNode fill:#FEF3C7,stroke:#F59E0B,stroke-width:1.5px,rx:5px,ry:5px,color:#78350F;
+
+    %% 1. PERCEPTION LAYER
+    subgraph Inputs ["1. Input & Perception Layer"]
+        UA["User Audio Stream"]:::inputNode
+        UV["User Video Stream"]:::inputNode
+        GT["Gaze Tracking (Gaze Vectors)"]:::inputNode
+        FV["Facial Valence & Arousal"]:::inputNode
+        
+        UV --> GT
+        UV --> FV
+    end
+    style Inputs fill:#F8FAFC,stroke:#CBD5E1,stroke-width:1.5px,stroke-dasharray: 5 5,color:#475569;
+
+    %% NATS EVENT BUS
+    EB["Local Event Bus<br>(Pydantic Contracts & orjson Serialization over NATS)"]:::busNode
+
+    UA --> EB
+    GT --> EB
+    FV --> EB
+
+    %% 2. REFLEXIVE PATHWAY (SYSTEM PART A)
+    subgraph PartA ["2. System Part A (Reflexive Pathway - Sub-15ms in Rust / PyO3)"]
+        VAD["Speculative Soft-Ducking<br>(VAP Transition Prob > 0.75)"]:::reflexiveNode
+        SV["Semantic Verification<br>(Local Whisper Turn Check)"]:::reflexiveNode
+        
+        UA --> VAD
+        UA --> SV
+    end
+    style PartA fill:#FFF1F2,stroke:#FDA4AF,stroke-width:1.5px,stroke-dasharray: 5 5,color:#9F1239;
+
+    %% 3. DELIBERATIVE PATHWAY (SYSTEM PART B)
+    subgraph PartB ["3. System Part B (Deliberative Pathway - 100-300ms in Python)"]
+        ToM["Theory of Mind (ToM)<br>(Infers User Affective State)"]:::deliberativeNode
+        UK["User Knowledge Model<br>(Extracts Active Knowledge Set)"]:::deliberativeNode
+        Endo["Neuromodulatory Loop<br>(Simulates Cortisol, Dopamine, Fatigue)"]:::deliberativeNode
+        BT["Behavior Tree / MAUT<br>(Goal Utility TD-Learning)"]:::deliberativeNode
+        LLM["Appraisal & Dialogue Engine<br>(Single-Pass Co-generation)"]:::deliberativeNode
+        Thought["Proactive Thought Engine<br>(Idle Cues Scheduler)"]:::deliberativeNode
+    end
+    style PartB fill:#EEF2FF,stroke:#C7D2FE,stroke-width:1.5px,stroke-dasharray: 5 5,color:#3730A3;
+
+    %% 4. MULTI-TIER HYBRID MEMORY
+    subgraph Memory ["4. Four-Tier Hybrid Memory Architecture"]
+        M1["Redis (Tier 1)<br>[Active PAD & Working Cache]"]:::memoryNode
+        M2["SQLite (Tier 2)<br>[Dialogue Logs & Telemetry]"]:::memoryNode
+        M3["Qdrant (Tier 3)<br>[Semantic Vectors & MRL Gating]"]:::memoryNode
+        M4["Neo4j (Tier 4)<br>[Relational Graph & Epistemic Beliefs]"]:::memoryNode
+    end
+    style Memory fill:#ECFDF5,stroke:#A7F3D0,stroke-width:1.5px,stroke-dasharray: 5 5,color:#065F46;
+
+    %% 5. AUTONOMIC TTS FEEDBACK
+    subgraph TTS ["5. Vocal Prosody Rendering"]
+        TTS_Eng["Speech Synthesis Engine"]:::ttsNode
+        Prosody["Dynamic Prosody Modulator<br>(Speaking Rate, Pitch, Pause)"]:::ttsNode
+        Crossfade["Linear Audio Crossfader<br>(15ms Window)"]:::ttsNode
+        
+        Prosody --> TTS_Eng
+        TTS_Eng --> Crossfade
+    end
+    style TTS fill:#FFFBEB,stroke:#FDE68A,stroke-width:1.5px,stroke-dasharray: 5 5,color:#92400E;
+
+    %% Event Bus Connections
+    EB --> ToM
+    EB --> UK
+    
+    %% Internal Connections B
+    ToM --> Endo
+    UK --> BT
+    Endo --> BT
+    BT --> LLM
+    Thought --> LLM
+    
+    %% Memory Interactions
+    LLM --> M1
+    LLM --> M2
+    LLM --> M3
+    LLM --> M4
+    
+    %% Neuromodulation Feedback
+    Endo -->|Matryoshka Dimension Truncation| M3
+    Endo -->|Speaking Rate / Pitch Shift / Pause Bias| Prosody
+    
+    %% Output flow
+    LLM -->|Stream Audio Tokens| TTS_Eng
+    LLM -->|Async XML Appraisal Tags| EB
+
+    %% Link styles for cohesive visual tracking
+    linkStyle 0,1,2,3,4 stroke:#3B82F6,stroke-width:2px,fill:none;
+    linkStyle 5,6 stroke:#EF4444,stroke-width:2px,fill:none;
+    linkStyle 7,8,21,22 stroke:#F59E0B,stroke-width:2px,fill:none;
+    linkStyle 9,10,11,12,13,14,15 stroke:#6366F1,stroke-width:2px,fill:none;
+    linkStyle 16,17,18,19,20 stroke:#10B981,stroke-width:2px,fill:none;
+    linkStyle 23 stroke:#8B5CF6,stroke-width:2px,fill:none;
