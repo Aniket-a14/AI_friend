@@ -309,12 +309,13 @@ To establish rigorous scientific boundaries, CVS-3.5 is actively compared agains
 
 ### 📚 Reference Mapping
 
-> [!WARNING]
-> **Provenance status.** [1]–[4] are vendor product materials, **not** peer-reviewed
-> publications. [5]–[7] are academic claims whose exact titles/venues remain
-> **unverified** against the published record. See the canonical, annotated list in
-> the root `README.md` (§8) — it is maintained there to avoid duplicate drift.
-> Comparative figures attributed to these sources are unverified.
+> [!NOTE]
+> **Provenance.** [1]–[4] are vendor product materials, **not** peer-reviewed
+> publications. [5]–[7] are real, verified publications whose titles were
+> previously paraphrased into non-existent variants and have since been corrected
+> against the published record. See the canonical, annotated list in the root
+> `README.md` (§8) — maintained there to avoid duplicate drift. The *comparative
+> performance figures* attributed to these sources remain unverified.
 
 ---
 

@@ -112,17 +112,44 @@ app = FastAPI(
 )
 
 # CORS Middleware (Sovereign Local Access)
+#
+# Credentials must never be combined with a wildcard origin. The CORS spec forbids
+# it, and Starlette reacts by reflecting back whichever Origin the caller sent —
+# which would let any website on the internet make credentialed requests against
+# this host. Resolve the origin policy explicitly rather than always passing
+# allow_credentials=True.
+_lan_default = Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"]
+
+if _lan_default:
+    # Local-first default: permit loopback / private-range origins via regex.
+    _cors_policy = {
+        "allow_origins": [],
+        "allow_origin_regex": Config.LAN_CORS_ORIGIN_REGEX,
+        "allow_credentials": True,
+    }
+elif "*" in Config.ALLOWED_ORIGINS:
+    logger.warning(
+        "ALLOWED_ORIGINS is '*' while LAN_ONLY is disabled. Disabling credentialed "
+        "CORS, since wildcard-plus-credentials would reflect arbitrary origins. "
+        "Set an explicit origin allowlist to re-enable credentials."
+    )
+    _cors_policy = {
+        "allow_origins": ["*"],
+        "allow_origin_regex": None,
+        "allow_credentials": False,
+    }
+else:
+    _cors_policy = {
+        "allow_origins": Config.ALLOWED_ORIGINS,
+        "allow_origin_regex": None,
+        "allow_credentials": True,
+    }
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[]
-    if Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"]
-    else Config.ALLOWED_ORIGINS,
-    allow_origin_regex=Config.LAN_CORS_ORIGIN_REGEX
-    if Config.LAN_ONLY and Config.ALLOWED_ORIGINS == ["*"]
-    else None,
-    allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
+    **_cors_policy,
 )
 
 

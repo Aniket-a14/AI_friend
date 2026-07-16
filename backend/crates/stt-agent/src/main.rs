@@ -1,45 +1,116 @@
+//! STT agent — real speech recognition over the NATS mesh.
+//!
+//! Dual-path fan-out:
+//!   * **fast path** (`tiny.en`)  -> speculative partial hypotheses on
+//!     `audio.perception`, plus keyword-triggered `audio.stop` for barge-in.
+//!   * **accurate path** (`base.en`) -> the final transcript on `chat.input`.
+//!
+//! Whisper is an utterance model, so inbound PCM is buffered and segmented by an
+//! energy endpointer (`audio::Endpointer`) before recognition. Inference is
+//! CPU-bound and therefore runs on dedicated workers: the NATS receive loop only
+//! decodes, buffers and dispatches, so audio ingestion is never blocked by a
+//! transcription.
+
+mod audio;
+mod whisper;
+
 use anyhow::{Context, Result};
 use async_nats::Message;
 use bytes::Bytes;
 use contracts::{
-    topics, AmbientNoiseTelemetry, AudioPerception, AudioStop, ChatInput, ChatInputMetadata, JsonMap, LatencyHop,
-    LatencyMetadata, SpeculativeIntent, UserVoiceProperties, HEADER_LATENCY_META,
+    topics, AmbientNoiseTelemetry, AudioPerception, AudioStop, ChatInput, ChatInputMetadata,
+    JsonMap, LatencyHop, LatencyMetadata, SpeculativeIntent, UserVoiceProperties,
+    HEADER_LATENCY_META,
 };
 use futures_util::StreamExt;
-
-#[derive(Debug)]
-struct SttState {
-    last_noise_publish: f64,
-    noise_floor_rms: f64,
-}
 use serde_json::json;
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{error, info};
+use tokio::sync::{mpsc, Mutex};
+use tracing::{error, info, warn};
 use uuid::Uuid;
+
+use audio::{Endpointer, VadEvent};
+use whisper::WhisperModel;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Backend {
+    Whisper,
+    Mock,
+}
 
 #[derive(Debug, Clone)]
 struct SttConfig {
     nats_url: String,
-    target_sample_rate: u32,
+    backend: Backend,
+    /// Only consulted when `backend == Mock`.
     mock_transcript: Option<String>,
+    model_dir: PathBuf,
+    fast_model: String,
+    accurate_model: String,
+    language: String,
+    /// Used only when the inbound message carries no sample_rate header.
+    fallback_sample_rate: u32,
+    endpoint_silence_ms: f64,
+    min_speech_ms: f64,
+    partial_interval_ms: f64,
+    max_utterance_secs: f64,
 }
 
 impl SttConfig {
     fn from_env() -> Self {
+        let backend = match env_or("STT_BACKEND", "whisper").to_lowercase().as_str() {
+            "mock" => Backend::Mock,
+            _ => Backend::Whisper,
+        };
+
         Self {
             nats_url: env_or("NATS_URL", "nats://127.0.0.1:4222"),
-            target_sample_rate: env_or("STT_TARGET_SAMPLE_RATE", "16000")
-                .parse()
-                .unwrap_or(16_000),
+            backend,
             mock_transcript: std::env::var("RUST_STT_MOCK_TRANSCRIPT")
                 .ok()
                 .filter(|s| !s.trim().is_empty()),
+            model_dir: PathBuf::from(env_or("STT_MODEL_DIR", "/app/models/whisper")),
+            fast_model: env_or("STT_FAST_MODEL", "tiny.en"),
+            accurate_model: env_or("STT_ACCURATE_MODEL", "base.en"),
+            language: env_or("STT_LANGUAGE", "en"),
+            fallback_sample_rate: parse_env("STT_TARGET_SAMPLE_RATE", 16_000),
+            endpoint_silence_ms: parse_env("STT_ENDPOINT_SILENCE_MS", 700.0),
+            min_speech_ms: parse_env("STT_MIN_SPEECH_MS", 250.0),
+            partial_interval_ms: parse_env("STT_PARTIAL_INTERVAL_MS", 500.0),
+            max_utterance_secs: parse_env("STT_MAX_UTTERANCE_SECS", 30.0),
         }
     }
 }
 
 fn env_or(name: &str, fallback: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| fallback.to_string())
+}
+
+fn parse_env<T: std::str::FromStr>(name: &str, fallback: T) -> T {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(fallback)
+}
+
+/// A unit of work for an inference worker.
+struct Job {
+    pcm_16k: Vec<f32>,
+    utterance_id: String,
+    latency: Option<LatencyMetadata>,
+}
+
+struct SttState {
+    endpointer: Endpointer,
+    /// Accumulated mono samples at the *source* rate; resampled at inference time.
+    buffer: Vec<f32>,
+    source_rate: u32,
+    utterance_id: String,
+    utterance_latency: Option<LatencyMetadata>,
+    last_partial_at: f64,
+    last_noise_publish: f64,
 }
 
 #[tokio::main]
@@ -49,17 +120,6 @@ async fn main() -> Result<()> {
         .init();
 
     let config = SttConfig::from_env();
-    if config
-        .mock_transcript
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .is_none()
-    {
-        anyhow::bail!(
-            "RUST_STT_MOCK_TRANSCRIPT is empty and no live STT backend is configured; refusing to start"
-        );
-    }
 
     let client = async_nats::connect(config.nats_url.clone())
         .await
@@ -67,15 +127,69 @@ async fn main() -> Result<()> {
     let jetstream = async_nats::jetstream::new(client.clone());
     let mut subscriber = client.subscribe(topics::AUDIO_INBOUND).await?;
 
-    info!("rust stt-agent subscribed to {}", topics::AUDIO_INBOUND);
-
-    let state = std::sync::Arc::new(tokio::sync::Mutex::new(SttState {
+    let state = Arc::new(Mutex::new(SttState {
+        endpointer: Endpointer::new(config.endpoint_silence_ms, config.min_speech_ms),
+        buffer: Vec::new(),
+        source_rate: config.fallback_sample_rate,
+        utterance_id: Uuid::new_v4().to_string(),
+        utterance_latency: None,
+        last_partial_at: 0.0,
         last_noise_publish: 0.0,
-        noise_floor_rms: 0.01,
     }));
 
+    // Bounded(1) for partials: if the fast model is still busy, a newer partial
+    // supersedes the queued one — stale speculative text is worse than none.
+    let (partial_tx, partial_rx) = mpsc::channel::<Job>(1);
+    // Finals must not be dropped; they drive cognition.
+    let (final_tx, final_rx) = mpsc::channel::<Job>(8);
+
+    match config.backend {
+        Backend::Mock => {
+            let transcript = config.mock_transcript.clone().context(
+                "STT_BACKEND=mock but RUST_STT_MOCK_TRANSCRIPT is empty. Set a transcript, \
+                 or use STT_BACKEND=whisper for real recognition.",
+            )?;
+            warn!(
+                transcript = %transcript,
+                "stt-agent running in MOCK mode: inbound audio content is ignored and a fixed \
+                 string is replayed. Downstream chat.input is NOT real perception."
+            );
+            spawn_mock_workers(jetstream.clone(), partial_rx, final_rx, transcript);
+        }
+        Backend::Whisper => {
+            info!(
+                fast = %config.fast_model,
+                accurate = %config.accurate_model,
+                dir = %config.model_dir.display(),
+                "resolving whisper models"
+            );
+            let fast_path = whisper::ensure_model(&config.model_dir, &config.fast_model).await?;
+            let accurate_path =
+                whisper::ensure_model(&config.model_dir, &config.accurate_model).await?;
+
+            let fast = Arc::new(WhisperModel::load(&fast_path, "fast", &config.language)?);
+            let accurate =
+                Arc::new(WhisperModel::load(&accurate_path, "accurate", &config.language)?);
+
+            spawn_whisper_worker(jetstream.clone(), partial_rx, fast, PathKind::Partial);
+            spawn_whisper_worker(jetstream.clone(), final_rx, accurate, PathKind::Final);
+            info!("stt-agent online with real whisper recognition (dual-path)");
+        }
+    }
+
+    info!("rust stt-agent subscribed to {}", topics::AUDIO_INBOUND);
+
     while let Some(message) = subscriber.next().await {
-        if let Err(err) = handle_audio_inbound(&config, &jetstream, message, state.clone()).await {
+        if let Err(err) = handle_audio_inbound(
+            &config,
+            &jetstream,
+            message,
+            state.clone(),
+            &partial_tx,
+            &final_tx,
+        )
+        .await
+        {
             error!("stt-agent failed to process audio.inbound: {err:#}");
         }
     }
@@ -83,210 +197,173 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn handle_audio_inbound(
-    config: &SttConfig,
-    jetstream: &async_nats::jetstream::Context,
-    message: Message,
-    state: std::sync::Arc<tokio::sync::Mutex<SttState>>,
-) -> Result<()> {
-    let metadata = metadata_from_headers(&message);
-    let channels = metadata.as_ref().and_then(|m| m.channels).unwrap_or(1) as usize;
-    let pcm_16k_mono = normalize_pcm_i16(&message.payload, channels.max(1));
+/// Which half of the dual-path fan-out a worker serves.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PathKind {
+    Partial,
+    Final,
+}
 
-    let num_samples = pcm_16k_mono.len();
+fn spawn_whisper_worker(
+    jetstream: async_nats::jetstream::Context,
+    mut rx: mpsc::Receiver<Job>,
+    model: Arc<WhisperModel>,
+    path: PathKind,
+) {
+    tokio::spawn(async move {
+        while let Some(job) = rx.recv().await {
+            let model = model.clone();
+            let pcm = job.pcm_16k;
+            let started = now_seconds();
 
-    // 1. Root-Mean-Square (RMS) Energy Calculation
-    let energy_rms = if num_samples > 0 {
-        let sum_sq: f64 = pcm_16k_mono.iter()
-            .map(|&s| {
-                let norm = s as f64 / i16::MAX as f64;
-                norm * norm
-            })
-            .sum();
-        (sum_sq / num_samples as f64).sqrt()
-    } else {
-        0.0
-    };
+            let result = tokio::task::spawn_blocking(move || model.transcribe(&pcm)).await;
 
-    // Update running noise floor
-    {
-        let mut state_guard = state.lock().await;
-        let now = now_seconds();
-
-        if energy_rms < state_guard.noise_floor_rms {
-            state_guard.noise_floor_rms = energy_rms;
-        } else {
-            state_guard.noise_floor_rms = state_guard.noise_floor_rms * 0.995 + energy_rms * 0.005;
-        }
-
-        if now - state_guard.last_noise_publish >= 0.5 {
-            state_guard.last_noise_publish = now;
-            let noise_floor_db = if state_guard.noise_floor_rms > 0.0 {
-                20.0 * state_guard.noise_floor_rms.log10()
-            } else {
-                -100.0
-            };
-
-            let noise_telemetry = AmbientNoiseTelemetry {
-                rms_energy: state_guard.noise_floor_rms,
-                noise_floor_db,
-                timestamp: now,
-            };
-
-            jetstream
-                .publish(
-                    topics::AMBIENT_NOISE_TELEMETRY,
-                    Bytes::from(serde_json::to_vec(&noise_telemetry)?),
-                )
-                .await?
-                .await?;
-        }
-    }
-
-    // 2. Fundamental Frequency (F0 Pitch) Autocorrelation
-    let pitch_f0 = if num_samples > 400 {
-        let min_lag = 40;  // 16000 / 400Hz
-        let max_lag = 200; // 16000 / 80Hz
-        let mut best_lag = 0;
-        let mut best_corr = -1.0;
-
-        for lag in min_lag..=max_lag {
-            let mut corr = 0.0;
-            let mut norm1 = 0.0;
-            let mut norm2 = 0.0;
-            let limit = num_samples - lag;
-            for i in 0..limit {
-                let x = pcm_16k_mono[i] as f64;
-                let y = pcm_16k_mono[i + lag] as f64;
-                corr += x * y;
-                norm1 += x * x;
-                norm2 += y * y;
-            }
-            if norm1 > 0.0 && norm2 > 0.0 {
-                let normalized_corr = corr / (norm1 * norm2).sqrt();
-                if normalized_corr > best_corr {
-                    best_corr = normalized_corr;
-                    best_lag = lag;
+            let text = match result {
+                Ok(Ok(text)) => text,
+                Ok(Err(err)) => {
+                    error!("whisper inference error: {err:#}");
+                    continue;
                 }
+                Err(err) => {
+                    error!("whisper worker panicked: {err}");
+                    continue;
+                }
+            };
+
+            if text.trim().is_empty() {
+                continue;
+            }
+
+            let elapsed_ms = (now_seconds() - started) * 1000.0;
+            let publish = match path {
+                PathKind::Partial => {
+                    publish_partial(&jetstream, &text, &job.utterance_id).await
+                }
+                PathKind::Final => {
+                    info!(text = %text, took_ms = elapsed_ms, "final transcript");
+                    publish_final(&jetstream, &text, &job.utterance_id, job.latency, "whisper")
+                        .await
+                }
+            };
+            if let Err(err) = publish {
+                error!("stt-agent failed to publish transcript: {err:#}");
             }
         }
-        if best_corr > 0.3 && best_lag > 0 {
-            16000.0 / best_lag as f64
-        } else {
-            150.0
-        }
-    } else {
-        150.0
-    };
+    });
+}
 
-    // 3. Simple speech rate/tempo estimation via Zero Crossing Rate (ZCR)
-    let mut zero_crossings = 0;
-    for i in 1..num_samples {
-        if (pcm_16k_mono[i - 1] >= 0 && pcm_16k_mono[i] < 0) || (pcm_16k_mono[i - 1] < 0 && pcm_16k_mono[i] >= 0) {
-            zero_crossings += 1;
+/// Mock workers keep the deterministic path available for CI without pulling
+/// models, while still exercising the real buffering/endpointing pipeline.
+fn spawn_mock_workers(
+    jetstream: async_nats::jetstream::Context,
+    mut partial_rx: mpsc::Receiver<Job>,
+    mut final_rx: mpsc::Receiver<Job>,
+    transcript: String,
+) {
+    let js = jetstream.clone();
+    let text = transcript.clone();
+    tokio::spawn(async move {
+        while let Some(job) = partial_rx.recv().await {
+            if let Err(err) = publish_partial(&js, &text, &job.utterance_id).await {
+                error!("mock partial publish failed: {err:#}");
+            }
         }
-    }
-    let zcr = if num_samples > 0 { zero_crossings as f64 / num_samples as f64 } else { 0.0 };
-    let tempo_wpm = 120.0 + (zcr * 200.0).min(60.0);
+    });
+    tokio::spawn(async move {
+        while let Some(job) = final_rx.recv().await {
+            // source="mock", never "whisper": downstream must be able to tell a
+            // scripted string from real recognition.
+            if let Err(err) =
+                publish_final(&jetstream, &transcript, &job.utterance_id, job.latency, "mock").await
+            {
+                error!("mock final publish failed: {err:#}");
+            }
+        }
+    });
+}
 
-    // Publish user voice properties
-    let voice_properties = UserVoiceProperties {
-        pitch_f0,
-        energy_rms,
-        tempo_wpm,
+async fn publish_partial(
+    jetstream: &async_nats::jetstream::Context,
+    text: &str,
+    utterance_id: &str,
+) -> Result<()> {
+    let mut metadata_map = JsonMap::new();
+    metadata_map.insert("text".to_string(), json!(text));
+    metadata_map.insert("is_partial".to_string(), json!(true));
+
+    let speculative = build_speculative_intent(text, utterance_id);
+    let intent = speculative.as_ref().map(|s| s.name.clone());
+    let keywords = speculative
+        .as_ref()
+        .map(|s| s.keywords.clone())
+        .unwrap_or_default();
+    let confidence = speculative.as_ref().map(|s| s.confidence).unwrap_or(0.7);
+
+    let perception = AudioPerception {
+        text: text.to_string(),
+        intent,
+        intent_type: "CONVERSATIONAL".to_string(),
+        keywords,
+        confidence,
+        snr: 0.0,
+        // Whisper does not classify emotion or paralinguistics. Left empty rather
+        // than fabricated; populating these needs a model that actually predicts them.
+        paralinguistic_events: Vec::new(),
+        speculative_intent: speculative.clone(),
+        metadata: metadata_map,
         timestamp: now_seconds(),
+        utterance_id: Some(utterance_id.to_string()),
     };
 
     jetstream
         .publish(
-            topics::USER_VOICE_PROPERTIES,
-            Bytes::from(serde_json::to_vec(&voice_properties)?),
+            topics::AUDIO_PERCEPTION,
+            Bytes::from(serde_json::to_vec(&perception)?),
         )
         .await?
         .await?;
 
-    let text = config
-        .mock_transcript
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .context("RUST_STT_MOCK_TRANSCRIPT is empty and no live STT backend is configured")?;
-
-    let utterance_id = Uuid::new_v4().to_string();
-
-    // Stream continuous partial transcript hypotheses onto audio.perception with is_partial: true
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let mut current_words = Vec::new();
-
-    for word in words {
-        current_words.push(word);
-        let partial_text = current_words.join(" ");
-
-        let mut metadata_map = JsonMap::new();
-        metadata_map.insert("text".to_string(), json!(partial_text));
-        metadata_map.insert("is_partial".to_string(), json!(true));
-
-        let speculative = build_speculative_intent(&partial_text, &utterance_id);
-        let intent = speculative.as_ref().map(|s| s.name.clone());
-        let keywords = speculative.as_ref().map(|s| s.keywords.clone()).unwrap_or_default();
-        let confidence = speculative.as_ref().map(|s| s.confidence).unwrap_or(0.9);
-
-        let perception = AudioPerception {
-            text: partial_text.clone(),
-            intent,
-            intent_type: "CONVERSATIONAL".to_string(),
-            keywords,
-            confidence,
-            snr: 0.0,
-            paralinguistic_events: Vec::new(),
-            speculative_intent: speculative.clone(),
-            metadata: metadata_map,
-            timestamp: now_seconds(),
-            utterance_id: Some(utterance_id.clone()),
+    if let Some(spec) = speculative {
+        let stop = AudioStop {
+            interrupt: true,
+            speculative: true,
+            reason: None,
+            command_text: None,
+            intent: Some(spec.name.clone()),
+            intent_type: "VOICE_INTERRUPTION".to_string(),
+            keywords: spec.keywords.clone(),
+            confidence: spec.confidence,
+            perception_text: Some(spec.text.clone()),
+            utterance_id: spec.utterance_id.clone(),
+            turn_id: None,
         };
-
         jetstream
-            .publish(
-                topics::AUDIO_PERCEPTION,
-                Bytes::from(serde_json::to_vec(&perception)?),
-            )
+            .publish(topics::AUDIO_STOP, Bytes::from(serde_json::to_vec(&stop)?))
             .await?
             .await?;
-
-        // Speculative Stop keyword check (emergency stop trigger)
-        if let Some(speculative_stop) = speculative {
-            let stop = AudioStop {
-                interrupt: true,
-                speculative: true,
-                reason: None,
-                command_text: None,
-                intent: Some(speculative_stop.name.clone()),
-                intent_type: "VOICE_INTERRUPTION".to_string(),
-                keywords: speculative_stop.keywords.clone(),
-                confidence: speculative_stop.confidence,
-                perception_text: Some(speculative_stop.text.clone()),
-                utterance_id: speculative_stop.utterance_id.clone(),
-                turn_id: None,
-            };
-            jetstream
-                .publish(topics::AUDIO_STOP, Bytes::from(serde_json::to_vec(&stop)?))
-                .await?
-                .await?;
-        }
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(80)).await;
     }
 
-    // Final CHAT_INPUT message
-    let latency_metadata = append_latency(metadata, topics::CHAT_INPUT);
+    Ok(())
+}
+
+async fn publish_final(
+    jetstream: &async_nats::jetstream::Context,
+    text: &str,
+    utterance_id: &str,
+    latency: Option<LatencyMetadata>,
+    source: &str,
+) -> Result<()> {
+    let latency_metadata = append_latency(latency, topics::CHAT_INPUT);
     let chat = ChatInput {
         text: text.to_string(),
-        utterance_id: Some(utterance_id.clone()),
+        utterance_id: Some(utterance_id.to_string()),
         turn_id: None,
         metadata: ChatInputMetadata {
-            source: "whisper".to_string(),
+            // Provenance must reflect what actually produced the text: a mock run
+            // labelled "whisper" is precisely the defect this rewrite removed.
+            source: source.to_string(),
             confidence: 0.9,
-            utterance_id: Some(utterance_id.clone()),
+            utterance_id: Some(utterance_id.to_string()),
         },
         latency_metadata: Some(latency_metadata),
     };
@@ -295,9 +372,194 @@ async fn handle_audio_inbound(
         .publish(topics::CHAT_INPUT, Bytes::from(serde_json::to_vec(&chat)?))
         .await?
         .await?;
-
-    let _ = config.target_sample_rate;
     Ok(())
+}
+
+async fn handle_audio_inbound(
+    config: &SttConfig,
+    jetstream: &async_nats::jetstream::Context,
+    message: Message,
+    state: Arc<Mutex<SttState>>,
+    partial_tx: &mpsc::Sender<Job>,
+    final_tx: &mpsc::Sender<Job>,
+) -> Result<()> {
+    let metadata = metadata_from_headers(&message);
+    let channels = metadata.as_ref().and_then(|m| m.channels).unwrap_or(1) as usize;
+    let header_rate = metadata.as_ref().and_then(|m| m.sample_rate);
+
+    let chunk = audio::decode_mono_f32(&message.payload, channels.max(1));
+    if chunk.is_empty() {
+        return Ok(());
+    }
+
+    let source_rate = header_rate.unwrap_or(config.fallback_sample_rate).max(1);
+    let chunk_rms = audio::rms(&chunk);
+    let chunk_ms = (chunk.len() as f64 / source_rate as f64) * 1000.0;
+
+    let mut guard = state.lock().await;
+    guard.source_rate = source_rate;
+    guard.buffer.extend_from_slice(&chunk);
+    if guard.utterance_latency.is_none() {
+        guard.utterance_latency = metadata.clone();
+    }
+
+    let event = guard.endpointer.push(chunk_rms, chunk_ms);
+    let now = now_seconds();
+
+    // Ambient noise telemetry (throttled).
+    if now - guard.last_noise_publish >= 0.5 {
+        guard.last_noise_publish = now;
+        let floor = guard.endpointer.noise_floor();
+        let noise_floor_db = if floor > 0.0 {
+            20.0 * floor.log10()
+        } else {
+            -100.0
+        };
+        let telemetry = AmbientNoiseTelemetry {
+            rms_energy: floor,
+            noise_floor_db,
+            timestamp: now,
+        };
+        jetstream
+            .publish(
+                topics::AMBIENT_NOISE_TELEMETRY,
+                Bytes::from(serde_json::to_vec(&telemetry)?),
+            )
+            .await?
+            .await?;
+    }
+
+    // Voice properties, derived at the true source rate (previously these used a
+    // hardcoded 16 kHz regardless of the real rate, skewing pitch by the ratio).
+    let voice_properties = UserVoiceProperties {
+        pitch_f0: estimate_f0(&chunk, source_rate),
+        energy_rms: chunk_rms,
+        tempo_wpm: estimate_tempo_wpm(&chunk),
+        timestamp: now,
+    };
+    jetstream
+        .publish(
+            topics::USER_VOICE_PROPERTIES,
+            Bytes::from(serde_json::to_vec(&voice_properties)?),
+        )
+        .await?
+        .await?;
+
+    // Guard against an unbounded buffer if the endpointer never fires (e.g. a
+    // continuously noisy room): force a cut at max_utterance_secs.
+    let buffered_secs = guard.buffer.len() as f64 / source_rate as f64;
+    let force_cut = buffered_secs >= config.max_utterance_secs;
+
+    match event {
+        VadEvent::Silence if !force_cut => {
+            // Keep only a short pre-roll so speech onset isn't clipped.
+            let preroll = (source_rate as f64 * 0.3) as usize;
+            if guard.buffer.len() > preroll {
+                let excess = guard.buffer.len() - preroll;
+                guard.buffer.drain(..excess);
+            }
+        }
+        VadEvent::SpeechContinues if !force_cut => {
+            if now - guard.last_partial_at >= config.partial_interval_ms / 1000.0 {
+                guard.last_partial_at = now;
+                let pcm = guard.buffer.clone();
+                let utt = guard.utterance_id.clone();
+                let rate = source_rate;
+                drop(guard);
+
+                if let Ok(pcm_16k) = audio::resample_to_16k(&pcm, rate) {
+                    // try_send: drop rather than queue if the fast model is busy.
+                    let _ = partial_tx.try_send(Job {
+                        pcm_16k,
+                        utterance_id: utt,
+                        latency: None,
+                    });
+                }
+                return Ok(());
+            }
+        }
+        _ => {
+            // Endpoint (or forced cut): close the utterance and transcribe it.
+            let pcm = std::mem::take(&mut guard.buffer);
+            let utt = guard.utterance_id.clone();
+            let latency = guard.utterance_latency.take();
+            guard.utterance_id = Uuid::new_v4().to_string();
+            guard.last_partial_at = 0.0;
+            let rate = source_rate;
+            drop(guard);
+
+            let pcm_16k = audio::resample_to_16k(&pcm, rate)?;
+            if !pcm_16k.is_empty() {
+                info!(
+                    secs = pcm_16k.len() as f64 / 16_000.0,
+                    forced = force_cut,
+                    "utterance endpointed; transcribing"
+                );
+                final_tx
+                    .send(Job {
+                        pcm_16k,
+                        utterance_id: utt,
+                        latency,
+                    })
+                    .await
+                    .ok();
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Autocorrelation pitch estimate over the 80-400 Hz band, at the true rate.
+fn estimate_f0(samples: &[f32], sample_rate: u32) -> f64 {
+    let min_lag = (sample_rate as f64 / 400.0) as usize;
+    let max_lag = (sample_rate as f64 / 80.0) as usize;
+    if samples.len() <= max_lag || min_lag == 0 {
+        return 150.0;
+    }
+
+    let mut best_lag = 0usize;
+    let mut best_corr = -1.0f64;
+
+    for lag in min_lag..=max_lag {
+        let mut corr = 0.0f64;
+        let mut norm1 = 0.0f64;
+        let mut norm2 = 0.0f64;
+        for i in 0..(samples.len() - lag) {
+            let x = samples[i] as f64;
+            let y = samples[i + lag] as f64;
+            corr += x * y;
+            norm1 += x * x;
+            norm2 += y * y;
+        }
+        if norm1 > 0.0 && norm2 > 0.0 {
+            let normalized = corr / (norm1 * norm2).sqrt();
+            if normalized > best_corr {
+                best_corr = normalized;
+                best_lag = lag;
+            }
+        }
+    }
+
+    if best_corr > 0.3 && best_lag > 0 {
+        sample_rate as f64 / best_lag as f64
+    } else {
+        150.0
+    }
+}
+
+fn estimate_tempo_wpm(samples: &[f32]) -> f64 {
+    if samples.is_empty() {
+        return 120.0;
+    }
+    let mut zero_crossings = 0usize;
+    for i in 1..samples.len() {
+        if (samples[i - 1] >= 0.0) != (samples[i] >= 0.0) {
+            zero_crossings += 1;
+        }
+    }
+    let zcr = zero_crossings as f64 / samples.len() as f64;
+    120.0 + (zcr * 200.0).min(60.0)
 }
 
 fn metadata_from_headers(message: &Message) -> Option<LatencyMetadata> {
@@ -320,25 +582,6 @@ fn append_latency(metadata: Option<LatencyMetadata>, subject: &str) -> LatencyMe
         timestamp: now,
     });
     metadata
-}
-
-fn normalize_pcm_i16(bytes: &[u8], channels: usize) -> Vec<i16> {
-    let samples = bytes
-        .chunks_exact(2)
-        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect::<Vec<_>>();
-
-    if channels <= 1 {
-        return samples;
-    }
-
-    samples
-        .chunks_exact(channels)
-        .map(|frame| {
-            let total: i32 = frame.iter().map(|sample| *sample as i32).sum();
-            (total / channels as i32) as i16
-        })
-        .collect()
 }
 
 fn build_speculative_intent(text: &str, utterance_id: &str) -> Option<SpeculativeIntent> {
@@ -406,9 +649,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_json_style_audio_by_not_parsing_text_from_pcm() {
-        let normalized = normalize_pcm_i16(br#"{"audio":"legacy-json"}"#, 1);
-        assert!(!normalized.is_empty());
+    fn pcm_bytes_are_never_parsed_as_text() {
+        let decoded = audio::decode_mono_f32(br#"{"audio":"legacy-json"}"#, 1);
+        assert!(!decoded.is_empty());
         assert!(build_speculative_intent("", "utt-1").is_none());
     }
 
@@ -420,8 +663,10 @@ mod tests {
             bytes.extend_from_slice(&sample.to_le_bytes());
         }
 
-        let mono = normalize_pcm_i16(&bytes, 2);
-        assert_eq!(mono, vec![0, 2000]);
+        let mono = audio::decode_mono_f32(&bytes, 2);
+        assert_eq!(mono.len(), 2);
+        assert!(mono[0].abs() < 0.001);
+        assert!((mono[1] - (2000.0 / i16::MAX as f32)).abs() < 0.001);
     }
 
     #[test]
@@ -433,11 +678,7 @@ mod tests {
         assert_eq!(perception.intent_type, "COMMAND");
         assert_eq!(perception.keywords, vec!["stop"]);
         assert_eq!(
-            perception
-                .speculative_intent
-                .unwrap()
-                .utterance_id
-                .as_deref(),
+            perception.speculative_intent.unwrap().utterance_id.as_deref(),
             Some("utt-1")
         );
     }
@@ -445,5 +686,26 @@ mod tests {
     #[test]
     fn speculative_stop_avoids_partial_keyword_matches() {
         assert!(build_speculative_intent("knowledge now", "utt-1").is_none());
+    }
+
+    #[test]
+    fn f0_tracks_a_known_tone_at_its_true_rate() {
+        // 200 Hz sine at 48 kHz must read ~200 Hz, not 200*(16000/48000).
+        let rate = 48_000u32;
+        let freq = 200.0f64;
+        let samples: Vec<f32> = (0..rate as usize / 2)
+            .map(|i| {
+                (2.0 * std::f64::consts::PI * freq * (i as f64 / rate as f64)).sin() as f32
+            })
+            .collect();
+        let f0 = estimate_f0(&samples, rate);
+        assert!((f0 - freq).abs() < 10.0, "expected ~{freq} Hz, got {f0}");
+    }
+
+    #[test]
+    fn backend_defaults_to_whisper_not_mock() {
+        // Guards the E1 regression: the deployed agent must not silently ship mocks.
+        std::env::remove_var("STT_BACKEND");
+        assert_eq!(SttConfig::from_env().backend, Backend::Whisper);
     }
 }

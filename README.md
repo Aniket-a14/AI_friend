@@ -123,6 +123,23 @@ graph TD
 
 CVS-3.5 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration protocol.
 
+> [!WARNING]
+> **Partially implemented; not yet build-verified.** The `stt-agent` crate now embeds a
+> real speech-recognition backend (whisper.cpp via `whisper-rs`), with 16 kHz sinc
+> resampling and VAD endpointing, and defaults to `STT_BACKEND=whisper`. Two caveats:
+>
+> 1. **The fast path is Whisper, not SenseVoice.** SenseVoice is a sherpa-onnx model and
+>    is not reachable through whisper.cpp, so the fan-out below runs a *small* Whisper
+>    model for the speculative path and a *larger* one for the final transcript. The
+>    emotion / paralinguistic events SenseVoice would supply are **not** inferred —
+>    those fields are left empty rather than fabricated.
+> 2. **The native build has not been run yet.** The Rust sources type-check against the
+>    real `whisper-rs` 0.16 API and the audio front-end is unit-tested, but whisper.cpp
+>    itself has never been compiled here, and no live transcription has been observed.
+>    Treat accuracy and latency as unmeasured until CI or a local Docker build is green.
+
+<!-- -->
+
 > [!IMPORTANT]
 > **Protocol Description**:
 > Audio arriving via WebRTC is fanned out to two paths: **SenseVoice** (optimized for CPU-based temporal intent) and **Whisper** (optimized for GPU-based semantic accuracy).
@@ -187,7 +204,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | :--- | :--- | :--- | :--- |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
 | **Voice Agent** | Rust / ORT (ONNX) / SoVITS | CVS-3.5 Local Synthesis Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
-| **STT Agent** | Rust / Whisper | Dual-path perception; fan-out transcription. | `audio.inbound`, `chat.input`, `audio.perception` |
+| **STT Agent** ⚠️ | Rust / whisper.cpp | Real speech recognition via `whisper-rs` (16 kHz sinc resampling + VAD endpointing), defaulting to `STT_BACKEND=whisper`; the scripted transcript is now opt-in behind `STT_BACKEND=mock`. **Not yet build-verified** — whisper.cpp has never been compiled here and no live transcription has been observed. The fast path is a small Whisper model, **not** SenseVoice, so no emotion/paralinguistic events are inferred. | `audio.inbound`, `chat.input`, `audio.perception` |
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
 | **Subconscious** | Python / Neo4j | Background reflection, internal monologue generation (Tier-5). | `chat.input`, `system.tick`, `knowledge.*` |
@@ -349,15 +366,15 @@ CVS-3.5 is benchmarked against 7 other state-of-the-art and legacy humanoid, exp
 
 #### 📚 Reference Mapping
 
-> [!WARNING]
-> **Provenance status.** [1]–[4] are **vendor product materials, not peer-reviewed
-> publications** — they were previously formatted as if they were formal papers
-> (e.g. a "Technical Report"), which overstated their standing. They are listed
-> below as what they actually are: company product pages. [5]–[7] are academic
-> claims whose **exact titles and venues have not yet been verified against the
-> published record**; confirm each (DOI / arXiv / proceedings page) before relying
-> on them in any write-up. Comparative figures attributed to these sources are
-> likewise unverified.
+> [!NOTE]
+> **Provenance.** [1]–[4] are **vendor product materials, not peer-reviewed
+> publications** — they were previously formatted as formal papers (e.g. a
+> "Technical Report"), overstating their standing, and are now listed as what they
+> are. [5]–[7] are **real, verified publications**; their titles were previously
+> paraphrased into non-existent variants and have been corrected against the
+> published record (links below). The *comparative performance figures* attributed
+> to these sources in the table above remain **unverified** and should be checked
+> against each paper before being relied upon.
 
 **Vendor / product materials (non-peer-reviewed):**
 
@@ -366,11 +383,11 @@ CVS-3.5 is benchmarked against 7 other state-of-the-art and legacy humanoid, exp
 * **[3] Unitree Robotics** — Unitree G1 humanoid, product materials ([unitree.com/g1](https://unitree.com/g1)).
 * **[4] Engineered Arts** — Ameca / Tritium orchestration layer, product materials ([engineeredarts.co.uk/ameca](https://engineeredarts.co.uk/ameca)).
 
-**Academic references (⚠️ citation details unverified — confirm before use):**
+**Peer-reviewed publications:**
 
-* **[5] Inoue et al.** — real-time multimodal turn-taking for conversational robots (ERICA line of work). *Exact title/venue to be confirmed.*
-* **[6] Gutiérrez et al. (2024)** — *HippoRAG*, neurobiologically inspired long-term memory for retrieval-augmented LLMs, NeurIPS 2024. *Exact title to be confirmed — the version previously cited here did not match the published title.*
-* **[7] Wu et al.** — neurosymbolic integration of cognitive architectures with LLMs. *Venue "Journal of Neurosymbolic AI" could not be confirmed to exist; verify or remove.*
+* **[5] Inoue, K., Jiang, B., Ekstedt, E., Kawahara, T., & Skantze, G. (2024)**, *"Multilingual Turn-taking Prediction Using Voice Activity Projection"*, in *Proceedings of LREC-COLING 2024*, pp. 11873–11883, Torino, Italy. ([arXiv:2403.06487](https://arxiv.org/abs/2403.06487))
+* **[6] Gutiérrez, B. J., Shu, Y., Gu, Y., Yasunaga, M., & Su, Y. (2024)**, *"HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models"*, in *Advances in Neural Information Processing Systems (NeurIPS 2024)*. ([arXiv:2405.14831](https://arxiv.org/abs/2405.14831) · [proceedings](https://papers.nips.cc/paper_files/paper/2024/hash/6ddc001d07ca4f319af96a3024f6dbd1-Abstract-Conference.html))
+* **[7] Wu, S., Oltramari, A., Francis, J., Giles, C. L., & Ritter, F. E. (2024)**, *"Cognitive LLMs: Toward Human-Like Artificial Intelligence by Integrating Cognitive Architectures and Large Language Models for Manufacturing Decision-making"*, *Neurosymbolic Artificial Intelligence* (IOS Press). ([arXiv:2408.09176](https://arxiv.org/abs/2408.09176))
 
 ---
 

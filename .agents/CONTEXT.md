@@ -1535,10 +1535,26 @@ Behavior changes:
 
 Documentation changes:
 
-- **B3**: reference list reframed — [1]–[4] are vendor product pages, not the
-  "Technical Report"-style publications they were formatted as; [5]–[7] flagged as
-  unverified pending confirmation against the published record. Duplicate block in
-  `app/agents/context.md` now points at the canonical README list.
+- **B3**: reference list corrected against the published record. [1]–[4] are vendor
+  product pages, not the "Technical Report"-style publications they were formatted
+  as. [5]–[7] turned out to be **real papers by the stated authors in the stated
+  venues, but every one carried a paraphrased title that does not exist**:
+  - [5] was cited as *"Real-Time Turn-Taking Decision Making for a Humanoid Robot
+    Using Multimodal Cues"*; the actual LREC-COLING 2024 paper is Inoue, Jiang,
+    Ekstedt, Kawahara & Skantze, *"Multilingual Turn-taking Prediction Using Voice
+    Activity Projection"* (pp. 11873–11883, arXiv:2403.06487).
+  - [6] was cited as *"...Long-Term Memory Retrieval for Generative Agents"*; the
+    actual NeurIPS 2024 paper is *"HippoRAG: Neurobiologically Inspired Long-Term
+    Memory for Large Language Models"* (arXiv:2405.14831).
+  - [7] was cited as *"Integrating Cognitive Architectures with Large Language
+    Models: A Neurosymbolic Framework"*; the actual paper is Wu, Oltramari,
+    Francis, Giles & Ritter, *"Cognitive LLMs: Toward Human-Like Artificial
+    Intelligence by Integrating Cognitive Architectures and Large Language Models
+    for Manufacturing Decision-making"*, *Neurosymbolic Artificial Intelligence*
+    (IOS Press, arXiv:2408.09176). The venue **does** exist — an earlier draft of
+    this audit wrongly suspected otherwise; verification corrected that.
+
+  Duplicate block in `app/agents/context.md` now points at the canonical README list.
 - **D1**: version labels unified to CVS-3.5 (was a mix of "CVS-1.0", "v3.0
   Micro-Agents", "CVS-3.5" across 20+ sites).
 - **D2/D3/D4**: Architecture Snapshot rewritten to current reality (Rust
@@ -1567,10 +1583,162 @@ Remaining risks / next work:
   `MOCK_LLM_TEXT=false` against a live Ollama model on a held-out corpus, to
   replace the `[TBP]` placeholders (B2). Until then, no recall/realism number in
   the docs should be treated as evidence.
-- **B3**: citations [5]–[7] still need verification (DOI/arXiv/proceedings).
+- **B3**: citation *titles* are now verified and corrected, but the **comparative
+  figures** attributed to [5]–[7] in the SOTA table (e.g. ERICA "200 ms", HippoRAG
+  "~92% Recall@5", ACT-R/E "0.280 ToM MAE") were **not** checked against the
+  papers. Verify each before publishing the table.
 - A1/A3 verified at unit level only; true redelivery behaviour needs a live NATS
   mesh under CPU-latency load.
 - Untouched: A5 (brittle `is_sqlite` sniffing), A7 (over-strict prosody
   validator), C2 (`*`+credentials CORS when `LAN_ONLY=false`), E1 (prod STT
   defaults to `RUST_STT_MOCK_TRANSCRIPT`), E2 (brain_agent 512M limit), E3
   (LiveKit http:// vs ws:// scheme), F1/F2 (god-functions).
+
+## 2026-07-17 Audit Follow-up — C2 (CORS) + E1 (STT is a stub)
+
+### C2 — Wildcard CORS could reflect arbitrary origins with credentials
+
+Changed files: `backend/main.py`
+
+`CORSMiddleware` was always constructed with `allow_credentials=True`. With
+`LAN_ONLY=false` and the default `ALLOWED_ORIGINS=*`, that yields wildcard +
+credentials — forbidden by the CORS spec, and Starlette resolves it by *reflecting
+back whichever Origin the caller sent*, so any website could make credentialed
+requests against the host. The origin policy is now resolved explicitly into three
+branches: LAN default (regex over loopback/private ranges, credentials on),
+wildcard (credentials **forced off**, with a startup warning), explicit allowlist
+(credentials on). Verified all three branches; the wildcard+credentials
+combination is now unreachable.
+
+### E1 — The STT agent is a stub; the documented fix was not implementable
+
+The audit recorded E1 as "production STT defaults to a mock transcript — make real
+STT the default". **That fix is impossible, and the finding was understated.**
+
+Reading `backend/crates/stt-agent/`:
+
+- Its `Cargo.toml` pulls **no speech-recognition dependency at all** — no whisper,
+  sherpa, sensevoice, vosk or onnx. Only NATS/serde/tokio plumbing.
+- `main.rs` **refuses to start** when `RUST_STT_MOCK_TRANSCRIPT` is empty:
+  *"no live STT backend is configured"*. There is nothing to switch to.
+- It ignores inbound audio *content* (it derives RMS/noise telemetry from the
+  bytes, but the transcript is fixed), splits the fixed string into words, and
+  replays them as timed "partial hypotheses" on `audio.perception` at 80 ms
+  intervals — closely imitating live incremental recognition.
+- It published the result as `ChatInput` with `source: "whisper", confidence: 0.9`.
+
+So the deployed mesh's entire perception path is scripted playback labelled as
+Whisper output. Flipping the default to "real" would only make the container exit.
+
+Changed files: `backend/crates/stt-agent/src/main.rs`, `docker-compose.prod.yml`,
+`README.md`
+
+- `source` is now `"mock"`, not `"whisper"` — a fixed stub string is no longer
+  indistinguishable from real recognition in logs/telemetry/benchmarks. Nothing
+  branches on this value (only `source == "subconscious"` is tested in
+  `brain_agent`); the static contract fixture is unchanged.
+- Added a loud startup `warn!` stating the agent is a stub.
+- **Healthcheck fixed.** It was
+  `[ -n "${RUST_STT_MOCK_TRANSCRIPT}" ] && nc -z nats_mesh 4222 || exit 1`,
+  broken twice over: Compose interpolates `${...}` at *parse time from the host
+  env*, so it never tested anything in the container; and because the var is not
+  defined in `.env.example` it collapsed to `[ -n "" ] && ... || exit 1`, i.e. it
+  reported **unhealthy unconditionally**. Now uses the same `nc -z nats_mesh 4222`
+  probe as every other service.
+- README: agent registry now marks STT ⚠️ stub; the "Dual-STT fan-out" protocol
+  section is marked design-intent-not-current-behaviour. The Brain-side
+  arbitration logic *is* real and test-covered — it is simply fed scripted input.
+
+Verification:
+
+```powershell
+cd backend; python -m pytest --ignore=scripts   # exit 0
+cargo check -p stt-agent                        # clean
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config  # OK
+```
+
+Remaining risks / next work:
+
+- **No real STT exists in the mesh.** Porting a Whisper/SenseVoice backend into
+  `crates/stt-agent` (or restoring the archived Python `STTAgent`) is now the
+  blocking prerequisite for *any* end-to-end perception, latency or accuracy
+  claim. Until then the `[TBP]` SLO table cannot be honestly populated end-to-end.
+- The audit's E1 severity should be read as higher than originally filed: this is
+  not a config default, it is a missing subsystem.
+- Still untouched: A5 (brittle `is_sqlite` sniffing), A7 (over-strict prosody
+  validator), C1 (unauthenticated `/token`; accepted for localhost-only use),
+  E2 (brain_agent 512M limit), E3 (LiveKit http:// vs ws:// scheme),
+  F1/F2 (god-functions), B2 (benchmarks still need a real re-run).
+
+---
+
+## 2026-07-17 E1 Resolved — Real STT (whisper.cpp) implemented, build not yet verified
+
+Supersedes the previous entry's "No real STT exists in the mesh" risk. The
+`stt-agent` crate now has an actual recognition backend.
+
+### What landed
+
+- **`audio.rs` (new).** `decode_mono_f32` (interleaved i16 -> mono f32),
+  `resample_to_16k` (rubato windowed-sinc), `rms`, and an `Endpointer` VAD state
+  machine emitting `Silence` / `SpeechContinues` / `Endpoint`. Whisper needs mono
+  f32 at *exactly* 16 kHz; the old code named a buffer `pcm_16k_mono` but never
+  resampled and ignored `STT_TARGET_SAMPLE_RATE`. Downsampling 48k/32k -> 16k
+  without band-limiting aliases high-frequency energy into the speech band, so a
+  sinc resampler is used rather than sample-dropping.
+- **`whisper.rs` (new).** `WhisperModel::load/transcribe`, `clean_transcript`, and
+  `ensure_model` (download to `.part` then rename, so a crash mid-download cannot
+  leave a corrupt file that later looks like a valid cache hit). Models are cached
+  in the `stt_models_data` volume.
+- **`main.rs` (rewritten).** `STT_BACKEND` selects `whisper` (default) or `mock`;
+  dual-path fan-out (small model -> partial, larger -> final); inference runs on
+  `spawn_blocking`; bounded(1) partial channel with `try_send` sheds load rather
+  than queueing stale hypotheses.
+- Compose mounts the model volume and passes `STT_*`; `Dockerfile.rust` gains
+  `cmake clang libclang-dev` for whisper.cpp + bindgen.
+
+### The fast path is Whisper, not SenseVoice
+
+SenseVoice is a sherpa-onnx model and is not reachable through whisper.cpp. The
+speculative path therefore runs a *small Whisper* model. Consequently **no emotion
+or paralinguistic events are inferred** — those fields are left empty rather than
+fabricated. Docs corrected accordingly; the historical "SenseVoice fast path"
+description was design intent that was never implementable via this backend.
+
+### Verification — what is and is not proven
+
+Proven without a native toolchain (no local cmake/clang):
+
+```powershell
+# audio.rs compiled standalone (only needs rubato)
+cargo test          # 6/6 pass — proves rubato 0.16 API; 4800 @48k -> ~1600 @16k
+# clean_transcript extracted and tested
+cargo test          # 3/3 pass
+# whole crate type-checked against a signature-faithful whisper-rs 0.16 stub
+cargo check -p stt-agent   # Finished, 0 errors, 0 warnings
+python -m pytest backend   # 190 passed, exit 0
+```
+
+Reading the real `whisper-rs` 0.16 source (fetched from `static.crates.io`) caught
+two genuine compile errors written from stale API memory: `full_n_segments()`
+returns `c_int`, not `Result` (so `.with_context()?` was invalid), and
+`full_get_segment_text` no longer exists — segments are reached via `as_iter()` /
+`to_str_lossy()`. A third bug was self-inflicted: `publish_final` hardcoded
+`source: "whisper"`, which would have relabelled mock output as real Whisper —
+exactly the E1 dishonesty being removed. Now parameterised.
+
+**NOT proven:** whisper.cpp has never been compiled here, and no live
+transcription has been observed. Accuracy and latency remain unmeasured. CI
+(`ci.yml` runs `cargo check --workspace`; `docker-build.yml` builds
+`Dockerfile.rust`) will exercise the native build on push — that is the gate.
+
+Remaining risks / next work:
+
+- Native build + a live audio round-trip are the outstanding proof. Until both are
+  green, no perception latency/accuracy number may be published.
+- `stt_agent`'s healthcheck still only probes NATS reachability; it does not prove
+  a model loaded. Consider a readiness subject once the build is green.
+- Still untouched: A5 (brittle `is_sqlite` sniffing), A7 (over-strict prosody
+  validator), C1 (unauthenticated `/token`; accepted for localhost-only use),
+  E2 (brain_agent 512M limit), E3 (LiveKit http:// vs ws:// scheme),
+  F1/F2 (god-functions), B2 (benchmarks still need a real re-run).

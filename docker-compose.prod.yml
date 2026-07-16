@@ -226,7 +226,19 @@ services:
       timeout: 5s
       retries: 5
 
-  # 6. STT AGENT (Whisper, VAD) - Rust-based Default
+  # 6. STT AGENT (real Whisper recognition, dual-path)
+  #
+  # Runs whisper.cpp via whisper-rs. Two models fan out: STT_FAST_MODEL drives
+  # low-latency speculative partials on audio.perception (barge-in), while
+  # STT_ACCURATE_MODEL produces the final chat.input transcript.
+  #
+  # Models are downloaded on first boot into the stt_models_data volume, mirroring
+  # how Ollama models are provisioned. First start is slower while ~220MB of ggml
+  # weights are fetched; subsequent starts hit the cache.
+  #
+  # Set STT_BACKEND=mock (plus RUST_STT_MOCK_TRANSCRIPT) only for CI/offline runs
+  # where no model download is possible — it replays a fixed string and is NOT
+  # real perception.
   stt_agent:
     build:
       context: ./backend
@@ -234,10 +246,22 @@ services:
       target: runtime
     container_name: stt_agent
     command: [ "stt-agent" ]
+    volumes:
+      - stt_models_data:/app/models
     environment:
       - NATS_URL=nats://nats_mesh:4222
+      - STT_BACKEND=${STT_BACKEND:-whisper}
+      - STT_MODEL_DIR=${STT_MODEL_DIR:-/app/models/whisper}
+      - STT_FAST_MODEL=${STT_FAST_MODEL:-tiny.en}
+      - STT_ACCURATE_MODEL=${STT_ACCURATE_MODEL:-base.en}
+      - STT_LANGUAGE=${STT_LANGUAGE:-en}
+      # Fallback only; the true rate is read from the audio.inbound header.
       - STT_TARGET_SAMPLE_RATE=${STT_TARGET_SAMPLE_RATE:-16000}
-      - RUST_STT_MOCK_TRANSCRIPT=${RUST_STT_MOCK_TRANSCRIPT:-mock_transcript_active}
+      - STT_ENDPOINT_SILENCE_MS=${STT_ENDPOINT_SILENCE_MS:-700}
+      - STT_MIN_SPEECH_MS=${STT_MIN_SPEECH_MS:-250}
+      - STT_PARTIAL_INTERVAL_MS=${STT_PARTIAL_INTERVAL_MS:-500}
+      - STT_MAX_UTTERANCE_SECS=${STT_MAX_UTTERANCE_SECS:-30}
+      - RUST_STT_MOCK_TRANSCRIPT=${RUST_STT_MOCK_TRANSCRIPT:-}
     networks:
       - ai_mesh_network
     depends_on:
@@ -246,8 +270,14 @@ services:
       nats:
         condition: service_healthy
     restart: always
+    # Was: [ -n "${RUST_STT_MOCK_TRANSCRIPT}" ] && nc -z nats_mesh 4222 || exit 1
+    # That was broken twice over: Compose interpolates ${...} at parse time from the
+    # HOST env (so it never tested the container), and because the var is undefined
+    # in .env.example it collapsed to `[ -n "" ] && ... || exit 1` — i.e. the probe
+    # reported unhealthy unconditionally. Use the same liveness probe as every other
+    # service in the mesh.
     healthcheck:
-      test: ["CMD-SHELL", "[ -n \"${RUST_STT_MOCK_TRANSCRIPT}\" ] && nc -z nats_mesh 4222 || exit 1"]
+      test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
