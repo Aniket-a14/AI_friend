@@ -1742,3 +1742,48 @@ Remaining risks / next work:
   validator), C1 (unauthenticated `/token`; accepted for localhost-only use),
   E2 (brain_agent 512M limit), E3 (LiveKit http:// vs ws:// scheme),
   F1/F2 (god-functions), B2 (benchmarks still need a real re-run).
+
+---
+
+## 2026-07-17 Absent acoustic emotion was read as confident neutrality (STT follow-up)
+
+Found while answering "if we don't use sherpa-onnx, are the emotion fields just
+empty?" — they are, but empty was **not** inert.
+
+`apply_sensory_perception` read `metadata.get("emotional_bias", 0.0)`. The Whisper
+STT publishes only `text` / `is_partial` / `confidence`, so the default fired on
+every partial. With published `confidence=0.7` clearing `MIN_PERCEPTION_CONFIDENCE`
+(0.55) and `STATE_SENSORY_WEIGHT=0.20`, each partial applied
+`mood = mood*0.86 + 0.0*0.14`. Measured against the pre-fix code, five partials —
+one utterance — took mood and `user_mental_model.inferred_valence` from 0.800 to
+**0.376**. It did not merely fail to add affect; it *erased* affect that semantic
+appraisal and System-2 drift had just established, flattening the agent the more
+the user spoke.
+
+Root cause is a category error: **absence of evidence encoded as evidence of
+neutrality.** Fix distinguishes the two — a missing `emotional_bias` skips the
+mood/valence blend entirely, while an explicit `0.0` from a model that really does
+predict emotion is still treated as a genuine neutral reading and blended. Events
+continue to apply independently. (`bool` is excluded from the numeric check because
+`isinstance(True, int)` is True.)
+
+Tests added in `test_state.py`, each verified to fail against the pre-fix code:
+`test_missing_emotional_bias_does_not_flatten_mood` and
+`test_events_still_apply_without_emotional_bias` both FAIL pre-fix;
+`test_explicit_zero_emotional_bias_still_blends` passes either way by design — it
+guards the *over*-correction of skipping all zeros. Full suite: 193 passed.
+
+Related findings, not yet fixed:
+
+- **SenseVoice is disconnected, not absent.** `scripts/bootstrap/provision_models.py`
+  still downloads the sherpa-onnx SenseVoice model and `models/sensevoice/export-onnx.py`
+  still exports it; the only consumer is the undeployed
+  `_archive/python_agents/stt/sensevoice_service.py`. The model is provisioned and
+  nothing reads it. Restoring the real fast path is therefore a wiring job, not a
+  port — cheaper than the previous entry implied.
+- **Contract/consumer mismatch.** `AudioPerception` has a top-level
+  `paralinguistic_events` field, but the Python side reads `metadata["events"]`.
+  Populating the contract field would change nothing. Pick one shape.
+- Until an acoustic backend lands, Laughter (energy +0.15, trust +0.05), Applause
+  (+0.2 energy) and Cough/Sneeze (+0.02 attachment) are unreachable, and ToM
+  valence drifts on text alone.
