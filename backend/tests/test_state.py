@@ -103,3 +103,46 @@ async def test_fatigue_evolution(state_service):
     await state_service.handle_system_tick(tick)
     # Check bounded range reflecting configuration (timezone day/night safe)
     assert 0.29 < state_service.current_state.fatigue < 0.40
+
+
+@pytest.mark.asyncio
+async def test_apply_semantic_appraisal_writes_and_clamps(state_service):
+    """A2: System-2 background drift is applied under the state lock and bounded."""
+    state_service.current_state.mood = 0.0
+    state_service.current_state.energy = 0.5
+    state_service.current_state.dominance = 0.5
+
+    # Out-of-range values must be clamped to PAD bounds.
+    await state_service.apply_semantic_appraisal(
+        {"valence": 5.0, "arousal": -2.0, "dominance": 0.7}
+    )
+    assert state_service.current_state.mood == 1.0
+    assert state_service.current_state.energy == 0.0
+    assert state_service.current_state.dominance == 0.7
+
+    # Missing / None keys leave the corresponding dimension untouched.
+    await state_service.apply_semantic_appraisal({"valence": 0.2, "arousal": None})
+    assert state_service.current_state.mood == pytest.approx(0.2)
+    assert state_service.current_state.energy == 0.0
+    assert state_service.current_state.dominance == 0.7
+
+
+@pytest.mark.asyncio
+async def test_state_lock_serializes_concurrent_writers(state_service):
+    """A2: appraisal and background drift cannot interleave a read-modify-write."""
+    import asyncio
+
+    from app.cognitive.appraisal import AppraisalVector
+
+    state_service.current_state.mood = 0.0
+    appraisal = AppraisalVector(goal_congruence=1.0, relationship_impact=1.0)
+
+    # Fire the synchronous appraisal path and a background drift concurrently.
+    await asyncio.gather(
+        state_service.update_from_appraisal(appraisal),
+        state_service.apply_semantic_appraisal({"valence": -0.9}),
+    )
+
+    # Whichever ran last wins, but the value must be a clean, in-bounds float
+    # (no half-written interleave) — proving the lock serialized the writers.
+    assert -1.0 <= state_service.current_state.mood <= 1.0

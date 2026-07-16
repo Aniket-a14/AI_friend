@@ -44,13 +44,44 @@ Core design principles:
 
 ## Architecture Snapshot
 
-Main modular layers (Refactored 2026-04-19):
+> This section describes the runtime as it exists **now**. Dated entries below are
+> a historical ledger and are intentionally not rewritten — where they describe
+> Python voice/STT layers, they record a design that has since been superseded.
 
-- **Sensory (STT) Layer (`app/stt/`)**: Houses perception engines (Whisper, SenseVoice) and the `STTAgent`. Decoupled from core logic via structured hypotheses.
-- **Cognitive Layer (`app/cognitive/`)**: BDI orchestrator (`CognitiveService`), identity management, and behavioral reflection. Injects State services via package facade.
-- **State Layer (`app/state/`)**: The "Shared Kernel." Houses persistent mood/energy dynamics (`AgentState`), vector memory (`MemoryStore`), conversation history, and Neo4j graph state.
-- **Voice Layer (`app/voice/`)**: Signal rendering engine. Houses `VoiceAgent`, SoVITS runtime, and extracted signal helpers (`AudioNormalizer`, `AudioCache`).
-- **Mesh**: NATS JetStream subjects provide the only cross-layer integration point, ensuring a hardware-agnostic and decoupled runtime.
+Current layout (verified against `docker-compose.prod.yml`, 2026-07-16):
+
+**Python agents (`backend/app/agents/`, built from `backend/Dockerfile` target `slim`)**
+
+- **`brain_agent`**: cognitive orchestrator; owns `CognitiveService` and the turn loop.
+- **`system_agent`**: `system.tick` heartbeat emitter.
+- **`subconscious_agent`**: background reflection + proactive thought generation.
+- **`surfacing_agent`**: ACT-R / pgvector memory surfacing.
+- **`transport_agent`**: LiveKit WebRTC bridge (PCM <-> `audio.inbound` / `audio.stream`).
+
+**Rust agents (`backend/crates/`, built from `backend/Dockerfile.rust`)**
+
+- **`voice-agent`**: signal rendering (ONNX/`ort` local TTS, SoVITS fallback, prosody, OLA
+  crossfade, reverb DSP). Launched as the `voice-agent` binary, **not** `python -m`.
+- **`stt-agent`**: perception / transcription. Launched as the `stt-agent` binary.
+- **`contracts`**, **`cognitive-rust`**: shared signal contracts and the PyO3 cognitive
+  hot-path extension (ACT-R scoring, fatigue).
+
+**Support layers**
+
+- **Cognitive Layer (`app/cognitive/`)**: BDI orchestrator (`CognitiveService`), pure
+  `CognitivePipeline`, identity, appraisal/reappraisal, decision, action, reflection.
+- **State Layer (`app/state/`)**: the "Shared Kernel" — `AgentState`/`StateService`,
+  `MemoryStore` (pgvector/Qdrant/SQLite), conversation history, Neo4j `GraphDB`.
+- **Vision (`app/vision/`)**: present in-tree but **commented out** in
+  `docker-compose.prod.yml`; treat as experimental/not deployed.
+- **Mesh**: NATS JetStream subjects remain the only cross-layer integration point.
+
+**Vestigial — do not add code here**
+
+- `app/voice/` and `app/stt/` contain only `__init__.py`. The Python `VoiceAgent`,
+  `STTAgent`, `AudioNormalizer`, `AudioCache`, `prosody.py`, `playback.py`, and
+  `resilience.py` were superseded by the Rust crates and now live only under
+  `_archive/python_agents/` for reference.
 
 ## Recent Review Findings
 
@@ -1435,3 +1466,111 @@ Verification:
 
 - Ran the full test suite in the virtual environment: `pytest backend/tests/` (192/192 tests passed).
 - Ran pre-commit validations: all checks passed cleanly.
+
+## 2026-07-16 Codebase Audit — Tier 1 Correctness + Tier 0 Integrity/Docs
+
+Full phased audit of the repository, followed by the two highest-priority
+remediation tiers. Audit scope: docs, cognitive core, state/memory, agents, LLM
+client, API surface, compose orchestration, frontend.
+
+### Tier 1 — Correctness fixes
+
+Changed files:
+
+- `backend/app/agents/base.py`
+- `backend/app/state/agent_state.py`
+- `backend/app/cognitive/pipeline.py`
+- `backend/tests/test_state.py`
+
+Behavior changes:
+
+- **Ack-window (A1)**: `BaseAgent._handler` only ack'd *after* the callback returned,
+  while `BrainAgent._on_chat_input` awaits an entire cognitive turn (bounded by
+  `LLM_STREAM_MAX_SECONDS=120`). Under JetStream's default AckWait (~30s) this
+  redelivers mid-generation and produces duplicate turns — exactly under the
+  CPU-only latency this ledger repeatedly reports. Added `_ack_heartbeat()`, which
+  calls `msg.in_progress()` every 15s for `chat.*` subjects until the callback
+  returns. Hot media paths (`audio.*`) are unaffected.
+- **Poison messages (A3)**: `chat.*`/`state.*` were `nak()`ed forever on handler
+  error. Now bounded by `MESH_MAX_DELIVER` (default 5); past the limit the message
+  is `term()`ed and logged as a dead-letter with a payload preview.
+- **State race (A2)**: `CognitivePipeline._async_system2_appraisal` was a
+  fire-and-forget task writing `state.current_state.{valence,arousal,dominance}`
+  directly, racing the synchronous appraisal path; the prior task was never
+  cancelled. Added `StateService._state_lock`, a guarded
+  `apply_semantic_appraisal()` (LLM inference stays *outside* the lock), guarded
+  `update_from_appraisal()` / `apply_sensory_perception()`, and the pipeline now
+  cancels any in-flight System-2 task before starting a new one.
+
+### Tier 0 — Evaluation integrity (B1) and documentation truth (B3/D1–D4)
+
+Changed files:
+
+- `backend/app/llm/ollama_client.py`
+- `backend/app/state/memory_store.py`
+- `backend/tests/test_eriksonian_cognitive_alignment.py`
+- `README.md`, `backend/app/agents/context.md`, `.agents/CONTEXT.md`
+- version-label sweep across `backend/app/**`, `backend/main.py`
+
+Behavior changes:
+
+- **Mock no longer knows the answers (B1)**: both `MOCK_LLM_TEXT` blocks scanned the
+  prompt and emitted hardcoded evaluation-corpus entities ("chamomile brew", "the
+  testing laboratory", "affective cognitive architectures", "rasgulla"), so recall
+  benchmarks passed *by construction*. Replaced with corpus-agnostic
+  `_extract_first_memory_snippet()`, which echoes back whatever retrieval actually
+  surfaced. Determinism preserved; a passing recall now means retrieval worked.
+- **Corpus constants removed (B1)**: `SYNONYM_MAP` no longer pre-seeds production
+  retrieval with corpus proper nouns (`mimi`, `bruno`, `courtyard`, `rasgulla`).
+- **Magic constants named/de-fitted (B1)**: added `DIRECT_CUE_BOOST = 5.0`
+  (replacing three inline literals plus a comment falsely claiming "+1.2") and
+  `PPR_DAMPING = 0.85` (canonical PageRank damping), replacing
+  `d = 0.647798871` — a value whose own comment admitted it was tuned to make
+  1-hop spreading activation land on "exactly 0.6".
+- **Circular test broken (B1)**: `test_cue_and_spreading_activation_boosts` pinned
+  the *derived* values (5.45 / 0.6) that the tuned constant produced — the constant
+  was fitted to the test and the test asserted the constant. Rewritten to assert
+  the mechanism behaviourally (A >= `DIRECT_CUE_BOOST`; 0 < B < A; C == 0). This
+  confirmed spreading activation is real, not an artifact of the magic number.
+
+Documentation changes:
+
+- **B3**: reference list reframed — [1]–[4] are vendor product pages, not the
+  "Technical Report"-style publications they were formatted as; [5]–[7] flagged as
+  unverified pending confirmation against the published record. Duplicate block in
+  `app/agents/context.md` now points at the canonical README list.
+- **D1**: version labels unified to CVS-3.5 (was a mix of "CVS-1.0", "v3.0
+  Micro-Agents", "CVS-3.5" across 20+ sites).
+- **D2/D3/D4**: Architecture Snapshot rewritten to current reality (Rust
+  voice/stt crates; `app/voice/` + `app/stt/` are vestigial `__init__.py` only;
+  Vision present but commented out in prod). README mermaid and agent registry
+  updated to match.
+
+Verification:
+
+```powershell
+cd backend
+python -m pytest --ignore=scripts   # exit 0, all green
+```
+
+- Added `test_apply_semantic_appraisal_writes_and_clamps` and
+  `test_state_lock_serializes_concurrent_writers`.
+- Note: this environment's pytest reporter truncates the summary line; exit code
+  is the reliable pass/fail signal (a deliberately failing run returned 1).
+
+Remaining risks / next work:
+
+- **Retrieval ranking changed** (`PPR_DAMPING` 0.647798871 -> 0.85). Benchmark
+  numbers from before and after are **not comparable**; re-baseline rather than
+  diffing against historical results.
+- **B1 is only half closed**: benchmarks still need a real re-run with
+  `MOCK_LLM_TEXT=false` against a live Ollama model on a held-out corpus, to
+  replace the `[TBP]` placeholders (B2). Until then, no recall/realism number in
+  the docs should be treated as evidence.
+- **B3**: citations [5]–[7] still need verification (DOI/arXiv/proceedings).
+- A1/A3 verified at unit level only; true redelivery behaviour needs a live NATS
+  mesh under CPU-latency load.
+- Untouched: A5 (brittle `is_sqlite` sniffing), A7 (over-strict prosody
+  validator), C2 (`*`+credentials CORS when `LAN_ONLY=false`), E1 (prod STT
+  defaults to `RUST_STT_MOCK_TRANSCRIPT`), E2 (brain_agent 512M limit), E3
+  (LiveKit http:// vs ws:// scheme), F1/F2 (god-functions).

@@ -13,7 +13,7 @@ logger = logging.getLogger("reflection")
 
 class ReflectionService:
     """
-    CVS-1.0 Solid State Learning Layer.
+    CVS-3.5 Solid State Learning Layer.
     Implements Fact Resolution, Confidence Gating, and Adaptive Persona Evolution.
     """
 
@@ -27,7 +27,7 @@ class ReflectionService:
         self.is_reflecting = False
         self.last_reflection_started_at = 0.0
 
-        # CVS-1.0: Explicit completion signaling for deterministic mesh verification
+        # CVS-3.5: Explicit completion signaling for deterministic mesh verification
         self.reflection_done = asyncio.Event()
         self.reflection_done.set()
 
@@ -37,7 +37,7 @@ class ReflectionService:
             return
 
         if self.is_reflecting or not recent_episodes:
-            # CVS-1.0: Always return awaitable to support deterministic testing
+            # CVS-3.5: Always return awaitable to support deterministic testing
             f = asyncio.Future()
             f.set_result(None)
             return f
@@ -56,7 +56,7 @@ class ReflectionService:
 
         self.last_reflection_started_at = now
 
-        # CVS-1.0: Signal started
+        # CVS-3.5: Signal started
         self.reflection_done.clear()
 
         logger.info(
@@ -136,7 +136,7 @@ class ReflectionService:
                 )
                 facts = self._extract_json(fact_res)
 
-                # CVS-1.0: Defensive parsing for LLM output variability
+                # CVS-3.5: Defensive parsing for LLM output variability
                 if isinstance(facts, dict):
                     facts = [facts]
                 elif not isinstance(facts, list):
@@ -244,7 +244,7 @@ class ReflectionService:
                 )
                 suggestions = self._extract_json(ident_res)
 
-                # CVS-1.0: Defensive parsing for identity suggestions (Ensures .get() availability)
+                # CVS-3.5: Defensive parsing for identity suggestions (Ensures .get() availability)
                 if isinstance(suggestions, list) and len(suggestions) > 0:
                     suggestions = suggestions[0]
                 elif not isinstance(suggestions, dict):

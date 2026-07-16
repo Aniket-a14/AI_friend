@@ -200,10 +200,14 @@ class CognitivePipeline:
             weights = self.reappraisal.get_weights() if self.reappraisal else None
             await self.state.update_from_appraisal(appraisal_vector, weights=weights)
 
-            # Trigger System 2 deep appraisal in background (non-blocking)
+            # Trigger System 2 deep appraisal in background (non-blocking).
+            # A2: cancel any still-running prior appraisal so overlapping tasks
+            # cannot clobber each other's writes to short-term affect.
             if self.llm:
                 import asyncio
 
+                if self._system2_task and not self._system2_task.done():
+                    self._system2_task.cancel()
                 self._system2_task = asyncio.create_task(
                     self._async_system2_appraisal(event.raw_content)
                 )
@@ -400,10 +404,9 @@ class CognitivePipeline:
             new_pad = await self.appraisal.appraise_semantic_drift(
                 user_utterance, self.llm, current_pad
             )
-            # Update state with drifted mood values
-            self.state.current_state.valence = new_pad["valence"]
-            self.state.current_state.arousal = new_pad["arousal"]
-            self.state.current_state.dominance = new_pad["dominance"]
+            # Update state with drifted mood values under the state lock (A2)
+            # so this background write cannot race the synchronous appraisal path.
+            await self.state.apply_semantic_appraisal(new_pad)
             logger.info(
                 "[System 2 Appraisal] Mood drifted: V=%.2f, Ar=%.2f, D=%.2f",
                 self.state.current_state.valence,

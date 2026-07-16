@@ -307,14 +307,14 @@ To establish rigorous scientific boundaries, CVS-3.5 is actively compared agains
 | **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
 | **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
 
-### 📚 Academic Reference Mapping:
-* **[1] Figure AI (2025)**, *"Figure 02 Technical Report: In-House End-to-End Embodied Humanoid AI System"* ([Figure AI](https://figure.ai/)).
-* **[2] Tesla Motors (2024)**, *"Tesla Bot (Optimus Gen 2) Visual-Motor End-to-End Deep Neural Networks"* ([Tesla](https://tesla.com/optimus)).
-* **[3] Unitree Robotics (2024)**, *"Unitree G1 Humanoid Agent: Local VLMs and Reinforcement Learning Control"* ([Unitree](https://unitree.com/g1)).
-* **[4] Engineered Arts (2025)**, *"Tritium Software Orchestration Layer and Low-Latency Voice Streaming on Ameca Gen 3"* ([Engineered Arts](https://engineeredarts.co.uk/ameca)).
-* **[5] Inoue et al. (2024)**, *"Real-Time Turn-Taking Decision Making for a Humanoid Robot Using Multimodal Cues"*, in *Proceedings of LREC-COLING*.
-* **[6] Gutiérrez et al. (2024)**, *"HippoRAG: Neurobiologically Inspired Long-Term Memory Retrieval for Generative Agents"*, in *Proceedings of NeurIPS*.
-* **[7] Wu et al. (2024)**, *"Integrating Cognitive Architectures with Large Language Models: A Neurosymbolic Framework"*, in *Journal of Neurosymbolic AI*.
+### 📚 Reference Mapping
+
+> [!WARNING]
+> **Provenance status.** [1]–[4] are vendor product materials, **not** peer-reviewed
+> publications. [5]–[7] are academic claims whose exact titles/venues remain
+> **unverified** against the published record. See the canonical, annotated list in
+> the root `README.md` (§8) — it is maintained there to avoid duplicate drift.
+> Comparative figures attributed to these sources are unverified.
 
 ---
 

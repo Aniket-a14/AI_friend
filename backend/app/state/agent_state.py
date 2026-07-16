@@ -194,6 +194,9 @@ class StateService:
         self.publish_cb = publish_cb
         self.current_state = AgentState()
         self.last_speculative_intent = None  # Transient sensory state
+        # A2: serializes short-term affect mutation so the fire-and-forget
+        # System-2 semantic-drift task cannot clobber a fresher appraisal.
+        self._state_lock = asyncio.Lock()
 
         # Connect to Redis
         try:
@@ -578,6 +581,21 @@ class StateService:
         """Mark that the user just interacted. Called by BrainAgent on every chat.input."""
         self.current_state.last_user_interaction = time.time()
 
+    async def apply_semantic_appraisal(self, new_pad: Dict[str, float]):
+        """Apply System-2 background semantic-drift results to short-term affect.
+
+        Only the write is serialized under the state lock (A2); the expensive
+        LLM inference that produced ``new_pad`` runs upstream, outside the lock.
+        """
+        async with self._state_lock:
+            if "valence" in new_pad and new_pad["valence"] is not None:
+                self.current_state.valence = float(new_pad["valence"])
+            if "arousal" in new_pad and new_pad["arousal"] is not None:
+                self.current_state.arousal = float(new_pad["arousal"])
+            if "dominance" in new_pad and new_pad["dominance"] is not None:
+                self.current_state.dominance = float(new_pad["dominance"])
+            self._enforce_bounds()
+
     async def update_from_appraisal(self, appraisal, weights: Dict[str, float] = None):
         """
         PAD + Relational update driven by appraisal vector (§2.3).
@@ -604,44 +622,46 @@ class StateService:
         w5 = weights.get("w5_a_to_d", 0.6)
         w6 = weights.get("w6_na_to_d", 0.4)
 
-        # PAD mood-pull (§2.3)
-        self.current_state.mood = (
-            1 - self.alpha
-        ) * self.current_state.mood + self.alpha * (w1 * G + w2 * RI)
-        self.current_state.energy = (
-            1 - self.beta
-        ) * self.current_state.energy + self.beta * (w3 * N + w4 * R)
-        self.current_state.dominance = (
-            1 - self.gamma
-        ) * self.current_state.dominance + self.gamma * (w5 * A + w6 * NA)
+        async with self._state_lock:
+            # PAD mood-pull (§2.3)
+            self.current_state.mood = (
+                1 - self.alpha
+            ) * self.current_state.mood + self.alpha * (w1 * G + w2 * RI)
+            self.current_state.energy = (
+                1 - self.beta
+            ) * self.current_state.energy + self.beta * (w3 * N + w4 * R)
+            self.current_state.dominance = (
+                1 - self.gamma
+            ) * self.current_state.dominance + self.gamma * (w5 * A + w6 * NA)
 
-        # Relational updates (§2.3)
-        self.current_state.trust_benevolence = max(
-            0.0, min(1.0, self.current_state.trust_benevolence + self.delta * RI)
-        )
-        self.current_state.trust_competence = max(
-            0.0,
-            min(
-                1.0,
-                self.current_state.trust_competence + self.delta * (0.6 * G + 0.4 * R),
-            ),
-        )
-        self.current_state.trust_integrity = max(
-            0.0, min(1.0, self.current_state.trust_integrity + self.delta * NA)
-        )
-        self.current_state.interaction_count += 1
-        freq = min(1.0, self.current_state.interaction_count / 100.0)
-        self.current_state.attachment = max(
-            0.0,
-            min(
-                1.0,
-                self.current_state.attachment
-                + self.epsilon * self.current_state.trust * freq,
-            ),
-        )
+            # Relational updates (§2.3)
+            self.current_state.trust_benevolence = max(
+                0.0, min(1.0, self.current_state.trust_benevolence + self.delta * RI)
+            )
+            self.current_state.trust_competence = max(
+                0.0,
+                min(
+                    1.0,
+                    self.current_state.trust_competence
+                    + self.delta * (0.6 * G + 0.4 * R),
+                ),
+            )
+            self.current_state.trust_integrity = max(
+                0.0, min(1.0, self.current_state.trust_integrity + self.delta * NA)
+            )
+            self.current_state.interaction_count += 1
+            freq = min(1.0, self.current_state.interaction_count / 100.0)
+            self.current_state.attachment = max(
+                0.0,
+                min(
+                    1.0,
+                    self.current_state.attachment
+                    + self.epsilon * self.current_state.trust * freq,
+                ),
+            )
 
-        self.current_state.last_update = datetime.now()
-        self._enforce_bounds()
+            self.current_state.last_update = datetime.now()
+            self._enforce_bounds()
         await self.persist_state()
 
         logger.debug(
@@ -695,37 +715,44 @@ class StateService:
             )
             return
 
-        # Confidence-scaled emotional bias
-        weight = self.sensory_weight * max(0.0, min(1.0, confidence))
-        self.current_state.mood = (self.current_state.mood * (1 - weight)) + (
-            emotion_bias * weight
-        )
-
-        # Drift user mental model's inferred valence based on acoustic cues
-        if confidence >= self.min_perception_confidence:
-            user_weight = self.sensory_weight * max(0.0, min(1.0, confidence))
-            self.current_state.user_mental_model.inferred_valence = (
-                (1 - user_weight)
-                * self.current_state.user_mental_model.inferred_valence
-                + user_weight * emotion_bias
+        async with self._state_lock:
+            # Confidence-scaled emotional bias
+            weight = self.sensory_weight * max(0.0, min(1.0, confidence))
+            self.current_state.mood = (self.current_state.mood * (1 - weight)) + (
+                emotion_bias * weight
             )
 
-        # Arousal modulation from acoustic events
-        for event in events:
-            if event == "Laughter":
-                self.current_state.energy = min(1.0, self.current_state.energy + 0.15)
-                self.current_state.trust = min(1.0, self.current_state.trust + 0.05)
-                logger.info("😄 Agent sensed laughter - Energy/Trust boosted.")
-            elif event == "Applause":
-                self.current_state.energy = min(1.0, self.current_state.energy + 0.2)
-                logger.info("👏 Agent sensed applause - Energy spike.")
-            elif event in ["Cough", "Sneeze"]:
-                self.current_state.attachment = min(
-                    1.0, self.current_state.attachment + 0.02
+            # Drift user mental model's inferred valence based on acoustic cues
+            if confidence >= self.min_perception_confidence:
+                user_weight = self.sensory_weight * max(0.0, min(1.0, confidence))
+                self.current_state.user_mental_model.inferred_valence = (
+                    (1 - user_weight)
+                    * self.current_state.user_mental_model.inferred_valence
+                    + user_weight * emotion_bias
                 )
-                logger.debug(f"🤧 Agent sensed {event} - Attachment nudged (Empathy).")
 
-        self._enforce_bounds()
+            # Arousal modulation from acoustic events
+            for event in events:
+                if event == "Laughter":
+                    self.current_state.energy = min(
+                        1.0, self.current_state.energy + 0.15
+                    )
+                    self.current_state.trust = min(1.0, self.current_state.trust + 0.05)
+                    logger.info("😄 Agent sensed laughter - Energy/Trust boosted.")
+                elif event == "Applause":
+                    self.current_state.energy = min(
+                        1.0, self.current_state.energy + 0.2
+                    )
+                    logger.info("👏 Agent sensed applause - Energy spike.")
+                elif event in ["Cough", "Sneeze"]:
+                    self.current_state.attachment = min(
+                        1.0, self.current_state.attachment + 0.02
+                    )
+                    logger.debug(
+                        f"🤧 Agent sensed {event} - Attachment nudged (Empathy)."
+                    )
+
+            self._enforce_bounds()
         await self._persist_sensory_state_if_due()
 
     async def handle_system_tick(self, tick_metadata: Dict[str, Any]):

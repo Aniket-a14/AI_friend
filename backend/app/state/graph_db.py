@@ -15,7 +15,7 @@ _CYPHER_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 class GraphDB:
     """
-    Asynchronous Knowledge Mesh for CVS-1.0.
+    Asynchronous Knowledge Mesh for CVS-3.5.
     Manages persistent entities and relationships without blocking the cognitive loop.
     """
 

@@ -400,7 +400,7 @@ class DecisionService:
         self, backbone_text: str, perception_keywords: list[str] = None
     ) -> bool:
         """
-        Hardened Semantic Conflict Resolver for CVS-1.0.
+        Hardened Semantic Conflict Resolver for CVS-3.5.
         Logic: Distinguish between Agent Commands and Conversational Context.
         """
         if not backbone_text:
