@@ -22,13 +22,13 @@ class IdentityManager:
         self.personality = self._load_json(self.personality_path)
         self.history = self._load_json(self.history_path)
 
-        # CVS-1.0: Ensure safe defaults for adaptive history
+        # CVS-3.5: Ensure safe defaults for adaptive history
         self.history.setdefault("relationship", "Friend")
         self.history.setdefault("memories", [])
 
         self.config_store = None
 
-        # CVS-1.0: Immutable Core Trait seeding
+        # CVS-3.5: Immutable Core Trait seeding
         self._refresh_immutable_core()
 
         # Homeostatic Adaptive Trait Cap: maximum 5 active adaptive traits

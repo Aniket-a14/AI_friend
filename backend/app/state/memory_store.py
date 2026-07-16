@@ -54,14 +54,18 @@ def _get_stem(word: str) -> str:
     return w
 
 
+# Generic lexical/morphological synonym expansions for cue matching.
+# NOTE: corpus-specific proper nouns (benchmark pet names, place names, dish
+# names) were intentionally removed — production retrieval must not be
+# pre-seeded with the evaluation corpus. Keep this table domain-agnostic.
 SYNONYM_MAP = {
-    "cat": ["feline", "mimi", "kitty", "pet"],
-    "dog": ["canine", "bruno", "pup", "pet"],
+    "cat": ["feline", "kitty", "pet"],
+    "dog": ["canine", "pup", "pet"],
     "rain": ["shower", "precipitation", "storm"],
-    "laboratory": ["lab", "research", "facility", "courtyard"],
+    "laboratory": ["lab", "research", "facility"],
     "work": ["job", "project", "task", "develop"],
     "university": ["college", "academics", "school"],
-    "sweet": ["rasgulla", "dessert", "food", "sugar"],
+    "sweet": ["dessert", "food", "sugar"],
     "calibrating": ["calibration", "calibrate", "tune", "setup"],
     "activating": ["activation", "activate", "initialize", "start"],
     "developer": ["programmer", "engineer", "coder"],
@@ -74,6 +78,12 @@ SYNONYM_MAP = {
     "sipped": ["sip", "sipping"],
     "sip": ["sipped", "sipping"],
 }
+
+# Retrieval scoring constants. These were previously inline "magic numbers"
+# (one reverse-engineered to make a benchmark metric land on exactly 0.6).
+# Named and documented here so the scoring is honest and tunable.
+DIRECT_CUE_BOOST = 5.0  # additive score bump per query cue found in a memory
+PPR_DAMPING = 0.85  # canonical PageRank teleport/damping factor
 
 
 class GoalBuffer:
@@ -1571,13 +1581,13 @@ class MemoryStore:
                 if cue not in matched_cues:
                     matched_cues.append(cue)
 
-            # Apply Direct cue boost (+1.2)
+            # Apply direct cue boost (DIRECT_CUE_BOOST per matched cue)
             if matched_cues:
                 for idx, cand in enumerate(raw_candidates):
                     content_lower = cand["content"].lower()
                     match_count = sum(1 for mc in matched_cues if mc in content_lower)
                     if match_count > 0:
-                        cand["score"] += 5.0 * match_count
+                        cand["score"] += DIRECT_CUE_BOOST * match_count
                         direct_boosted_indices.add(idx)
 
             # HippoRAG-Inspired Personalized PageRank (PPR) Engine
@@ -1625,8 +1635,8 @@ class MemoryStore:
                             name: idx for idx, name in enumerate(entity_names)
                         }
 
-                        # Damping factor aligned to scale 1-hop spreading activation expectation to exactly 0.6
-                        d = 0.647798871
+                        # Standard PageRank damping (teleport) factor.
+                        d = PPR_DAMPING
 
                         # 3-iteration power method PPR propagation
                         for _ in range(3):
@@ -1918,7 +1928,7 @@ class MemoryStore:
                         )
 
                         # Massive ranking boost for keyword match count ( HippoRAG key relevance )
-                        ranking_score = score + 5.0 * match_count
+                        ranking_score = score + DIRECT_CUE_BOOST * match_count
 
                         scored_archive_rows.append(
                             (ranking_score, score, similarity, row)
@@ -2160,7 +2170,7 @@ class MemoryStore:
                             match_count = sum(
                                 1 for mc in matched_cues if mc in content.lower()
                             )
-                            score_active += 5.0 * match_count
+                            score_active += DIRECT_CUE_BOOST * match_count
 
                             promoted_results.append(
                                 {

@@ -101,10 +101,10 @@ graph TD
     Brain --> State
     Brain --> Learning --> Identity
 
-    subgraph "Voice Subsystem"
-        Prosody["prosody.py — VAD Mapping"]
-        Playback["playback.py — OLA Signal"]
-        Resilience["resilience.py — Fillers"]
+    subgraph "Voice Subsystem — Rust crate: backend/crates/voice-agent"
+        Prosody["Prosody — PAD → rate/pitch/volume"]
+        Playback["Playback — OLA crossfade + reverb DSP"]
+        Resilience["Resilience — speculative fillers"]
     end
 
     Voice --> Prosody
@@ -191,7 +191,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
 | **Subconscious** | Python / Neo4j | Background reflection, internal monologue generation (Tier-5). | `chat.input`, `system.tick`, `knowledge.*` |
-| **Vision Agent** | Ollama / moondream | Host-native visual appraisal and spatial reasoning (Tier-4). | `vision.frames`, `vision.control`, `vision.description` |
+| **Vision Agent** ⚠️ | Ollama / moondream | Host-native visual appraisal and spatial reasoning (Tier-4). **Experimental — currently commented out in `docker-compose.prod.yml` and not deployed by default.** | `vision.frames`, `vision.control`, `vision.description` |
 | **Pulse Agent** | Python / Cron | Mesh heartbeat emitter; triggers maturation cycles. | `system.tick` |
 
 ---
@@ -347,14 +347,30 @@ CVS-3.5 is benchmarked against 7 other state-of-the-art and legacy humanoid, exp
 
 *All "Ours" columns are kept blank as `[TBP]` (To Be Populated) until dynamic benchmarking runs are completed.*
 
-#### 📚 Academic Reference Mapping
-* **[1] Figure AI (2025)**, *"Figure 02 Technical Report: In-House End-to-End Embodied Humanoid AI System"* ([Figure AI](https://figure.ai/)).
-* **[2] Tesla Motors (2024)**, *"Tesla Bot (Optimus Gen 2) Visual-Motor End-to-End Deep Neural Networks"* ([Tesla](https://tesla.com/optimus)).
-* **[3] Unitree Robotics (2024)**, *"Unitree G1 Humanoid Agent: Local VLMs and Reinforcement Learning Control"* ([Unitree](https://unitree.com/g1)).
-* **[4] Engineered Arts (2025)**, *"Tritium Software Orchestration Layer and Low-Latency Voice Streaming on Ameca Gen 3"* ([Engineered Arts](https://engineeredarts.co.uk/ameca)).
-* **[5] Inoue et al. (2024)**, *"Real-Time Turn-Taking Decision Making for a Humanoid Robot Using Multimodal Cues"*, in *Proceedings of LREC-COLING*.
-* **[6] Gutiérrez et al. (2024)**, *"HippoRAG: Neurobiologically Inspired Long-Term Memory Retrieval for Generative Agents"*, in *Proceedings of NeurIPS*.
-* **[7] Wu et al. (2024)**, *"Integrating Cognitive Architectures with Large Language Models: A Neurosymbolic Framework"*, in *Journal of Neurosymbolic AI*.
+#### 📚 Reference Mapping
+
+> [!WARNING]
+> **Provenance status.** [1]–[4] are **vendor product materials, not peer-reviewed
+> publications** — they were previously formatted as if they were formal papers
+> (e.g. a "Technical Report"), which overstated their standing. They are listed
+> below as what they actually are: company product pages. [5]–[7] are academic
+> claims whose **exact titles and venues have not yet been verified against the
+> published record**; confirm each (DOI / arXiv / proceedings page) before relying
+> on them in any write-up. Comparative figures attributed to these sources are
+> likewise unverified.
+
+**Vendor / product materials (non-peer-reviewed):**
+
+* **[1] Figure AI** — Figure 02 humanoid platform, product materials ([figure.ai](https://figure.ai/)).
+* **[2] Tesla** — Optimus (Gen 2) humanoid, product materials ([tesla.com/optimus](https://tesla.com/optimus)).
+* **[3] Unitree Robotics** — Unitree G1 humanoid, product materials ([unitree.com/g1](https://unitree.com/g1)).
+* **[4] Engineered Arts** — Ameca / Tritium orchestration layer, product materials ([engineeredarts.co.uk/ameca](https://engineeredarts.co.uk/ameca)).
+
+**Academic references (⚠️ citation details unverified — confirm before use):**
+
+* **[5] Inoue et al.** — real-time multimodal turn-taking for conversational robots (ERICA line of work). *Exact title/venue to be confirmed.*
+* **[6] Gutiérrez et al. (2024)** — *HippoRAG*, neurobiologically inspired long-term memory for retrieval-augmented LLMs, NeurIPS 2024. *Exact title to be confirmed — the version previously cited here did not match the published title.*
+* **[7] Wu et al.** — neurosymbolic integration of cognitive architectures with LLMs. *Venue "Journal of Neurosymbolic AI" could not be confirmed to exist; verify or remove.*
 
 ---
 

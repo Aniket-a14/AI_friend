@@ -11,7 +11,7 @@ logger = logging.getLogger("ollama_client")
 
 class OllamaClient:
     """
-    Resilient Ollama Client for CVS-1.0.
+    Resilient Ollama Client for CVS-3.5.
     Implements Exponential Backoff with Jitter for high-load reliability.
     Uses httpx for unified async stack and connection pooling.
     """
@@ -100,6 +100,28 @@ class OllamaClient:
             variants.append(f"{model}:latest")
         return list(dict.fromkeys(variants))
 
+    @staticmethod
+    def _extract_first_memory_snippet(prompt: str) -> str:
+        """Return the first surfaced-memory line injected into the prompt, if any.
+
+        Used only by the deterministic ``MOCK_LLM_TEXT`` path. It reflects back
+        whatever memory content retrieval actually surfaced, so a passing recall
+        test proves retrieval worked — rather than the answer being hardcoded to
+        the evaluation corpus. Corpus-agnostic by construction.
+        """
+        marker = "SHARED HISTORY / RECENT CONTEXT"
+        idx = prompt.find(marker)
+        if idx == -1:
+            return ""
+        block = prompt[idx + len(marker) :]
+        for line in block.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("-"):
+                text = stripped.lstrip("-").strip()
+                if text:
+                    return text[:160]
+        return ""
+
     def _extract_response_text(self, payload: Dict[str, Any]) -> str:
         text = payload.get("response")
         if isinstance(text, str):
@@ -120,65 +142,12 @@ class OllamaClient:
         options_override: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
         if getattr(Config, "MOCK_LLM_TEXT", False):
-            # Dynamic semantic entity extraction based on actual database retrieval
-            lower_prompt = prompt.lower()
-
-            # Extract the actual retrieved memories block (SHARED HISTORY / RECENT CONTEXT)
-            history_block = ""
-            if "shared history / recent context" in lower_prompt:
-                parts = lower_prompt.split("shared history / recent context")[-1]
-                if "user:" in parts:
-                    history_block = parts.split("user:")[0]
-                else:
-                    history_block = parts
-
-            matched_entities = []
-
-            # Workspace / Kolkata
-            if (
-                "our shared workspace" in history_block
-                or "workspace" in history_block
-                or "kolkata" in history_block
-            ):
-                matched_entities.append("our shared workspace")
-
-            # Research / College / Architecture / University / Project / Topic / Studies
-            if (
-                "affective cognitive architecture" in history_block
-                or "affective cognitive architectures" in history_block
-                or "affective" in history_block
-            ):
-                matched_entities.append("affective cognitive architectures")
-
-            # Laboratory / Bangalore
-            if (
-                "the testing laboratory" in history_block
-                or "the testing facility" in history_block
-                or "the robotics laboratory" in history_block
-                or "main laboratory" in history_block
-                or "laboratory" in history_block
-                or "facility" in history_block
-                or "lab" in history_block
-            ):
-                matched_entities.append("the testing laboratory")
-
-            # Friend
-            if "my friend" in history_block or "friend" in history_block:
-                matched_entities.append("my friend")
-
-            # Drink / Brew / Rasgulla
-            if (
-                "chamomile brew" in history_block
-                or "tea" in history_block
-                or "brew" in history_block
-                or "infusion" in history_block
-                or "rasgulla" in history_block
-                or "sweet" in history_block
-            ):
-                matched_entities.append("chamomile brew")
-
-            if matched_entities:
-                yield f"I recall our shared experiences related to {' and '.join(matched_entities)}, my friend."
+            # Corpus-agnostic deterministic mock: reflect back whatever memory
+            # content retrieval actually surfaced into the prompt. This exercises
+            # retrieval honestly instead of hardcoding the evaluation corpus.
+            snippet = self._extract_first_memory_snippet(prompt)
+            if snippet:
+                yield f"I remember that — {snippet}"
             else:
                 yield "I'm thinking about our conversation, my friend."
             return
@@ -241,62 +210,11 @@ class OllamaClient:
         if getattr(Config, "MOCK_LLM_TEXT", False):
             lower_prompt = prompt.lower()
 
-            # Extract the actual retrieved memories block (SHARED HISTORY / RECENT CONTEXT)
-            history_block = ""
-            if "shared history / recent context" in lower_prompt:
-                parts = lower_prompt.split("shared history / recent context")[-1]
-                if "user:" in parts:
-                    history_block = parts.split("user:")[0]
-                else:
-                    history_block = parts
-
-            matched_entities = []
-
-            # Workspace / Kolkata
-            if (
-                "our shared workspace" in history_block
-                or "workspace" in history_block
-                or "kolkata" in history_block
-            ):
-                matched_entities.append("our shared workspace")
-
-            # Research / College / Architecture / University / Project / Topic / Studies
-            if (
-                "affective cognitive architecture" in history_block
-                or "affective cognitive architectures" in history_block
-                or "affective" in history_block
-            ):
-                matched_entities.append("affective cognitive architectures")
-
-            # Laboratory / Bangalore
-            if (
-                "the testing laboratory" in history_block
-                or "the testing facility" in history_block
-                or "the robotics laboratory" in history_block
-                or "main laboratory" in history_block
-                or "laboratory" in history_block
-                or "facility" in history_block
-                or "lab" in history_block
-            ):
-                matched_entities.append("the testing laboratory")
-
-            # Friend
-            if "my friend" in history_block or "friend" in history_block:
-                matched_entities.append("my friend")
-
-            # Drink / Brew / Rasgulla
-            if (
-                "chamomile brew" in history_block
-                or "tea" in history_block
-                or "brew" in history_block
-                or "infusion" in history_block
-                or "rasgulla" in history_block
-                or "sweet" in history_block
-            ):
-                matched_entities.append("chamomile brew")
-
-            if matched_entities:
-                return f"I recall our shared experiences related to {' and '.join(matched_entities)}, my friend."
+            # Corpus-agnostic deterministic mock: reflect back the memory content
+            # retrieval actually surfaced, rather than hardcoding eval entities.
+            snippet = self._extract_first_memory_snippet(prompt)
+            if snippet and "shared history / recent context" in lower_prompt:
+                return f"I remember that — {snippet}"
 
             if (
                 "subject_type" in lower_prompt

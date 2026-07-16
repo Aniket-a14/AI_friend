@@ -32,7 +32,7 @@ class AIBackend:
         """Minimal initialization for signaling server with Provisioning Guard."""
         logger.info("Initializing Sovereign Signaling Backend...")
 
-        # 1. CVS-1.0 Provisioning Guard (Solid State Mesh Requirement)
+        # 1. CVS-3.5 Provisioning Guard (Solid State Mesh Requirement)
         try:
             ensure_models_provisioned()
             logger.info("✅ Sensory Mesh models verified and locked.")

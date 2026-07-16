@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class BaseAgent:
     """
-    The blueprint for all v3.0 Micro-Agents.
+    The blueprint for all CVS-3.5 Micro-Agents.
     Communicates via NATS JetStream.
     """
 
@@ -95,7 +95,7 @@ class BaseAgent:
             logger.warning(f"Error handling cache sync: {e}")
 
     async def _bootstrap_mesh(self):
-        """Ensure core streams exist on the mesh (CVS-1.0 Hardened)."""
+        """Ensure core streams exist on the mesh (CVS-3.5 Hardened)."""
         from ..nats_streams import CORE_STREAMS
 
         core_streams = {name: list(subjects) for name, subjects in CORE_STREAMS.items()}
@@ -271,6 +271,23 @@ class BaseAgent:
                 avg_latency,
             )
 
+    async def _ack_heartbeat(self, msg, interval: float = 15.0):
+        """Periodically signal JetStream that a long callback is still working.
+
+        Resets the consumer AckWait timer so long cognitive turns are not
+        redelivered mid-flight (A1). Cancelled by the handler once the callback
+        returns.
+        """
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                try:
+                    await msg.in_progress()
+                except Exception:
+                    return
+        except asyncio.CancelledError:
+            return
+
     async def subscribe(
         self,
         subject: str,
@@ -287,6 +304,12 @@ class BaseAgent:
             await self.connect()
 
         async def _handler(msg):
+            # A1: Long-running cognitive turns (chat.*) can exceed JetStream's
+            # default AckWait, causing mid-generation redelivery and duplicate
+            # turns. Keep the message "in progress" until the callback returns.
+            hb_task = None
+            if subject.startswith("chat.") and hasattr(msg, "in_progress"):
+                hb_task = asyncio.create_task(self._ack_heartbeat(msg))
             try:
                 # 1. Check for Binary Payload + Headers
                 if msg.headers and "X-Latency-Meta" in msg.headers:
@@ -318,14 +341,47 @@ class BaseAgent:
                         )
                     await callback(data)
 
+                if hb_task:
+                    hb_task.cancel()
+                    hb_task = None
                 await msg.ack()
             except Exception as e:
                 logger.error(f"Subscription handler error on {subject}: {e}")
                 # Auto-ACK fast-moving media, but NACK critical state/chat flows
                 if subject.startswith("chat.") or subject.startswith("state."):
-                    await msg.nak()
+                    # A3: bound redelivery so a persistently malformed ("poison")
+                    # payload cannot spin forever. After MESH_MAX_DELIVER attempts,
+                    # terminate delivery and record the drop as a dead-letter.
+                    num_delivered = None
+                    try:
+                        num_delivered = msg.metadata.num_delivered
+                    except Exception:
+                        num_delivered = None
+                    max_deliver = max(1, int(os.getenv("MESH_MAX_DELIVER", "5")))
+                    if num_delivered is not None and num_delivered >= max_deliver:
+                        try:
+                            preview = msg.data.decode(errors="replace")[:500]
+                        except Exception:
+                            preview = "<undecodable>"
+                        logger.error(
+                            "[DeadLetter] Dropping poison message on %s after %s "
+                            "deliveries: %s | payload=%s",
+                            subject,
+                            num_delivered,
+                            e,
+                            preview,
+                        )
+                        if hasattr(msg, "term"):
+                            await msg.term()
+                        else:
+                            await msg.ack()
+                    else:
+                        await msg.nak()
                 else:
                     await msg.ack()
+            finally:
+                if hb_task:
+                    hb_task.cancel()
 
         # 3. Durable Management
         # Generate a unique durable name based on the subject if not provided

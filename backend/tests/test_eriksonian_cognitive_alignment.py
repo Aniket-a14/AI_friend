@@ -9,7 +9,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 from app.state.sqlite_fallback import SQLitePool
-from app.state.memory_store import MemoryStore
+from app.state.memory_store import DIRECT_CUE_BOOST, MemoryStore
 
 
 @pytest.fixture
@@ -72,7 +72,18 @@ def test_eriksonian_db_schema_attributes(temp_store):
 
 
 def test_cue_and_spreading_activation_boosts(temp_store):
-    """Validate that matching cue words in query gives direct boost (+5.0 per cue match) and +0.6 spreading boost to connected memories."""
+    """Validate cue-boost and spreading-activation *behaviour*.
+
+    Deliberately asserts ordering/sign relationships rather than exact magic
+    numbers. The previous version pinned +5.45 / +0.6, which were emergent from
+    a PPR damping factor reverse-engineered to make the spreading boost land on
+    exactly 0.6 — the test and the constant validated each other rather than the
+    retrieval mechanism. These invariants hold under any sane tuning:
+
+      A (direct cue match)      -> boost of at least DIRECT_CUE_BOOST
+      B (entity-linked to A)    -> smaller, strictly positive spreading boost
+      C (unrelated)             -> no boost at all
+    """
     # Insert three test memories
     # Memory A (Contains entities 'priya' and 'kolkata')
     # Memory B (Contains entity 'kolkata')
@@ -117,24 +128,24 @@ def test_cue_and_spreading_activation_boosts(temp_store):
         )
         cued_scores = {r["content"]: r["score"] for r in cued_results}
 
-    # Verify boosts
-    # Memory A contains 'priya' -> Direct Boost + spread activation (+5.45 under new production constants)
-    expected_a_boost = 5.45
+    # Memory A contains the cue 'priya' -> direct cue boost dominates.
     actual_a_boost = (
         cued_scores["Priya is my partner, she lives in Kolkata."]
         - baseline_scores["Priya is my partner, she lives in Kolkata."]
     )
-    assert math.isclose(actual_a_boost, expected_a_boost, abs_tol=1e-4)
+    assert actual_a_boost >= DIRECT_CUE_BOOST
 
-    # Memory B contains 'kolkata', which is shared with Memory A (directly boosted) -> Spreading Boost (+0.6)
-    expected_b_boost = 0.6
+    # Memory B shares the entity 'Kolkata' with directly-cued Memory A, so it
+    # receives associative spreading activation — positive, but well below a
+    # direct cue hit.
     actual_b_boost = (
         cued_scores["Kolkata is a beautiful city."]
         - baseline_scores["Kolkata is a beautiful city."]
     )
-    assert math.isclose(actual_b_boost, expected_b_boost, abs_tol=1e-4)
+    assert actual_b_boost > 0.0
+    assert actual_b_boost < actual_a_boost
 
-    # Memory C has no shared entities -> No Boost (0.0)
+    # Memory C shares no cues or entities -> no boost.
     actual_c_boost = (
         cued_scores["An unrelated memory."] - baseline_scores["An unrelated memory."]
     )

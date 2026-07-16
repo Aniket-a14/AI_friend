@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class BrainAgent(BaseAgent):
     """
-    The Brain Agent (CVS-1.0 Edition).
+    The Brain Agent (CVS-3.5 Edition).
     Orchestrator of Identity and Temporal Cognitive Flow.
     """
 
@@ -52,7 +52,7 @@ class BrainAgent(BaseAgent):
         self.last_user_distance = 1.0
         self.last_user_voice_properties = None
 
-        # CVS-1.0 Segmentation Config
+        # CVS-3.5 Segmentation Config
         self.coordinator = SpeechCoordinator(
             segmenter=HybridSegmenter(target_size=7), formation_buffer_ms=0.030
         )
@@ -131,10 +131,10 @@ class BrainAgent(BaseAgent):
         )
         # Note: system.tick proactive engagement is now handled by SubconsciousAgent
 
-        logger.info(f"🧠 {self.name} Online | CVS-1.0 Cognitive Mesh Active.")
+        logger.info(f"🧠 {self.name} Online | CVS-3.5 Cognitive Mesh Active.")
 
     async def _on_voice_feedback(self, data: Dict[str, Any]):
-        """Adaptive Tuning Loop (CVS-1.0 alpha-damped loop)."""
+        """Adaptive Tuning Loop (CVS-3.5 alpha-damped loop)."""
         target = data.get("target_chunk_size", 8)
         alpha = getattr(Config, "FEEDBACK_ALPHA", 0.7)
 
@@ -652,7 +652,7 @@ async def main():
         logger.info("[Brain] Running runtime bootstrap checks...")
         await bootstrap_runtime()
 
-    # 1. Initialize CVS-1.0 Foundation (Pool-based logic)
+    # 1. Initialize CVS-3.5 Foundation (Pool-based logic)
     conversation_store = ConversationHistoryStore()
     await conversation_store.initialize()  # Creates the database pool
 
