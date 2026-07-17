@@ -156,7 +156,7 @@ sequenceDiagram
     participant U as User
     participant H as Host (Windows)
     participant T as TransportAgent (Docker)
-    participant SV as "Whisper tiny.en (Fast Path)"
+    participant WF as "Whisper tiny.en (Fast Path)"
     participant W as "Whisper base.en (Accurate Path)"
     participant VA as "Vision Agent (VLM)"
     participant B as Brain Agent (Decision)
@@ -171,14 +171,14 @@ sequenceDiagram
         U->>T: WebRTC Audio
         T->>T: PCM → audio.inbound
         par Dual-STT Fan-Out
-            T->>SV: 400ms chunks (Speculative)
+            T->>WF: 400ms chunks (Speculative)
             T->>W: Full utterance (Semantic)
         end
     end
 
-    Note over SV, B: Stage 1 — Speculative Perception
-    SV->>B: AudioPerception (emotion + intent)
-    SV-->>V: audio.stop (speculative=true)
+    Note over WF, B: Stage 1 — Speculative Perception
+    WF->>B: AudioPerception (intent only; Whisper infers no emotion)
+    WF-->>V: audio.stop (speculative=true)
     V->>V: Immediate OLA Pause
 
     Note over W, B: Stage 2 — Semantic Resolution

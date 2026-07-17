@@ -45,7 +45,21 @@ def ensure_base_models():
         return
 
     logger.info("📥 Downloading base ONNX fallback model from sherpa-onnx releases...")
+    extracted_dir = MODELS_DIR / EXTRACTED_DIR_NAME
     try:
+        # A previous run that failed between extraction and the moves leaves this
+        # directory behind. tar would then extract *over* it, and assets the new
+        # archive happens not to ship would be satisfied by the stale ones — passing
+        # the missing-file check below while pairing a model with a lexicon and
+        # tokens it was never trained against. That mismatch is silent: the voice
+        # loads and speaks confidently in the wrong phonemes.
+        if extracted_dir.exists():
+            logger.warning(
+                "Removing stale extraction directory from a previous run: %s",
+                extracted_dir,
+            )
+            shutil.rmtree(extracted_dir)
+
         response = requests.get(BASE_ONNX_URL, stream=True, timeout=120)
         response.raise_for_status()
 
@@ -62,7 +76,6 @@ def ensure_base_models():
             # behaviour stable across versions.
             tar.extractall(path=MODELS_DIR, filter="data")
 
-        extracted_dir = MODELS_DIR / EXTRACTED_DIR_NAME
         if not extracted_dir.exists():
             raise RuntimeError(
                 f"expected {extracted_dir} in the archive but it was not extracted; "
@@ -89,8 +102,6 @@ def ensure_base_models():
         for src, dst in moves:
             shutil.move(str(src), str(dst))
 
-        shutil.rmtree(extracted_dir)
-
         logger.info(
             "✨ Base ONNX fallback model provisioned successfully in models/base/"
         )
@@ -102,6 +113,10 @@ def ensure_base_models():
     finally:
         if TEMP_FILE.exists():
             os.remove(TEMP_FILE)
+        # Always clear the extraction directory, successful or not, so a failed run
+        # cannot seed the next one with mismatched leftovers.
+        if extracted_dir.exists():
+            shutil.rmtree(extracted_dir, ignore_errors=True)
 
 
 PLACEHOLDER_MARKER = b"MOCK_"
@@ -132,7 +147,12 @@ def purge_placeholder_artifacts():
             logger.warning("Could not inspect %s: %s", path, e)
             continue
         if head == PLACEHOLDER_MARKER:
-            path.unlink()
+            try:
+                path.unlink()
+            except OSError as e:
+                # Cleanup of a stale artifact is not worth failing provisioning over.
+                logger.warning("Could not remove placeholder %s: %s", path, e)
+                continue
             removed += 1
             logger.warning(
                 "Removed placeholder %s — it was a text file, not an ONNX model.",
