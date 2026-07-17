@@ -124,28 +124,32 @@ graph TD
 CVS-3.5 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration protocol.
 
 > [!WARNING]
-> **Implemented and build-verified; not yet heard.** The `stt-agent` crate embeds a
-> real speech-recognition backend (whisper.cpp via `whisper-rs`), with 16 kHz sinc
-> resampling and VAD endpointing, and defaults to `STT_BACKEND=whisper`. Two caveats:
+> **Implemented and build-verified; not yet heard.** The `stt-agent` crate embeds
+> real speech recognition (whisper.cpp via `whisper-rs` for the accurate path,
+> SenseVoice via `sherpa-onnx` for the fast path), with 16 kHz sinc resampling and
+> VAD endpointing, defaulting to `STT_BACKEND=whisper`. Two caveats:
 >
-> 1. **The fast path is Whisper, not SenseVoice.** SenseVoice is a sherpa-onnx model and
->    is not reachable through whisper.cpp, so the fan-out below runs a *small* Whisper
->    model for the speculative path and a *larger* one for the final transcript. The
->    emotion / paralinguistic events SenseVoice would supply are **not** inferred —
->    those fields are left empty rather than fabricated.
-> 2. **No live transcription has been observed.** whisper.cpp now compiles and links
->    from source, and the 19 crate unit tests pass against the real `whisper-rs` 0.16
->    API, but no ggml weights have been downloaded here and no audio has been
->    transcribed end-to-end. Treat accuracy and latency as **unmeasured**. Building
->    requires `libclang` (`cmake` + `clang`); `Dockerfile.rust` installs both.
+> 1. **SenseVoice requires host-side provisioning.** Run
+>    `python backend/scripts/bootstrap/provision_models.py` once; docker-compose
+>    bind-mounts the result. Without it the fast path falls back to a small Whisper
+>    model: barge-in keeps working, but the emotion / paralinguistic fields stay
+>    empty — the agent hears words, not tone — and the logs say so loudly.
+> 2. **No live transcription has been observed.** Both backends compile, link and
+>    pass the crate's unit tests (including cross-language wire-shape tests), but
+>    no audio has been transcribed end-to-end and no acoustic emotion has been
+>    classified on a live utterance. Treat accuracy and latency as **unmeasured**.
+>    Building requires `libclang` (`cmake` + `clang`); `Dockerfile.rust` installs both.
 
 <!-- -->
 
 > [!IMPORTANT]
 > **Protocol Description**:
-> Audio arriving via WebRTC is fanned out to two paths, both Whisper: a **small model**
-> (`STT_FAST_MODEL`, default `tiny.en`) for speculative temporal intent, and a **larger
-> model** (`STT_ACCURATE_MODEL`, default `base.en`) for semantic accuracy.
+> Audio arriving via WebRTC is fanned out to two paths: **SenseVoice**
+> (`STT_SENSEVOICE_DIR`; classifies speech emotion and audio events alongside the
+> words) for speculative temporal intent, and **Whisper** (`STT_ACCURATE_MODEL`,
+> default `base.en`) for semantic accuracy. When no SenseVoice model is provisioned
+> the fast path degrades to a small Whisper model (`STT_FAST_MODEL`, default
+> `tiny.en`) and no emotion is inferred.
 >
 > * **Stage 1 (Reflexive Soft-Attenuation)**: The fast path transcribes a speculative partial and publishes a speculative `audio.stop` if it detects an interruption marker. The Voice Agent immediately executes a **System 1 soft-attenuation**, ducking the volume by 70% within 10ms to allow duplex listening. Partials are only emitted once the endpointer confirms speech, so a cough cannot trigger this. Detection latency is **unmeasured** — see the warning above.
 > * **Stage 2 (Symbolic Interruption Validation)**: The Brain Agent evaluates the speculative perception text. If confirmed, it commits a hard `audio.stop` (aborting playback and LLM generation). If rejected as noise or a non-interruption, it publishes `audio.resume`, causing the Voice Agent to smoothly ramp output volume back to 100%.
@@ -156,7 +160,7 @@ sequenceDiagram
     participant U as User
     participant H as Host (Windows)
     participant T as TransportAgent (Docker)
-    participant WF as "Whisper tiny.en (Fast Path)"
+    participant WF as "SenseVoice (Fast Path)"
     participant W as "Whisper base.en (Accurate Path)"
     participant VA as "Vision Agent (VLM)"
     participant B as Brain Agent (Decision)
@@ -177,7 +181,7 @@ sequenceDiagram
     end
 
     Note over WF, B: Stage 1 — Speculative Perception
-    WF->>B: AudioPerception (intent only; Whisper infers no emotion)
+    WF->>B: AudioPerception (intent + emotion + audio events)
     WF-->>V: audio.stop (speculative=true)
     V->>V: Immediate OLA Pause
 
@@ -207,7 +211,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | :--- | :--- | :--- | :--- |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
 | **Voice Agent** | Rust / ORT (ONNX) / SoVITS | CVS-3.5 Local Synthesis Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
-| **STT Agent** ⚠️ | Rust / whisper.cpp | Real speech recognition via `whisper-rs` (16 kHz sinc resampling + VAD endpointing), defaulting to `STT_BACKEND=whisper`; the scripted transcript is now opt-in behind `STT_BACKEND=mock`. Build-verified (whisper.cpp compiles and links; 19 unit tests pass), but **no live transcription has been observed** — accuracy and latency are unmeasured. The fast path is a small Whisper model, **not** SenseVoice, so no emotion/paralinguistic events are inferred. | `audio.inbound`, `chat.input`, `audio.perception` |
+| **STT Agent** ⚠️ | Rust / whisper.cpp + sherpa-onnx | Real speech recognition, dual-path: whisper.cpp (`whisper-rs`) produces the final transcript; SenseVoice (`sherpa-onnx`) serves the fast path with speech-emotion + audio-event classification (falls back to a small Whisper model — words, no tone — when unprovisioned). Scripted transcript is opt-in behind `STT_BACKEND=mock`. Build-verified (both backends compile and link; 30 unit tests pass), but **no live transcription or emotion classification has been observed** — accuracy and latency are unmeasured. | `audio.inbound`, `chat.input`, `audio.perception` |
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
 | **Subconscious** | Python / Neo4j | Background reflection, internal monologue generation (Tier-5). | `chat.input`, `system.tick`, `knowledge.*` |
@@ -221,7 +225,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 Every interaction follows a strictly governed loop through the mesh:
 
 1. **Perception**: Transport Agent publishes raw PCM to `audio.inbound`.
-2. **Speculation**: STT Agent (fast Whisper path) identifies high-confidence intent and publishes `audio.perception`.
+2. **Speculation**: STT Agent (SenseVoice fast path, or Whisper fallback) identifies high-confidence intent and publishes `audio.perception` with any classified emotion/audio events.
 3. **Reflex**: Voice Agent receives `audio.perception` and triggers an immediate speculative pause.
 4. **Appraisal**: Brain Agent receives final transcript, computes emotional valence via **OCC/Lazarus**, and updates **PAD** state.
 5. **Deliberation**: Decision Service selects the optimal intent using **MAUT** scoring.

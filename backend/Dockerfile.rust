@@ -16,7 +16,28 @@ COPY Cargo.toml ./Cargo.toml
 COPY Cargo.lock ./Cargo.lock
 COPY crates ./crates
 
-RUN cargo build --release --package voice-agent --package stt-agent
+# Two builds, deliberately ordered, because of a shared-library filename collision:
+# ort (voice-agent) copies ITS ONNX Runtime into target/release/libonnxruntime.so,
+# and sherpa-onnx (stt-agent) copies ITS OWN bundled ONNX Runtime — a different
+# version — under the exact same path. In a combined build whichever crate builds
+# last silently wins, and the losing agent fails at startup (or worse, misbehaves)
+# while the image build stays green. Building voice-agent alone first lets us stage
+# ort's pristine copy before sherpa can clobber it.
+RUN cargo build --release --package voice-agent
+RUN mkdir -p /staging/voice-libs \
+    && cp -L /app/target/release/libonnxruntime.so* /staging/voice-libs/
+
+RUN cargo build --release --package stt-agent
+# sherpa's pristine libraries live in its own build out-dir, untouched by the
+# collision above. `cp -L` materialises symlink names as real files so nothing
+# dangles after the COPY into the runtime stage. The `test` lines make this fail
+# loudly if the sherpa-onnx-sys layout ever changes, instead of shipping an image
+# whose stt-agent cannot start.
+RUN mkdir -p /staging/stt-libs \
+    && find /app/target/release/build -path '*sherpa-onnx-sys*' -name '*.so*' \
+       -exec cp -L {} /staging/stt-libs/ \; \
+    && test -e /staging/stt-libs/libsherpa-onnx-c-api.so \
+    && ls /staging/stt-libs/libonnxruntime.so* > /dev/null
 
 FROM debian:trixie-slim AS runtime
 
@@ -26,8 +47,18 @@ RUN apt-get -o Acquire::Check-Valid-Until=false update \
 
 COPY --from=builder /app/target/release/voice-agent /usr/local/bin/voice-agent
 COPY --from=builder /app/target/release/stt-agent /usr/local/bin/stt-agent
-# Copy ONNX Runtime shared library from builder stage to prevent dynamic linking failure
-COPY --from=builder /app/target/release/libonnxruntime.so* /usr/local/lib/
+
+# voice-agent's ONNX Runtime (ort's copy) resolves via the linker cache: ort emits
+# no rpath, so /usr/local/lib + ldconfig is its lookup path.
+COPY --from=builder /staging/voice-libs/ /usr/local/lib/
+
+# stt-agent's sherpa libraries — including sherpa's own libonnxruntime.so — go NEXT
+# TO THE BINARY, not into /usr/local/lib. sherpa-onnx-sys links stt-agent with
+# `-rpath $ORIGIN`, so it prefers these; and because /usr/local/bin is not in the
+# linker cache, voice-agent can never accidentally load sherpa's ONNX Runtime in
+# place of ort's. Two agents, two ONNX Runtimes, zero ambiguity.
+COPY --from=builder /staging/stt-libs/ /usr/local/bin/
+
 RUN ldconfig
 
 # stt-agent downloads ggml weights into STT_MODEL_DIR (/app/models/whisper) on
@@ -38,6 +69,10 @@ RUN ldconfig
 # creates it root-owned 0755 instead. `nobody` could then never write the cache,
 # so ensure_model() would fail and the container would restart-loop -- with
 # STT_BACKEND=whisper (the default) that means no transcription at all.
-RUN install -d -o nobody -g nogroup /app/models /app/models/whisper
+#
+# models/sensevoice is the mountpoint for the host-provisioned SenseVoice model
+# (backend/scripts/bootstrap/provision_models.py); it is bind-mounted read-only by
+# docker-compose, so ownership only matters for the empty-dir fallback case.
+RUN install -d -o nobody -g nogroup /app/models /app/models/whisper /app/models/sensevoice
 
 USER nobody:nogroup

@@ -1886,14 +1886,30 @@ mod tests {
             eprintln!("SKIP: models/base not provisioned");
             return;
         };
-        let loud = peak(&engine.synthesize(PHRASE, 1.0, 1.0, 1.0).unwrap()) as f64;
-        let quiet = peak(&engine.synthesize(PHRASE, 1.0, 1.0, 0.5).unwrap()) as f64;
+        // Compare RMS, not peak: VITS draws fresh noise every render
+        // (noise_scale=0.667), so these are two *different* waveforms of the same
+        // sentence. Peak is an extreme-value statistic and varies tens of percent
+        // between independent renders — this test originally used it and flaked
+        // (0.531 one run, 0.353 the next). RMS over ~3s of speech is stable to a
+        // few percent, and volume scales every sample linearly, so the RMS ratio
+        // tracks the volume ratio.
+        let loud = rms_i16(&engine.synthesize(PHRASE, 1.0, 1.0, 1.0).unwrap());
+        let quiet = rms_i16(&engine.synthesize(PHRASE, 1.0, 1.0, 0.5).unwrap());
         assert!(loud > 0.0);
         let ratio = quiet / loud;
         assert!(
-            (ratio - 0.5).abs() < 0.12,
-            "volume 0.5 should halve peak amplitude; ratio was {ratio:.3}"
+            (ratio - 0.5).abs() < 0.10,
+            "volume 0.5 should halve RMS amplitude; ratio was {ratio:.3}"
         );
+    }
+
+    fn rms_i16(pcm: &[u8]) -> f64 {
+        let samples: Vec<f64> = pcm
+            .chunks_exact(2)
+            .map(|c| i16::from_le_bytes([c[0], c[1]]) as f64)
+            .collect();
+        assert!(!samples.is_empty());
+        (samples.iter().map(|s| s * s).sum::<f64>() / samples.len() as f64).sqrt()
     }
 
     #[test]

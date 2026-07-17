@@ -9,7 +9,10 @@ import nats
 
 from app.config import Config
 from app.network import is_lan_client_allowed
-from scripts.provision_models import ensure_models_provisioned
+# scripts.bootstrap, not scripts: the old import pointed at a module that does not
+# exist, so main.py could not even be imported — the Provisioning Guard below,
+# together with its "models verified and locked" log, had never once run.
+from scripts.bootstrap.provision_models import ensure_models_provisioned
 from app.logging_config import setup_logging
 
 # Configure logging

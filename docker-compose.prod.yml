@@ -226,15 +226,19 @@ services:
       timeout: 5s
       retries: 5
 
-  # 6. STT AGENT (real Whisper recognition, dual-path)
+  # 6. STT AGENT (real recognition, dual-path)
   #
-  # Runs whisper.cpp via whisper-rs. Two models fan out: STT_FAST_MODEL drives
-  # low-latency speculative partials on audio.perception (barge-in), while
-  # STT_ACCURATE_MODEL produces the final chat.input transcript.
+  # The accurate path is whisper.cpp (STT_ACCURATE_MODEL -> final chat.input
+  # transcript). The fast path prefers SenseVoice (sherpa-onnx), which classifies
+  # speech emotion and audio events (laughter, coughing, ...) alongside the words —
+  # the acoustic half of the affect pillar. When no SenseVoice model is mounted the
+  # fast path falls back to a small Whisper model (STT_FAST_MODEL): barge-in still
+  # works, but the agent hears words without tone, and says so loudly in its logs.
   #
-  # Models are downloaded on first boot into the stt_models_data volume, mirroring
-  # how Ollama models are provisioned. First start is slower while ~220MB of ggml
-  # weights are fetched; subsequent starts hit the cache.
+  # Whisper ggml weights are downloaded on first boot into the stt_models_data
+  # volume (~220MB). The SenseVoice model is provisioned on the HOST — run
+  # `python backend/scripts/bootstrap/provision_models.py` once — and bind-mounted
+  # read-only below; the agent does not download it.
   #
   # Set STT_BACKEND=mock (plus RUST_STT_MOCK_TRANSCRIPT) only for CI/offline runs
   # where no model download is possible — it replays a fixed string and is NOT
@@ -248,10 +252,13 @@ services:
     command: [ "stt-agent" ]
     volumes:
       - stt_models_data:/app/models
+      - ./backend/models/sensevoice:/app/models/sensevoice:ro
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - STT_BACKEND=${STT_BACKEND:-whisper}
       - STT_MODEL_DIR=${STT_MODEL_DIR:-/app/models/whisper}
+      - STT_SENSEVOICE=${STT_SENSEVOICE:-on}
+      - STT_SENSEVOICE_DIR=${STT_SENSEVOICE_DIR:-/app/models/sensevoice}
       - STT_FAST_MODEL=${STT_FAST_MODEL:-tiny.en}
       - STT_ACCURATE_MODEL=${STT_ACCURATE_MODEL:-base.en}
       - STT_LANGUAGE=${STT_LANGUAGE:-en}

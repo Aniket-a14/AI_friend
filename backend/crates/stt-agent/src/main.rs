@@ -12,6 +12,7 @@
 //! transcription.
 
 mod audio;
+mod sensevoice;
 mod whisper;
 
 use anyhow::{Context, Result};
@@ -32,6 +33,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use audio::{Endpointer, VadEvent};
+use sensevoice::SenseVoiceModel;
 use whisper::WhisperModel;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +51,13 @@ struct SttConfig {
     model_dir: PathBuf,
     fast_model: String,
     accurate_model: String,
+    /// SenseVoice model directory. When it holds a usable model, SenseVoice serves
+    /// the fast path and the agent perceives emotion; otherwise the fast path falls
+    /// back to `fast_model` (Whisper) and the agent hears words but not tone.
+    sensevoice_dir: PathBuf,
+    /// Set `STT_SENSEVOICE=off` to force the Whisper fast path even when a
+    /// SenseVoice model is present.
+    sensevoice_enabled: bool,
     language: String,
     /// Used only when the inbound message carries no sample_rate header.
     fallback_sample_rate: u32,
@@ -74,6 +83,11 @@ impl SttConfig {
             model_dir: PathBuf::from(env_or("STT_MODEL_DIR", "/app/models/whisper")),
             fast_model: env_or("STT_FAST_MODEL", "tiny.en"),
             accurate_model: env_or("STT_ACCURATE_MODEL", "base.en"),
+            sensevoice_dir: PathBuf::from(env_or("STT_SENSEVOICE_DIR", "/app/models/sensevoice")),
+            sensevoice_enabled: !matches!(
+                env_or("STT_SENSEVOICE", "on").to_lowercase().as_str(),
+                "off" | "false" | "0"
+            ),
             language: env_or("STT_LANGUAGE", "en"),
             fallback_sample_rate: parse_env("STT_TARGET_SAMPLE_RATE", 16_000),
             endpoint_silence_ms: parse_env("STT_ENDPOINT_SILENCE_MS", 700.0),
@@ -197,27 +211,29 @@ async fn main() -> Result<()> {
         }
         Backend::Whisper => {
             info!(
-                fast = %config.fast_model,
                 accurate = %config.accurate_model,
                 dir = %config.model_dir.display(),
                 "resolving whisper models"
             );
-            let fast_path = whisper::ensure_model(&config.model_dir, &config.fast_model).await?;
             let accurate_path =
                 whisper::ensure_model(&config.model_dir, &config.accurate_model).await?;
-
-            let fast = Arc::new(WhisperModel::load(&fast_path, "fast", &config.language)?);
             let accurate =
                 Arc::new(WhisperModel::load(&accurate_path, "accurate", &config.language)?);
 
-            spawn_whisper_partial_worker(
+            let fast = Arc::new(load_fast_path(&config).await?);
+            let hears_emotion = matches!(*fast, FastPath::SenseVoice(_));
+
+            spawn_partial_worker(
                 jetstream.clone(),
                 partial_slot.clone(),
                 fast,
                 state.clone(),
             );
-            spawn_whisper_final_worker(jetstream.clone(), final_rx, accurate, state.clone());
-            info!("stt-agent online with real whisper recognition (dual-path)");
+            spawn_final_worker(jetstream.clone(), final_rx, accurate);
+            info!(
+                hears_emotion,
+                "stt-agent online with real recognition (dual-path)"
+            );
         }
     }
 
@@ -241,20 +257,50 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Which half of the dual-path fan-out a worker serves.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PathKind {
-    Partial,
-    Final,
+/// The model serving the speculative fast path.
+///
+/// SenseVoice is preferred because it perceives *how* the user sounds, not just
+/// what they said — the input HNNA's affect pillar was designed around and has
+/// been starved of since the Rust migration. Whisper is the fallback when no
+/// SenseVoice model is provisioned: it keeps barge-in working, but the agent stays
+/// deaf to tone.
+enum FastPath {
+    SenseVoice(Arc<SenseVoiceModel>),
+    Whisper(Arc<WhisperModel>),
 }
 
-/// Transcribe one job and publish the result, honouring `path` semantics.
-async fn run_whisper_job(
+impl FastPath {
+    /// Transcribe, and read acoustic affect if this model can.
+    fn perceive(&self, pcm_16k: &[f32]) -> Result<sensevoice::Perception> {
+        match self {
+            FastPath::SenseVoice(model) => model.perceive(pcm_16k),
+            FastPath::Whisper(model) => Ok(sensevoice::Perception {
+                text: model.transcribe(pcm_16k)?,
+                // Whisper classifies neither emotion nor audio events. These stay
+                // absent rather than defaulting: `None` means "no acoustic estimate",
+                // which the Python state machine treats differently from a genuine
+                // neutral reading. Defaulting to 0.0 here would flatten the agent's
+                // mood toward zero on every single utterance.
+                emotion: None,
+                emotional_bias: None,
+                events: Vec::new(),
+            }),
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            FastPath::SenseVoice(_) => "sensevoice",
+            FastPath::Whisper(_) => "whisper-fast",
+        }
+    }
+}
+
+/// Transcribe one utterance and publish the final transcript onto `chat.input`.
+async fn run_final_job(
     jetstream: &async_nats::jetstream::Context,
     model: &Arc<WhisperModel>,
-    state: &Arc<Mutex<SttState>>,
     job: Job,
-    path: PathKind,
 ) {
     let model = model.clone();
     let pcm = job.pcm_16k;
@@ -279,29 +325,60 @@ async fn run_whisper_job(
     }
 
     let elapsed_ms = (now_seconds() - started) * 1000.0;
-    let publish = match path {
-        PathKind::Partial => {
-            // Inference outlives the utterance it came from: by now the endpointer
-            // may have closed that turn and rotated `utterance_id`. Publishing
-            // anyway would put a hypothesis for finished speech on
-            // audio.perception, whose barge-in path could then emit audio.stop
-            // against whatever the agent is saying *now*.
-            if !is_current_utterance(state, &job.utterance_id).await {
-                info!(
-                    took_ms = elapsed_ms,
-                    "discarding partial for an utterance that already closed"
-                );
-                return;
-            }
-            publish_partial(jetstream, &text, &job.utterance_id).await
+    info!(text = %text, took_ms = elapsed_ms, "final transcript");
+    if let Err(err) = publish_final(jetstream, &text, &job.utterance_id, job.latency, "whisper").await
+    {
+        error!("stt-agent failed to publish transcript: {err:#}");
+    }
+}
+
+/// Run the speculative fast path and publish onto `audio.perception`.
+async fn run_partial_job(
+    jetstream: &async_nats::jetstream::Context,
+    fast: &Arc<FastPath>,
+    state: &Arc<Mutex<SttState>>,
+    job: Job,
+) {
+    let model = fast.clone();
+    let pcm = job.pcm_16k;
+    let started = now_seconds();
+
+    let result = tokio::task::spawn_blocking(move || model.perceive(&pcm)).await;
+
+    let perception = match result {
+        Ok(Ok(perception)) => perception,
+        Ok(Err(err)) => {
+            error!(model = fast.label(), "fast-path inference error: {err:#}");
+            return;
         }
-        PathKind::Final => {
-            info!(text = %text, took_ms = elapsed_ms, "final transcript");
-            publish_final(jetstream, &text, &job.utterance_id, job.latency, "whisper").await
+        Err(err) => {
+            error!(model = fast.label(), "fast-path worker panicked: {err}");
+            return;
         }
     };
-    if let Err(err) = publish {
-        error!("stt-agent failed to publish transcript: {err:#}");
+
+    // Events are perception even without words: a laugh or a cough carries affect
+    // and has no transcript. Dropping on empty text alone would discard them.
+    if perception.text.trim().is_empty() && perception.events.is_empty() {
+        return;
+    }
+
+    let elapsed_ms = (now_seconds() - started) * 1000.0;
+
+    // Inference outlives the utterance it came from: by now the endpointer may have
+    // closed that turn and rotated `utterance_id`. Publishing anyway would put a
+    // hypothesis for finished speech on audio.perception, whose barge-in path could
+    // then emit audio.stop against whatever the agent is saying *now*.
+    if !is_current_utterance(state, &job.utterance_id).await {
+        info!(
+            took_ms = elapsed_ms,
+            "discarding partial for an utterance that already closed"
+        );
+        return;
+    }
+
+    if let Err(err) = publish_partial(jetstream, &perception, &job.utterance_id).await {
+        error!("stt-agent failed to publish perception: {err:#}");
     }
 }
 
@@ -310,29 +387,56 @@ async fn is_current_utterance(state: &Arc<Mutex<SttState>>, utterance_id: &str) 
     state.lock().await.utterance_id == utterance_id
 }
 
-fn spawn_whisper_final_worker(
+/// Choose the fast-path model: SenseVoice when available, Whisper otherwise.
+///
+/// The fallback is deliberate rather than fatal — barge-in must keep working on a
+/// host with no SenseVoice model — but it is *loud*, because the difference is not
+/// cosmetic: without SenseVoice the agent cannot perceive tone at all, and the
+/// entire acoustic half of the affect pillar stays dark.
+async fn load_fast_path(config: &SttConfig) -> Result<FastPath> {
+    if config.sensevoice_enabled {
+        match SenseVoiceModel::load(&config.sensevoice_dir, &config.language) {
+            Ok(model) => return Ok(FastPath::SenseVoice(Arc::new(model))),
+            Err(err) => sensevoice::warn_if_unavailable(&config.sensevoice_dir, &err),
+        }
+    } else {
+        warn!(
+            "STT_SENSEVOICE is off: the fast path will use Whisper and the agent will \
+             not perceive acoustic emotion or audio events."
+        );
+    }
+
+    info!(fast = %config.fast_model, "falling back to the Whisper fast path");
+    let fast_path = whisper::ensure_model(&config.model_dir, &config.fast_model).await?;
+    Ok(FastPath::Whisper(Arc::new(WhisperModel::load(
+        &fast_path,
+        "fast",
+        &config.language,
+    )?)))
+}
+
+fn spawn_final_worker(
     jetstream: async_nats::jetstream::Context,
     mut rx: mpsc::Receiver<Job>,
     model: Arc<WhisperModel>,
-    state: Arc<Mutex<SttState>>,
 ) {
     tokio::spawn(async move {
         while let Some(job) = rx.recv().await {
-            run_whisper_job(&jetstream, &model, &state, job, PathKind::Final).await;
+            run_final_job(&jetstream, &model, job).await;
         }
     });
 }
 
-fn spawn_whisper_partial_worker(
+fn spawn_partial_worker(
     jetstream: async_nats::jetstream::Context,
     slot: Arc<PartialSlot>,
-    model: Arc<WhisperModel>,
+    fast: Arc<FastPath>,
     state: Arc<Mutex<SttState>>,
 ) {
     tokio::spawn(async move {
         loop {
             let job = slot.take().await;
-            run_whisper_job(&jetstream, &model, &state, job, PathKind::Partial).await;
+            run_partial_job(&jetstream, &fast, &state, job).await;
         }
     });
 }
@@ -350,7 +454,13 @@ fn spawn_mock_workers(
     tokio::spawn(async move {
         loop {
             let job = partial_slot.take().await;
-            if let Err(err) = publish_partial(&js, &text, &job.utterance_id).await {
+            // No emotion or events: a mock must never fabricate acoustic affect that
+            // would drift the agent's real mood.
+            let perception = sensevoice::Perception {
+                text: text.clone(),
+                ..Default::default()
+            };
+            if let Err(err) = publish_partial(&js, &perception, &job.utterance_id).await {
                 error!("mock partial publish failed: {err:#}");
             }
         }
@@ -368,14 +478,38 @@ fn spawn_mock_workers(
     });
 }
 
-async fn publish_partial(
-    jetstream: &async_nats::jetstream::Context,
-    text: &str,
+/// Build the `audio.perception` message for a fast-path hypothesis.
+///
+/// Pure so its wire shape is testable: the acoustic-affect consumer reads
+/// `metadata`, NOT the top-level fields. `CognitiveService._on_audio_perception`
+/// takes `data["metadata"]` and hands it to
+/// `StateService.apply_sensory_perception`, which looks up "emotional_bias" and
+/// "events" there. The pre-migration Python STT agent published *both* locations
+/// (`metadata={**perception_data}` plus `paralinguistic_events=...`); the Rust
+/// rewrite kept only the top-level field, so even a model that did classify
+/// emotion would have had it silently dropped on the floor. Populating both is
+/// what actually reconnects the wire.
+fn build_partial_perception(
+    heard: &sensevoice::Perception,
     utterance_id: &str,
-) -> Result<()> {
+) -> (AudioPerception, Option<SpeculativeIntent>) {
+    let text = heard.text.as_str();
+
     let mut metadata_map = JsonMap::new();
     metadata_map.insert("text".to_string(), json!(text));
     metadata_map.insert("is_partial".to_string(), json!(true));
+    metadata_map.insert("events".to_string(), json!(heard.events));
+    if let Some(emotion) = &heard.emotion {
+        metadata_map.insert("emotion".to_string(), json!(emotion));
+    }
+    // Only present when a model genuinely estimated it. An absent key and an
+    // explicit 0.0 mean different things downstream: absence is "no acoustic
+    // evidence" and is skipped, while 0.0 is a real neutral reading that gets
+    // blended. Writing 0.0 for "we don't know" would drag mood toward zero on every
+    // perception and erase the affect semantic appraisal just established.
+    if let Some(bias) = heard.emotional_bias {
+        metadata_map.insert("emotional_bias".to_string(), json!(bias));
+    }
 
     let speculative = build_speculative_intent(text, utterance_id);
     let intent = speculative.as_ref().map(|s| s.name.clone());
@@ -392,14 +526,22 @@ async fn publish_partial(
         keywords,
         confidence,
         snr: 0.0,
-        // Whisper does not classify emotion or paralinguistics. Left empty rather
-        // than fabricated; populating these needs a model that actually predicts them.
-        paralinguistic_events: Vec::new(),
+        paralinguistic_events: heard.events.clone(),
         speculative_intent: speculative.clone(),
         metadata: metadata_map,
         timestamp: now_seconds(),
         utterance_id: Some(utterance_id.to_string()),
     };
+
+    (perception, speculative)
+}
+
+async fn publish_partial(
+    jetstream: &async_nats::jetstream::Context,
+    heard: &sensevoice::Perception,
+    utterance_id: &str,
+) -> Result<()> {
+    let (perception, speculative) = build_partial_perception(heard, utterance_id);
 
     jetstream
         .publish(
@@ -769,6 +911,57 @@ mod tests {
             utterance_id: utterance_id.to_string(),
             latency: None,
         }
+    }
+
+    /// The wire-shape regression this whole integration exists to prevent.
+    ///
+    /// Python's consumer chain is `CognitiveService._on_audio_perception` →
+    /// `data["metadata"]` → `StateService.apply_sensory_perception` →
+    /// `metadata["emotional_bias"]` / `metadata["events"]`. The post-migration Rust
+    /// agent published emotion data (had it existed) only at the top level, where
+    /// that chain never looks — a wire that inspected as connected but carried
+    /// nothing. This test walks the serialized JSON exactly the way Python does.
+    #[test]
+    fn perception_carries_affect_where_python_reads_it() {
+        let heard = sensevoice::Perception {
+            text: "that is wonderful".into(),
+            emotion: Some("HAPPY".into()),
+            emotional_bias: Some(0.4),
+            events: vec!["Laughter".into()],
+        };
+        let (perception, _) = build_partial_perception(&heard, "utt-1");
+        let wire: serde_json::Value =
+            serde_json::from_slice(&serde_json::to_vec(&perception).unwrap()).unwrap();
+
+        // Python: data.get("metadata", {})
+        let metadata = &wire["metadata"];
+        assert_eq!(metadata["emotional_bias"], json!(0.4));
+        assert_eq!(metadata["events"], json!(["Laughter"]));
+        assert_eq!(metadata["emotion"], json!("HAPPY"));
+        assert_eq!(metadata["is_partial"], json!(true));
+        // The top-level contract field must ALSO be populated.
+        assert_eq!(wire["paralinguistic_events"], json!(["Laughter"]));
+    }
+
+    #[test]
+    fn absent_emotion_is_an_absent_key_not_zero() {
+        // `metadata.get("emotional_bias")` returning 0.0 and returning None steer
+        // the Python state machine differently: 0.0 is blended into mood as a real
+        // neutral reading, None is skipped. A Whisper fast path (no emotion model)
+        // must therefore OMIT the key entirely, or every utterance would drag the
+        // agent's mood toward zero — the exact bug fixed in 45e1a33.
+        let heard = sensevoice::Perception {
+            text: "hello there".into(),
+            ..Default::default()
+        };
+        let (perception, _) = build_partial_perception(&heard, "utt-1");
+        let wire: serde_json::Value =
+            serde_json::from_slice(&serde_json::to_vec(&perception).unwrap()).unwrap();
+
+        let metadata = wire["metadata"].as_object().unwrap();
+        assert!(!metadata.contains_key("emotional_bias"));
+        assert!(!metadata.contains_key("emotion"));
+        assert_eq!(metadata["events"], json!([]));
     }
 
     #[tokio::test]

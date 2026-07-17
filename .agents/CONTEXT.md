@@ -2063,3 +2063,75 @@ output, contradicting its own Whisper warning three lines above (corrected).
 **Verification:** voice-agent 21 tests pass (up from 19, 5 against the real 114MB
 model); stt-agent 19 pass. Both clippy-clean. Python suite unaffected. The native
 whisper.cpp build is now proven locally — see the update above.
+
+---
+
+## 2026-07-17 — SenseVoice restored: the agent can hear tone again (affect pillar, acoustic half)
+
+Since the Rust migration, the fast path ran Whisper only, and Whisper only
+transcribes. The Python consumer for acoustic affect
+(`StateService.apply_sensory_perception` — mood blending from `emotional_bias`,
+energy/trust nudges from Laughter/Applause/Cough) has been live and reachable the
+whole time, receiving nothing on every perception. This entry reconnects it.
+
+**What was built.** `stt-agent/src/sensevoice.rs`: SenseVoice via the `sherpa-onnx`
+crate (v1.13.4, `shared` linking). SenseVoice emits classifications as inline tags
+(`<|en|><|HAPPY|><|Laughter|>text`); the parser strips them and maps emotion to the
+scalar bias the Python state machine expects. The emotion→bias table is ported
+VERBATIM from the archived `sensevoice_service.py` — the damped-bias state machine
+downstream was tuned against those exact numbers, so "improving" them here would
+silently retune the agent's affect response. `FastPath` enum: SenseVoice when
+provisioned, Whisper fallback (loud warning: words without tone). Absence semantics
+preserved end-to-end: no emotion classified → the `emotional_bias` KEY IS OMITTED,
+never written as 0.0 (see 45e1a33 for why).
+
+**The dead wire, and its second break.** Even had a model been classifying emotion,
+the Rust agent published `paralinguistic_events` only at the AudioPerception top
+level — but Python reads `data["metadata"]["events"]` and
+`["emotional_bias"]`. The pre-migration agent published both locations; the rewrite
+kept only the one nothing reads. `build_partial_perception` (extracted pure from
+`publish_partial`) now populates both, and a test walks the serialized JSON exactly
+the way `CognitiveService._on_audio_perception` does.
+
+**The provisioning chain was broken in three places, one fatal.**
+`backend/main.py` imported `scripts.provision_models` — a module that does not
+exist (`scripts/bootstrap/provision_models.py` is the real path), so main.py was
+UNIMPORTABLE and the "✅ Sensory Mesh models verified and locked" log had never
+once printed. In the script itself: `base_dir` resolved to `backend/scripts/`, so
+it provisioned into `backend/scripts/models/sensevoice` — a path nothing reads —
+and logged success; and the checksum-mismatch re-provision path early-returned
+"already provisioned" without downloading anything, a no-op that logged success.
+All rewritten: correct paths, `extractall(filter="data")` (CVE-2007-4559),
+re-hash after extraction, replace-never-merge, cleanup in `finally`.
+
+**Two shared-library collisions, one predicted, one discovered.**
+
+1. *Predicted (Linux/Docker):* sherpa bundles ITS OWN `libonnxruntime.so` and
+   copies it into `target/release/` — the same path ort (voice-agent) writes its
+   different-version copy. Build order decides which survives; the losing agent
+   fails at runtime while the image builds green. `Dockerfile.rust` now builds the
+   two agents in sequence, stages ort's lib before sherpa can clobber it, and
+   ships sherpa's libs NEXT TO the stt-agent binary (its `$ORIGIN` rpath prefers
+   them; /usr/local/bin is not in the linker cache, so voice-agent can never load
+   them). Two agents, two ONNX Runtimes, zero ambiguity.
+
+2. *Discovered (Windows, via the real-model test):* Windows 11 ships its own
+   `onnxruntime.dll` (Windows ML, ORT 1.17) in System32, and System32 outranks
+   PATH in DLL search. Test exes run from `target/debug/deps/`, where sherpa never
+   copies its DLLs — so sherpa's C API (wants ORT API 27) loaded the OS's 1.17 and
+   died with an access violation. `stt-agent/build.rs` (Windows-only) now stages
+   sherpa's DLLs into deps/, whose position at the front of the search order wins.
+   Without the runtime test this would have shipped as "compiles, therefore works".
+
+**Verified:** 31 stt-agent tests pass including `real_model_loads_and_perceives_audio`
+— the actual 234MB SenseVoice model loads through the real sherpa API and inference
+completes (a 220Hz hum yields `emotional_bias: None`, correctly not `Some(0.0)`).
+21 voice-agent tests still pass alongside (no cross-contamination from the staged
+DLLs). Python suite unaffected. Combined compose config validates. The volume-test
+flake was also fixed (peak → RMS; peak is an extreme-value statistic across two
+independent stochastic VITS renders and varied 0.35–0.53 run to run).
+
+**NOT proven:** no live emotional *speech* has been classified — the runtime test
+uses a synthetic tone, which proves the API contract, not recognition quality. No
+mesh round-trip. The Docker lib separation is reasoned, not yet exercised (CI's
+docker build will compile it; only a live boot proves the runtime resolution).
