@@ -34,6 +34,9 @@ jobs:
           # Full history so the review can diff against the base branch and read the
           # .agents/CONTEXT.md ledger for prior decisions.
           fetch-depth: 0
+          # The next step runs a shell-capable agent; don't leave GITHUB_TOKEN in the
+          # local git config where that agent could read or exfiltrate it.
+          persist-credentials: false
 
       - name: Claude review
         uses: anthropics/claude-code-action@v1

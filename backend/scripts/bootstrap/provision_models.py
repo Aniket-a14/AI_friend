@@ -13,6 +13,10 @@ MODEL_CONFIG = {
     "name": "sense-voice-small",
     "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2",
     "expected_sha256": "C71F0CE00BEC95B07744E116345E33D8CBBE08CEF896382CF907BF4B51A2CD51",
+    # tokens.txt is the id->token map SenseVoice needs at load time; a stale or
+    # truncated copy from a half-finished extraction would pass an existence check
+    # yet break decoding, so it is pinned and verified alongside the weights.
+    "expected_tokens_sha256": "F449EB28DC567533D7FA59BE34E2ABCA8784F771850C78A47FB731A31429A1DC",
     "target_dir": "models/sensevoice",
     "archive_dir_name": "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17",
 }
@@ -33,6 +37,23 @@ def get_file_sha256(filename):
     return sha256_hash.hexdigest()
 
 
+def _verify_artifacts(model_path, tokens_path, config):
+    """Both the weights and the token map must hash to their pinned checksums.
+
+    Returns (ok, detail). Hashing tokens.txt as well as the model closes the gap
+    where a corrupt token map — accepted by existence alone — would report the
+    model as provisioned and then fail SenseVoice at load time.
+    """
+    for path, key in (
+        (model_path, "expected_sha256"),
+        (tokens_path, "expected_tokens_sha256"),
+    ):
+        sha = get_file_sha256(path)
+        if sha.upper() != config[key].upper():
+            return False, f"{path.name} hashed {sha}, expected {config[key]}"
+    return True, None
+
+
 def ensure_models_provisioned():
     """Provision SenseVoice if missing or corrupt. Raises on failure."""
     config = MODEL_CONFIG
@@ -44,27 +65,24 @@ def ensure_models_provisioned():
     # provisioned: the old check skipped it silently and the agent then failed at
     # load time with no hint that provisioning was the culprit.
     if model_path.exists() and tokens_path.exists():
-        sha = get_file_sha256(model_path)
-        if sha.upper() == config["expected_sha256"].upper():
-            logger.info("✅ SenseVoice model verified (SHA256 match).")
+        ok, detail = _verify_artifacts(model_path, tokens_path, config)
+        if ok:
+            logger.info("✅ SenseVoice model + tokens verified (SHA256 match).")
             return
-        logger.warning(
-            "🚨 SenseVoice model failed its checksum (got %s…); re-provisioning.",
-            sha[:8],
-        )
+        logger.warning("🚨 SenseVoice artifacts failed verification (%s); re-provisioning.", detail)
     else:
         logger.info("SenseVoice model not provisioned; downloading %s...", config["name"])
 
     _provision_model(config, target_dir)
 
-    # Trust nothing until the artifact on disk hashes correctly. The old flow
+    # Trust nothing until both artifacts on disk hash correctly. The old flow
     # logged success straight after extraction, so a truncated or tampered
     # download became "provisioned" until some later run happened to re-hash it.
-    sha = get_file_sha256(model_path)
-    if sha.upper() != config["expected_sha256"].upper():
+    ok, detail = _verify_artifacts(model_path, tokens_path, config)
+    if not ok:
         raise RuntimeError(
-            f"SenseVoice model at {model_path} hashed {sha}, expected "
-            f"{config['expected_sha256']}. Refusing to report success."
+            f"SenseVoice provisioning verification failed: {detail}. "
+            "Refusing to report success."
         )
     logger.info("✨ SenseVoice provisioned and verified in %s", target_dir)
 
