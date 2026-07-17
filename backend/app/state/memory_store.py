@@ -2760,25 +2760,35 @@ class MemoryStore:
                 cutoff_milestones = now_cleanup - timedelta(days=720)
 
                 try:
+                    # COALESCE(last_recalled_at, created_at): a memory that was
+                    # archived but never recalled has NULL last_recalled_at, and
+                    # `NULL < cutoff` is NULL (never true) -- such rows would be
+                    # immortal in the archive. Age them out by creation time
+                    # instead, matching how the activation SQL already coalesces
+                    # this column (db/schema.sql).
                     if self.is_sqlite:
+                        # Normalise both operands through datetime(): the SQLite
+                        # fallback stores timestamps as text, so a raw string
+                        # comparison of differing ISO formats/precision/offsets
+                        # is unreliable. datetime() canonicalises to UTC.
                         await conn.execute(
                             """
                             DELETE FROM archived_memories
-                            WHERE (importance_score < 0.5 AND last_recalled_at < ?)
-                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND last_recalled_at < ?)
-                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND last_recalled_at < ?);
+                            WHERE (importance_score < 0.5 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?))
+                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?))
+                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?));
                             """,
-                            cutoff_distractors,
-                            cutoff_anecdotes,
-                            cutoff_milestones,
+                            cutoff_distractors.isoformat(),
+                            cutoff_anecdotes.isoformat(),
+                            cutoff_milestones.isoformat(),
                         )
                     else:
                         await conn.execute(
                             """
                             DELETE FROM archived_memories
-                            WHERE (importance_score < 0.5 AND last_recalled_at < $1)
-                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND last_recalled_at < $2)
-                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND last_recalled_at < $3);
+                            WHERE (importance_score < 0.5 AND COALESCE(last_recalled_at, created_at) < $1)
+                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND COALESCE(last_recalled_at, created_at) < $2)
+                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND COALESCE(last_recalled_at, created_at) < $3);
                             """,
                             cutoff_distractors,
                             cutoff_anecdotes,
