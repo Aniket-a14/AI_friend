@@ -15,7 +15,24 @@ use std::collections::HashMap;
 use std::path::Path;
 use ort::session::Session;
 use ort::value::Tensor;
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 
+/// VITS flow / stochastic-duration noise scales.
+///
+/// These set baseline *variability*, not affect, and stay at the upstream piper
+/// defaults. The emotional controls are `Prosody { rate, pitch, volume }`.
+const VITS_NOISE_SCALE: f32 = 0.667;
+const VITS_NOISE_SCALE_W: f32 = 0.8;
+
+/// Mirrors the clamps `contracts::vad_to_prosody` already applies. Repeated here
+/// because `dynamic_prosody` can be overridden from the mesh and must not be
+/// trusted to be in range — a zero or negative rate would divide by zero below.
+const MIN_RATE: f32 = 0.6;
+const MAX_RATE: f32 = 1.8;
+const MIN_PITCH: f32 = 0.5;
+const MAX_PITCH: f32 = 2.0;
 
 struct Phonemizer {
     lexicon: HashMap<String, Vec<String>>,
@@ -98,18 +115,32 @@ impl LocalTtsEngine {
         Ok(Self { session: std::sync::Mutex::new(session), phonemizer })
     }
 
-    fn synthesize(&self, text: &str, speed: f32) -> Result<Vec<u8>> {
+    /// Render `text` under the full prosody triple.
+    ///
+    /// Previously only `rate` reached the vocoder: `pitch` and `volume` were
+    /// computed by the cognitive layer and then discarded, so every affective
+    /// state collapsed onto "how fast the agent talks". All three now apply.
+    fn synthesize(&self, text: &str, rate: f32, pitch: f32, volume: f32) -> Result<Vec<u8>> {
         let ids = self.phonemizer.phonemize(text);
         if ids.is_empty() {
             return Ok(Vec::new());
         }
 
         let num_phonemes = ids.len();
-        let length_scale = 1.0 / speed;
+        let rate = rate.clamp(MIN_RATE, MAX_RATE);
+        let pitch = pitch.clamp(MIN_PITCH, MAX_PITCH);
+
+        // VITS exposes no pitch input, so pitch is applied by resampling the
+        // rendered waveform (see `pitch_shift`). That also divides duration by
+        // `pitch`, so pre-multiply length_scale by `pitch` to cancel it and let
+        // the final duration honour `rate` alone:
+        //     generated = pitch / rate  ->  after resample = 1 / rate
+        let length_scale = pitch / rate;
 
         let input_array = ndarray::Array2::from_shape_vec((1, num_phonemes), ids)?;
         let input_lengths_array = ndarray::Array1::from_vec(vec![num_phonemes as i64]);
-        let scales_array = ndarray::Array1::from_vec(vec![0.667f32, length_scale, 0.8f32]);
+        let scales_array =
+            ndarray::Array1::from_vec(vec![VITS_NOISE_SCALE, length_scale, VITS_NOISE_SCALE_W]);
 
         let input_tensor = Tensor::from_array(input_array)?;
         let input_lengths_tensor = Tensor::from_array(input_lengths_array)?;
@@ -121,19 +152,69 @@ impl LocalTtsEngine {
             "scales" => scales_tensor,
         ];
 
-        let mut session_guard = self.session.lock().map_err(|e| anyhow::anyhow!("mutex poisoned: {e}"))?;
-        let outputs = session_guard.run(inputs)?;
-        let output_value = outputs.get("output").context("missing output audio tensor")?;
-        let (_dimensions, audio_data) = output_value.try_extract_tensor::<f32>()?;
+        // Copy the waveform out and release the session lock before resampling:
+        // the shift is CPU-bound and must not serialise other synthesis calls.
+        let audio: Vec<f32> = {
+            let mut session_guard = self
+                .session
+                .lock()
+                .map_err(|e| anyhow::anyhow!("mutex poisoned: {e}"))?;
+            let outputs = session_guard.run(inputs)?;
+            let output_value = outputs.get("output").context("missing output audio tensor")?;
+            let (_dimensions, audio_data) = output_value.try_extract_tensor::<f32>()?;
+            audio_data.to_vec()
+        };
 
-        let mut pcm_bytes = Vec::with_capacity(audio_data.len() * 2);
-        for &sample in audio_data {
-            let clamped = (sample * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+        let audio = pitch_shift(&audio, pitch)?;
+
+        // Volume is applied in the f32 domain, before quantisation, so a quiet
+        // agent does not pay an extra rounding penalty. `Prosody.volume` is an
+        // absolute level in 0.1..=1.0 (1.0 = full scale), not a gain around 1.0.
+        let volume = volume.clamp(0.0, 1.0);
+        let mut pcm_bytes = Vec::with_capacity(audio.len() * 2);
+        for &sample in &audio {
+            let scaled = sample * volume * i16::MAX as f32;
+            let clamped = scaled.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
             pcm_bytes.extend_from_slice(&clamped.to_le_bytes());
         }
 
         Ok(pcm_bytes)
     }
+}
+
+/// Shift pitch by `pitch` (1.0 = unchanged) via band-limited resampling.
+///
+/// Resampling to `n / pitch` samples and replaying at the original rate scales
+/// every frequency by `pitch` and divides duration by `pitch`; callers cancel the
+/// duration change through `length_scale`.
+///
+/// Caveat: this moves formants along with F0, so extreme shifts sound
+/// "chipmunk"/"Darth Vader". It is acceptable here because `vad_to_prosody`
+/// squashes pitch through `tanh`, keeping realistic output near 0.85..1.20 where
+/// formant drift is slight. Wider expressive range would need a formant-preserving
+/// shifter (PSOLA/WORLD) instead.
+fn pitch_shift(samples: &[f32], pitch: f32) -> Result<Vec<f32>> {
+    if samples.is_empty() || (pitch - 1.0).abs() < 1e-3 {
+        return Ok(samples.to_vec());
+    }
+
+    let ratio = 1.0 / pitch as f64;
+    let params = SincInterpolationParameters {
+        sinc_len: 128,
+        f_cutoff: 0.95,
+        interpolation: SincInterpolationType::Linear,
+        oversampling_factor: 128,
+        window: WindowFunction::BlackmanHarris2,
+    };
+
+    let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, samples.len(), 1)
+        .context("construct pitch-shift resampler")?;
+
+    let output = resampler
+        .process(&[samples.to_vec()], None)
+        .context("pitch-shift resample")?;
+
+    Ok(output.into_iter().next().unwrap_or_default())
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -801,12 +882,8 @@ async fn handle_chat_output(
                 apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
                 let _ = generate_and_publish_visemes(jetstream, &pcm);
 
-                let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
-                    *guard
-                } else {
-                    1.0
-                };
-                publish_pcm(jetstream, pcm, &event, noise_scale).await?;
+                let gain = utterance_gain(&noise_scale_factor, prosody.volume);
+                publish_pcm(jetstream, pcm, &event, gain).await?;
             }
             TemporalPart::Hesitation(ms) => {
                 ola_filter.clear_history();
@@ -817,16 +894,20 @@ async fn handle_chat_output(
                 apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
                 let _ = generate_and_publish_visemes(jetstream, &pcm);
 
-                let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
-                    *guard
-                } else {
-                    1.0
-                };
-                publish_pcm(jetstream, pcm, &event, noise_scale).await?;
+                let gain = utterance_gain(&noise_scale_factor, prosody.volume);
+                publish_pcm(jetstream, pcm, &event, gain).await?;
             }
             TemporalPart::Text(text) => {
                 if let Some(engine) = local_engine.as_ref() {
-                    match engine.synthesize(&text, prosody.rate as f32) {
+                    // Local engine bakes `volume` into the waveform, so publish_pcm
+                    // below applies only the ambient-noise compensation. (The remote
+                    // path differs — see the `else` branch.)
+                    match engine.synthesize(
+                        &text,
+                        prosody.rate as f32,
+                        prosody.pitch as f32,
+                        prosody.volume as f32,
+                    ) {
                         Ok(pcm_bytes) => {
                             for chunk in pcm_bytes.chunks(4096) {
                                 if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
@@ -879,6 +960,9 @@ async fn handle_chat_output(
                         if !chunk.is_empty() {
                             let mut pcm_bytes = chunk.to_vec();
 
+                            // Ambient compensation only: `synthesize_stream` already
+                            // sent rate/pitch/volume to the remote engine, so folding
+                            // `prosody.volume` in here would apply it twice.
                             let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
                                 *guard
                             } else {
@@ -994,6 +1078,17 @@ async fn synthesize_stream(
     }
 
     Ok(response)
+}
+
+/// Publish gain for locally-generated PCM that has *not* already had
+/// `Prosody.volume` baked in (vocalisations, hesitations): emotional level x
+/// ambient-noise compensation.
+///
+/// Without this, a quiet agent's "hmm" would play at full level next to its
+/// attenuated words, breaking the illusion mid-utterance.
+fn utterance_gain(noise_scale_factor: &std::sync::Mutex<f64>, volume: f64) -> f64 {
+    let noise_scale = noise_scale_factor.lock().map(|g| *g).unwrap_or(1.0);
+    volume * noise_scale
 }
 
 fn scale_pcm_in_place(pcm: &mut [u8], noise_scale: f64) {
@@ -1243,5 +1338,85 @@ mod tests {
         assert_eq!(scaled_up_samples[0], 1400);
         assert_eq!(scaled_up_samples[1], -2800);
         assert_eq!(scaled_up_samples[2], 4200);
+    }
+
+    fn tone(len: usize, amp: f32) -> Vec<f32> {
+        (0..len).map(|i| amp * (i as f32 * 0.10).sin()).collect()
+    }
+
+    #[test]
+    fn pitch_shift_is_identity_at_unity() {
+        let input = tone(512, 0.5);
+        let out = pitch_shift(&input, 1.0).unwrap();
+        assert_eq!(out, input);
+    }
+
+    #[test]
+    fn pitch_shift_up_compresses_sample_count() {
+        // Raising pitch by 1.25 must yield ~1/1.25 of the samples; the caller
+        // cancels that duration change via length_scale.
+        let input = tone(4000, 0.5);
+        let out = pitch_shift(&input, 1.25).unwrap();
+        let expected = 4000.0 / 1.25;
+        assert!(
+            (out.len() as f64 - expected).abs() / expected < 0.05,
+            "expected ~{expected} samples, got {}",
+            out.len()
+        );
+    }
+
+    #[test]
+    fn pitch_shift_down_expands_sample_count() {
+        let input = tone(4000, 0.5);
+        let out = pitch_shift(&input, 0.8).unwrap();
+        let expected = 4000.0 / 0.8;
+        assert!(
+            (out.len() as f64 - expected).abs() / expected < 0.05,
+            "expected ~{expected} samples, got {}",
+            out.len()
+        );
+    }
+
+    #[test]
+    fn pitch_compensation_preserves_rate_driven_duration() {
+        // The invariant synthesize() relies on: generating at length_scale
+        // pitch/rate and then resampling by 1/pitch must leave duration a
+        // function of rate alone, so pitch and speed stay independent.
+        let base = 4000.0f64;
+        for &(rate, pitch) in &[(1.0, 1.0), (1.0, 1.25), (1.4, 0.8), (0.7, 1.5)] {
+            let length_scale = pitch / rate;
+            let generated = (base * length_scale).round() as usize;
+            let out = pitch_shift(&tone(generated, 0.5), pitch as f32).unwrap();
+            let expected = base / rate;
+            assert!(
+                (out.len() as f64 - expected).abs() / expected < 0.05,
+                "rate={rate} pitch={pitch}: expected ~{expected}, got {}",
+                out.len()
+            );
+        }
+    }
+
+    #[test]
+    fn pitch_shift_handles_empty_input() {
+        assert!(pitch_shift(&[], 1.5).unwrap().is_empty());
+    }
+
+    #[test]
+    fn utterance_gain_combines_volume_and_noise() {
+        let noise = std::sync::Mutex::new(1.2f64);
+        assert!((utterance_gain(&noise, 0.5) - 0.6).abs() < 1e-9);
+    }
+
+    #[test]
+    fn utterance_gain_falls_back_when_lock_poisoned() {
+        let noise = std::sync::Arc::new(std::sync::Mutex::new(1.2f64));
+        let n2 = noise.clone();
+        let _ = std::thread::spawn(move || {
+            let _g = n2.lock().unwrap();
+            panic!("poison");
+        })
+        .join();
+        // Poisoned lock must degrade to unity noise compensation, not silence.
+        assert!((utterance_gain(&noise, 0.5) - 0.5).abs() < 1e-9);
     }
 }

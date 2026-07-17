@@ -1787,3 +1787,59 @@ Related findings, not yet fixed:
 - Until an acoustic backend lands, Laughter (energy +0.15, trust +0.05), Applause
   (+0.2 energy) and Cough/Sneeze (+0.02 attachment) are unreachable, and ToM
   valence drifts on text alone.
+
+---
+
+## 2026-07-17 Pillar 3 — pitch and volume now reach the vocoder
+
+`LocalTtsEngine::synthesize(&self, text, speed)` took **only** speed. `ProsodyFrame`
+carries `{ rate, pitch, volume }`, and `contracts::vad_to_prosody` computes all
+three from PAD affect (valence/arousal/dominance/fatigue/distance) — but the local
+ONNX path passed `prosody.rate` and dropped pitch and volume on the floor. The two
+remaining VITS scales were hardcoded (`0.667`, `0.8`). Net effect: the whole
+affective architecture reached the vocoder as a single float. "Angry" and "excited"
+were both just *faster*; there was no *louder*.
+
+Note this was **local-path only** — `synthesize_stream` already forwarded
+rate/pitch/volume to the remote engine. The regression was invisible whenever a
+remote TTS was configured.
+
+### How pitch is applied
+
+VITS exposes no pitch input (its three scales are noise_scale, length_scale,
+noise_scale_w). Pitch is therefore applied by band-limited resampling of the
+rendered waveform via rubato: resampling to `n/pitch` samples and replaying at the
+original rate scales every frequency by `pitch` **and** divides duration by
+`pitch`. That duration change is cancelled at the source by generating at
+`length_scale = pitch / rate`, so:
+
+    generated = pitch / rate   ->   after resample = 1 / rate
+
+leaving duration a function of `rate` alone. Pitch and speed are now independent.
+`pitch_compensation_preserves_rate_driven_duration` pins this invariant over
+(rate, pitch) = (1.0,1.0), (1.0,1.25), (1.4,0.8), (0.7,1.5).
+
+Caveat recorded deliberately: resampling shifts **formants** along with F0, so
+extreme shifts sound "chipmunk"/"Darth Vader". Acceptable here only because
+`vad_to_prosody` squashes pitch through `tanh`, keeping realistic output near
+0.85..1.20. Widening expressive pitch range later requires a formant-preserving
+shifter (PSOLA/WORLD) — resampling will not survive it.
+
+### Volume
+
+Applied in the f32 domain before quantisation (a quiet agent shouldn't pay an extra
+rounding penalty). `Prosody.volume` is an absolute level 0.1..=1.0 (1.0 = full
+scale), not a gain around 1.0. Vocalisations and hesitations get it via
+`utterance_gain` = volume x ambient-noise compensation, so a quiet agent's "hmm"
+doesn't blast at full level next to its attenuated words. The remote path is
+deliberately left on noise-compensation only — folding volume in there would apply
+it twice.
+
+Also released the ONNX session mutex before resampling, so the CPU-bound shift no
+longer serialises concurrent synthesis.
+
+Verification: `cargo test -p voice-agent` 13 passed (7 new, 6 pre-existing);
+`cargo test -p contracts` 6 passed; `cargo clippy -p voice-agent` — 4 warnings, all
+on pre-existing lines (318, 703, 805, 837), none in the new code. Not verified: no
+audio was rendered — `models/base/` and `models/custom/` still contain no real
+weights, so this path cannot run end-to-end yet (see the fake-ONNX-exporter issue).
