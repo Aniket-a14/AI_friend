@@ -1,0 +1,316 @@
+//! Audio front-end for the STT agent: rate normalisation and speech endpointing.
+//!
+//! Whisper requires mono f32 PCM at exactly 16 kHz. Inbound mesh audio arrives at
+//! whatever rate the transport negotiated (LiveKit/WebRTC is commonly 48 kHz;
+//! `Config.SAMPLE_RATE` is 32 kHz), so it must be resampled rather than
+//! reinterpreted. The previous implementation named its buffer `pcm_16k_mono` but
+//! never resampled at all, and discarded `STT_TARGET_SAMPLE_RATE` outright.
+
+use anyhow::{Context, Result};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
+
+pub const WHISPER_SAMPLE_RATE: u32 = 16_000;
+
+/// Decode interleaved little-endian i16 PCM and downmix to mono f32 in [-1.0, 1.0].
+pub fn decode_mono_f32(bytes: &[u8], channels: usize) -> Vec<f32> {
+    let channels = channels.max(1);
+    let samples: Vec<i16> = bytes
+        .chunks_exact(2)
+        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect();
+
+    let scale = 1.0 / i16::MAX as f32;
+    if channels == 1 {
+        return samples.iter().map(|&s| s as f32 * scale).collect();
+    }
+
+    samples
+        .chunks_exact(channels)
+        .map(|frame| {
+            let total: i32 = frame.iter().map(|s| *s as i32).sum();
+            (total as f32 / channels as f32) * scale
+        })
+        .collect()
+}
+
+/// Resample mono f32 audio to 16 kHz for Whisper.
+///
+/// Uses a windowed-sinc resampler rather than naive linear interpolation: the
+/// common case here is *downsampling* (48k/32k -> 16k), where dropping samples
+/// without band-limiting folds high-frequency energy back into the speech band as
+/// aliasing and measurably degrades recognition.
+pub fn resample_to_16k(input: &[f32], source_rate: u32) -> Result<Vec<f32>> {
+    if input.is_empty() {
+        return Ok(Vec::new());
+    }
+    if source_rate == WHISPER_SAMPLE_RATE {
+        return Ok(input.to_vec());
+    }
+    if source_rate == 0 {
+        anyhow::bail!("source sample rate is zero");
+    }
+
+    let ratio = WHISPER_SAMPLE_RATE as f64 / source_rate as f64;
+    let params = SincInterpolationParameters {
+        sinc_len: 128,
+        f_cutoff: 0.95,
+        interpolation: SincInterpolationType::Linear,
+        oversampling_factor: 128,
+        window: WindowFunction::BlackmanHarris2,
+    };
+
+    let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, input.len(), 1)
+        .context("construct sinc resampler")?;
+
+    let output = resampler
+        .process(&[input.to_vec()], None)
+        .context("resample to 16 kHz")?;
+
+    Ok(output.into_iter().next().unwrap_or_default())
+}
+
+/// Root-mean-square energy of a mono f32 buffer.
+pub fn rms(samples: &[f32]) -> f64 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f64 = samples.iter().map(|&s| (s as f64) * (s as f64)).sum();
+    (sum_sq / samples.len() as f64).sqrt()
+}
+
+/// Speech endpointing state machine.
+///
+/// Whisper is an utterance model, not a streaming one: audio must be segmented
+/// into utterances before recognition. This tracks an adaptive noise floor and
+/// reports when speech has started and when a trailing silence long enough to be
+/// an endpoint has elapsed.
+#[derive(Debug)]
+pub struct Endpointer {
+    noise_floor: f64,
+    speech_active: bool,
+    silence_run_ms: f64,
+    speech_run_ms: f64,
+    /// Speech must exceed noise_floor by this factor to count as voiced.
+    speech_factor: f64,
+    /// Absolute floor so a silent room cannot make noise_floor ~0 and trigger on hiss.
+    min_speech_rms: f64,
+    /// Trailing silence required to close an utterance.
+    endpoint_silence_ms: f64,
+    /// Reject blips shorter than this as non-speech.
+    min_speech_ms: f64,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum VadEvent {
+    /// No speech in progress.
+    Silence,
+    /// Speech is ongoing; utterance still open.
+    SpeechContinues,
+    /// A complete utterance just ended and should be transcribed.
+    Endpoint,
+}
+
+impl Endpointer {
+    pub fn new(endpoint_silence_ms: f64, min_speech_ms: f64) -> Self {
+        Self {
+            noise_floor: 0.01,
+            speech_active: false,
+            silence_run_ms: 0.0,
+            speech_run_ms: 0.0,
+            speech_factor: 3.0,
+            min_speech_rms: 0.008,
+            endpoint_silence_ms,
+            min_speech_ms,
+        }
+    }
+
+    pub fn noise_floor(&self) -> f64 {
+        self.noise_floor
+    }
+
+    /// Whether the open utterance has accumulated enough voiced audio to be
+    /// believed as speech rather than a blip.
+    ///
+    /// `push` returns `SpeechContinues` from the *first* voiced chunk, long before
+    /// `min_speech_ms` is met, because the utterance buffer must start filling at
+    /// onset or speech gets clipped. But a blip that never reaches `min_speech_ms`
+    /// is ultimately rejected as `Silence`, so anything speculative driven off
+    /// `SpeechContinues` alone (partial inference, and the barge-in `audio.stop`
+    /// it can emit) would be acting on audio the endpointer itself does not yet
+    /// consider speech. Callers gate that work on this.
+    pub fn speech_confirmed(&self) -> bool {
+        self.speech_active && self.speech_run_ms >= self.min_speech_ms
+    }
+
+    /// Feed one chunk's energy and duration; returns the resulting VAD event.
+    pub fn push(&mut self, chunk_rms: f64, chunk_ms: f64) -> VadEvent {
+        let threshold = (self.noise_floor * self.speech_factor).max(self.min_speech_rms);
+        let is_voiced = chunk_rms > threshold;
+
+        // Adapt the noise floor only on non-speech, so sustained talking cannot
+        // drag the floor up and deafen the detector mid-utterance.
+        if !is_voiced {
+            if chunk_rms < self.noise_floor {
+                self.noise_floor = chunk_rms;
+            } else {
+                self.noise_floor = self.noise_floor * 0.995 + chunk_rms * 0.005;
+            }
+        }
+
+        if is_voiced {
+            self.speech_active = true;
+            self.speech_run_ms += chunk_ms;
+            self.silence_run_ms = 0.0;
+            return VadEvent::SpeechContinues;
+        }
+
+        if !self.speech_active {
+            return VadEvent::Silence;
+        }
+
+        self.silence_run_ms += chunk_ms;
+        if self.silence_run_ms < self.endpoint_silence_ms {
+            return VadEvent::SpeechContinues;
+        }
+
+        // Trailing silence long enough to close the utterance.
+        let had_real_speech = self.speech_run_ms >= self.min_speech_ms;
+        self.speech_active = false;
+        self.speech_run_ms = 0.0;
+        self.silence_run_ms = 0.0;
+
+        if had_real_speech {
+            VadEvent::Endpoint
+        } else {
+            VadEvent::Silence
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tone(len: usize, amp: f32) -> Vec<f32> {
+        (0..len)
+            .map(|i| amp * (i as f32 * 0.10).sin())
+            .collect()
+    }
+
+    #[test]
+    fn decode_mono_passthrough() {
+        let bytes = [0x00, 0x40, 0x00, 0xC0]; // 16384, -16384
+        let out = decode_mono_f32(&bytes, 1);
+        assert_eq!(out.len(), 2);
+        assert!((out[0] - 0.5).abs() < 0.01);
+        assert!((out[1] + 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn decode_downmixes_stereo() {
+        // L=16384, R=-16384 -> mono 0
+        let bytes = [0x00, 0x40, 0x00, 0xC0];
+        let out = decode_mono_f32(&bytes, 2);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].abs() < 0.01);
+    }
+
+    #[test]
+    fn resample_48k_to_16k_thirds_the_length() {
+        let input = tone(4800, 0.5);
+        let out = resample_to_16k(&input, 48_000).unwrap();
+        let expected = 1600.0;
+        assert!(
+            (out.len() as f64 - expected).abs() / expected < 0.05,
+            "expected ~{expected} samples, got {}",
+            out.len()
+        );
+    }
+
+    #[test]
+    fn resample_is_identity_at_16k() {
+        let input = tone(320, 0.25);
+        let out = resample_to_16k(&input, 16_000).unwrap();
+        assert_eq!(out, input);
+    }
+
+    #[test]
+    fn endpointer_emits_endpoint_after_trailing_silence() {
+        let mut ep = Endpointer::new(500.0, 100.0);
+        // Establish a quiet floor.
+        for _ in 0..20 {
+            ep.push(0.001, 20.0);
+        }
+        // Speech.
+        for _ in 0..10 {
+            assert_eq!(ep.push(0.2, 20.0), VadEvent::SpeechContinues);
+        }
+        // Trailing silence shorter than the endpoint window keeps it open.
+        assert_eq!(ep.push(0.001, 100.0), VadEvent::SpeechContinues);
+        // Crossing the window closes the utterance exactly once.
+        assert_eq!(ep.push(0.001, 500.0), VadEvent::Endpoint);
+        assert_eq!(ep.push(0.001, 500.0), VadEvent::Silence);
+    }
+
+    #[test]
+    fn endpointer_rejects_short_blip_as_noise() {
+        let mut ep = Endpointer::new(300.0, 200.0);
+        for _ in 0..20 {
+            ep.push(0.001, 20.0);
+        }
+        // A 40ms blip is below min_speech_ms, so it must not produce an utterance.
+        ep.push(0.3, 20.0);
+        ep.push(0.3, 20.0);
+        assert_eq!(ep.push(0.001, 400.0), VadEvent::Silence);
+    }
+
+    #[test]
+    fn short_blip_is_never_confirmed_speech() {
+        let mut ep = Endpointer::new(300.0, 200.0);
+        for _ in 0..20 {
+            ep.push(0.001, 20.0);
+        }
+        assert!(!ep.speech_confirmed(), "silence is not speech");
+
+        // A 40ms blip still returns SpeechContinues — the utterance buffer has to
+        // start filling at onset or speech gets clipped — but it must never be
+        // *confirmed*, because that is what gates speculative partial inference and
+        // the barge-in audio.stop it can emit. This blip is rejected as noise below,
+        // so anything that acted on it would have interrupted the agent for nothing.
+        assert_eq!(ep.push(0.3, 20.0), VadEvent::SpeechContinues);
+        assert_eq!(ep.push(0.3, 20.0), VadEvent::SpeechContinues);
+        assert!(
+            !ep.speech_confirmed(),
+            "a 40ms blip must not gate partial inference"
+        );
+        assert_eq!(ep.push(0.001, 400.0), VadEvent::Silence);
+    }
+
+    #[test]
+    fn speech_is_confirmed_once_min_speech_ms_accumulates() {
+        let mut ep = Endpointer::new(300.0, 200.0);
+        for _ in 0..20 {
+            ep.push(0.001, 20.0);
+        }
+        // 180ms of voiced audio: still under the 200ms threshold.
+        for _ in 0..9 {
+            ep.push(0.3, 20.0);
+        }
+        assert!(!ep.speech_confirmed(), "180ms is below min_speech_ms");
+
+        // Crossing 200ms confirms it.
+        ep.push(0.3, 20.0);
+        assert!(ep.speech_confirmed(), "200ms should be confirmed speech");
+
+        // Confirmation survives the trailing-silence window so partials keep flowing
+        // until the utterance actually closes.
+        ep.push(0.001, 100.0);
+        assert!(ep.speech_confirmed(), "still open during trailing silence");
+
+        // Closing the utterance clears it.
+        assert_eq!(ep.push(0.001, 400.0), VadEvent::Endpoint);
+        assert!(!ep.speech_confirmed(), "closed utterance is not speech");
+    }
+}

@@ -702,11 +702,15 @@ class StateService:
     async def apply_sensory_perception(self, perception_metadata: Dict[str, Any]):
         """
         Acoustic Perception Update (confidence-scaled low weight).
-        Triggered by SenseVoice emotional/event cues.
+        Triggered by emotional/event cues from an acoustic backend.
+
+        Backends that only transcribe (e.g. Whisper) supply no `emotional_bias`.
+        That absence means "no acoustic evidence", NOT "the user sounds neutral" —
+        see the note below.
         """
-        emotion_bias = perception_metadata.get("emotional_bias", 0.0)
+        emotion_bias = perception_metadata.get("emotional_bias")
         confidence = perception_metadata.get("confidence", 1.0)
-        events = perception_metadata.get("events", [])
+        events = perception_metadata.get("events", []) or []
 
         if confidence < self.min_perception_confidence and not events:
             logger.debug(
@@ -715,21 +719,33 @@ class StateService:
             )
             return
 
-        async with self._state_lock:
-            # Confidence-scaled emotional bias
-            weight = self.sensory_weight * max(0.0, min(1.0, confidence))
-            self.current_state.mood = (self.current_state.mood * (1 - weight)) + (
-                emotion_bias * weight
-            )
+        # A missing emotion estimate must not be defaulted to 0.0 and blended in.
+        # Doing so pulls mood and inferred_valence toward zero on *every*
+        # perception, erasing affect that semantic appraisal just established —
+        # the agent flattens the more the user speaks. An explicit 0.0 from a
+        # model that genuinely predicts emotion is a real neutral reading and is
+        # still blended; only absence is skipped. bool is excluded because
+        # isinstance(True, int) is True.
+        has_emotion_estimate = isinstance(emotion_bias, (int, float)) and not isinstance(
+            emotion_bias, bool
+        )
 
-            # Drift user mental model's inferred valence based on acoustic cues
-            if confidence >= self.min_perception_confidence:
-                user_weight = self.sensory_weight * max(0.0, min(1.0, confidence))
-                self.current_state.user_mental_model.inferred_valence = (
-                    (1 - user_weight)
-                    * self.current_state.user_mental_model.inferred_valence
-                    + user_weight * emotion_bias
+        async with self._state_lock:
+            if has_emotion_estimate:
+                # Confidence-scaled emotional bias
+                weight = self.sensory_weight * max(0.0, min(1.0, confidence))
+                self.current_state.mood = (self.current_state.mood * (1 - weight)) + (
+                    emotion_bias * weight
                 )
+
+                # Drift user mental model's inferred valence based on acoustic cues
+                if confidence >= self.min_perception_confidence:
+                    user_weight = self.sensory_weight * max(0.0, min(1.0, confidence))
+                    self.current_state.user_mental_model.inferred_valence = (
+                        (1 - user_weight)
+                        * self.current_state.user_mental_model.inferred_valence
+                        + user_weight * emotion_bias
+                    )
 
             # Arousal modulation from acoustic events
             for event in events:

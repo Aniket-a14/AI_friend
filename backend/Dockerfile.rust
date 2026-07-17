@@ -1,9 +1,14 @@
 FROM rust:1-trixie AS builder
 
-# Install python3 and dev headers required by pyo3 (used in the workspace Cargo structure)
+# python3/dev headers are required by pyo3 (used in the workspace Cargo structure).
+# cmake + clang/libclang are required by whisper-rs, which compiles whisper.cpp
+# from source and generates its FFI bindings with bindgen.
 RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y --no-install-recommends \
     python3 \
     python3-dev \
+    cmake \
+    clang \
+    libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -11,7 +16,30 @@ COPY Cargo.toml ./Cargo.toml
 COPY Cargo.lock ./Cargo.lock
 COPY crates ./crates
 
+# Build both Rust agents. Contrary to an earlier assumption, there is NO
+# libonnxruntime.so filename collision between them:
+#   * ort (voice-agent), default features, STATICALLY links the ONNX Runtime core
+#     into the binary. It emits no libonnxruntime.so at all — only optional GPU
+#     execution-provider plugins (libonnxruntime_providers_*.so) which a CPU-only
+#     deployment never loads. `ldd voice-agent` shows no onnxruntime dependency.
+#   * sherpa-onnx (stt-agent) ships its OWN dynamic libonnxruntime.so plus
+#     libsherpa-onnx-c-api.so / -cxx-api.so, all under target/release.
+# Because voice-agent has no libonnxruntime.so NEEDED entry, sherpa's copy on the
+# global loader path cannot shadow anything for it. So a single combined build is
+# safe and only sherpa's three libraries need staging.
 RUN cargo build --release --package voice-agent --package stt-agent
+
+# Stage sherpa-onnx's runtime libraries. `cp -L` materialises symlink names as real
+# files; naming each explicitly makes the step fail loudly (cp errors) if the
+# sherpa-onnx-sys layout ever changes, instead of silently shipping an stt-agent
+# that cannot start.
+RUN mkdir -p /staging/stt-libs \
+    && cp -L \
+         /app/target/release/libsherpa-onnx-c-api.so \
+         /app/target/release/libsherpa-onnx-cxx-api.so \
+         /app/target/release/libonnxruntime.so \
+         /staging/stt-libs/ \
+    && ls /staging/stt-libs/libonnxruntime.so > /dev/null
 
 FROM debian:trixie-slim AS runtime
 
@@ -21,8 +49,32 @@ RUN apt-get -o Acquire::Check-Valid-Until=false update \
 
 COPY --from=builder /app/target/release/voice-agent /usr/local/bin/voice-agent
 COPY --from=builder /app/target/release/stt-agent /usr/local/bin/stt-agent
-# Copy ONNX Runtime shared library from builder stage to prevent dynamic linking failure
-COPY --from=builder /app/target/release/libonnxruntime.so* /usr/local/lib/
+
+# voice-agent needs no libraries staged: its ONNX Runtime core is statically linked
+# into the binary (ldd shows only libc/libstdc++/libgcc/libm).
+#
+# stt-agent needs sherpa-onnx's three shared libraries. They go into /usr/local/lib
+# + ldconfig rather than next to the binary so the loader resolves sherpa's
+# TRANSITIVE dependencies (libsherpa-onnx-c-api.so -> libsherpa-onnx-cxx-api.so and
+# libonnxruntime.so) via the global cache, which a $ORIGIN RUNPATH on the executable
+# alone would not cover. This cannot affect voice-agent: it has no libonnxruntime.so
+# NEEDED entry, so sherpa's copy on the cache is invisible to it.
+COPY --from=builder /staging/stt-libs/ /usr/local/lib/
+
 RUN ldconfig
+
+# stt-agent downloads ggml weights into STT_MODEL_DIR (/app/models/whisper) on
+# first boot, and docker-compose mounts the stt_models_data volume at /app/models.
+# This directory must exist *in the image*, owned by the runtime user, before the
+# USER switch: when Docker seeds a fresh named volume it copies the image
+# directory's ownership, but if the mountpoint does not exist in the image it
+# creates it root-owned 0755 instead. `nobody` could then never write the cache,
+# so ensure_model() would fail and the container would restart-loop -- with
+# STT_BACKEND=whisper (the default) that means no transcription at all.
+#
+# models/sensevoice is the mountpoint for the host-provisioned SenseVoice model
+# (backend/scripts/bootstrap/provision_models.py); it is bind-mounted read-only by
+# docker-compose, so ownership only matters for the empty-dir fallback case.
+RUN install -d -o nobody -g nogroup /app/models /app/models/whisper /app/models/sensevoice
 
 USER nobody:nogroup
