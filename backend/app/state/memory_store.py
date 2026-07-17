@@ -86,6 +86,19 @@ SYNONYM_MAP = {
 DIRECT_CUE_BOOST = 5.0  # additive score bump per query cue found in a memory
 PPR_DAMPING = 0.85  # canonical PageRank teleport/damping factor
 
+# ACT-R retrieval-scoring weights. These were duplicated inline across three
+# scoring paths (Qdrant/SQLite/PG); naming them here keeps the paths in sync and
+# makes the affective tuning explicit. base_activation adds an importance term
+# and an emotional-proximity bonus to the classic ln(freq) - d·ln(recency) core;
+# the similarity gain rewards congruent valence×arousal and suppresses recall
+# under stress (arousal×cortisol); the final score subtracts an emotional-
+# distance penalty.
+ACTR_IMPORTANCE_WEIGHT = 1.5  # weight on importance_score in base activation
+ACTR_EMO_PROXIMITY_WEIGHT = 0.15  # bonus for small emotional distance
+ACTR_VALENCE_GAIN = 0.1  # similarity gain from congruent valence×arousal
+ACTR_STRESS_SUPPRESSION = 0.2  # similarity suppression under arousal×cortisol
+ACTR_EMO_DISTANCE_PENALTY = 0.5  # score penalty per unit emotional distance
+
 
 class GoalBuffer:
     def __init__(self, capacity=5):
@@ -269,6 +282,30 @@ class MemoryStore:
                     importance,
                     memory_id,
                 )
+
+    def _base_activation(self, recall_count, hours_since, importance_score, dist_emo):
+        """ACT-R base-level activation: ln(freq) - d·ln(recency) plus importance
+        and emotional-proximity terms. Shared by every retrieval-scoring path so
+        the formula stays identical across the Qdrant, SQLite and PG branches.
+        """
+        return (
+            _cached_ln(recall_count)
+            - self.decay_rate * _cached_ln(hours_since + 1.0)
+            + ACTR_IMPORTANCE_WEIGHT * importance_score
+            + ACTR_EMO_PROXIMITY_WEIGHT * (1.0 - dist_emo)
+        )
+
+    def _effective_similarity(
+        self, similarity, memory_valence, emotion_weight, current_arousal, current_cortisol
+    ):
+        """Neuromodulatory gain on cosine similarity: boosted by congruent
+        valence×arousal, suppressed under stress (arousal×cortisol).
+        """
+        return similarity * (
+            1.0
+            + ACTR_VALENCE_GAIN * memory_valence * emotion_weight
+            - ACTR_STRESS_SUPPRESSION * current_arousal * current_cortisol
+        )
 
     async def get_embedding(self, text: str):
         """Generates vector embedding for text using local Ollama."""
@@ -972,22 +1009,25 @@ class MemoryStore:
                             + (emotion_weight_row - current_arousal) ** 2
                         )
 
-                        base_activation = (
-                            _cached_ln(recall_count)
-                            - self.decay_rate * _cached_ln(hours_since + 1.0)
-                            + 1.5 * importance_score
-                            + 0.15 * (1.0 - dist_emo)
+                        base_activation = self._base_activation(
+                            recall_count, hours_since, importance_score, dist_emo
                         )
 
                         similarity = cand["score"]
-                        effective_similarity = similarity * (
-                            1.0
-                            + 0.1 * memory_valence * emotion_weight_row
-                            - 0.2 * current_arousal * current_cortisol
+                        effective_similarity = self._effective_similarity(
+                            similarity,
+                            memory_valence,
+                            emotion_weight_row,
+                            current_arousal,
+                            current_cortisol,
                         )
 
                         spread_activation = self.spread_weight * effective_similarity
-                        score = base_activation + spread_activation - 0.5 * dist_emo
+                        score = (
+                            base_activation
+                            + spread_activation
+                            - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+                        )
 
                         if score <= (threshold - 2.5) and importance_score < 0.7:
                             continue
@@ -1277,24 +1317,30 @@ class MemoryStore:
                                 + (emotion_weight_row - current_arousal) ** 2
                             )
 
-                            base_activation = (
-                                _cached_ln(recall_count)
-                                - self.decay_rate * _cached_ln(hours_since + 1.0)
-                                + 1.5 * (row.get("importance_score") or 0.5)
-                                + 0.15 * (1.0 - dist_emo)
+                            base_activation = self._base_activation(
+                                recall_count,
+                                hours_since,
+                                row.get("importance_score") or 0.5,
+                                dist_emo,
                             )
 
                             # Neuromodulatory distance mapping
-                            effective_similarity = similarity * (
-                                1.0
-                                + 0.1 * memory_valence * emotion_weight_row
-                                - 0.2 * current_arousal * current_cortisol
+                            effective_similarity = self._effective_similarity(
+                                similarity,
+                                memory_valence,
+                                emotion_weight_row,
+                                current_arousal,
+                                current_cortisol,
                             )
 
                             spread_activation = (
                                 self.spread_weight * effective_similarity
                             )
-                            score = base_activation + spread_activation - 0.5 * dist_emo
+                            score = (
+                                base_activation
+                                + spread_activation
+                                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+                            )
 
                             if (
                                 score <= (threshold - 2.5)
@@ -2034,21 +2080,27 @@ class MemoryStore:
                             + (emotion_weight_row - current_arousal) ** 2
                         )
 
-                        base_activation = (
-                            _cached_ln(recall_count)
-                            - self.decay_rate * _cached_ln(hours_since + 1.0)
-                            + 1.5 * (row.get("importance_score") or 0.5)
-                            + 0.15 * (1.0 - dist_emo)
+                        base_activation = self._base_activation(
+                            recall_count,
+                            hours_since,
+                            row.get("importance_score") or 0.5,
+                            dist_emo,
                         )
 
-                        effective_similarity = similarity * (
-                            1.0
-                            + 0.1 * memory_valence * emotion_weight_row
-                            - 0.2 * current_arousal * current_cortisol
+                        effective_similarity = self._effective_similarity(
+                            similarity,
+                            memory_valence,
+                            emotion_weight_row,
+                            current_arousal,
+                            current_cortisol,
                         )
 
                         spread_activation = self.spread_weight * effective_similarity
-                        score = base_activation + spread_activation - 0.5 * dist_emo
+                        score = (
+                            base_activation
+                            + spread_activation
+                            - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+                        )
 
                         # Lexical match count boost to ensure direct query matches sort higher
                         content_lower = content.lower()
@@ -2284,16 +2336,18 @@ class MemoryStore:
 
                             # Recalculate active score since it is now promoted and last_recalled_at is set to now (hours_since = 0.001)
                             # We use recall_count + 1 since the recall_count has been incremented upon recall/promotion
-                            base_activation_active = (
-                                _cached_ln(recall_count + 1)
-                                - self.decay_rate * _cached_ln(0.001 + 1.0)
-                                + 1.5 * (row.get("importance_score") or 0.5)
-                                + 0.15 * (1.0 - dist_emo)
+                            # recall_count + 1 (already incremented on promotion)
+                            # and a near-zero recency (last_recalled_at is now).
+                            base_activation_active = self._base_activation(
+                                recall_count + 1,
+                                0.001,
+                                row.get("importance_score") or 0.5,
+                                dist_emo,
                             )
                             score_active = (
                                 base_activation_active
                                 + spread_activation
-                                - 0.5 * dist_emo
+                                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
                             )
                             # Apply direct cue boost since it was promoted due to keyword matches
                             match_count = sum(
