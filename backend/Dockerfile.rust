@@ -34,9 +34,11 @@ RUN cargo build --release --package voice-agent --package stt-agent
 # sherpa-onnx-sys layout ever changes, instead of silently shipping an stt-agent
 # that cannot start.
 RUN mkdir -p /staging/stt-libs \
-    && for lib in libsherpa-onnx-c-api.so libsherpa-onnx-cxx-api.so libonnxruntime.so; do \
-         cp -L "/app/target/release/$lib" /staging/stt-libs/; \
-       done \
+    && cp -L \
+         /app/target/release/libsherpa-onnx-c-api.so \
+         /app/target/release/libsherpa-onnx-cxx-api.so \
+         /app/target/release/libonnxruntime.so \
+         /staging/stt-libs/ \
     && ls /staging/stt-libs/libonnxruntime.so > /dev/null
 
 FROM debian:trixie-slim AS runtime
