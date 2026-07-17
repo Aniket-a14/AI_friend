@@ -190,6 +190,86 @@ class MemoryStore:
         """
         self._l1_cache.clear()
 
+    async def _find_existing_memory(self, conn, content, wing):
+        """Return the id of a memory with identical content+wing, else None.
+
+        Backs reinforce-on-repeat dedup. The ``isinstance(rows, list)`` guard is
+        load-bearing: on the PG unit-test path ``conn`` is an AsyncMock whose
+        ``fetch`` returns a truthy MagicMock, which would otherwise read as a
+        hit and make every add masquerade as a duplicate.
+
+        Dedup is an optimization, not a correctness requirement: if the lookup
+        errors, return None so the caller falls through to a normal insert
+        rather than dropping the write.
+        """
+        try:
+            if self.is_sqlite:
+                rows = await conn.fetch(
+                    "SELECT id FROM memories WHERE content = ? AND wing = ? LIMIT 1",
+                    content,
+                    wing,
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT id FROM memories WHERE content = $1 AND wing = $2 LIMIT 1",
+                    content,
+                    wing,
+                )
+        except Exception as e:
+            logger.debug(f"Dedup lookup failed, proceeding to insert: {e}")
+            return None
+        if isinstance(rows, list) and rows:
+            return rows[0]["id"]
+        return None
+
+    async def _reinforce_memory(self, conn, memory_id, importance, current_time):
+        """Strengthen an existing memory when the same statement recurs.
+
+        Repetition consolidates a trace, it never weakens one: bump
+        ``recall_count`` (ACT-R frequency), refresh recency, and raise
+        ``importance_score`` to the max of old/new so a later low-importance
+        restatement cannot demote an already-salient memory.
+        """
+        if self.is_sqlite:
+            # CAST the bound importance to REAL: SQLite would otherwise compare a
+            # numeric column against a text-affinity param and MAX() would return
+            # the text operand, silently demoting a salient memory.
+            if current_time is not None:
+                await conn.execute(
+                    "UPDATE memories SET recall_count = recall_count + 1, "
+                    "last_recalled_at = ?, "
+                    "importance_score = MAX(importance_score, CAST(? AS REAL)) WHERE id = ?",
+                    current_time,
+                    importance,
+                    memory_id,
+                )
+            else:
+                await conn.execute(
+                    "UPDATE memories SET recall_count = recall_count + 1, "
+                    "last_recalled_at = CURRENT_TIMESTAMP, "
+                    "importance_score = MAX(importance_score, CAST(? AS REAL)) WHERE id = ?",
+                    importance,
+                    memory_id,
+                )
+        else:
+            if current_time is not None:
+                await conn.execute(
+                    "UPDATE memories SET recall_count = recall_count + 1, "
+                    "last_recalled_at = $1, "
+                    "importance_score = GREATEST(importance_score, $2) WHERE id = $3",
+                    current_time,
+                    importance,
+                    memory_id,
+                )
+            else:
+                await conn.execute(
+                    "UPDATE memories SET recall_count = recall_count + 1, "
+                    "last_recalled_at = NOW(), "
+                    "importance_score = GREATEST(importance_score, $1) WHERE id = $2",
+                    importance,
+                    memory_id,
+                )
+
     async def get_embedding(self, text: str):
         """Generates vector embedding for text using local Ollama."""
         attempts = [
@@ -265,6 +345,24 @@ class MemoryStore:
             # Generate a single UUID for both stores to ensure correlation
             memory_id = str(uuid.uuid4())
             raw_val = raw_content or content
+
+            # Reinforce-on-repeat: an identical statement in the same wing should
+            # strengthen the existing trace, not mint a duplicate. Human memory
+            # consolidates repetition; duplicating it would inflate retrieval
+            # with near-identical rows and distort ACT-R frequency counts. Check
+            # before the expensive embedding + graph pre-linking work, and skip
+            # both when it is a repeat.
+            async with self.pool.acquire() as conn:
+                existing_id = await self._find_existing_memory(conn, content, wing)
+                if existing_id is not None:
+                    await self._reinforce_memory(
+                        conn, existing_id, importance, current_time
+                    )
+                    self._invalidate_l1_cache()
+                    logger.info(
+                        f"🧠 Memory Reinforced [{wing}:{room or 'global'}]: {content[:50]}..."
+                    )
+                    return True
 
             # Pre-link entities from graph to metadata
             present_entities = []
