@@ -133,6 +133,37 @@ class TestActionPromptAssembly:
         assert pos_most < pos_least < pos_second
 
     @pytest.mark.asyncio
+    async def test_grounding_block_sits_adjacent_to_the_query(self, action_service):
+        # Lost-in-the-middle at the prompt level: SHARED HISTORY must land in the
+        # high-attention tail (after ToM, immediately before "User:"), not buried
+        # mid-prompt.
+        plan = ActionPlan(
+            action_type="RESPOND_CHAT",
+            goal="ENGAGE",
+            payload={
+                "message": "what should we do?",
+                "identity_prompt": "You are my friend.",
+                "emotion_state": "neutral",
+                "surfaced_memories": [_mem("we love climbing", score=5.0)],
+                "user_mental_model": {
+                    "inferred_valence": 0.2,
+                    "inferred_arousal": 0.5,
+                    "implied_goals": ["plan a weekend"],
+                    "known_concepts": ["climbing"],
+                },
+            },
+        )
+        captured = await self._capture_prompt(action_service, plan)
+        prompt = captured["prompt"]
+
+        pos_tom = prompt.index("Theory of Mind")
+        pos_history = prompt.index("SHARED HISTORY")
+        pos_user = prompt.index("User:")
+        # ToM comes first, then the grounding, then the query — grounding is the
+        # last thing the model reads before the question.
+        assert pos_tom < pos_history < pos_user
+
+    @pytest.mark.asyncio
     async def test_system_prompt_carries_grounding_constraint(self, action_service):
         plan = ActionPlan(
             action_type="RESPOND_CHAT",
