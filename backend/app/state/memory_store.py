@@ -181,6 +181,24 @@ class MemoryStore:
             and type(self.pool).__name__ not in ("MagicMock", "AsyncMock", "Mock")
         )
 
+    @staticmethod
+    def _as_aware_utc(dt):
+        """Coerce a datetime to timezone-aware UTC so recency arithmetic never
+        mixes naive and aware operands (which raises TypeError).
+
+        Timestamps reach these code paths from two sources: naive values
+        (SQLite CURRENT_TIMESTAMP, strptime of stored strings) and aware values
+        (Postgres timestamptz, datetime.now(timezone.utc), a caller-supplied
+        current_time). Naive inputs are assumed to already be UTC -- which is how
+        the stored timestamps are written -- and aware inputs are converted.
+        None passes through so callers can apply their own fallback.
+        """
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
     def _l1_cache_put(self, cache_key, value):
         """Insert into the L1 cache with LRU eviction.
 
@@ -1192,15 +1210,15 @@ class MemoryStore:
                             # Recalculate score with neuromodulatory gating
                             last_recall = row.get("last_recalled_at")
                             now = (
-                                current_time
+                                self._as_aware_utc(current_time)
                                 if current_time is not None
                                 else datetime.now(timezone.utc)
                             )
-
-                            if last_recall is None:
-                                last_recall = now
-                            elif last_recall.tzinfo is None:
-                                last_recall = last_recall.replace(tzinfo=timezone.utc)
+                            last_recall = (
+                                now
+                                if last_recall is None
+                                else self._as_aware_utc(last_recall)
+                            )
 
                             hours_since = max(
                                 0.001, (now - last_recall).total_seconds() / 3600.0
@@ -1958,14 +1976,13 @@ class MemoryStore:
                         recall_count = max(1, row.get("recall_count") or 1)
                         last_recall = row.get("last_recalled_at")
                         now = (
-                            current_time
+                            self._as_aware_utc(current_time)
                             if current_time is not None
                             else datetime.now(timezone.utc)
                         )
-                        if last_recall is None:
-                            last_recall = now
-                        elif last_recall.tzinfo is None:
-                            last_recall = last_recall.replace(tzinfo=timezone.utc)
+                        last_recall = (
+                            now if last_recall is None else self._as_aware_utc(last_recall)
+                        )
 
                         hours_since = max(
                             0.001, (now - last_recall).total_seconds() / 3600.0
@@ -2060,14 +2077,13 @@ class MemoryStore:
                         recall_count = max(1, row.get("recall_count") or 1)
                         last_recall = row.get("last_recalled_at")
                         now = (
-                            current_time
+                            self._as_aware_utc(current_time)
                             if current_time is not None
                             else datetime.now(timezone.utc)
                         )
-                        if last_recall is None:
-                            last_recall = now
-                        elif last_recall.tzinfo is None:
-                            last_recall = last_recall.replace(tzinfo=timezone.utc)
+                        last_recall = (
+                            now if last_recall is None else self._as_aware_utc(last_recall)
+                        )
 
                         hours_since = max(
                             0.001, (now - last_recall).total_seconds() / 3600.0
@@ -2563,16 +2579,15 @@ class MemoryStore:
                     else:
                         dt = created_at
 
-                    # Calculate hours since creation
-                    if current_time is not None:
-                        now = (
-                            current_time.astimezone(dt.tzinfo)
-                            if dt.tzinfo
-                            else current_time
-                        )
-                    else:
-                        now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
-                    delta = now - dt
+                    # Calculate hours since creation. Coerce both operands to
+                    # aware-UTC so a naive stored created_at and an aware
+                    # current_time (or vice versa) never raise on subtraction.
+                    now = (
+                        self._as_aware_utc(current_time)
+                        if current_time is not None
+                        else datetime.now(timezone.utc)
+                    )
+                    delta = now - self._as_aware_utc(dt)
                     hours_since = max(0.0, delta.total_seconds() / 3600.0)
 
                     # Extract decay_rate from metadata if possible
