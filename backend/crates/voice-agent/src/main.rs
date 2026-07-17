@@ -21,10 +21,36 @@ use rubato::{
 
 /// VITS flow / stochastic-duration noise scales.
 ///
-/// These set baseline *variability*, not affect, and stay at the upstream piper
-/// defaults. The emotional controls are `Prosody { rate, pitch, volume }`.
+/// These set baseline *variability*, not affect. The emotional controls are
+/// `Prosody { rate, pitch, volume }`.
 const VITS_NOISE_SCALE: f32 = 0.667;
 const VITS_NOISE_SCALE_W: f32 = 0.8;
+
+/// Graph interface of the sherpa-onnx VITS family (vits-ljs and friends).
+///
+/// This crate previously used piper's names (`input`, `input_lengths`, a fused
+/// `scales` tensor, output `output`) while its `Phonemizer` required a
+/// `lexicon.txt` that piper voices do not ship — the two halves targeted
+/// different model families, so local synthesis could not have worked with
+/// either. The lexicon side is load-bearing (there is no runtime phonemizer),
+/// so the graph side was corrected to match it.
+const VITS_INPUT_TOKENS: &str = "x";
+const VITS_INPUT_TOKEN_LEN: &str = "x_length";
+const VITS_INPUT_NOISE_SCALE: &str = "noise_scale";
+const VITS_INPUT_LENGTH_SCALE: &str = "length_scale";
+const VITS_INPUT_NOISE_SCALE_W: &str = "noise_scale_w";
+const VITS_OUTPUT_AUDIO: &str = "y";
+
+const VITS_REQUIRED_INPUTS: [&str; 5] = [
+    VITS_INPUT_TOKENS,
+    VITS_INPUT_TOKEN_LEN,
+    VITS_INPUT_NOISE_SCALE,
+    VITS_INPUT_LENGTH_SCALE,
+    VITS_INPUT_NOISE_SCALE_W,
+];
+
+/// Blank token id interleaved between phonemes when the model sets `add_blank=1`.
+const VITS_BLANK_ID: i64 = 0;
 
 /// Mirrors the clamps `contracts::vad_to_prosody` already applies. Repeated here
 /// because `dynamic_prosody` can be overridden from the mesh and must not be
@@ -40,56 +66,102 @@ struct Phonemizer {
 }
 
 impl Phonemizer {
+    /// Load a lexicon-based phonemizer.
+    ///
+    /// Both files are **required**. The previous implementation wrapped each read
+    /// in `if let Ok(..)` and returned `Ok` regardless, so a missing or
+    /// unparseable file produced an empty table, `phonemize` returned only
+    /// `[bos, eos]`, and the agent rendered silence with nothing logged anywhere.
+    /// Failing here instead lets `load_local_engine` fall through to another
+    /// candidate — or report honestly that local synthesis is unavailable.
     fn load(lexicon_path: &Path, tokens_path: &Path) -> Result<Self> {
+        let lexicon_raw = std::fs::read_to_string(lexicon_path)
+            .with_context(|| format!("read lexicon {}", lexicon_path.display()))?;
+        let tokens_raw = std::fs::read_to_string(tokens_path)
+            .with_context(|| format!("read tokens {}", tokens_path.display()))?;
+
+        // sherpa-onnx lexicons are whitespace-separated: `word ph1 ph2 ...`.
+        // This previously split on '\t' only and required >= 2 parts, so every
+        // line of a space-separated lexicon collapsed to a single part and was
+        // dropped — yielding an empty lexicon. `split_whitespace` accepts either.
         let mut lexicon = HashMap::new();
-        if let Ok(content) = std::fs::read_to_string(lexicon_path) {
-            for line in content.lines() {
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 2 {
-                    let word = parts[0].to_lowercase();
-                    let phonemes: Vec<String> = parts[1].split(' ').map(String::from).collect();
-                    lexicon.insert(word, phonemes);
-                }
+        for line in lexicon_raw.lines() {
+            let mut parts = line.split_whitespace();
+            let Some(word) = parts.next() else { continue };
+            let phonemes: Vec<String> = parts.map(String::from).collect();
+            if phonemes.is_empty() {
+                continue;
             }
+            lexicon.insert(word.to_lowercase(), phonemes);
         }
 
         let mut tokens = HashMap::new();
-        if let Ok(content) = std::fs::read_to_string(tokens_path) {
-            for line in content.lines() {
-                let parts: Vec<&str> = line.split(' ').collect();
-                if parts.len() >= 2 {
-                    if let Ok(id) = parts[1].parse::<i64>() {
-                        tokens.insert(parts[0].to_string(), id);
-                    }
-                }
+        for line in tokens_raw.lines() {
+            // Token names may themselves be whitespace (e.g. the space phoneme),
+            // so split off the trailing id rather than splitting the whole line.
+            let Some((name, id)) = line.rsplit_once(' ') else { continue };
+            if let Ok(id) = id.trim().parse::<i64>() {
+                tokens.insert(name.to_string(), id);
             }
         }
 
+        if lexicon.is_empty() {
+            anyhow::bail!(
+                "lexicon {} parsed to zero entries — wrong format or wrong model \
+                 (a lexicon-based VITS voice is required, not an espeak/piper one)",
+                lexicon_path.display()
+            );
+        }
+        if tokens.is_empty() {
+            anyhow::bail!(
+                "tokens {} parsed to zero entries",
+                tokens_path.display()
+            );
+        }
+
+        info!(
+            lexicon_entries = lexicon.len(),
+            token_entries = tokens.len(),
+            "phonemizer loaded"
+        );
         Ok(Self { lexicon, tokens })
     }
 
+    /// Map text to VITS token ids via the lexicon.
+    ///
+    /// The model declares `add_blank=1`, so phonemes are interleaved with the
+    /// blank token in the canonical VITS form `[0, p1, 0, p2, 0, ..., pn, 0]`.
+    /// The previous code emitted `[p1, 0, p2, 0, ...]` — missing the leading
+    /// blank — and bracketed with piper's `^`/`$` tokens, which the sherpa-onnx
+    /// VITS vocabulary does not define (so they silently never appended).
     fn phonemize(&self, text: &str) -> Vec<i64> {
-        let mut ids = Vec::new();
-        if let Some(&id) = self.tokens.get("^") {
-            ids.push(id);
-        }
-
+        let mut phoneme_ids = Vec::new();
         for word in text.split_whitespace() {
-            let clean_word: String = word.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase();
-            if let Some(phonemes) = self.lexicon.get(&clean_word) {
-                for p in phonemes {
-                    if let Some(&id) = self.tokens.get(p) {
-                        ids.push(id);
-                        ids.push(0); // Separator
-                    }
+            let clean_word: String = word
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+                .to_lowercase();
+            let Some(phonemes) = self.lexicon.get(&clean_word) else {
+                continue;
+            };
+            for p in phonemes {
+                if let Some(&id) = self.tokens.get(p) {
+                    phoneme_ids.push(id);
                 }
             }
         }
 
-        if let Some(&id) = self.tokens.get("$") {
-            ids.push(id);
+        if phoneme_ids.is_empty() {
+            return Vec::new();
         }
 
+        let mut ids = Vec::with_capacity(phoneme_ids.len() * 2 + 1);
+        ids.push(VITS_BLANK_ID);
+        for id in phoneme_ids {
+            ids.push(id);
+            ids.push(VITS_BLANK_ID);
+        }
         ids
     }
 }
@@ -97,10 +169,19 @@ impl Phonemizer {
 struct LocalTtsEngine {
     session: std::sync::Mutex<Session>,
     phonemizer: Phonemizer,
+    /// Rate the model actually renders at (read from ONNX metadata).
+    native_sample_rate: u32,
+    /// Rate the mesh expects; output is resampled to this.
+    target_sample_rate: u32,
 }
 
 impl LocalTtsEngine {
-    fn load(model_path: &Path, lexicon_path: &Path, tokens_path: &Path) -> Result<Self> {
+    fn load(
+        model_path: &Path,
+        lexicon_path: &Path,
+        tokens_path: &Path,
+        target_sample_rate: u32,
+    ) -> Result<Self> {
         let mut builder = Session::builder()?
             .with_execution_providers([
                 ort::ep::TensorRT::default().build(),
@@ -110,9 +191,38 @@ impl LocalTtsEngine {
             .map_err(|e| anyhow::anyhow!("failed to configure execution providers: {:?}", e))?;
 
         let session = builder.commit_from_file(model_path)?;
-        let phonemizer = Phonemizer::load(lexicon_path, tokens_path)?;
 
-        Ok(Self { session: std::sync::Mutex::new(session), phonemizer })
+        // Verify the graph interface at load rather than discovering it as
+        // "Invalid input name" on the first utterance.
+        let actual: Vec<&str> = session.inputs().iter().map(|i| i.name()).collect();
+        if let Some(missing) = VITS_REQUIRED_INPUTS
+            .iter()
+            .find(|name| !actual.contains(name))
+        {
+            anyhow::bail!(
+                "model {} does not expose input `{missing}` (actual inputs: {actual:?}). \
+                 This build targets the sherpa-onnx VITS family (vits-ljs); espeak/piper \
+                 voices use `input`/`input_lengths`/`scales` and ship no lexicon.txt.",
+                model_path.display()
+            );
+        }
+
+        let phonemizer = Phonemizer::load(lexicon_path, tokens_path)?;
+        let native_sample_rate = model_sample_rate(&session, target_sample_rate);
+
+        if native_sample_rate != target_sample_rate {
+            info!(
+                native_sample_rate,
+                target_sample_rate, "model rate differs from mesh rate; output will be resampled"
+            );
+        }
+
+        Ok(Self {
+            session: std::sync::Mutex::new(session),
+            phonemizer,
+            native_sample_rate,
+            target_sample_rate,
+        })
     }
 
     /// Render `text` under the full prosody triple.
@@ -131,25 +241,33 @@ impl LocalTtsEngine {
         let pitch = pitch.clamp(MIN_PITCH, MAX_PITCH);
 
         // VITS exposes no pitch input, so pitch is applied by resampling the
-        // rendered waveform (see `pitch_shift`). That also divides duration by
-        // `pitch`, so pre-multiply length_scale by `pitch` to cancel it and let
-        // the final duration honour `rate` alone:
-        //     generated = pitch / rate  ->  after resample = 1 / rate
+        // rendered waveform below. That also divides duration by `pitch`, so
+        // pre-multiply length_scale by `pitch` to cancel it and let the final
+        // duration honour `rate` alone.
+        //
+        // Resampling shifts formants along with F0, so extreme shifts sound
+        // "chipmunk"/"Darth Vader". Acceptable only because `vad_to_prosody`
+        // squashes pitch through `tanh`, keeping realistic values near 0.85..1.20.
+        // A wider expressive range needs a formant-preserving shifter (PSOLA/WORLD).
         let length_scale = pitch / rate;
 
-        let input_array = ndarray::Array2::from_shape_vec((1, num_phonemes), ids)?;
-        let input_lengths_array = ndarray::Array1::from_vec(vec![num_phonemes as i64]);
-        let scales_array =
-            ndarray::Array1::from_vec(vec![VITS_NOISE_SCALE, length_scale, VITS_NOISE_SCALE_W]);
-
-        let input_tensor = Tensor::from_array(input_array)?;
-        let input_lengths_tensor = Tensor::from_array(input_lengths_array)?;
-        let scales_tensor = Tensor::from_array(scales_array)?;
-
         let inputs = ort::inputs![
-            "input" => input_tensor,
-            "input_lengths" => input_lengths_tensor,
-            "scales" => scales_tensor,
+            VITS_INPUT_TOKENS => Tensor::from_array(
+                ndarray::Array2::from_shape_vec((1, num_phonemes), ids)?
+            )?,
+            VITS_INPUT_TOKEN_LEN => Tensor::from_array(
+                ndarray::Array1::from_vec(vec![num_phonemes as i64])
+            )?,
+            // Separate scalars, not one fused `scales` tensor.
+            VITS_INPUT_NOISE_SCALE => Tensor::from_array(
+                ndarray::Array1::from_vec(vec![VITS_NOISE_SCALE])
+            )?,
+            VITS_INPUT_LENGTH_SCALE => Tensor::from_array(
+                ndarray::Array1::from_vec(vec![length_scale])
+            )?,
+            VITS_INPUT_NOISE_SCALE_W => Tensor::from_array(
+                ndarray::Array1::from_vec(vec![VITS_NOISE_SCALE_W])
+            )?,
         ];
 
         // Copy the waveform out and release the session lock before resampling:
@@ -160,12 +278,25 @@ impl LocalTtsEngine {
                 .lock()
                 .map_err(|e| anyhow::anyhow!("mutex poisoned: {e}"))?;
             let outputs = session_guard.run(inputs)?;
-            let output_value = outputs.get("output").context("missing output audio tensor")?;
+            let output_value = outputs
+                .get(VITS_OUTPUT_AUDIO)
+                .with_context(|| format!("missing output audio tensor `{VITS_OUTPUT_AUDIO}`"))?;
             let (_dimensions, audio_data) = output_value.try_extract_tensor::<f32>()?;
             audio_data.to_vec()
         };
 
-        let audio = pitch_shift(&audio, pitch)?;
+        // One sinc pass does both jobs; two would double the cost and compound
+        // interpolation error.
+        //
+        //   pitch shift      : 1 / pitch          (see the length_scale note above)
+        //   rate conversion  : target / native    (model rate -> mesh rate)
+        //
+        // Duration still resolves to `1/rate` in seconds:
+        //   generated = pitch/rate  ->  x (target/native)/pitch  ->  /target
+        //     = base/(rate * native)  seconds
+        let ratio =
+            (self.target_sample_rate as f64 / self.native_sample_rate as f64) / pitch as f64;
+        let audio = resample_by(&audio, ratio)?;
 
         // Volume is applied in the f32 domain, before quantisation, so a quiet
         // agent does not pay an extra rounding penalty. `Prosody.volume` is an
@@ -191,7 +322,7 @@ impl LocalTtsEngine {
 /// "seamless fallback / robust startup" guarantee in `docs/ARCHITECTURE.md`. A
 /// corrupt or placeholder `custom_vits.onnx` was therefore strictly worse than
 /// having no custom model at all, and said nothing about why.
-fn load_local_engine() -> Option<LocalTtsEngine> {
+fn load_local_engine(target_sample_rate: u32) -> Option<LocalTtsEngine> {
     let candidates = [
         (
             "CUSTOM",
@@ -212,7 +343,7 @@ fn load_local_engine() -> Option<LocalTtsEngine> {
             continue;
         }
         info!(model = %model.display(), "Loading {label} local voice weights...");
-        match LocalTtsEngine::load(model, lexicon, tokens) {
+        match LocalTtsEngine::load(model, lexicon, tokens, target_sample_rate) {
             Ok(engine) => {
                 info!("Loaded {label} local voice weights.");
                 return Some(engine);
@@ -228,23 +359,18 @@ fn load_local_engine() -> Option<LocalTtsEngine> {
     None
 }
 
-/// Shift pitch by `pitch` (1.0 = unchanged) via band-limited resampling.
+/// Band-limited resample: `output.len() ~= samples.len() * ratio`.
 ///
-/// Resampling to `n / pitch` samples and replaying at the original rate scales
-/// every frequency by `pitch` and divides duration by `pitch`; callers cancel the
-/// duration change through `length_scale`.
-///
-/// Caveat: this moves formants along with F0, so extreme shifts sound
-/// "chipmunk"/"Darth Vader". It is acceptable here because `vad_to_prosody`
-/// squashes pitch through `tanh`, keeping realistic output near 0.85..1.20 where
-/// formant drift is slight. Wider expressive range would need a formant-preserving
-/// shifter (PSOLA/WORLD) instead.
-fn pitch_shift(samples: &[f32], pitch: f32) -> Result<Vec<f32>> {
-    if samples.is_empty() || (pitch - 1.0).abs() < 1e-3 {
+/// Serves two fused purposes in `synthesize` (see there): pitch shifting and
+/// native-rate -> mesh-rate conversion.
+fn resample_by(samples: &[f32], ratio: f64) -> Result<Vec<f32>> {
+    if samples.is_empty() || (ratio - 1.0).abs() < 1e-6 {
         return Ok(samples.to_vec());
     }
+    if !ratio.is_finite() || ratio <= 0.0 {
+        anyhow::bail!("invalid resample ratio {ratio}");
+    }
 
-    let ratio = 1.0 / pitch as f64;
     let params = SincInterpolationParameters {
         sinc_len: 128,
         f_cutoff: 0.95,
@@ -254,13 +380,37 @@ fn pitch_shift(samples: &[f32], pitch: f32) -> Result<Vec<f32>> {
     };
 
     let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, samples.len(), 1)
-        .context("construct pitch-shift resampler")?;
+        .context("construct resampler")?;
 
     let output = resampler
         .process(&[samples.to_vec()], None)
-        .context("pitch-shift resample")?;
+        .context("resample")?;
 
     Ok(output.into_iter().next().unwrap_or_default())
+}
+
+/// Native output rate of a sherpa-onnx VITS model, from its ONNX metadata.
+///
+/// Falls back to `default_rate` when absent. Publishing a model's audio at the
+/// wrong rate is an inaudible-in-code but glaring runtime bug: a 22.05 kHz voice
+/// emitted into a 32 kHz stream plays ~45% fast and sharp.
+fn model_sample_rate(session: &Session, default_rate: u32) -> u32 {
+    // `metadata()` -> Result, `custom()` -> Option<String> (ort 2.0.0-rc.12).
+    match session
+        .metadata()
+        .ok()
+        .and_then(|m| m.custom("sample_rate"))
+        .and_then(|v| v.trim().parse::<u32>().ok())
+    {
+        Some(rate) if rate > 0 => rate,
+        _ => {
+            warn!(
+                default_rate,
+                "model exposes no usable `sample_rate` metadata; assuming default"
+            );
+            default_rate
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -476,7 +626,7 @@ async fn main() -> Result<()> {
         .build()
         .context("build reqwest client with timeouts")?;
 
-    let local_engine = load_local_engine();
+    let local_engine = load_local_engine(config.sample_rate);
 
     let local_engine = std::sync::Arc::new(local_engine);
 
@@ -1369,60 +1519,59 @@ mod tests {
     }
 
     #[test]
-    fn pitch_shift_is_identity_at_unity() {
+    fn resample_is_identity_at_unity_ratio() {
         let input = tone(512, 0.5);
-        let out = pitch_shift(&input, 1.0).unwrap();
-        assert_eq!(out, input);
+        assert_eq!(resample_by(&input, 1.0).unwrap(), input);
     }
 
     #[test]
-    fn pitch_shift_up_compresses_sample_count() {
-        // Raising pitch by 1.25 must yield ~1/1.25 of the samples; the caller
-        // cancels that duration change via length_scale.
-        let input = tone(4000, 0.5);
-        let out = pitch_shift(&input, 1.25).unwrap();
-        let expected = 4000.0 / 1.25;
-        assert!(
-            (out.len() as f64 - expected).abs() / expected < 0.05,
-            "expected ~{expected} samples, got {}",
-            out.len()
-        );
+    fn resample_rejects_nonsense_ratios() {
+        assert!(resample_by(&tone(64, 0.5), 0.0).is_err());
+        assert!(resample_by(&tone(64, 0.5), -1.0).is_err());
+        assert!(resample_by(&tone(64, 0.5), f64::NAN).is_err());
     }
 
     #[test]
-    fn pitch_shift_down_expands_sample_count() {
-        let input = tone(4000, 0.5);
-        let out = pitch_shift(&input, 0.8).unwrap();
-        let expected = 4000.0 / 0.8;
-        assert!(
-            (out.len() as f64 - expected).abs() / expected < 0.05,
-            "expected ~{expected} samples, got {}",
-            out.len()
-        );
-    }
-
-    #[test]
-    fn pitch_compensation_preserves_rate_driven_duration() {
-        // The invariant synthesize() relies on: generating at length_scale
-        // pitch/rate and then resampling by 1/pitch must leave duration a
-        // function of rate alone, so pitch and speed stay independent.
-        let base = 4000.0f64;
-        for &(rate, pitch) in &[(1.0, 1.0), (1.0, 1.25), (1.4, 0.8), (0.7, 1.5)] {
-            let length_scale = pitch / rate;
-            let generated = (base * length_scale).round() as usize;
-            let out = pitch_shift(&tone(generated, 0.5), pitch as f32).unwrap();
-            let expected = base / rate;
+    fn resample_scales_sample_count_by_ratio() {
+        for &ratio in &[0.8f64, 1.25, 1.451] {
+            let out = resample_by(&tone(4000, 0.5), ratio).unwrap();
+            let expected = 4000.0 * ratio;
             assert!(
                 (out.len() as f64 - expected).abs() / expected < 0.05,
-                "rate={rate} pitch={pitch}: expected ~{expected}, got {}",
+                "ratio={ratio}: expected ~{expected}, got {}",
                 out.len()
             );
         }
     }
 
     #[test]
-    fn pitch_shift_handles_empty_input() {
-        assert!(pitch_shift(&[], 1.5).unwrap().is_empty());
+    fn resample_handles_empty_input() {
+        assert!(resample_by(&[], 1.5).unwrap().is_empty());
+    }
+
+    /// The invariant `synthesize` depends on: generating at length_scale
+    /// `pitch/rate` and then resampling by `(target/native)/pitch` must leave the
+    /// output *duration in seconds* a function of `rate` alone — independent of
+    /// both pitch and the model's native rate.
+    #[test]
+    fn duration_depends_on_rate_alone_across_pitch_and_sample_rate() {
+        const BASE_NATIVE_SAMPLES: f64 = 8000.0;
+        for &(native, target) in &[(22_050u32, 32_000u32), (16_000, 32_000), (32_000, 32_000)] {
+            for &(rate, pitch) in &[(1.0f64, 1.0f64), (1.0, 1.25), (1.4, 0.8), (0.7, 1.5)] {
+                let length_scale = pitch / rate;
+                let generated = (BASE_NATIVE_SAMPLES * length_scale).round() as usize;
+
+                let ratio = (target as f64 / native as f64) / pitch;
+                let out = resample_by(&tone(generated, 0.5), ratio).unwrap();
+
+                let duration_s = out.len() as f64 / target as f64;
+                let expected_s = (BASE_NATIVE_SAMPLES / native as f64) / rate;
+                assert!(
+                    (duration_s - expected_s).abs() / expected_s < 0.05,
+                    "native={native} target={target} rate={rate} pitch={pitch}:                      expected ~{expected_s:.4}s, got {duration_s:.4}s"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1459,6 +1608,7 @@ mod tests {
             &model,
             &dir.join("lexicon.txt"),
             &dir.join("tokens.txt"),
+            32_000,
         );
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -1466,5 +1616,167 @@ mod tests {
             result.is_err(),
             "a placeholder text file must not load as an ONNX model"
         );
+    }
+
+    /// Path to the provisioned base voice, relative to the crate root (cargo sets
+    /// CWD there for tests). Populated by `scripts/research/export_models.py`.
+    fn base_voice_dir() -> Option<std::path::PathBuf> {
+        let dir = std::path::PathBuf::from("../../../models/base");
+        dir.join("model.onnx").exists().then_some(dir)
+    }
+
+    fn load_base_voice() -> Option<LocalTtsEngine> {
+        let dir = base_voice_dir()?;
+        Some(
+            LocalTtsEngine::load(
+                &dir.join("model.onnx"),
+                &dir.join("lexicon.txt"),
+                &dir.join("tokens.txt"),
+                32_000,
+            )
+            .expect("base voice is present but failed to load"),
+        )
+    }
+
+    fn peak(pcm: &[u8]) -> i32 {
+        pcm.chunks_exact(2)
+            .map(|c| (i16::from_le_bytes([c[0], c[1]]) as i32).abs())
+            .max()
+            .unwrap_or(0)
+    }
+
+    const PHRASE: &str = "hello world this is a test of the voice";
+
+    #[test]
+    fn real_voice_phonemizes_words_not_just_bos_eos() {
+        let Some(engine) = load_base_voice() else {
+            eprintln!("SKIP: models/base not provisioned");
+            return;
+        };
+        // The regression this guards: a mis-parsed lexicon yields an empty table,
+        // so phonemize() returns only [bos, eos] and VITS renders silence.
+        let ids = engine.phonemizer.phonemize(PHRASE);
+        assert!(
+            ids.len() > 20,
+            "expected real phoneme ids for {PHRASE:?}, got only {} — lexicon likely empty",
+            ids.len()
+        );
+    }
+
+    #[test]
+    fn real_voice_renders_audible_audio() {
+        let Some(engine) = load_base_voice() else {
+            eprintln!("SKIP: models/base not provisioned");
+            return;
+        };
+        let pcm = engine.synthesize(PHRASE, 1.0, 1.0, 1.0).unwrap();
+        assert!(pcm.len() > 2 * 8_000, "expected >0.25s of audio, got {} bytes", pcm.len());
+        assert!(peak(&pcm) > 1_000, "audio is effectively silent (peak {})", peak(&pcm));
+    }
+
+    #[test]
+    fn real_voice_duration_tracks_rate_and_ignores_pitch() {
+        let Some(engine) = load_base_voice() else {
+            eprintln!("SKIP: models/base not provisioned");
+            return;
+        };
+        let normal = engine.synthesize(PHRASE, 1.0, 1.0, 1.0).unwrap().len() as f64;
+        let high = engine.synthesize(PHRASE, 1.0, 1.3, 1.0).unwrap().len() as f64;
+        let fast = engine.synthesize(PHRASE, 1.5, 1.0, 1.0).unwrap().len() as f64;
+
+        // Pitch must not change duration -- the whole point of the length_scale
+        // compensation. VITS' stochastic duration predictor adds run-to-run
+        // variance, hence the loose bound.
+        assert!(
+            (high - normal).abs() / normal < 0.20,
+            "pitch changed duration: normal={normal} high-pitch={high}"
+        );
+        // Rate must: 1.5x faster => ~2/3 the samples.
+        let expected_fast = normal / 1.5;
+        assert!(
+            (fast - expected_fast).abs() / expected_fast < 0.20,
+            "rate did not drive duration: expected ~{expected_fast}, got {fast}"
+        );
+    }
+
+    #[test]
+    fn real_voice_volume_scales_amplitude() {
+        let Some(engine) = load_base_voice() else {
+            eprintln!("SKIP: models/base not provisioned");
+            return;
+        };
+        let loud = peak(&engine.synthesize(PHRASE, 1.0, 1.0, 1.0).unwrap()) as f64;
+        let quiet = peak(&engine.synthesize(PHRASE, 1.0, 1.0, 0.5).unwrap()) as f64;
+        assert!(loud > 0.0);
+        let ratio = quiet / loud;
+        assert!(
+            (ratio - 0.5).abs() < 0.12,
+            "volume 0.5 should halve peak amplitude; ratio was {ratio:.3}"
+        );
+    }
+
+    #[test]
+    fn real_voice_native_rate_is_resampled_to_mesh_rate() {
+        let Some(engine) = load_base_voice() else {
+            eprintln!("SKIP: models/base not provisioned");
+            return;
+        };
+        eprintln!(
+            "native={} target={}",
+            engine.native_sample_rate, engine.target_sample_rate
+        );
+        assert_eq!(engine.target_sample_rate, 32_000);
+        assert!(engine.native_sample_rate > 0);
+    }
+
+    fn wav_bytes(pcm: &[u8], sample_rate: u32) -> Vec<u8> {
+        let mut w = Vec::new();
+        let data_len = pcm.len() as u32;
+        w.extend_from_slice(b"RIFF");
+        w.extend_from_slice(&(36 + data_len).to_le_bytes());
+        w.extend_from_slice(b"WAVEfmt ");
+        w.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size
+        w.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        w.extend_from_slice(&1u16.to_le_bytes()); // mono
+        w.extend_from_slice(&sample_rate.to_le_bytes());
+        w.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
+        w.extend_from_slice(&2u16.to_le_bytes()); // block align
+        w.extend_from_slice(&16u16.to_le_bytes()); // bits
+        w.extend_from_slice(b"data");
+        w.extend_from_slice(&data_len.to_le_bytes());
+        w.extend_from_slice(pcm);
+        w
+    }
+
+    /// Renders WAVs for human listening. Opt-in:
+    ///   cargo test -p voice-agent render_prosody_demo_wavs -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn render_prosody_demo_wavs() {
+        let engine = load_base_voice().expect("models/base must be provisioned");
+        let out = std::path::PathBuf::from("../../../voice_demo");
+        std::fs::create_dir_all(&out).unwrap();
+
+        let phrase = "hello my friend it is really good to hear from you today";
+        let cases: &[(&str, f32, f32, f32)] = &[
+            ("neutral", 1.0, 1.0, 1.0),
+            ("excited_fast_high", 1.4, 1.25, 1.0),
+            ("sad_slow_low", 0.75, 0.85, 0.6),
+            ("quiet_half_volume", 1.0, 1.0, 0.5),
+            ("pitch_only_high", 1.0, 1.3, 1.0),
+            ("rate_only_fast", 1.5, 1.0, 1.0),
+        ];
+
+        for (name, rate, pitch, volume) in cases {
+            let pcm = engine.synthesize(phrase, *rate, *pitch, *volume).unwrap();
+            let secs = pcm.len() as f64 / 2.0 / engine.target_sample_rate as f64;
+            let path = out.join(format!("{name}.wav"));
+            std::fs::write(&path, wav_bytes(&pcm, engine.target_sample_rate)).unwrap();
+            eprintln!(
+                "{name:20} rate={rate:.2} pitch={pitch:.2} vol={volume:.2} -> {secs:.2}s peak={} {}",
+                peak(&pcm),
+                path.display()
+            );
+        }
     }
 }

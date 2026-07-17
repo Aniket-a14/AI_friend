@@ -2525,6 +2525,7 @@ dependencies = [
  "ort",
  "regex",
  "reqwest",
+ "rubato",
  "serde",
  "serde_json",
  "tokio",

@@ -1898,3 +1898,79 @@ ONNX model on disk (paths are hardcoded, and proving "loads base" needs real
 weights). Reviewed, not executed. Run `python scripts/research/export_models.py` to
 fetch the real ~20MB piper voice and exercise it end-to-end — that is also what would
 finally make the pitch/volume work audible.
+
+---
+
+## 2026-07-17 Local TTS made to actually work — it never had
+
+Provisioning the real voice (per the previous entry) proved the local ONNX path had
+**never** produced speech. Four independent defects, every one failing silently.
+
+### Proof it could not have worked
+
+The crate used piper's graph names (`input`, `input_lengths`, a fused `scales`
+tensor, output `output`) while its `Phonemizer` required a `lexicon.txt` — which
+piper voices do not ship (they phonemize via espeak-ng at runtime). **The two halves
+targeted different model families.** With a piper model: right tensor names, empty
+lexicon -> `[bos, eos]` -> silence. With a lexicon model: right lexicon, wrong tensor
+names -> `Invalid input name: input`. There was no model for which both held.
+
+### The four defects
+
+1. **Wrong model family provisioned.** `export_models.py` fetched
+   `vits-piper-en_US-amy-low` (espeak, no lexicon). Now fetches `vits-ljs`, which
+   ships `tokens.txt` + `lexicon.txt` (CMU-in-IPA) and matches the Phonemizer.
+2. **Lexicon parsed with the wrong separator.** sherpa-onnx lexicons are
+   *space*-separated (`balzer b ˈ æ l t s ɚ`); the code did `line.split('\t')` and
+   required `>= 2` parts, so every line collapsed to one part and was dropped —
+   an empty lexicon, silently. Now `split_whitespace` (accepts either). Tokens now
+   use `rsplit_once(' ')`, since the old `split(' ')` broke on the *space phoneme*,
+   a real entry in these vocabularies.
+3. **Silent tolerance of missing/broken files.** `Phonemizer::load` wrapped both
+   reads in `if let Ok(..)` and returned `Ok` regardless. Now both are required and
+   a zero-entry lexicon is a hard error, so `load_local_engine` can fall through.
+4. **Wrong graph interface.** Real vits-ljs inputs are `x` ['N','L'] i64,
+   `x_length` ['N'] i64, and **three separate** f32 scalars `noise_scale` /
+   `length_scale` / `noise_scale_w`; output is `y`. Corrected, and the interface is
+   now validated at load — a wrong model family fails with the actual input names
+   listed, instead of "Invalid input name" on the first utterance.
+
+Also: `add_blank=1` (model metadata) means canonical interleave
+`[0, p1, 0, p2, 0, ..., pn, 0]`. The old code emitted `[p1, 0, p2, 0, ...]` (no
+leading blank) and bracketed with piper's `^`/`$`, which this vocabulary does not
+define — so they silently never appended.
+
+### Sample rate
+
+ONNX metadata reports `sample_rate = 22050`; the mesh runs at 32000 and there was
+**no output rate conversion at all** — a 22.05k voice emitted into a 32k stream
+plays ~45% fast and sharp. Native rate is now read from metadata (not hardcoded) and
+the conversion is *fused* with the pitch shift into one sinc pass:
+`ratio = (target/native) / pitch`. Two passes would double cost and compound
+interpolation error.
+
+### Verified — real audio, not simulated
+
+`cargo test -p voice-agent`: **19 passed**, including 5 that load the real 114MB
+model and render:
+
+```
+neutral            rate=1.00 pitch=1.00 -> 2.97s peak=15661
+pitch_only_high    rate=1.00 pitch=1.30 -> 3.02s peak=13809   <- +30% pitch, +1.7% duration
+rate_only_fast     rate=1.50 pitch=1.00 -> 2.33s peak=13660
+quiet_half_volume  vol=0.50             -> peak=8313          <- 0.531 x neutral
+```
+
+Pitch/duration independence — the point of the length_scale compensation — holds on
+real audio (1.7% drift). Volume halves amplitude as designed.
+
+**Known non-linearity (not a bug):** rate does not scale duration exactly. rate=1.5
+gives 2.33s where linear predicts 1.98s (+18%); rate=0.75 deviates only ~3%. VITS
+ceils each phoneme's frame count (`w_ceil = torch.ceil(w)`), so shrinking
+length_scale rounds many phonemes *up*, inflating short renders. Deviation grows as
+length_scale falls, exactly as ceil-quantisation predicts. Inherent to VITS; the
+`real_voice_duration_tracks_rate_and_ignores_pitch` bound is 20% to accommodate it.
+
+Still not verified: nothing has been run through the live mesh, and no one has
+listened. `cargo test -p voice-agent render_prosody_demo_wavs -- --ignored` writes
+`voice_demo/*.wav` (gitignored) for that.

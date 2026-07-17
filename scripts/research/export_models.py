@@ -16,8 +16,18 @@ MODELS_DIR = BASE_DIR / "models"
 CUSTOM_DIR = MODELS_DIR / "custom"
 BASE_MODEL_DIR = MODELS_DIR / "base"
 
-# Standard pre-exported ONNX voice model URL (optimized Piper-VITS English model)
-BASE_ONNX_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2"
+# Base VITS voice.
+#
+# Must be a *lexicon-based* model: the voice agent's Phonemizer resolves words via
+# a `lexicon.txt` (word -> phoneme sequence) and has no runtime phonemizer of its
+# own. Piper voices (vits-piper-*) are espeak-ng based and ship `espeak-ng-data/`
+# with NO lexicon.txt, so they silently produce an empty lexicon -> no speech.
+# vits-ljs ships tokens.txt + lexicon.txt (CMU-in-IPA) and matches the Phonemizer.
+BASE_ONNX_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-ljs.tar.bz2"
+)
+EXTRACTED_DIR_NAME = "vits-ljs"
+ARCHIVE_MODEL_NAME = "vits-ljs.onnx"
 TEMP_FILE = MODELS_DIR / "temp_tts_model.tar.bz2"
 
 
@@ -52,17 +62,32 @@ def ensure_base_models():
             # behaviour stable across versions.
             tar.extractall(path=MODELS_DIR, filter="data")
 
-        extracted_dir = MODELS_DIR / "vits-piper-en_US-amy-low"
+        extracted_dir = MODELS_DIR / EXTRACTED_DIR_NAME
         if not extracted_dir.exists():
             raise RuntimeError(
                 f"expected {extracted_dir} in the archive but it was not extracted; "
                 "the upstream release layout may have changed"
             )
 
-        # Move key assets to base model directory
-        shutil.move(str(extracted_dir / "en_US-amy-low.onnx"), str(model_file))
-        shutil.move(str(extracted_dir / "lexicon.txt"), str(lexicon_file))
-        shutil.move(str(extracted_dir / "tokens.txt"), str(tokens_file))
+        # Fail loudly if the archive layout drifts, rather than half-provisioning
+        # models/base/ and leaving the agent to fail silently at synthesis time.
+        moves = (
+            (extracted_dir / ARCHIVE_MODEL_NAME, model_file),
+            (extracted_dir / "lexicon.txt", lexicon_file),
+            (extracted_dir / "tokens.txt", tokens_file),
+        )
+        missing = [str(src) for src, _ in moves if not src.exists()]
+        if missing:
+            raise RuntimeError(
+                "archive is missing expected asset(s): "
+                + ", ".join(missing)
+                + ". A lexicon-based VITS voice is required — espeak-based piper "
+                "voices ship no lexicon.txt and will not work with the agent's "
+                "Phonemizer."
+            )
+
+        for src, dst in moves:
+            shutil.move(str(src), str(dst))
 
         shutil.rmtree(extracted_dir)
 
