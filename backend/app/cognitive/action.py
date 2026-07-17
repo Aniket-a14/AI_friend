@@ -187,9 +187,11 @@ class ActionService:
                 set(re.findall(r"\b[a-z]{3,}\b", sentence.lower()))
                 - _GROUNDING_STOPWORDS
             )
-            # Only act when the claim carries real specifics and NONE of them are
-            # grounded; a partial match means the memory is at least partly real.
-            if len(claim_words) >= 2 and not (claim_words & grounding_words):
+            # Only act when the claim has at least two unsupported specifics;
+            # this catches both wholly-ungrounded claims and partially-grounded
+            # claims that mix real context with fabricated details.
+            unsupported_words = claim_words - grounding_words
+            if len(unsupported_words) >= 2:
                 return (
                     False,
                     "You referenced a shared memory that is not in the provided "
@@ -647,6 +649,21 @@ class ActionService:
                                         "data": "I need a moment to gather my thoughts...",
                                     }
                                     break
+                                # Check grounding on the accumulated response so far
+                                is_retry_grounded, retry_ground_reason = (
+                                    self._check_response_grounding(
+                                        candidate, surfaced, msg
+                                    )
+                                )
+                                if not is_retry_grounded:
+                                    logger.warning(
+                                        f"[System 3] Retry fabricated a memory claim: {retry_ground_reason}. Yielding safe fallback."
+                                    )
+                                    yield {
+                                        "type": "content",
+                                        "data": "I need a moment to gather my thoughts...",
+                                    }
+                                    break
                                 yield {"type": "content", "data": clean_chunk}
                                 accumulated_retry_response = candidate
 
@@ -657,7 +674,24 @@ class ActionService:
                                 is_valid_trail, _ = self._validate_partial_response(
                                     candidate, plan.goal
                                 )
-                                if not is_valid_trail:
+                                if is_valid_trail:
+                                    # Check grounding on trailing content too
+                                    is_trail_grounded, trail_ground_reason = (
+                                        self._check_response_grounding(
+                                            candidate, surfaced, msg
+                                        )
+                                    )
+                                    if not is_trail_grounded:
+                                        logger.warning(
+                                            f"[System 3] Retry trailing fabricated a memory claim: {trail_ground_reason}. Yielding safe fallback."
+                                        )
+                                        yield {
+                                            "type": "content",
+                                            "data": "I need a moment to gather my thoughts...",
+                                        }
+                                    else:
+                                        yield {"type": "content", "data": trailing}
+                                else:
                                     logger.warning(
                                         "[System 3] Retry trailing also violated constraints; yielding safe fallback."
                                     )
@@ -665,8 +699,7 @@ class ActionService:
                                         "type": "content",
                                         "data": "I need a moment to gather my thoughts...",
                                     }
-                                else:
-                                    yield {"type": "content", "data": trailing}
+
                         yield {"type": "done", "data": "finished"}
                     except Exception as inner_e:
                         logger.error(

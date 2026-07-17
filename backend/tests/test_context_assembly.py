@@ -239,6 +239,16 @@ class TestResponseGroundingGate:
         )
         assert ok is True
 
+    def test_partial_grounding_with_two_unsupported_specifics_is_rejected(self, svc):
+        # One word grounded, but two fabricated specifics -> should be rejected.
+        ok, reason = svc._check_response_grounding(
+            "You told me about your trip to Japan with Sarah and Emily.",
+            surfaced=[_mem("Planning a trip to Japan next spring", score=2.0)],
+            user_message="hi",
+        )
+        assert ok is False
+        assert "shared memory" in reason
+
     @pytest.mark.asyncio
     async def test_execute_routes_fabrication_to_self_correction(self):
         action_service = ActionService(llm_service=MagicMock())
@@ -277,4 +287,50 @@ class TestResponseGroundingGate:
         # The metacognitive self-correction interstitial proves the grounding gate
         # fired and the retry path ran.
         assert "rephrase" in joined
+        assert calls["n"] == 2
+
+    @pytest.mark.asyncio
+    async def test_execute_retry_fabrication_is_also_caught(self):
+        # When the self-correction retry also fabricates, it must be caught and a
+        # safe fallback emitted instead of forwarding the fabricated claim.
+        action_service = ActionService(llm_service=MagicMock())
+        calls = {"n": 0}
+
+        def stream_factory(prompt, system=None, model=None, options_override=None):
+            calls["n"] += 1
+
+            async def first():
+                yield "You told me your cat is named Whiskers."
+
+            async def retry():
+                # Retry also fabricates a memory claim with 2+ unsupported specifics
+                yield "You told me your favorite band is The Beatles."
+
+            return first() if calls["n"] == 1 else retry()
+
+        action_service.llm.generate_stream = MagicMock(side_effect=stream_factory)
+
+        plan = ActionPlan(
+            action_type="RESPOND_CHAT",
+            goal="ENGAGE",
+            payload={
+                "message": "hi",
+                "identity_prompt": "You are my friend.",
+                "emotion_state": "neutral",
+                "surfaced_memories": [],
+            },
+        )
+
+        chunks = []
+        async for out in action_service.execute(plan):
+            if out.get("type") == "content":
+                chunks.append(out["data"])
+
+        joined = "".join(chunks)
+        # The self-correction interstitial must appear
+        assert "rephrase" in joined
+        # The fabricated retry claim must NOT appear verbatim
+        assert "Beatles" not in joined
+        # Safe fallback must be present
+        assert "gather my thoughts" in joined
         assert calls["n"] == 2
