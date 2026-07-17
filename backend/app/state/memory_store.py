@@ -17,6 +17,7 @@ import asyncio
 import httpx
 import orjson
 import math
+from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
 from typing import Iterable
 from ..config import Config
@@ -138,9 +139,13 @@ class MemoryStore:
         self.subconscious_threshold = -2.5  # theta_sub
         self.pruning_threshold = -3.5  # theta_prune
 
-        # L1 Memory Activation Cache
-        self._l1_cache = {}  # key -> (timestamp, results)
+        # L1 Memory Activation Cache. Bounded LRU: keys are full query
+        # signatures (query text + affect + limits), so the working set is
+        # unbounded across a long session and an unevicted dict would leak.
+        # OrderedDict + a max size caps residency; oldest entries fall out first.
+        self._l1_cache = OrderedDict()  # key -> (timestamp, results)
         self._l1_cache_ttl = 15.0  # seconds
+        self._l1_cache_max = 256  # entries; evict least-recently-used past this
 
         self._db_stop_words = set()
         self._last_stop_words_update = 0.0
@@ -162,6 +167,28 @@ class MemoryStore:
             hasattr(self.pool, "connection")
             and type(self.pool).__name__ not in ("MagicMock", "AsyncMock", "Mock")
         )
+
+    def _l1_cache_put(self, cache_key, value):
+        """Insert into the L1 cache with LRU eviction.
+
+        The newest entry is moved to the end; once the cache exceeds
+        ``_l1_cache_max`` the least-recently-used entry (front) is dropped.
+        """
+        self._l1_cache[cache_key] = value
+        self._l1_cache.move_to_end(cache_key)
+        while len(self._l1_cache) > self._l1_cache_max:
+            self._l1_cache.popitem(last=False)
+
+    def _invalidate_l1_cache(self):
+        """Drop every cached result set.
+
+        Cache keys are query signatures, not memory ids, so a write to any
+        single memory can change the correct result of an unknown set of
+        queries. A full clear is the only coherent invalidation; it is called
+        only on mutations rare relative to reads (writes, pruning), never on the
+        per-recall reinforcement path.
+        """
+        self._l1_cache.clear()
 
     async def get_embedding(self, text: str):
         """Generates vector embedding for text using local Ollama."""
@@ -549,6 +576,9 @@ class MemoryStore:
             logger.info(
                 f"🧠 Memory Stored [{wing}:{room or 'global'}]: {content[:50]}..."
             )
+            # A new memory can satisfy queries whose cached result sets predate
+            # it, so drop the L1 cache to avoid serving stale recalls.
+            self._invalidate_l1_cache()
             return True
         except Exception as e:
             logger.error(f"Failed to add memory: {e}")
@@ -641,6 +671,7 @@ class MemoryStore:
         if cache_key in self._l1_cache:
             ts, cached_results = self._l1_cache[cache_key]
             if now_ts - ts < self._l1_cache_ttl:
+                self._l1_cache.move_to_end(cache_key)
                 if cached_results and refresh_on_recall:
                     await self._refresh_memories(
                         cached_results,
@@ -2225,7 +2256,7 @@ class MemoryStore:
                 task.add_done_callback(_done_callback)
 
             # Cache results in L1 memory cache before returning
-            self._l1_cache[cache_key] = (now_ts, results)
+            self._l1_cache_put(cache_key, (now_ts, results))
             return results
 
         except Exception as e:
@@ -2660,6 +2691,13 @@ class MemoryStore:
                     )
                 except Exception as clean_err:
                     logger.error(f"Failed subconscious archive cleanup: {clean_err}")
+
+            # Pruning and importance decay change what search over the active
+            # `memories` table should return, so drop the L1 cache when either
+            # actually mutated rows. (Archive cleanup alone touches only
+            # archived_memories, which the cached search path never reads.)
+            if to_delete or to_update:
+                self._invalidate_l1_cache()
 
             logger.info(
                 f"📉 Checked and decayed {len(rows)} memories (pruned: {len(to_delete)})."
