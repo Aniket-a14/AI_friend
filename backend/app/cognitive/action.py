@@ -1,11 +1,99 @@
 import asyncio
 import logging
+import re
 import time
 from typing import Dict, Any, AsyncGenerator
 from .decision import ActionPlan
 from ..config import Config
 
 logger = logging.getLogger(__name__)
+
+# Phrases where the assistant attributes a fact to the shared past or the user's
+# prior statements ("you told me…", "remember when we…"). Such a phrase asserts a
+# memory; if its content is absent from the surfaced memories AND the user's
+# current message, the memory is being fabricated -- the exact hallucination the
+# grounding gate catches.
+_MEMORY_CLAIM_RE = re.compile(
+    r"\b("
+    r"you (?:once |also |already )?(?:told|said|mentioned|shared)"
+    r"|you'?ve (?:told|mentioned|shared)"
+    r"|you used to"
+    r"|remember when (?:you|we)"
+    r"|last time (?:you|we)"
+    r"|i remember you (?:saying|mentioning|telling)"
+    r"|as you (?:said|mentioned|told me)"
+    r"|back when (?:you|we)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# The trigger words themselves plus generic conversational filler and common
+# function words. Stripped from a claim before checking grounding so only
+# substantive specifics (names, places, activities -- including short ones like
+# "dog" or "Rex") drive the decision, keeping the gate high-precision.
+_GROUNDING_STOPWORDS = frozenset(
+    {
+        # memory-attribution trigger words
+        "told", "said", "mentioned", "shared", "remember", "saying",
+        "mentioning", "telling", "used",
+        # temporal / discourse filler
+        "when", "last", "time", "back", "once", "also", "already",
+        "earlier", "before", "then", "now", "ago",
+        # generic conversational filler
+        "that", "this", "about", "really", "think", "know", "just", "very",
+        "much", "would", "could", "some", "thing", "things", "something",
+        "want", "like", "into", "over", "still", "even", "well", "sure",
+        # pronouns / determiners / common short function words
+        "your", "yours", "you", "the", "and", "are", "for", "not", "but",
+        "his", "her", "was", "has", "had", "our", "out", "who", "how",
+        "all", "any", "can", "did", "get", "got", "let", "may", "off",
+        "old", "one", "own", "put", "say", "see", "she", "too", "two",
+        "use", "way", "yes", "yet", "him", "per", "via", "with", "from",
+        "they", "them", "than", "what", "which", "were", "been", "have",
+    }
+)
+
+
+def _memory_relevance(memory: Dict[str, Any]) -> float:
+    """Relevance value used to order a surfaced memory.
+
+    ``search_memories`` emits ``score``; the proactive surfacing path in
+    ``core.py`` emits ``relevance``. Fall back to 0.0 when neither is a usable
+    number so unranked items keep a stable (middle-ish) position rather than
+    crashing the sort.
+    """
+    for key in ("score", "relevance"):
+        val = memory.get(key)
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            return float(val)
+    return 0.0
+
+
+def reorder_for_long_context(memories):
+    """Reorder retrieved memories to mitigate the "lost in the middle" effect.
+
+    LLMs attend most strongly to the beginning and end of their context and
+    systematically lose information placed in the middle (Liu et al., 2023).
+    Retrieval hands us memories ranked most- to least-relevant, so a plain
+    concatenation spends the high-attention *final* slot on the least relevant
+    item and buries the mid-ranked ones. Instead, place the most relevant items
+    at both edges and the least relevant in the middle: ranked ``[A, B, C, D, E]``
+    (A most relevant) becomes ``[A, C, E, D, B]``, so A and B bracket the block.
+
+    Input order is not trusted — items are sorted by relevance first — so this is
+    safe for both producer shapes (``score`` and ``relevance``).
+    """
+    ranked = sorted(memories, key=_memory_relevance, reverse=True)
+    reordered = [None] * len(ranked)
+    left, right = 0, len(ranked) - 1
+    for i, item in enumerate(ranked):
+        if i % 2 == 0:
+            reordered[left] = item
+            left += 1
+        else:
+            reordered[right] = item
+            right -= 1
+    return reordered
 
 
 class MetacognitiveException(Exception):
@@ -68,6 +156,49 @@ class ActionService:
         self.llm = llm_service
         self.memory = memory_store
         self.publish_cb = None
+
+    def _check_response_grounding(
+        self, response: str, surfaced, user_message: str
+    ) -> tuple[bool, str]:
+        """Deterministic anti-hallucination gate for fabricated shared memories.
+
+        Fires only when the response explicitly *attributes* a fact to the shared
+        past ("you told me…", "remember when we…") whose substantive content
+        appears in neither the surfaced memories nor the user's current message.
+        Requiring an attribution phrase plus at least two ungrounded specifics
+        keeps it high-precision: it targets invented recollections, not the
+        model's ordinary conversational contributions.
+
+        Returns (is_grounded, reason). ``reason`` feeds the self-correction prompt.
+        """
+        if not response or not _MEMORY_CLAIM_RE.search(response):
+            return True, ""
+
+        grounding_text = " ".join(
+            (m.get("content") or "") for m in (surfaced or [])
+        )
+        grounding_text = f"{grounding_text} {user_message or ''}".lower()
+        grounding_words = set(re.findall(r"\b[a-z]{3,}\b", grounding_text))
+
+        for sentence in re.split(r"(?<=[.!?])\s+", response):
+            if not _MEMORY_CLAIM_RE.search(sentence):
+                continue
+            claim_words = (
+                set(re.findall(r"\b[a-z]{3,}\b", sentence.lower()))
+                - _GROUNDING_STOPWORDS
+            )
+            # Only act when the claim has at least two unsupported specifics;
+            # this catches both wholly-ungrounded claims and partially-grounded
+            # claims that mix real context with fabricated details.
+            unsupported_words = claim_words - grounding_words
+            if len(unsupported_words) >= 2:
+                return (
+                    False,
+                    "You referenced a shared memory that is not in the provided "
+                    "context. Do not invent things the user never told you; only "
+                    "reference facts present in SHARED HISTORY.",
+                )
+        return True, ""
 
     def _validate_partial_response(self, text: str, goal: str) -> tuple[bool, str]:
         stripped = text.strip()
@@ -133,9 +264,13 @@ class ActionService:
 
             shared_history = ""
             if surfaced:
+                # Edge-load the most relevant memories so they land in the LLM's
+                # high-attention start/end positions instead of being lost in the
+                # middle of the block.
+                ordered = reorder_for_long_context(surfaced)
                 shared_history = (
                     "\nSHARED HISTORY / RECENT CONTEXT (Active Influence):\n"
-                    + "\n".join([f"- {m['content']}" for m in surfaced])
+                    + "\n".join([f"- {m['content']}" for m in ordered])
                 )
 
             # Theory of Mind (ToM) Context Injection
@@ -167,10 +302,15 @@ class ActionService:
 
             # 1. Prepare Identity-Aware System and User Prompts
             # Static System Prompt (cached by inference engines like Ollama/vLLM)
-            system_instruction = f"{identity_prompt}\n\nGuideline:\n- Maintain your identity rules at all times.\n- Focus on natural conversational phrases.\n- IMPORTANT: If the SHARED HISTORY / RECENT CONTEXT contains relevant biographical facts, partner details, childhood milestones, or personal preferences, you MUST integrate them explicitly and accurately to answer the user's question.\n- Respond only in English. Do not use Hindi, Hinglish, or any other language for now.\n- The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.\n- You may use <pause=300ms> or <hesitate> when it improves natural timing."
+            system_instruction = f"{identity_prompt}\n\nGuideline:\n- Maintain your identity rules at all times.\n- Focus on natural conversational phrases.\n- IMPORTANT: If the SHARED HISTORY / RECENT CONTEXT contains relevant biographical facts, partner details, childhood milestones, or personal preferences, you MUST integrate them explicitly and accurately to answer the user's question.\n- GROUNDING: Base any specific claim about the user, your shared past, names, dates, places, or events ONLY on the SHARED HISTORY / RECENT CONTEXT provided. Do not invent memories or details that are not there. If the user asks about something you have no memory of, say so naturally (e.g. \"I don't think you've told me that\") instead of making it up.\n- Respond only in English. Do not use Hindi, Hinglish, or any other language for now.\n- The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.\n- You may use <pause=300ms> or <hesitate> when it improves natural timing."
 
-            # Dynamic User Prompt (appends active context to the query suffix)
-            user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{shared_history}{tom_context}\n\nUser: {msg}\nAssistant:"
+            # Dynamic User Prompt. Ordering fights "lost in the middle": the factual
+            # grounding (SHARED HISTORY) is placed LAST before the user's query so it
+            # sits in the model's high-attention tail, adjacent to what it must
+            # answer. The more abstract, lower-cost-to-lose context (goal, emotion,
+            # Theory-of-Mind) goes earlier. Within the history block itself, memories
+            # are already edge-loaded by reorder_for_long_context().
+            user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{tom_context}{shared_history}\n\nUser: {msg}\nAssistant:"
 
             valence = plan.payload.get("valence", 0.0)
             arousal = plan.payload.get("arousal", 0.5)
@@ -436,6 +576,16 @@ class ActionService:
                                 raise MetacognitiveException(reason)
                             yield {"type": "content", "data": trailing}
                             accumulated_response = candidate
+
+                    # Post-generation grounding gate: the whole utterance is now
+                    # known, so check it for fabricated shared-memory claims and
+                    # route any hit through the same self-correction path.
+                    is_grounded, ground_reason = self._check_response_grounding(
+                        accumulated_response, surfaced, msg
+                    )
+                    if not is_grounded:
+                        raise MetacognitiveException(ground_reason)
+
                     yield {"type": "done", "data": "finished"}
 
                 except MetacognitiveException as me:
@@ -499,6 +649,21 @@ class ActionService:
                                         "data": "I need a moment to gather my thoughts...",
                                     }
                                     break
+                                # Check grounding on the accumulated response so far
+                                is_retry_grounded, retry_ground_reason = (
+                                    self._check_response_grounding(
+                                        candidate, surfaced, msg
+                                    )
+                                )
+                                if not is_retry_grounded:
+                                    logger.warning(
+                                        f"[System 3] Retry fabricated a memory claim: {retry_ground_reason}. Yielding safe fallback."
+                                    )
+                                    yield {
+                                        "type": "content",
+                                        "data": "I need a moment to gather my thoughts...",
+                                    }
+                                    break
                                 yield {"type": "content", "data": clean_chunk}
                                 accumulated_retry_response = candidate
 
@@ -509,7 +674,24 @@ class ActionService:
                                 is_valid_trail, _ = self._validate_partial_response(
                                     candidate, plan.goal
                                 )
-                                if not is_valid_trail:
+                                if is_valid_trail:
+                                    # Check grounding on trailing content too
+                                    is_trail_grounded, trail_ground_reason = (
+                                        self._check_response_grounding(
+                                            candidate, surfaced, msg
+                                        )
+                                    )
+                                    if not is_trail_grounded:
+                                        logger.warning(
+                                            f"[System 3] Retry trailing fabricated a memory claim: {trail_ground_reason}. Yielding safe fallback."
+                                        )
+                                        yield {
+                                            "type": "content",
+                                            "data": "I need a moment to gather my thoughts...",
+                                        }
+                                    else:
+                                        yield {"type": "content", "data": trailing}
+                                else:
                                     logger.warning(
                                         "[System 3] Retry trailing also violated constraints; yielding safe fallback."
                                     )
@@ -517,8 +699,7 @@ class ActionService:
                                         "type": "content",
                                         "data": "I need a moment to gather my thoughts...",
                                     }
-                                else:
-                                    yield {"type": "content", "data": trailing}
+
                         yield {"type": "done", "data": "finished"}
                     except Exception as inner_e:
                         logger.error(
