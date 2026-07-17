@@ -86,6 +86,19 @@ SYNONYM_MAP = {
 DIRECT_CUE_BOOST = 5.0  # additive score bump per query cue found in a memory
 PPR_DAMPING = 0.85  # canonical PageRank teleport/damping factor
 
+# ACT-R retrieval-scoring weights. These were duplicated inline across three
+# scoring paths (Qdrant/SQLite/PG); naming them here keeps the paths in sync and
+# makes the affective tuning explicit. base_activation adds an importance term
+# and an emotional-proximity bonus to the classic ln(freq) - d·ln(recency) core;
+# the similarity gain rewards congruent valence×arousal and suppresses recall
+# under stress (arousal×cortisol); the final score subtracts an emotional-
+# distance penalty.
+ACTR_IMPORTANCE_WEIGHT = 1.5  # weight on importance_score in base activation
+ACTR_EMO_PROXIMITY_WEIGHT = 0.15  # bonus for small emotional distance
+ACTR_VALENCE_GAIN = 0.1  # similarity gain from congruent valence×arousal
+ACTR_STRESS_SUPPRESSION = 0.2  # similarity suppression under arousal×cortisol
+ACTR_EMO_DISTANCE_PENALTY = 0.5  # score penalty per unit emotional distance
+
 
 class GoalBuffer:
     def __init__(self, capacity=5):
@@ -270,6 +283,146 @@ class MemoryStore:
                     memory_id,
                 )
 
+    def _base_activation(self, recall_count, hours_since, importance_score, dist_emo):
+        """ACT-R base-level activation: ln(freq) - d·ln(recency) plus importance
+        and emotional-proximity terms. Shared by every retrieval-scoring path so
+        the formula stays identical across the Qdrant, SQLite and PG branches.
+        """
+        return (
+            _cached_ln(recall_count)
+            - self.decay_rate * _cached_ln(hours_since + 1.0)
+            + ACTR_IMPORTANCE_WEIGHT * importance_score
+            + ACTR_EMO_PROXIMITY_WEIGHT * (1.0 - dist_emo)
+        )
+
+    def _effective_similarity(
+        self, similarity, memory_valence, emotion_weight, current_arousal, current_cortisol
+    ):
+        """Neuromodulatory gain on cosine similarity: boosted by congruent
+        valence×arousal, suppressed under stress (arousal×cortisol).
+        """
+        return similarity * (
+            1.0
+            + ACTR_VALENCE_GAIN * memory_valence * emotion_weight
+            - ACTR_STRESS_SUPPRESSION * current_arousal * current_cortisol
+        )
+
+    # Columns always written; the Eriksonian columns below may be absent on an
+    # un-migrated schema, so a failed full insert falls back to just these.
+    _MEMORY_BASE_COLUMNS = (
+        "id",
+        "content",
+        "raw_content",
+        "wing",
+        "room",
+        "embedding",
+        "importance_score",
+        "emotional_weight",
+        "valence",
+        "certainty",
+        "source",
+        "metadata",
+    )
+    _MEMORY_ERIKSONIAN_COLUMNS = (
+        "lifespan_stage",
+        "crisis",
+        "virtue",
+        "relations",
+        "relation_circles",
+        "modality",
+    )
+
+    async def _insert_memory_row(
+        self,
+        conn,
+        *,
+        memory_id,
+        content,
+        raw_val,
+        wing,
+        room,
+        vector_str,
+        importance,
+        emotion,
+        valence,
+        certainty,
+        source,
+        metadata_json,
+        lifespan_stage,
+        crisis,
+        virtue,
+        relations,
+        relation_circles,
+        modality,
+        current_time,
+    ):
+        """Insert a memory row from a single column/placeholder builder.
+
+        Collapses what were eight near-identical INSERTs spanning three binary
+        axes -- SQLite vs PostgreSQL placeholders, timed vs untimed
+        (created_at/last_recalled_at), and the full Eriksonian column set vs a
+        legacy fallback for un-migrated schemas. recall_count is always the
+        literal 1; an untimed insert lets last_recalled_at default via
+        CURRENT_TIMESTAMP.
+        """
+        base_vals = [
+            memory_id,
+            content,
+            raw_val,
+            wing,
+            room,
+            vector_str,
+            importance,
+            emotion,
+            valence,
+            certainty,
+            source,
+            metadata_json,
+        ]
+        erik_vals = [lifespan_stage, crisis, virtue, relations, relation_circles, modality]
+
+        async def _insert(include_eriksonian: bool):
+            cols = list(self._MEMORY_BASE_COLUMNS)
+            vals = list(base_vals)
+            if include_eriksonian:
+                cols += list(self._MEMORY_ERIKSONIAN_COLUMNS)
+                vals += erik_vals
+
+            if self.is_sqlite:
+                placeholders = ["?"] * len(vals)
+            else:
+                placeholders = [f"${i}" for i in range(1, len(vals) + 1)]
+
+            # recall_count is a literal, never a bound parameter.
+            cols.append("recall_count")
+            placeholders.append("1")
+
+            params = list(vals)
+            if current_time is not None:
+                cols += ["last_recalled_at", "created_at"]
+                if self.is_sqlite:
+                    placeholders += ["?", "?"]
+                else:
+                    placeholders += [f"${len(vals) + 1}", f"${len(vals) + 2}"]
+                params += [current_time, current_time]
+            else:
+                cols.append("last_recalled_at")
+                placeholders.append("CURRENT_TIMESTAMP")
+
+            sql = (
+                f"INSERT INTO memories ({', '.join(cols)}) "
+                f"VALUES ({', '.join(placeholders)})"
+            )
+            await conn.execute(sql, *params)
+
+        try:
+            await _insert(include_eriksonian=True)
+        except Exception as e:
+            logger.warning(
+                f"Eriksonian insert failed, falling back to legacy schema: {e}"
+            )
+            await _insert(include_eriksonian=False)
+
     async def get_embedding(self, text: str):
         """Generates vector embedding for text using local Ollama."""
         attempts = [
@@ -395,246 +548,28 @@ class MemoryStore:
 
             vector_str = str(vector)
             async with self.pool.acquire() as conn:
-                if self.is_sqlite:
-                    try:
-                        if current_time is not None:
-                            await conn.execute(
-                                """
-                                INSERT INTO memories (
-                                    id, content, raw_content, wing, room,
-                                    embedding, importance_score, emotional_weight,
-                                    valence, certainty, source, metadata,
-                                    lifespan_stage, crisis, virtue, relations, relation_circles, modality,
-                                    recall_count, last_recalled_at, created_at
-                                )
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-                                """,
-                                memory_id,
-                                content,
-                                raw_val,
-                                wing,
-                                room,
-                                vector_str,
-                                importance,
-                                emotion,
-                                valence,
-                                certainty,
-                                source,
-                                orjson.dumps(metadata or {}).decode(),
-                                lifespan_stage,
-                                crisis,
-                                virtue,
-                                relations,
-                                relation_circles,
-                                modality,
-                                current_time,
-                                current_time,
-                            )
-                        else:
-                            await conn.execute(
-                                """
-                                INSERT INTO memories (
-                                    id, content, raw_content, wing, room,
-                                    embedding, importance_score, emotional_weight,
-                                    valence, certainty, source, metadata,
-                                    lifespan_stage, crisis, virtue, relations, relation_circles, modality,
-                                    recall_count, last_recalled_at
-                                )
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-                                """,
-                                memory_id,
-                                content,
-                                raw_val,
-                                wing,
-                                room,
-                                vector_str,
-                                importance,
-                                emotion,
-                                valence,
-                                certainty,
-                                source,
-                                orjson.dumps(metadata or {}).decode(),
-                                lifespan_stage,
-                                crisis,
-                                virtue,
-                                relations,
-                                relation_circles,
-                                modality,
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            f"Eriksonian insert failed, falling back to legacy schema: {e}"
-                        )
-                        if current_time is not None:
-                            await conn.execute(
-                                """
-                                INSERT INTO memories (
-                                    id, content, raw_content, wing, room,
-                                    embedding, importance_score, emotional_weight,
-                                    valence, certainty, source, metadata,
-                                    recall_count, last_recalled_at, created_at
-                                )
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-                                """,
-                                memory_id,
-                                content,
-                                raw_val,
-                                wing,
-                                room,
-                                vector_str,
-                                importance,
-                                emotion,
-                                valence,
-                                certainty,
-                                source,
-                                orjson.dumps(metadata or {}).decode(),
-                                current_time,
-                                current_time,
-                            )
-                        else:
-                            await conn.execute(
-                                """
-                                INSERT INTO memories (
-                                    id, content, raw_content, wing, room,
-                                    embedding, importance_score, emotional_weight,
-                                    valence, certainty, source, metadata,
-                                    recall_count, last_recalled_at
-                                )
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-                                """,
-                                memory_id,
-                                content,
-                                raw_val,
-                                wing,
-                                room,
-                                vector_str,
-                                importance,
-                                emotion,
-                                valence,
-                                certainty,
-                                source,
-                                orjson.dumps(metadata or {}).decode(),
-                            )
-                else:
-                    try:
-                        if current_time is not None:
-                            await conn.execute(
-                                """
-                                INSERT INTO memories (
-                                    id, content, raw_content, wing, room,
-                                    embedding, importance_score, emotional_weight,
-                                    valence, certainty, source, metadata,
-                                    lifespan_stage, crisis, virtue, relations, relation_circles, modality,
-                                    recall_count, last_recalled_at, created_at
-                                )
-                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 1, $19, $20)
-                                """,
-                                memory_id,
-                                content,
-                                raw_val,
-                                wing,
-                                room,
-                                vector_str,
-                                importance,
-                                emotion,
-                                valence,
-                                certainty,
-                                source,
-                                orjson.dumps(metadata or {}).decode(),
-                                lifespan_stage,
-                                crisis,
-                                virtue,
-                                relations,
-                                relation_circles,
-                                modality,
-                                current_time,
-                                current_time,
-                            )
-                        else:
-                            await conn.execute(
-                                """
-                                INSERT INTO memories (
-                                    id, content, raw_content, wing, room,
-                                    embedding, importance_score, emotional_weight,
-                                    valence, certainty, source, metadata,
-                                    lifespan_stage, crisis, virtue, relations, relation_circles, modality,
-                                    recall_count, last_recalled_at
-                                )
-                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 1, CURRENT_TIMESTAMP)
-                                """,
-                                memory_id,
-                                content,
-                                raw_val,
-                                wing,
-                                room,
-                                vector_str,
-                                importance,
-                                emotion,
-                                valence,
-                                certainty,
-                                source,
-                                orjson.dumps(metadata or {}).decode(),
-                                lifespan_stage,
-                                crisis,
-                                virtue,
-                                relations,
-                                relation_circles,
-                                modality,
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            f"Eriksonian insert failed, falling back to legacy schema: {e}"
-                        )
-                        if current_time is not None:
-                            await conn.execute(
-                                """
-                                INSERT INTO memories (
-                                    id, content, raw_content, wing, room,
-                                    embedding, importance_score, emotional_weight,
-                                    valence, certainty, source, metadata,
-                                    recall_count, last_recalled_at, created_at
-                                )
-                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, $13, $14)
-                                """,
-                                memory_id,
-                                content,
-                                raw_val,
-                                wing,
-                                room,
-                                vector_str,
-                                importance,
-                                emotion,
-                                valence,
-                                certainty,
-                                source,
-                                orjson.dumps(metadata or {}).decode(),
-                                current_time,
-                                current_time,
-                            )
-                        else:
-                            await conn.execute(
-                                """
-                                INSERT INTO memories (
-                                    id, content, raw_content, wing, room,
-                                    embedding, importance_score, emotional_weight,
-                                    valence, certainty, source, metadata,
-                                    recall_count, last_recalled_at
-                                )
-                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, CURRENT_TIMESTAMP)
-                                """,
-                                memory_id,
-                                content,
-                                raw_val,
-                                wing,
-                                room,
-                                vector_str,
-                                importance,
-                                emotion,
-                                valence,
-                                certainty,
-                                source,
-                                orjson.dumps(metadata or {}).decode(),
-                            )
+                await self._insert_memory_row(
+                    conn,
+                    memory_id=memory_id,
+                    content=content,
+                    raw_val=raw_val,
+                    wing=wing,
+                    room=room,
+                    vector_str=vector_str,
+                    importance=importance,
+                    emotion=emotion,
+                    valence=valence,
+                    certainty=certainty,
+                    source=source,
+                    metadata_json=orjson.dumps(metadata or {}).decode(),
+                    lifespan_stage=lifespan_stage,
+                    crisis=crisis,
+                    virtue=virtue,
+                    relations=relations,
+                    relation_circles=relation_circles,
+                    modality=modality,
+                    current_time=current_time,
+                )
             # Upsert into Qdrant if online using the same memory_id
             if self.qdrant_store.client:
                 qdrant_ts = (
@@ -972,22 +907,25 @@ class MemoryStore:
                             + (emotion_weight_row - current_arousal) ** 2
                         )
 
-                        base_activation = (
-                            _cached_ln(recall_count)
-                            - self.decay_rate * _cached_ln(hours_since + 1.0)
-                            + 1.5 * importance_score
-                            + 0.15 * (1.0 - dist_emo)
+                        base_activation = self._base_activation(
+                            recall_count, hours_since, importance_score, dist_emo
                         )
 
                         similarity = cand["score"]
-                        effective_similarity = similarity * (
-                            1.0
-                            + 0.1 * memory_valence * emotion_weight_row
-                            - 0.2 * current_arousal * current_cortisol
+                        effective_similarity = self._effective_similarity(
+                            similarity,
+                            memory_valence,
+                            emotion_weight_row,
+                            current_arousal,
+                            current_cortisol,
                         )
 
                         spread_activation = self.spread_weight * effective_similarity
-                        score = base_activation + spread_activation - 0.5 * dist_emo
+                        score = (
+                            base_activation
+                            + spread_activation
+                            - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+                        )
 
                         if score <= (threshold - 2.5) and importance_score < 0.7:
                             continue
@@ -1277,24 +1215,30 @@ class MemoryStore:
                                 + (emotion_weight_row - current_arousal) ** 2
                             )
 
-                            base_activation = (
-                                _cached_ln(recall_count)
-                                - self.decay_rate * _cached_ln(hours_since + 1.0)
-                                + 1.5 * (row.get("importance_score") or 0.5)
-                                + 0.15 * (1.0 - dist_emo)
+                            base_activation = self._base_activation(
+                                recall_count,
+                                hours_since,
+                                row.get("importance_score") or 0.5,
+                                dist_emo,
                             )
 
                             # Neuromodulatory distance mapping
-                            effective_similarity = similarity * (
-                                1.0
-                                + 0.1 * memory_valence * emotion_weight_row
-                                - 0.2 * current_arousal * current_cortisol
+                            effective_similarity = self._effective_similarity(
+                                similarity,
+                                memory_valence,
+                                emotion_weight_row,
+                                current_arousal,
+                                current_cortisol,
                             )
 
                             spread_activation = (
                                 self.spread_weight * effective_similarity
                             )
-                            score = base_activation + spread_activation - 0.5 * dist_emo
+                            score = (
+                                base_activation
+                                + spread_activation
+                                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+                            )
 
                             if (
                                 score <= (threshold - 2.5)
@@ -2034,21 +1978,27 @@ class MemoryStore:
                             + (emotion_weight_row - current_arousal) ** 2
                         )
 
-                        base_activation = (
-                            _cached_ln(recall_count)
-                            - self.decay_rate * _cached_ln(hours_since + 1.0)
-                            + 1.5 * (row.get("importance_score") or 0.5)
-                            + 0.15 * (1.0 - dist_emo)
+                        base_activation = self._base_activation(
+                            recall_count,
+                            hours_since,
+                            row.get("importance_score") or 0.5,
+                            dist_emo,
                         )
 
-                        effective_similarity = similarity * (
-                            1.0
-                            + 0.1 * memory_valence * emotion_weight_row
-                            - 0.2 * current_arousal * current_cortisol
+                        effective_similarity = self._effective_similarity(
+                            similarity,
+                            memory_valence,
+                            emotion_weight_row,
+                            current_arousal,
+                            current_cortisol,
                         )
 
                         spread_activation = self.spread_weight * effective_similarity
-                        score = base_activation + spread_activation - 0.5 * dist_emo
+                        score = (
+                            base_activation
+                            + spread_activation
+                            - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+                        )
 
                         # Lexical match count boost to ensure direct query matches sort higher
                         content_lower = content.lower()
@@ -2284,16 +2234,18 @@ class MemoryStore:
 
                             # Recalculate active score since it is now promoted and last_recalled_at is set to now (hours_since = 0.001)
                             # We use recall_count + 1 since the recall_count has been incremented upon recall/promotion
-                            base_activation_active = (
-                                _cached_ln(recall_count + 1)
-                                - self.decay_rate * _cached_ln(0.001 + 1.0)
-                                + 1.5 * (row.get("importance_score") or 0.5)
-                                + 0.15 * (1.0 - dist_emo)
+                            # recall_count + 1 (already incremented on promotion)
+                            # and a near-zero recency (last_recalled_at is now).
+                            base_activation_active = self._base_activation(
+                                recall_count + 1,
+                                0.001,
+                                row.get("importance_score") or 0.5,
+                                dist_emo,
                             )
                             score_active = (
                                 base_activation_active
                                 + spread_activation
-                                - 0.5 * dist_emo
+                                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
                             )
                             # Apply direct cue boost since it was promoted due to keyword matches
                             match_count = sum(
@@ -2760,25 +2712,35 @@ class MemoryStore:
                 cutoff_milestones = now_cleanup - timedelta(days=720)
 
                 try:
+                    # COALESCE(last_recalled_at, created_at): a memory that was
+                    # archived but never recalled has NULL last_recalled_at, and
+                    # `NULL < cutoff` is NULL (never true) -- such rows would be
+                    # immortal in the archive. Age them out by creation time
+                    # instead, matching how the activation SQL already coalesces
+                    # this column (db/schema.sql).
                     if self.is_sqlite:
+                        # Normalise both operands through datetime(): the SQLite
+                        # fallback stores timestamps as text, so a raw string
+                        # comparison of differing ISO formats/precision/offsets
+                        # is unreliable. datetime() canonicalises to UTC.
                         await conn.execute(
                             """
                             DELETE FROM archived_memories
-                            WHERE (importance_score < 0.5 AND last_recalled_at < ?)
-                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND last_recalled_at < ?)
-                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND last_recalled_at < ?);
+                            WHERE (importance_score < 0.5 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?))
+                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?))
+                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?));
                             """,
-                            cutoff_distractors,
-                            cutoff_anecdotes,
-                            cutoff_milestones,
+                            cutoff_distractors.isoformat(),
+                            cutoff_anecdotes.isoformat(),
+                            cutoff_milestones.isoformat(),
                         )
                     else:
                         await conn.execute(
                             """
                             DELETE FROM archived_memories
-                            WHERE (importance_score < 0.5 AND last_recalled_at < $1)
-                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND last_recalled_at < $2)
-                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND last_recalled_at < $3);
+                            WHERE (importance_score < 0.5 AND COALESCE(last_recalled_at, created_at) < $1)
+                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND COALESCE(last_recalled_at, created_at) < $2)
+                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND COALESCE(last_recalled_at, created_at) < $3);
                             """,
                             cutoff_distractors,
                             cutoff_anecdotes,
