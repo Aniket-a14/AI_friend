@@ -1,11 +1,57 @@
 import asyncio
 import logging
+import re
 import time
 from typing import Dict, Any, AsyncGenerator
 from .decision import ActionPlan
 from ..config import Config
 
 logger = logging.getLogger(__name__)
+
+# Phrases where the assistant attributes a fact to the shared past or the user's
+# prior statements ("you told me…", "remember when we…"). Such a phrase asserts a
+# memory; if its content is absent from the surfaced memories AND the user's
+# current message, the memory is being fabricated -- the exact hallucination the
+# grounding gate catches.
+_MEMORY_CLAIM_RE = re.compile(
+    r"\b("
+    r"you (?:once |also |already )?(?:told|said|mentioned|shared)"
+    r"|you'?ve (?:told|mentioned|shared)"
+    r"|you used to"
+    r"|remember when (?:you|we)"
+    r"|last time (?:you|we)"
+    r"|i remember you (?:saying|mentioning|telling)"
+    r"|as you (?:said|mentioned|told me)"
+    r"|back when (?:you|we)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# The trigger words themselves plus generic conversational filler and common
+# function words. Stripped from a claim before checking grounding so only
+# substantive specifics (names, places, activities -- including short ones like
+# "dog" or "Rex") drive the decision, keeping the gate high-precision.
+_GROUNDING_STOPWORDS = frozenset(
+    {
+        # memory-attribution trigger words
+        "told", "said", "mentioned", "shared", "remember", "saying",
+        "mentioning", "telling", "used",
+        # temporal / discourse filler
+        "when", "last", "time", "back", "once", "also", "already",
+        "earlier", "before", "then", "now", "ago",
+        # generic conversational filler
+        "that", "this", "about", "really", "think", "know", "just", "very",
+        "much", "would", "could", "some", "thing", "things", "something",
+        "want", "like", "into", "over", "still", "even", "well", "sure",
+        # pronouns / determiners / common short function words
+        "your", "yours", "you", "the", "and", "are", "for", "not", "but",
+        "his", "her", "was", "has", "had", "our", "out", "who", "how",
+        "all", "any", "can", "did", "get", "got", "let", "may", "off",
+        "old", "one", "own", "put", "say", "see", "she", "too", "two",
+        "use", "way", "yes", "yet", "him", "per", "via", "with", "from",
+        "they", "them", "than", "what", "which", "were", "been", "have",
+    }
+)
 
 
 def _memory_relevance(memory: Dict[str, Any]) -> float:
@@ -110,6 +156,47 @@ class ActionService:
         self.llm = llm_service
         self.memory = memory_store
         self.publish_cb = None
+
+    def _check_response_grounding(
+        self, response: str, surfaced, user_message: str
+    ) -> tuple[bool, str]:
+        """Deterministic anti-hallucination gate for fabricated shared memories.
+
+        Fires only when the response explicitly *attributes* a fact to the shared
+        past ("you told me…", "remember when we…") whose substantive content
+        appears in neither the surfaced memories nor the user's current message.
+        Requiring an attribution phrase plus at least two ungrounded specifics
+        keeps it high-precision: it targets invented recollections, not the
+        model's ordinary conversational contributions.
+
+        Returns (is_grounded, reason). ``reason`` feeds the self-correction prompt.
+        """
+        if not response or not _MEMORY_CLAIM_RE.search(response):
+            return True, ""
+
+        grounding_text = " ".join(
+            (m.get("content") or "") for m in (surfaced or [])
+        )
+        grounding_text = f"{grounding_text} {user_message or ''}".lower()
+        grounding_words = set(re.findall(r"\b[a-z]{3,}\b", grounding_text))
+
+        for sentence in re.split(r"(?<=[.!?])\s+", response):
+            if not _MEMORY_CLAIM_RE.search(sentence):
+                continue
+            claim_words = (
+                set(re.findall(r"\b[a-z]{3,}\b", sentence.lower()))
+                - _GROUNDING_STOPWORDS
+            )
+            # Only act when the claim carries real specifics and NONE of them are
+            # grounded; a partial match means the memory is at least partly real.
+            if len(claim_words) >= 2 and not (claim_words & grounding_words):
+                return (
+                    False,
+                    "You referenced a shared memory that is not in the provided "
+                    "context. Do not invent things the user never told you; only "
+                    "reference facts present in SHARED HISTORY.",
+                )
+        return True, ""
 
     def _validate_partial_response(self, text: str, goal: str) -> tuple[bool, str]:
         stripped = text.strip()
@@ -482,6 +569,16 @@ class ActionService:
                                 raise MetacognitiveException(reason)
                             yield {"type": "content", "data": trailing}
                             accumulated_response = candidate
+
+                    # Post-generation grounding gate: the whole utterance is now
+                    # known, so check it for fabricated shared-memory claims and
+                    # route any hit through the same self-correction path.
+                    is_grounded, ground_reason = self._check_response_grounding(
+                        accumulated_response, surfaced, msg
+                    )
+                    if not is_grounded:
+                        raise MetacognitiveException(ground_reason)
+
                     yield {"type": "done", "data": "finished"}
 
                 except MetacognitiveException as me:

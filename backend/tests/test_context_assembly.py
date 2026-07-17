@@ -146,3 +146,104 @@ class TestActionPromptAssembly:
         captured = await self._capture_prompt(action_service, plan)
         assert "GROUNDING" in captured["system"]
         assert "Do not invent" in captured["system"]
+
+
+class TestResponseGroundingGate:
+    @pytest.fixture
+    def svc(self):
+        return ActionService(llm_service=MagicMock())
+
+    def test_fabricated_memory_with_no_context_is_flagged(self, svc):
+        ok, reason = svc._check_response_grounding(
+            "You told me your dog is named Rex.", surfaced=[], user_message="hi"
+        )
+        assert ok is False
+        assert "shared memory" in reason
+
+    def test_short_specifics_are_not_dropped(self, svc):
+        # "dog"/"Rex" are 3 letters; the gate must still see them as specifics.
+        ok, _ = svc._check_response_grounding(
+            "Remember when we adopted Rex?", surfaced=[], user_message=""
+        )
+        assert ok is False
+
+    def test_claim_grounded_by_a_memory_passes(self, svc):
+        ok, _ = svc._check_response_grounding(
+            "You told me your dog is named Rex.",
+            surfaced=[_mem("Their dog Rex loves the park", score=3.0)],
+            user_message="hi",
+        )
+        assert ok is True
+
+    def test_claim_grounded_by_current_user_message_passes(self, svc):
+        # The user just supplied the fact this turn; echoing it is not fabrication.
+        ok, _ = svc._check_response_grounding(
+            "You mentioned you love hiking.",
+            surfaced=[],
+            user_message="I love hiking on weekends",
+        )
+        assert ok is True
+
+    def test_response_without_a_memory_claim_is_never_flagged(self, svc):
+        ok, _ = svc._check_response_grounding(
+            "Have you ever tried rock climbing in Nepal?",
+            surfaced=[],
+            user_message="hi",
+        )
+        assert ok is True
+
+    def test_vague_claim_without_specifics_is_not_flagged(self, svc):
+        # No substantive specifics to fabricate -> stay silent (high precision).
+        ok, _ = svc._check_response_grounding(
+            "You told me that before.", surfaced=[], user_message="hi"
+        )
+        assert ok is True
+
+    def test_partial_grounding_is_treated_as_grounded(self, svc):
+        # One specific matches context; only wholly-unsupported claims are flagged.
+        ok, _ = svc._check_response_grounding(
+            "You told me about your trip to Japan with Sarah.",
+            surfaced=[_mem("Planning a trip to Japan next spring", score=2.0)],
+            user_message="hi",
+        )
+        assert ok is True
+
+    @pytest.mark.asyncio
+    async def test_execute_routes_fabrication_to_self_correction(self):
+        action_service = ActionService(llm_service=MagicMock())
+        calls = {"n": 0}
+
+        def stream_factory(prompt, system=None, model=None, options_override=None):
+            calls["n"] += 1
+
+            async def first():
+                yield "You told me your cat is named Whiskers."
+
+            async def retry():
+                yield "Tell me more about your day."
+
+            return first() if calls["n"] == 1 else retry()
+
+        action_service.llm.generate_stream = MagicMock(side_effect=stream_factory)
+
+        plan = ActionPlan(
+            action_type="RESPOND_CHAT",
+            goal="ENGAGE",
+            payload={
+                "message": "how are you?",
+                "identity_prompt": "You are my friend.",
+                "emotion_state": "neutral",
+                "surfaced_memories": [],
+            },
+        )
+
+        chunks = []
+        async for out in action_service.execute(plan):
+            if out.get("type") == "content":
+                chunks.append(out["data"])
+
+        joined = "".join(chunks)
+        # The metacognitive self-correction interstitial proves the grounding gate
+        # fired and the retry path ran.
+        assert "rephrase" in joined
+        assert calls["n"] == 2
