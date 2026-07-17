@@ -182,6 +182,52 @@ impl LocalTtsEngine {
     }
 }
 
+/// Resolve the local TTS engine, preferring custom weights over the base voice.
+///
+/// Falls through to the next candidate when a model is missing **or unloadable**.
+/// The previous implementation branched on `custom.exists()` and swallowed the
+/// load error with `.ok()`, so a present-but-broken custom model disabled local
+/// synthesis outright rather than falling back to base — the exact opposite of the
+/// "seamless fallback / robust startup" guarantee in `docs/ARCHITECTURE.md`. A
+/// corrupt or placeholder `custom_vits.onnx` was therefore strictly worse than
+/// having no custom model at all, and said nothing about why.
+fn load_local_engine() -> Option<LocalTtsEngine> {
+    let candidates = [
+        (
+            "CUSTOM",
+            Path::new("models/custom/custom_vits.onnx"),
+            Path::new("models/custom/lexicon.txt"),
+            Path::new("models/custom/tokens.txt"),
+        ),
+        (
+            "BASE",
+            Path::new("models/base/model.onnx"),
+            Path::new("models/base/lexicon.txt"),
+            Path::new("models/base/tokens.txt"),
+        ),
+    ];
+
+    for (label, model, lexicon, tokens) in candidates {
+        if !model.exists() {
+            continue;
+        }
+        info!(model = %model.display(), "Loading {label} local voice weights...");
+        match LocalTtsEngine::load(model, lexicon, tokens) {
+            Ok(engine) => {
+                info!("Loaded {label} local voice weights.");
+                return Some(engine);
+            }
+            Err(e) => warn!(
+                model = %model.display(),
+                "Failed to load {label} voice weights: {e:#}. Falling through to next candidate."
+            ),
+        }
+    }
+
+    warn!("No usable local voice weights. Local ONNX engine offline; synthesis will use the remote endpoint.");
+    None
+}
+
 /// Shift pitch by `pitch` (1.0 = unchanged) via band-limited resampling.
 ///
 /// Resampling to `n / pitch` samples and replaying at the original rate scales
@@ -430,29 +476,7 @@ async fn main() -> Result<()> {
         .build()
         .context("build reqwest client with timeouts")?;
 
-    let custom_model = Path::new("models/custom/custom_vits.onnx");
-    let base_model = Path::new("models/base/model.onnx");
-    let base_lexicon = Path::new("models/base/lexicon.txt");
-    let base_tokens = Path::new("models/base/tokens.txt");
-
-    let local_engine = if custom_model.exists() {
-        info!("Loading CUSTOM local voice weights...");
-        LocalTtsEngine::load(
-            custom_model,
-            Path::new("models/custom/lexicon.txt"),
-            Path::new("models/custom/tokens.txt"),
-        ).ok()
-    } else if base_model.exists() {
-        info!("Loading BASE local voice weights...");
-        LocalTtsEngine::load(
-            base_model,
-            base_lexicon,
-            base_tokens,
-        ).ok()
-    } else {
-        warn!("No local voice weights found. Local ONNX engine offline.");
-        None
-    };
+    let local_engine = load_local_engine();
 
     let local_engine = std::sync::Arc::new(local_engine);
 
@@ -1418,5 +1442,29 @@ mod tests {
         .join();
         // Poisoned lock must degrade to unity noise compensation, not silence.
         assert!((utterance_gain(&noise, 0.5) - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn placeholder_onnx_file_errors_instead_of_loading() {
+        // The exact bytes the old exporter wrote under a *.onnx name. This must
+        // surface as a recoverable Err so load_local_engine() can fall through to
+        // the base voice; the old `.ok()` turned this into None and took local
+        // synthesis down with it.
+        let dir = std::env::temp_dir().join(format!("va-placeholder-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let model = dir.join("custom_vits.onnx");
+        std::fs::write(&model, b"MOCK_CUSTOM_VITS_ONNX_CONTENT").unwrap();
+
+        let result = LocalTtsEngine::load(
+            &model,
+            &dir.join("lexicon.txt"),
+            &dir.join("tokens.txt"),
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            result.is_err(),
+            "a placeholder text file must not load as an ONNX model"
+        );
     }
 }

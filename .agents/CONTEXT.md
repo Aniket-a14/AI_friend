@@ -1843,3 +1843,58 @@ Verification: `cargo test -p voice-agent` 13 passed (7 new, 6 pre-existing);
 on pre-existing lines (318, 703, 805, 837), none in the new code. Not verified: no
 audio was rendered — `models/base/` and `models/custom/` still contain no real
 weights, so this path cannot run end-to-end yet (see the fake-ONNX-exporter issue).
+
+---
+
+## 2026-07-17 Fake ONNX exporter removed; local voice fallback actually falls back
+
+Two defects that compounded into "training a custom voice makes the agent mute".
+
+### The exporter fabricated success
+
+`scripts/research/export_models.py::export_custom_models` wrote **text files** named
+`custom_gpt.onnx` / `custom_vits.onnx` containing `MOCK_CUSTOM_*_ONNX_CONTENT`, then
+logged `✅ Custom ONNX models exported successfully`. Same class of problem as the
+STT stub (E1): a success message for work that never happened.
+
+It only triggered when real GPT-SoVITS checkpoints were present — so it punished
+exactly the user who *had* trained a voice.
+
+Now: no fabricated artifacts. Reports honestly that export is unimplemented, points
+at the GPT-SoVITS exporter to implement, and returns False so the real base voice is
+used. `purge_placeholder_artifacts()` deletes the poison files left by prior runs,
+matching on the `MOCK_` content marker so a genuine model is never touched
+(verified: fake removed, real preserved).
+
+### The fallback did not fall back
+
+`voice-agent` branched on `custom_model.exists()` and swallowed the load error with
+`.ok()`. A present-but-broken custom model therefore yielded `None` — it did **not**
+try base. So the placeholder files disabled local synthesis *entirely*, while
+`docs/ARCHITECTURE.md` §95 promised the engine "seamlessly falls back to a base
+Piper VITS model, guaranteeing robust startup stability". A corrupt custom model was
+strictly worse than no custom model, and logged nothing about why.
+
+`load_local_engine()` now iterates candidates (CUSTOM -> BASE), falling through on
+missing *or unloadable*, and logs the underlying error at each step instead of
+discarding it.
+
+### Also
+
+- `tar.extractall(..., filter="data")` — the unfiltered call allowed a malicious
+  archive to write anywhere on disk (CVE-2007-4559); it is also the future
+  interpreter default, so pinning it keeps behaviour stable.
+- `ensure_base_models` no longer swallows failures. It is now the only working local
+  voice, so a failed download must not be reported as provisioned. Cleanup moved to
+  `finally`; `main()` provisions base *before* attempting custom.
+
+Verification: `cargo test -p voice-agent` 14 passed (incl. new
+`placeholder_onnx_file_errors_instead_of_loading`, which pins that the exact
+placeholder bytes surface as a recoverable `Err` — the mechanism fall-through relies
+on). clippy: same 4 pre-existing warnings, none new. ruff clean.
+
+Not verified: the CUSTOM -> BASE fall-through cannot be unit-tested without a real
+ONNX model on disk (paths are hardcoded, and proving "loads base" needs real
+weights). Reviewed, not executed. Run `python scripts/research/export_models.py` to
+fetch the real ~20MB piper voice and exercise it end-to-end — that is also what would
+finally make the pitch/volume work audible.
