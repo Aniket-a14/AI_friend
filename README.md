@@ -124,7 +124,7 @@ graph TD
 CVS-3.5 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration protocol.
 
 > [!WARNING]
-> **Partially implemented; not yet build-verified.** The `stt-agent` crate now embeds a
+> **Implemented and build-verified; not yet heard.** The `stt-agent` crate embeds a
 > real speech-recognition backend (whisper.cpp via `whisper-rs`), with 16 kHz sinc
 > resampling and VAD endpointing, and defaults to `STT_BACKEND=whisper`. Two caveats:
 >
@@ -133,18 +133,21 @@ CVS-3.5 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration 
 >    model for the speculative path and a *larger* one for the final transcript. The
 >    emotion / paralinguistic events SenseVoice would supply are **not** inferred —
 >    those fields are left empty rather than fabricated.
-> 2. **The native build has not been run yet.** The Rust sources type-check against the
->    real `whisper-rs` 0.16 API and the audio front-end is unit-tested, but whisper.cpp
->    itself has never been compiled here, and no live transcription has been observed.
->    Treat accuracy and latency as unmeasured until CI or a local Docker build is green.
+> 2. **No live transcription has been observed.** whisper.cpp now compiles and links
+>    from source, and the 19 crate unit tests pass against the real `whisper-rs` 0.16
+>    API, but no ggml weights have been downloaded here and no audio has been
+>    transcribed end-to-end. Treat accuracy and latency as **unmeasured**. Building
+>    requires `libclang` (`cmake` + `clang`); `Dockerfile.rust` installs both.
 
 <!-- -->
 
 > [!IMPORTANT]
 > **Protocol Description**:
-> Audio arriving via WebRTC is fanned out to two paths: **SenseVoice** (optimized for CPU-based temporal intent) and **Whisper** (optimized for GPU-based semantic accuracy).
+> Audio arriving via WebRTC is fanned out to two paths, both Whisper: a **small model**
+> (`STT_FAST_MODEL`, default `tiny.en`) for speculative temporal intent, and a **larger
+> model** (`STT_ACCURATE_MODEL`, default `base.en`) for semantic accuracy.
 >
-> * **Stage 1 (Reflexive Soft-Attenuation)**: SenseVoice detects interruption markers in <100ms and publishes a speculative `audio.stop` message. The Voice Agent immediately executes a **System 1 soft-attenuation**, ducking the volume by 70% within 10ms to allow duplex listening.
+> * **Stage 1 (Reflexive Soft-Attenuation)**: The fast path transcribes a speculative partial and publishes a speculative `audio.stop` if it detects an interruption marker. The Voice Agent immediately executes a **System 1 soft-attenuation**, ducking the volume by 70% within 10ms to allow duplex listening. Partials are only emitted once the endpointer confirms speech, so a cough cannot trigger this. Detection latency is **unmeasured** — see the warning above.
 > * **Stage 2 (Symbolic Interruption Validation)**: The Brain Agent evaluates the speculative perception text. If confirmed, it commits a hard `audio.stop` (aborting playback and LLM generation). If rejected as noise or a non-interruption, it publishes `audio.resume`, causing the Voice Agent to smoothly ramp output volume back to 100%.
 > * **Stage 3 (Resolution)**: Once Whisper produces the final transcript, the Brain Agent performs a deep cognitive turn to update state and generate the response.
 
@@ -153,8 +156,8 @@ sequenceDiagram
     participant U as User
     participant H as Host (Windows)
     participant T as TransportAgent (Docker)
-    participant SV as "SenseVoice (Fast Path)"
-    participant W as "Whisper (Accurate Path)"
+    participant SV as "Whisper tiny.en (Fast Path)"
+    participant W as "Whisper base.en (Accurate Path)"
     participant VA as "Vision Agent (VLM)"
     participant B as Brain Agent (Decision)
     participant V as Voice Agent (CVS)
@@ -204,7 +207,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | :--- | :--- | :--- | :--- |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
 | **Voice Agent** | Rust / ORT (ONNX) / SoVITS | CVS-3.5 Local Synthesis Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
-| **STT Agent** ⚠️ | Rust / whisper.cpp | Real speech recognition via `whisper-rs` (16 kHz sinc resampling + VAD endpointing), defaulting to `STT_BACKEND=whisper`; the scripted transcript is now opt-in behind `STT_BACKEND=mock`. **Not yet build-verified** — whisper.cpp has never been compiled here and no live transcription has been observed. The fast path is a small Whisper model, **not** SenseVoice, so no emotion/paralinguistic events are inferred. | `audio.inbound`, `chat.input`, `audio.perception` |
+| **STT Agent** ⚠️ | Rust / whisper.cpp | Real speech recognition via `whisper-rs` (16 kHz sinc resampling + VAD endpointing), defaulting to `STT_BACKEND=whisper`; the scripted transcript is now opt-in behind `STT_BACKEND=mock`. Build-verified (whisper.cpp compiles and links; 19 unit tests pass), but **no live transcription has been observed** — accuracy and latency are unmeasured. The fast path is a small Whisper model, **not** SenseVoice, so no emotion/paralinguistic events are inferred. | `audio.inbound`, `chat.input`, `audio.perception` |
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
 | **Subconscious** | Python / Neo4j | Background reflection, internal monologue generation (Tier-5). | `chat.input`, `system.tick`, `knowledge.*` |
@@ -218,7 +221,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 Every interaction follows a strictly governed loop through the mesh:
 
 1. **Perception**: Transport Agent publishes raw PCM to `audio.inbound`.
-2. **Speculation**: STT Agent (SenseVoice) identifies high-confidence intent and publishes `audio.perception`.
+2. **Speculation**: STT Agent (fast Whisper path) identifies high-confidence intent and publishes `audio.perception`.
 3. **Reflex**: Voice Agent receives `audio.perception` and triggers an immediate speculative pause.
 4. **Appraisal**: Brain Agent receives final transcript, computes emotional valence via **OCC/Lazarus**, and updates **PAD** state.
 5. **Deliberation**: Decision Service selects the optimal intent using **MAUT** scoring.
@@ -489,7 +492,7 @@ AI_friend/
 | :--- | :--- | :--- | :---: | :---: | :---: |
 | **Mesh Telemetry** | Speed | orjson / NATS Binary | <0.5 µs | **`[TBP]`** | **Pending** |
 | **Data Throughput**| Scale | PyO3 FFI Audio | 80,000 OPS | **`[TBP]`** | **Pending** |
-| **STT Perception** | Latency | SenseVoice CPU Fan-out | <50ms | **`[TBP]`** | **Pending** |
+| **STT Perception** | Latency | Fast Whisper CPU Fan-out | <50ms | **`[TBP]`** | **Pending** |
 | **Cognitive Turn** | Turnaround | BDI Mesh + State Hydration | <120ms | **`[TBP]`** | **Pending** |
 | **First Audio** | Response | Streaming PCM Chunking | <180ms | **`[TBP]`** | **Pending** |
 | **Total Perceived** | **End-to-End**| **CVS-3.5 Premium Mesh** | **<250ms** | **`[TBP]`** | **Pending** |

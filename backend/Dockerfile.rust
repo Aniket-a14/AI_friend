@@ -30,4 +30,14 @@ COPY --from=builder /app/target/release/stt-agent /usr/local/bin/stt-agent
 COPY --from=builder /app/target/release/libonnxruntime.so* /usr/local/lib/
 RUN ldconfig
 
+# stt-agent downloads ggml weights into STT_MODEL_DIR (/app/models/whisper) on
+# first boot, and docker-compose mounts the stt_models_data volume at /app/models.
+# This directory must exist *in the image*, owned by the runtime user, before the
+# USER switch: when Docker seeds a fresh named volume it copies the image
+# directory's ownership, but if the mountpoint does not exist in the image it
+# creates it root-owned 0755 instead. `nobody` could then never write the cache,
+# so ensure_model() would fail and the container would restart-loop -- with
+# STT_BACKEND=whisper (the default) that means no transcription at all.
+RUN install -d -o nobody -g nogroup /app/models /app/models/whisper
+
 USER nobody:nogroup

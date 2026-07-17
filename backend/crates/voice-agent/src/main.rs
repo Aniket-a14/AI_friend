@@ -59,6 +59,53 @@ const MIN_RATE: f32 = 0.6;
 const MAX_RATE: f32 = 1.8;
 const MIN_PITCH: f32 = 0.5;
 const MAX_PITCH: f32 = 2.0;
+const MIN_VOLUME: f32 = 0.1;
+const MAX_VOLUME: f32 = 1.0;
+
+/// Force mesh-supplied prosody into the ranges the audio path assumes.
+///
+/// `vad_to_prosody` clamps its own output, but a `dynamic_prosody` override
+/// arrives over `agent.voice.modulation` and is only as sane as its publisher.
+/// Clamping at the point of *selection* rather than inside `synthesize` is what
+/// makes that safe: local synthesis was the only consumer that re-clamped, so
+/// remote synthesis, hesitation pitch and vocalization gain all took whatever the
+/// mesh said — a negative volume inverts the waveform, and a zero rate divides by
+/// zero in the length-scale computation.
+/// The turn currently being spoken, shared between the chat.output loop that
+/// tracks it and the audio.stop task that must respect it.
+type ActiveTurn = std::sync::Arc<std::sync::Mutex<Option<String>>>;
+
+/// Whether an `AudioStop` should act on the turn currently being spoken.
+///
+/// `AudioStop.turn_id` was previously ignored entirely, so a stop that had been
+/// delayed in the mesh — or one emitted for a turn that has since finished —
+/// aborted whatever the agent had *started saying next*. The user saw the agent
+/// cut itself off mid-sentence for an interruption aimed at a reply that was
+/// already over.
+///
+/// A stop naming no turn stays unscoped and is always honoured: barge-in from the
+/// STT path is not always able to name the turn it is interrupting, and silently
+/// ignoring those would make interruption stop working altogether. Only an
+/// *explicit* mismatch is rejected.
+fn stop_applies_to_active_turn(active: &ActiveTurn, stop_turn: Option<&str>) -> bool {
+    let Some(stop_turn) = stop_turn else {
+        return true;
+    };
+    match active.lock() {
+        // Nothing is speaking, so there is no current turn to protect; honouring
+        // the stop is harmless (a new turn clears the abort flag when it starts).
+        Ok(guard) => guard.as_deref().is_none_or(|active| active == stop_turn),
+        Err(_) => true,
+    }
+}
+
+fn clamp_prosody(mut prosody: contracts::Prosody) -> contracts::Prosody {
+    prosody.rate = prosody.rate.clamp(MIN_RATE as f64, MAX_RATE as f64);
+    prosody.pitch = prosody.pitch.clamp(MIN_PITCH as f64, MAX_PITCH as f64);
+    prosody.volume = prosody.volume.clamp(MIN_VOLUME as f64, MAX_VOLUME as f64);
+    prosody.pause_bias = prosody.pause_bias.clamp(0.0, 1.0);
+    prosody
+}
 
 struct Phonemizer {
     lexicon: HashMap<String, Vec<String>>,
@@ -134,15 +181,20 @@ impl Phonemizer {
     /// The previous code emitted `[p1, 0, p2, 0, ...]` — missing the leading
     /// blank — and bracketed with piper's `^`/`$` tokens, which the sherpa-onnx
     /// VITS vocabulary does not define (so they silently never appended).
-    fn phonemize(&self, text: &str) -> Vec<i64> {
+    fn phonemize(&self, text: &str) -> PhonemizedText {
         let mut phoneme_ids = Vec::new();
+        let mut oov = Vec::new();
         for word in text.split_whitespace() {
             let clean_word: String = word
                 .chars()
                 .filter(|c| c.is_alphanumeric())
                 .collect::<String>()
                 .to_lowercase();
+            if clean_word.is_empty() {
+                continue;
+            }
             let Some(phonemes) = self.lexicon.get(&clean_word) else {
+                oov.push(clean_word);
                 continue;
             };
             for p in phonemes {
@@ -153,7 +205,10 @@ impl Phonemizer {
         }
 
         if phoneme_ids.is_empty() {
-            return Vec::new();
+            return PhonemizedText {
+                ids: Vec::new(),
+                oov,
+            };
         }
 
         let mut ids = Vec::with_capacity(phoneme_ids.len() * 2 + 1);
@@ -162,8 +217,20 @@ impl Phonemizer {
             ids.push(id);
             ids.push(VITS_BLANK_ID);
         }
-        ids
+        PhonemizedText { ids, oov }
     }
+}
+
+/// The result of a lexicon lookup over an utterance.
+///
+/// `oov` is carried rather than discarded because this Phonemizer has no
+/// grapheme-to-phoneme fallback: a word absent from `lexicon.txt` — most often a
+/// name — simply has no phonemes to contribute. Dropping it silently makes the
+/// agent *speak a different sentence than it decided to say*, which is
+/// indistinguishable to the listener from the agent having chosen those words.
+struct PhonemizedText {
+    ids: Vec<i64>,
+    oov: Vec<String>,
 }
 
 struct LocalTtsEngine {
@@ -231,9 +298,27 @@ impl LocalTtsEngine {
     /// computed by the cognitive layer and then discarded, so every affective
     /// state collapsed onto "how fast the agent talks". All three now apply.
     fn synthesize(&self, text: &str, rate: f32, pitch: f32, volume: f32) -> Result<Vec<u8>> {
-        let ids = self.phonemizer.phonemize(text);
+        let PhonemizedText { ids, oov } = self.phonemizer.phonemize(text);
         if ids.is_empty() {
-            return Ok(Vec::new());
+            // Previously `Ok(Vec::new())`: an utterance this voice could not
+            // pronounce at all was reported as successful synthesis of zero audio,
+            // so the caller published nothing and the agent just went quiet. Failing
+            // instead lets the caller fall back to remote synthesis.
+            anyhow::bail!(
+                "no word of {text:?} is in the local lexicon (unknown: {oov:?}); \
+                 this voice cannot pronounce it"
+            );
+        }
+        if !oov.is_empty() {
+            // Speak what we can — muting the whole sentence over one unknown name
+            // would be worse — but never let this pass unremarked.
+            warn!(
+                unknown_words = ?oov,
+                text = %text,
+                "local voice has no pronunciation for these words and will omit them; \
+                 the spoken sentence will differ from the generated text. A \
+                 grapheme-to-phoneme fallback is needed to say arbitrary words."
+            );
         }
 
         let num_phonemes = ids.len();
@@ -599,7 +684,14 @@ impl VoiceConfig {
                 "At the end of the exam, the program shows the performance summary.",
             ),
             tts_language: env_or("TTS_LANGUAGE", "en"),
-            sample_rate: env_or("SAMPLE_RATE", "32000").parse().unwrap_or(32_000),
+            // A zero rate parses fine but sizes the reverb delay buffer to zero,
+            // which panics on the first index; it would also make every duration
+            // computation divide by zero. Treat it like any other unparseable value.
+            sample_rate: env_or("SAMPLE_RATE", "32000")
+                .parse::<u32>()
+                .ok()
+                .filter(|rate| *rate > 0)
+                .unwrap_or(32_000),
         }
     }
 }
@@ -626,9 +718,11 @@ async fn main() -> Result<()> {
         .build()
         .context("build reqwest client with timeouts")?;
 
-    let local_engine = load_local_engine(config.sample_rate);
-
-    let local_engine = std::sync::Arc::new(local_engine);
+    // Option<Arc<_>> rather than Arc<Option<_>>: the engine handle is moved into a
+    // spawn_blocking closure per utterance, which needs an owned 'static handle to
+    // the engine itself, not to the "is one configured?" question.
+    let local_engine: Option<std::sync::Arc<LocalTtsEngine>> =
+        load_local_engine(config.sample_rate).map(std::sync::Arc::new);
 
     let last_distance = std::sync::Arc::new(std::sync::Mutex::new(1.0));
     let noise_scale_factor = std::sync::Arc::new(std::sync::Mutex::new(1.0f64));
@@ -684,17 +778,26 @@ async fn main() -> Result<()> {
 
     // Abort flag for immediate voice playback stop
     let abort_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let active_turn: ActiveTurn = std::sync::Arc::new(std::sync::Mutex::new(None));
     let attenuation_factor = std::sync::Arc::new(std::sync::Mutex::new(1.0f64));
     let dynamic_prosody = std::sync::Arc::new(std::sync::Mutex::new(None::<contracts::Prosody>));
 
     // Subscribe to audio.stop and set abort flag or duck volume (attenuate)
     let abort_flag_stop = abort_flag.clone();
     let attenuation_stop = attenuation_factor.clone();
+    let active_turn_stop = active_turn.clone();
     let mut stop_sub = client.subscribe(topics::AUDIO_STOP).await?;
     tokio::spawn(async move {
         while let Some(msg) = stop_sub.next().await {
             match serde_json::from_slice::<contracts::AudioStop>(&msg.payload) {
                 Ok(stop) => {
+                    if !stop_applies_to_active_turn(&active_turn_stop, stop.turn_id.as_deref()) {
+                        info!(
+                            stop_turn = ?stop.turn_id,
+                            "Ignoring AUDIO_STOP addressed to a turn that is no longer speaking."
+                        );
+                        continue;
+                    }
                     if stop.speculative {
                         info!("Received SPECULATIVE AUDIO_STOP - ducking current voice playback.");
                         if let Ok(mut guard) = attenuation_stop.lock() {
@@ -706,6 +809,8 @@ async fn main() -> Result<()> {
                     }
                 }
                 Err(_) => {
+                    // Unparseable payloads carry no turn_id to check, so they stay
+                    // unscoped and abort whatever is speaking.
                     info!("Received generic AUDIO_STOP - aborting current voice playback.");
                     abort_flag_stop.store(true, std::sync::atomic::Ordering::SeqCst);
                 }
@@ -769,7 +874,6 @@ async fn main() -> Result<()> {
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
 
     let mut ola_filter = OlaCrossfadeFilter::new(config.sample_rate);
-    let mut last_turn_id: Option<String> = None;
 
     while let Some(message) = subscriber.next().await {
         match serde_json::from_slice::<ChatOutput>(&message.payload) {
@@ -780,18 +884,22 @@ async fn main() -> Result<()> {
                     if let Ok(mut guard) = attenuation_factor.lock() {
                         *guard = 1.0;
                     }
-                    last_turn_id = None;
+                    if let Ok(mut guard) = active_turn.lock() {
+                        *guard = None;
+                    }
                     continue;
                 }
 
                 // Detect start of a new stream/response by tracking turn_id changes
                 if let Some(ref current_turn_id) = event.turn_id {
-                    let is_new_stream = match last_turn_id {
-                        Some(ref prev_id) => prev_id != current_turn_id,
-                        None => true,
+                    let is_new_stream = match active_turn.lock() {
+                        Ok(guard) => guard.as_deref() != Some(current_turn_id.as_str()),
+                        Err(_) => true,
                     };
                     if is_new_stream {
-                        last_turn_id = Some(current_turn_id.clone());
+                        if let Ok(mut guard) = active_turn.lock() {
+                            *guard = Some(current_turn_id.clone());
+                        }
                         abort_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                         if let Ok(mut guard) = attenuation_factor.lock() {
                             *guard = 1.0;
@@ -987,7 +1095,7 @@ async fn handle_chat_output(
     attenuation_factor: std::sync::Arc<std::sync::Mutex<f64>>,
     dynamic_prosody: std::sync::Arc<std::sync::Mutex<Option<contracts::Prosody>>>,
     noise_scale_factor: std::sync::Arc<std::sync::Mutex<f64>>,
-    local_engine: std::sync::Arc<Option<LocalTtsEngine>>,
+    local_engine: Option<std::sync::Arc<LocalTtsEngine>>,
 ) -> Result<()> {
     if event.done {
         return Ok(());
@@ -1007,11 +1115,11 @@ async fn handle_chat_output(
         return Ok(());
     };
 
-    let prosody = if let Ok(guard) = dynamic_prosody.lock() {
-        guard.clone().unwrap_or_else(|| vad_to_prosody(event.affect.as_ref()))
+    let prosody = clamp_prosody(if let Ok(guard) = dynamic_prosody.lock() {
+        (*guard).unwrap_or_else(|| vad_to_prosody(event.affect.as_ref()))
     } else {
         vad_to_prosody(event.affect.as_ref())
-    };
+    });
     ola_filter.notify_new_prosody(prosody);
 
     let distance = event
@@ -1072,49 +1180,79 @@ async fn handle_chat_output(
                 publish_pcm(jetstream, pcm, &event, gain).await?;
             }
             TemporalPart::Text(text) => {
-                if let Some(engine) = local_engine.as_ref() {
+                // Local synthesis is CPU-bound: ONNX inference plus a sinc resample,
+                // tens to hundreds of milliseconds with no await point. Run inline it
+                // occupies a Tokio worker for that whole time, stalling the abort
+                // flag, NATS traffic and every other task sharing the runtime.
+                let local_pcm = match local_engine.as_ref() {
+                    Some(engine) => {
+                        let engine = engine.clone();
+                        let text = text.clone();
+                        let (rate, pitch, volume) = (
+                            prosody.rate as f32,
+                            prosody.pitch as f32,
+                            prosody.volume as f32,
+                        );
+                        match tokio::task::spawn_blocking(move || {
+                            engine.synthesize(&text, rate, pitch, volume)
+                        })
+                        .await
+                        {
+                            Ok(result) => Some(result),
+                            Err(join_err) => {
+                                error!("local synthesis task panicked: {join_err}");
+                                Some(Err(anyhow::anyhow!("synthesis task panicked")))
+                            }
+                        }
+                    }
+                    None => None,
+                };
+
+                // `None` = no local engine configured. `Some(Err(..))` = local engine
+                // could not speak this text (e.g. every word out of lexicon); both
+                // fall through to remote synthesis rather than emitting silence.
+                let local_pcm = match local_pcm {
+                    Some(Ok(pcm_bytes)) => Some(pcm_bytes),
+                    Some(Err(e)) => {
+                        warn!(
+                            "local ONNX synthesis failed ({e:#}); falling back to remote synthesis"
+                        );
+                        None
+                    }
+                    None => None,
+                };
+
+                if let Some(pcm_bytes) = local_pcm {
                     // Local engine bakes `volume` into the waveform, so publish_pcm
                     // below applies only the ambient-noise compensation. (The remote
                     // path differs — see the `else` branch.)
-                    match engine.synthesize(
-                        &text,
-                        prosody.rate as f32,
-                        prosody.pitch as f32,
-                        prosody.volume as f32,
-                    ) {
-                        Ok(pcm_bytes) => {
-                            for chunk in pcm_bytes.chunks(4096) {
-                                if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
-                                    info!("Aborting playback due to AUDIO_STOP event.");
-                                    break;
-                                }
-                                let mut chunk_vec = chunk.to_vec();
-
-                                const REVERB_DRY_LIMIT: f64 = 2.5;
-                                const REVERB_WET_LIMIT: f64 = 3.5;
-                                let wet_gain = if distance <= REVERB_DRY_LIMIT {
-                                    0.0
-                                } else if distance >= REVERB_WET_LIMIT {
-                                    1.0
-                                } else {
-                                    ((distance - REVERB_DRY_LIMIT) / (REVERB_WET_LIMIT - REVERB_DRY_LIMIT))
-                                        as f32
-                                };
-
-                                chunk_vec = reverb_filter.process(&chunk_vec, wet_gain);
-                                chunk_vec = ola_filter.process(&chunk_vec);
-
-                                let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
-                                apply_attenuation(&mut chunk_vec, &mut current_attenuation_val, target_att);
-                                let _ = generate_and_publish_visemes(jetstream, &chunk_vec);
-
-                                let noise_scale = if let Ok(guard) = noise_scale_factor.lock() { *guard } else { 1.0 };
-                                publish_pcm(jetstream, chunk_vec, &event, noise_scale).await?;
-                            }
+                    for chunk in pcm_bytes.chunks(4096) {
+                        if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                            info!("Aborting playback due to AUDIO_STOP event.");
+                            break;
                         }
-                        Err(e) => {
-                            error!("Local ONNX synthesis failed: {:?}", e);
-                        }
+                        let mut chunk_vec = chunk.to_vec();
+
+                        const REVERB_DRY_LIMIT: f64 = 2.5;
+                        const REVERB_WET_LIMIT: f64 = 3.5;
+                        let wet_gain = if distance <= REVERB_DRY_LIMIT {
+                            0.0
+                        } else if distance >= REVERB_WET_LIMIT {
+                            1.0
+                        } else {
+                            ((distance - REVERB_DRY_LIMIT) / (REVERB_WET_LIMIT - REVERB_DRY_LIMIT))
+                                as f32
+                        };
+
+                        chunk_vec = reverb_filter.process(&chunk_vec, wet_gain);
+                        chunk_vec = ola_filter.process(&chunk_vec);
+
+                        let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
+                        apply_attenuation(&mut chunk_vec, &mut current_attenuation_val, target_att);
+                        let _ = generate_and_publish_visemes(jetstream, &chunk_vec);
+
+                        let noise_scale = if let Ok(guard) = noise_scale_factor.lock() { *guard } else { 1.0 };
+                        publish_pcm(jetstream, chunk_vec, &event, noise_scale).await?;
                     }
                 } else {
                     let mut response = synthesize_stream(
@@ -1655,11 +1793,54 @@ mod tests {
         };
         // The regression this guards: a mis-parsed lexicon yields an empty table,
         // so phonemize() returns only [bos, eos] and VITS renders silence.
-        let ids = engine.phonemizer.phonemize(PHRASE);
+        let phonemized = engine.phonemizer.phonemize(PHRASE);
         assert!(
-            ids.len() > 20,
+            phonemized.ids.len() > 20,
             "expected real phoneme ids for {PHRASE:?}, got only {} — lexicon likely empty",
-            ids.len()
+            phonemized.ids.len()
+        );
+        assert!(
+            phonemized.oov.is_empty(),
+            "every word of {PHRASE:?} should be in the lexicon, but these were not: {:?}",
+            phonemized.oov
+        );
+    }
+
+    #[test]
+    fn real_voice_reports_out_of_vocabulary_words() {
+        let Some(engine) = load_base_voice() else {
+            eprintln!("SKIP: models/base not provisioned");
+            return;
+        };
+        // OOV words used to be dropped with no trace, so the agent silently spoke a
+        // different sentence than it generated. They must now be reported.
+        let phonemized = engine.phonemizer.phonemize("hello zzzqqxyzzy world");
+        assert_eq!(
+            phonemized.oov,
+            vec!["zzzqqxyzzy".to_string()],
+            "expected the nonsense word to be reported as out-of-vocabulary"
+        );
+        assert!(
+            !phonemized.ids.is_empty(),
+            "the in-vocabulary words should still phonemize"
+        );
+    }
+
+    #[test]
+    fn synthesize_fails_when_no_word_is_pronounceable() {
+        let Some(engine) = load_base_voice() else {
+            eprintln!("SKIP: models/base not provisioned");
+            return;
+        };
+        // Previously this returned Ok(empty) — synthesis "succeeded" with no audio,
+        // so the caller published silence instead of falling back to remote TTS.
+        let err = engine
+            .synthesize("zzzqqxyzzy vvvwwqqjj", 1.0, 1.0, 1.0)
+            .expect_err("unpronounceable text must fail, not return empty audio");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("local lexicon"),
+            "error should explain the lexicon miss, got: {msg}"
         );
     }
 

@@ -102,6 +102,41 @@ struct Job {
     latency: Option<LatencyMetadata>,
 }
 
+/// A one-slot, latest-wins handoff to the speculative partial worker.
+///
+/// Partials are disposable by design: if the fast model cannot keep up, the only
+/// hypothesis worth transcribing is the newest one. A bounded channel cannot
+/// express that — `try_send` fails on a full channel and thereby keeps the
+/// *oldest* queued job — so this replaces the pending job instead of rejecting
+/// the new one.
+#[derive(Default)]
+struct PartialSlot {
+    pending: std::sync::Mutex<Option<Job>>,
+    ready: tokio::sync::Notify,
+}
+
+impl PartialSlot {
+    /// Overwrite any pending job. Never blocks and never discards the newest job.
+    fn offer(&self, job: Job) {
+        if let Ok(mut pending) = self.pending.lock() {
+            *pending = Some(job);
+        }
+        self.ready.notify_one();
+    }
+
+    /// Wait for the most recently offered job.
+    async fn take(&self) -> Job {
+        loop {
+            // `Notify` holds a permit if `offer` ran before we registered, so a job
+            // offered between these two lines wakes the next `notified()` at once.
+            if let Some(job) = self.pending.lock().ok().and_then(|mut p| p.take()) {
+                return job;
+            }
+            self.ready.notified().await;
+        }
+    }
+}
+
 struct SttState {
     endpointer: Endpointer,
     /// Accumulated mono samples at the *source* rate; resampled at inference time.
@@ -137,9 +172,13 @@ async fn main() -> Result<()> {
         last_noise_publish: 0.0,
     }));
 
-    // Bounded(1) for partials: if the fast model is still busy, a newer partial
-    // supersedes the queued one — stale speculative text is worse than none.
-    let (partial_tx, partial_rx) = mpsc::channel::<Job>(1);
+    // Latest-wins slot for partials: if the fast model is still busy, a newer
+    // partial supersedes the queued one — stale speculative text is worse than
+    // none. This was previously an `mpsc::channel(1)` + `try_send`, which does the
+    // *opposite*: `try_send` on a full channel rejects the new job and keeps the
+    // older one, so an overloaded fast path published hypotheses that lagged the
+    // speaker instead of skipping to the current one.
+    let partial_slot = Arc::new(PartialSlot::default());
     // Finals must not be dropped; they drive cognition.
     let (final_tx, final_rx) = mpsc::channel::<Job>(8);
 
@@ -154,7 +193,7 @@ async fn main() -> Result<()> {
                 "stt-agent running in MOCK mode: inbound audio content is ignored and a fixed \
                  string is replayed. Downstream chat.input is NOT real perception."
             );
-            spawn_mock_workers(jetstream.clone(), partial_rx, final_rx, transcript);
+            spawn_mock_workers(jetstream.clone(), partial_slot.clone(), final_rx, transcript);
         }
         Backend::Whisper => {
             info!(
@@ -171,8 +210,13 @@ async fn main() -> Result<()> {
             let accurate =
                 Arc::new(WhisperModel::load(&accurate_path, "accurate", &config.language)?);
 
-            spawn_whisper_worker(jetstream.clone(), partial_rx, fast, PathKind::Partial);
-            spawn_whisper_worker(jetstream.clone(), final_rx, accurate, PathKind::Final);
+            spawn_whisper_partial_worker(
+                jetstream.clone(),
+                partial_slot.clone(),
+                fast,
+                state.clone(),
+            );
+            spawn_whisper_final_worker(jetstream.clone(), final_rx, accurate, state.clone());
             info!("stt-agent online with real whisper recognition (dual-path)");
         }
     }
@@ -185,7 +229,7 @@ async fn main() -> Result<()> {
             &jetstream,
             message,
             state.clone(),
-            &partial_tx,
+            &partial_slot,
             &final_tx,
         )
         .await
@@ -204,50 +248,91 @@ enum PathKind {
     Final,
 }
 
-fn spawn_whisper_worker(
+/// Transcribe one job and publish the result, honouring `path` semantics.
+async fn run_whisper_job(
+    jetstream: &async_nats::jetstream::Context,
+    model: &Arc<WhisperModel>,
+    state: &Arc<Mutex<SttState>>,
+    job: Job,
+    path: PathKind,
+) {
+    let model = model.clone();
+    let pcm = job.pcm_16k;
+    let started = now_seconds();
+
+    let result = tokio::task::spawn_blocking(move || model.transcribe(&pcm)).await;
+
+    let text = match result {
+        Ok(Ok(text)) => text,
+        Ok(Err(err)) => {
+            error!("whisper inference error: {err:#}");
+            return;
+        }
+        Err(err) => {
+            error!("whisper worker panicked: {err}");
+            return;
+        }
+    };
+
+    if text.trim().is_empty() {
+        return;
+    }
+
+    let elapsed_ms = (now_seconds() - started) * 1000.0;
+    let publish = match path {
+        PathKind::Partial => {
+            // Inference outlives the utterance it came from: by now the endpointer
+            // may have closed that turn and rotated `utterance_id`. Publishing
+            // anyway would put a hypothesis for finished speech on
+            // audio.perception, whose barge-in path could then emit audio.stop
+            // against whatever the agent is saying *now*.
+            if !is_current_utterance(state, &job.utterance_id).await {
+                info!(
+                    took_ms = elapsed_ms,
+                    "discarding partial for an utterance that already closed"
+                );
+                return;
+            }
+            publish_partial(jetstream, &text, &job.utterance_id).await
+        }
+        PathKind::Final => {
+            info!(text = %text, took_ms = elapsed_ms, "final transcript");
+            publish_final(jetstream, &text, &job.utterance_id, job.latency, "whisper").await
+        }
+    };
+    if let Err(err) = publish {
+        error!("stt-agent failed to publish transcript: {err:#}");
+    }
+}
+
+/// Whether `utterance_id` is still the utterance the endpointer has open.
+async fn is_current_utterance(state: &Arc<Mutex<SttState>>, utterance_id: &str) -> bool {
+    state.lock().await.utterance_id == utterance_id
+}
+
+fn spawn_whisper_final_worker(
     jetstream: async_nats::jetstream::Context,
     mut rx: mpsc::Receiver<Job>,
     model: Arc<WhisperModel>,
-    path: PathKind,
+    state: Arc<Mutex<SttState>>,
 ) {
     tokio::spawn(async move {
         while let Some(job) = rx.recv().await {
-            let model = model.clone();
-            let pcm = job.pcm_16k;
-            let started = now_seconds();
+            run_whisper_job(&jetstream, &model, &state, job, PathKind::Final).await;
+        }
+    });
+}
 
-            let result = tokio::task::spawn_blocking(move || model.transcribe(&pcm)).await;
-
-            let text = match result {
-                Ok(Ok(text)) => text,
-                Ok(Err(err)) => {
-                    error!("whisper inference error: {err:#}");
-                    continue;
-                }
-                Err(err) => {
-                    error!("whisper worker panicked: {err}");
-                    continue;
-                }
-            };
-
-            if text.trim().is_empty() {
-                continue;
-            }
-
-            let elapsed_ms = (now_seconds() - started) * 1000.0;
-            let publish = match path {
-                PathKind::Partial => {
-                    publish_partial(&jetstream, &text, &job.utterance_id).await
-                }
-                PathKind::Final => {
-                    info!(text = %text, took_ms = elapsed_ms, "final transcript");
-                    publish_final(&jetstream, &text, &job.utterance_id, job.latency, "whisper")
-                        .await
-                }
-            };
-            if let Err(err) = publish {
-                error!("stt-agent failed to publish transcript: {err:#}");
-            }
+fn spawn_whisper_partial_worker(
+    jetstream: async_nats::jetstream::Context,
+    slot: Arc<PartialSlot>,
+    model: Arc<WhisperModel>,
+    state: Arc<Mutex<SttState>>,
+) {
+    tokio::spawn(async move {
+        loop {
+            let job = slot.take().await;
+            run_whisper_job(&jetstream, &model, &state, job, PathKind::Partial).await;
         }
     });
 }
@@ -256,14 +341,15 @@ fn spawn_whisper_worker(
 /// models, while still exercising the real buffering/endpointing pipeline.
 fn spawn_mock_workers(
     jetstream: async_nats::jetstream::Context,
-    mut partial_rx: mpsc::Receiver<Job>,
+    partial_slot: Arc<PartialSlot>,
     mut final_rx: mpsc::Receiver<Job>,
     transcript: String,
 ) {
     let js = jetstream.clone();
     let text = transcript.clone();
     tokio::spawn(async move {
-        while let Some(job) = partial_rx.recv().await {
+        loop {
+            let job = partial_slot.take().await;
             if let Err(err) = publish_partial(&js, &text, &job.utterance_id).await {
                 error!("mock partial publish failed: {err:#}");
             }
@@ -380,7 +466,7 @@ async fn handle_audio_inbound(
     jetstream: &async_nats::jetstream::Context,
     message: Message,
     state: Arc<Mutex<SttState>>,
-    partial_tx: &mpsc::Sender<Job>,
+    partial_slot: &Arc<PartialSlot>,
     final_tx: &mpsc::Sender<Job>,
 ) -> Result<()> {
     let metadata = metadata_from_headers(&message);
@@ -420,12 +506,13 @@ async fn handle_audio_inbound(
             noise_floor_db,
             timestamp: now,
         };
-        jetstream
+        // Publish, but do not await the JetStream ack (see the voice-properties
+        // publish below for why).
+        let _ = jetstream
             .publish(
                 topics::AMBIENT_NOISE_TELEMETRY,
                 Bytes::from(serde_json::to_vec(&telemetry)?),
             )
-            .await?
             .await?;
     }
 
@@ -437,12 +524,18 @@ async fn handle_audio_inbound(
         tempo_wpm: estimate_tempo_wpm(&chunk),
         timestamp: now,
     };
-    jetstream
+    // `.publish().await` hands the message to the connection; the returned
+    // PublishAckFuture is deliberately *not* awaited. Awaiting it costs a NATS
+    // round-trip on every inbound chunk (~50/sec at 20ms frames), and this loop is
+    // the only consumer of audio.inbound — a slow or backed-up JetStream would
+    // stall audio ingestion itself, losing the very speech we are here to hear.
+    // These are ephemeral observability samples superseded by the next chunk, so
+    // delivery confirmation buys nothing worth that risk.
+    let _ = jetstream
         .publish(
             topics::USER_VOICE_PROPERTIES,
             Bytes::from(serde_json::to_vec(&voice_properties)?),
         )
-        .await?
         .await?;
 
     // Guard against an unbounded buffer if the endpointer never fires (e.g. a
@@ -458,9 +551,23 @@ async fn handle_audio_inbound(
                 let excess = guard.buffer.len() - preroll;
                 guard.buffer.drain(..excess);
             }
+            // The audio this latency metadata described has just been discarded, so
+            // its provenance no longer applies to anything buffered. Re-anchor it to
+            // the current chunk, which is what the retained pre-roll now consists of.
+            // Left stale, the first chunk after startup would date the utterance
+            // forever: someone speaking an hour into an idle session produced a
+            // chat.input whose capture timestamp was an hour old, inflating every
+            // downstream latency measurement by the length of the silence.
+            guard.utterance_latency = metadata.clone();
         }
         VadEvent::SpeechContinues if !force_cut => {
-            if now - guard.last_partial_at >= config.partial_interval_ms / 1000.0 {
+            // `SpeechContinues` fires from the first voiced chunk, before the
+            // endpointer believes this is speech at all. Transcribing that would
+            // spend the fast model on a blip and, worse, let its hypothesis reach
+            // the barge-in path — interrupting the agent for a cough that the
+            // endpointer goes on to reject as noise.
+            let confirmed = guard.endpointer.speech_confirmed();
+            if confirmed && now - guard.last_partial_at >= config.partial_interval_ms / 1000.0 {
                 guard.last_partial_at = now;
                 let pcm = guard.buffer.clone();
                 let utt = guard.utterance_id.clone();
@@ -468,8 +575,9 @@ async fn handle_audio_inbound(
                 drop(guard);
 
                 if let Ok(pcm_16k) = audio::resample_to_16k(&pcm, rate) {
-                    // try_send: drop rather than queue if the fast model is busy.
-                    let _ = partial_tx.try_send(Job {
+                    // Latest-wins: replaces any hypothesis the fast model has not
+                    // started yet, rather than being dropped in favour of it.
+                    partial_slot.offer(Job {
                         pcm_16k,
                         utterance_id: utt,
                         latency: None,
@@ -653,6 +761,50 @@ mod tests {
         let decoded = audio::decode_mono_f32(br#"{"audio":"legacy-json"}"#, 1);
         assert!(!decoded.is_empty());
         assert!(build_speculative_intent("", "utt-1").is_none());
+    }
+
+    fn job(utterance_id: &str) -> Job {
+        Job {
+            pcm_16k: vec![0.0; 4],
+            utterance_id: utterance_id.to_string(),
+            latency: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn partial_slot_keeps_the_newest_hypothesis() {
+        // The regression this guards: partials used to go through
+        // `mpsc::channel(1)` + `try_send`, which drops the *new* job when the
+        // channel is full and delivers the stale one. An overloaded fast path then
+        // published hypotheses describing speech the user had already finished.
+        let slot = PartialSlot::default();
+        slot.offer(job("utt-old"));
+        slot.offer(job("utt-newer"));
+        slot.offer(job("utt-newest"));
+
+        let received = slot.take().await;
+        assert_eq!(
+            received.utterance_id, "utt-newest",
+            "the most recent partial must supersede queued ones"
+        );
+    }
+
+    #[tokio::test]
+    async fn partial_slot_wakes_a_waiting_worker() {
+        let slot = Arc::new(PartialSlot::default());
+        let waiter = slot.clone();
+        let handle = tokio::spawn(async move { waiter.take().await });
+
+        // Yield so the worker is parked in `take()` before anything is offered:
+        // this exercises the notify path rather than the already-pending path.
+        tokio::task::yield_now().await;
+        slot.offer(job("utt-1"));
+
+        let received = tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+            .await
+            .expect("worker should be woken by offer")
+            .expect("worker task should not panic");
+        assert_eq!(received.utterance_id, "utt-1");
     }
 
     #[test]

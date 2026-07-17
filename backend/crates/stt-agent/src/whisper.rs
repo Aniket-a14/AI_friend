@@ -9,6 +9,7 @@
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
+use tokio::io::AsyncWriteExt;
 use tracing::{info, warn};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -142,7 +143,7 @@ pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf>
     let url = format!("{MODEL_BASE_URL}/{file_name}");
     info!(model = model_name, %url, "downloading whisper model (first run only)");
 
-    let response = reqwest::Client::builder()
+    let mut response = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(1800))
         .build()?
         .get(&url)
@@ -152,19 +153,35 @@ pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf>
         .error_for_status()
         .with_context(|| format!("download {url}"))?;
 
-    let bytes = response.bytes().await.context("read model body")?;
-
     // Write to a temp path then rename, so a crash mid-download cannot leave a
     // corrupt file that later looks like a valid cache hit.
+    //
+    // Streamed chunk-by-chunk rather than via `response.bytes()`, which would hold
+    // the entire model in memory before the first byte reaches disk — a spike as
+    // large as the model itself (hundreds of MB for the larger ggml weights) at
+    // startup, inside a memory-capped container, purely to write a file.
     let tmp = target.with_extension("part");
-    tokio::fs::write(&tmp, &bytes)
+    let mut file = tokio::fs::File::create(&tmp)
         .await
-        .with_context(|| format!("write {}", tmp.display()))?;
+        .with_context(|| format!("create {}", tmp.display()))?;
+
+    let mut written: u64 = 0;
+    while let Some(chunk) = response.chunk().await.context("read model body")? {
+        file.write_all(&chunk)
+            .await
+            .with_context(|| format!("write {}", tmp.display()))?;
+        written += chunk.len() as u64;
+    }
+    file.flush()
+        .await
+        .with_context(|| format!("flush {}", tmp.display()))?;
+    drop(file);
+
     tokio::fs::rename(&tmp, &target)
         .await
         .with_context(|| format!("finalise {}", target.display()))?;
 
-    info!(model = model_name, bytes = bytes.len(), "whisper model ready");
+    info!(model = model_name, bytes = written, "whisper model ready");
     Ok(target)
 }
 

@@ -130,6 +130,20 @@ impl Endpointer {
         self.noise_floor
     }
 
+    /// Whether the open utterance has accumulated enough voiced audio to be
+    /// believed as speech rather than a blip.
+    ///
+    /// `push` returns `SpeechContinues` from the *first* voiced chunk, long before
+    /// `min_speech_ms` is met, because the utterance buffer must start filling at
+    /// onset or speech gets clipped. But a blip that never reaches `min_speech_ms`
+    /// is ultimately rejected as `Silence`, so anything speculative driven off
+    /// `SpeechContinues` alone (partial inference, and the barge-in `audio.stop`
+    /// it can emit) would be acting on audio the endpointer itself does not yet
+    /// consider speech. Callers gate that work on this.
+    pub fn speech_confirmed(&self) -> bool {
+        self.speech_active && self.speech_run_ms >= self.min_speech_ms
+    }
+
     /// Feed one chunk's energy and duration; returns the resulting VAD event.
     pub fn push(&mut self, chunk_rms: f64, chunk_ms: f64) -> VadEvent {
         let threshold = (self.noise_floor * self.speech_factor).max(self.min_speech_rms);
@@ -250,5 +264,53 @@ mod tests {
         ep.push(0.3, 20.0);
         ep.push(0.3, 20.0);
         assert_eq!(ep.push(0.001, 400.0), VadEvent::Silence);
+    }
+
+    #[test]
+    fn short_blip_is_never_confirmed_speech() {
+        let mut ep = Endpointer::new(300.0, 200.0);
+        for _ in 0..20 {
+            ep.push(0.001, 20.0);
+        }
+        assert!(!ep.speech_confirmed(), "silence is not speech");
+
+        // A 40ms blip still returns SpeechContinues — the utterance buffer has to
+        // start filling at onset or speech gets clipped — but it must never be
+        // *confirmed*, because that is what gates speculative partial inference and
+        // the barge-in audio.stop it can emit. This blip is rejected as noise below,
+        // so anything that acted on it would have interrupted the agent for nothing.
+        assert_eq!(ep.push(0.3, 20.0), VadEvent::SpeechContinues);
+        assert_eq!(ep.push(0.3, 20.0), VadEvent::SpeechContinues);
+        assert!(
+            !ep.speech_confirmed(),
+            "a 40ms blip must not gate partial inference"
+        );
+        assert_eq!(ep.push(0.001, 400.0), VadEvent::Silence);
+    }
+
+    #[test]
+    fn speech_is_confirmed_once_min_speech_ms_accumulates() {
+        let mut ep = Endpointer::new(300.0, 200.0);
+        for _ in 0..20 {
+            ep.push(0.001, 20.0);
+        }
+        // 180ms of voiced audio: still under the 200ms threshold.
+        for _ in 0..9 {
+            ep.push(0.3, 20.0);
+        }
+        assert!(!ep.speech_confirmed(), "180ms is below min_speech_ms");
+
+        // Crossing 200ms confirms it.
+        ep.push(0.3, 20.0);
+        assert!(ep.speech_confirmed(), "200ms should be confirmed speech");
+
+        // Confirmation survives the trailing-silence window so partials keep flowing
+        // until the utterance actually closes.
+        ep.push(0.001, 100.0);
+        assert!(ep.speech_confirmed(), "still open during trailing silence");
+
+        // Closing the utterance clears it.
+        assert_eq!(ep.push(0.001, 400.0), VadEvent::Endpoint);
+        assert!(!ep.speech_confirmed(), "closed utterance is not speech");
     }
 }

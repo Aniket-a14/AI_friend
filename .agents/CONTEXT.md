@@ -1732,6 +1732,12 @@ transcription has been observed. Accuracy and latency remain unmeasured. CI
 (`ci.yml` runs `cargo check --workspace`; `docker-build.yml` builds
 `Dockerfile.rust`) will exercise the native build on push — that is the gate.
 
+> **Update (2026-07-17):** the native build is now proven. Installing LLVM supplied
+> the `libclang` that `whisper-rs-sys`' bindgen needs, and whisper.cpp compiles,
+> links and passes 19 unit tests locally on Windows — no longer Docker-only. A live
+> audio round-trip is still outstanding: no ggml weights have been fetched here and
+> nothing has been transcribed, so accuracy and latency stay unmeasured.
+
 Remaining risks / next work:
 
 - Native build + a live audio round-trip are the outstanding proof. Until both are
@@ -1974,3 +1980,86 @@ length_scale falls, exactly as ceil-quantisation predicts. Inherent to VITS; the
 Still not verified: nothing has been run through the live mesh, and no one has
 listened. `cargo test -p voice-agent render_prosody_demo_wavs -- --ignored` writes
 `voice_demo/*.wav` (gitignored) for that.
+
+---
+
+## 2026-07-17 — PR #56 review round: 18 bot comments triaged, 13 fixed, 1 rejected
+
+CodeRabbit + Codex left 18 inline comments on PR #56. Deduplicated across the two
+bots: **14 distinct findings**. Every one was verified against the code rather than
+taken on trust; 13 were real and are fixed, 1 was wrong.
+
+**Rejected — CodeRabbit `.agents/CONTEXT.md:1597`** ("audit headings are future-dated
+July 17 2026; today is July 16"). The commits are authored `2026-07-17 +0530`. The
+bot compared against UTC while the ledger is written in the author's local timezone
+(IST, UTC+5:30), so entries legitimately date a few hours "ahead" of UTC. No change.
+
+**Critical — the whisper cache was unwritable in production.** `Dockerfile.rust`
+never created `/app/models`, and its last line is `USER nobody:nogroup`. When Docker
+seeds a fresh named volume it copies the *image directory's* ownership — but if the
+mountpoint does not exist in the image, it creates it `root:root 0755` instead. With
+`stt_models_data:/app/models` mounted and `STT_BACKEND=whisper` (the default),
+`ensure_model()` could never write the weights: first boot would restart-loop and the
+"real STT" shipped in E1 would never transcribe anything. Both bots found this
+independently. Fixed with `install -d -o nobody -g nogroup` before the USER switch.
+
+**The partial queue did the opposite of its own comment.** The comment promised "a
+newer partial supersedes the queued one"; the code was `mpsc::channel(1)` +
+`try_send`, and `try_send` on a full channel rejects the *new* job and keeps the old
+one — first-in-wins. An overloaded fast path therefore published hypotheses lagging
+the speaker. Replaced with `PartialSlot` (mutex + `Notify`), which genuinely
+overwrites. Two tests pin it.
+
+**Speculation ran on unconfirmed speech.** `Endpointer::push` returns
+`SpeechContinues` from the first voiced chunk, long before `min_speech_ms` — correct
+for buffering (onset must not clip) but wrong as a trigger for partial inference,
+which can emit a barge-in `audio.stop`. A cough could interrupt the agent and then be
+rejected as noise by the same endpointer. Added `speech_confirmed()` and gated
+partial dispatch on it.
+
+**Late partials could abort the wrong turn.** Fast-path inference outlives its
+utterance; by publish time the endpointer may have rotated `utterance_id`. The
+hypothesis for finished speech then reached `audio.perception` and could stop the
+agent mid-reply to a *different* turn. Partials are now dropped unless their
+utterance is still open. Same class in voice-agent: `AudioStop.turn_id` existed in
+the contract and was simply never read, so a delayed stop aborted whatever was
+speaking next — now scoped, with unscoped stops still honoured.
+
+**Latency provenance survived silence.** `utterance_latency` was captured on the
+first chunk ever seen and never cleared while idle audio was trimmed, so someone
+speaking an hour into a quiet session produced a `chat.input` timestamped an hour
+early — every downstream latency number inflated by the idle duration. Re-anchored
+when the pre-roll is trimmed.
+
+**The audio.inbound loop awaited a NATS round-trip per chunk.** `.await?.await?` on
+voice-properties waits for the JetStream *ack* on every inbound chunk (~50/sec at
+20ms frames), in the sole consumer of `audio.inbound` — a slow mesh would stall
+ingestion of the very speech being listened for. These are ephemeral samples
+superseded by the next chunk; the ack is no longer awaited.
+
+**Local TTS could not fall back.** `synthesize` returned `Ok(Vec::new())` for text it
+could not pronounce and the caller's `Err` branch only logged — either way the agent
+just went quiet, with no attempt at remote synthesis. Now: unpronounceable text is an
+error, and any local failure falls through to remote. Synthesis also moved to
+`spawn_blocking` (ONNX inference + sinc resample, no await point, was occupying a
+Tokio worker).
+
+**Out-of-vocabulary words — partially resolved, G2P deferred.** OOV words were
+dropped with no trace, so the agent *spoke a different sentence than it generated* —
+output-channel fabrication, indistinguishable to a listener from the agent having
+chosen those words. The Phonemizer has no grapheme-to-phoneme fallback, so this is
+now reported (`PhonemizedText.oov` + a loud warning naming the words) and an
+all-OOV utterance fails into remote synthesis. It is **not** fully fixed: a sentence
+containing one unknown name still gets spoken without it, because muting the whole
+sentence would be worse. A real G2P fallback is the actual fix and is outstanding.
+
+Also: `SAMPLE_RATE=0` parsed fine and panicked on a zero-length reverb buffer (now
+rejected); untrusted mesh prosody was clamped only inside local synthesis while
+remote/hesitation/vocalization consumed raw values (now clamped at selection); the
+whisper model download buffered the whole file in RAM before writing (now streamed);
+README still described a SenseVoice fast path with <100ms detection and emotion
+output, contradicting its own Whisper warning three lines above (corrected).
+
+**Verification:** voice-agent 21 tests pass (up from 19, 5 against the real 114MB
+model); stt-agent 19 pass. Both clippy-clean. Python suite unaffected. The native
+whisper.cpp build is now proven locally — see the update above.
