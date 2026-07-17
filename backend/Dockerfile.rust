@@ -16,28 +16,28 @@ COPY Cargo.toml ./Cargo.toml
 COPY Cargo.lock ./Cargo.lock
 COPY crates ./crates
 
-# Two builds, deliberately ordered, because of a shared-library filename collision:
-# ort (voice-agent) copies ITS ONNX Runtime into target/release/libonnxruntime.so,
-# and sherpa-onnx (stt-agent) copies ITS OWN bundled ONNX Runtime — a different
-# version — under the exact same path. In a combined build whichever crate builds
-# last silently wins, and the losing agent fails at startup (or worse, misbehaves)
-# while the image build stays green. Building voice-agent alone first lets us stage
-# ort's pristine copy before sherpa can clobber it.
-RUN cargo build --release --package voice-agent
-RUN mkdir -p /staging/voice-libs \
-    && cp -L /app/target/release/libonnxruntime.so* /staging/voice-libs/
+# Build both Rust agents. Contrary to an earlier assumption, there is NO
+# libonnxruntime.so filename collision between them:
+#   * ort (voice-agent), default features, STATICALLY links the ONNX Runtime core
+#     into the binary. It emits no libonnxruntime.so at all — only optional GPU
+#     execution-provider plugins (libonnxruntime_providers_*.so) which a CPU-only
+#     deployment never loads. `ldd voice-agent` shows no onnxruntime dependency.
+#   * sherpa-onnx (stt-agent) ships its OWN dynamic libonnxruntime.so plus
+#     libsherpa-onnx-c-api.so / -cxx-api.so, all under target/release.
+# Because voice-agent has no libonnxruntime.so NEEDED entry, sherpa's copy on the
+# global loader path cannot shadow anything for it. So a single combined build is
+# safe and only sherpa's three libraries need staging.
+RUN cargo build --release --package voice-agent --package stt-agent
 
-RUN cargo build --release --package stt-agent
-# sherpa's pristine libraries live in its own build out-dir, untouched by the
-# collision above. `cp -L` materialises symlink names as real files so nothing
-# dangles after the COPY into the runtime stage. The `test` lines make this fail
-# loudly if the sherpa-onnx-sys layout ever changes, instead of shipping an image
-# whose stt-agent cannot start.
+# Stage sherpa-onnx's runtime libraries. `cp -L` materialises symlink names as real
+# files; naming each explicitly makes the step fail loudly (cp errors) if the
+# sherpa-onnx-sys layout ever changes, instead of silently shipping an stt-agent
+# that cannot start.
 RUN mkdir -p /staging/stt-libs \
-    && find /app/target/release/build -path '*sherpa-onnx-sys*' -name '*.so*' \
-       -exec cp -L {} /staging/stt-libs/ \; \
-    && test -e /staging/stt-libs/libsherpa-onnx-c-api.so \
-    && ls /staging/stt-libs/libonnxruntime.so* > /dev/null
+    && for lib in libsherpa-onnx-c-api.so libsherpa-onnx-cxx-api.so libonnxruntime.so; do \
+         cp -L "/app/target/release/$lib" /staging/stt-libs/; \
+       done \
+    && ls /staging/stt-libs/libonnxruntime.so > /dev/null
 
 FROM debian:trixie-slim AS runtime
 
@@ -48,16 +48,16 @@ RUN apt-get -o Acquire::Check-Valid-Until=false update \
 COPY --from=builder /app/target/release/voice-agent /usr/local/bin/voice-agent
 COPY --from=builder /app/target/release/stt-agent /usr/local/bin/stt-agent
 
-# voice-agent's ONNX Runtime (ort's copy) resolves via the linker cache: ort emits
-# no rpath, so /usr/local/lib + ldconfig is its lookup path.
-COPY --from=builder /staging/voice-libs/ /usr/local/lib/
-
-# stt-agent's sherpa libraries — including sherpa's own libonnxruntime.so — go NEXT
-# TO THE BINARY, not into /usr/local/lib. sherpa-onnx-sys links stt-agent with
-# `-rpath $ORIGIN`, so it prefers these; and because /usr/local/bin is not in the
-# linker cache, voice-agent can never accidentally load sherpa's ONNX Runtime in
-# place of ort's. Two agents, two ONNX Runtimes, zero ambiguity.
-COPY --from=builder /staging/stt-libs/ /usr/local/bin/
+# voice-agent needs no libraries staged: its ONNX Runtime core is statically linked
+# into the binary (ldd shows only libc/libstdc++/libgcc/libm).
+#
+# stt-agent needs sherpa-onnx's three shared libraries. They go into /usr/local/lib
+# + ldconfig rather than next to the binary so the loader resolves sherpa's
+# TRANSITIVE dependencies (libsherpa-onnx-c-api.so -> libsherpa-onnx-cxx-api.so and
+# libonnxruntime.so) via the global cache, which a $ORIGIN RUNPATH on the executable
+# alone would not cover. This cannot affect voice-agent: it has no libonnxruntime.so
+# NEEDED entry, so sherpa's copy on the cache is invisible to it.
+COPY --from=builder /staging/stt-libs/ /usr/local/lib/
 
 RUN ldconfig
 
