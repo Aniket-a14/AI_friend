@@ -146,3 +146,52 @@ async def test_state_lock_serializes_concurrent_writers(state_service):
     # Whichever ran last wins, but the value must be a clean, in-bounds float
     # (no half-written interleave) — proving the lock serialized the writers.
     assert -1.0 <= state_service.current_state.mood <= 1.0
+
+
+@pytest.mark.asyncio
+async def test_missing_emotional_bias_does_not_flatten_mood(state_service):
+    """Transcript-only STT (Whisper) sends no emotional_bias; affect must be untouched.
+
+    Regression: the metadata was defaulted to 0.0 and blended in, so every partial
+    transcript pulled mood and inferred_valence ~14% toward zero, erasing affect
+    established by semantic appraisal.
+    """
+    state_service.current_state.mood = 0.8
+    state_service.current_state.user_mental_model.inferred_valence = 0.8
+
+    # Exactly what the Whisper STT publishes: text + confidence, no emotion.
+    for _ in range(5):
+        await state_service.apply_sensory_perception(
+            {"text": "hello there", "is_partial": True, "confidence": 0.7}
+        )
+
+    assert state_service.current_state.mood == 0.8
+    assert state_service.current_state.user_mental_model.inferred_valence == 0.8
+
+
+@pytest.mark.asyncio
+async def test_explicit_zero_emotional_bias_still_blends(state_service):
+    """An explicit 0.0 from a real emotion model is evidence, not absence."""
+    state_service.current_state.mood = 0.8
+
+    await state_service.apply_sensory_perception(
+        {"emotional_bias": 0.0, "confidence": 0.9}
+    )
+
+    assert state_service.current_state.mood < 0.8
+
+
+@pytest.mark.asyncio
+async def test_events_still_apply_without_emotional_bias(state_service):
+    """Paralinguistic events must fire even when no emotion estimate is supplied."""
+    state_service.current_state.mood = 0.4
+    state_service.current_state.energy = 0.5
+    baseline_mood = state_service.current_state.mood
+
+    await state_service.apply_sensory_perception(
+        {"confidence": 0.9, "events": ["Laughter"]}
+    )
+
+    assert state_service.current_state.energy > 0.5
+    # ...but the absent emotion estimate still must not move mood.
+    assert state_service.current_state.mood == baseline_mood

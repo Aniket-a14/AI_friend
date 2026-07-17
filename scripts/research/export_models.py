@@ -16,8 +16,18 @@ MODELS_DIR = BASE_DIR / "models"
 CUSTOM_DIR = MODELS_DIR / "custom"
 BASE_MODEL_DIR = MODELS_DIR / "base"
 
-# Standard pre-exported ONNX voice model URL (optimized Piper-VITS English model)
-BASE_ONNX_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2"
+# Base VITS voice.
+#
+# Must be a *lexicon-based* model: the voice agent's Phonemizer resolves words via
+# a `lexicon.txt` (word -> phoneme sequence) and has no runtime phonemizer of its
+# own. Piper voices (vits-piper-*) are espeak-ng based and ship `espeak-ng-data/`
+# with NO lexicon.txt, so they silently produce an empty lexicon -> no speech.
+# vits-ljs ships tokens.txt + lexicon.txt (CMU-in-IPA) and matches the Phonemizer.
+BASE_ONNX_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-ljs.tar.bz2"
+)
+EXTRACTED_DIR_NAME = "vits-ljs"
+ARCHIVE_MODEL_NAME = "vits-ljs.onnx"
 TEMP_FILE = MODELS_DIR / "temp_tts_model.tar.bz2"
 
 
@@ -35,7 +45,21 @@ def ensure_base_models():
         return
 
     logger.info("📥 Downloading base ONNX fallback model from sherpa-onnx releases...")
+    extracted_dir = MODELS_DIR / EXTRACTED_DIR_NAME
     try:
+        # A previous run that failed between extraction and the moves leaves this
+        # directory behind. tar would then extract *over* it, and assets the new
+        # archive happens not to ship would be satisfied by the stale ones — passing
+        # the missing-file check below while pairing a model with a lexicon and
+        # tokens it was never trained against. That mismatch is silent: the voice
+        # loads and speaks confidently in the wrong phonemes.
+        if extracted_dir.exists():
+            logger.warning(
+                "Removing stale extraction directory from a previous run: %s",
+                extracted_dir,
+            )
+            shutil.rmtree(extracted_dir)
+
         response = requests.get(BASE_ONNX_URL, stream=True, timeout=120)
         response.raise_for_status()
 
@@ -45,32 +69,118 @@ def ensure_base_models():
 
         logger.info("📦 Extracting base models...")
         with tarfile.open(TEMP_FILE, "r:bz2") as tar:
-            tar.extractall(path=MODELS_DIR)
+            # filter="data" refuses members with absolute paths, ".." traversal,
+            # or special file types. Without it a malicious archive can write
+            # anywhere on disk (CVE-2007-4559); it also becomes the interpreter
+            # default in a future Python, so setting it explicitly keeps
+            # behaviour stable across versions.
+            tar.extractall(path=MODELS_DIR, filter="data")
 
-        extracted_dir = MODELS_DIR / "vits-piper-en_US-amy-low"
-        if extracted_dir.exists():
-            # Move key assets to base model directory
-            shutil.move(str(extracted_dir / "en_US-amy-low.onnx"), str(model_file))
-            shutil.move(str(extracted_dir / "lexicon.txt"), str(lexicon_file))
-            shutil.move(str(extracted_dir / "tokens.txt"), str(tokens_file))
+        if not extracted_dir.exists():
+            raise RuntimeError(
+                f"expected {extracted_dir} in the archive but it was not extracted; "
+                "the upstream release layout may have changed"
+            )
 
-            # Clean up extraction directory
-            shutil.rmtree(extracted_dir)
+        # Fail loudly if the archive layout drifts, rather than half-provisioning
+        # models/base/ and leaving the agent to fail silently at synthesis time.
+        moves = (
+            (extracted_dir / ARCHIVE_MODEL_NAME, model_file),
+            (extracted_dir / "lexicon.txt", lexicon_file),
+            (extracted_dir / "tokens.txt", tokens_file),
+        )
+        missing = [str(src) for src, _ in moves if not src.exists()]
+        if missing:
+            raise RuntimeError(
+                "archive is missing expected asset(s): "
+                + ", ".join(missing)
+                + ". A lexicon-based VITS voice is required — espeak-based piper "
+                "voices ship no lexicon.txt and will not work with the agent's "
+                "Phonemizer."
+            )
 
-        if TEMP_FILE.exists():
-            os.remove(TEMP_FILE)
+        for src, dst in moves:
+            shutil.move(str(src), str(dst))
 
         logger.info(
             "✨ Base ONNX fallback model provisioned successfully in models/base/"
         )
-    except Exception as e:
-        logger.error(f"❌ Failed to provision base models: {e}")
+    except Exception:
+        # Do not report success for a voice that was not provisioned: this is now
+        # the only real local voice, since custom export is unimplemented.
+        logger.exception("❌ Failed to provision base models")
+        raise
+    finally:
         if TEMP_FILE.exists():
             os.remove(TEMP_FILE)
+        # Always clear the extraction directory, successful or not, so a failed run
+        # cannot seed the next one with mismatched leftovers.
+        if extracted_dir.exists():
+            shutil.rmtree(extracted_dir, ignore_errors=True)
+
+
+PLACEHOLDER_MARKER = b"MOCK_"
+CUSTOM_ARTIFACTS = ("custom_gpt.onnx", "custom_vits.onnx")
+
+
+def purge_placeholder_artifacts():
+    """Delete fake ``*.onnx`` files left by the old placeholder export.
+
+    An earlier version of this script wrote text files containing
+    ``MOCK_CUSTOM_*_ONNX_CONTENT`` under those names and logged success. They are
+    not models: ONNX Runtime cannot parse them, and because the voice agent tries
+    ``models/custom/`` first, their mere presence used to disable local synthesis
+    entirely. Anyone who ran the old script still has them on disk, so clean them
+    up here.
+
+    Only files whose contents carry the placeholder marker are removed — a real
+    exported model is never touched.
+    """
+    removed = 0
+    for name in CUSTOM_ARTIFACTS:
+        path = CUSTOM_DIR / name
+        if not path.exists():
+            continue
+        try:
+            head = path.read_bytes()[: len(PLACEHOLDER_MARKER)]
+        except OSError as e:
+            logger.warning("Could not inspect %s: %s", path, e)
+            continue
+        if head == PLACEHOLDER_MARKER:
+            try:
+                path.unlink()
+            except OSError as e:
+                # Cleanup of a stale artifact is not worth failing provisioning over.
+                logger.warning("Could not remove placeholder %s: %s", path, e)
+                continue
+            removed += 1
+            logger.warning(
+                "Removed placeholder %s — it was a text file, not an ONNX model.",
+                path,
+            )
+    return removed
 
 
 def export_custom_models():
-    """Placeholder/Engine script to export custom weights to ONNX if custom files are present."""
+    """Export custom GPT-SoVITS checkpoints to ONNX.
+
+    NOT IMPLEMENTED. This previously *simulated* the export by writing text files
+    named ``custom_gpt.onnx`` / ``custom_vits.onnx`` and logging
+    "✅ Custom ONNX models exported successfully" — a success message for work that
+    never happened, producing artifacts that actively broke local synthesis.
+
+    Returning False (rather than faking output) means the voice agent falls back to
+    the real base model in ``models/base/``.
+
+    To implement: install GPT-SoVITS and call its exporter, roughly::
+
+        from GPT_SoVITS.export_onnx import export_gpt, export_sovits
+
+    writing real ``custom_gpt.onnx`` / ``custom_vits.onnx`` plus the matching
+    ``lexicon.txt`` and ``tokens.txt`` into ``models/custom/``.
+    """
+    purge_placeholder_artifacts()
+
     gpt_weights_dir = MODELS_DIR / "GPT_weights"
     sovits_weights_dir = MODELS_DIR / "SoVITS_weights"
 
@@ -78,42 +188,30 @@ def export_custom_models():
     custom_sovits_pth = sovits_weights_dir / "ai_friend_voice.pth"
 
     if not (custom_gpt_ckpt.exists() and custom_sovits_pth.exists()):
-        logger.info(
-            "⚠️ Custom GPT-SoVITS checkpoints not found. Skipping custom ONNX export."
-        )
+        logger.info("Custom GPT-SoVITS checkpoints not found. Using base voice.")
         return False
 
-    logger.info(
-        "🚀 Custom GPT-SoVITS checkpoints found! Beginning ONNX export process..."
+    logger.error(
+        "Custom GPT-SoVITS checkpoints were found at:\n"
+        "    %s\n"
+        "    %s\n"
+        "but ONNX export for them is NOT IMPLEMENTED, so they cannot be used. "
+        "The base voice in models/base/ will be used instead. Implement the "
+        "GPT-SoVITS exporter in export_custom_models() to enable the custom voice.",
+        custom_gpt_ckpt,
+        custom_sovits_pth,
     )
-    os.makedirs(CUSTOM_DIR, exist_ok=True)
-
-    # In a full run with custom weights, we import the GPT-SoVITS exporter module:
-    # from GPT_SoVITS.export_onnx import export_gpt, export_sovits
-    # For now, we simulate the structure and write the output files
-
-    try:
-        # Mock export of custom weights
-        # Under normal conditions, these would write custom_gpt.onnx and custom_vits.onnx
-        logger.info("Exporting custom_gpt.onnx...")
-        with open(CUSTOM_DIR / "custom_gpt.onnx", "w") as f:
-            f.write("MOCK_CUSTOM_GPT_ONNX_CONTENT")
-        logger.info("Exporting custom_vits.onnx...")
-        with open(CUSTOM_DIR / "custom_vits.onnx", "w") as f:
-            f.write("MOCK_CUSTOM_VITS_ONNX_CONTENT")
-        logger.info("✅ Custom ONNX models exported successfully to models/custom/")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Custom ONNX export failed: {e}")
-        return False
+    return False
 
 
 def main():
-    # 1. Check/export custom models first
-    export_custom_models()
-
-    # 2. Always ensure base fallback models are ready
+    # Base first: it is the only voice that actually works today, so provision it
+    # before anything that might fail.
     ensure_base_models()
+
+    # Purges stale placeholder artifacts and reports honestly that custom export
+    # is unimplemented. Never fabricates output.
+    export_custom_models()
 
 
 if __name__ == "__main__":

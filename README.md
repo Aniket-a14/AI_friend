@@ -123,11 +123,35 @@ graph TD
 
 CVS-3.5 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration protocol.
 
+> [!WARNING]
+> **Implemented and build-verified; not yet heard.** The `stt-agent` crate embeds
+> real speech recognition (whisper.cpp via `whisper-rs` for the accurate path,
+> SenseVoice via `sherpa-onnx` for the fast path), with 16 kHz sinc resampling and
+> VAD endpointing, defaulting to `STT_BACKEND=whisper`. Two caveats:
+>
+> 1. **SenseVoice requires host-side provisioning.** Run
+>    `python backend/scripts/bootstrap/provision_models.py` once; docker-compose
+>    bind-mounts the result. Without it the fast path falls back to a small Whisper
+>    model: barge-in keeps working, but the emotion / paralinguistic fields stay
+>    empty — the agent hears words, not tone — and the logs say so loudly.
+> 2. **No live transcription has been observed.** Both backends compile, link and
+>    pass the crate's unit tests (including cross-language wire-shape tests), but
+>    no audio has been transcribed end-to-end and no acoustic emotion has been
+>    classified on a live utterance. Treat accuracy and latency as **unmeasured**.
+>    Building requires `libclang` (`cmake` + `clang`); `Dockerfile.rust` installs both.
+
+<!-- -->
+
 > [!IMPORTANT]
 > **Protocol Description**:
-> Audio arriving via WebRTC is fanned out to two paths: **SenseVoice** (optimized for CPU-based temporal intent) and **Whisper** (optimized for GPU-based semantic accuracy).
+> Audio arriving via WebRTC is fanned out to two paths: **SenseVoice**
+> (`STT_SENSEVOICE_DIR`; classifies speech emotion and audio events alongside the
+> words) for speculative temporal intent, and **Whisper** (`STT_ACCURATE_MODEL`,
+> default `base.en`) for semantic accuracy. When no SenseVoice model is provisioned
+> the fast path degrades to a small Whisper model (`STT_FAST_MODEL`, default
+> `tiny.en`) and no emotion is inferred.
 >
-> * **Stage 1 (Reflexive Soft-Attenuation)**: SenseVoice detects interruption markers in <100ms and publishes a speculative `audio.stop` message. The Voice Agent immediately executes a **System 1 soft-attenuation**, ducking the volume by 70% within 10ms to allow duplex listening.
+> * **Stage 1 (Reflexive Soft-Attenuation)**: The fast path transcribes a speculative partial and publishes a speculative `audio.stop` if it detects an interruption marker. The Voice Agent immediately executes a **System 1 soft-attenuation**, ducking the volume by 70% within 10ms to allow duplex listening. Partials are only emitted once the endpointer confirms speech, so a cough cannot trigger this. Detection latency is **unmeasured** — see the warning above.
 > * **Stage 2 (Symbolic Interruption Validation)**: The Brain Agent evaluates the speculative perception text. If confirmed, it commits a hard `audio.stop` (aborting playback and LLM generation). If rejected as noise or a non-interruption, it publishes `audio.resume`, causing the Voice Agent to smoothly ramp output volume back to 100%.
 > * **Stage 3 (Resolution)**: Once Whisper produces the final transcript, the Brain Agent performs a deep cognitive turn to update state and generate the response.
 
@@ -136,8 +160,8 @@ sequenceDiagram
     participant U as User
     participant H as Host (Windows)
     participant T as TransportAgent (Docker)
-    participant SV as "SenseVoice (Fast Path)"
-    participant W as "Whisper (Accurate Path)"
+    participant WF as "SenseVoice (Fast Path)"
+    participant W as "Whisper base.en (Accurate Path)"
     participant VA as "Vision Agent (VLM)"
     participant B as Brain Agent (Decision)
     participant V as Voice Agent (CVS)
@@ -151,14 +175,14 @@ sequenceDiagram
         U->>T: WebRTC Audio
         T->>T: PCM → audio.inbound
         par Dual-STT Fan-Out
-            T->>SV: 400ms chunks (Speculative)
+            T->>WF: 400ms chunks (Speculative)
             T->>W: Full utterance (Semantic)
         end
     end
 
-    Note over SV, B: Stage 1 — Speculative Perception
-    SV->>B: AudioPerception (emotion + intent)
-    SV-->>V: audio.stop (speculative=true)
+    Note over WF, B: Stage 1 — Speculative Perception
+    WF->>B: AudioPerception (intent + emotion + audio events)
+    WF-->>V: audio.stop (speculative=true)
     V->>V: Immediate OLA Pause
 
     Note over W, B: Stage 2 — Semantic Resolution
@@ -187,7 +211,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | :--- | :--- | :--- | :--- |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
 | **Voice Agent** | Rust / ORT (ONNX) / SoVITS | CVS-3.5 Local Synthesis Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
-| **STT Agent** | Rust / Whisper | Dual-path perception; fan-out transcription. | `audio.inbound`, `chat.input`, `audio.perception` |
+| **STT Agent** ⚠️ | Rust / whisper.cpp + sherpa-onnx | Real speech recognition, dual-path: whisper.cpp (`whisper-rs`) produces the final transcript; SenseVoice (`sherpa-onnx`) serves the fast path with speech-emotion + audio-event classification (falls back to a small Whisper model — words, no tone — when unprovisioned). Scripted transcript is opt-in behind `STT_BACKEND=mock`. Build-verified (both backends compile and link; 30 unit tests pass), but **no live transcription or emotion classification has been observed** — accuracy and latency are unmeasured. | `audio.inbound`, `chat.input`, `audio.perception` |
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
 | **Subconscious** | Python / Neo4j | Background reflection, internal monologue generation (Tier-5). | `chat.input`, `system.tick`, `knowledge.*` |
@@ -201,7 +225,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 Every interaction follows a strictly governed loop through the mesh:
 
 1. **Perception**: Transport Agent publishes raw PCM to `audio.inbound`.
-2. **Speculation**: STT Agent (SenseVoice) identifies high-confidence intent and publishes `audio.perception`.
+2. **Speculation**: STT Agent (SenseVoice fast path, or Whisper fallback) identifies high-confidence intent and publishes `audio.perception` with any classified emotion/audio events.
 3. **Reflex**: Voice Agent receives `audio.perception` and triggers an immediate speculative pause.
 4. **Appraisal**: Brain Agent receives final transcript, computes emotional valence via **OCC/Lazarus**, and updates **PAD** state.
 5. **Deliberation**: Decision Service selects the optimal intent using **MAUT** scoring.
@@ -349,15 +373,15 @@ CVS-3.5 is benchmarked against 7 other state-of-the-art and legacy humanoid, exp
 
 #### 📚 Reference Mapping
 
-> [!WARNING]
-> **Provenance status.** [1]–[4] are **vendor product materials, not peer-reviewed
-> publications** — they were previously formatted as if they were formal papers
-> (e.g. a "Technical Report"), which overstated their standing. They are listed
-> below as what they actually are: company product pages. [5]–[7] are academic
-> claims whose **exact titles and venues have not yet been verified against the
-> published record**; confirm each (DOI / arXiv / proceedings page) before relying
-> on them in any write-up. Comparative figures attributed to these sources are
-> likewise unverified.
+> [!NOTE]
+> **Provenance.** [1]–[4] are **vendor product materials, not peer-reviewed
+> publications** — they were previously formatted as formal papers (e.g. a
+> "Technical Report"), overstating their standing, and are now listed as what they
+> are. [5]–[7] are **real, verified publications**; their titles were previously
+> paraphrased into non-existent variants and have been corrected against the
+> published record (links below). The *comparative performance figures* attributed
+> to these sources in the table above remain **unverified** and should be checked
+> against each paper before being relied upon.
 
 **Vendor / product materials (non-peer-reviewed):**
 
@@ -366,11 +390,11 @@ CVS-3.5 is benchmarked against 7 other state-of-the-art and legacy humanoid, exp
 * **[3] Unitree Robotics** — Unitree G1 humanoid, product materials ([unitree.com/g1](https://unitree.com/g1)).
 * **[4] Engineered Arts** — Ameca / Tritium orchestration layer, product materials ([engineeredarts.co.uk/ameca](https://engineeredarts.co.uk/ameca)).
 
-**Academic references (⚠️ citation details unverified — confirm before use):**
+**Peer-reviewed publications:**
 
-* **[5] Inoue et al.** — real-time multimodal turn-taking for conversational robots (ERICA line of work). *Exact title/venue to be confirmed.*
-* **[6] Gutiérrez et al. (2024)** — *HippoRAG*, neurobiologically inspired long-term memory for retrieval-augmented LLMs, NeurIPS 2024. *Exact title to be confirmed — the version previously cited here did not match the published title.*
-* **[7] Wu et al.** — neurosymbolic integration of cognitive architectures with LLMs. *Venue "Journal of Neurosymbolic AI" could not be confirmed to exist; verify or remove.*
+* **[5] Inoue, K., Jiang, B., Ekstedt, E., Kawahara, T., & Skantze, G. (2024)**, *"Multilingual Turn-taking Prediction Using Voice Activity Projection"*, in *Proceedings of LREC-COLING 2024*, pp. 11873–11883, Torino, Italy. ([arXiv:2403.06487](https://arxiv.org/abs/2403.06487))
+* **[6] Gutiérrez, B. J., Shu, Y., Gu, Y., Yasunaga, M., & Su, Y. (2024)**, *"HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models"*, in *Advances in Neural Information Processing Systems (NeurIPS 2024)*. ([arXiv:2405.14831](https://arxiv.org/abs/2405.14831) · [proceedings](https://papers.nips.cc/paper_files/paper/2024/hash/6ddc001d07ca4f319af96a3024f6dbd1-Abstract-Conference.html))
+* **[7] Wu, S., Oltramari, A., Francis, J., Giles, C. L., & Ritter, F. E. (2024)**, *"Cognitive LLMs: Toward Human-Like Artificial Intelligence by Integrating Cognitive Architectures and Large Language Models for Manufacturing Decision-making"*, *Neurosymbolic Artificial Intelligence* (IOS Press). ([arXiv:2408.09176](https://arxiv.org/abs/2408.09176))
 
 ---
 
@@ -472,7 +496,7 @@ AI_friend/
 | :--- | :--- | :--- | :---: | :---: | :---: |
 | **Mesh Telemetry** | Speed | orjson / NATS Binary | <0.5 µs | **`[TBP]`** | **Pending** |
 | **Data Throughput**| Scale | PyO3 FFI Audio | 80,000 OPS | **`[TBP]`** | **Pending** |
-| **STT Perception** | Latency | SenseVoice CPU Fan-out | <50ms | **`[TBP]`** | **Pending** |
+| **STT Perception** | Latency | Fast Whisper CPU Fan-out | <50ms | **`[TBP]`** | **Pending** |
 | **Cognitive Turn** | Turnaround | BDI Mesh + State Hydration | <120ms | **`[TBP]`** | **Pending** |
 | **First Audio** | Response | Streaming PCM Chunking | <180ms | **`[TBP]`** | **Pending** |
 | **Total Perceived** | **End-to-End**| **CVS-3.5 Premium Mesh** | **<250ms** | **`[TBP]`** | **Pending** |

@@ -1535,10 +1535,26 @@ Behavior changes:
 
 Documentation changes:
 
-- **B3**: reference list reframed — [1]–[4] are vendor product pages, not the
-  "Technical Report"-style publications they were formatted as; [5]–[7] flagged as
-  unverified pending confirmation against the published record. Duplicate block in
-  `app/agents/context.md` now points at the canonical README list.
+- **B3**: reference list corrected against the published record. [1]–[4] are vendor
+  product pages, not the "Technical Report"-style publications they were formatted
+  as. [5]–[7] turned out to be **real papers by the stated authors in the stated
+  venues, but every one carried a paraphrased title that does not exist**:
+  - [5] was cited as *"Real-Time Turn-Taking Decision Making for a Humanoid Robot
+    Using Multimodal Cues"*; the actual LREC-COLING 2024 paper is Inoue, Jiang,
+    Ekstedt, Kawahara & Skantze, *"Multilingual Turn-taking Prediction Using Voice
+    Activity Projection"* (pp. 11873–11883, arXiv:2403.06487).
+  - [6] was cited as *"...Long-Term Memory Retrieval for Generative Agents"*; the
+    actual NeurIPS 2024 paper is *"HippoRAG: Neurobiologically Inspired Long-Term
+    Memory for Large Language Models"* (arXiv:2405.14831).
+  - [7] was cited as *"Integrating Cognitive Architectures with Large Language
+    Models: A Neurosymbolic Framework"*; the actual paper is Wu, Oltramari,
+    Francis, Giles & Ritter, *"Cognitive LLMs: Toward Human-Like Artificial
+    Intelligence by Integrating Cognitive Architectures and Large Language Models
+    for Manufacturing Decision-making"*, *Neurosymbolic Artificial Intelligence*
+    (IOS Press, arXiv:2408.09176). The venue **does** exist — an earlier draft of
+    this audit wrongly suspected otherwise; verification corrected that.
+
+  Duplicate block in `app/agents/context.md` now points at the canonical README list.
 - **D1**: version labels unified to CVS-3.5 (was a mix of "CVS-1.0", "v3.0
   Micro-Agents", "CVS-3.5" across 20+ sites).
 - **D2/D3/D4**: Architecture Snapshot rewritten to current reality (Rust
@@ -1567,10 +1583,555 @@ Remaining risks / next work:
   `MOCK_LLM_TEXT=false` against a live Ollama model on a held-out corpus, to
   replace the `[TBP]` placeholders (B2). Until then, no recall/realism number in
   the docs should be treated as evidence.
-- **B3**: citations [5]–[7] still need verification (DOI/arXiv/proceedings).
+- **B3**: citation *titles* are now verified and corrected, but the **comparative
+  figures** attributed to [5]–[7] in the SOTA table (e.g. ERICA "200 ms", HippoRAG
+  "~92% Recall@5", ACT-R/E "0.280 ToM MAE") were **not** checked against the
+  papers. Verify each before publishing the table.
 - A1/A3 verified at unit level only; true redelivery behaviour needs a live NATS
   mesh under CPU-latency load.
 - Untouched: A5 (brittle `is_sqlite` sniffing), A7 (over-strict prosody
   validator), C2 (`*`+credentials CORS when `LAN_ONLY=false`), E1 (prod STT
   defaults to `RUST_STT_MOCK_TRANSCRIPT`), E2 (brain_agent 512M limit), E3
   (LiveKit http:// vs ws:// scheme), F1/F2 (god-functions).
+
+## 2026-07-17 Audit Follow-up — C2 (CORS) + E1 (STT is a stub)
+
+### C2 — Wildcard CORS could reflect arbitrary origins with credentials
+
+Changed files: `backend/main.py`
+
+`CORSMiddleware` was always constructed with `allow_credentials=True`. With
+`LAN_ONLY=false` and the default `ALLOWED_ORIGINS=*`, that yields wildcard +
+credentials — forbidden by the CORS spec, and Starlette resolves it by *reflecting
+back whichever Origin the caller sent*, so any website could make credentialed
+requests against the host. The origin policy is now resolved explicitly into three
+branches: LAN default (regex over loopback/private ranges, credentials on),
+wildcard (credentials **forced off**, with a startup warning), explicit allowlist
+(credentials on). Verified all three branches; the wildcard+credentials
+combination is now unreachable.
+
+### E1 — The STT agent is a stub; the documented fix was not implementable
+
+The audit recorded E1 as "production STT defaults to a mock transcript — make real
+STT the default". **That fix is impossible, and the finding was understated.**
+
+Reading `backend/crates/stt-agent/`:
+
+- Its `Cargo.toml` pulls **no speech-recognition dependency at all** — no whisper,
+  sherpa, sensevoice, vosk or onnx. Only NATS/serde/tokio plumbing.
+- `main.rs` **refuses to start** when `RUST_STT_MOCK_TRANSCRIPT` is empty:
+  *"no live STT backend is configured"*. There is nothing to switch to.
+- It ignores inbound audio *content* (it derives RMS/noise telemetry from the
+  bytes, but the transcript is fixed), splits the fixed string into words, and
+  replays them as timed "partial hypotheses" on `audio.perception` at 80 ms
+  intervals — closely imitating live incremental recognition.
+- It published the result as `ChatInput` with `source: "whisper", confidence: 0.9`.
+
+So the deployed mesh's entire perception path is scripted playback labelled as
+Whisper output. Flipping the default to "real" would only make the container exit.
+
+Changed files: `backend/crates/stt-agent/src/main.rs`, `docker-compose.prod.yml`,
+`README.md`
+
+- `source` is now `"mock"`, not `"whisper"` — a fixed stub string is no longer
+  indistinguishable from real recognition in logs/telemetry/benchmarks. Nothing
+  branches on this value (only `source == "subconscious"` is tested in
+  `brain_agent`); the static contract fixture is unchanged.
+- Added a loud startup `warn!` stating the agent is a stub.
+- **Healthcheck fixed.** It was
+  `[ -n "${RUST_STT_MOCK_TRANSCRIPT}" ] && nc -z nats_mesh 4222 || exit 1`,
+  broken twice over: Compose interpolates `${...}` at *parse time from the host
+  env*, so it never tested anything in the container; and because the var is not
+  defined in `.env.example` it collapsed to `[ -n "" ] && ... || exit 1`, i.e. it
+  reported **unhealthy unconditionally**. Now uses the same `nc -z nats_mesh 4222`
+  probe as every other service.
+- README: agent registry now marks STT ⚠️ stub; the "Dual-STT fan-out" protocol
+  section is marked design-intent-not-current-behaviour. The Brain-side
+  arbitration logic *is* real and test-covered — it is simply fed scripted input.
+
+Verification:
+
+```powershell
+cd backend; python -m pytest --ignore=scripts   # exit 0
+cargo check -p stt-agent                        # clean
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config  # OK
+```
+
+Remaining risks / next work:
+
+- **No real STT exists in the mesh.** Porting a Whisper/SenseVoice backend into
+  `crates/stt-agent` (or restoring the archived Python `STTAgent`) is now the
+  blocking prerequisite for *any* end-to-end perception, latency or accuracy
+  claim. Until then the `[TBP]` SLO table cannot be honestly populated end-to-end.
+- The audit's E1 severity should be read as higher than originally filed: this is
+  not a config default, it is a missing subsystem.
+- Still untouched: A5 (brittle `is_sqlite` sniffing), A7 (over-strict prosody
+  validator), C1 (unauthenticated `/token`; accepted for localhost-only use),
+  E2 (brain_agent 512M limit), E3 (LiveKit http:// vs ws:// scheme),
+  F1/F2 (god-functions), B2 (benchmarks still need a real re-run).
+
+---
+
+## 2026-07-17 E1 Resolved — Real STT (whisper.cpp) implemented, build not yet verified
+
+Supersedes the previous entry's "No real STT exists in the mesh" risk. The
+`stt-agent` crate now has an actual recognition backend.
+
+### What landed
+
+- **`audio.rs` (new).** `decode_mono_f32` (interleaved i16 -> mono f32),
+  `resample_to_16k` (rubato windowed-sinc), `rms`, and an `Endpointer` VAD state
+  machine emitting `Silence` / `SpeechContinues` / `Endpoint`. Whisper needs mono
+  f32 at *exactly* 16 kHz; the old code named a buffer `pcm_16k_mono` but never
+  resampled and ignored `STT_TARGET_SAMPLE_RATE`. Downsampling 48k/32k -> 16k
+  without band-limiting aliases high-frequency energy into the speech band, so a
+  sinc resampler is used rather than sample-dropping.
+- **`whisper.rs` (new).** `WhisperModel::load/transcribe`, `clean_transcript`, and
+  `ensure_model` (download to `.part` then rename, so a crash mid-download cannot
+  leave a corrupt file that later looks like a valid cache hit). Models are cached
+  in the `stt_models_data` volume.
+- **`main.rs` (rewritten).** `STT_BACKEND` selects `whisper` (default) or `mock`;
+  dual-path fan-out (small model -> partial, larger -> final); inference runs on
+  `spawn_blocking`; bounded(1) partial channel with `try_send` sheds load rather
+  than queueing stale hypotheses.
+- Compose mounts the model volume and passes `STT_*`; `Dockerfile.rust` gains
+  `cmake clang libclang-dev` for whisper.cpp + bindgen.
+
+### The fast path is Whisper, not SenseVoice
+
+SenseVoice is a sherpa-onnx model and is not reachable through whisper.cpp. The
+speculative path therefore runs a *small Whisper* model. Consequently **no emotion
+or paralinguistic events are inferred** — those fields are left empty rather than
+fabricated. Docs corrected accordingly; the historical "SenseVoice fast path"
+description was design intent that was never implementable via this backend.
+
+### Verification — what is and is not proven
+
+Proven without a native toolchain (no local cmake/clang):
+
+```powershell
+# audio.rs compiled standalone (only needs rubato)
+cargo test          # 6/6 pass — proves rubato 0.16 API; 4800 @48k -> ~1600 @16k
+# clean_transcript extracted and tested
+cargo test          # 3/3 pass
+# whole crate type-checked against a signature-faithful whisper-rs 0.16 stub
+cargo check -p stt-agent   # Finished, 0 errors, 0 warnings
+python -m pytest backend   # 190 passed, exit 0
+```
+
+Reading the real `whisper-rs` 0.16 source (fetched from `static.crates.io`) caught
+two genuine compile errors written from stale API memory: `full_n_segments()`
+returns `c_int`, not `Result` (so `.with_context()?` was invalid), and
+`full_get_segment_text` no longer exists — segments are reached via `as_iter()` /
+`to_str_lossy()`. A third bug was self-inflicted: `publish_final` hardcoded
+`source: "whisper"`, which would have relabelled mock output as real Whisper —
+exactly the E1 dishonesty being removed. Now parameterised.
+
+**NOT proven:** whisper.cpp has never been compiled here, and no live
+transcription has been observed. Accuracy and latency remain unmeasured. CI
+(`ci.yml` runs `cargo check --workspace`; `docker-build.yml` builds
+`Dockerfile.rust`) will exercise the native build on push — that is the gate.
+
+> **Update (2026-07-17):** the native build is now proven. Installing LLVM supplied
+> the `libclang` that `whisper-rs-sys`' bindgen needs, and whisper.cpp compiles,
+> links and passes 19 unit tests locally on Windows — no longer Docker-only. A live
+> audio round-trip is still outstanding: no ggml weights have been fetched here and
+> nothing has been transcribed, so accuracy and latency stay unmeasured.
+
+Remaining risks / next work:
+
+- Native build + a live audio round-trip are the outstanding proof. Until both are
+  green, no perception latency/accuracy number may be published.
+- `stt_agent`'s healthcheck still only probes NATS reachability; it does not prove
+  a model loaded. Consider a readiness subject once the build is green.
+- Still untouched: A5 (brittle `is_sqlite` sniffing), A7 (over-strict prosody
+  validator), C1 (unauthenticated `/token`; accepted for localhost-only use),
+  E2 (brain_agent 512M limit), E3 (LiveKit http:// vs ws:// scheme),
+  F1/F2 (god-functions), B2 (benchmarks still need a real re-run).
+
+---
+
+## 2026-07-17 Absent acoustic emotion was read as confident neutrality (STT follow-up)
+
+Found while answering "if we don't use sherpa-onnx, are the emotion fields just
+empty?" — they are, but empty was **not** inert.
+
+`apply_sensory_perception` read `metadata.get("emotional_bias", 0.0)`. The Whisper
+STT publishes only `text` / `is_partial` / `confidence`, so the default fired on
+every partial. With published `confidence=0.7` clearing `MIN_PERCEPTION_CONFIDENCE`
+(0.55) and `STATE_SENSORY_WEIGHT=0.20`, each partial applied
+`mood = mood*0.86 + 0.0*0.14`. Measured against the pre-fix code, five partials —
+one utterance — took mood and `user_mental_model.inferred_valence` from 0.800 to
+**0.376**. It did not merely fail to add affect; it *erased* affect that semantic
+appraisal and System-2 drift had just established, flattening the agent the more
+the user spoke.
+
+Root cause is a category error: **absence of evidence encoded as evidence of
+neutrality.** Fix distinguishes the two — a missing `emotional_bias` skips the
+mood/valence blend entirely, while an explicit `0.0` from a model that really does
+predict emotion is still treated as a genuine neutral reading and blended. Events
+continue to apply independently. (`bool` is excluded from the numeric check because
+`isinstance(True, int)` is True.)
+
+Tests added in `test_state.py`, each verified to fail against the pre-fix code:
+`test_missing_emotional_bias_does_not_flatten_mood` and
+`test_events_still_apply_without_emotional_bias` both FAIL pre-fix;
+`test_explicit_zero_emotional_bias_still_blends` passes either way by design — it
+guards the *over*-correction of skipping all zeros. Full suite: 193 passed.
+
+Related findings, not yet fixed:
+
+- **SenseVoice is disconnected, not absent.** `scripts/bootstrap/provision_models.py`
+  still downloads the sherpa-onnx SenseVoice model and `models/sensevoice/export-onnx.py`
+  still exports it; the only consumer is the undeployed
+  `_archive/python_agents/stt/sensevoice_service.py`. The model is provisioned and
+  nothing reads it. Restoring the real fast path is therefore a wiring job, not a
+  port — cheaper than the previous entry implied.
+- **Contract/consumer mismatch.** `AudioPerception` has a top-level
+  `paralinguistic_events` field, but the Python side reads `metadata["events"]`.
+  Populating the contract field would change nothing. Pick one shape.
+- Until an acoustic backend lands, Laughter (energy +0.15, trust +0.05), Applause
+  (+0.2 energy) and Cough/Sneeze (+0.02 attachment) are unreachable, and ToM
+  valence drifts on text alone.
+
+---
+
+## 2026-07-17 Pillar 3 — pitch and volume now reach the vocoder
+
+`LocalTtsEngine::synthesize(&self, text, speed)` took **only** speed. `ProsodyFrame`
+carries `{ rate, pitch, volume }`, and `contracts::vad_to_prosody` computes all
+three from PAD affect (valence/arousal/dominance/fatigue/distance) — but the local
+ONNX path passed `prosody.rate` and dropped pitch and volume on the floor. The two
+remaining VITS scales were hardcoded (`0.667`, `0.8`). Net effect: the whole
+affective architecture reached the vocoder as a single float. "Angry" and "excited"
+were both just *faster*; there was no *louder*.
+
+Note this was **local-path only** — `synthesize_stream` already forwarded
+rate/pitch/volume to the remote engine. The regression was invisible whenever a
+remote TTS was configured.
+
+### How pitch is applied
+
+VITS exposes no pitch input (its three scales are noise_scale, length_scale,
+noise_scale_w). Pitch is therefore applied by band-limited resampling of the
+rendered waveform via rubato: resampling to `n/pitch` samples and replaying at the
+original rate scales every frequency by `pitch` **and** divides duration by
+`pitch`. That duration change is cancelled at the source by generating at
+`length_scale = pitch / rate`, so:
+
+    generated = pitch / rate   ->   after resample = 1 / rate
+
+leaving duration a function of `rate` alone. Pitch and speed are now independent.
+`pitch_compensation_preserves_rate_driven_duration` pins this invariant over
+(rate, pitch) = (1.0,1.0), (1.0,1.25), (1.4,0.8), (0.7,1.5).
+
+Caveat recorded deliberately: resampling shifts **formants** along with F0, so
+extreme shifts sound "chipmunk"/"Darth Vader". Acceptable here only because
+`vad_to_prosody` squashes pitch through `tanh`, keeping realistic output near
+0.85..1.20. Widening expressive pitch range later requires a formant-preserving
+shifter (PSOLA/WORLD) — resampling will not survive it.
+
+### Volume
+
+Applied in the f32 domain before quantisation (a quiet agent shouldn't pay an extra
+rounding penalty). `Prosody.volume` is an absolute level 0.1..=1.0 (1.0 = full
+scale), not a gain around 1.0. Vocalisations and hesitations get it via
+`utterance_gain` = volume x ambient-noise compensation, so a quiet agent's "hmm"
+doesn't blast at full level next to its attenuated words. The remote path is
+deliberately left on noise-compensation only — folding volume in there would apply
+it twice.
+
+Also released the ONNX session mutex before resampling, so the CPU-bound shift no
+longer serialises concurrent synthesis.
+
+Verification: `cargo test -p voice-agent` 13 passed (7 new, 6 pre-existing);
+`cargo test -p contracts` 6 passed; `cargo clippy -p voice-agent` — 4 warnings, all
+on pre-existing lines (318, 703, 805, 837), none in the new code. Not verified: no
+audio was rendered — `models/base/` and `models/custom/` still contain no real
+weights, so this path cannot run end-to-end yet (see the fake-ONNX-exporter issue).
+
+---
+
+## 2026-07-17 Fake ONNX exporter removed; local voice fallback actually falls back
+
+Two defects that compounded into "training a custom voice makes the agent mute".
+
+### The exporter fabricated success
+
+`scripts/research/export_models.py::export_custom_models` wrote **text files** named
+`custom_gpt.onnx` / `custom_vits.onnx` containing `MOCK_CUSTOM_*_ONNX_CONTENT`, then
+logged `✅ Custom ONNX models exported successfully`. Same class of problem as the
+STT stub (E1): a success message for work that never happened.
+
+It only triggered when real GPT-SoVITS checkpoints were present — so it punished
+exactly the user who *had* trained a voice.
+
+Now: no fabricated artifacts. Reports honestly that export is unimplemented, points
+at the GPT-SoVITS exporter to implement, and returns False so the real base voice is
+used. `purge_placeholder_artifacts()` deletes the poison files left by prior runs,
+matching on the `MOCK_` content marker so a genuine model is never touched
+(verified: fake removed, real preserved).
+
+### The fallback did not fall back
+
+`voice-agent` branched on `custom_model.exists()` and swallowed the load error with
+`.ok()`. A present-but-broken custom model therefore yielded `None` — it did **not**
+try base. So the placeholder files disabled local synthesis *entirely*, while
+`docs/ARCHITECTURE.md` §95 promised the engine "seamlessly falls back to a base
+Piper VITS model, guaranteeing robust startup stability". A corrupt custom model was
+strictly worse than no custom model, and logged nothing about why.
+
+`load_local_engine()` now iterates candidates (CUSTOM -> BASE), falling through on
+missing *or unloadable*, and logs the underlying error at each step instead of
+discarding it.
+
+### Also
+
+- `tar.extractall(..., filter="data")` — the unfiltered call allowed a malicious
+  archive to write anywhere on disk (CVE-2007-4559); it is also the future
+  interpreter default, so pinning it keeps behaviour stable.
+- `ensure_base_models` no longer swallows failures. It is now the only working local
+  voice, so a failed download must not be reported as provisioned. Cleanup moved to
+  `finally`; `main()` provisions base *before* attempting custom.
+
+Verification: `cargo test -p voice-agent` 14 passed (incl. new
+`placeholder_onnx_file_errors_instead_of_loading`, which pins that the exact
+placeholder bytes surface as a recoverable `Err` — the mechanism fall-through relies
+on). clippy: same 4 pre-existing warnings, none new. ruff clean.
+
+Not verified: the CUSTOM -> BASE fall-through cannot be unit-tested without a real
+ONNX model on disk (paths are hardcoded, and proving "loads base" needs real
+weights). Reviewed, not executed. Run `python scripts/research/export_models.py` to
+fetch the real ~20MB piper voice and exercise it end-to-end — that is also what would
+finally make the pitch/volume work audible.
+
+---
+
+## 2026-07-17 Local TTS made to actually work — it never had
+
+Provisioning the real voice (per the previous entry) proved the local ONNX path had
+**never** produced speech. Four independent defects, every one failing silently.
+
+### Proof it could not have worked
+
+The crate used piper's graph names (`input`, `input_lengths`, a fused `scales`
+tensor, output `output`) while its `Phonemizer` required a `lexicon.txt` — which
+piper voices do not ship (they phonemize via espeak-ng at runtime). **The two halves
+targeted different model families.** With a piper model: right tensor names, empty
+lexicon -> `[bos, eos]` -> silence. With a lexicon model: right lexicon, wrong tensor
+names -> `Invalid input name: input`. There was no model for which both held.
+
+### The four defects
+
+1. **Wrong model family provisioned.** `export_models.py` fetched
+   `vits-piper-en_US-amy-low` (espeak, no lexicon). Now fetches `vits-ljs`, which
+   ships `tokens.txt` + `lexicon.txt` (CMU-in-IPA) and matches the Phonemizer.
+2. **Lexicon parsed with the wrong separator.** sherpa-onnx lexicons are
+   *space*-separated (`balzer b ˈ æ l t s ɚ`); the code did `line.split('\t')` and
+   required `>= 2` parts, so every line collapsed to one part and was dropped —
+   an empty lexicon, silently. Now `split_whitespace` (accepts either). Tokens now
+   use `rsplit_once(' ')`, since the old `split(' ')` broke on the *space phoneme*,
+   a real entry in these vocabularies.
+3. **Silent tolerance of missing/broken files.** `Phonemizer::load` wrapped both
+   reads in `if let Ok(..)` and returned `Ok` regardless. Now both are required and
+   a zero-entry lexicon is a hard error, so `load_local_engine` can fall through.
+4. **Wrong graph interface.** Real vits-ljs inputs are `x` ['N','L'] i64,
+   `x_length` ['N'] i64, and **three separate** f32 scalars `noise_scale` /
+   `length_scale` / `noise_scale_w`; output is `y`. Corrected, and the interface is
+   now validated at load — a wrong model family fails with the actual input names
+   listed, instead of "Invalid input name" on the first utterance.
+
+Also: `add_blank=1` (model metadata) means canonical interleave
+`[0, p1, 0, p2, 0, ..., pn, 0]`. The old code emitted `[p1, 0, p2, 0, ...]` (no
+leading blank) and bracketed with piper's `^`/`$`, which this vocabulary does not
+define — so they silently never appended.
+
+### Sample rate
+
+ONNX metadata reports `sample_rate = 22050`; the mesh runs at 32000 and there was
+**no output rate conversion at all** — a 22.05k voice emitted into a 32k stream
+plays ~45% fast and sharp. Native rate is now read from metadata (not hardcoded) and
+the conversion is *fused* with the pitch shift into one sinc pass:
+`ratio = (target/native) / pitch`. Two passes would double cost and compound
+interpolation error.
+
+### Verified — real audio, not simulated
+
+`cargo test -p voice-agent`: **19 passed**, including 5 that load the real 114MB
+model and render:
+
+```
+neutral            rate=1.00 pitch=1.00 -> 2.97s peak=15661
+pitch_only_high    rate=1.00 pitch=1.30 -> 3.02s peak=13809   <- +30% pitch, +1.7% duration
+rate_only_fast     rate=1.50 pitch=1.00 -> 2.33s peak=13660
+quiet_half_volume  vol=0.50             -> peak=8313          <- 0.531 x neutral
+```
+
+Pitch/duration independence — the point of the length_scale compensation — holds on
+real audio (1.7% drift). Volume halves amplitude as designed.
+
+**Known non-linearity (not a bug):** rate does not scale duration exactly. rate=1.5
+gives 2.33s where linear predicts 1.98s (+18%); rate=0.75 deviates only ~3%. VITS
+ceils each phoneme's frame count (`w_ceil = torch.ceil(w)`), so shrinking
+length_scale rounds many phonemes *up*, inflating short renders. Deviation grows as
+length_scale falls, exactly as ceil-quantisation predicts. Inherent to VITS; the
+`real_voice_duration_tracks_rate_and_ignores_pitch` bound is 20% to accommodate it.
+
+Still not verified: nothing has been run through the live mesh, and no one has
+listened. `cargo test -p voice-agent render_prosody_demo_wavs -- --ignored` writes
+`voice_demo/*.wav` (gitignored) for that.
+
+---
+
+## 2026-07-17 — PR #56 review round: 18 bot comments triaged, 13 fixed, 1 rejected
+
+CodeRabbit + Codex left 18 inline comments on PR #56. Deduplicated across the two
+bots: **14 distinct findings**. Every one was verified against the code rather than
+taken on trust; 13 were real and are fixed, 1 was wrong.
+
+**Rejected — CodeRabbit `.agents/CONTEXT.md:1597`** ("audit headings are future-dated
+July 17 2026; today is July 16"). The commits are authored `2026-07-17 +0530`. The
+bot compared against UTC while the ledger is written in the author's local timezone
+(IST, UTC+5:30), so entries legitimately date a few hours "ahead" of UTC. No change.
+
+**Critical — the whisper cache was unwritable in production.** `Dockerfile.rust`
+never created `/app/models`, and its last line is `USER nobody:nogroup`. When Docker
+seeds a fresh named volume it copies the *image directory's* ownership — but if the
+mountpoint does not exist in the image, it creates it `root:root 0755` instead. With
+`stt_models_data:/app/models` mounted and `STT_BACKEND=whisper` (the default),
+`ensure_model()` could never write the weights: first boot would restart-loop and the
+"real STT" shipped in E1 would never transcribe anything. Both bots found this
+independently. Fixed with `install -d -o nobody -g nogroup` before the USER switch.
+
+**The partial queue did the opposite of its own comment.** The comment promised "a
+newer partial supersedes the queued one"; the code was `mpsc::channel(1)` +
+`try_send`, and `try_send` on a full channel rejects the *new* job and keeps the old
+one — first-in-wins. An overloaded fast path therefore published hypotheses lagging
+the speaker. Replaced with `PartialSlot` (mutex + `Notify`), which genuinely
+overwrites. Two tests pin it.
+
+**Speculation ran on unconfirmed speech.** `Endpointer::push` returns
+`SpeechContinues` from the first voiced chunk, long before `min_speech_ms` — correct
+for buffering (onset must not clip) but wrong as a trigger for partial inference,
+which can emit a barge-in `audio.stop`. A cough could interrupt the agent and then be
+rejected as noise by the same endpointer. Added `speech_confirmed()` and gated
+partial dispatch on it.
+
+**Late partials could abort the wrong turn.** Fast-path inference outlives its
+utterance; by publish time the endpointer may have rotated `utterance_id`. The
+hypothesis for finished speech then reached `audio.perception` and could stop the
+agent mid-reply to a *different* turn. Partials are now dropped unless their
+utterance is still open. Same class in voice-agent: `AudioStop.turn_id` existed in
+the contract and was simply never read, so a delayed stop aborted whatever was
+speaking next — now scoped, with unscoped stops still honoured.
+
+**Latency provenance survived silence.** `utterance_latency` was captured on the
+first chunk ever seen and never cleared while idle audio was trimmed, so someone
+speaking an hour into a quiet session produced a `chat.input` timestamped an hour
+early — every downstream latency number inflated by the idle duration. Re-anchored
+when the pre-roll is trimmed.
+
+**The audio.inbound loop awaited a NATS round-trip per chunk.** `.await?.await?` on
+voice-properties waits for the JetStream *ack* on every inbound chunk (~50/sec at
+20ms frames), in the sole consumer of `audio.inbound` — a slow mesh would stall
+ingestion of the very speech being listened for. These are ephemeral samples
+superseded by the next chunk; the ack is no longer awaited.
+
+**Local TTS could not fall back.** `synthesize` returned `Ok(Vec::new())` for text it
+could not pronounce and the caller's `Err` branch only logged — either way the agent
+just went quiet, with no attempt at remote synthesis. Now: unpronounceable text is an
+error, and any local failure falls through to remote. Synthesis also moved to
+`spawn_blocking` (ONNX inference + sinc resample, no await point, was occupying a
+Tokio worker).
+
+**Out-of-vocabulary words — partially resolved, G2P deferred.** OOV words were
+dropped with no trace, so the agent *spoke a different sentence than it generated* —
+output-channel fabrication, indistinguishable to a listener from the agent having
+chosen those words. The Phonemizer has no grapheme-to-phoneme fallback, so this is
+now reported (`PhonemizedText.oov` + a loud warning naming the words) and an
+all-OOV utterance fails into remote synthesis. It is **not** fully fixed: a sentence
+containing one unknown name still gets spoken without it, because muting the whole
+sentence would be worse. A real G2P fallback is the actual fix and is outstanding.
+
+Also: `SAMPLE_RATE=0` parsed fine and panicked on a zero-length reverb buffer (now
+rejected); untrusted mesh prosody was clamped only inside local synthesis while
+remote/hesitation/vocalization consumed raw values (now clamped at selection); the
+whisper model download buffered the whole file in RAM before writing (now streamed);
+README still described a SenseVoice fast path with <100ms detection and emotion
+output, contradicting its own Whisper warning three lines above (corrected).
+
+**Verification:** voice-agent 21 tests pass (up from 19, 5 against the real 114MB
+model); stt-agent 19 pass. Both clippy-clean. Python suite unaffected. The native
+whisper.cpp build is now proven locally — see the update above.
+
+---
+
+## 2026-07-17 — SenseVoice restored: the agent can hear tone again (affect pillar, acoustic half)
+
+Since the Rust migration, the fast path ran Whisper only, and Whisper only
+transcribes. The Python consumer for acoustic affect
+(`StateService.apply_sensory_perception` — mood blending from `emotional_bias`,
+energy/trust nudges from Laughter/Applause/Cough) has been live and reachable the
+whole time, receiving nothing on every perception. This entry reconnects it.
+
+**What was built.** `stt-agent/src/sensevoice.rs`: SenseVoice via the `sherpa-onnx`
+crate (v1.13.4, `shared` linking). SenseVoice emits classifications as inline tags
+(`<|en|><|HAPPY|><|Laughter|>text`); the parser strips them and maps emotion to the
+scalar bias the Python state machine expects. The emotion→bias table is ported
+VERBATIM from the archived `sensevoice_service.py` — the damped-bias state machine
+downstream was tuned against those exact numbers, so "improving" them here would
+silently retune the agent's affect response. `FastPath` enum: SenseVoice when
+provisioned, Whisper fallback (loud warning: words without tone). Absence semantics
+preserved end-to-end: no emotion classified → the `emotional_bias` KEY IS OMITTED,
+never written as 0.0 (see 45e1a33 for why).
+
+**The dead wire, and its second break.** Even had a model been classifying emotion,
+the Rust agent published `paralinguistic_events` only at the AudioPerception top
+level — but Python reads `data["metadata"]["events"]` and
+`["emotional_bias"]`. The pre-migration agent published both locations; the rewrite
+kept only the one nothing reads. `build_partial_perception` (extracted pure from
+`publish_partial`) now populates both, and a test walks the serialized JSON exactly
+the way `CognitiveService._on_audio_perception` does.
+
+**The provisioning chain was broken in three places, one fatal.**
+`backend/main.py` imported `scripts.provision_models` — a module that does not
+exist (`scripts/bootstrap/provision_models.py` is the real path), so main.py was
+UNIMPORTABLE and the "✅ Sensory Mesh models verified and locked" log had never
+once printed. In the script itself: `base_dir` resolved to `backend/scripts/`, so
+it provisioned into `backend/scripts/models/sensevoice` — a path nothing reads —
+and logged success; and the checksum-mismatch re-provision path early-returned
+"already provisioned" without downloading anything, a no-op that logged success.
+All rewritten: correct paths, `extractall(filter="data")` (CVE-2007-4559),
+re-hash after extraction, replace-never-merge, cleanup in `finally`.
+
+**Two shared-library collisions, one predicted, one discovered.**
+
+1. *Predicted (Linux/Docker):* sherpa bundles ITS OWN `libonnxruntime.so` and
+   copies it into `target/release/` — the same path ort (voice-agent) writes its
+   different-version copy. Build order decides which survives; the losing agent
+   fails at runtime while the image builds green. `Dockerfile.rust` now builds the
+   two agents in sequence, stages ort's lib before sherpa can clobber it, and
+   ships sherpa's libs NEXT TO the stt-agent binary (its `$ORIGIN` rpath prefers
+   them; /usr/local/bin is not in the linker cache, so voice-agent can never load
+   them). Two agents, two ONNX Runtimes, zero ambiguity.
+
+2. *Discovered (Windows, via the real-model test):* Windows 11 ships its own
+   `onnxruntime.dll` (Windows ML, ORT 1.17) in System32, and System32 outranks
+   PATH in DLL search. Test exes run from `target/debug/deps/`, where sherpa never
+   copies its DLLs — so sherpa's C API (wants ORT API 27) loaded the OS's 1.17 and
+   died with an access violation. `stt-agent/build.rs` (Windows-only) now stages
+   sherpa's DLLs into deps/, whose position at the front of the search order wins.
+   Without the runtime test this would have shipped as "compiles, therefore works".
+
+**Verified:** 31 stt-agent tests pass including `real_model_loads_and_perceives_audio`
+— the actual 234MB SenseVoice model loads through the real sherpa API and inference
+completes (a 220Hz hum yields `emotional_bias: None`, correctly not `Some(0.0)`).
+21 voice-agent tests still pass alongside (no cross-contamination from the staged
+DLLs). Python suite unaffected. Combined compose config validates. The volume-test
+flake was also fixed (peak → RMS; peak is an extreme-value statistic across two
+independent stochastic VITS renders and varied 0.35–0.53 run to run).
+
+**NOT proven:** no live emotional *speech* has been classified — the runtime test
+uses a synthetic tone, which proves the API contract, not recognition quality. No
+mesh round-trip. The Docker lib separation is reasoned, not yet exercised (CI's
+docker build will compile it; only a live boot proves the runtime resolution).
