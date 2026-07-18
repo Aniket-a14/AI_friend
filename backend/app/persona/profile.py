@@ -55,6 +55,7 @@ A configured friend that cannot be affected by what happens to it is a puppet,
 not a character.
 """
 
+import copy
 import json
 import logging
 from enum import Enum
@@ -147,7 +148,11 @@ class PersonaProfile(BaseModel):
     @property
     def immutable(self) -> Dict[str, Any]:
         """The safety core. Always the code constant, never the file."""
-        return json.loads(json.dumps(IMMUTABLE_CORE))  # defensive copy
+        # A copy, so a caller mutating what it receives cannot edit the boundary
+        # list every other caller reads. deepcopy rather than a JSON round-trip:
+        # the latter silently coerces types (a tuple would come back a list), so
+        # the "copy" could differ from the original it is meant to reproduce.
+        return copy.deepcopy(IMMUTABLE_CORE)
 
     # -- construction -------------------------------------------------------
 
