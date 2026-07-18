@@ -54,7 +54,7 @@ def _assert_matches(entity_names, adj, seeds, iterations=3):
     expected = _py_reference(entity_names, adj, seeds, PPR_DAMPING, iterations)
 
     # Prepare the index-based structures needed by the Rust implementation.
-    n = len(entity_names)
+    len(entity_names)
     node_to_idx = {name: idx for idx, name in enumerate(entity_names)}
     seed_list = sorted(seeds)
     adjacency_idx = []
