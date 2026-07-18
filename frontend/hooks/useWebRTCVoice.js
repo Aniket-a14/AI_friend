@@ -44,9 +44,13 @@ export function useWebRTCVoice() {
             setIsConnecting(true);
             try {
                 // 1. Get Token from Backend
-                const res = await fetch(`${BACKEND_URL}/token`, {
-                    headers: BACKEND_ACCESS_KEY ? { 'X-Backend-Key': BACKEND_ACCESS_KEY } : {},
-                });
+                // Query param, not a custom header: a custom header forces a CORS
+                // preflight (OPTIONS) round-trip before every session start, and
+                // the key is already exposed in the client bundle either way.
+                const tokenUrl = BACKEND_ACCESS_KEY
+                    ? `${BACKEND_URL}/token?key=${encodeURIComponent(BACKEND_ACCESS_KEY)}`
+                    : `${BACKEND_URL}/token`;
+                const res = await fetch(tokenUrl);
                 if (!res.ok) throw new Error("Failed to fetch token");
                 const { token, url } = await res.json();
 
