@@ -280,13 +280,13 @@ Empirical performance profiling of the containerized cognitive mesh running loca
 
 | Metric | Mean | p50 | p95 | p99 | Jitter |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **End-to-End Thought Latency** | **`[TBP]`** | `[TBP]` | `[TBP]` | `[TBP]` | `[TBP]` |
-| **Time-to-First-Token (TTFT)** | **`[TBP]`** | `[TBP]` | `[TBP]` | `[TBP]` | `[TBP]` |
+| **End-to-End Thought Latency** | *(not yet measured)* | — | — | — | — |
+| **Time-to-First-Token (TTFT)** | *(not yet measured)* | — | — | — | — |
 
-*All values will be populated dynamically by executing `scripts/research/hard_benchmark.py`.*
+*Neither figure has a real percentile/jitter distribution captured yet — `live_telemetry.e2e_mean`/`ttft_mean` are explicitly `null` in `scripts/results/extended_benchmarks.json`. A prior figure attributed to LLM inference in the results summary was mislabeled (it was actually pre-LLM memory-retrieval latency) and has been retracted. The pre-generation cognitive pathway (gating + retrieval, excluding LLM token generation) is measured at **5.44 ms** — see §7 below.*
 
-* **Local Inference Efficiency**: `[TBP]` — to be compared against cloud humanoid baseline architectures upon benchmarking.
-* **Lightweight Footprint**: `[TBP]` — system memory footprint and CPU utilization to be measured under light-mode compose profiles.
+* **Local Inference Efficiency**: *(not yet measured)* — no verified LLM-inference-latency figure exists in the current dataset.
+* **Lightweight Footprint**: **1,266 MB RAM / 0.99 W** for the full 8-agent mesh + Postgres/Neo4j/Qdrant/NATS/Redis stack (`scripts/results/human_realism_results.json`).
 
 ---
 
@@ -296,16 +296,18 @@ To establish rigorous scientific boundaries, CVS-3.5 is actively compared agains
 
 | Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [1] | SOTA Humanoid: Tesla Optimus Gen 2 [2] | Compact Humanoid: Unitree G1 [3] | SOTA Expressive: Ameca Gen 3 [4] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [6] | SOTA Embodied: ACT-R/E [7] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** | **`[TBP]`** |
-| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | **`[TBP]`** | **`[TBP]`** |
-| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **`[TBP]`** | **`[TBP]`** |
-| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **`[TBP]`** | **`[TBP]`** |
-| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
+| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)*⁶ |
+| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)*⁶ |
+| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | *(not yet measured)*³ | *(mode retired)*⁶ |
+| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | *(not yet measured)*³ | *(mode retired)*⁶ |
+| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **87.5%**⁴ | *(mode retired)*⁶ |
+| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **0.032 (valence) / 0.041 (arousal)**⁴ | *(mode retired)*⁶ |
+| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **Dynamic** (PAD + cortisol/dopamine coupling) | *(mode retired)*⁶ |
+| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **1,266 MB**⁵ (8-agent mesh + DB stack) | *(mode retired)*⁶ |
+| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁵ | *(mode retired)*⁶ |
+| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)*⁶ |
+
+> Provenance/caveats for the "Physical" column (¹composed estimate, not a live stopwatch trial; ²composed from 7 measured components, excludes LLM generation; ³no verified telemetry exists yet — a prior figure here was mislabeled and has been retracted; ⁴independently recomputed from raw per-sample arrays and matches exactly; ⁵full 8-agent mesh + DB stack; ⁶accelerated mode is intentionally disabled in `hard_benchmark.py`) mirror `README.md` §8 and `scripts/results/benchmark_results_summary.md` — keep these three in sync.
 
 ### 📚 Reference Mapping
 

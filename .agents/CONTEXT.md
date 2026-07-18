@@ -2144,3 +2144,83 @@ independent stochastic VITS renders and varied 0.35–0.53 run to run).
 uses a synthetic tone, which proves the API contract, not recognition quality. No
 mesh round-trip. The Docker lib separation is reasoned, not yet exercised (CI's
 docker build will compile it; only a live boot proves the runtime resolution).
+
+## 2026-07-18 — B2/B3 closed: `[TBP]` placeholders replaced with verified numbers; two fabrication bugs found and fixed
+
+The 2026-07-16 audit's B2/B3 hedge ("no recall/realism number in the docs should
+be treated as evidence" until a `MOCK_LLM_TEXT=false` re-run) was addressed by
+verification rather than a fresh benchmark run (no live infra available in this
+environment). Every number now published was independently re-derived from the
+raw per-sample arrays in `scripts/results/*.json` — not read off the summary at
+face value — and cross-checked against every PNG in that directory.
+
+**What is now genuinely confirmed real:** intent classification (85.7% accuracy,
+per-class P/R/F1, full 4×4 confusion matrix), Theory of Mind MAE (0.0323 valence /
+0.0407 arousal), and Recall@K (81.8/87.5/87.5/93.2% at K=1/3/5/10) all recomputed
+from the raw 1000-sample and 88-probe arrays in `benchmark_results.json` and
+matched the summary exactly. The classification calls are real synchronous HTTP
+calls to a local Ollama `qwen2.5:3b` (`hard_benchmark.py`), not the mocked
+deterministic-text path — `MOCK_LLM_TEXT` defaults to `False` and nothing in the
+"physical" mode run forced it true. Resource footprint (1,266 MB RAM, 0.99 W) and
+paralinguistic tag precision (95.3%/94.4%) are also real, measured telemetry.
+
+**Two fabrication bugs were found and fixed in `scripts/research/`, not just
+documented:**
+
+1. `cognitive_metrics_eval.py`'s `module3_memory_actr()` silently fell back to
+   `np.random.seed(42)`-generated synthetic latency-scaling numbers whenever real
+   progression data wasn't found — and that fabricated curve (flat 15ms vs. rising
+   to 50ms) is what `cognitive_rag_recall.png`'s right-hand panel actually plots.
+   The real `progression.retrieval_latency_pruned/unpruned` arrays tell a far less
+   dramatic story (~170ms→174ms vs. ~170ms→181ms, ~4% apart). Fixed to raise
+   instead of fabricate; the existing chart is flagged unverified in the results
+   summary and needs a fresh run to regenerate honestly.
+2. `module4_conflict_resolver()`'s barge-in "stop latency" (104.3ms mean, 7.72ms
+   std) was `np.random.normal(mean, 8, 1000)` — fake Gaussian noise sprinkled onto
+   a real composed constant (100ms audio-buffer assumption + 3 measured
+   components) to make it look like measured trial variance. The "baseline" 479.9ms
+   was `np.random.normal(480, 50, 1000)` — a fully invented constant with no
+   citation. Fixed to report the composed constant directly, with its provenance
+   in the output, and no fabricated baseline.
+
+**Also found, not a script bug but a labeling error:** the results summary
+attributed "162.79ms mean inference" to a local Qwen model. That figure
+(`cognitive.local_compute_ms`) is actually the mean wall-clock duration of
+`memory_store.search_memories()` (pre-LLM retrieval) — traced via
+`pre_llm_overhead_results`/`search_duration_ms` in `hard_benchmark.py`. No
+verified LLM-inference or TTFT figure exists anywhere in this dataset;
+`extended_benchmarks.json`'s `live_telemetry.e2e_mean`/`ttft_mean` are explicitly
+`null`. Retracted in the results summary rather than propagated into any doc.
+
+**Also found:** two different benchmark scripts model the same "standard
+database" comparison baseline for Neo4j multi-hop retrieval as an *arbitrary
+multiplier* on the measured uncached latency (`human_realism_eval.py`: ×6.5/12/22;
+`extended_benchmarks_eval.py`: a hardcoded fallback ×~18/42/149, reached because of
+a JSON key-path mismatch that silently skips the real data). Neither is a
+benchmarked external system. `sota_comparisons.md`'s Table III now carries the
+real Cached/Uncached numbers with this caveat explicit, and leaves "Performance
+Speedup" unfilled rather than publish a multiplier computed against an invented
+baseline.
+
+**What was populated, with what confidence:** `README.md` §8, `docs/ROBOTICS_ANALYSIS.md`,
+`backend/app/agents/context.md`, and `academic_benchmarks/documentation/sota_comparisons.md`
+now carry the real numbers above, footnoted by provenance. "Speech-to-Speech TTFT",
+"Memory Scaling Complexity", and most of `sota_comparisons.md` Table II's
+per-component rows are left `*(not yet measured)*` rather than forced — no
+defensible real number exists for them yet. The "Accelerated" column in every SOTA
+table is marked `(mode retired)`: `hard_benchmark.py` explicitly refuses to run it
+("Accelerated simulation mode is disabled as requested by the user").
+
+**B3 (citations):** `academic_sota_benchmarks.md` and `walkthrough.md` still
+carried the old fabricated-title-style citations for Figure 02 / Tesla Optimus
+(formatted as fake "Technical Report" entries) that were already fixed in
+`README.md`'s reference mapping. Brought into line with the same
+vendor-materials-not-papers framing.
+
+**NOT done:** a fresh `MOCK_LLM_TEXT=false` benchmark run against a held-out
+corpus (still blocked on no live infra in this environment); verifying the
+*comparative figures* attributed to [5]-[7] in the SOTA tables (ERICA "200ms",
+HippoRAG "~92% Recall@5", ACT-R/E "0.280 ToM MAE") against the cited papers
+themselves — still open from the prior audit entry; a full audit of
+`literature_references.md`'s ~30+ citations (out of scope for this pass, by
+explicit choice).

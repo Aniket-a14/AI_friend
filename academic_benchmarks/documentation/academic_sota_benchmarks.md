@@ -373,11 +373,13 @@ EREC = \frac{\theta_{\text{SLO}} \cdot \Omega_{\text{RAM-limit}} \cdot \Phi_{\te
 ```
 
 *   $\theta_{\text{SLO}} = 15.0\text{ ms}$: Maximum end-to-end cognitive routing latency budget.
-*   $\text{Latency}_{\text{E2E}} = \text{[TBP]}\text{ ms}$: Measured sub-LLM perception-appraisal-decision pathway latency.
+*   $\text{Latency}_{\text{E2E}} = 5.44\text{ ms}$: Sum of 7 measured component latencies (audio ingest/DSP, working-memory read/write, ACT-R vector search, prosody generation, ducking, NATS RTT); excludes LLM token generation, so it is a *pathway* latency, not full turn latency.
 *   $\Omega_{\text{RAM-limit}} = 4,096\text{ MB}$: Standard edge RAM allocation budget.
-*   $\text{Footprint}_{\text{RAM}} = \text{[TBP]}\text{ MB}$: Total active memory footprint of all 8 container services in macOS light-mode.
+*   $\text{Footprint}_{\text{RAM}} = 1,266.28\text{ MB}$: Total active memory footprint of all 8 container services (measured, `human_realism_eval.py`).
 *   $\Phi_{\text{power-limit}} = 35.0\text{ W}$: NVIDIA Jetson maximum edge TDP power budget.
-*   $\text{Power}_{\text{active}} = \text{[TBP]}\text{ W}$: Measured active power draw of the decentralized mesh (excluding localized Llama inference GPU power).
+*   $\text{Power}_{\text{active}} = 0.99\text{ W}$: Measured active power draw of the decentralized mesh (excluding localized Llama inference GPU power).
+
+With these substituted, $EREC \approx 315.3$. This is a **derived index computed from the measured/composed figures above**, not itself an independently measured quantity — treat it as illustrative, not a benchmarked result.
 
 
 ---
@@ -387,20 +389,22 @@ EREC = \frac{\theta_{\text{SLO}} \cdot \Omega_{\text{RAM-limit}} \cdot \Phi_{\te
 We present a comprehensive, multi-dimensional empirical comparison matrix contrasting the **AI Friend CVS-3.5 Sovereign Mesh** against the latest state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures.
 
 > [!NOTE]
-> All CVS-3.5 values represent empty placeholder states (`[TBP]`) to be populated dynamically upon running our high-fidelity physical benchmarking script (`hard_benchmark.py`).
+> The "Ours" columns below were independently re-derived from the raw per-sample telemetry in `scripts/results/*.json` (not trusted at face value) — see `scripts/results/benchmark_results_summary.md` for the full verification notes. **Not every figure is a raw stopwatch measurement**: values marked ¹² are *composed estimates* (sums of independently measured sub-components, not live end-to-end trials) and values marked ⁴ are *independently recomputed aggregates* rather than newly measured — see the numbered footnotes below the matrix for the provenance class of each metric. Accelerated (non-physical) benchmarking mode is intentionally disabled in `hard_benchmark.py`, so that column cannot be populated under the current harness. Kept in sync with `README.md` §8.
 
 | Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** | **`[TBP]`** |
-| **Local Compute Latency** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | **`[TBP]`** | **`[TBP]`** |
-| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **`[TBP]`** | **`[TBP]`** |
-| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **`[TBP]`** | **`[TBP]`** |
-| **Paralinguistic Precision** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
+| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)* |
+| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)* |
+| **Local Compute Latency** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | *(not yet measured)*³ | *(mode retired)* |
+| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | *(not yet measured)*³ | *(mode retired)* |
+| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **87.5%**⁴ | *(mode retired)* |
+| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **0.032 (valence) / 0.041 (arousal)**⁴ | *(mode retired)* |
+| **Paralinguistic Precision** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **95.3% (low stress) / 94.4% (high stress)**⁵ | *(mode retired)* |
+| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **1,266 MB**⁶ | *(mode retired)* |
+| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁶ | *(mode retired)* |
+| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)*⁷ |
+
+¹Composed estimate, not a live stopwatch trial. ²Sum of 7 measured components, excludes LLM generation. ³No verified telemetry exists yet. ⁴Independently recomputed from raw per-sample arrays; matches exactly. ⁵Genuinely measured. ⁶Full 8-agent mesh + DB stack. ⁷Non-physical "accelerated" simulation mode is intentionally disabled in `hard_benchmark.py`; this column cannot be populated under the current benchmarking harness.
 
 ---
 
@@ -582,7 +586,7 @@ Save the following content directly as `bibliography.bib` in your LaTeX project 
 
 @inproceedings{gutierrez2024hipporag,
   author    = {Guti{\'e}rrez, Bernal and Shu, Yi and Gu, Yu and Yasunaga, Michihiro and Su, Yu},
-  title     = {HippoRAG: Neurobiologically Inspired Long-Term Memory Retrieval for Generative Agents},
+  title     = {HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models},
   booktitle = {Proceedings of the Annual Conference on Neural Information Processing Systems (NeurIPS)},
   year      = {2024}
 }
@@ -653,36 +657,38 @@ Save the following content directly as `bibliography.bib` in your LaTeX project 
   year      = {2024}
 }
 
-@techreport{figure2025,
-  author      = {Figure AI},
-  title       = {Figure 02 Technical Report: In-House End-to-End Embodied Humanoid AI System},
-  institution = {Figure AI Inc.},
-  year        = {2025},
-  note        = {\url{https://figure.ai/}}
+% NOTE (2026-07-18): the four vendor entries below were previously formatted as
+% @techreport, styling vendor product pages as formal technical reports -- none
+% of these are peer-reviewed or institutionally published. Reformatted as @misc
+% product materials, matching README.md §8's Reference Mapping (the source of
+% truth for these four entries).
+
+@misc{figure2025,
+  author       = {{Figure AI}},
+  title        = {Figure 02 -- product materials (not a peer-reviewed technical report)},
+  howpublished = {\url{https://figure.ai/}},
+  year         = {2025}
 }
 
-@techreport{tesla2024,
-  author      = {Tesla Motors},
-  title       = {Tesla Bot (Optimus Gen 2) Visual-Motor End-to-End Deep Neural Networks},
-  institution = {Tesla Inc.},
-  year        = {2024},
-  note        = {\url{https://tesla.com/optimus}}
+@misc{tesla2024,
+  author       = {{Tesla, Inc.}},
+  title        = {Optimus (Gen 2) -- product materials (not a peer-reviewed publication)},
+  howpublished = {\url{https://tesla.com/optimus}},
+  year         = {2024}
 }
 
-@techreport{unitree2024,
-  author      = {Unitree Robotics},
-  title       = {Unitree G1 Humanoid Agent: Local VLMs and Reinforcement Learning Control},
-  institution = {Unitree Robotics Inc.},
-  year        = {2024},
-  note        = {\url{https://unitree.com/g1}}
+@misc{unitree2024,
+  author       = {{Unitree Robotics}},
+  title        = {Unitree G1 -- product materials (not a peer-reviewed publication)},
+  howpublished = {\url{https://unitree.com/g1}},
+  year         = {2024}
 }
 
-@techreport{ameca2025,
-  author      = {Engineered Arts},
-  title       = {Tritium Software Orchestration Layer and Low-Latency Voice Streaming on Ameca Gen 3},
-  institution = {Engineered Arts Ltd.},
-  year        = {2025},
-  note        = {\url{https://engineeredarts.co.uk/ameca}}
+@misc{ameca2025,
+  author       = {{Engineered Arts}},
+  title        = {Ameca Gen 3 / Tritium orchestration layer -- product materials (not a peer-reviewed publication)},
+  howpublished = {\url{https://engineeredarts.co.uk/ameca}},
+  year         = {2025}
 }
 ```
 
@@ -696,18 +702,19 @@ Save the following content directly as `bibliography.bib` in your LaTeX project 
 \begin{tabular}{lccccc}
 \hline
 \textbf{Subsystem Component} & \textbf{Original Latency} & \textbf{Optimized Latency} & \textbf{Throughput} & \textbf{Real-Time Budget} & \textbf{Status} \\ \hline
-Audio Ingest \& Normalizer   & --                       & [TBP]                      & [TBP]               & 5.00 ms                   & [TBP]           \\
-System 1 DSP Feature Extraction & --                    & [TBP]                      & [TBP]               & 1.00 ms                   & [TBP]           \\
-Soft-Attenuation Volume Ducking & --                    & [TBP]                      & [TBP]               & 1.00 ms                   & [TBP]           \\
-Hybrid Text Segmenter        & 4.294 ms                 & [TBP]                      & [TBP]               & 10.00 ms                  & [TBP]           \\
-Subconscious Threat Scan     & --                       & [TBP]                      & [TBP]               & 2.00 ms                   & [TBP]           \\
-Memory ACT-R Index Search    & --                       & [TBP]                      & [TBP]               & 8.00 ms                   & [TBP]           \\
-Hormonal State Appraisal     & --                       & [TBP]                      & [TBP]               & 5.00 ms                   & [TBP]           \\
-LLM Temperature Modulation   & 2.30 \(\mu\)s            & [TBP]                      & [TBP]               & 1.00 ms                   & [TBP]           \\ \hline
-\textbf{End-to-End Pathway}  & \textbf{--}              & \textbf{[TBP]}             & \textbf{[TBP]}      & \textbf{17.00 ms}         & \textbf{[TBP]}  \\ \hline
+Audio Ingest \& Normalizer   & --                       & (not yet measured)        & (not yet measured)  & 5.00 ms                   & Pending         \\
+System 1 DSP Feature Extraction & --                    & 0.043 ms                  & $\sim$23{,}000 ops/s & 1.00 ms                  & Met             \\
+Soft-Attenuation Volume Ducking & --                    & 0.019 ms                  & $\sim$51{,}800 ops/s & 1.00 ms                  & Met             \\
+Hybrid Text Segmenter        & 4.294 ms                 & (not yet measured)        & (not yet measured)  & 10.00 ms                  & Pending         \\
+Subconscious Threat Scan     & --                       & (not yet measured)        & (not yet measured)  & 2.00 ms                   & Pending         \\
+Memory ACT-R Index Search    & --                       & 1.073 ms                  & $\sim$932 ops/s      & 8.00 ms                   & Met             \\
+Hormonal State Appraisal     & --                       & (not yet measured)        & (not yet measured)  & 5.00 ms                   & Pending         \\
+LLM Temperature Modulation   & 2.30 \(\mu\)s            & (not yet measured)        & (not yet measured)  & 1.00 ms                   & Pending         \\ \hline
+\textbf{End-to-End Pathway}  & \textbf{--}              & \textbf{5.44 ms}          & \textbf{(not yet measured)} & \textbf{15.00 ms} & \textbf{Met}    \\ \hline
 \end{tabular}
 \end{table*}
 ```
+*End-to-End Pathway (5.44 ms) sums all seven measured component latencies (audio ingest/DSP, working-memory read/write, ACT-R vector search, prosody generation, ducking, NATS RTT) from `scripts/results/human_realism_results.json` — not a row-by-row sum of only the rows shown above, several of which remain individually unmeasured. Excludes LLM token generation. Throughput figures are derived ($1000 / \text{latency}_{\text{ms}}$), not independently measured op-rate trials.*
 
 ### 4.3 Master Comparative Table LaTeX Code
 
@@ -719,12 +726,13 @@ LLM Temperature Modulation   & 2.30 \(\mu\)s            & [TBP]                 
 \begin{tabular}{lcccccccc}
 \hline
 \textbf{Performance Axis} & \textbf{Figure 02} & \textbf{Optimus Gen 2} & \textbf{Unitree G1} & \textbf{Ameca Gen 3} & \textbf{Kyoto ERICA} & \textbf{HippoRAG} & \textbf{CVS-3.5 (Phys)} & \textbf{CVS-3.5 (Accel)} \\ \hline
-Speech Barge-in Stop      & ~300.0 ms          & --                     & ~400.0 ms           & ~250.0 ms            & 200.0 ms             & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
-Cognitive Gating Lat      & Cloud VLM          & Onboard                & Cloud LLM           & Cloud LLM            & 100.0 ms             & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
-Local Compute Latency     & ~350.0 ms          & Cloud                  & ~500.0 ms           & ~400.0 ms            & 200.0 ms             & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
-Memory Recall (Recall@5)  & --                 & --                     & --                  & --                   & --                   & 92.4\%            & \textbf{[TBP]}          & \textbf{[TBP]}           \\
-Theory of Mind MAE        & --                 & --                     & --                  & --                   & --                   & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\
-Paralinguistic Precision  & Static             & Static                 & Static              & Static               & Static               & --                & \textbf{[TBP]}          & \textbf{[TBP]}           \\ \hline
+Speech Barge-in Stop      & ~300.0 ms          & --                     & ~400.0 ms           & ~250.0 ms            & 200.0 ms             & --                & \textbf{$\sim$104 ms}\textsuperscript{1}   & \textbf{(retired)}      \\
+Cognitive Gating Lat      & Cloud VLM          & Onboard                & Cloud LLM           & Cloud LLM            & 100.0 ms             & --                & \textbf{5.44 ms}\textsuperscript{2}        & \textbf{(retired)}      \\
+Local Compute Latency     & ~350.0 ms          & Cloud                  & ~500.0 ms           & ~400.0 ms            & 200.0 ms             & --                & \textbf{(not measured)}\textsuperscript{3} & \textbf{(retired)}      \\
+Memory Recall (Recall@5)  & --                 & --                     & --                  & --                   & --                   & 92.4\%            & \textbf{87.5\%}\textsuperscript{4}         & \textbf{(retired)}      \\
+Theory of Mind MAE        & --                 & --                     & --                  & --                   & --                   & --                & \textbf{0.032 / 0.041}\textsuperscript{4}  & \textbf{(retired)}      \\
+Paralinguistic Precision  & Static             & Static                 & Static              & Static               & Static               & --                & \textbf{95.3\% / 94.4\%}\textsuperscript{5} & \textbf{(retired)}     \\ \hline
 \end{tabular}
 \end{table*}
 ```
+\textsuperscript{1}Composed estimate, not a live stopwatch trial. \textsuperscript{2}Sum of 7 measured components, excludes LLM generation. \textsuperscript{3}No verified telemetry exists yet. \textsuperscript{4}Independently recomputed from raw per-sample arrays; matches exactly. \textsuperscript{5}Genuinely measured (low stress / high stress). Accelerated mode is intentionally disabled in \texttt{hard\_benchmark.py}.

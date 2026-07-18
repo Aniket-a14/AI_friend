@@ -367,14 +367,12 @@ def module3_memory_actr():
     latency_unpruned = prog.get("retrieval_latency_unpruned", [])
 
     if not iterations or not latency_pruned or not latency_unpruned:
-        iterations = list(range(10, 1010, 10))
-        np.random.seed(42)
-        latency_pruned = [
-            15.0 + np.random.normal(0, 1.2) + 0.001 * i for i in iterations
-        ]
-        latency_unpruned = [
-            15.0 + 0.035 * i + np.random.normal(0, 2.0) for i in iterations
-        ]
+        raise RuntimeError(
+            "No real progression data found in benchmark_results.json "
+            "(progression.retrieval_latency_pruned/unpruned). Run "
+            "hard_benchmark.py's physical benchmark first — this module "
+            "must not synthesize placeholder latency-scaling numbers."
+        )
 
     # Plot Recall Efficiency: Side-by-side plots
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), dpi=300)
@@ -501,47 +499,80 @@ def module4_conflict_resolver():
     cvs_metrics = compute_metrics(cvs_tp, cvs_fn, cvs_fp, cvs_tn)
     base_metrics = compute_metrics(base_tp, base_fn, base_fp, base_tn)
 
-    # Interruption latency comparison — dynamically computed from measured components
-    nats_rtt = 3.921
-    dsp_ext = 0.043
-    ducking_lat = 0.019
+    # Interruption latency: a COMPOSED estimate (100ms audio-buffer assumption +
+    # three independently measured components), not a live end-to-end stopwatch
+    # trial. Previously this was dressed up as a measured distribution by
+    # sampling np.random.normal(mean, 8, 1000) and reporting the resulting
+    # mean/std — that std was fabricated noise, not real trial-to-trial
+    # variance, and the "baseline" 480ms/50ms was an unsourced invented
+    # constant. Report the composed constant directly instead.
+    audio_buffer_assumption_ms = 100.0
+    # Fallback defaults mirror the last-known-real values from scripts/results/
+    # as of this writing; they are labeled "default" (not "measured") in the
+    # provenance string below whenever the corresponding artifact couldn't be
+    # loaded, so a missing/unparsable file never gets silently reported as
+    # measured telemetry.
+    nats_rtt, nats_rtt_measured = 3.845, False
+    dsp_ext, dsp_ext_measured = 0.043, False
+    ducking_lat, ducking_lat_measured = 0.019, False
     try:
         realism_path = os.path.join(RESULTS_DIR, "human_realism_results.json")
         if os.path.exists(realism_path):
             with open(realism_path, "r") as rf:
                 rdata = json.load(rf)
                 m1 = rdata.get("module1_computational_efficiency", {})
-                nats_rtt = m1.get("nats_rtt_ms", rdata.get("nats_rtt_ms", 3.921))
-
+                if "nats_rtt_ms" in m1 or "nats_rtt_ms" in rdata:
+                    nats_rtt = m1.get("nats_rtt_ms", rdata.get("nats_rtt_ms"))
+                    nats_rtt_measured = True
+    except Exception as e:
+        print(f"  ⚠️ Could not load human_realism_results.json for NATS RTT: {e}")
+    try:
         profile_path = os.path.join(RESULTS_DIR, "latency_profile.json")
         if os.path.exists(profile_path):
             with open(profile_path, "r") as pf:
                 pdata = json.load(pf)
-                dsp_ext = pdata.get("dsp_extraction_avg_ms", 0.043)
-                ducking_lat = pdata.get("soft_ducking_latency_avg_ms", 0.019)
-    except Exception:
-        pass
-    mean_barge_in = 100.0 + nats_rtt + dsp_ext + ducking_lat
-    cvs_latencies = np.random.normal(mean_barge_in, 8, 1000)
-    base_latencies = np.random.normal(480, 50, 1000)
+                if "dsp_extraction_avg_ms" in pdata:
+                    dsp_ext = pdata["dsp_extraction_avg_ms"]
+                    dsp_ext_measured = True
+                if "soft_ducking_latency_avg_ms" in pdata:
+                    ducking_lat = pdata["soft_ducking_latency_avg_ms"]
+                    ducking_lat_measured = True
+    except Exception as e:
+        print(f"  ⚠️ Could not load latency_profile.json for DSP/ducking: {e}")
+    composed_barge_in_ms = (
+        audio_buffer_assumption_ms + nats_rtt + dsp_ext + ducking_lat
+    )
+
+    def _component_label(value, measured, unit_fmt):
+        tag = "measured" if measured else "default (artifact unavailable)"
+        return f"{value:{unit_fmt}}ms {tag}"
 
     print(
-        f"  CVS-3.5 Conflict Resolver: F1={cvs_metrics['f1'] * 100:.1f}%, Mean Latency={np.mean(cvs_latencies):.1f}ms"
+        f"  CVS-3.5 Conflict Resolver: F1={cvs_metrics['f1'] * 100:.1f}%, "
+        f"Composed Stop Latency={composed_barge_in_ms:.1f}ms "
+        f"({audio_buffer_assumption_ms:.0f}ms buffer assumption + "
+        f"{_component_label(nats_rtt, nats_rtt_measured, '.2f')} NATS RTT + "
+        f"{_component_label(dsp_ext, dsp_ext_measured, '.3f')} DSP + "
+        f"{_component_label(ducking_lat, ducking_lat_measured, '.3f')} ducking)"
     )
     print(
-        f"  Baseline VAD/Keyword:      F1={base_metrics['f1'] * 100:.1f}%, Mean Latency={np.mean(base_latencies):.1f}ms"
+        f"  Baseline VAD/Keyword:      F1={base_metrics['f1'] * 100:.1f}% "
+        "(no baseline latency reported — no measured or cited reference "
+        "system available; do not fabricate one)"
     )
 
     return {
         "cvs_metrics": cvs_metrics,
         "baseline_metrics": base_metrics,
         "cvs_stop_latency_ms": {
-            "mean": round(float(np.mean(cvs_latencies)), 2),
-            "std": round(float(np.std(cvs_latencies)), 2),
-        },
-        "baseline_stop_latency_ms": {
-            "mean": round(float(np.mean(base_latencies)), 2),
-            "std": round(float(np.std(base_latencies)), 2),
+            "composed_estimate": round(composed_barge_in_ms, 2),
+            "provenance": (
+                f"{audio_buffer_assumption_ms:.0f}ms audio-buffer assumption + "
+                f"{_component_label(nats_rtt, nats_rtt_measured, '.3f')} NATS RTT + "
+                f"{_component_label(dsp_ext, dsp_ext_measured, '.3f')} DSP "
+                f"extraction + {_component_label(ducking_lat, ducking_lat_measured, '.3f')} "
+                "ducking transition; not a live end-to-end stopwatch trial"
+            ),
         },
     }
 

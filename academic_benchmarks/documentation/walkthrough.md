@@ -30,26 +30,30 @@ In previous benchmarking sessions, the user-facing visual plots and the compiled
 
 ## 📊 Evaluation Methodologies: Accelerated Simulation vs. Physical Real-Time Interaction
 
-To satisfy rigorous academic review, the benchmarking framework separates validation into two distinct empirical pathways:
+The benchmarking framework was *designed* to separate validation into two distinct empirical pathways. Of these, only the physical pathway has ever actually been run — see the `[!WARNING]` below.
 
 ```mermaid
 graph TD
-    A[CVS-3.5 Verification Framework] --> B[1. Accelerated Simulation]
+    A[CVS-3.5 Verification Framework] --> B["1. Accelerated Simulation (disabled, never run)"]
     A --> C[2. Physical Real-Time Interaction]
 
-    B --> B1["High-Throughput Trial (N=100,000 Iterations)"]
+    B --> B1["High-Throughput Trial (N=100,000 Iterations) — design target, not an executed run"]
     B --> B2["Mock-Cluttered Host Environment"]
-    B --> B3["Validates: Memory Recall, Threat Scan, ToM MAE Error Convergence"]
+    B --> B3["Would validate: Memory Recall, Threat Scan, ToM MAE Error Convergence"]
 
     C --> C1["Human-in-the-Loop trials (N=50 Cycles)"]
     C --> C2["Physical Hardware Mesh (NATS, Neo4j, iMac M3, AGX Jetson)"]
     C --> C3["Validates: Barge-In Latencies, Paralinguistic Filler Rates"]
 ```
 
-### 🧠 1. Accelerated Simulation Benchmarks
-* **Scope**: $N = 100,000$ high-speed iterations.
-* **Methodology**: Stress-tests high-level symbolic and sub-symbolic cognitive processes under synthetic loads. It injects cluttered vector spaces, emotional prompts, and adversarial dialogue turns to measure mathematical error convergence, classification bounds, and memory index retrieval accuracy.
-* **Key Visuals**: Confirms that memory recall remains scale-invariant and that user Theory of Mind (Valence/Arousal MAE) converges toward ground truth values without clock delays or physical I/O latency.
+### 🧠 1. Accelerated Simulation Benchmarks — historical design, unexecuted
+
+> [!WARNING]
+> **This mode has never been run and is explicitly disabled.** `hard_benchmark.py` exits immediately with "Accelerated simulation mode is disabled as requested by the user" if selected. Everything below this line describes the *intended* methodology as originally designed, not a result — no accelerated-mode numbers exist anywhere in `scripts/results/`, and every "(mode retired)" cell in the comparison matrices below reflects this.
+
+* **Intended scope**: $N = 100,000$ high-speed iterations (never executed).
+* **Intended methodology**: Stress-test high-level symbolic and sub-symbolic cognitive processes under synthetic loads by injecting cluttered vector spaces, emotional prompts, and adversarial dialogue turns to measure mathematical error convergence, classification bounds, and memory index retrieval accuracy.
+* **Intended key visuals**: Would confirm whether memory recall remains scale-invariant and whether Theory of Mind (Valence/Arousal MAE) converges toward ground truth values without clock delays or physical I/O latency — none of this has been measured.
 
 ### 💓 2. Physical Real-Time Interaction Benchmarks (Human Realism)
 * **Scope**: Live interactive trials (50 dialogue cycles) on a physical infrastructure mesh.
@@ -62,23 +66,24 @@ graph TD
 
 The complete, publication-grade comparison matrix (Table II in the formal report) compares **AI Friend CVS-3.5** against 7 state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures.
 
-### Table II: SOTA Comparative Matrix ($N = 100,000$ Accelerated Ticks)
+### Table II: SOTA Comparative Matrix ($N = 1{,}000$ Physical Ticks)
 
 | Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** | **`[TBP]`** |
-| **Local Compute Latency** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | **`[TBP]`** | **`[TBP]`** |
-| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **`[TBP]`** | **`[TBP]`** |
-| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **`[TBP]`** | **`[TBP]`** |
-| **Paralinguistic Precision** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
+| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)* |
+| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)* |
+| **Local Compute Latency** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | *(not yet measured)*³ | *(mode retired)* |
+| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | *(not yet measured)*³ | *(mode retired)* |
+| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **87.5%**⁴ | *(mode retired)* |
+| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **0.032 (valence) / 0.041 (arousal)**⁴ | *(mode retired)* |
+| **Paralinguistic Precision** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **95.3% (low stress) / 94.4% (high stress)**⁵ | *(mode retired)* |
+| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **1,266 MB**⁶ | *(mode retired)* |
+| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁶ | *(mode retired)* |
+| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)* |
 
 > [!NOTE]
-> * All CVS-3.5 columns represent blank states awaiting the execution of live benchmarks to populate their performance parameters.
+> * Independently re-derived from the raw per-sample telemetry in `scripts/results/*.json` (N=1000 intent samples, 88 recall probes) — not trusted at face value. ¹Composed estimate, not a live stopwatch trial. ²Sum of 7 measured components, excludes LLM generation. ³No verified telemetry exists yet. ⁴Recomputed from raw arrays; matches exactly. ⁵Genuinely measured. ⁶Full 8-agent mesh + DB stack.
+> * Accelerated (non-physical) mode is intentionally disabled in `hard_benchmark.py` ("disabled as requested by the user") — the prior "$N=100{,}000$ Accelerated Ticks" heading described a run that never happened; corrected to the real physical run size.
 > * Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase.
 
 
@@ -90,17 +95,21 @@ The complete, publication-grade comparison matrix (Table II in the formal report
 To prevent turnaround bottlenecks, the sub-LLM pipeline executes in a fraction of a millisecond, leaving the bulk of the cognitive frame time budget available for neural token generation.
 
 ```
-Incoming Turn -> [Audio Ingest: `[TBP]` ms] -> [Hybrid Segmenter: `[TBP]` ms] -> [Subconscious Threat Scan: `[TBP]` ms] -> [ACT-R Memory Search: `[TBP]` ms] -> [Endocrine Appraisal: `[TBP]` ms] -> Local LLM Inference -> Stripper / Post-Response Tagging
+Incoming Turn -> [Audio Ingest: not yet measured] -> [Hybrid Segmenter: not yet measured] -> [Subconscious Threat Scan: not yet measured] -> [ACT-R Memory Search: 1.073 ms] -> [Endocrine Appraisal: not yet measured] -> Local LLM Inference -> Stripper / Post-Response Tagging
 ```
+*Only ACT-R Memory Search has an isolated measured figure; the pathway as a whole (all measured components summed, excluding LLM generation) is 5.44 ms.*
 
 ### 2. Neo4j Knowledge DB Traversal Speed
 The custom cached graph traversal mechanisms in CVS-3.5 bypass typical O(N) database scans, exhibiting scale-invariant lookup latencies:
 
 | Traversal Hop Depth | CVS-3.5 Cached (ms) | CVS-3.5 Uncached (ms) | Standard Database (ms) | Performance Speedup |
 | :---: | :---: | :---: | :---: | :---: |
-| **1-Hop** | **`[TBP]`** | `[TBP]` | 8.50 ms | **`[TBP]`** |
-| **2-Hop** | **`[TBP]`** | `[TBP]` | 24.20 ms | **`[TBP]`** |
-| **3-Hop** | **`[TBP]`** | `[TBP]` | 84.60 ms | **`[TBP]`** |
+| **1-Hop** | **0.164 ms** | **0.485 ms** | 8.50 ms | *(see note)* |
+| **2-Hop** | **0.181 ms** | **0.578 ms** | 24.20 ms | *(see note)* |
+| **3-Hop** | **0.197 ms** | **0.568 ms** | 84.60 ms | *(see note)* |
+
+> [!WARNING]
+> Cached/Uncached are real (Uncached is a live-measured Neo4j Cypher traversal; Cached is derived from one measured Redis fetch time). "Standard Database" is **not a benchmarked external system** — it's an arbitrary multiplier applied to the uncached measurement, and two different eval scripts disagree with each other by more than 2x on that multiplier. "Performance Speedup" is left unfilled rather than publish a multiplier computed against an invented baseline — see `academic_benchmarks/documentation/sota_comparisons.md` §4 for detail.
 
 ---
 
@@ -113,8 +122,8 @@ Dynamic vocal filler insertion rate (`Words/Turn`) and tag mapping accuracies:
 
 | State Scenario | CVS-3.5 Tag Precision | Filler Rate (Words/Turn) | Associated Generated Tags |
 | :--- | :---: | :---: | :--- |
-| **Low Stress / Calm** | **`[TBP]`** | `[TBP]` | `[TBP]` |
-| **High Stress / Threat** | **`[TBP]`** | `[TBP]` | `[TBP]` |
+| **Low Stress / Calm** | **95.3%** | 0.12 | `[laughs]`, `[nods]` |
+| **High Stress / Threat** | **94.4%** | 0.42 | `[sighs]`, `[clears throat]`, `[voice cracks]` |
 | **Standard Voice Baseline** | 71.4% | 1.85 | `None` (Static Text-to-Speech) |
 
 ---
@@ -126,25 +135,26 @@ The following carousels display the fully updated, dynamically synchronized visu
 ### 📊 Carousel 1: Cognitive Performance & Accelerated Simulation
 
 ````carousel
-[TBP]
+![Intent classification confusion matrices](../../scripts/results/cognitive_confusion_matrix.png)
 <!-- slide -->
-[TBP]
+![Theory of Mind inference error distributions](../../scripts/results/cognitive_tom_errors.png)
 <!-- slide -->
-[TBP]
+![Memory Retrieval Recall@K and latency scaling](../../scripts/results/cognitive_rag_recall.png)
 <!-- slide -->
-[TBP]
+![8-Dimensional Sovereign Cognitive Mind Benchmarks radar](../../scripts/results/extended_benchmarks_radar.png)
 <!-- slide -->
-[TBP]
+![Extended benchmark comparisons: coherence decay, Green AI footprint](../../scripts/results/extended_benchmarks_comparisons.png)
 ````
+*The Recall@K panel in slide 3 is real and verified; its latency-scaling companion panel is flagged unverified — see `scripts/results/benchmark_results_summary.md`.*
 
 ### 💓 Carousel 2: Speech Turn-Taking & Interruption Trajectories
 
 ````carousel
-[TBP]
+![Human-realism comparisons: turn-taking latency, ToM MAE, ACT-R retrieval speedup](../../scripts/results/human_realism_comparisons.png)
 <!-- slide -->
-[TBP]
+![Hard-benchmark 1000-iteration convergence: intent accuracy, ToM MAE, Recall@5, memory search latency progression](../../scripts/results/hard_benchmark_progression.png)
 <!-- slide -->
-[TBP]
+![Cognitive-affective trajectory: PAD, ToM alignment, endocrine dynamics](../../scripts/results/research_trajectory_plot.png)
 ````
 
 ---
@@ -153,21 +163,38 @@ The following carousels display the fully updated, dynamically synchronized visu
 
 All physical files generated, audited, and compiled during this verification round have been successfully mirrored in the active Brain folder:
 
-1. **Academic Publication PDF**: [CVS-3.5_Mind_Benchmarking_Report.pdf](../../_archive/academic_benchmarks/reports/CVS-3.0_Mind_Benchmarking_Report.pdf) (exactly 4 pages, double-column letter, includes running headers/footers, Table II SOTA Comparative Matrix, Table III Paralinguistics, and embedded visual charts).
+1. **Academic Publication PDF**: [CVS-3.5_Mind_Benchmarking_Report.pdf](../../scripts/results/CVS-3.5_Mind_Benchmarking_Report.pdf) (exactly 4 pages, double-column letter, includes running headers/footers, Table II SOTA Comparative Matrix, Table III Paralinguistics, and embedded visual charts). The prior link pointed at a stale, differently-versioned copy in `_archive/`; this points at the current verified report in `scripts/results/`.
 2. **Master SOTA Review**: [academic_sota_benchmarks.md](./academic_sota_benchmarks.md) (extensive review compiling 30 peer-reviewed paper references, LaTeX templates, and detailed BibTeX listings).
-3. **Core Telemetry JSON**: [benchmark_results.json](../datasets/benchmark_results.json) (100,000-iteration dynamic run telemetry).
-4. **Paralinguistic Telemetry JSON**: [human_realism_results.json](../datasets/human_realism_results.json) (computational footprint, Neo4j traversals, and paralinguistic tag precision).
-5. **Dynamic Trajectory CSV**: [research_pad_trajectory.csv](../datasets/research_pad_trajectory.csv) (raw timeseries mapping cortisol, dopamine, and PAD vectors over 90 seconds).
+3. **Core Telemetry JSON**: [benchmark_results.json](../../scripts/results/benchmark_results.json) (1,000-iteration physical run telemetry, N=88 recall probes).
+4. **Paralinguistic Telemetry JSON**: [human_realism_results.json](../../scripts/results/human_realism_results.json) (computational footprint, Neo4j traversals, and paralinguistic tag precision).
+5. **Dynamic Trajectory CSV**: [research_pad_trajectory.csv](../../scripts/results/research_pad_trajectory.csv) (20 real-time NATS data points mapping cortisol, dopamine, and PAD vectors).
+
+> [!WARNING]
+> The `academic_benchmarks/datasets/` mirror referenced by earlier revisions of this section (`../datasets/*.json`) is stale — those files are 97-byte placeholder stubs (`{"status": ..., "message": ...}`) dated 2026-05-23, predating the real 2026-06-06 benchmark run entirely. Links above now point at the actual results in `scripts/results/`, the single source of truth.
 
 ---
 
 ## 🔬 Bibliography and Literature Review References
-Below are representative citations corresponding to the comparative matrix:
+Below are representative citations corresponding to the comparative matrix.
 
-* **[3] Figure AI (2025)**, *"Figure 02 Technical Report: In-House End-to-End Embodied Humanoid AI System"*.
-* **[5] Inoue et al. (2024)**, *"Real-Time Turn-Taking Decision Making for a Humanoid Robot Using Multimodal Cues"*, in *Proceedings of LREC-COLING*.
-* **[12] Engineered Arts (2025)**, *"Tritium Software Orchestration Layer and Low-Latency Voice Streaming on Ameca Gen 3"*.
-* **[17] Sumers et al. (2023)**, *"Cognitive Architectures for Language Agents"*, in *Transactions on Machine Learning Research (TMLR)*.
-* **[21] Gutiérrez et al. (2024)**, *"HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models"*, in *Proceedings of NeurIPS*.
-* **[28] Tesla Motors (2024)**, *"Tesla Bot (Optimus Gen 2) Visual-Motor End-to-End Deep Neural Networks"*.
-* **[29] Unitree Robotics (2024)**, *"Unitree G1 Humanoid Agent: Local VLMs and Reinforcement Learning Control"*.
+> [!NOTE]
+> **Provenance.** [3], [12], [28], [29] are **vendor product materials, not peer-reviewed
+> publications** — they were previously formatted as formal papers (e.g. a "Technical
+> Report"), overstating their standing, and are now listed as what they are. [5], [17],
+> [21] are **real, verified publications**; two of their titles below were previously
+> paraphrased into non-existent variants and have been corrected to match the
+> published record (kept in sync with `README.md` §8, the single source of truth for
+> these seven references).
+
+**Vendor / product materials (non-peer-reviewed):**
+
+* **[3] Figure AI** — Figure 02 humanoid platform, product materials ([figure.ai](https://figure.ai/)).
+* **[12] Engineered Arts** — Ameca / Tritium orchestration layer, product materials ([engineeredarts.co.uk/ameca](https://engineeredarts.co.uk/ameca)).
+* **[28] Tesla** — Optimus (Gen 2) humanoid, product materials ([tesla.com/optimus](https://tesla.com/optimus)).
+* **[29] Unitree Robotics** — Unitree G1 humanoid, product materials ([unitree.com/g1](https://unitree.com/g1)).
+
+**Peer-reviewed publications:**
+
+* **[5] Inoue, K., Jiang, B., Ekstedt, E., Kawahara, T., & Skantze, G. (2024)**, *"Multilingual Turn-taking Prediction Using Voice Activity Projection"*, in *Proceedings of LREC-COLING 2024*, pp. 11873–11883, Torino, Italy. ([arXiv:2403.06487](https://arxiv.org/abs/2403.06487))
+* **[17] Wu, S., Oltramari, A., Francis, J., Giles, C. L., & Ritter, F. E. (2024)**, *"Cognitive LLMs: Toward Human-Like Artificial Intelligence by Integrating Cognitive Architectures and Large Language Models for Manufacturing Decision-making"*, *Neurosymbolic Artificial Intelligence* (IOS Press). ([arXiv:2408.09176](https://arxiv.org/abs/2408.09176))
+* **[21] Gutiérrez, B. J., Shu, Y., Gu, Y., Yasunaga, M., & Su, Y. (2024)**, *"HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models"*, in *Advances in Neural Information Processing Systems (NeurIPS 2024)*. ([arXiv:2405.14831](https://arxiv.org/abs/2405.14831))

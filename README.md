@@ -358,18 +358,25 @@ CVS-3.5 is benchmarked against 7 other state-of-the-art and legacy humanoid, exp
 
 | Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [1] | SOTA Humanoid: Tesla Optimus Gen 2 [2] | Compact Humanoid: Unitree G1 [3] | SOTA Expressive: Ameca Gen 3 [4] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [6] | SOTA Embodied: ACT-R/E [7] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** | **`[TBP]`** |
-| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | **`[TBP]`** | **`[TBP]`** |
-| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **`[TBP]`** | **`[TBP]`** |
-| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **`[TBP]`** | **`[TBP]`** |
-| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **`[TBP]`** | **`[TBP]`** |
-| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
+| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)*⁶ |
+| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)*⁶ |
+| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | *(not yet measured)*³ | *(mode retired)*⁶ |
+| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | *(not yet measured)*³ | *(mode retired)*⁶ |
+| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **87.5%**⁴ | *(mode retired)*⁶ |
+| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **0.032 (valence) / 0.041 (arousal)**⁴ | *(mode retired)*⁶ |
+| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **Dynamic** (PAD + cortisol/dopamine coupling) | *(mode retired)*⁶ |
+| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **1,266 MB**⁵ (8-agent mesh + DB stack) | *(mode retired)*⁶ |
+| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁵ | *(mode retired)*⁶ |
+| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)*⁶ |
 
-*All "Ours" columns are kept blank as `[TBP]` (To Be Populated) until dynamic benchmarking runs are completed.*
+> [!NOTE]
+> **Provenance of "Ours: CVS-3.5 (Physical)" values.** All figures are read from `scripts/results/*.json` and independently re-derived from the underlying raw per-sample arrays (1000 intent samples, 88 recall probes) rather than trusted at face value — see `scripts/results/benchmark_results_summary.md` for the full verification notes and caveats. **Not every figure below is a raw stopwatch measurement**: figures marked ¹² are *composed estimates* (sums of independently measured sub-components, not live end-to-end trials) and figures marked ⁴ are *independently recomputed aggregates* rather than newly measured — see the numbered notes for the exact provenance class of each metric.
+> 1. **Composed estimate**, not a live end-to-end stopwatch trial: 100ms audio-buffer assumption + 3.85ms measured NATS RTT + 0.04ms measured DSP extraction + 0.02ms measured soft-ducking transition.
+> 2. **Composed estimate** summing seven independently measured component latencies (audio ingest/DSP, working-memory read/write, ACT-R vector search, prosody generation, ducking, NATS RTT); excludes LLM token generation, so it is not a full turn latency.
+> 3. No true first-token or complexity-scaling telemetry currently exists — a prior figure attributed to LLM inference here was mislabeled (it was actually memory-retrieval latency) and has been retracted; a benchmark fallback that silently fabricated latency-scaling numbers has been fixed to fail loudly instead. See the results summary for detail.
+> 4. Independently recomputed from the raw ground-truth/prediction arrays (N=1000 for ToM MAE, N=88 recall probes for Recall@5); matches the reported aggregate exactly.
+> 5. Full 8-agent cognitive mesh + Postgres/Neo4j/Qdrant/NATS/Redis stack, measured via `human_realism_eval.py`.
+> 6. Non-physical "accelerated" simulation mode is intentionally disabled in `hard_benchmark.py` ("Accelerated simulation mode is disabled as requested by the user. Only rigorous Physical live benchmarking ... is supported") — this column cannot be populated under the current benchmarking harness.
 
 #### 📚 Reference Mapping
 
@@ -494,14 +501,14 @@ AI_friend/
 
 | Pipeline Stage | Metric | Strategy | Target (p99 / Budget) | Actual (Empirical Mean / Min) | Status |
 | :--- | :--- | :--- | :---: | :---: | :---: |
-| **Mesh Telemetry** | Speed | orjson / NATS Binary | <0.5 µs | **`[TBP]`** | **Pending** |
-| **Data Throughput**| Scale | PyO3 FFI Audio | 80,000 OPS | **`[TBP]`** | **Pending** |
-| **STT Perception** | Latency | Fast Whisper CPU Fan-out | <50ms | **`[TBP]`** | **Pending** |
-| **Cognitive Turn** | Turnaround | BDI Mesh + State Hydration | <120ms | **`[TBP]`** | **Pending** |
-| **First Audio** | Response | Streaming PCM Chunking | <180ms | **`[TBP]`** | **Pending** |
-| **Total Perceived** | **End-to-End**| **CVS-3.5 Premium Mesh** | **<250ms** | **`[TBP]`** | **Pending** |
+| **Mesh Telemetry** | Speed | orjson / NATS Binary | <0.5 µs | *(not yet measured)* | **Pending** |
+| **Data Throughput**| Scale | PyO3 FFI Audio | 80,000 OPS | *(not yet measured)* | **Pending** |
+| **STT Perception** | Latency | Fast Whisper CPU Fan-out | <50ms | *(not yet measured — no real STT backend exists yet; see §STT status)* | **Pending** |
+| **Cognitive Turn** | Turnaround | BDI Mesh + State Hydration | <120ms | **5.44 ms** | ✅ **Met** |
+| **First Audio** | Response | Streaming PCM Chunking | <180ms | *(not yet measured)* | **Pending** |
+| **Total Perceived** | **End-to-End**| **CVS-3.5 Premium Mesh** | **<250ms** | *(not yet measured — no live stopwatch E2E trial exists)* | **Pending** |
 
-*All "Actual" values will be populated dynamically by executing `scripts/research/hard_benchmark.py`.*
+*"Cognitive Turn" sums seven independently measured component latencies (audio ingest/DSP, working-memory read/write, ACT-R vector search, prosody generation, ducking, NATS RTT) from `scripts/results/human_realism_results.json`; it excludes LLM token generation. All other "Actual" values remain unmeasured until a live end-to-end harness exists — see `scripts/results/benchmark_results_summary.md` for what is and isn't verified today.*
 
 ---
 
