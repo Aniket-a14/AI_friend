@@ -53,10 +53,24 @@ def _py_reference(entity_names, adj, seeds, damping, iterations):
 def _assert_matches(entity_names, adj, seeds, iterations=3):
     expected = _py_reference(entity_names, adj, seeds, PPR_DAMPING, iterations)
 
-    rust = MemoryStore._personalized_pagerank(
-        entity_names, adj, seeds, PPR_DAMPING, iterations
+    # Prepare the index-based structures needed by the Rust implementation.
+    n = len(entity_names)
+    node_to_idx = {name: idx for idx, name in enumerate(entity_names)}
+    seed_list = sorted(seeds)
+    adjacency_idx = []
+    degrees = []
+    for name in entity_names:
+        neighbors = adj.get(name, ())
+        degrees.append(len(neighbors))
+        adjacency_idx.append([node_to_idx[nb] for nb in neighbors if nb in node_to_idx])
+
+    import cognitive_rust
+    rust = list(
+        cognitive_rust.personalized_pagerank(
+            adjacency_idx, degrees, seed_list, PPR_DAMPING, iterations
+        )
     )
-    assert rust == pytest.approx(expected, abs=1e-12)
+    assert rust == pytest.approx(expected, abs=1e-12, rel=0)
 
     # Force the pure-Python fallback by making the Rust call raise.
     with patch(
@@ -65,7 +79,7 @@ def _assert_matches(entity_names, adj, seeds, iterations=3):
         fallback = MemoryStore._personalized_pagerank(
             entity_names, adj, seeds, PPR_DAMPING, iterations
         )
-    assert fallback == pytest.approx(expected, abs=1e-12)
+    assert fallback == pytest.approx(expected, abs=1e-12, rel=0)
     return rust
 
 
