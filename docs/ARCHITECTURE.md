@@ -54,8 +54,9 @@ Introduced the **Subconscious Agent** to manage background cognition during peri
 
 Introduced the **Vision Agent** to provide spatial and visual grounding for the cognitive mesh.
 
-- **Host-Native Bridge**: Screen and camera processing operate outside Docker constraints using a native Windows/macOS bridge to bypass container limitations.
 - **Visual Appraisal**: The VisionAgent captures frames and queries local `moondream:latest` via Ollama. It publishes `vision.description` back to the BrainAgent for context-aware grounding without sending raw image blobs over the mesh.
+- **Somatic Homeostasis**: `SomaticAppraiser` (`app/cognitive/somatic.py`) matches that description against comfort objects the agent has *learned* — facts `learning.py` tagged `somatic` and wrote to Neo4j — and lifts valence/arousal through `StateService.apply_somatic_perception`. Dopamine is a derived property (`max(0, V) × Ar`), so it rises by construction rather than being assigned. This is the visual mirror of the acoustic path, where SenseVoice emotion feeds `apply_sensory_perception`. Nothing is hardcoded: with no learned somatic facts the agent recognises nothing and no spike fires.
+- **Capture runs on the host, not in a container.** This is a platform constraint, verified rather than assumed: inside a Linux container there is no `/dev/video*`, no `/tmp/.X11-unix`, `DISPLAY` is unset, and `mss` fails with `Library libxcb.so not found`. On a Windows or macOS host the container runs in a Linux VM with no route to the host display or USB webcam, so no configuration fixes it — run `python -m app.vision.agent` on the host. On a **Linux** host the containerised path does work with `--device=/dev/video0` and/or an X11 socket mount; the `vision` compose profile ships both, commented out. The agent runs a capture preflight at startup and says loudly when it is blind, and its healthcheck probes a sentinel touched on each successful capture rather than process liveness — a lesson from finding E1, where a healthcheck passed because the thing it checked had been stubbed.
 
 ### 📖 4. Sovereign Memory Surfacing & 4-Tier Hybrid Storage
 

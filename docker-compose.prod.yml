@@ -299,28 +299,62 @@ services:
 
 
   # 7. VISION AGENT (OpenCV, Screen/Cam) - Heavy
-#  vision_agent:
-#    build:
-#      context: ./backend
-#      target: full
-#    container_name: vision_agent
-#    command: [ "python", "-m", "app.vision.agent" ]
-#    env_file: .env
-#    environment:
-#      - AGENT_NAME=vision_agent
-#      - NATS_URL=nats://nats_mesh:4222
-#      - OLLAMA_URL=${OLLAMA_URL}
-#    depends_on:
-#      nats:
-#        condition: service_started
-#    networks:
-#      - ai_mesh_network
-#    restart: always
-#    healthcheck:
-#      test: ["CMD-SHELL", "pgrep python || exit 1"]
-#      interval: 30s
-#      timeout: 10s
-#      retries: 35
+  #
+  # OPT-IN, AND LINUX-HOST ONLY. Start with:
+  #     docker compose --profile vision up vision_agent
+  #
+  # Capture is host-bound and cannot be containerised on every platform. This
+  # was verified rather than assumed, on a Windows host with a Linux Docker
+  # engine:
+  #   - /dev/video* does not exist in the container (no camera)
+  #   - `--device=/dev/video0` is rejected by the daemon outright
+  #   - /tmp/.X11-unix is absent and DISPLAY is unset (no screen)
+  #   - mss itself fails with "Library libxcb.so not found"
+  # On a Windows or macOS host the container runs inside a Linux VM with no
+  # route to the host's display or USB webcam, so no amount of configuration
+  # fixes this. RUN THE AGENT ON THE HOST INSTEAD:
+  #     pip install -r backend/requirements-ai.txt
+  #     NATS_URL=nats://127.0.0.1:4222 python -m app.vision.agent
+  #
+  # On a LINUX host the passthrough below does work: uncomment the `devices`
+  # entry for camera capture, and/or the X11 mount plus DISPLAY for screen
+  # capture. Both are commented out because a missing device makes the whole
+  # service fail to start on hosts that do not have it.
+  #
+  # The healthcheck deliberately probes the sentinel the agent touches on each
+  # successful capture, not `pgrep python` — a blind agent keeps its process
+  # alive perfectly well, which is how finding E1 hid a stubbed STT for so long.
+  vision_agent:
+    profiles: [ vision ]
+    build:
+      context: ./backend
+      target: full
+    container_name: vision_agent
+    command: [ "python", "-m", "app.vision.agent" ]
+    env_file: .env
+    environment:
+      - AGENT_NAME=vision_agent
+      - NATS_URL=nats://nats_mesh:4222
+      - OLLAMA_URL=${OLLAMA_URL}
+      - VISION_HEALTH_FILE=/tmp/vision_agent_healthy
+      # Linux host + screen capture: also uncomment the X11 volume below.
+      # - DISPLAY=${DISPLAY}
+    # volumes:
+    #   - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    # devices:
+    #   - /dev/video0:/dev/video0
+    depends_on:
+      nats:
+        condition: service_started
+    networks:
+      - ai_mesh_network
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "test -f /tmp/vision_agent_healthy && test $(( $(date +%s) - $(stat -c %Y /tmp/vision_agent_healthy) )) -lt 60 || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 # Use the existing network created by infra
 networks:
