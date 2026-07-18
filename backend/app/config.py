@@ -115,6 +115,9 @@ class AppSettings(BaseSettings):
     VLM_PROMPT: str = (
         "Describe what you see in this image briefly. Focus on what the user is doing."
     )
+    # Touched on every successful frame capture so a container healthcheck can
+    # probe the real path rather than mere process liveness (see finding E1).
+    VISION_HEALTH_FILE: str = "/tmp/vision_agent_healthy"
 
     STT_MODEL_SIZE: str = "small"
     STT_DEVICE: str = "cpu"

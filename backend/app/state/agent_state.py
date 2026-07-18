@@ -771,6 +771,63 @@ class StateService:
             self._enforce_bounds()
         await self._persist_sensory_state_if_due()
 
+    async def apply_somatic_perception(self, somatic: Dict[str, Any]):
+        """Visual Somatic Homeostasis — recognising a comfort object feels good.
+
+        The visual counterpart to `apply_sensory_perception` above: that folds
+        *how the user sounds* into mood, this folds *what the agent is looking
+        at* into valence and arousal. Together they are the two halves of the
+        perception-to-affect path.
+
+        Roadmap §C (`docs/cvs4_architecture_roadmap.md`) specifies a dopamine
+        spike alongside the valence one. `dopamine` here is a derived property
+        (`max(0, valence) * arousal`), not a stored field, so it cannot be
+        assigned; lifting valence and arousal is what raises it, which this does.
+
+        Absence of a match must never reach this method as a zero spike. Doing
+        so would drag mood toward neutral on every appraisal interval and
+        flatten the agent the longer it looks at nothing in particular -- the
+        same failure mode documented for a missing acoustic emotion estimate.
+        """
+        if not somatic:
+            return
+
+        valence_spike = somatic.get("valence_spike", 0.0)
+        arousal_spike = somatic.get("arousal_spike", 0.0)
+        try:
+            valence_spike = float(valence_spike)
+            arousal_spike = float(arousal_spike)
+        except (TypeError, ValueError):
+            logger.warning(
+                "[State] Ignoring somatic perception with non-numeric spikes: %r",
+                somatic,
+            )
+            return
+
+        if valence_spike <= 0.0 and arousal_spike <= 0.0:
+            return
+
+        entities = somatic.get("entities") or []
+        async with self._state_lock:
+            before_valence = self.current_state.valence
+            self.current_state.valence = min(
+                1.0, self.current_state.valence + valence_spike
+            )
+            self.current_state.arousal = min(
+                1.0, self.current_state.arousal + arousal_spike
+            )
+            self._enforce_bounds()
+            after_valence = self.current_state.valence
+
+        logger.info(
+            "👁️  Somatic comfort recognised %s — valence %.2f → %.2f (dopamine now %.2f).",
+            entities,
+            before_valence,
+            after_valence,
+            self.current_state.dopamine,
+        )
+        await self._persist_sensory_state_if_due()
+
     async def handle_system_tick(self, tick_metadata: Dict[str, Any]):
         """
         Idle evolution triggered by NATS system.tick.
