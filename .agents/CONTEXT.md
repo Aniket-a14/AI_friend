@@ -3080,3 +3080,68 @@ riding along with a test fix.
 
 Full backend suite: **505 passed**, `ruff check .` clean.
 
+### Review round (PR #75)
+
+Three comments, all three valid, and the first was a real bug rather than a
+style note.
+
+**The retry loop leaked the internal signal.** Stage 9 re-runs
+`action.execute(plan)` after an identity-validation failure, and that second
+loop yielded chunks without passing them through `_consume_internal_chunk`. So a
+`self_correction` emitted on the *retry* both reached the transport as an
+unrecognised chunk type and failed to release cortisol. The retry is the worst
+place for that gap: it runs only after a response was already rejected, with a
+hardened prompt, so it is the likeliest path to trip a second metacognitive
+violation. Fixed by filtering both loops.
+
+The bug existed because the test drove `_consume_internal_chunk` directly and
+never the loops that call it — the method was correct and unreachable-from-test
+on one of its two call sites. Added
+`test_the_self_correction_signal_is_consumed_on_the_retry_pass_too`, which runs
+the whole pipeline through `execute()` with `validate_response` rejecting once
+and accepting the second time, and asserts the retry branch was actually entered
+rather than trusting that it was.
+
+**Two vacuous assertions.** `cortisol <= 1.0` passed with the release deleted
+entirely, since the hormone sits at a 0.5 tonic baseline anyway; it now asserts
+the burst landed and stopped at the ceiling. `error is None or abs(error) >=
+DEADBAND` accepted exactly the regression it was meant to catch; it now asserts
+`is None` flatly.
+
+The ceiling assertion is `pytest.approx(1.0)`, not `== 1.0`, and deliberately:
+the phasic term starts decaying the instant it is recorded, so the total is
+asymptotically 1.0 (measured 0.99999998) and never precisely it. An exact
+comparison would pass or fail on scheduling luck.
+
+### Verification
+
+Five mutations. Reverting the retry-loop fix fails the new test. The tolerance
+branch returning `0.0` instead of `None` fails the tightened assertion.
+
+Removing the clamp inside `release_cortisol` **survived**, correctly: the
+`cortisol` property carries its own `min(1.0, ...)`, so either clamp alone
+suffices for that input. Removing the *property* clamp also survived at first —
+and that one was a genuine hole. The two clamps are not redundant: the phasic
+peak is stored relative to the tonic floor at release time, so a mood collapse
+afterwards lifts tonic underneath a burst already at the ceiling (0.5 + 0.5
+becomes ~0.9 + 0.5) and only the property clamp catches it. That matters because
+`_compute_endocrine_options` maps cortisol onto sampling temperature, and a
+value above 1.0 leaves the intended range. Added
+`test_a_mood_collapse_after_a_burst_cannot_push_cortisol_over_one`, which
+asserts its own fixture actually exceeds 1.0 before asserting the clamp holds;
+the property mutation is now caught.
+
+One mutation initially reported as surviving had been applied to the wrong line:
+`reappraisal.py` has four `return None` statements and a `replace(..., 1)` hit
+the *disabled* branch, which never executes when reappraisal is enabled.
+Retargeted by searching for the tolerance comment rather than by ordinal
+position. This is the second time this exact mistake has appeared in this
+ledger, which is itself the argument for anchoring mutations to surrounding text.
+
+Full backend suite: **528 passed**, `ruff check .` clean.
+
+**NOT done:** the two `action.execute` loops in stage 9 are now near-identical
+four-line bodies differing only in the speculative flag. Collapsing them into one
+drained helper would make this class of bug unrepresentable rather than merely
+fixed, but it touches the streaming hot path and belongs in its own PR.
+

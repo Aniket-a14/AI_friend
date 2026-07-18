@@ -392,6 +392,13 @@ class CognitivePipeline:
                     if chunk["type"] == "done":
                         done_chunk = chunk
                         continue
+                    # The retry is the likeliest place to trip a second
+                    # metacognitive violation, since it runs with a hardened
+                    # prompt after one rejection. Skipping the filter here would
+                    # leak `self_correction` to the transport *and* swallow the
+                    # cortisol release on the one path that most deserves it.
+                    if await self._consume_internal_chunk(chunk):
+                        continue
                     yield chunk
         stage_times["stage_9_validation_ms"] = (time.perf_counter() - t_start) * 1000.0
 
