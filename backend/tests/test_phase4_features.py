@@ -153,14 +153,25 @@ async def test_brain_agent_publishes_the_affect_vector_to_chat_output():
     assert parsed.done is False
     assert parsed.turn_id == "turn-5"
 
+    # Every field the snapshot supplied, because affect is now the whole
+    # contract: anything dropped between here and the wire is a change in how
+    # the agent sounds that nothing else would catch.
     assert parsed.affect.valence == -0.2
     assert parsed.affect.arousal == 0.6
     assert parsed.affect.dominance == 0.4
+    assert parsed.affect.trust == 0.7
+    assert parsed.affect.attachment == 0.2
+    assert parsed.affect.emotion == "sad"
     assert parsed.affect.fatigue == 0.4
     # Distance drives the whisper/call-out volume and pitch shift in Rust, so
     # losing it here silently flattens how the agent projects.
     assert parsed.affect.user_distance == 1.8
 
-    # The brain must not attach a second opinion on prosody.
-    assert parsed.speaking_rate == ChatOutput().speaking_rate
-    assert parsed.pause_bias == ChatOutput().pause_bias
+    # The brain must not attach a second opinion on prosody. All four, not the
+    # two that happen to be most visible — a repopulated `intensity` would be
+    # believed by a reader and disagree with what the voice agent computes.
+    defaults = ChatOutput()
+    assert parsed.speaking_rate == defaults.speaking_rate
+    assert parsed.pause_bias == defaults.pause_bias
+    assert parsed.intensity == defaults.intensity
+    assert parsed.confidence == defaults.confidence
