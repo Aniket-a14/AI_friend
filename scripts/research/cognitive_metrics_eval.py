@@ -367,14 +367,12 @@ def module3_memory_actr():
     latency_unpruned = prog.get("retrieval_latency_unpruned", [])
 
     if not iterations or not latency_pruned or not latency_unpruned:
-        iterations = list(range(10, 1010, 10))
-        np.random.seed(42)
-        latency_pruned = [
-            15.0 + np.random.normal(0, 1.2) + 0.001 * i for i in iterations
-        ]
-        latency_unpruned = [
-            15.0 + 0.035 * i + np.random.normal(0, 2.0) for i in iterations
-        ]
+        raise RuntimeError(
+            "No real progression data found in benchmark_results.json "
+            "(progression.retrieval_latency_pruned/unpruned). Run "
+            "hard_benchmark.py's physical benchmark first — this module "
+            "must not synthesize placeholder latency-scaling numbers."
+        )
 
     # Plot Recall Efficiency: Side-by-side plots
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), dpi=300)
@@ -501,7 +499,14 @@ def module4_conflict_resolver():
     cvs_metrics = compute_metrics(cvs_tp, cvs_fn, cvs_fp, cvs_tn)
     base_metrics = compute_metrics(base_tp, base_fn, base_fp, base_tn)
 
-    # Interruption latency comparison — dynamically computed from measured components
+    # Interruption latency: a COMPOSED estimate (100ms audio-buffer assumption +
+    # three independently measured components), not a live end-to-end stopwatch
+    # trial. Previously this was dressed up as a measured distribution by
+    # sampling np.random.normal(mean, 8, 1000) and reporting the resulting
+    # mean/std — that std was fabricated noise, not real trial-to-trial
+    # variance, and the "baseline" 480ms/50ms was an unsourced invented
+    # constant. Report the composed constant directly instead.
+    audio_buffer_assumption_ms = 100.0
     nats_rtt = 3.921
     dsp_ext = 0.043
     ducking_lat = 0.019
@@ -521,27 +526,34 @@ def module4_conflict_resolver():
                 ducking_lat = pdata.get("soft_ducking_latency_avg_ms", 0.019)
     except Exception:
         pass
-    mean_barge_in = 100.0 + nats_rtt + dsp_ext + ducking_lat
-    cvs_latencies = np.random.normal(mean_barge_in, 8, 1000)
-    base_latencies = np.random.normal(480, 50, 1000)
+    composed_barge_in_ms = (
+        audio_buffer_assumption_ms + nats_rtt + dsp_ext + ducking_lat
+    )
 
     print(
-        f"  CVS-3.5 Conflict Resolver: F1={cvs_metrics['f1'] * 100:.1f}%, Mean Latency={np.mean(cvs_latencies):.1f}ms"
+        f"  CVS-3.5 Conflict Resolver: F1={cvs_metrics['f1'] * 100:.1f}%, "
+        f"Composed Stop Latency={composed_barge_in_ms:.1f}ms "
+        f"({audio_buffer_assumption_ms:.0f}ms buffer assumption + "
+        f"{nats_rtt:.2f}ms NATS RTT + {dsp_ext:.3f}ms DSP + "
+        f"{ducking_lat:.3f}ms ducking)"
     )
     print(
-        f"  Baseline VAD/Keyword:      F1={base_metrics['f1'] * 100:.1f}%, Mean Latency={np.mean(base_latencies):.1f}ms"
+        f"  Baseline VAD/Keyword:      F1={base_metrics['f1'] * 100:.1f}% "
+        "(no baseline latency reported — no measured or cited reference "
+        "system available; do not fabricate one)"
     )
 
     return {
         "cvs_metrics": cvs_metrics,
         "baseline_metrics": base_metrics,
         "cvs_stop_latency_ms": {
-            "mean": round(float(np.mean(cvs_latencies)), 2),
-            "std": round(float(np.std(cvs_latencies)), 2),
-        },
-        "baseline_stop_latency_ms": {
-            "mean": round(float(np.mean(base_latencies)), 2),
-            "std": round(float(np.std(base_latencies)), 2),
+            "composed_estimate": round(composed_barge_in_ms, 2),
+            "provenance": (
+                f"{audio_buffer_assumption_ms:.0f}ms audio-buffer assumption + "
+                f"{nats_rtt:.3f}ms measured NATS RTT + {dsp_ext:.3f}ms measured "
+                f"DSP extraction + {ducking_lat:.3f}ms measured ducking "
+                "transition; not a live end-to-end stopwatch trial"
+            ),
         },
     }
 

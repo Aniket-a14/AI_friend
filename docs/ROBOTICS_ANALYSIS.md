@@ -20,13 +20,13 @@ Assuming a high-end local GPU (e.g., RTX 4090 or Mac M-series with unified memor
 
 Here is the lifecycle of a single conversational turn:
 
-1.  **Fast Perception & Semantic Interruption Conflict Resolution:** CVS-3.5's sub-cognitive VAD and semantic segmenter resolve conversational turn-taking boundaries. Empirical latency: **`[TBP]`**.
-2.  **Sub-LLM Pathway Overhead:** The entire perception-appraisal-decision chain (including subconscious threat scanning, memory index lookup, and endocrine hormone appraisal calculation). Empirical latency: **`[TBP]`**.
-3.  **Local LLM TTFT:** The BrainAgent prompts Ollama using the active model (`llama3.2:3b`). Empirical Mean TTFT: **`[TBP]`** under local iMac M3 Apple Metal acceleration.
-4.  **End-to-End Thought Latency:** The complete cognitive loop completes generating full responses. Empirical Mean: **`[TBP]`**.
+1.  **Fast Perception & Semantic Interruption Conflict Resolution:** CVS-3.5's sub-cognitive VAD and semantic segmenter resolve conversational turn-taking boundaries. Empirical latency: **~104 ms** (composed estimate: 100ms audio-buffer assumption + 3.85ms measured NATS RTT + 0.04ms measured DSP + 0.02ms measured ducking — not a live end-to-end stopwatch trial; see `scripts/results/benchmark_results_summary.md`).
+2.  **Sub-LLM Pathway Overhead:** The entire perception-appraisal-decision chain (including subconscious threat scanning, memory index lookup, and endocrine hormone appraisal calculation). Empirical latency: **5.44 ms** (sum of 7 independently measured component latencies from `scripts/results/human_realism_results.json`; excludes LLM token generation).
+3.  **Local LLM TTFT:** The BrainAgent prompts Ollama using the active model (`llama3.2:3b`). Empirical Mean TTFT: *(not yet measured)* — no true first-token telemetry currently exists; a prior figure attributed to LLM inference elsewhere in this repo was mislabeled (it was actually memory-retrieval latency) and has been retracted.
+4.  **End-to-End Thought Latency:** The complete cognitive loop completes generating full responses. Empirical Mean: *(not yet measured)* — `live_telemetry.e2e_mean` is explicitly `null` in `scripts/results/extended_benchmarks.json`; no live stopwatch E2E trial has been run.
 5.  **Audio Render (<1ms):** The Rust-native VoiceAgent immediately queues the PCM buffer for overlap-add (OLA) crossfade playback.
 
-**Total Empirical Turnaround:** **`[TBP]`** — to be populated by executing `scripts/research/hard_benchmark.py`.
+**Total Empirical Turnaround:** *(not yet measured end-to-end)* — items 1-2 above are measured/composed; items 3-4 require a live TTFT/E2E harness that does not exist yet (see `scripts/research/hard_benchmark.py`).
 
 > [!TIP]
 > **Human-Level Overlap:** Because the STT agent separates *speculative intent* from *deep transcription*, if you interrupt the AI while it is speaking, the VoiceAgent applies a `SPECULATIVE_PAUSE` in roughly **~200ms**. This makes the AI feel incredibly human, as it stops talking almost the instant you interject, rather than talking over you while it waits for Whisper to finish transcribing.
@@ -119,7 +119,7 @@ CVS-3.5 has fully ascended to **Tier 5 (Predictive Continuous Simulation)**.
 ### When will it behave like a "Near-Perfect Human"?
 If we define "near-perfect human" strictly within the domain of a PC-based voice companion (like the movie *Her*):
 
-1.  **Conversational Cadence (Target / 6 Months):** With our sub-cognitive VAD and fast turn-taking arbitration, dialogue transition latency target: **<200 ms** (empirical: **`[TBP]`**).
+1.  **Conversational Cadence (Target / 6 Months):** With our sub-cognitive VAD and fast turn-taking arbitration, dialogue transition latency target: **<200 ms** (empirical: **~104 ms**, composed estimate — see §2 above; meets target, but is not yet a live stopwatch trial).
 2.  **Contextual & Emotional Reality (Achieved):** Integrated 12-dimensional benchmarks (dialogue coherence, memory recall curves, theory of mind valence appraiser) ensure a self-maturing relationship state that never jailbreaks or forgets.
 3.  **Acoustic Affect (1-2 Years):** The VoiceAgent maps PAD states to prosody parameters. The integration of end-to-end local Audio-Language Models (ALMs) will finalize natural acoustic micro-tremors in the near future.
 
