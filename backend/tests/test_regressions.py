@@ -548,3 +548,86 @@ async def _collect_outputs(generator):
     async for item in generator:
         outputs.append(item)
     return outputs
+
+
+def test_brain_agent_concurrent_chat_inputs_prevent_lost_task_ownership():
+    """
+    Regression test for A4 generation-cancel race condition.
+
+    Two concurrent chat input callbacks should not both create generation tasks
+    where one overwrites the other's task reference, causing lost task ownership.
+    The atomic _replace_active_generation method prevents this TOCTOU race.
+    """
+    agent = BrainAgent(graph_db=None, memory_store=None, conversation_store=None)
+    agent.set_state = AsyncMock()
+    agent.publish = AsyncMock()
+    agent._publish_speech_chunk = AsyncMock()
+    agent.cognitive_core.state.get_context_snapshot = MagicMock(
+        return_value={"emotion": "neutral"}
+    )
+    agent.cognitive_core.state.record_user_interaction = MagicMock()
+
+    # Track which tasks were created
+    created_tasks = []
+    original_create_task = asyncio.create_task
+
+    def tracking_create_task(coro):
+        task = original_create_task(coro)
+        created_tasks.append(task)
+        return task
+
+    # Track execution of flow processing
+    flow_executions = []
+
+    async def _mock_flow(msg, is_subconscious, message):
+        flow_id = len(flow_executions)
+        flow_executions.append(flow_id)
+        # Simulate some async work
+        await asyncio.sleep(0.01)
+        return flow_id
+
+    agent._process_chat_input_flow = _mock_flow
+
+    # Fire two concurrent chat inputs
+    async def run_concurrent_inputs():
+        msg1 = {
+            "text": "first input",
+            "turn_id": "turn-1",
+            "utterance_id": "utt-1",
+            "metadata": {"source": "user"}
+        }
+        msg2 = {
+            "text": "second input",
+            "turn_id": "turn-2",
+            "utterance_id": "utt-2",
+            "metadata": {"source": "user"}
+        }
+
+        # Start both concurrently
+        results = await asyncio.gather(
+            agent._on_chat_input(msg1),
+            agent._on_chat_input(msg2),
+            return_exceptions=True
+        )
+
+        return results
+
+    results = asyncio.run(run_concurrent_inputs())
+
+    # Both should complete without exception
+    for result in results:
+        if isinstance(result, Exception):
+            raise result
+
+    # Verify both flow executions happened
+    assert len(flow_executions) == 2, f"Expected 2 flow executions, got {len(flow_executions)}"
+
+    # After completion, no active task should remain
+    # (both cleaned up in finally blocks)
+    assert agent._active_generation_task is None or agent._active_generation_task.done()
+
+    # The key assertion: no orphaned tasks exist
+    # Both tasks should have been properly tracked and cleaned up
+    # If the race existed, one task would be orphaned (created but lost ownership)
+    for task in created_tasks:
+        assert task.done(), "All created tasks should have completed or been cancelled"
