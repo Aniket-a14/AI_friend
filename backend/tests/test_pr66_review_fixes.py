@@ -117,6 +117,63 @@ def test_visible_segments_strips_thought_split_across_chunks():
     assert "plan" not in "".join(seen)
 
 
+@pytest.mark.parametrize(
+    "chunks,expected",
+    [
+        # The tag arriving whole was the only case the old parser handled.
+        (["<thought>SECRET</thought>Hi."], "Hi."),
+        # Models stream token by token, so these are the common cases, not edge
+        # cases: the old parser spoke the entire reasoning block for all of them.
+        (["<tho", "ught>SECRET</thought>Hi."], "Hi."),
+        (["<", "thought", ">", "SECRET", "</thought>", "Hi."], "Hi."),
+        (["<thought>SECRET</thou", "ght>Tail"], "Tail"),
+        # Visible text before a block used to be dropped entirely.
+        (["Hello <thought>SECRET</thought> Bye"], "Hello  Bye"),
+        # Only the first block was ever recognised.
+        (["A<thought>S1</thought>B<thought>S2</thought>C"], "ABC"),
+        # An unclosed block must not be spoken.
+        (["<thought>SECRET never closes"], ""),
+    ],
+)
+def test_visible_segments_never_leaks_reasoning(chunks, expected):
+    svc = _service()
+    state = _ChatStreamState()
+    out = []
+    for chunk in chunks:
+        out.extend(svc._visible_segments(chunk, state))
+    out.extend(svc._visible_trailing("", state))
+    spoken = "".join(out)
+
+    assert spoken == expected
+    assert "SECRET" not in spoken
+    assert "S1" not in spoken and "S2" not in spoken
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["3 < 4 and 5<6", "Wait <pause=300ms> ok", "no tags here at all"],
+)
+def test_visible_segments_does_not_swallow_non_thought_markup(text):
+    """The partial-tag hold must release anything that never becomes a tag."""
+    svc = _service()
+    state = _ChatStreamState()
+    out = svc._visible_segments(text, state)
+    out.extend(svc._visible_trailing("", state))
+    assert "".join(out) == text
+
+
+def test_self_correction_yields_fallback_when_retry_produces_nothing():
+    """An empty retry stream left the user with 'Wait, let me rephrase that...'
+    and then silence, same as the exception path."""
+    llm = _ScriptedLLM(["As an AI I cannot"], [])
+    svc = _service(llm=llm)
+    out = asyncio.run(_drain(svc.execute(_plan())))
+
+    contents = [c["data"] for c in out if c["type"] == "content"]
+    assert _SAFE_FALLBACK_LINE in contents
+    assert out[-1]["type"] == "done"
+
+
 def test_visible_segments_passes_through_plain_text():
     svc = _service()
     state = _ChatStreamState()
@@ -328,6 +385,84 @@ def test_insert_row_propagates_non_schema_errors(exc):
         asyncio.run(store._insert_memory_row(conn, **_insert_kwargs()))
 
     assert len(calls) == 1, "must not retry a non-schema failure"
+
+
+def test_archive_activation_survives_an_unparseable_stored_timestamp():
+    """_as_aware_utc returning None must not then be subtracted from. Otherwise
+    one malformed archive row discards the entire search result set."""
+    store = _store()
+    row = {
+        "last_recalled_at": "not a timestamp",
+        "recall_count": 2,
+        "valence": 0.1,
+        "emotional_weight": 0.2,
+        "importance_score": 0.6,
+    }
+    score, spread, dist_emo, recall_count, now = store._archive_row_activation(
+        row,
+        0.5,
+        current_valence=0.0,
+        current_arousal=0.5,
+        current_cortisol=0.2,
+        current_time=None,
+    )
+    assert isinstance(score, float)
+    assert recall_count == 2
+
+
+def test_promotion_survives_a_qdrant_failure_after_the_sql_move():
+    """The SQL move is authoritative and has already committed. Treating a
+    vector-store failure as a failed promotion would strand the memory: absent
+    from the results and absent from the archive."""
+    store = _store()
+    # is_sqlite is a read-only structural check (the A5 fix), so satisfy it
+    # honestly with a real sqlite3 connection rather than patching the property.
+    store.pool.connection.conn = sqlite3.connect(":memory:")
+
+    conn = MagicMock()
+    conn.execute = AsyncMock(return_value=None)
+    acquired = MagicMock()
+    acquired.__aenter__ = AsyncMock(return_value=conn)
+    acquired.__aexit__ = AsyncMock(return_value=False)
+    store.pool.acquire = MagicMock(return_value=acquired)
+
+    store.qdrant_store = MagicMock()
+    store.qdrant_store.client = object()
+    store.qdrant_store.add_vector_memory = MagicMock(
+        side_effect=RuntimeError("qdrant unreachable")
+    )
+
+    # Must not raise: the caller uses an exception here to mean "not promoted".
+    asyncio.run(
+        store._write_promoted_memory(
+            "m1", "content", {}, [0.1], 1, datetime.now(timezone.utc), {}, sql_meta={}
+        )
+    )
+    assert conn.execute.await_count == 2  # insert + archive delete
+
+
+def test_promotion_propagates_a_sql_failure():
+    """A genuine SQL failure must still reach the caller so the row is skipped."""
+    store = _store()
+    # is_sqlite is a read-only structural check (the A5 fix), so satisfy it
+    # honestly with a real sqlite3 connection rather than patching the property.
+    store.pool.connection.conn = sqlite3.connect(":memory:")
+
+    conn = MagicMock()
+    conn.execute = AsyncMock(side_effect=RuntimeError("disk full"))
+    acquired = MagicMock()
+    acquired.__aenter__ = AsyncMock(return_value=conn)
+    acquired.__aexit__ = AsyncMock(return_value=False)
+    store.pool.acquire = MagicMock(return_value=acquired)
+    store.qdrant_store = MagicMock()
+    store.qdrant_store.client = None
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(
+            store._write_promoted_memory(
+                "m1", "c", {}, [0.1], 1, datetime.now(timezone.utc), {}, sql_meta={}
+            )
+        )
 
 
 def test_promotion_payload_does_not_let_custom_metadata_overwrite_wing():

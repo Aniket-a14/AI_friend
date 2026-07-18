@@ -445,55 +445,91 @@ class ActionService:
         logger.debug("[CoT Thought] stripped %d characters", len(thought_content))
         return parts[1]
 
-    def _visible_segments(self, clean_chunk: str, state: "_ChatStreamState") -> list:
-        """Advance the CoT state machine by one chunk; return speakable text.
+    _THOUGHT_OPEN = "<thought"
+    _THOUGHT_CLOSE = "</thought>"
 
-        `<thought>...</thought>` reasoning is buffered and dropped; only what
-        falls outside it is returned. State is carried on `state` so the machine
-        survives a tag split across chunk boundaries. Both the primary and the
-        self-correction streams run through this, so the retry can no longer
-        leak raw reasoning to the user.
+    @staticmethod
+    def _held_partial(data: str, token: str) -> str:
+        """Longest suffix of `data` that is a proper prefix of `token`.
+
+        This is what makes the parser safe across chunk boundaries: a stream
+        ending in "<tho" must hold those characters back rather than speak them,
+        because the next chunk may complete the tag.
+        """
+        for length in range(min(len(data), len(token) - 1), 0, -1):
+            if data[-length:] == token[:length]:
+                return data[-length:]
+        return ""
+
+    def _visible_segments(self, clean_chunk: str, state: "_ChatStreamState") -> list:
+        """Advance the CoT parser by one chunk; return speakable text.
+
+        `<thought>...</thought>` reasoning is dropped, everything outside it is
+        returned. Both the primary and the self-correction streams run through
+        this, so neither can leak raw reasoning to the user.
+
+        This is an incremental parser rather than a "does the buffer contain a
+        tag yet" check, because models stream token by token: "<thought>" very
+        commonly arrives as "<" + "thought" + ">". The previous approach saw a
+        first chunk of "<" , concluded no tag was present, spoke it, and latched
+        into a state where the whole reasoning block passed straight through --
+        so CoT stripping only worked when the opening tag happened to land
+        whole in one chunk. It also dropped any visible text preceding a tag and
+        handled only a single block per stream. All of that is handled here.
         """
         segments = []
-        if not state.checked_start:
-            state.thought_buffer += clean_chunk
-            if "<thought" in state.thought_buffer:
-                state.in_thought = True
-                state.checked_start = True
-                if "</thought>" in state.thought_buffer:
-                    remaining_content = self._split_thought(state.thought_buffer)
-                    if remaining_content:
-                        segments.append(remaining_content)
-                    state.thought_buffer = ""
-                    state.in_thought = False
-            else:
-                segments.append(state.thought_buffer)
-                state.thought_buffer = ""
-                state.checked_start = True
-        elif state.in_thought:
-            state.thought_buffer += clean_chunk
-            if "</thought>" in state.thought_buffer:
-                remaining_content = self._split_thought(state.thought_buffer)
-                if remaining_content:
-                    segments.append(remaining_content)
-                state.thought_buffer = ""
+        data = state.thought_buffer + clean_chunk
+        state.thought_buffer = ""
+
+        while data:
+            if state.in_thought:
+                idx = data.find(self._THOUGHT_CLOSE)
+                if idx == -1:
+                    # Still reasoning. Retain only a possible partial closing
+                    # tag; the rest is reasoning and is discarded unspoken.
+                    state.thought_buffer = self._held_partial(
+                        data, self._THOUGHT_CLOSE
+                    )
+                    break
+                data = data[idx + len(self._THOUGHT_CLOSE) :]
                 state.in_thought = False
-        else:
-            segments.append(clean_chunk)
+                continue
+
+            idx = data.find(self._THOUGHT_OPEN)
+            if idx == -1:
+                held = self._held_partial(data, self._THOUGHT_OPEN)
+                visible = data[: len(data) - len(held)] if held else data
+                if visible:
+                    segments.append(visible)
+                state.thought_buffer = held
+                break
+
+            if idx > 0:
+                segments.append(data[:idx])
+            close_bracket = data.find(">", idx)
+            if close_bracket == -1:
+                # "<thought" seen but the tag is not terminated yet.
+                state.thought_buffer = data[idx:]
+                break
+            state.in_thought = True
+            data = data[close_bracket + 1 :]
+
+        state.checked_start = True
         return segments
 
     def _visible_trailing(self, trailing: str, state: "_ChatStreamState") -> list:
-        """Same machine, for whatever the sanitizer held back at flush time."""
-        if not trailing:
-            return []
-        if state.in_thought:
-            state.thought_buffer += trailing
-            if "</thought>" in state.thought_buffer:
-                remaining_content = self._split_thought(state.thought_buffer)
-                if remaining_content:
-                    return [remaining_content]
-            return []
-        return [trailing]
+        """Same parser, for whatever the sanitizer held back at flush time.
+
+        Anything still buffered afterwards was an unterminated tag or an
+        unclosed thought block; neither is speakable, so it is dropped.
+        """
+        segments = self._visible_segments(trailing, state) if trailing else []
+        leftover = state.thought_buffer
+        state.thought_buffer = ""
+        if leftover and not state.in_thought:
+            # A partial that never completed (e.g. a literal trailing "<").
+            segments.append(leftover)
+        return segments
 
     async def _emit_validated(
         self, text: str, state: "_ChatStreamState", goal: str, allow_hesitation: bool = True
@@ -629,6 +665,7 @@ class ActionService:
         deadline = time.monotonic() + stream_budget
         accumulated_retry_response = ""
         is_valid = True
+        emitted_any = False
 
         while is_valid:
             remaining = deadline - time.monotonic()
@@ -651,6 +688,7 @@ class ActionService:
                     logger.warning(
                         "[System 3] Retry also violated constraints; yielding safe fallback."
                     )
+                    emitted_any = True
                     yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
                     break
 
@@ -663,9 +701,11 @@ class ActionService:
                         f"[System 3] Retry fabricated a memory claim: {retry_ground_reason}. Yielding safe fallback."
                     )
                     is_valid = False
+                    emitted_any = True
                     yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
                     break
 
+                emitted_any = True
                 yield {"type": "content", "data": clean_chunk}
                 accumulated_retry_response = candidate
 
@@ -682,6 +722,7 @@ class ActionService:
                     logger.warning(
                         "[System 3] Retry trailing also violated constraints; yielding safe fallback."
                     )
+                    emitted_any = True
                     yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
                 else:
                     # Check grounding on trailing content too
@@ -692,9 +733,18 @@ class ActionService:
                         logger.warning(
                             f"[System 3] Retry trailing fabricated a memory claim: {trail_ground_reason}. Yielding safe fallback."
                         )
+                        emitted_any = True
                         yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
                     else:
+                        emitted_any = True
                         yield {"type": "content", "data": trailing}
+
+        if not emitted_any:
+            # An empty retry stream, an expired budget, or a deadline that had
+            # already passed all land here. Without this the user hears
+            # "Wait, let me rephrase that..." and then nothing at all.
+            logger.warning("[System 3] Retry produced no content; yielding safe fallback.")
+            yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
 
         yield {"type": "done", "data": "finished"}
 
