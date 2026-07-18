@@ -36,6 +36,12 @@ def _default_user_mental_model():
 
 logger = logging.getLogger(__name__)
 
+# Roadmap §C: recognising a somatic comfort fires a phasic dopamine burst of
+# this size. Kept here rather than in somatic.py because it is a property of the
+# endocrine response, not of visual recognition -- any future reward channel
+# (a warm reply, a resolved goal) should fire through the same mechanism.
+SOMATIC_DOPAMINE_SPIKE = 0.25
+
 
 @dataclass(slots=True)
 class AgentState:
@@ -71,6 +77,21 @@ class AgentState:
     baseline_valence: float = 0.0
     baseline_arousal: float = 0.5
     baseline_dominance: float = 0.5
+
+    # Phasic dopamine (see the `dopamine` property). Stored as a peak plus the
+    # moment it was released, so the current level is derived from elapsed time
+    # rather than needing a tick to decay it. That keeps the reading correct
+    # even if system.tick stalls, and makes decay testable without a clock stub.
+    #
+    # Deliberately NOT persisted, unlike the baselines above. A burst has a 90s
+    # half-life, so it is already within rounding distance of zero by the time
+    # any realistic restart completes; carrying it across one would preserve a
+    # value that no longer means anything. Restoring a state with no burst is
+    # also the safe direction -- peak defaults to 0.0, which reads as "no
+    # outstanding reward" rather than as a stale one. If a future hormone decays
+    # on an hours-scale, that one *will* need persisting.
+    dopamine_phasic_peak: float = 0.0
+    dopamine_phasic_at: float = field(default_factory=time.time)
 
     # --- Affect Split Properties ---
     @property
@@ -169,14 +190,75 @@ class AgentState:
         return max(0.0, min(1.0, base_cortisol + fatigue_contribution))
 
     @property
+    def dopamine_tonic(self) -> float:
+        """Background reward tone: positive valence × arousal.
+
+        This is the whole of what `dopamine` used to be. It tracks the ongoing
+        affective state instantaneously and has no memory of its own.
+        """
+        return max(0.0, min(1.0, max(0.0, self.valence) * self.arousal))
+
+    @property
+    def dopamine_phasic(self) -> float:
+        """The decaying remainder of recent reward bursts.
+
+        Real dopamine signalling separates a slow tonic level from fast phasic
+        bursts on reward (Grace 1991; Schultz's reward-prediction-error work).
+        The tonic term above cannot represent "something good happened thirty
+        seconds ago and I am still lit up" -- being a pure function of current
+        valence and arousal, it forgets instantly. This is that memory, decaying
+        exponentially from the peak toward zero.
+        """
+        if self.dopamine_phasic_peak <= 0.0:
+            return 0.0
+        half_life = max(1e-6, float(getattr(Config, "DOPAMINE_PHASIC_HALFLIFE_S", 90.0)))
+        elapsed = max(0.0, time.time() - self.dopamine_phasic_at)
+        return self.dopamine_phasic_peak * math.exp(-math.log(2.0) * elapsed / half_life)
+
+    @property
     def dopamine(self) -> float:
         """
-        Reward hormone. Tracks positive valence × arousal.
+        Reward hormone: tonic tone plus any decaying phasic burst.
         High dopamine → exploratory/playful behavior (higher top_p).
         Low dopamine → conservative/flat behavior (lower top_p).
         Range: 0.0 (no reward signal) to 1.0 (peak reward).
+
+        With no burst outstanding this is exactly the historical derived value
+        (`max(0, V) * Ar`), so every existing reading and test is unaffected.
         """
-        return max(0.0, min(1.0, max(0.0, self.valence) * self.arousal))
+        return max(0.0, min(1.0, self.dopamine_tonic + self.dopamine_phasic))
+
+    def release_dopamine(self, amount: float) -> float:
+        """Fire a phasic burst, returning the new total dopamine level.
+
+        Implements the roadmap's `D_t = min(1.0, D_{t-1} + amount)`
+        (`docs/cvs4_architecture_roadmap.md` §C) literally, which the previous
+        derived-only property could not: with dopamine computed purely from
+        valence and arousal there was no `D_{t-1}` to add to, and the only way
+        to move it was to move mood itself.
+
+        The burst is stored relative to the tonic floor, so that floor stays
+        free to drift with affect underneath a decaying burst instead of being
+        double-counted into it.
+        """
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            return self.dopamine
+        # NaN survives `float()` and then defeats every comparison below:
+        # `nan <= 0.0` is False, so it passes the guard, and `min(1.0, nan)`
+        # returns 1.0 -- a NaN reward would fire a *maximum* burst. Infinity
+        # takes the same route. Both are caller bugs, not rewards.
+        if not math.isfinite(amount):
+            logger.warning("[Endocrine] Ignoring non-finite dopamine release %r.", amount)
+            return self.dopamine
+        if amount <= 0.0:
+            return self.dopamine
+
+        target_total = min(1.0, self.dopamine + amount)
+        self.dopamine_phasic_peak = max(0.0, target_total - self.dopamine_tonic)
+        self.dopamine_phasic_at = time.time()
+        return self.dopamine
 
 
 class StateService:
@@ -800,9 +882,11 @@ class StateService:
         perception-to-affect path.
 
         Roadmap §C (`docs/cvs4_architecture_roadmap.md`) specifies a dopamine
-        spike alongside the valence one. `dopamine` here is a derived property
-        (`max(0, valence) * arousal`), not a stored field, so it cannot be
-        assigned; lifting valence and arousal is what raises it, which this does.
+        spike alongside the valence one, and both now happen literally: the
+        valence lift below, and a real phasic burst via `release_dopamine`.
+        Before phasic dopamine existed, the burst could only be approximated by
+        moving mood and letting the derived term follow, which meant the reward
+        vanished the instant valence drifted back.
 
         Absence of a match must never reach this method as a zero spike. Doing
         so would drag mood toward neutral on every appraisal interval and
@@ -827,6 +911,14 @@ class StateService:
         if valence_spike <= 0.0 and arousal_spike <= 0.0:
             return
 
+        # Roadmap §C: D_t = min(1.0, D_{t-1} + 0.25). Falls back to the valence
+        # lift alone when a caller supplies no explicit burst.
+        dopamine_spike = somatic.get("dopamine_spike", SOMATIC_DOPAMINE_SPIKE)
+        try:
+            dopamine_spike = float(dopamine_spike)
+        except (TypeError, ValueError):
+            dopamine_spike = SOMATIC_DOPAMINE_SPIKE
+
         entities = somatic.get("entities") or []
         async with self._state_lock:
             before_valence = self.current_state.valence
@@ -837,6 +929,8 @@ class StateService:
                 1.0, self.current_state.arousal + arousal_spike
             )
             self._enforce_bounds()
+            # After bounds, so the burst is measured against the settled tonic.
+            self.current_state.release_dopamine(dopamine_spike)
             after_valence = self.current_state.valence
 
         logger.info(
