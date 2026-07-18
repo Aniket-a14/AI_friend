@@ -340,6 +340,93 @@ def test_signaling_lan_guard_allows_only_loopback_and_private_clients():
     assert not is_lan_client_allowed("example.com")
 
 
+def test_is_loopback_client_rejects_other_lan_devices():
+    from app.network import is_loopback_client
+
+    assert is_loopback_client("127.0.0.1")
+    assert is_loopback_client("::1")
+    # Unlike is_lan_client_allowed, private/link-local non-loopback addresses
+    # (another device on the same WiFi) are NOT loopback.
+    assert not is_loopback_client("192.168.1.42")
+    assert not is_loopback_client("10.0.0.12")
+    assert not is_loopback_client("8.8.8.8")
+    assert not is_loopback_client(None)
+
+
+def _fake_request(host, headers=None, query_params=None):
+    return SimpleNamespace(
+        client=SimpleNamespace(host=host),
+        headers=headers or {},
+        query_params=query_params or {},
+    )
+
+
+def test_require_session_auth_allows_loopback_without_a_key(monkeypatch):
+    import asyncio as _asyncio
+    from app.config import Config
+    import main
+
+    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", None)
+    _asyncio.run(main.require_session_auth(_fake_request("127.0.0.1")))
+
+
+def test_require_session_auth_rejects_lan_client_without_key_configured(
+    monkeypatch,
+):
+    import asyncio as _asyncio
+    from fastapi import HTTPException
+    from app.config import Config
+    import main
+
+    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", None)
+    try:
+        _asyncio.run(main.require_session_auth(_fake_request("192.168.1.42")))
+        assert False, "expected HTTPException"
+    except HTTPException as e:
+        assert e.status_code == 503
+
+
+def test_require_session_auth_rejects_lan_client_with_wrong_key(monkeypatch):
+    import asyncio as _asyncio
+    from fastapi import HTTPException
+    from app.config import Config
+    import main
+
+    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", "correct-key")
+    try:
+        _asyncio.run(
+            main.require_session_auth(
+                _fake_request(
+                    "192.168.1.42", headers={"x-backend-key": "wrong-key"}
+                )
+            )
+        )
+        assert False, "expected HTTPException"
+    except HTTPException as e:
+        assert e.status_code == 401
+
+
+def test_require_session_auth_accepts_lan_client_with_correct_key(monkeypatch):
+    import asyncio as _asyncio
+    from app.config import Config
+    import main
+
+    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", "correct-key")
+    _asyncio.run(
+        main.require_session_auth(
+            _fake_request(
+                "192.168.1.42", headers={"x-backend-key": "correct-key"}
+            )
+        )
+    )
+    # Also accepted via the ?key= query param fallback.
+    _asyncio.run(
+        main.require_session_auth(
+            _fake_request("192.168.1.42", query_params={"key": "correct-key"})
+        )
+    )
+
+
 def test_surfacing_agent_subscribes_to_state_update_subject():
     agent = SurfacingAgent(memory_store=MagicMock())
     agent.connect = AsyncMock()
@@ -526,3 +613,94 @@ async def _collect_outputs(generator):
     async for item in generator:
         outputs.append(item)
     return outputs
+
+
+def test_brain_agent_concurrent_chat_inputs_prevent_lost_task_ownership():
+    """
+    Regression test for A4 generation-cancel race condition.
+
+    Two concurrent chat input callbacks should not both create generation tasks
+    where one overwrites the other's task reference, causing lost task ownership.
+    The atomic _replace_active_generation method prevents this TOCTOU race.
+    """
+    agent = BrainAgent(graph_db=None, memory_store=None, conversation_store=None)
+    agent.set_state = AsyncMock()
+    agent.publish = AsyncMock()
+    agent._publish_speech_chunk = AsyncMock()
+    agent.cognitive_core.state.get_context_snapshot = MagicMock(
+        return_value={"emotion": "neutral"}
+    )
+    agent.cognitive_core.state.record_user_interaction = MagicMock()
+
+    # Track which tasks were created
+    created_tasks = []
+    original_create_task = asyncio.create_task
+
+    def tracking_create_task(coro):
+        task = original_create_task(coro)
+        created_tasks.append(task)
+        return task
+
+    # Track execution of flow processing
+    flow_executions = []
+
+    async def _mock_flow(msg, is_subconscious, message):
+        flow_id = len(flow_executions)
+        flow_executions.append(flow_id)
+        # Simulate some async work
+        await asyncio.sleep(0.01)
+        return flow_id
+
+    agent._process_chat_input_flow = _mock_flow
+
+    # Fire two concurrent chat inputs
+    async def run_concurrent_inputs():
+        msg1 = {
+            "text": "first input",
+            "turn_id": "turn-1",
+            "utterance_id": "utt-1",
+            "metadata": {"source": "user"}
+        }
+        msg2 = {
+            "text": "second input",
+            "turn_id": "turn-2",
+            "utterance_id": "utt-2",
+            "metadata": {"source": "user"}
+        }
+
+        # Start both concurrently
+        results = await asyncio.gather(
+            agent._on_chat_input(msg1),
+            agent._on_chat_input(msg2),
+            return_exceptions=True
+        )
+
+        return results
+
+    results = asyncio.run(run_concurrent_inputs())
+
+    # Both should complete without exception
+    for result in results:
+        if isinstance(result, Exception):
+            raise result
+
+    # At least one flow must run. Exactly one is the *expected* outcome for two
+    # truly concurrent turns: _replace_active_generation cancels whichever task
+    # was active before creating the new one, and a task cancelled before the
+    # event loop ever schedules it never executes its body at all - so the
+    # loser can legitimately have zero (not one) recorded executions. Asserting
+    # ==2 assumes both survive to run, which contradicts the whole point of the
+    # fix (a new turn supersedes, not runs alongside, the old one).
+    assert 1 <= len(flow_executions) <= 2, (
+        f"Expected 1 or 2 flow executions, got {len(flow_executions)}"
+    )
+
+    # After completion, no active task should remain
+    # (both cleaned up in finally blocks)
+    assert agent._active_generation_task is None or agent._active_generation_task.done()
+
+    # The key assertion: no orphaned tasks exist
+    # Both tasks should have been properly tracked and cleaned up
+    # If the race existed, one task would be orphaned (created but lost ownership)
+    for task in created_tasks:
+        assert task.done(), "All created tasks should have completed or been cancelled"

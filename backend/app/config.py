@@ -15,6 +15,7 @@ class AppSettings(BaseSettings):
     TESTING_CONSOLIDATION_BYPASS_SILENCE: bool = False
     ALLOWED_ORIGINS_STR: str = Field(default="*", alias="ALLOWED_ORIGINS")
     LAN_ONLY: bool = True
+    BACKEND_ACCESS_KEY: Optional[str] = None
     LAN_CORS_ORIGIN_REGEX: str = (
         r"^https?://("
         r"127\.0\.0\.1|"
