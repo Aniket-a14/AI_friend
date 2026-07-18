@@ -54,6 +54,60 @@ _GROUNDING_STOPWORDS = frozenset(
 )
 
 
+# Static half of the chat system prompt, appended after the identity block.
+# Hoisted out of execute() so the prompt contract is visible at module scope
+# rather than buried mid-function.
+_CHAT_GUIDELINE = (
+    "Guideline:\n"
+    "- Maintain your identity rules at all times.\n"
+    "- Focus on natural conversational phrases.\n"
+    "- IMPORTANT: If the SHARED HISTORY / RECENT CONTEXT contains relevant "
+    "biographical facts, partner details, childhood milestones, or personal "
+    "preferences, you MUST integrate them explicitly and accurately to answer "
+    "the user's question.\n"
+    "- GROUNDING: Base any specific claim about the user, your shared past, "
+    "names, dates, places, or events ONLY on the SHARED HISTORY / RECENT "
+    "CONTEXT provided. Do not invent memories or details that are not there. "
+    "If the user asks about something you have no memory of, say so naturally "
+    '(e.g. "I don\'t think you\'ve told me that") instead of making it up.\n'
+    "- Respond only in English. Do not use Hindi, Hinglish, or any other "
+    "language for now.\n"
+    "- The voice layer already carries emotion separately. Do not emit XML "
+    "wrappers or emotion tags.\n"
+    "- You may use <pause=300ms> or <hesitate> when it improves natural timing."
+)
+
+# Spoken when self-correction cannot produce a compliant reply.
+_SAFE_FALLBACK_LINE = "I need a moment to gather my thoughts..."
+
+
+class _ChatStreamState:
+    """Mutable state threaded through the chat streaming loop.
+
+    Chunk handling needs to carry accumulated text, chain-of-thought parsing
+    position and whether the one allowed hesitation has been spent. Bundling
+    them keeps the per-chunk helpers free of long parameter lists and makes it
+    explicit which state the loop actually mutates.
+    """
+
+    __slots__ = (
+        "accumulated_response",
+        "in_thought",
+        "thought_buffer",
+        "checked_start",
+        "has_hesitated",
+        "dominance",
+    )
+
+    def __init__(self, dominance: float = 0.5):
+        self.accumulated_response = ""
+        self.in_thought = False
+        self.thought_buffer = ""
+        self.checked_start = False
+        self.has_hesitated = False
+        self.dominance = dominance
+
+
 def _memory_relevance(memory: Dict[str, Any]) -> float:
     """Relevance value used to order a surfaced memory.
 
@@ -222,6 +276,523 @@ class ActionService:
 
         return True, ""
 
+    # ------------------------------------------------------------------
+    # RESPOND_CHAT stages (F1)
+    #
+    # execute() was a ~520-line god-function interleaving memory surfacing,
+    # prompt assembly, endocrine sampling math, CoT thought-stripping,
+    # paralinguistic injection, per-chunk validation, grounding checks and a
+    # full self-correction retry loop. The same
+    # hesitate -> validate -> yield -> accumulate block appeared six times.
+    # The stages below are that same behavior, named and de-duplicated.
+    # ------------------------------------------------------------------
+
+    async def _surface_fallback_memories(self, plan: ActionPlan, msg: str) -> list:
+        """Synchronous recall fallback when no memories were pre-surfaced.
+
+        Prevents a race in low-latency/benchmark modes where the async
+        surfacing agent has not answered yet by the time we need context.
+        """
+        try:
+            fallback_memories = await self.memory.search_memories(
+                query_text=msg,
+                wing="personal",
+                limit=3,
+                refresh_on_recall=False,
+                current_valence=plan.payload.get("valence", 0.0),
+                current_arousal=plan.payload.get("arousal", 0.5),
+                current_cortisol=plan.payload.get("cortisol", 0.0),
+            )
+            if fallback_memories:
+                logger.info(
+                    f"⚡ [Action] Synchronous recall fallback surfaced {len(fallback_memories)} memories."
+                )
+                return fallback_memories
+        except Exception as fe:
+            logger.warning(f"Failed to run synchronous memory surfacing fallback: {fe}")
+        return []
+
+    @staticmethod
+    def _build_shared_history(surfaced: list) -> str:
+        """Render surfaced memories, edge-loaded against lost-in-the-middle."""
+        if not surfaced:
+            return ""
+        ordered = reorder_for_long_context(surfaced)
+        return "\nSHARED HISTORY / RECENT CONTEXT (Active Influence):\n" + "\n".join(
+            [f"- {m['content']}" for m in ordered]
+        )
+
+    @staticmethod
+    def _build_tom_context(user_tom) -> str:
+        """Render the Theory-of-Mind block describing the inferred user state."""
+        if not user_tom:
+            return ""
+        inferred_val = user_tom.get("inferred_valence", 0.0)
+        inferred_ar = user_tom.get("inferred_arousal", 0.5)
+        impl_goals = user_tom.get("implied_goals", [])
+        if not isinstance(impl_goals, list):
+            logger.warning(
+                f"[Action] Unexpected type for implied_goals in user_mental_model: {type(impl_goals)}. Falling back to empty list."
+            )
+            impl_goals = []
+        # Take the last 10 known concepts to keep it concise and avoid context bloat
+        known_con = user_tom.get("known_concepts", [])[-10:]
+
+        tom_context = "\n\nYour Inferred Perspective of the User (Theory of Mind):\n"
+        tom_context += (
+            f"- User Inferred Valence: {inferred_val:.2f} (Scale: -1.0 to 1.0)\n"
+        )
+        tom_context += (
+            f"- User Inferred Arousal: {inferred_ar:.2f} (Scale: 0.0 to 1.0)\n"
+        )
+        if impl_goals:
+            tom_context += f"- User Implied Goals: {', '.join(impl_goals)}\n"
+        if known_con:
+            tom_context += f"- User Known Concepts (Respect this knowledge boundary): {', '.join(known_con)}\n"
+        return tom_context
+
+    @staticmethod
+    def _compute_endocrine_options(payload: Dict[str, Any]):
+        """Map the endocrine state onto LLM sampling parameters.
+
+        cortisol -> temperature (stress narrows sampling), dopamine -> top_p
+        (reward widens it), fatigue -> num_predict (tiredness shortens replies).
+        Returns None when no endocrine signal is present at all, leaving the
+        model on its defaults.
+        """
+        cortisol = payload.get("cortisol")
+        dopamine = payload.get("dopamine")
+        fatigue = payload.get("fatigue")
+
+        if cortisol is None and dopamine is None and fatigue is None:
+            return None
+
+        endocrine_options = {}
+        if cortisol is not None:
+            try:
+                endo_temperature = max(
+                    0.0, min(1.0, round(0.9 - (float(cortisol) * 0.6), 3))
+                )
+            except (ValueError, TypeError):
+                endo_temperature = 0.7
+            endocrine_options["temperature"] = endo_temperature
+        else:
+            endocrine_options["temperature"] = 0.7
+
+        if dopamine is not None:
+            try:
+                endo_top_p = max(0.0, min(1.0, round(0.70 + (float(dopamine) * 0.25), 3)))
+            except (ValueError, TypeError):
+                endo_top_p = 0.8
+            endocrine_options["top_p"] = endo_top_p
+        else:
+            endocrine_options["top_p"] = 0.8
+
+        try:
+            fatigue_val = max(
+                0.0, min(1.0, float(fatigue if fatigue is not None else 0.0))
+            )
+        except (ValueError, TypeError):
+            fatigue_val = 0.0
+
+        # Bounded num_predict strictly between 100 (exhausted) and 250 (fresh)
+        endocrine_options["num_predict"] = int(
+            max(100, min(250, int(250 - (fatigue_val * 150))))
+        )
+
+        logger.info(
+            "[Endocrine] Cortisol=%s Dopamine=%s Fatigue=%s → temp=%.3f top_p=%.3f num_predict=%d",
+            cortisol,
+            dopamine,
+            fatigue,
+            endocrine_options["temperature"],
+            endocrine_options["top_p"],
+            endocrine_options["num_predict"],
+        )
+        return endocrine_options
+
+    @staticmethod
+    def _prepended_affect_tag(arousal: float, valence: float) -> str:
+        """Non-verbal breath/sigh opener implied by the current affect."""
+        if arousal > 0.6 and valence < -0.3:
+            return "<breath_fast> "
+        if arousal < 0.4 and valence < 0.0:
+            return "<sigh_soft> "
+        return ""
+
+    @staticmethod
+    def _split_thought(thought_buffer: str):
+        """Split a completed <thought>...</thought> block off the buffer.
+
+        Returns the content that follows the closing tag; the reasoning itself
+        is logged, never spoken.
+        """
+        parts = thought_buffer.split("</thought>", 1)
+        thought_content = parts[0].replace("<thought>", "").strip()
+        logger.info(f"[CoT Thought] {thought_content}")
+        return parts[1]
+
+    async def _emit_validated(
+        self, text: str, state: "_ChatStreamState", goal: str, allow_hesitation: bool = True
+    ):
+        """Validate a piece of pending speech, then emit and accumulate it.
+
+        This single helper replaces six near-identical inline copies of
+        "maybe inject a hesitation, build the candidate utterance, run the
+        System-3 check, yield, accumulate". Raises MetacognitiveException so
+        the caller's self-correction path takes over.
+        """
+        if (
+            allow_hesitation
+            and state.dominance < 0.4
+            and not state.has_hesitated
+            and "," in text
+        ):
+            text = text.replace(",", " <hesitate>,", 1)
+            state.has_hesitated = True
+
+        candidate = state.accumulated_response + text
+        is_valid, reason = self._validate_partial_response(candidate, goal)
+        if not is_valid:
+            raise MetacognitiveException(reason)
+
+        yield {"type": "content", "data": text}
+        state.accumulated_response = candidate
+
+    async def _stream_primary_response(
+        self,
+        *,
+        plan: ActionPlan,
+        user_prompt: str,
+        system_instruction: str,
+        model,
+        endocrine_options,
+        sanitizer: "ControlMarkupSanitizer",
+        stream_budget: int,
+        state: "_ChatStreamState",
+        surfaced: list,
+        msg: str,
+    ):
+        """Stream the first-pass reply, stripping CoT and validating as it goes."""
+        stream_iter = self.llm.generate_stream(
+            prompt=user_prompt,
+            system=system_instruction,
+            model=model,
+            options_override=endocrine_options,
+        ).__aiter__()
+        deadline = time.monotonic() + stream_budget
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise asyncio.TimeoutError()
+
+            try:
+                chunk = await asyncio.wait_for(
+                    stream_iter.__anext__(), timeout=remaining
+                )
+            except StopAsyncIteration:
+                break
+
+            clean_chunk = sanitizer.feed(chunk)
+            if not clean_chunk:
+                continue
+
+            # CoT strip check
+            if not state.checked_start:
+                state.thought_buffer += clean_chunk
+                if "<thought" in state.thought_buffer:
+                    state.in_thought = True
+                    state.checked_start = True
+                    if "</thought>" in state.thought_buffer:
+                        remaining_content = self._split_thought(state.thought_buffer)
+                        if remaining_content:
+                            async for out in self._emit_validated(
+                                remaining_content, state, plan.goal
+                            ):
+                                yield out
+                        state.thought_buffer = ""
+                        state.in_thought = False
+                else:
+                    async for out in self._emit_validated(
+                        state.thought_buffer, state, plan.goal
+                    ):
+                        yield out
+                    state.thought_buffer = ""
+                    state.checked_start = True
+                    continue
+
+            elif state.in_thought:
+                state.thought_buffer += clean_chunk
+                if "</thought>" in state.thought_buffer:
+                    remaining_content = self._split_thought(state.thought_buffer)
+                    if remaining_content:
+                        async for out in self._emit_validated(
+                            remaining_content, state, plan.goal
+                        ):
+                            yield out
+                    state.thought_buffer = ""
+                    state.in_thought = False
+                continue
+            else:
+                async for out in self._emit_validated(clean_chunk, state, plan.goal):
+                    yield out
+
+        # Flush whatever the markup sanitizer was still holding back.
+        trailing = sanitizer.flush()
+        if trailing:
+            if state.in_thought:
+                state.thought_buffer += trailing
+                if "</thought>" in state.thought_buffer:
+                    remaining_content = self._split_thought(state.thought_buffer)
+                    if remaining_content:
+                        async for out in self._emit_validated(
+                            remaining_content, state, plan.goal, allow_hesitation=False
+                        ):
+                            yield out
+            else:
+                async for out in self._emit_validated(
+                    trailing, state, plan.goal, allow_hesitation=False
+                ):
+                    yield out
+
+        # Post-generation grounding gate: the whole utterance is now known, so
+        # check it for fabricated shared-memory claims and route any hit
+        # through the same self-correction path.
+        is_grounded, ground_reason = self._check_response_grounding(
+            state.accumulated_response, surfaced, msg
+        )
+        if not is_grounded:
+            raise MetacognitiveException(ground_reason)
+
+        yield {"type": "done", "data": "finished"}
+
+    async def _announce_self_correction(self, reason: str):
+        """Interrupt playback so the retry is not spoken over the bad take."""
+        if self.publish_cb:
+            try:
+                await self.publish_cb(
+                    "control.interrupt", {"reason": reason, "interrupt": True}
+                )
+                await self.publish_cb(
+                    "audio.stop", {"interrupt": True, "reason": reason}
+                )
+            except Exception as pe:
+                logger.error(f"[System 3] Failed to publish interrupt: {pe}")
+
+    async def _stream_self_correction(
+        self,
+        *,
+        plan: ActionPlan,
+        user_prompt: str,
+        system_instruction: str,
+        model,
+        endocrine_options,
+        sanitizer: "ControlMarkupSanitizer",
+        stream_budget: int,
+        surfaced: list,
+        msg: str,
+    ):
+        """Second-pass regeneration after a System-3 violation.
+
+        Any further violation (constraint or grounding, mid-stream or trailing)
+        collapses to a single safe fallback line rather than a third attempt.
+        """
+        stream_iter = self.llm.generate_stream(
+            prompt=user_prompt,
+            system=system_instruction,
+            model=model,
+            options_override=endocrine_options,
+        ).__aiter__()
+        deadline = time.monotonic() + stream_budget
+        accumulated_retry_response = ""
+        is_valid = True
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                chunk = await asyncio.wait_for(
+                    stream_iter.__anext__(), timeout=remaining
+                )
+            except StopAsyncIteration:
+                break
+            clean_chunk = sanitizer.feed(chunk)
+            if not clean_chunk:
+                continue
+
+            candidate = accumulated_retry_response + clean_chunk
+            is_valid, _ = self._validate_partial_response(candidate, plan.goal)
+            if not is_valid:
+                logger.warning(
+                    "[System 3] Retry also violated constraints; yielding safe fallback."
+                )
+                yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
+                break
+
+            # Check grounding on the accumulated response so far
+            is_retry_grounded, retry_ground_reason = self._check_response_grounding(
+                candidate, surfaced, msg
+            )
+            if not is_retry_grounded:
+                logger.warning(
+                    f"[System 3] Retry fabricated a memory claim: {retry_ground_reason}. Yielding safe fallback."
+                )
+                yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
+                break
+
+            yield {"type": "content", "data": clean_chunk}
+            accumulated_retry_response = candidate
+
+        if is_valid:
+            trailing = sanitizer.flush()
+            if trailing:
+                candidate = accumulated_retry_response + trailing
+                is_valid_trail, _ = self._validate_partial_response(
+                    candidate, plan.goal
+                )
+                if not is_valid_trail:
+                    logger.warning(
+                        "[System 3] Retry trailing also violated constraints; yielding safe fallback."
+                    )
+                    yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
+                else:
+                    # Check grounding on trailing content too
+                    is_trail_grounded, trail_ground_reason = (
+                        self._check_response_grounding(candidate, surfaced, msg)
+                    )
+                    if not is_trail_grounded:
+                        logger.warning(
+                            f"[System 3] Retry trailing fabricated a memory claim: {trail_ground_reason}. Yielding safe fallback."
+                        )
+                        yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
+                    else:
+                        yield {"type": "content", "data": trailing}
+
+        yield {"type": "done", "data": "finished"}
+
+    async def _execute_respond_chat(self, plan: ActionPlan):
+        """Generate a spoken reply: surface context, prompt, stream, self-correct."""
+        msg = plan.payload.get("message", "")
+        identity_prompt = plan.payload.get("identity_prompt", "You are my friend.")
+        emotion = plan.payload.get("emotion_state", "neutral")
+        model = plan.payload.get("model")
+
+        # Contextual Enrichments
+        surfaced = plan.payload.get("surfaced_memories", [])
+        if not surfaced and self.memory:
+            surfaced = await self._surface_fallback_memories(plan, msg)
+
+        shared_history = self._build_shared_history(surfaced)
+        tom_context = self._build_tom_context(plan.payload.get("user_mental_model"))
+
+        # Static System Prompt (cached by inference engines like Ollama/vLLM)
+        system_instruction = f"{identity_prompt}\n\n{_CHAT_GUIDELINE}"
+
+        # Dynamic User Prompt. Ordering fights "lost in the middle": the factual
+        # grounding (SHARED HISTORY) is placed LAST before the user's query so it
+        # sits in the model's high-attention tail, adjacent to what it must
+        # answer. The more abstract, lower-cost-to-lose context (goal, emotion,
+        # Theory-of-Mind) goes earlier. Within the history block itself, memories
+        # are already edge-loaded by reorder_for_long_context().
+        user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{tom_context}{shared_history}\n\nUser: {msg}\nAssistant:"
+
+        valence = plan.payload.get("valence", 0.0)
+        arousal = plan.payload.get("arousal", 0.5)
+        dominance = plan.payload.get("dominance", 0.5)
+
+        try:
+            endocrine_options = self._compute_endocrine_options(plan.payload)
+
+            sanitizer = ControlMarkupSanitizer()
+            stream_budget = max(15, int(getattr(Config, "LLM_STREAM_MAX_SECONDS", 120)))
+            state = _ChatStreamState(dominance=dominance)
+
+            prepended_tag = self._prepended_affect_tag(arousal, valence)
+            if prepended_tag:
+                yield {"type": "content", "data": prepended_tag}
+
+            try:
+                async for out in self._stream_primary_response(
+                    plan=plan,
+                    user_prompt=user_prompt,
+                    system_instruction=system_instruction,
+                    model=model,
+                    endocrine_options=endocrine_options,
+                    sanitizer=sanitizer,
+                    stream_budget=stream_budget,
+                    state=state,
+                    surfaced=surfaced,
+                    msg=msg,
+                ):
+                    yield out
+
+            except MetacognitiveException as me:
+                logger.warning(
+                    f"[System 3] Metacognitive violation: {me.reason}. Triggering self-correction."
+                )
+                await self._announce_self_correction(me.reason)
+
+                yield {"type": "content", "data": " Wait, let me rephrase that... "}
+                if endocrine_options is None:
+                    endocrine_options = {}
+                endocrine_options["temperature"] = min(
+                    1.0, endocrine_options.get("temperature", 0.7) + 0.2
+                )
+                retry_prompt = (
+                    user_prompt
+                    + f"\n\nCRITICAL FIX: Your previous response violated constraints: {me.reason}. Correct it immediately and do not repeat the forbidden phrases."
+                )
+
+                try:
+                    async for out in self._stream_self_correction(
+                        plan=plan,
+                        user_prompt=retry_prompt,
+                        system_instruction=system_instruction,
+                        model=model,
+                        endocrine_options=endocrine_options,
+                        sanitizer=sanitizer,
+                        stream_budget=stream_budget,
+                        surfaced=surfaced,
+                        msg=msg,
+                    ):
+                        yield out
+                except Exception as inner_e:
+                    logger.error(f"[System 3] Self-correction generation failed: {inner_e}")
+                    yield {"type": "done", "data": "finished"}
+
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[Action] Stream timed out after %ss; emitting graceful fallback.",
+                    stream_budget,
+                )
+                yield {
+                    "type": "content",
+                    "data": "I'm having trouble thinking right now...",
+                }
+                yield {"type": "done", "data": ""}
+
+        except Exception as e:
+            logger.error(f"[Action] LLM Execution failed: {e}")
+            yield {"type": "error", "data": str(e)}
+            yield {"type": "done", "data": ""}
+
+    async def _execute_store_memory(self, plan: ActionPlan):
+        """Commit an explicitly requested memory."""
+        content = plan.payload.get("content", "")
+        # Using the new intelligent MemoryStore
+        if self.memory:
+            await self.memory.add_memory(
+                content=content,
+                importance=0.7,  # High importance for explicit 'remember' commands
+                emotion=0.2,
+                source="user",
+            )
+        yield {"type": "system", "data": "Memory securely consolidated."}
+        yield {"type": "content", "data": "Got it, I've committed that to memory."}
+        yield {"type": "done", "data": ""}
+
     async def execute(self, plan: ActionPlan) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Executes the plan and yields output chunks.
@@ -231,511 +802,12 @@ class ActionService:
         )
 
         if plan.action_type == "RESPOND_CHAT":
-            # 1. Prepare Identity-Aware Prompt
-            msg = plan.payload.get("message", "")
-            identity_prompt = plan.payload.get("identity_prompt", "You are my friend.")
-            emotion = plan.payload.get("emotion_state", "neutral")
-
-            model = plan.payload.get("model")
-
-            # Contextual Enrichments
-            surfaced = plan.payload.get("surfaced_memories", [])
-            if not surfaced and self.memory:
-                try:
-                    # Synchronous fallback to prevent race conditions in low-latency/benchmark modes
-                    fallback_memories = await self.memory.search_memories(
-                        query_text=msg,
-                        wing="personal",
-                        limit=3,
-                        refresh_on_recall=False,
-                        current_valence=plan.payload.get("valence", 0.0),
-                        current_arousal=plan.payload.get("arousal", 0.5),
-                        current_cortisol=plan.payload.get("cortisol", 0.0),
-                    )
-                    if fallback_memories:
-                        surfaced = fallback_memories
-                        logger.info(
-                            f"⚡ [Action] Synchronous recall fallback surfaced {len(surfaced)} memories."
-                        )
-                except Exception as fe:
-                    logger.warning(
-                        f"Failed to run synchronous memory surfacing fallback: {fe}"
-                    )
-
-            shared_history = ""
-            if surfaced:
-                # Edge-load the most relevant memories so they land in the LLM's
-                # high-attention start/end positions instead of being lost in the
-                # middle of the block.
-                ordered = reorder_for_long_context(surfaced)
-                shared_history = (
-                    "\nSHARED HISTORY / RECENT CONTEXT (Active Influence):\n"
-                    + "\n".join([f"- {m['content']}" for m in ordered])
-                )
-
-            # Theory of Mind (ToM) Context Injection
-            tom_context = ""
-            user_tom = plan.payload.get("user_mental_model")
-            if user_tom:
-                inferred_val = user_tom.get("inferred_valence", 0.0)
-                inferred_ar = user_tom.get("inferred_arousal", 0.5)
-                impl_goals = user_tom.get("implied_goals", [])
-                if not isinstance(impl_goals, list):
-                    logger.warning(
-                        f"[Action] Unexpected type for implied_goals in user_mental_model: {type(impl_goals)}. Falling back to empty list."
-                    )
-                    impl_goals = []
-                # Take the last 10 known concepts to keep it concise and avoid context bloat
-                known_con = user_tom.get("known_concepts", [])[-10:]
-
-                tom_context = (
-                    "\n\nYour Inferred Perspective of the User (Theory of Mind):\n"
-                )
-                tom_context += f"- User Inferred Valence: {inferred_val:.2f} (Scale: -1.0 to 1.0)\n"
-                tom_context += (
-                    f"- User Inferred Arousal: {inferred_ar:.2f} (Scale: 0.0 to 1.0)\n"
-                )
-                if impl_goals:
-                    tom_context += f"- User Implied Goals: {', '.join(impl_goals)}\n"
-                if known_con:
-                    tom_context += f"- User Known Concepts (Respect this knowledge boundary): {', '.join(known_con)}\n"
-
-            # 1. Prepare Identity-Aware System and User Prompts
-            # Static System Prompt (cached by inference engines like Ollama/vLLM)
-            system_instruction = f"{identity_prompt}\n\nGuideline:\n- Maintain your identity rules at all times.\n- Focus on natural conversational phrases.\n- IMPORTANT: If the SHARED HISTORY / RECENT CONTEXT contains relevant biographical facts, partner details, childhood milestones, or personal preferences, you MUST integrate them explicitly and accurately to answer the user's question.\n- GROUNDING: Base any specific claim about the user, your shared past, names, dates, places, or events ONLY on the SHARED HISTORY / RECENT CONTEXT provided. Do not invent memories or details that are not there. If the user asks about something you have no memory of, say so naturally (e.g. \"I don't think you've told me that\") instead of making it up.\n- Respond only in English. Do not use Hindi, Hinglish, or any other language for now.\n- The voice layer already carries emotion separately. Do not emit XML wrappers or emotion tags.\n- You may use <pause=300ms> or <hesitate> when it improves natural timing."
-
-            # Dynamic User Prompt. Ordering fights "lost in the middle": the factual
-            # grounding (SHARED HISTORY) is placed LAST before the user's query so it
-            # sits in the model's high-attention tail, adjacent to what it must
-            # answer. The more abstract, lower-cost-to-lose context (goal, emotion,
-            # Theory-of-Mind) goes earlier. Within the history block itself, memories
-            # are already edge-loaded by reorder_for_long_context().
-            user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{tom_context}{shared_history}\n\nUser: {msg}\nAssistant:"
-
-            valence = plan.payload.get("valence", 0.0)
-            arousal = plan.payload.get("arousal", 0.5)
-            dominance = plan.payload.get("dominance", 0.5)
-
-            try:
-                # 2. Endocrine System: Calculate physiological LLM parameters
-                endocrine_options = None
-                cortisol = plan.payload.get("cortisol")
-                dopamine = plan.payload.get("dopamine")
-                fatigue = plan.payload.get("fatigue")
-
-                if cortisol is not None or dopamine is not None or fatigue is not None:
-                    endocrine_options = {}
-                    if cortisol is not None:
-                        try:
-                            val = float(cortisol)
-                            endo_temperature = max(
-                                0.0, min(1.0, round(0.9 - (val * 0.6), 3))
-                            )
-                        except (ValueError, TypeError):
-                            endo_temperature = 0.7
-                        endocrine_options["temperature"] = endo_temperature
-                    else:
-                        endocrine_options["temperature"] = 0.7
-
-                    if dopamine is not None:
-                        try:
-                            val = float(dopamine)
-                            endo_top_p = max(
-                                0.0, min(1.0, round(0.70 + (val * 0.25), 3))
-                            )
-                        except (ValueError, TypeError):
-                            endo_top_p = 0.8
-                        endocrine_options["top_p"] = endo_top_p
-                    else:
-                        endocrine_options["top_p"] = 0.8
-
-                    try:
-                        fatigue_val = max(
-                            0.0,
-                            min(1.0, float(fatigue if fatigue is not None else 0.0)),
-                        )
-                    except (ValueError, TypeError):
-                        fatigue_val = 0.0
-
-                    # Bounded num_predict strictly between 100 (exhausted) and 250 (fresh)
-                    endo_num_predict = int(
-                        max(100, min(250, int(250 - (fatigue_val * 150))))
-                    )
-                    endocrine_options["num_predict"] = endo_num_predict
-
-                    logger.info(
-                        "[Endocrine] Cortisol=%s Dopamine=%s Fatigue=%s → temp=%.3f top_p=%.3f num_predict=%d",
-                        cortisol,
-                        dopamine,
-                        fatigue,
-                        endocrine_options["temperature"],
-                        endocrine_options["top_p"],
-                        endocrine_options["num_predict"],
-                    )
-
-                # 3. Stream Generation
-                sanitizer = ControlMarkupSanitizer()
-                stream_budget = max(
-                    15, int(getattr(Config, "LLM_STREAM_MAX_SECONDS", 120))
-                )
-
-                # Track state for paralinguistic injection, CoT thought stripping, and System 3 checks
-                in_thought = False
-                thought_buffer = ""
-                checked_start = False
-                has_hesitated = False
-                accumulated_response = ""
-
-                # Prepend tags based on emotional states
-                prepended_tag = ""
-                if arousal > 0.6 and valence < -0.3:
-                    prepended_tag = "<breath_fast> "
-                elif arousal < 0.4 and valence < 0.0:
-                    prepended_tag = "<sigh_soft> "
-
-                if prepended_tag:
-                    yield {"type": "content", "data": prepended_tag}
-
-                try:
-                    stream_iter = self.llm.generate_stream(
-                        prompt=user_prompt,
-                        system=system_instruction,
-                        model=model,
-                        options_override=endocrine_options,
-                    ).__aiter__()
-                    deadline = time.monotonic() + stream_budget
-
-                    while True:
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0:
-                            raise asyncio.TimeoutError()
-
-                        try:
-                            chunk = await asyncio.wait_for(
-                                stream_iter.__anext__(), timeout=remaining
-                            )
-                        except StopAsyncIteration:
-                            break
-
-                        clean_chunk = sanitizer.feed(chunk)
-                        if not clean_chunk:
-                            continue
-
-                        # CoT strip check
-                        if not checked_start:
-                            thought_buffer += clean_chunk
-                            if "<thought" in thought_buffer:
-                                in_thought = True
-                                checked_start = True
-                                if "</thought>" in thought_buffer:
-                                    parts = thought_buffer.split("</thought>", 1)
-                                    thought_block = parts[0]
-                                    remaining_content = parts[1]
-
-                                    thought_content = thought_block.replace(
-                                        "<thought>", ""
-                                    ).strip()
-                                    logger.info(f"[CoT Thought] {thought_content}")
-                                    if remaining_content:
-                                        if (
-                                            dominance < 0.4
-                                            and not has_hesitated
-                                            and "," in remaining_content
-                                        ):
-                                            remaining_content = (
-                                                remaining_content.replace(
-                                                    ",", " <hesitate>,", 1
-                                                )
-                                            )
-                                            has_hesitated = True
-
-                                        candidate = (
-                                            accumulated_response + remaining_content
-                                        )
-                                        is_valid, reason = (
-                                            self._validate_partial_response(
-                                                candidate, plan.goal
-                                            )
-                                        )
-                                        if not is_valid:
-                                            raise MetacognitiveException(reason)
-
-                                        yield {
-                                            "type": "content",
-                                            "data": remaining_content,
-                                        }
-                                        accumulated_response = candidate
-                                    thought_buffer = ""
-                                    in_thought = False
-                            else:
-                                if (
-                                    dominance < 0.4
-                                    and not has_hesitated
-                                    and "," in thought_buffer
-                                ):
-                                    thought_buffer = thought_buffer.replace(
-                                        ",", " <hesitate>,", 1
-                                    )
-                                    has_hesitated = True
-
-                                candidate = accumulated_response + thought_buffer
-                                is_valid, reason = self._validate_partial_response(
-                                    candidate, plan.goal
-                                )
-                                if not is_valid:
-                                    raise MetacognitiveException(reason)
-
-                                yield {"type": "content", "data": thought_buffer}
-                                accumulated_response = candidate
-                                thought_buffer = ""
-                                checked_start = True
-                                continue
-
-                        elif in_thought:
-                            thought_buffer += clean_chunk
-                            if "</thought>" in thought_buffer:
-                                parts = thought_buffer.split("</thought>", 1)
-                                thought_block = parts[0]
-                                remaining_content = parts[1]
-
-                                thought_content = thought_block.replace(
-                                    "<thought>", ""
-                                ).strip()
-                                logger.info(f"[CoT Thought] {thought_content}")
-
-                                if remaining_content:
-                                    if (
-                                        dominance < 0.4
-                                        and not has_hesitated
-                                        and "," in remaining_content
-                                    ):
-                                        remaining_content = remaining_content.replace(
-                                            ",", " <hesitate>,", 1
-                                        )
-                                        has_hesitated = True
-
-                                    candidate = accumulated_response + remaining_content
-                                    is_valid, reason = self._validate_partial_response(
-                                        candidate, plan.goal
-                                    )
-                                    if not is_valid:
-                                        raise MetacognitiveException(reason)
-
-                                    yield {"type": "content", "data": remaining_content}
-                                    accumulated_response = candidate
-                                thought_buffer = ""
-                                in_thought = False
-                            continue
-                        else:
-                            if (
-                                dominance < 0.4
-                                and not has_hesitated
-                                and "," in clean_chunk
-                            ):
-                                clean_chunk = clean_chunk.replace(
-                                    ",", " <hesitate>,", 1
-                                )
-                                has_hesitated = True
-
-                            candidate = accumulated_response + clean_chunk
-                            is_valid, reason = self._validate_partial_response(
-                                candidate, plan.goal
-                            )
-                            if not is_valid:
-                                raise MetacognitiveException(reason)
-
-                            yield {"type": "content", "data": clean_chunk}
-                            accumulated_response = candidate
-
-                    trailing = sanitizer.flush()
-                    if trailing:
-                        if in_thought:
-                            thought_buffer += trailing
-                            if "</thought>" in thought_buffer:
-                                parts = thought_buffer.split("</thought>", 1)
-                                thought_content = (
-                                    parts[0].replace("<thought>", "").strip()
-                                )
-                                logger.info(f"[CoT Thought] {thought_content}")
-                                remaining_content = parts[1]
-                                if remaining_content:
-                                    candidate = accumulated_response + remaining_content
-                                    is_valid, reason = self._validate_partial_response(
-                                        candidate, plan.goal
-                                    )
-                                    if not is_valid:
-                                        raise MetacognitiveException(reason)
-                                    yield {"type": "content", "data": remaining_content}
-                                    accumulated_response = candidate
-                        else:
-                            candidate = accumulated_response + trailing
-                            is_valid, reason = self._validate_partial_response(
-                                candidate, plan.goal
-                            )
-                            if not is_valid:
-                                raise MetacognitiveException(reason)
-                            yield {"type": "content", "data": trailing}
-                            accumulated_response = candidate
-
-                    # Post-generation grounding gate: the whole utterance is now
-                    # known, so check it for fabricated shared-memory claims and
-                    # route any hit through the same self-correction path.
-                    is_grounded, ground_reason = self._check_response_grounding(
-                        accumulated_response, surfaced, msg
-                    )
-                    if not is_grounded:
-                        raise MetacognitiveException(ground_reason)
-
-                    yield {"type": "done", "data": "finished"}
-
-                except MetacognitiveException as me:
-                    logger.warning(
-                        f"[System 3] Metacognitive violation: {me.reason}. Triggering self-correction."
-                    )
-                    if self.publish_cb:
-                        try:
-                            await self.publish_cb(
-                                "control.interrupt",
-                                {"reason": me.reason, "interrupt": True},
-                            )
-                            await self.publish_cb(
-                                "audio.stop", {"interrupt": True, "reason": me.reason}
-                            )
-                        except Exception as pe:
-                            logger.error(
-                                f"[System 3] Failed to publish interrupt: {pe}"
-                            )
-
-                    yield {"type": "content", "data": " Wait, let me rephrase that... "}
-                    if endocrine_options is None:
-                        endocrine_options = {}
-                    endocrine_options["temperature"] = min(
-                        1.0, endocrine_options.get("temperature", 0.7) + 0.2
-                    )
-                    user_prompt += f"\n\nCRITICAL FIX: Your previous response violated constraints: {me.reason}. Correct it immediately and do not repeat the forbidden phrases."
-
-                    try:
-                        stream_iter = self.llm.generate_stream(
-                            prompt=user_prompt,
-                            system=system_instruction,
-                            model=model,
-                            options_override=endocrine_options,
-                        ).__aiter__()
-                        deadline = time.monotonic() + stream_budget
-                        accumulated_retry_response = ""
-                        is_valid = True
-                        while True:
-                            remaining = deadline - time.monotonic()
-                            if remaining <= 0:
-                                break
-                            try:
-                                chunk = await asyncio.wait_for(
-                                    stream_iter.__anext__(), timeout=remaining
-                                )
-                            except StopAsyncIteration:
-                                break
-                            clean_chunk = sanitizer.feed(chunk)
-                            if clean_chunk:
-                                candidate = accumulated_retry_response + clean_chunk
-                                is_valid, _ = self._validate_partial_response(
-                                    candidate, plan.goal
-                                )
-                                if not is_valid:
-                                    logger.warning(
-                                        "[System 3] Retry also violated constraints; yielding safe fallback."
-                                    )
-                                    yield {
-                                        "type": "content",
-                                        "data": "I need a moment to gather my thoughts...",
-                                    }
-                                    break
-                                # Check grounding on the accumulated response so far
-                                is_retry_grounded, retry_ground_reason = (
-                                    self._check_response_grounding(
-                                        candidate, surfaced, msg
-                                    )
-                                )
-                                if not is_retry_grounded:
-                                    logger.warning(
-                                        f"[System 3] Retry fabricated a memory claim: {retry_ground_reason}. Yielding safe fallback."
-                                    )
-                                    yield {
-                                        "type": "content",
-                                        "data": "I need a moment to gather my thoughts...",
-                                    }
-                                    break
-                                yield {"type": "content", "data": clean_chunk}
-                                accumulated_retry_response = candidate
-
-                        if is_valid:
-                            trailing = sanitizer.flush()
-                            if trailing:
-                                candidate = accumulated_retry_response + trailing
-                                is_valid_trail, _ = self._validate_partial_response(
-                                    candidate, plan.goal
-                                )
-                                if is_valid_trail:
-                                    # Check grounding on trailing content too
-                                    is_trail_grounded, trail_ground_reason = (
-                                        self._check_response_grounding(
-                                            candidate, surfaced, msg
-                                        )
-                                    )
-                                    if not is_trail_grounded:
-                                        logger.warning(
-                                            f"[System 3] Retry trailing fabricated a memory claim: {trail_ground_reason}. Yielding safe fallback."
-                                        )
-                                        yield {
-                                            "type": "content",
-                                            "data": "I need a moment to gather my thoughts...",
-                                        }
-                                    else:
-                                        yield {"type": "content", "data": trailing}
-                                else:
-                                    logger.warning(
-                                        "[System 3] Retry trailing also violated constraints; yielding safe fallback."
-                                    )
-                                    yield {
-                                        "type": "content",
-                                        "data": "I need a moment to gather my thoughts...",
-                                    }
-
-                        yield {"type": "done", "data": "finished"}
-                    except Exception as inner_e:
-                        logger.error(
-                            f"[System 3] Self-correction generation failed: {inner_e}"
-                        )
-                        yield {"type": "done", "data": "finished"}
-
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "[Action] Stream timed out after %ss; emitting graceful fallback.",
-                        stream_budget,
-                    )
-                    yield {
-                        "type": "content",
-                        "data": "I'm having trouble thinking right now...",
-                    }
-                    yield {"type": "done", "data": ""}
-
-            except Exception as e:
-                logger.error(f"[Action] LLM Execution failed: {e}")
-                yield {"type": "error", "data": str(e)}
-                yield {"type": "done", "data": ""}
+            async for out in self._execute_respond_chat(plan):
+                yield out
 
         elif plan.action_type == "STORE_MEMORY":
-            content = plan.payload.get("content", "")
-            # Using the new intelligent MemoryStore
-            if self.memory:
-                await self.memory.add_memory(
-                    content=content,
-                    importance=0.7,  # High importance for explicit 'remember' commands
-                    emotion=0.2,
-                    source="user",
-                )
-            yield {"type": "system", "data": "Memory securely consolidated."}
-            yield {"type": "content", "data": "Got it, I've committed that to memory."}
-            yield {"type": "done", "data": ""}
+            async for out in self._execute_store_memory(plan):
+                yield out
 
         elif plan.action_type == "BACKGROUND_CONSOLIDATION":
             # Already triggered by CognitiveService
