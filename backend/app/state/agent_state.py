@@ -78,20 +78,31 @@ class AgentState:
     baseline_arousal: float = 0.5
     baseline_dominance: float = 0.5
 
-    # Phasic dopamine (see the `dopamine` property). Stored as a peak plus the
-    # moment it was released, so the current level is derived from elapsed time
-    # rather than needing a tick to decay it. That keeps the reading correct
-    # even if system.tick stalls, and makes decay testable without a clock stub.
+    # Phasic hormone bursts (see the `dopamine` and `cortisol` properties).
+    # Stored as a peak plus the moment it was released, so the current level is
+    # derived from elapsed time rather than needing a tick to decay it. That
+    # keeps the reading correct even if system.tick stalls, and makes decay
+    # testable without a clock stub.
     #
-    # Deliberately NOT persisted, unlike the baselines above. A burst has a 90s
-    # half-life, so it is already within rounding distance of zero by the time
-    # any realistic restart completes; carrying it across one would preserve a
-    # value that no longer means anything. Restoring a state with no burst is
-    # also the safe direction -- peak defaults to 0.0, which reads as "no
-    # outstanding reward" rather than as a stale one. If a future hormone decays
-    # on an hours-scale, that one *will* need persisting.
+    # Deliberately NOT persisted, unlike the baselines above. Both half-lives
+    # are minutes-scale, so a burst is already within rounding distance of zero
+    # by the time any realistic restart completes; carrying it across one would
+    # preserve a value that no longer means anything. Restoring a state with no
+    # burst is also the safe direction -- peak defaults to 0.0, which reads as
+    # "nothing outstanding" rather than as a stale reward or a stale threat. If
+    # a future hormone decays on an hours-scale, that one *will* need
+    # persisting.
     dopamine_phasic_peak: float = 0.0
     dopamine_phasic_at: float = field(default_factory=time.time)
+    cortisol_phasic_peak: float = 0.0
+    cortisol_phasic_at: float = field(default_factory=time.time)
+
+    # Half-lives are temperament, not deployment settings: how long a reward
+    # glows and how long a fright lingers are among the most recognisable things
+    # about a person. StateService seeds these from the PersonaProfile; the
+    # defaults reproduce the previous Config-driven behaviour exactly.
+    dopamine_halflife_s: float = 90.0
+    cortisol_halflife_s: float = 600.0
 
     # --- Affect Split Properties ---
     @property
@@ -177,17 +188,100 @@ class AgentState:
                 pass
 
     # --- Endocrine Hormonal Properties (Tier-5 Physiological Control) ---
-    @property
-    def cortisol(self) -> float:
+    @staticmethod
+    def _decayed(peak: float, released_at: float, half_life: float) -> float:
+        """Exponential decay of a phasic burst from `peak` toward zero.
+
+        Shared by both hormones so the two cannot drift apart: a fix to the
+        decay maths that only landed on one of them would be a subtle and
+        long-lived bug, since each reads plausibly on its own.
         """
-        Stress hormone. Inversely tracks valence + fatigue contribution.
-        High cortisol → rigid/defensive behavior (low LLM temperature).
-        Low cortisol → relaxed/creative behavior (higher temperature).
-        Range: 0.0 (fully relaxed) to 1.0 (maximum stress).
+        if peak <= 0.0:
+            return 0.0
+        half_life = max(1e-6, float(half_life))
+        elapsed = max(0.0, time.time() - released_at)
+        return peak * math.exp(-math.log(2.0) * elapsed / half_life)
+
+    @staticmethod
+    def _burst_amount(amount: Any, hormone: str) -> float:
+        """Validate a release amount, returning 0.0 for anything unusable."""
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            return 0.0
+        # NaN survives `float()` and then defeats every comparison downstream:
+        # `nan <= 0.0` is False, so it passes the positivity guard, and
+        # `min(1.0, nan)` returns 1.0 -- a NaN input would fire a *maximum*
+        # burst. Infinity takes the same route. Both are caller bugs, not
+        # signals, and a maximum stress response is the worst possible reading
+        # of a malformed one.
+        if not math.isfinite(amount):
+            logger.warning("[Endocrine] Ignoring non-finite %s release %r.", hormone, amount)
+            return 0.0
+        return max(0.0, amount)
+
+    @property
+    def cortisol_tonic(self) -> float:
+        """Background stress tone: inverse valence plus a fatigue contribution.
+
+        This is the whole of what `cortisol` used to be. Like tonic dopamine it
+        is a pure function of current affect, so it has no memory: the moment
+        valence recovers, the stress is gone.
         """
         base_cortisol = 0.5 - (self.valence / 2.0)
         fatigue_contribution = 0.3 * self.fatigue
         return max(0.0, min(1.0, base_cortisol + fatigue_contribution))
+
+    @property
+    def cortisol_phasic(self) -> float:
+        """The decaying remainder of recent acute stress.
+
+        The tonic term is derived entirely from valence, which made stress
+        unable to outlive its cause -- recover your mood and the alarm stops,
+        instantly and completely. That is not how a threat response works. The
+        HPA axis releases cortisol on a slower course than a dopamine burst and
+        it clears slower too, which is why the default half-life here is
+        markedly longer than dopamine's: being frightened has a hangover, being
+        pleased mostly does not.
+        """
+        return self._decayed(
+            self.cortisol_phasic_peak, self.cortisol_phasic_at, self.cortisol_halflife_s
+        )
+
+    @property
+    def cortisol(self) -> float:
+        """
+        Stress hormone: tonic tone plus any decaying acute burst.
+        High cortisol → rigid/defensive behavior (low LLM temperature).
+        Low cortisol → relaxed/creative behavior (higher temperature).
+        Range: 0.0 (fully relaxed) to 1.0 (maximum stress).
+
+        With no burst outstanding this is exactly the historical derived value,
+        so every existing reading and test is unaffected.
+        """
+        return max(0.0, min(1.0, self.cortisol_tonic + self.cortisol_phasic))
+
+    def release_cortisol(self, amount: float) -> float:
+        """Fire an acute stress response, returning the new cortisol level.
+
+        The mirror of `release_dopamine`, and the reason the endocrine layer is
+        no longer one-sided. Tonic cortisol and tonic dopamine are perfectly
+        anti-correlated by construction -- both are functions of valence alone,
+        one rising exactly as the other falls -- so before this the agent could
+        not be *both* stressed and rewarded, a combination that describes a
+        great deal of ordinary experience. Phasic dopamine already broke that
+        coupling in one direction; this breaks it in the other.
+        """
+        amount = self._burst_amount(amount, "cortisol")
+        if amount <= 0.0:
+            return self.cortisol
+
+        target_total = min(1.0, self.cortisol + amount)
+        # Relative to the tonic floor, so that floor stays free to drift with
+        # affect underneath a decaying burst instead of being double-counted.
+        self.cortisol_phasic_peak = max(0.0, target_total - self.cortisol_tonic)
+        self.cortisol_phasic_at = time.time()
+        return self.cortisol
 
     @property
     def dopamine_tonic(self) -> float:
@@ -209,11 +303,9 @@ class AgentState:
         valence and arousal, it forgets instantly. This is that memory, decaying
         exponentially from the peak toward zero.
         """
-        if self.dopamine_phasic_peak <= 0.0:
-            return 0.0
-        half_life = max(1e-6, float(getattr(Config, "DOPAMINE_PHASIC_HALFLIFE_S", 90.0)))
-        elapsed = max(0.0, time.time() - self.dopamine_phasic_at)
-        return self.dopamine_phasic_peak * math.exp(-math.log(2.0) * elapsed / half_life)
+        return self._decayed(
+            self.dopamine_phasic_peak, self.dopamine_phasic_at, self.dopamine_halflife_s
+        )
 
     @property
     def dopamine(self) -> float:
@@ -241,17 +333,7 @@ class AgentState:
         free to drift with affect underneath a decaying burst instead of being
         double-counted into it.
         """
-        try:
-            amount = float(amount)
-        except (TypeError, ValueError):
-            return self.dopamine
-        # NaN survives `float()` and then defeats every comparison below:
-        # `nan <= 0.0` is False, so it passes the guard, and `min(1.0, nan)`
-        # returns 1.0 -- a NaN reward would fire a *maximum* burst. Infinity
-        # takes the same route. Both are caller bugs, not rewards.
-        if not math.isfinite(amount):
-            logger.warning("[Endocrine] Ignoring non-finite dopamine release %r.", amount)
-            return self.dopamine
+        amount = self._burst_amount(amount, "dopamine")
         if amount <= 0.0:
             return self.dopamine
 
@@ -291,6 +373,7 @@ class StateService:
             trust_competence=self.persona.initial_trust,
             trust_integrity=self.persona.initial_trust,
             attachment=self.persona.initial_attachment,
+            **self.persona.hormone_halflives(),
         )
         self.last_speculative_intent = None  # Transient sensory state
         # A2: serializes short-term affect mutation so the fire-and-forget
@@ -941,6 +1024,43 @@ class StateService:
             self.current_state.dopamine,
         )
         await self._persist_sensory_state_if_due()
+
+    async def release_cortisol(self, amount: float, *, reason: str = "") -> float:
+        """Fire an acute stress response under the state lock.
+
+        `AgentState.release_cortisol` is the primitive and does no locking. A
+        fire-and-forget System-2 appraisal writes affect concurrently with the
+        synchronous path (finding A2), and the burst peak is computed *relative
+        to the tonic floor* — so an unlocked release that interleaves with a
+        valence write can measure its peak against a floor that no longer
+        exists and store a burst of the wrong size.
+
+        This is the API stress channels should call. The dopamine equivalent
+        below exists for the same reason.
+        """
+        async with self._state_lock:
+            level = self.current_state.release_cortisol(amount)
+        if reason:
+            logger.info(
+                "[Endocrine] Cortisol released (%s) — now %.2f.", reason, level
+            )
+        return level
+
+    async def release_dopamine(self, amount: float, *, reason: str = "") -> float:
+        """Fire a reward burst under the state lock. See `release_cortisol`.
+
+        `apply_somatic_perception` does not call this: it is already inside the
+        lock and holds it across the valence lift and the burst deliberately,
+        so the peak is measured against the settled tonic. Re-entering here
+        would deadlock on a non-reentrant `asyncio.Lock`.
+        """
+        async with self._state_lock:
+            level = self.current_state.release_dopamine(amount)
+        if reason:
+            logger.info(
+                "[Endocrine] Dopamine released (%s) — now %.2f.", reason, level
+            )
+        return level
 
     async def handle_system_tick(self, tick_metadata: Dict[str, Any]):
         """
