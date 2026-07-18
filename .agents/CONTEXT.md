@@ -2431,3 +2431,90 @@ inside a loop — correct, but a batching opportunity now that it is isolated in
 
 With this, every finding from the original audit (A1-A7, B1-B3, C1-C4, D1-D4,
 E1-E3, F1-F4) is either resolved or explicitly accepted.
+
+## 2026-07-18 PR #66 review fallout — eleven pre-existing bugs the decomposition exposed
+
+CodeRabbit posted 11 actionable findings on the F1 PR. Every one was checked
+against `git show main:` first: **all 11 predate F1 and were byte-identical in
+the pre-refactor code.** None were regressions. The decomposition did not
+introduce them, it made them legible — they had been buried inside a 1600-line
+and a 520-line function where nobody could see them. That is the return on F1,
+arriving one PR later than the refactor itself.
+
+PR #66 was merged as-is rather than amended, to keep its proven zero-drift
+property intact; these fixes land separately, where their behaviour changes are
+the point rather than a contamination of the equivalence claim.
+
+### Privacy
+- **Hidden reasoning was logged at INFO.** `_split_thought` wrote the whole
+  `<thought>` block to the application log. That block quotes the user's message
+  and every surfaced memory verbatim, so private conversation content was being
+  persisted into production logs on every chain-of-thought turn. Now only the
+  stripped character count is recorded, at DEBUG.
+
+### Correctness
+- **`is_self_reflection` was missing from the L1 cache key.** Pronoun cues
+  resolve in opposite directions under that flag ("I"/"my" bind to the agent when
+  self-reflecting, to the user otherwise), so for the cache TTL a self-reflection
+  query could be served the user's memories and vice versa. A perspective bug,
+  not merely a stale read.
+- **The self-correction retry leaked raw `<thought>` blocks.** Only the primary
+  stream ran the CoT parser. The retry yielded reasoning straight to the user.
+  Both paths now share one `_visible_segments` state machine rather than the
+  retry growing a second copy of it.
+- **The retry reused the aborted primary stream's sanitizer**, so a partial
+  control tag left buffered by the abandoned take corrupted the retry's first
+  chunk. It now gets a fresh sanitizer and fresh CoT state.
+- **A failed self-correction emitted `done` with no content** — the user heard
+  "Wait, let me rephrase that..." followed by silence. It now yields the safe
+  fallback line first.
+- **Malformed `known_concepts` aborted the turn with no terminal event**, since
+  `_build_tom_context` runs before the streaming `try`. Both it and
+  `implied_goals` are now type-guarded and member-coerced.
+
+### Data integrity
+- **STORE_MEMORY always claimed success.** `add_memory` returns `False` on a
+  failed write and an absent store writes nothing at all; both reported "Got it,
+  I've committed that to memory." Confirmation is now gated on a real write.
+  The shared `mock_memory_store` fixture returned `None` here, which had been
+  misrepresenting the contract — corrected to `True`.
+- **The legacy-schema fallback caught every exception.** A constraint violation,
+  serialization conflict, or transient outage would silently re-insert the row
+  with its Eriksonian metadata stripped. Narrowed to genuine missing-column
+  errors via `_is_missing_column_error` (Postgres SQLSTATE 42703; SQLite message
+  text), everything else re-raised.
+- **Archived metadata was conflated with the Qdrant payload.** The full search
+  payload was persisted as the SQL `metadata` column, and `raw_meta` was splatted
+  at the top level where a stored key named `wing` or `room` silently overwrote
+  the authoritative one. Custom fields now sit under `custom_metadata`, serialized
+  to match `add_memory`'s writer and the `orjson.loads()` on the read path.
+- **Failed promotions were still returned as promoted results** and cached as
+  active — surfacing a memory the next turn could not find again. Now skipped.
+- **SQLite archive timestamps are TEXT**, and the archive path did datetime
+  arithmetic and `.isoformat()`/`.tzinfo` access straight on them. `_as_aware_utc`
+  now parses ISO strings (including the space-separated `CURRENT_TIMESTAMP` form
+  and a trailing `Z`), degrading to `None` rather than raising mid-retrieval.
+
+### Verification
+`tests/test_pr66_review_fixes.py` (35 tests), one or more per finding. Mutation
+tested: each fix was individually reverted and the corresponding test confirmed
+to fail. The first pass caught only 10 of 11 — reverting the missing-column guard
+broke nothing, because the tests exercised the predicate in isolation but never
+proved `_insert_memory_row` actually called it. Two integration tests were added
+to close that gap, and the mutation now fails three tests.
+
+The F1 equivalence harness was re-run against the merged pre-fix module after the
+CoT state machine was rewired onto the shared helper: **28 of 29 scenarios
+byte-identical**, the sole difference being STORE_MEMORY, which is the intended
+change above. That confirms sharing the parser between the two streams did not
+disturb the primary path.
+
+Full backend suite: **352 passed** (317 + 35 new). `ruff check .` clean.
+
+**NOT done:** promotion is transactional on PostgreSQL only. The SQLite shim
+commits per `execute()` and exposes no transaction API, so there the archive
+delete is merely ordered after the insert; the insert is an idempotent upsert, so
+a partial failure re-converges on retry rather than duplicating. Making this
+genuinely atomic on both backends requires adding transaction support to
+`SQLiteConnection`, which is a change to the pool abstraction rather than to this
+call site.
