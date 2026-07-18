@@ -1428,7 +1428,7 @@ Changed files:
 
 Behavior/process changes:
 - **Disk-Backed Quantized HNSW Vector Archives (`halfvec(768)`)**: Updated PostgreSQL schema definition (`schema.sql`) to introduce `embedding halfvec(768)` inside the subconscious archive (`archived_memories` table), accompanied by a custom disk-backed HNSW index using `halfvec_cosine_ops` to enable ultra-fast direct semantic lookup over cold archived files.
-- **Lexical Priming & True Hybrid Synonym search**: Integrated Porter-style root-lemma stem extraction (`_get_stem`) and a contextual thesaurus (`SYNONYM_MAP`) inside `search_memories`. Upgraded the L3 subconscious lookup query to a true pgvector HNSW Semantic + Lexical Synonym ILIKE keyword hybrid search over `archived_memories` to bypass synonym mismatch failures.
+- **Lexical Priming & True Hybrid Synonym search**: Integrated Porter-style root-lemma stem extraction (`_get_stem`) and lexical cue expansion inside `search_memories`. Upgraded the L3 subconscious lookup query to a true pgvector HNSW Semantic + Lexical ILIKE keyword hybrid search over `archived_memories` to bypass synonym mismatch failures. (The former static `SYNONYM_MAP` thesaurus has since been replaced by the learned `MentalLexicon`; see the mental-lexicon entry below.)
 - **ACT-R Spreading Activation & Topic-Shift Context Buffer**: Implemented a 3-turn sliding window `GoalBuffer` inside `MemoryStore` to maintain concept focus. Integrated a cosine-similarity topic-shift detector that flushes the Goal Buffer instantly when prompt similarity drops below `0.15`. Programmed mathematical spreading activation ($W_j \cdot S_{ji}$) to dynamically boost cued archived candidates.
 - **Production Importance Sorting Priority**: Modified production candidate promotion sorting logic in `memory_store.py` to prioritize `importance_score` before vector similarity (`similarity_arch`). This solves the retrieval penalty for cold-seeded milestones that match lexical keyword culer queries but start with `NULL` embeddings (giving them `0.0` vector similarity).
 - **The Vector Discard Pruning Fix**: Fixed a critical database pruning bug in the sequential benchmark script `hard_benchmark.py`. During decay events, the benchmark's custom pruner statement was omitting the `embedding` column, setting it to `NULL` in the archive and making decayed milestones invisible to pgvector semantic search. The pruner now correctly copies and casts the vector columns (`embedding::halfvec` for PostgreSQL and standard `embedding` for SQLite).
@@ -1522,6 +1522,15 @@ Behavior changes:
   surfaced. Determinism preserved; a passing recall now means retrieval worked.
 - **Corpus constants removed (B1)**: `SYNONYM_MAP` no longer pre-seeds production
   retrieval with corpus proper nouns (`mimi`, `bruno`, `courtyard`, `rasgulla`).
+- **Static thesaurus retired for a learned mental lexicon (B1)**: `SYNONYM_MAP`
+  is deleted entirely. Query-cue expansion now reads the `MentalLexicon`
+  (`lexicon_store.py`): the humanoid boots with a small *generic* innate seed
+  (`lexicon_seed.py`) and then acquires vocabulary and distributional
+  co-occurrence associations from lived conversation (Hebbian "fire together,
+  wire together"), persisted in the `vocabulary` / `lexical_associations` tables
+  (Postgres) with a SQLite fallback. `add_memory` teaches the lexicon; recall
+  expansion reads it from an in-memory cache refreshed on the stop-word cadence.
+  An empty lexicon expands nothing (honest cold start → literal matching).
 - **Magic constants named/de-fitted (B1)**: added `DIRECT_CUE_BOOST = 5.0`
   (replacing three inline literals plus a comment falsely claiming "+1.2") and
   `PPR_DAMPING = 0.85` (canonical PageRank damping), replacing
