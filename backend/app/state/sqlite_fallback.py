@@ -119,6 +119,38 @@ class SQLiteConnection:
             )
         """)
 
+        # Mental lexicon: learned vocabulary (pgvector fallback storage in SQLite).
+        # embedding is nullable TEXT, reserved for a future semantic-neighbor pass.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS vocabulary (
+                term TEXT PRIMARY KEY,
+                surface_forms TEXT DEFAULT '[]',
+                embedding TEXT,
+                times_seen INTEGER DEFAULT 1,
+                source TEXT DEFAULT 'acquired',
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Learned word associations (distributional co-occurrence). Canonical
+        # ordering term_a < term_b; weight reinforced on each co-occurrence.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS lexical_associations (
+                term_a TEXT NOT NULL,
+                term_b TEXT NOT NULL,
+                weight REAL DEFAULT 1.0,
+                last_reinforced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (term_a, term_b)
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS lexical_assoc_a_idx ON lexical_associations(term_a)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS lexical_assoc_b_idx ON lexical_associations(term_b)"
+        )
+
         # Migration for existing memories table to add developmental stage columns
         cursor.execute("PRAGMA table_info(memories)")
         existing_mem_cols = {row[1] for row in cursor.fetchall()}
