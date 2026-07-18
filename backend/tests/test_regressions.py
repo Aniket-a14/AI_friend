@@ -275,6 +275,93 @@ def test_signaling_lan_guard_allows_only_loopback_and_private_clients():
     assert not is_lan_client_allowed("example.com")
 
 
+def test_is_loopback_client_rejects_other_lan_devices():
+    from app.network import is_loopback_client
+
+    assert is_loopback_client("127.0.0.1")
+    assert is_loopback_client("::1")
+    # Unlike is_lan_client_allowed, private/link-local non-loopback addresses
+    # (another device on the same WiFi) are NOT loopback.
+    assert not is_loopback_client("192.168.1.42")
+    assert not is_loopback_client("10.0.0.12")
+    assert not is_loopback_client("8.8.8.8")
+    assert not is_loopback_client(None)
+
+
+def _fake_request(host, headers=None, query_params=None):
+    return SimpleNamespace(
+        client=SimpleNamespace(host=host),
+        headers=headers or {},
+        query_params=query_params or {},
+    )
+
+
+def test_require_session_auth_allows_loopback_without_a_key(monkeypatch):
+    import asyncio as _asyncio
+    from app.config import Config
+    import main
+
+    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", None)
+    _asyncio.run(main.require_session_auth(_fake_request("127.0.0.1")))
+
+
+def test_require_session_auth_rejects_lan_client_without_key_configured(
+    monkeypatch,
+):
+    import asyncio as _asyncio
+    from fastapi import HTTPException
+    from app.config import Config
+    import main
+
+    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", None)
+    try:
+        _asyncio.run(main.require_session_auth(_fake_request("192.168.1.42")))
+        assert False, "expected HTTPException"
+    except HTTPException as e:
+        assert e.status_code == 503
+
+
+def test_require_session_auth_rejects_lan_client_with_wrong_key(monkeypatch):
+    import asyncio as _asyncio
+    from fastapi import HTTPException
+    from app.config import Config
+    import main
+
+    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", "correct-key")
+    try:
+        _asyncio.run(
+            main.require_session_auth(
+                _fake_request(
+                    "192.168.1.42", headers={"x-backend-key": "wrong-key"}
+                )
+            )
+        )
+        assert False, "expected HTTPException"
+    except HTTPException as e:
+        assert e.status_code == 401
+
+
+def test_require_session_auth_accepts_lan_client_with_correct_key(monkeypatch):
+    import asyncio as _asyncio
+    from app.config import Config
+    import main
+
+    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", "correct-key")
+    _asyncio.run(
+        main.require_session_auth(
+            _fake_request(
+                "192.168.1.42", headers={"x-backend-key": "correct-key"}
+            )
+        )
+    )
+    # Also accepted via the ?key= query param fallback.
+    _asyncio.run(
+        main.require_session_auth(
+            _fake_request("192.168.1.42", query_params={"key": "correct-key"})
+        )
+    )
+
+
 def test_surfacing_agent_subscribes_to_state_update_subject():
     agent = SurfacingAgent(memory_store=MagicMock())
     agent.connect = AsyncMock()

@@ -3,6 +3,9 @@ import { Room, RoomEvent, createLocalAudioTrack } from 'livekit-client';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'ws://localhost:7880';
+// Only needed when the backend is reached from a device other than the one
+// running it (BACKEND_ACCESS_KEY on the backend); unset for same-machine use.
+const BACKEND_ACCESS_KEY = process.env.NEXT_PUBLIC_BACKEND_ACCESS_KEY || '';
 
 export function useWebRTCVoice() {
     const [isConnected, setIsConnected] = useState(false);
@@ -41,7 +44,9 @@ export function useWebRTCVoice() {
             setIsConnecting(true);
             try {
                 // 1. Get Token from Backend
-                const res = await fetch(`${BACKEND_URL}/token`);
+                const res = await fetch(`${BACKEND_URL}/token`, {
+                    headers: BACKEND_ACCESS_KEY ? { 'X-Backend-Key': BACKEND_ACCESS_KEY } : {},
+                });
                 if (!res.ok) throw new Error("Failed to fetch token");
                 const { token, url } = await res.json();
 
