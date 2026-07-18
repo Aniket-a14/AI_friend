@@ -72,4 +72,6 @@ scripts/research/NRC-VAD-Lexicon/
 scripts/research/flooded_seeding_corpus.json
 
 # Benchmarking & Research Results
-scripts/results/
+# (scripts/results/ is intentionally NOT ignored: README.md, docs/, and
+# academic_benchmarks/documentation/ embed images and link data files from it
+# as the verified source of truth for SOTA benchmark claims.)
