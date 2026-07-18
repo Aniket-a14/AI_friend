@@ -81,6 +81,14 @@ class AgentState:
     # moment it was released, so the current level is derived from elapsed time
     # rather than needing a tick to decay it. That keeps the reading correct
     # even if system.tick stalls, and makes decay testable without a clock stub.
+    #
+    # Deliberately NOT persisted, unlike the baselines above. A burst has a 90s
+    # half-life, so it is already within rounding distance of zero by the time
+    # any realistic restart completes; carrying it across one would preserve a
+    # value that no longer means anything. Restoring a state with no burst is
+    # also the safe direction -- peak defaults to 0.0, which reads as "no
+    # outstanding reward" rather than as a stale one. If a future hormone decays
+    # on an hours-scale, that one *will* need persisting.
     dopamine_phasic_peak: float = 0.0
     dopamine_phasic_at: float = field(default_factory=time.time)
 
@@ -235,6 +243,13 @@ class AgentState:
         try:
             amount = float(amount)
         except (TypeError, ValueError):
+            return self.dopamine
+        # NaN survives `float()` and then defeats every comparison below:
+        # `nan <= 0.0` is False, so it passes the guard, and `min(1.0, nan)`
+        # returns 1.0 -- a NaN reward would fire a *maximum* burst. Infinity
+        # takes the same route. Both are caller bugs, not rewards.
+        if not math.isfinite(amount):
+            logger.warning("[Endocrine] Ignoring non-finite dopamine release %r.", amount)
             return self.dopamine
         if amount <= 0.0:
             return self.dopamine

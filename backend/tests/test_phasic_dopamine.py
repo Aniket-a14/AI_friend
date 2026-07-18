@@ -107,6 +107,31 @@ def test_a_non_positive_release_cannot_eat_an_outstanding_burst(amount):
     assert state.dopamine_phasic_peak == pytest.approx(peak)
 
 
+@pytest.mark.parametrize(
+    "amount", [float("nan"), float("inf"), float("-inf")]
+)
+def test_a_non_finite_release_is_ignored(amount):
+    """NaN survives float() and then defeats every comparison: `nan <= 0.0` is
+    False so it passes the guard, and `min(1.0, nan)` returns 1.0 -- so before
+    this check a NaN reward fired a *maximum* burst."""
+    state = AgentState(mood=0.0, energy=0.5)
+    before = state.dopamine
+
+    assert state.release_dopamine(amount) == pytest.approx(before)
+    assert state.dopamine_phasic_peak == 0.0
+
+
+@pytest.mark.parametrize("amount", [float("nan"), float("inf")])
+def test_a_non_finite_release_cannot_disturb_an_outstanding_burst(amount):
+    state = AgentState(mood=0.0, energy=0.5)
+    state.release_dopamine(0.4)
+    peak = state.dopamine_phasic_peak
+
+    state.release_dopamine(amount)
+
+    assert state.dopamine_phasic_peak == pytest.approx(peak)
+
+
 def test_repeated_releases_cannot_build_an_unboundedly_long_burst():
     """The cap belongs inside release, not only on the reported value. Storing
     an over-large peak would read as 1.0 after clamping while taking many extra
