@@ -142,6 +142,37 @@ CVS-3.5 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration 
 
 <!-- -->
 
+> [!WARNING]
+> **The Vision Agent must run on the host on Windows and macOS.** It is excluded
+> from the default compose stack and gated behind the `vision` profile. Capture is
+> host-bound, verified empirically rather than assumed: inside a Linux container
+> there is no `/dev/video*`, `--device=/dev/video0` is rejected by the daemon,
+> `/tmp/.X11-unix` is absent with `DISPLAY` unset, and `mss` fails outright with
+> `Library libxcb.so not found`. On a Windows/macOS host the container runs in a
+> Linux VM with no route to the host's display or webcam, so no configuration
+> resolves this.
+>
+> ```bash
+> pip install -r backend/requirements-ai.txt   # mss + opencv-python
+> NATS_URL=nats://127.0.0.1:4222 python -m app.vision.agent
+> ```
+>
+> On a **Linux** host the containerised path does work — uncomment the `devices`
+> and/or X11 entries in the `vision_agent` service and run
+> `docker compose --profile vision up vision_agent`.
+>
+> The agent probes capture at startup and logs prominently when it is blind, and
+> its healthcheck reads a sentinel touched on each successful capture rather than
+> `pgrep python`, which passes just as happily when every frame returns `None`.
+>
+> **Somatic response is learned, and starts empty.** Recognising a comfort object
+> lifts valence/arousal (and so dopamine) only for objects the agent has actually
+> learned about — facts `learning.py` tagged `somatic` in Neo4j. A fresh agent, or
+> one running without Neo4j, recognises nothing and no spike fires. That cold start
+> is deliberate: no comfort vocabulary is hardcoded.
+
+<!-- -->
+
 > [!IMPORTANT]
 > **Protocol Description**:
 > Audio arriving via WebRTC is fanned out to two paths: **SenseVoice**
