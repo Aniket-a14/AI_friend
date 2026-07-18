@@ -317,6 +317,72 @@ pub fn evaluate_acoustic_reflex(rms: f64, _zcr: f64, threshold: f64) -> bool {
     rms > threshold
 }
 
+/// HippoRAG-inspired Personalized PageRank power method for graph spreading
+/// activation. This is a faithful port of the former in-Python hot loop and
+/// preserves its exact semantics, including two deliberate behaviors:
+///
+///   * `degrees[i]` carries the ORIGINAL neighbor count of node `i`. When an
+///     edge points at an entity outside the candidate set its resolved index is
+///     omitted from `adjacency[i]`, yet the mass is still divided by the full
+///     degree -- so that share leaks out of the graph, exactly as before.
+///   * A node with degree 0 is dangling and redistributes its mass uniformly
+///     across the seed set rather than the whole graph.
+///
+/// `adjacency[i]` holds the resolved (in-range) neighbor indices of node `i`;
+/// `seeds` are the personalization/teleport nodes. Returns the rank vector of
+/// length `adjacency.len()`.
+#[pyfunction]
+#[pyo3(signature = (adjacency, degrees, seeds, damping, iterations))]
+pub fn personalized_pagerank(
+    adjacency: Vec<Vec<usize>>,
+    degrees: Vec<usize>,
+    seeds: Vec<usize>,
+    damping: f64,
+    iterations: usize,
+) -> Vec<f64> {
+    let n = adjacency.len();
+    if n == 0 || seeds.is_empty() {
+        return vec![0.0; n];
+    }
+
+    let seed_share = 1.0 / seeds.len() as f64;
+    let mut p0 = vec![0.0_f64; n];
+    for &s in &seeds {
+        if s < n {
+            p0[s] = seed_share;
+        }
+    }
+
+    let mut p = p0.clone();
+    for _ in 0..iterations {
+        let mut p_next = vec![0.0_f64; n];
+        for i in 0..n {
+            let degree = degrees.get(i).copied().unwrap_or(0);
+            if degree > 0 {
+                let share = p[i] / degree as f64;
+                for &nb in &adjacency[i] {
+                    if nb < n {
+                        p_next[nb] += share;
+                    }
+                }
+            } else {
+                // Dangling node: redistribute uniformly across the seeds.
+                let share = p[i] / seeds.len() as f64;
+                for &s in &seeds {
+                    if s < n {
+                        p_next[s] += share;
+                    }
+                }
+            }
+        }
+        for i in 0..n {
+            p_next[i] = damping * p_next[i] + (1.0 - damping) * p0[i];
+        }
+        p = p_next;
+    }
+    p
+}
+
 #[pyfunction]
 pub fn score_memories_actr_sqlite(
     query_vector: Vec<f64>,
@@ -543,6 +609,7 @@ fn cognitive_rust(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(update_fatigue, module)?)?;
     module.add_function(wrap_pyfunction!(compute_vector_delta, module)?)?;
     module.add_function(wrap_pyfunction!(evaluate_acoustic_reflex, module)?)?;
+    module.add_function(wrap_pyfunction!(personalized_pagerank, module)?)?;
     Ok(())
 }
 
@@ -645,5 +712,41 @@ mod tests {
         let delta = compute_vector_delta(v1, v2);
         // (1^2 + 2^2 + 2^2) / 3 = (1 + 4 + 4) / 3 = 9 / 3 = 3.0
         assert!((delta - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ppr_single_iteration_two_node_ring() {
+        // seed=node0, both connected. One power iteration, d=0.85.
+        // node0 (deg1) pushes 1.0 -> node1; node1 (deg1) pushes 0.0 -> node0.
+        // teleport: p0[0]=1.0 so node0 = 0.85*0 + 0.15*1 = 0.15; node1 = 0.85*1 = 0.85.
+        let p = personalized_pagerank(vec![vec![1], vec![0]], vec![1, 1], vec![0], 0.85, 1);
+        assert!((p[0] - 0.15).abs() < 1e-12);
+        assert!((p[1] - 0.85).abs() < 1e-12);
+    }
+
+    #[test]
+    fn ppr_dangling_node_redistributes_to_seeds() {
+        // node0 has degree 0 (dangling), node1 -> node0. seed=node0.
+        // node0 dangling pushes its full mass back to the seed set {0}.
+        let p = personalized_pagerank(vec![vec![], vec![0]], vec![0, 1], vec![0], 0.85, 1);
+        assert!((p[0] - 1.0).abs() < 1e-12);
+        assert!((p[1] - 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn ppr_degree_greater_than_resolved_neighbors_leaks_mass() {
+        // node0 reports degree 2 but only one neighbor resolved in-set: half its
+        // mass leaks out of the graph, exactly as the legacy Python loop did.
+        // share = 1.0/2 = 0.5 -> node1; node0 = 0.15 (teleport), node1 = 0.85*0.5.
+        let p = personalized_pagerank(vec![vec![1], vec![]], vec![2, 0], vec![0], 0.85, 1);
+        assert!((p[0] - 0.15).abs() < 1e-12);
+        assert!((p[1] - 0.425).abs() < 1e-12);
+        assert!(p[0] + p[1] < 1.0); // mass genuinely leaked
+    }
+
+    #[test]
+    fn ppr_empty_seeds_returns_zero_vector() {
+        let p = personalized_pagerank(vec![vec![1], vec![0]], vec![1, 1], vec![], 0.85, 3);
+        assert_eq!(p, vec![0.0, 0.0]);
     }
 }
