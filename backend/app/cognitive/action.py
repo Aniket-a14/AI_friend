@@ -810,6 +810,11 @@ class ActionService:
                 )
                 await self._announce_self_correction(me.reason)
 
+                # Reported, not acted on: this layer has no StateService, and
+                # giving it one to fire a hormone would invert the dependency.
+                # The pipeline owns state and decides the response.
+                yield {"type": "self_correction", "data": me.reason}
+
                 yield {"type": "content", "data": " Wait, let me rephrase that... "}
                 if endocrine_options is None:
                     endocrine_options = {}

@@ -91,7 +91,7 @@ class ReappraisalEngine:
         actual_text_valence: float,
         acoustic_delta: float = 0.0,
         behavioral_signal: float = 0.5,
-    ):
+    ) -> Optional[float]:
         """
         §8.1: Evaluate the outcome of the agent's last response.
 
@@ -99,17 +99,29 @@ class ReappraisalEngine:
 
         §8.2: Adjust appraisal parameters based on prediction error.
         The system updates appraisal PARAMETERS (w₁, w₂), not emotions.
+
+        Returns the **reward prediction error** (actual − expected), or `None`
+        when no comparison was made: disabled, no expectation recorded, rate
+        limited, or the outcome landed within tolerance.
+
+        The sign is deliberately flipped relative to the internal `delta`
+        (expected − actual) used for weight updates. Positive here means the
+        turn went *better* than predicted, which is the direction the caller
+        cares about, and matching the sign convention of the literature this
+        implements (Schultz) keeps the endocrine channel readable. `None` and
+        `0.0` are different answers — "no comparison" versus "exactly as
+        expected" — so callers must not conflate them.
         """
         if not self.enabled:
-            return
+            return None
 
         if self._expected_valence is None or self._pre_response_state is None:
-            return
+            return None
 
         # Rate limiting: don't evaluate more than once per 2 seconds
         now = time.time()
         if now - self._last_evaluation_time < 2.0:
-            return
+            return None
         self._last_evaluation_time = now
 
         # §8.1: Multi-signal outcome computation
@@ -126,7 +138,10 @@ class ReappraisalEngine:
                 "[Reappraisal] Δ=%.3f — within tolerance, no adaptation.", delta
             )
             self._reset_turn_state()
-            return
+            # Within tolerance: the turn went as predicted. No prediction
+            # error means no phasic burst, which is the point of the model --
+            # a reward that was fully expected does not fire one.
+            return None
 
         # Confidence weighting: reduce learning rate for noisy signals
         confidence = min(1.0, abs(actual_text_valence) + 0.3)
@@ -149,6 +164,7 @@ class ReappraisalEngine:
         )
 
         self._reset_turn_state()
+        return -delta
 
     def get_weights(self) -> Dict[str, float]:
         """Returns current adaptive appraisal weights."""
