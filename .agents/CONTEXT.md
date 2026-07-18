@@ -2335,3 +2335,99 @@ clean; compose config resolves.
 **NOT done:** F1 (`search_memories`/`ActionService.execute` god-functions,
 F2 already resolved in an earlier pass) — explicitly left for a separate
 pass, this batch was scoped to the smaller items only.
+
+---
+
+## 2026-07-18 F1 resolved — both god-functions decomposed, behavior proven unchanged
+
+The last open item from the original audit, and the one flagged as "the riskiest
+area to touch." Both functions were split into named stages **with no behavioral
+change**, which was proven rather than assumed (see Verification below).
+
+### `MemoryStore.search_memories`: 1623 → 248 lines (-84%)
+
+It fused L1 caching, Qdrant retrieval, two SQL dialects, cue extraction, graph
+building, pronoun resolution, PageRank spreading activation, archive promotion
+and result formatting into one body. Now an orchestrator over:
+`_compute_mrl_gating`, `_detect_topic_shift`, `_gather_candidate_sources`,
+`_score_qdrant_candidates` (+`_fetch_candidate_db_metadata`,
+`_coerce_last_recall_ts`), `_fetch_sqlite_candidates` (+`_normalize_recall_ts`),
+`_fetch_postgres_candidates` (+`_fetch_surface_actr_rows`),
+`_resolve_dynamic_stop_words`, `_build_entity_graph`, `_resolve_identity_nodes`,
+`_resolve_pronoun_cues`, `_apply_direct_cue_boost`,
+`_apply_ppr_spreading_activation` (+`_collect_ppr_seeds`,
+`_map_candidate_entities`), `_apply_goal_buffer_boost`, `_format_results`, and
+`_recall_from_archive` (+`_expand_archive_cues`, `_fetch_archive_rows`,
+`_rank_archive_rows`, `_promote_archived_rows`, `_write_promoted_memory`,
+`_build_promotion_payload`, `_archive_row_activation`,
+`_parse_stored_embedding`, `_archive_similarity_fallback`).
+
+Hoisted out of the hot path: the 188-word stop-word literal, which was being
+rebuilt on *every single call*, now the module-level `SEARCH_STOP_WORDS`
+frozenset — membership proven identical by `exec`-ing the old literal out of git
+and diffing the sets (188 == 188, empty symmetric difference). Also hoisted: the
+pronoun sets, the four repeated SQL literals, and `re`/`json`/`uuid` (same
+cleanup as F3 in `brain_agent`). `import cognitive_rust` deliberately stays
+lazy — it is an optional compiled extension and a module-level import would
+break importing `MemoryStore` wherever it is not built.
+
+One real duplication removed: the archive-promotion path carried an inline copy
+of the effective-similarity formula. Its constants (`0.1`, `0.2`) are exactly
+`ACTR_VALENCE_GAIN` / `ACTR_STRESS_SUPPRESSION`, so it now calls the shared
+`_effective_similarity` — verified numerically equivalent before the swap.
+
+Subtlety preserved deliberately: the SQLite branch rebinds the enclosing
+`now_ts`, and *that* value is what stamps the L1 cache entry. The extracted
+helper therefore returns `(candidates, now_ts)` rather than letting the caller's
+value stand, so cache timestamps behave exactly as before.
+
+### `ActionService.execute`: 523 → 24 lines (-95%)
+
+Now a dispatcher over `_execute_respond_chat` / `_execute_store_memory`. The
+chat path splits into `_surface_fallback_memories`, `_build_shared_history`,
+`_build_tom_context`, `_compute_endocrine_options`, `_prepended_affect_tag`,
+`_split_thought`, `_emit_validated`, `_stream_primary_response`,
+`_announce_self_correction` and `_stream_self_correction`.
+
+The "maybe inject a hesitation → build candidate → System-3 validate → yield →
+accumulate" block appeared **six times**; it is now `_emit_validated` with an
+`allow_hesitation` flag (the two trailing-flush sites deliberately skip
+hesitation, matching the original). Streaming state moved into a
+`_ChatStreamState` holder. The static half of the system prompt became
+`_CHAT_GUIDELINE` at module scope — extracted via AST from the original f-string
+and proven to reconstruct it byte-for-byte (944 chars).
+
+### Verification — how "no behavior change" was actually established
+
+Not "the tests still pass." Two purpose-built equivalence harnesses:
+
+- **search_memories:** a characterization harness snapshotting exact output over
+  17 scenarios (pronoun resolution both directions, PPR spreading, cue boost,
+  goal-buffer priming across a topic-shift sequence, all three MRL stress tiers,
+  exclusions, thresholds, limits, room filter, no-user_id, stop-word-only query),
+  run before and after → **byte-identical JSON**.
+- **execute:** the pre-refactor module restored from git as a sibling module and
+  driven side-by-side with the new one over 29 scenarios — CoT split across
+  chunks, hesitation budget exhaustion, emotion-tag sanitization, partial tags
+  spanning chunks, all four System-3 violation classes, grounding failure,
+  retry-also-fails fallback, endocrine variants including bad types, ToM edge
+  cases, LLM exceptions, and every non-chat action type — comparing the full
+  emitted chunk sequence, the exact prompts/options handed to the LLM, and the
+  published interrupt events. **All 29 identical.**
+
+New `tests/test_f1_decomposed_stages.py` (42 tests) locks in the extracted
+stages — none of which were reachable in isolation before this refactor, which
+is the whole point of F1. Mutation-checked on both sides (a broken MRL tier and
+a dropped hesitation flag) to confirm the suite detects regressions rather than
+passing vacuously.
+
+Full backend suite: **317 passed** (275 + 42 new). `ruff check .` clean.
+
+**NOT done:** the retrieval pipeline is now decomposed but still runs in-process;
+moving more of the ACT-R/PPR hot loop into the Rust crate (Tier-3 item 10 of the
+original plan) remains open. The archive-promotion path still does per-row SQL
+inside a loop — correct, but a batching opportunity now that it is isolated in
+`_promote_archived_rows`.
+
+With this, every finding from the original audit (A1-A7, B1-B3, C1-C4, D1-D4,
+E1-E3, F1-F4) is either resolved or explicitly accepted.
