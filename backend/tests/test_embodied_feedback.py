@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from app.state import ConversationHistoryStore
 from app.agents.brain_agent import BrainAgent
@@ -102,5 +104,58 @@ async def test_dialogue_truncation_via_estimation_fallback(
 
     new_brief = await store.get_last_interaction_brief()
     assert new_brief == "I was planning to buy a coffee"
+
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_active_generation_waits_for_task_to_fully_unwind(
+    mock_llm_service, mock_graph_db, mock_memory_store
+):
+    """A4 regression: cancelling the active generation task must wait for the
+    task to actually stop touching shared turn state, not just request
+    cancellation and move on. Otherwise a new turn (or a semantic interrupt)
+    can reset last_assistant_response while the old, "cancelled" task is still
+    mid-flight and about to write stale data on top of it.
+    """
+    store = ConversationHistoryStore()
+    await store.initialize()
+    await store.start_session()
+
+    agent = BrainAgent(
+        ollama_url="http://dummy",
+        graph_db=mock_graph_db,
+        memory_store=mock_memory_store,
+        conversation_store=store,
+    )
+
+    cleanup_done = asyncio.Event()
+
+    async def slow_old_turn():
+        try:
+            agent.last_assistant_response = "partial-old-turn-text"
+            await asyncio.sleep(10)
+        finally:
+            # Simulates a still-unwinding _stream_to_speech/_process_chat_input_flow
+            # writing turn state after being cancelled.
+            agent.last_assistant_response = (
+                (agent.last_assistant_response or "") + "-cleanup-write"
+            )
+            cleanup_done.set()
+
+    task = asyncio.create_task(slow_old_turn())
+    agent._active_generation_task = task
+
+    # Let the task actually start and set its initial state.
+    await asyncio.sleep(0)
+    assert agent.last_assistant_response == "partial-old-turn-text"
+
+    await agent._cancel_active_generation("test cancellation")
+
+    # By the time _cancel_active_generation returns, the old task's cleanup
+    # must have already run (not still pending on the event loop).
+    assert cleanup_done.is_set()
+    assert agent.last_assistant_response == "partial-old-turn-text-cleanup-write"
+    assert agent._active_generation_task is None
 
     await store.close()

@@ -62,6 +62,7 @@ class BrainAgent(BaseAgent):
         self.interruption_classifier = InterruptionClassifier()
         self.conversational_runtime = ConversationalRuntime(publish_cb=self.publish)
         self._active_generation_task = None
+        self._generation_lock = asyncio.Lock()
         self.last_audio_progress = None
         self.last_assistant_response = None
 
@@ -173,6 +174,33 @@ class BrainAgent(BaseAgent):
             data.get("user_distance") if data.get("user_distance") is not None else 1.0
         )
 
+    async def _cancel_active_generation(self, reason: str):
+        """Cancel the in-flight generation task and wait for it to fully unwind.
+
+        A4: a fire-and-forget .cancel() only *requests* cancellation - the task
+        keeps running until its next await point, so it can still write stale
+        last_assistant_response/last_audio_progress after a new turn has already
+        reset that state, or after _on_audio_stop has already read it for
+        truncation. Awaiting the task here closes that race by guaranteeing the
+        previous turn has stopped touching shared state before the caller
+        (a new chat.input turn, or a semantic interrupt) proceeds.
+        """
+        async with self._generation_lock:
+            task = self._active_generation_task
+            if not task or task.done():
+                return
+            logger.info("Cancelling active generation task: %s", reason)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Previous generation task raised while being cancelled")
+            finally:
+                if self._active_generation_task is task:
+                    self._active_generation_task = None
+
     async def _on_chat_input(self, message: Dict[str, Any]):
         now = datetime.now()
         self.last_interaction_time = now
@@ -187,10 +215,9 @@ class BrainAgent(BaseAgent):
             logger.error(f"Unexpected error processing chat.input: {e}", exc_info=True)
             return
 
-        # Cancel any previous generation task if running
-        if self._active_generation_task and not self._active_generation_task.done():
-            logger.info("Cancelling active task due to new incoming speech turn.")
-            self._active_generation_task.cancel()
+        # Cancel any previous generation task and wait for it to fully stop before
+        # this turn starts touching last_assistant_response / last_audio_progress.
+        await self._cancel_active_generation("new incoming speech turn")
 
         # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio
         if not is_subconscious:
@@ -364,15 +391,9 @@ class BrainAgent(BaseAgent):
                 )
                 await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
 
-                # Instantly cancel active LLM generation stream
-                if (
-                    self._active_generation_task
-                    and not self._active_generation_task.done()
-                ):
-                    logger.info(
-                        "[Brain] Cancelling active LLM stream task due to semantic interrupt."
-                    )
-                    self._active_generation_task.cancel()
+                # Instantly cancel active LLM generation stream and wait for it to
+                # fully stop before returning, so state left behind is consistent.
+                await self._cancel_active_generation("semantic interrupt")
             else:
                 # Not a valid semantic interruption! Send an audio resume to restore volume.
                 from ..contracts import AudioResume
