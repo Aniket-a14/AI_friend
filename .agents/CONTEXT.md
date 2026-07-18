@@ -2815,3 +2815,74 @@ unified, and the narrative half remains unbounded. `DOPAMINE_PHASIC_HALFLIFE_S`
 (PR #70) is temperament by rights and belongs in the profile, but was left out to
 avoid stacking branches again. Restored Neo4j baselines bypass persona bounds by
 design — the profile seeds a new friend, it does not clamp a lived one.
+
+## 2026-07-18 Phasic cortisol: stress that outlives its cause
+
+`cortisol` was a pure function of valence and fatigue, which made it the exact
+mirror image of tonic dopamine — both derived from valence alone, one rising
+precisely as the other fell. Two consequences followed, and neither was a
+modelling choice anyone made on purpose.
+
+Stress could not outlive its cause. Recover your mood and the alarm stopped
+instantly and completely, which is not how a threat response works; the HPA axis
+clears on its own schedule, not the mood's. And the agent could never be
+stressed and rewarded at once, because the two formulae made that combination
+arithmetically impossible — yet it describes a great deal of ordinary
+experience. PR #70 broke the coupling in one direction with phasic dopamine.
+This is the other half.
+
+`cortisol` is now `cortisol_tonic` (the old formula, unchanged) plus
+`cortisol_phasic`, a burst fired by `release_cortisol()` and decaying
+exponentially from wall-clock elapsed time rather than by tick decrement, so the
+reading stays correct even when `system.tick` stalls.
+
+The default cortisol half-life (600s) is deliberately much longer than
+dopamine's (90s). A fright has a hangover; a pleasure mostly does not. Equalising
+them would restore the symmetry this change exists to break, so there is a test
+asserting the inequality rather than the specific numbers.
+
+Both half-lives moved into `PersonaProfile` as CONSTITUTIONAL fields, closing the
+item the previous entry left open. How long a good moment glows and how long a
+bad one keeps its grip are as much temperament as the baselines are; leaving them
+in `Config` would mean one process hosts exactly one emotional metabolism.
+`Config` keeps both keys as the defaults a profile inherits, so no existing `.env`
+breaks. Bounds are floored at 5s — a near-zero half-life is not a fast
+temperament but a broken hormone, since the burst would decay below any useful
+threshold before the next turn could read it — and capped so a burst cannot
+outlive the conversation that caused it.
+
+The decay maths and the release-amount validation are now shared helpers used by
+both hormones. Two independent copies would each read plausibly alone, so a fix
+landing on only one of them would be a subtle and long-lived bug.
+
+### Verification
+
+`tests/test_phasic_cortisol.py` (31 tests). Five mutations applied, all caught:
+dropping the phasic term from the total (4 failures), removing the non-finite
+guard (1), storing the burst absolutely rather than relative to the tonic floor
+(2), not seeding the persona's half-lives into state (1), and removing the
+half-life bounds (2).
+
+The load-bearing test is the backward-compatibility one: with no burst
+outstanding, `cortisol` is bit-for-bit the old derived value. Every consumer —
+the LLM temperature mapping, the memory stress-suppression term, the surfacing
+agent's vocal modulation — was tuned against that formula, and all of them would
+shift underneath at once otherwise.
+
+One test was wrong on first run, and the code was right. `test_stress_survives_
+the_mood_recovering` started at `mood=-0.8`, where tonic cortisol is already 0.9,
+so the 0.2 burst was clipped to 0.1 by the ceiling and the test measured the clip
+rather than the survival. Fixed by starting from a non-saturated mood, with a
+comment recording why the fixture value matters.
+
+Full backend suite: **499 passed** (468 + 31), `ruff check .` clean. Counts from
+`--junit-xml`, not the truncated terminal summary.
+
+**NOT done:** `release_cortisol` has no callers yet — this is the mechanism, and
+the stress channels that should fire it (validation failures, boundary
+violations, repeated self-correction, user frustration signals) are the next
+change. `release_dopamine` still has exactly one channel, somatic comfort
+recognition. A hormone with no channel is still only a formula. Phasic state
+remains unpersisted across restart, unchanged from PR #70 and for the same
+reason: both half-lives are minutes-scale, so any realistic restart outlasts the
+burst. `IdentityManager` is still a separate persona source.
