@@ -1025,6 +1025,43 @@ class StateService:
         )
         await self._persist_sensory_state_if_due()
 
+    async def release_cortisol(self, amount: float, *, reason: str = "") -> float:
+        """Fire an acute stress response under the state lock.
+
+        `AgentState.release_cortisol` is the primitive and does no locking. A
+        fire-and-forget System-2 appraisal writes affect concurrently with the
+        synchronous path (finding A2), and the burst peak is computed *relative
+        to the tonic floor* — so an unlocked release that interleaves with a
+        valence write can measure its peak against a floor that no longer
+        exists and store a burst of the wrong size.
+
+        This is the API stress channels should call. The dopamine equivalent
+        below exists for the same reason.
+        """
+        async with self._state_lock:
+            level = self.current_state.release_cortisol(amount)
+        if reason:
+            logger.info(
+                "[Endocrine] Cortisol released (%s) — now %.2f.", reason, level
+            )
+        return level
+
+    async def release_dopamine(self, amount: float, *, reason: str = "") -> float:
+        """Fire a reward burst under the state lock. See `release_cortisol`.
+
+        `apply_somatic_perception` does not call this: it is already inside the
+        lock and holds it across the valence lift and the burst deliberately,
+        so the peak is measured against the settled tonic. Re-entering here
+        would deadlock on a non-reentrant `asyncio.Lock`.
+        """
+        async with self._state_lock:
+            level = self.current_state.release_dopamine(amount)
+        if reason:
+            logger.info(
+                "[Endocrine] Dopamine released (%s) — now %.2f.", reason, level
+            )
+        return level
+
     async def handle_system_tick(self, tick_metadata: Dict[str, Any]):
         """
         Idle evolution triggered by NATS system.tick.

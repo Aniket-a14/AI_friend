@@ -2878,7 +2878,44 @@ comment recording why the fixture value matters.
 Full backend suite: **499 passed** (468 + 31), `ruff check .` clean. Counts from
 `--junit-xml`, not the truncated terminal summary.
 
-**NOT done:** `release_cortisol` has no callers yet — this is the mechanism, and
+### Review round (PR #73)
+
+Three findings, all accepted.
+
+The substantive one: `AgentState.release_cortisol` is a public mutator that does
+no locking, and the repo's own rule is that affect mutation goes through
+`StateService` under `self._state_lock` (finding A2). Real hazard, and specific
+to this design — the burst peak is computed *relative to the tonic floor*, so an
+unlocked release interleaving with a concurrent valence write measures its peak
+against a floor that has already moved and stores a burst of the wrong size.
+Added `StateService.release_cortisol()` and `release_dopamine()` wrappers.
+Adding them now rather than with the first caller is deliberate: the stress and
+reward channels are the next change and should have a safe API from the start.
+
+`apply_somatic_perception` deliberately does *not* use the wrapper. It already
+holds the lock across the valence lift and the burst so the peak is measured
+against the settled tonic after `_enforce_bounds`; re-entering would deadlock on
+a non-reentrant `asyncio.Lock`. There is now a test pinning that arrangement
+rather than a comment asserting it, since a comment cannot fail.
+
+The two minor findings were both test-quality: the `StateService` integration
+test wrote `state_cache.db` into the working directory (now `":memory:"`), and
+two bound tests used `pytest.raises(Exception)`, which would have passed if the
+constructor raised for a renamed field or a typo — reporting a bound as enforced
+when it had been silently deleted. Now `ValidationError`.
+
+**A vacuous test of my own, caught by mutation.** The first version of the lock
+test asserted `_state_lock` was unlocked before and after the call. That passes
+whether or not the wrapper ever acquires it, and sure enough, deleting the
+`async with` from the wrapper failed nothing. Replaced with a test that holds the
+lock and asserts the release *blocks* — which catches it. Same lesson as always:
+a mutation that changes nothing observable means the assertion was aimed at state
+the test could never distinguish.
+
+Post-review: 34 tests in the file, seven mutations caught. Full suite **502
+passed**, `ruff check .` clean.
+
+**NOT done:** the release wrappers have no callers yet — this is the mechanism, and
 the stress channels that should fire it (validation failures, boundary
 violations, repeated self-correction, user frustration signals) are the next
 change. `release_dopamine` still has exactly one channel, somatic comfort
