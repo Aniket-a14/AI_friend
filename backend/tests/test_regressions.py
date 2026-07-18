@@ -619,8 +619,16 @@ def test_brain_agent_concurrent_chat_inputs_prevent_lost_task_ownership():
         if isinstance(result, Exception):
             raise result
 
-    # Verify both flow executions happened
-    assert len(flow_executions) == 2, f"Expected 2 flow executions, got {len(flow_executions)}"
+    # At least one flow must run. Exactly one is the *expected* outcome for two
+    # truly concurrent turns: _replace_active_generation cancels whichever task
+    # was active before creating the new one, and a task cancelled before the
+    # event loop ever schedules it never executes its body at all - so the
+    # loser can legitimately have zero (not one) recorded executions. Asserting
+    # ==2 assumes both survive to run, which contradicts the whole point of the
+    # fix (a new turn supersedes, not runs alongside, the old one).
+    assert 1 <= len(flow_executions) <= 2, (
+        f"Expected 1 or 2 flow executions, got {len(flow_executions)}"
+    )
 
     # After completion, no active task should remain
     # (both cleaned up in finally blocks)
