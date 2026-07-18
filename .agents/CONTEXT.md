@@ -2815,7 +2815,6 @@ unified, and the narrative half remains unbounded. `DOPAMINE_PHASIC_HALFLIFE_S`
 (PR #70) is temperament by rights and belongs in the profile, but was left out to
 avoid stacking branches again. Restored Neo4j baselines bypass persona bounds by
 design — the profile seeds a new friend, it does not clamp a lived one.
-
 ## 2026-07-18 Phasic cortisol: stress that outlives its cause
 
 `cortisol` was a pure function of valence and fatigue, which made it the exact
@@ -3004,3 +3003,80 @@ stressors and are not wired. The gains are reasoned, not measured -- no
 calibration against real conversation has been done, and they should be treated
 as starting points rather than tuned values. Cortisol still has no channel for
 user-expressed frustration, which is probably the most obvious missing one.
+## 2026-07-18 Prosody gets one source; Python's copy was dead and wrong
+
+`SpeechCoordinator.map_affect_to_prosody` computed speaking rate, intensity,
+pause bias and confidence, attached them to every `ChatOutput`, and shipped them
+across NATS. Nothing read them. The voice agent derives prosody itself from the
+`affect` vector via `contracts::vad_to_prosody` (Rust), and a grep of the crates
+for reads of `speaking_rate`, `pause_bias` or `intensity` returns nothing.
+
+The two implementations had also drifted, which is the part that mattered:
+
+- Python: `rate = 1.0 + 0.20*Ar - 0.10*V - 0.25*F` — linear.
+- Rust: `rate = 1.0 + tanh(0.20*Ar - 0.10*V - 0.25*F)` — saturated.
+
+Rust additionally models pitch, volume and user-distance adaptation (whisper
+under 0.6m, call-out over 1.5m) that had no Python counterpart at all. Both
+carried the same `Continuous formulas from CVS-3.5 Roadmap` comment, so the
+disagreement did not read as one. Anyone opening `speech.py` to learn how fast
+this agent talks got an answer that had never been true in production — the same
+class of problem as the `[TBP]` benchmark numbers, code that reads as
+authoritative and is not.
+
+Python now emits only the affect vector. The four `ChatOutput` prosody fields are
+kept at their defaults and marked deprecated in `contracts.py` rather than
+removed: removing them is a wire-contract change requiring
+`setup_nats_streams.py` to be re-run, and it is a separable decision. They are
+now inert rather than carrying a stale second opinion.
+
+### Verification
+
+`tests/test_phase4_features.py` rewritten (3 tests → 6). The old ones asserted
+Python's formulas to five decimal places, were green for the life of the project,
+and proved nothing about the running system; worse, they made the dead code look
+load-bearing. The new ones pin the contract that actually exists — a complete
+affect vector, no prosody — plus the legacy `mood`/`energy` key fallback and the
+absent-snapshot path.
+
+Four mutations applied, all caught: reintroducing a Python prosody implementation
+and repopulating the wire fields (2 failures), dropping `user_distance` from the
+affect vector (1), removing the legacy `mood`/`energy` fallback (1), and dropping
+`user_distance` in `brain_agent._publish_speech_chunk` (1).
+
+That last one initially reported as *surviving*. The mutation script's
+`str.replace(..., 1)` had not applied at all — a mutation that changes nothing is
+a failed edit, not a gap in the tests. Retargeted at the exact line, it fails as
+expected. Worth recording because "mutation survived" and "mutation never
+applied" look identical in a results table.
+
+Full backend suite: **471 passed** (468 - 3 + 6), `ruff check .` clean.
+
+**NOT done:** the four deprecated fields are still on the wire. Removing them is
+a follow-up contract PR, gated on checking the frontend and any external
+consumer. `AgentVoiceModulation`/`ProsodyFrame` in `surfacing_agent` is a
+separate trajectory path and was not touched.
+
+### Review round (PR #74)
+
+CodeRabbit flagged the end-to-end test as under-asserting: it fed `trust`,
+`attachment` and `emotion` into the state snapshot and never checked they reached
+the wire, and it verified only two of the four deprecated prosody fields were
+inert. Correct on both counts. Mutation-tested before and after to be sure the
+gap was real rather than theoretical: dropping `trust`, `emotion`, or
+`attachment` from `brain_agent._publish_speech_chunk`, and repopulating
+`intensity`, all **survived** the old test and all fail the new one. Only the
+`speaking_rate` mutation had been caught. Four real gaps, not style.
+
+Chasing those mutations surfaced something the review did not mention:
+`brain_agent._publish_speech_chunk` builds its own `ChatOutput` rather than
+calling `SpeechCoordinator.create_chunk_payload`, so the affect vector is
+constructed twice from the same keys with the same defaults. That is the exact
+shape of the bug this PR removes for prosody — two implementations, one
+consumed — and it is why a mutation in `speech.py` left the end-to-end test
+green. It has not drifted yet. Left alone here deliberately: collapsing it
+touches the brain's streaming hot path and belongs in its own PR rather than
+riding along with a test fix.
+
+Full backend suite: **505 passed**, `ruff check .` clean.
+
