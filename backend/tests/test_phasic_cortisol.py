@@ -18,10 +18,13 @@ The first test below is the load-bearing one: with no burst outstanding the
 value is bit-for-bit what it always was, so nothing downstream shifts.
 """
 
+import asyncio
 import math
 import time
+from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 
 from app.persona import PersonaProfile, Tier
 from app.state.agent_state import AgentState, StateService
@@ -237,7 +240,10 @@ def test_both_half_lives_are_constitutional_persona_fields():
 def test_state_service_seeds_state_half_lives_from_the_persona():
     """The persona's values must actually reach the state that decays."""
     persona = PersonaProfile(dopamine_halflife_s=45.0, cortisol_halflife_s=1200.0)
-    service = StateService(graph_store=None, persona=persona)
+    # ":memory:" so the default constructor does not write state_cache.db into
+    # the working directory, which leaves an artifact and fails outright in a
+    # read-only workspace.
+    service = StateService(graph_store=None, persona=persona, db_path=":memory:")
     assert service.current_state.dopamine_halflife_s == 45.0
     assert service.current_state.cortisol_halflife_s == 1200.0
 
@@ -247,21 +253,107 @@ def test_a_persona_cannot_set_a_half_life_so_short_the_burst_is_never_seen():
 
     The release would fire and decay below any useful threshold before the next
     turn could read it — indistinguishable from the hormone not existing.
+
+    `ValidationError` specifically, not bare `Exception`: a broad catch would
+    also pass if the constructor raised for an unrelated reason — a renamed
+    field, a typo in the keyword — and the test would report the bound as
+    enforced when it had been silently deleted.
     """
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         PersonaProfile(cortisol_halflife_s=0.0)
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         PersonaProfile(dopamine_halflife_s=0.001)
 
 
 def test_a_persona_cannot_set_a_half_life_that_outlives_the_conversation():
     """A burst lasting hours would colour sessions it has nothing to do with."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         PersonaProfile(dopamine_halflife_s=99_999.0)
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         PersonaProfile(cortisol_halflife_s=99_999.0)
 
 
 def test_an_unconfigured_deployment_keeps_the_previous_half_life():
     """The dopamine default must not move; it was tuned before this change."""
     assert PersonaProfile.from_config().dopamine_halflife_s == 90.0
+
+
+# --------------------------------------------------------------------------
+# the locked service API
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_service_releases_both_hormones_under_the_state_lock():
+    """Affect mutation must go through StateService, holding `_state_lock`.
+
+    The burst peak is computed *relative to the tonic floor*. A fire-and-forget
+    System-2 appraisal writes valence concurrently with the synchronous path
+    (finding A2), so an unlocked release that interleaves with a valence write
+    measures its peak against a floor that has already moved and stores a burst
+    of the wrong size. These wrappers are the API the stress and reward
+    channels will call.
+    """
+    service = StateService(graph_store=None, db_path=":memory:")
+    service.current_state.mood = 0.0
+
+    assert not service._state_lock.locked()
+    level = await service.release_cortisol(0.3, reason="test")
+    assert level > service.current_state.cortisol_tonic
+    # Released, not merely computed: the burst is outstanding on the state.
+    assert service.current_state.cortisol_phasic_peak > 0.0
+    # And the lock was given back, or every later turn would hang on it.
+    assert not service._state_lock.locked()
+
+    await service.release_dopamine(0.3, reason="test")
+    assert service.current_state.dopamine_phasic_peak > 0.0
+    assert not service._state_lock.locked()
+
+
+@pytest.mark.asyncio
+async def test_somatic_perception_does_not_deadlock_on_the_release_wrapper():
+    """`apply_somatic_perception` already holds the lock across its burst.
+
+    It calls the unlocked `AgentState` primitive on purpose, so the peak is
+    measured against the settled tonic after `_enforce_bounds`. If it were ever
+    switched to the service wrapper, this would hang forever — `asyncio.Lock`
+    is not reentrant — so the test pins the arrangement rather than the comment.
+    """
+    service = StateService(graph_store=None, db_path=":memory:")
+    service._persist_sensory_state_if_due = AsyncMock(return_value=None)
+
+    await asyncio.wait_for(
+        service.apply_somatic_perception(
+            {"valence_spike": 0.2, "arousal_spike": 0.1, "entities": ["mug"]}
+        ),
+        timeout=5.0,
+    )
+    assert service.current_state.dopamine_phasic_peak > 0.0
+    assert not service._state_lock.locked()
+
+
+@pytest.mark.asyncio
+async def test_a_release_waits_for_a_held_state_lock():
+    """Proves the wrapper actually acquires the lock, rather than merely
+    leaving it free.
+
+    The obvious assertion — that `_state_lock` is unlocked after the call —
+    passes whether or not the wrapper ever took it, so it cannot detect the
+    lock being dropped. Holding the lock and showing the release *blocks* is
+    the only version of this test with any detection power.
+    """
+    service = StateService(graph_store=None, db_path=":memory:")
+
+    async with service._state_lock:
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(service.release_cortisol(0.3), timeout=0.25)
+        # Blocked, so nothing was written while another writer held the lock.
+        assert service.current_state.cortisol_phasic_peak == 0.0
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(service.release_dopamine(0.3), timeout=0.25)
+        assert service.current_state.dopamine_phasic_peak == 0.0
+
+    # Released once the lock is free again.
+    assert await service.release_cortisol(0.3) > 0.0
+    assert service.current_state.cortisol_phasic_peak > 0.0
