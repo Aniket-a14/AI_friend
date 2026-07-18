@@ -1,7 +1,39 @@
 import logging
+import math
 from typing import Dict, Any, AsyncGenerator, List
 
 logger = logging.getLogger(__name__)
+
+# --- Endocrine channels ---------------------------------------------------
+# Until now both hormones had a release API and almost nothing calling it: one
+# channel (somatic comfort recognition) for dopamine and none at all for
+# cortisol. A hormone with no channel is only a formula, so these are the
+# events that actually move them.
+#
+# The reward channel is *prediction error*, not outcome. Firing a burst on any
+# good turn would double-count what tonic dopamine already tracks -- the tonic
+# term is valence x arousal, and a good turn raises valence by itself. Phasic
+# dopamine is supposed to signal "better than I expected", per the Schultz
+# reward-prediction-error work the `dopamine_phasic` docstring cites. The
+# reappraisal module was already computing exactly that quantity and throwing
+# it away after using it to tune weights.
+#
+# Scaled well below 1.0: a single surprising turn should colour the next few
+# minutes, not saturate the hormone. Deliberately asymmetric -- the stress
+# response to a turn going badly is stronger than the reward for one going
+# well, which is the standard negativity bias and also the safer failure mode
+# for a system whose cortisol narrows its own sampling temperature.
+REWARD_PREDICTION_GAIN = 0.35
+STRESS_PREDICTION_GAIN = 0.45
+# Below this, a prediction error is noise rather than surprise. Reappraisal
+# already ignores |delta| < 0.1 for weight updates; matching that keeps one
+# definition of "significant" instead of two that can drift apart.
+PREDICTION_ERROR_DEADBAND = 0.1
+# A self-correction means the agent caught itself about to violate its own
+# identity constraints mid-sentence. Fixed rather than scaled: the severity of
+# a violation is not something the metacognitive check reports, and inventing a
+# magnitude for it would be false precision.
+SELF_CORRECTION_STRESS = 0.3
 
 
 class CognitivePipeline:
@@ -188,11 +220,12 @@ class CognitivePipeline:
                 if isinstance(tom, dict) and "inferred_valence" in tom:
                     actual_text_valence = tom["inferred_valence"]
 
-                await self.reappraisal.evaluate_outcome(
+                prediction_error = await self.reappraisal.evaluate_outcome(
                     actual_text_valence=actual_text_valence,
                     acoustic_delta=acoustic_delta,
                     behavioral_signal=0.5,
                 )
+                await self._apply_reward_prediction_error(prediction_error)
 
             # Pre-Decision Vocabulary Update (zero LLM overhead concepts indexing)
             await self.state.update_theory_of_mind(event.raw_content)
@@ -331,6 +364,8 @@ class CognitivePipeline:
             if chunk["type"] == "done":
                 done_chunk = chunk
                 continue
+            if await self._consume_internal_chunk(chunk):
+                continue
             yield chunk
         stage_times["stage_8_action_execution_ms"] = (
             time.perf_counter() - t_start
@@ -393,6 +428,70 @@ class CognitivePipeline:
             yield done_chunk
         else:
             yield {"type": "done", "data": "finished", "speculative": is_spec}
+
+    async def _consume_internal_chunk(self, chunk) -> bool:
+        """Handle chunks meant for the pipeline itself. True = do not forward.
+
+        Downstream consumers switch on a small set of chunk types, and an
+        unrecognised one reaches the transport as a malformed message. These
+        are internal signals from the action layer, not output.
+        """
+        if chunk.get("type") == "self_correction":
+            await self._apply_self_correction_stress(chunk.get("data", ""))
+            return True
+        return False
+
+    async def _apply_reward_prediction_error(self, prediction_error):
+        """Turn a reward prediction error into a hormone burst.
+
+        `None` means no comparison was made (reappraisal disabled, no recorded
+        expectation, rate limited, or within tolerance) and is *not* the same as
+        `0.0`. Treating them alike would fire a burst of zero on every turn the
+        module declined to evaluate, which is harmless today only because the
+        release methods reject non-positive amounts -- a coincidence, not a
+        guarantee, so the distinction is made explicitly here.
+        """
+        if prediction_error is None:
+            return
+        try:
+            prediction_error = float(prediction_error)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(prediction_error):
+            return
+        if abs(prediction_error) < PREDICTION_ERROR_DEADBAND:
+            return
+
+        try:
+            if prediction_error > 0:
+                await self.state.release_dopamine(
+                    min(1.0, prediction_error * REWARD_PREDICTION_GAIN),
+                    reason=f"turn exceeded expectation by {prediction_error:.2f}",
+                )
+            else:
+                await self.state.release_cortisol(
+                    min(1.0, -prediction_error * STRESS_PREDICTION_GAIN),
+                    reason=f"turn fell short of expectation by {-prediction_error:.2f}",
+                )
+        except Exception as e:
+            # An endocrine failure must never take down the turn: the hormone
+            # modulates how the agent speaks, it does not decide whether it can.
+            logger.warning("[Endocrine] Prediction-error release failed: %s", e)
+
+    async def _apply_self_correction_stress(self, reason: str):
+        """Catching yourself mid-violation is a stressor.
+
+        Deliberately fired from the pipeline rather than from `ActionService`,
+        which has no `StateService` handle. Action reports what happened; state
+        decides the physiological response. Plumbing a mutable state service
+        into the action layer to save one event type would invert that.
+        """
+        try:
+            await self.state.release_cortisol(
+                SELF_CORRECTION_STRESS, reason=f"self-correction: {reason}"
+            )
+        except Exception as e:
+            logger.warning("[Endocrine] Self-correction release failed: %s", e)
 
     async def _async_system2_appraisal(self, user_utterance: str):
         try:

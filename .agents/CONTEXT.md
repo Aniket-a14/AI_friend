@@ -2923,3 +2923,84 @@ recognition. A hormone with no channel is still only a formula. Phasic state
 remains unpersisted across restart, unchanged from PR #70 and for the same
 reason: both half-lives are minutes-scale, so any realistic restart outlasts the
 burst. `IdentityManager` is still a separate persona source.
+
+## 2026-07-18 The hormones get channels: reward prediction error and self-correction
+
+Both hormones had a release API and almost nothing calling it -- one channel for
+dopamine (somatic comfort recognition) and none at all for cortisol. An agent
+with no camera had a reward hormone that had never once fired. A hormone with no
+channel is only a formula, and the previous two entries said so in their own
+"NOT done" sections. This closes it.
+
+**Reward channel: prediction error, not outcome.** Firing a burst on any good
+turn would double-count what tonic dopamine already tracks -- the tonic term is
+valence x arousal, and a good turn raises valence by itself, so the burst would
+be the same signal counted twice. Phasic dopamine is supposed to mean *better
+than expected* (Schultz, cited in `dopamine_phasic`'s own docstring). The
+reappraisal engine was already computing exactly that quantity, using it to tune
+appraisal weights, and throwing it away. `evaluate_outcome` now returns it.
+
+The sign is flipped on the way out. Internally reappraisal uses
+`delta = expected - actual` for weight updates; returning that raw would invert
+the endocrine channel, firing cortisol on every pleasant surprise and dopamine
+on every disappointment. The returned value is `actual - expected`, matching the
+sign convention of the literature.
+
+`None` and `0.0` are deliberately different answers -- "no comparison was made"
+versus "exactly as expected". Reappraisal returns `None` when disabled, when no
+expectation was recorded, when rate-limited, and when the outcome landed within
+its existing 0.1 tolerance. The pipeline's deadband reuses that same 0.1 rather
+than introducing a second definition of "significant" that could drift.
+
+**Stress channel: self-correction.** Catching yourself mid-sentence about to
+violate your own identity constraints is the clearest stressor the agent has.
+`ActionService` yields a `self_correction` chunk; the pipeline consumes it and
+fires cortisol. Deliberately *reported* rather than acted on at the action layer,
+which has no `StateService` -- giving it one to fire a hormone would invert the
+dependency. Action reports what happened; state decides the physiological
+response. The chunk is consumed, not forwarded: downstream consumers switch on a
+small set of chunk types and an unrecognised one reaches the transport as a
+malformed message.
+
+Gains are asymmetric (stress 0.45, reward 0.35). Standard negativity bias, and
+also the safer failure direction: cortisol narrows the agent's own sampling
+temperature, so over-reacting to a bad turn degrades gracefully while
+over-reacting to a good one makes it erratic exactly when things are going well.
+
+### Verification
+
+`tests/test_endocrine_channels.py` (21 tests). Eight mutations applied, seven
+caught: deadband removed (3 failures), finiteness guard removed (3), reward and
+stress polarity swapped (3), self-correction firing no cortisol (1), the
+`self_correction` chunk being forwarded downstream (1), reappraisal returning the
+unflipped sign (1), and the tolerance path returning `0.0` instead of `None` (1).
+
+**One mutation survived, and it was right to.** Deleting the explicit
+`if prediction_error is None: return` changed nothing, because `float(None)`
+raises `TypeError` and the conversion guard below already catches it. The check
+is defence in depth and documentation of intent, not independently load-bearing.
+Recorded rather than papered over: the honest count is seven of eight, and a
+test contorted into detecting a redundant branch would be testing the branch
+rather than the behaviour.
+
+A weak test was caught during development. The first version of the
+chunk-routing test reimplemented the pipeline's loop inside the test and asserted
+against its own copy -- it would have passed with the real routing deleted. The
+routing was extracted into `_consume_internal_chunk` so the test drives the real
+method.
+
+**Line endings.** This repo has no `.gitattributes` and `core.autocrlf=false`, so
+files carry mixed conventions: `pipeline.py` and `reappraisal.py` are LF while
+`action.py` is CRLF. Editing via Python's text mode rewrote whole files and
+produced a 1800-line diff for a five-line change. Each file was restored to its
+own committed convention. Worth knowing before scripting an edit here.
+
+Full backend suite: **523 passed** (502 + 21), `ruff check .` clean.
+
+**NOT done:** the reward channel depends on `ReappraisalEngine` being enabled
+(`REAPPRAISAL_ENABLED`); with it off, phasic dopamine falls back to the somatic
+path alone. Grounding failures and generation errors are plausible additional
+stressors and are not wired. The gains are reasoned, not measured -- no
+calibration against real conversation has been done, and they should be treated
+as starting points rather than tuned values. Cortisol still has no channel for
+user-expressed frustration, which is probably the most obvious missing one.
