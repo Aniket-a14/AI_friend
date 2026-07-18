@@ -55,30 +55,11 @@ def _get_stem(word: str) -> str:
     return w
 
 
-# Generic lexical/morphological synonym expansions for cue matching.
-# NOTE: corpus-specific proper nouns (benchmark pet names, place names, dish
-# names) were intentionally removed — production retrieval must not be
-# pre-seeded with the evaluation corpus. Keep this table domain-agnostic.
-SYNONYM_MAP = {
-    "cat": ["feline", "kitty", "pet"],
-    "dog": ["canine", "pup", "pet"],
-    "rain": ["shower", "precipitation", "storm"],
-    "laboratory": ["lab", "research", "facility"],
-    "work": ["job", "project", "task", "develop"],
-    "university": ["college", "academics", "school"],
-    "sweet": ["dessert", "food", "sugar"],
-    "calibrating": ["calibration", "calibrate", "tune", "setup"],
-    "activating": ["activation", "activate", "initialize", "start"],
-    "developer": ["programmer", "engineer", "coder"],
-    "grew": ["grow", "growth", "growing"],
-    "grow": ["grew", "growth", "growing"],
-    "spent": ["spend", "spending"],
-    "spend": ["spent", "spending"],
-    "slept": ["sleep", "sleeping"],
-    "sleep": ["slept", "sleeping"],
-    "sipped": ["sip", "sipping"],
-    "sip": ["sipped", "sipping"],
-}
+# Query-cue synonym expansion is no longer a hardcoded thesaurus. It now reads
+# the humanoid's *learned* vocabulary (MentalLexicon, see lexicon_store.py):
+# words that co-occur in lived conversation become associated, and recall-time
+# expansion draws on what the system has actually learned. See _get_stem below
+# for the (generic, morphological) stemming that still normalizes cues.
 
 # Retrieval scoring constants. These were previously inline "magic numbers"
 # (one reverse-engineered to make a benchmark metric land on exactly 0.6).
@@ -164,8 +145,12 @@ class MemoryStore:
         self._last_stop_words_update = 0.0
 
         from .semantic_recall_store import SemanticRecallStore
+        from .lexicon_store import MentalLexicon
 
         self.qdrant_store = SemanticRecallStore()
+        # Learned vocabulary: replaces the old static SYNONYM_MAP. Boots with a
+        # generic innate seed, then acquires words + associations from experience.
+        self.lexicon = MentalLexicon(self.pool)
         self.goal_buffer = GoalBuffer(capacity=5)
         self._last_query_vector = None
         import sys
@@ -597,6 +582,8 @@ class MemoryStore:
                         conn, existing_id, importance, current_time
                     )
                     self._invalidate_l1_cache()
+                    # Repetition strengthens word associations too (guarded).
+                    await self.lexicon.learn_from_text(content)
                     logger.info(
                         f"🧠 Memory Reinforced [{wing}:{room or 'global'}]: {content[:50]}..."
                     )
@@ -697,6 +684,9 @@ class MemoryStore:
             # A new memory can satisfy queries whose cached result sets predate
             # it, so drop the L1 cache to avoid serving stale recalls.
             self._invalidate_l1_cache()
+            # Acquire vocabulary + co-occurrence associations from the stored
+            # content (guarded internally so it can never fail the write).
+            await self.lexicon.learn_from_text(content)
             return True
         except Exception as e:
             logger.error(f"Failed to add memory: {e}")
@@ -805,6 +795,9 @@ class MemoryStore:
                 or now_ts - self._last_stop_words_update > 300.0
             ):
                 await self._update_dynamic_stop_words()
+                # Reload the learned-vocabulary association cache on the same
+                # cadence (first call also creates tables + plants the seed).
+                await self.lexicon.refresh()
                 self._last_stop_words_update = now_ts
 
             query_vector = await self.get_embedding(query_text)
@@ -1912,10 +1905,10 @@ class MemoryStore:
                     expanded_cues.add(cue)
                     stem = _get_stem(cue)
                     expanded_cues.add(stem)
-                    if stem in SYNONYM_MAP:
-                        expanded_cues.update(SYNONYM_MAP[stem])
-                    if cue in SYNONYM_MAP:
-                        expanded_cues.update(SYNONYM_MAP[cue])
+                    # Learned lexical priming: pull the cue's strongest acquired
+                    # associates (empty until the lexicon has learned them).
+                    expanded_cues.update(self.lexicon.expand(cue))
+                    expanded_cues.update(self.lexicon.expand(stem))
 
                 expanded_cues_list = list(expanded_cues)
                 patterns = [f"%{cue}%" for cue in expanded_cues_list]
