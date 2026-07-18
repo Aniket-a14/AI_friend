@@ -1,0 +1,75 @@
+# Line-ending policy.
+#
+# `.editorconfig` has declared `end_of_line = lf` repo-wide since early on, but
+# nothing enforced it: `core.autocrlf` is unset on the dev machines and there was
+# no `.gitattributes`, so whatever each editor or script happened to write is
+# what got committed. The result is a repo split roughly 226 CRLF files to 200
+# LF, with eight files that are mixed *inside a single file* — including
+# `.github/workflows/ci.yml` and `backend/requirements-base.txt`.
+#
+# The practical cost is not aesthetic. A tool that rewrites a whole file in text
+# mode flips every line, and a five-line change arrives as a 1800-line diff that
+# no reviewer can read. That has already happened more than once.
+#
+# This file makes the working tree irrelevant: Git normalizes to LF in the
+# object database on commit, so a file written with CRLF lands as LF and the
+# diff shows only what actually changed.
+#
+# NOTE: adding this file does not rewrite existing history or the working tree.
+# The 226 already-committed CRLF files stay as they are until someone runs
+# `git add --renormalize .` in a dedicated commit. That is deliberately deferred
+# until the open PRs land, because renormalizing 226 files while branches are in
+# flight turns every one of them into a conflict.
+
+*               text=auto eol=lf
+
+# Scripts whose interpreter cares. A `.sh` with CRLF fails on Linux with the
+# famously unhelpful `bad interpreter: /bin/bash^M`, which matters because these
+# run inside the Docker images.
+*.sh            text eol=lf
+*.bash          text eol=lf
+
+# The Windows counterpart: `cmd.exe` needs CRLF in batch files.
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+*.ps1           text eol=crlf
+
+# Binary — never diff, never normalize. Silent corruption otherwise.
+*.png           binary
+*.ico           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.webp          binary
+*.pdf           binary
+*.woff          binary
+*.woff2         binary
+*.ttf           binary
+*.otf           binary
+
+# Voice/model artefacts. None are tracked today, but this is a speech project
+# with SoVITS checkpoints and reference audio one careless `git add` away, and
+# the failure mode is a corrupted model that still loads.
+*.wav           binary
+*.mp3           binary
+*.flac          binary
+*.ogg           binary
+*.opus          binary
+*.pt            binary
+*.pth           binary
+*.onnx          binary
+*.safetensors   binary
+*.ckpt          binary
+*.bin           binary
+*.gguf          binary
+
+# Lockfiles: generated, and reviewing them line by line is noise.
+package-lock.json   -diff linguist-generated
+Cargo.lock          -diff linguist-generated
+
+# Better hunk headers when reading diffs in these languages.
+*.py            diff=python
+*.rs            diff=rust
+*.md            diff=markdown
+*.html          diff=html
+*.css           diff=css
