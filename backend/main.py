@@ -1,5 +1,6 @@
 import logging
 import json
+import secrets
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +9,7 @@ from livekit import api
 import nats
 
 from app.config import Config
-from app.network import is_lan_client_allowed
+from app.network import is_lan_client_allowed, is_loopback_client
 # scripts.bootstrap, not scripts: the old import pointed at a module that does not
 # exist, so main.py could not even be imported — the Provisioning Guard below,
 # together with its "models verified and locked" log, had never once run.
@@ -98,6 +99,33 @@ async def require_lan_client(request: Request):
         raise HTTPException(status_code=403, detail="LAN clients only")
 
 
+async def require_session_auth(request: Request):
+    """Gate LiveKit token issuance behind a shared secret (C1).
+
+    require_lan_client only restricts *where* a caller can connect from - with
+    LAN_ONLY on, that's still "any device on the WiFi," and with it off, no
+    network check applies at all. Without this, anyone who can reach the port
+    can mint a room-join token for themselves. The host running the backend is
+    trusted without a key so same-machine dev/deployments need no extra config;
+    every other caller (another LAN device, or anyone reaching a LAN_ONLY=false
+    deployment) must present BACKEND_ACCESS_KEY.
+    """
+    host = request.client.host if request.client else None
+    if is_loopback_client(host):
+        return
+
+    expected = Config.BACKEND_ACCESS_KEY
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="BACKEND_ACCESS_KEY must be set to serve non-loopback clients",
+        )
+
+    provided = request.headers.get("x-backend-key") or request.query_params.get("key")
+    if not provided or not secrets.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="Invalid or missing session key")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -171,7 +199,7 @@ async def get_status():
     return {"status": "ok", "ready": backend.is_ready}
 
 
-@app.get("/token")
+@app.get("/token", dependencies=[Depends(require_session_auth)])
 async def get_token(participant: str = "user"):
     """LiveKit Token Endpoint"""
     try:
@@ -182,7 +210,7 @@ async def get_token(participant: str = "user"):
         raise HTTPException(status_code=500, detail="Token generation failed")
 
 
-@app.post("/start-session")
+@app.post("/start-session", dependencies=[Depends(require_session_auth)])
 async def start_session(participant: str = "user"):
     """Alias for token generation to support legacy frontend calls."""
     try:
