@@ -5,11 +5,7 @@
       "Warm"
     ],
     "immutable": {
-      "values": [
-        "Honesty"
-      ],
-      "base_tone": "Warm",
-      "boundaries": []
+      "base_tone": "Warm"
     },
     "adaptive_traits": [
       "Reserved"
