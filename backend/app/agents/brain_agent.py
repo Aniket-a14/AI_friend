@@ -11,6 +11,7 @@ from ..llm.ollama_client import OllamaClient
 from ..state import GraphDB, MemoryStore, ConversationHistoryStore
 from ..config import Config
 from ..cognitive import CognitiveService
+from ..cognitive.somatic import SomaticAppraiser
 from ..runtime_bootstrap import bootstrap_runtime
 from ..contracts import (
     AudioPlaybackProgress,
@@ -57,6 +58,13 @@ class BrainAgent(BaseAgent):
             graph_db=graph_db,
             identity_store=conversation_store,
         )
+
+        # Visual Somatic Homeostasis: recognising a learned comfort object in
+        # what the agent is looking at lifts valence/arousal (and therefore the
+        # derived dopamine term). Lives here rather than in the vision agent
+        # because it needs the graph and the state service, keeping the vision
+        # agent a pure sensor with no database credentials.
+        self.somatic_appraiser = SomaticAppraiser(graph_store=graph_db)
 
         self.last_interaction_time = datetime.now()
         self.last_visual_context = "No visual data available."
@@ -181,6 +189,28 @@ class BrainAgent(BaseAgent):
         self.last_user_distance = (
             data.get("user_distance") if data.get("user_distance") is not None else 1.0
         )
+
+        await self._appraise_somatic(description)
+
+    async def _appraise_somatic(self, description: str):
+        """Turn a recognised comfort object into an endocrine response.
+
+        This is the step that makes vision a sense rather than a captioner: the
+        description above only ever became prompt text, so the agent could
+        describe something it loves and feel nothing. Failures are contained --
+        the visual context is still worth having even if the somatic layer is
+        unavailable.
+        """
+        if not description:
+            return
+        try:
+            await self.somatic_appraiser.refresh()
+            somatic = self.somatic_appraiser.appraise(description)
+            if not somatic:
+                return
+            await self.cognitive_core.state.apply_somatic_perception(somatic)
+        except Exception:
+            logger.exception("[Brain] Somatic appraisal failed; visual context kept.")
 
     async def _cancel_active_generation(self, reason: str):
         """Cancel the in-flight generation task and wait for it to fully unwind.

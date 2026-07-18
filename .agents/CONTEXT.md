@@ -2559,3 +2559,103 @@ fails as expected. The F1 equivalence harness was re-run after the parser
 rewrite: still 28/29, the sole difference remaining the intended STORE_MEMORY
 change — the new parser corrects cases the harness never covered and disturbs
 none that it does.
+
+## 2026-07-18 Vision became a sense — somatic homeostasis, and the container question settled
+
+Vision was a captioner bolted to the side of the system. `VisualAppraisalService`
+turned frames into sentences, `_on_vision_description` stored the sentence as
+prompt text, and that was the end of it: the agent could describe something it
+loved and feel precisely nothing. The roadmap's §E Somatic Vision-Homeostasis
+called for a `vision_appraisal.py` that never existed — `grep -rn "somatic"
+backend/app/` returned two incidental hits, both string literals in a category
+list. This closes that gap.
+
+### The comforts are learned, not listed
+
+`learning.py` already extracts conversational facts and tags each with a
+category, one of which is `somatic`; those land in Neo4j as triplets. The new
+`SomaticAppraiser` (`app/cognitive/somatic.py`) reads them back. So the agent's
+comforts come from its own life. With no learned somatic facts — a fresh agent,
+or one running without Neo4j — it recognises nothing and no spike ever fires.
+That cold start is deliberate and matches the mental lexicon's design (B1): no
+comfort vocabulary is baked into a perception path.
+
+Matching is whole-word (so "tea" does not fire on "steam"), confidence-weighted,
+saturating (three comforts in one frame are warmer than one, not three times
+warmer), and refractory for 120s per term — staring at the same mug must not
+re-spike every appraisal interval, the affective counterpart to the habituation
+threshold already in the VLM config.
+
+### Where the roadmap could not be followed literally
+
+§C specifies `D_t = min(1.0, D_{t-1} + 0.25)`. That is not implementable here:
+`AgentState.dopamine` is a **derived property** (`max(0, valence) * arousal`), not
+a stored field, so there is no `D_{t-1}`. Lifting valence and arousal is how
+dopamine rises in this architecture — it follows by construction. The constants
+were chosen so a recognised comfort moves dopamine by roughly the intended
+magnitude. Named `app/cognitive/somatic.py` rather than the roadmap's
+`vision_appraisal.py`, because `app/vision/appraisal.py` already exists and does
+something different (frames→text vs text→affect), and because the appraiser needs
+the graph and state service — keeping it in the cognitive layer lets the vision
+agent stay a pure sensor with no database credentials.
+
+`StateService.apply_somatic_perception` mirrors `apply_sensory_perception`
+exactly, including its central caution: a non-match returns `None` and is skipped,
+never applied as a zero spike. Blending zeros in every interval would drag mood
+toward neutral and flatten the agent the longer it looked at nothing in
+particular — the identical failure mode documented for a missing acoustic
+emotion estimate.
+
+### Docker vs host: measured, not assumed
+
+The question was settled empirically on this machine (Windows host, Linux Docker
+engine):
+
+- `/dev/video*` does not exist in the container.
+- `docker run --device=/dev/video0` is rejected by the daemon outright.
+- `/tmp/.X11-unix` is absent and `DISPLAY` is unset.
+- `mss` fails on import-time capture with `ScreenShotError: Library libxcb.so not found`.
+
+On a Windows or macOS host the container runs inside a Linux VM with no route to
+the host's display or USB webcam, so **no configuration fixes this** — capture
+must run on the host. On a **Linux** host it does work with device passthrough
+and/or an X11 socket mount, so the compose service now exists under an opt-in
+`vision` profile with both passthrough options present but commented out (a
+missing device would otherwise fail the whole service to start).
+
+`docs/ARCHITECTURE.md` had claimed a "native Windows/macOS bridge to bypass
+container limitations." No such bridge exists; the line was aspirational. Replaced
+with what was actually measured.
+
+### The healthcheck was E1 all over again
+
+The commented-out service probed `pgrep python`, which passes perfectly while
+every frame comes back `None` — `ScreenLink` catches its own error, sets
+`headless`, and returns `None` forever. That is precisely the shape of finding E1,
+where a healthcheck passed *because* the STT it checked had been stubbed. The
+agent now runs a capture preflight at startup and logs prominently when it is
+blind, touches a sentinel file on each successful capture, and the healthcheck
+reads that sentinel's freshness. All three states (fresh / stale / missing) were
+verified in a real container.
+
+### Verification
+
+`tests/test_somatic_vision.py` (31 tests). Six mutations applied and all caught —
+but only after two corrections worth recording. Removing the zero-spike guard
+initially broke **nothing**, because adding `0.0` genuinely leaves affect
+unchanged; the guard's only observable effect is skipping the persistence path, so
+the test now asserts that instead of state equality it could never distinguish.
+And the whole-word-matching mutation first reported a false "pattern miss" from
+shell escaping rather than a real absence — retried by line index, it fails
+correctly.
+
+Full backend suite: **397 passed** (366 + 31). `ruff check .` clean.
+`docker compose config` valid, with `vision_agent` correctly absent by default
+and present under `--profile vision`.
+
+**NOT done:** no live camera or screen has driven this end to end — the somatic
+path is verified at unit and integration level only, with no VLM in the loop. The
+comfort vocabulary also depends on `learning.py` having run against real
+conversation and Neo4j being reachable; neither is exercised here. And the visual
+pillar remains the only one of the three whose capture cannot be containerised on
+this platform, which is a deployment property, not a bug to fix.

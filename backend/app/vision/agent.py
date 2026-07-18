@@ -43,6 +43,8 @@ class VisionAgent(BaseAgent):
         self.source = "screen"  # screen | camera
         self.fps = fps
         self.running = False
+        self.can_capture = False
+        self.health_file = getattr(Config, "VISION_HEALTH_FILE", "")
 
         # Tier-4: VLM Appraisal Pipeline
         self.vlm_enabled = Config.VLM_ENABLED
@@ -60,6 +62,56 @@ class VisionAgent(BaseAgent):
                 prompt=Config.VLM_PROMPT,
             )
 
+    def preflight(self) -> bool:
+        """Probe whether this process can actually see anything.
+
+        Capture is host-bound. `mss` needs a real display connection and
+        `cv2.VideoCapture(0)` needs a `/dev/video*` node, so inside a Linux
+        container neither exists unless the host is also Linux and the X11
+        socket plus video device are explicitly passed through. On a Windows or
+        macOS host that passthrough is not possible at all -- Docker runs the
+        container in a Linux VM that has no access to the host's display or USB
+        webcam.
+
+        Without this probe the failure is silent and expensive: ScreenLink
+        catches its own error, sets `headless`, and `capture_frame()` returns
+        None forever while the process stays happily alive. That is exactly the
+        shape of finding E1, where a healthcheck passed because the thing it was
+        checking had been stubbed out.
+        """
+        probe = (
+            self.camera.capture_frame()
+            if self.source == "camera"
+            else self.screen.capture_frame()
+        )
+        if probe:
+            return True
+
+        logger.error(
+            "🚫 [Vision] Cannot capture from '%s'. Screen capture needs a display "
+            "connection and camera capture needs a /dev/video* node. If this is a "
+            "container: run the vision agent on the HOST instead "
+            "(`python -m app.vision.agent`), or on a Linux host pass through "
+            "`/tmp/.X11-unix` + DISPLAY (screen) or `--device=/dev/video0` (camera). "
+            "The agent stays up so the mesh is unaffected, but it is blind.",
+            self.source,
+        )
+        return False
+
+    def _mark_capture_healthy(self):
+        """Touch the sentinel the container healthcheck reads.
+
+        The probe must test the real path, not process liveness: `pgrep python`
+        succeeds just as readily when every frame comes back None.
+        """
+        if not self.health_file:
+            return
+        try:
+            with open(self.health_file, "w") as fh:
+                fh.write(str(time.time()))
+        except OSError as e:
+            logger.debug("[Vision] Could not write health sentinel: %s", e)
+
     async def start(self):
         await self.connect()
 
@@ -68,7 +120,11 @@ class VisionAgent(BaseAgent):
 
         self.running = True
         vlm_status = f"VLM={Config.VLM_MODEL}" if self.vlm_enabled else "VLM=disabled"
-        logger.info(f"📸 {self.name} started. {vlm_status} | {self.fps} FPS")
+        self.can_capture = self.preflight()
+        sight = "seeing" if self.can_capture else "BLIND (no capture device)"
+        logger.info(
+            f"📸 {self.name} started. {vlm_status} | {self.fps} FPS | {sight}"
+        )
 
         asyncio.create_task(self._capture_loop())
 
@@ -91,6 +147,12 @@ class VisionAgent(BaseAgent):
                     frame = self.screen.capture_frame()
 
                 if frame:
+                    if not self.can_capture:
+                        # Recovered: a display or camera appeared after startup.
+                        logger.info("👁️  [Vision] Capture recovered; the agent can see.")
+                        self.can_capture = True
+                    self._mark_capture_healthy()
+
                     # 2. Base64 encode for NATS
                     frame_b64 = base64.b64encode(frame).decode("utf-8")
 
