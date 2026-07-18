@@ -84,7 +84,11 @@ The `<thought>` parser is a genuine incremental parser with partial-token hold-b
 Two sources, not yet unified:
 
 - `cognitive/identity.py` (`IdentityManager`) loads `personality.json` / `history.json` — the **narrative** persona (name, values, tone, boundaries, adaptive traits). It already distinguishes an immutable core from adaptive traits that evolve through reflection, capped at 5.
-- The **numeric** persona — temperament baselines and the `PSYCH_*` coefficients — currently comes from `Config`. All six coefficients are read in exactly one place, `StateService.__init__`, which is the injection point for any per-persona work.
+- The **numeric** persona lives in `persona/profile.py` (`PersonaProfile`), injected into `StateService.__init__`. `Config` now only supplies defaults.
+
+`PersonaProfile` sorts every field into one of three tiers, declared in the schema so the boundary is enforceable rather than conventional: **IMMUTABLE** (safety invariants — deliberately *not* model fields; they live in `IMMUTABLE_CORE` and a persona file naming them is rejected with a warning), **CONSTITUTIONAL** (temperament, fixed at creation), **ADAPTIVE** (seeded by the user, then owned by the agent). Bounds are tighter than the maths permits, each guarding a specific failure mode — `mood_decay_rate > 0` because zero is a permanent mood lock, `baseline_valence` capped at ±0.6 because a friend pinned at maximum can never be sad *with* you. The rule is that a personality may be shaped but must remain moveable.
+
+Loading is deliberately asymmetric: `load()` (authored file) validates strictly and falls back *whole*, since half-applying a persona hands its author a friend they did not describe; `from_config()` clamps with a warning, since a running deployment should not fail to boot because bounds arrived.
 
 `config.py` is a process-global Pydantic-settings singleton reached through a metaclass (`Config.FOO` delegates to `config_instance`). Prefer `@computed_field` properties over adding logic to `ConfigMeta.__getattr__` (F4).
 
