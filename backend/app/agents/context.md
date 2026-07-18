@@ -305,7 +305,7 @@ To establish rigorous scientific boundaries, CVS-3.5 is actively compared agains
 | **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **Dynamic** (PAD + cortisol/dopamine coupling) | *(mode retired)*⁶ |
 | **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **1,266 MB**⁵ (8-agent mesh + DB stack) | *(mode retired)*⁶ |
 | **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁵ | *(mode retired)*⁶ |
-| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
+| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)*⁶ |
 
 > Provenance/caveats for the "Physical" column (¹composed estimate, not a live stopwatch trial; ²composed from 7 measured components, excludes LLM generation; ³no verified telemetry exists yet — a prior figure here was mislabeled and has been retracted; ⁴independently recomputed from raw per-sample arrays and matches exactly; ⁵full 8-agent mesh + DB stack; ⁶accelerated mode is intentionally disabled in `hard_benchmark.py`) mirror `README.md` §8 and `scripts/results/benchmark_results_summary.md` — keep these three in sync.
 

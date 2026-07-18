@@ -1,6 +1,6 @@
 # AI Friend CVS-3.5 — Complete Benchmark Results & SOTA Comparisons
 
-> All values below are **organic** — derived from raw telemetry in `benchmark_results.json` (1000 intent samples, 88 recall probes) and `research_pad_trajectory.csv` (20 real-time NATS data points). No hardcoded or simulated data.
+> All values below trace back to raw telemetry in `benchmark_results.json` (1000 intent samples, 88 recall probes), `extended_benchmarks.json`, `human_realism_results.json`, `latency_profile.json`, and `research_pad_trajectory.csv` (20 real-time NATS data points) — no hardcoded or `np.random`-simulated data feeds a published number. That said, **"organic" does not mean "directly measured"**: some figures are raw per-sample measurements, some are **composed estimates** (sums of independently measured sub-components, not a single end-to-end stopwatch trial), some are **independently recomputed aggregates** (re-derived from the raw arrays rather than read off a summary), and a few comparison "baselines" are **arbitrary, uncited multipliers** applied to a real measurement rather than a benchmarked external system — each is labeled as such at the point it's reported below.
 
 ---
 
@@ -52,7 +52,7 @@
 | Recall@10 | **93.2%** | 86.7% | +6.5 pp |
 
 > [!NOTE]
-> ACT-R bounded retrieval outperforms unbounded RAG because it uses activation-weighted decay + recency scoring. The Qdrant vector search operates at sub-millisecond latency (1.073ms avg).
+> ACT-R bounded retrieval outperforms unbounded RAG because it uses activation-weighted decay + recency scoring. The Qdrant vector search operates at approximately 1ms latency (1.073ms avg).
 
 > [!WARNING]
 > **Unverified chart data.** `cognitive_rag_recall.png`'s right-hand "Retrieval Latency Scaling over Time" panel was a fallback path in `cognitive_metrics_eval.py` (`module3_memory_actr`) that silently generated `np.random.seed(42)` synthetic numbers whenever it couldn't find real progression data — the flat-15ms-vs-rising-to-50ms curve shown in that panel is **not measured telemetry** and should not be cited. The real `progression.retrieval_latency_pruned/unpruned` arrays in `benchmark_results.json` (real `search_memories()` wall-clock time, N=1000) show a much smaller gap (~170ms → 174ms pruned vs. ~170ms → 181ms unpruned, roughly 4%), and even that pair is noisy end-to-end wall time (network + DB IO), not a clean asymptotic-complexity measurement. The fallback has been fixed to raise instead of fabricate; this panel needs a fresh run to regenerate honestly. The Recall@K panel (left-hand side) is unaffected — that data is real (verified against `raw_data.recall_success_k`, N=88 probes).
@@ -82,7 +82,7 @@
 > [!WARNING]
 > **Corrected.** This table previously reported a std dev (CVS-3.5: 7.72ms, Baseline: 49.32ms) that was fabricated — `np.random.normal(mean, std, 1000)` synthetic noise sampled around the constants above, not real trial-to-trial variance. The baseline "479.9 ms" was likewise an invented constant with no source. Both have been removed from the generating script (`cognitive_metrics_eval.py`); the CVS-3.5 figure above is the honest composed estimate with its full provenance shown.
 
-> **4.6× faster** barge-in response. CVS-3.5 latency = 100ms audio buffer + 3.85ms NATS RTT + 0.04ms DSP + 0.02ms ducking.
+> No verified baseline exists to compare against, so no "×faster" factor is reported here — see the correction note above.
 
 ---
 
@@ -164,7 +164,7 @@
 | **CVS-3.5** | **~92.2%** |
 | Baseline | ~83.5% |
 
-> Coherence decay rate is organically tied to Memory Recall@5 (12.5% gap → 0.125 decay/turn).
+> Coherence decay rate is tied to how far CVS-3.5's own Recall@5 (87.5%) sits below a perfect 100% (a 12.5 percentage-point self-referential gap → 0.125 decay/turn), not the 10.5pp CVS-vs-Unbounded-RAG gap shown in the Module 3 table above — the two "gaps" are different measurements that happen to look similar. The baseline's own decay rate (0.42/turn) is an assumed industry-baseline curve shape, not derived from any measured competitor system.
 
 ---
 
@@ -242,7 +242,7 @@
 | **CVS-3.5** | **0.1 s** |
 | Baseline | 0.6 s |
 
-> Derived from real trajectory CSV cortisol spike → baseline recovery (t=5.80s → t=5.80s elapsed), scaled to the 90s simulation window.
+> Derived from real trajectory CSV cortisol spike → baseline recovery (unrounded t=5.796s → t=5.801s, a 0.005s window in the raw 20-sample trace — the two timestamps only *look* identical at 2-decimal display precision), scaled to the 90s simulation window (0.005s × 90/3.018s ≈ 0.1s). The 20-sample trace is coarse, so this is a noisy statistic, not a precision timing measurement. Baseline (0.6s) is `CVS-3.5 recovery × 6.2`, an arbitrary uncited multiplier, not an independently measured competitor recovery time.
 
 ---
 
@@ -280,7 +280,7 @@
 | Capability | **CVS-3.5 Result** | **Industry Baseline** | **Factor** |
 |---|---|---|---|
 | Emotion Tracking (ToM MAE) | **0.032** | 0.394 | **12.3× better** |
-| Barge-in Latency | **104 ms** | 480 ms | **4.6× faster** |
+| Barge-in Latency | **~104 ms** (composed estimate) | *(not measured — see correction note in §1)* | N/A |
 | Conflict Resolver F1 | **94.8%** | 67.6% | **+27.2 pp** |
 | Memory Recall@5 | **87.5%** | 77.0% | **+10.5 pp** |
 | Knowledge Traversal (3-hop) | **0.197 ms** | 12.49 ms | **63× faster** |
