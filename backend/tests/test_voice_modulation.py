@@ -42,11 +42,34 @@ def test_invalid_voice_modulation_unordered():
         )
 
 
-def test_invalid_voice_modulation_wrong_cadence():
+def test_voice_modulation_tolerates_jittered_cadence():
+    # A7: real producers (resampling, a non-Rust generator) won't always land on
+    # an exact 50ms grid. A gap that's merely jittery, not pathological, is fine.
+    modulation = AgentVoiceModulation(
+        trajectory=[
+            ProsodyFrame(time_offset_ms=0, rate=1.0, pitch=1.0, volume=0.5),
+            ProsodyFrame(time_offset_ms=40, rate=1.1, pitch=1.0, volume=0.6),
+            ProsodyFrame(time_offset_ms=95, rate=1.2, pitch=1.0, volume=0.6),
+        ]
+    )
+    assert [f.time_offset_ms for f in modulation.trajectory] == [0, 40, 95]
+
+
+def test_invalid_voice_modulation_zero_gap():
+    with pytest.raises(ValidationError):
+        AgentVoiceModulation(
+            trajectory=[
+                ProsodyFrame(time_offset_ms=50, rate=1.0, pitch=1.0, volume=0.5),
+                ProsodyFrame(time_offset_ms=50, rate=1.1, pitch=1.0, volume=0.6),
+            ]
+        )
+
+
+def test_invalid_voice_modulation_gap_too_large():
     with pytest.raises(ValidationError):
         AgentVoiceModulation(
             trajectory=[
                 ProsodyFrame(time_offset_ms=0, rate=1.0, pitch=1.0, volume=0.5),
-                ProsodyFrame(time_offset_ms=40, rate=1.1, pitch=1.0, volume=0.6),
+                ProsodyFrame(time_offset_ms=5000, rate=1.1, pitch=1.0, volume=0.6),
             ]
         )

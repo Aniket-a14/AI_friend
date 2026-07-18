@@ -2224,3 +2224,68 @@ HippoRAG "~92% Recall@5", ACT-R/E "0.280 ToM MAE") against the cited papers
 themselves — still open from the prior audit entry; a full audit of
 `literature_references.md`'s ~30+ citations (out of scope for this pass, by
 explicit choice).
+
+---
+
+## 2026-07-18 A5, A7, E2, E3, F3, F4 resolved — batch of small robustness/maintainability fixes
+
+**A5 (brittle `is_sqlite` sniffing).** `MemoryStore.is_sqlite` matched
+`type(self.pool).__name__` against a hardcoded set of strings (`"MockPGPool"`,
+excluding `"MagicMock"/"AsyncMock"/"Mock"`) - any renamed/subclassed/new pool
+silently misclassified. Now checks a structural fact instead: whether
+`pool.connection.conn` is an actual stdlib `sqlite3.Connection` (the one thing
+the production `SQLitePool` and its test doubles genuinely share, since both
+wrap a real `sqlite3.connect(...)`). New `tests/test_memory_store_is_sqlite.py`
+covers a real pool, a generic `MagicMock`, a pool with no `.connection` at all,
+and a renamed `SQLitePool` subclass.
+
+**A7 (over-strict prosody validator).** `AgentVoiceModulation.validate_trajectory`
+required consecutive frame offsets to differ by *exactly* 50ms, rejecting the
+whole trajectory on any jitter. The only real producer
+(`generate_apra_trajectory` in `cognitive-rust`) does step in exact 50ms
+increments, but the contract only needs frames close enough together for smooth
+playback. Replaced the exact-equality check with strictly-increasing + a
+`MAX_FRAME_GAP_MS = 250` ceiling. `test_invalid_voice_modulation_wrong_cadence`
+(asserting a 40ms gap must fail) replaced with
+`test_voice_modulation_tolerates_jittered_cadence` plus explicit zero-gap and
+gap-too-large rejection tests.
+
+**E2 (brain_agent 512M memory limit).** The only service in
+`docker-compose.prod.yml` with an explicit memory cap was also the heaviest one
+(asyncpg pool, neo4j driver, embedding/LLM HTTP buffers, in-process caches) -
+every sibling service has no limit at all. Raised to a 2048M limit / 512M
+reservation. Verified with `docker compose -f docker-compose.infra.yml -f
+docker-compose.prod.yml config` (resolves to 2147483648 / 536870912 bytes).
+
+**E3 (LiveKit `http://` vs `ws://`).** `Config.LIVEKIT_URL` defaulted to
+`http://127.0.0.1:7880`, but both consumers (`useWebRTCVoice.js`'s
+`room.connect()` and `transport_agent.py`'s `room.connect()`) need `ws(s)://`.
+Fixed the default and both `.env.example` files, and added a
+`field_validator` on `LIVEKIT_URL` that rewrites `http(s)://` to `ws(s)://` so
+an existing deployment's already-saved `.env` self-heals instead of requiring
+a manual edit.
+
+**F3 (inline imports in hot handlers).** `brain_agent.py` re-imported
+`AudioStop`/`AudioResume`/`AudioPlaybackProgress`/`UserVoiceProperties` from
+`..contracts` (and `InterruptionClassifier`/`ConversationalRuntime` from
+`..utils`) inside the per-message handler methods and `__init__`. Hoisted all
+six to module-level imports; no circular-import issue (checked both `utils`
+modules import nothing back from `agents`).
+
+**F4 (`Config` metaclass `__getattr__` surprise).** `ConfigMeta.__getattr__`
+special-cased `ALLOWED_ORIGINS`/`OLLAMA_REQUIRED_MODELS` inline before falling
+back to `getattr(config_instance, name)` for everything else - a surprising
+place to hide derived config, easy to miss when adding a third computed value.
+Moved both to real `@computed_field @property` definitions on `AppSettings`
+itself; `ConfigMeta.__getattr__` is now just the one-line delegation. Behavior
+preserved exactly, including the pre-existing quirk that the explicit-CSV
+branch of `OLLAMA_REQUIRED_MODELS` does *not* dedupe (only the
+derived-from-individual-models branch does) - caught by an initial wrong test
+expectation, fixed after reproducing directly with `python -c`.
+
+Verification: `cd backend && python -m pytest` — all passed; `ruff check .`
+clean; compose config resolves.
+
+**NOT done:** F1 (`search_memories`/`ActionService.execute` god-functions,
+F2 already resolved in an earlier pass) — explicitly left for a separate
+pass, this batch was scoped to the smaller items only.
