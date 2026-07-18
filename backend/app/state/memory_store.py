@@ -1359,9 +1359,10 @@ class MemoryStore:
                 if current_time is not None
                 else datetime.now(timezone.utc)
             )
-            last_recall = (
-                now if last_recall is None else self._as_aware_utc(last_recall)
-            )
+            # `or now` covers both a missing timestamp and one _as_aware_utc
+            # could not parse; either way the row is treated as just-recalled
+            # rather than raising and discarding the whole result set.
+            last_recall = self._as_aware_utc(last_recall) or now
 
             hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
 
@@ -1945,7 +1946,9 @@ class MemoryStore:
             if current_time is not None
             else datetime.now(timezone.utc)
         )
-        last_recall = now if last_recall is None else self._as_aware_utc(last_recall)
+        # `or now`: an unparseable stored timestamp must not raise here and
+        # discard otherwise valid archive candidates.
+        last_recall = self._as_aware_utc(last_recall) or now
 
         hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
         memory_valence = row.get("valence") or 0.0
@@ -2091,15 +2094,26 @@ class MemoryStore:
             else:
                 await _move(conn)
 
-        # Upsert Qdrant
+        # Upsert Qdrant. The SQL move above is the authoritative promotion and
+        # has already committed: the active row exists and the archive row is
+        # gone. Letting a vector-store failure propagate here would make the
+        # caller skip a memory that is, in fact, promoted -- stranding it out of
+        # both the returned results and the archive. Log and carry on; the
+        # vector index is a search accelerator, rebuildable from SQL.
         if self.qdrant_store and self.qdrant_store.client:
-            await asyncio.to_thread(
-                self.qdrant_store.add_vector_memory,
-                mem_id,
-                emb,
-                content,
-                payload_meta,
-            )
+            try:
+                await asyncio.to_thread(
+                    self.qdrant_store.add_vector_memory,
+                    mem_id,
+                    emb,
+                    content,
+                    payload_meta,
+                )
+            except Exception as qerr:
+                logger.error(
+                    f"Promoted memory {mem_id} committed to SQL but its Qdrant "
+                    f"upsert failed; vector index is stale for this row: {qerr}"
+                )
 
         logger.info(
             f"📥 [Memory Promotion] Promoted memory '{content[:40]}...' from archive back to active storage."
@@ -2819,7 +2833,7 @@ class MemoryStore:
                         if current_time is not None
                         else datetime.now(timezone.utc)
                     )
-                    delta = now - self._as_aware_utc(dt)
+                    delta = now - (self._as_aware_utc(dt) or now)
                     hours_since = max(0.0, delta.total_seconds() / 3600.0)
 
                     # Extract decay_rate from metadata if possible

@@ -2518,3 +2518,44 @@ a partial failure re-converges on retry rather than duplicating. Making this
 genuinely atomic on both backends requires adding transaction support to
 `SQLiteConnection`, which is a change to the pool abstraction rather than to this
 call site.
+
+### PR #67 review round — four more, two of them self-inflicted
+
+CodeRabbit's review of the fix PR raised five findings. One (a local named
+`secret` tripping the credential scanner) was already fixed. The other four were
+real, and two were caused by this branch:
+
+- **`_as_aware_utc` returning `None` was never honoured by its callers.** The
+  new ISO-parsing path degrades to `None` on a malformed timestamp, but three
+  call sites subtracted the result directly, so a single bad archive row raised
+  and discarded the entire search result set. The docstring promised a fallback
+  the callers did not provide. All three now use `... or now`.
+- **Skipping a promotion on any exception was too blunt.** `_write_promoted_memory`
+  commits SQL *before* updating Qdrant, so a vector-store failure made the caller
+  skip a memory that had in fact been promoted — stranding it out of both the
+  returned results and the archive. SQL is now authoritative: the Qdrant upsert
+  logs and continues, while a genuine SQL failure still propagates.
+
+And two pre-existing, both worse than they first appeared:
+
+- **CoT stripping only worked when `<thought>` arrived whole in one chunk.**
+  Models stream token by token, so "<" + "thought" + ">" is the *common* case,
+  not an edge case. The old check saw a first chunk of "<", concluded no tag was
+  present, spoke it, and latched `checked_start`, after which the entire
+  reasoning block passed straight through to the user. It also dropped visible
+  text preceding a block and recognised only the first block per stream.
+  Replaced with a real incremental parser that holds partial tags across chunk
+  boundaries. This makes the earlier logging fix meaningful: there was no point
+  keeping reasoning out of the logs while speaking it aloud.
+- **A retry that produced nothing emitted only `done`**, so an expired budget or
+  an empty stream left the user with "Wait, let me rephrase that..." and silence
+  — the same hole as the exception path, one branch over.
+
+Verification: 17 further tests (49 in the file, 366 in the suite). Each of the
+four fixes was mutation-tested. The first attempt at the timestamp mutation
+passed spuriously because it patched the `_fetch_postgres_candidates` call site
+rather than the archive one the test exercises; retargeted by indentation, it
+fails as expected. The F1 equivalence harness was re-run after the parser
+rewrite: still 28/29, the sole difference remaining the intended STORE_MEMORY
+change — the new parser corrects cases the harness never covered and disturbs
+none that it does.
