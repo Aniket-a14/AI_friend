@@ -1,0 +1,107 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Read this first
+
+`.agents/CONTEXT.md` is the project's engineering ledger and the best source of ground truth — it records what was actually built, what was measured, and what was deliberately left undone. **Read it before making architecture or behavior changes, and append an entry after every meaningful one.** Existing entries show the expected style: what changed, why, how it was verified, and an explicit "NOT done" section.
+
+The polished `README.md` overstates completeness relative to the ledger. Where they disagree, the ledger is right.
+
+## Commands
+
+The virtualenv lives at the **repo root** (`.venv`), but pytest must run from `backend/`:
+
+```bash
+cd backend
+
+../.venv/Scripts/python.exe -m pytest                      # full suite
+../.venv/Scripts/python.exe -m pytest tests/test_foo.py    # one file
+../.venv/Scripts/python.exe -m pytest tests/test_foo.py::test_name   # one test
+../.venv/Scripts/python.exe -m pytest -k "somatic and not vision"    # by expression
+../.venv/Scripts/python.exe -m ruff check .                # lint (CI gate)
+```
+
+Rust workspace (`backend/crates/`) and the native extension:
+
+```bash
+cd backend
+cargo check --workspace
+maturin build --manifest-path crates/cognitive-rust/Cargo.toml --out target/wheels
+```
+
+Frontend (`frontend/`): `npm run dev` | `npm run build` | `npm run lint`.
+
+Infra for integration work:
+
+```bash
+docker compose -f docker-compose.infra.yml up -d
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up
+docker compose -f docker-compose.prod.yml --profile vision up   # vision is opt-in
+```
+
+### Getting a reliable test count on Windows
+
+This environment **truncates pytest's terminal summary** — the `N passed` line and the entire `=== FAILURES ===` section are frequently swallowed, so a run can look clean when it is not. Do not trust the dots. Use:
+
+```bash
+../.venv/Scripts/python.exe -m pytest -q --junit-xml=<scratch>/res.xml
+# then parse tests/failures/errors from the XML
+```
+
+To see a traceback that pytest is eating, import the failing test directly in a small script, wrap it in `try/except BaseException` with `traceback.print_exc()`, redirect to a file, and read the file.
+
+## Architecture
+
+### The mesh
+
+Agents are separate processes coordinated over **NATS JetStream**, not function calls. `backend/app/agents/` holds `brain_agent` (the cognitive turn), `system_agent` (ticks, decay), `subconscious_agent` (background reflection, Neo4j persistence), `surfacing_agent`, and `transport_agent` (LiveKit WebRTC). Voice and STT are **Rust** binaries (`backend/crates/voice-agent`, `stt-agent`); their Python predecessors are dead code in `_archive/`.
+
+`backend/app/contracts.py` defines the Pydantic models that cross agent boundaries. Changing a contract means also running `backend/scripts/bootstrap/setup_nats_streams.py`.
+
+**Ack model matters here.** `BaseAgent.subscribe` acks only after the callback returns, and a cognitive turn can run to `LLM_STREAM_MAX_SECONDS` (120s), well past JetStream's default AckWait — see finding A1 in the ledger before touching long-running consumers.
+
+### The cognitive turn
+
+`cognitive/pipeline.py` → `cognitive/core.py` → `cognitive/action.py`. Appraisal produces a plan; `ActionService.execute` streams the response, strips `<thought>` chain-of-thought incrementally across chunk boundaries, sanitizes control markup, validates against identity boundaries, and can trigger a self-correction retry pass.
+
+The `<thought>` parser is a genuine incremental parser with partial-token hold-back — a naive `split()` leaks the entire reasoning block when the LLM emits `<`, `thought`, `>` as separate tokens, which is the common case, not an edge case.
+
+### State is single-owner
+
+`state/agent_state.py` holds `AgentState` (a `slots=True` dataclass: PAD affect, Marsh trust, attachment, fatigue) and `StateService`, which owns **all** mutation behind `self._state_lock`. A fire-and-forget System-2 appraisal task writes concurrently with the synchronous path, so bypassing the lock reintroduces finding A2. Route new affect changes through a `StateService` method rather than touching `current_state` fields directly.
+
+**Endocrine layer.** `cortisol`, `dopamine`, and `fatigue` are injected into the plan payload by `cognitive/core.py` and mapped to LLM sampling parameters in `action.py::_compute_endocrine_options` — cortisol narrows temperature, dopamine widens top_p, fatigue shortens `num_predict`. Dopamine is a real hormone: `dopamine_tonic` (valence × arousal) plus `dopamine_phasic`, a decaying burst fired by `release_dopamine()`. **Cortisol is still purely derived** from valence and fatigue, so acute stress cannot outlive its cause — the symmetric treatment is a known open item.
+
+### Memory
+
+`state/memory_store.py` is the largest and riskiest file (~2600 lines). `search_memories` fuses an L1 cache, Qdrant vectors, Neo4j graph boost, Postgres/SQLite candidates, PageRank, and cue expansion. Retrieval uses a **learned mental lexicon** (`lexicon_store.py`), built from the agent's own conversation — not a hardcoded thesaurus. The innate seed in `lexicon_seed.py` is generic English used once at DB seeding, never on the hot path.
+
+**Dual backend.** Nearly every query has a Postgres and a SQLite branch. `MemoryStore.is_sqlite` is a read-only property (there is no setter — see A5); to force SQLite in a test, give the pool a real `sqlite3` connection instead of assigning to the property.
+
+### Persona and identity
+
+Two sources, not yet unified:
+
+- `cognitive/identity.py` (`IdentityManager`) loads `personality.json` / `history.json` — the **narrative** persona (name, values, tone, boundaries, adaptive traits). It already distinguishes an immutable core from adaptive traits that evolve through reflection, capped at 5.
+- The **numeric** persona — temperament baselines and the `PSYCH_*` coefficients — currently comes from `Config`. All six coefficients are read in exactly one place, `StateService.__init__`, which is the injection point for any per-persona work.
+
+`config.py` is a process-global Pydantic-settings singleton reached through a metaclass (`Config.FOO` delegates to `config_instance`). Prefer `@computed_field` properties over adding logic to `ConfigMeta.__getattr__` (F4).
+
+## Conventions
+
+**Branch and PR per change.** Feature branch off `main`, PR to `main`. When merging, **retarget any stacked PR before deleting a base branch** — deleting a base auto-closes PRs targeting it, and a closed PR cannot be reopened or retargeted once its base is gone.
+
+**Verification bar.** Full backend suite plus `ruff check .` before considering work done. New tests are expected to be **mutation-tested**: deliberately break the code they cover and confirm they fail. This repeatedly catches tests that pass for the wrong reason — a mutation that changes nothing observable usually means the assertion targets state the test could never distinguish.
+
+**Test names state the failure, not the number** (`test_mood_decay_cannot_be_zero`, not `test_bounds`). Tests carry docstrings explaining what breaks in the real system if the assertion fails.
+
+## CI gotchas
+
+- **Credential Leak Prevention** greps for `(password|secret|api_key)\s*=\s*['"][^'"]{8,}['"]` across the whole repo with **no test-directory exclusion**. A test variable named `secret = "..."` fails the build; rename the variable rather than loosening the check.
+- **Persona Guard** runs on changes to `cognitive/**`, `vision/**`, `brain_agent.py`, `voice/agent.py`, and the frontend identity seed. It boots a real NATS container.
+- **Workflows are path-filtered**, so PR check counts legitimately differ. A PR based on a non-`main` branch runs almost nothing and CodeRabbit skips it entirely — a green check on such a PR means "nothing ran," not "nothing wrong." CodeRabbit also reports the check as *passed* when it hit its review-rate limit; read the actual comment.
+
+## Integrity constraints
+
+Documented benchmark results are **placeholders** (`[TBP]`), and `MOCK_LLM_TEXT=true` returns hardcoded strings fitted to a specific demo corpus. No headline latency or Recall@K figure has been measured against real infrastructure. Do not present these numbers as results, and do not add corpus-specific constants to production retrieval paths (finding B1). State targets as targets until measured.
