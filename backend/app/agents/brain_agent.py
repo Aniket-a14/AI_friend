@@ -696,17 +696,14 @@ class BrainAgent(BaseAgent):
             return
 
         state_snap = self.cognitive_core.state.get_context_snapshot()
-        prosody = self.coordinator.map_affect_to_prosody(state_snap)
 
-        # Full §5.3 Affect Metadata Contract
+        # Full §5.3 Affect Metadata Contract. Prosody is not attached here: the
+        # voice agent derives it from `affect` via `contracts::vad_to_prosody`
+        # and never read what Python sent. See SpeechCoordinator's docstring.
         payload = ChatOutput(
             content=text,
             done=False,
             turn_id=turn_id,
-            confidence=prosody["confidence"],
-            intensity=prosody["intensity"],
-            speaking_rate=prosody["speaking_rate"],
-            pause_bias=prosody["pause_bias"],
             affect=ChatOutputAffect(
                 valence=state_snap.get("valence", state_snap.get("mood", 0.0)),
                 arousal=state_snap.get("arousal", state_snap.get("energy", 0.5)),

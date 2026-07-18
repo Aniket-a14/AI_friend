@@ -4,34 +4,28 @@ from ..contracts import ChatOutput, ChatOutputAffect
 
 class SpeechCoordinator:
     """
-    Coordinates text-to-speech chunking and prosody mapping.
-    Maps emotional state to speaking rate, intensity, and pause bias.
+    Coordinates text-to-speech chunking and attaches the affect vector.
+
+    Prosody is deliberately *not* computed here. The voice agent derives it
+    from `affect` via `contracts::vad_to_prosody` (Rust) and has never read the
+    values this class used to attach, so the second implementation on this side
+    produced output that crossed the wire and went straight into the bin.
+
+    Worse, the two had drifted apart. This computed a *linear* speaking rate
+    (`1.0 + 0.20·Ar - 0.10·V - 0.25·F`) while Rust computes a `tanh`-saturated
+    one over the same terms, and Rust additionally models pitch, volume, and
+    user-distance adaptation that had no counterpart here at all. Both carried
+    the same "Continuous formulas from CVS-3.5 Roadmap" comment, so the
+    disagreement did not look like one. Anyone reading this file to learn how
+    fast the agent talks got an answer that had never been true in production.
+
+    The fix is one implementation, not a better second one: emit the affect
+    vector and let the single prosody mapping consume it.
     """
 
     def __init__(self, segmenter, formation_buffer_ms: float = 0.030):
         self.segmenter = segmenter
         self.formation_buffer_ms = formation_buffer_ms
-
-    def map_affect_to_prosody(self, state_snap: Dict[str, Any]) -> Dict[str, float]:
-        """§5.1: Continuous PAD-to-prosody formulas."""
-        V = state_snap.get("valence", state_snap.get("mood", 0.0))
-        Ar = state_snap.get("arousal", state_snap.get("energy", 0.5))
-        F = state_snap.get("fatigue", 0.0)
-
-        # Continuous formulas from CVS-3.5 Roadmap:
-        # Sr = 1.0 + (0.20 * arousal) - (0.10 * valence) - (0.25 * fatigue)
-        speaking_rate = max(0.6, min(1.8, 1.0 + (0.20 * Ar) - (0.10 * V) - (0.25 * F)))
-        confidence = 0.9  # Baseline
-        intensity = abs(V) * Ar
-        # pause_bias = 1.0 - arousal
-        pause_bias = max(0.0, min(1.0, 1.0 - Ar))
-
-        return {
-            "speaking_rate": round(speaking_rate, 3),
-            "intensity": round(intensity, 3),
-            "pause_bias": round(pause_bias, 3),
-            "confidence": confidence,
-        }
 
     def create_chunk_payload(
         self,
@@ -45,33 +39,23 @@ class SpeechCoordinator:
         user_distance: float = None,
     ) -> ChatOutput:
         text = " ".join(words).strip() if words else None
-        prosody = self.map_affect_to_prosody(state_snap or {})
+        state_snap = state_snap or {}
 
         return ChatOutput(
             content=text,
             done=done,
             turn_id=turn_id,
-            confidence=prosody["confidence"],
-            intensity=prosody["intensity"],
-            speaking_rate=prosody["speaking_rate"],
-            pause_bias=prosody["pause_bias"],
             full_response=full_response,
             generation_error=generation_error,
             proactive=proactive,
             affect=ChatOutputAffect(
-                valence=state_snap.get("valence", state_snap.get("mood", 0.0))
-                if state_snap
-                else 0.0,
-                arousal=state_snap.get("arousal", state_snap.get("energy", 0.5))
-                if state_snap
-                else 0.5,
-                dominance=state_snap.get("dominance", 0.5) if state_snap else 0.5,
-                trust=state_snap.get("trust", 0.5) if state_snap else 0.5,
-                attachment=state_snap.get("attachment", 0.1) if state_snap else 0.1,
-                emotion=state_snap.get("emotion", "neutral")
-                if state_snap
-                else "neutral",
-                fatigue=state_snap.get("fatigue", 0.0) if state_snap else 0.0,
+                valence=state_snap.get("valence", state_snap.get("mood", 0.0)),
+                arousal=state_snap.get("arousal", state_snap.get("energy", 0.5)),
+                dominance=state_snap.get("dominance", 0.5),
+                trust=state_snap.get("trust", 0.5),
+                attachment=state_snap.get("attachment", 0.1),
+                emotion=state_snap.get("emotion", "neutral"),
+                fatigue=state_snap.get("fatigue", 0.0),
                 user_distance=user_distance,
             ),
         )
