@@ -94,6 +94,17 @@ class ChatOutput(BaseModel):
     affect: Optional[ChatOutputAffect] = None
 
     # Prosody & Signals
+    #
+    # DEPRECATED, and no longer written by any producer. Prosody has a single
+    # source: the voice agent computes it from `affect` above via
+    # `contracts::vad_to_prosody` (Rust). Python used to populate these too,
+    # with a formula that disagreed with the Rust one, and nothing ever read
+    # them -- see SpeechCoordinator's docstring.
+    #
+    # Retained at their defaults rather than removed, so an older consumer
+    # deserializing a new message still finds the fields it expects. They carry
+    # no information: do not read them, and do not repopulate them. Removing
+    # them is a wire-contract change and needs `setup_nats_streams.py` re-run.
     confidence: float = 1.0
     intensity: float = 0.0
     speaking_rate: float = 1.0

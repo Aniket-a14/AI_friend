@@ -1,5 +1,18 @@
 """
-Comprehensive tests for Phase 4: Dynamic Continuous Prosody Mapping, verifying Python-side PAD formulas.
+The Brain→Voice affect contract, and prosody having exactly one source.
+
+This file used to assert Python's PAD-to-prosody formulas in fine numeric
+detail. Those assertions were green for the life of the project and proved
+nothing about the running system: the voice agent computes prosody itself from
+the `affect` vector via `contracts::vad_to_prosody` (Rust) and never read the
+values Python attached. The two implementations had also drifted — Python's
+speaking rate was linear where Rust's is `tanh`-saturated, and Rust models
+pitch, volume, and distance adaptation that Python did not have at all.
+
+So the tests here now pin the contract that actually exists: the brain emits a
+complete and accurate **affect vector**, and does not emit prosody. A test
+asserting a formula nobody consumes is worse than no test, because it makes
+dead code look load-bearing and dares the next reader to delete it.
 """
 
 import pytest
@@ -11,143 +24,34 @@ from app.contracts import ChatOutput, ChatOutputAffect
 from app.agents.brain_agent import BrainAgent
 
 
-def test_speech_coordinator_continuous_formulas():
-    """Verify that SpeechCoordinator computes correct continuous PAD formulas with fatigue slowdown."""
+def test_the_coordinator_no_longer_computes_prosody():
+    """Python must not grow a second prosody implementation again.
+
+    If this method returns, the system once more has two disagreeing answers to
+    "how fast does the agent talk", only one of which reaches the speaker.
+    """
+    assert not hasattr(SpeechCoordinator, "map_affect_to_prosody")
+
+
+def test_a_chunk_payload_carries_the_full_affect_vector():
+    """Affect is the real contract: it is the sole input to Rust prosody.
+
+    Every field here is read by `vad_to_prosody`, so a value silently dropped
+    or defaulted on this side changes how the agent sounds.
+    """
     coordinator = SpeechCoordinator(segmenter=HybridSegmenter(target_size=8))
-
-    # 1. Baseline/Neutral state
-    state_snap = {
-        "valence": 0.0,
-        "arousal": 0.5,
-        "dominance": 0.5,
-        "fatigue": 0.0,
-    }
-    prosody = coordinator.map_affect_to_prosody(state_snap)
-    # Sr = 1.0 + 0.20 * Ar - 0.10 * V - 0.25 * F = 1.0 + 0.20*0.5 - 0.0 - 0.0 = 1.10
-    assert abs(prosody["speaking_rate"] - 1.10) < 1e-5
-    assert abs(prosody["pause_bias"] - 0.5) < 1e-5
-    assert abs(prosody["intensity"] - 0.0) < 1e-5
-
-    # 2. Excited/Positive state
-    state_snap_excited = {
-        "valence": 0.8,
-        "arousal": 0.9,
-        "dominance": 0.7,
-        "fatigue": 0.0,
-    }
-    prosody_excited = coordinator.map_affect_to_prosody(state_snap_excited)
-    # Sr = 1.0 + 0.20 * 0.9 - 0.10 * 0.8 - 0.0 = 1.0 + 0.18 - 0.08 = 1.10
-    assert abs(prosody_excited["speaking_rate"] - 1.10) < 1e-5
-    assert abs(prosody_excited["pause_bias"] - 0.1) < 1e-5
-    assert abs(prosody_excited["intensity"] - 0.72) < 1e-5
-
-    # 3. Fatigued/Stressed state
-    state_snap_tired = {
-        "valence": -0.4,
-        "arousal": 0.8,
-        "dominance": 0.3,
-        "fatigue": 0.8,
-    }
-    prosody_tired = coordinator.map_affect_to_prosody(state_snap_tired)
-    # Sr = 1.0 + (0.20 * arousal) - (0.10 * valence) - (0.25 * fatigue) = 1.0 + 0.16 + 0.04 - 0.20 = 1.00
-    assert abs(prosody_tired["speaking_rate"] - 1.00) < 1e-5
-    assert abs(prosody_tired["pause_bias"] - 0.2) < 1e-5
-    assert abs(prosody_tired["intensity"] - 0.32) < 1e-5
-
-    # (1) Max fatigue (fatigue=1.0) with high arousal (arousal=0.9)
-    # Sr = 1.0 + 0.20 * Ar - 0.10 * V - 0.25 * F = 1.0 + 0.20 * 0.9 - 0.10 * 0.5 - 0.25 * 1.0 = 0.88
-    # Intensity = |V| * Ar = |0.5| * 0.9 = 0.45
-    # Pause Bias = clamp(1.0 - Ar, 0, 1) = clamp(1.0 - 0.9, 0, 1) = 0.10
-    state_snap_max_fatigue = {
-        "valence": 0.5,
-        "arousal": 0.9,
-        "dominance": 0.5,
-        "fatigue": 1.0,
-    }
-    prosody_fatigue = coordinator.map_affect_to_prosody(state_snap_max_fatigue)
-    assert abs(prosody_fatigue["speaking_rate"] - 0.880) < 1e-5
-    assert abs(prosody_fatigue["pause_bias"] - 0.100) < 1e-5
-    assert abs(prosody_fatigue["intensity"] - 0.450) < 1e-5
-
-    # (2) Zero arousal (arousal=0.0) combined with varying valence
-    # Case A: Positive valence (valence=0.5)
-    # Sr = 1.0 + 0.20 * 0.0 - 0.10 * 0.5 - 0.25 * 0.0 = 0.95
-    # Intensity = |V| * Ar = |0.5| * 0.0 = 0.00
-    # Pause Bias = clamp(1.0 - Ar, 0, 1) = clamp(1.0 - 0.0, 0, 1) = 1.00
-    state_snap_zero_arousal_pos = {
-        "valence": 0.5,
-        "arousal": 0.0,
-        "dominance": 0.5,
-        "fatigue": 0.0,
-    }
-    prosody_zero_ar_pos = coordinator.map_affect_to_prosody(state_snap_zero_arousal_pos)
-    assert abs(prosody_zero_ar_pos["speaking_rate"] - 0.950) < 1e-5
-    assert abs(prosody_zero_ar_pos["pause_bias"] - 1.000) < 1e-5
-    assert abs(prosody_zero_ar_pos["intensity"] - 0.000) < 1e-5
-
-    # Case B: Negative valence (valence=-0.8)
-    # Sr = 1.0 + 0.20 * 0.0 - 0.10 * -0.8 - 0.25 * 0.0 = 1.08
-    # Intensity = |V| * Ar = |-0.8| * 0.0 = 0.00
-    # Pause Bias = clamp(1.0 - Ar, 0, 1) = clamp(1.0 - 0.0, 0, 1) = 1.00
-    state_snap_zero_arousal_neg = {
-        "valence": -0.8,
-        "arousal": 0.0,
-        "dominance": 0.5,
-        "fatigue": 0.0,
-    }
-    prosody_zero_ar_neg = coordinator.map_affect_to_prosody(state_snap_zero_arousal_neg)
-    assert abs(prosody_zero_ar_neg["speaking_rate"] - 1.080) < 1e-5
-    assert abs(prosody_zero_ar_neg["pause_bias"] - 1.000) < 1e-5
-    assert abs(prosody_zero_ar_neg["intensity"] - 0.000) < 1e-5
-
-    # (3) Negative/edge dominance values (e.g. dominance=-1.0)
-    # Sr = 1.0 + 0.20 * 0.6 - 0.10 * 0.4 - 0.25 * 0.2 = 1.03
-    # Intensity = |V| * Ar = |0.4| * 0.6 = 0.24
-    # Pause Bias = clamp(1.0 - Ar, 0, 1) = clamp(1.0 - 0.6, 0, 1) = 0.40
-    state_snap_neg_dom = {
-        "valence": 0.4,
-        "arousal": 0.6,
-        "dominance": -1.0,
-        "fatigue": 0.2,
-    }
-    prosody_neg_dom = coordinator.map_affect_to_prosody(state_snap_neg_dom)
-    assert abs(prosody_neg_dom["speaking_rate"] - 1.030) < 1e-5
-    assert abs(prosody_neg_dom["pause_bias"] - 0.400) < 1e-5
-    assert abs(prosody_neg_dom["intensity"] - 0.240) < 1e-5
-
-    # (4) Out-of-range input (e.g., arousal=1.5, valence=-1.5)
-    # Sr = max(0.6, min(1.8, 1.0 + 0.20 * 1.5 - 0.10 * -1.5)) = max(0.6, min(1.8, 1.45)) = 1.45
-    # Intensity = |V| * Ar = |-1.5| * 1.5 = 2.25
-    # Pause Bias = clamp(1.0 - Ar, 0, 1) = clamp(1.0 - 1.5, 0, 1) = 0.00
-    state_snap_out_of_range = {
-        "valence": -1.5,
-        "arousal": 1.5,
-        "dominance": 0.5,
-        "fatigue": 0.0,
-    }
-    prosody_out_of_range = coordinator.map_affect_to_prosody(state_snap_out_of_range)
-    assert abs(prosody_out_of_range["speaking_rate"] - 1.450) < 1e-5
-    assert abs(prosody_out_of_range["pause_bias"] - 0.000) < 1e-5
-    assert abs(prosody_out_of_range["intensity"] - 2.250) < 1e-5
-
-
-def test_speech_coordinator_create_chunk_payload():
-    """Verify that SpeechCoordinator creates a fully compliant ChatOutput with affect fields."""
-    coordinator = SpeechCoordinator(segmenter=HybridSegmenter(target_size=8))
-
-    state_snap = {
-        "valence": 0.5,
-        "arousal": 0.7,
-        "dominance": 0.6,
-        "trust": 0.8,
-        "attachment": 0.4,
-        "emotion": "happy",
-        "fatigue": 0.2,
-    }
 
     payload = coordinator.create_chunk_payload(
         words=["hello", "there"],
-        state_snap=state_snap,
+        state_snap={
+            "valence": 0.5,
+            "arousal": 0.7,
+            "dominance": 0.6,
+            "trust": 0.8,
+            "attachment": 0.4,
+            "emotion": "happy",
+            "fatigue": 0.2,
+        },
         turn_id="turn-4",
         done=False,
         user_distance=1.2,
@@ -158,13 +62,6 @@ def test_speech_coordinator_create_chunk_payload():
     assert payload.turn_id == "turn-4"
     assert payload.done is False
 
-    # Check top-level prosody fields (rounded to 3 decimal places)
-    # Sr = 1.0 + 0.20*0.7 - 0.10*0.5 - 0.25*0.2 = 1.0 + 0.14 - 0.05 - 0.05 = 1.04
-    assert abs(payload.speaking_rate - 1.04) < 1e-5
-    assert abs(payload.pause_bias - 0.3) < 1e-5
-
-    # Check affect payload details
-    assert payload.affect is not None
     assert isinstance(payload.affect, ChatOutputAffect)
     assert payload.affect.valence == 0.5
     assert payload.affect.arousal == 0.7
@@ -176,10 +73,50 @@ def test_speech_coordinator_create_chunk_payload():
     assert payload.affect.user_distance == 1.2
 
 
+def test_the_legacy_mood_and_energy_keys_still_map_onto_affect():
+    """`get_context_snapshot` has emitted both namings historically.
+
+    Dropping the fallback would send valence 0.0 / arousal 0.5 — a flat,
+    neutral-sounding agent — rather than failing loudly.
+    """
+    coordinator = SpeechCoordinator(segmenter=HybridSegmenter(target_size=8))
+    payload = coordinator.create_chunk_payload(
+        words=["hi"], state_snap={"mood": -0.7, "energy": 0.9}, turn_id="t"
+    )
+    assert payload.affect.valence == -0.7
+    assert payload.affect.arousal == 0.9
+
+
+def test_an_absent_state_snapshot_produces_neutral_affect_not_a_crash():
+    """A chunk published before state exists must still be speakable."""
+    coordinator = SpeechCoordinator(segmenter=HybridSegmenter(target_size=8))
+    payload = coordinator.create_chunk_payload(words=["hi"], state_snap=None)
+    assert payload.affect.valence == 0.0
+    assert payload.affect.arousal == 0.5
+    assert payload.affect.emotion == "neutral"
+
+
+def test_prosody_fields_stay_at_their_defaults_on_the_wire():
+    """The deprecated fields must be inert, not carry a stale second opinion.
+
+    They are kept for deserialization compatibility with older consumers. If a
+    producer starts filling them again a reader could reasonably believe them,
+    and they would disagree with what the voice agent actually does.
+    """
+    coordinator = SpeechCoordinator(segmenter=HybridSegmenter(target_size=8))
+    payload = coordinator.create_chunk_payload(
+        words=["hi"], state_snap={"valence": 0.9, "arousal": 0.9, "fatigue": 0.9}
+    )
+    defaults = ChatOutput()
+    assert payload.speaking_rate == defaults.speaking_rate
+    assert payload.pause_bias == defaults.pause_bias
+    assert payload.intensity == defaults.intensity
+    assert payload.confidence == defaults.confidence
+
+
 @pytest.mark.asyncio
-async def test_brain_agent_prosody_calculation_publishing():
-    """Verify that BrainAgent correctly computes prosody and publishes compliant JSON to NATS."""
-    # Instantiating a mock/stub BrainAgent
+async def test_brain_agent_publishes_the_affect_vector_to_chat_output():
+    """The end-to-end Brain→Voice contract, as it is actually consumed."""
     agent = BrainAgent(
         ollama_url="http://127.0.0.1:11434",
         graph_db=MagicMock(),
@@ -187,7 +124,6 @@ async def test_brain_agent_prosody_calculation_publishing():
         conversation_store=MagicMock(),
     )
 
-    # Mock cognitive core context snapshot
     state_snap = {
         "valence": -0.2,
         "arousal": 0.6,
@@ -200,34 +136,42 @@ async def test_brain_agent_prosody_calculation_publishing():
     agent.cognitive_core = MagicMock()
     agent.cognitive_core.state.get_context_snapshot.return_value = state_snap
     agent.last_user_distance = 1.8
-
-    # Mock publish
     agent.publish = AsyncMock()
 
-    # Call the speech publishing method
     await agent._publish_speech_chunk(
         words=["testing", "continuous", "prosody"], turn_id="turn-5"
     )
 
-    # Assert publish was called once
     agent.publish.assert_called_once()
     nats_topic, nats_payload = agent.publish.call_args[0]
 
     assert nats_topic == "chat.output"
     assert isinstance(nats_payload, dict)
 
-    # Validate published payload
     parsed = ChatOutput.model_validate(nats_payload)
     assert parsed.content == "testing continuous prosody"
     assert parsed.done is False
     assert parsed.turn_id == "turn-5"
 
-    # Sr = 1.0 + 0.20*0.6 - 0.10*(-0.2) - 0.25*0.4 = 1.0 + 0.12 + 0.02 - 0.10 = 1.04
-    assert abs(parsed.speaking_rate - 1.04) < 1e-5
-    assert abs(parsed.pause_bias - 0.4) < 1e-5
-
+    # Every field the snapshot supplied, because affect is now the whole
+    # contract: anything dropped between here and the wire is a change in how
+    # the agent sounds that nothing else would catch.
     assert parsed.affect.valence == -0.2
     assert parsed.affect.arousal == 0.6
     assert parsed.affect.dominance == 0.4
+    assert parsed.affect.trust == 0.7
+    assert parsed.affect.attachment == 0.2
+    assert parsed.affect.emotion == "sad"
     assert parsed.affect.fatigue == 0.4
+    # Distance drives the whisper/call-out volume and pitch shift in Rust, so
+    # losing it here silently flattens how the agent projects.
     assert parsed.affect.user_distance == 1.8
+
+    # The brain must not attach a second opinion on prosody. All four, not the
+    # two that happen to be most visible — a repopulated `intensity` would be
+    # believed by a reader and disagree with what the voice agent computes.
+    defaults = ChatOutput()
+    assert parsed.speaking_rate == defaults.speaking_rate
+    assert parsed.pause_bias == defaults.pause_bias
+    assert parsed.intensity == defaults.intensity
+    assert parsed.confidence == defaults.confidence
