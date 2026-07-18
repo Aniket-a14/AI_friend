@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, List, TYPE_CHECKING
 from datetime import datetime
 from ..config import Config
+from ..persona import PersonaProfile
 
 if TYPE_CHECKING:
     from ..cognitive.tom import UserMentalModel
@@ -270,11 +271,27 @@ class StateService:
         redis_host="127.0.0.1",
         redis_port=6379,
         publish_cb=None,
+        persona: "PersonaProfile" = None,
     ):
         self.graph = graph_store
         self.db_path = db_path
         self.publish_cb = publish_cb
-        self.current_state = AgentState()
+        # Temperament has to exist before the state it initialises.
+        self.persona = persona or PersonaProfile.load()
+        self.current_state = AgentState(
+            baseline_valence=self.persona.baseline_valence,
+            baseline_arousal=self.persona.baseline_arousal,
+            baseline_dominance=self.persona.baseline_dominance,
+            # A friend starts where its author placed it, then lives its own way
+            # from there -- these are seeds, not settings (Tier.ADAPTIVE).
+            mood=self.persona.baseline_valence,
+            energy=self.persona.baseline_arousal,
+            dominance=self.persona.baseline_dominance,
+            trust_benevolence=self.persona.initial_trust,
+            trust_competence=self.persona.initial_trust,
+            trust_integrity=self.persona.initial_trust,
+            attachment=self.persona.initial_attachment,
+        )
         self.last_speculative_intent = None  # Transient sensory state
         # A2: serializes short-term affect mutation so the fire-and-forget
         # System-2 semantic-drift task cannot clobber a fresher appraisal.
@@ -296,14 +313,17 @@ class StateService:
         self._initialize_sqlite()
 
         # --- Psychological Coefficients (§2.4) ---
-        self.alpha = getattr(Config, "PSYCH_ALPHA", 0.3)  # Valence drift rate
-        self.beta = getattr(Config, "PSYCH_BETA", 0.5)  # Arousal response rate
-        self.gamma = getattr(Config, "PSYCH_GAMMA", 0.2)  # Dominance stability
-        self.delta = getattr(Config, "PSYCH_DELTA", 0.1)  # Trust change rate (Marsh)
-        self.epsilon = getattr(
-            Config, "PSYCH_EPSILON", 0.03
-        )  # Attachment growth rate (Bowlby)
-        self.lambda_decay = getattr(Config, "PSYCH_LAMBDA_DECAY", 0.05)  # ALMA decay
+        # These are the agent's temperament, so they come from the persona rather
+        # than from process-global config. `PersonaProfile.from_config()` reads
+        # the same PSYCH_* settings as before, so an unconfigured deployment is
+        # unchanged; a persona file overrides them per-friend.
+        coefficients = self.persona.coefficients()
+        self.alpha = coefficients["alpha"]  # Valence drift rate
+        self.beta = coefficients["beta"]  # Arousal response rate
+        self.gamma = coefficients["gamma"]  # Dominance stability
+        self.delta = coefficients["delta"]  # Trust change rate (Marsh)
+        self.epsilon = coefficients["epsilon"]  # Attachment growth rate (Bowlby)
+        self.lambda_decay = coefficients["lambda_decay"]  # ALMA decay
 
         # Legacy coefficients (kept for idle evolution)
         self.trust_baseline = 0.5
