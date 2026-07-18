@@ -70,14 +70,16 @@ async def _drain(agen):
 
 def test_split_thought_does_not_log_reasoning_content(caplog):
     """Finding #1: the reasoning block quotes the user and surfaced memories."""
-    secret = "the user's private disclosure about their medical history"
+    private_content = "the user's own disclosure about their medical history"
     with caplog.at_level("DEBUG"):
-        tail = ActionService._split_thought(f"<thought>{secret}</thought>Hello.")
+        tail = ActionService._split_thought(
+            f"<thought>{private_content}</thought>Hello."
+        )
 
     assert tail == "Hello."
-    assert secret not in caplog.text
+    assert private_content not in caplog.text
     # The length is fine to record; the content is not.
-    assert str(len(secret)) in caplog.text
+    assert str(len(private_content)) in caplog.text
 
 
 @pytest.mark.parametrize("bad", ["not a list", 42, {"a": 1}, None])
