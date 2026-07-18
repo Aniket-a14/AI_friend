@@ -3184,12 +3184,8 @@
       "f1": 0.6757
     },
     "cvs_stop_latency_ms": {
-      "mean": 104.3,
-      "std": 7.72
-    },
-    "baseline_stop_latency_ms": {
-      "mean": 479.88,
-      "std": 49.32
+      "composed_estimate": 103.91,
+      "provenance": "100ms audio-buffer assumption + 3.845ms measured NATS RTT + 0.043ms measured DSP extraction + 0.019ms measured ducking transition; not a live end-to-end stopwatch trial"
     }
   }
 }

@@ -30,26 +30,30 @@ In previous benchmarking sessions, the user-facing visual plots and the compiled
 
 ## 📊 Evaluation Methodologies: Accelerated Simulation vs. Physical Real-Time Interaction
 
-To satisfy rigorous academic review, the benchmarking framework separates validation into two distinct empirical pathways:
+The benchmarking framework was *designed* to separate validation into two distinct empirical pathways. Of these, only the physical pathway has ever actually been run — see the `[!WARNING]` below.
 
 ```mermaid
 graph TD
-    A[CVS-3.5 Verification Framework] --> B[1. Accelerated Simulation]
+    A[CVS-3.5 Verification Framework] --> B["1. Accelerated Simulation (disabled, never run)"]
     A --> C[2. Physical Real-Time Interaction]
 
-    B --> B1["High-Throughput Trial (N=100,000 Iterations)"]
+    B --> B1["High-Throughput Trial (N=100,000 Iterations) — design target, not an executed run"]
     B --> B2["Mock-Cluttered Host Environment"]
-    B --> B3["Validates: Memory Recall, Threat Scan, ToM MAE Error Convergence"]
+    B --> B3["Would validate: Memory Recall, Threat Scan, ToM MAE Error Convergence"]
 
     C --> C1["Human-in-the-Loop trials (N=50 Cycles)"]
     C --> C2["Physical Hardware Mesh (NATS, Neo4j, iMac M3, AGX Jetson)"]
     C --> C3["Validates: Barge-In Latencies, Paralinguistic Filler Rates"]
 ```
 
-### 🧠 1. Accelerated Simulation Benchmarks
-* **Scope**: $N = 100,000$ high-speed iterations.
-* **Methodology**: Stress-tests high-level symbolic and sub-symbolic cognitive processes under synthetic loads. It injects cluttered vector spaces, emotional prompts, and adversarial dialogue turns to measure mathematical error convergence, classification bounds, and memory index retrieval accuracy.
-* **Key Visuals**: Confirms that memory recall remains scale-invariant and that user Theory of Mind (Valence/Arousal MAE) converges toward ground truth values without clock delays or physical I/O latency.
+### 🧠 1. Accelerated Simulation Benchmarks — historical design, unexecuted
+
+> [!WARNING]
+> **This mode has never been run and is explicitly disabled.** `hard_benchmark.py` exits immediately with "Accelerated simulation mode is disabled as requested by the user" if selected. Everything below this line describes the *intended* methodology as originally designed, not a result — no accelerated-mode numbers exist anywhere in `scripts/results/`, and every "(mode retired)" cell in the comparison matrices below reflects this.
+
+* **Intended scope**: $N = 100,000$ high-speed iterations (never executed).
+* **Intended methodology**: Stress-test high-level symbolic and sub-symbolic cognitive processes under synthetic loads by injecting cluttered vector spaces, emotional prompts, and adversarial dialogue turns to measure mathematical error convergence, classification bounds, and memory index retrieval accuracy.
+* **Intended key visuals**: Would confirm whether memory recall remains scale-invariant and whether Theory of Mind (Valence/Arousal MAE) converges toward ground truth values without clock delays or physical I/O latency — none of this has been measured.
 
 ### 💓 2. Physical Real-Time Interaction Benchmarks (Human Realism)
 * **Scope**: Live interactive trials (50 dialogue cycles) on a physical infrastructure mesh.
@@ -75,7 +79,7 @@ The complete, publication-grade comparison matrix (Table II in the formal report
 | **Paralinguistic Precision** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **95.3% (low stress) / 94.4% (high stress)**⁵ | *(mode retired)* |
 | **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **1,266 MB**⁶ | *(mode retired)* |
 | **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁶ | *(mode retired)* |
-| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
+| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)* |
 
 > [!NOTE]
 > * Independently re-derived from the raw per-sample telemetry in `scripts/results/*.json` (N=1000 intent samples, 88 recall probes) — not trusted at face value. ¹Composed estimate, not a live stopwatch trial. ²Sum of 7 measured components, excludes LLM generation. ³No verified telemetry exists yet. ⁴Recomputed from raw arrays; matches exactly. ⁵Genuinely measured. ⁶Full 8-agent mesh + DB stack.
@@ -159,7 +163,7 @@ The following carousels display the fully updated, dynamically synchronized visu
 
 All physical files generated, audited, and compiled during this verification round have been successfully mirrored in the active Brain folder:
 
-1. **Academic Publication PDF**: [CVS-3.5_Mind_Benchmarking_Report.pdf](../../_archive/academic_benchmarks/reports/CVS-3.0_Mind_Benchmarking_Report.pdf) (exactly 4 pages, double-column letter, includes running headers/footers, Table II SOTA Comparative Matrix, Table III Paralinguistics, and embedded visual charts).
+1. **Academic Publication PDF**: [CVS-3.5_Mind_Benchmarking_Report.pdf](../../scripts/results/CVS-3.5_Mind_Benchmarking_Report.pdf) (exactly 4 pages, double-column letter, includes running headers/footers, Table II SOTA Comparative Matrix, Table III Paralinguistics, and embedded visual charts). The prior link pointed at a stale, differently-versioned copy in `_archive/`; this points at the current verified report in `scripts/results/`.
 2. **Master SOTA Review**: [academic_sota_benchmarks.md](./academic_sota_benchmarks.md) (extensive review compiling 30 peer-reviewed paper references, LaTeX templates, and detailed BibTeX listings).
 3. **Core Telemetry JSON**: [benchmark_results.json](../../scripts/results/benchmark_results.json) (1,000-iteration physical run telemetry, N=88 recall probes).
 4. **Paralinguistic Telemetry JSON**: [human_realism_results.json](../../scripts/results/human_realism_results.json) (computational footprint, Neo4j traversals, and paralinguistic tag precision).

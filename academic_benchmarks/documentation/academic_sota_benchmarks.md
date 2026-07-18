@@ -389,7 +389,7 @@ With these substituted, $EREC \approx 315.3$. This is a **derived index computed
 We present a comprehensive, multi-dimensional empirical comparison matrix contrasting the **AI Friend CVS-3.5 Sovereign Mesh** against the latest state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures.
 
 > [!NOTE]
-> The "Ours" columns below were independently re-derived from the raw per-sample telemetry in `scripts/results/*.json` (not trusted at face value) — see `scripts/results/benchmark_results_summary.md` for the full verification notes. Accelerated (non-physical) benchmarking mode is intentionally disabled in `hard_benchmark.py`, so that column cannot be populated under the current harness. Kept in sync with `README.md` §8.
+> The "Ours" columns below were independently re-derived from the raw per-sample telemetry in `scripts/results/*.json` (not trusted at face value) — see `scripts/results/benchmark_results_summary.md` for the full verification notes. **Not every figure is a raw stopwatch measurement**: values marked ¹² are *composed estimates* (sums of independently measured sub-components, not live end-to-end trials) and values marked ⁴ are *independently recomputed aggregates* rather than newly measured — see the numbered footnotes below the matrix for the provenance class of each metric. Accelerated (non-physical) benchmarking mode is intentionally disabled in `hard_benchmark.py`, so that column cannot be populated under the current harness. Kept in sync with `README.md` §8.
 
 | Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -402,9 +402,9 @@ We present a comprehensive, multi-dimensional empirical comparison matrix contra
 | **Paralinguistic Precision** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **95.3% (low stress) / 94.4% (high stress)**⁵ | *(mode retired)* |
 | **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **1,266 MB**⁶ | *(mode retired)* |
 | **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁶ | *(mode retired)* |
+| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)*⁷ |
 
-¹Composed estimate, not a live stopwatch trial. ²Sum of 7 measured components, excludes LLM generation. ³No verified telemetry exists yet. ⁴Independently recomputed from raw per-sample arrays; matches exactly. ⁵Genuinely measured. ⁶Full 8-agent mesh + DB stack.
-| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
+¹Composed estimate, not a live stopwatch trial. ²Sum of 7 measured components, excludes LLM generation. ³No verified telemetry exists yet. ⁴Independently recomputed from raw per-sample arrays; matches exactly. ⁵Genuinely measured. ⁶Full 8-agent mesh + DB stack. ⁷Non-physical "accelerated" simulation mode is intentionally disabled in `hard_benchmark.py`; this column cannot be populated under the current benchmarking harness.
 
 ---
 
@@ -710,7 +710,7 @@ Subconscious Threat Scan     & --                       & (not yet measured)    
 Memory ACT-R Index Search    & --                       & 1.073 ms                  & $\sim$932 ops/s      & 8.00 ms                   & Met             \\
 Hormonal State Appraisal     & --                       & (not yet measured)        & (not yet measured)  & 5.00 ms                   & Pending         \\
 LLM Temperature Modulation   & 2.30 \(\mu\)s            & (not yet measured)        & (not yet measured)  & 1.00 ms                   & Pending         \\ \hline
-\textbf{End-to-End Pathway}  & \textbf{--}              & \textbf{5.44 ms}          & \textbf{(not yet measured)} & \textbf{17.00 ms} & \textbf{Met}    \\ \hline
+\textbf{End-to-End Pathway}  & \textbf{--}              & \textbf{5.44 ms}          & \textbf{(not yet measured)} & \textbf{15.00 ms} & \textbf{Met}    \\ \hline
 \end{tabular}
 \end{table*}
 ```

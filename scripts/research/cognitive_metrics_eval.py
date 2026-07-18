@@ -507,35 +507,53 @@ def module4_conflict_resolver():
     # variance, and the "baseline" 480ms/50ms was an unsourced invented
     # constant. Report the composed constant directly instead.
     audio_buffer_assumption_ms = 100.0
-    nats_rtt = 3.921
-    dsp_ext = 0.043
-    ducking_lat = 0.019
+    # Fallback defaults mirror the last-known-real values from scripts/results/
+    # as of this writing; they are labeled "default" (not "measured") in the
+    # provenance string below whenever the corresponding artifact couldn't be
+    # loaded, so a missing/unparsable file never gets silently reported as
+    # measured telemetry.
+    nats_rtt, nats_rtt_measured = 3.845, False
+    dsp_ext, dsp_ext_measured = 0.043, False
+    ducking_lat, ducking_lat_measured = 0.019, False
     try:
         realism_path = os.path.join(RESULTS_DIR, "human_realism_results.json")
         if os.path.exists(realism_path):
             with open(realism_path, "r") as rf:
                 rdata = json.load(rf)
                 m1 = rdata.get("module1_computational_efficiency", {})
-                nats_rtt = m1.get("nats_rtt_ms", rdata.get("nats_rtt_ms", 3.921))
-
+                if "nats_rtt_ms" in m1 or "nats_rtt_ms" in rdata:
+                    nats_rtt = m1.get("nats_rtt_ms", rdata.get("nats_rtt_ms"))
+                    nats_rtt_measured = True
+    except Exception as e:
+        print(f"  ⚠️ Could not load human_realism_results.json for NATS RTT: {e}")
+    try:
         profile_path = os.path.join(RESULTS_DIR, "latency_profile.json")
         if os.path.exists(profile_path):
             with open(profile_path, "r") as pf:
                 pdata = json.load(pf)
-                dsp_ext = pdata.get("dsp_extraction_avg_ms", 0.043)
-                ducking_lat = pdata.get("soft_ducking_latency_avg_ms", 0.019)
-    except Exception:
-        pass
+                if "dsp_extraction_avg_ms" in pdata:
+                    dsp_ext = pdata["dsp_extraction_avg_ms"]
+                    dsp_ext_measured = True
+                if "soft_ducking_latency_avg_ms" in pdata:
+                    ducking_lat = pdata["soft_ducking_latency_avg_ms"]
+                    ducking_lat_measured = True
+    except Exception as e:
+        print(f"  ⚠️ Could not load latency_profile.json for DSP/ducking: {e}")
     composed_barge_in_ms = (
         audio_buffer_assumption_ms + nats_rtt + dsp_ext + ducking_lat
     )
+
+    def _component_label(value, measured, unit_fmt):
+        tag = "measured" if measured else "default (artifact unavailable)"
+        return f"{value:{unit_fmt}}ms {tag}"
 
     print(
         f"  CVS-3.5 Conflict Resolver: F1={cvs_metrics['f1'] * 100:.1f}%, "
         f"Composed Stop Latency={composed_barge_in_ms:.1f}ms "
         f"({audio_buffer_assumption_ms:.0f}ms buffer assumption + "
-        f"{nats_rtt:.2f}ms NATS RTT + {dsp_ext:.3f}ms DSP + "
-        f"{ducking_lat:.3f}ms ducking)"
+        f"{_component_label(nats_rtt, nats_rtt_measured, '.2f')} NATS RTT + "
+        f"{_component_label(dsp_ext, dsp_ext_measured, '.3f')} DSP + "
+        f"{_component_label(ducking_lat, ducking_lat_measured, '.3f')} ducking)"
     )
     print(
         f"  Baseline VAD/Keyword:      F1={base_metrics['f1'] * 100:.1f}% "
@@ -550,9 +568,10 @@ def module4_conflict_resolver():
             "composed_estimate": round(composed_barge_in_ms, 2),
             "provenance": (
                 f"{audio_buffer_assumption_ms:.0f}ms audio-buffer assumption + "
-                f"{nats_rtt:.3f}ms measured NATS RTT + {dsp_ext:.3f}ms measured "
-                f"DSP extraction + {ducking_lat:.3f}ms measured ducking "
-                "transition; not a live end-to-end stopwatch trial"
+                f"{_component_label(nats_rtt, nats_rtt_measured, '.3f')} NATS RTT + "
+                f"{_component_label(dsp_ext, dsp_ext_measured, '.3f')} DSP "
+                f"extraction + {_component_label(ducking_lat, ducking_lat_measured, '.3f')} "
+                "ducking transition; not a live end-to-end stopwatch trial"
             ),
         },
     }

@@ -12,7 +12,7 @@ This document provides a highly rigorous, multi-dimensional empirical comparison
 The comparative matrix below evaluates **CVS-3.5** against 6 state-of-the-art and legacy conversational and mobile robotics platforms across 8 core metrics.
 
 > [!NOTE]
-> The "Ours" columns below were independently re-derived from the raw per-sample telemetry in `scripts/results/*.json` (not trusted at face value) — see `scripts/results/benchmark_results_summary.md` for the full verification notes, including two numbers that were previously mislabeled/fabricated and have since been corrected or retracted. Accelerated (non-physical) benchmarking mode is intentionally disabled in `hard_benchmark.py`, so that column cannot be populated under the current harness.
+> The "Ours" columns below were independently re-derived from the raw per-sample telemetry in `scripts/results/*.json` (not trusted at face value) — see `scripts/results/benchmark_results_summary.md` for the full verification notes, including two numbers that were previously mislabeled/fabricated and have since been corrected or retracted. **Not every figure is a raw stopwatch measurement**: some (marked ¹²) are *composed estimates* summing independently measured sub-components rather than live end-to-end trials, and some (marked ⁴) are aggregates *independently recomputed* from raw per-sample arrays rather than newly measured — see the per-metric footnotes below the matrix for the provenance class of each value. Accelerated (non-physical) benchmarking mode is intentionally disabled in `hard_benchmark.py`, so that column cannot be populated under the current harness.
 
 | Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -62,7 +62,7 @@ To prevent turn-taking bottlenecks, the sub-LLM pre-processing and emotional app
 | **Memory ACT-R Index Search** | -- | **1.073 ms** | ~932 ops/s | 8.00 ms | ✅ Met |
 | **Hormonal State Appraisal** | -- | *(not yet measured)* | *(not yet measured)* | 5.00 ms | Pending |
 | **LLM Temperature Modulation** | 2.30 µs | *(not yet measured)* | *(not yet measured)* | 1.00 ms | Pending |
-| **End-to-End Pathway** | **--** | **5.44 ms**⁷ | *(not yet measured)* | **17.00 ms** | ✅ **Met** |
+| **End-to-End Pathway** | **--** | **5.44 ms**⁷ | *(not yet measured)* | **15.00 ms** | ✅ **Met** |
 
 ⁷Sum of all seven measured component latencies (audio ingest/DSP, working-memory read/write, ACT-R vector search, prosody generation, ducking, NATS RTT — see `scripts/results/human_realism_results.json`), not a row-by-row sum of the table above (several rows remain unmeasured individually). Excludes LLM token generation. Throughput figures are derived (1000 / latency_ms), not independently measured op-rate trials.
 
@@ -95,7 +95,7 @@ Dynamic vocal filler insertion rates (`Words/Turn`) and acoustic markup parsing 
 | :--- | :---: | :---: | :--- |
 | **Low Stress / Calm** | **95.3%** | 0.12 | `[laughs]`, `[nods]` |
 | **High Stress / Threat** | **94.4%** | 0.42 | `[sighs]`, `[clears throat]`, `[voice cracks]` |
-| **Standard Voice Baseline** | 71.4% | 1.85 | `None` (Static Text-to-Speech) |
+| **Standard Voice Baseline** | 74.3% | 1.85 | `None` (Static Text-to-Speech) |
 
 ---
 
@@ -107,7 +107,7 @@ Prior cascaded turn-taking architectures suffer from turn gaps between $700\text
 ### 6.2 Goal and Affect Classification Accuracy
 The classification accuracy of intent and goals under synthetic stress is plotted in the confusion matrices below:
 
-![Intent classification confusion matrices: industry baseline vs. AI Friend HNNA Sovereign Mesh](../../scripts/results/cognitive_confusion_matrix.png)
+![Intent classification confusion matrices: industry baseline vs. AI Friend CVS-3.5 Sovereign Mesh](../../scripts/results/cognitive_confusion_matrix.png)
 
 CVS-3.5 maintains **85.7%** classification accuracy (N=1000, independently recomputed from the raw ground-truth/prediction arrays) across dynamic intent mapping, vs. an 84.0% zero-shot LLM baseline on the same samples — a modest, not dramatic, margin; standard cascaded LLM configurations experience prompt drift and decline under rapid conversational state transitions, but this dataset does not directly measure that decline.
 
