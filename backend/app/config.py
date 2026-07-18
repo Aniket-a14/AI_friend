@@ -119,6 +119,12 @@ class AppSettings(BaseSettings):
     # probe the real path rather than mere process liveness (see finding E1).
     VISION_HEALTH_FILE: str = "/tmp/vision_agent_healthy"
 
+    # Half-life of a phasic dopamine burst, in seconds. Real phasic bursts last
+    # only hundreds of milliseconds; this is the felt afterglow of a reward at
+    # conversational timescale, so it is deliberately much slower than biology
+    # and much faster than the ALMA mood decay (PSYCH_LAMBDA_DECAY, hours).
+    DOPAMINE_PHASIC_HALFLIFE_S: float = 90.0
+
     STT_MODEL_SIZE: str = "small"
     STT_DEVICE: str = "cpu"
 
