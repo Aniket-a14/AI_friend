@@ -2224,3 +2224,42 @@ HippoRAG "~92% Recall@5", ACT-R/E "0.280 ToM MAE") against the cited papers
 themselves — still open from the prior audit entry; a full audit of
 `literature_references.md`'s ~30+ citations (out of scope for this pass, by
 explicit choice).
+
+---
+
+## 2026-07-18 A4 and C1 resolved — generation-cancel race closed, /token now requires a shared secret off-loopback
+
+**A4 (interruption truncation race).** `BrainAgent._on_chat_input` and
+`_on_audio_perception` both called `_active_generation_task.cancel()` and moved on
+immediately. `.cancel()` only *requests* cancellation — the task keeps running
+until its next await point — so the "cancelled" old turn could still write stale
+`last_assistant_response`/`last_audio_progress` after a new turn had already reset
+that state, or after `_on_audio_stop` had already read it for truncation. Added
+`BrainAgent._cancel_active_generation()` (guarded by a new `_generation_lock`) that
+cancels and *awaits* the task before returning; both call sites now go through it.
+Regression test `test_cancel_active_generation_waits_for_task_to_fully_unwind`
+(`tests/test_embodied_feedback.py`) proves the old task's cleanup has run before
+the caller proceeds.
+
+**C1 (unauthenticated `/token`).** `require_lan_client` only ever restricted
+*where* a caller could connect from — with `LAN_ONLY=true` that's still "any
+device on the WiFi," and with it `false` no check applied at all. Any client that
+could reach the port could mint itself a LiveKit room-join token. Added
+`require_session_auth` (`backend/main.py`) as a second, independent dependency on
+`/token` and `/start-session`: the loopback host (`app/network.py`'s new
+`is_loopback_client`, narrower than the existing `is_lan_client_allowed`) is
+trusted with no config, matching today's zero-config single-machine setups; every
+other caller must send a `BACKEND_ACCESS_KEY` (new `Config` field) via
+`X-Backend-Key` header or `?key=`, compared with `secrets.compare_digest`. Fails
+closed (503) if a non-loopback client asks and no key is configured, rather than
+silently allowing. Frontend (`useWebRTCVoice.js`) sends the key from
+`NEXT_PUBLIC_BACKEND_ACCESS_KEY` when set. Both new env vars documented in
+`.env.example` / `frontend/.env.example`.
+
+Verification: `cd backend && python -m pytest` — 113 passed; `ruff check` clean on
+all changed files.
+
+**NOT done:** no rate-limiting on `/token` (a valid key can still be used to mint
+unlimited room identities); no login/user-account system — this remains a
+single-shared-secret model appropriate for a personal/family deployment, not a
+multi-tenant one.
