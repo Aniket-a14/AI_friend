@@ -263,6 +263,71 @@ def test_action_service_strips_emotion_wrappers_but_keeps_pause_tags():
     assert content == "hey there<pause=300ms>"
 
 
+def test_config_normalizes_livekit_url_scheme_to_websocket():
+    # E3: room.connect() (both the JS frontend and transport_agent's Python RTC
+    # client) needs ws(s)://, not http(s)://. An existing .env still carrying the
+    # old http:// default must self-heal rather than silently breaking connects.
+    from app.config import AppSettings
+
+    assert AppSettings(LIVEKIT_URL="http://local_sfu:7880").LIVEKIT_URL == (
+        "ws://local_sfu:7880"
+    )
+    assert AppSettings(LIVEKIT_URL="https://sfu.example.com").LIVEKIT_URL == (
+        "wss://sfu.example.com"
+    )
+    assert AppSettings(LIVEKIT_URL="ws://already-correct:7880").LIVEKIT_URL == (
+        "ws://already-correct:7880"
+    )
+
+
+def test_config_allowed_origins_computed_field_splits_csv():
+    # F4: ALLOWED_ORIGINS used to be materialized only inside
+    # ConfigMeta.__getattr__'s special-casing; it's now a real computed_field
+    # on AppSettings, visible on the model itself.
+    from app.config import AppSettings
+
+    assert AppSettings(ALLOWED_ORIGINS="*").ALLOWED_ORIGINS == ["*"]
+    assert AppSettings(
+        ALLOWED_ORIGINS="http://a.example.com,http://b.example.com"
+    ).ALLOWED_ORIGINS == ["http://a.example.com", "http://b.example.com"]
+
+
+def test_config_ollama_required_models_computed_field():
+    from app.config import AppSettings
+
+    # An explicit CSV is stripped/filtered but not deduped (only the
+    # derived-from-individual-models branch below dedupes) - preserved as-is
+    # from the pre-refactor behavior.
+    explicit = AppSettings(OLLAMA_REQUIRED_MODELS="modelA, modelB ,modelA")
+    assert explicit.OLLAMA_REQUIRED_MODELS == ["modelA", "modelB", "modelA"]
+
+    # OLLAMA_REQUIRED_MODELS="" forces the "derive from individual models"
+    # branch, overriding whatever the real .env on this machine may set.
+    derived = AppSettings(
+        OLLAMA_REQUIRED_MODELS="",
+        LLM_FAST_MODEL="fast-model",
+        LLM_CHAT_MODEL="chat-model",
+        LLM_REFLECTION_MODEL="reflect-model",
+        VLM_ENABLED=True,
+        VLM_MODEL="vision-model",
+    )
+    assert derived.OLLAMA_REQUIRED_MODELS == [
+        "chat-model",
+        "fast-model",
+        "reflect-model",
+        "nomic-embed-text",
+        "vision-model",
+    ]
+
+    derived_vlm_off = AppSettings(
+        OLLAMA_REQUIRED_MODELS="",
+        LLM_FAST_MODEL="fast-model",
+        LLM_CHAT_MODEL="fast-model",
+        VLM_ENABLED=False,
+    )
+    assert derived_vlm_off.OLLAMA_REQUIRED_MODELS == ["fast-model", "nomic-embed-text"]
+
+
 def test_signaling_lan_guard_allows_only_loopback_and_private_clients():
     from app.network import is_lan_client_allowed
 

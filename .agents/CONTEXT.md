@@ -2239,7 +2239,13 @@ that state, or after `_on_audio_stop` had already read it for truncation. Added
 cancels and *awaits* the task before returning; both call sites now go through it.
 Regression test `test_cancel_active_generation_waits_for_task_to_fully_unwind`
 (`tests/test_embodied_feedback.py`) proves the old task's cleanup has run before
-the caller proceeds.
+the caller proceeds. A CodeRabbit auto-fix during review (`_replace_active_generation`)
+further closed a narrower TOCTOU gap — cancel-prior + create-new + assign is now one
+atomic critical section under `_generation_lock` — but its own added test asserted
+both concurrent turns must fully execute, which contradicts the fix's own point
+(a new turn supersedes, not runs alongside, the old one); reproduced locally
+(`AssertionError: Expected 2 flow executions, got 1`), traced the lock ordering to
+confirm no deadlock, and corrected the assertion. Stress-tested 20x with no flakiness.
 
 **C1 (unauthenticated `/token`).** `require_lan_client` only ever restricted
 *where* a caller could connect from — with `LAN_ONLY=true` that's still "any
@@ -2249,17 +2255,83 @@ could reach the port could mint itself a LiveKit room-join token. Added
 `/token` and `/start-session`: the loopback host (`app/network.py`'s new
 `is_loopback_client`, narrower than the existing `is_lan_client_allowed`) is
 trusted with no config, matching today's zero-config single-machine setups; every
-other caller must send a `BACKEND_ACCESS_KEY` (new `Config` field) via
-`X-Backend-Key` header or `?key=`, compared with `secrets.compare_digest`. Fails
-closed (503) if a non-loopback client asks and no key is configured, rather than
-silently allowing. Frontend (`useWebRTCVoice.js`) sends the key from
-`NEXT_PUBLIC_BACKEND_ACCESS_KEY` when set. Both new env vars documented in
-`.env.example` / `frontend/.env.example`.
+other caller must send a `BACKEND_ACCESS_KEY` (new `Config` field) via `?key=`
+(query param, not a header — a custom header forces a CORS preflight round-trip
+on every session start, per a CodeRabbit review nitpick) compared with
+`secrets.compare_digest`. Fails closed (503) if a non-loopback client asks and no
+key is configured, rather than silently allowing. Frontend (`useWebRTCVoice.js`)
+sends the key from `NEXT_PUBLIC_BACKEND_ACCESS_KEY` when set. Both new env vars
+documented in `.env.example` / `frontend/.env.example`.
 
 Verification: `cd backend && python -m pytest` — 113 passed; `ruff check` clean on
-all changed files.
+all changed files; all 16 PR CI checks green.
 
 **NOT done:** no rate-limiting on `/token` (a valid key can still be used to mint
 unlimited room identities); no login/user-account system — this remains a
 single-shared-secret model appropriate for a personal/family deployment, not a
 multi-tenant one.
+
+---
+
+## 2026-07-18 A5, A7, E2, E3, F3, F4 resolved — batch of small robustness/maintainability fixes
+
+**A5 (brittle `is_sqlite` sniffing).** `MemoryStore.is_sqlite` matched
+`type(self.pool).__name__` against a hardcoded set of strings (`"MockPGPool"`,
+excluding `"MagicMock"/"AsyncMock"/"Mock"`) - any renamed/subclassed/new pool
+silently misclassified. Now checks a structural fact instead: whether
+`pool.connection.conn` is an actual stdlib `sqlite3.Connection` (the one thing
+the production `SQLitePool` and its test doubles genuinely share, since both
+wrap a real `sqlite3.connect(...)`). New `tests/test_memory_store_is_sqlite.py`
+covers a real pool, a generic `MagicMock`, a pool with no `.connection` at all,
+and a renamed `SQLitePool` subclass.
+
+**A7 (over-strict prosody validator).** `AgentVoiceModulation.validate_trajectory`
+required consecutive frame offsets to differ by *exactly* 50ms, rejecting the
+whole trajectory on any jitter. The only real producer
+(`generate_apra_trajectory` in `cognitive-rust`) does step in exact 50ms
+increments, but the contract only needs frames close enough together for smooth
+playback. Replaced the exact-equality check with strictly-increasing + a
+`MAX_FRAME_GAP_MS = 250` ceiling. `test_invalid_voice_modulation_wrong_cadence`
+(asserting a 40ms gap must fail) replaced with
+`test_voice_modulation_tolerates_jittered_cadence` plus explicit zero-gap and
+gap-too-large rejection tests.
+
+**E2 (brain_agent 512M memory limit).** The only service in
+`docker-compose.prod.yml` with an explicit memory cap was also the heaviest one
+(asyncpg pool, neo4j driver, embedding/LLM HTTP buffers, in-process caches) -
+every sibling service has no limit at all. Raised to a 2048M limit / 512M
+reservation. Verified with `docker compose -f docker-compose.infra.yml -f
+docker-compose.prod.yml config` (resolves to 2147483648 / 536870912 bytes).
+
+**E3 (LiveKit `http://` vs `ws://`).** `Config.LIVEKIT_URL` defaulted to
+`http://127.0.0.1:7880`, but both consumers (`useWebRTCVoice.js`'s
+`room.connect()` and `transport_agent.py`'s `room.connect()`) need `ws(s)://`.
+Fixed the default and both `.env.example` files, and added a
+`field_validator` on `LIVEKIT_URL` that rewrites `http(s)://` to `ws(s)://` so
+an existing deployment's already-saved `.env` self-heals instead of requiring
+a manual edit.
+
+**F3 (inline imports in hot handlers).** `brain_agent.py` re-imported
+`AudioStop`/`AudioResume`/`AudioPlaybackProgress`/`UserVoiceProperties` from
+`..contracts` (and `InterruptionClassifier`/`ConversationalRuntime` from
+`..utils`) inside the per-message handler methods and `__init__`. Hoisted all
+six to module-level imports; no circular-import issue (checked both `utils`
+modules import nothing back from `agents`).
+
+**F4 (`Config` metaclass `__getattr__` surprise).** `ConfigMeta.__getattr__`
+special-cased `ALLOWED_ORIGINS`/`OLLAMA_REQUIRED_MODELS` inline before falling
+back to `getattr(config_instance, name)` for everything else - a surprising
+place to hide derived config, easy to miss when adding a third computed value.
+Moved both to real `@computed_field @property` definitions on `AppSettings`
+itself; `ConfigMeta.__getattr__` is now just the one-line delegation. Behavior
+preserved exactly, including the pre-existing quirk that the explicit-CSV
+branch of `OLLAMA_REQUIRED_MODELS` does *not* dedupe (only the
+derived-from-individual-models branch does) - caught by an initial wrong test
+expectation, fixed after reproducing directly with `python -c`.
+
+Verification: `cd backend && python -m pytest` — all passed; `ruff check .`
+clean; compose config resolves.
+
+**NOT done:** F1 (`search_memories`/`ActionService.execute` god-functions,
+F2 already resolved in an earlier pass) — explicitly left for a separate
+pass, this batch was scoped to the smaller items only.

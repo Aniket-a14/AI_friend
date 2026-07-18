@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, model_validator
+from pydantic import Field, computed_field, field_validator, model_validator
 
 _env_file = Path(__file__).resolve().parent.parent.parent / ".env"
 
@@ -37,7 +37,7 @@ class AppSettings(BaseSettings):
     QDRANT_PORT: int = 6333
 
     # LiveKit Configuration
-    LIVEKIT_URL: str = "http://127.0.0.1:7880"
+    LIVEKIT_URL: str = "ws://127.0.0.1:7880"
     LIVEKIT_API_KEY: Optional[str] = None
     LIVEKIT_API_SECRET: Optional[str] = None
 
@@ -149,31 +149,57 @@ class AppSettings(BaseSettings):
             self.LLM_REFLECTION_MODEL = self.LLM_CHAT_MODEL
         return self
 
+    @field_validator("LIVEKIT_URL")
+    @classmethod
+    def normalize_livekit_scheme(cls, v: str) -> str:
+        """E3: both the frontend and transport_agent hand this straight to
+        LiveKit's room.connect(), which needs ws(s)://, not http(s)://. Normalize
+        here so an existing .env carrying the old http:// default (from before
+        this fix) self-heals instead of requiring every deployment to be
+        manually edited.
+        """
+        if v.startswith("https://"):
+            return "wss://" + v[len("https://") :]
+        if v.startswith("http://"):
+            return "ws://" + v[len("http://") :]
+        return v
+
+    # F4: these were previously computed in ConfigMeta.__getattr__, which
+    # special-cased these two names and silently delegated every other
+    # attribute straight to config_instance - a surprising place to look for
+    # derived config, and easy to miss when adding a third computed value.
+    # Real computed_field properties are visible on AppSettings itself, so
+    # ConfigMeta's job shrinks to "look up the instance," nothing more.
+    @computed_field
+    @property
+    def ALLOWED_ORIGINS(self) -> List[str]:
+        return self.ALLOWED_ORIGINS_STR.split(",")
+
+    @computed_field
+    @property
+    def OLLAMA_REQUIRED_MODELS(self) -> List[str]:
+        if self.OLLAMA_REQUIRED_MODELS_STR.strip():
+            return [
+                model.strip()
+                for model in self.OLLAMA_REQUIRED_MODELS_STR.split(",")
+                if model.strip()
+            ]
+        models = [
+            self.LLM_CHAT_MODEL,
+            self.LLM_FAST_MODEL,
+            self.LLM_REFLECTION_MODEL,
+            "nomic-embed-text",
+        ]
+        if self.VLM_ENABLED:
+            models.append(self.VLM_MODEL)
+        return list(dict.fromkeys(models))
+
 
 config_instance = AppSettings()
 
 
 class ConfigMeta(type):
     def __getattr__(cls, name):
-        if name == "ALLOWED_ORIGINS":
-            return config_instance.ALLOWED_ORIGINS_STR.split(",")
-        if name == "OLLAMA_REQUIRED_MODELS":
-            if config_instance.OLLAMA_REQUIRED_MODELS_STR.strip():
-                return [
-                    model.strip()
-                    for model in config_instance.OLLAMA_REQUIRED_MODELS_STR.split(",")
-                    if model.strip()
-                ]
-            else:
-                models = [
-                    config_instance.LLM_CHAT_MODEL,
-                    config_instance.LLM_FAST_MODEL,
-                    config_instance.LLM_REFLECTION_MODEL,
-                    "nomic-embed-text",
-                ]
-                if config_instance.VLM_ENABLED:
-                    models.append(config_instance.VLM_MODEL)
-                return list(dict.fromkeys(models))
         return getattr(config_instance, name)
 
 
