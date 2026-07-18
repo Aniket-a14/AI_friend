@@ -2977,3 +2977,26 @@ a follow-up contract PR, gated on checking the frontend and any external
 consumer. `AgentVoiceModulation`/`ProsodyFrame` in `surfacing_agent` is a
 separate trajectory path and was not touched.
 
+### Review round (PR #74)
+
+CodeRabbit flagged the end-to-end test as under-asserting: it fed `trust`,
+`attachment` and `emotion` into the state snapshot and never checked they reached
+the wire, and it verified only two of the four deprecated prosody fields were
+inert. Correct on both counts. Mutation-tested before and after to be sure the
+gap was real rather than theoretical: dropping `trust`, `emotion`, or
+`attachment` from `brain_agent._publish_speech_chunk`, and repopulating
+`intensity`, all **survived** the old test and all fail the new one. Only the
+`speaking_rate` mutation had been caught. Four real gaps, not style.
+
+Chasing those mutations surfaced something the review did not mention:
+`brain_agent._publish_speech_chunk` builds its own `ChatOutput` rather than
+calling `SpeechCoordinator.create_chunk_payload`, so the affect vector is
+constructed twice from the same keys with the same defaults. That is the exact
+shape of the bug this PR removes for prosody — two implementations, one
+consumed — and it is why a mutation in `speech.py` left the end-to-end test
+green. It has not drifted yet. Left alone here deliberately: collapsing it
+touches the brain's streaming hot path and belongs in its own PR rather than
+riding along with a test fix.
+
+Full backend suite: **505 passed**, `ruff check .` clean.
+
