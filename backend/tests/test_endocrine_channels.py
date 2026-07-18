@@ -19,10 +19,12 @@ your own identity constraints is a stressor.
 """
 
 import math
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.cognitive.appraisal import AppraisalVector
+from app.cognitive.decision import ActionPlan
 from app.cognitive.pipeline import (
     PREDICTION_ERROR_DEADBAND,
     REWARD_PREDICTION_GAIN,
@@ -142,10 +144,49 @@ async def test_a_malformed_prediction_error_moves_no_hormone(error):
 
 
 @pytest.mark.asyncio
-async def test_an_enormous_prediction_error_cannot_saturate_the_hormone():
-    """A runaway signal must not pin sampling parameters at an extreme."""
+async def test_an_enormous_prediction_error_cannot_push_cortisol_past_its_ceiling():
+    """A runaway signal must clamp at the ceiling rather than overflow it.
+
+    `cortisol <= 1.0` alone would be vacuous: with the release deleted entirely
+    the hormone sits at its 0.5 tonic baseline and still satisfies it. So assert
+    that the burst both landed and stopped at the top.
+
+    Approximate, not exact: the phasic term begins decaying the moment it is
+    recorded, so the total is asymptotically 1.0 (0.99999998 here) and never
+    precisely it. `== 1.0` would pass or fail on scheduling luck.
+    """
     pipeline, service = _pipeline()
     await pipeline._apply_reward_prediction_error(-500.0)
+    assert service.current_state.cortisol_phasic_peak > 0.0
+    assert service.current_state.cortisol == pytest.approx(1.0)
+    assert service.current_state.cortisol <= 1.0
+
+
+@pytest.mark.asyncio
+async def test_a_mood_collapse_after_a_burst_cannot_push_cortisol_over_one():
+    """The tonic floor can rise *underneath* a burst that is already at the top.
+
+    `release_cortisol` clamps the total at release time, but the phasic peak it
+    stores is relative to whatever the tonic floor was *then*. If mood then
+    collapses, tonic climbs independently and the sum exceeds 1.0 — here 0.5 +
+    0.5 becomes roughly 0.9 + 0.5. Only the clamp on the `cortisol` property
+    catches that, which is why the release-time clamp alone is not enough.
+
+    It matters because `_compute_endocrine_options` maps cortisol onto sampling
+    temperature; a value above 1.0 walks straight out of the intended range.
+    """
+    pipeline, service = _pipeline()
+    await pipeline._apply_reward_prediction_error(-500.0)
+    assert service.current_state.cortisol == pytest.approx(1.0)
+
+    # The floor rises after the fact.
+    service.current_state.mood = -1.0
+    assert service.current_state.cortisol_tonic > 0.5, "fixture failed to lift tonic"
+    assert (
+        service.current_state.cortisol_tonic + service.current_state.cortisol_phasic
+        > 1.0
+    ), "fixture does not actually exercise the property clamp"
+
     assert service.current_state.cortisol <= 1.0
 
 
@@ -197,6 +238,106 @@ async def test_the_self_correction_event_is_consumed_not_forwarded():
 
     assert service.current_state.cortisol_phasic_peak == pytest.approx(
         SELF_CORRECTION_STRESS
+    )
+
+
+def _full_pipeline_with_failing_validation(retry_chunks):
+    """A pipeline driven through `execute()`, forced down the retry branch.
+
+    `validate_response` rejects the first response and accepts the second, which
+    is the only way to reach the second `action.execute` loop in stage 9.
+    """
+    service = StateService(graph_store=None, db_path=":memory:")
+    service.current_state.mood = 0.0
+    service.current_state.fatigue = 0.0
+
+    perception = AsyncMock()
+    perception.perceive.return_value = MagicMock(
+        event_type="USER_MESSAGE",
+        raw_content="hello",
+        intent="CHAT",
+        event_id="evt-retry",
+        metadata={},
+    )
+    appraisal = MagicMock()
+    appraisal.appraise.return_value = AppraisalVector(
+        relevance=1.0,
+        novelty=0.5,
+        goal_congruence=0.2,
+        agency=0.8,
+        norm_alignment=1.0,
+        relationship_impact=0.1,
+    )
+    decision = MagicMock()
+    decision.decide = AsyncMock(
+        return_value=ActionPlan(
+            action_type="RESPOND_CHAT",
+            goal="GREET",
+            payload={"message": "hi", "identity_prompt": "be yourself"},
+        )
+    )
+
+    calls = {"n": 0}
+
+    async def execute(plan):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            yield {"type": "content", "data": "first attempt"}
+            yield {"type": "done", "data": ""}
+        else:
+            for chunk in retry_chunks:
+                yield chunk
+
+    action = MagicMock()
+    action.execute.side_effect = execute
+
+    identity = MagicMock()
+    identity.get_persona_prompt.return_value = "System prompt"
+    identity.validate_response = AsyncMock(
+        side_effect=[(False, "Safety/Toxicity boundary violation"), (True, "")]
+    )
+
+    pipeline = CognitivePipeline(
+        perception=perception,
+        appraisal=appraisal,
+        state=service,
+        decision=decision,
+        action=action,
+        learning=AsyncMock(),
+        identity=identity,
+    )
+    return pipeline, service, calls
+
+
+@pytest.mark.asyncio
+async def test_the_self_correction_signal_is_consumed_on_the_retry_pass_too():
+    """Stage 9's retry loop is a second, easy-to-forget copy of the action loop.
+
+    It is also the likeliest place to emit this signal: it runs only after a
+    response was already rejected, with a hardened prompt. Filtering the first
+    loop and not this one would leak `self_correction` to the transport on the
+    exact path that most deserves the cortisol, and the bug would be invisible
+    to any test that only drives the happy path.
+    """
+    pipeline, service, calls = _full_pipeline_with_failing_validation(
+        [
+            {"type": "content", "data": "corrected attempt"},
+            {"type": "self_correction", "data": "Safety/Toxicity boundary violation"},
+            {"type": "done", "data": ""},
+        ]
+    )
+
+    results = [c async for c in pipeline.execute({"type": "USER_MESSAGE", "content": "hi"})]
+
+    assert calls["n"] == 2, "the retry branch was never reached"
+    assert not any(c["type"] == "self_correction" for c in results), (
+        "internal signal leaked to the transport from the retry loop"
+    )
+    assert any(
+        c["type"] == "content" and c["data"] == "corrected attempt" for c in results
+    ), "the retry's real content must still reach the user"
+    assert service.current_state.cortisol_phasic_peak > 0.0, (
+        "the retry's self-correction must still raise cortisol"
     )
 
 
@@ -254,7 +395,10 @@ async def test_an_outcome_within_tolerance_reports_no_prediction_error():
     error = await engine.evaluate_outcome(
         actual_text_valence=0.4, acoustic_delta=0.0, behavioral_signal=0.5
     )
-    assert error is None or abs(error) >= PREDICTION_ERROR_DEADBAND
+    # Flatly `None`, not "None or something the deadband would filter": the
+    # weaker form would still pass if the tolerance branch started reporting a
+    # hormone-eligible signal, which is the exact regression this guards.
+    assert error is None
 
 
 def test_the_gains_keep_a_single_turn_from_saturating_a_hormone():
