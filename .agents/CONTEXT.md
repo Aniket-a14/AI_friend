@@ -3145,3 +3145,40 @@ four-line bodies differing only in the speculative flag. Collapsing them into on
 drained helper would make this class of bug unrepresentable rather than merely
 fixed, but it touches the streaming hot path and belongs in its own PR.
 
+---
+
+## 2026-07-19 — Renormalizing the repo to LF
+
+Follow-up to `.gitattributes` (d118cb7), deliberately held until PR #75 merged so
+it would not turn an in-flight branch into several hundred conflicts.
+
+`git add --renormalize .` restaged **113 files**. Verified the change is carriage
+returns and nothing else, two ways, because a bulk rewrite is exactly the kind of
+commit where a real edit hides unnoticed:
+
+- `git diff --cached --ignore-cr-at-eol` reports no content change.
+- `frontend/package-lock.json` was the one file that check could not cover — it
+  shows as *binary* because `.gitattributes` marks it `-diff`, so git refuses to
+  diff it textually. Compared byte-for-byte instead: 289216 → 281217, a delta of
+  exactly 7999, matching its 7999 CR bytes, and identical after stripping them.
+
+That second point is worth keeping. The `-diff` attribute that makes lockfiles
+pleasant to review also silently removes them from the safety net you would
+otherwise rely on to prove a bulk rewrite was safe.
+
+### Verification
+
+All **466** tracked text blobs at HEAD now contain zero CRLF. Full backend suite
+**528 passed**, `ruff check .` clean.
+
+Note that the *working tree* on a Windows dev machine can still hold CRLF after
+this commit and `git status` will read clean, because git normalizes on read
+before comparing to the index. The committed content is what matters and what CI
+and fresh clones receive; local files converge on the next checkout.
+
+**NOT done:** eight files previously had mixed endings *within a single file*
+(`.github/workflows/ci.yml`, `backend/requirements-base.txt`, `frontend/app/page.js`
+among them). Renormalization fixed their line endings, but mixed endings inside
+one file usually mean it was edited by two tools that disagreed, so those files
+are worth a look for other inconsistencies this commit did not address.
+
