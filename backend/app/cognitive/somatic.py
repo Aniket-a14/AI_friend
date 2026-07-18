@@ -22,13 +22,11 @@ is a deliberate, honest cold start, matching the mental lexicon's design (B1:
 no benchmark-fitted constants baked into a retrieval path).
 
 **On the roadmap's dopamine equation.** `docs/cvs4_architecture_roadmap.md` §C
-specifies `D_t = min(1.0, D_{t-1} + 0.25)` alongside a valence spike. That
-cannot be applied literally here: `AgentState.dopamine` is a *derived* property
-(`max(0, valence) * arousal`), not a stored field, so there is no `D_{t-1}` to
-increment. Spiking valence and arousal is how dopamine rises in this
-architecture — it follows by construction rather than being assigned. The
-constants below are chosen so a recognised comfort produces a dopamine movement
-of roughly the intended magnitude.
+specifies `D_t = min(1.0, D_{t-1} + 0.25)` alongside a valence spike. Both now
+happen literally: `apply_somatic_perception` lifts valence and arousal *and*
+fires a real phasic dopamine burst. Dopamine is no longer a purely derived
+quantity — it is a tonic term (the old `max(0, valence) * arousal`) plus a
+decaying burst, so a reward can outlast the mood swing that accompanied it.
 """
 
 import logging
@@ -38,10 +36,11 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Roadmap §C: a recognised somatic entity lifts valence, and arousal rises with
-# it so the derived dopamine term (max(0, V) * Ar) actually moves. Deliberately
-# smaller than an explicit user statement of affect: seeing a comfort is a
-# gentle background warmth, not an emotional event.
+# Roadmap §C: a recognised somatic entity lifts valence and arousal, which
+# raises the tonic dopamine term; the phasic burst is fired separately by
+# `apply_somatic_perception` (SOMATIC_DOPAMINE_SPIKE). Deliberately smaller than
+# an explicit user statement of affect: seeing a comfort is a gentle background
+# warmth, not an emotional event.
 SOMATIC_VALENCE_SPIKE = 0.15
 SOMATIC_AROUSAL_SPIKE = 0.10
 

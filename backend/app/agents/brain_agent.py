@@ -61,7 +61,7 @@ class BrainAgent(BaseAgent):
 
         # Visual Somatic Homeostasis: recognising a learned comfort object in
         # what the agent is looking at lifts valence/arousal (and therefore the
-        # derived dopamine term). Lives here rather than in the vision agent
+        # dopamine, tonic and phasic). Lives here rather than in the vision agent
         # because it needs the graph and the state service, keeping the vision
         # agent a pure sensor with no database credentials.
         self.somatic_appraiser = SomaticAppraiser(graph_store=graph_db)

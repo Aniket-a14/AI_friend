@@ -2660,6 +2660,71 @@ conversation and Neo4j being reachable; neither is exercised here. And the visua
 pillar remains the only one of the three whose capture cannot be containerised on
 this platform, which is a deployment property, not a bug to fix.
 
+## 2026-07-18 Dopamine became a hormone instead of a formula
+
+The somatic work one commit earlier had to document a deviation: the roadmap's
+`D_t = min(1.0, D_{t-1} + 0.25)` was not implementable, because
+`AgentState.dopamine` was a *derived property* — `max(0, valence) * arousal` —
+with no `D_{t-1}` to increment. This removes that constraint rather than
+continuing to work around it.
+
+### Tonic plus phasic
+
+Dopamine is now `dopamine_tonic + dopamine_phasic`, clamped:
+
+- **Tonic** is the old formula, character-for-character. It tracks ongoing affect
+  and has no memory of its own.
+- **Phasic** is a decaying burst, stored as a peak plus the timestamp it fired,
+  with a 90-second half-life (`DOPAMINE_PHASIC_HALFLIFE_S`).
+
+The split is the standard tonic/phasic distinction in dopamine signalling (Grace
+1991; Schultz's reward-prediction-error work), and it buys the thing the derived
+version structurally could not express: *"something good happened thirty seconds
+ago and I am still lit up."* Previously a reward evaporated the instant mood
+drifted back, because dopamine was a pure function of mood.
+
+**Backward compatibility is exact.** With no burst outstanding, `dopamine`
+returns bit-for-bit what it always did. The whole pre-existing `test_endocrine.py`
+suite — which explicitly asserts the derived values, e.g. `V=0.8, Ar=0.7 → 0.56` —
+passes untouched, and a parametrised test now pins that equivalence deliberately
+against the old formula rather than by coincidence.
+
+Decay is computed from elapsed wall-clock time in the property rather than
+decremented on `system.tick`. That keeps the reading correct if ticks stall,
+avoids drift between a stored value and a computed one, and makes decay testable
+by moving a timestamp instead of stubbing a clock.
+
+The burst is stored **relative to the tonic floor**, so mood may drift underneath
+a live burst without being double-counted into it. `release_dopamine` implements
+the roadmap equation literally against the *total*, then derives the peak.
+
+### Verification
+
+`tests/test_phasic_dopamine.py` (31 tests). Six mutations applied; **four caught
+on the first pass, two escaped**, and both escapes were real gaps rather than
+redundant code:
+
+- Removing the `min(1.0, ...)` inside `release_dopamine` changed nothing
+  observable, because the property clamps anyway — but an over-large stored peak
+  reads as 1.0 while taking *many extra half-lives* to fall back, pinning the
+  agent at peak reward. Now tested by firing twenty bursts and asserting decay.
+- Removing the `amount <= 0.0` guard also changed nothing, because with no burst
+  outstanding a negative amount clamps to zero regardless. The guard is
+  load-bearing only once a burst exists — a bad caller must not be able to
+  cancel a reward. Now tested against an outstanding burst.
+
+Both tests fail against the mutated code and pass against the real code; 6/6
+after the additions. This is the fourth time this session a first-pass mutation
+check has flattered itself, which is itself the argument for running them.
+
+Full backend suite: **428 passed** (397 + 31). `ruff check .` clean.
+
+**NOT done:** cortisol is still derived (`0.5 - V/2 + 0.3·fatigue`) and has the
+same limitation — acute stress cannot outlive the valence dip that caused it. The
+symmetric treatment is straightforward now that the pattern exists, but it was
+not in scope here and no caller currently needs it. The half-life is also a
+guess: 90s is a conversational-timescale choice, not a measured or tuned value.
+
 ## 2026-07-18 PersonaProfile: temperament stops being a deployment setting
 
 The stated direction for this system is that a user should be able to author
