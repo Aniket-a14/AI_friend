@@ -2659,3 +2659,94 @@ comfort vocabulary also depends on `learning.py` having run against real
 conversation and Neo4j being reachable; neither is exercised here. And the visual
 pillar remains the only one of the three whose capture cannot be containerised on
 this platform, which is a deployment property, not a bug to fix.
+
+## 2026-07-18 PersonaProfile: temperament stops being a deployment setting
+
+The stated direction for this system is that a user should be able to author
+their own friend — past, present, thinking, emotions — rather than receive a
+fixed one. Measured against that, the codebase was split in an awkward place.
+
+Narrative identity was already in good shape: `personality.json` carries name,
+values, tone and traits, and `IdentityManager` already distinguishes an immutable
+core from adaptive traits that evolve through reflection. That immutable/adaptive
+instinct is the right one and this change extends it rather than replacing it.
+
+**Temperament was the gap.** `personality.json` never drove affect. The baselines
+`baseline_valence/arousal/dominance` were hardcoded dataclass defaults
+(`0.0/0.5/0.5`), written only by `subconscious_agent` restoring from Neo4j with
+those same constants as its fallback. So a user could tell the agent it was "warm
+and slightly protective" in *words*, but could not make it constitutionally
+cheerful, anxious, or subdued. A melancholic low-energy friend was not
+expressible.
+
+Worse, the six coefficients that decide *how* feeling moves — `PSYCH_ALPHA`
+through `PSYCH_LAMBDA_DECAY` — lived in `Config`, a process-global env-var
+singleton. Emotional character was therefore a property of the `.env` file: one
+process, one personality, tuned by whoever deployed it.
+
+### What changed
+
+`app/persona/profile.py` introduces `PersonaProfile`, and `Config` is demoted to
+supplying its defaults. The integration turned out to be far smaller than
+expected: all six coefficients were read in exactly one place
+(`StateService.__init__`), so injection needed one constructor rather than a
+sweep through the cognitive core.
+
+Every field declares a tier in the schema, so the boundary is enforceable and
+self-documenting rather than a convention:
+
+- **IMMUTABLE** — safety invariants. Deliberately *not* model fields, because a
+  field is by definition settable; they live in the `IMMUTABLE_CORE` constant and
+  are merged at read time. A persona file that names them is rejected with a
+  warning, since a user-editable file must never be able to loosen a boundary.
+- **CONSTITUTIONAL** — who the friend is: temperament baselines and the rates at
+  which feeling moves. Set at creation, held for life.
+- **ADAPTIVE** — seeded by the user, then owned by the friend. Trust, attachment
+  and relationship start where the author placed them and go where living takes
+  them.
+
+### The bounds are the actual design work
+
+Total configurability has a failure mode: a user can tune a friend into something
+not recognisably alive. Each bound exists to preserve a specific property, and
+the tests name the failure rather than the number.
+
+`mood_decay_rate` is strictly positive — at zero, ALMA decay stops and mood locks
+permanently at whatever it last felt. `baseline_valence` is capped at ±0.6, not
+±1.0, because a friend pinned at maximum valence can never be sad *with* you,
+which is absence rather than cheerfulness. Arousal and dominance keep headroom at
+both ends. The through-line: **a personality may be shaped, but it must remain
+moveable.**
+
+Loading is strict for authored files and lenient for deployment config, and the
+asymmetry is deliberate. An invalid persona file falls back *whole* rather than
+partially applying, because half-applying it would hand the author a friend they
+did not describe. An out-of-range `PSYCH_*` env var is clamped with a warning
+instead, so a deployment already running an unusual value does not fail to boot
+because persona bounds arrived.
+
+### Verification
+
+`tests/test_persona_profile.py` (35 tests). Five mutations applied, all caught:
+allowing a file to override the safety core, permitting a zero mood-decay lock,
+regressing the bounds reader, sharing the mutable core, and widening the baseline
+cap to ±1.0.
+
+One real bug was found by the tests during development, in this change's own
+code. `_bounds_of` collected bounds with `getattr(...) or low`, and `gt=0.0` is
+falsy — so the strictly-positive guard silently evaporated and a zero
+`mood_decay_rate` sailed through clamping. The single most important bound was
+the one the idiom dropped. Now an explicit `is not None`, with the mutation
+retained as a regression test.
+
+Full backend suite: **432 passed** (397 + 35), `ruff check .` clean. Counts taken
+from `--junit-xml` rather than the terminal summary, which this environment
+truncates.
+
+**NOT done:** no persona file ships, and nothing writes one — there is no
+authoring UI, so this is the mechanism, not the product surface. `IdentityManager`
+still loads `personality.json` independently; the two persona sources are not yet
+unified, and the narrative half remains unbounded. `DOPAMINE_PHASIC_HALFLIFE_S`
+(PR #70) is temperament by rights and belongs in the profile, but was left out to
+avoid stacking branches again. Restored Neo4j baselines bypass persona bounds by
+design — the profile seeds a new friend, it does not clamp a lived one.
