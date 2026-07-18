@@ -12,8 +12,19 @@ from ..state import GraphDB, MemoryStore, ConversationHistoryStore
 from ..config import Config
 from ..cognitive import CognitiveService
 from ..runtime_bootstrap import bootstrap_runtime
-from ..contracts import ChatInput, ChatOutput, ChatOutputAffect, Topics
+from ..contracts import (
+    AudioPlaybackProgress,
+    AudioResume,
+    AudioStop,
+    ChatInput,
+    ChatOutput,
+    ChatOutputAffect,
+    Topics,
+    UserVoiceProperties,
+)
 from ..logging_config import setup_logging
+from ..utils.conversational_runtime import ConversationalRuntime
+from ..utils.interruption_classifier import InterruptionClassifier
 from ..utils.segmentation import HybridSegmenter
 from ..utils.speech import SpeechCoordinator
 
@@ -56,9 +67,6 @@ class BrainAgent(BaseAgent):
         self.coordinator = SpeechCoordinator(
             segmenter=HybridSegmenter(target_size=7), formation_buffer_ms=0.030
         )
-        from ..utils.interruption_classifier import InterruptionClassifier
-        from ..utils.conversational_runtime import ConversationalRuntime
-
         self.interruption_classifier = InterruptionClassifier()
         self.conversational_runtime = ConversationalRuntime(publish_cb=self.publish)
         self._active_generation_task = None
@@ -194,8 +202,6 @@ class BrainAgent(BaseAgent):
 
         # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio
         if not is_subconscious:
-            from ..contracts import AudioStop
-
             stop_msg = AudioStop(
                 interrupt=True,
                 speculative=False,
@@ -352,8 +358,6 @@ class BrainAgent(BaseAgent):
                 )
 
                 # Instantly publish confirmed audio.stop to silence playback
-                from ..contracts import AudioStop
-
                 stop_msg = AudioStop(
                     interrupt=True,
                     speculative=False,
@@ -375,8 +379,6 @@ class BrainAgent(BaseAgent):
                     self._active_generation_task.cancel()
             else:
                 # Not a valid semantic interruption! Send an audio resume to restore volume.
-                from ..contracts import AudioResume
-
                 resume_msg = AudioResume(
                     reason="not_interruption",
                     perception_text=text,
@@ -387,8 +389,6 @@ class BrainAgent(BaseAgent):
     async def _on_audio_playback_progress(self, data: Dict[str, Any]):
         """Tracks the current word/character progress of the audio playback."""
         try:
-            from ..contracts import AudioPlaybackProgress
-
             progress = AudioPlaybackProgress.model_validate(data)
             self.last_audio_progress = progress
             logger.debug(
@@ -400,8 +400,6 @@ class BrainAgent(BaseAgent):
     async def _on_audio_stop(self, data: Dict[str, Any]):
         """Handles confirmed audio stops to truncate the last played utterance in history."""
         try:
-            from ..contracts import AudioStop
-
             stop_msg = AudioStop.model_validate(data)
 
             # Truncation only happens on confirmed (non-speculative) interrupts
@@ -447,8 +445,6 @@ class BrainAgent(BaseAgent):
     async def _on_user_voice_properties(self, data: Dict[str, Any]):
         """Ingest real-time user voice properties (System 1 feature stream)."""
         try:
-            from ..contracts import UserVoiceProperties
-
             props = UserVoiceProperties.model_validate(data)
             self.last_user_voice_properties = props
             logger.debug(

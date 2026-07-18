@@ -17,7 +17,7 @@ Usage:
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -247,6 +247,13 @@ class ProsodyFrame(BaseModel):
 class AgentVoiceModulation(BaseModel):
     model_config = {"extra": "allow"}
 
+    # A7: the reference generator (generate_apra_trajectory, cognitive-rust)
+    # steps in exactly 50ms increments, but the contract only needs frames close
+    # enough together for smooth playback - not that exact grid. A hard "==50"
+    # check made any jitter or resampling (e.g. a future non-Rust producer, or a
+    # frame dropped/merged in transit) reject the *entire* trajectory.
+    MAX_FRAME_GAP_MS: ClassVar[int] = 250
+
     trajectory: List[ProsodyFrame] = Field(..., min_length=1)
     timestamp: float = Field(default_factory=time.time)
 
@@ -258,12 +265,17 @@ class AgentVoiceModulation(BaseModel):
         if v[0].time_offset_ms < 0:
             raise ValueError("First offset must be >= 0.")
         for i in range(1, len(v)):
-            if v[i].time_offset_ms < v[i - 1].time_offset_ms:
+            gap = v[i].time_offset_ms - v[i - 1].time_offset_ms
+            if gap <= 0:
                 raise ValueError(
-                    "Trajectory must be ordered by time_offset_ms ascending."
+                    "Trajectory must be strictly ordered by time_offset_ms ascending."
                 )
-            if v[i].time_offset_ms - v[i - 1].time_offset_ms != 50:
-                raise ValueError("Consecutive frames must differ by exactly 50 ms.")
+            if gap > AgentVoiceModulation.MAX_FRAME_GAP_MS:
+                raise ValueError(
+                    "Consecutive frames must be no more than "
+                    f"{AgentVoiceModulation.MAX_FRAME_GAP_MS} ms apart "
+                    f"(got {gap} ms)."
+                )
         return v
 
 

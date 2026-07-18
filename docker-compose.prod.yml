@@ -56,7 +56,15 @@ services:
 
     deploy:
       resources:
+        # E2: brain_agent is the only service in this file with an explicit cap,
+        # yet it's the heaviest one - the full cognitive pipeline (asyncpg pool,
+        # neo4j bolt driver, embedding/LLM HTTP buffers, in-process memory cache)
+        # runs here, while every sibling service below has no limit at all. 512M
+        # was measured tight even in a light benchmark run; give it real headroom
+        # instead of a cap likely to OOM-kill mid-session under sustained load.
         limits:
+          memory: 2048M
+        reservations:
           memory: 512M
     restart: always
     healthcheck:
@@ -206,7 +214,7 @@ services:
     command: [ "python", "-m", "app.agents.transport_agent" ]
     environment:
       - NATS_URL=nats://nats_mesh:4222
-      - LIVEKIT_URL=http://local_sfu:7880
+      - LIVEKIT_URL=ws://local_sfu:7880
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - TRANSPORT_AUDIO_QUEUE_SIZE=${TRANSPORT_AUDIO_QUEUE_SIZE:-1024}

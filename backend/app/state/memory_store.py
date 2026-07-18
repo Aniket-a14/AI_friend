@@ -17,6 +17,7 @@ import asyncio
 import httpx
 import orjson
 import math
+import sqlite3
 from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
 from typing import Iterable
@@ -160,11 +161,20 @@ class MemoryStore:
 
     @property
     def is_sqlite(self) -> bool:
-        """Heuristic check to determine if the backing pool uses the Mock SQLite adaptor."""
-        return type(self.pool).__name__ == "MockPGPool" or (
-            hasattr(self.pool, "connection")
-            and type(self.pool).__name__ not in ("MagicMock", "AsyncMock", "Mock")
-        )
+        """Whether the backing pool is actually a stdlib sqlite3 connection under
+        the hood (SQLitePool, or a test double shaped like it), rather than real
+        asyncpg/Postgres.
+
+        A5: previously sniffed type(self.pool).__name__ against a hardcoded set
+        of class names ("MockPGPool", excluding "MagicMock"/"AsyncMock"/"Mock").
+        Any pool class not on that exact list - a rename, a subclass, a new test
+        double - silently misclassified and routed to the wrong SQL dialect.
+        Checking what pool.connection.conn actually *is* (a real sqlite3.Connection,
+        the one thing both the production SQLitePool and its test doubles genuinely
+        share) is a structural fact instead of a name-matching guess.
+        """
+        conn = getattr(self.pool, "connection", None)
+        return isinstance(getattr(conn, "conn", None), sqlite3.Connection)
 
     @staticmethod
     def _as_aware_utc(dt):
