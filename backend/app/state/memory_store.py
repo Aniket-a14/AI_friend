@@ -15,9 +15,12 @@ import logging
 import time
 import asyncio
 import httpx
+import json
 import orjson
 import math
+import re
 import sqlite3
+import uuid
 from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
 from typing import Iterable
@@ -80,6 +83,114 @@ ACTR_EMO_PROXIMITY_WEIGHT = 0.15  # bonus for small emotional distance
 ACTR_VALENCE_GAIN = 0.1  # similarity gain from congruent valence×arousal
 ACTR_STRESS_SUPPRESSION = 0.2  # similarity suppression under arousal×cortisol
 ACTR_EMO_DISTANCE_PENALTY = 0.5  # score penalty per unit emotional distance
+
+# Generic English stop words plus a few domain-generic conversational terms,
+# stripped from a query before it is used for lexical cue matching. Hoisted to
+# module scope: this is a constant, and rebuilding the literal on every
+# search_memories call was pure waste. Membership is unchanged (the original
+# literal contained duplicates, which a set collapses either way).
+SEARCH_STOP_WORDS = frozenset(
+    {
+        "the", "and", "but", "yet", "for", "nor", "with", "this", "that",
+        "these", "those", "you", "your", "yours", "him", "her", "them", "his",
+        "hers", "their", "theirs", "was", "were", "been", "have", "has", "had",
+        "did", "does", "what", "where", "when", "who", "why", "how", "can",
+        "could", "would", "should", "shall", "will", "about", "above", "after",
+        "again", "against", "all", "am", "an", "any", "are", "arent", "as",
+        "at", "be", "because", "before", "being", "below", "between", "both",
+        "by", "cant", "cannot", "didnt", "dont", "down", "during", "each",
+        "few", "from", "further", "hadnt", "hasnt", "havent", "having", "he",
+        "hed", "hell", "hes", "here", "heres", "herself", "himself", "i", "id",
+        "ill", "im", "ive", "if", "in", "into", "isnt", "it", "its", "itself",
+        "lets", "me", "more", "most", "mustnt", "my", "myself", "no", "not",
+        "of", "off", "on", "once", "only", "or", "other", "ought", "our",
+        "ours", "ourselves", "out", "over", "own", "same", "shant", "she",
+        "shed", "shell", "shes", "shouldnt", "so", "some", "such", "than",
+        "thats", "themselves", "then", "there", "theres", "they", "theyd",
+        "theyll", "theyre", "theyve", "through", "to", "too", "under",
+        "until", "up", "very", "wasnt", "we", "wed", "well", "weve", "werent",
+        "whats", "whens", "wheres", "which", "while", "whos", "whom", "whys",
+        "wont", "wouldnt", "youd", "youll", "youre", "youve", "yourself",
+        "yourselves", "describe", "compare", "influence", "influenced",
+        "friend", "companion", "robot", "human", "development", "developer",
+        "developers", "project", "workspace", "shared", "recall", "recalled",
+        "experience", "experiences", "related",
+    }
+)
+
+# Pronoun sets used for speaker/listener cue resolution.
+FIRST_PERSON_PRONOUNS = frozenset({"i", "me", "my", "myself", "we", "our", "us"})
+SECOND_PERSON_PRONOUNS = frozenset(
+    {"you", "your", "yours", "yourself", "yourselves"}
+)
+
+# Postgres retrieval fast path. Two variants of the same query: the current
+# schema also carries the Eriksonian lifespan columns on `memories`, while a
+# not-yet-migrated database has only the base columns. Both take the identical
+# 12-argument tuple; see _fetch_surface_actr_rows.
+_SURFACE_ACTR_SELECT_HEAD = """
+    SELECT
+        m.id AS id,
+        s.content,
+        s.raw_content,
+        s.wing,
+        s.room,
+        s.importance_score,
+        s.emotional_weight,
+        s.valence,
+        s.recall_count,
+        s.last_recalled_at,
+        s.created_at,
+        s.metadata,
+        s.similarity,
+        s.score"""
+
+_SURFACE_ACTR_FROM_JOIN = """
+    FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::double precision, $10::double precision, $11::integer, $12::timestamptz) s
+    LEFT JOIN memories m ON m.content = s.content AND m.wing = s.wing
+"""
+
+_SURFACE_ACTR_SQL_ERIKSONIAN = (
+    _SURFACE_ACTR_SELECT_HEAD
+    + """,
+        m.lifespan_stage,
+        m.crisis,
+        m.virtue,
+        m.relations,
+        m.relation_circles,
+        m.modality"""
+    + _SURFACE_ACTR_FROM_JOIN
+)
+
+_SURFACE_ACTR_SQL_LEGACY = _SURFACE_ACTR_SELECT_HEAD + _SURFACE_ACTR_FROM_JOIN
+
+# Archive -> active promotion. Same columns in both dialects; only the
+# placeholder style and the EXCLUDED casing differ.
+_PROMOTE_INSERT_COLUMNS = """INSERT INTO memories (
+        id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
+        valence, certainty, source, recall_count, last_recalled_at, created_at,
+        metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
+    ) VALUES """
+
+_PROMOTE_INSERT_SQLITE = (
+    _PROMOTE_INSERT_COLUMNS
+    + """(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+        recall_count = excluded.recall_count,
+        last_recalled_at = excluded.last_recalled_at,
+        importance_score = excluded.importance_score
+"""
+)
+
+_PROMOTE_INSERT_PG = (
+    _PROMOTE_INSERT_COLUMNS
+    + """($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+    ON CONFLICT(id) DO UPDATE SET
+        recall_count = EXCLUDED.recall_count,
+        last_recalled_at = EXCLUDED.last_recalled_at,
+        importance_score = EXCLUDED.importance_score
+"""
+)
 
 
 class GoalBuffer:
@@ -749,6 +860,1371 @@ class MemoryStore:
             logger.debug(f"Failed to load dynamic stop words: {e}")
             self._db_stop_words = set()
 
+    # ------------------------------------------------------------------
+    # search_memories stages (F1)
+    #
+    # search_memories was a ~1600-line god-function fusing L1 caching, Qdrant
+    # retrieval, two SQL dialects, cue extraction, graph building, pronoun
+    # resolution, PageRank spreading activation, archive promotion and result
+    # formatting into one body. The stages below are that same pipeline, split
+    # at its natural seams so each piece can be read and tested on its own.
+    # Behavior is intentionally unchanged - the scoring math, ordering and
+    # error-swallowing semantics are preserved exactly.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _compute_mrl_gating(
+        current_arousal: float,
+        current_cortisol: float,
+        limit,
+        refresh_on_recall: bool,
+    ) -> tuple[int, int]:
+        """Dynamic Matryoshka (MRL) dimension gating.
+
+        Higher stress/arousal restricts the search to a smaller Matryoshka
+        prefix and a smaller candidate pool, bounding retrieval latency when
+        the agent is under load.
+        """
+        stress_index = max(current_arousal, current_cortisol)
+        if stress_index > 0.8:
+            return 256, max(10, limit * 2 if limit is not None else 10)
+        if stress_index > 0.6:
+            return 512, max(30, limit * 3 if limit is not None else 30)
+        if refresh_on_recall:
+            return 768, max(120, limit * 6 if limit is not None else 120)
+        return 768, max(20, limit * 3 if limit is not None else 20)
+
+    def _detect_topic_shift(self, query_vector: list) -> None:
+        """Flush the goal buffer when the query diverges sharply from the last one."""
+        if self._last_query_vector is not None:
+            try:
+                dot = sum(a * b for a, b in zip(query_vector, self._last_query_vector))
+                norm1 = math.sqrt(sum(a * a for a in query_vector))
+                norm2 = math.sqrt(sum(b * b for b in self._last_query_vector))
+                sim = dot / (norm1 * norm2) if norm1 > 1e-9 and norm2 > 1e-9 else 1.0
+                if sim < 0.15:
+                    logger.info(
+                        f"🔄 Topic Shift Detected (similarity {sim:.3f} < 0.15). Flushing Goal Buffer."
+                    )
+                    self.goal_buffer.flush()
+            except Exception as ts_err:
+                logger.debug(f"Topic-shift calculation failed: {ts_err}")
+        self._last_query_vector = query_vector
+
+    async def _gather_candidate_sources(self, mrl_query_vector, candidate_limit):
+        """Fetch vector candidates and the Neo4j entity/relation graph concurrently."""
+
+        async def safe_qdrant_search():
+            try:
+                if self.qdrant_store.client:
+                    return await asyncio.to_thread(
+                        self.qdrant_store.search_vector_memories,
+                        query_vector=mrl_query_vector,
+                        limit=candidate_limit,
+                    )
+            except Exception as qe:
+                logger.error(f"Qdrant retrieval failed: {qe}")
+            return []
+
+        async def _dummy_list():
+            return []
+
+        candidates, entity_records, relation_records = await asyncio.gather(
+            safe_qdrant_search(),
+            self.graph_db.execute_query(
+                "MATCH (e:Entity) RETURN e.name AS name, e.description AS description",
+                use_cache=True,
+            )
+            if self.graph_db
+            else _dummy_list(),
+            self.graph_db.execute_query(
+                "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target",
+                use_cache=True,
+            )
+            if self.graph_db
+            else _dummy_list(),
+        )
+
+        # Defensive type checks
+        if not isinstance(entity_records, list):
+            entity_records = []
+        if not isinstance(relation_records, list):
+            relation_records = []
+        return candidates, entity_records, relation_records
+
+    async def _score_qdrant_candidates(
+        self,
+        candidates,
+        *,
+        wing,
+        room,
+        excluded,
+        threshold,
+        current_valence,
+        current_arousal,
+        current_cortisol,
+        current_time,
+        now_ts,
+    ) -> list:
+        """Score Qdrant vector hits with ACT-R activation + neuromodulatory gating."""
+        raw_candidates = []
+        try:
+            db_metadata = await self._fetch_candidate_db_metadata(candidates)
+
+            for cand in candidates:
+                meta = cand["metadata"]
+                c_wing = meta.get("wing")
+                c_room = meta.get("room")
+                if wing is not None and c_wing != wing:
+                    continue
+                if room is not None and c_room != room:
+                    continue
+
+                c_content = cand["content"]
+                if c_content in excluded:
+                    continue
+
+                memory_id = cand["id"]
+                db_meta = db_metadata.get(str(memory_id))
+
+                memory_valence = (
+                    db_meta.get("valence")
+                    if (db_meta and db_meta.get("valence") is not None)
+                    else meta.get("valence", 0.0)
+                )
+                emotion_weight_row = (
+                    db_meta.get("emotional_weight")
+                    if (db_meta and db_meta.get("emotional_weight") is not None)
+                    else meta.get("emotional_weight", 0.0)
+                )
+                importance_score = (
+                    db_meta.get("importance_score")
+                    if (db_meta and db_meta.get("importance_score") is not None)
+                    else meta.get("importance_score", 0.5)
+                )
+                recall_count = max(
+                    1,
+                    db_meta.get("recall_count")
+                    if (db_meta and db_meta.get("recall_count") is not None)
+                    else meta.get("recall_count", 1),
+                )
+
+                last_recall_time = self._coerce_last_recall_ts(db_meta, meta, now_ts)
+                hours_since = max(0.001, (now_ts - last_recall_time) / 3600.0)
+
+                # 2D/3D Emotional Distance matching the research simulator
+                dist_emo = math.sqrt(
+                    (memory_valence - current_valence) ** 2
+                    + (emotion_weight_row - current_arousal) ** 2
+                )
+
+                base_activation = self._base_activation(
+                    recall_count, hours_since, importance_score, dist_emo
+                )
+
+                similarity = cand["score"]
+                effective_similarity = self._effective_similarity(
+                    similarity,
+                    memory_valence,
+                    emotion_weight_row,
+                    current_arousal,
+                    current_cortisol,
+                )
+
+                spread_activation = self.spread_weight * effective_similarity
+                score = (
+                    base_activation
+                    + spread_activation
+                    - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+                )
+
+                if score <= (threshold - 2.5) and importance_score < 0.7:
+                    continue
+
+                created_val = meta.get("created_at")
+                try:
+                    created = (
+                        datetime.fromtimestamp(float(created_val), timezone.utc)
+                        if created_val
+                        else (
+                            current_time
+                            if current_time is not None
+                            else datetime.now(timezone.utc)
+                        )
+                    )
+                except Exception:
+                    created = (
+                        current_time
+                        if current_time is not None
+                        else datetime.now(timezone.utc)
+                    )
+
+                custom_metadata = {}
+                if "custom_metadata" in meta:
+                    try:
+                        custom_metadata = orjson.loads(meta["custom_metadata"])
+                    except Exception:
+                        pass
+
+                raw_candidates.append(
+                    {
+                        "id": memory_id,
+                        "content": c_content,
+                        "raw_content": c_content,
+                        "wing": c_wing or "personal",
+                        "room": c_room,
+                        "score": score,
+                        "valence": memory_valence,
+                        "created_at": created,
+                        "recall_count": recall_count,
+                        "metadata": custom_metadata,
+                        "lifespan_stage": meta.get("lifespan_stage"),
+                        "crisis": meta.get("crisis"),
+                        "virtue": meta.get("virtue"),
+                        "relations": meta.get("relations"),
+                        "relation_circles": meta.get("relation_circles"),
+                        "modality": meta.get("modality"),
+                        "similarity": similarity,
+                        "last_recalled_at": datetime.fromtimestamp(
+                            last_recall_time, timezone.utc
+                        ),
+                    }
+                )
+        except Exception as qe:
+            logger.error(f"Qdrant retrieval failed, falling back to database: {qe}")
+        return raw_candidates
+
+    async def _fetch_candidate_db_metadata(self, candidates) -> dict:
+        """Load the authoritative SQL metadata for a set of Qdrant candidates.
+
+        Qdrant payloads can lag the SQL row (recall_count/last_recalled_at move
+        on every recall), so the DB copy wins where present.
+        """
+        db_metadata = {}
+        try:
+            cand_ids = [c["id"] for c in candidates if c.get("id")]
+            if cand_ids:
+                async with self.pool.acquire() as conn:
+                    if self.is_sqlite:
+                        placeholders = ",".join("?" for _ in cand_ids)
+                        rows = await conn.fetch(
+                            f"SELECT id, importance_score, emotional_weight, valence, recall_count, last_recalled_at FROM memories WHERE id IN ({placeholders})",
+                            *cand_ids,
+                        )
+                    else:
+                        rows = await conn.fetch(
+                            "SELECT id, importance_score, emotional_weight, valence, recall_count, last_recalled_at FROM memories WHERE id = ANY($1)",
+                            cand_ids,
+                        )
+                    for r in rows:
+                        db_metadata[str(r["id"])] = r
+        except Exception as db_err:
+            logger.warning(
+                f"Failed to fetch updated memory metadata from SQL DB for Qdrant candidates: {db_err}"
+            )
+        return db_metadata
+
+    @staticmethod
+    def _coerce_last_recall_ts(db_meta, meta, now_ts) -> float:
+        """Normalize last_recalled_at (datetime | epoch | ISO string) to a float epoch."""
+        try:
+            if db_meta and db_meta.get("last_recalled_at"):
+                last_recall_time = db_meta.get("last_recalled_at")
+                if isinstance(last_recall_time, (int, float)):
+                    return float(last_recall_time)
+                if hasattr(last_recall_time, "timestamp"):
+                    return last_recall_time.timestamp()
+                dt = datetime.fromisoformat(str(last_recall_time).replace(" ", "T"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.timestamp()
+            return float(meta.get("last_recalled_at", now_ts))
+        except (ValueError, TypeError):
+            return now_ts
+
+    async def _fetch_sqlite_candidates(
+        self,
+        conn,
+        *,
+        query_vector,
+        wing,
+        room,
+        excluded,
+        threshold,
+        current_valence,
+        current_arousal,
+        current_cortisol,
+        current_time,
+    ) -> tuple[list, float]:
+        """SQLite fallback: fetch rows and score them via the Rust ACT-R kernel.
+
+        Returns the candidates plus the `now_ts` it computed, because the
+        original inlined body rebound the enclosing now_ts here and that value
+        is what later stamps the L1 cache entry.
+        """
+        if room is not None:
+            rows = await conn.fetch(
+                "SELECT * FROM memories WHERE wing = ? AND room = ?", wing, room
+            )
+        else:
+            rows = await conn.fetch("SELECT * FROM memories WHERE wing = ?", wing)
+
+        # Manual cosine similarity and ACT-R scoring (delegated to Rust PyO3).
+        # Imported lazily: the compiled extension is optional in some envs and
+        # a module-level import would break importing MemoryStore entirely.
+        import cognitive_rust
+
+        now = current_time if current_time is not None else datetime.now(timezone.utc)
+        now_ts = now.timestamp()
+
+        # Preprocess timestamps for Rust
+        for row in rows:
+            row["_last_recall_ts"] = self._normalize_recall_ts(
+                row.get("last_recalled_at"), now_ts
+            )
+
+        scored_indices = cognitive_rust.score_memories_actr_sqlite(
+            query_vector,
+            rows,
+            excluded,
+            current_valence,
+            current_arousal,
+            current_cortisol,
+            self.decay_rate,
+            self.spread_weight,
+            threshold,
+            now_ts,
+        )
+
+        raw_candidates = []
+        for idx, score, similarity in scored_indices:
+            row = rows[idx]
+            last_recall = row.get("last_recalled_at")
+            if last_recall is None:
+                last_recall = now
+            elif isinstance(last_recall, str):
+                try:
+                    last_recall = datetime.fromisoformat(last_recall)
+                except Exception:
+                    last_recall = now
+            if last_recall.tzinfo is None:
+                last_recall = last_recall.replace(tzinfo=timezone.utc)
+
+            created = row.get("created_at")
+            if isinstance(created, str):
+                try:
+                    created = datetime.fromisoformat(created)
+                except Exception:
+                    created = now
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+
+            raw_meta = row.get("metadata")
+            if isinstance(raw_meta, str):
+                try:
+                    raw_meta = orjson.loads(raw_meta)
+                except Exception:
+                    raw_meta = {}
+
+            raw_candidates.append(
+                {
+                    "id": row.get("id"),
+                    "content": row["content"],
+                    "raw_content": row.get("raw_content") or row["content"],
+                    "wing": row.get("wing", "personal"),
+                    "room": row.get("room"),
+                    "score": score,
+                    "valence": row.get("valence") or 0.0,
+                    "created_at": created,
+                    "recall_count": max(1, row.get("recall_count") or 1),
+                    "metadata": raw_meta or {},
+                    "lifespan_stage": row.get("lifespan_stage"),
+                    "crisis": row.get("crisis"),
+                    "virtue": row.get("virtue"),
+                    "relations": row.get("relations"),
+                    "relation_circles": row.get("relation_circles"),
+                    "modality": row.get("modality"),
+                    "similarity": similarity,
+                    "last_recalled_at": last_recall,
+                }
+            )
+        return raw_candidates, now_ts
+
+    @staticmethod
+    def _normalize_recall_ts(last_recall, now_ts: float) -> float:
+        """Coerce a row's last_recalled_at into a float epoch for the Rust kernel."""
+        if last_recall is None:
+            return now_ts
+        if isinstance(last_recall, datetime):
+            return last_recall.timestamp()
+        if isinstance(last_recall, (int, float)):
+            return float(last_recall)
+        if isinstance(last_recall, str):
+            try:
+                return float(last_recall)
+            except ValueError:
+                try:
+                    dt = datetime.fromisoformat(last_recall.replace(" ", "T"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.timestamp()
+                except Exception:
+                    return now_ts
+        return now_ts
+
+    async def _fetch_postgres_candidates(
+        self,
+        conn,
+        *,
+        vector_str,
+        wing,
+        room,
+        excluded,
+        threshold,
+        candidate_limit,
+        current_valence,
+        current_arousal,
+        current_cortisol,
+        current_time,
+    ) -> list:
+        """PostgreSQL fast path via the surface_actr_memories() vector procedure."""
+        rows = await self._fetch_surface_actr_rows(
+            conn,
+            vector_str=vector_str,
+            wing=wing,
+            room=room,
+            threshold=threshold,
+            candidate_limit=candidate_limit,
+            current_valence=current_valence,
+            current_arousal=current_arousal,
+            current_cortisol=current_cortisol,
+            current_time=current_time,
+        )
+
+        raw_candidates = []
+        for row in rows:
+            if row["content"] in excluded:
+                continue
+
+            similarity = row.get("similarity") or 0.0
+            recall_count = max(1, row.get("recall_count") or 1)
+
+            # Recalculate score with neuromodulatory gating
+            last_recall = row.get("last_recalled_at")
+            now = (
+                self._as_aware_utc(current_time)
+                if current_time is not None
+                else datetime.now(timezone.utc)
+            )
+            last_recall = (
+                now if last_recall is None else self._as_aware_utc(last_recall)
+            )
+
+            hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
+
+            memory_valence = row.get("valence") or 0.0
+            emotion_weight_row = row.get("emotional_weight") or 0.0
+
+            # 2D/3D Emotional Distance matching the research simulator
+            dist_emo = math.sqrt(
+                (memory_valence - current_valence) ** 2
+                + (emotion_weight_row - current_arousal) ** 2
+            )
+
+            base_activation = self._base_activation(
+                recall_count,
+                hours_since,
+                row.get("importance_score") or 0.5,
+                dist_emo,
+            )
+
+            # Neuromodulatory distance mapping
+            effective_similarity = self._effective_similarity(
+                similarity,
+                memory_valence,
+                emotion_weight_row,
+                current_arousal,
+                current_cortisol,
+            )
+
+            spread_activation = self.spread_weight * effective_similarity
+            score = (
+                base_activation
+                + spread_activation
+                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+            )
+
+            if score <= (threshold - 2.5) and (row.get("importance_score") or 0.5) < 0.7:
+                continue
+
+            created = row.get("created_at")
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+
+            raw_meta = row.get("metadata")
+            if isinstance(raw_meta, str):
+                try:
+                    raw_meta = orjson.loads(raw_meta)
+                except Exception:
+                    raw_meta = {}
+
+            raw_candidates.append(
+                {
+                    "id": row.get("id"),
+                    "content": row["content"],
+                    "raw_content": row.get("raw_content") or row["content"],
+                    "wing": row.get("wing", "personal"),
+                    "room": row.get("room"),
+                    "score": score,
+                    "valence": row.get("valence") or 0.0,
+                    "created_at": created,
+                    "recall_count": recall_count,
+                    "metadata": raw_meta or {},
+                    "lifespan_stage": row.get("lifespan_stage"),
+                    "crisis": row.get("crisis"),
+                    "virtue": row.get("virtue"),
+                    "relations": row.get("relations"),
+                    "relation_circles": row.get("relation_circles"),
+                    "modality": row.get("modality"),
+                    "similarity": similarity,
+                    "last_recalled_at": last_recall,
+                }
+            )
+        return raw_candidates
+
+    async def _fetch_surface_actr_rows(
+        self,
+        conn,
+        *,
+        vector_str,
+        wing,
+        room,
+        threshold,
+        candidate_limit,
+        current_valence,
+        current_arousal,
+        current_cortisol,
+        current_time,
+    ):
+        """Call surface_actr_memories(), falling back to the pre-Eriksonian schema.
+
+        The two queries take identical arguments and differ only in whether the
+        Eriksonian lifespan columns are selected from the JOINed memories row,
+        so the argument tuple is built once.
+        """
+        args = (
+            vector_str,
+            wing,
+            room,
+            self.decay_rate,
+            self.spread_weight,
+            self.emotion_weight,
+            current_valence,
+            current_arousal,
+            current_cortisol,
+            threshold - 2.5,
+            candidate_limit,
+            current_time,
+        )
+        try:
+            return await conn.fetch(_SURFACE_ACTR_SQL_ERIKSONIAN, *args)
+        except Exception as pg_err:
+            logger.warning(
+                f"Eriksonian JOIN pg query failed, falling back to legacy schema: {pg_err}"
+            )
+            return await conn.fetch(_SURFACE_ACTR_SQL_LEGACY, *args)
+
+    def _resolve_dynamic_stop_words(self, user_id) -> set:
+        """Static stop words plus DB-learned ones and the agent/user proper nouns.
+
+        The agent's own name and the speaker's name are suppressed as cues
+        because they appear in nearly every memory and would otherwise boost
+        everything uniformly.
+        """
+        dynamic_stop_words = set(SEARCH_STOP_WORDS)
+        if getattr(self, "_db_stop_words", None):
+            dynamic_stop_words.update(self._db_stop_words)
+        ai_name_cfg = getattr(Config, "AI_NAME", None)
+        if ai_name_cfg:
+            for w in re.findall(r"\b\w{3,}\b", ai_name_cfg.lower()):
+                dynamic_stop_words.add(w)
+        if user_id:
+            for w in re.findall(r"\b\w{3,}\b", user_id.lower()):
+                dynamic_stop_words.add(w)
+        return dynamic_stop_words
+
+    @staticmethod
+    def _build_entity_graph(entity_records, relation_records, raw_candidates):
+        """Build the entity list and co-occurrence adjacency used by PPR.
+
+        Edges come from Neo4j relations plus entity co-occurrence within each
+        candidate memory.
+        """
+        entity_names = [r["name"] for r in entity_records]
+        adj = {}
+
+        for r in relation_records:
+            src = r["source"]
+            tgt = r["target"]
+            adj.setdefault(src, set()).add(tgt)
+            adj.setdefault(tgt, set()).add(src)
+
+        # Add co-occurrence connections from candidate memories
+        for cand in raw_candidates:
+            payload_meta = cand.get("metadata") or {}
+            cand_ents = payload_meta.get("entities", [])
+            if not cand_ents:
+                content_lower = cand["content"].lower()
+                cand_ents = []
+                for name in entity_names:
+                    pattern = rf"\b{re.escape(name.lower())}\b"
+                    if re.search(pattern, content_lower):
+                        cand_ents.append(name)
+
+            for i in range(len(cand_ents)):
+                for j in range(i + 1, len(cand_ents)):
+                    e1 = cand_ents[i]
+                    e2 = cand_ents[j]
+                    adj.setdefault(e1, set()).add(e2)
+                    adj.setdefault(e2, set()).add(e1)
+
+        return entity_names, adj
+
+    @staticmethod
+    def _resolve_identity_nodes(entity_records, entity_names, adj, user_id):
+        """Discover which graph nodes represent the agent and the user.
+
+        Falls back through description text, configured AI_NAME, and finally
+        the most-connected non-agent entity, so pronoun resolution still works
+        on a graph that was never explicitly annotated.
+        """
+        agent_node_name = None
+        user_node_name = None
+
+        # 1. Discover Agent Node Name dynamically
+        for r in entity_records:
+            desc = r.get("description") or ""
+            if "central cognitive system" in desc.lower():
+                agent_node_name = r["name"]
+                break
+        if not agent_node_name:
+            ai_name = getattr(Config, "AI_NAME", "AI Friend")
+            for name in entity_names:
+                if name.lower() == ai_name.lower():
+                    agent_node_name = name
+                    break
+        if not agent_node_name:
+            agent_node_name = getattr(Config, "AI_NAME", "AI Friend")
+
+        # 2. Discover User Node Name dynamically
+        if user_id:
+            for name in entity_names:
+                if name.lower() == user_id.lower():
+                    user_node_name = name
+                    break
+        if not user_node_name:
+            for r in entity_records:
+                desc = r.get("description") or ""
+                if (
+                    "user" in desc.lower()
+                    or "companion" in desc.lower()
+                    or "friend" in desc.lower()
+                ):
+                    if r["name"] != agent_node_name:
+                        user_node_name = r["name"]
+                        break
+        if not user_node_name and entity_names:
+            ai_names = {"ai friend", "my friend", agent_node_name.lower()}
+            if getattr(Config, "AI_NAME", None):
+                ai_names.add(Config.AI_NAME.lower())
+            candidates_names = [
+                name for name in entity_names if name.lower() not in ai_names
+            ]
+            if candidates_names:
+                candidates_names.sort(
+                    key=lambda name: len(adj.get(name, set())), reverse=True
+                )
+                user_node_name = candidates_names[0]
+        if not user_node_name:
+            user_node_name = user_id or "user"
+
+        return agent_node_name, user_node_name
+
+    @staticmethod
+    def _resolve_pronoun_cues(
+        query_text, agent_node_name, user_node_name, user_id, is_self_reflection
+    ) -> set:
+        """Context-aware speaker/listener pronoun resolution.
+
+        Who "I" and "you" refer to flips depending on whether the agent is
+        reflecting on itself or the user is speaking.
+        """
+        query_words_all = re.findall(r"\b\w+\b", query_text.lower())
+        resolved_cues = set()
+
+        if is_self_reflection:
+            # Agent speaking: "I" -> Agent, "you" -> User
+            speaker, listener = agent_node_name, user_node_name
+        else:
+            # User speaking: "I" -> User, "you" -> Agent
+            speaker, listener = user_node_name, agent_node_name
+
+        if any(p in query_words_all for p in FIRST_PERSON_PRONOUNS) and speaker:
+            resolved_cues.add(speaker.lower())
+        if any(p in query_words_all for p in SECOND_PERSON_PRONOUNS) and listener:
+            resolved_cues.add(listener.lower())
+
+        # Add user/agent names if explicitly mentioned in query
+        user_aliases = {"user"}
+        if user_id:
+            user_aliases.add(user_id.lower())
+        if user_node_name:
+            user_aliases.add(user_node_name.lower())
+
+        agent_aliases = {"ai friend", "my friend"}
+        if getattr(Config, "AI_NAME", None):
+            agent_aliases.add(Config.AI_NAME.lower())
+        if agent_node_name:
+            agent_aliases.add(agent_node_name.lower())
+
+        for word in query_words_all:
+            if word in user_aliases and user_node_name:
+                resolved_cues.add(user_node_name.lower())
+            if word in agent_aliases and agent_node_name:
+                resolved_cues.add(agent_node_name.lower())
+
+        return resolved_cues
+
+    @staticmethod
+    def _apply_direct_cue_boost(raw_candidates, matched_cues) -> set:
+        """Add DIRECT_CUE_BOOST per literal query cue found in a memory.
+
+        Returns the indices that were boosted; PPR treats these as seeds when
+        the query itself names no known entity.
+        """
+        direct_boosted_indices = set()
+        if not matched_cues:
+            return direct_boosted_indices
+        for idx, cand in enumerate(raw_candidates):
+            content_lower = cand["content"].lower()
+            match_count = sum(1 for mc in matched_cues if mc in content_lower)
+            if match_count > 0:
+                cand["score"] += DIRECT_CUE_BOOST * match_count
+                direct_boosted_indices.add(idx)
+        return direct_boosted_indices
+
+    def _apply_ppr_spreading_activation(
+        self,
+        raw_candidates,
+        entity_names,
+        adj,
+        matched_cues,
+        direct_boosted_indices,
+        agent_node_name,
+    ) -> None:
+        """HippoRAG-inspired Personalized PageRank spreading activation.
+
+        Seeds are the query's entity cues (or, failing that, the entities of
+        directly-cued memories), and each candidate gains a degree-scaled boost
+        for the seeded entities it mentions.
+        """
+        if not entity_names:
+            return
+        try:
+            seeds = self._collect_ppr_seeds(
+                entity_names, matched_cues, direct_boosted_indices, raw_candidates
+            )
+
+            # Compute Personalized PageRank Vector (3-iteration power method,
+            # delegated to the Rust hot loop with a Python fallback).
+            # PPR_DAMPING is the canonical teleport factor.
+            if not seeds:
+                ppr = {}
+            else:
+                p = self._personalized_pagerank(
+                    entity_names, adj, seeds, PPR_DAMPING, 3
+                )
+                ppr = {entity_names[i]: p[i] for i in range(len(entity_names))}
+
+            cand_entities = self._map_candidate_entities(
+                raw_candidates, entity_names, agent_node_name
+            )
+
+            # Apply spreading activation boost based on PPR probability
+            for idx, cand in enumerate(raw_candidates):
+                if idx in direct_boosted_indices:
+                    continue
+                boost_sum = 0.0
+                for ent in cand_entities[idx]:
+                    if ent in ppr:
+                        deg = len(adj.get(ent, set()))
+                        # HippoRAG-inspired degree-scaled activation boost
+                        boost = (1.2 * ppr[ent]) / (1.0 + math.log(max(1, deg)))
+                        boost_sum += boost
+                if boost_sum > 0:
+                    cand["score"] += boost_sum
+
+        except Exception as ne_err:
+            logger.error(f"PPR spreading activation failed: {ne_err}")
+
+    @staticmethod
+    def _collect_ppr_seeds(
+        entity_names, matched_cues, direct_boosted_indices, raw_candidates
+    ) -> set:
+        """Pick the PPR seed entities for this query."""
+        seeds = set()
+
+        # 1. Query cues that match entity names
+        for cue in matched_cues:
+            for idx, name in enumerate(entity_names):
+                if name.lower() == cue.lower():
+                    seeds.add(idx)
+
+        # 2. If no direct query seeds, use entities from directly cued memories
+        #    (vector-guided associative recall)
+        if not seeds:
+            for idx in direct_boosted_indices:
+                cand = raw_candidates[idx]
+                payload_meta = cand.get("metadata") or {}
+                cand_ents = payload_meta.get("entities", [])
+                if not cand_ents:
+                    content_lower = cand["content"].lower()
+                    for e_idx, name in enumerate(entity_names):
+                        pattern = rf"\b{re.escape(name.lower())}\b"
+                        if re.search(pattern, content_lower):
+                            seeds.add(e_idx)
+                else:
+                    for ent in cand_ents:
+                        for e_idx, name in enumerate(entity_names):
+                            if name.lower() == ent.lower():
+                                seeds.add(e_idx)
+        return seeds
+
+    @staticmethod
+    def _map_candidate_entities(raw_candidates, entity_names, agent_node_name) -> dict:
+        """Map each candidate index to the entity names it mentions.
+
+        Prefers entities recorded in the memory's metadata; falls back to
+        scanning the content. First-person pronouns count as a mention of the
+        agent itself.
+        """
+
+        def present_entities(content: str) -> set:
+            content_lower = content.lower()
+            present = set()
+            for name in entity_names:
+                pattern = rf"\b{re.escape(name.lower())}\b"
+                if re.search(pattern, content_lower):
+                    present.add(name)
+            if agent_node_name and any(
+                re.search(rf"\b{re.escape(pr)}\b", content_lower)
+                for pr in FIRST_PERSON_PRONOUNS
+            ):
+                present.add(agent_node_name)
+            return present
+
+        cand_entities = {}
+        for idx, cand in enumerate(raw_candidates):
+            payload_meta = cand.get("metadata") or {}
+            if "entities" in payload_meta and isinstance(
+                payload_meta["entities"], list
+            ):
+                cand_entities[idx] = set(payload_meta["entities"])
+                if agent_node_name and any(
+                    re.search(rf"\b{re.escape(pr)}\b", cand["content"].lower())
+                    for pr in FIRST_PERSON_PRONOUNS
+                ):
+                    cand_entities[idx].add(agent_node_name)
+            else:
+                cand_entities[idx] = present_entities(cand["content"])
+        return cand_entities
+
+    def _apply_goal_buffer_boost(self, raw_candidates) -> None:
+        """Prime candidates that mention concepts held in the active goal buffer."""
+        active_concepts = [c[0] for c in self.goal_buffer.concepts]
+        if not active_concepts:
+            return
+        for cand in raw_candidates:
+            content_lower = cand["content"].lower()
+            match_count = sum(1 for c in active_concepts if c in content_lower)
+            if match_count > 0:
+                w_j = 1.5 / len(active_concepts)
+                boost = match_count * w_j * 1.2
+                cand["score"] += boost
+                logger.debug(
+                    f"GoalBuffer Prime: Added +{boost:.3f} spreading activation to memory {cand.get('id') or cand.get('content', 'N/A')}"
+                )
+
+    @staticmethod
+    def _format_results(raw_candidates, threshold) -> list:
+        """Drop sub-threshold candidates and project them to the public shape."""
+        results = []
+        for cand in raw_candidates:
+            if cand["score"] <= threshold:
+                continue
+            results.append(
+                {
+                    "content": cand["content"],
+                    "raw_content": cand["raw_content"],
+                    "wing": cand["wing"],
+                    "room": cand["room"],
+                    "score": cand["score"],
+                    "valence": cand["valence"],
+                    "created_at": cand["created_at"].isoformat()
+                    if cand["created_at"]
+                    else None,
+                    "recall_count": cand["recall_count"],
+                    "metadata": cand["metadata"],
+                    # Eriksonian columns
+                    "lifespan_stage": cand.get("lifespan_stage"),
+                    "crisis": cand.get("crisis"),
+                    "virtue": cand.get("virtue"),
+                    "relations": cand.get("relations"),
+                    "relation_circles": cand.get("relation_circles"),
+                    "modality": cand.get("modality"),
+                }
+            )
+        return results
+
+    # --- L3 sub-conscious archive search and promotion -------------------
+
+    def _expand_archive_cues(
+        self, query_words, dynamic_stop_words, matched_cues, resolved_cues, user_id
+    ) -> set:
+        """Build the lexical cue set used to probe archived (L3) memories.
+
+        Unlike the active-tier cues, the speaker's own name is *kept* here: an
+        archived memory is often only findable by who it was about. Cues are
+        then widened by stemming and the learned mental lexicon.
+        """
+        archive_stop_words = set(dynamic_stop_words)
+        if user_id:
+            for w in re.findall(r"\b\w{3,}\b", user_id.lower()):
+                archive_stop_words.discard(w)
+        archive_cues = [w for w in query_words if w not in archive_stop_words]
+
+        # Also include any resolved cues (agent name / resolved user name)
+        for cue in resolved_cues:
+            if cue not in archive_cues:
+                archive_cues.append(cue)
+
+        if not archive_cues:
+            archive_cues = list(matched_cues)
+
+        # Apply lexical priming/synonym expansion to cues
+        expanded_cues = set()
+        for cue in archive_cues:
+            expanded_cues.add(cue)
+            stem = _get_stem(cue)
+            expanded_cues.add(stem)
+            # Learned lexical priming: pull the cue's strongest acquired
+            # associates (empty until the lexicon has learned them).
+            expanded_cues.update(self.lexicon.expand(cue))
+            expanded_cues.update(self.lexicon.expand(stem))
+        return expanded_cues
+
+    async def _fetch_archive_rows(self, expanded_cues_list, wing, vector_str) -> list:
+        """Hybrid semantic + lexical lookup against archived_memories."""
+        patterns = [f"%{cue}%" for cue in expanded_cues_list]
+        # Fetch more candidates than needed so they can be re-ranked by keyword
+        # match count and ACT-R score before the promotion cut.
+        archive_limit = 250
+        try:
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    where_clause = " OR ".join(
+                        "lower(content) LIKE ?" for _ in expanded_cues_list
+                    )
+                    query = f"""
+                        SELECT * FROM archived_memories
+                        WHERE wing = ? AND ({where_clause})
+                        ORDER BY importance_score DESC, last_recalled_at DESC
+                        LIMIT ?
+                    """
+                    return await conn.fetch(query, wing, *patterns, archive_limit)
+                # Postgres pgvector: hybrid semantic + lexical synonym search
+                # using the HNSW index over halfvec.
+                query = """
+                    SELECT *, (1 - (embedding <=> $2::halfvec))::double precision AS similarity_arch
+                    FROM archived_memories
+                    WHERE wing = $1 AND (embedding <=> $2::halfvec < 0.45 OR content ILIKE ANY($3))
+                    ORDER BY coalesce((1 - (embedding <=> $2::halfvec)), 0.0) DESC, importance_score DESC, last_recalled_at DESC
+                    LIMIT $4
+                """
+                return await conn.fetch(
+                    query, wing, vector_str, patterns, archive_limit
+                )
+        except Exception as arch_err:
+            logger.error(f"Archived memories hybrid lookup failed: {arch_err}")
+            return []
+
+    @staticmethod
+    def _parse_stored_embedding(emb_val):
+        """Parse an archived embedding stored as JSON text, a vector literal, or a list."""
+        if not emb_val:
+            return None
+        if isinstance(emb_val, list):
+            return emb_val
+        if isinstance(emb_val, str):
+            try:
+                return json.loads(emb_val)
+            except Exception:
+                try:
+                    return [
+                        float(x)
+                        for x in re.findall(
+                            r"[-+]?\d*\.\d+|\d+e[-+]?\d+|[-+]?\d+", emb_val
+                        )
+                    ]
+                except Exception:
+                    return None
+        return None
+
+    def _archive_row_activation(
+        self,
+        row,
+        similarity,
+        *,
+        current_valence,
+        current_arousal,
+        current_cortisol,
+        current_time,
+    ):
+        """ACT-R activation for one archived row.
+
+        Returns (score, spread_activation, dist_emo, recall_count) - the extra
+        terms are reused when the row is promoted and rescored as active.
+        """
+        recall_count = max(1, row.get("recall_count") or 1)
+        last_recall = row.get("last_recalled_at")
+        now = (
+            self._as_aware_utc(current_time)
+            if current_time is not None
+            else datetime.now(timezone.utc)
+        )
+        last_recall = now if last_recall is None else self._as_aware_utc(last_recall)
+
+        hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
+        memory_valence = row.get("valence") or 0.0
+        emotion_weight_row = row.get("emotional_weight") or 0.0
+
+        dist_emo = math.sqrt(
+            (memory_valence - current_valence) ** 2
+            + (emotion_weight_row - current_arousal) ** 2
+        )
+
+        base_activation = self._base_activation(
+            recall_count, hours_since, row.get("importance_score") or 0.5, dist_emo
+        )
+        effective_similarity = self._effective_similarity(
+            similarity,
+            memory_valence,
+            emotion_weight_row,
+            current_arousal,
+            current_cortisol,
+        )
+        spread_activation = self.spread_weight * effective_similarity
+        score = (
+            base_activation + spread_activation - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+        )
+        return score, spread_activation, dist_emo, recall_count, now
+
+    async def _rank_archive_rows(
+        self,
+        archive_rows,
+        expanded_cues,
+        query_vector,
+        *,
+        limit,
+        current_valence,
+        current_arousal,
+        current_cortisol,
+        current_time,
+    ) -> list:
+        """Score archived rows and keep the best few for promotion."""
+        scored_archive_rows = []
+        for row in archive_rows:
+            content = row.get("content", "")
+            similarity = row.get("similarity_arch")
+            if similarity is None:
+                similarity = self._archive_similarity_fallback(row, query_vector)
+
+            score, _spread, _dist, _recall, _now = self._archive_row_activation(
+                row,
+                similarity,
+                current_valence=current_valence,
+                current_arousal=current_arousal,
+                current_cortisol=current_cortisol,
+                current_time=current_time,
+            )
+
+            # Lexical match count boost so direct query matches sort higher
+            # (HippoRAG key-relevance ranking).
+            content_lower = content.lower()
+            match_count = sum(1 for cue in expanded_cues if cue in content_lower)
+            ranking_score = score + DIRECT_CUE_BOOST * match_count
+
+            scored_archive_rows.append((ranking_score, score, similarity, row))
+
+        scored_archive_rows.sort(key=lambda x: x[0], reverse=True)
+        # Limit the promotion list to prevent flooding the active tier
+        promote_limit = min(5, limit) if limit else 5
+        return scored_archive_rows[:promote_limit]
+
+    @staticmethod
+    def _archive_similarity_fallback(row, query_vector) -> float:
+        """Cosine similarity computed in Python when the DB did not supply one."""
+        emb = MemoryStore._parse_stored_embedding(row.get("embedding"))
+        if not emb or not query_vector:
+            return 0.0
+        import numpy as np
+
+        q_arr = np.array(query_vector)
+        emb_arr = np.array(emb)
+        norm_q = np.linalg.norm(q_arr)
+        norm_emb = np.linalg.norm(emb_arr)
+        if norm_q > 0 and norm_emb > 0:
+            return float(np.dot(q_arr, emb_arr) / (norm_q * norm_emb))
+        return 0.0
+
+    async def _write_promoted_memory(self, mem_id, content, row, emb, recall_count, now, payload_meta):
+        """Move one archived row back into the active tier (SQL + Qdrant)."""
+        insert_values = (
+            mem_id,
+            content,
+            row.get("raw_content"),
+            row.get("wing"),
+            row.get("room"),
+            str(emb),
+            row.get("importance_score"),
+            row.get("emotional_weight"),
+            row.get("valence"),
+            row.get("certainty"),
+            row.get("source"),
+            recall_count + 1,
+            now,
+            row.get("created_at"),
+            json.dumps(payload_meta),
+            row.get("lifespan_stage"),
+            row.get("crisis"),
+            row.get("virtue"),
+            row.get("relations"),
+            row.get("relation_circles"),
+            row.get("modality"),
+        )
+        async with self.pool.acquire() as conn:
+            if self.is_sqlite:
+                await conn.execute(_PROMOTE_INSERT_SQLITE, *insert_values)
+                await conn.execute(
+                    "DELETE FROM archived_memories WHERE id = ?", mem_id
+                )
+            else:
+                await conn.execute(_PROMOTE_INSERT_PG, *insert_values)
+                await conn.execute(
+                    "DELETE FROM archived_memories WHERE id = $1", mem_id
+                )
+
+        # Upsert Qdrant
+        if self.qdrant_store and self.qdrant_store.client:
+            await asyncio.to_thread(
+                self.qdrant_store.add_vector_memory,
+                mem_id,
+                emb,
+                content,
+                payload_meta,
+            )
+
+        logger.info(
+            f"📥 [Memory Promotion] Promoted memory '{content[:40]}...' from archive back to active storage."
+        )
+
+    @staticmethod
+    def _build_promotion_payload(row, raw_meta) -> dict:
+        """Qdrant payload for a memory being promoted out of the archive."""
+        return {
+            "wing": row.get("wing", "personal"),
+            "room": row.get("room") or "",
+            "importance_score": row.get("importance_score"),
+            "emotional_weight": row.get("emotional_weight"),
+            "valence": row.get("valence"),
+            "certainty": row.get("certainty"),
+            "source": row.get("source"),
+            "created_at": row.get("created_at").isoformat()
+            if row.get("created_at")
+            else None,
+            "lifespan_stage": row.get("lifespan_stage") or "",
+            "crisis": row.get("crisis") or "",
+            "virtue": row.get("virtue") or "",
+            "relations": row.get("relations") or "",
+            "relation_circles": row.get("relation_circles") or "",
+            "modality": row.get("modality") or "",
+            **(raw_meta or {}),
+        }
+
+    async def _promote_archived_rows(
+        self,
+        scored_archive_rows,
+        matched_cues,
+        *,
+        threshold,
+        current_valence,
+        current_arousal,
+        current_cortisol,
+        current_time,
+    ) -> list:
+        """Promote qualifying archived rows to the active tier and return them."""
+        promoted_results = []
+        for _ranking_score, score, similarity, row in scored_archive_rows:
+            content = row["content"]
+
+            emb = self._parse_stored_embedding(row.get("embedding"))
+            # Fallback to the embedding API if the archived row has none
+            if not emb:
+                emb = await self.get_embedding(content)
+                if not emb:
+                    continue
+
+            (
+                _score,
+                spread_activation,
+                dist_emo,
+                recall_count,
+                now,
+            ) = self._archive_row_activation(
+                row,
+                similarity,
+                current_valence=current_valence,
+                current_arousal=current_arousal,
+                current_cortisol=current_cortisol,
+                current_time=current_time,
+            )
+
+            # Only promote if it passes the threshold or is a milestone memory
+            if not (
+                score > (threshold - 2.5)
+                or (row.get("importance_score") or 0.5) >= 0.7
+            ):
+                continue
+
+            mem_id = str(row.get("id") or uuid.uuid4())
+            raw_meta = row.get("metadata")
+            if isinstance(raw_meta, str):
+                try:
+                    raw_meta = json.loads(raw_meta)
+                except Exception:
+                    raw_meta = {}
+            elif not isinstance(raw_meta, dict):
+                raw_meta = {}
+
+            payload_meta = self._build_promotion_payload(row, raw_meta)
+
+            try:
+                await self._write_promoted_memory(
+                    mem_id, content, row, emb, recall_count, now, payload_meta
+                )
+            except Exception as prom_err:
+                logger.error(f"Failed to promote memory {mem_id}: {prom_err}")
+
+            created = row.get("created_at")
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+
+            # Rescore as an active memory: recall_count was incremented on
+            # promotion and last_recalled_at is now, so recency is ~0.
+            base_activation_active = self._base_activation(
+                recall_count + 1, 0.001, row.get("importance_score") or 0.5, dist_emo
+            )
+            score_active = (
+                base_activation_active
+                + spread_activation
+                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+            )
+            # Apply direct cue boost since it was promoted for keyword matches
+            match_count = sum(1 for mc in matched_cues if mc in content.lower())
+            score_active += DIRECT_CUE_BOOST * match_count
+
+            promoted_results.append(
+                {
+                    "content": content,
+                    "raw_content": row.get("raw_content") or content,
+                    "wing": row.get("wing", "personal"),
+                    "room": row.get("room"),
+                    "score": score_active,
+                    "valence": row.get("valence") or 0.0,
+                    "created_at": created.isoformat() if created else None,
+                    "recall_count": recall_count + 1,
+                    "metadata": raw_meta or {},
+                    "lifespan_stage": row.get("lifespan_stage"),
+                    "crisis": row.get("crisis"),
+                    "virtue": row.get("virtue"),
+                    "relations": row.get("relations"),
+                    "relation_circles": row.get("relation_circles"),
+                    "modality": row.get("modality"),
+                }
+            )
+        return promoted_results
+
+    async def _recall_from_archive(
+        self,
+        *,
+        query_words,
+        dynamic_stop_words,
+        matched_cues,
+        resolved_cues,
+        user_id,
+        wing,
+        vector_str,
+        query_vector,
+        existing_results,
+        excluded,
+        limit,
+        threshold,
+        current_valence,
+        current_arousal,
+        current_cortisol,
+        current_time,
+    ) -> list:
+        """L3 sub-conscious search: surface archived memories and promote the best."""
+        expanded_cues = self._expand_archive_cues(
+            query_words, dynamic_stop_words, matched_cues, resolved_cues, user_id
+        )
+        archive_rows = await self._fetch_archive_rows(
+            list(expanded_cues), wing, vector_str
+        )
+        if not archive_rows:
+            return []
+
+        active_contents = {res["content"] for res in existing_results}
+        archive_rows = [
+            r
+            for r in archive_rows
+            if r.get("content")
+            and r["content"] not in active_contents
+            and r["content"] not in excluded
+        ]
+        if not archive_rows:
+            return []
+
+        scored_archive_rows = await self._rank_archive_rows(
+            archive_rows,
+            expanded_cues,
+            query_vector,
+            limit=limit,
+            current_valence=current_valence,
+            current_arousal=current_arousal,
+            current_cortisol=current_cortisol,
+            current_time=current_time,
+        )
+        return await self._promote_archived_rows(
+            scored_archive_rows,
+            matched_cues,
+            threshold=threshold,
+            current_valence=current_valence,
+            current_arousal=current_arousal,
+            current_cortisol=current_cortisol,
+            current_time=current_time,
+        )
+
     async def search_memories(
         self,
         query_text,
@@ -766,10 +2242,15 @@ class MemoryStore:
         current_time=None,
     ):
         """
-        ACT-R Based Retrieval with Hieraining & Neuromodulatory Gating:
-            Score = Bᵢ + w_spread·Similarity_eff + w_emotion·EmotionalAlignment
+        ACT-R Based Retrieval with Hierarchical & Neuromodulatory Gating:
+            Score = B_i + w_spread*Similarity_eff + w_emotion*EmotionalAlignment
 
         Filters results by 'wing' and optionally 'room' before scoring.
+
+        The pipeline runs as: L1 cache -> embed + MRL gating -> candidate fetch
+        (Qdrant, else SQL) -> lexical/graph cue analysis -> spreading-activation
+        boosts -> threshold + format -> L3 archive promotion -> sort/limit.
+        Each stage is a `_`-prefixed helper defined above.
         """
         # L1 Cache lookup to bypass DB and math activation loops for active topics
         cache_key = (
@@ -814,1526 +2295,146 @@ class MemoryStore:
             if not query_vector:
                 return []
 
-            # Dynamic Matryoshka Representation Learning (MRL) dimension gating based on stress/arousal/fatigue
-            # Higher stress/arousal/fatigue restricts search bandwidth to a smaller Matryoshka prefix to bound latency.
-            stress_index = max(current_arousal, current_cortisol)
-            if stress_index > 0.8:
-                mrl_dim = 256
-                candidate_limit = max(10, limit * 2 if limit is not None else 10)
-            elif stress_index > 0.6:
-                mrl_dim = 512
-                candidate_limit = max(30, limit * 3 if limit is not None else 30)
-            else:
-                mrl_dim = 768
-                candidate_limit = (
-                    max(120, limit * 6 if limit is not None else 120)
-                    if refresh_on_recall
-                    else max(20, limit * 3 if limit is not None else 20)
-                )
+            mrl_dim, candidate_limit = self._compute_mrl_gating(
+                current_arousal, current_cortisol, limit, refresh_on_recall
+            )
 
             # Slice query_vector to mrl_dim and pad with zeros to 768
             mrl_query_vector = list(query_vector)
             for i in range(mrl_dim, len(mrl_query_vector)):
                 mrl_query_vector[i] = 0.0
 
-            # Topic-Shift check:
-            if self._last_query_vector is not None:
-                try:
-                    dot = sum(
-                        a * b for a, b in zip(query_vector, self._last_query_vector)
-                    )
-                    norm1 = math.sqrt(sum(a * a for a in query_vector))
-                    norm2 = math.sqrt(sum(b * b for b in self._last_query_vector))
-                    sim = (
-                        dot / (norm1 * norm2) if norm1 > 1e-9 and norm2 > 1e-9 else 1.0
-                    )
-                    if sim < 0.15:
-                        logger.info(
-                            f"🔄 Topic Shift Detected (similarity {sim:.3f} < 0.15). Flushing Goal Buffer."
-                        )
-                        self.goal_buffer.flush()
-                except Exception as ts_err:
-                    logger.debug(f"Topic-shift calculation failed: {ts_err}")
-            self._last_query_vector = query_vector
+            self._detect_topic_shift(query_vector)
 
             vector_str = str(mrl_query_vector)
             excluded = {content for content in (exclude_contents or []) if content}
-
             is_sqlite = self.is_sqlite
-            raw_candidates = []
-
-            # Non-blocking wrapper to query Qdrant via a thread pool
-            async def safe_qdrant_search():
-                try:
-                    if self.qdrant_store.client:
-                        return await asyncio.to_thread(
-                            self.qdrant_store.search_vector_memories,
-                            query_vector=mrl_query_vector,
-                            limit=candidate_limit,
-                        )
-                except Exception as qe:
-                    logger.error(f"Qdrant retrieval failed: {qe}")
-                return []
-
-            async def _dummy_list():
-                return []
 
             # Concurrently fetch vector candidates and Neo4j graph data
-            candidates, entity_records, relation_records = await asyncio.gather(
-                safe_qdrant_search(),
-                self.graph_db.execute_query(
-                    "MATCH (e:Entity) RETURN e.name AS name, e.description AS description",
-                    use_cache=True,
-                )
-                if self.graph_db
-                else _dummy_list(),
-                self.graph_db.execute_query(
-                    "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target",
-                    use_cache=True,
-                )
-                if self.graph_db
-                else _dummy_list(),
-            )
-
-            # Defensive type checks
-            if not isinstance(entity_records, list):
-                entity_records = []
-            if not isinstance(relation_records, list):
-                relation_records = []
+            (
+                candidates,
+                entity_records,
+                relation_records,
+            ) = await self._gather_candidate_sources(mrl_query_vector, candidate_limit)
 
             # 1. Qdrant Selective Vector Path
+            raw_candidates = []
             if self.qdrant_store.client and candidates:
-                try:
-                    db_metadata = {}
-                    try:
-                        cand_ids = [c["id"] for c in candidates if c.get("id")]
-                        if cand_ids:
-                            async with self.pool.acquire() as conn:
-                                if self.is_sqlite:
-                                    placeholders = ",".join("?" for _ in cand_ids)
-                                    rows = await conn.fetch(
-                                        f"SELECT id, importance_score, emotional_weight, valence, recall_count, last_recalled_at FROM memories WHERE id IN ({placeholders})",
-                                        *cand_ids,
-                                    )
-                                else:
-                                    rows = await conn.fetch(
-                                        "SELECT id, importance_score, emotional_weight, valence, recall_count, last_recalled_at FROM memories WHERE id = ANY($1)",
-                                        cand_ids,
-                                    )
-                                for r in rows:
-                                    db_metadata[str(r["id"])] = r
-                    except Exception as db_err:
-                        logger.warning(
-                            f"Failed to fetch updated memory metadata from SQL DB for Qdrant candidates: {db_err}"
-                        )
+                raw_candidates = await self._score_qdrant_candidates(
+                    candidates,
+                    wing=wing,
+                    room=room,
+                    excluded=excluded,
+                    threshold=threshold,
+                    current_valence=current_valence,
+                    current_arousal=current_arousal,
+                    current_cortisol=current_cortisol,
+                    current_time=current_time,
+                    now_ts=now_ts,
+                )
 
-                    for cand in candidates:
-                        meta = cand["metadata"]
-                        c_wing = meta.get("wing")
-                        c_room = meta.get("room")
-                        if wing is not None and c_wing != wing:
-                            continue
-                        if room is not None and c_room != room:
-                            continue
-
-                        c_content = cand["content"]
-                        if c_content in excluded:
-                            continue
-
-                        memory_id = cand["id"]
-                        db_meta = db_metadata.get(str(memory_id))
-
-                        memory_valence = (
-                            db_meta.get("valence")
-                            if (db_meta and db_meta.get("valence") is not None)
-                            else meta.get("valence", 0.0)
-                        )
-                        emotion_weight_row = (
-                            db_meta.get("emotional_weight")
-                            if (db_meta and db_meta.get("emotional_weight") is not None)
-                            else meta.get("emotional_weight", 0.0)
-                        )
-                        importance_score = (
-                            db_meta.get("importance_score")
-                            if (db_meta and db_meta.get("importance_score") is not None)
-                            else meta.get("importance_score", 0.5)
-                        )
-                        recall_count = max(
-                            1,
-                            db_meta.get("recall_count")
-                            if (db_meta and db_meta.get("recall_count") is not None)
-                            else meta.get("recall_count", 1),
-                        )
-
-                        try:
-                            if db_meta and db_meta.get("last_recalled_at"):
-                                last_recall_time = db_meta.get("last_recalled_at")
-                                if isinstance(last_recall_time, (int, float)):
-                                    last_recall_time = float(last_recall_time)
-                                else:
-                                    if hasattr(last_recall_time, "timestamp"):
-                                        last_recall_time = last_recall_time.timestamp()
-                                    else:
-                                        dt = datetime.fromisoformat(
-                                            str(last_recall_time).replace(" ", "T")
-                                        )
-                                        if dt.tzinfo is None:
-                                            dt = dt.replace(tzinfo=timezone.utc)
-                                        last_recall_time = dt.timestamp()
-                            else:
-                                last_recall_time = float(
-                                    meta.get("last_recalled_at", now_ts)
-                                )
-                        except (ValueError, TypeError):
-                            last_recall_time = now_ts
-
-                        hours_since = max(0.001, (now_ts - last_recall_time) / 3600.0)
-
-                        # 2D/3D Emotional Distance matching the research simulator
-                        dist_emo = math.sqrt(
-                            (memory_valence - current_valence) ** 2
-                            + (emotion_weight_row - current_arousal) ** 2
-                        )
-
-                        base_activation = self._base_activation(
-                            recall_count, hours_since, importance_score, dist_emo
-                        )
-
-                        similarity = cand["score"]
-                        effective_similarity = self._effective_similarity(
-                            similarity,
-                            memory_valence,
-                            emotion_weight_row,
-                            current_arousal,
-                            current_cortisol,
-                        )
-
-                        spread_activation = self.spread_weight * effective_similarity
-                        score = (
-                            base_activation
-                            + spread_activation
-                            - ACTR_EMO_DISTANCE_PENALTY * dist_emo
-                        )
-
-                        if score <= (threshold - 2.5) and importance_score < 0.7:
-                            continue
-
-                        created_val = meta.get("created_at")
-                        try:
-                            created = (
-                                datetime.fromtimestamp(float(created_val), timezone.utc)
-                                if created_val
-                                else (
-                                    current_time
-                                    if current_time is not None
-                                    else datetime.now(timezone.utc)
-                                )
-                            )
-                        except Exception:
-                            created = (
-                                current_time
-                                if current_time is not None
-                                else datetime.now(timezone.utc)
-                            )
-
-                        custom_metadata = {}
-                        if "custom_metadata" in meta:
-                            try:
-                                custom_metadata = orjson.loads(meta["custom_metadata"])
-                            except Exception:
-                                pass
-
-                        raw_candidates.append(
-                            {
-                                "id": memory_id,
-                                "content": c_content,
-                                "raw_content": c_content,
-                                "wing": c_wing or "personal",
-                                "room": c_room,
-                                "score": score,
-                                "valence": memory_valence,
-                                "created_at": created,
-                                "recall_count": recall_count,
-                                "metadata": custom_metadata,
-                                "lifespan_stage": meta.get("lifespan_stage"),
-                                "crisis": meta.get("crisis"),
-                                "virtue": meta.get("virtue"),
-                                "relations": meta.get("relations"),
-                                "relation_circles": meta.get("relation_circles"),
-                                "modality": meta.get("modality"),
-                                "similarity": similarity,
-                                "last_recalled_at": datetime.fromtimestamp(
-                                    last_recall_time, timezone.utc
-                                ),
-                            }
-                        )
-                except Exception as qe:
-                    logger.error(
-                        f"Qdrant retrieval failed, falling back to database: {qe}"
-                    )
-
-            # 2. Database Fallback (if Qdrant is offline or returned no candidates)
+            # 2. Database Fallback (Qdrant offline or returned no candidates)
             if not raw_candidates:
                 async with self.pool.acquire() as conn:
                     if is_sqlite:
-                        # SQLite fallback: fetch relevant memories and compute similarity in Python
-                        if room is not None:
-                            rows = await conn.fetch(
-                                "SELECT * FROM memories WHERE wing = ? AND room = ?",
-                                wing,
-                                room,
-                            )
-                        else:
-                            rows = await conn.fetch(
-                                "SELECT * FROM memories WHERE wing = ?", wing
-                            )
-
-                        # Manual cosine similarity and ACT-R scoring (Delegated to Rust PyO3)
-                        import cognitive_rust
-
-                        now = (
-                            current_time
-                            if current_time is not None
-                            else datetime.now(timezone.utc)
+                        # The SQLite path recomputes "now"; keep its value, it is
+                        # what stamps the L1 cache entry below.
+                        raw_candidates, now_ts = await self._fetch_sqlite_candidates(
+                            conn,
+                            query_vector=query_vector,
+                            wing=wing,
+                            room=room,
+                            excluded=excluded,
+                            threshold=threshold,
+                            current_valence=current_valence,
+                            current_arousal=current_arousal,
+                            current_cortisol=current_cortisol,
+                            current_time=current_time,
                         )
-                        now_ts = now.timestamp()
-
-                        # Preprocess timestamps for Rust
-                        for row in rows:
-                            last_recall = row.get("last_recalled_at")
-                            if last_recall is None:
-                                row["_last_recall_ts"] = now_ts
-                            elif isinstance(last_recall, datetime):
-                                row["_last_recall_ts"] = last_recall.timestamp()
-                            elif isinstance(last_recall, (int, float)):
-                                row["_last_recall_ts"] = float(last_recall)
-                            elif isinstance(last_recall, str):
-                                try:
-                                    row["_last_recall_ts"] = float(last_recall)
-                                except ValueError:
-                                    try:
-                                        dt = datetime.fromisoformat(
-                                            last_recall.replace(" ", "T")
-                                        )
-                                        if dt.tzinfo is None:
-                                            dt = dt.replace(tzinfo=timezone.utc)
-                                        row["_last_recall_ts"] = dt.timestamp()
-                                    except Exception:
-                                        row["_last_recall_ts"] = now_ts
-                            else:
-                                row["_last_recall_ts"] = now_ts
-
-                        scored_indices = cognitive_rust.score_memories_actr_sqlite(
-                            query_vector,
-                            rows,
-                            excluded,
-                            current_valence,
-                            current_arousal,
-                            current_cortisol,
-                            self.decay_rate,
-                            self.spread_weight,
-                            threshold,
-                            now_ts,
-                        )
-
-                        for idx, score, similarity in scored_indices:
-                            row = rows[idx]
-                            last_recall = row.get("last_recalled_at")
-                            if last_recall is None:
-                                last_recall = now
-                            elif isinstance(last_recall, str):
-                                try:
-                                    last_recall = datetime.fromisoformat(last_recall)
-                                except Exception:
-                                    last_recall = now
-                            if last_recall.tzinfo is None:
-                                last_recall = last_recall.replace(tzinfo=timezone.utc)
-
-                            created = row.get("created_at")
-                            if isinstance(created, str):
-                                try:
-                                    created = datetime.fromisoformat(created)
-                                except Exception:
-                                    created = now
-                            if created and created.tzinfo is None:
-                                created = created.replace(tzinfo=timezone.utc)
-
-                            raw_meta = row.get("metadata")
-                            if isinstance(raw_meta, str):
-                                try:
-                                    raw_meta = orjson.loads(raw_meta)
-                                except Exception:
-                                    raw_meta = {}
-
-                            raw_candidates.append(
-                                {
-                                    "id": row.get("id"),
-                                    "content": row["content"],
-                                    "raw_content": row.get("raw_content")
-                                    or row["content"],
-                                    "wing": row.get("wing", "personal"),
-                                    "room": row.get("room"),
-                                    "score": score,
-                                    "valence": row.get("valence") or 0.0,
-                                    "created_at": created,
-                                    "recall_count": max(
-                                        1, row.get("recall_count") or 1
-                                    ),
-                                    "metadata": raw_meta or {},
-                                    "lifespan_stage": row.get("lifespan_stage"),
-                                    "crisis": row.get("crisis"),
-                                    "virtue": row.get("virtue"),
-                                    "relations": row.get("relations"),
-                                    "relation_circles": row.get("relation_circles"),
-                                    "modality": row.get("modality"),
-                                    "similarity": similarity,
-                                    "last_recalled_at": last_recall,
-                                }
-                            )
                     else:
-                        # PostgreSQL fast-path via custom C-level vector procedure
-                        try:
-                            rows = await conn.fetch(
-                                """
-                                SELECT
-                                    m.id AS id,
-                                    s.content,
-                                    s.raw_content,
-                                    s.wing,
-                                    s.room,
-                                    s.importance_score,
-                                    s.emotional_weight,
-                                    s.valence,
-                                    s.recall_count,
-                                    s.last_recalled_at,
-                                    s.created_at,
-                                    s.metadata,
-                                    s.similarity,
-                                    s.score,
-                                    m.lifespan_stage,
-                                    m.crisis,
-                                    m.virtue,
-                                    m.relations,
-                                    m.relation_circles,
-                                    m.modality
-                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::double precision, $10::double precision, $11::integer, $12::timestamptz) s
-                                LEFT JOIN memories m ON m.content = s.content AND m.wing = s.wing
-                                """,
-                                vector_str,
-                                wing,
-                                room,
-                                self.decay_rate,
-                                self.spread_weight,
-                                self.emotion_weight,
-                                current_valence,
-                                current_arousal,
-                                current_cortisol,
-                                threshold - 2.5,
-                                candidate_limit,
-                                current_time,
-                            )
-                        except Exception as pg_err:
-                            logger.warning(
-                                f"Eriksonian JOIN pg query failed, falling back to legacy schema: {pg_err}"
-                            )
-                            rows = await conn.fetch(
-                                """
-                                SELECT
-                                    m.id AS id,
-                                    s.content,
-                                    s.raw_content,
-                                    s.wing,
-                                    s.room,
-                                    s.importance_score,
-                                    s.emotional_weight,
-                                    s.valence,
-                                    s.recall_count,
-                                    s.last_recalled_at,
-                                    s.created_at,
-                                    s.metadata,
-                                    s.similarity,
-                                    s.score
-                                FROM surface_actr_memories($1::vector(768), $2::text, $3::text, $4::double precision, $5::double precision, $6::double precision, $7::double precision, $8::double precision, $9::double precision, $10::double precision, $11::integer, $12::timestamptz) s
-                                LEFT JOIN memories m ON m.content = s.content AND m.wing = s.wing
-                                """,
-                                vector_str,
-                                wing,
-                                room,
-                                self.decay_rate,
-                                self.spread_weight,
-                                self.emotion_weight,
-                                current_valence,
-                                current_arousal,
-                                current_cortisol,
-                                threshold - 2.5,
-                                candidate_limit,
-                                current_time,
-                            )
+                        raw_candidates = await self._fetch_postgres_candidates(
+                            conn,
+                            vector_str=vector_str,
+                            wing=wing,
+                            room=room,
+                            excluded=excluded,
+                            threshold=threshold,
+                            candidate_limit=candidate_limit,
+                            current_valence=current_valence,
+                            current_arousal=current_arousal,
+                            current_cortisol=current_cortisol,
+                            current_time=current_time,
+                        )
 
-                        for row in rows:
-                            if row["content"] in excluded:
-                                continue
-
-                            similarity = row.get("similarity") or 0.0
-                            recall_count = max(1, row.get("recall_count") or 1)
-
-                            # Recalculate score with neuromodulatory gating
-                            last_recall = row.get("last_recalled_at")
-                            now = (
-                                self._as_aware_utc(current_time)
-                                if current_time is not None
-                                else datetime.now(timezone.utc)
-                            )
-                            last_recall = (
-                                now
-                                if last_recall is None
-                                else self._as_aware_utc(last_recall)
-                            )
-
-                            hours_since = max(
-                                0.001, (now - last_recall).total_seconds() / 3600.0
-                            )
-
-                            memory_valence = row.get("valence") or 0.0
-                            emotion_weight_row = row.get("emotional_weight") or 0.0
-
-                            # 2D/3D Emotional Distance matching the research simulator
-                            dist_emo = math.sqrt(
-                                (memory_valence - current_valence) ** 2
-                                + (emotion_weight_row - current_arousal) ** 2
-                            )
-
-                            base_activation = self._base_activation(
-                                recall_count,
-                                hours_since,
-                                row.get("importance_score") or 0.5,
-                                dist_emo,
-                            )
-
-                            # Neuromodulatory distance mapping
-                            effective_similarity = self._effective_similarity(
-                                similarity,
-                                memory_valence,
-                                emotion_weight_row,
-                                current_arousal,
-                                current_cortisol,
-                            )
-
-                            spread_activation = (
-                                self.spread_weight * effective_similarity
-                            )
-                            score = (
-                                base_activation
-                                + spread_activation
-                                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
-                            )
-
-                            if (
-                                score <= (threshold - 2.5)
-                                and (row.get("importance_score") or 0.5) < 0.7
-                            ):
-                                continue
-
-                            created = row.get("created_at")
-                            if created and created.tzinfo is None:
-                                created = created.replace(tzinfo=timezone.utc)
-
-                            raw_meta = row.get("metadata")
-                            if isinstance(raw_meta, str):
-                                try:
-                                    raw_meta = orjson.loads(raw_meta)
-                                except Exception:
-                                    raw_meta = {}
-
-                            raw_candidates.append(
-                                {
-                                    "id": row.get("id"),
-                                    "content": row["content"],
-                                    "raw_content": row.get("raw_content")
-                                    or row["content"],
-                                    "wing": row.get("wing", "personal"),
-                                    "room": row.get("room"),
-                                    "score": score,
-                                    "valence": row.get("valence") or 0.0,
-                                    "created_at": created,
-                                    "recall_count": recall_count,
-                                    "metadata": raw_meta or {},
-                                    "lifespan_stage": row.get("lifespan_stage"),
-                                    "crisis": row.get("crisis"),
-                                    "virtue": row.get("virtue"),
-                                    "relations": row.get("relations"),
-                                    "relation_circles": row.get("relation_circles"),
-                                    "modality": row.get("modality"),
-                                    "similarity": similarity,
-                                    "last_recalled_at": last_recall,
-                                }
-                            )
-
-            # 3. Post-process candidate list in Python (Direct Cue Boost + Spreading Activation)
-            # Dynamically extract cues and entities from query and candidates without hardcoded mock data
-            stop_words = {
-                "the",
-                "and",
-                "but",
-                "yet",
-                "for",
-                "nor",
-                "with",
-                "this",
-                "that",
-                "these",
-                "those",
-                "you",
-                "your",
-                "yours",
-                "him",
-                "her",
-                "them",
-                "his",
-                "hers",
-                "their",
-                "theirs",
-                "was",
-                "were",
-                "been",
-                "have",
-                "has",
-                "had",
-                "did",
-                "does",
-                "what",
-                "where",
-                "when",
-                "who",
-                "why",
-                "how",
-                "can",
-                "could",
-                "would",
-                "should",
-                "shall",
-                "will",
-                "about",
-                "above",
-                "after",
-                "again",
-                "against",
-                "all",
-                "am",
-                "an",
-                "any",
-                "are",
-                "arent",
-                "as",
-                "at",
-                "be",
-                "because",
-                "before",
-                "being",
-                "below",
-                "between",
-                "both",
-                "by",
-                "cant",
-                "cannot",
-                "didnt",
-                "dont",
-                "down",
-                "during",
-                "each",
-                "few",
-                "from",
-                "further",
-                "hadnt",
-                "hasnt",
-                "havent",
-                "having",
-                "he",
-                "hed",
-                "hell",
-                "hes",
-                "here",
-                "heres",
-                "herself",
-                "himself",
-                "i",
-                "id",
-                "ill",
-                "im",
-                "ive",
-                "if",
-                "in",
-                "into",
-                "isnt",
-                "it",
-                "its",
-                "itself",
-                "lets",
-                "me",
-                "more",
-                "most",
-                "mustnt",
-                "my",
-                "myself",
-                "no",
-                "nor",
-                "not",
-                "of",
-                "off",
-                "on",
-                "once",
-                "only",
-                "or",
-                "other",
-                "ought",
-                "our",
-                "ours",
-                "ourselves",
-                "out",
-                "over",
-                "own",
-                "same",
-                "shant",
-                "she",
-                "shed",
-                "shell",
-                "shes",
-                "shouldnt",
-                "so",
-                "some",
-                "such",
-                "than",
-                "that",
-                "thats",
-                "the",
-                "their",
-                "theirs",
-                "them",
-                "themselves",
-                "then",
-                "there",
-                "theres",
-                "these",
-                "they",
-                "theyd",
-                "theyll",
-                "theyre",
-                "theyve",
-                "this",
-                "those",
-                "through",
-                "to",
-                "too",
-                "under",
-                "until",
-                "up",
-                "very",
-                "wasnt",
-                "we",
-                "wed",
-                "well",
-                "were",
-                "weve",
-                "werent",
-                "what",
-                "whats",
-                "when",
-                "whens",
-                "where",
-                "wheres",
-                "which",
-                "while",
-                "who",
-                "whos",
-                "whom",
-                "why",
-                "whys",
-                "with",
-                "wont",
-                "wouldnt",
-                "you",
-                "youd",
-                "youll",
-                "youre",
-                "youve",
-                "your",
-                "yours",
-                "yourself",
-                "yourselves",
-                "describe",
-                "compare",
-                "influence",
-                "influenced",
-                "friend",
-                "companion",
-                "robot",
-                "human",
-                "development",
-                "developer",
-                "developers",
-                "project",
-                "workspace",
-                "shared",
-                "recall",
-                "recalled",
-                "experience",
-                "experiences",
-                "about",
-                "related",
-            }
-
-            import re
-
+            # 3. Post-process in Python: direct cue boost + spreading activation
             query_words = re.findall(r"\b\w{3,}\b", query_text.lower())
-
-            # Dynamic stop words resolution to avoid hardcoding production names
-            dynamic_stop_words = set(stop_words)
-            if hasattr(self, "_db_stop_words") and self._db_stop_words:
-                dynamic_stop_words.update(self._db_stop_words)
-            ai_name_cfg = getattr(Config, "AI_NAME", None)
-            if ai_name_cfg:
-                for w in re.findall(r"\b\w{3,}\b", ai_name_cfg.lower()):
-                    dynamic_stop_words.add(w)
-            if user_id:
-                for w in re.findall(r"\b\w{3,}\b", user_id.lower()):
-                    dynamic_stop_words.add(w)
-
+            dynamic_stop_words = self._resolve_dynamic_stop_words(user_id)
             matched_cues = [w for w in query_words if w not in dynamic_stop_words]
             self.goal_buffer.update_buffer(query_text, dynamic_stop_words)
-
-            # Direct cue boost and dynamic pronoun resolution
-            direct_boosted_indices = set()
 
             entity_names = []
             adj = {}
             agent_node_name = None
             user_node_name = None
-
-            # Process entity and relationship records fetched in the parallel task
             try:
-                entity_names = [r["name"] for r in entity_records]
-
-                # Build adjacency list/set for fast connection lookup
-                for r in relation_records:
-                    src = r["source"]
-                    tgt = r["target"]
-                    adj.setdefault(src, set()).add(tgt)
-                    adj.setdefault(tgt, set()).add(src)
-
-                # Add co-occurrence connections from candidate memories
-                for cand in raw_candidates:
-                    payload_meta = cand.get("metadata") or {}
-                    cand_ents = payload_meta.get("entities", [])
-                    if not cand_ents:
-                        content_lower = cand["content"].lower()
-                        cand_ents = []
-                        for name in entity_names:
-                            pattern = rf"\b{re.escape(name.lower())}\b"
-                            if re.search(pattern, content_lower):
-                                cand_ents.append(name)
-
-                    for i in range(len(cand_ents)):
-                        for j in range(i + 1, len(cand_ents)):
-                            e1 = cand_ents[i]
-                            e2 = cand_ents[j]
-                            adj.setdefault(e1, set()).add(e2)
-                            adj.setdefault(e2, set()).add(e1)
-
-                # 1. Discover Agent Node Name dynamically
-                for r in entity_records:
-                    desc = r.get("description") or ""
-                    if "central cognitive system" in desc.lower():
-                        agent_node_name = r["name"]
-                        break
-                if not agent_node_name:
-                    ai_name = getattr(Config, "AI_NAME", "AI Friend")
-                    for name in entity_names:
-                        if name.lower() == ai_name.lower():
-                            agent_node_name = name
-                            break
-                if not agent_node_name:
-                    agent_node_name = getattr(Config, "AI_NAME", "AI Friend")
-
-                # 2. Discover User Node Name dynamically
-                if user_id:
-                    for name in entity_names:
-                        if name.lower() == user_id.lower():
-                            user_node_name = name
-                            break
-                if not user_node_name:
-                    for r in entity_records:
-                        desc = r.get("description") or ""
-                        if (
-                            "user" in desc.lower()
-                            or "companion" in desc.lower()
-                            or "friend" in desc.lower()
-                        ):
-                            if r["name"] != agent_node_name:
-                                user_node_name = r["name"]
-                                break
-                if not user_node_name and entity_names:
-                    ai_names = {
-                        "ai friend",
-                        "my friend",
-                        agent_node_name.lower(),
-                    }
-                    if hasattr(Config, "AI_NAME") and Config.AI_NAME:
-                        ai_names.add(Config.AI_NAME.lower())
-                    candidates_names = [
-                        name for name in entity_names if name.lower() not in ai_names
-                    ]
-                    if candidates_names:
-                        candidates_names.sort(
-                            key=lambda name: len(adj.get(name, set())), reverse=True
-                        )
-                        user_node_name = candidates_names[0]
-                if not user_node_name:
-                    user_node_name = user_id or "user"
-
+                entity_names, adj = self._build_entity_graph(
+                    entity_records, relation_records, raw_candidates
+                )
+                agent_node_name, user_node_name = self._resolve_identity_nodes(
+                    entity_records, entity_names, adj, user_id
+                )
             except Exception as e:
                 logger.debug(f"Failed to process entities: {e}")
 
-            # 3. Context-Aware Speaker/Listener Pronoun Resolution mapping
-            first_person_pronouns = {"i", "me", "my", "myself", "we", "our", "us"}
-            second_person_pronouns = {"you", "your", "yours", "yourself", "yourselves"}
-
-            query_words_all = re.findall(r"\b\w+\b", query_text.lower())
-            resolved_cues = set()
-
-            if is_self_reflection:
-                # Agent speaking: "I" -> Agent, "you" -> User
-                if any(p in query_words_all for p in first_person_pronouns):
-                    if agent_node_name:
-                        resolved_cues.add(agent_node_name.lower())
-                if any(p in query_words_all for p in second_person_pronouns):
-                    if user_node_name:
-                        resolved_cues.add(user_node_name.lower())
-            else:
-                # User speaking: "I" -> User, "you" -> Agent
-                if any(p in query_words_all for p in first_person_pronouns):
-                    if user_node_name:
-                        resolved_cues.add(user_node_name.lower())
-                if any(p in query_words_all for p in second_person_pronouns):
-                    if agent_node_name:
-                        resolved_cues.add(agent_node_name.lower())
-
-            # Add user/agent names if explicitly mentioned in query
-            user_aliases = {"user"}
-            if user_id:
-                user_aliases.add(user_id.lower())
-            if user_node_name:
-                user_aliases.add(user_node_name.lower())
-
-            agent_aliases = {"ai friend", "my friend"}
-            if hasattr(Config, "AI_NAME") and Config.AI_NAME:
-                agent_aliases.add(Config.AI_NAME.lower())
-            if agent_node_name:
-                agent_aliases.add(agent_node_name.lower())
-
-            for word in query_words_all:
-                if word in user_aliases:
-                    if user_node_name:
-                        resolved_cues.add(user_node_name.lower())
-                if word in agent_aliases:
-                    if agent_node_name:
-                        resolved_cues.add(agent_node_name.lower())
-
+            resolved_cues = self._resolve_pronoun_cues(
+                query_text,
+                agent_node_name,
+                user_node_name,
+                user_id,
+                is_self_reflection,
+            )
             for cue in resolved_cues:
                 if cue not in matched_cues:
                     matched_cues.append(cue)
 
-            # Apply direct cue boost (DIRECT_CUE_BOOST per matched cue)
-            if matched_cues:
-                for idx, cand in enumerate(raw_candidates):
-                    content_lower = cand["content"].lower()
-                    match_count = sum(1 for mc in matched_cues if mc in content_lower)
-                    if match_count > 0:
-                        cand["score"] += DIRECT_CUE_BOOST * match_count
-                        direct_boosted_indices.add(idx)
-
-            # HippoRAG-Inspired Personalized PageRank (PPR) Engine
-            if entity_names:
-                try:
-                    # Identify query/context seed nodes
-                    seeds = set()
-
-                    # 1. Query cues that match entity names
-                    for cue in matched_cues:
-                        for idx, name in enumerate(entity_names):
-                            if name.lower() == cue.lower():
-                                seeds.add(idx)
-
-                    # 2. If no direct query seeds, use entities from directly cued memories (for vector-guided associative recall)
-                    if not seeds:
-                        for idx in direct_boosted_indices:
-                            cand = raw_candidates[idx]
-                            payload_meta = cand.get("metadata") or {}
-                            cand_ents = payload_meta.get("entities", [])
-                            if not cand_ents:
-                                content_lower = cand["content"].lower()
-                                for e_idx, name in enumerate(entity_names):
-                                    pattern = rf"\b{re.escape(name.lower())}\b"
-                                    if re.search(pattern, content_lower):
-                                        seeds.add(e_idx)
-                            else:
-                                for ent in cand_ents:
-                                    for e_idx, name in enumerate(entity_names):
-                                        if name.lower() == ent.lower():
-                                            seeds.add(e_idx)
-
-                    # Compute Personalized PageRank Vector (3-iteration power
-                    # method, delegated to the Rust hot loop with a Python
-                    # fallback). PPR_DAMPING is the canonical teleport factor.
-                    N = len(entity_names)
-                    if not seeds:
-                        ppr = {}
-                    else:
-                        p = self._personalized_pagerank(
-                            entity_names, adj, seeds, PPR_DAMPING, 3
-                        )
-                        ppr = {entity_names[i]: p[i] for i in range(N)}
-
-                    # Helper to find which entities are present in a memory content (fallback scanning)
-                    def get_present_entities(content: str) -> set[str]:
-                        content_lower = content.lower()
-                        present = set()
-                        for name in entity_names:
-                            name_lower = name.lower()
-                            pattern = rf"\b{re.escape(name_lower)}\b"
-                            if re.search(pattern, content_lower):
-                                present.add(name)
-
-                        if agent_node_name and any(
-                            re.search(rf"\b{re.escape(pr)}\b", content_lower)
-                            for pr in {"i", "me", "my", "myself", "we", "our", "us"}
-                        ):
-                            present.add(agent_node_name)
-                        return present
-
-                    # Map candidate indices to their present entities
-                    cand_entities = {}
-                    for idx, cand in enumerate(raw_candidates):
-                        payload_meta = cand.get("metadata") or {}
-                        if "entities" in payload_meta and isinstance(
-                            payload_meta["entities"], list
-                        ):
-                            cand_entities[idx] = set(payload_meta["entities"])
-                            if agent_node_name and any(
-                                re.search(
-                                    rf"\b{re.escape(pr)}\b", cand["content"].lower()
-                                )
-                                for pr in {"i", "me", "my", "myself", "we", "our", "us"}
-                            ):
-                                cand_entities[idx].add(agent_node_name)
-                        else:
-                            cand_entities[idx] = get_present_entities(cand["content"])
-
-                    # Apply spreading activation boost to all candidate memories based on PPR probability
-                    for idx, cand in enumerate(raw_candidates):
-                        if idx in direct_boosted_indices:
-                            continue
-                        boost_sum = 0.0
-                        for ent in cand_entities[idx]:
-                            if ent in ppr:
-                                deg = len(adj.get(ent, set()))
-                                # HippoRAG-inspired degree-scaled activation boost
-                                boost = (1.2 * ppr[ent]) / (1.0 + math.log(max(1, deg)))
-                                boost_sum += boost
-                        if boost_sum > 0:
-                            cand["score"] += boost_sum
-
-                except Exception as ne_err:
-                    logger.error(f"PPR spreading activation failed: {ne_err}")
-
-            # Native Goal Buffer Spreading Activation
-            active_concepts = [c[0] for c in self.goal_buffer.concepts]
-            if active_concepts:
-                for cand in raw_candidates:
-                    content_lower = cand["content"].lower()
-                    match_count = sum(1 for c in active_concepts if c in content_lower)
-                    if match_count > 0:
-                        w_j = 1.5 / len(active_concepts)
-                        boost = match_count * w_j * 1.2
-                        cand["score"] += boost
-                        logger.debug(
-                            f"GoalBuffer Prime: Added +{boost:.3f} spreading activation to memory {cand.get('id') or cand.get('content', 'N/A')}"
-                        )
+            direct_boosted_indices = self._apply_direct_cue_boost(
+                raw_candidates, matched_cues
+            )
+            self._apply_ppr_spreading_activation(
+                raw_candidates,
+                entity_names,
+                adj,
+                matched_cues,
+                direct_boosted_indices,
+                agent_node_name,
+            )
+            self._apply_goal_buffer_boost(raw_candidates)
 
             # 4. Filter by final threshold, format and return results
-            results = []
-            for cand in raw_candidates:
-                if cand["score"] <= threshold:
-                    continue
-
-                res_dict = {
-                    "content": cand["content"],
-                    "raw_content": cand["raw_content"],
-                    "wing": cand["wing"],
-                    "room": cand["room"],
-                    "score": cand["score"],
-                    "valence": cand["valence"],
-                    "created_at": cand["created_at"].isoformat()
-                    if cand["created_at"]
-                    else None,
-                    "recall_count": cand["recall_count"],
-                    "metadata": cand["metadata"],
-                }
-
-                # Include Eriksonian columns
-                res_dict["lifespan_stage"] = cand.get("lifespan_stage")
-                res_dict["crisis"] = cand.get("crisis")
-                res_dict["virtue"] = cand.get("virtue")
-                res_dict["relations"] = cand.get("relations")
-                res_dict["relation_circles"] = cand.get("relation_circles")
-                res_dict["modality"] = cand.get("modality")
-
-                results.append(res_dict)
+            results = self._format_results(raw_candidates, threshold)
 
             # L3 Sub-conscious Search and Promotion
             if matched_cues:
-                # 1. Fetch top candidates from archived_memories
-                archive_rows = []
-
-                # Use query words except standard/dynamic stop words, but preserve user_id names for L3 search
-                archive_stop_words = set(dynamic_stop_words)
-                if user_id:
-                    for w in re.findall(r"\b\w{3,}\b", user_id.lower()):
-                        archive_stop_words.discard(w)
-                archive_cues = [w for w in query_words if w not in archive_stop_words]
-
-                # Also include any resolved cues (like agent name / resolved user name)
-                for cue in resolved_cues:
-                    if cue not in archive_cues:
-                        archive_cues.append(cue)
-
-                if not archive_cues:
-                    archive_cues = list(matched_cues)
-
-                # Apply lexical priming/synonym expansion to cues
-                expanded_cues = set()
-                for cue in archive_cues:
-                    expanded_cues.add(cue)
-                    stem = _get_stem(cue)
-                    expanded_cues.add(stem)
-                    # Learned lexical priming: pull the cue's strongest acquired
-                    # associates (empty until the lexicon has learned them).
-                    expanded_cues.update(self.lexicon.expand(cue))
-                    expanded_cues.update(self.lexicon.expand(stem))
-
-                expanded_cues_list = list(expanded_cues)
-                patterns = [f"%{cue}%" for cue in expanded_cues_list]
-                archive_limit = 250  # Fetch more candidates to rank by keyword match count and ACT-R score
-
-                try:
-                    async with self.pool.acquire() as conn:
-                        if self.is_sqlite:
-                            where_clause = " OR ".join(
-                                "lower(content) LIKE ?" for _ in expanded_cues_list
-                            )
-                            query = f"""
-                                SELECT * FROM archived_memories
-                                WHERE wing = ? AND ({where_clause})
-                                ORDER BY importance_score DESC, last_recalled_at DESC
-                                LIMIT ?
-                            """
-                            archive_rows = await conn.fetch(
-                                query, wing, *patterns, archive_limit
-                            )
-                        else:
-                            # Postgres pgvector: Hybrid Semantic + Lexical Synonym search using HNSW index over halfvec
-                            query = """
-                                SELECT *, (1 - (embedding <=> $2::halfvec))::double precision AS similarity_arch
-                                FROM archived_memories
-                                WHERE wing = $1 AND (embedding <=> $2::halfvec < 0.45 OR content ILIKE ANY($3))
-                                ORDER BY coalesce((1 - (embedding <=> $2::halfvec)), 0.0) DESC, importance_score DESC, last_recalled_at DESC
-                                LIMIT $4
-                            """
-                            archive_rows = await conn.fetch(
-                                query, wing, vector_str, patterns, archive_limit
-                            )
-                except Exception as arch_err:
-                    logger.error(f"Archived memories hybrid lookup failed: {arch_err}")
-
-                if archive_rows:
-                    active_contents = {res["content"] for res in results}
-                    archive_rows = [
-                        r
-                        for r in archive_rows
-                        if r.get("content")
-                        and r["content"] not in active_contents
-                        and r["content"] not in excluded
-                    ]
-
-                if archive_rows:
-                    # Sort archive_rows by score and keyword matches
-                    # Rank candidates by matching cues and ACT-R score calculated in Python
-                    scored_archive_rows = []
-                    for row in archive_rows:
-                        content = row.get("content", "")
-
-                        # Get similarity
-                        similarity = row.get("similarity_arch")
-                        if similarity is None:
-                            # Fallback: parse embedding and compute similarity
-                            emb_val = row.get("embedding")
-                            emb = None
-                            if emb_val:
-                                if isinstance(emb_val, str):
-                                    try:
-                                        import json
-
-                                        emb = json.loads(emb_val)
-                                    except Exception:
-                                        import re
-
-                                        try:
-                                            emb = [
-                                                float(x)
-                                                for x in re.findall(
-                                                    r"[-+]?\d*\.\d+|\d+e[-+]?\d+|[-+]?\d+",
-                                                    emb_val,
-                                                )
-                                            ]
-                                        except Exception:
-                                            pass
-                                elif isinstance(emb_val, list):
-                                    emb = emb_val
-                            if emb and query_vector:
-                                import numpy as np
-
-                                q_arr = np.array(query_vector)
-                                emb_arr = np.array(emb)
-                                norm_q = np.linalg.norm(q_arr)
-                                norm_emb = np.linalg.norm(emb_arr)
-                                if norm_q > 0 and norm_emb > 0:
-                                    similarity = float(
-                                        np.dot(q_arr, emb_arr) / (norm_q * norm_emb)
-                                    )
-                                else:
-                                    similarity = 0.0
-                            else:
-                                similarity = 0.0
-
-                        recall_count = max(1, row.get("recall_count") or 1)
-                        last_recall = row.get("last_recalled_at")
-                        now = (
-                            self._as_aware_utc(current_time)
-                            if current_time is not None
-                            else datetime.now(timezone.utc)
-                        )
-                        last_recall = (
-                            now if last_recall is None else self._as_aware_utc(last_recall)
-                        )
-
-                        hours_since = max(
-                            0.001, (now - last_recall).total_seconds() / 3600.0
-                        )
-                        memory_valence = row.get("valence") or 0.0
-                        emotion_weight_row = row.get("emotional_weight") or 0.0
-
-                        dist_emo = math.sqrt(
-                            (memory_valence - current_valence) ** 2
-                            + (emotion_weight_row - current_arousal) ** 2
-                        )
-
-                        base_activation = self._base_activation(
-                            recall_count,
-                            hours_since,
-                            row.get("importance_score") or 0.5,
-                            dist_emo,
-                        )
-
-                        effective_similarity = self._effective_similarity(
-                            similarity,
-                            memory_valence,
-                            emotion_weight_row,
-                            current_arousal,
-                            current_cortisol,
-                        )
-
-                        spread_activation = self.spread_weight * effective_similarity
-                        score = (
-                            base_activation
-                            + spread_activation
-                            - ACTR_EMO_DISTANCE_PENALTY * dist_emo
-                        )
-
-                        # Lexical match count boost to ensure direct query matches sort higher
-                        content_lower = content.lower()
-                        match_count = sum(
-                            1 for cue in expanded_cues if cue in content_lower
-                        )
-
-                        # Massive ranking boost for keyword match count ( HippoRAG key relevance )
-                        ranking_score = score + DIRECT_CUE_BOOST * match_count
-
-                        scored_archive_rows.append(
-                            (ranking_score, score, similarity, row)
-                        )
-
-                    # Sort scored candidates by ranking score descending
-                    scored_archive_rows.sort(key=lambda x: x[0], reverse=True)
-
-                    # Limit the actual promotion list to prevent flooding
-                    promote_limit = min(5, limit) if limit else 5
-                    scored_archive_rows = scored_archive_rows[:promote_limit]
-
-                # 2. Score and promote candidates
-                promoted_results = []
-                if archive_rows:
-                    for ranking_score, score, similarity, row in scored_archive_rows:
-                        content = row["content"]
-
-                        # Parse or retrieve the embedding
-                        emb_val = row.get("embedding")
-                        emb = None
-                        if emb_val:
-                            if isinstance(emb_val, str):
-                                try:
-                                    import json
-
-                                    emb = json.loads(emb_val)
-                                except Exception:
-                                    import re
-
-                                    try:
-                                        emb = [
-                                            float(x)
-                                            for x in re.findall(
-                                                r"[-+]?\d*\.\d+|\d+e[-+]?\d+|[-+]?\d+",
-                                                emb_val,
-                                            )
-                                        ]
-                                    except Exception:
-                                        pass
-                            elif isinstance(emb_val, list):
-                                emb = emb_val
-
-                        # Fallback to call embedding API if missing
-                        if not emb:
-                            emb = await self.get_embedding(content)
-                            if not emb:
-                                continue
-
-                        recall_count = max(1, row.get("recall_count") or 1)
-                        last_recall = row.get("last_recalled_at")
-                        now = (
-                            self._as_aware_utc(current_time)
-                            if current_time is not None
-                            else datetime.now(timezone.utc)
-                        )
-                        last_recall = (
-                            now if last_recall is None else self._as_aware_utc(last_recall)
-                        )
-
-                        hours_since = max(
-                            0.001, (now - last_recall).total_seconds() / 3600.0
-                        )
-                        memory_valence = row.get("valence") or 0.0
-                        emotion_weight_row = row.get("emotional_weight") or 0.0
-
-                        dist_emo = math.sqrt(
-                            (memory_valence - current_valence) ** 2
-                            + (emotion_weight_row - current_arousal) ** 2
-                        )
-
-                        effective_similarity = similarity * (
-                            1.0
-                            + 0.1 * memory_valence * emotion_weight_row
-                            - 0.2 * current_arousal * current_cortisol
-                        )
-
-                        spread_activation = self.spread_weight * effective_similarity
-
-                        # Only promote if it passes the threshold or is a milestone (importance_score >= 0.7)
-                        if (
-                            score > (threshold - 2.5)
-                            or (row.get("importance_score") or 0.5) >= 0.7
-                        ):
-                            import uuid
-
-                            mem_id = str(row.get("id") or uuid.uuid4())
-                            raw_meta = row.get("metadata")
-                            import json
-
-                            if isinstance(raw_meta, str):
-                                try:
-                                    raw_meta = json.loads(raw_meta)
-                                except Exception:
-                                    raw_meta = {}
-                            elif not isinstance(raw_meta, dict):
-                                raw_meta = {}
-
-                            # Ensure entities are computed
-                            payload_meta = {
-                                "wing": row.get("wing", "personal"),
-                                "room": row.get("room") or "",
-                                "importance_score": row.get("importance_score"),
-                                "emotional_weight": row.get("emotional_weight"),
-                                "valence": row.get("valence"),
-                                "certainty": row.get("certainty"),
-                                "source": row.get("source"),
-                                "created_at": row.get("created_at").isoformat()
-                                if row.get("created_at")
-                                else None,
-                                "lifespan_stage": row.get("lifespan_stage") or "",
-                                "crisis": row.get("crisis") or "",
-                                "virtue": row.get("virtue") or "",
-                                "relations": row.get("relations") or "",
-                                "relation_circles": row.get("relation_circles") or "",
-                                "modality": row.get("modality") or "",
-                                **(raw_meta or {}),
-                            }
-
-                            # SQLite vs Postgres insert
-                            try:
-                                async with self.pool.acquire() as conn:
-                                    if self.is_sqlite:
-                                        await conn.execute(
-                                            """
-                                            INSERT INTO memories (
-                                                id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
-                                                valence, certainty, source, recall_count, last_recalled_at, created_at,
-                                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
-                                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                            ON CONFLICT(id) DO UPDATE SET
-                                                recall_count = excluded.recall_count,
-                                                last_recalled_at = excluded.last_recalled_at,
-                                                importance_score = excluded.importance_score
-                                            """,
-                                            mem_id,
-                                            content,
-                                            row.get("raw_content"),
-                                            row.get("wing"),
-                                            row.get("room"),
-                                            str(emb),
-                                            row.get("importance_score"),
-                                            row.get("emotional_weight"),
-                                            row.get("valence"),
-                                            row.get("certainty"),
-                                            row.get("source"),
-                                            recall_count + 1,
-                                            now,
-                                            row.get("created_at"),
-                                            json.dumps(payload_meta),
-                                            row.get("lifespan_stage"),
-                                            row.get("crisis"),
-                                            row.get("virtue"),
-                                            row.get("relations"),
-                                            row.get("relation_circles"),
-                                            row.get("modality"),
-                                        )
-                                        await conn.execute(
-                                            "DELETE FROM archived_memories WHERE id = ?",
-                                            mem_id,
-                                        )
-                                    else:
-                                        await conn.execute(
-                                            """
-                                            INSERT INTO memories (
-                                                id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
-                                                valence, certainty, source, recall_count, last_recalled_at, created_at,
-                                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
-                                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-                                            ON CONFLICT(id) DO UPDATE SET
-                                                recall_count = EXCLUDED.recall_count,
-                                                last_recalled_at = EXCLUDED.last_recalled_at,
-                                                importance_score = EXCLUDED.importance_score
-                                            """,
-                                            mem_id,
-                                            content,
-                                            row.get("raw_content"),
-                                            row.get("wing"),
-                                            row.get("room"),
-                                            str(emb),
-                                            row.get("importance_score"),
-                                            row.get("emotional_weight"),
-                                            row.get("valence"),
-                                            row.get("certainty"),
-                                            row.get("source"),
-                                            recall_count + 1,
-                                            now,
-                                            row.get("created_at"),
-                                            json.dumps(payload_meta),
-                                            row.get("lifespan_stage"),
-                                            row.get("crisis"),
-                                            row.get("virtue"),
-                                            row.get("relations"),
-                                            row.get("relation_circles"),
-                                            row.get("modality"),
-                                        )
-                                        await conn.execute(
-                                            "DELETE FROM archived_memories WHERE id = $1",
-                                            mem_id,
-                                        )
-
-                                # Upsert Qdrant
-                                if self.qdrant_store and self.qdrant_store.client:
-                                    await asyncio.to_thread(
-                                        self.qdrant_store.add_vector_memory,
-                                        mem_id,
-                                        emb,
-                                        content,
-                                        payload_meta,
-                                    )
-
-                                logger.info(
-                                    f"📥 [Memory Promotion] Promoted memory '{content[:40]}...' from archive back to active storage."
-                                )
-                            except Exception as prom_err:
-                                logger.error(
-                                    f"Failed to promote memory {mem_id}: {prom_err}"
-                                )
-
-                            created = row.get("created_at")
-                            if created and created.tzinfo is None:
-                                created = created.replace(tzinfo=timezone.utc)
-
-                            # Recalculate active score since it is now promoted and last_recalled_at is set to now (hours_since = 0.001)
-                            # We use recall_count + 1 since the recall_count has been incremented upon recall/promotion
-                            # recall_count + 1 (already incremented on promotion)
-                            # and a near-zero recency (last_recalled_at is now).
-                            base_activation_active = self._base_activation(
-                                recall_count + 1,
-                                0.001,
-                                row.get("importance_score") or 0.5,
-                                dist_emo,
-                            )
-                            score_active = (
-                                base_activation_active
-                                + spread_activation
-                                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
-                            )
-                            # Apply direct cue boost since it was promoted due to keyword matches
-                            match_count = sum(
-                                1 for mc in matched_cues if mc in content.lower()
-                            )
-                            score_active += DIRECT_CUE_BOOST * match_count
-
-                            promoted_results.append(
-                                {
-                                    "content": content,
-                                    "raw_content": row.get("raw_content") or content,
-                                    "wing": row.get("wing", "personal"),
-                                    "room": row.get("room"),
-                                    "score": score_active,
-                                    "valence": row.get("valence") or 0.0,
-                                    "created_at": created.isoformat()
-                                    if created
-                                    else None,
-                                    "recall_count": recall_count + 1,
-                                    "metadata": raw_meta or {},
-                                    "lifespan_stage": row.get("lifespan_stage"),
-                                    "crisis": row.get("crisis"),
-                                    "virtue": row.get("virtue"),
-                                    "relations": row.get("relations"),
-                                    "relation_circles": row.get("relation_circles"),
-                                    "modality": row.get("modality"),
-                                }
-                            )
-
-                    if promoted_results:
-                        results.extend(promoted_results)
+                promoted_results = await self._recall_from_archive(
+                    query_words=query_words,
+                    dynamic_stop_words=dynamic_stop_words,
+                    matched_cues=matched_cues,
+                    resolved_cues=resolved_cues,
+                    user_id=user_id,
+                    wing=wing,
+                    vector_str=vector_str,
+                    query_vector=query_vector,
+                    existing_results=results,
+                    excluded=excluded,
+                    limit=limit,
+                    threshold=threshold,
+                    current_valence=current_valence,
+                    current_arousal=current_arousal,
+                    current_cortisol=current_cortisol,
+                    current_time=current_time,
+                )
+                if promoted_results:
+                    results.extend(promoted_results)
 
             if results:
                 # Sort and limit results to maintain full compatibility with offline tests
@@ -2342,7 +2443,7 @@ class MemoryStore:
                     results = results[:limit]
 
                 logger.info(
-                    f"🧠 ACT-R Recall: {len(results)} memories for: '{query_text[:30]}...'"
+                    f"\U0001f9e0 ACT-R Recall: {len(results)} memories for: '{query_text[:30]}...'"
                 )
 
             if results and refresh_on_recall:
@@ -2372,6 +2473,7 @@ class MemoryStore:
             traceback.print_exc()
             logger.error(f"Memory search failed: {e}")
             return []
+
 
     async def _refresh_memories(
         self, memories: list[dict], current_valence: float = 0.0, current_time=None
