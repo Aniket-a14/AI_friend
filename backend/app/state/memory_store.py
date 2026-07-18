@@ -288,6 +288,25 @@ class MemoryStore:
         return isinstance(getattr(conn, "conn", None), sqlite3.Connection)
 
     @staticmethod
+    def _is_missing_column_error(exc: BaseException) -> bool:
+        """True only when a write failed because a column does not exist.
+
+        Distinguishes an un-migrated schema (worth retrying without the
+        Eriksonian columns) from constraint violations, serialization
+        conflicts, and transient outages (which must propagate). Postgres
+        reports SQLSTATE 42703; SQLite only says so in the message text.
+        """
+        sqlstate = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
+        if sqlstate == "42703":  # undefined_column
+            return True
+        if type(exc).__name__ == "UndefinedColumnError":
+            return True
+        message = str(exc).lower()
+        if isinstance(exc, sqlite3.OperationalError):
+            return "no column named" in message or "has no column" in message
+        return False
+
+    @staticmethod
     def _as_aware_utc(dt):
         """Coerce a datetime to timezone-aware UTC so recency arithmetic never
         mixes naive and aware operands (which raises TypeError).
@@ -298,9 +317,27 @@ class MemoryStore:
         current_time). Naive inputs are assumed to already be UTC -- which is how
         the stored timestamps are written -- and aware inputs are converted.
         None passes through so callers can apply their own fallback.
+
+        SQLite hands back TEXT for timestamp columns, so archived rows can carry
+        an ISO string where the active path carries a datetime. Those are parsed
+        here rather than at each call site; anything unparseable degrades to None
+        so callers fall back instead of raising mid-retrieval.
         """
         if dt is None:
             return None
+        if isinstance(dt, str):
+            raw = dt.strip()
+            if not raw:
+                return None
+            # SQLite CURRENT_TIMESTAMP writes "YYYY-MM-DD HH:MM:SS"; fromisoformat
+            # handles that plus the "T"-separated and offset-bearing variants.
+            if raw.endswith("Z"):
+                raw = raw[:-1] + "+00:00"
+            try:
+                dt = datetime.fromisoformat(raw)
+            except ValueError:
+                logger.debug("Unparseable stored timestamp %r; treating as missing.", dt)
+                return None
         if dt.tzinfo is None:
             return dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc)
@@ -608,7 +645,13 @@ class MemoryStore:
 
         try:
             await _insert(include_eriksonian=True)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - narrowed by _is_missing_column_error
+            # Only an un-migrated schema justifies dropping the Eriksonian
+            # columns. Retrying on *any* failure meant a constraint violation,
+            # a serialization conflict, or a transient outage would silently
+            # re-insert the row with its developmental metadata stripped.
+            if not self._is_missing_column_error(e):
+                raise
             logger.warning(
                 f"Eriksonian insert failed, falling back to legacy schema: {e}"
             )
@@ -1316,9 +1359,10 @@ class MemoryStore:
                 if current_time is not None
                 else datetime.now(timezone.utc)
             )
-            last_recall = (
-                now if last_recall is None else self._as_aware_utc(last_recall)
-            )
+            # `or now` covers both a missing timestamp and one _as_aware_utc
+            # could not parse; either way the row is treated as just-recalled
+            # rather than raising and discarding the whole result set.
+            last_recall = self._as_aware_utc(last_recall) or now
 
             hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
 
@@ -1902,7 +1946,9 @@ class MemoryStore:
             if current_time is not None
             else datetime.now(timezone.utc)
         )
-        last_recall = now if last_recall is None else self._as_aware_utc(last_recall)
+        # `or now`: an unparseable stored timestamp must not raise here and
+        # discard otherwise valid archive candidates.
+        last_recall = self._as_aware_utc(last_recall) or now
 
         hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
         memory_valence = row.get("valence") or 0.0
@@ -1987,8 +2033,23 @@ class MemoryStore:
             return float(np.dot(q_arr, emb_arr) / (norm_q * norm_emb))
         return 0.0
 
-    async def _write_promoted_memory(self, mem_id, content, row, emb, recall_count, now, payload_meta):
-        """Move one archived row back into the active tier (SQL + Qdrant)."""
+    async def _write_promoted_memory(
+        self, mem_id, content, row, emb, recall_count, now, payload_meta, sql_meta
+    ):
+        """Move one archived row back into the active tier (SQL + Qdrant).
+
+        `sql_meta` is the row's own metadata envelope and `payload_meta` the
+        Qdrant search payload; they are deliberately not the same object. Qdrant
+        needs the denormalized scalars flattened for filtering, while the SQL
+        `metadata` column is the authoritative record and must round-trip what
+        `add_memory` would have written.
+
+        Raises on failure so the caller does not report an unpersisted memory.
+        On PostgreSQL the insert and the archive delete run in one transaction;
+        the SQLite shim commits per statement, so there the delete is merely
+        ordered after the insert. The insert is an idempotent upsert, so a
+        partial failure re-converges on retry rather than duplicating.
+        """
         insert_values = (
             mem_id,
             content,
@@ -2004,7 +2065,7 @@ class MemoryStore:
             recall_count + 1,
             now,
             row.get("created_at"),
-            json.dumps(payload_meta),
+            json.dumps(sql_meta),
             row.get("lifespan_stage"),
             row.get("crisis"),
             row.get("virtue"),
@@ -2012,7 +2073,8 @@ class MemoryStore:
             row.get("relation_circles"),
             row.get("modality"),
         )
-        async with self.pool.acquire() as conn:
+
+        async def _move(conn):
             if self.is_sqlite:
                 await conn.execute(_PROMOTE_INSERT_SQLITE, *insert_values)
                 await conn.execute(
@@ -2024,15 +2086,34 @@ class MemoryStore:
                     "DELETE FROM archived_memories WHERE id = $1", mem_id
                 )
 
-        # Upsert Qdrant
+        async with self.pool.acquire() as conn:
+            transaction = getattr(conn, "transaction", None)
+            if not self.is_sqlite and callable(transaction):
+                async with transaction():
+                    await _move(conn)
+            else:
+                await _move(conn)
+
+        # Upsert Qdrant. The SQL move above is the authoritative promotion and
+        # has already committed: the active row exists and the archive row is
+        # gone. Letting a vector-store failure propagate here would make the
+        # caller skip a memory that is, in fact, promoted -- stranding it out of
+        # both the returned results and the archive. Log and carry on; the
+        # vector index is a search accelerator, rebuildable from SQL.
         if self.qdrant_store and self.qdrant_store.client:
-            await asyncio.to_thread(
-                self.qdrant_store.add_vector_memory,
-                mem_id,
-                emb,
-                content,
-                payload_meta,
-            )
+            try:
+                await asyncio.to_thread(
+                    self.qdrant_store.add_vector_memory,
+                    mem_id,
+                    emb,
+                    content,
+                    payload_meta,
+                )
+            except Exception as qerr:
+                logger.error(
+                    f"Promoted memory {mem_id} committed to SQL but its Qdrant "
+                    f"upsert failed; vector index is stale for this row: {qerr}"
+                )
 
         logger.info(
             f"📥 [Memory Promotion] Promoted memory '{content[:40]}...' from archive back to active storage."
@@ -2040,7 +2121,16 @@ class MemoryStore:
 
     @staticmethod
     def _build_promotion_payload(row, raw_meta) -> dict:
-        """Qdrant payload for a memory being promoted out of the archive."""
+        """Qdrant payload for a memory being promoted out of the archive.
+
+        Mirrors the canonical shape `add_memory` writes: the authoritative
+        columns stay sourced from the row itself, and the memory's own metadata
+        goes under `custom_metadata` where the read path expects it. Splatting
+        `raw_meta` at the top level (as this once did) let a stored key named
+        `wing` or `room` silently overwrite the real one, and hid the custom
+        fields from readers looking for the envelope.
+        """
+        created_at = MemoryStore._as_aware_utc(row.get("created_at"))
         return {
             "wing": row.get("wing", "personal"),
             "room": row.get("room") or "",
@@ -2049,16 +2139,16 @@ class MemoryStore:
             "valence": row.get("valence"),
             "certainty": row.get("certainty"),
             "source": row.get("source"),
-            "created_at": row.get("created_at").isoformat()
-            if row.get("created_at")
-            else None,
+            "created_at": created_at.isoformat() if created_at else None,
             "lifespan_stage": row.get("lifespan_stage") or "",
             "crisis": row.get("crisis") or "",
             "virtue": row.get("virtue") or "",
             "relations": row.get("relations") or "",
             "relation_circles": row.get("relation_circles") or "",
             "modality": row.get("modality") or "",
-            **(raw_meta or {}),
+            # Serialized, matching add_memory's writer and the orjson.loads()
+            # in the Qdrant read path.
+            "custom_metadata": orjson.dumps(raw_meta or {}).decode(),
         }
 
     async def _promote_archived_rows(
@@ -2120,14 +2210,23 @@ class MemoryStore:
 
             try:
                 await self._write_promoted_memory(
-                    mem_id, content, row, emb, recall_count, now, payload_meta
+                    mem_id,
+                    content,
+                    row,
+                    emb,
+                    recall_count,
+                    now,
+                    payload_meta,
+                    sql_meta=raw_meta,
                 )
             except Exception as prom_err:
+                # The move did not persist, so this memory is still archived.
+                # Returning it anyway surfaced a result the next turn could not
+                # find again, and cached it as though it were active.
                 logger.error(f"Failed to promote memory {mem_id}: {prom_err}")
+                continue
 
-            created = row.get("created_at")
-            if created and created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
+            created = self._as_aware_utc(row.get("created_at"))
 
             # Rescore as an active memory: recall_count was incremented on
             # promotion and last_recalled_at is now, so recency is ~0.
@@ -2264,6 +2363,10 @@ class MemoryStore:
             current_cortisol,
             tuple(sorted(exclude_contents or [])),
             user_id,
+            # Pronoun cues resolve in opposite directions depending on this flag
+            # ("I"/"my" bind to the agent when self-reflecting, to the user
+            # otherwise), so the two modes must not share a cache entry.
+            is_self_reflection,
             current_time.isoformat() if current_time is not None else None,
         )
         now_ts = current_time.timestamp() if current_time is not None else time.time()
@@ -2730,7 +2833,7 @@ class MemoryStore:
                         if current_time is not None
                         else datetime.now(timezone.utc)
                     )
-                    delta = now - self._as_aware_utc(dt)
+                    delta = now - (self._as_aware_utc(dt) or now)
                     hours_since = max(0.0, delta.total_seconds() / 3600.0)
 
                     # Extract decay_rate from metadata if possible

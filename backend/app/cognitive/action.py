@@ -335,8 +335,17 @@ class ActionService:
                 f"[Action] Unexpected type for implied_goals in user_mental_model: {type(impl_goals)}. Falling back to empty list."
             )
             impl_goals = []
-        # Take the last 10 known concepts to keep it concise and avoid context bloat
-        known_con = user_tom.get("known_concepts", [])[-10:]
+        impl_goals = [str(goal) for goal in impl_goals]
+        # Take the last 10 known concepts to keep it concise and avoid context bloat.
+        # Guarded like implied_goals above: this runs before the streaming try
+        # block, so a malformed value would abort the turn with no terminal event.
+        known_con = user_tom.get("known_concepts", [])
+        if not isinstance(known_con, list):
+            logger.warning(
+                f"[Action] Unexpected type for known_concepts in user_mental_model: {type(known_con)}. Falling back to empty list."
+            )
+            known_con = []
+        known_con = [str(concept) for concept in known_con[-10:]]
 
         tom_context = "\n\nYour Inferred Perspective of the User (Theory of Mind):\n"
         tom_context += (
@@ -425,12 +434,102 @@ class ActionService:
         """Split a completed <thought>...</thought> block off the buffer.
 
         Returns the content that follows the closing tag; the reasoning itself
-        is logged, never spoken.
+        is discarded, never spoken.
+
+        Only the stripped length is logged. The reasoning block quotes the user
+        message and any surfaced memories verbatim, so emitting it at INFO
+        persisted private conversation content into production logs.
         """
         parts = thought_buffer.split("</thought>", 1)
         thought_content = parts[0].replace("<thought>", "").strip()
-        logger.info(f"[CoT Thought] {thought_content}")
+        logger.debug("[CoT Thought] stripped %d characters", len(thought_content))
         return parts[1]
+
+    _THOUGHT_OPEN = "<thought"
+    _THOUGHT_CLOSE = "</thought>"
+
+    @staticmethod
+    def _held_partial(data: str, token: str) -> str:
+        """Longest suffix of `data` that is a proper prefix of `token`.
+
+        This is what makes the parser safe across chunk boundaries: a stream
+        ending in "<tho" must hold those characters back rather than speak them,
+        because the next chunk may complete the tag.
+        """
+        for length in range(min(len(data), len(token) - 1), 0, -1):
+            if data[-length:] == token[:length]:
+                return data[-length:]
+        return ""
+
+    def _visible_segments(self, clean_chunk: str, state: "_ChatStreamState") -> list:
+        """Advance the CoT parser by one chunk; return speakable text.
+
+        `<thought>...</thought>` reasoning is dropped, everything outside it is
+        returned. Both the primary and the self-correction streams run through
+        this, so neither can leak raw reasoning to the user.
+
+        This is an incremental parser rather than a "does the buffer contain a
+        tag yet" check, because models stream token by token: "<thought>" very
+        commonly arrives as "<" + "thought" + ">". The previous approach saw a
+        first chunk of "<" , concluded no tag was present, spoke it, and latched
+        into a state where the whole reasoning block passed straight through --
+        so CoT stripping only worked when the opening tag happened to land
+        whole in one chunk. It also dropped any visible text preceding a tag and
+        handled only a single block per stream. All of that is handled here.
+        """
+        segments = []
+        data = state.thought_buffer + clean_chunk
+        state.thought_buffer = ""
+
+        while data:
+            if state.in_thought:
+                idx = data.find(self._THOUGHT_CLOSE)
+                if idx == -1:
+                    # Still reasoning. Retain only a possible partial closing
+                    # tag; the rest is reasoning and is discarded unspoken.
+                    state.thought_buffer = self._held_partial(
+                        data, self._THOUGHT_CLOSE
+                    )
+                    break
+                data = data[idx + len(self._THOUGHT_CLOSE) :]
+                state.in_thought = False
+                continue
+
+            idx = data.find(self._THOUGHT_OPEN)
+            if idx == -1:
+                held = self._held_partial(data, self._THOUGHT_OPEN)
+                visible = data[: len(data) - len(held)] if held else data
+                if visible:
+                    segments.append(visible)
+                state.thought_buffer = held
+                break
+
+            if idx > 0:
+                segments.append(data[:idx])
+            close_bracket = data.find(">", idx)
+            if close_bracket == -1:
+                # "<thought" seen but the tag is not terminated yet.
+                state.thought_buffer = data[idx:]
+                break
+            state.in_thought = True
+            data = data[close_bracket + 1 :]
+
+        state.checked_start = True
+        return segments
+
+    def _visible_trailing(self, trailing: str, state: "_ChatStreamState") -> list:
+        """Same parser, for whatever the sanitizer held back at flush time.
+
+        Anything still buffered afterwards was an unterminated tag or an
+        unclosed thought block; neither is speakable, so it is dropped.
+        """
+        segments = self._visible_segments(trailing, state) if trailing else []
+        leftover = state.thought_buffer
+        state.thought_buffer = ""
+        if leftover and not state.in_thought:
+            # A partial that never completed (e.g. a literal trailing "<").
+            segments.append(leftover)
+        return segments
 
     async def _emit_validated(
         self, text: str, state: "_ChatStreamState", goal: str, allow_hesitation: bool = True
@@ -499,62 +598,16 @@ class ActionService:
                 continue
 
             # CoT strip check
-            if not state.checked_start:
-                state.thought_buffer += clean_chunk
-                if "<thought" in state.thought_buffer:
-                    state.in_thought = True
-                    state.checked_start = True
-                    if "</thought>" in state.thought_buffer:
-                        remaining_content = self._split_thought(state.thought_buffer)
-                        if remaining_content:
-                            async for out in self._emit_validated(
-                                remaining_content, state, plan.goal
-                            ):
-                                yield out
-                        state.thought_buffer = ""
-                        state.in_thought = False
-                else:
-                    async for out in self._emit_validated(
-                        state.thought_buffer, state, plan.goal
-                    ):
-                        yield out
-                    state.thought_buffer = ""
-                    state.checked_start = True
-                    continue
-
-            elif state.in_thought:
-                state.thought_buffer += clean_chunk
-                if "</thought>" in state.thought_buffer:
-                    remaining_content = self._split_thought(state.thought_buffer)
-                    if remaining_content:
-                        async for out in self._emit_validated(
-                            remaining_content, state, plan.goal
-                        ):
-                            yield out
-                    state.thought_buffer = ""
-                    state.in_thought = False
-                continue
-            else:
-                async for out in self._emit_validated(clean_chunk, state, plan.goal):
+            for segment in self._visible_segments(clean_chunk, state):
+                async for out in self._emit_validated(segment, state, plan.goal):
                     yield out
 
         # Flush whatever the markup sanitizer was still holding back.
-        trailing = sanitizer.flush()
-        if trailing:
-            if state.in_thought:
-                state.thought_buffer += trailing
-                if "</thought>" in state.thought_buffer:
-                    remaining_content = self._split_thought(state.thought_buffer)
-                    if remaining_content:
-                        async for out in self._emit_validated(
-                            remaining_content, state, plan.goal, allow_hesitation=False
-                        ):
-                            yield out
-            else:
-                async for out in self._emit_validated(
-                    trailing, state, plan.goal, allow_hesitation=False
-                ):
-                    yield out
+        for segment in self._visible_trailing(sanitizer.flush(), state):
+            async for out in self._emit_validated(
+                segment, state, plan.goal, allow_hesitation=False
+            ):
+                yield out
 
         # Post-generation grounding gate: the whole utterance is now known, so
         # check it for fabricated shared-memory claims and route any hit
@@ -588,7 +641,6 @@ class ActionService:
         system_instruction: str,
         model,
         endocrine_options,
-        sanitizer: "ControlMarkupSanitizer",
         stream_budget: int,
         surfaced: list,
         msg: str,
@@ -597,7 +649,13 @@ class ActionService:
 
         Any further violation (constraint or grounding, mid-stream or trailing)
         collapses to a single safe fallback line rather than a third attempt.
+
+        The retry gets its own sanitizer and CoT state: the primary stream was
+        abandoned mid-flight and may have left a partial control tag buffered or
+        an unclosed `<thought>` open, which would corrupt the retry's first chunk.
         """
+        sanitizer = ControlMarkupSanitizer()
+        cot_state = _ChatStreamState()
         stream_iter = self.llm.generate_stream(
             prompt=user_prompt,
             system=system_instruction,
@@ -607,8 +665,9 @@ class ActionService:
         deadline = time.monotonic() + stream_budget
         accumulated_retry_response = ""
         is_valid = True
+        emitted_any = False
 
-        while True:
+        while is_valid:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
@@ -618,35 +677,42 @@ class ActionService:
                 )
             except StopAsyncIteration:
                 break
-            clean_chunk = sanitizer.feed(chunk)
-            if not clean_chunk:
+            raw_chunk = sanitizer.feed(chunk)
+            if not raw_chunk:
                 continue
 
-            candidate = accumulated_retry_response + clean_chunk
-            is_valid, _ = self._validate_partial_response(candidate, plan.goal)
-            if not is_valid:
-                logger.warning(
-                    "[System 3] Retry also violated constraints; yielding safe fallback."
-                )
-                yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
-                break
+            for clean_chunk in self._visible_segments(raw_chunk, cot_state):
+                candidate = accumulated_retry_response + clean_chunk
+                is_valid, _ = self._validate_partial_response(candidate, plan.goal)
+                if not is_valid:
+                    logger.warning(
+                        "[System 3] Retry also violated constraints; yielding safe fallback."
+                    )
+                    emitted_any = True
+                    yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
+                    break
 
-            # Check grounding on the accumulated response so far
-            is_retry_grounded, retry_ground_reason = self._check_response_grounding(
-                candidate, surfaced, msg
-            )
-            if not is_retry_grounded:
-                logger.warning(
-                    f"[System 3] Retry fabricated a memory claim: {retry_ground_reason}. Yielding safe fallback."
+                # Check grounding on the accumulated response so far
+                is_retry_grounded, retry_ground_reason = self._check_response_grounding(
+                    candidate, surfaced, msg
                 )
-                yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
-                break
+                if not is_retry_grounded:
+                    logger.warning(
+                        f"[System 3] Retry fabricated a memory claim: {retry_ground_reason}. Yielding safe fallback."
+                    )
+                    is_valid = False
+                    emitted_any = True
+                    yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
+                    break
 
-            yield {"type": "content", "data": clean_chunk}
-            accumulated_retry_response = candidate
+                emitted_any = True
+                yield {"type": "content", "data": clean_chunk}
+                accumulated_retry_response = candidate
 
         if is_valid:
-            trailing = sanitizer.flush()
+            trailing = "".join(
+                self._visible_trailing(sanitizer.flush(), cot_state)
+            )
             if trailing:
                 candidate = accumulated_retry_response + trailing
                 is_valid_trail, _ = self._validate_partial_response(
@@ -656,6 +722,7 @@ class ActionService:
                     logger.warning(
                         "[System 3] Retry trailing also violated constraints; yielding safe fallback."
                     )
+                    emitted_any = True
                     yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
                 else:
                     # Check grounding on trailing content too
@@ -666,9 +733,18 @@ class ActionService:
                         logger.warning(
                             f"[System 3] Retry trailing fabricated a memory claim: {trail_ground_reason}. Yielding safe fallback."
                         )
+                        emitted_any = True
                         yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
                     else:
+                        emitted_any = True
                         yield {"type": "content", "data": trailing}
+
+        if not emitted_any:
+            # An empty retry stream, an expired budget, or a deadline that had
+            # already passed all land here. Without this the user hears
+            # "Wait, let me rephrase that..." and then nothing at all.
+            logger.warning("[System 3] Retry produced no content; yielding safe fallback.")
+            yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
 
         yield {"type": "done", "data": "finished"}
 
@@ -752,7 +828,6 @@ class ActionService:
                         system_instruction=system_instruction,
                         model=model,
                         endocrine_options=endocrine_options,
-                        sanitizer=sanitizer,
                         stream_budget=stream_budget,
                         surfaced=surfaced,
                         msg=msg,
@@ -760,6 +835,9 @@ class ActionService:
                         yield out
                 except Exception as inner_e:
                     logger.error(f"[System 3] Self-correction generation failed: {inner_e}")
+                    # Without this the user hears "Wait, let me rephrase that..."
+                    # followed by silence.
+                    yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
                     yield {"type": "done", "data": "finished"}
 
             except asyncio.TimeoutError:
@@ -781,14 +859,28 @@ class ActionService:
     async def _execute_store_memory(self, plan: ActionPlan):
         """Commit an explicitly requested memory."""
         content = plan.payload.get("content", "")
-        # Using the new intelligent MemoryStore
-        if self.memory:
-            await self.memory.add_memory(
-                content=content,
-                importance=0.7,  # High importance for explicit 'remember' commands
-                emotion=0.2,
-                source="user",
-            )
+        # Using the new intelligent MemoryStore. Confirmation is gated on an
+        # actual successful write: add_memory() returns False when persistence
+        # fails, and an absent store writes nothing at all. Claiming "committed
+        # to memory" in either case is a promise the agent cannot keep.
+        if not self.memory:
+            logger.error("[Action] STORE_MEMORY requested but no memory store is attached.")
+            yield {"type": "error", "data": "Memory storage is unavailable."}
+            yield {"type": "done", "data": ""}
+            return
+
+        stored = await self.memory.add_memory(
+            content=content,
+            importance=0.7,  # High importance for explicit 'remember' commands
+            emotion=0.2,
+            source="user",
+        )
+        if not stored:
+            logger.error("[Action] Memory persistence failed for an explicit store request.")
+            yield {"type": "error", "data": "Memory could not be stored."}
+            yield {"type": "done", "data": ""}
+            return
+
         yield {"type": "system", "data": "Memory securely consolidated."}
         yield {"type": "content", "data": "Got it, I've committed that to memory."}
         yield {"type": "done", "data": ""}

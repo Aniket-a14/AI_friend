@@ -375,7 +375,8 @@ def mock_memory_store():
     """Mock for PGVector MemoryStore"""
     store = MagicMock()
     store.search_memories = AsyncMock(return_value=[])
-    store.add_memory = AsyncMock(return_value=None)
+    # The real add_memory returns True/False; None would read as a failed write.
+    store.add_memory = AsyncMock(return_value=True)
     return store
 
 
