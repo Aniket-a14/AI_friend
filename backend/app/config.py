@@ -45,6 +45,9 @@ class AppSettings(BaseSettings):
     DATABASE_URL: Optional[str] = None
     PERSONALITY_SEED_PATH: Optional[str] = None
     HISTORY_SEED_PATH: Optional[str] = None
+    # A user-authored persona (see app/persona/profile.py). Unset means "use the
+    # PSYCH_* / AI_NAME defaults below", which is exactly the previous behaviour.
+    PERSONA_PROFILE_PATH: Optional[str] = None
 
     # Neo4j Graph Configuration
     NEO4J_URI: Optional[str] = None
