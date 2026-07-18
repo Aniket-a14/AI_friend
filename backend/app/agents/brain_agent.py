@@ -201,6 +201,40 @@ class BrainAgent(BaseAgent):
                 if self._active_generation_task is task:
                     self._active_generation_task = None
 
+    async def _replace_active_generation(self, coro, reason: str):
+        """Atomically replace the active generation task with a new one.
+
+        Holds the lock through the entire critical section: cancel the prior task,
+        await its completion, create the new task, and assign it to
+        _active_generation_task. This prevents concurrent callers from both
+        creating tasks and losing ownership when one overwrites the other's
+        assignment (TOCTOU race).
+
+        Args:
+            coro: Coroutine to wrap in the new generation task
+            reason: Reason for cancelling the prior task (if any)
+
+        Returns:
+            The newly created task
+        """
+        async with self._generation_lock:
+            # Cancel and await prior task if it exists
+            prior_task = self._active_generation_task
+            if prior_task and not prior_task.done():
+                logger.info("Cancelling active generation task: %s", reason)
+                prior_task.cancel()
+                try:
+                    await prior_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.exception("Previous generation task raised while being cancelled")
+
+            # Create and assign new task while still holding the lock
+            new_task = asyncio.create_task(coro)
+            self._active_generation_task = new_task
+            return new_task
+
     async def _on_chat_input(self, message: Dict[str, Any]):
         now = datetime.now()
         self.last_interaction_time = now
@@ -214,10 +248,6 @@ class BrainAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Unexpected error processing chat.input: {e}", exc_info=True)
             return
-
-        # Cancel any previous generation task and wait for it to fully stop before
-        # this turn starts touching last_assistant_response / last_audio_progress.
-        await self._cancel_active_generation("new incoming speech turn")
 
         # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio
         if not is_subconscious:
@@ -233,18 +263,21 @@ class BrainAgent(BaseAgent):
             )
             await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
 
-        # Start the flow task in background to allow cancellation on interruption
-        task = asyncio.create_task(
-            self._process_chat_input_flow(msg, is_subconscious, message)
+        # Atomically replace the active generation task to prevent concurrent
+        # chat inputs from both creating tasks and losing ownership.
+        task = await self._replace_active_generation(
+            self._process_chat_input_flow(msg, is_subconscious, message),
+            "new incoming speech turn"
         )
-        self._active_generation_task = task
         try:
             await task
         except asyncio.CancelledError:
             logger.info("Active generation flow task cancelled.")
         finally:
-            if self._active_generation_task == task:
-                self._active_generation_task = None
+            # Clean up only if we still own this task
+            async with self._generation_lock:
+                if self._active_generation_task == task:
+                    self._active_generation_task = None
 
     async def _process_chat_input_flow(
         self, chat_input: ChatInput, is_subconscious: bool, message: Dict[str, Any]
