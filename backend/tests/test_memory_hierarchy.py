@@ -110,10 +110,17 @@ async def test_verbatim_storage_integrity(memory_store, mock_pool):
             wing="personal",
         )
 
-        # Capture the call to execute
-        call_args = conn.execute.call_args
-        params = call_args[0][1:]
+        # add_memory also teaches the MentalLexicon (extra execute calls after
+        # the insert), so locate the memories INSERT specifically rather than
+        # assuming it is the last execute.
+        insert_call = None
+        for call in conn.execute.call_args_list:
+            if "INSERT INTO memories" in call[0][0]:
+                insert_call = call
+                break
 
+        assert insert_call is not None
+        params = insert_call[0][1:]
         assert params[1] == "Processed narrative"
         assert params[2] == "Raw verbatim transcript"
         assert params[3] == "personal"

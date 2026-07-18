@@ -208,3 +208,32 @@ begin
   limit p_limit;
 end;
 $$;
+
+-- Mental lexicon: the humanoid's learned vocabulary. It boots with a small
+-- generic innate seed (source = 'innate') and acquires new words from lived
+-- conversation. The embedding column is reserved for a future semantic-neighbor
+-- augmentation and is left unpopulated by the current co-occurrence learner.
+create table if not exists vocabulary (
+  term text primary key,
+  surface_forms text default '[]',
+  embedding vector(768),
+  times_seen integer default 1,
+  source text default 'acquired',
+  first_seen timestamptz default now(),
+  last_seen timestamptz default now()
+);
+
+-- Learned word associations (distributional co-occurrence). Pairs are stored
+-- once in canonical order (term_a < term_b); weight is reinforced each time the
+-- two words are experienced together, so recall-time cue expansion reads what
+-- the system has actually learned rather than a hardcoded thesaurus.
+create table if not exists lexical_associations (
+  term_a text not null,
+  term_b text not null,
+  weight double precision default 1.0,
+  last_reinforced timestamptz default now(),
+  primary key (term_a, term_b)
+);
+
+create index if not exists lexical_assoc_a_idx on lexical_associations(term_a);
+create index if not exists lexical_assoc_b_idx on lexical_associations(term_b);
