@@ -125,6 +125,22 @@ class PersonaProfile(BaseModel):
     # Strictly positive: see the module docstring. Zero is a mood lock.
     mood_decay_rate: float = _constitutional(default=0.05, gt=0.0, le=0.5)
 
+    # -- constitutional: how long feeling lingers --------------------------
+    # Half-lives of the phasic hormone bursts, in seconds. These are as much a
+    # part of temperament as the baselines: how long a good moment glows, and
+    # how long a bad one keeps its grip, are among the most recognisable things
+    # about a person. Cortisol's default is deliberately the longer of the two
+    # -- a fright has a hangover, a pleasure mostly does not.
+    #
+    # Both are floored well above zero. At a near-zero half-life a burst is
+    # gone before it can influence anything, which is not a fast temperament
+    # but a broken hormone: the release fires and nothing downstream ever sees
+    # it. The ceilings stop the opposite failure, a burst that outlives the
+    # conversation that caused it and colours a session it has nothing to do
+    # with.
+    dopamine_halflife_s: float = _constitutional(default=90.0, ge=5.0, le=1800.0)
+    cortisol_halflife_s: float = _constitutional(default=600.0, ge=5.0, le=7200.0)
+
     # -- adaptive: seeded here, then owned by the friend --------------------
     relationship: str = _adaptive(default="Friend", max_length=64)
     initial_trust: float = _adaptive(default=0.5, ge=0.0, le=1.0)
@@ -174,6 +190,8 @@ class PersonaProfile(BaseModel):
             "trust_change_rate": getattr(Config, "PSYCH_DELTA", 0.1),
             "attachment_growth_rate": getattr(Config, "PSYCH_EPSILON", 0.03),
             "mood_decay_rate": getattr(Config, "PSYCH_LAMBDA_DECAY", 0.05),
+            "dopamine_halflife_s": getattr(Config, "DOPAMINE_PHASIC_HALFLIFE_S", 90.0),
+            "cortisol_halflife_s": getattr(Config, "CORTISOL_PHASIC_HALFLIFE_S", 600.0),
         }
         return cls._clamped(raw, origin="Config")
 
@@ -315,6 +333,13 @@ class PersonaProfile(BaseModel):
             "delta": self.trust_change_rate,
             "epsilon": self.attachment_growth_rate,
             "lambda_decay": self.mood_decay_rate,
+        }
+
+    def hormone_halflives(self) -> Dict[str, float]:
+        """Phasic decay half-lives, under AgentState's own field names."""
+        return {
+            "dopamine_halflife_s": self.dopamine_halflife_s,
+            "cortisol_halflife_s": self.cortisol_halflife_s,
         }
 
     def baseline_affect(self) -> Dict[str, float]:
