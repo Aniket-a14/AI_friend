@@ -325,6 +325,73 @@ class MemoryStore:
             - ACTR_STRESS_SUPPRESSION * current_arousal * current_cortisol
         )
 
+    @staticmethod
+    def _personalized_pagerank(entity_names, adj, seeds, damping, iterations):
+        """HippoRAG-inspired Personalized PageRank over the entity graph.
+
+        The numeric power-method loop is delegated to the ``cognitive_rust``
+        extension (the same crate that already owns the ACT-R scoring hot loop),
+        with an exact pure-Python fallback if the extension is unavailable. Both
+        paths preserve the legacy semantics precisely:
+
+          * ``degrees`` holds each node's ORIGINAL neighbor count. A neighbor
+            whose name is absent from ``entity_names`` has no resolvable index
+            and is dropped from the push, but the mass is still divided by the
+            full degree -- so that share leaks out of the graph, unchanged.
+          * A degree-0 node is dangling and redistributes uniformly across the
+            seeds rather than the whole graph.
+
+        ``seeds`` is a set of node indices; returns the rank vector (list) of
+        length ``len(entity_names)``.
+        """
+        n = len(entity_names)
+        if not seeds or n == 0:
+            return [0.0] * n
+
+        node_to_idx = {name: idx for idx, name in enumerate(entity_names)}
+        seed_list = sorted(seeds)
+
+        # Resolve name-based adjacency to index lists once; keep the original
+        # degree so the divisor (and the leaked mass) matches the legacy loop.
+        adjacency_idx = []
+        degrees = []
+        for name in entity_names:
+            neighbors = adj.get(name, ())
+            degrees.append(len(neighbors))
+            adjacency_idx.append([node_to_idx[nb] for nb in neighbors if nb in node_to_idx])
+
+        try:
+            import cognitive_rust
+
+            return list(
+                cognitive_rust.personalized_pagerank(
+                    adjacency_idx, degrees, seed_list, damping, iterations
+                )
+            )
+        except Exception:
+            # Pure-Python fallback with identical arithmetic and ordering.
+            p_0 = [0.0] * n
+            seed_share = 1.0 / len(seed_list)
+            for s_idx in seed_list:
+                p_0[s_idx] = seed_share
+            p = list(p_0)
+            for _ in range(iterations):
+                p_next = [0.0] * n
+                for i in range(n):
+                    degree = degrees[i]
+                    if degree:
+                        val = p[i] / degree
+                        for n_idx in adjacency_idx[i]:
+                            p_next[n_idx] += val
+                    else:
+                        dangling_share = p[i] / len(seed_list)
+                        for s_idx in seed_list:
+                            p_next[s_idx] += dangling_share
+                for i in range(n):
+                    p_next[i] = damping * p_next[i] + (1.0 - damping) * p_0[i]
+                p = p_next
+            return p
+
     # Columns always written; the Eriksonian columns below may be absent on an
     # un-migrated schema, so a failed full insert falls back to just these.
     _MEMORY_BASE_COLUMNS = (
@@ -1711,45 +1778,16 @@ class MemoryStore:
                                         if name.lower() == ent.lower():
                                             seeds.add(e_idx)
 
-                    # Compute Personalized PageRank Vector
+                    # Compute Personalized PageRank Vector (3-iteration power
+                    # method, delegated to the Rust hot loop with a Python
+                    # fallback). PPR_DAMPING is the canonical teleport factor.
                     N = len(entity_names)
                     if not seeds:
                         ppr = {}
                     else:
-                        p_0 = [0.0] * N
-                        val = 1.0 / len(seeds)
-                        for s_idx in seeds:
-                            p_0[s_idx] = val
-
-                        p = list(p_0)
-                        node_to_idx = {
-                            name: idx for idx, name in enumerate(entity_names)
-                        }
-
-                        # Standard PageRank damping (teleport) factor.
-                        d = PPR_DAMPING
-
-                        # 3-iteration power method PPR propagation
-                        for _ in range(3):
-                            p_next = [0.0] * N
-                            for i in range(N):
-                                node_name = entity_names[i]
-                                neighbors = adj.get(node_name, set())
-                                if neighbors:
-                                    val = p[i] / len(neighbors)
-                                    for n in neighbors:
-                                        n_idx = node_to_idx.get(n)
-                                        if n_idx is not None:
-                                            p_next[n_idx] += val
-                                else:
-                                    # Dangling node distributes to seeds
-                                    for idx in seeds:
-                                        p_next[idx] += p[i] / len(seeds)
-
-                            for i in range(N):
-                                p_next[i] = d * p_next[i] + (1 - d) * p_0[i]
-                            p = p_next
-
+                        p = self._personalized_pagerank(
+                            entity_names, adj, seeds, PPR_DAMPING, 3
+                        )
                         ppr = {entity_names[i]: p[i] for i in range(N)}
 
                     # Helper to find which entities are present in a memory content (fallback scanning)
