@@ -281,8 +281,78 @@ def test_a_misspelled_setting_is_reported_rather_than_swallowed(tmp_path, caplog
 
 
 def test_no_file_contributes_nothing(tmp_path):
+    """"No authored file" must never be confused with "an empty one".
+
+    If this returned anything but `{}`, an agent with no persona file would
+    still get overrides applied over its saved state — and on a first boot
+    those phantom values would be what the friend was seeded with.
+    """
     assert authored_overrides(None, first_boot=True) == {}
     assert authored_overrides(None, first_boot=False) == {}
+
+
+# --------------------------------------------------------------------------
+# the seed marker must mean what it says
+# --------------------------------------------------------------------------
+
+
+def test_the_marker_is_not_stamped_when_the_file_was_never_read(tmp_path):
+    """Passing an explicit `persona` skips the authored file entirely.
+
+    The marker is permanent, so stamping it here would burn the one seeding
+    opportunity without the file ever being consulted: the user's adaptive
+    values would never be applied, with no error raised and no way to retry.
+    """
+    from app.persona import PersonaProfile
+
+    agent = IdentityManager(
+        base_path=str(tmp_path),
+        persona=PersonaProfile(name="Injected"),
+        persona_file=_write(tmp_path),
+    )
+    assert agent.first_boot is True
+    assert agent.seeded_from_file is False
+    assert IdentityManager.SEED_MARKER not in agent.history
+
+    # And the chance survives: a later boot without the injected profile seeds.
+    later = IdentityManager(base_path=str(tmp_path), persona_file=_write(tmp_path))
+    assert later.persona.adaptive_traits == ["Eager"]
+
+
+def test_a_persona_file_that_does_not_exist_does_not_burn_the_seed(tmp_path):
+    """A typo'd path resolves to "no file", not to a truthy Path.
+
+    Otherwise the marker is written on the strength of a path that was never
+    successfully read, and the real file — once the typo is fixed — arrives too
+    late to seed anything.
+    """
+    agent = IdentityManager(
+        base_path=str(tmp_path), persona_file=tmp_path / "not_here.toml"
+    )
+    assert agent.persona_file is None
+    assert agent.seeded_from_file is False
+    assert IdentityManager.SEED_MARKER not in agent.history
+
+
+def test_an_unparseable_file_does_not_burn_the_seed(tmp_path):
+    """Existing is not the same as contributing.
+
+    A file that fails to parse yields nothing, so the agent has not been seeded
+    and must still be seedable once the syntax error is fixed.
+    """
+    agent = IdentityManager(
+        base_path=str(tmp_path),
+        persona_file=_write(tmp_path, "name = = = broken ["),
+    )
+    assert agent.seeded_from_file is False
+    assert IdentityManager.SEED_MARKER not in agent.history
+
+
+def test_a_real_seeding_does_stamp_the_marker(tmp_path):
+    """The counterpart: when the file *is* applied, say so permanently."""
+    agent = IdentityManager(base_path=str(tmp_path), persona_file=_write(tmp_path))
+    assert agent.seeded_from_file is True
+    assert agent.history[IdentityManager.SEED_MARKER]
 
 
 # --------------------------------------------------------------------------

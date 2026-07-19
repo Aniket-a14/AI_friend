@@ -3561,3 +3561,38 @@ changed at runtime through reflection lives in personality.json while the
 authored file still describes the original. Reconciling those two, and the
 `relationship` field that still lives in history.json, remain open.
 
+### Review round (PR #78)
+
+One Major, and a good one: **the seed marker could be stamped without anything
+having been seeded.**
+
+The marker is written once and never again, so a false stamp does not merely log
+something inaccurate — it permanently consumes the single seeding opportunity.
+The user's adaptive values would never be applied, with no error raised and no
+way to retry. Two ways in:
+
+1. Passing an explicit `persona=` skips `_profile_from_personality`, and with it
+   `authored_overrides`, so the file is never read. The marker was gated on a
+   file being *configured*, not on it having been consulted.
+2. An explicit `persona_file` was wrapped in `Path()` without an existence
+   check, unlike `find_persona_file`'s explicit branch. A typo'd path stayed
+   truthy, so the marker was written on the strength of a file that was never
+   opened — and the real file, once the typo was fixed, arrived too late.
+
+Both now resolve through a `seeded_from_file` flag set where the file is
+actually read, and set from `bool(authored)` so that a file which exists but is
+empty or unparseable does not count either. Existing is not the same as
+contributing.
+
+### Verification
+
+3 mutations, all 3 caught: the marker gated on configuration rather than use,
+the explicit path left unchecked, and an empty file counting as seeded. Four new
+tests covering the injected-persona path, the missing path, the unparseable
+file, and the counterpart case where seeding genuinely happened.
+
+Also added the test docstring CodeRabbit flagged on
+`test_no_file_contributes_nothing`.
+
+Full non-benchmark suite: **571 passed**, `ruff check .` clean.
+
