@@ -75,7 +75,17 @@ class IdentityManager:
         persona_file=AUTO_DISCOVER,
     ):
         if base_path is None:
-            base_path = os.path.dirname(os.path.dirname(__file__))
+            # Defaults to the package directory, which makes `app/` writable
+            # state: anything constructing a manager without a durable store —
+            # `ReflectionService`'s fallback, most obviously — writes
+            # `personality.json` and `history.json` right where the code lives.
+            # That is how the test suite came to modify a **git-tracked** file
+            # on every run, via `_consolidate` → `evolve_persona` → `save()`.
+            # Overridable so a deployment (or the suite) can put identity state
+            # somewhere that is not the source tree.
+            base_path = getattr(Config, "IDENTITY_BASE_PATH", None) or os.path.dirname(
+                os.path.dirname(__file__)
+            )
 
         self.personality_path = os.path.join(base_path, "personality.json")
         self.history_path = os.path.join(base_path, "history.json")
@@ -343,9 +353,18 @@ class IdentityManager:
         if not config_store or not hasattr(config_store, "get_agent_config"):
             return
 
-        self.config_store = config_store
         try:
             config = await config_store.get_agent_config()
+
+            # Recorded only once the store has actually answered. `save()` skips
+            # the JSON files whenever a store is attached, so claiming one before
+            # knowing it works means a database that is down at boot leaves the
+            # agent persisting *nowhere*: the file fallback is disabled because a
+            # store exists, and the store cannot be written because it does not.
+            # Attaching on success makes a failed hydration degrade to exactly
+            # the offline behaviour the fallback was kept for.
+            self.config_store = config_store
+
             personality_raw = config.get("personality")
             history_raw = config.get("history")
 

@@ -151,6 +151,58 @@ async def test_save_does_not_touch_the_tracked_json_once_a_store_is_attached(tmp
     assert after == before, "the durable store owns this now"
 
 
+@pytest.mark.asyncio
+async def test_a_store_that_fails_to_answer_is_not_treated_as_attached(tmp_path):
+    """Otherwise a database down at boot means persisting *nowhere*.
+
+    `save()` skips the JSON files whenever a store is attached. Recording the
+    store before it has actually answered means a failed hydration disables the
+    file fallback (a store exists) while the store itself cannot be written
+    (it does not) — so the agent silently stops persisting anything at all.
+    A failed hydration has to degrade to exactly the offline behaviour the
+    fallback was kept for.
+    """
+
+    class Broken:
+        async def get_agent_config(self):
+            raise RuntimeError("database is down")
+
+    agent = IdentityManager(base_path=str(tmp_path), persona_file=None)
+    await agent.hydrate_from_config_store(Broken())
+
+    assert agent.config_store is None, "an unreachable store is not attached"
+
+    agent.persona.name = "Survived"
+    agent._sync_personality_from_profile()
+    agent.save()
+    written = json.loads((tmp_path / "personality.json").read_text(encoding="utf-8"))
+    assert written["name"] == "Survived"
+
+
+def test_identity_files_never_default_into_the_source_tree(monkeypatch, tmp_path):
+    """`app/personality.json` and `app/history.json` are tracked in git.
+
+    `base_path` defaults to the package directory, so anything that saves
+    without a durable store writes into the repo. The suite did precisely this
+    — `test_subconscious_consolidation` builds a `ReflectionService` with no
+    identity manager, and `_consolidate` → `evolve_persona` → `save()` rewrote
+    the tracked file on every run.
+
+    Redirecting the default is what stops that. If the override is dropped, the
+    working tree silently goes dirty again on every test run, and the next
+    person to `git add -A` commits whatever the suite happened to invent.
+    """
+    from app import config as config_module
+
+    monkeypatch.setattr(
+        config_module.config_instance, "IDENTITY_BASE_PATH", str(tmp_path)
+    )
+    agent = IdentityManager(persona_file=None)
+
+    assert agent.personality_path == str(tmp_path / "personality.json")
+    assert agent.history_path == str(tmp_path / "history.json")
+
+
 def test_save_still_writes_files_when_there_is_no_store(tmp_path):
     """The fallback is the point, not an oversight.
 
@@ -244,6 +296,69 @@ async def test_one_bad_memory_does_not_abandon_the_rest():
 
     assert len(stored) == 2
     assert [m["content"] for m in store.added] == ["fine", "also fine"]
+
+
+# --------------------------------------------------------------------------
+# seeding runs exactly once, whatever the source
+# --------------------------------------------------------------------------
+
+
+def _service(tmp_path, memory_store):
+    """A cognitive service whose identity lives in tmp_path.
+
+    `base_path` is mandatory here, not tidiness: the default resolves to the
+    real `app/` directory, so a `save()` during the test would write the
+    git-tracked `personality.json`.
+    """
+    from app.cognitive.core import CognitiveService
+
+    return CognitiveService(
+        llm_service=None,
+        memory_store=memory_store,
+        graph_db=None,
+        base_path=str(tmp_path),
+    )
+
+
+@pytest.mark.asyncio
+async def test_biography_seeding_across_two_boots_stores_each_passage_once(tmp_path):
+    """The fingerprint ledger is what makes seeding survivable.
+
+    Neither `seed_biography_once` nor `migrate_history_once` had any test at
+    all — the existing biography suite covers the `seed_biography` *function*,
+    not the method that records what was stored. If the ledger is not written,
+    or not read back, every restart re-seeds the whole documentary: duplicate
+    memories, repeated embedding work, and a friend whose past grows a copy of
+    itself on each boot.
+    """
+    bio = tmp_path / "biography.md"
+    bio.write_text("## Her sister\n\nThey text every morning.\n", encoding="utf-8")
+
+    store = FakeMemoryStore()
+    service = _service(tmp_path, store)
+
+    assert await service.seed_biography_once(bio) == 1
+    assert await service.seed_biography_once(bio) == 0, "already seeded"
+    assert len(store.added) == 1
+
+
+@pytest.mark.asyncio
+async def test_history_migration_across_two_boots_stores_each_memory_once(tmp_path):
+    """Same ledger contract, the other source.
+
+    Reflection keeps appending to `history["memories"]`, so this runs on every
+    boot with a list that is mostly already migrated.
+    """
+    store = FakeMemoryStore()
+    service = _service(tmp_path, store)
+    service.identity.history["memories"] = ["she hates coriander"]
+
+    assert await service.migrate_history_once() == 1
+    assert await service.migrate_history_once() == 0, "already migrated"
+
+    service.identity.history["memories"].append("she sings while cooking")
+    assert await service.migrate_history_once() == 1, "new entries still import"
+    assert len(store.added) == 2
 
 
 # --------------------------------------------------------------------------

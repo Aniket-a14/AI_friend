@@ -56,10 +56,13 @@ async def _run(skip_prompt: bool) -> int:
     if result["persona_cleared"]:
         print("🌱 Persona cleared. The next start will seed from config/ again.")
     else:
-        # Reported rather than raised: the memory half may well have succeeded,
-        # and someone who is told "done" while their old persona is still stored
-        # will restart into the friend they just tried to replace.
-        print("⚠️  The stored persona could NOT be cleared; your friend is unchanged.")
+        # "Unchanged" would be a lie: the memory half already succeeded, and
+        # saying nothing happened is how someone concludes it is safe to walk
+        # away from a half-reset agent. Name the actual state instead.
+        print("⚠️  The stored persona could NOT be cleared.")
+        print("    Seeded memories are already gone, so your friend is now in a")
+        print("    half-reset state: original persona, missing its seeded past.")
+        print("    Re-run this once the database is reachable.")
         return 1
     return 0
 

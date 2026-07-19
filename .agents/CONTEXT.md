@@ -3745,7 +3745,7 @@ when refusing to persist anything is worst.
 change deliberately inverts, and their failure was the first confirmation the
 inversion took effect.
 
-**7 mutations, all 7 caught**: first-boot not recomputed after hydration,
+**11 mutations, all 11 caught**: first-boot not recomputed after hydration,
 `save()` writing JSON despite a store, later boots still applying constitutional
 fields, the seed marker not stamped post-hydration, duplicate memories not
 de-duped within a run, `user` added to the resettable sources, and the archive
@@ -3759,14 +3759,48 @@ line, and it is worth stating as a rule: **anchor mutations on text unique to
 the branch under test, and treat a lone SURVIVED among CAUGHTs as suspect until
 the anchor is verified.**
 
-**603 non-benchmark tests pass**, `ruff check .` clean.
+Review round (PR #80) added four more: attaching a config store before it has
+answered (a real regression — `save()` skips the JSON files when a store is
+attached, so a database down at boot left the agent persisting *nowhere*), plus
+three on the extracted `_seed_once` helper. Two of those initially SURVIVED,
+which exposed that `seed_biography_once` and `migrate_history_once` had **no
+test at all** — the biography suite covers the `seed_biography` function, not
+the method that records what was stored. That gap predates this PR and is now
+closed. CodeRabbit's `is_sqlite` finding was skipped: it is a `@property`, so
+`getattr` returns a bool, not a bound method.
 
-A correction to an earlier claim in this work: the `personality.json` /
-`history.json` modifications appearing after suite runs were **line-ending
-renormalization** from `.gitattributes` on files that still had legacy CRLF in
-the working tree — not the suite writing to them. An instrumented run recorded
-zero `save()` calls to the app path across all 603 tests. The `save()` guard
-here closes a latent defect (two writable copies), not a live symptom.
+**607 non-benchmark tests pass**, `ruff check .` clean, working tree clean.
+
+### The suite really was writing to a tracked file
+
+This was claimed, retracted, and then confirmed — the retraction was the error,
+and how it happened is worth recording.
+
+`personality.json`/`history.json` kept appearing as modified after suite runs.
+An instrumented `save()` reported **zero** calls to the app path, so this was
+written up as `.gitattributes` line-ending renormalization rather than a write.
+That instrumentation was broken: the path guard used `.replace("\\\\", "/")`,
+which in the generated source became a two-character `\` and so replaced
+*double* backslashes. Real Windows paths have single ones, the guard never
+matched, and a false negative was reported as a verified fact.
+
+Bisecting per test file named `test_subconscious_consolidation.py`, and an
+`open()` tracer gave the stack: `ReflectionService._consolidate` →
+`evolve_persona` → `save()` → `backend/app/history.json`. That service builds a
+default `IdentityManager` when none is injected, and `base_path` defaults to the
+package directory — so `app/` is writable state and anything saving without a
+durable store writes into the repo.
+
+`IDENTITY_BASE_PATH` now overrides that default, and conftest points it at a
+per-session temp directory. The working tree stays clean across a full run for
+the first time.
+
+**The lesson is about the instrumentation, not the bug.** A diagnostic that can
+fail silently is worse than none: it produced a confident wrong answer that was
+then reported to the user and written into this ledger. Two things would have
+caught it — asserting the probe fired at least once before trusting a zero
+result, and noticing that a read-only file produced no test failure, which
+already implied a swallowed write rather than no write.
 
 **NOT done:** no write path from `agent_configs` back to a human-readable
 export, so inspecting the current persona means reading the database. Neo4j
