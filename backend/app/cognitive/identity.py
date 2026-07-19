@@ -540,11 +540,19 @@ class IdentityManager:
         # 1. Update Adaptive Styles (Vocabulary, preferences)
         if "speaking_style" in suggestions:
             style = dict(self.persona.speaking_style)
-            style["style_description"] = suggestions["speaking_style"]
+            # Truncated, not rejected. This value arrives from the reflection
+            # model at runtime, and the same asymmetry that governs
+            # `from_config()` applies: a running friend should degrade rather
+            # than fail to evolve because a model was verbose once. Bounding it
+            # here rather than in the prompt builder keeps the stored value
+            # bounded too -- clipping only on read would let the column grow
+            # without limit while hiding that it had.
+            described = str(suggestions["speaking_style"])[
+                : PersonaProfile.MAX_STYLE_DESCRIPTION
+            ]
+            style["style_description"] = described
             self.persona.speaking_style = style
-            logger.info(
-                f"[Identity] Adaptive style evolved: {style['style_description']}"
-            )
+            logger.info(f"[Identity] Adaptive style evolved: {described}")
 
         if "new_traits" in suggestions:
             # The cap lives on the profile now, not restated here.
