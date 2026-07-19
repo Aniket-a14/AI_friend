@@ -20,6 +20,11 @@ from .decision import DecisionService
 from .action import ActionService
 from .learning import ReflectionService
 from .identity import IdentityManager
+from ..persona.biography import (
+    find_biography_file,
+    read_biography,
+    seed_biography,
+)
 from .pipeline import CognitivePipeline
 
 logger = logging.getLogger(__name__)
@@ -41,6 +46,8 @@ class CognitiveService:
     ):
         self.identity = IdentityManager(base_path=base_path)
         self.identity_store = identity_store
+        # Kept so the biography can be seeded into episodic memory at startup.
+        self.memory_store = memory_store
         self.perception = PerceptionService(llm_service=llm_service)
         self.appraisal = AppraisalEngine()  # §1: OCC/Lazarus/EMA
         self.reappraisal = ReappraisalEngine()  # Gross/Bosse feedback loop
@@ -95,11 +102,53 @@ class CognitiveService:
         if self.agent:
             await self.agent.publish(subject, data)
 
+    SEEDED_KEY = "biography_seeded"
+
+    async def seed_biography_once(self, path: Any = None) -> int:
+        """Write any not-yet-seeded biography passages into episodic memory.
+
+        Returns the number stored, so a caller can tell "nothing to do" from
+        "did not run". Idempotent by paragraph fingerprint rather than by a
+        single flag, so the documentary can be extended later without either
+        duplicating what is already there or refusing the new material.
+
+        Failures never propagate. A friend who does not remember the story you
+        wrote for them is a degraded friend; an agent that will not start is no
+        friend at all.
+        """
+        try:
+            entries = read_biography(path or find_biography_file())
+            if not entries:
+                return 0
+
+            already = self.identity.history.get(self.SEEDED_KEY) or []
+            stored = await seed_biography(entries, self.memory_store, already)
+            if not stored:
+                return 0
+
+            self.identity.history[self.SEEDED_KEY] = list(already) + stored
+            self.identity.save()
+            await self.identity.persist_to_config_store()
+            logger.info(
+                "[Biography] Seeded %d passage(s); %d known in total.",
+                len(stored),
+                len(self.identity.history[self.SEEDED_KEY]),
+            )
+            return len(stored)
+        except Exception as exc:
+            logger.error("[Biography] Seeding failed (%s); continuing.", exc)
+            return 0
+
     async def initialize(self, agent: Any = None):
         """Load identity and hydrate states. Subscribes to Mesh heartbeats."""
         if self.identity_store:
             await self.identity.hydrate_from_config_store(self.identity_store)
         await self.state.hydrate_state()
+
+        # After hydration, so the record of what has already been seeded comes
+        # from the durable store rather than from a local file that may be
+        # behind it — otherwise a redeployed agent re-seeds its whole history.
+        await self.seed_biography_once()
 
         # Initialize appraisal engine with identity boundaries
         boundaries = self.identity.personality.get("boundaries", [])
