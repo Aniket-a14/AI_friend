@@ -139,16 +139,16 @@ pub struct ChatOutput {
     pub turn_id: Option<String>,
     #[serde(default)]
     pub affect: Option<ChatOutputAffect>,
-    #[serde(default = "default_one")]
-    pub confidence: f64,
-    #[serde(default)]
-    pub intensity: f64,
-    #[serde(default = "default_one")]
-    pub speaking_rate: f64,
-    #[serde(default)]
-    pub pause_bias: f64,
-    #[serde(default)]
-    pub paralinguistic_tags: Vec<String>,
+    // The deprecated prosody block (confidence, intensity, speaking_rate,
+    // pause_bias, paralinguistic_tags) was removed. Prosody has one source:
+    // `vad_to_prosody` derives it from `affect` above. Nothing read these, and
+    // the Python side populated them with a different formula.
+    //
+    // Removal is safe both ways round: this struct has no
+    // `deny_unknown_fields`, so a message from an older producer still
+    // carrying them deserializes and they are ignored. Note that
+    // `contracts::Prosody` has its own `pause_bias` -- a different type, not
+    // affected by this.
     #[serde(default)]
     pub timestamp: f64,
     #[serde(default)]
@@ -159,10 +159,6 @@ pub struct ChatOutput {
     pub proactive: bool,
     #[serde(default)]
     pub latency_metadata: Option<LatencyMetadata>,
-}
-
-fn default_one() -> f64 {
-    1.0
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

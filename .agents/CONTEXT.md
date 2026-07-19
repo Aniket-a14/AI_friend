@@ -4189,6 +4189,97 @@ asserted that the loop stayed responsive and that a single call wrote correct
 values -- neither could see a two-call ordering property, and nothing prompted
 writing that test until review did.
 
+### 2026-07-19 — A4: the barge-in transcript no longer guesses
+
+When the user interrupts, `_on_audio_stop` rewrites the stored assistant reply
+to what was actually heard. With real playback progress it uses
+`character_offset`, which is accurate. Without it, it estimated
+`int(elapsed * 15)` -- a hardcoded 15 characters per second -- and cut there.
+
+Two things were wrong. The rate was invented and unbounded in error: real speech
+rate varies with prosody, pauses and the synthesiser, so the cut landed wherever
+the arithmetic said. And `assistant_response_start_time` was stamped on only one
+of the two streaming paths -- the other assigns `last_assistant_response`
+without it -- so `elapsed` could be measured from a previous turn entirely.
+
+This matters more than a logging bug because the stored message is not a log.
+Memory reads it and the persona prompt reads it back, so a wrong cut point does
+not misreport history, it *becomes* what the agent believes it said.
+
+Decision (maintainer): keep the full text when progress is unknown and log that
+truncation was skipped. That is also imperfect -- the agent may believe it said
+more than was heard -- but it is wrong honestly and visibly rather than by
+fabrication. The estimate is removed rather than tuned, and
+`assistant_response_start_time` with it, since nothing else read it.
+
+Also fixed while there: `last_audio_progress` was cleared only on the branch
+that truncated, so a stop matching none of the guards left the marker in place
+for the *next* interrupt to cut against -- a stale offset from a reply that had
+already ended.
+
+**An existing test was inverted, deliberately.**
+`test_dialogue_truncation_via_estimation_fallback` asserted the old estimate
+(cutting "…buy a coffee, but I forgot my wallet." to "…buy a coffee" because
+2.0s had passed). It is renamed
+`test_dialogue_is_not_rewritten_when_playback_progress_is_unknown` and asserts
+the opposite, with the reasoning in its docstring. Recording it here because
+"a test changed to match the code" is normally a smell: this one is a behaviour
+decision, and the accurate `character_offset` path is still covered and still
+truncates.
+
+Five mutations, five caught, including reinstating the estimate and accepting an
+out-of-range offset.
+
+**657 tests pass**, `ruff check .` clean.
+
+**NOT verified:** none of this was exercised against live audio. The accurate
+path depends on `AudioPlaybackProgress` arriving before the stop, which only a
+real barge-in can confirm.
+### 2026-07-19 — Prosody fields removed from the wire, in one PR
+
+The deprecated `ChatOutput` prosody block -- `confidence`, `intensity`,
+`speaking_rate`, `pause_bias`, `paralinguistic_tags` -- is gone from both
+`app/contracts.py` and `crates/contracts/src/lib.rs`. Prosody has one source:
+the voice agent derives it from `affect` via `vad_to_prosody`. Python used to
+populate these with a formula that disagreed with the Rust one, and nothing read
+them.
+
+**This was previously deferred as needing a rollout plan. It did not.** Four
+checks, verified before touching anything, show removal is safe in both
+directions at once:
+
+- the Rust structs set no `deny_unknown_fields`, so a message from an older
+  Python producer still carrying the keys deserializes and they are ignored;
+- every Rust field is `#[serde(default)]`, so an older Rust build receiving a
+  message *without* them fills defaults;
+- Python's `ChatOutput` is `extra: "allow"`, so an old message validates against
+  the new model;
+- nothing constructs them. Python never passed them; Rust never builds
+  `ChatOutput` at all, only deserializes it.
+
+So there is no deploy ordering constraint and no mixed-version window to manage.
+`setup_nats_streams.py` configures stream subjects, not message schemas, and
+needs no re-run for a field removal.
+
+`cargo check --workspace` passes. `default_one()` became unused with the last
+field that referenced it and was removed too. Note `contracts::Prosody` has its
+own `pause_bias` -- a different struct, untouched.
+
+**The compatibility claim is demonstrated rather than asserted.**
+`test_rust_contract_fixtures.py` parses a Rust-generated fixture that still
+contains all five old fields, and it passes unchanged: `extra: "allow"` carries
+them through. Mutation U3 flips that to `extra: "forbid"` and the fixture test
+fails, which is what pins the property.
+
+Two tests in `test_phase4_features.py` asserted the fields sat at their
+*defaults*; they now assert the names are absent from `model_fields` and from
+the published payload. Deliberately checked against declared fields rather than
+attribute access -- `extra: "allow"` means reading `payload.speaking_rate` on an
+instance built from an older message still succeeds, so attribute access cannot
+distinguish "removed" from "carried through".
+
+**649 tests pass**, `ruff check .` clean, `cargo check --workspace` clean,
+3/3 mutations caught.
 ### 2026-07-19 — F1, finally scoped: only 5 of 17 dual-backend branches were duplication
 
 F1 was written against a `memory_store.py` that no longer exists. Measured

@@ -93,25 +93,18 @@ class ChatOutput(BaseModel):
     turn_id: Optional[str] = None
     affect: Optional[ChatOutputAffect] = None
 
-    # Prosody & Signals
+    # The deprecated prosody block (confidence, intensity, speaking_rate,
+    # pause_bias, paralinguistic_tags) was removed here. Prosody has a single
+    # source: the voice agent derives it from `affect` above via
+    # `contracts::vad_to_prosody` (Rust). Python used to populate these with a
+    # formula that disagreed with the Rust one, and nothing ever read them.
     #
-    # DEPRECATED, and no longer written by any producer. Prosody has a single
-    # source: the voice agent computes it from `affect` above via
-    # `contracts::vad_to_prosody` (Rust). Python used to populate these too,
-    # with a formula that disagreed with the Rust one, and nothing ever read
-    # them -- see SpeechCoordinator's docstring.
-    #
-    # Retained at their defaults rather than removed, so an older consumer
-    # deserializing a new message still finds the fields it expects. They carry
-    # no information: do not read them, and do not repopulate them. Removing
-    # them is a wire-contract change and needs `setup_nats_streams.py` re-run.
-    confidence: float = 1.0
-    intensity: float = 0.0
-    speaking_rate: float = 1.0
-    pause_bias: float = 0.0
-    paralinguistic_tags: List[str] = Field(
-        default_factory=list
-    )  # [laughs], [sighs], etc.
+    # Safe to remove in both rollout directions, which is why they went rather
+    # than staying deprecated forever: this model is `extra: "allow"`, so a
+    # message from an older producer still carrying them validates; and the
+    # Rust struct sets `#[serde(default)]` on every field with no
+    # `deny_unknown_fields`, so a new message missing them deserializes there
+    # too. No deploy ordering is required.
 
     # Metadata
     timestamp: float = Field(default_factory=time.time)
