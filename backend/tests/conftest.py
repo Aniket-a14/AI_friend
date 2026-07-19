@@ -13,8 +13,13 @@ os.environ.setdefault("LIVEKIT_API_SECRET", "dummy_secret")
 # `IdentityManager` searches upward for `config/persona.toml`, which is right in
 # production and wrong here: any test that builds one with default arguments
 # would otherwise inherit whatever character happens to be checked out beside
-# the code, and `ReflectionService` builds one by default. That made the suite
-# write the repo's authored persona into the tracked `app/personality.json`.
+# the code — so the suite's results would depend on the repo's own persona file,
+# and editing that file could turn tests red.
+#
+# This was also the reason the suite wrote to the tracked `app/personality.json`.
+# That half is fixed properly now: `save()` writes to `agent_configs` whenever a
+# durable store is attached, and only falls back to the JSON files when there is
+# nowhere better. The env var stays for the isolation, which is its own reason.
 #
 # Tests that exercise authoring pass an explicit path, so this disables ambient
 # discovery without disabling the feature.

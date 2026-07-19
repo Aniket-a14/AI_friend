@@ -2,24 +2,30 @@
 #  YOUR FRIEND
 #  ─────────────────────────────────────────────────────────────────────────
 #
-#  This file describes who your humanoid is. Edit it, restart, and the agent
-#  boots as the character you wrote here.
+#  This file describes who your humanoid *starts out as*. It is read **once**,
+#  on the very first boot, and then never again.
 #
-#  Every value below belongs to one of three tiers, and the tier decides who
-#  owns it and for how long:
+#  That is the most important thing to understand about it. After the first
+#  start, everything here lives in the database and evolves with the friend you
+#  are actually talking to. Editing this file later changes nothing — not the
+#  adaptive values, not the temperament, not the name. The log will tell you it
+#  was skipped.
 #
-#    CONSTITUTIONAL  Who this friend fundamentally is. You set it, and it holds
-#                    for their life. Editing it later still takes effect, but
-#                    understand what you are doing: changing a temperament does
-#                    not update your friend so much as replace them with a
-#                    different person.
+#  To start over from what you have written here:
 #
-#    ADAPTIVE        You choose where the relationship *starts*. Living together
-#                    decides where it goes. These are read **only on the first
-#                    boot** — after that they belong to your friend, and editing
-#                    them here does nothing. That is deliberate: a stray edit
-#                    should never be able to erase trust that took months to
-#                    build. The log will tell you when a value was ignored.
+#      cd backend && ../.venv/Scripts/python.exe -m scripts.reset_persona
+#
+#  Every value below belongs to one of three tiers. The tier no longer decides
+#  *when* a value applies — none of them apply after the first boot — but it
+#  still decides what the friend is allowed to do with it afterwards:
+#
+#    CONSTITUTIONAL  Who this friend fundamentally is. Seeded here, then held
+#                    steady. Reflection does not rewrite these.
+#
+#    ADAPTIVE        Where the relationship *starts*. Living together decides
+#                    where it goes: these move on their own as trust and
+#                    attachment build. A stray edit here should never be able to
+#                    erase months of that, which is why nothing here is re-read.
 #
 #    IMMUTABLE       Safety invariants. They are not in this file and cannot be
 #                    put in it. If you add them they are ignored with a warning.

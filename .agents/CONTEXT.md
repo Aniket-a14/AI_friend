@@ -3666,3 +3666,113 @@ prompt-resident and count against context on every turn, which is a real budget
 this now spends without measuring — worth checking against the 120s stream
 ceiling once there is a real persona to measure with.
 
+
+---
+
+## 2026-07-19 — One identity, one place: the durable store becomes authoritative
+
+The persona had two homes and no rule about which won. `IdentityManager` loaded
+`personality.json`/`history.json` from disk, then `hydrate_from_config_store`
+overwrote from `agent_configs`, and `save()` wrote the JSON files back — so
+runtime state existed in two writable copies that could disagree with nothing to
+adjudicate. `history["memories"]` was a third problem hiding inside the second.
+
+### The bug that made this urgent
+
+`_profile_from_personality` asks `self.first_boot` whether the authored persona
+file still applies. `first_boot` was computed once in `__init__`, from the
+**local files** — and `personality.json`/`history.json` are tracked in git and
+ship seed-shaped. So on disk every fresh clone and every container redeploy
+looks like a first boot, no matter how long the friend behind the durable store
+has existed.
+
+Hydration then rebuilt the profile with that stale flag still set to `True`,
+re-applying `config/persona.toml` over months of accumulated persona. The friend
+would reset to their original description on every deploy, silently. Hydration
+now loads history **before** personality and recomputes first-boot-ness from it;
+the ordering is load-bearing and commented as such.
+
+### `history["memories"]` reached no reader at all
+
+`evolve_persona` appends to it whenever reflection decides something is worth
+keeping. Nothing ever read it back — `get_persona_prompt` builds from the
+profile and `history["relationship"]`, and no other caller touches the list. The
+agent had been deciding what to remember, writing it down, and never once
+consulting it.
+
+`persona/history_migration.py` drains the list into the real episodic store
+(`source="seed_history"`), reusing the per-entry fingerprint idempotence from the
+biography work for the same reason: the list keeps being appended to, so a single
+flag would force a choice between re-importing everything and never importing
+what arrived later. Entries are not removed from the list — the fingerprint
+ledger already prevents duplicates, and dropping them would make the JSON the
+only place a failed migration could be noticed.
+
+### Decisions
+
+**persona.toml is a seed, full stop.** Constitutional fields used to keep
+applying on every boot, on the argument that temperament is who someone
+fundamentally is. That is right for a persona being tuned iteratively and wrong
+for the case this exists to serve — describing a real person so the agent can
+start out as them — because re-asserting who someone is on every boot pins them
+to the moment the file was written. Constitutional values move slowly, not
+never. The tiers still govern bounds and what may be evolved; they no longer
+govern which boot a value applies on.
+
+**Re-seeding is a decision, not a side effect of editing.**
+`scripts/reset_persona.py` requires typing `reset my friend` in full — not a
+y/n, because the destructive half is irreversible and a reflexive "y" is the
+likeliest way to lose a persona someone spent an evening writing.
+
+**A reset keeps what the user actually said.** Only `biography` and
+`seed_history` sources are cleared. Correcting a typo in a temperament setting
+must not cost months of real conversation. Both memory tiers are cleared, since
+an archived seeded memory can be promoted back and would otherwise resurface
+weeks later. Qdrant vectors go with the rows — retrieval fuses vector hits with
+SQL rows, so a surviving vector means the old persona keeps being *found*. The
+persona row is deleted rather than rewritten so `_ensure_config_exists` remains
+the single definition of "a fresh agent".
+
+**`save()` keeps the file fallback.** It writes JSON only when no durable store
+is attached. Removing the files entirely was considered and rejected: a
+deployment with neither Postgres nor the SQLite fallback reachable is exactly
+when refusing to persist anything is worst.
+
+### Verification
+
+`tests/test_persona_storage.py` (15 tests), plus two tests in
+`test_persona_authoring.py` rewritten — they pinned the precedence rule this
+change deliberately inverts, and their failure was the first confirmation the
+inversion took effect.
+
+**7 mutations, all 7 caught**: first-boot not recomputed after hydration,
+`save()` writing JSON despite a store, later boots still applying constitutional
+fields, the seed marker not stamped post-hydration, duplicate memories not
+de-duped within a run, `user` added to the resettable sources, and the archive
+tier skipped on reset.
+
+M3 initially reported SURVIVED and was a false result — `"    return {}"` also
+matches inside the 8-space `return {}` in `read_persona_file`, so `replace(…, 1)`
+mutated a different function. Retargeted with unique surrounding context; caught.
+This is the fourth time in this engagement a mutation was applied to the wrong
+line, and it is worth stating as a rule: **anchor mutations on text unique to
+the branch under test, and treat a lone SURVIVED among CAUGHTs as suspect until
+the anchor is verified.**
+
+**603 non-benchmark tests pass**, `ruff check .` clean.
+
+A correction to an earlier claim in this work: the `personality.json` /
+`history.json` modifications appearing after suite runs were **line-ending
+renormalization** from `.gitattributes` on files that still had legacy CRLF in
+the working tree — not the suite writing to them. An instrumented run recorded
+zero `save()` calls to the app path across all 603 tests. The `save()` guard
+here closes a latent defect (two writable copies), not a live symptom.
+
+**NOT done:** no write path from `agent_configs` back to a human-readable
+export, so inspecting the current persona means reading the database. Neo4j
+entities the subconscious agent may derive *from* seeded memories are not
+cleared by a reset — `MemoryStore` only reads Neo4j, so nothing seeded is
+written there directly, but a second-order residue is possible. `--all` (full
+amnesia) was scoped out; only the persona-level reset exists. The conftest
+`PERSONA_PROFILE_PATH` guard stays, since it isolates ambient discovery, which
+is its own reason and unaffected by this change.
