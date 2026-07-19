@@ -3951,6 +3951,70 @@ confirm the new tests pin both directions rather than just the bug.
 prosody wire change, Neo4j reset residue, and the unmeasured `identity_summary`
 prompt cost all remain open.
 
+### 2026-07-19 — Neo4j reset residue does not exist; the prompt had one unbounded field
+
+Two items were queued: tag graph writes with the seeded memory they derive from
+(3a), and measure the persona prompt's per-turn cost (4a). Investigating the
+first disproved it, and investigating the second found a bug rather than a
+number.
+
+**There is no seed-derived graph residue, because there is no derivation.**
+Traced every writer of `:Entity` nodes. `TripleExtractor.extract_and_store`
+(`state/triple_extractor.py`) has **zero callers** — dead code. The one live
+writer is `learning.py:220`, reached from two reflection entry points, and both
+are fed by live turns: `subconscious_agent` reads
+`get_recent_unconsolidated_episodes`, which is `SELECT ... FROM messages`
+(`memory_store.py:2727`), and `pipeline.py:393` builds its episode from
+`event.raw_content` plus `full_response`. Seeded biography passages are written
+to `memories` — a different table, which is exactly what `prune_biography`
+scans. Nothing reads `memories` into graph extraction, so a reset leaves no
+orphaned entities.
+
+The one path by which a seeded fact can reach the graph is indirect: the agent
+retrieves a passage, says something about it, and *that turn's transcript* is
+reflected. By then it is a conversation artifact, which the chosen reset scope
+(persona + biography, keep conversation memories) deliberately preserves. So
+the indirect path is correct as-is, not a gap.
+
+3a is therefore **not built**: threading provenance through `create_triplet`
+would be machinery with no user. Recorded here rather than left open, because
+the next person to read "Neo4j residue" in a TODO would re-derive this.
+
+**`style_description` was the only unbounded field in the per-turn prompt.**
+Every other narrative field declares a ceiling — `identity_summary` 1200,
+`speech_patterns` 20, `adaptive_traits` 5, `relationship` 64, and the immutable
+core is constant. But `speaking_style` is `Dict[str, Any]`, which cannot bound
+its own values, and `evolve_persona` assigned `suggestions["speaking_style"]`
+straight from reflection output with no limit.
+
+That field compounds in a way the others cannot: it is the only part of the
+prompt the agent rewrites *by itself*, so a reflection model that returns a
+paragraph instead of a phrase permanently enlarges every subsequent turn — and
+the next reflection reads the enlarged prompt and can grow it again. Nothing in
+the loop pulls it back. Now capped at 400 characters (`MAX_STYLE_DESCRIPTION`,
+declared in `profile.py` beside the other tier bounds), truncated rather than
+rejected, and truncated at *assignment* so the stored column is bounded too —
+clipping only on render would let the value grow forever while hiding that it
+had.
+
+This is the honest answer to "measure the prompt cost": the reason nobody could
+state it was that one field had no ceiling. Fully saturated the prompt is ~5900
+characters, pinned by a test at a 7000 budget. The budget is deliberately slack
+— a tight one fails on template rewording, while an unbounded field overshoots
+by an order of magnitude.
+
+Five mutations, five caught, including two asymmetric ones (bound raised to
+uselessness; bound tightened until it trims ordinary text) so the tests pin a
+range rather than one side.
+
+**643 tests pass**, `ruff check .` clean.
+
+**NOT done:** 4b — latency of the assembled prompt against the 120s stream
+ceiling — is **dropped, not deferred**, per the standing decision not to run
+real-infrastructure benchmarks. No latency figure is claimed. F1
+(`memory_store.py` decomposition) and the cross-language prosody wire change
+remain open. `TripleExtractor` is dead code and was left in place rather than
+removed as an unrelated drive-by.
 ### 2026-07-19 — Dead code removal, and two ways the scan lied
 
 Swept `backend/` for symbols with no reference, then verified each candidate by
