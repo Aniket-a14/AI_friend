@@ -24,7 +24,7 @@ import sqlite3
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
-from typing import Iterable
+from typing import Any, Iterable, List, Sequence, Tuple
 from ..config import Config
 
 logger = logging.getLogger(__name__)
@@ -297,6 +297,35 @@ class MemoryStore:
         """
         conn = getattr(self.pool, "connection", None)
         return isinstance(getattr(conn, "conn", None), sqlite3.Connection)
+
+    def _in_predicate(
+        self, column: str, values: Sequence[Any], param_index: int = 1
+    ) -> Tuple[str, List[Any]]:
+        """Build a `column IN (...)` predicate and its arguments for this backend.
+
+        The two dialects express set membership differently and neither is
+        wrong: SQLite wants one placeholder per value, Postgres takes the whole
+        list as a single array parameter via `= ANY($n)`. Spelling that out at
+        each call site produced the same eight-line if/else repeatedly, where
+        the only real content was a column name.
+
+        Returns the clause and the argument list to splat, so callers keep each
+        backend's idiom rather than being forced onto a lowest common
+        denominator -- flattening Postgres to N placeholders would work but
+        would throw away the array form the query planner handles better.
+
+        Deliberately *not* applied to every dual-backend branch in this file.
+        Most of them differ for real reasons -- boolean literals (`0`/`1` vs
+        `FALSE`/`TRUE`), date arithmetic (`datetime('now', '-24 hours')` vs
+        `NOW() - INTERVAL`), `datetime()` normalisation that SQLite needs
+        because it stores timestamps as text, and `executemany` which the
+        SQLite fallback does not provide. Those are genuine differences between
+        the backends, not duplication, and collapsing them would invent a
+        sameness that is not there.
+        """
+        if self.is_sqlite:
+            return f"{column} IN ({','.join('?' * len(values))})", list(values)
+        return f"{column} = ANY(${param_index})", [list(values)]
 
     @staticmethod
     def _is_missing_column_error(exc: BaseException) -> bool:
@@ -1159,17 +1188,12 @@ class MemoryStore:
             cand_ids = [c["id"] for c in candidates if c.get("id")]
             if cand_ids:
                 async with self.pool.acquire() as conn:
-                    if self.is_sqlite:
-                        placeholders = ",".join("?" for _ in cand_ids)
-                        rows = await conn.fetch(
-                            f"SELECT id, importance_score, emotional_weight, valence, recall_count, last_recalled_at FROM memories WHERE id IN ({placeholders})",
-                            *cand_ids,
-                        )
-                    else:
-                        rows = await conn.fetch(
-                            "SELECT id, importance_score, emotional_weight, valence, recall_count, last_recalled_at FROM memories WHERE id = ANY($1)",
-                            cand_ids,
-                        )
+                    where, args = self._in_predicate("id", cand_ids)
+                    rows = await conn.fetch(
+                        "SELECT id, importance_score, emotional_weight, valence, "
+                        f"recall_count, last_recalled_at FROM memories WHERE {where}",
+                        *args,
+                    )
                     for r in rows:
                         db_metadata[str(r["id"])] = r
         except Exception as db_err:
@@ -2754,17 +2778,15 @@ class MemoryStore:
             return
         try:
             async with self.pool.acquire() as conn:
-                if self.is_sqlite:
-                    placeholders = ",".join("?" for _ in message_ids)
-                    await conn.execute(
-                        f"UPDATE messages SET consolidated = 1 WHERE id IN ({placeholders})",
-                        *message_ids,
-                    )
-                else:
-                    await conn.execute(
-                        "UPDATE messages SET consolidated = TRUE WHERE id = ANY($1)",
-                        message_ids,
-                    )
+                where, args = self._in_predicate("id", message_ids)
+                # `1` vs `TRUE` stays a dialect literal: a Postgres boolean
+                # column will not accept the integer, so this is a real
+                # difference rather than noise the helper should absorb.
+                truth = "1" if self.is_sqlite else "TRUE"
+                await conn.execute(
+                    f"UPDATE messages SET consolidated = {truth} WHERE {where}",
+                    *args,
+                )
         except Exception as e:
             logger.error(f"Failed to mark episodes consolidated: {e}")
 
@@ -2781,17 +2803,12 @@ class MemoryStore:
 
             async with self.pool.acquire() as conn:
                 # 1. Fetch matching memories
-                if self.is_sqlite:
-                    placeholders = ",".join("?" for _ in unique_contents)
-                    rows = await conn.fetch(
-                        f"SELECT id, content, recall_count, created_at, metadata, importance_score FROM memories WHERE content IN ({placeholders})",
-                        *unique_contents,
-                    )
-                else:
-                    rows = await conn.fetch(
-                        "SELECT id, content, recall_count, created_at, metadata, importance_score FROM memories WHERE content = ANY($1)",
-                        unique_contents,
-                    )
+                where, args = self._in_predicate("content", unique_contents)
+                rows = await conn.fetch(
+                    "SELECT id, content, recall_count, created_at, metadata, "
+                    f"importance_score FROM memories WHERE {where}",
+                    *args,
+                )
 
                 if not rows:
                     return
