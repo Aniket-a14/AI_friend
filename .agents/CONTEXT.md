@@ -4015,3 +4015,58 @@ real-infrastructure benchmarks. No latency figure is claimed. F1
 (`memory_store.py` decomposition) and the cross-language prosody wire change
 remain open. `TripleExtractor` is dead code and was left in place rather than
 removed as an unrelated drive-by.
+### 2026-07-19 — Dead code removal, and two ways the scan lied
+
+Swept `backend/` for symbols with no reference, then verified each candidate by
+hand. The verification mattered more than the scan: the first pass produced 322
+candidates, of which roughly all were false, and even the corrected pass was
+wrong twice in opposite directions.
+
+**The scan called live wire contracts dead.** `PlaybackVisemes`,
+`AmbientNoiseTelemetry` and `AudioPerception` have no Python reader — they are
+the mirror side of contracts the Rust agents use, with voice-agent publishing
+visemes (`voice-agent/src/main.rs:1070`), stt-agent publishing telemetry, and
+voice-agent subscribing to it. Any dead-code pass reading only Python deletes
+these and breaks the voice pipeline silently, because nothing in the Python test
+suite would fail. Left in place.
+
+**The scan called a live file dead because its scope was wrong.** It covered
+`backend/`, and `WorkingMemoryStore` is imported by
+`scripts/research/estimate_realtime_latency.py` at the *repo root*, plus
+documented in `docs/ARCHITECTURE.md`. It was deleted, caught by a repo-wide
+grep before commit, and restored. Recorded because the failure mode is generic:
+a reachability scan is only as true as its root set, and this repo has Python
+outside `backend/`.
+
+**Removed** (verified unreferenced repo-wide, not just in `backend/`):
+`app/tools.py` (`ToolRegistry`, 136 lines, imported by nothing);
+`app/state/triple_extractor.py` (`TripleExtractor`, production-dead — the only
+importer is `demo_memory_agent.py`, which imports it from
+`app.knowledge.triple_extractor`, a module path that does not exist, so that
+file was already broken); `GraphDB.create_entity`, `create_relationship`,
+`create_user_belief`, `get_user_beliefs`; `ConversationHistoryStore`'s
+`update_evolved_learnings`, `get_recent_sessions_gist`,
+`get_total_sessions_count`, `end_session`; `BaseAgent.log_latency`;
+`CognitiveService.get_current_emotion`. Net −502 lines.
+
+**A security test was retargeted rather than deleted.**
+`test_graph_db_rejects_unsafe_cypher_identifiers_without_querying` used
+`create_relationship` as its vehicle for proving that labels and relation types
+are rejected before any Cypher runs. Deleting that method would have deleted the
+guard. It now drives `consolidate_relationship`, which is the path actually
+reachable in production via `create_triplet` from `learning.py` — so the test is
+strictly stronger than before, having previously guarded a function nothing
+called while the live path went unchecked. Three mutations (bypass the relation
+sanitizer, bypass the label sanitizer, bypass both), three caught.
+
+**637 tests pass** (639 before, minus two `TripleExtractor` tests removed with
+the class), `ruff check .` clean.
+
+**NOT done:** `StateUpdate` in `contracts.py` has no publisher, no Rust
+counterpart and no frontend use, but was left alone — it is a wire model, and
+the visemes case above is exactly why Python-only evidence is not sufficient for
+those. `get_last_interaction_brief` and `get_last_session_time` are
+production-unused but retained: both are covered by regression tests that pin
+SQL query shape, and deleting the methods would delete the guards.
+`demo_memory_agent.py` has a pre-existing broken import and was not repaired
+here. F1 and the cross-language prosody change remain open.

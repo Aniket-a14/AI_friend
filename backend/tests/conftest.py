@@ -397,9 +397,8 @@ def mock_graph_db():
     db = MagicMock()
     # All methods MUST be async to match AsyncGraphDatabase driver
     db.execute_query = AsyncMock(return_value=[])
-    db.create_relationship = AsyncMock(return_value=None)
     db.create_triplet = AsyncMock(return_value=None)
-    db.create_entity = AsyncMock(return_value=None)
+    db.consolidate_relationship = AsyncMock(return_value=None)
     db.invalidate_cache = AsyncMock(return_value=None)
     db.close = AsyncMock(return_value=None)
     return db

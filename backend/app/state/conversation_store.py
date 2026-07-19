@@ -3,7 +3,7 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict
 
 import asyncpg
 from ..config import Config
@@ -178,19 +178,6 @@ class ConversationHistoryStore:
 
         return {"personality": "{}", "history": "{}", "evolved_learnings": ""}
 
-    async def update_evolved_learnings(self, content: str):
-        """Update the growing memory of the AI."""
-        if not self.pool:
-            return
-        try:
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE agent_configs SET evolved_learnings = $1, updated_at = NOW() WHERE id = 1",
-                    content,
-                )
-        except Exception as e:
-            logger.error(f"Failed to update evolved learnings: {e}")
-
     async def update_agent_config(
         self,
         personality: str,
@@ -305,75 +292,6 @@ class ConversationHistoryStore:
         except Exception as e:
             logger.error(f"Failed to log message: {e}")
 
-    async def get_recent_sessions_gist(self, limit: int = 3) -> List[Dict[str, Any]]:
-        """Fetch a 'blurry' view of the last few sessions (just first/last messages)."""
-        if not self.pool:
-            return []
-
-        try:
-            async with self.pool.acquire() as conn:
-                # Single query: sessions + first/last message via LATERAL (no N+1)
-                if self.current_session_id:
-                    rows = await conn.fetch(
-                        """
-                        SELECT s.id AS session_id, s.started_at,
-                               m.role, m.content, m.timestamp, m.pos
-                        FROM (
-                            SELECT id, started_at FROM sessions
-                            WHERE id != $2
-                            ORDER BY started_at DESC LIMIT $1
-                        ) s,
-                        LATERAL (
-                            (SELECT role, content, timestamp, 1 AS pos FROM messages WHERE session_id = s.id ORDER BY timestamp ASC LIMIT 1)
-                            UNION ALL
-                            (SELECT role, content, timestamp, 2 AS pos FROM messages WHERE session_id = s.id ORDER BY timestamp DESC LIMIT 1)
-                        ) m
-                        ORDER BY s.started_at DESC, m.pos ASC
-                        """,
-                        limit,
-                        self.current_session_id,
-                    )
-                else:
-                    rows = await conn.fetch(
-                        """
-                        SELECT s.id AS session_id, s.started_at,
-                               m.role, m.content, m.timestamp, m.pos
-                        FROM (
-                            SELECT id, started_at FROM sessions
-                            ORDER BY started_at DESC LIMIT $1
-                        ) s,
-                        LATERAL (
-                            (SELECT role, content, timestamp, 1 AS pos FROM messages WHERE session_id = s.id ORDER BY timestamp ASC LIMIT 1)
-                            UNION ALL
-                            (SELECT role, content, timestamp, 2 AS pos FROM messages WHERE session_id = s.id ORDER BY timestamp DESC LIMIT 1)
-                        ) m
-                        ORDER BY s.started_at DESC, m.pos ASC
-                        """,
-                        limit,
-                    )
-
-                # Group rows by session
-                gists_by_session = {}
-                for row in rows:
-                    sid = row["session_id"]
-                    if sid not in gists_by_session:
-                        gists_by_session[sid] = {
-                            "date": row["started_at"].strftime("%Y-%m-%d"),
-                            "interaction": [],
-                        }
-                    gists_by_session[sid]["interaction"].append(
-                        {
-                            "role": row["role"],
-                            "content": row["content"],
-                            "timestamp": row["timestamp"],
-                        }
-                    )
-
-                return list(gists_by_session.values())
-        except Exception as e:
-            logger.error(f"Failed to fetch session gists: {e}")
-            return []
-
     async def get_last_session_time(self) -> Optional[datetime]:
         """Fetch the ended_at time of the most recent completed session."""
         if not self.pool:
@@ -407,18 +325,6 @@ class ConversationHistoryStore:
             logger.error(f"Failed to fetch last session time: {e}")
             return None
 
-    async def get_total_sessions_count(self) -> int:
-        """Count total historical sessions for milestone tracking."""
-        if not self.pool:
-            return 0
-        try:
-            async with self.pool.acquire() as conn:
-                count = await conn.fetchval("SELECT COUNT(*) FROM sessions")
-                return count or 0
-        except Exception as e:
-            logger.error(f"Failed to fetch session count: {e}")
-            return 0
-
     async def get_last_interaction_brief(self) -> Optional[str]:
         """Fetch the very last assistant message content to gauge sentiment."""
         if not self.pool:
@@ -432,36 +338,6 @@ class ConversationHistoryStore:
         except Exception as e:
             logger.error(f"Failed to fetch last interaction: {e}")
             return None
-
-    async def end_session(
-        self,
-        trust_benevolence: float = 0.5,
-        trust_competence: float = 0.5,
-        trust_integrity: float = 0.5,
-    ):
-        """End the current session."""
-        if not self.pool or not self.current_session_id:
-            return
-
-        try:
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE sessions
-                    SET ended_at = NOW(),
-                        trust_benevolence = $2,
-                        trust_competence = $3,
-                        trust_integrity = $4
-                    WHERE id = $1
-                    """,
-                    self.current_session_id,
-                    trust_benevolence,
-                    trust_competence,
-                    trust_integrity,
-                )
-            self.current_session_id = None
-        except Exception as e:
-            logger.error(f"Failed to end session: {e}")
 
     async def update_last_assistant_message(self, content: str):
         """Update/truncate the content of the very last assistant message in the current session."""

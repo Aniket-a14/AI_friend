@@ -804,7 +804,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             'test_pipeline_step_dispatch_benchmark': 'cognitive',
             'test_nats_metadata_serialization_benchmark': 'cognitive',
             'test_memory_semantic_retrieve_benchmark': 'memory',
-            'test_triple_extractor_nlp_benchmark': 'memory',
             'test_conversation_serialization_benchmark': 'memory',
             'test_hybrid_segmenter_benchmark': 'memory',
             'test_audio_normalizer_16bit_pcm_benchmark': 'voice'
@@ -823,7 +822,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             'test_pipeline_step_dispatch_benchmark': 'Step Router Loop',
             'test_nats_metadata_serialization_benchmark': 'Payload Serialization',
             'test_memory_semantic_retrieve_benchmark': 'ACT-R Retrieval Search',
-            'test_triple_extractor_nlp_benchmark': 'NLP Knowledge Triples',
             'test_conversation_serialization_benchmark': 'Context Serialization',
             'test_hybrid_segmenter_benchmark': 'Hybrid Segmenter',
             'test_audio_normalizer_16bit_pcm_benchmark': 'Audio Normalizer'
@@ -1448,7 +1446,6 @@ def load_benchmarks():
             "mean": 0.0000311,
             "stddev": 0.0000025,
         },
-        "test_triple_extractor_nlp_benchmark": {"mean": 0.0000075, "stddev": 0.0000007},
         "test_conversation_serialization_benchmark": {
             "mean": 0.0000651,
             "stddev": 0.000005,

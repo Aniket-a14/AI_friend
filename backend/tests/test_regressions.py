@@ -14,7 +14,6 @@ from app.cognitive.identity import IdentityManager  # noqa: E402
 from app.state.graph_db import GraphDB  # noqa: E402
 from app.state.agent_state import StateService  # noqa: E402
 from app.state.conversation_store import ConversationHistoryStore  # noqa: E402
-from app.state.triple_extractor import TripleExtractor  # noqa: E402
 
 
 def test_get_last_session_time_without_current_session_builds_valid_query():
@@ -468,60 +467,39 @@ def test_database_schema_matches_memory_store_runtime_columns():
 
 
 def test_graph_db_rejects_unsafe_cypher_identifiers_without_querying():
+    """Labels and relation types are interpolated into Cypher, so they must be
+    rejected before any query runs.
+
+    Retargeted from `create_relationship` to `consolidate_relationship` when the
+    former was deleted as dead code. This is the stronger test of the two: it
+    covers the path that is actually reachable in production, via
+    `create_triplet` from `learning.py`. The old version guarded a function
+    nothing called, while the live path went unchecked for the same property.
+    """
     graph = object.__new__(GraphDB)
     graph.execute_query = AsyncMock()
     graph._invalidate_cache = AsyncMock()
 
-    try:
-        asyncio.run(
-            graph.create_relationship(
-                "User",
-                "Person`) DETACH DELETE n //",
-                "LIKES",
-                "Coffee",
-                "Concept",
+    for label, relation, what in (
+        ("Person`) DETACH DELETE n //", "LIKES", "label"),
+        ("Person", "LIKES`) DETACH DELETE n //", "relation"),
+    ):
+        try:
+            asyncio.run(
+                graph.consolidate_relationship(
+                    subject_name="User",
+                    relation=relation,
+                    target_name="Coffee",
+                    subject_label=label,
+                    target_label="Concept",
+                )
             )
-        )
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("unsafe label should be rejected")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"unsafe {what} should be rejected")
 
-    graph.execute_query.assert_not_awaited()
-
-    try:
-        asyncio.run(
-            graph.create_relationship(
-                "User",
-                "Person",
-                "LIKES`) DETACH DELETE n //",
-                "Coffee",
-                "Concept",
-            )
-        )
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("unsafe relation should be rejected")
-
-    graph.execute_query.assert_not_awaited()
-
-
-def test_triple_extractor_uses_current_graph_relationship_contract():
-    graph = SimpleNamespace(create_triplet=AsyncMock())
-    extractor = TripleExtractor(graph_db=graph)
-
-    triples = asyncio.run(
-        extractor.extract_and_store("I live in Pune", user_id="Aniket")
-    )
-
-    assert triples == [["Aniket", "LIVES_IN", "Pune"]]
-    graph.create_triplet.assert_awaited_once_with(
-        "Aniket",
-        "LIVES_IN",
-        "Pune",
-        {"source": "triple_extractor"},
-    )
+        graph.execute_query.assert_not_awaited()
 
 
 def test_surfacing_agent_suppresses_recently_recalled_memories():
