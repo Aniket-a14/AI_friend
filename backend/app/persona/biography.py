@@ -1,0 +1,227 @@
+"""
+Seeding a friend with a life.
+
+`config/persona.toml` describes *temperament* — how someone feels, how fast,
+for how long. It cannot describe a person. Who they are is mostly episodes:
+what happened to them, who is in their life, how they argue, the phrase they
+always use when they are tired.
+
+That material does not belong in the persona schema and it does not belong in
+the system prompt either. A biography of any real length would sit in the
+context window of every single turn, costing latency on each one, while most of
+it is irrelevant to whatever is being said right now. The agent already has the
+right machine for this — an episodic memory store with vector search, graph
+links and ACT-R activation — and it was only ever fed by conversation.
+
+So a `biography.md` is read once and written into memory as episodes. From then
+on the ordinary retrieval path decides what surfaces: mention her sister and the
+sister paragraphs come back; talk about work and they stay put. The documentary
+can be fifty pages, because only the relevant few sentences are ever in play.
+
+**Granularity is paragraphs, not sections.** A whole section as one memory
+retrieves all-or-nothing, so a question about one detail drags in five unrelated
+ones and crowds out everything else. Each paragraph carries its heading as
+context, which is what makes an isolated line like "she never apologises first"
+still mean something when it surfaces on its own.
+"""
+
+import hashlib
+import logging
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable, List, Optional, Sequence, Set
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_BIOGRAPHY_FILE = "config/biography.md"
+
+# Biography material is foundational rather than incidental: it should outrank a
+# passing remark from last Tuesday when both match a cue. Not pinned to the
+# maximum, because things the user actually says should still be able to win.
+BIOGRAPHY_IMPORTANCE = 0.75
+
+# Marks these memories as seeded rather than lived, so they can be told apart
+# later -- for re-seeding, for pruning, and for honesty about where the agent's
+# sense of a shared past actually came from.
+BIOGRAPHY_SOURCE = "biography"
+
+_HEADING = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
+
+
+@dataclass(frozen=True)
+class BiographyEntry:
+    """One paragraph of the documentary, with the heading it sat under."""
+
+    heading: str
+    text: str
+
+    @property
+    def fingerprint(self) -> str:
+        """Identity of this paragraph, for seeding it exactly once.
+
+        Over heading *and* text, so moving a paragraph to a different section
+        counts as new — its meaning depends on what it was filed under.
+        """
+        digest = hashlib.sha256()
+        digest.update(self.heading.encode("utf-8"))
+        digest.update(b"\x00")
+        digest.update(self.text.encode("utf-8"))
+        return digest.hexdigest()
+
+    @property
+    def memory_text(self) -> str:
+        """What actually gets stored.
+
+        The heading is folded in rather than kept as metadata because retrieval
+        matches on content: a paragraph filed under "Her sister" that never says
+        "sister" would otherwise be unreachable by the obvious cue.
+        """
+        if not self.heading:
+            return self.text
+        return f"{self.heading}: {self.text}"
+
+
+def parse_biography(markdown: str) -> List[BiographyEntry]:
+    """Split prose into paragraphs, each tagged with its nearest heading.
+
+    Deliberately forgiving. This file is written by a person describing someone
+    they know, not authored against a spec, so anything structural that is
+    missing is inferred rather than rejected: text before the first heading is
+    kept, blank-line-separated paragraphs are the unit, and heading depth is
+    ignored beyond nesting the trail.
+    """
+    entries: List[BiographyEntry] = []
+    heading_trail: List[str] = []
+    buffer: List[str] = []
+
+    def flush() -> None:
+        text = " ".join(" ".join(buffer).split()).strip()
+        buffer.clear()
+        if text:
+            entries.append(
+                BiographyEntry(heading=" / ".join(heading_trail), text=text)
+            )
+
+    for line in (markdown or "").splitlines():
+        match = _HEADING.match(line)
+        if match:
+            flush()
+            depth = len(match.group(1))
+            # Keep the enclosing headings so "How she argues / With family"
+            # reads as one place rather than two unrelated labels.
+            heading_trail = heading_trail[: depth - 1]
+            while len(heading_trail) < depth - 1:
+                heading_trail.append("")
+            heading_trail.append(match.group(2))
+            heading_trail = [h for h in heading_trail if h]
+            continue
+
+        if not line.strip():
+            flush()
+            continue
+
+        buffer.append(line.strip())
+
+    flush()
+    return entries
+
+
+def read_biography(path: Optional[Path]) -> List[BiographyEntry]:
+    """Parse the biography file, returning `[]` on any problem.
+
+    Never raises: an unreadable biography must not stop the agent from starting.
+    A friend who does not remember your history is still a friend you can talk
+    to; a process that will not boot is not.
+    """
+    if path is None:
+        return []
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.error(
+            "[Biography] Could not read %s (%s). The agent will start without "
+            "its seeded history.",
+            path,
+            exc,
+        )
+        return []
+    return parse_biography(text)
+
+
+def find_biography_file(explicit: Optional[str] = None) -> Optional[Path]:
+    """Locate `config/biography.md`, walking up from this module.
+
+    Same reasoning as the persona file: the agents are launched from the repo
+    root, from `backend/`, and from a container WORKDIR, so a path relative to
+    the process working directory resolves differently in each.
+    """
+    if explicit:
+        path = Path(explicit)
+        return path if path.exists() else None
+
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / DEFAULT_BIOGRAPHY_FILE
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def pending_entries(
+    entries: Sequence[BiographyEntry], already_seeded: Iterable[str]
+) -> List[BiographyEntry]:
+    """The paragraphs not yet written to memory.
+
+    Per-paragraph rather than a single "seeded" flag so the documentary can be
+    *added to*. Writing another page later seeds only the new pages, instead of
+    forcing a choice between duplicating the whole file and never extending it.
+    """
+    seen: Set[str] = set(already_seeded or ())
+    return [entry for entry in entries if entry.fingerprint not in seen]
+
+
+async def seed_biography(
+    entries: Sequence[BiographyEntry],
+    memory_store: Any,
+    already_seeded: Iterable[str] = (),
+) -> List[str]:
+    """Write pending paragraphs into episodic memory.
+
+    Returns the fingerprints actually stored, for the caller to persist. A
+    failure on one paragraph is logged and skipped rather than aborting: a
+    partly-seeded history is worth more than none, and the next boot retries
+    only what is still missing.
+    """
+    if memory_store is None:
+        return []
+
+    pending = pending_entries(entries, already_seeded)
+    if not pending:
+        return []
+
+    logger.info("[Biography] Seeding %d new passage(s) into memory.", len(pending))
+
+    stored: List[str] = []
+    for entry in pending:
+        try:
+            await memory_store.add_memory(
+                content=entry.memory_text,
+                wing="personal",
+                room=entry.heading or None,
+                importance=BIOGRAPHY_IMPORTANCE,
+                source=BIOGRAPHY_SOURCE,
+                metadata={
+                    "biography_heading": entry.heading,
+                    "biography_fingerprint": entry.fingerprint,
+                },
+            )
+        except Exception as exc:
+            logger.error(
+                "[Biography] Could not seed passage under %r (%s); skipping it.",
+                entry.heading or "(untitled)",
+                exc,
+            )
+            continue
+        stored.append(entry.fingerprint)
+
+    return stored

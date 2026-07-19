@@ -3595,4 +3595,74 @@ Also added the test docstring CodeRabbit flagged on
 `test_no_file_contributes_nothing`.
 
 Full non-benchmark suite: **571 passed**, `ruff check .` clean.
+---
+
+## 2026-07-19 — Seeding a friend with a life
+
+Extends the authoring surface so a user can describe a *person*, not just a
+temperament. Requested case: someone wants to model the humanoid on a real
+friend and write a full documentary of her.
+
+### Why this is not more schema fields
+
+A documentary is mostly episodes — what happened, who is in it, how she argues,
+the phrase she uses when she is tired. That material fits neither the persona
+schema nor the system prompt.
+
+Prompt-resident text is paid for on **every single turn**: a biography of any
+real length would sit in the context window on each one, costing latency and
+crowding out the conversation, while most of it is irrelevant to whatever is
+being said right now. The agent already owns the correct machine for this — an
+episodic store with vector search, graph links and ACT-R activation — and it had
+only ever been fed by conversation.
+
+So the split is:
+
+- `identity_summary` in persona.toml, capped at 1200 characters, always in the
+  prompt. Two paragraphs of who someone *is*.
+- `config/biography.md`, read once and written into episodic memory. Retrieval
+  then decides what surfaces: mention her sister and the sister paragraphs come
+  back; talk about work and they stay put. It can be fifty pages.
+
+### Decisions
+
+**Paragraphs, not sections.** A whole section as one memory retrieves
+all-or-nothing, so one detail drags in five unrelated ones. Each paragraph
+carries its heading folded into the stored text rather than held as metadata,
+because retrieval matches on content — a passage filed under "Her sister" that
+never says "sister" would otherwise be unreachable by the obvious cue.
+
+**Idempotent per paragraph, not per file.** A single "seeded" flag forces a
+choice between duplicating the whole history on every boot and never being able
+to extend the documentary. Fingerprints are over heading *and* text, so moving a
+passage to a different section counts as new — its meaning depends on where it
+was filed. Seeding runs after hydration so the record of what is already stored
+comes from the durable store rather than a local file that may be behind it;
+otherwise a redeployed agent re-seeds its entire past.
+
+Seeded memories carry `source="biography"` so they can be told apart from lived
+ones — needed for re-seeding and pruning, and for being honest about where the
+agent's sense of a shared history actually came from.
+
+`add_memory` already reinforces identical content rather than duplicating it,
+but relying on that alone would still redo the embedding work for the whole file
+on every start and would tie correctness to a downstream implementation detail.
+
+### Verification
+
+`tests/test_biography_seeding.py` (16 tests). **7 mutations, all 7 caught**:
+fingerprint ignoring the heading, the already-seeded list ignored, the heading
+not folded into stored text, one bad passage aborting the rest, biography
+importance dropping to ordinary, blank lines no longer splitting paragraphs, and
+the source marker lost.
+
+**583 non-benchmark tests pass**, `ruff check .` clean.
+
+**NOT done:** no re-read after edits within a run — a biography changed while
+the agent is running is picked up on next start, not live. Nothing prunes
+biography memories if the user deletes a passage; the fingerprints make that
+possible but it is not implemented. `identity_summary` and `speech_patterns` are
+prompt-resident and count against context on every turn, which is a real budget
+this now spends without measuring — worth checking against the 120s stream
+ceiling once there is a real persona to measure with.
 
