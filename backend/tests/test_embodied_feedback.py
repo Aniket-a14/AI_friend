@@ -67,9 +67,27 @@ async def test_dialogue_truncation_on_interruption(
 
 
 @pytest.mark.asyncio
-async def test_dialogue_truncation_via_estimation_fallback(
-    mock_llm_service, mock_graph_db, mock_memory_store, monkeypatch
+async def test_dialogue_is_not_rewritten_when_playback_progress_is_unknown(
+    mock_llm_service, mock_graph_db, mock_memory_store
 ):
+    """Renamed and inverted from `test_dialogue_truncation_via_estimation_fallback`.
+
+    That test asserted the old behaviour: with no playback progress, estimate
+    the spoken length at 15 characters/second and rewrite the stored reply at
+    that offset. Here it cut "…buy a coffee, but I forgot my wallet." down to
+    "…buy a coffee" purely because 2.0 seconds had passed.
+
+    The estimate has been deliberately removed rather than tuned. The rate was
+    invented, real speech rate varies with prosody and pauses, and the
+    timestamp it measured against was set on only one of the two streaming
+    paths — so the cut point could be derived from an entirely different turn.
+    Since the stored message is what memory and the persona prompt read back,
+    a wrong cut makes the agent believe it said something it did not.
+
+    The assertion is therefore inverted on purpose: this documents a behaviour
+    change, not a weakened test. The accurate path — a real `character_offset`
+    from playback progress — is still covered above and still truncates.
+    """
     store = ConversationHistoryStore()
     await store.initialize()
 
@@ -85,13 +103,6 @@ async def test_dialogue_truncation_via_estimation_fallback(
     )
 
     agent.last_assistant_response = original_text
-    import time
-
-    fixed_time = 1713330000.0
-    monkeypatch.setattr(time, "time", lambda: fixed_time)
-
-    agent.assistant_response_start_time = fixed_time - 2.0
-
     assert agent.last_audio_progress is None
 
     stop_data = {
@@ -103,7 +114,9 @@ async def test_dialogue_truncation_via_estimation_fallback(
     await agent._on_audio_stop(stop_data)
 
     new_brief = await store.get_last_interaction_brief()
-    assert new_brief == "I was planning to buy a coffee"
+    assert new_brief == original_text, (
+        "the reply was rewritten despite nothing knowing how much was heard"
+    )
 
     await store.close()
 
