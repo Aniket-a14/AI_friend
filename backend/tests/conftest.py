@@ -8,6 +8,20 @@ os.environ.setdefault("NEO4J_URI", "bolt://127.0.0.1:7687")
 os.environ.setdefault("LIVEKIT_API_KEY", "dummy_key")
 os.environ.setdefault("LIVEKIT_API_SECRET", "dummy_secret")
 
+# Point persona discovery at nothing for the whole suite.
+#
+# `IdentityManager` searches upward for `config/persona.toml`, which is right in
+# production and wrong here: any test that builds one with default arguments
+# would otherwise inherit whatever character happens to be checked out beside
+# the code, and `ReflectionService` builds one by default. That made the suite
+# write the repo's authored persona into the tracked `app/personality.json`.
+#
+# Tests that exercise authoring pass an explicit path, so this disables ambient
+# discovery without disabling the feature.
+os.environ.setdefault("PERSONA_PROFILE_PATH", os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "_no_persona_file_here.toml"
+))
+
 import types
 import pytest
 import asyncio

@@ -2,11 +2,16 @@ import logging
 import json
 import os
 import re
+from datetime import datetime, timezone
 from typing import Dict, Any, Tuple
 
 from pydantic import ValidationError
 
+from pathlib import Path
+
+from ..config import Config
 from ..persona import IMMUTABLE_CORE, PersonaProfile
+from ..persona.authoring import AUTO_DISCOVER, authored_overrides, find_persona_file
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +68,47 @@ class IdentityManager:
     Hybrid Model: Immutable Core + Adaptive System.
     """
 
-    def __init__(self, base_path: str = None, persona: "PersonaProfile" = None):
+    def __init__(
+        self,
+        base_path: str = None,
+        persona: "PersonaProfile" = None,
+        persona_file=AUTO_DISCOVER,
+    ):
         if base_path is None:
             base_path = os.path.dirname(os.path.dirname(__file__))
 
         self.personality_path = os.path.join(base_path, "personality.json")
         self.history_path = os.path.join(base_path, "history.json")
 
+        # `AUTO_DISCOVER` searches for config/persona.toml; an explicit path
+        # uses that file; `None` means this agent has no authored file at all.
+        # Callers that build an agent from a scratch directory need the last
+        # option, or they inherit whatever persona the repo happens to hold.
+        if persona_file is AUTO_DISCOVER:
+            self.persona_file = find_persona_file(
+                getattr(Config, "PERSONA_PROFILE_PATH", None)
+            )
+        elif persona_file is None:
+            self.persona_file = None
+        else:
+            # Existence-checked, like the explicit branch of `find_persona_file`.
+            # A path that does not exist must resolve to "no file", not to a
+            # truthy Path: the seed marker is written once and never again, so a
+            # typo'd path would consume the single seeding opportunity while
+            # contributing nothing.
+            candidate = Path(persona_file)
+            self.persona_file = candidate if candidate.exists() else None
+            if self.persona_file is None:
+                logger.warning(
+                    "[Persona] No persona file at %s; continuing without one.",
+                    persona_file,
+                )
+
         self.personality = self._load_json(self.personality_path)
         self.history = self._load_json(self.history_path)
+
+        # Captured before the defaults below fill `history` in.
+        self.first_boot = self._detect_first_boot()
 
         # CVS-3.5: Ensure safe defaults for adaptive history
         self.history.setdefault("relationship", "Friend")
@@ -84,7 +121,28 @@ class IdentityManager:
         # one set of bounds. The raw dict is kept because `evolve_persona` and
         # `save()` still work on it, but anything a reader needs is taken from
         # the profile.
+        # Set by `_profile_from_personality`, which is the only place the
+        # authored file is consulted. An explicitly supplied `persona` bypasses
+        # that entirely, so this stays False and no marker is written.
+        self.seeded_from_file = False
         self.persona = persona or self._profile_from_personality()
+
+        if self.first_boot and self.seeded_from_file:
+            # Gated on the file having actually contributed, not merely on one
+            # being configured. The marker is permanent, so stamping it when
+            # nothing was read burns the single seeding opportunity and the
+            # user's adaptive values would never be applied — with no error and
+            # no way to retry.
+            #
+            # Written now rather than at next save: if the process dies before
+            # any conversation, the next boot must not seed a second time over
+            # values the user may since have adjusted.
+            self.history[self.SEED_MARKER] = datetime.now(timezone.utc).isoformat()
+            logger.info(
+                "[Persona] Seeded from %s. Adaptive values now belong to your "
+                "friend; edits to them in that file will be ignored from here.",
+                self.persona_file,
+            )
 
         # CVS-3.5: Immutable Core Trait seeding
         self._refresh_immutable_core()
@@ -99,6 +157,36 @@ class IdentityManager:
 
         logger.info(
             f"[Identity] Hybrid Persona Active | Core: {self.immutable_core['base_tone']}"
+        )
+
+    SEED_MARKER = "persona_seeded_at"
+
+    def _detect_first_boot(self) -> bool:
+        """Has this agent lived yet?
+
+        The obvious test — do the identity files exist — is wrong here, and
+        wrong in the direction that silently disables the feature:
+        `personality.json` and `history.json` are **tracked in git**, so every
+        fresh clone already has them and no one would ever get a first boot. The
+        adaptive half of an authored persona would never once be applied.
+
+        What actually distinguishes a new agent from a returning one is whether
+        it has accumulated anything. The committed files are seed-shaped — an
+        empty memory list and no evolved learnings — while a friend someone has
+        talked to has both.
+
+        The marker settles it permanently after the first run, so this heuristic
+        is asked exactly once per install rather than re-litigated on every
+        boot as the agent's shape changes.
+        """
+        if not isinstance(self.history, dict):
+            return True
+        if self.history.get(self.SEED_MARKER):
+            return False
+        return not (
+            self.history.get("memories")
+            or self.history.get("evolved_learnings")
+            or self.history.get("interaction_count")
         )
 
     def _profile_from_personality(self) -> "PersonaProfile":
@@ -131,8 +219,28 @@ class IdentityManager:
             )
             flat["adaptive_traits"] = traits[-limit:]
 
+        # Precedence, lowest to highest:
+        #
+        #   1. deployment defaults          (Config / the schema)
+        #   2. the agent's own saved state  (personality.json)
+        #   3. the authored file            (config/persona.toml)
+        #
+        # The authored file sits on top so an edit to a constitutional value
+        # takes effect on the next boot. It contributes nothing adaptive after
+        # the first boot, so layer 2's evolved traits and speaking style survive
+        # underneath it — which is the whole seed-once rule, expressed as an
+        # ordering rather than as a special case.
         merged = PersonaProfile.from_config().model_dump()
         merged.update({k: v for k, v in flat.items() if v is not None})
+
+        authored = authored_overrides(
+            self.persona_file, first_boot=self.first_boot
+        )
+        # Records that the file was read *and* had something to say. A file that
+        # exists but is empty or unparseable contributes nothing, so it must not
+        # count as having seeded the agent.
+        self.seeded_from_file = bool(authored)
+        merged.update({k: v for k, v in authored.items() if v is not None})
 
         try:
             return PersonaProfile(**merged)

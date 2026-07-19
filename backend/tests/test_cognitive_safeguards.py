@@ -200,7 +200,7 @@ def test_adaptive_traits_init_cap():
     }
     with patch("builtins.open", mock_open(read_data=json.dumps(p))):
         with patch("os.path.exists", return_value=True):
-            manager = IdentityManager(base_path="/fake")
+            manager = IdentityManager(base_path="/fake", persona_file=None)
             # Should be capped to the last 5 traits
             assert len(manager.personality["core_personality"]["adaptive_traits"]) == 5
             assert manager.personality["core_personality"]["adaptive_traits"] == [
@@ -216,7 +216,7 @@ def test_adaptive_traits_init_cap():
 async def test_adaptive_traits_evolve_cap(base_personality):
     with patch("builtins.open", mock_open(read_data=json.dumps(base_personality))):
         with patch("os.path.exists", return_value=True):
-            manager = IdentityManager(base_path="/fake")
+            manager = IdentityManager(base_path="/fake", persona_file=None)
             manager.personality = base_personality
 
             # Evolve with 2 new traits (total 7)
@@ -236,7 +236,7 @@ async def test_adaptive_traits_hydration_cap():
     }
     with patch("builtins.open", mock_open(read_data=json.dumps(p))):
         with patch("os.path.exists", return_value=True):
-            manager = IdentityManager(base_path="/fake")
+            manager = IdentityManager(base_path="/fake", persona_file=None)
 
             # Mock Config Store that returns 7 traits
             config_store = AsyncMock()
