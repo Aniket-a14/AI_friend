@@ -391,9 +391,6 @@ class CognitiveService:
                 # content, error, done, etc.
                 yield output
 
-    async def get_current_emotion(self) -> str:
-        return self.state.get_emotion_label()
-
     async def generate_proactive_response(
         self, thought_prompt: str = None
     ) -> AsyncGenerator[Dict[str, Any], None]:

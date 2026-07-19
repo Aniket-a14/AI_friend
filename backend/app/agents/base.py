@@ -210,21 +210,6 @@ class BaseAgent:
         except Exception as e:
             logger.error(f"Failed to publish to {subject}: {e}")
 
-    def log_latency(self, data: Any, stage_name: str):
-        """Utility to log current latency relative to start_time."""
-        meta = None
-        if isinstance(data, dict):
-            meta = data.get("latency_metadata")
-
-        if meta and "start_time" in meta:
-            elapsed = (time.time() - meta["start_time"]) * 1000
-            # Track drift trends (Observability Hook)
-            logger.info(
-                f"⏱️ [LATENCY] Stage '{stage_name}' | Total: {elapsed:.2f}ms | Hops: {len(meta['hops'])}"
-            )
-            return elapsed
-        return 0
-
     def _extract_latency_ms(
         self, metadata: Optional[Dict[str, Any]]
     ) -> Optional[float]:
