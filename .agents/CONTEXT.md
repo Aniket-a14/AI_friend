@@ -4331,3 +4331,75 @@ Postgres, because `is_sqlite` is derived from the pool (A5) rather than stored.
 modules. That was offered and not chosen, and on this evidence it would be
 motion rather than progress -- the file is long because the domain is, not
 because one function is doing five jobs. F1 is closed.
+
+### 2026-07-19 — Cleanup pass: a stale path that had quietly disarmed the Persona Guard
+
+Asked to remove temporary files and irrelevant code. There were **no tracked
+temporary files at all** -- every cache, `__pycache__`, and `.db` is already
+gitignored, and the working tree was clean. The dead-code sweep of #83 also held
+up: nothing new surfaced under `backend/app/`. What the sweep did find was a
+class of rot the earlier pass had no reason to look for -- *references* that
+outlived the files they point at, in docs and in CI.
+
+**The one that mattered: Persona Guard was firing on paths that do not exist.**
+The workflow's `paths:` filter listed `backend/persona/**` and
+`backend/app/voice/agent.py`. Neither exists. The identity seeds actually live at
+`backend/app/personality.json`, `backend/app/history.json`, and
+`config/persona.toml`, and voice moved to Rust long ago. So the guard that exists
+specifically to catch **identity seed corruption** did not run when the identity
+seeds changed. Filter retargeted onto the real paths; every entry was then
+asserted to resolve on disk.
+
+**Worse, its seed-validation step could not fail.** "Check Identity Seed
+Consistency" globbed `persona/**/*.json` and `identity/**/*.json` relative to
+`backend/`. Both match nothing, so the loop body never executed and the step
+printed `✅ All identity seed files are valid JSON` having validated **zero
+files** -- a green check that asserted nothing, which is the failure mode
+CLAUDE.md already warns about for path-filtered workflows. Replaced the glob with
+the two explicit seed paths. Mutation-tested: truncating `personality.json` to
+`{"broken":` makes the step exit 1; the previous glob version passed on the same
+corruption.
+
+**Removed:** `demo_memory_agent.py` (repo root, 61 lines). Unrunnable, with three
+broken imports: `app.knowledge.graph_db` and `app.knowledge.triple_extractor` name
+a package that has never existed in this tree (`GraphDB` is at
+`app.state.graph_db`), and `TripleExtractor` itself was deleted in #83. The #83
+entry flagged this file's broken import and explicitly deferred it; there is
+nothing here to repair, since the class it demonstrates is gone.
+
+**Docs corrected to match the runtime:** `backend/README.md` told the reader to
+launch `python -m app.stt.agent` and `python -m app.voice.agent` -- both modules
+are `__init__.py` tombstones; replaced with the real Python agents plus the
+`cargo run --bin voice-agent` / `stt-agent` invocations (bin names verified
+against the crate manifests). `CONTRIBUTING.md`'s project map pointed personality
+edits at the nonexistent `backend/persona/` and new voices at
+`backend/app/voice/prosody.py` (archived); both retargeted.
+
+`.pytest_cache/` and `.ruff_cache/` were being ignored via a mechanism outside
+`.gitignore`, so they are now listed there explicitly.
+
+**666 tests pass**, `ruff check .` clean -- unchanged from baseline, as expected
+for a change that touches no importable code.
+
+**NOT done, deliberately:**
+
+- **`_archive/` (47 files) was left entirely alone.** It is a deliberate archive,
+  named as such, and CLAUDE.md documents it as where the Python voice/STT
+  predecessors live. Deleting it is a decision about project history, not
+  cleanup, and is not mine to make silently.
+- **`backend/app/voice/__init__.py` and `app/stt/__init__.py` kept.** They contain
+  only a comment pointing at the archive. That comment is the reason someone
+  looking for `VoiceAgent` in the obvious place finds out where it went; the
+  files are documentation, not residue.
+- **`backend/scripts/audio/generate_fillers.py` kept but is broken.** It imports
+  `app.voice.sovits_client`, which now lives only in `_archive`. Unlike
+  `demo_memory_agent.py` this is *not* safely deletable: SoVITS is still a live
+  subsystem (`Dockerfile.sovits`, three compose files, `config.py`, the Rust
+  voice-agent all reference it), so this is a working script whose dependency
+  moved, not a script for a dead feature. Repointing it at the archived client or
+  porting it to the Rust path is a real decision and is left open.
+- **The Persona Guard's markup-stripping step still cannot fail.** Line 94 ends
+  in `|| echo "⚠️ ... needs ActionService update"`, which swallows a genuine
+  assertion failure into a passing step. This is the same always-green defect as
+  the seed glob, but fixing it changes when CI blocks a merge, so it is reported
+  rather than changed here.

@@ -12,8 +12,10 @@ on:
       - 'backend/app/cognitive/**'
       - 'backend/app/vision/**'
       - 'backend/app/agents/brain_agent.py'
-      - 'backend/app/voice/agent.py'
-      - 'backend/persona/**'
+      - 'backend/app/persona/**'
+      - 'backend/app/personality.json'
+      - 'backend/app/history.json'
+      - 'config/persona.toml'
       - 'frontend/prisma/seed.js'
 
 jobs:
@@ -98,19 +100,23 @@ jobs:
           # Verify persona JSON files are valid
           cd backend
           python -c "
-          import json, glob, sys
+          import json, sys
+          # Explicit paths, not a glob. The previous glob searched 'persona/**'
+          # and 'identity/**' -- neither directory exists under backend/, so it
+          # matched nothing and reported success while validating zero files.
+          seeds = ['app/personality.json', 'app/history.json']
           errors = []
-          for f in glob.glob('persona/**/*.json', recursive=True) + glob.glob('identity/**/*.json', recursive=True):
+          for f in seeds:
               try:
                   with open(f) as fp:
-                      data = json.load(fp)
+                      json.load(fp)
                   print(f'✅ {f}: valid JSON')
               except Exception as e:
                   errors.append(f'{f}: {e}')
                   print(f'❌ {f}: {e}')
           if errors:
               sys.exit(1)
-          print('✅ All identity seed files are valid JSON')
+          print(f'✅ All {len(seeds)} identity seed files are valid JSON')
           "
 
       - name: Upload Persona Results

@@ -48,8 +48,12 @@ python main.py
 
 # Or start agents individually
 python -m app.agents.brain_agent
-python -m app.stt.agent
-python -m app.voice.agent
+python -m app.agents.system_agent
+python -m app.agents.subconscious_agent
+
+# Voice and STT are Rust binaries, not Python modules
+cargo run --bin voice-agent
+cargo run --bin stt-agent
 ```
 
 ## 🧪 Testing & Verification
