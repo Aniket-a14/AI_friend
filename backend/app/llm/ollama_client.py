@@ -328,8 +328,24 @@ class OllamaClient:
             response = await client.post("/api/generate", json=payload, timeout=120.0)
             if response.status_code == 200:
                 return self._extract_response_text(response.json())
-        except Exception:
-            pass
+            logger.warning(
+                "[Ollama] Vision generate returned HTTP %s for model %s; "
+                "returning no description.",
+                response.status_code,
+                target_model,
+            )
+        except Exception as exc:
+            # Logged rather than swallowed. The empty string returned below is
+            # indistinguishable from "the model saw nothing worth describing",
+            # so without this line a vision backend that is down looks exactly
+            # like a quiet room -- and the agent narrates the difference to the
+            # user as if it were real.
+            logger.warning(
+                "[Ollama] Vision generate failed for model %s (%s); "
+                "returning no description.",
+                target_model,
+                exc,
+            )
         return ""
 
     async def check_health(self) -> bool:

@@ -225,7 +225,7 @@ sequenceDiagram
     B->>V: ChatOutput (Segments + Affect Vector)
 
     Note over V, U: Stage 4 — Signal Rendering
-    V->>V: prosody.py → playback.py
+    V->>V: prosody mapping → OLA playback (Rust)
     V->>T: 32kHz PCM → audio.stream
     T->>U: WebRTC Audio
     V-->>B: voice.segmentation_feedback (Telemetry)

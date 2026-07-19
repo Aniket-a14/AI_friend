@@ -4070,3 +4070,121 @@ production-unused but retained: both are covered by regression tests that pin
 SQL query shape, and deleting the methods would delete the guards.
 `demo_memory_agent.py` has a pre-existing broken import and was not repaired
 here. F1 and the cross-language prosody change remain open.
+
+### 2026-07-19 — Second audit pass: a camera anyone could turn on, and blocking work on the loop
+
+Re-audited after #74-#83 and rescoped the findings by effort. Most of the
+original audit is genuinely closed; what follows is what was still real.
+
+**`/vision/toggle` had no session auth.** It carried only the app-level
+`require_lan_client`, while `/token` and `/start-session` both add
+`require_session_auth`. As that function's own docstring says, the LAN check
+"only restricts *where* a caller can connect from" -- with LAN_ONLY on that is
+still any device on the WiFi. So a guest on the network could switch the vision
+source to `camera`. That is a privacy boundary, not a preference, and it was
+the only state-changing endpoint left open. `/`, `/status` and `/health` expose
+a readiness boolean and stay open for healthchecks.
+
+**Two synchronous calls sat on the event loop in `persist_state`,** which runs
+from five call sites including the per-turn path: a blocking `redis.Redis.hset`
+and a blocking `sqlite3` write. The loop stalled for a network round trip plus
+a disk write mid-conversation, exactly when latency is felt. Both now run via
+`asyncio.to_thread`, with the SQL parameters snapshotted on the loop first --
+read inside the worker they could interleave with the System-2 appraisal and
+persist a row that is half one appraisal and half the next. Extracting
+`_write_state_row` also fixed a latent leak: the original `conn.close()` ran
+only on success. `hydrate_state`'s reads are left synchronous deliberately;
+they are startup-only and read a single local row.
+
+**`hydrate_state` was the one mutation path not holding `_state_lock`,** writing
+~20 fields one at a time. Startup-only today, so nothing races it, but a later
+mid-session caller would interleave with the appraisal task.
+
+**`_cached_ln` keyed on the rounded value but stored the log of the raw one.**
+The cached result therefore depended on which float reached it first, so two
+runs with identical inputs in a different order could produce different ACT-R
+activations and a different memory ranking, with nothing to indicate why. Now
+`functools.lru_cache(maxsize=4096)` with rounding in the caller -- deterministic,
+and bounded, closing A6.
+
+**Smaller:** a failed vision call was `except Exception: pass` then `return ""`,
+making a dead backend indistinguishable from "the model saw nothing worth
+describing" -- now logged. `CompatibilityQueue.join` spun with no exit, so a
+dead worker thread presented as a frozen test run; now bounded, returning
+False on timeout. Dead `evolution_buffer` attribute removed. README's voice
+diagram no longer points at archived `prosody.py`/`playback.py`.
+
+**`evolved_learnings` is hollow and stays that way, documented.** It has a
+column in both schemas, loads and saves, and nothing anywhere writes content
+into it. It was also a term in `_detect_first_boot`, where a permanently-empty
+value made a condition that could never fire; that term is removed. The storage
+round trip is kept -- a loader without a saver is a worse asymmetry than an
+unused pair, and dropping the columns is a migration, i.e. a decision rather
+than cleanup. **Correction to the audit that produced this item:** it was
+reported as "read into the prompt", which was wrong; it never reaches
+`get_persona_prompt`.
+
+**A pre-existing test-isolation bug surfaced and was fixed.** Four session-auth
+tests in `test_regressions.py` patched the `Config` *class*. `ConfigMeta`
+defines `__getattr__` but no `__setattr__`, so `monkeypatch.setattr` wrote into
+`Config.__dict__` and on teardown "restored" the value it had read *through*
+`__getattr__` -- permanently replacing the delegating attribute with a class
+attribute shadowing `config_instance` for the rest of the session. They passed
+in isolation and failed only once collection order changed, which is how it
+appeared: adding an unrelated test file moved them. Now patched on
+`config_instance`, matching `test_persona_storage.py`.
+
+Eight mutations, eight caught -- but only after two of the new tests were
+rewritten. The "does not block the loop" test asserted the final tick count,
+which `gather` satisfies whether or not the work overlapped; it now samples the
+tick count *at the moment the blocking call returns*. The `join` test hung
+rather than failed under its mutant, so it now drives `join` from a watchdog
+thread: a test that pins CI is worse than one that fails. Also worth recording:
+the first mutation run was killed for taking too long and left a mutant in
+`app/metrics.py` -- in-place mutation scripts need the source verified after an
+interrupted run, and each mutant should run only its guarding test, not the
+whole file.
+
+**648 tests pass**, `ruff check .` clean.
+
+**NOT done:** A4 (`offset = int(elapsed * 15)` barge-in truncation) needs a live
+session to verify. C3 (literal `.replace("System:", "")` scrubbing) is a
+threat-model decision, not a defect at the current single-user scope. F1 needs
+rescoping before it needs doing: `ActionService.execute` is now 23 lines (the
+audit said ~470), `search_memories` 251 (~1000), and `add_memory`'s eight
+near-identical INSERTs are two -- the god-functions are gone, and what remains
+is dual-backend duplication spread across the file, a different and lower-value
+problem. Prosody wire fields and B1 benchmark residue unchanged.
+
+### 2026-07-19 — PR #84 review: taking work off the loop made it reorderable
+
+CodeRabbit's review of #84 posted one finding, and it was a real regression
+introduced by that PR.
+
+Moving the Redis and SQLite writes into `asyncio.to_thread` fixed the blocking
+problem and created an ordering one: `persist_state` now yields at each
+dispatch, so two overlapping persists can complete in the opposite order and
+leave an older snapshot on top of a newer one. Inline, the writes ran to
+completion one after another and ordering was free. The stored row is what the
+agent rehydrates from, so the consequence is a friend that wakes up as an
+earlier version of itself with nothing recording why.
+
+Reviewing the function to fix that surfaced a second defect the finding did not
+mention: the Redis mapping was built *before* its `await` and the SQL parameters
+*after* it, so a single call could write two different states to the two
+backends. Both now come from one snapshot taken once.
+
+Serialized on a dedicated `_persist_lock`. It cannot be `_state_lock` -- callers
+reach `persist_state` from methods already holding that one, so sharing it
+deadlocks, which the S2 mutation below confirms rather than assumes.
+
+Three mutations, three caught: removing the lock, substituting `_state_lock` for
+it, and putting the SQLite write back on the loop.
+
+**649 tests pass**, `ruff check .` clean.
+
+The general lesson is worth keeping: *a fix that removes blocking usually
+removes ordering with it*. The tests written alongside the original change
+asserted that the loop stayed responsive and that a single call wrote correct
+values -- neither could see a two-call ordering property, and nothing prompted
+writing that test until review did.
