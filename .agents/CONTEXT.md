@@ -3910,3 +3910,43 @@ those keys. Neo4j entities the subconscious agent may derive *from* seeded
 memories are still not cleared by a reset — nothing tracks the derivation, so
 there is no query that finds them. `identity_summary` prompt cost remains
 unmeasured.
+
+### 2026-07-19 — PR #81 review round: three findings, two of them real bugs
+
+CodeRabbit's review of #81 landed three findings and all three were valid. Two
+changed behaviour.
+
+**A failed scan silently orphaned a passage forever.** `prune_biography`
+`continue`d past a database error, then returned `list(stale)` — so a
+fingerprint whose scan raised was dropped from the ledger while its memory row
+survived. The ledger entry is the *only* record that a fingerprint was ever
+seeded, so nothing would ever look for that row again: a passage the user
+deleted would keep being recalled, with no remaining trace pointing at why. A
+transient error, permanent consequence. Failed marks are now held back and
+retried on the next boot; scanned marks still leave the ledger even when they
+matched no row, so one permanently-broken entry cannot pin the whole prune.
+
+**A rejected persona file still counted as seeded.** `seeded_from_file` and
+`authored_keys` were assigned *before* `PersonaProfile(**merged)` validated. On
+`ValidationError` the agent fell back to schema defaults while still believing
+the author had chosen them — stamping the one-time seed marker and applying the
+*default* relationship as if it had been written down. Given seed-once
+semantics, that spends the single seeding opportunity on a persona whose
+contents never took effect, recoverable only by a reset. This is the same class
+of bug as the relationship-default regression caught mid-#81, in a sibling path
+— which is the signal worth recording: the first fix addressed the instance,
+not the pattern, and the pattern had a second instance one function away.
+
+Third finding was cosmetic: `show_persona.py` printed
+`len(evolved_learnings)` — a `TEXT` column, so a *character* count — in a
+column of item counts. Now labelled `N chars`.
+
+Five mutations, five caught, including two asymmetric ones (hold back
+everything on any failure; stop recording authored keys on the success path) to
+confirm the new tests pin both directions rather than just the bug.
+
+**639 tests pass**, `ruff check .` clean.
+
+**NOT done:** unchanged from the #81 entry above — F1, the cross-language
+prosody wire change, Neo4j reset residue, and the unmeasured `identity_summary`
+prompt cost all remain open.

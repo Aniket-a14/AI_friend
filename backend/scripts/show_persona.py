@@ -77,7 +77,10 @@ def _render(identity: IdentityManager) -> str:
     out.append(
         _line("migrated memories", len(history.get("history_memories_migrated") or []))
     )
-    out.append(_line("evolved learnings", len(history.get("evolved_learnings") or "")))
+    # A free-text blob, not a list. Printed as characters and labelled as such,
+    # because an unlabelled number in a column of item counts reads as one.
+    learned = len(history.get("evolved_learnings") or "")
+    out.append(_line("evolved learnings", f"{learned} chars"))
     out.append("")
     return "\n".join(out)
 

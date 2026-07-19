@@ -215,7 +215,10 @@ async def prune_biography(
         return []
 
     is_sqlite = bool(getattr(memory_store, "is_sqlite", False))
-    removed: List[str] = []
+    # Fingerprints whose scan raised. They are held back from the ledger so the
+    # next boot tries again — dropping one on a transient database error would
+    # orphan its row permanently, since nothing would ever look for it after.
+    unscanned: set[str] = set()
 
     logger.info("[Biography] Pruning %d deleted passage(s) from memory.", len(stale))
 
@@ -245,6 +248,7 @@ async def prune_biography(
                         mark[:12],
                         exc,
                     )
+                    unscanned.add(mark)
                     continue
 
                 ids = [str(dict(r)["id"]) for r in rows or ()]
@@ -255,10 +259,17 @@ async def prune_biography(
                 await conn.execute(f"DELETE FROM {table} WHERE id IN ({marks})", *ids)
                 await _drop_vectors(memory_store, ids)
 
-    # Every stale fingerprint leaves the ledger, including ones that matched no
-    # row. Keeping them would mean re-running this scan on every single boot for
-    # a memory that no longer exists.
-    removed = list(stale)
+    # Every *scanned* fingerprint leaves the ledger, including ones that matched
+    # no row. Keeping those would mean re-running this scan on every single boot
+    # for a memory that no longer exists. A fingerprint whose scan failed is a
+    # different case: there we do not know whether a row is still out there, and
+    # the ledger entry is the only thing that will ever make us look again.
+    removed = [mark for mark in stale if mark not in unscanned]
+    if unscanned:
+        logger.warning(
+            "[Biography] %d passage(s) could not be scanned; retrying next boot.",
+            len(unscanned),
+        )
     return removed
 
 

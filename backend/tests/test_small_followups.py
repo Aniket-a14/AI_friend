@@ -189,6 +189,73 @@ async def test_a_fingerprint_with_no_row_still_leaves_the_ledger():
     ]
 
 
+class ExplodingConn(FakeConn):
+    """A connection whose scans fail, as a database under load does."""
+
+    async def fetch(self, query, *args):
+        raise RuntimeError("connection reset")
+
+
+@pytest.mark.asyncio
+async def test_a_passage_whose_scan_failed_stays_in_the_ledger():
+    """A transient database error must not orphan the row permanently.
+
+    The ledger entry is the only record that a fingerprint was ever seeded. If
+    a failed scan still counted as removed, the entry would be dropped while
+    its memory row survived, and nothing would ever look for that row again —
+    the passage would be recalled by a friend who was told to forget it, with
+    no remaining trace pointing at why.
+    """
+    store = SimpleNamespace(
+        pool=FakePool(ExplodingConn([])), is_sqlite=True, qdrant_store=None
+    )
+
+    assert await prune_biography(["unlucky-fingerprint"], store) == []
+
+
+@pytest.mark.asyncio
+async def test_a_scanned_passage_leaves_the_ledger_even_when_a_sibling_failed():
+    """One bad fingerprint must not hold back the others.
+
+    Otherwise a single permanently-unscannable entry would re-run the whole
+    prune on every boot forever.
+    """
+
+    class HalfBroken(FakeConn):
+        async def fetch(self, query, *args):
+            if "bad" in args:
+                raise RuntimeError("connection reset")
+            return []
+
+    store = SimpleNamespace(
+        pool=FakePool(HalfBroken([])), is_sqlite=True, qdrant_store=None
+    )
+
+    assert await prune_biography(["good", "bad"], store) == ["good"]
+
+
+def test_a_rejected_persona_file_does_not_count_as_seeded(tmp_path):
+    """A file that failed validation applied nothing, so it seeded nothing.
+
+    `seeded_from_file` and `authored_keys` used to be set before the profile
+    was validated. When validation then failed, the agent fell back to schema
+    defaults while still believing the author had chosen them — so the seed
+    marker was stamped and the *default* relationship was applied as if it had
+    been written down. That spends the single, one-time seed opportunity on a
+    persona whose contents never took effect, and only a reset gets it back.
+    """
+    bad = tmp_path / "persona.toml"
+    # Out of bounds by design: mood decay of zero is a permanent mood lock, and
+    # the schema rejects it rather than clamping.
+    bad.write_text('relationship = "New Acquaintance"\nmood_decay_rate = 0.0\n', encoding="utf-8")
+
+    agent = IdentityManager(base_path=str(tmp_path), persona_file=bad)
+
+    assert agent.seeded_from_file is False
+    assert agent.authored_keys == set()
+    assert agent.history["relationship"] == "Friend"
+
+
 @pytest.mark.asyncio
 async def test_an_unreadable_biography_never_prunes_everything(tmp_path):
     """The most expensive possible misreading of an ambiguous situation.

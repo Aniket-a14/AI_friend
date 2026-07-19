@@ -300,19 +300,10 @@ class IdentityManager:
         authored = authored_overrides(
             self.persona_file, first_boot=self.first_boot
         )
-        # Records that the file was read *and* had something to say. A file that
-        # exists but is empty or unparseable contributes nothing, so it must not
-        # count as having seeded the agent.
-        self.seeded_from_file = bool(authored)
-        # Which fields the author actually wrote, as opposed to which ones the
-        # schema supplies a default for. Seeding needs the difference: applying
-        # a *default* over a value the durable store already holds is not
-        # seeding, it is overwriting.
-        self.authored_keys = set(authored)
         merged.update({k: v for k, v in authored.items() if v is not None})
 
         try:
-            return PersonaProfile(**merged)
+            profile = PersonaProfile(**merged)
         except ValidationError as exc:
             logger.error(
                 "[Identity] %s could not be applied (%s); using defaults for the "
@@ -320,7 +311,26 @@ class IdentityManager:
                 self.personality_path,
                 exc,
             )
+            # Nothing was authored, because nothing was applied. Recording the
+            # keys anyway would let seeding treat schema *defaults* as the
+            # author's choices and stamp the one-time seed marker for a persona
+            # that was rejected — spending the single seed opportunity on a file
+            # whose contents never took effect.
+            self.seeded_from_file = False
+            self.authored_keys = set()
             return PersonaProfile.from_config()
+
+        # Set only once the profile validates. Records that the file was read
+        # *and* had something to say — a file that exists but is empty or
+        # unparseable contributes nothing, so it must not count as having
+        # seeded the agent.
+        self.seeded_from_file = bool(authored)
+        # Which fields the author actually wrote, as opposed to which ones the
+        # schema supplies a default for. Seeding needs the difference: applying
+        # a *default* over a value the durable store already holds is not
+        # seeding, it is overwriting.
+        self.authored_keys = set(authored)
+        return profile
 
     def _sync_personality_from_profile(self) -> None:
         """Project the profile back onto the raw dict `save()` writes.
