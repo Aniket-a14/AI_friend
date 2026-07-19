@@ -3318,3 +3318,134 @@ does not actually reach the branch it names.
 
 Full backend suite **551 passed**, `ruff check .` clean.
 
+---
+
+## 2026-07-19 — One owner per persona field
+
+Step 5b: the narrative half of the persona now goes through `PersonaProfile`
+alongside the numeric half.
+
+### What the survey actually found
+
+Not two working systems needing a merge. `PersonaProfile` already declared
+`name`, `relationship`, `adaptive_traits` and `speaking_style` — and **nothing
+consumed any of them**. `StateService` reads only the numeric fields. So the
+duplication was already written, one copy was dead, and the two had drifted
+apart unnoticed.
+
+The sharpest case: the adaptive-trait cap existed three times — as
+`max_length=5` on the field, as a `[-5:]` slice in the IdentityManager
+constructor, and again inside `evolve_persona`. One rule, three
+implementations. That is the shape both the prosody and the affect duplications
+started as.
+
+### Decisions
+
+`personality.json` is read, not migrated: `flatten_personality_shape` maps the
+nested layout onto the schema so an authored file keeps working, and flat keys
+win where both appear, so a file can be migrated a field at a time.
+
+`IdentityManager._profile_from_personality` is **lenient** where
+`PersonaProfile.load()` is strict, which is a deliberate inversion of the rule
+stated when that asymmetry was introduced. `load()` is strict because a persona
+file is an author describing a friend. But personality.json is not purely
+authored — `evolve_persona` writes to it — so it is partly the agent's own
+running state. Under strict loading a friend that had grown a sixth adaptive
+trait would fall back whole and lose its name and tone: punishing the user for
+something the agent did. An over-long list is trimmed to the newest instead.
+
+Evolution now goes profile-first, then projects onto the raw dict. The other
+order was tried and is a trap: `evolve_persona` mutating the dict while the
+prompt reads the profile means the agent evolves traits that never change how it
+speaks — the whole reflection loop running with nothing downstream of it. Caught
+by two existing tests failing, not by design.
+
+### The bug the deferral would have shipped
+
+`speaking_style` was typed `Dict[str, str]`. The real personality.json stores
+`common_vocabulary` as a **list**, so the file has never satisfied the schema —
+invisible while nothing read the field. This was noted as a cosmetic wart and
+consciously deferred to a later PR. It was not cosmetic: the first reader hit a
+validation error, and because this path falls back *whole*, one vocabulary entry
+discarded the entire narrative persona — name, tone and traits. Widened to
+`Dict[str, Any]`. The lesson is about the deferral, not the type: a schema that
+has never been exercised against its real data is a guess, and "cosmetic" was an
+assessment made without running it.
+
+### Verification
+
+`tests/test_persona_unification.py` (15 tests). **9 mutations, 8 caught.**
+
+`M1` — prompt reads the raw dict instead of the profile — survived at first, and
+legitimately: the dict is kept as a faithful projection, so both sources agree
+and no test could distinguish them. Which one is *authoritative* was a design
+decision nothing asserted. Added a test that forces them apart (rename the
+profile without syncing) so the answer is observable; now caught.
+
+`M8` — "nested immutable block trusted again" — survived because the mutation
+does not express the threat. `values` and `boundaries` are deliberately not
+model fields, so a flatten step cannot reintroduce them whatever it copies. The
+protection is structural rather than procedural, and the real regression is
+already covered by the #76 mutation that points `_refresh_immutable_core` back
+at the file. Recorded rather than replaced, since a mutation that cannot fail is
+worth knowing about.
+
+Two pre-existing tests had to change. Both assigned `manager.personality` *after*
+construction and relied on the prompt re-reading that dict on every call, which
+is precisely the drift this change removes; they now supply the personality
+through the file the manager reads. One of them
+(`test_identity_appraisal_benchmark`) was additionally broken on its own terms:
+`patch("builtins.open", mock_open=MagicMock(...))` passes `mock_open` as a
+keyword to `patch` rather than as the replacement, so the file was never read
+and the test had been measuring the post-assignment all along.
+
+Full backend suite **566 passed**, `ruff check .` clean.
+
+**NOT done:** no write path — authoring still means editing the file by hand.
+That is step 6, where the UI can decide what the write API needs. `history.json`
+is untouched and still holds `relationship` and `memories`; the profile's
+`relationship` field remains unused, because runtime relationship state
+genuinely belongs to the agent rather than the authored persona, and reconciling
+those two is its own decision. The suite still writes to the real
+`backend/app/personality.json`; the write stays content-idempotent so the tree
+stays clean, but a test touching a tracked application file still wants a
+`tmp_path` fixture.
+
+### Review round (PR #77)
+
+One Major, and correct: **`hydrate_from_config_store` never rebuilt the
+profile.**
+
+Every reader now takes its narrative fields from `self.persona`, but hydration
+replaced only `self.personality`. So a persona loaded from the durable store had
+no effect until the process restarted — the agent kept serving whatever it
+booted with, and hydration logged success. This is the source the class docstring
+names as preferred over local JSON, which makes it the worst possible place to
+silently ignore, and it reintroduced the exact two-sources drift the PR set out
+to remove, through the one call site that was not updated.
+
+It also held a **fourth** copy of the adaptive-trait cap. The PR description said
+three; there were four, and the fourth was enforcing a limit on data no reader
+consulted any more. Worth noting against the claim made when this work started:
+"grep found three" is a count of what a particular search matched, not of what
+exists.
+
+The gap was structural — no test exercised `hydrate_from_config_store` at all,
+so nothing could have caught it. Added three, driving a stand-in store: hydration
+reaches the prompt, the cap comes from the schema on that path too, and hydration
+cannot reopen the immutable core (the durable store is user-reachable via
+whatever writes to it).
+
+### Verification
+
+3 mutations, **all 3 caught**: hydration stops rebuilding the profile (the
+reviewed bug), rebuilds without projecting back, and reinstates its own hardcoded
+cap.
+
+Also added the missing docstring CodeRabbit flagged on
+`test_an_evolved_speaking_style_reaches_the_prompt`. The convention exists because
+a test whose failure message does not say what breaks in the real system gets
+deleted by whoever it inconveniences.
+
+Full backend suite **569 passed**, `ruff check .` clean.
+
