@@ -18,8 +18,6 @@ from ..contracts import (
     AudioResume,
     AudioStop,
     ChatInput,
-    ChatOutput,
-    ChatOutputAffect,
     Topics,
     UserVoiceProperties,
 )
@@ -695,28 +693,21 @@ class BrainAgent(BaseAgent):
         if not text:
             return
 
-        state_snap = self.cognitive_core.state.get_context_snapshot()
-
-        # Full §5.3 Affect Metadata Contract. Prosody is not attached here: the
-        # voice agent derives it from `affect` via `contracts::vad_to_prosody`
-        # and never read what Python sent. See SpeechCoordinator's docstring.
-        payload = ChatOutput(
-            content=text,
-            done=False,
+        # Built by the coordinator, which is where every other chunk on this
+        # subject is built. This method used to re-derive the affect vector
+        # inline — the same eight `state_snap.get(...)` lines with the same
+        # defaults — so the wire contract had two implementations and a change
+        # to one silently produced streams whose chunks disagreed with their own
+        # `done` message. Exactly the drift that put prosody in this state to
+        # begin with, one layer up.
+        payload = self.coordinator.create_chunk_payload(
+            words=words,
+            state_snap=self.cognitive_core.state.get_context_snapshot(),
             turn_id=turn_id,
-            affect=ChatOutputAffect(
-                valence=state_snap.get("valence", state_snap.get("mood", 0.0)),
-                arousal=state_snap.get("arousal", state_snap.get("energy", 0.5)),
-                dominance=state_snap.get("dominance", 0.5),
-                trust=state_snap.get("trust", 0.5),
-                attachment=state_snap.get("attachment", 0.1),
-                emotion=state_snap.get("emotion", "neutral"),
-                fatigue=state_snap.get("fatigue", 0.0),
-                user_distance=self.last_user_distance,
-            ),
-            metadata=incoming_metadata,
-            latency_metadata=incoming_latency_metadata,
+            user_distance=self.last_user_distance,
         )
+        payload.metadata = incoming_metadata
+        payload.latency_metadata = incoming_latency_metadata
         await self.publish(Topics.CHAT_OUTPUT, payload.model_dump())
 
     async def stop(self):

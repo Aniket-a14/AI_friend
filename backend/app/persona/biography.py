@@ -180,6 +180,112 @@ def pending_entries(
     return [entry for entry in entries if entry.fingerprint not in seen]
 
 
+def stale_fingerprints(
+    entries: Sequence[BiographyEntry], already_seeded: Iterable[str]
+) -> List[str]:
+    """Seeded passages the biography no longer contains.
+
+    The counterpart to `pending_entries`. Adding a paragraph seeded it; deleting
+    one did nothing, so a passage removed because it was wrong — or because the
+    person it described asked for it to go — stayed in memory forever and kept
+    surfacing. The file looked like the source of truth and was not.
+
+    Editing a paragraph shows up here as one stale fingerprint plus one pending
+    entry, which is the correct reading: the fingerprint covers heading and
+    text, so an edited passage is a different passage.
+    """
+    current = {entry.fingerprint for entry in entries}
+    return [mark for mark in (already_seeded or ()) if mark not in current]
+
+
+async def prune_biography(
+    stale: Sequence[str], memory_store: Any
+) -> List[str]:
+    """Delete memories for passages no longer in the biography.
+
+    Returns the fingerprints actually removed, for the caller to drop from the
+    ledger. A fingerprint whose row is already gone still counts as removed —
+    the ledger is a record of what was seeded, and leaving an entry for a
+    memory that does not exist means retrying the delete on every boot forever.
+    """
+    if memory_store is None or not stale:
+        return []
+    pool = getattr(memory_store, "pool", None)
+    if pool is None:
+        return []
+
+    is_sqlite = bool(getattr(memory_store, "is_sqlite", False))
+    removed: List[str] = []
+
+    logger.info("[Biography] Pruning %d deleted passage(s) from memory.", len(stale))
+
+    async with pool.acquire() as conn:
+        for table in ("memories", "archived_memories"):
+            for mark in stale:
+                try:
+                    if is_sqlite:
+                        # `metadata` is TEXT here, so the JSON has to be parsed
+                        # by the query rather than indexed into. json1 ships
+                        # with the stdlib build.
+                        rows = await conn.fetch(
+                            f"SELECT id FROM {table} WHERE "
+                            "json_extract(metadata, '$.biography_fingerprint') = ?",
+                            mark,
+                        )
+                    else:
+                        rows = await conn.fetch(
+                            f"SELECT id FROM {table} WHERE "
+                            "metadata->>'biography_fingerprint' = $1",
+                            mark,
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "[Biography] Could not scan %s for %s (%s); skipping.",
+                        table,
+                        mark[:12],
+                        exc,
+                    )
+                    continue
+
+                ids = [str(dict(r)["id"]) for r in rows or ()]
+                if not ids:
+                    continue
+
+                marks = ",".join("?" if is_sqlite else f"${i + 1}" for i in range(len(ids)))
+                await conn.execute(f"DELETE FROM {table} WHERE id IN ({marks})", *ids)
+                await _drop_vectors(memory_store, ids)
+
+    # Every stale fingerprint leaves the ledger, including ones that matched no
+    # row. Keeping them would mean re-running this scan on every single boot for
+    # a memory that no longer exists.
+    removed = list(stale)
+    return removed
+
+
+async def _drop_vectors(memory_store: Any, ids: Sequence[str]) -> None:
+    """Remove the vectors for deleted memories.
+
+    Retrieval fuses Qdrant hits with SQL rows, so a vector left behind after
+    its row is gone means the pruned passage keeps being *found* — the search
+    returns a candidate that no longer exists.
+    """
+    store = getattr(memory_store, "qdrant_store", None)
+    if not store or not getattr(store, "client", None) or not ids:
+        return
+    try:
+        import asyncio
+
+        from qdrant_client.http import models
+
+        await asyncio.to_thread(
+            store.client.delete,
+            collection_name=store.collection_name,
+            points_selector=models.PointIdsList(points=list(ids)),
+        )
+    except Exception as exc:
+        logger.error("[Biography] Could not delete %d vector(s): %s", len(ids), exc)
+
+
 async def seed_biography(
     entries: Sequence[BiographyEntry],
     memory_store: Any,
