@@ -91,7 +91,18 @@ class IdentityManager:
         elif persona_file is None:
             self.persona_file = None
         else:
-            self.persona_file = Path(persona_file)
+            # Existence-checked, like the explicit branch of `find_persona_file`.
+            # A path that does not exist must resolve to "no file", not to a
+            # truthy Path: the seed marker is written once and never again, so a
+            # typo'd path would consume the single seeding opportunity while
+            # contributing nothing.
+            candidate = Path(persona_file)
+            self.persona_file = candidate if candidate.exists() else None
+            if self.persona_file is None:
+                logger.warning(
+                    "[Persona] No persona file at %s; continuing without one.",
+                    persona_file,
+                )
 
         self.personality = self._load_json(self.personality_path)
         self.history = self._load_json(self.history_path)
@@ -110,12 +121,22 @@ class IdentityManager:
         # one set of bounds. The raw dict is kept because `evolve_persona` and
         # `save()` still work on it, but anything a reader needs is taken from
         # the profile.
+        # Set by `_profile_from_personality`, which is the only place the
+        # authored file is consulted. An explicitly supplied `persona` bypasses
+        # that entirely, so this stays False and no marker is written.
+        self.seeded_from_file = False
         self.persona = persona or self._profile_from_personality()
 
-        if self.first_boot and self.persona_file is not None:
-            # Written now, not on the next save: if the process dies before any
-            # conversation happens, the next boot must not seed a second time
-            # over values the user may already have adjusted.
+        if self.first_boot and self.seeded_from_file:
+            # Gated on the file having actually contributed, not merely on one
+            # being configured. The marker is permanent, so stamping it when
+            # nothing was read burns the single seeding opportunity and the
+            # user's adaptive values would never be applied — with no error and
+            # no way to retry.
+            #
+            # Written now rather than at next save: if the process dies before
+            # any conversation, the next boot must not seed a second time over
+            # values the user may since have adjusted.
             self.history[self.SEED_MARKER] = datetime.now(timezone.utc).isoformat()
             logger.info(
                 "[Persona] Seeded from %s. Adaptive values now belong to your "
@@ -215,6 +236,10 @@ class IdentityManager:
         authored = authored_overrides(
             self.persona_file, first_boot=self.first_boot
         )
+        # Records that the file was read *and* had something to say. A file that
+        # exists but is empty or unparseable contributes nothing, so it must not
+        # count as having seeded the agent.
+        self.seeded_from_file = bool(authored)
         merged.update({k: v for k, v in authored.items() if v is not None})
 
         try:
