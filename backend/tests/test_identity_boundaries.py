@@ -168,6 +168,114 @@ async def test_contempt_aimed_at_the_user_is_rejected(tmp_path):
 @pytest.mark.parametrize(
     "text",
     [
+        "I hate <pause=100ms> you.",
+        "I hate <hesitate> you.",
+        "You are <pause=200ms> worthless.",
+        "I hate <pause=100ms> <hesitate> you.",
+        "I ha<pause=50ms>te you.",
+        "5 < 10, and I hate you.",
+    ],
+)
+async def test_control_markup_cannot_smuggle_contempt_past_the_boundary(
+    tmp_path, text
+):
+    """The persona prompt *tells* the model to emit `<pause=ms>` and `<hesitate>`.
+
+    `ControlMarkupSanitizer` preserves those tags on purpose — they are voice
+    instructions — so the text reaching validation genuinely contains them, and
+    a pattern expecting "hate" and "you" to be adjacent never matches. This is
+    not a hypothetical evasion by a malicious model; it is what ordinary,
+    instructed output looks like.
+    """
+    manager = _identity(tmp_path, HOSTILE_FILE)
+    is_valid, reason = await manager.validate_response(text, "CHAT")
+    assert is_valid is False, f"markup bypassed the boundary: {text!r}"
+    assert "Non-toxicity" in reason
+
+
+@pytest.mark.asyncio
+async def test_stripping_markup_can_never_conceal_hostile_text(tmp_path):
+    """The bug the first version of this fix introduced.
+
+    That version deleted everything after an unclosed `<`, so "5 < 10, and I
+    hate you" collapsed to "5" and the contempt vanished before matching. A
+    cleaner that can hide text is worse than no cleaner at all, because it
+    fails in the direction that looks clean.
+
+    The guard is structural: the raw text is always one of the views, so a
+    stripping rule can only ever add a reason to reject, never remove one.
+    """
+    from app.cognitive.identity import _match_views
+
+    hostile = "5 < 10, and i hate you"
+    assert hostile in _match_views(hostile), "raw text must always be a view"
+
+    manager = _identity(tmp_path, HOSTILE_FILE)
+    is_valid, _ = await manager.validate_response(hostile, "CHAT")
+    assert is_valid is False
+
+
+@pytest.mark.asyncio
+async def test_an_avoid_pattern_containing_brackets_still_matches(tmp_path):
+    """The one case where only the untouched text can match.
+
+    Both cleaned views remove or space out angle brackets, so a phrase an author
+    deliberately wrote *with* them exists in the raw view alone. Without it in
+    the set this rule becomes unenforceable, which is the concrete reason the
+    raw text is kept rather than a tidier single canonical form.
+    """
+    manager = _identity(
+        tmp_path,
+        {
+            "core_personality": {"immutable": {"base_tone": "Warm"}},
+            "conversation_rules": {"avoid": ["<internal>"]},
+        },
+    )
+    is_valid, reason = await manager.validate_response(
+        "here is the <internal> note", "CHAT"
+    )
+    assert is_valid is False
+    assert "<internal>" in reason
+
+
+@pytest.mark.asyncio
+async def test_neutralizing_markup_does_not_invent_contempt(tmp_path):
+    """Stripping tags joins whatever sat either side of them.
+
+    If a tag stands where a word was, removing it can fuse an innocent sentence
+    into a hostile-looking one. The strip must not manufacture the phrase it is
+    hunting for.
+    """
+    manager = _identity(tmp_path, HOSTILE_FILE)
+    for text in (
+        "I hate the way <pause=100ms> you were treated.",
+        "I hate waiting. <pause=200ms> You deserve better.",
+    ):
+        is_valid, reason = await manager.validate_response(text, "CHAT")
+        assert is_valid is True, f"false positive after stripping: {text!r} ({reason})"
+
+
+@pytest.mark.asyncio
+async def test_a_restricted_phrase_split_by_markup_is_still_caught(tmp_path):
+    """The avoid-list had the same weakness as the toxicity check."""
+    manager = _identity(
+        tmp_path,
+        {
+            "core_personality": {"immutable": {"base_tone": "Warm"}},
+            "conversation_rules": {"avoid": ["magic word"]},
+        },
+    )
+    is_valid, reason = await manager.validate_response(
+        "the magic <pause=100ms> word", "CHAT"
+    )
+    assert is_valid is False
+    assert "magic word" in reason
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
         "I hate mushrooms too, honestly.",
         "I hate that this happened to you.",
         "I hate to say it, but you might be right.",

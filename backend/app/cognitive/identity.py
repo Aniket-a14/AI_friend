@@ -19,6 +19,37 @@ _HOSTILE_TO_USER = re.compile(
     r"|\b(?:shut\s+up|go\s+away)\s*,?\s*(?:you|idiot|stupid)\b"
 )
 
+_WELL_FORMED_TAG = re.compile(r"<[^<>]*>")
+
+
+def _match_views(text: str) -> Tuple[str, ...]:
+    """Every reading of `text` a boundary check should be judged against.
+
+    The persona prompt *invites* the model to emit `<pause=300ms>` and
+    `<hesitate>`, and `ControlMarkupSanitizer` preserves them on purpose — they
+    are instructions for the voice layer. So the text handed to
+    `validate_response` genuinely contains markup, and `I hate <pause=100ms> you`
+    slips past any pattern expecting `hate` and `you` to be adjacent. That is
+    ordinary instructed output, not an attack.
+
+    Returning several views instead of one canonical "cleaned" string is the
+    important part. A single strip has to be right about what to remove, and a
+    first attempt here removed everything after an unclosed `<` — which turned
+    "5 < 10, I hate you" into "5" and *hid* the hostility rather than missing
+    it. A cleaner that can conceal text is worse than no cleaner. With the raw
+    text always among the views, no stripping rule can subtract evidence: each
+    view can only ever add a reason to reject.
+
+    Validation-only. The response itself keeps its markers.
+    """
+    raw = re.sub(r"\s+", " ", (text or "")).strip()
+    # Tags removed outright, so a marker splitting a word ("I ha<pause>te you")
+    # closes back up.
+    detagged = re.sub(r"\s+", " ", _WELL_FORMED_TAG.sub("", raw)).strip()
+    # Only the brackets themselves, so nothing is ever swallowed wholesale.
+    debracketed = re.sub(r"\s+", " ", raw.replace("<", " ").replace(">", " ")).strip()
+    return tuple({raw, detagged, debracketed})
+
 # Authorable, unlike values and boundaries: tone is how the friend sounds, not
 # what it will refuse to do. Used when personality.json names no base_tone.
 DEFAULT_BASE_TONE = "Warm, intellectual, and slightly protective"
@@ -284,14 +315,19 @@ MANDATORY RULES:
         # This is a crude last-resort backstop, not content moderation. The
         # real work is done by the persona prompt and the model; anything that
         # reaches here has already gone wrong.
-        lowered = text.lower()
+        views = _match_views(text.lower())
+
         for boundary in self.immutable_core["boundaries"]:
-            if "toxic" in boundary.lower() and _HOSTILE_TO_USER.search(lowered):
+            if "toxic" in boundary.lower() and any(
+                _HOSTILE_TO_USER.search(view) for view in views
+            ):
                 return False, "Response violates core boundary: Non-toxicity"
 
-        # Restricted phrases check
+        # The avoid-list had the same weakness: a restricted phrase broken up by
+        # a pause marker slipped straight through a plain substring test.
         forbidden = self.personality.get("conversation_rules", {}).get("avoid", [])
         for pattern in forbidden:
-            if pattern.lower() in text.lower():
+            needle = pattern.lower()
+            if any(needle in view for view in views):
                 return False, f"Restricted phrase detected: {pattern}"
         return True, ""
