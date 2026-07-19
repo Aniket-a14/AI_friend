@@ -414,7 +414,11 @@ class BrainAgent(BaseAgent):
 
         if not is_subconscious:
             self.last_assistant_response = ""
-            self.assistant_response_start_time = time.time()
+            # `assistant_response_start_time` used to be stamped here, read only
+            # by the character-rate truncation guess in `_on_audio_stop`. That
+            # guess is gone, and it was set on this path only -- the other
+            # streaming path assigns `last_assistant_response` without it, which
+            # is how elapsed time could be measured from an earlier turn.
 
         full_response = await self._stream_to_speech(
             wrapped_generator,
@@ -500,27 +504,40 @@ class BrainAgent(BaseAgent):
                             await self.conversation_store.update_last_assistant_message(
                                 truncated_text
                             )
-                        self.last_audio_progress = None
-                elif (
-                    not progress
-                    and self.last_assistant_response
-                    and hasattr(self, "assistant_response_start_time")
-                ):
-                    # Fallback: estimate progress using average word/character duration
-                    elapsed = time.time() - self.assistant_response_start_time
-                    # Average speech rate: ~15 characters per second (approx 150 WPM)
-                    offset = int(elapsed * 15)
-                    if 0 < offset < len(self.last_assistant_response):
-                        truncated_text = self.last_assistant_response[:offset].strip()
-                        original_length = len(self.last_assistant_response)
-                        truncated_length = len(truncated_text)
-                        logger.info(
-                            f"Truncating history (via estimation): original_length={original_length}, truncated_length={truncated_length}, offset={offset}, elapsed={elapsed:.2f}s"
-                        )
-                        if self.conversation_store:
-                            await self.conversation_store.update_last_assistant_message(
-                                truncated_text
-                            )
+                elif not progress and self.last_assistant_response:
+                    # No real playback progress, so we do not know how much of
+                    # the reply was actually heard -- and we no longer guess.
+                    #
+                    # This used to estimate `int(elapsed * 15)`, a hardcoded
+                    # 15 characters per second, and rewrite the stored reply at
+                    # that offset. Two things were wrong with it. The rate was
+                    # invented and unbounded in error: real speech rate varies
+                    # with prosody, pauses and the synthesiser, so the cut
+                    # landed wherever the arithmetic said. And
+                    # `assistant_response_start_time` is only set on one of the
+                    # two streaming paths, so `elapsed` could be measured from a
+                    # *previous* turn entirely.
+                    #
+                    # The transcript is not a log; it is what memory and the
+                    # persona prompt read back later. A wrong cut point puts
+                    # words in the agent's mouth that it never said, or deletes
+                    # ones it did, and nothing downstream can tell that the
+                    # sentence was reconstructed. Keeping the full text is also
+                    # wrong -- the agent may believe it said more than was heard
+                    # -- but it is wrong in a way that is honest and visible in
+                    # the log, rather than silently fabricated.
+                    logger.info(
+                        "Interrupted with no playback progress; keeping the full "
+                        "reply (%d chars) rather than guessing a cut point.",
+                        len(self.last_assistant_response),
+                    )
+
+                # Cleared however this turn resolved. It was previously reset
+                # only on the branch that actually truncated, so a stop that
+                # matched none of the guards left the progress marker in place
+                # for the *next* interrupt to truncate against -- a stale offset
+                # from a reply that had already ended.
+                self.last_audio_progress = None
         except Exception as e:
             logger.error(f"Error handling audio stop truncation: {e}")
 
