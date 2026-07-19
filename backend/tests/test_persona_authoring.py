@@ -166,36 +166,58 @@ def test_a_later_boot_keeps_the_relationship_the_agent_has_lived(tmp_path):
     assert "Eager" not in agent.persona.adaptive_traits
 
 
-def test_a_later_boot_still_applies_a_constitutional_edit(tmp_path):
-    """Editing temperament has to actually do something.
+def test_a_later_boot_ignores_a_constitutional_edit_too(tmp_path):
+    """The file is a seed, not a live description.
 
-    The counterpart to the rule above: if *nothing* in the file took effect
-    after the first boot, the authoring surface would be write-once and users
-    would reasonably conclude it was broken.
+    Constitutional fields used to keep applying on every boot, so editing
+    temperament took effect at the next start. That is right for a persona you
+    are tuning and wrong for one modelled on a real person: re-asserting who
+    someone is on every boot pins them to the moment the file was written and
+    they can never grow past it.
+
+    If this regresses, a friend who has spent months becoming warmer snaps back
+    to their authored tone on the next deploy, silently.
     """
     agent = _agent(
         tmp_path,
         _write(tmp_path),
         personality={"name": "Old Name", "core_personality": {}},
     )
-    assert agent.persona.name == "Written"
-    assert agent.persona.base_tone == "Dry and exact"
-    assert agent.persona.baseline_valence == 0.4
+    assert agent.first_boot is False
+    assert agent.persona.name == "Old Name"
+    assert agent.persona.base_tone != "Dry and exact"
 
 
-def test_the_authored_file_outranks_the_saved_state_for_constitutional_fields(tmp_path):
+def test_the_saved_state_outranks_the_authored_file_after_the_first_boot(tmp_path):
     """Precedence, stated where it is observable.
 
-    defaults < the agent's saved state < the authored file. If the saved state
-    won, an edit would appear to do nothing on every boot after the first.
+    defaults < the authored file (first boot only) < the agent's saved state.
+    If the file won, every deploy would overwrite who the friend had become.
     """
     agent = _agent(
         tmp_path,
         _write(tmp_path),
         personality={"name": "Saved", "core_personality": {"traits": ["Stale"]}},
     )
-    assert agent.persona.name == "Written"
-    assert agent.persona.traits == ["Precise"]
+    assert agent.persona.name == "Saved"
+    assert agent.persona.traits == ["Stale"]
+
+
+def test_an_already_seeded_agent_is_not_re_marked(tmp_path):
+    """The marker records a seeding that happened, not a boot that occurred.
+
+    A later boot reads the file (to report what it would have set) but applies
+    nothing, so it must not claim to have seeded. Re-stamping would be harmless
+    today and misleading the moment anyone uses the timestamp to answer "when
+    did this friend start existing".
+    """
+    agent = _agent(
+        tmp_path,
+        _write(tmp_path),
+        personality={"name": "Saved", "core_personality": {}},
+    )
+    assert agent.seeded_from_file is False
+    assert IdentityManager.SEED_MARKER not in agent.history
 
 
 # --------------------------------------------------------------------------

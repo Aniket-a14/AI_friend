@@ -5,20 +5,26 @@ Reading the file a user writes their friend into.
 file becomes one, and — the part that carries the weight — **when it stops being
 consulted**.
 
-The three tiers already declared in the schema each imply a different answer to
-"the user edited the file and restarted":
+The answer is the same for everything the file can set: **read once, then
+never again.**
 
-- IMMUTABLE  never comes from a file at all. Rejected on every read.
-- CONSTITUTIONAL is who the friend fundamentally is, so an edit applies. The
-  author is told plainly that this replaces a temperament rather than tuning it.
-- ADAPTIVE  is seeded once and then owned by the friend. On every later boot the
-  file's values are ignored, and that is the whole point: trust and attachment
-  are built over months of conversation, and a config file that quietly reset
-  them on restart would make the relationship worthless. The agent's own state
-  wins, and the log says which values were skipped so the silence is explained.
+- IMMUTABLE      never comes from a file at all. Rejected on every read.
+- CONSTITUTIONAL seeds the friend's temperament on the first boot.
+- ADAPTIVE       seeds their starting relationship on the first boot.
 
-Nothing distinguished a first boot from a later one before, which is why the
-tiers were documentation rather than behaviour.
+After that the durable store owns all of it and the file is inert. Trust and
+attachment are built over months of conversation, and a config file that
+quietly reset them on restart would make the relationship worthless — but the
+same is true of temperament, just more slowly. A person modelled on someone
+real has to be allowed to stop matching the document, or the document is not a
+seed, it is a leash.
+
+The tiers still exist and still matter: they are what the *schema* enforces
+(bounds, what may be evolved) and what the log names back to the author. They
+just no longer decide which boot a value applies on.
+
+Starting over is `scripts/reset_persona.py` — deliberate, confirmed, and
+distinct from editing a file.
 """
 
 import logging
@@ -134,9 +140,20 @@ def authored_overrides(
 ) -> Dict[str, Any]:
     """The fields an authored file may contribute to *this* boot.
 
-    On a first boot that is everything it declares. On any later boot the
-    adaptive values are dropped, because by then they describe a relationship
-    that has already started moving.
+    On a first boot, everything it declares. On any later boot, **nothing**.
+
+    This used to keep applying the constitutional half forever, on the argument
+    that temperament is who someone fundamentally is and so an edit should take
+    effect. The argument holds for a persona you are authoring iteratively. It
+    does not hold for the case this file exists to serve — describing a real
+    person so the agent can start out as them — because there the file is a
+    snapshot of one moment, and re-applying it on every boot pins the friend to
+    that moment permanently. Constitutional values move slowly, not never.
+
+    So the tier split no longer decides *when* a value applies; it decides what
+    the log can tell the user about what they wrote. Re-seeding from an edited
+    file is `scripts/reset_persona.py`, which is a deliberate act with a
+    confirmation prompt rather than something a text editor does silently.
     """
     if path is None:
         return {}
@@ -163,11 +180,13 @@ def authored_overrides(
         )
         return {**constitutional, **adaptive}
 
-    if adaptive:
+    written = sorted({*constitutional, *adaptive})
+    if written:
         logger.info(
-            "[Persona] %s: %s left as your friend has them, not as written. "
-            "Adaptive values are seeded once and then belong to them.",
+            "[Persona] %s was already used to seed this friend; %s left as they "
+            "have grown them. Run scripts/reset_persona.py to start over from "
+            "the file.",
             path,
-            ", ".join(sorted(adaptive)),
+            ", ".join(written),
         )
-    return constitutional
+    return {}

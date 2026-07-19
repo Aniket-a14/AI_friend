@@ -1,5 +1,6 @@
 import sys
 import os
+import tempfile
 
 # Set fallback environment variables for testing before any app modules are loaded
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@127.0.0.1:5432/test")
@@ -13,14 +14,34 @@ os.environ.setdefault("LIVEKIT_API_SECRET", "dummy_secret")
 # `IdentityManager` searches upward for `config/persona.toml`, which is right in
 # production and wrong here: any test that builds one with default arguments
 # would otherwise inherit whatever character happens to be checked out beside
-# the code, and `ReflectionService` builds one by default. That made the suite
-# write the repo's authored persona into the tracked `app/personality.json`.
+# the code — so the suite's results would depend on the repo's own persona file,
+# and editing that file could turn tests red.
+#
+# This was also the reason the suite wrote to the tracked `app/personality.json`.
+# That half is fixed properly now: `save()` writes to `agent_configs` whenever a
+# durable store is attached, and only falls back to the JSON files when there is
+# nowhere better. The env var stays for the isolation, which is its own reason.
 #
 # Tests that exercise authoring pass an explicit path, so this disables ambient
 # discovery without disabling the feature.
 os.environ.setdefault("PERSONA_PROFILE_PATH", os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "_no_persona_file_here.toml"
 ))
+
+# Keep identity writes out of the source tree.
+#
+# `IdentityManager` defaults `base_path` to the package directory, so
+# `personality.json` and `history.json` — both **tracked in git** — are written
+# by anything that saves without a durable store attached. The suite did exactly
+# that: `test_subconscious_consolidation` builds a `ReflectionService` with no
+# identity manager, and `_consolidate` → `evolve_persona` → `save()` rewrote the
+# tracked file on every run, dirtying the working tree.
+#
+# A temp directory per session, so a test that saves is writing somewhere it is
+# allowed to. Tests that care about the files pass an explicit `base_path`.
+os.environ.setdefault(
+    "IDENTITY_BASE_PATH", tempfile.mkdtemp(prefix="pankudi-identity-")
+)
 
 import types
 import pytest

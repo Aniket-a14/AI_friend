@@ -23,7 +23,13 @@ class ReflectionService:
         self.llm = llm_service
         self.graph = graph_store
         self.vector = pg_vector
-        self.identity = identity_manager or IdentityManager()
+        # `persona_file=None` on the fallback, not `AUTO_DISCOVER`. The real
+        # path injects `CognitiveService`'s manager and never reaches this, so
+        # anything that does get here is a reflection service standing alone —
+        # and one that walked up the tree to adopt whatever `config/persona.toml`
+        # happened to be checked out would be evolving a persona nobody wired to
+        # it. A default identity is a safe fallback; a *discovered* one is not.
+        self.identity = identity_manager or IdentityManager(persona_file=None)
         self.is_reflecting = False
         self.last_reflection_started_at = 0.0
 

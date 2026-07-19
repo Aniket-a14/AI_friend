@@ -75,7 +75,17 @@ class IdentityManager:
         persona_file=AUTO_DISCOVER,
     ):
         if base_path is None:
-            base_path = os.path.dirname(os.path.dirname(__file__))
+            # Defaults to the package directory, which makes `app/` writable
+            # state: anything constructing a manager without a durable store —
+            # `ReflectionService`'s fallback, most obviously — writes
+            # `personality.json` and `history.json` right where the code lives.
+            # That is how the test suite came to modify a **git-tracked** file
+            # on every run, via `_consolidate` → `evolve_persona` → `save()`.
+            # Overridable so a deployment (or the suite) can put identity state
+            # somewhere that is not the source tree.
+            base_path = getattr(Config, "IDENTITY_BASE_PATH", None) or os.path.dirname(
+                os.path.dirname(__file__)
+            )
 
         self.personality_path = os.path.join(base_path, "personality.json")
         self.history_path = os.path.join(base_path, "history.json")
@@ -127,22 +137,7 @@ class IdentityManager:
         self.seeded_from_file = False
         self.persona = persona or self._profile_from_personality()
 
-        if self.first_boot and self.seeded_from_file:
-            # Gated on the file having actually contributed, not merely on one
-            # being configured. The marker is permanent, so stamping it when
-            # nothing was read burns the single seeding opportunity and the
-            # user's adaptive values would never be applied — with no error and
-            # no way to retry.
-            #
-            # Written now rather than at next save: if the process dies before
-            # any conversation, the next boot must not seed a second time over
-            # values the user may since have adjusted.
-            self.history[self.SEED_MARKER] = datetime.now(timezone.utc).isoformat()
-            logger.info(
-                "[Persona] Seeded from %s. Adaptive values now belong to your "
-                "friend; edits to them in that file will be ignored from here.",
-                self.persona_file,
-            )
+        self._stamp_seed_marker()
 
         # CVS-3.5: Immutable Core Trait seeding
         self._refresh_immutable_core()
@@ -160,6 +155,28 @@ class IdentityManager:
         )
 
     SEED_MARKER = "persona_seeded_at"
+
+    def _stamp_seed_marker(self) -> None:
+        """Record that the authored file has now been consumed.
+
+        Gated on the file having actually contributed, not merely on one being
+        configured. The marker is permanent, so stamping it when nothing was
+        read burns the single seeding opportunity and the user's authored values
+        would never be applied — with no error and no way to retry.
+
+        Written immediately rather than at the next save: if the process dies
+        before any conversation, the next boot must not seed a second time over
+        values the user may since have adjusted.
+        """
+        if not (self.first_boot and self.seeded_from_file):
+            return
+
+        self.history[self.SEED_MARKER] = datetime.now(timezone.utc).isoformat()
+        logger.info(
+            "[Persona] Seeded from %s. Your friend owns these values now; edits "
+            "to that file will be ignored until you reset them.",
+            self.persona_file,
+        )
 
     def _detect_first_boot(self) -> bool:
         """Has this agent lived yet?
@@ -222,14 +239,23 @@ class IdentityManager:
         # Precedence, lowest to highest:
         #
         #   1. deployment defaults          (Config / the schema)
-        #   2. the agent's own saved state  (personality.json)
-        #   3. the authored file            (config/persona.toml)
+        #   2. the agent's own saved state  (the durable store, or JSON)
+        #   3. the authored file            (config/persona.toml) — first boot only
         #
-        # The authored file sits on top so an edit to a constitutional value
-        # takes effect on the next boot. It contributes nothing adaptive after
-        # the first boot, so layer 2's evolved traits and speaking style survive
-        # underneath it — which is the whole seed-once rule, expressed as an
-        # ordering rather than as a special case.
+        # Layer 3 used to apply its constitutional fields on *every* boot, so an
+        # edit to temperament took effect on the next start. That is the right
+        # design for a persona you are still tuning and the wrong one for the
+        # thing this is actually for: seeding a friend modelled on a real
+        # person, then letting them become themselves. A file that keeps
+        # re-asserting who someone is means they can never grow away from the
+        # document, and the document is always the least current description of
+        # them.
+        #
+        # So `persona.toml` is now a starting point in the literal sense — read
+        # once, then silent. Everything after that lives in the durable store
+        # and evolves. Changing your mind about the starting point is a reset
+        # (`scripts/reset_persona.py`), which is deliberately a decision rather
+        # than a side effect of editing a config file.
         merged = PersonaProfile.from_config().model_dump()
         merged.update({k: v for k, v in flat.items() if v is not None})
 
@@ -327,11 +353,39 @@ class IdentityManager:
         if not config_store or not hasattr(config_store, "get_agent_config"):
             return
 
-        self.config_store = config_store
         try:
             config = await config_store.get_agent_config()
+
+            # Recorded only once the store has actually answered. `save()` skips
+            # the JSON files whenever a store is attached, so claiming one before
+            # knowing it works means a database that is down at boot leaves the
+            # agent persisting *nowhere*: the file fallback is disabled because a
+            # store exists, and the store cannot be written because it does not.
+            # Attaching on success makes a failed hydration degrade to exactly
+            # the offline behaviour the fallback was kept for.
+            self.config_store = config_store
+
             personality_raw = config.get("personality")
             history_raw = config.get("history")
+
+            # History **before** personality, and the order is load-bearing.
+            # `_profile_from_personality` asks `self.first_boot` whether the
+            # authored file still applies, and first-boot-ness is a property of
+            # the history. Rebuilding the profile while `first_boot` still held
+            # the value computed from local files would re-seed an agent that
+            # has already lived: `personality.json` and `history.json` ship
+            # seed-shaped and are tracked in git, so every fresh clone or
+            # redeploy looks like a first boot on disk no matter how long the
+            # friend behind the durable store has existed. The authored file
+            # would overwrite months of accumulated persona on every deploy.
+            if history_raw:
+                loaded_history = json.loads(history_raw)
+                if loaded_history:
+                    self.history = loaded_history
+                    # Re-enforce defaults after hydration
+                    self.history.setdefault("relationship", "Friend")
+                    self.history.setdefault("memories", [])
+                    self.first_boot = self._detect_first_boot()
 
             if personality_raw:
                 loaded_personality = json.loads(personality_raw)
@@ -351,13 +405,10 @@ class IdentityManager:
                     self.persona = self._profile_from_personality()
                     self._sync_personality_from_profile()
 
-            if history_raw:
-                loaded_history = json.loads(history_raw)
-                if loaded_history:
-                    self.history = loaded_history
-                    # Re-enforce defaults after hydration
-                    self.history.setdefault("relationship", "Friend")
-                    self.history.setdefault("memories", [])
+            # A genuine first boot against a durable store seeds here rather
+            # than in `__init__`, so the marker lands in the history that is
+            # about to be persisted instead of in one already discarded.
+            self._stamp_seed_marker()
 
             evolved = config.get("evolved_learnings")
             if evolved:
@@ -384,7 +435,24 @@ class IdentityManager:
             logger.error(f"Failed to persist identity to config store: {e}")
 
     def save(self):
-        """Flushes identity state back to disk."""
+        """Flush identity state to disk — only when there is no durable store.
+
+        `agent_configs` is the authority once it is reachable, so writing the
+        JSON files alongside it would create a second copy that drifts the
+        moment the two disagree, and nothing would say which one won. It also
+        made the test suite write to `personality.json`, a **git-tracked** file:
+        running the suite dirtied the working tree, which conftest suppressed by
+        pointing the agent at a scratch path rather than by stopping the write.
+
+        The files are not obsolete, though. They are the shipped defaults, and
+        they remain the only identity a deployment has when Postgres and the
+        SQLite fallback are both unavailable — which is exactly when refusing to
+        persist anything would be worst. So the fallback stays, gated on there
+        being no better place to put it.
+        """
+        if self.config_store is not None:
+            return
+
         try:
             # Only the authorable part goes back to disk. Writing values and
             # boundaries here would re-create the block the loader deliberately
