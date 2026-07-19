@@ -39,8 +39,8 @@ We follow a strict **Planning-First** philosophy. Non-trivial changes (anything 
 | If you want to... | Edit these files/folders |
 | :--- | :--- |
 | **Change how AI "Sees"** | `backend/app/vision/` (Links, Appraisal, Agent) |
-| **Change AI Personality** | `backend/persona/` (JSON seeds) and `app/cognitive/identity.py` |
-| **Add a new Voice/Tone** | `backend/app/voice/prosody.py` |
+| **Change AI Personality** | `backend/app/personality.json` / `history.json` (seeds), `backend/app/persona/profile.py` (numeric tiers) and `app/cognitive/identity.py` (narrative) |
+| **Add a new Voice/Tone** | `backend/crates/voice-agent/` (Rust; prosody is derived from the affect vector in `crates/contracts`) |
 | **Change Memory logic** | `backend/app/state/memory_store.py` (ACT-R) |
 | **Add a new NATS Signal** | `backend/app/contracts.py` and `backend/app/nats_streams.py` |
 | **Update the Dashboard** | `frontend/components/` and `frontend/app/` |
