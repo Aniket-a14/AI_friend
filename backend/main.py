@@ -221,9 +221,16 @@ async def start_session(participant: str = "user"):
         raise HTTPException(status_code=500, detail="Session start failed")
 
 
-@app.post("/vision/toggle")
+@app.post("/vision/toggle", dependencies=[Depends(require_session_auth)])
 async def toggle_vision(source: str):
-    """Vision Control Endpoint"""
+    """Vision Control Endpoint.
+
+    Session-authed like `/token`, and for a stronger reason. `require_lan_client`
+    only restricts *where* a caller connects from, which with LAN_ONLY on still
+    means any device on the WiFi; this endpoint points a camera at the user. A
+    guest on the same network being able to switch the vision source from
+    `screen` to `camera` is a privacy boundary, not a preference.
+    """
     if source not in ["screen", "camera"]:
         raise HTTPException(status_code=400, detail="Invalid vision source")
     return await backend.toggle_vision_source(source)

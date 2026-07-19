@@ -360,12 +360,22 @@ def _fake_request(host, headers=None, query_params=None):
     )
 
 
+# These four patch `config_instance`, not the `Config` class.
+#
+# `ConfigMeta` defines `__getattr__` but no `__setattr__`, so
+# `monkeypatch.setattr(Config, ...)` writes a real entry into `Config.__dict__`
+# and, on teardown, "restores" the value it originally read *through*
+# `__getattr__`. The delegating attribute is thereby replaced by a permanent
+# class attribute that shadows `config_instance` for every later test in the
+# session. The tests passed in isolation and failed only once collection order
+# put something else first -- which is how this surfaced: adding an unrelated
+# test file moved them.
 def test_require_session_auth_allows_loopback_without_a_key(monkeypatch):
     import asyncio as _asyncio
-    from app.config import Config
+    from app import config as config_module
     import main
 
-    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", None)
+    monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", None)
     _asyncio.run(main.require_session_auth(_fake_request("127.0.0.1")))
 
 
@@ -374,10 +384,10 @@ def test_require_session_auth_rejects_lan_client_without_key_configured(
 ):
     import asyncio as _asyncio
     from fastapi import HTTPException
-    from app.config import Config
+    from app import config as config_module
     import main
 
-    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", None)
+    monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", None)
     try:
         _asyncio.run(main.require_session_auth(_fake_request("192.168.1.42")))
         assert False, "expected HTTPException"
@@ -388,10 +398,10 @@ def test_require_session_auth_rejects_lan_client_without_key_configured(
 def test_require_session_auth_rejects_lan_client_with_wrong_key(monkeypatch):
     import asyncio as _asyncio
     from fastapi import HTTPException
-    from app.config import Config
+    from app import config as config_module
     import main
 
-    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", "correct-key")
+    monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", "correct-key")
     try:
         _asyncio.run(
             main.require_session_auth(
@@ -407,10 +417,10 @@ def test_require_session_auth_rejects_lan_client_with_wrong_key(monkeypatch):
 
 def test_require_session_auth_accepts_lan_client_with_correct_key(monkeypatch):
     import asyncio as _asyncio
-    from app.config import Config
+    from app import config as config_module
     import main
 
-    monkeypatch.setattr(Config, "BACKEND_ACCESS_KEY", "correct-key")
+    monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", "correct-key")
     _asyncio.run(
         main.require_session_auth(
             _fake_request(

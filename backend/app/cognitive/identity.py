@@ -148,9 +148,6 @@ class IdentityManager:
         # rule, one implementation.
         self._sync_personality_from_profile()
 
-        # Buffer for adaptive variable evolution
-        self.evolution_buffer = {}
-
         logger.info(
             f"[Identity] Hybrid Persona Active | Core: {self.immutable_core['base_tone']}"
         )
@@ -239,9 +236,7 @@ class IdentityManager:
         if self.history.get(self.SEED_MARKER):
             return False
         return not (
-            self.history.get("memories")
-            or self.history.get("evolved_learnings")
-            or self.history.get("interaction_count")
+            self.history.get("memories") or self.history.get("interaction_count")
         )
 
     def _profile_from_personality(self) -> "PersonaProfile":
@@ -464,6 +459,16 @@ class IdentityManager:
             self._seed_relationship_from_profile()
             self._stamp_seed_marker()
 
+            # `evolved_learnings` is currently a hollow field: it has a column in
+            # both schemas, loads here and saves in `persist_to_config_store`,
+            # but **nothing anywhere writes content into it** -- there is no
+            # producer, so it is always "". The round trip is kept because the
+            # column exists on both backends and a loader without a saver (or
+            # the reverse) is a worse asymmetry than an unused pair. It was also
+            # a term in `_detect_first_boot`, where a permanently-empty value
+            # meant a condition that could never fire; that has been removed.
+            # Implementing the producer, or dropping the columns via migration,
+            # is a decision rather than cleanup.
             evolved = config.get("evolved_learnings")
             if evolved:
                 self.history["evolved_learnings"] = evolved

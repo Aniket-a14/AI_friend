@@ -46,14 +46,33 @@ class SubjectMetrics:
             def qsize(self):
                 return len(self.parent._buffer)
 
-            def join(self):
-                import time
+            def join(self, timeout: float = 5.0):
+                """Block until the buffer drains, or `timeout` elapses.
 
-                # Wait until the buffer is empty and no batch is currently being processed
+                Bounded deliberately. This spun on `while buffer or processing`
+                with no exit, so if the worker thread died the caller hung
+                forever with no diagnostic -- a dead metrics thread would
+                present as a frozen test run or a hung shutdown, which is a long
+                way from where the fault actually is.
+
+                Returns True if the buffer drained, False on timeout, so a
+                caller can tell the difference. `time` is imported at module
+                scope; the local re-import here shadowed it for no reason.
+                """
+                deadline = time.monotonic() + timeout
                 while self.parent._buffer or getattr(
                     self.parent, "_is_processing", False
                 ):
+                    if time.monotonic() >= deadline:
+                        logger.warning(
+                            "[Metrics] join() timed out after %.1fs with %d "
+                            "buffered event(s); worker may have died.",
+                            timeout,
+                            len(self.parent._buffer),
+                        )
+                        return False
                     time.sleep(0.01)
+                return True
 
         self._queue = CompatibilityQueue(self)
         self._is_processing = False
