@@ -32,7 +32,7 @@ def _store(is_sqlite: bool) -> MemoryStore:
     return store
 
 
-def test_sqlite_gets_one_placeholder_per_value():
+def test_sqlite_cannot_be_given_a_postgres_array_parameter():
     """SQLite has no array parameter; it needs `IN (?,?,?)`."""
     where, args = _store(True)._in_predicate("id", ["a", "b", "c"])
 
@@ -40,7 +40,7 @@ def test_sqlite_gets_one_placeholder_per_value():
     assert args == ["a", "b", "c"]
 
 
-def test_postgres_gets_a_single_array_parameter():
+def test_postgres_is_not_flattened_to_one_placeholder_per_value():
     """`= ANY($1)` passes the whole list as one argument.
 
     Flattening Postgres to N placeholders would also work, which is exactly why
@@ -53,7 +53,7 @@ def test_postgres_gets_a_single_array_parameter():
     assert args == [["a", "b", "c"]]
 
 
-def test_the_postgres_parameter_index_is_honoured():
+def test_a_hardcoded_parameter_index_would_bind_the_wrong_argument():
     """The predicate is rarely the first parameter in a real query.
 
     Hardcoding `$1` would silently bind against whatever argument happened to be
@@ -65,13 +65,13 @@ def test_the_postgres_parameter_index_is_honoured():
 
 
 @pytest.mark.parametrize("backend", [True, False])
-def test_the_column_name_reaches_the_clause(backend):
+def test_a_hardcoded_column_name_would_query_the_wrong_field(backend):
     """Both call sites use a different column, so it cannot be hardcoded."""
     where, _ = _store(backend)._in_predicate("content", ["x"])
     assert where.startswith("content ")
 
 
-def test_a_single_value_still_produces_valid_syntax():
+def test_a_one_element_list_does_not_emit_broken_syntax():
     """The one-element case is the common one for a targeted lookup.
 
     `",".join("?" * 1)` is a place where a plausible-looking implementation
@@ -121,7 +121,7 @@ def _pool_returning(conn, is_sqlite: bool):
 @pytest.mark.parametrize(
     "is_sqlite,expected_literal", [(True, "consolidated = 1"), (False, "consolidated = TRUE")]
 )
-async def test_the_consolidated_flag_uses_each_backend_s_boolean(
+async def test_a_shared_boolean_literal_would_break_postgres(
     is_sqlite, expected_literal
 ):
     """Postgres will not accept the integer `1` for a boolean column.
@@ -144,7 +144,7 @@ async def test_the_consolidated_flag_uses_each_backend_s_boolean(
     assert expected_literal in conn.sql
 
 
-def test_the_two_dialects_do_not_produce_the_same_clause():
+def test_a_collapsed_branch_would_send_one_dialect_the_wrong_sql():
     """A guard against the helper collapsing to one branch.
 
     If a refactor made `is_sqlite` always false (or the branch unreachable),
