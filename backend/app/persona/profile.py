@@ -153,6 +153,24 @@ class PersonaProfile(BaseModel):
         min_length=1,
         max_length=200,
     )
+
+    # A few sentences that must colour *every* reply — not a biography.
+    #
+    # The length cap is the point of this field, not a formality. Whatever goes
+    # here occupies the context window on every single turn, so it is paid for
+    # on each one in latency and in room taken from actual conversation. The
+    # long material belongs in `config/biography.md`, which is seeded into
+    # episodic memory and surfaces only when it is relevant.
+    #
+    # 1200 characters is roughly two paragraphs: enough for who someone is,
+    # short of enough to start listing what happened to them.
+    identity_summary: str = _constitutional(default="", max_length=1200)
+
+    # Turns of phrase that are recognisably hers. Kept separate from
+    # `speaking_style` because these are constitutional — the way a person
+    # talks is not something the agent should reflect its way out of, whereas
+    # the register it adopts with you is.
+    speech_patterns: List[str] = _constitutional(default_factory=list, max_length=20)
     traits: List[str] = _constitutional(default_factory=list, max_length=8)
     # Phrases the friend must not say. Constitutional rather than adaptive: a
     # user asking never to hear something is not a preference the agent gets to
