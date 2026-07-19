@@ -1,7 +1,7 @@
 import time
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import mock_open, patch
 
 from app.metrics import SubjectMetrics
 from app.utils.segmentation import HybridSegmenter
@@ -80,14 +80,14 @@ def test_identity_appraisal_benchmark(benchmark):
         "conversation_rules": {"avoid": ["As an AI", "I am a language model"]},
         "speaking_style": {"pace": "fluent", "common_vocabulary": ["arre", "yaar"]},
     }
-    m_open = patch(
-        "builtins.open", mock_open=MagicMock(return_value=json.dumps(personality))
-    )
+    # `patch("builtins.open", mock_open=MagicMock(...))` passed `mock_open` as a
+    # keyword to `patch` rather than as the replacement, so the file was never
+    # actually read and the test depended entirely on the assignment below.
+    m_open = patch("builtins.open", mock_open(read_data=json.dumps(personality)))
     m_exists = patch("os.path.exists", return_value=True)
 
     with m_open, m_exists:
         manager = IdentityManager(base_path="/fake/path")
-        manager.personality = personality
 
         def run():
             return manager.get_persona_prompt()

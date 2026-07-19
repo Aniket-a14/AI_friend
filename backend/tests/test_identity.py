@@ -59,10 +59,18 @@ async def test_persona_evolution_adaptive(sample_personality, sample_history):
 
 
 def test_persona_prompt_generation(sample_personality, sample_history):
-    with patch("builtins.open", mock_open()):
+    """The prompt must reflect the personality the manager actually loaded.
+
+    This used to assign `manager.personality` *after* construction and rely on
+    the prompt re-reading that dict every call. The narrative fields now come
+    from the validated `PersonaProfile` built at load time, so the personality
+    has to be supplied through the file the manager reads — which is also what
+    happens in production. Assigning the dict afterwards no longer changes who
+    the agent is, and should not: that was the drift this unification removed.
+    """
+    with patch("builtins.open", mock_open(read_data=json.dumps(sample_personality))):
         with patch("os.path.exists", return_value=True):
             manager = IdentityManager(base_path="/fake/path")
-            manager.personality = sample_personality
             manager.history = sample_history
 
             prompt = manager.get_persona_prompt()
