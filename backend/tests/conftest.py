@@ -1,5 +1,6 @@
 import sys
 import os
+import tempfile
 
 # Set fallback environment variables for testing before any app modules are loaded
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@127.0.0.1:5432/test")
@@ -26,6 +27,21 @@ os.environ.setdefault("LIVEKIT_API_SECRET", "dummy_secret")
 os.environ.setdefault("PERSONA_PROFILE_PATH", os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "_no_persona_file_here.toml"
 ))
+
+# Keep identity writes out of the source tree.
+#
+# `IdentityManager` defaults `base_path` to the package directory, so
+# `personality.json` and `history.json` — both **tracked in git** — are written
+# by anything that saves without a durable store attached. The suite did exactly
+# that: `test_subconscious_consolidation` builds a `ReflectionService` with no
+# identity manager, and `_consolidate` → `evolve_persona` → `save()` rewrote the
+# tracked file on every run, dirtying the working tree.
+#
+# A temp directory per session, so a test that saves is writing somewhere it is
+# allowed to. Tests that care about the files pass an explicit `base_path`.
+os.environ.setdefault(
+    "IDENTITY_BASE_PATH", tempfile.mkdtemp(prefix="pankudi-identity-")
+)
 
 import types
 import pytest
