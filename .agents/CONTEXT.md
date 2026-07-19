@@ -3262,3 +3262,59 @@ tracked application file is still wrong and wants a `tmp_path` fixture.
 shared schema, no tier enforcement on the narrative half, and no write path. That
 is the rest of step 5, and step 6's authoring surface depends on it.
 
+### Review round (PR #76)
+
+One comment, rated Critical, and correct: **control markup could carry contempt
+straight past the boundary check.**
+
+The persona prompt explicitly invites the model to emit `<pause=300ms>` and
+`<hesitate>`, and `ControlMarkupSanitizer` preserves those tags on purpose —
+they are instructions for the voice layer. So the text handed to
+`validate_response` genuinely contains markup, and `I hate <pause=100ms> you`
+never matched a pattern expecting `hate` and `you` to be adjacent. Confirmed
+against the compiled regex before changing anything: three of three variants
+bypassed. This is not an adversarial model; it is what ordinary instructed
+output looks like.
+
+Notably the check had to exist first for this to be reachable. The boundaries
+fix in this same PR is what turned the dead loop back on, and reactivating a
+check is exactly when its weaknesses become live.
+
+### The first fix was worse than the bug
+
+The obvious repair — strip tags, match the cleaned string — was implemented and
+then rejected. Stripping included a rule for an unclosed `<` at the end of a
+truncated stream, which meant `5 < 10, and I hate you` collapsed to `5`. The
+hostility did not merely go unmatched; it was **deleted before matching**. A
+cleaner that can conceal text is worse than no cleaner, because it fails in the
+direction that looks clean.
+
+Caught by writing a test case the fix could not pass, rather than by writing
+cases the fix was known to handle.
+
+Replaced with several *views* of the text — raw, tags removed, brackets spaced —
+rejecting if any of them matches. The structural property is what matters: the
+raw text is always among the views, so no stripping rule can subtract evidence.
+Each view can only ever add a reason to reject. The avoid-list is checked the
+same way; it had the identical weakness.
+
+### Verification
+
+11 mutations across the two rounds, **all 11 caught**. The five new ones: match
+raw only (the reviewed bypass), drop the de-tagged view, drop the raw view,
+avoid-list checks raw only, toxicity checks one view only.
+
+Dropping the raw view initially **survived**, and the reason is worth recording.
+The concealment test used `5 < 10, and I hate you`, which contains no
+*well-formed* tag — so the de-tagged view was byte-identical to the raw one and
+the set still held it. The test asserted a property that was true by accident.
+The raw view is only load-bearing when a pattern contains angle brackets itself,
+so an avoid-list entry of `<internal>` was added; it exists in the raw view
+alone, and the mutation is now caught.
+
+That is three times in this ledger that a mutation looked survivable for a
+reason unrelated to the code under test. The recurring shape: a fixture that
+does not actually reach the branch it names.
+
+Full backend suite **551 passed**, `ruff check .` clean.
+
