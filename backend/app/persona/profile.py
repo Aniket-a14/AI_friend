@@ -60,7 +60,7 @@ import json
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -194,6 +194,20 @@ class PersonaProfile(BaseModel):
     # entire narrative persona down with it — name, tone and traits discarded
     # over a vocabulary entry.
     speaking_style: Dict[str, Any] = _adaptive(default_factory=dict)
+
+    # The one field in the per-turn prompt that reflection writes *free text*
+    # into. `Dict[str, Any]` cannot bound its own values, so the ceiling has to
+    # be applied where the value is assigned -- see
+    # `IdentityManager.evolve_persona`. Without it, `style_description` is the
+    # only part of the persona prompt with no upper size, and it is the part the
+    # agent rewrites by itself: an LLM that returns a paragraph instead of a
+    # phrase permanently enlarges every subsequent turn's prompt, and the next
+    # reflection reads that bloated prompt and can grow it again.
+    #
+    # 400 characters is a sentence or two -- the register the friend adopts with
+    # you, which is what this field is for. Anything longer is the reflection
+    # model explaining itself rather than describing a voice.
+    MAX_STYLE_DESCRIPTION: ClassVar[int] = 400
 
     # -- tier introspection -------------------------------------------------
 
