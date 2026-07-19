@@ -71,6 +71,7 @@ async def test_state_persistence_does_not_block_the_event_loop():
     service.db_path = ":memory:"
     service.publish_cb = None
     service.redis_client = None
+    service._persist_lock = asyncio.Lock()
 
     ticks_when_write_finished = []
 
@@ -118,6 +119,70 @@ async def test_state_persistence_does_not_block_the_event_loop():
     assert ticks_when_write_finished[0] > 0, (
         "the event loop made no progress while the state write ran, so the "
         "write is back on the loop"
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_older_state_snapshot_cannot_land_on_top_of_a_newer_one():
+    """Taking the writes off the loop made `persist_state` yield, which made it
+    reorderable — a regression introduced by the fix above it.
+
+    Inline, two overlapping persists ran to completion one after the other. With
+    `to_thread` each one yields, so a slow first write can finish *after* a fast
+    second one and leave the older mood on top. The stored state is what the
+    agent rehydrates from, so the friend would wake up as an earlier version of
+    itself with nothing recording why.
+
+    Caught by CodeRabbit on PR #84, not by the tests written alongside the
+    change that caused it.
+    """
+    from app.state.agent_state import StateService
+
+    service = object.__new__(StateService)
+    service.db_path = ":memory:"
+    service.publish_cb = None
+    service.redis_client = None
+    service._persist_lock = asyncio.Lock()
+
+    order = []
+    delays = {0.5: 0.20, 0.9: 0.01}  # first write slow, second fast
+
+    def write(params):
+        mood = params[1]
+        time.sleep(delays[mood])
+        order.append(mood)
+
+    service._write_state_row = write
+
+    class _Model:
+        inferred_valence = 0.0
+        inferred_arousal = 0.5
+        implied_goals = []
+        known_concepts = []
+
+    class _State:
+        mood = 0.5
+        energy = dominance = 0.5
+        trust_benevolence = trust_competence = trust_integrity = trust = 0.5
+        attachment = fatigue = last_user_interaction = 0.0
+        interaction_count = 0
+        baseline_valence = baseline_arousal = baseline_dominance = 0.0
+        user_mental_model = _Model()
+
+    service.current_state = _State()
+
+    async def persist_with(mood):
+        service.current_state.mood = mood
+        await service.persist_state("friend")
+
+    first = asyncio.create_task(persist_with(0.5))
+    await asyncio.sleep(0)  # let it snapshot and dispatch
+    second = asyncio.create_task(persist_with(0.9))
+    await asyncio.gather(first, second)
+
+    assert order == [0.5, 0.9], (
+        f"writes completed out of order ({order}); the older snapshot would "
+        "overwrite the newer one"
     )
 
 

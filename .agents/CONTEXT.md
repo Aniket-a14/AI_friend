@@ -4155,3 +4155,36 @@ audit said ~470), `search_memories` 251 (~1000), and `add_memory`'s eight
 near-identical INSERTs are two -- the god-functions are gone, and what remains
 is dual-backend duplication spread across the file, a different and lower-value
 problem. Prosody wire fields and B1 benchmark residue unchanged.
+
+### 2026-07-19 — PR #84 review: taking work off the loop made it reorderable
+
+CodeRabbit's review of #84 posted one finding, and it was a real regression
+introduced by that PR.
+
+Moving the Redis and SQLite writes into `asyncio.to_thread` fixed the blocking
+problem and created an ordering one: `persist_state` now yields at each
+dispatch, so two overlapping persists can complete in the opposite order and
+leave an older snapshot on top of a newer one. Inline, the writes ran to
+completion one after another and ordering was free. The stored row is what the
+agent rehydrates from, so the consequence is a friend that wakes up as an
+earlier version of itself with nothing recording why.
+
+Reviewing the function to fix that surfaced a second defect the finding did not
+mention: the Redis mapping was built *before* its `await` and the SQL parameters
+*after* it, so a single call could write two different states to the two
+backends. Both now come from one snapshot taken once.
+
+Serialized on a dedicated `_persist_lock`. It cannot be `_state_lock` -- callers
+reach `persist_state` from methods already holding that one, so sharing it
+deadlocks, which the S2 mutation below confirms rather than assumes.
+
+Three mutations, three caught: removing the lock, substituting `_state_lock` for
+it, and putting the SQLite write back on the loop.
+
+**649 tests pass**, `ruff check .` clean.
+
+The general lesson is worth keeping: *a fix that removes blocking usually
+removes ordering with it*. The tests written alongside the original change
+asserted that the loop stayed responsive and that a single call wrote correct
+values -- neither could see a two-call ordering property, and nothing prompted
+writing that test until review did.

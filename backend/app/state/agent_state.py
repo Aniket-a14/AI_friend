@@ -379,6 +379,11 @@ class StateService:
         # A2: serializes short-term affect mutation so the fire-and-forget
         # System-2 semantic-drift task cannot clobber a fresher appraisal.
         self._state_lock = asyncio.Lock()
+        # Separate from `_state_lock` on purpose. This one serializes the *write
+        # ordering* in `persist_state`, which now yields at each `to_thread`
+        # dispatch; callers reach `persist_state` from methods already holding
+        # `_state_lock`, so reusing it would deadlock.
+        self._persist_lock = asyncio.Lock()
 
         # Connect to Redis
         try:
@@ -643,110 +648,118 @@ class StateService:
                 logger.warning(f"Failed fallback hydration from Neo4j: {e}")
 
     async def persist_state(self, agent_name: str = "my friend"):
-        """Saves current state to Redis and local SQLite cache, broadcasting updates asynchronously."""
-        # 1. Save to Redis
-        if self.redis_client:
-            try:
-                # Off-thread: `redis.Redis` is the synchronous client, and this
-                # runs on every state persist -- five call sites, including the
-                # per-turn path. Called directly it blocks the event loop for a
-                # network round trip while the agent is mid-conversation, which
-                # is exactly when latency is visible. redis-py's client is
-                # thread-safe for commands (it holds a connection pool), so a
-                # worker thread is safe here.
-                await asyncio.to_thread(
-                    self.redis_client.hset,
-                    f"state:{agent_name}",
-                    mapping={
-                        "mood": str(self.current_state.mood),
-                        "energy": str(self.current_state.energy),
-                        "dominance": str(self.current_state.dominance),
-                        "trust_benevolence": str(self.current_state.trust_benevolence),
-                        "trust_competence": str(self.current_state.trust_competence),
-                        "trust_integrity": str(self.current_state.trust_integrity),
-                        "trust": str(self.current_state.trust),
-                        "attachment": str(self.current_state.attachment),
-                        "fatigue": str(self.current_state.fatigue),
-                        "last_user_interaction": str(
-                            self.current_state.last_user_interaction
-                        ),
-                        "interaction_count": str(self.current_state.interaction_count),
-                        "inferred_valence": str(
-                            self.current_state.user_mental_model.inferred_valence
-                        ),
-                        "inferred_arousal": str(
-                            self.current_state.user_mental_model.inferred_arousal
-                        ),
-                        "implied_goals": json.dumps(
-                            self.current_state.user_mental_model.implied_goals
-                        ),
-                        "known_concepts": json.dumps(
-                            self.current_state.user_mental_model.known_concepts
-                        ),
-                        "baseline_valence": str(self.current_state.baseline_valence),
-                        "baseline_arousal": str(self.current_state.baseline_arousal),
-                        "baseline_dominance": str(
-                            self.current_state.baseline_dominance
-                        ),
-                    },
-                )
-            except Exception as e:
-                logger.warning(f"Failed to persist state to Redis: {e}")
+        """Save state to Redis and the local SQLite cache, then broadcast.
 
-        # 2. Save to SQLite cache
-        #
-        # Snapshotted here, on the loop, rather than read inside the worker
-        # thread. `current_state` is mutated by the System-2 appraisal task, so
-        # a thread reading it field-by-field could persist a row that is half
-        # one appraisal and half the next -- a state the agent was never in.
-        sqlite_params = (
-            agent_name,
-            self.current_state.mood,
-            self.current_state.energy,
-            self.current_state.dominance,
-            self.current_state.trust_benevolence,
-            self.current_state.trust_competence,
-            self.current_state.trust_integrity,
-            self.current_state.trust,
-            self.current_state.attachment,
-            self.current_state.fatigue,
-            self.current_state.last_user_interaction,
-            self.current_state.interaction_count,
-            self.current_state.user_mental_model.inferred_valence,
-            self.current_state.user_mental_model.inferred_arousal,
-            json.dumps(self.current_state.user_mental_model.implied_goals),
-            json.dumps(self.current_state.user_mental_model.known_concepts),
-            self.current_state.baseline_valence,
-            self.current_state.baseline_arousal,
-            self.current_state.baseline_dominance,
-        )
-        try:
-            await asyncio.to_thread(self._write_state_row, sqlite_params)
-        except Exception as e:
-            logger.error(f"Failed to persist state to SQLite: {e}")
+        Serialized on `_persist_lock`, which is deliberately *not* `_state_lock`.
+        Moving the two writes onto worker threads made `persist_state` yield at
+        each `await`, so two overlapping calls could have their writes complete
+        in the opposite order and leave an older snapshot on top of a newer one
+        -- a regression introduced by the same change that took the blocking
+        work off the loop. The lock restores ordering without putting it back:
+        it is an asyncio lock, so the rest of the loop keeps running while a
+        persist is in flight.
+
+        It cannot be `_state_lock`: callers reach here from methods that already
+        hold that lock, so sharing it would deadlock. This one guards *write
+        ordering*, not the state fields.
+        """
+        async with self._persist_lock:
+            # One snapshot, taken once, used by both stores. Previously the
+            # Redis mapping was built before its await and the SQL parameters
+            # after it, so a single call could write two different states to the
+            # two backends.
+            snapshot = {
+            "mood": self.current_state.mood,
+            "energy": self.current_state.energy,
+            "dominance": self.current_state.dominance,
+            "trust_benevolence": self.current_state.trust_benevolence,
+            "trust_competence": self.current_state.trust_competence,
+            "trust_integrity": self.current_state.trust_integrity,
+            "trust": self.current_state.trust,
+            "attachment": self.current_state.attachment,
+            "fatigue": self.current_state.fatigue,
+            "last_user_interaction": self.current_state.last_user_interaction,
+            "interaction_count": self.current_state.interaction_count,
+            "inferred_valence": self.current_state.user_mental_model.inferred_valence,
+            "inferred_arousal": self.current_state.user_mental_model.inferred_arousal,
+            "baseline_valence": self.current_state.baseline_valence,
+            "baseline_arousal": self.current_state.baseline_arousal,
+            "baseline_dominance": self.current_state.baseline_dominance,
+            }
+
+            # 1. Save to Redis
+            if self.redis_client:
+                try:
+                    # Off-thread: `redis.Redis` is the synchronous client and
+                    # this runs on every persist, including the per-turn path.
+                    # Called directly it blocks the loop for a network round
+                    # trip mid-conversation. redis-py holds a connection pool
+                    # and is thread-safe for commands.
+                    await asyncio.to_thread(
+                        self.redis_client.hset,
+                        f"state:{agent_name}",
+                        mapping={
+                        "mood": str(snapshot["mood"]),
+                        "energy": str(snapshot["energy"]),
+                        "dominance": str(snapshot["dominance"]),
+                        "trust_benevolence": str(snapshot["trust_benevolence"]),
+                        "trust_competence": str(snapshot["trust_competence"]),
+                        "trust_integrity": str(snapshot["trust_integrity"]),
+                        "trust": str(snapshot["trust"]),
+                        "attachment": str(snapshot["attachment"]),
+                        "fatigue": str(snapshot["fatigue"]),
+                        "last_user_interaction": str(snapshot["last_user_interaction"]),
+                        "interaction_count": str(snapshot["interaction_count"]),
+                        "inferred_valence": str(snapshot["inferred_valence"]),
+                        "inferred_arousal": str(snapshot["inferred_arousal"]),
+                        "baseline_valence": str(snapshot["baseline_valence"]),
+                        "baseline_arousal": str(snapshot["baseline_arousal"]),
+                        "baseline_dominance": str(snapshot["baseline_dominance"]),
+                        "implied_goals": json.dumps(
+                                self.current_state.user_mental_model.implied_goals
+                            ),
+                            "known_concepts": json.dumps(
+                                self.current_state.user_mental_model.known_concepts
+                            ),
+                        },
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to persist state to Redis: {e}")
+
+            # 2. Save to SQLite cache
+            sqlite_params = (
+                agent_name,
+            snapshot["mood"],
+            snapshot["energy"],
+            snapshot["dominance"],
+            snapshot["trust_benevolence"],
+            snapshot["trust_competence"],
+            snapshot["trust_integrity"],
+            snapshot["trust"],
+            snapshot["attachment"],
+            snapshot["fatigue"],
+            snapshot["last_user_interaction"],
+            snapshot["interaction_count"],
+            snapshot["inferred_valence"],
+            snapshot["inferred_arousal"],
+                json.dumps(self.current_state.user_mental_model.implied_goals),
+                json.dumps(self.current_state.user_mental_model.known_concepts),
+                snapshot["baseline_valence"],
+                snapshot["baseline_arousal"],
+                snapshot["baseline_dominance"],
+            )
+            try:
+                await asyncio.to_thread(self._write_state_row, sqlite_params)
+            except Exception as e:
+                logger.error(f"Failed to persist state to SQLite: {e}")
 
         # 3. Publish asynchronous NATS broadcast
         if self.publish_cb:
             state_data = {
                 "agent_name": agent_name,
-                "mood": self.current_state.mood,
-                "energy": self.current_state.energy,
-                "dominance": self.current_state.dominance,
-                "trust_benevolence": self.current_state.trust_benevolence,
-                "trust_competence": self.current_state.trust_competence,
-                "trust_integrity": self.current_state.trust_integrity,
-                "trust": self.current_state.trust,
-                "attachment": self.current_state.attachment,
-                "fatigue": self.current_state.fatigue,
-                "last_user_interaction": self.current_state.last_user_interaction,
-                "interaction_count": self.current_state.interaction_count,
-                "inferred_valence": self.current_state.user_mental_model.inferred_valence,
-                "inferred_arousal": self.current_state.user_mental_model.inferred_arousal,
+                **snapshot,
                 "implied_goals": self.current_state.user_mental_model.implied_goals,
                 "known_concepts": self.current_state.user_mental_model.known_concepts,
-                "baseline_valence": self.current_state.baseline_valence,
-                "baseline_arousal": self.current_state.baseline_arousal,
-                "baseline_dominance": self.current_state.baseline_dominance,
                 "timestamp": time.time(),
             }
             try:
@@ -756,7 +769,7 @@ class StateService:
                 logger.warning(f"Failed to trigger NATS state broadcast task: {e}")
 
         logger.debug(
-            f"[State] Persisted to cache (non-blocking Neo4j): V={self.current_state.mood:.2f} Ar={self.current_state.energy:.2f} D={self.current_state.dominance:.2f}"
+            f"[State] Persisted to cache (non-blocking Neo4j): V={snapshot['mood']:.2f} Ar={snapshot['energy']:.2f} D={snapshot['dominance']:.2f}"
         )
 
     def _write_state_row(self, params) -> None:
