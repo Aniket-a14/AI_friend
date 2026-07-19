@@ -25,6 +25,7 @@ from ..persona.biography import (
     read_biography,
     seed_biography,
 )
+from ..persona.history_migration import migrate_history_memories
 from .pipeline import CognitivePipeline
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,35 @@ class CognitiveService:
         if self.agent:
             await self.agent.publish(subject, data)
 
+    async def _seed_once(self, key: str, items: Any, migrate: Any, label: str) -> int:
+        """Write whatever `migrate` accepts into memory, exactly once each.
+
+        The two seeding paths — biography passages and drained history memories
+        — differ only in where their items come from. Everything after that is
+        the same nine lines: read the fingerprint ledger, store what is new,
+        extend the ledger, persist, report. Keeping two copies means the next
+        fix to the persistence order lands in one of them and not the other.
+
+        Both migrators deliberately share the signature
+        `(items, memory_store, already) -> list[str]`, which is what makes this
+        a parameter rather than a branch.
+        """
+        already = self.identity.history.get(key) or []
+        stored = await migrate(items, self.memory_store, already)
+        if not stored:
+            return 0
+
+        self.identity.history[key] = list(already) + stored
+        self.identity.save()
+        await self.identity.persist_to_config_store()
+        logger.info(
+            "[%s] Stored %d new item(s); %d known in total.",
+            label,
+            len(stored),
+            len(self.identity.history[key]),
+        )
+        return len(stored)
+
     SEEDED_KEY = "biography_seeded"
 
     async def seed_biography_once(self, path: Any = None) -> int:
@@ -121,22 +151,35 @@ class CognitiveService:
             if not entries:
                 return 0
 
-            already = self.identity.history.get(self.SEEDED_KEY) or []
-            stored = await seed_biography(entries, self.memory_store, already)
-            if not stored:
-                return 0
-
-            self.identity.history[self.SEEDED_KEY] = list(already) + stored
-            self.identity.save()
-            await self.identity.persist_to_config_store()
-            logger.info(
-                "[Biography] Seeded %d passage(s); %d known in total.",
-                len(stored),
-                len(self.identity.history[self.SEEDED_KEY]),
+            return await self._seed_once(
+                self.SEEDED_KEY, entries, seed_biography, "Biography"
             )
-            return len(stored)
         except Exception as exc:
             logger.error("[Biography] Seeding failed (%s); continuing.", exc)
+            return 0
+
+    MIGRATED_KEY = "history_memories_migrated"
+
+    async def migrate_history_once(self) -> int:
+        """Drain `history["memories"]` into the episodic store.
+
+        Returns the number migrated. Same idempotence-by-fingerprint contract as
+        `seed_biography_once`, and for the same reason: reflection keeps
+        appending to the list, so this has to import only what is new.
+
+        Failures never propagate. Losing the migration costs recall of things
+        that were already unreachable; failing to boot costs everything.
+        """
+        try:
+            memories = self.identity.history.get("memories") or []
+            if not memories:
+                return 0
+
+            return await self._seed_once(
+                self.MIGRATED_KEY, memories, migrate_history_memories, "History"
+            )
+        except Exception as exc:
+            logger.error("[History] Migration failed (%s); continuing.", exc)
             return 0
 
     async def initialize(self, agent: Any = None):
@@ -149,6 +192,10 @@ class CognitiveService:
         # from the durable store rather than from a local file that may be
         # behind it — otherwise a redeployed agent re-seeds its whole history.
         await self.seed_biography_once()
+
+        # After the biography, so a first boot writes the authored history
+        # before anything reflection has since added on top of it.
+        await self.migrate_history_once()
 
         # Initialize appraisal engine with identity boundaries
         boundaries = self.identity.personality.get("boundaries", [])

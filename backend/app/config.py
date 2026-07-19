@@ -48,6 +48,11 @@ class AppSettings(BaseSettings):
     # A user-authored persona (see app/persona/profile.py). Unset means "use the
     # PSYCH_* / AI_NAME defaults below", which is exactly the previous behaviour.
     PERSONA_PROFILE_PATH: Optional[str] = None
+    # Where `personality.json`/`history.json` live. Unset means "beside the
+    # code", which is the historical behaviour and fine for a normal deployment
+    # — but it makes the package directory writable state, so anything that
+    # builds an `IdentityManager` without a durable store writes into the repo.
+    IDENTITY_BASE_PATH: Optional[str] = None
 
     # Neo4j Graph Configuration
     NEO4J_URI: Optional[str] = None
