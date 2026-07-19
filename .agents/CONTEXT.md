@@ -3182,3 +3182,139 @@ among them). Renormalization fixed their line endings, but mixed endings inside
 one file usually mean it was edited by two tools that disagreed, so those files
 are worth a look for other inconsistencies this commit did not address.
 
+---
+
+## 2026-07-19 — The immutable core was not immutable
+
+First slice of the IdentityManager/PersonaProfile unification, pulled forward
+because it turned out to be a live safety hole rather than a design wart.
+
+### What was wrong
+
+`IdentityManager._refresh_immutable_core` read its entire "immutable" block out
+of `personality.json` — a user-editable file. `PersonaProfile`'s own comment had
+already named the risk ("that file is user-editable, so it cannot be the
+authority on safety"), but nothing enforced it, and the file shipped in this
+repo had drifted to:
+
+    "immutable": { "values": ["Honesty"], "base_tone": "Warm", "boundaries": [] }
+
+Verified by running it, not by reading it:
+
+- `validate_response` iterates `boundaries` to enforce non-toxicity. With the
+  list empty the loop body never executed. Fed "I hate you, you are worthless",
+  it returned `(True, '')`. The check was dead code.
+- `get_persona_prompt` emitted a literal `BOUNDARIES: ` with nothing after the
+  colon, so the model was told nothing about them either.
+- `Privacy` had silently vanished from the values — the value that stands behind
+  "will never share user data".
+
+Both defences were down at once, and an empty list is the worst possible value
+precisely because it fails silently: every enforcement loop still runs, just zero
+times.
+
+Nothing caught it because **every** reference to `validate_response` in the test
+suite is a mock. The real function had no coverage, so it could go dead and stay
+green. That is the more general lesson here: a safety check that is only ever
+mocked is a safety check nobody has tested.
+
+### The fix
+
+`IMMUTABLE_CORE` is now the authority. Values and boundaries are copied from it
+and cannot be emptied, narrowed, or substituted from the file; a file that tries
+is ignored with a warning, matching what `PersonaProfile.load()` already does.
+`base_tone` stays authorable — it describes how the friend sounds, not what it
+refuses to do. The lists are copied rather than referenced, since `save()` hands
+the dict back out and a shared list would let one mutation edit the constant for
+every future instance in the process.
+
+`save()` now writes only `base_tone` back to disk. Round-tripping the safety text
+into a user-editable file would imply that is where it lives, and would make
+every later boot warn about a block this code wrote itself.
+
+Restoring the boundaries also reactivated the toxicity check, which was written
+as `"hate" in text.lower()`. That rejects "I hate mushrooms too" and "I hate that
+this happened to you". A false rejection is no longer cheap — it forces a
+regeneration and, since the endocrine channels landed, fires a cortisol burst, so
+the agent would stress itself for sympathising with the user. Narrowed to
+contempt aimed at the user. It remains a crude backstop, not moderation.
+
+### Verification
+
+New `tests/test_identity_boundaries.py` (13 tests), the first real coverage this
+path has had. Six mutations, **all six caught**: restoring file authority,
+sharing the module lists instead of copying, reinstating the bare-substring
+match, disabling the check entirely, writing safety text back on save, and
+dropping the base_tone fallback.
+
+Full backend suite **541 passed**, `ruff check .` clean.
+
+**Pre-existing issue found, not fixed:** the test suite writes to the real
+`backend/app/personality.json`. It was invisible until now because `save()` wrote
+back exactly what it had read, making the write content-idempotent; this change
+altered the written shape and surfaced it. Confirmed pre-existing by running the
+suite against unmodified main code and watching the file change. Committing the
+cleaned file restores idempotence, so the tree stays clean, but a test reaching a
+tracked application file is still wrong and wants a `tmp_path` fixture.
+
+**NOT done:** this is only the safety slice. `IdentityManager` and
+`PersonaProfile` remain two persona sources — narrative and numeric — with no
+shared schema, no tier enforcement on the narrative half, and no write path. That
+is the rest of step 5, and step 6's authoring surface depends on it.
+
+### Review round (PR #76)
+
+One comment, rated Critical, and correct: **control markup could carry contempt
+straight past the boundary check.**
+
+The persona prompt explicitly invites the model to emit `<pause=300ms>` and
+`<hesitate>`, and `ControlMarkupSanitizer` preserves those tags on purpose —
+they are instructions for the voice layer. So the text handed to
+`validate_response` genuinely contains markup, and `I hate <pause=100ms> you`
+never matched a pattern expecting `hate` and `you` to be adjacent. Confirmed
+against the compiled regex before changing anything: three of three variants
+bypassed. This is not an adversarial model; it is what ordinary instructed
+output looks like.
+
+Notably the check had to exist first for this to be reachable. The boundaries
+fix in this same PR is what turned the dead loop back on, and reactivating a
+check is exactly when its weaknesses become live.
+
+### The first fix was worse than the bug
+
+The obvious repair — strip tags, match the cleaned string — was implemented and
+then rejected. Stripping included a rule for an unclosed `<` at the end of a
+truncated stream, which meant `5 < 10, and I hate you` collapsed to `5`. The
+hostility did not merely go unmatched; it was **deleted before matching**. A
+cleaner that can conceal text is worse than no cleaner, because it fails in the
+direction that looks clean.
+
+Caught by writing a test case the fix could not pass, rather than by writing
+cases the fix was known to handle.
+
+Replaced with several *views* of the text — raw, tags removed, brackets spaced —
+rejecting if any of them matches. The structural property is what matters: the
+raw text is always among the views, so no stripping rule can subtract evidence.
+Each view can only ever add a reason to reject. The avoid-list is checked the
+same way; it had the identical weakness.
+
+### Verification
+
+11 mutations across the two rounds, **all 11 caught**. The five new ones: match
+raw only (the reviewed bypass), drop the de-tagged view, drop the raw view,
+avoid-list checks raw only, toxicity checks one view only.
+
+Dropping the raw view initially **survived**, and the reason is worth recording.
+The concealment test used `5 < 10, and I hate you`, which contains no
+*well-formed* tag — so the de-tagged view was byte-identical to the raw one and
+the set still held it. The test asserted a property that was true by accident.
+The raw view is only load-bearing when a pattern contains angle brackets itself,
+so an avoid-list entry of `<internal>` was added; it exists in the raw view
+alone, and the mutation is now caught.
+
+That is three times in this ledger that a mutation looked survivable for a
+reason unrelated to the code under test. The recurring shape: a fixture that
+does not actually reach the branch it names.
+
+Full backend suite **551 passed**, `ruff check .` clean.
+

@@ -1,9 +1,58 @@
 import logging
 import json
 import os
+import re
 from typing import Dict, Any, Tuple
 
+from ..persona import IMMUTABLE_CORE
+
 logger = logging.getLogger(__name__)
+
+# Contempt directed at the user, which is what the non-toxicity boundary is
+# actually about. Deliberately narrow: the agent saying it hates a *thing* is
+# ordinary conversation, and rejecting it costs a regeneration and a stress
+# response. Matches the agent as speaker ("I hate you"), not the user's words.
+_HOSTILE_TO_USER = re.compile(
+    r"\bi\s+(?:really\s+|fucking\s+)?hate\s+(?:you|u)\b"
+    r"|\byou(?:'re|\s+are)\s+(?:so\s+|such\s+a\s+)?"
+    r"(?:worthless|pathetic|disgusting|stupid|idiot|useless)\b"
+    r"|\b(?:shut\s+up|go\s+away)\s*,?\s*(?:you|idiot|stupid)\b"
+)
+
+_WELL_FORMED_TAG = re.compile(r"<[^<>]*>")
+
+
+def _match_views(text: str) -> Tuple[str, ...]:
+    """Every reading of `text` a boundary check should be judged against.
+
+    The persona prompt *invites* the model to emit `<pause=300ms>` and
+    `<hesitate>`, and `ControlMarkupSanitizer` preserves them on purpose — they
+    are instructions for the voice layer. So the text handed to
+    `validate_response` genuinely contains markup, and `I hate <pause=100ms> you`
+    slips past any pattern expecting `hate` and `you` to be adjacent. That is
+    ordinary instructed output, not an attack.
+
+    Returning several views instead of one canonical "cleaned" string is the
+    important part. A single strip has to be right about what to remove, and a
+    first attempt here removed everything after an unclosed `<` — which turned
+    "5 < 10, I hate you" into "5" and *hid* the hostility rather than missing
+    it. A cleaner that can conceal text is worse than no cleaner. With the raw
+    text always among the views, no stripping rule can subtract evidence: each
+    view can only ever add a reason to reject.
+
+    Validation-only. The response itself keeps its markers.
+    """
+    raw = re.sub(r"\s+", " ", (text or "")).strip()
+    # Tags removed outright, so a marker splitting a word ("I ha<pause>te you")
+    # closes back up.
+    detagged = re.sub(r"\s+", " ", _WELL_FORMED_TAG.sub("", raw)).strip()
+    # Only the brackets themselves, so nothing is ever swallowed wholesale.
+    debracketed = re.sub(r"\s+", " ", raw.replace("<", " ").replace(">", " ")).strip()
+    return tuple({raw, detagged, debracketed})
+
+# Authorable, unlike values and boundaries: tone is how the friend sounds, not
+# what it will refuse to do. Used when personality.json names no base_tone.
+DEFAULT_BASE_TONE = "Warm, intellectual, and slightly protective"
 
 
 class IdentityManager:
@@ -58,17 +107,40 @@ class IdentityManager:
             return {}
 
     def _refresh_immutable_core(self):
-        self.immutable_core = self.personality.get("core_personality", {}).get(
-            "immutable",
-            {
-                "values": ["Honesty", "Privacy", "Curiosity"],
-                "base_tone": "Warm, intellectual, and slightly protective",
-                "boundaries": [
-                    "Will never share user data",
-                    "Will not adopt toxic behavior",
-                ],
-            },
+        """Rebuild the immutable core, with `IMMUTABLE_CORE` as the authority.
+
+        This used to read the whole block straight out of `personality.json`,
+        which made a user-editable file the authority on the agent's own safety
+        boundaries. That is not a theoretical hole: the file shipped in this
+        repo carried `"boundaries": []`, which emptied the list that
+        `validate_response` iterates, so the toxicity check silently became dead
+        code and the prompt went out reading `BOUNDARIES: ` with nothing after
+        it. It also dropped `Privacy` from the values.
+
+        Values and boundaries now come from code and cannot be narrowed,
+        emptied, or renamed by editing the file. `base_tone` stays authorable —
+        it describes how the friend sounds, not what it will refuse to do.
+        """
+        file_block = (
+            self.personality.get("core_personality", {}).get("immutable") or {}
         )
+
+        overreach = [key for key in ("values", "boundaries") if key in file_block]
+        if overreach:
+            logger.warning(
+                "[Identity] personality.json tried to set immutable %s; ignoring. "
+                "Safety invariants come from persona.IMMUTABLE_CORE, not from a "
+                "user-editable file.",
+                " and ".join(overreach),
+            )
+
+        self.immutable_core = {
+            # Copied, not referenced: `save()` writes this dict back out, and a
+            # shared list would let a later mutation edit the module constant.
+            "values": list(IMMUTABLE_CORE["values"]),
+            "boundaries": list(IMMUTABLE_CORE["boundaries"]),
+            "base_tone": file_block.get("base_tone") or DEFAULT_BASE_TONE,
+        }
 
     async def hydrate_from_config_store(self, config_store):
         """
@@ -132,9 +204,15 @@ class IdentityManager:
     def save(self):
         """Flushes identity state back to disk."""
         try:
-            # Sync immutable core back to personality JSON structure
+            # Only the authorable part goes back to disk. Writing values and
+            # boundaries here would re-create the block the loader deliberately
+            # ignores, so every subsequent boot would warn about a file this
+            # code wrote itself — and it would put safety text back in a
+            # user-editable file, implying it can be edited there.
             core_personality = self.personality.setdefault("core_personality", {})
-            core_personality["immutable"] = self.immutable_core
+            core_personality["immutable"] = {
+                "base_tone": self.immutable_core["base_tone"]
+            }
             self.history.setdefault("memories", [])
 
             with open(self.personality_path, "w", encoding="utf-8") as f:
@@ -224,14 +302,32 @@ MANDATORY RULES:
         """.strip()
 
     async def validate_response(self, text: str, goal: str) -> Tuple[bool, str]:
-        # Enforce Boundaries
+        # Enforce Boundaries.
+        #
+        # This check was dormant for as long as the shipped personality.json
+        # carried an empty `boundaries` list, so restoring that list turns it
+        # back on. The old condition was `"hate" in text.lower()`, which rejects
+        # "I hate mushrooms too" and "I hate that this happened to you" — and a
+        # false rejection is no longer cheap: it forces a regeneration and, since
+        # the endocrine channels landed, fires a cortisol burst. So match
+        # contempt aimed at the user rather than the bare token.
+        #
+        # This is a crude last-resort backstop, not content moderation. The
+        # real work is done by the persona prompt and the model; anything that
+        # reaches here has already gone wrong.
+        views = _match_views(text.lower())
+
         for boundary in self.immutable_core["boundaries"]:
-            if "toxic" in boundary.lower() and "hate" in text.lower():
+            if "toxic" in boundary.lower() and any(
+                _HOSTILE_TO_USER.search(view) for view in views
+            ):
                 return False, "Response violates core boundary: Non-toxicity"
 
-        # Restricted phrases check
+        # The avoid-list had the same weakness: a restricted phrase broken up by
+        # a pause marker slipped straight through a plain substring test.
         forbidden = self.personality.get("conversation_rules", {}).get("avoid", [])
         for pattern in forbidden:
-            if pattern.lower() in text.lower():
+            needle = pattern.lower()
+            if any(needle in view for view in views):
                 return False, f"Restricted phrase detected: {pattern}"
         return True, ""
