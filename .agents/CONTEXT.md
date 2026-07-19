@@ -4235,3 +4235,48 @@ out-of-range offset.
 **NOT verified:** none of this was exercised against live audio. The accurate
 path depends on `AudioPlaybackProgress` arriving before the stop, which only a
 real barge-in can confirm.
+### 2026-07-19 — Prosody fields removed from the wire, in one PR
+
+The deprecated `ChatOutput` prosody block -- `confidence`, `intensity`,
+`speaking_rate`, `pause_bias`, `paralinguistic_tags` -- is gone from both
+`app/contracts.py` and `crates/contracts/src/lib.rs`. Prosody has one source:
+the voice agent derives it from `affect` via `vad_to_prosody`. Python used to
+populate these with a formula that disagreed with the Rust one, and nothing read
+them.
+
+**This was previously deferred as needing a rollout plan. It did not.** Four
+checks, verified before touching anything, show removal is safe in both
+directions at once:
+
+- the Rust structs set no `deny_unknown_fields`, so a message from an older
+  Python producer still carrying the keys deserializes and they are ignored;
+- every Rust field is `#[serde(default)]`, so an older Rust build receiving a
+  message *without* them fills defaults;
+- Python's `ChatOutput` is `extra: "allow"`, so an old message validates against
+  the new model;
+- nothing constructs them. Python never passed them; Rust never builds
+  `ChatOutput` at all, only deserializes it.
+
+So there is no deploy ordering constraint and no mixed-version window to manage.
+`setup_nats_streams.py` configures stream subjects, not message schemas, and
+needs no re-run for a field removal.
+
+`cargo check --workspace` passes. `default_one()` became unused with the last
+field that referenced it and was removed too. Note `contracts::Prosody` has its
+own `pause_bias` -- a different struct, untouched.
+
+**The compatibility claim is demonstrated rather than asserted.**
+`test_rust_contract_fixtures.py` parses a Rust-generated fixture that still
+contains all five old fields, and it passes unchanged: `extra: "allow"` carries
+them through. Mutation U3 flips that to `extra: "forbid"` and the fixture test
+fails, which is what pins the property.
+
+Two tests in `test_phase4_features.py` asserted the fields sat at their
+*defaults*; they now assert the names are absent from `model_fields` and from
+the published payload. Deliberately checked against declared fields rather than
+attribute access -- `extra: "allow"` means reading `payload.speaking_rate` on an
+instance built from an older message still succeeds, so attribute access cannot
+distinguish "removed" from "carried through".
+
+**649 tests pass**, `ruff check .` clean, `cargo check --workspace` clean,
+3/3 mutations caught.

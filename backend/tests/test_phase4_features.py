@@ -96,22 +96,33 @@ def test_an_absent_state_snapshot_produces_neutral_affect_not_a_crash():
     assert payload.affect.emotion == "neutral"
 
 
-def test_prosody_fields_stay_at_their_defaults_on_the_wire():
-    """The deprecated fields must be inert, not carry a stale second opinion.
+def test_the_brain_declares_no_prosody_fields_at_all():
+    """Strengthened from asserting the deprecated fields sat at their defaults.
 
-    They are kept for deserialization compatibility with older consumers. If a
-    producer starts filling them again a reader could reasonably believe them,
-    and they would disagree with what the voice agent actually does.
+    They used to be kept, inert, for deserialization compatibility. They are now
+    removed outright, which is a stronger guarantee than "present but default":
+    a field that does not exist cannot be quietly repopulated with a second
+    opinion that disagrees with what the voice agent computes from `affect`.
+
+    Asserted on the model's declared fields rather than on attribute access,
+    because `ChatOutput` is `extra: "allow"` -- reading `payload.speaking_rate`
+    on an instance built from an *older* message would still succeed, so
+    attribute access cannot tell "removed" from "carried through".
     """
     coordinator = SpeechCoordinator(segmenter=HybridSegmenter(target_size=8))
     payload = coordinator.create_chunk_payload(
         words=["hi"], state_snap={"valence": 0.9, "arousal": 0.9, "fatigue": 0.9}
     )
-    defaults = ChatOutput()
-    assert payload.speaking_rate == defaults.speaking_rate
-    assert payload.pause_bias == defaults.pause_bias
-    assert payload.intensity == defaults.intensity
-    assert payload.confidence == defaults.confidence
+
+    gone = {
+        "confidence",
+        "intensity",
+        "speaking_rate",
+        "pause_bias",
+        "paralinguistic_tags",
+    }
+    assert gone.isdisjoint(ChatOutput.model_fields)
+    assert gone.isdisjoint(payload.model_dump())
 
 
 @pytest.mark.asyncio
@@ -167,11 +178,16 @@ async def test_brain_agent_publishes_the_affect_vector_to_chat_output():
     # losing it here silently flattens how the agent projects.
     assert parsed.affect.user_distance == 1.8
 
-    # The brain must not attach a second opinion on prosody. All four, not the
-    # two that happen to be most visible — a repopulated `intensity` would be
-    # believed by a reader and disagree with what the voice agent computes.
-    defaults = ChatOutput()
-    assert parsed.speaking_rate == defaults.speaking_rate
-    assert parsed.pause_bias == defaults.pause_bias
-    assert parsed.intensity == defaults.intensity
-    assert parsed.confidence == defaults.confidence
+    # The brain must not attach a second opinion on prosody. The deprecated
+    # fields are gone from the contract entirely now, so the check is that the
+    # published payload carries no key by those names -- a producer that
+    # reintroduced one would be shipping a value the voice agent never asked
+    # for and would disagree with.
+    published = parsed.model_dump()
+    assert {
+        "confidence",
+        "intensity",
+        "speaking_rate",
+        "pause_bias",
+        "paralinguistic_tags",
+    }.isdisjoint(published)
