@@ -87,7 +87,7 @@ def test_identity_appraisal_benchmark(benchmark):
     m_exists = patch("os.path.exists", return_value=True)
 
     with m_open, m_exists:
-        manager = IdentityManager(base_path="/fake/path")
+        manager = IdentityManager(base_path="/fake/path", persona_file=None)
 
         def run():
             return manager.get_persona_prompt()

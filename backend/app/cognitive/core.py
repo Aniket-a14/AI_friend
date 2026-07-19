@@ -44,7 +44,16 @@ class CognitiveService:
         self.perception = PerceptionService(llm_service=llm_service)
         self.appraisal = AppraisalEngine()  # §1: OCC/Lazarus/EMA
         self.reappraisal = ReappraisalEngine()  # Gross/Bosse feedback loop
-        self.state = StateService(graph_store=graph_db, publish_cb=self.publish)
+        # One profile drives both halves of the persona. Without this,
+        # StateService would call `PersonaProfile.load()` and build a *second*
+        # profile from a different source, so the authored file could set a
+        # temperament the numeric layer never saw — the same two-sources split
+        # this work has been closing, reopened at the last wiring point.
+        self.state = StateService(
+            graph_store=graph_db,
+            publish_cb=self.publish,
+            persona=self.identity.persona,
+        )
         self.decision = DecisionService(
             llm_service=llm_service, memory_store=memory_store
         )

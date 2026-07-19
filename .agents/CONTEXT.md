@@ -3449,3 +3449,115 @@ deleted by whoever it inconveniences.
 
 Full backend suite **569 passed**, `ruff check .` clean.
 
+---
+
+## 2026-07-19 — config/persona.toml: authoring a friend
+
+Step 6, scoped by the maintainer to **backend only** — no API, no UI. A file the
+user edits, which becomes the ground the humanoid boots from.
+
+### The rule that carries the weight
+
+Not the parsing. The question "the user edited the file and restarted — what
+happens to what the agent has become?"
+
+The tier model has claimed since it was written that adaptive values are "seeded
+by the user, then owned by the friend". Nothing enforced it, because **nothing
+distinguished a first boot from a later one**. The tiers were documentation.
+
+Detecting that turned out to be the hard part, and the obvious answer was
+wrong in the direction that silently disables the feature. The first
+implementation asked "do the identity files exist" — but `personality.json` and
+`history.json` are **tracked in git**, so every fresh clone already has them.
+No user would ever have got a first boot; the adaptive half of an authored
+persona would never once have been applied, and every test would still have
+passed, because the tests wrote their own files.
+
+What actually distinguishes a new agent from a returning one is whether it has
+accumulated anything. The committed files are seed-shaped — an empty memory
+list, no evolved learnings — while a friend someone has talked to has both. A
+`persona_seeded_at` marker is written into history.json on the seeding boot, so
+the heuristic is asked exactly once per install rather than re-litigated as the
+agent's shape changes. Written immediately rather than at next save: if the
+process dies before any conversation, the next boot must not seed a second time
+over values the user has since adjusted. From that one bit:
+
+- **First boot** — the file supplies everything.
+- **Later boots** — constitutional edits still apply; adaptive values are
+  ignored and the skip is logged. Trust and attachment are built over months,
+  and a config file that silently reset them on restart would make the
+  relationship worth nothing.
+
+Expressed as a precedence order rather than a special case: defaults < the
+agent's saved state < the authored file, with the authored file contributing
+nothing adaptive after the first boot, so the agent's evolved traits survive
+underneath it.
+
+### TOML, for the comments
+
+`tomllib` is stdlib on 3.11+, so no dependency. JSON was the consistent choice
+and the wrong one: the point of this file is that a user understands what they
+may change, and the tier, the bound, and *why the bound exists* belong next to
+the value being edited, not in a README nobody opens.
+
+`core.py` now passes `identity.persona` into `StateService`. Without it the
+service builds its own profile via `PersonaProfile.load()`, so an authored
+temperament could apply to the narrative half and never reach the layer that
+computes mood — the same two-sources split this work has spent four PRs closing,
+reopened at the final wiring point.
+
+### Ambient discovery was a design bug, found by running it
+
+`find_persona_file` walks up from the module to locate `config/persona.toml`.
+The first wiring made that unconditional, and **13 existing tests failed**: an
+agent built from a scratch directory walked up and found the developer's own
+persona, so every test silently inherited whatever character happened to be
+checked out.
+
+Fixed with an explicit `AUTO_DISCOVER` sentinel, because `None` cannot mean both
+"go and find one" and "there is no file". Callers that want isolation say so.
+Worth recording as a general shape: discovery that cannot be switched off is
+global mutable state wearing a filesystem.
+
+### Verification
+
+`tests/test_persona_authoring.py` (13 tests). **10 mutations, 9 caught**:
+re-seeding adaptive values on every boot, first boot failing to seed them, a
+broken file raising instead of falling back, unknown keys dropped silently, the
+authored file losing precedence, `first_boot` hardcoded true, detecting first
+boot by file existence (the clone bug above), the seed marker never being
+written, and the marker being ignored when present.
+
+The survivor is the same structural one seen in PR #77: accepting the immutable
+core from the file changes nothing, because `values` and `boundaries` are
+deliberately not model fields, so `split_by_tier` routes them to `unknown` and
+they are never applied. `strip_immutable` is defence in depth on a path that is
+already closed by the schema's shape.
+
+Ambient discovery also had to be disabled suite-wide in `conftest.py`.
+`ReflectionService` builds an `IdentityManager` by default, so five test files
+were constructing one on the *real* app path; once discovery existed, the suite
+started writing the repo's authored persona into the tracked
+`app/personality.json`. Previously that write was invisible because it wrote
+back exactly what it read.
+
+**567 non-benchmark tests pass**, `ruff check .` clean, and the suite no longer
+modifies tracked application files.
+
+### On the suite taking 15-20 minutes
+
+Measured rather than guessed: the non-benchmark tests run in **246s**, so the
+`pytest-benchmark` tests are roughly 75-80% of the wall clock. They measure
+performance rather than catching regressions, and CI already runs them in a
+dedicated job that finishes in 1m38s. `-m "not benchmark"` is the right local
+default; the full suite still gates a commit.
+
+The larger cost was process, not tooling: the convention is a full suite before
+work is *done*, and it had been running after nearly every edit — five or six
+full passes per PR where one targeted file said the same thing.
+
+**NOT done:** no write path — the agent never edits this file, so a persona
+changed at runtime through reflection lives in personality.json while the
+authored file still describes the original. Reconciling those two, and the
+`relationship` field that still lives in history.json, remain open.
+
