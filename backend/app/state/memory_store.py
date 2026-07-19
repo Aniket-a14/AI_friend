@@ -17,6 +17,7 @@ import asyncio
 import httpx
 import json
 import orjson
+import functools
 import math
 import re
 import sqlite3
@@ -28,16 +29,26 @@ from ..config import Config
 
 logger = logging.getLogger(__name__)
 
-# Global logarithmic lookup cache to bypass floating-point log calculations in ACT-R decay loops
-_LN_CACHE = {}
-
-
+@functools.lru_cache(maxsize=4096)
 def _cached_ln(x: float) -> float:
-    """Returns the cached natural logarithm rounded to 3 decimal places to maximize hits."""
-    key = round(x, 3)
-    if key not in _LN_CACHE:
-        _LN_CACHE[key] = math.log(x)
-    return _LN_CACHE[key]
+    """Natural log, memoized on the value rounded to 3 decimal places.
+
+    Was a bare module-level dict that was never evicted (A6). Rounding bounds
+    the key space in practice, but "in practice" is doing real work there: the
+    keys are memory ages, so a long-lived process with a wide spread of
+    timestamps keeps adding entries for the life of the process, and nothing
+    ever removes one.
+
+    `lru_cache` gives the same hit rate for this access pattern with an actual
+    ceiling. The rounding happens in the caller so the cache key is the rounded
+    value rather than the raw float -- memoizing on the raw float would make
+    almost every lookup a miss and the cache pure overhead.
+    """
+    return math.log(x)
+
+
+def _ln(x: float) -> float:
+    return _cached_ln(round(x, 3))
 
 
 def _get_stem(word: str) -> str:
@@ -450,8 +461,8 @@ class MemoryStore:
         the formula stays identical across the Qdrant, SQLite and PG branches.
         """
         return (
-            _cached_ln(recall_count)
-            - self.decay_rate * _cached_ln(hours_since + 1.0)
+            _ln(recall_count)
+            - self.decay_rate * _ln(hours_since + 1.0)
             + ACTR_IMPORTANCE_WEIGHT * importance_score
             + ACTR_EMO_PROXIMITY_WEIGHT * (1.0 - dist_emo)
         )

@@ -454,12 +454,29 @@ class StateService:
         conn.close()
 
     async def hydrate_state(self, agent_name: str = "my friend"):
-        """Loads state from Redis or local SQLite cache."""
+        """Loads state from Redis or local SQLite cache.
+
+        Takes `_state_lock` like every other mutation path. Hydration is called
+        once from `CognitiveService.initialize`, so today nothing races it --
+        but it writes roughly twenty `current_state` fields one at a time, and
+        it was the only writer not holding the lock. A future caller that
+        re-hydrates mid-session would interleave with the fire-and-forget
+        System-2 appraisal and leave a state that is half restored and half
+        appraised, which is precisely the failure the lock exists to prevent.
+        """
         logger.info(f"[State] Hydrating {agent_name} from Redis/SQLite...")
+        async with self._state_lock:
+            await self._hydrate_locked(agent_name)
+
+    async def _hydrate_locked(self, agent_name: str):
         # 1. Try Redis
         if self.redis_client:
             try:
-                data = self.redis_client.hgetall(f"state:{agent_name}")
+                # Off the loop: synchronous client, and a dead Redis costs a
+                # full connect timeout here rather than returning quickly.
+                data = await asyncio.to_thread(
+                    self.redis_client.hgetall, f"state:{agent_name}"
+                )
                 if data:
                     self.current_state.mood = float(data.get("mood", 0.0))
                     self.current_state.energy = float(data.get("energy", 0.5))
@@ -630,7 +647,15 @@ class StateService:
         # 1. Save to Redis
         if self.redis_client:
             try:
-                self.redis_client.hset(
+                # Off-thread: `redis.Redis` is the synchronous client, and this
+                # runs on every state persist -- five call sites, including the
+                # per-turn path. Called directly it blocks the event loop for a
+                # network round trip while the agent is mid-conversation, which
+                # is exactly when latency is visible. redis-py's client is
+                # thread-safe for commands (it holds a connection pool), so a
+                # worker thread is safe here.
+                await asyncio.to_thread(
+                    self.redis_client.hset,
                     f"state:{agent_name}",
                     mapping={
                         "mood": str(self.current_state.mood),
@@ -669,62 +694,34 @@ class StateService:
                 logger.warning(f"Failed to persist state to Redis: {e}")
 
         # 2. Save to SQLite cache
+        #
+        # Snapshotted here, on the loop, rather than read inside the worker
+        # thread. `current_state` is mutated by the System-2 appraisal task, so
+        # a thread reading it field-by-field could persist a row that is half
+        # one appraisal and half the next -- a state the agent was never in.
+        sqlite_params = (
+            agent_name,
+            self.current_state.mood,
+            self.current_state.energy,
+            self.current_state.dominance,
+            self.current_state.trust_benevolence,
+            self.current_state.trust_competence,
+            self.current_state.trust_integrity,
+            self.current_state.trust,
+            self.current_state.attachment,
+            self.current_state.fatigue,
+            self.current_state.last_user_interaction,
+            self.current_state.interaction_count,
+            self.current_state.user_mental_model.inferred_valence,
+            self.current_state.user_mental_model.inferred_arousal,
+            json.dumps(self.current_state.user_mental_model.implied_goals),
+            json.dumps(self.current_state.user_mental_model.known_concepts),
+            self.current_state.baseline_valence,
+            self.current_state.baseline_arousal,
+            self.current_state.baseline_dominance,
+        )
         try:
-            conn = sqlite3.connect(self.db_path)
-            with conn:
-                conn.execute(
-                    """
-                    INSERT INTO agent_state (
-                        agent_name, mood, energy, dominance, trust_benevolence, trust_competence,
-                        trust_integrity, trust, attachment, fatigue, last_user_interaction,
-                        interaction_count, inferred_valence, inferred_arousal, implied_goals,
-                        known_concepts, baseline_valence, baseline_arousal, baseline_dominance, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT(agent_name) DO UPDATE SET
-                        mood = excluded.mood,
-                        energy = excluded.energy,
-                        dominance = excluded.dominance,
-                        trust_benevolence = excluded.trust_benevolence,
-                        trust_competence = excluded.trust_competence,
-                        trust_integrity = excluded.trust_integrity,
-                        trust = excluded.trust,
-                        attachment = excluded.attachment,
-                        fatigue = excluded.fatigue,
-                        last_user_interaction = excluded.last_user_interaction,
-                        interaction_count = excluded.interaction_count,
-                        inferred_valence = excluded.inferred_valence,
-                        inferred_arousal = excluded.inferred_arousal,
-                        implied_goals = excluded.implied_goals,
-                        known_concepts = excluded.known_concepts,
-                        baseline_valence = excluded.baseline_valence,
-                        baseline_arousal = excluded.baseline_arousal,
-                        baseline_dominance = excluded.baseline_dominance,
-                        updated_at = CURRENT_TIMESTAMP
-                """,
-                    (
-                        agent_name,
-                        self.current_state.mood,
-                        self.current_state.energy,
-                        self.current_state.dominance,
-                        self.current_state.trust_benevolence,
-                        self.current_state.trust_competence,
-                        self.current_state.trust_integrity,
-                        self.current_state.trust,
-                        self.current_state.attachment,
-                        self.current_state.fatigue,
-                        self.current_state.last_user_interaction,
-                        self.current_state.interaction_count,
-                        self.current_state.user_mental_model.inferred_valence,
-                        self.current_state.user_mental_model.inferred_arousal,
-                        json.dumps(self.current_state.user_mental_model.implied_goals),
-                        json.dumps(self.current_state.user_mental_model.known_concepts),
-                        self.current_state.baseline_valence,
-                        self.current_state.baseline_arousal,
-                        self.current_state.baseline_dominance,
-                    ),
-                )
-            conn.close()
+            await asyncio.to_thread(self._write_state_row, sqlite_params)
         except Exception as e:
             logger.error(f"Failed to persist state to SQLite: {e}")
 
@@ -761,6 +758,58 @@ class StateService:
         logger.debug(
             f"[State] Persisted to cache (non-blocking Neo4j): V={self.current_state.mood:.2f} Ar={self.current_state.energy:.2f} D={self.current_state.dominance:.2f}"
         )
+
+    def _write_state_row(self, params) -> None:
+        """Write the agent_state row. Synchronous; called only via `to_thread`.
+
+        Split out of `persist_state` so the blocking `sqlite3` work happens off
+        the event loop -- it ran on every persist, from five call sites
+        including the per-turn path, so the loop stalled on a disk write while
+        the agent was mid-conversation.
+
+        Opening a connection per call is deliberate rather than lazy: `sqlite3`
+        connections are not safe to share across threads by default, so a cached
+        one would need its own guard.
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO agent_state (
+                        agent_name, mood, energy, dominance, trust_benevolence, trust_competence,
+                        trust_integrity, trust, attachment, fatigue, last_user_interaction,
+                        interaction_count, inferred_valence, inferred_arousal, implied_goals,
+                        known_concepts, baseline_valence, baseline_arousal, baseline_dominance, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(agent_name) DO UPDATE SET
+                        mood = excluded.mood,
+                        energy = excluded.energy,
+                        dominance = excluded.dominance,
+                        trust_benevolence = excluded.trust_benevolence,
+                        trust_competence = excluded.trust_competence,
+                        trust_integrity = excluded.trust_integrity,
+                        trust = excluded.trust,
+                        attachment = excluded.attachment,
+                        fatigue = excluded.fatigue,
+                        last_user_interaction = excluded.last_user_interaction,
+                        interaction_count = excluded.interaction_count,
+                        inferred_valence = excluded.inferred_valence,
+                        inferred_arousal = excluded.inferred_arousal,
+                        implied_goals = excluded.implied_goals,
+                        known_concepts = excluded.known_concepts,
+                        baseline_valence = excluded.baseline_valence,
+                        baseline_arousal = excluded.baseline_arousal,
+                        baseline_dominance = excluded.baseline_dominance,
+                        updated_at = CURRENT_TIMESTAMP
+                """,
+                    params,
+                )
+        finally:
+            # `finally`, not a trailing call: the original leaked the connection
+            # whenever the INSERT raised.
+            conn.close()
 
     def record_user_interaction(self):
         """Mark that the user just interacted. Called by BrainAgent on every chat.input."""
