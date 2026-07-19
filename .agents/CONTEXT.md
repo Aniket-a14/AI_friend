@@ -3810,3 +3810,143 @@ written there directly, but a second-order residue is possible. `--all` (full
 amnesia) was scoped out; only the persona-level reset exists. The conftest
 `PERSONA_PROFILE_PATH` guard stays, since it isolates ambient discovery, which
 is its own reason and unaffected by this change.
+
+---
+
+## 2026-07-19 — Five small follow-ups, two of which were dead features
+
+Cleanup batch after the storage work. Three change behaviour; two remove a
+duplicated implementation. Deliberately excludes the `memory_store.py`
+decomposition (F1), which is its own project.
+
+### `relationship` had two owners and the authored one was read by nobody
+
+`PersonaProfile.relationship` is what `config/persona.toml` sets.
+`history["relationship"]` is what the prompt reads and `evolve_persona` writes.
+Nothing connected them — grep for readers of the profile field returned none —
+so writing `relationship = "New Acquaintance"` in the authored file did
+**nothing at all**, silently. The authoring surface advertised a setting with no
+effect.
+
+The profile field is now the seed and the history entry the live value, which is
+how every other adaptive field already works.
+
+**The first version of this shipped a bug**, caught by an existing regression
+test rather than a new one: seeding fired on any first boot, so an agent
+hydrating from a store that said `"Trusted Friend"` was demoted to the schema
+default `"Friend"` on every start. Seeding is now gated on the author having
+*written* the field. Applying a default is not seeding, it is overwriting.
+
+### Deleting a biography passage did nothing
+
+Seeding was one-directional: adding a paragraph created a memory, deleting one
+left it in place forever. A passage removed because it was wrong — or because
+the person it describes asked for it to go — kept surfacing, and the file read
+as the source of truth while not being one.
+
+`stale_fingerprints` is the counterpart to `pending_entries`, and pruning runs
+*before* seeding so an edited paragraph is removed and re-added in one pass
+rather than briefly existing twice. Fingerprints cover heading and text, so an
+edit correctly appears on both sides.
+
+An empty parse is explicitly **not** treated as "everything was deleted". A
+biography that fails to parse would otherwise erase the entire seeded history on
+one bad edit — the most expensive available reading of an ambiguous situation.
+Qdrant vectors go with the rows, for the same reason as in the reset path.
+
+### The self-correction retry was a divergent copy
+
+Stage 8 and stage 9 ran the same loop over `action.execute`, and they had
+already drifted: the retry never applied the `speculative` tag, so a speculative
+turn that got self-corrected emitted chunks disagreeing with the plan that
+produced them. Nothing reported it, because a missing key reads as "not
+speculative". One `_stream_action_pass` now serves both.
+
+### Affect had two implementations of one wire contract
+
+`_publish_speech_chunk` re-derived the same eight `state_snap.get(...)` defaults
+that `create_chunk_payload` already applies. Same class of defect as the prosody
+drift one layer down, and the same fix: one implementation.
+
+### `scripts/show_persona.py`
+
+Once the durable store became authoritative there was no way to answer "who is
+my friend right now" — `persona.toml` describes the seed, not the agent. Prints
+the live persona by tier, plus provenance (was it ever seeded from a file, how
+many biography passages, how many migrated memories). Read-only by construction.
+
+Refuses to print defaults when hydration *fails*, as opposed to returning
+nothing: showing a persona that is not the stored one, with no indication the
+real answer was never retrieved, is worse than showing nothing.
+
+### Verification
+
+`tests/test_small_followups.py` (11 tests). **9 mutations, 8 caught.**
+
+M2 (dropping the `first_boot` guard on relationship seeding) survives and is
+**expected to**: `authored_overrides` returns `{}` on later boots, so
+`authored_keys` is already empty and the second guard alone suffices. The two
+conditions are not independent. The redundant check is kept and commented,
+because relying on the coupling would tie this method to a detail of another
+module — and the silent failure mode is a friendship reset on every restart.
+
+Two tests initially passed for the wrong reason and were rewritten after
+mutation exposed them: the biography-prune test used a fake store with no
+`pool`, so `prune_biography` bailed on its first line and the test passed
+against a mutant that pruned everything; and the affect test compared
+`_publish_speech_chunk` to `create_chunk_payload`, which is tautological when
+both read the same mapping — it now pins the values against the state snapshot
+as well.
+
+**618 non-benchmark tests pass**, `ruff check .` clean, working tree clean.
+
+**NOT done, and deliberately out of scope:** the `memory_store.py`
+decomposition (F1) — 3031 lines, `search_memories` still fusing six retrieval
+strategies. Removing the deprecated prosody fields from `ChatOutput` turned out
+**not** to be small: the Rust `contracts` crate declares the same fields, so it
+is a coordinated cross-language wire change needing a `setup_nats_streams.py`
+re-run and a deploy ordering where old consumers still receive messages without
+those keys. Neo4j entities the subconscious agent may derive *from* seeded
+memories are still not cleared by a reset — nothing tracks the derivation, so
+there is no query that finds them. `identity_summary` prompt cost remains
+unmeasured.
+
+### 2026-07-19 — PR #81 review round: three findings, two of them real bugs
+
+CodeRabbit's review of #81 landed three findings and all three were valid. Two
+changed behaviour.
+
+**A failed scan silently orphaned a passage forever.** `prune_biography`
+`continue`d past a database error, then returned `list(stale)` — so a
+fingerprint whose scan raised was dropped from the ledger while its memory row
+survived. The ledger entry is the *only* record that a fingerprint was ever
+seeded, so nothing would ever look for that row again: a passage the user
+deleted would keep being recalled, with no remaining trace pointing at why. A
+transient error, permanent consequence. Failed marks are now held back and
+retried on the next boot; scanned marks still leave the ledger even when they
+matched no row, so one permanently-broken entry cannot pin the whole prune.
+
+**A rejected persona file still counted as seeded.** `seeded_from_file` and
+`authored_keys` were assigned *before* `PersonaProfile(**merged)` validated. On
+`ValidationError` the agent fell back to schema defaults while still believing
+the author had chosen them — stamping the one-time seed marker and applying the
+*default* relationship as if it had been written down. Given seed-once
+semantics, that spends the single seeding opportunity on a persona whose
+contents never took effect, recoverable only by a reset. This is the same class
+of bug as the relationship-default regression caught mid-#81, in a sibling path
+— which is the signal worth recording: the first fix addressed the instance,
+not the pattern, and the pattern had a second instance one function away.
+
+Third finding was cosmetic: `show_persona.py` printed
+`len(evolved_learnings)` — a `TEXT` column, so a *character* count — in a
+column of item counts. Now labelled `N chars`.
+
+Five mutations, five caught, including two asymmetric ones (hold back
+everything on any failure; stop recording authored keys on the success path) to
+confirm the new tests pin both directions rather than just the bug.
+
+**639 tests pass**, `ruff check .` clean.
+
+**NOT done:** unchanged from the #81 entry above — F1, the cross-language
+prosody wire change, Neo4j reset residue, and the unmeasured `identity_summary`
+prompt cost all remain open.

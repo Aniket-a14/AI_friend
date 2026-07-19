@@ -137,6 +137,7 @@ class IdentityManager:
         self.seeded_from_file = False
         self.persona = persona or self._profile_from_personality()
 
+        self._seed_relationship_from_profile()
         self._stamp_seed_marker()
 
         # CVS-3.5: Immutable Core Trait seeding
@@ -155,6 +156,43 @@ class IdentityManager:
         )
 
     SEED_MARKER = "persona_seeded_at"
+
+    def _seed_relationship_from_profile(self) -> None:
+        """Give `relationship` one owner, seeded from the file exactly once.
+
+        There were two: `PersonaProfile.relationship`, which `persona.toml` can
+        set, and `history["relationship"]`, which the prompt reads and
+        `evolve_persona` writes. Nothing connected them — grep for readers of
+        the profile field and there are none — so writing
+        `relationship = "New Acquaintance"` in the authored file did **nothing
+        at all**, silently. The authoring surface advertised a setting with no
+        effect.
+
+        The profile field is now the seed and the history entry is the live
+        value, which matches how every other adaptive field already works: the
+        file says where the relationship starts, living together decides where
+        it goes. Seeding only on the first boot is what keeps an edit from
+        resetting a friendship that has since moved.
+
+        Gated on the author having *written* `relationship`, not merely on it
+        being a first boot. The schema gives the field a default, so seeding
+        unconditionally would push `"Friend"` over whatever the durable store
+        holds — a hydrating agent whose store says `"Trusted Friend"` would be
+        demoted on every start by a value nobody chose. Seeding means applying
+        what someone wrote; applying a default is just overwriting.
+        """
+        # The two guards below are *not* independent, and a mutation that
+        # disables the first one is unobservable: `authored_overrides` returns
+        # `{}` on any later boot, so `authored_keys` is already empty by then
+        # and the second check alone would do the job. Kept anyway, because
+        # relying on that would couple this method to a detail of another
+        # module — if seed-once ever moves out of `authored_overrides`, the
+        # silent failure is a friendship reset on every restart.
+        if not self.first_boot:
+            return
+        if "relationship" not in getattr(self, "authored_keys", set()):
+            return
+        self.history["relationship"] = self.persona.relationship
 
     def _stamp_seed_marker(self) -> None:
         """Record that the authored file has now been consumed.
@@ -262,14 +300,10 @@ class IdentityManager:
         authored = authored_overrides(
             self.persona_file, first_boot=self.first_boot
         )
-        # Records that the file was read *and* had something to say. A file that
-        # exists but is empty or unparseable contributes nothing, so it must not
-        # count as having seeded the agent.
-        self.seeded_from_file = bool(authored)
         merged.update({k: v for k, v in authored.items() if v is not None})
 
         try:
-            return PersonaProfile(**merged)
+            profile = PersonaProfile(**merged)
         except ValidationError as exc:
             logger.error(
                 "[Identity] %s could not be applied (%s); using defaults for the "
@@ -277,7 +311,26 @@ class IdentityManager:
                 self.personality_path,
                 exc,
             )
+            # Nothing was authored, because nothing was applied. Recording the
+            # keys anyway would let seeding treat schema *defaults* as the
+            # author's choices and stamp the one-time seed marker for a persona
+            # that was rejected — spending the single seed opportunity on a file
+            # whose contents never took effect.
+            self.seeded_from_file = False
+            self.authored_keys = set()
             return PersonaProfile.from_config()
+
+        # Set only once the profile validates. Records that the file was read
+        # *and* had something to say — a file that exists but is empty or
+        # unparseable contributes nothing, so it must not count as having
+        # seeded the agent.
+        self.seeded_from_file = bool(authored)
+        # Which fields the author actually wrote, as opposed to which ones the
+        # schema supplies a default for. Seeding needs the difference: applying
+        # a *default* over a value the durable store already holds is not
+        # seeding, it is overwriting.
+        self.authored_keys = set(authored)
+        return profile
 
     def _sync_personality_from_profile(self) -> None:
         """Project the profile back onto the raw dict `save()` writes.
@@ -406,8 +459,9 @@ class IdentityManager:
                     self._sync_personality_from_profile()
 
             # A genuine first boot against a durable store seeds here rather
-            # than in `__init__`, so the marker lands in the history that is
-            # about to be persisted instead of in one already discarded.
+            # than in `__init__`, so the seed lands in the history that is about
+            # to be persisted instead of in one already discarded.
+            self._seed_relationship_from_profile()
             self._stamp_seed_marker()
 
             evolved = config.get("evolved_learnings")
