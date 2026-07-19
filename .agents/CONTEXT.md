@@ -4188,3 +4188,55 @@ removes ordering with it*. The tests written alongside the original change
 asserted that the loop stayed responsive and that a single call wrote correct
 values -- neither could see a two-call ordering property, and nothing prompted
 writing that test until review did.
+
+### 2026-07-19 — F1, finally scoped: only 5 of 17 dual-backend branches were duplication
+
+F1 was written against a `memory_store.py` that no longer exists. Measured
+before starting: `ActionService.execute` is **23** lines (the finding said
+~470), `search_memories` **251** (~1000), and `add_memory`'s "eight
+near-identical INSERTs" are **two**. The god-functions were decomposed by
+earlier work and nobody updated the finding.
+
+What remains is dual-backend duplication, so that is what was examined. There
+are 17 `is_sqlite` branch sites, and they fall into three groups:
+
+1. **Genuine duplication (5 sites)** -- the two dialects spell set membership
+   differently and nothing else differs: SQLite needs one placeholder per value,
+   Postgres takes the list as one array via `= ANY($n)`.
+2. **Real dialect differences** -- boolean literals (`0`/`1` vs `FALSE`/`TRUE`),
+   date arithmetic (`datetime('now', '-24 hours')` vs `NOW() - INTERVAL`), and
+   `datetime()` normalisation SQLite needs because it stores timestamps as text
+   and raw string comparison across ISO formats is unreliable.
+3. **Capability differences** -- `executemany` on Postgres versus a loop,
+   because the SQLite fallback does not provide it.
+
+Only group 1 is duplication. `_in_predicate(column, values, param_index)` now
+returns the clause and its arguments, and three of the five call sites use it;
+the other two carry additional structure (a conditional timestamp parameter, and
+an `INSERT ... SELECT`) where the branch is not just the predicate.
+
+The helper deliberately returns each backend's own idiom rather than a lowest
+common denominator: flattening Postgres to N placeholders would work and would
+throw away the array form the planner handles better. Mutation V1 is exactly
+that flattening, and it is caught.
+
+**Groups 2 and 3 were left alone, and that is the finding.** Collapsing them
+would invent a sameness that is not there -- a shared spelling of
+`consolidated = 1` fails on a Postgres boolean column, and a shared timestamp
+comparison silently returns wrong rows on SQLite. The remaining 12 branches are
+not debt.
+
+Five mutations, five caught -- but V5 (`truth = "1"` unconditionally) **survived
+the first version of these tests**. The predicate was covered and the dialect
+literal sitting beside it was not, so a change that breaks Postgres and only
+Postgres passed everything. That gap is now covered by asserting the emitted SQL
+per backend. Writing that test also caught a mistake of my own: swapping in a
+capturing pool dropped `pool.connection.conn` and silently flipped the store to
+Postgres, because `is_sqlite` is derived from the pool (A5) rather than stored.
+
+**658 tests pass**, `ruff check .` clean.
+
+**NOT done:** `memory_store.py` is still 3031 lines and is not split into
+modules. That was offered and not chosen, and on this evidence it would be
+motion rather than progress -- the file is long because the domain is, not
+because one function is doing five jobs. F1 is closed.
