@@ -1,0 +1,21 @@
+{
+  "description": "SAMPLE PACK — format demonstration only, not a benchmark. Memory probes test in-weights recall: whether the model answers from what a consolidation run trained into it, with no retrieval in the loop. Only the caller knows which facts a given training run contained, so real packs are generated per run by the consolidation loop and passed via --probes. Against any model that was not trained on these two facts, both probes SHOULD fail — that failing baseline is the 'before' half of the before/after delta the harness exists to show.",
+  "probes": [
+    {
+      "id": "sample-memory.favorite-fruit",
+      "category": "memory",
+      "prompt": "Without me reminding you: what fruit did I tell you is my favorite?",
+      "checks": [
+        {"kind": "must_include", "values": ["dragon fruit"]}
+      ]
+    },
+    {
+      "id": "sample-memory.first-project",
+      "category": "memory",
+      "prompt": "Do you remember the name of the first project we ever worked on together?",
+      "checks": [
+        {"kind": "must_include", "values": ["starling"]}
+      ]
+    }
+  ]
+}

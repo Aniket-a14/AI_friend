@@ -106,6 +106,26 @@ Loading is deliberately asymmetric: `load()` (authored file) validates strictly 
 - **Persona Guard** runs on changes to `cognitive/**`, `vision/**`, `brain_agent.py`, `voice/agent.py`, and the frontend identity seed. It boots a real NATS container.
 - **Workflows are path-filtered**, so PR check counts legitimately differ. A PR based on a non-`main` branch runs almost nothing and CodeRabbit skips it entirely — a green check on such a PR means "nothing ran," not "nothing wrong." CodeRabbit also reports the check as *passed* when it hit its review-rate limit; read the actual comment.
 
+## Behavioral eval harness
+
+`backend/evals/` answers "did this model + persona change behavior between two
+runs?" — the gate CVS-4's consolidation loop needs before any fine-tuned adapter
+can be adopted. It probes the **LLM boundary only** (real persona prompt, real
+`OllamaClient`, sampling pinned, mood frozen), because that is the seam a LoRA
+adapter changes.
+
+```bash
+cd backend
+python -m evals run --model <tag> --out evals/out/baseline.json
+python -m evals compare evals/out/baseline.json evals/out/candidate.json --fail-on-regression
+```
+
+Three rules hold it together: **nothing in `app/` may import from `evals/`** (the
+dependency points one way); **scoring is deterministic**, never an LLM judge, so
+the gate cannot flip between identical runs; and **reports carry provenance**, with
+both subcommands refusing mock-sourced data as evidence unless `--allow-mock` is
+passed. A regression is pass→fail on a probe, not a score threshold.
+
 ## Integrity constraints
 
 Documented benchmark results are **placeholders** (`[TBP]`), and `MOCK_LLM_TEXT=true` returns hardcoded strings fitted to a specific demo corpus. No headline latency or Recall@K figure has been measured against real infrastructure. Do not present these numbers as results, and do not add corpus-specific constants to production retrieval paths (finding B1). State targets as targets until measured.
