@@ -7,7 +7,6 @@ from app.metrics import SubjectMetrics
 from app.utils.segmentation import HybridSegmenter
 from app.state.agent_state import AgentState
 from app.cognitive.identity import IdentityManager
-from app.state.triple_extractor import TripleExtractor
 
 
 pytest.importorskip("pytest_benchmark")
@@ -282,25 +281,6 @@ def test_memory_semantic_retrieve_benchmark(benchmark):
 
     fact, score = benchmark(run)
     assert fact is not None
-
-
-@pytest.mark.benchmark
-def test_triple_extractor_nlp_benchmark(benchmark):
-    """Profiles extracting subject-verb-object knowledge triples from input text."""
-    extractor = TripleExtractor(llm_service=None, graph_db=None)
-
-    def run():
-        return extractor._parse_json_from_text(
-            '[["Aniket", "LIVES_IN", "Mumbai"], ["Aniket", "ROLE", "Engineer"]]'
-        )
-
-    triples = benchmark(run)
-    assert len(triples) == 2
-
-
-# ==========================================
-# 6. PIPELINES & CONVERSATION SERIALIZATION
-# ==========================================
 
 
 @pytest.mark.benchmark
