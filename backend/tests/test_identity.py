@@ -24,7 +24,7 @@ def test_identity_load(sample_personality, sample_history):
 
     with patch("builtins.open", m_open):
         with patch("os.path.exists", return_value=True):
-            manager = IdentityManager(base_path="/fake/path")
+            manager = IdentityManager(base_path="/fake/path", persona_file=None)
             assert manager.personality["name"] == "my friend"
             assert "Warm" in manager.personality["core_personality"]["traits"]
 
@@ -34,7 +34,7 @@ async def test_persona_evolution_immediate(sample_personality, sample_history):
     # Test semi-static trait update (Relationship)
     with patch("builtins.open", mock_open()):
         with patch("os.path.exists", return_value=True):
-            manager = IdentityManager(base_path="/fake/path")
+            manager = IdentityManager(base_path="/fake/path", persona_file=None)
             manager.personality = sample_personality
             manager.history = sample_history
 
@@ -47,7 +47,7 @@ async def test_persona_evolution_adaptive(sample_personality, sample_history):
     # Test adaptive style update (Speaking Style)
     with patch("builtins.open", mock_open()):
         with patch("os.path.exists", return_value=True):
-            manager = IdentityManager(base_path="/fake/path")
+            manager = IdentityManager(base_path="/fake/path", persona_file=None)
             manager.personality = sample_personality
             manager.history = sample_history
 
@@ -70,7 +70,7 @@ def test_persona_prompt_generation(sample_personality, sample_history):
     """
     with patch("builtins.open", mock_open(read_data=json.dumps(sample_personality))):
         with patch("os.path.exists", return_value=True):
-            manager = IdentityManager(base_path="/fake/path")
+            manager = IdentityManager(base_path="/fake/path", persona_file=None)
             manager.history = sample_history
 
             prompt = manager.get_persona_prompt()

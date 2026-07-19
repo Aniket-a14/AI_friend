@@ -30,7 +30,7 @@ def _identity(tmp_path, personality: dict) -> IdentityManager:
         json.dumps(personality), encoding="utf-8"
     )
     (tmp_path / "history.json").write_text("{}", encoding="utf-8")
-    return IdentityManager(base_path=str(tmp_path))
+    return IdentityManager(base_path=str(tmp_path), persona_file=None)
 
 
 HOSTILE_FILE = {
@@ -315,6 +315,8 @@ def test_saving_does_not_write_safety_text_back_into_the_editable_file(tmp_path)
     assert immutable["base_tone"] == "Warm"
 
     # And a reload still has the real thing.
-    assert IdentityManager(base_path=str(tmp_path)).immutable_core["boundaries"] == (
+    assert IdentityManager(
+        base_path=str(tmp_path), persona_file=None
+    ).immutable_core["boundaries"] == (
         IMMUTABLE_CORE["boundaries"]
     )

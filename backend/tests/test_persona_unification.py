@@ -30,7 +30,7 @@ def _identity(tmp_path, personality: dict) -> IdentityManager:
         json.dumps(personality), encoding="utf-8"
     )
     (tmp_path / "history.json").write_text("{}", encoding="utf-8")
-    return IdentityManager(base_path=str(tmp_path))
+    return IdentityManager(base_path=str(tmp_path), persona_file=None)
 
 
 NESTED = {
@@ -192,7 +192,7 @@ async def test_evolution_is_written_back_to_disk(tmp_path):
     written = json.loads((tmp_path / "personality.json").read_text(encoding="utf-8"))
     assert "Playful" in written["core_personality"]["adaptive_traits"]
 
-    reloaded = IdentityManager(base_path=str(tmp_path))
+    reloaded = IdentityManager(base_path=str(tmp_path), persona_file=None)
     assert "Playful" in reloaded.persona.adaptive_traits
 
 

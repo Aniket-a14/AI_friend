@@ -600,7 +600,7 @@ def test_identity_hydrates_from_durable_config_store():
         }
     )
 
-    manager = IdentityManager(base_path="/missing/path")
+    manager = IdentityManager(base_path="/missing/path", persona_file=None)
     asyncio.run(manager.hydrate_from_config_store(store))
 
     assert manager.personality["name"] == "durable friend"
