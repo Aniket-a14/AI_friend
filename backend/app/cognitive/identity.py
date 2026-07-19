@@ -4,7 +4,9 @@ import os
 import re
 from typing import Dict, Any, Tuple
 
-from ..persona import IMMUTABLE_CORE
+from pydantic import ValidationError
+
+from ..persona import IMMUTABLE_CORE, PersonaProfile
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +63,7 @@ class IdentityManager:
     Hybrid Model: Immutable Core + Adaptive System.
     """
 
-    def __init__(self, base_path: str = None):
+    def __init__(self, base_path: str = None, persona: "PersonaProfile" = None):
         if base_path is None:
             base_path = os.path.dirname(os.path.dirname(__file__))
 
@@ -77,23 +79,89 @@ class IdentityManager:
 
         self.config_store = None
 
+        # The narrative half of the persona now goes through the same schema as
+        # the numeric half, so every authored field has one owner, one tier and
+        # one set of bounds. The raw dict is kept because `evolve_persona` and
+        # `save()` still work on it, but anything a reader needs is taken from
+        # the profile.
+        self.persona = persona or self._profile_from_personality()
+
         # CVS-3.5: Immutable Core Trait seeding
         self._refresh_immutable_core()
 
-        # Homeostatic Adaptive Trait Cap: maximum 5 active adaptive traits
-        adaptive_traits = self.personality.get("core_personality", {}).get(
-            "adaptive_traits", []
-        )
-        if len(adaptive_traits) > 5:
-            self.personality["core_personality"]["adaptive_traits"] = adaptive_traits[
-                -5:
-            ]
+        # The adaptive-trait cap used to be re-implemented here as a `[-5:]`
+        # slice. It is `PersonaProfile.adaptive_traits`' `max_length` now — one
+        # rule, one implementation.
+        self._sync_personality_from_profile()
 
         # Buffer for adaptive variable evolution
         self.evolution_buffer = {}
 
         logger.info(
             f"[Identity] Hybrid Persona Active | Core: {self.immutable_core['base_tone']}"
+        )
+
+    def _profile_from_personality(self) -> "PersonaProfile":
+        """Build a profile from the loaded personality.json.
+
+        Lenient, unlike `PersonaProfile.load()`, and the asymmetry is
+        deliberate. `load()` is strict because a persona *file* is an author
+        deliberately describing a friend, and half-applying it hands them
+        someone they did not write. But personality.json is not purely authored:
+        `evolve_persona` writes to it, so it is partly the agent's own running
+        state. A friend that had grown a sixth adaptive trait would, under
+        strict loading, fall back whole and lose its name and tone as well —
+        punishing the user for something the agent did.
+
+        So an over-long adaptive_traits list is trimmed to the newest few rather
+        than rejected. Exceeding that cap is the expected result of living, not
+        an authoring mistake.
+        """
+        flat = PersonaProfile.flatten_personality_shape(
+            self.personality, origin=self.personality_path
+        )
+
+        limit = PersonaProfile.adaptive_trait_limit()
+        traits = flat.get("adaptive_traits")
+        if isinstance(traits, list) and len(traits) > limit:
+            logger.info(
+                "[Identity] Trimming %d adaptive traits to the newest %d.",
+                len(traits),
+                limit,
+            )
+            flat["adaptive_traits"] = traits[-limit:]
+
+        merged = PersonaProfile.from_config().model_dump()
+        merged.update({k: v for k, v in flat.items() if v is not None})
+
+        try:
+            return PersonaProfile(**merged)
+        except ValidationError as exc:
+            logger.error(
+                "[Identity] %s could not be applied (%s); using defaults for the "
+                "narrative persona.",
+                self.personality_path,
+                exc,
+            )
+            return PersonaProfile.from_config()
+
+    def _sync_personality_from_profile(self) -> None:
+        """Project the profile back onto the raw dict `save()` writes.
+
+        One direction only. The profile is the source of truth for these fields
+        and the dict is a serialization of it, so nothing here reads the dict to
+        decide the profile's value — that would restore the two-way drift this
+        change exists to remove.
+        """
+        core = self.personality.setdefault("core_personality", {})
+        core["adaptive_traits"] = list(self.persona.adaptive_traits)
+        core["traits"] = list(self.persona.traits)
+        self.personality["name"] = self.persona.name
+        self.personality.setdefault("speaking_style", {}).update(
+            self.persona.speaking_style
+        )
+        self.personality.setdefault("conversation_rules", {})["avoid"] = list(
+            self.persona.avoid
         )
 
     def _load_json(self, path: str) -> Dict[str, Any]:
@@ -139,7 +207,8 @@ class IdentityManager:
             # shared list would let a later mutation edit the module constant.
             "values": list(IMMUTABLE_CORE["values"]),
             "boundaries": list(IMMUTABLE_CORE["boundaries"]),
-            "base_tone": file_block.get("base_tone") or DEFAULT_BASE_TONE,
+            # Via the profile, which applied the schema's bounds to it.
+            "base_tone": self.persona.base_tone or DEFAULT_BASE_TONE,
         }
 
     async def hydrate_from_config_store(self, config_store):
@@ -228,30 +297,23 @@ class IdentityManager:
         Logic for adaptive variable mutation.
         Note: Core traits in `self.immutable_core` are never modified by reflection.
         """
+        # Evolution goes through the profile, then the raw dict is synced from
+        # it. The other order — mutating the dict and letting the profile fall
+        # behind — is how the prompt would quietly stop reflecting who the agent
+        # had become: it would evolve traits and never sound any different.
+        #
         # 1. Update Adaptive Styles (Vocabulary, preferences)
         if "speaking_style" in suggestions:
-            style = self.personality.setdefault("speaking_style", {})
+            style = dict(self.persona.speaking_style)
             style["style_description"] = suggestions["speaking_style"]
+            self.persona.speaking_style = style
             logger.info(
                 f"[Identity] Adaptive style evolved: {style['style_description']}"
             )
 
         if "new_traits" in suggestions:
-            adaptive_traits = self.personality.setdefault(
-                "core_personality", {}
-            ).setdefault(
-                "adaptive_traits",
-                [],
-            )
-            for trait in suggestions["new_traits"]:
-                if trait not in adaptive_traits:
-                    adaptive_traits.append(trait)
-            # Enforce homeostatic cap of 5 adaptive traits
-            if len(adaptive_traits) > 5:
-                adaptive_traits = adaptive_traits[-5:]
-                self.personality["core_personality"]["adaptive_traits"] = (
-                    adaptive_traits
-                )
+            # The cap lives on the profile now, not restated here.
+            self.persona.learn_traits(suggestions["new_traits"])
 
         # 2. Update Relationship Context
         if "relationship" in suggestions:
@@ -261,23 +323,27 @@ class IdentityManager:
         if "new_memory" in suggestions:
             self.history.setdefault("memories", []).append(suggestions["new_memory"])
 
+        self._sync_personality_from_profile()
         self.save()
         await self.persist_to_config_store()
 
     def get_persona_prompt(self, current_mood_directive: str = "") -> str:
-        p = self.personality
         h = self.history
         core = self.immutable_core
 
-        # Adaptive current variables
-        adaptive_traits = ", ".join(
-            p.get("core_personality", {}).get("adaptive_traits", [])
+        # Every narrative field comes from the profile, which has already
+        # applied the schema's tiers and bounds. The raw dict is deliberately
+        # not read here: doing so would reintroduce the second, unvalidated
+        # source this change exists to remove. `history` stays separate because
+        # it is the agent's running record, not the authored persona.
+        adaptive_traits = ", ".join(self.persona.adaptive_traits)
+        style = self.persona.speaking_style.get("style_description", "")
+        vocab = ", ".join(
+            list(self.persona.speaking_style.get("common_vocabulary", []))[:30]
         )
-        style = p.get("speaking_style", {}).get("style_description", "")
-        vocab = ", ".join(p.get("speaking_style", {}).get("common_vocabulary", [])[:30])
 
         return f"""
-YOU ARE {p.get("name", "my friend")}. 🤖✨
+YOU ARE {self.persona.name}. 🤖✨
 IMMUTABLE VALUES: {", ".join(core["values"])}
 CORE TONE: {core["base_tone"]}
 BOUNDARIES: {", ".join(core["boundaries"])}
@@ -325,7 +391,7 @@ MANDATORY RULES:
 
         # The avoid-list had the same weakness: a restricted phrase broken up by
         # a pause marker slipped straight through a plain substring test.
-        forbidden = self.personality.get("conversation_rules", {}).get("avoid", [])
+        forbidden = self.persona.avoid
         for pattern in forbidden:
             needle = pattern.lower()
             if any(needle in view for view in views):

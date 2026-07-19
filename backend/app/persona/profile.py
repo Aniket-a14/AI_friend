@@ -141,12 +141,41 @@ class PersonaProfile(BaseModel):
     dopamine_halflife_s: float = _constitutional(default=90.0, ge=5.0, le=1800.0)
     cortisol_halflife_s: float = _constitutional(default=600.0, ge=5.0, le=7200.0)
 
+    # -- constitutional: narrative character --------------------------------
+    # These were `IdentityManager`'s half of the persona, read straight out of
+    # personality.json with no schema and no tier. They live here now so that
+    # every authored field has exactly one owner and one set of bounds. The
+    # tiering is the same judgement applied to prose as to numbers: what the
+    # friend fundamentally *is* holds for its life, what the relationship
+    # becomes belongs to the relationship.
+    base_tone: str = _constitutional(
+        default="Warm, intellectual, and slightly protective",
+        min_length=1,
+        max_length=200,
+    )
+    traits: List[str] = _constitutional(default_factory=list, max_length=8)
+    # Phrases the friend must not say. Constitutional rather than adaptive: a
+    # user asking never to hear something is not a preference the agent gets to
+    # outgrow through reflection.
+    avoid: List[str] = _constitutional(default_factory=list, max_length=64)
+
     # -- adaptive: seeded here, then owned by the friend --------------------
     relationship: str = _adaptive(default="Friend", max_length=64)
     initial_trust: float = _adaptive(default=0.5, ge=0.0, le=1.0)
     initial_attachment: float = _adaptive(default=0.1, ge=0.0, le=1.0)
+    # The cap is the schema's, and only the schema's. `IdentityManager` used to
+    # re-implement it as a `[-5:]` slice in its constructor -- one rule with two
+    # implementations, which is how the prosody and affect duplications both
+    # began. Homeostatic: a friend that accumulates traits without bound
+    # eventually has no character at all, just a list.
     adaptive_traits: List[str] = _adaptive(default_factory=list, max_length=5)
-    speaking_style: Dict[str, str] = _adaptive(default_factory=dict)
+    # `Any`, not `str`. The schema originally said `Dict[str, str]`, which the
+    # real personality.json has never satisfied: `common_vocabulary` is a list
+    # of words. Nothing noticed because nothing read this field. The moment
+    # IdentityManager did, one list-valued key failed validation and took the
+    # entire narrative persona down with it — name, tone and traits discarded
+    # over a vocabulary entry.
+    speaking_style: Dict[str, Any] = _adaptive(default_factory=dict)
 
     # -- tier introspection -------------------------------------------------
 
@@ -160,6 +189,36 @@ class PersonaProfile(BaseModel):
     @classmethod
     def fields_in(cls, tier: Tier) -> List[str]:
         return sorted(n for n in cls.model_fields if cls.tier_of(n) is tier)
+
+    @classmethod
+    def adaptive_trait_limit(cls) -> int:
+        """The homeostatic cap, read off the schema rather than restated.
+
+        This number had been written out by hand in three places — the
+        IdentityManager constructor, `evolve_persona`, and the field itself —
+        so changing it required finding all three. Now there is one.
+        """
+        for meta in cls.model_fields["adaptive_traits"].metadata:
+            limit = getattr(meta, "max_length", None)
+            if limit is not None:
+                return limit
+        raise RuntimeError("adaptive_traits lost its max_length constraint")
+
+    def learn_traits(self, new_traits: List[str]) -> List[str]:
+        """Adopt new adaptive traits, keeping only the newest within the cap.
+
+        The one place a trait list grows. Dropping the *oldest* is the point:
+        this is the mechanism by which a friend can change over time rather than
+        accrete forever, and a friend who is fifteen adjectives at once is not a
+        character. Assignment is validated, so the cap cannot be exceeded even
+        if this method is wrong.
+        """
+        merged = list(self.adaptive_traits)
+        for trait in new_traits or []:
+            if trait and trait not in merged:
+                merged.append(trait)
+        self.adaptive_traits = merged[-self.adaptive_trait_limit():]
+        return list(self.adaptive_traits)
 
     @property
     def immutable(self) -> Dict[str, Any]:
@@ -284,6 +343,9 @@ class PersonaProfile(BaseModel):
             return cls.from_config()
 
         data = cls._reject_immutable_overrides(data, origin=str(file))
+        # Accepts both this schema's flat keys and IdentityManager's nested
+        # personality.json layout, so an existing authored file keeps working.
+        data = cls.flatten_personality_shape(data, origin=str(file))
 
         # Anything the file omits inherits the deployment default, so a persona
         # may specify only the handful of traits its author actually cares about.
@@ -321,6 +383,59 @@ class PersonaProfile(BaseModel):
                 )
                 cleaned.pop(key)
         return cleaned
+
+    @classmethod
+    def flatten_personality_shape(
+        cls, data: Dict[str, Any], *, origin: str = "personality.json"
+    ) -> Dict[str, Any]:
+        """Translate the nested `personality.json` layout onto these fields.
+
+        `IdentityManager`'s file groups things under `core_personality`,
+        `conversation_rules` and so on. That layout predates this schema and is
+        what every existing install has on disk, so it is read rather than
+        migrated: a user who authored a friend should not have to rewrite the
+        file to keep it.
+
+        Flat keys win where both are present, so a file may be written either
+        way and a partially-migrated one still loads.
+
+        The nested `immutable` block is dropped here for the same reason
+        `_reject_immutable_overrides` drops the flat one — it is the exact path
+        that let a user-editable file empty the safety boundaries. Only
+        `base_tone` survives it, which is authorable by design.
+        """
+        if not isinstance(data, dict):
+            return {}
+
+        flat = {k: v for k, v in data.items() if k in cls.model_fields}
+
+        core = data.get("core_personality")
+        core = core if isinstance(core, dict) else {}
+
+        immutable = core.get("immutable")
+        immutable = immutable if isinstance(immutable, dict) else {}
+        smuggled = [k for k in immutable if k in IMMUTABLE_CORE]
+        if smuggled:
+            logger.warning(
+                "[Persona] core_personality.immutable in %s tried to set %s; "
+                "ignored. Safety invariants are fixed in code.",
+                origin,
+                " and ".join(sorted(smuggled)),
+            )
+
+        nested = {
+            "traits": core.get("traits"),
+            "adaptive_traits": core.get("adaptive_traits"),
+            "base_tone": immutable.get("base_tone"),
+            "avoid": (data.get("conversation_rules") or {}).get("avoid")
+            if isinstance(data.get("conversation_rules"), dict)
+            else None,
+        }
+        for key, value in nested.items():
+            if value is not None and key not in flat:
+                flat[key] = value
+
+        return flat
 
     # -- consumption --------------------------------------------------------
 
