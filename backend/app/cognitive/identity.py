@@ -455,11 +455,20 @@ class IdentityManager:
             list(self.persona.speaking_style.get("common_vocabulary", []))[:30]
         )
 
+        # Only ever a few sentences (the schema caps it), because this is paid
+        # for on every turn. The long history lives in episodic memory and
+        # arrives through retrieval when it is actually relevant.
+        who = self.persona.identity_summary.strip()
+        who_block = f"\nWHO YOU ARE:\n{who}\n" if who else ""
+        patterns = ", ".join(self.persona.speech_patterns)
+        patterns_block = f"CHARACTERISTIC PHRASES: {patterns}\n" if patterns else ""
+
         return f"""
 YOU ARE {self.persona.name}. 🤖✨
 IMMUTABLE VALUES: {", ".join(core["values"])}
 CORE TONE: {core["base_tone"]}
 BOUNDARIES: {", ".join(core["boundaries"])}
+{who_block}{patterns_block}
 
 ADAPTIVE TRAITS: {adaptive_traits}
 RELATIONSHIP: {h.get("relationship", "User")}
