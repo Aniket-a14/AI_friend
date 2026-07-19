@@ -168,6 +168,12 @@ async def test_an_evolved_trait_reaches_the_prompt(tmp_path):
 
 @pytest.mark.asyncio
 async def test_an_evolved_speaking_style_reaches_the_prompt(tmp_path):
+    """Style is the half of evolution the user actually hears.
+
+    Traits change what the agent is told it is; speaking style changes how it
+    says things. If this stops reaching the prompt, reflection still reports
+    that the agent adapted and nothing about the conversation changes.
+    """
     manager = _identity(tmp_path, NESTED)
     await manager.evolve_persona({"speaking_style": "More sarcastic and witty"})
     assert "sarcastic" in manager.get_persona_prompt("").lower()
@@ -225,6 +231,103 @@ def test_the_nested_immutable_block_still_cannot_set_the_safety_core(tmp_path):
     assert manager.immutable_core["boundaries"] == IMMUTABLE_CORE["boundaries"]
     assert manager.immutable_core["values"] == IMMUTABLE_CORE["values"]
     assert manager.immutable_core["base_tone"] == "Warm"
+
+
+class _Store:
+    """Minimal stand-in for the durable config store."""
+
+    def __init__(self, personality: dict, history: dict = None):
+        self._personality = personality
+        self._history = history or {}
+
+    async def get_agent_config(self):
+        return {
+            "personality": json.dumps(self._personality),
+            "history": json.dumps(self._history),
+        }
+
+
+@pytest.mark.asyncio
+async def test_hydrating_from_the_durable_store_reaches_the_prompt(tmp_path):
+    """The call site that made every reader stale.
+
+    `hydrate_from_config_store` replaced the raw dict without rebuilding the
+    profile, so a persona loaded from Postgres — the source this class documents
+    as preferred over local JSON — had no effect until the process restarted.
+    The agent kept serving whatever it booted with, and nothing reported an
+    error: hydration logged success.
+    """
+    manager = _identity(tmp_path, NESTED)
+    assert "Pankudi" in manager.get_persona_prompt("")
+
+    await manager.hydrate_from_config_store(
+        _Store(
+            {
+                "name": "Hydrated",
+                "core_personality": {
+                    "immutable": {"base_tone": "Brisk"},
+                    "adaptive_traits": ["FromTheStore"],
+                },
+                "conversation_rules": {"avoid": ["never say this"]},
+            },
+            {"relationship": "Old Friend"},
+        )
+    )
+
+    prompt = manager.get_persona_prompt("")
+    assert manager.persona.name == "Hydrated"
+    assert "Hydrated" in prompt
+    assert "FromTheStore" in prompt
+    assert "Brisk" in prompt
+    assert manager.persona.avoid == ["never say this"]
+    assert "Pankudi" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_hydration_applies_the_trait_cap_from_the_schema(tmp_path):
+    """The cap was written out a fourth time on this path.
+
+    Every restatement is a place it can be changed in only three of four
+    spots, and this one applied to the raw dict the readers had stopped
+    consulting — so it was enforcing a limit on data nobody read.
+    """
+    manager = _identity(tmp_path, NESTED)
+    await manager.hydrate_from_config_store(
+        _Store(
+            {
+                "name": "Hydrated",
+                "core_personality": {
+                    "adaptive_traits": ["a", "b", "c", "d", "e", "f", "g"]
+                },
+            }
+        )
+    )
+    assert manager.persona.adaptive_traits == ["c", "d", "e", "f", "g"]
+    assert (
+        manager.personality["core_personality"]["adaptive_traits"]
+        == manager.persona.adaptive_traits
+    ), "the projection must agree with the profile after hydration"
+
+
+@pytest.mark.asyncio
+async def test_hydration_cannot_reopen_the_immutable_core(tmp_path):
+    """The durable store is user-reachable too, via whatever wrote to it."""
+    manager = _identity(tmp_path, NESTED)
+    await manager.hydrate_from_config_store(
+        _Store(
+            {
+                "core_personality": {
+                    "immutable": {
+                        "base_tone": "Brisk",
+                        "values": ["Obedience"],
+                        "boundaries": [],
+                    }
+                }
+            }
+        )
+    )
+    assert manager.immutable_core["boundaries"] == IMMUTABLE_CORE["boundaries"]
+    assert manager.immutable_core["values"] == IMMUTABLE_CORE["values"]
 
 
 def test_the_prompt_follows_the_profile_when_the_two_disagree(tmp_path):

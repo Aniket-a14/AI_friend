@@ -3411,3 +3411,41 @@ those two is its own decision. The suite still writes to the real
 stays clean, but a test touching a tracked application file still wants a
 `tmp_path` fixture.
 
+### Review round (PR #77)
+
+One Major, and correct: **`hydrate_from_config_store` never rebuilt the
+profile.**
+
+Every reader now takes its narrative fields from `self.persona`, but hydration
+replaced only `self.personality`. So a persona loaded from the durable store had
+no effect until the process restarted — the agent kept serving whatever it
+booted with, and hydration logged success. This is the source the class docstring
+names as preferred over local JSON, which makes it the worst possible place to
+silently ignore, and it reintroduced the exact two-sources drift the PR set out
+to remove, through the one call site that was not updated.
+
+It also held a **fourth** copy of the adaptive-trait cap. The PR description said
+three; there were four, and the fourth was enforcing a limit on data no reader
+consulted any more. Worth noting against the claim made when this work started:
+"grep found three" is a count of what a particular search matched, not of what
+exists.
+
+The gap was structural — no test exercised `hydrate_from_config_store` at all,
+so nothing could have caught it. Added three, driving a stand-in store: hydration
+reaches the prompt, the cap comes from the schema on that path too, and hydration
+cannot reopen the immutable core (the durable store is user-reachable via
+whatever writes to it).
+
+### Verification
+
+3 mutations, **all 3 caught**: hydration stops rebuilding the profile (the
+reviewed bug), rebuilds without projecting back, and reinstates its own hardcoded
+cap.
+
+Also added the missing docstring CodeRabbit flagged on
+`test_an_evolved_speaking_style_reaches_the_prompt`. The convention exists because
+a test whose failure message does not say what breaks in the real system gets
+deleted by whoever it inconveniences.
+
+Full backend suite **569 passed**, `ruff check .` clean.
+

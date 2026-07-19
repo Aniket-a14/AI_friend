@@ -229,14 +229,19 @@ class IdentityManager:
                 loaded_personality = json.loads(personality_raw)
                 if loaded_personality:
                     self.personality = loaded_personality
-                    # Enforce homeostatic cap of 5 adaptive traits
-                    adaptive_traits = self.personality.get("core_personality", {}).get(
-                        "adaptive_traits", []
-                    )
-                    if len(adaptive_traits) > 5:
-                        self.personality["core_personality"]["adaptive_traits"] = (
-                            adaptive_traits[-5:]
-                        )
+                    # Rebuild the profile, or hydration would change nothing.
+                    # Every reader — the prompt, the boundary check, the
+                    # immutable core — takes its narrative fields from
+                    # `self.persona`, so replacing only the raw dict leaves the
+                    # agent serving whatever it booted with until the process
+                    # restarts. This is the durable store, the source this class
+                    # documents as preferred over local JSON, which makes it the
+                    # worst place to silently ignore.
+                    #
+                    # The homeostatic cap was re-implemented here too; it is the
+                    # schema's, applied by `_profile_from_personality`.
+                    self.persona = self._profile_from_personality()
+                    self._sync_personality_from_profile()
 
             if history_raw:
                 loaded_history = json.loads(history_raw)
