@@ -22,8 +22,10 @@ from .learning import ReflectionService
 from .identity import IdentityManager
 from ..persona.biography import (
     find_biography_file,
+    prune_biography,
     read_biography,
     seed_biography,
+    stale_fingerprints,
 )
 from ..persona.history_migration import migrate_history_memories
 from .pipeline import CognitivePipeline
@@ -149,14 +151,49 @@ class CognitiveService:
         try:
             entries = read_biography(path or find_biography_file())
             if not entries:
+                # No file, or an unreadable one. Deliberately *not* treated as
+                # "every passage was deleted" — a biography that failed to parse
+                # would otherwise erase the whole seeded history on one bad
+                # edit, which is the most expensive possible reading of an
+                # ambiguous situation.
                 return 0
 
+            await self._prune_deleted_passages(entries)
             return await self._seed_once(
                 self.SEEDED_KEY, entries, seed_biography, "Biography"
             )
         except Exception as exc:
             logger.error("[Biography] Seeding failed (%s); continuing.", exc)
             return 0
+
+    async def _prune_deleted_passages(self, entries) -> int:
+        """Forget passages the user removed from the biography.
+
+        Seeding was one-directional: adding a paragraph created a memory, and
+        deleting one did nothing, so a passage removed because it was wrong —
+        or because the person it describes asked for it to go — kept surfacing
+        forever. The file read as the source of truth and was not.
+
+        Runs before seeding so an *edited* paragraph is pruned and re-seeded in
+        the same pass rather than briefly existing twice.
+        """
+        already = self.identity.history.get(self.SEEDED_KEY) or []
+        stale = stale_fingerprints(entries, already)
+        if not stale:
+            return 0
+
+        removed = await prune_biography(stale, self.memory_store)
+        if not removed:
+            return 0
+
+        gone = set(removed)
+        self.identity.history[self.SEEDED_KEY] = [
+            mark for mark in already if mark not in gone
+        ]
+        self.identity.save()
+        await self.identity.persist_to_config_store()
+        logger.info("[Biography] Forgot %d deleted passage(s).", len(removed))
+        return len(removed)
 
     MIGRATED_KEY = "history_memories_migrated"
 

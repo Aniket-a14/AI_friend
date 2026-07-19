@@ -356,17 +356,11 @@ class CognitivePipeline:
         full_response = ""
         done_chunk = None
         is_spec = plan.payload.get("speculative", False)
-        async for chunk in self.action.execute(plan):
-            if is_spec:
-                chunk["speculative"] = True
-            if chunk["type"] == "content":
-                full_response += chunk["data"]
-            if chunk["type"] == "done":
-                done_chunk = chunk
-                continue
-            if await self._consume_internal_chunk(chunk):
-                continue
+        pass_result = {"response": "", "done": None}
+        async for chunk in self._stream_action_pass(plan, is_spec, pass_result):
             yield chunk
+        full_response = pass_result["response"]
+        done_chunk = pass_result["done"]
         stage_times["stage_8_action_execution_ms"] = (
             time.perf_counter() - t_start
         ) * 1000.0
@@ -384,22 +378,13 @@ class CognitivePipeline:
                 plan.payload["identity_prompt"] += (
                     f"\n\nCRITICAL FIX: Your previous response was rejected for: {reason}. Correct this immediately."
                 )
-                full_response = ""
-                done_chunk = None
-                async for chunk in self.action.execute(plan):
-                    if chunk["type"] == "content":
-                        full_response += chunk["data"]
-                    if chunk["type"] == "done":
-                        done_chunk = chunk
-                        continue
-                    # The retry is the likeliest place to trip a second
-                    # metacognitive violation, since it runs with a hardened
-                    # prompt after one rejection. Skipping the filter here would
-                    # leak `self_correction` to the transport *and* swallow the
-                    # cortisol release on the one path that most deserves it.
-                    if await self._consume_internal_chunk(chunk):
-                        continue
+                retry_result = {"response": "", "done": None}
+                async for chunk in self._stream_action_pass(
+                    plan, is_spec, retry_result
+                ):
                     yield chunk
+                full_response = retry_result["response"]
+                done_chunk = retry_result["done"]
         stage_times["stage_9_validation_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # 10. Learning + Episodic Memory (§6.1)
@@ -435,6 +420,37 @@ class CognitivePipeline:
             yield done_chunk
         else:
             yield {"type": "done", "data": "finished", "speculative": is_spec}
+
+    async def _stream_action_pass(self, plan, is_spec: bool, result: dict):
+        """Run one generation pass, yielding what the transport should see.
+
+        The first pass and the self-correction retry were two copies of this
+        loop, and they had already drifted: the retry never tagged its chunks
+        with `speculative`, so a speculative turn that got self-corrected
+        emitted a stream whose chunks disagreed with the plan that produced
+        them. Nothing downstream reported it, because a missing key just reads
+        as "not speculative".
+
+        Accumulated output goes into `result` rather than a return value —
+        this is an async generator, so it cannot both yield chunks and hand
+        back the assembled response.
+        """
+        async for chunk in self.action.execute(plan):
+            if is_spec:
+                chunk["speculative"] = True
+            if chunk["type"] == "content":
+                result["response"] += chunk["data"]
+            if chunk["type"] == "done":
+                result["done"] = chunk
+                continue
+            # The retry is the likeliest place to trip a second metacognitive
+            # violation, since it runs with a hardened prompt after one
+            # rejection. Skipping the filter would leak `self_correction` to
+            # the transport *and* swallow the cortisol release on the one path
+            # that most deserves it.
+            if await self._consume_internal_chunk(chunk):
+                continue
+            yield chunk
 
     async def _consume_internal_chunk(self, chunk) -> bool:
         """Handle chunks meant for the pipeline itself. True = do not forward.
