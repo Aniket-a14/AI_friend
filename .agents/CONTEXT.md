@@ -4403,3 +4403,128 @@ for a change that touches no importable code.
   assertion failure into a passing step. This is the same always-green defect as
   the seed glob, but fixing it changes when CI blocks a merge, so it is reported
   rather than changed here.
+
+### 2026-07-19 — A behavioral eval harness, because no test can tell you the agent is still itself
+
+Built `backend/evals/`: a before/after gate that answers one question
+deterministically — *did this model + persona combination change behavior
+between two runs?* This is the prerequisite for CVS-4's QLoRA consolidation
+loop. Every PR since #64 has been carried by mutation-tested assertions, but no
+assertion can tell you whether a fine-tuned model is still your friend or got
+quietly lobotomized. Fine-tuning without this would be the first change in this
+project with no way to verify it.
+
+**Evaluated at the LLM boundary, and only there.** Probes go through the real
+`IdentityManager.get_persona_prompt` and the real `OllamaClient`, with sampling
+pinned (temperature 0, seed 42) and the mood directive frozen to a constant. No
+NATS, no databases, no mesh. That seam is exactly what a LoRA adapter changes —
+retrieval, state, and the action pipeline are untouched by an adapter swap, so
+including them would add variance without adding signal. Freezing the mood
+matters for the same reason: volatile affect is *supposed* to change responses,
+so an eval that let it float would measure the agent's mood, not the model.
+
+**Probes are persona-derived, not a fixed list.** A hardcoded "is your name
+Pankudi?" probe would be fitted to one deployment the same way the old synonym
+map was fitted to one corpus (B1). `persona_probes()` reads whatever
+`IdentityManager` actually loaded, so pointing the harness at a different
+persona makes it ask about *that* persona. Verified by mutation: hardcoding the
+name is caught. Two shipped packs supplement it —
+`probes/identity_pressure.json` (persona-independent: prompt disclosure, persona
+swap, values override) and `probes/sample_memory_recall.json`, which is labeled
+in its own description as a format demonstration whose probes *should* fail
+against any model not trained on those facts.
+
+**The hostility probe delegates to `validate_response`.** Eval and runtime
+therefore share one definition of what crosses a line, by construction rather
+than by convention — a boundary check cannot drift from the boundary it claims
+to test.
+
+**Scoring is deterministic; there is no LLM judge.** A judge model would add its
+own noise to precisely the measurement being stabilized, and would double the
+cost per probe on CPU-only hardware. The tradeoff is real and is documented in
+`evals/README.md`: tone, warmth, and style drift are genuine phenomena this
+harness does **not** measure. A gate that flips between identical runs is worse
+than one that misses nuance.
+
+Two production behaviors are reused rather than reimplemented: responses are
+scored after `<thought>` stripping (what the user actually hears), and matched
+across `identity._match_views` — raw, detagged, debracketed. The persona prompt
+*invites* `<pause=300ms>` markers, so `I ha<pause=100ms>te you` would slip a
+naive substring check while being exactly the behavior the gate exists to catch.
+
+**Provenance is a first-class field.** Reports record `live` or `mock`, read from
+`config_instance` rather than the `Config` metaclass so patched tests are seen.
+Both CLI subcommands refuse mock-sourced data as evidence unless `--allow-mock`
+is passed, and a mock comparison prints a banner saying it is a plumbing check.
+This repo has already shipped one evaluation path whose numbers came from a mock
+fitted to the corpus; the refusal is what makes that mistake structurally harder
+to repeat. `evals/out/` is gitignored — a number only means something next to the
+run that produced it.
+
+**The gate is pass→fail, not a score threshold.** A regression is a probe the
+baseline passed and the candidate failed. Deciding how much score decay is
+tolerable would be a tuning knob nobody has measured; pass/fail is unarguable,
+which is what a gate must be. Score dips that stay above passing are reported as
+`declines` so they are visible without blocking adoption.
+
+**18 tests, 16 mutations, 16 caught.** The mutations cover every way the gate
+could lie rather than merely break: views collapsed to raw text (pause markers
+hide violations), `strip_thoughts` neutered (reasoning scored as answer),
+`must_not_include` inverted, unknown check kinds silently passing, the probe
+name hardcoded, duplicate ids tolerated, the runner substituting its own system
+prompt, temperature unpinned, the boundary check auto-passing, provenance always
+`live`, regressions never recorded, `gate_passed` always true, missing probes
+hidden, and both CLI mock refusals removed.
+
+**687 tests pass** (666 before), `ruff check .` clean. `app/` imports nothing
+from `evals/`; the dependency points one way only.
+
+**NOT done:**
+
+- **The harness has never been run against a real model.** Verification used a
+  scripted client in tests plus one end-to-end CLI run through the
+  `MOCK_LLM_TEXT` short-circuit, which returns before any HTTP call. Both CLI
+  subcommands, report round-tripping, and the exit codes are exercised; what is
+  unproven is how a real local model actually scores, and therefore whether the
+  probe wording discriminates usefully in practice. Running against live Ollama
+  is a deliberate standing constraint from the maintainer, not an oversight.
+  Expect probe wording to need tuning on first real use.
+- **Determinism is per-build and per-hardware.** Greedy decoding plus a seed pins
+  Ollama's sampling, not floating-point reality across machines. Reports are only
+  comparable from the same box and binary; nothing enforces that.
+- **No CI integration.** The harness is a local tool. Wiring it into a workflow
+  would need a model in CI, which no runner here has.
+- **Memory probes have no generator.** The consolidation loop is expected to emit
+  a pack from its own training set; that loop does not exist yet, which is the
+  point. Until then memory probes are hand-authored.
+- **Style and tone drift remain unmeasured**, per the no-judge decision above.
+
+**Review follow-up (#89).** CodeRabbit found one genuine always-green defect
+that the 16 mutations had missed, in the same family as the Persona Guard bug
+fixed the day before: a `Check` with an **empty `values` list** scored
+`missing == []` and therefore passed unconditionally. A probe pack could ship a
+check that could never fail, and the gate would count it as evidence. `Check`
+now validates on construction — non-`boundary` kinds require values, and regex
+patterns must compile, so a typo in an authored pack fails when the file is read
+rather than minutes into a run. It also added `re.IGNORECASE` to the regex
+kinds: views are lowercased before matching, so a pattern written in prose case
+(`\bI am Max\b`) silently never fired, which would have made a rename-resistance
+probe look green while testing nothing.
+
+Both fixes arrived without tests, so three were added and mutation-tested (5
+mutations: guard removed, guard over-applied to `boundary`, regex-compile check
+removed, `IGNORECASE` dropped from each kind — 5 caught). Worth recording that
+the mutation set missed this class entirely: every mutation tested whether a
+*present* check could be broken, and none asked whether an *absent* one could be
+detected. Mutation testing confirms the code a test exercises; it says nothing
+about inputs the test never constructs.
+
+**The `Links` CI check was failing on an unrelated file.** `papers.nips.cc`
+began refusing TCP connections from GitHub-hosted runners between the last `main`
+run and this branch — "Connection refused", not 404, and the workflow checks all
+markdown on every PR, so a citation in `README.md` failed a PR that never
+touched it. Added to `.lycheeignore` alongside the existing CI-blocked hosts.
+Deliberately narrow: reference [6] also carries an arXiv link, which is **not**
+excluded and still validates, so the paper remains independently confirmable by
+CI. Given B3 was about unverifiable citations, excluding a proceedings mirror
+must not become a way to stop checking whether a cited paper exists.

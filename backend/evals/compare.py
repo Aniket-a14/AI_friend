@@ -1,0 +1,127 @@
+"""Diff two eval reports: the before/after half of the harness.
+
+This is the piece CVS-4 actually gates on. A consolidation run produces a
+candidate model; the loop runs the same probes against baseline and candidate
+and adopts the adapter only if `gate_passed` — no probe the baseline passed
+now fails — while memory-recall improvements are what it was hoping to buy.
+
+"Regression" is deliberately pass/fail, not a score threshold. A score delta
+of -0.1 on a three-check probe is one check flipping; deciding how much of
+that is tolerable would be a tuning knob nobody has measured yet. Pass/fail
+regressions are unarguable, which is what a gate needs to be.
+"""
+
+from typing import Dict, List
+
+from .schema import ComparisonReport, EvalReport, ProbeDelta
+
+
+def compare_reports(
+    baseline: EvalReport, candidate: EvalReport
+) -> ComparisonReport:
+    base_by_id = {result.probe_id: result for result in baseline.results}
+    cand_by_id = {result.probe_id: result for result in candidate.results}
+    shared = [pid for pid in base_by_id if pid in cand_by_id]
+
+    regressions: List[ProbeDelta] = []
+    improvements: List[ProbeDelta] = []
+    declines: List[ProbeDelta] = []
+    unchanged = 0
+
+    for pid in shared:
+        base, cand = base_by_id[pid], cand_by_id[pid]
+        delta = ProbeDelta(
+            probe_id=pid,
+            category=base.category,
+            baseline_score=base.score,
+            candidate_score=cand.score,
+            delta=cand.score - base.score,
+        )
+        if base.passed and not cand.passed:
+            regressions.append(delta)
+        elif cand.score > base.score:
+            improvements.append(delta)
+        elif cand.score < base.score:
+            declines.append(delta)
+        else:
+            unchanged += 1
+
+    by_category_delta: Dict[str, float] = {}
+    categories = set(baseline.by_category) | set(candidate.by_category)
+    for category in sorted(categories):
+        base_mean = (
+            baseline.by_category[category].mean_score
+            if category in baseline.by_category
+            else 0.0
+        )
+        cand_mean = (
+            candidate.by_category[category].mean_score
+            if category in candidate.by_category
+            else 0.0
+        )
+        by_category_delta[category] = cand_mean - base_mean
+
+    return ComparisonReport(
+        baseline_model=baseline.model,
+        candidate_model=candidate.model,
+        baseline_provenance=baseline.provenance,
+        candidate_provenance=candidate.provenance,
+        regressions=regressions,
+        improvements=improvements,
+        declines=declines,
+        unchanged=unchanged,
+        only_in_baseline=sorted(set(base_by_id) - set(cand_by_id)),
+        only_in_candidate=sorted(set(cand_by_id) - set(base_by_id)),
+        by_category_delta=by_category_delta,
+    )
+
+
+def render_comparison(comparison: ComparisonReport) -> str:
+    lines = [
+        f"baseline:  {comparison.baseline_model} "
+        f"[{comparison.baseline_provenance}]",
+        f"candidate: {comparison.candidate_model} "
+        f"[{comparison.candidate_provenance}]",
+        "",
+    ]
+    if "mock" in (comparison.baseline_provenance, comparison.candidate_provenance):
+        lines += [
+            "!! MOCK PROVENANCE — these responses came from the deterministic",
+            "!! mock, not a model. This comparison is a plumbing check, not",
+            "!! evidence about model behavior.",
+            "",
+        ]
+
+    for category, delta in comparison.by_category_delta.items():
+        lines.append(f"  {category:<10} mean score delta {delta:+.3f}")
+    lines.append("")
+
+    if comparison.regressions:
+        lines.append("REGRESSIONS (baseline passed, candidate failed):")
+        for item in comparison.regressions:
+            lines.append(
+                f"  - {item.probe_id} ({item.category}) "
+                f"{item.baseline_score:.2f} -> {item.candidate_score:.2f}"
+            )
+    else:
+        lines.append("No regressions.")
+
+    if comparison.improvements:
+        lines.append("Improvements:")
+        for item in comparison.improvements:
+            lines.append(f"  + {item.probe_id} ({item.delta:+.2f})")
+    if comparison.declines:
+        lines.append("Score declines (still passing):")
+        for item in comparison.declines:
+            lines.append(f"  ~ {item.probe_id} ({item.delta:+.2f})")
+
+    for label, ids in (
+        ("Only in baseline", comparison.only_in_baseline),
+        ("Only in candidate", comparison.only_in_candidate),
+    ):
+        if ids:
+            lines.append(f"{label}: {', '.join(ids)}")
+
+    lines.append("")
+    lines.append(f"GATE: {'PASS' if comparison.gate_passed else 'FAIL'}")
+    return "\n".join(lines)
