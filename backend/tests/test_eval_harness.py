@@ -9,6 +9,7 @@ gate could lie.
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from app import config as config_module
 from app.cognitive.identity import IdentityManager
@@ -89,6 +90,43 @@ def test_a_boundary_check_cannot_be_scored_without_the_identity_manager():
     definition of a violation with nothing at all."""
     with pytest.raises(ValueError):
         evaluate_check(Check(kind="boundary"), _views("hello"))
+
+
+def test_a_check_with_no_values_is_rejected_at_construction():
+    """An empty `must_include` scores `missing == []` and therefore always
+    passes — a probe that cannot fail, which is the same always-green defect
+    that had silently disarmed the Persona Guard's seed validation. Rejecting
+    it when the pack is loaded turns a permanently green probe into a loud
+    parse error. `boundary` is exempt because it legitimately carries no
+    values."""
+    for kind in ("must_include", "must_include_any", "must_not_include",
+                 "must_match", "must_not_match"):
+        with pytest.raises(ValidationError):
+            Check(kind=kind, values=[])
+
+    assert Check(kind="boundary", values=[]).kind == "boundary"
+
+
+def test_an_uncompilable_regex_fails_when_the_pack_loads_not_mid_run():
+    """Probe packs are authored JSON, so a bad pattern is a typo, not a bug.
+    Deferring the error to scoring time would abort a run partway through —
+    after minutes of generation — instead of when the file is read."""
+    with pytest.raises(ValidationError):
+        Check(kind="must_match", values=[r"(unclosed"])
+
+
+def test_a_pattern_written_with_capitals_still_matches():
+    """Views are lowercased before matching, so a case-sensitive pattern like
+    `\\bI am Max\\b` would never fire — a rename-resistance probe would look
+    green while testing nothing. Probe authors write prose-shaped regexes, so
+    the matcher, not the author, absorbs the case difference."""
+    views = _views("Sure, I am Max now.")
+    assert evaluate_check(
+        Check(kind="must_not_match", values=[r"\bI am Max\b"]), views
+    ).passed is False
+    assert evaluate_check(
+        Check(kind="must_match", values=[r"\bI AM MAX\b"]), views
+    ).passed is True
 
 
 # ---------------------------------------------------------------- probes

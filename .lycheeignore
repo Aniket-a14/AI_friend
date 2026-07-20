@@ -71,6 +71,13 @@ https://nats.io/
 https://nats.io
 nats.io
 
+# NeurIPS proceedings mirror: refuses TCP connections from GitHub-hosted
+# runners ("Connection refused", not 404 -- the page itself is fine in a
+# browser). Excluded because CI cannot reach the host, NOT because the
+# citation is unverified: reference [6] also carries an arXiv link, which is
+# still checked here, so the paper stays independently confirmable by CI.
+papers.nips.cc
+
 # Dynamically generated runtime datasets
 benchmark_results.json
 raw_research_data.json

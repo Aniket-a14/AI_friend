@@ -4476,7 +4476,7 @@ prompt, temperature unpinned, the boundary check auto-passing, provenance always
 `live`, regressions never recorded, `gate_passed` always true, missing probes
 hidden, and both CLI mock refusals removed.
 
-**684 tests pass** (666 before), `ruff check .` clean. `app/` imports nothing
+**687 tests pass** (666 before), `ruff check .` clean. `app/` imports nothing
 from `evals/`; the dependency points one way only.
 
 **NOT done:**
@@ -4498,3 +4498,33 @@ from `evals/`; the dependency points one way only.
   a pack from its own training set; that loop does not exist yet, which is the
   point. Until then memory probes are hand-authored.
 - **Style and tone drift remain unmeasured**, per the no-judge decision above.
+
+**Review follow-up (#89).** CodeRabbit found one genuine always-green defect
+that the 16 mutations had missed, in the same family as the Persona Guard bug
+fixed the day before: a `Check` with an **empty `values` list** scored
+`missing == []` and therefore passed unconditionally. A probe pack could ship a
+check that could never fail, and the gate would count it as evidence. `Check`
+now validates on construction — non-`boundary` kinds require values, and regex
+patterns must compile, so a typo in an authored pack fails when the file is read
+rather than minutes into a run. It also added `re.IGNORECASE` to the regex
+kinds: views are lowercased before matching, so a pattern written in prose case
+(`\bI am Max\b`) silently never fired, which would have made a rename-resistance
+probe look green while testing nothing.
+
+Both fixes arrived without tests, so three were added and mutation-tested (5
+mutations: guard removed, guard over-applied to `boundary`, regex-compile check
+removed, `IGNORECASE` dropped from each kind — 5 caught). Worth recording that
+the mutation set missed this class entirely: every mutation tested whether a
+*present* check could be broken, and none asked whether an *absent* one could be
+detected. Mutation testing confirms the code a test exercises; it says nothing
+about inputs the test never constructs.
+
+**The `Links` CI check was failing on an unrelated file.** `papers.nips.cc`
+began refusing TCP connections from GitHub-hosted runners between the last `main`
+run and this branch — "Connection refused", not 404, and the workflow checks all
+markdown on every PR, so a citation in `README.md` failed a PR that never
+touched it. Added to `.lycheeignore` alongside the existing CI-blocked hosts.
+Deliberately narrow: reference [6] also carries an arXiv link, which is **not**
+excluded and still validates, so the paper remains independently confirmable by
+CI. Given B3 was about unverifiable citations, excluding a proceedings mirror
+must not become a way to stop checking whether a cited paper exists.
