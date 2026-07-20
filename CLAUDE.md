@@ -107,7 +107,7 @@ Loading is deliberately asymmetric: `load()` (authored file) validates strictly 
 ## CI gotchas
 
 - **Credential Leak Prevention** greps for `(password|secret|api_key)\s*=\s*['"][^'"]{8,}['"]` across the whole repo with **no test-directory exclusion**. A test variable named `secret = "..."` fails the build; rename the variable rather than loosening the check.
-- **Persona Guard** runs on changes to `cognitive/**`, `vision/**`, `brain_agent.py`, `voice/agent.py`, and the frontend identity seed. It boots a real NATS container.
+- **Persona Guard** runs on changes to `cognitive/**`, `vision/**`, `brain_agent.py`, `persona/**`, the identity seeds (`personality.json` / `history.json` / `config/persona.toml`), and the frontend identity seed. It boots a real NATS container.
 - **Workflows are path-filtered**, so PR check counts legitimately differ. A PR based on a non-`main` branch runs almost nothing and CodeRabbit skips it entirely — a green check on such a PR means "nothing ran," not "nothing wrong." CodeRabbit also reports the check as *passed* when it hit its review-rate limit; read the actual comment.
 
 ## Behavioral eval harness
