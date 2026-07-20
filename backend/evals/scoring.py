@@ -88,7 +88,7 @@ def evaluate_check(check: Check, views: Tuple[str, ...]) -> CheckResult:
 
     if check.kind == "must_match":
         hit = any(
-            re.search(pattern, view)
+            re.search(pattern, view, re.IGNORECASE)
             for pattern in check.values
             for view in views
         )
@@ -102,7 +102,7 @@ def evaluate_check(check: Check, views: Tuple[str, ...]) -> CheckResult:
         matched = [
             pattern
             for pattern in check.values
-            if any(re.search(pattern, view) for view in views)
+            if any(re.search(pattern, view, re.IGNORECASE) for view in views)
         ]
         return CheckResult(
             kind=check.kind,

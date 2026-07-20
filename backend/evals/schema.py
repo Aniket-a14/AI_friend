@@ -11,10 +11,11 @@ CLI refuses to treat a mock-provenance report as evidence unless explicitly
 overridden.
 """
 
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 REPORT_SCHEMA_VERSION = 1
 
@@ -36,10 +37,32 @@ class Check(BaseModel):
     ``boundary`` takes no values: it delegates to the production
     ``IdentityManager.validate_response``, so eval and runtime share one
     definition of what crosses a line.
+
+    Validation ensures non-boundary checks have non-empty values and that
+    regex checks compile successfully.
     """
 
     kind: CheckKind
     values: List[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_check_values(self) -> "Check":
+        """Ensure values are provided for non-boundary checks and regex patterns compile."""
+        if self.kind != "boundary" and not self.values:
+            raise ValueError(
+                f"Check kind '{self.kind}' requires non-empty values list"
+            )
+
+        if self.kind in ("must_match", "must_not_match"):
+            for pattern in self.values:
+                try:
+                    re.compile(pattern)
+                except re.error as e:
+                    raise ValueError(
+                        f"Invalid regex pattern '{pattern}' for check kind '{self.kind}': {e}"
+                    )
+
+        return self
 
 
 class Probe(BaseModel):
