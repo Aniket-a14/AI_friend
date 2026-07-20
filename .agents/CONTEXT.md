@@ -4528,3 +4528,39 @@ Deliberately narrow: reference [6] also carries an arXiv link, which is **not**
 excluded and still validates, so the paper remains independently confirmable by
 CI. Given B3 was about unverifiable citations, excluding a proceedings mirror
 must not become a way to stop checking whether a cited paper exists.
+
+### 2026-07-20 — CLAUDE.md was describing an endocrine layer that had already been fixed
+
+`CLAUDE.md` still asserted **"Cortisol is still purely derived** from valence and
+fatigue, so acute stress cannot outlive its cause — the symmetric treatment is a
+known open item." That stopped being true at `597596a`
+(*feat(endocrine): split cortisol into tonic and phasic; half-lives become
+persona*), which added `cortisol_phasic`, `release_cortisol()`, and the
+persona-owned `cortisol_halflife_s`, covered by 34 tests in
+`tests/test_phasic_cortisol.py`.
+
+Caught the worst possible way: the line was read as current, and phasic cortisol
+was **recommended to the maintainer as the next piece of open work** on a
+codebase where it had already shipped. The 2026-07-17 ledger entry that first
+recorded it as NOT done is left exactly as written — it was true on its date, and
+the ledger is a dated record, not a status board. `CLAUDE.md` is the opposite: it
+is read as present tense, so a stale claim there is not history, it is a wrong
+answer.
+
+Rewrote the endocrine paragraph to describe what the layer actually is now
+(tonic + phasic for **both** hormones) and to carry the two facts a reader needs
+before touching it: the tonic terms are anti-correlated by construction, so only
+the phasic channels allow stressed-and-rewarded simultaneously; and burst peaks
+are computed relative to the tonic floor, so releases must go through the
+lock-holding `StateService` wrappers or a concurrent valence write corrupts the
+peak.
+
+Markdown-only; no code changed, so the suite was not re-run beyond the clean
+post-merge run on `main` at 687 passing.
+
+**NOT done:** this is one instance of a general problem — `CLAUDE.md` states
+current architecture in present tense and nothing verifies it against the code.
+The same class of rot produced the `backend/persona/**` CI filter in #88 and the
+archived-module references in `backend/README.md`. A doc-drift check (assert that
+paths named in `CLAUDE.md` exist; flag "still"/"not yet"/"open item" phrasing for
+periodic review) would catch the mechanical half. Not built here.
