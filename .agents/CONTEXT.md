@@ -4564,3 +4564,68 @@ The same class of rot produced the `backend/persona/**` CI filter in #88 and the
 archived-module references in `backend/README.md`. A doc-drift check (assert that
 paths named in `CLAUDE.md` exist; flag "still"/"not yet"/"open item" phrasing for
 periodic review) would catch the mechanical half. Not built here.
+
+### 2026-07-20 — The always-green Persona Guard step, a dead filler pipeline, and a check for the drift itself
+
+Pushed directly to `main` at the maintainer's explicit instruction, deviating
+from the branch-and-PR convention. Recorded because the convention exists and
+this is the exception, not a new default.
+
+**The Persona Guard's markup step was not merely unable to fail — it was already
+failing.** It called `ActionService._strip_emotion_wrappers`, which **does not
+exist**; every run raised `AttributeError` and the trailing
+`|| echo "⚠️ ... needs ActionService update"` converted it into a pass. So the
+step has validated nothing for its entire life, while printing a warning that
+read as a known nice-to-have rather than as "this check is dead". That is the
+third always-green defect found in three days, after the seed-validation glob
+(#88) and the empty eval `Check` (#89).
+
+Rewired onto the real `ControlMarkupSanitizer` and the `||` removed, so a
+failure now fails the build. Strengthened while there: the sanitizer is stateful
+precisely because an LLM emits `<`, `emotion`, `>` as separate tokens, so the
+step now replays one wrapped string at **every** chunk boundary (39 splits) and
+asserts the wrapper never leaks. Verified locally against the real class before
+removing the `||`, since removing it on a genuinely failing assertion would have
+turned a silent no-op into a blocked merge queue.
+
+**The filler pipeline is dead, which reverses the call made in #88.** That entry
+kept `generate_fillers.py` on the reasoning that SoVITS is live infrastructure —
+true, but the wrong question. The right one is whether its *output* is consumed,
+and it is not: nothing in `app/`, the crates, the frontend, or compose reads
+`app/assets/fillers`, the `.wav` files are gitignored, and the live filler path
+in `conversational_runtime.py` sends **text** (`<hesitate> {filler}<pause=200ms>`)
+through ordinary TTS. So `generate_fillers.py` (broken, importing the archived
+`app.voice.sovits_client`) and `trim_fillers.py` (not broken, but trims the same
+unread artifacts) are both removed. `process_voice_samples.py` and
+`record_voice.py` are **kept**: they produce `voice_samples/` reference audio,
+which SoVITS genuinely still uses.
+
+**A doc-drift check now guards CLAUDE.md** (`tests/test_doc_drift.py`), the
+mechanical half of the problem flagged in #90. Every backticked path-shaped
+token must resolve against the repo, `backend/`, or `backend/app/`; bare
+filenames are searched by basename but **never inside `_archive/`**, because the
+archive holds retired twins of live modules (`voice/agent.py`, `prosody.py`) and
+a search that reached them would confirm a stale reference instead of catching
+it. It found a real one on its first run: CLAUDE.md still documented the Persona
+Guard as triggering on `voice/agent.py`, a path #88 had removed from the
+workflow and which does not exist. Fixed.
+
+Deliberately mechanical-only. Prose staleness ("still", "not yet", "open item")
+is *not* asserted — that needs human judgement, and a fuzzy check that cries
+wolf gets muted, which is exactly how the markup step above survived. The test
+also carries an anti-vacuity floor (≥20 tokens must be extracted), because a
+silently-matching-nothing extractor is the same defect it exists to prevent.
+
+**696 tests pass** (687 before), `ruff check .` clean. Mutations: 4 on the
+doc-drift check (dead path added to the real CLAUDE.md; `_archive` added to the
+basename search; extractor matching nothing; resolver always true) — 4 caught.
+
+**NOT done:** `evolved_learnings` was left alone and is no longer classified as
+a small item. It is a hollow round-trip (loads and saves, no producer), but
+removing it means a coordinated migration across `db/schema.sql`,
+`sqlite_fallback.py`, `runtime_bootstrap.py`, `conversation_store.py` and a
+**non-nullable Prisma column** in `frontend/prisma/schema.prisma`. That is a
+multi-backend schema change for zero behavioural gain; the existing symmetric
+loader/saver is a defensible resting point. Also not done: the same drift check
+for `README.md`, `CONTRIBUTING.md` and `docs/**`, which name far more paths and
+would need triage before the assertion could be turned on.

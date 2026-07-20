@@ -82,18 +82,37 @@ jobs:
         run: |
           cd backend
           python -c "
-          from app.cognitive.action import ActionService
-          # Verify XML wrappers are stripped but timing markers preserved
-          test_cases = [
+          # Was calling ActionService._strip_emotion_wrappers, which does not
+          # exist -- so this step raised AttributeError on every run and the
+          # trailing '|| echo' swallowed it into a pass. It validated nothing,
+          # for as long as it has existed. The real sanitizer is the streaming
+          # ControlMarkupSanitizer; no '||' here, so a failure fails the build.
+          from app.cognitive.action import ControlMarkupSanitizer
+
+          def sanitize(text, split_at=None):
+              s = ControlMarkupSanitizer()
+              if split_at is None:
+                  return s.feed(text) + s.flush()
+              return s.feed(text[:split_at]) + s.feed(text[split_at:]) + s.flush()
+
+          cases = [
               ('<emotion type=\"happy\">Hello!</emotion>', 'Hello!'),
               ('<pause=500>Think about it<hesitate>', '<pause=500>Think about it<hesitate>'),
               ('<emotion anger>Go away</emotion> <pause=200>please', 'Go away <pause=200>please'),
           ]
-          for input_text, expected in test_cases:
-              result = ActionService._strip_emotion_wrappers(input_text)
-              assert result.strip() == expected.strip(), f'FAIL: {input_text!r} -> {result!r}, expected {expected!r}'
-          print('✅ All emotion markup tests passed')
-          " 2>&1 || echo "⚠️ Markup stripping validation needs ActionService update"
+          for text, expected in cases:
+              got = sanitize(text)
+              assert got.strip() == expected.strip(), f'FAIL: {text!r} -> {got!r}, expected {expected!r}'
+
+          # The reason the sanitizer is stateful at all: an LLM emits '<',
+          # 'emotion', '>' as separate tokens routinely, and a stripper that
+          # only sees whole tags leaks the wrapper to the voice layer.
+          leaky = '<emotion type=\"sad\">I am here.</emotion>'
+          for split_at in range(1, len(leaky)):
+              got = sanitize(leaky, split_at)
+              assert got.strip() == 'I am here.', f'FAIL at split {split_at}: {got!r}'
+          print('✅ Emotion markup stripping holds, including across chunk boundaries')
+          "
 
       - name: Check Identity Seed Consistency
         run: |
