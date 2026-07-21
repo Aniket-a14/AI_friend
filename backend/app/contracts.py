@@ -211,7 +211,20 @@ class VisionDescription(BaseModel):
 
 # ─── state.update ────────────────────────────────────────────
 class StateUpdate(BaseModel):
-    """Published on `state.update` when agent state changes."""
+    """The affect broadcast published on `state.update` when agent state changes.
+
+    This is the single definition of that payload. `CognitivePipeline` builds it
+    with `from_snapshot` at its two publish sites, and `SurfacingAgent` reads the
+    same fields off the wire to drive mood-congruent recall and APRA vocal
+    modulation. The subject also carries a separate lifecycle message from
+    `BaseAgent.set_state` (`{agent, state, timestamp}` — "thinking"/"idle"); that
+    one is deliberately *not* modelled here, and the consumer tolerates it because
+    it reads affect fields with defaults rather than validating a fixed shape.
+
+    Before this was wired up the payload lived as an 11-field dict literal
+    duplicated across both pipeline sites, and this model shadowed it unused —
+    two definitions of one wire contract, free to drift apart silently.
+    """
 
     model_config = {"extra": "allow"}
 
@@ -226,6 +239,17 @@ class StateUpdate(BaseModel):
     dopamine: float = 0.0
     fatigue: float = 0.0
     user_mental_model: Optional[Dict[str, Any]] = None
+
+    @classmethod
+    def from_snapshot(cls, snapshot: Dict[str, Any]) -> "StateUpdate":
+        """Build the broadcast from a `StateService.get_context_snapshot()` dict.
+
+        Only the modelled fields are pulled; a key the snapshot omits falls back
+        to this model's default, so the defaults live here and nowhere else.
+        Snapshot keys outside the schema (`valence`, `arousal`, …) are dropped,
+        exactly as the previous hand-written literal dropped them.
+        """
+        return cls(**{k: snapshot[k] for k in cls.model_fields if k in snapshot})
 
 
 # ─── user.voice.properties ───────────────────────────────────
