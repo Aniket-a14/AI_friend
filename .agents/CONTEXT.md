@@ -4629,3 +4629,53 @@ multi-backend schema change for zero behavioural gain; the existing symmetric
 loader/saver is a defensible resting point. Also not done: the same drift check
 for `README.md`, `CONTRIBUTING.md` and `docs/**`, which name far more paths and
 would need triage before the assertion could be turned on.
+
+### 2026-07-21 — StateUpdate: the orphan wire model was shadowing a duplicated literal
+
+The prior audit listed `StateUpdate` as a dead contract — "no publisher in
+Python, Rust, or the frontend" — and the #83 ledger left it alone as a wire
+model that Python-only evidence could not clear. Looked closer before deleting,
+and the real shape of it changes the fix.
+
+`state.update` **is** a live subject. It carries two shapes: a lifecycle message
+from `BaseAgent.set_state` (`{agent, state, timestamp}`) and the full affect
+broadcast from `CognitivePipeline`, consumed by `SurfacingAgent._on_agent_state`
+for mood-congruent recall and APRA vocal modulation. The affect broadcast's
+fields are **exactly** `StateUpdate`'s — because the pipeline built them as an
+11-field dict literal, duplicated verbatim across its two publish sites, while
+`StateUpdate` sat unused describing the same thing. Two definitions of one wire
+contract, and the model was the one nothing referenced.
+
+So deleting the model would have removed a symbol and left the actual smell —
+the duplicated literal — in place. Wired it up instead: added
+`StateUpdate.from_snapshot(snapshot)`, which pulls only modelled fields (so
+`valence`/`arousal`, which the snapshot also carries, stay dropped exactly as the
+literal dropped them) and lets the model's own defaults fill anything the
+snapshot omits. Both pipeline sites now publish
+`StateUpdate.from_snapshot(state_snapshot).model_dump()`. The item is resolved by
+the model *gaining* a publisher, not by removal.
+
+Confirmed safe before changing anything: no Rust or frontend consumer of
+`state.update` (grepped both), and the sole Python consumer duck-types with
+`.get(...)` defaults, so it tolerated the lifecycle shape before and is
+unaffected now. Verified byte-identical output against the old literal for a
+populated snapshot (extras dropped), a partial snapshot, and an empty one — the
+model defaults were already equal to the literal's hardcoded defaults,
+field-for-field, so the wire bytes do not move.
+
+Net −22 lines in `pipeline.py`. **700 tests pass** (696 before), `ruff check .`
+clean. New `tests/test_state_update_contract.py`: `from_snapshot` field mapping,
+default fallback from a partial snapshot, out-of-schema key dropping, and an
+end-to-end pipeline test asserting the emitted `state.update` equals
+`StateUpdate.from_snapshot(...)` — driven with a deliberately partial snapshot so
+the model defaults have to fill ten fields, which is what makes it catch a
+reverted literal. Four mutations (drop a field in `from_snapshot`; leak extras;
+a pipeline site reverting to a divergent literal; a changed model default) —
+four caught.
+
+**NOT done:** the lifecycle payload from `set_state` (`{agent, state,
+timestamp}`) is still unmodelled. It is a genuinely different message sharing the
+subject, and modelling it would mean either a second contract or a union the
+duck-typing consumer does not need. Left as is; the consumer reading affect
+fields with defaults is what makes one subject carrying two shapes safe, and that
+is worth keeping simple.

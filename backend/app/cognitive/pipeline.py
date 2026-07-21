@@ -2,6 +2,8 @@ import logging
 import math
 from typing import Dict, Any, AsyncGenerator, List
 
+from ..contracts import StateUpdate
+
 logger = logging.getLogger(__name__)
 
 # --- Endocrine channels ---------------------------------------------------
@@ -252,19 +254,7 @@ class CognitivePipeline:
             yield {
                 "type": "mesh_signal",
                 "subject": "state.update",
-                "data": {
-                    "mood": state_snapshot.get("mood", 0.0),
-                    "energy": state_snapshot.get("energy", 0.5),
-                    "dominance": state_snapshot.get("dominance", 0.5),
-                    "trust": state_snapshot.get("trust", 0.5),
-                    "attachment": state_snapshot.get("attachment", 0.1),
-                    "emotion": state_snapshot.get("emotion", "neutral"),
-                    "interaction_count": state_snapshot.get("interaction_count", 0),
-                    "cortisol": state_snapshot.get("cortisol", 0.0),
-                    "dopamine": state_snapshot.get("dopamine", 0.0),
-                    "fatigue": state_snapshot.get("fatigue", 0.0),
-                    "user_mental_model": state_snapshot.get("user_mental_model"),
-                },
+                "data": StateUpdate.from_snapshot(state_snapshot).model_dump(),
             }
         else:
             stage_times["stage_5_state_update_ms"] = (
@@ -297,19 +287,7 @@ class CognitivePipeline:
                 yield {
                     "type": "mesh_signal",
                     "subject": "state.update",
-                    "data": {
-                        "mood": state_snapshot.get("mood", 0.0),
-                        "energy": state_snapshot.get("energy", 0.5),
-                        "dominance": state_snapshot.get("dominance", 0.5),
-                        "trust": state_snapshot.get("trust", 0.5),
-                        "attachment": state_snapshot.get("attachment", 0.1),
-                        "emotion": state_snapshot.get("emotion", "neutral"),
-                        "interaction_count": state_snapshot.get("interaction_count", 0),
-                        "cortisol": state_snapshot.get("cortisol", 0.0),
-                        "dopamine": state_snapshot.get("dopamine", 0.0),
-                        "fatigue": state_snapshot.get("fatigue", 0.0),
-                        "user_mental_model": state_snapshot.get("user_mental_model"),
-                    },
+                    "data": StateUpdate.from_snapshot(state_snapshot).model_dump(),
                 }
         stage_times["stage_6_decision_ms"] = (time.perf_counter() - t_start) * 1000.0
 
