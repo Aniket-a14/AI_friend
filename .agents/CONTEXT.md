@@ -4679,3 +4679,115 @@ subject, and modelling it would mean either a second contract or a union the
 duck-typing consumer does not need. Left as is; the consumer reading affect
 fields with defaults is what makes one subject carrying two shapes safe, and that
 is worth keeping simple.
+
+### 2026-07-30 — Voice: removed the local-ONNX fallback, added emotion-selected reference clips and a no-fallback resilience layer
+
+Trigger: the maintainer is about to clone a voice from a podcast recording into
+GPT-SoVITS and wants an emotional-delivery layer on top of it, under a hard
+constraint — no fallback to a *different* engine or voice, only same-engine
+recovery, because this has to run 24/7 unattended. Three changes to
+`crates/voice-agent`, done as one PR since they're interdependent.
+
+**1. Local ONNX/VITS engine removed.** `LocalTtsEngine`, `Phonemizer`,
+`resample_by`, `model_sample_rate`, `load_local_engine`, and the `VITS_*`
+constants are gone, along with the `ort`/`ndarray`/`rubato` dependencies they
+needed. This was a fallback to a *different, uncloned* voice on failure — under
+a no-fallback requirement that's strictly worse than silence, not a safety net,
+so it had to go rather than be hardened. `models/custom/`/`models/base/` and
+their sole producer, `scripts/research/export_models.py`, are dead with it and
+deleted (nothing else referenced that script). `handle_chat_output` now always
+synthesizes through the remote GPT-SoVITS endpoint.
+
+**2. Emotion-selected reference clips.** GPT-SoVITS already accepted a
+different `ref_audio_path`/`prompt_text` per HTTP request — the codebase just
+sent the same static pair (`REF_AUDIO_PATH`/`REF_TEXT`) on every call. Added
+`EmotionBucket` (Calm/Warm/Concerned/Excited/Neutral), `RefClip`, and
+`EmotionRefSet`; `select_emotion_bucket` maps the turn's already-computed
+valence/arousal onto a bucket (thresholds are a first-pass default, documented
+as unvalidated — no published study covers GPT-SoVITS multi-clip identity
+drift), and `EmotionRefSet::resolve` picks the matching optional
+`REF_AUDIO_PATH_{BUCKET}`/`REF_TEXT_{BUCKET}` pair, falling back to `Neutral`
+silently when unset. A pair only counts as configured if *both* env vars are
+present — a lone audio path with no matching transcript would mismatch what's
+sent to GPT-SoVITS, which is worse than falling back. This is dormant by
+default: with no emotion clips recorded yet, every turn still resolves to the
+one neutral clip, exactly as before this change.
+
+**3. Same-engine resilience layer.** `CircuitBreaker` (atomics-based; the
+`chat.output` subscriber loop calls `handle_chat_output` sequentially, so no
+lock is needed against itself — only against the background probe task, which
+is an accepted, documented race with a bounded worst case) opens after
+`TTS_CIRCUIT_BREAKER_FAILURE_THRESHOLD` (default 3) consecutive failures and
+allows exactly one half-open trial per `TTS_CIRCUIT_BREAKER_COOLDOWN_MS`
+(default 15s) once elapsed. `synthesize_stream_with_retry` retries a failed
+pre-flight request up to 3 attempts with fixed backoff (150ms, 400ms) — retries
+cover connecting and getting a response back, not a mid-stream drop, since
+replaying would re-speak audio already played for that turn. A background task
+(`spawn_readiness_probe`, `TTS_READINESS_PROBE_INTERVAL_SECS`, default 45,
+`0` disables it) independently posts a canned phrase to `/tts` and requires a
+non-empty response body, not just a 200 status — GPT-SoVITS has open reports of
+blank-audio responses under streaming load, which a status-only check would
+miss — so an outage is caught even during silence, not only when a user
+happens to speak. On any exhausted-retries failure, or while the breaker is
+open, the turn plays a `voice_engine_unavailable` vocalization through the
+existing `load_vocalization_pcm` mechanism instead of going silent — which
+already degrades to a synthetic tone (not a different voice) if that file
+hasn't been recorded, so the fallback is safe before the cloned voice exists.
+
+**4. Infra: GPT-SoVITS's own Docker healthcheck tightened.** It only checked
+`wget --spider /docs` — proof the HTTP server answers, not that the loaded
+model can render audio; a wedged CUDA context would pass it. Replaced with
+`backend/scripts/bootstrap/sovits_healthcheck.sh`, mounted the same way
+`sovits_bootstrap.sh` already is, which POSTs a real synthesis request and
+checks for a non-empty response body — written as a script rather than an
+inline `CMD-SHELL` one-liner specifically to avoid a triple-escaped
+YAML/shell/JSON quoting mess that would have been unverifiable by reading it.
+**Deliberately not done**: wiring actual container restart-on-unhealthy (Docker
+`restart: always` triggers on exit, not on healthcheck status alone). The
+options are a Docker-socket-mounted watchdog sidecar (new, security-sensitive
+attack surface) or moving GPT-SoVITS off Docker to a host-level systemd
+service — both are real deployment-model decisions, not something to pick
+silently. `voice-agent`'s own circuit breaker and readiness probe do not depend
+on this either way; they detect and route around an outage independently of
+Docker's health status.
+
+Docs updated to match: `README.md`, `docs/ARCHITECTURE.md`,
+`backend/app/agents/context.md` §10 no longer describe the ONNX dual-fallback
+as current; the historical "Scenario B" framing is kept as history, not
+deleted. `.env.example` (both) document all the new optional vars with the
+same defaults the code uses.
+
+**Verified**: `cargo check --workspace` and `cargo test --workspace` clean
+except one **pre-existing, unrelated** failure —
+`contracts::chat_output_round_trips_current_contract_shape` fails identically
+on `main` (confirmed via `git stash` + checkout), a stale fixture still
+carrying the deprecated prosody fields (`confidence`, `intensity`,
+`paralinguistic_tags`, `pause_bias`, `speaking_rate`) removed from `ChatOutput`
+in an earlier change. Not fixed here — out of scope, flagged for separate
+follow-up. `voice-agent`: 8 surviving tests → **33 passing** (16 ONNX-only
+tests removed, 25 new added for the bucket/ref-clip/breaker/retry/probe logic,
+5 of them against a real local `wiremock` HTTP server, not the network).
+`stt-agent` 31/31 and `cognitive-rust` 11/11 unaffected. `ruff check .` clean
+(Python side: only the dead script deletion touched it).
+
+Mutation-tested both new logic areas (break, confirm the test suite fails,
+restore): 5 mutations on `select_emotion_bucket`/`EmotionRefSet` — one survived
+on the first pass (`deadband_boundary_is_exclusive_not_inclusive` probed a
+valence edge at an arousal level that fell through to the same bucket either
+way, so a `>`→`>=` mutation changed nothing observable), fixed by raising the
+probe's arousal into range where the mutation actually flips the outcome, then
+5/5 caught. Same pattern on the `CircuitBreaker`: 5 mutations, one survived
+(`success_fully_resets_the_breaker` asserted post-success state without ever
+having opened the breaker first, so clearing `opened_at_ms` was a no-op the
+test couldn't see), fixed to open it first, then 5/5 caught.
+
+**NOT done:** no emotion-tagged reference clips exist yet, so the selection
+logic ships dormant — every turn resolves to `Neutral` until the podcast is
+recorded, sliced, and `REF_AUDIO_PATH_*`/`REF_TEXT_*` are set. No
+`voice_engine_unavailable.wav` exists yet either, so the fallback is currently
+the synthetic tone `load_vocalization_pcm` generates when a named clip is
+missing — audible and clearly not the cloned voice, but not a recorded "one
+moment" phrase. Migration candidates researched separately (CosyVoice2,
+Zonos2) were intentionally not touched — this change only hardens and extends
+the existing GPT-SoVITS path, per the staged plan; a full engine migration is
+a later, separate decision.
