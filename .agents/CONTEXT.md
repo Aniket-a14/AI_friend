@@ -4818,6 +4818,42 @@ or adopted — this only restores the previously-green baseline. Deciding
 whether to move to the newer ruff and clean up the ~40 files it would flag is
 a separate, repo-wide style decision for later.
 
+### 2026-07-31 — Fix: the pre-existing `contracts` round-trip fixture was stale, and so was the Python test mirroring it
+
+`contracts::tests::chat_output_round_trips_current_contract_shape` (flagged
+during PR #92 as pre-existing and out of scope, confirmed failing identically
+on `main`) was broken by `backend/crates/contracts/fixtures/chat_output_chunk.json`
+itself, not the struct: the fixture still carried the deprecated prosody block
+(`confidence`, `intensity`, `speaking_rate`, `pause_bias`,
+`paralinguistic_tags`) that an earlier change intentionally removed from
+`ChatOutput`. Deserializing an old-shaped fixture into the new struct silently
+drops the unknown keys (no `deny_unknown_fields`), so the round-trip
+re-serialization came back without them — and a fixture named "current
+contract shape" is supposed to *be* the current shape, not a historical
+message the struct merely tolerates. Fixed by removing those five keys from
+the fixture JSON.
+
+That same fixture is shared with Python: `tests/test_rust_contract_fixtures.py`
+loads it from `backend/crates/contracts/fixtures/` and asserts on it via
+`ChatOutput.model_validate` (`app/contracts.py`), which is `extra: "allow"` —
+so it was reading the deprecated keys back as ad hoc attributes and passing,
+even though `ChatOutput` itself no longer declares those fields. Fixing the
+fixture without touching this test would have just relocated the failure from
+Rust to Python, so the five corresponding assertions were removed there too.
+`tests/test_phase4_features.py` already asserted the fields are *absent*
+(`test_the_brain_declares_no_prosody_fields_at_all`), so it needed no change —
+it was already aligned with the current contract.
+
+**Verified**: `cargo test -p contracts` (6/6) and `cargo test --workspace`
+(11+6+31+33 passing across `cognitive-rust`/`contracts`/`stt-agent`/
+`voice-agent`, 0 failed) both clean. Full backend suite: 700 passed, 0
+failed/errored/skipped (via junit-xml, per this repo's Windows
+terminal-truncation caveat — never trusted the dot summary alone). `ruff
+check .` clean.
+
+**NOT done:** nothing else — this was a two-file, self-contained stale-fixture
+fix with no scope beyond the one pre-existing failure flagged in PR #92.
+
 ### 2026-07-31 — CI: adopted ruff 0.16.1 for real, and gave the repo its first ruff config
 
 Follow-up to the same-day pin above. The true scope of the `0.15.15` →

@@ -24,11 +24,6 @@ def test_rust_chat_output_fixture_matches_current_pydantic_contract():
     assert parsed.affect.trust == 0.5
     assert parsed.affect.attachment == 0.1
     assert parsed.affect.emotion == "happy"
-    assert parsed.confidence == 0.9
-    assert parsed.intensity == 0.56
-    assert parsed.speaking_rate == 1.15
-    assert parsed.pause_bias == 0.24
-    assert parsed.paralinguistic_tags == ["[laughs]"]
     assert parsed.full_response is None
     assert parsed.generation_error is None
     assert parsed.proactive is False
