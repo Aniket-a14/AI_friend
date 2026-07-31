@@ -25,7 +25,7 @@
 
 ## 🌟 The Philosophy of Perceptual Mastery
 
-AI Friend is not a reactive "turn-based" chatbot. It is a **Sovereign Mesh** of specialized agents synchronized through a hardened signal bus. In the **CVS-3.5 (Premium Edition)** release, the architecture shifted from legacy Python audio loops to a **High-Performance Rust Signal Mesh**, guaranteeing sub-50ms deterministic execution and true temporal identity continuity.
+AI Friend is not a reactive "turn-based" chatbot. It is a **Sovereign Mesh** of specialized agents synchronized through a hardened signal bus. In the **CVS-3.5 (Premium Edition)** release, the architecture shifted from legacy Python audio loops to a **High-Performance Rust Signal Mesh**, targeting sub-50ms deterministic execution and true temporal identity continuity — see [Performance Perceived SLOs](#performance-perceived-slos) below for what's actually been measured so far.
 
 ### 🧠 Reactive vs. Sovereign Intelligence
 

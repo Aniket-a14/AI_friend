@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 from collections.abc import AsyncGenerator
@@ -240,8 +241,6 @@ class CognitivePipeline:
             # A2: cancel any still-running prior appraisal so overlapping tasks
             # cannot clobber each other's writes to short-term affect.
             if self.llm:
-                import asyncio
-
                 if self._system2_task and not self._system2_task.done():
                     self._system2_task.cancel()
                 self._system2_task = asyncio.create_task(
