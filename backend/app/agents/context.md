@@ -360,19 +360,37 @@ The logged assistant message is truncated to at most $C$ characters while respec
 
 ---
 
-## 🧠 10. Scenario B: Local Voice Synthesis Acceleration & Quality-Prioritized Look-Ahead (May 31, 2026)
+## 🧠 10. Single-Engine Synthesis & Quality-Prioritized Look-Ahead
 
-CVS-3.5 introduces an accelerated local synthesis pipeline (**Scenario B**) to eliminate containerized HTTP API bottlenecks while maintaining high-quality emotional expression.
+CVS-3.5's voice agent renders every utterance through one self-hosted GPT-SoVITS
+endpoint — the cloned voice's identity lives permanently in its loaded weights
+(`CUSTOM_GPT_PATH`/`CUSTOM_SOVITS_PATH`), so there is nothing to select between
+at synthesis time.
 
-### 10.1 Native Local Synthesis Core (`LocalTtsEngine`)
-The voice agent embeds the `ort` library (ONNX Runtime) directly inside the Rust compiled executable.
-- **Dynamic Provider Selection**: At initialization, the engine programmatically polls and binds to the most performant execution provider available on the host platform:
-  * **NVIDIA GPU (Windows/Linux)**: Binds to the TensorRT or CUDA Execution Providers.
-  * **Apple Silicon (macOS)**: Binds to the CoreML Execution Provider.
-  * **Generic**: Falls back to multi-threaded CPU execution.
-- **Fallback Weight Resolution**: If custom weights are missing from `./models/custom/`, the engine logs a warning and dynamically loads the base English VITS voice model (`vits-piper-en_US-amy-low`) from `./models/base/`, guaranteeing robust startup stability.
+**History**: an earlier iteration ("Scenario B", May 31 2026) embedded the `ort`
+library (ONNX Runtime) directly in the Rust binary as a `LocalTtsEngine`, with
+dynamic execution-provider selection (TensorRT/CUDA/CoreML/CPU) and a
+custom→base model fallback under `models/custom/`/`models/base/`. It was
+removed 2026-07: on failure it fell back to a *different, uncloned* voice,
+which is strictly worse than silence under a no-fallback requirement. See the
+ledger entry for the removal and what replaced it.
+
+### 10.1 Emotion-Selected Reference Clips & Same-Engine Resilience
+- **Delivery register, not identity**: `select_emotion_bucket` maps the turn's
+  PAD affect (valence/arousal) onto one of five registers — calm, warm,
+  concerned, excited, neutral — each an optional GPT-SoVITS reference clip
+  (`REF_AUDIO_PATH_*`/`REF_TEXT_*`). An unconfigured register falls back to
+  neutral silently. This changes *how* a line is delivered per turn; the
+  cloned voice's identity never changes, since that is baked into the
+  server's weights, not the reference clip.
+- **No fallback, same-engine recovery only**: a circuit breaker with bounded
+  retry wraps every synthesis call, and a background readiness probe proves
+  the engine renders real audio (not just answers HTTP) independently of live
+  traffic, so an outage is caught even during silence. A confirmed failure
+  plays a same-voice fallback vocalization instead of dropping the turn or
+  switching voices.
 
 ### 10.2 Quality-Latency Balanced Pacing
 To prevent fragmented or robotic speech (which occurs when chunk sizes are too small), the system implements a quality-prioritized look-ahead configuration:
-- **Speech Segmentation**: The `brain_agent` buffers words and groups them into chunks of **7 words** (or splits on clause punctuation markers like commas, semicolons, and dashes). This provides the VITS acoustic model with sufficient semantic context to synthesize natural emotional inflections and pitch contours.
-- **Speculative Filler Invalidation**: Because a 7-word chunk takes longer to generate than a 3-word chunk, the system uses a faster **250ms speculative pause filler threshold** (configured via `Config.VOICE_FILLER_THRESHOLD`). If the LLM has not emitted the first chunk within 250ms of turn onset, an immediate vocal filler (e.g. *"Hmm"*, *"Accha"*) is injected to seize the turn, while the local ONNX engine synthesizes the quality-priority audio chunk in the background.
+- **Speech Segmentation**: The `brain_agent` buffers words and groups them into chunks of **7 words** (or splits on clause punctuation markers like commas, semicolons, and dashes). This provides the acoustic model with sufficient semantic context to synthesize natural emotional inflections and pitch contours.
+- **Speculative Filler Invalidation**: Because a 7-word chunk takes longer to generate than a 3-word chunk, the system uses a faster **250ms speculative pause filler threshold** (configured via `Config.VOICE_FILLER_THRESHOLD`). If the LLM has not emitted the first chunk within 250ms of turn onset, an immediate vocal filler (e.g. *"Hmm"*, *"Accha"*) is injected to seize the turn, while GPT-SoVITS synthesizes the quality-priority audio chunk in the background.

@@ -166,12 +166,16 @@ services:
       - ./models/GPT_weights:/workspace/GPT-SoVITS/GPT_weights
       - ./models/SoVITS_weights:/workspace/GPT-SoVITS/SoVITS_weights
       - ./backend/scripts/bootstrap/sovits_bootstrap.sh:/workspace/sovits_bootstrap.sh
+      - ./backend/scripts/bootstrap/sovits_healthcheck.sh:/workspace/sovits_healthcheck.sh
     shm_size: 16gb
     networks:
       - ai_mesh_network
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9871/docs || exit 1"]
+      # Real synthesis probe, not a status ping -- see sovits_healthcheck.sh
+      # for why. `timeout` here (10s) must stay above the script's own -m 8
+      # curl deadline, or Docker could kill the check before curl reports.
+      test: ["CMD-SHELL", "bash /workspace/sovits_healthcheck.sh"]
       interval: 30s
       timeout: 10s
       retries: 5

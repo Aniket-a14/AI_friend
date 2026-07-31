@@ -90,11 +90,11 @@ Interruption is now handled as a **Temporal Intent Problem** powered by binary P
 
 ### 🔊 6. Signal Rendering (Voice Agent)
 
-A persistent synthesis runtime with direct binary transport, accelerated local synthesis, and expressive behavior.
+A persistent synthesis runtime with direct binary transport and expressive behavior, rendered through a single cloned-voice engine — no fallback to a different voice.
 
-- **Rust Native Audio & Hybrid TTS Core**: The FFI layer handles pure PCM payloads. The Voice Agent dynamically coordinates speech synthesis using an ONNX-based **LocalTtsEngine** with fallback capability.
-- **Dual-Model Fallback Resolution**: If custom voice models are present under `models/custom/`, they are loaded. Otherwise, the engine seamlessly falls back to a base Piper VITS model (`vits-piper-en_US-amy-low`) under `models/base/`, or routes to the HTTP REST endpoint if local models are unprovisioned.
-- **Hardware-Accelerated Execution Providers**: Initializes ONNX Runtime sessions by dynamically binding to the most performant execution provider (TensorRT or CUDA on NVIDIA hardware, CoreML on Apple Silicon, or optimized multi-threaded CPU execution).
+- **Rust Native Audio, Single-Engine Synthesis**: The FFI layer handles pure PCM payloads. The Voice Agent renders every utterance through one self-hosted GPT-SoVITS endpoint. A local ONNX **LocalTtsEngine** with dual-model (`models/custom/` / `models/base/`) fallback existed through 2026-07 and was removed: its fallback path degraded to a *different, uncloned* voice on failure, which is worse than silence under a no-fallback requirement — see the ledger entry for the removal.
+- **Emotion-Selected Reference Clips**: Delivery register (calm/warm/concerned/excited/neutral) is chosen per turn from the agent's own PAD affect state (`select_emotion_bucket`) and determines which GPT-SoVITS reference clip carries the request — steering delivery, not identity, which stays permanently baked into the server's loaded weights (`CUSTOM_GPT_PATH`/`CUSTOM_SOVITS_PATH`).
+- **Same-Engine Resilience**: A circuit breaker with bounded retry wraps every synthesis call, and a background readiness probe independently proves the engine renders real audio (not just answers HTTP) so an outage is caught even during silence. A confirmed failure plays a same-voice fallback vocalization rather than dropping the turn or switching voices.
 - **Quality-Prioritized Look-Ahead Pacing**: The `BrainAgent` groups generated text into chunks of **7 words** (or splits on clause punctuation), allowing the VITS acoustic model to capture semantic context and produce natural, expressive prosody contours.
 - **Speculative Filler Interruption Masking**: Under quality-prioritized segmentation, to hide compilation/synthesis latency, the system utilizes a **250ms speculative pause filler threshold** (`VOICE_FILLER_THRESHOLD`). If the first audio chunk is not generated within 250ms, immediate vocal fillers (e.g. *"Hmm"*, *"Accha"*) are dispatched to maintain turn flow.
 - **Direct Binary Bus**: Publishes raw PCM bytes via `orjson` serialization at 80,000 OPS.
