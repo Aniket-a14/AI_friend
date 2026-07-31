@@ -17,7 +17,14 @@ from typing import Any
 
 import cognitive_rust
 
-from ..contracts import MemoryScope, MemorySurfaced, SurfacedMemory
+from ..contracts import (
+    AgentVoiceModulation,
+    MemoryScope,
+    MemorySurfaced,
+    ProsodyFrame,
+    SurfacedMemory,
+    Topics,
+)
 from ..state import ConversationHistoryStore, GraphDB, MemoryStore
 from .base import BaseAgent
 
@@ -120,8 +127,6 @@ class SurfacingAgent(BaseAgent):
             arousal = self._current_arousal
             dominance = data.get("dominance", 0.5)
             fatigue = data.get("fatigue", 0.0)
-
-            from ..contracts import AgentVoiceModulation, ProsodyFrame, Topics
 
             # Generate continuous trajectory using Rust PyO3
             trajectory_tuples = cognitive_rust.generate_apra_trajectory(

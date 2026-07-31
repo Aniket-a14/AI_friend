@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -10,6 +11,13 @@ import httpx
 from app.config import Config
 
 logger = logging.getLogger("ollama_client")
+
+# Matches a role-impersonation prefix at the start of a line (system:,
+# Assistant :, etc.), case-insensitive, tolerant of leading whitespace and
+# spacing around the colon. Used only on the /api/generate fallback path (see
+# _build_generate_prompt) -- the primary /api/chat path doesn't have this
+# problem since Ollama enforces role separation structurally there.
+_ROLE_PREFIX_RE = re.compile(r"(?im)^[ \t]*(system|assistant|user)\s*:\s*")
 
 
 class OllamaClient:
@@ -43,7 +51,19 @@ class OllamaClient:
             await self._client.aclose()
 
     def _build_generate_prompt(self, prompt: str, system: str | None = None) -> str:
-        safe_prompt = prompt.replace("System:", "").replace("Assistant:", "")
+        """Flatten prompt+system into the single string /api/generate expects.
+
+        C3: this used to strip only the two literal substrings "System:" and
+        "Assistant:", trivially bypassed by a different case or spacing
+        ("SYSTEM:", " assistant :"). Strips any line-leading role prefix
+        instead, case-insensitively, so text the caller supplies can't inject
+        a fake turn boundary into the flat prompt. Not a complete defense --
+        no regex can be, against a model that reads all of this as one token
+        stream -- but it closes the specific bypass the old check had. The
+        /api/chat path this client tries first doesn't need this at all: it
+        sends system/user as separate structured messages.
+        """
+        safe_prompt = _ROLE_PREFIX_RE.sub("", prompt)
         return f"{system}\n\nUser: {safe_prompt}\nAssistant:" if system else safe_prompt
 
     def _build_chat_messages(

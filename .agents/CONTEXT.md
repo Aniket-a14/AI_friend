@@ -4930,3 +4930,87 @@ CI's `app/ tests/`) clean. No Rust files touched, so `cargo` was not rerun.
 enough that some are certainly bugs hiding behind a catch-all, and picking
 those out from the ones that are load-bearing resilience needs a slower read
 than this PR's mechanical sweep.
+
+### 2026-07-31 — Full re-verification of the original audit against `main`, then closed the last six open findings in one PR
+
+After the ruff work above, re-checked every finding from the original audit
+(`A1`-`A7`, `B1`-`B3`, `C1`-`C4`, `D1`-`D4`, `E1`-`E3`, `F1`-`F4`) against the
+actual current state of `main` by reading the code, not by trusting the old
+audit text — it had already gone stale once this session (the "mental
+lexicon" replacing `SYNONYM_MAP`, finding B1, turned out to already be done
+and merged as `6f2b2a3`, contradicting an earlier "not started" report given
+in conversation). Result: 19 of 25 findings were already fixed by other work,
+2 were partially fixed, and 2 were genuinely still open. Closed all of the
+non-fully-fixed ones (6 items, counting `C4`'s two sub-issues separately) in
+this one PR, per explicit instruction not to split it further.
+
+**C3 — prompt-injection scrubbing.** `_build_generate_prompt` in
+`ollama_client.py` stripped only the literal substrings `"System:"` /
+`"Assistant:"`, bypassed by any case or spacing variant. Replaced with a
+case-insensitive, line-anchored regex (`_ROLE_PREFIX_RE`) that strips any
+line-leading `system:`/`assistant:`/`user:` prefix. Deliberately
+line-anchored, not a bare substring match: a role-like word mid-sentence
+("my Assistant: see attached") doesn't structurally read as a turn boundary
+to the model the way a newline-prefixed one does, and over-matching would
+mangle ordinary text for no security benefit. Not presented as a complete
+fix — no regex closes prompt injection against a model reading one token
+stream — just as closing the specific bypass the old check had. The primary
+`/api/chat` path (tried first) was never affected: Ollama enforces
+system/user separation structurally there via message roles. Two new tests
+in `test_audit_hygiene.py`; mutation-tested against both the original naive
+scrub and an un-anchored regex, both caught.
+
+**F3 — repeated inline imports.** Three redundant `import re` in
+`memory_store.py` (module already imports `re` at the top), one in
+`action.py` (same), one `import asyncio` in `pipeline.py` that had *no*
+module-level import to be redundant with (hoisted, not just deleted), and
+one `from ..contracts import AgentVoiceModulation, ProsodyFrame, Topics` in
+`surfacing_agent.py` merged into the file's existing top-level contracts
+import. A `from collections import Counter` inline alongside one of the
+`memory_store.py` sites (not originally flagged, found while reading the
+same lines) was hoisted too. No behavior change; verified by re-running the
+full suite and a plain `import` of all four modules.
+
+**B2 — placeholder results presented as fact.** The SLO table itself
+(`README.md`) was already honest ("not yet measured" throughout), but the
+intro prose asserted "guaranteeing sub-50ms deterministic execution" as
+settled fact one paragraph above a table showing that exact target
+unmeasured. Changed "guaranteeing" to "targeting" and linked directly to the
+SLO table, matching this repo's own stated integrity rule (state targets as
+targets until measured).
+
+**C4 — uvicorn `0.0.0.0` bind / unauthenticated `/`, `/status`, `/health`.**
+Investigated before changing anything: `/status`'s only real consumer is the
+Dockerfile's own `HEALTHCHECK` (`curl http://127.0.0.1:8000/status`,
+loopback, standard Docker/K8s probe shape); `/health` is the same kind of
+target; both return only booleans, no secrets or PII; frontend calls neither.
+Gating either behind auth would fight their purpose for no real security
+gain, so — confirmed with the maintainer rather than assumed — left `/`,
+`/status`, `/health` open, and instead added `BACKEND_BIND_HOST` (default
+`0.0.0.0`, unchanged from the previous hardcoded value) as a real,
+tested lever for the one path where it matters: `python main.py` run
+directly, not the Docker path, which needs `0.0.0.0` regardless of this
+setting since Docker's port publishing forwards to the container's
+interface, not loopback. `Dockerfile`'s own `CMD` was deliberately left
+hardcoded for that reason. Two new tests confirm the default matches the old
+hardcoded value and that the setting is actually configurable; mutated the
+default and confirmed the regression test catches it.
+
+**`DIRECT_CUE_BOOST` magic number.** Residual from the ruff-adjacent
+integrity pass: already named and given a one-line comment, but with no
+explanation of *why* `5.0` versus `PPR_DAMPING`'s textbook-justified `0.85`
+right next to it. Expanded the comment to state what's actually known and
+verifiable (it's large relative to the ACT-R base/spread-activation terms it
+gets added to, roughly -3..+3 per candidate, confirmed by reading
+`_base_activation`/`_effective_similarity`) and what isn't (the magnitude
+itself is a design choice, not derived from measurement) — matching this
+project's existing honesty pattern rather than inventing a justification
+that can't be verified. No behavior change, so no new test.
+
+**Verified**: full backend suite via junit-xml — 704 passed (700 + 4 new: 2
+for C3, 2 for C4), 0 failed/errored/skipped. `ruff check .` clean. No Rust
+files touched.
+
+**NOT done:** nothing else from the six was left partial. The other 19
+findings from the original audit remain fixed as of the previous
+re-verification; this entry only covers the six that weren't.
