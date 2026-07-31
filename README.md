@@ -115,7 +115,7 @@ graph TD
         Brain <--> Neo4j[("Neo4j: Knowledge Graph")]
         Brain <--> Postgres[("Postgres + pgvector")]
         Action --> Ollama["Ollama: Local LLM"]
-        Voice --> LocalONNX["Local ONNX TTS / GPT-SoVITS fallback"]
+        Voice --> SoVITS["GPT-SoVITS (voice cloning, no fallback engine)"]
     end
 ```
 
@@ -241,7 +241,7 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 | Agent | Technology | Primary Responsibility | NATS Subjects |
 | :--- | :--- | :--- | :--- |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
-| **Voice Agent** | Rust / ORT (ONNX) / SoVITS | CVS-3.5 Local Synthesis Runtime; renders affect-aware 32kHz audio. | `chat.output`, `audio.stream`, `audio.stop` |
+| **Voice Agent** | Rust / GPT-SoVITS | CVS-3.5 synthesis runtime; renders affect-aware 32kHz audio through a single cloned-voice engine, no fallback to a different voice. | `chat.output`, `audio.stream`, `audio.stop` |
 | **STT Agent** ⚠️ | Rust / whisper.cpp + sherpa-onnx | Real speech recognition, dual-path: whisper.cpp (`whisper-rs`) produces the final transcript; SenseVoice (`sherpa-onnx`) serves the fast path with speech-emotion + audio-event classification (falls back to a small Whisper model — words, no tone — when unprovisioned). Scripted transcript is opt-in behind `STT_BACKEND=mock`. Build-verified (both backends compile and link; 30 unit tests pass), but **no live transcription or emotion classification has been observed** — accuracy and latency are unmeasured. | `audio.inbound`, `chat.input`, `audio.perception` |
 | **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
@@ -487,8 +487,9 @@ In version **CVS-3.5**, the mesh implements "Solid State" principles to ensure p
 
 The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
 
-* **Local Synthesis Core (ONNX)**: Embeds ONNX Runtime (`ort`) with dynamic execution provider binding (TensorRT/CUDA for NVIDIA GPUs, CoreML for Apple Silicon, CPU fallback) to eliminate containerized HTTP API bottlenecks.
-* **Dual-Model Fallback**: Loads custom weights if present, falling back to a base Piper VITS model or HTTP routing to guarantee initialization safety.
+* **Single-Engine Synthesis (GPT-SoVITS)**: All speech renders through one self-hosted GPT-SoVITS endpoint carrying the cloned voice's identity in its trained weights. A local ONNX fallback engine existed through 2026-07 and was removed: it fell back to a *different, uncloned* voice on outage, which is strictly worse than silence under a no-fallback requirement — see the ledger.
+* **Emotion-Selected Reference Clips**: Delivery register (calm/warm/concerned/excited/neutral) is chosen per turn from the agent's own affect state and sent as GPT-SoVITS's per-request reference clip — steering *how* a line is delivered, not re-cloning identity, which stays permanently baked into the server's loaded weights.
+* **Same-Engine Resilience**: A circuit breaker plus bounded retry wrap the SoVITS call; a background readiness probe proves the engine can render real audio (not just answer HTTP) independently of live traffic. A confirmed failure plays a same-voice fallback vocalization instead of dropping the turn — never a different voice, never silence.
 * **Quality-Prioritized Look-Ahead**: Segments speech into 7-word chunks to preserve prosodic context and emotional inflection quality.
 * **Speculative Pause Fillers**: Injects early speculative fillers (hmm, um, accha) if decision generation latency exceeds 250ms, keeping the conversation alive while high-fidelity audio chunks are prepared in the background.
 * **OLA Signal Continuity**: Uses Overlap-Add (OLA) algorithms to ensure zero-click transitions between streaming PCM chunks.

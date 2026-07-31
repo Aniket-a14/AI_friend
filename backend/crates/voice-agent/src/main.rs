@@ -11,46 +11,6 @@ use reqwest::Client;
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
-use std::collections::HashMap;
-use std::path::Path;
-use ort::session::Session;
-use ort::value::Tensor;
-use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
-};
-
-/// VITS flow / stochastic-duration noise scales.
-///
-/// These set baseline *variability*, not affect. The emotional controls are
-/// `Prosody { rate, pitch, volume }`.
-const VITS_NOISE_SCALE: f32 = 0.667;
-const VITS_NOISE_SCALE_W: f32 = 0.8;
-
-/// Graph interface of the sherpa-onnx VITS family (vits-ljs and friends).
-///
-/// This crate previously used piper's names (`input`, `input_lengths`, a fused
-/// `scales` tensor, output `output`) while its `Phonemizer` required a
-/// `lexicon.txt` that piper voices do not ship — the two halves targeted
-/// different model families, so local synthesis could not have worked with
-/// either. The lexicon side is load-bearing (there is no runtime phonemizer),
-/// so the graph side was corrected to match it.
-const VITS_INPUT_TOKENS: &str = "x";
-const VITS_INPUT_TOKEN_LEN: &str = "x_length";
-const VITS_INPUT_NOISE_SCALE: &str = "noise_scale";
-const VITS_INPUT_LENGTH_SCALE: &str = "length_scale";
-const VITS_INPUT_NOISE_SCALE_W: &str = "noise_scale_w";
-const VITS_OUTPUT_AUDIO: &str = "y";
-
-const VITS_REQUIRED_INPUTS: [&str; 5] = [
-    VITS_INPUT_TOKENS,
-    VITS_INPUT_TOKEN_LEN,
-    VITS_INPUT_NOISE_SCALE,
-    VITS_INPUT_LENGTH_SCALE,
-    VITS_INPUT_NOISE_SCALE_W,
-];
-
-/// Blank token id interleaved between phonemes when the model sets `add_blank=1`.
-const VITS_BLANK_ID: i64 = 0;
 
 /// Mirrors the clamps `contracts::vad_to_prosody` already applies. Repeated here
 /// because `dynamic_prosody` can be overridden from the mesh and must not be
@@ -105,397 +65,6 @@ fn clamp_prosody(mut prosody: contracts::Prosody) -> contracts::Prosody {
     prosody.volume = prosody.volume.clamp(MIN_VOLUME as f64, MAX_VOLUME as f64);
     prosody.pause_bias = prosody.pause_bias.clamp(0.0, 1.0);
     prosody
-}
-
-struct Phonemizer {
-    lexicon: HashMap<String, Vec<String>>,
-    tokens: HashMap<String, i64>,
-}
-
-impl Phonemizer {
-    /// Load a lexicon-based phonemizer.
-    ///
-    /// Both files are **required**. The previous implementation wrapped each read
-    /// in `if let Ok(..)` and returned `Ok` regardless, so a missing or
-    /// unparseable file produced an empty table, `phonemize` returned only
-    /// `[bos, eos]`, and the agent rendered silence with nothing logged anywhere.
-    /// Failing here instead lets `load_local_engine` fall through to another
-    /// candidate — or report honestly that local synthesis is unavailable.
-    fn load(lexicon_path: &Path, tokens_path: &Path) -> Result<Self> {
-        let lexicon_raw = std::fs::read_to_string(lexicon_path)
-            .with_context(|| format!("read lexicon {}", lexicon_path.display()))?;
-        let tokens_raw = std::fs::read_to_string(tokens_path)
-            .with_context(|| format!("read tokens {}", tokens_path.display()))?;
-
-        // sherpa-onnx lexicons are whitespace-separated: `word ph1 ph2 ...`.
-        // This previously split on '\t' only and required >= 2 parts, so every
-        // line of a space-separated lexicon collapsed to a single part and was
-        // dropped — yielding an empty lexicon. `split_whitespace` accepts either.
-        let mut lexicon = HashMap::new();
-        for line in lexicon_raw.lines() {
-            let mut parts = line.split_whitespace();
-            let Some(word) = parts.next() else { continue };
-            let phonemes: Vec<String> = parts.map(String::from).collect();
-            if phonemes.is_empty() {
-                continue;
-            }
-            lexicon.insert(word.to_lowercase(), phonemes);
-        }
-
-        let mut tokens = HashMap::new();
-        for line in tokens_raw.lines() {
-            // Token names may themselves be whitespace (e.g. the space phoneme),
-            // so split off the trailing id rather than splitting the whole line.
-            let Some((name, id)) = line.rsplit_once(' ') else { continue };
-            if let Ok(id) = id.trim().parse::<i64>() {
-                tokens.insert(name.to_string(), id);
-            }
-        }
-
-        if lexicon.is_empty() {
-            anyhow::bail!(
-                "lexicon {} parsed to zero entries — wrong format or wrong model \
-                 (a lexicon-based VITS voice is required, not an espeak/piper one)",
-                lexicon_path.display()
-            );
-        }
-        if tokens.is_empty() {
-            anyhow::bail!(
-                "tokens {} parsed to zero entries",
-                tokens_path.display()
-            );
-        }
-
-        info!(
-            lexicon_entries = lexicon.len(),
-            token_entries = tokens.len(),
-            "phonemizer loaded"
-        );
-        Ok(Self { lexicon, tokens })
-    }
-
-    /// Map text to VITS token ids via the lexicon.
-    ///
-    /// The model declares `add_blank=1`, so phonemes are interleaved with the
-    /// blank token in the canonical VITS form `[0, p1, 0, p2, 0, ..., pn, 0]`.
-    /// The previous code emitted `[p1, 0, p2, 0, ...]` — missing the leading
-    /// blank — and bracketed with piper's `^`/`$` tokens, which the sherpa-onnx
-    /// VITS vocabulary does not define (so they silently never appended).
-    fn phonemize(&self, text: &str) -> PhonemizedText {
-        let mut phoneme_ids = Vec::new();
-        let mut oov = Vec::new();
-        for word in text.split_whitespace() {
-            let clean_word: String = word
-                .chars()
-                .filter(|c| c.is_alphanumeric())
-                .collect::<String>()
-                .to_lowercase();
-            if clean_word.is_empty() {
-                continue;
-            }
-            let Some(phonemes) = self.lexicon.get(&clean_word) else {
-                oov.push(clean_word);
-                continue;
-            };
-            for p in phonemes {
-                if let Some(&id) = self.tokens.get(p) {
-                    phoneme_ids.push(id);
-                }
-            }
-        }
-
-        if phoneme_ids.is_empty() {
-            return PhonemizedText {
-                ids: Vec::new(),
-                oov,
-            };
-        }
-
-        let mut ids = Vec::with_capacity(phoneme_ids.len() * 2 + 1);
-        ids.push(VITS_BLANK_ID);
-        for id in phoneme_ids {
-            ids.push(id);
-            ids.push(VITS_BLANK_ID);
-        }
-        PhonemizedText { ids, oov }
-    }
-}
-
-/// The result of a lexicon lookup over an utterance.
-///
-/// `oov` is carried rather than discarded because this Phonemizer has no
-/// grapheme-to-phoneme fallback: a word absent from `lexicon.txt` — most often a
-/// name — simply has no phonemes to contribute. Dropping it silently makes the
-/// agent *speak a different sentence than it decided to say*, which is
-/// indistinguishable to the listener from the agent having chosen those words.
-struct PhonemizedText {
-    ids: Vec<i64>,
-    oov: Vec<String>,
-}
-
-struct LocalTtsEngine {
-    session: std::sync::Mutex<Session>,
-    phonemizer: Phonemizer,
-    /// Rate the model actually renders at (read from ONNX metadata).
-    native_sample_rate: u32,
-    /// Rate the mesh expects; output is resampled to this.
-    target_sample_rate: u32,
-}
-
-impl LocalTtsEngine {
-    fn load(
-        model_path: &Path,
-        lexicon_path: &Path,
-        tokens_path: &Path,
-        target_sample_rate: u32,
-    ) -> Result<Self> {
-        let mut builder = Session::builder()?
-            .with_execution_providers([
-                ort::ep::TensorRT::default().build(),
-                ort::ep::CUDA::default().build(),
-                ort::ep::CoreML::default().build(),
-            ])
-            .map_err(|e| anyhow::anyhow!("failed to configure execution providers: {:?}", e))?;
-
-        let session = builder.commit_from_file(model_path)?;
-
-        // Verify the graph interface at load rather than discovering it as
-        // "Invalid input name" on the first utterance.
-        let actual: Vec<&str> = session.inputs().iter().map(|i| i.name()).collect();
-        if let Some(missing) = VITS_REQUIRED_INPUTS
-            .iter()
-            .find(|name| !actual.contains(name))
-        {
-            anyhow::bail!(
-                "model {} does not expose input `{missing}` (actual inputs: {actual:?}). \
-                 This build targets the sherpa-onnx VITS family (vits-ljs); espeak/piper \
-                 voices use `input`/`input_lengths`/`scales` and ship no lexicon.txt.",
-                model_path.display()
-            );
-        }
-
-        let phonemizer = Phonemizer::load(lexicon_path, tokens_path)?;
-        let native_sample_rate = model_sample_rate(&session, target_sample_rate);
-
-        if native_sample_rate != target_sample_rate {
-            info!(
-                native_sample_rate,
-                target_sample_rate, "model rate differs from mesh rate; output will be resampled"
-            );
-        }
-
-        Ok(Self {
-            session: std::sync::Mutex::new(session),
-            phonemizer,
-            native_sample_rate,
-            target_sample_rate,
-        })
-    }
-
-    /// Render `text` under the full prosody triple.
-    ///
-    /// Previously only `rate` reached the vocoder: `pitch` and `volume` were
-    /// computed by the cognitive layer and then discarded, so every affective
-    /// state collapsed onto "how fast the agent talks". All three now apply.
-    fn synthesize(&self, text: &str, rate: f32, pitch: f32, volume: f32) -> Result<Vec<u8>> {
-        let PhonemizedText { ids, oov } = self.phonemizer.phonemize(text);
-        if ids.is_empty() {
-            // Previously `Ok(Vec::new())`: an utterance this voice could not
-            // pronounce at all was reported as successful synthesis of zero audio,
-            // so the caller published nothing and the agent just went quiet. Failing
-            // instead lets the caller fall back to remote synthesis.
-            anyhow::bail!(
-                "no word of {text:?} is in the local lexicon (unknown: {oov:?}); \
-                 this voice cannot pronounce it"
-            );
-        }
-        if !oov.is_empty() {
-            // Speak what we can — muting the whole sentence over one unknown name
-            // would be worse — but never let this pass unremarked.
-            warn!(
-                unknown_words = ?oov,
-                text = %text,
-                "local voice has no pronunciation for these words and will omit them; \
-                 the spoken sentence will differ from the generated text. A \
-                 grapheme-to-phoneme fallback is needed to say arbitrary words."
-            );
-        }
-
-        let num_phonemes = ids.len();
-        let rate = rate.clamp(MIN_RATE, MAX_RATE);
-        let pitch = pitch.clamp(MIN_PITCH, MAX_PITCH);
-
-        // VITS exposes no pitch input, so pitch is applied by resampling the
-        // rendered waveform below. That also divides duration by `pitch`, so
-        // pre-multiply length_scale by `pitch` to cancel it and let the final
-        // duration honour `rate` alone.
-        //
-        // Resampling shifts formants along with F0, so extreme shifts sound
-        // "chipmunk"/"Darth Vader". Acceptable only because `vad_to_prosody`
-        // squashes pitch through `tanh`, keeping realistic values near 0.85..1.20.
-        // A wider expressive range needs a formant-preserving shifter (PSOLA/WORLD).
-        let length_scale = pitch / rate;
-
-        let inputs = ort::inputs![
-            VITS_INPUT_TOKENS => Tensor::from_array(
-                ndarray::Array2::from_shape_vec((1, num_phonemes), ids)?
-            )?,
-            VITS_INPUT_TOKEN_LEN => Tensor::from_array(
-                ndarray::Array1::from_vec(vec![num_phonemes as i64])
-            )?,
-            // Separate scalars, not one fused `scales` tensor.
-            VITS_INPUT_NOISE_SCALE => Tensor::from_array(
-                ndarray::Array1::from_vec(vec![VITS_NOISE_SCALE])
-            )?,
-            VITS_INPUT_LENGTH_SCALE => Tensor::from_array(
-                ndarray::Array1::from_vec(vec![length_scale])
-            )?,
-            VITS_INPUT_NOISE_SCALE_W => Tensor::from_array(
-                ndarray::Array1::from_vec(vec![VITS_NOISE_SCALE_W])
-            )?,
-        ];
-
-        // Copy the waveform out and release the session lock before resampling:
-        // the shift is CPU-bound and must not serialise other synthesis calls.
-        let audio: Vec<f32> = {
-            let mut session_guard = self
-                .session
-                .lock()
-                .map_err(|e| anyhow::anyhow!("mutex poisoned: {e}"))?;
-            let outputs = session_guard.run(inputs)?;
-            let output_value = outputs
-                .get(VITS_OUTPUT_AUDIO)
-                .with_context(|| format!("missing output audio tensor `{VITS_OUTPUT_AUDIO}`"))?;
-            let (_dimensions, audio_data) = output_value.try_extract_tensor::<f32>()?;
-            audio_data.to_vec()
-        };
-
-        // One sinc pass does both jobs; two would double the cost and compound
-        // interpolation error.
-        //
-        //   pitch shift      : 1 / pitch          (see the length_scale note above)
-        //   rate conversion  : target / native    (model rate -> mesh rate)
-        //
-        // Duration still resolves to `1/rate` in seconds:
-        //   generated = pitch/rate  ->  x (target/native)/pitch  ->  /target
-        //     = base/(rate * native)  seconds
-        let ratio =
-            (self.target_sample_rate as f64 / self.native_sample_rate as f64) / pitch as f64;
-        let audio = resample_by(&audio, ratio)?;
-
-        // Volume is applied in the f32 domain, before quantisation, so a quiet
-        // agent does not pay an extra rounding penalty. `Prosody.volume` is an
-        // absolute level in 0.1..=1.0 (1.0 = full scale), not a gain around 1.0.
-        let volume = volume.clamp(0.0, 1.0);
-        let mut pcm_bytes = Vec::with_capacity(audio.len() * 2);
-        for &sample in &audio {
-            let scaled = sample * volume * i16::MAX as f32;
-            let clamped = scaled.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-            pcm_bytes.extend_from_slice(&clamped.to_le_bytes());
-        }
-
-        Ok(pcm_bytes)
-    }
-}
-
-/// Resolve the local TTS engine, preferring custom weights over the base voice.
-///
-/// Falls through to the next candidate when a model is missing **or unloadable**.
-/// The previous implementation branched on `custom.exists()` and swallowed the
-/// load error with `.ok()`, so a present-but-broken custom model disabled local
-/// synthesis outright rather than falling back to base — the exact opposite of the
-/// "seamless fallback / robust startup" guarantee in `docs/ARCHITECTURE.md`. A
-/// corrupt or placeholder `custom_vits.onnx` was therefore strictly worse than
-/// having no custom model at all, and said nothing about why.
-fn load_local_engine(target_sample_rate: u32) -> Option<LocalTtsEngine> {
-    let candidates = [
-        (
-            "CUSTOM",
-            Path::new("models/custom/custom_vits.onnx"),
-            Path::new("models/custom/lexicon.txt"),
-            Path::new("models/custom/tokens.txt"),
-        ),
-        (
-            "BASE",
-            Path::new("models/base/model.onnx"),
-            Path::new("models/base/lexicon.txt"),
-            Path::new("models/base/tokens.txt"),
-        ),
-    ];
-
-    for (label, model, lexicon, tokens) in candidates {
-        if !model.exists() {
-            continue;
-        }
-        info!(model = %model.display(), "Loading {label} local voice weights...");
-        match LocalTtsEngine::load(model, lexicon, tokens, target_sample_rate) {
-            Ok(engine) => {
-                info!("Loaded {label} local voice weights.");
-                return Some(engine);
-            }
-            Err(e) => warn!(
-                model = %model.display(),
-                "Failed to load {label} voice weights: {e:#}. Falling through to next candidate."
-            ),
-        }
-    }
-
-    warn!("No usable local voice weights. Local ONNX engine offline; synthesis will use the remote endpoint.");
-    None
-}
-
-/// Band-limited resample: `output.len() ~= samples.len() * ratio`.
-///
-/// Serves two fused purposes in `synthesize` (see there): pitch shifting and
-/// native-rate -> mesh-rate conversion.
-fn resample_by(samples: &[f32], ratio: f64) -> Result<Vec<f32>> {
-    if samples.is_empty() || (ratio - 1.0).abs() < 1e-6 {
-        return Ok(samples.to_vec());
-    }
-    if !ratio.is_finite() || ratio <= 0.0 {
-        anyhow::bail!("invalid resample ratio {ratio}");
-    }
-
-    let params = SincInterpolationParameters {
-        sinc_len: 128,
-        f_cutoff: 0.95,
-        interpolation: SincInterpolationType::Linear,
-        oversampling_factor: 128,
-        window: WindowFunction::BlackmanHarris2,
-    };
-
-    let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, samples.len(), 1)
-        .context("construct resampler")?;
-
-    let output = resampler
-        .process(&[samples.to_vec()], None)
-        .context("resample")?;
-
-    Ok(output.into_iter().next().unwrap_or_default())
-}
-
-/// Native output rate of a sherpa-onnx VITS model, from its ONNX metadata.
-///
-/// Falls back to `default_rate` when absent. Publishing a model's audio at the
-/// wrong rate is an inaudible-in-code but glaring runtime bug: a 22.05 kHz voice
-/// emitted into a 32 kHz stream plays ~45% fast and sharp.
-fn model_sample_rate(session: &Session, default_rate: u32) -> u32 {
-    // `metadata()` -> Result, `custom()` -> Option<String> (ort 2.0.0-rc.12).
-    match session
-        .metadata()
-        .ok()
-        .and_then(|m| m.custom("sample_rate"))
-        .and_then(|v| v.trim().parse::<u32>().ok())
-    {
-        Some(rate) if rate > 0 => rate,
-        _ => {
-            warn!(
-                default_rate,
-                "model exposes no usable `sample_rate` metadata; assuming default"
-            );
-            default_rate
-        }
-    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -667,8 +236,7 @@ impl OlaCrossfadeFilter {
 struct VoiceConfig {
     nats_url: String,
     sovits_url: String,
-    ref_audio_path: String,
-    ref_text: String,
+    emotion_refs: EmotionRefSet,
     tts_language: String,
     sample_rate: u32,
 }
@@ -678,11 +246,7 @@ impl VoiceConfig {
         Self {
             nats_url: env_or("NATS_URL", "nats://127.0.0.1:4222"),
             sovits_url: env_or("SOVITS_URL", "http://127.0.0.1:9871"),
-            ref_audio_path: env_or("REF_AUDIO_PATH", "output/sample_en_gold.wav"),
-            ref_text: env_or(
-                "REF_TEXT",
-                "At the end of the exam, the program shows the performance summary.",
-            ),
+            emotion_refs: EmotionRefSet::from_env(),
             tts_language: env_or("TTS_LANGUAGE", "en"),
             // A zero rate parses fine but sizes the reverb delay buffer to zero,
             // which panics on the first index; it would also make every duration
@@ -698,6 +262,210 @@ impl VoiceConfig {
 
 fn env_or(name: &str, fallback: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| fallback.to_string())
+}
+
+/// One reference-audio clip GPT-SoVITS conditions delivery on: the audio path
+/// (read by the SoVITS *server*, not this process — see `EmotionRefSet::resolve`)
+/// plus the transcript of that clip, which the API requires alongside it.
+///
+/// This is not the cloned voice's identity — that is permanently baked into the
+/// GPT/SoVITS weights loaded once at server startup (`CUSTOM_GPT_PATH`/
+/// `CUSTOM_SOVITS_PATH`). A `RefClip` only steers *delivery* for one utterance:
+/// pacing, emphasis, emotional register. Sending a different one per turn is
+/// not re-cloning — the identity underneath never changes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RefClip {
+    audio_path: String,
+    text: String,
+}
+
+/// The five delivery registers a turn can be spoken in. `Neutral` is always
+/// configured (it is today's `REF_AUDIO_PATH`/`REF_TEXT`, kept as the
+/// unconditional default); the other four are optional overrides that fall
+/// back to `Neutral` when unset, so an unconfigured deployment behaves exactly
+/// as it did before this feature existed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmotionBucket {
+    Calm,
+    Warm,
+    Concerned,
+    Excited,
+    Neutral,
+}
+
+#[derive(Debug, Clone)]
+struct EmotionRefSet {
+    neutral: RefClip,
+    calm: Option<RefClip>,
+    warm: Option<RefClip>,
+    concerned: Option<RefClip>,
+    excited: Option<RefClip>,
+}
+
+impl EmotionRefSet {
+    fn from_env() -> Self {
+        Self {
+            neutral: RefClip {
+                audio_path: env_or("REF_AUDIO_PATH", "output/sample_en_gold.wav"),
+                text: env_or(
+                    "REF_TEXT",
+                    "At the end of the exam, the program shows the performance summary.",
+                ),
+            },
+            calm: optional_ref_clip("CALM"),
+            warm: optional_ref_clip("WARM"),
+            concerned: optional_ref_clip("CONCERNED"),
+            excited: optional_ref_clip("EXCITED"),
+        }
+    }
+
+    /// The clip to send for this bucket. Falls back to `neutral` whenever the
+    /// bucket has no override configured — deliberately silent, not a warning
+    /// on every turn: an unconfigured deployment is the expected starting
+    /// state, not a misconfiguration.
+    fn resolve(&self, bucket: EmotionBucket) -> &RefClip {
+        match bucket {
+            EmotionBucket::Neutral => &self.neutral,
+            EmotionBucket::Calm => self.calm.as_ref().unwrap_or(&self.neutral),
+            EmotionBucket::Warm => self.warm.as_ref().unwrap_or(&self.neutral),
+            EmotionBucket::Concerned => self.concerned.as_ref().unwrap_or(&self.neutral),
+            EmotionBucket::Excited => self.excited.as_ref().unwrap_or(&self.neutral),
+        }
+    }
+}
+
+/// Reads `REF_AUDIO_PATH_{suffix}` / `REF_TEXT_{suffix}`. Both must be present
+/// and non-empty or the bucket is treated as entirely unconfigured — pairing a
+/// real audio path with a missing/wrong transcript would send GPT-SoVITS a
+/// prompt that does not match its own reference audio, which is worse than
+/// falling back to neutral.
+fn optional_ref_clip(bucket_env_suffix: &str) -> Option<RefClip> {
+    let audio_path = std::env::var(format!("REF_AUDIO_PATH_{bucket_env_suffix}"))
+        .ok()
+        .filter(|s| !s.trim().is_empty())?;
+    let text = std::env::var(format!("REF_TEXT_{bucket_env_suffix}"))
+        .ok()
+        .filter(|s| !s.trim().is_empty())?;
+    Some(RefClip { audio_path, text })
+}
+
+/// Maps the affect already computed for this turn onto a delivery register.
+///
+/// Valence and arousal are the two axes GPT-SoVITS reference clips actually
+/// vary along — a different clip changes *how* a line is delivered, which is
+/// exactly what the pleasure/arousal circumplex describes. Trust, attachment
+/// and dominance already shape speed/pitch/volume via `vad_to_prosody`; they
+/// do not additionally pick which clip is speaking.
+///
+/// These thresholds are a first-pass default, not a validated mapping — no
+/// published study covers GPT-SoVITS multi-clip identity drift by affect
+/// distance. Retune by listening once real emotion-tagged clips exist.
+fn select_emotion_bucket(affect: Option<&contracts::ChatOutputAffect>) -> EmotionBucket {
+    const VALENCE_DEADBAND: f64 = 0.15;
+    const CALM_AROUSAL_CEILING: f64 = 0.40;
+    const EXCITED_AROUSAL_FLOOR: f64 = 0.60;
+    const CONCERNED_AROUSAL_FLOOR: f64 = 0.55;
+
+    let Some(affect) = affect else {
+        return EmotionBucket::Neutral;
+    };
+    let valence = affect.valence;
+    let arousal = affect.arousal;
+
+    if valence > VALENCE_DEADBAND && arousal >= EXCITED_AROUSAL_FLOOR {
+        EmotionBucket::Excited
+    } else if valence > VALENCE_DEADBAND {
+        EmotionBucket::Warm
+    } else if valence < -VALENCE_DEADBAND && arousal >= CONCERNED_AROUSAL_FLOOR {
+        EmotionBucket::Concerned
+    } else if valence.abs() <= VALENCE_DEADBAND && arousal < CALM_AROUSAL_CEILING {
+        EmotionBucket::Calm
+    } else {
+        EmotionBucket::Neutral
+    }
+}
+
+/// Shared health signal for the remote GPT-SoVITS engine — the sole synthesis
+/// path since local ONNX was removed. Fed by both the live request path
+/// (`handle_chat_output`) and the background readiness probe, so an outage is
+/// detected even with no user speaking, and a live turn never has to be the
+/// first thing to discover the engine is down.
+///
+/// This deliberately does not gate *whether* a turn gets audio — every failed
+/// turn still gets the same-voice fallback vocalization regardless of breaker
+/// state (see `handle_chat_output`). The breaker only decides whether to
+/// spend a real network round-trip finding that out again, so a confirmed
+/// outage does not pay a timeout on every subsequent utterance.
+///
+/// Read/write across the atomics is not linearised as one operation — the
+/// probe task and the request path can interleave. That is an accepted
+/// trade-off, not an oversight: `handle_chat_output` is called sequentially
+/// from the single `chat.output` subscriber loop in `main`, so the only real
+/// race is against the probe, and the worst case is a stale open/closed read
+/// for one turn, not a correctness failure.
+struct CircuitBreaker {
+    consecutive_failures: std::sync::atomic::AtomicU32,
+    /// 0 means closed. A non-zero value is the timestamp (ms since epoch) the
+    /// breaker opened, so `allow_request` can compute elapsed cooldown without
+    /// a separate "when" field that could drift out of sync with the flag.
+    opened_at_ms: std::sync::atomic::AtomicU64,
+    failure_threshold: u32,
+    open_cooldown_ms: u64,
+}
+
+impl CircuitBreaker {
+    fn new(failure_threshold: u32, open_cooldown_ms: u64) -> Self {
+        Self {
+            consecutive_failures: std::sync::atomic::AtomicU32::new(0),
+            opened_at_ms: std::sync::atomic::AtomicU64::new(0),
+            failure_threshold: failure_threshold.max(1),
+            open_cooldown_ms,
+        }
+    }
+
+    /// Whether a real network call is worth attempting right now. `false`
+    /// only while open and still inside the cooldown window. The first check
+    /// after cooldown elapses returns `true` as a half-open trial: exactly
+    /// one caller's result (via `record_success`/`record_failure`) decides
+    /// close-vs-reopen, since `handle_chat_output` never calls this
+    /// concurrently with itself.
+    fn allow_request(&self, now_ms: u64) -> bool {
+        let opened = self.opened_at_ms.load(std::sync::atomic::Ordering::SeqCst);
+        if opened == 0 {
+            return true;
+        }
+        now_ms.saturating_sub(opened) >= self.open_cooldown_ms
+    }
+
+    fn is_open(&self, now_ms: u64) -> bool {
+        !self.allow_request(now_ms)
+    }
+
+    fn record_success(&self) {
+        self.consecutive_failures
+            .store(0, std::sync::atomic::Ordering::SeqCst);
+        self.opened_at_ms.store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// A half-open trial's failure re-arms the full cooldown with a fresh
+    /// timestamp rather than leaving the old one — without this, the very
+    /// next `allow_request` call would see an unchanged (now stale) `opened`
+    /// timestamp and immediately re-open the trial window, hammering a
+    /// confirmed-still-down engine on every turn instead of backing off.
+    fn record_failure(&self, now_ms: u64) {
+        let failures = self
+            .consecutive_failures
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        if failures >= self.failure_threshold {
+            self.opened_at_ms
+                .store(now_ms.max(1), std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
+fn now_millis() -> u64 {
+    (now_seconds() * 1000.0) as u64
 }
 
 #[tokio::main]
@@ -718,11 +486,22 @@ async fn main() -> Result<()> {
         .build()
         .context("build reqwest client with timeouts")?;
 
-    // Option<Arc<_>> rather than Arc<Option<_>>: the engine handle is moved into a
-    // spawn_blocking closure per utterance, which needs an owned 'static handle to
-    // the engine itself, not to the "is one configured?" question.
-    let local_engine: Option<std::sync::Arc<LocalTtsEngine>> =
-        load_local_engine(config.sample_rate).map(std::sync::Arc::new);
+    let circuit_breaker = std::sync::Arc::new(CircuitBreaker::new(
+        env_or("TTS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "3")
+            .parse()
+            .unwrap_or(3),
+        env_or("TTS_CIRCUIT_BREAKER_COOLDOWN_MS", "15000")
+            .parse()
+            .unwrap_or(15_000),
+    ));
+    spawn_readiness_probe(
+        config.clone(),
+        http.clone(),
+        circuit_breaker.clone(),
+        env_or("TTS_READINESS_PROBE_INTERVAL_SECS", "45")
+            .parse()
+            .unwrap_or(45),
+    );
 
     let last_distance = std::sync::Arc::new(std::sync::Mutex::new(1.0));
     let noise_scale_factor = std::sync::Arc::new(std::sync::Mutex::new(1.0f64));
@@ -922,7 +701,7 @@ async fn main() -> Result<()> {
                     attenuation_factor.clone(),
                     dynamic_prosody.clone(),
                     noise_scale_factor.clone(),
-                    local_engine.clone(),
+                    circuit_breaker.clone(),
                 )
                 .await
                 {
@@ -1095,7 +874,7 @@ async fn handle_chat_output(
     attenuation_factor: std::sync::Arc<std::sync::Mutex<f64>>,
     dynamic_prosody: std::sync::Arc<std::sync::Mutex<Option<contracts::Prosody>>>,
     noise_scale_factor: std::sync::Arc<std::sync::Mutex<f64>>,
-    local_engine: Option<std::sync::Arc<LocalTtsEngine>>,
+    circuit_breaker: std::sync::Arc<CircuitBreaker>,
 ) -> Result<()> {
     if event.done {
         return Ok(());
@@ -1121,6 +900,13 @@ async fn handle_chat_output(
         vad_to_prosody(event.affect.as_ref())
     });
     ola_filter.notify_new_prosody(prosody);
+
+    // Computed once per event, like prosody above: the delivery register does
+    // not change mid-utterance, only which reference clip carries it.
+    let ref_clip = config
+        .emotion_refs
+        .resolve(select_emotion_bucket(event.affect.as_ref()))
+        .clone();
 
     let distance = event
         .affect
@@ -1180,58 +966,84 @@ async fn handle_chat_output(
                 publish_pcm(jetstream, pcm, &event, gain).await?;
             }
             TemporalPart::Text(text) => {
-                // Local synthesis is CPU-bound: ONNX inference plus a sinc resample,
-                // tens to hundreds of milliseconds with no await point. Run inline it
-                // occupies a Tokio worker for that whole time, stalling the abort
-                // flag, NATS traffic and every other task sharing the runtime.
-                let local_pcm = match local_engine.as_ref() {
-                    Some(engine) => {
-                        let engine = engine.clone();
-                        let text = text.clone();
-                        let (rate, pitch, volume) = (
-                            prosody.rate as f32,
-                            prosody.pitch as f32,
-                            prosody.volume as f32,
-                        );
-                        match tokio::task::spawn_blocking(move || {
-                            engine.synthesize(&text, rate, pitch, volume)
-                        })
-                        .await
-                        {
-                            Ok(result) => Some(result),
-                            Err(join_err) => {
-                                error!("local synthesis task panicked: {join_err}");
-                                Some(Err(anyhow::anyhow!("synthesis task panicked")))
-                            }
+                // Local ONNX synthesis was removed (2026-07): it was a fallback to a
+                // different, uncloned voice, which is strictly worse than silence
+                // under the no-fallback requirement — see the ledger entry. Remote
+                // synthesis is the only real-speech path now; a confirmed failure
+                // gets the same-voice fallback vocalization below, never a
+                // different voice.
+                let now_ms = now_millis();
+                let response = if circuit_breaker.is_open(now_ms) {
+                    // Already known down, from a recent live failure or the
+                    // background probe — skip the round-trip and its timeout
+                    // rather than rediscovering the same outage every turn.
+                    None
+                } else {
+                    match synthesize_stream_with_retry(
+                        config,
+                        http,
+                        &text,
+                        &ref_clip,
+                        prosody.rate,
+                        prosody.pitch,
+                        prosody.volume,
+                    )
+                    .await
+                    {
+                        Ok(response) => {
+                            circuit_breaker.record_success();
+                            Some(response)
+                        }
+                        Err(e) => {
+                            error!("synthesis failed after retries: {e:#}");
+                            circuit_breaker.record_failure(now_ms);
+                            None
                         }
                     }
-                    None => None,
                 };
 
-                // `None` = no local engine configured. `Some(Err(..))` = local engine
-                // could not speak this text (e.g. every word out of lexicon); both
-                // fall through to remote synthesis rather than emitting silence.
-                let local_pcm = match local_pcm {
-                    Some(Ok(pcm_bytes)) => Some(pcm_bytes),
-                    Some(Err(e)) => {
-                        warn!(
-                            "local ONNX synthesis failed ({e:#}); falling back to remote synthesis"
-                        );
-                        None
+                let Some(mut response) = response else {
+                    // No network call, or one that failed after retries: play
+                    // the same-voice "one moment" vocalization instead of
+                    // dropping the turn silently. `load_vocalization_pcm`
+                    // already degrades to a synthetic tone (not a different
+                    // voice, not silence) if `voice_engine_unavailable.wav`
+                    // has not been recorded yet — safe before the cloned
+                    // voice exists, better once it does.
+                    ola_filter.clear_history();
+                    let mut pcm =
+                        load_vocalization_pcm("voice_engine_unavailable", config.sample_rate);
+                    pcm = reverb_filter.process(&pcm, 0.1);
+
+                    let target_att = if let Ok(guard) = attenuation_factor.lock() {
+                        *guard
+                    } else {
+                        1.0
+                    };
+                    apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
+                    let _ = generate_and_publish_visemes(jetstream, &pcm);
+
+                    let gain = utterance_gain(&noise_scale_factor, prosody.volume);
+                    publish_pcm(jetstream, pcm, &event, gain).await?;
+                    continue;
+                };
+
+                while let Some(chunk) = response.chunk().await? {
+                    if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                        info!("Aborting synthesis chunk stream due to AUDIO_STOP event.");
+                        break;
                     }
-                    None => None,
-                };
+                    if !chunk.is_empty() {
+                        let mut pcm_bytes = chunk.to_vec();
 
-                if let Some(pcm_bytes) = local_pcm {
-                    // Local engine bakes `volume` into the waveform, so publish_pcm
-                    // below applies only the ambient-noise compensation. (The remote
-                    // path differs — see the `else` branch.)
-                    for chunk in pcm_bytes.chunks(4096) {
-                        if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
-                            info!("Aborting playback due to AUDIO_STOP event.");
-                            break;
-                        }
-                        let mut chunk_vec = chunk.to_vec();
+                        // Ambient compensation only: `synthesize_stream` already
+                        // sent rate/pitch/volume to the remote engine, so folding
+                        // `prosody.volume` in here would apply it twice.
+                        let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
+                            *guard
+                        } else {
+                            1.0
+                        };
 
                         const REVERB_DRY_LIMIT: f64 = 2.5;
                         const REVERB_WET_LIMIT: f64 = 3.5;
@@ -1244,63 +1056,14 @@ async fn handle_chat_output(
                                 as f32
                         };
 
-                        chunk_vec = reverb_filter.process(&chunk_vec, wet_gain);
-                        chunk_vec = ola_filter.process(&chunk_vec);
+                        pcm_bytes = reverb_filter.process(&pcm_bytes, wet_gain);
+                        pcm_bytes = ola_filter.process(&pcm_bytes);
 
                         let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
-                        apply_attenuation(&mut chunk_vec, &mut current_attenuation_val, target_att);
-                        let _ = generate_and_publish_visemes(jetstream, &chunk_vec);
+                        apply_attenuation(&mut pcm_bytes, &mut current_attenuation_val, target_att);
+                        let _ = generate_and_publish_visemes(jetstream, &pcm_bytes);
 
-                        let noise_scale = if let Ok(guard) = noise_scale_factor.lock() { *guard } else { 1.0 };
-                        publish_pcm(jetstream, chunk_vec, &event, noise_scale).await?;
-                    }
-                } else {
-                    let mut response = synthesize_stream(
-                        config,
-                        http,
-                        &text,
-                        prosody.rate,
-                        prosody.pitch,
-                        prosody.volume,
-                    )
-                    .await?;
-                    while let Some(chunk) = response.chunk().await? {
-                        if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
-                            info!("Aborting synthesis chunk stream due to AUDIO_STOP event.");
-                            break;
-                        }
-                        if !chunk.is_empty() {
-                            let mut pcm_bytes = chunk.to_vec();
-
-                            // Ambient compensation only: `synthesize_stream` already
-                            // sent rate/pitch/volume to the remote engine, so folding
-                            // `prosody.volume` in here would apply it twice.
-                            let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
-                                *guard
-                            } else {
-                                1.0
-                            };
-
-                            const REVERB_DRY_LIMIT: f64 = 2.5;
-                            const REVERB_WET_LIMIT: f64 = 3.5;
-                            let wet_gain = if distance <= REVERB_DRY_LIMIT {
-                                0.0
-                            } else if distance >= REVERB_WET_LIMIT {
-                                1.0
-                            } else {
-                                ((distance - REVERB_DRY_LIMIT) / (REVERB_WET_LIMIT - REVERB_DRY_LIMIT))
-                                    as f32
-                            };
-
-                            pcm_bytes = reverb_filter.process(&pcm_bytes, wet_gain);
-                            pcm_bytes = ola_filter.process(&pcm_bytes);
-
-                            let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
-                            apply_attenuation(&mut pcm_bytes, &mut current_attenuation_val, target_att);
-                            let _ = generate_and_publish_visemes(jetstream, &pcm_bytes);
-
-                            publish_pcm(jetstream, pcm_bytes, &event, noise_scale).await?;
-                        }
+                        publish_pcm(jetstream, pcm_bytes, &event, noise_scale).await?;
                     }
                 }
             }
@@ -1364,6 +1127,7 @@ async fn synthesize_stream(
     config: &VoiceConfig,
     http: &Client,
     text: &str,
+    ref_clip: &RefClip,
     speed: f64,
     pitch: f64,
     volume: f64,
@@ -1371,8 +1135,8 @@ async fn synthesize_stream(
     let payload = json!({
         "text": text,
         "text_lang": config.tts_language,
-        "ref_audio_path": config.ref_audio_path,
-        "prompt_text": config.ref_text,
+        "ref_audio_path": ref_clip.audio_path,
+        "prompt_text": ref_clip.text,
         "prompt_lang": config.tts_language,
         "text_split_method": "cut5",
         "batch_size": 1,
@@ -1390,6 +1154,105 @@ async fn synthesize_stream(
     }
 
     Ok(response)
+}
+
+/// How many times a synthesis request is attempted before it counts as one
+/// circuit-breaker failure. Retries only cover the *pre-flight* request
+/// (connecting and getting a response back) — once a stream has started
+/// delivering chunks, a mid-stream drop is not retried here, since replaying
+/// the request would re-speak audio already played for this turn.
+const MAX_SYNTHESIS_ATTEMPTS: u32 = 3;
+const RETRY_BACKOFF_MS: [u64; 2] = [150, 400];
+
+async fn synthesize_stream_with_retry(
+    config: &VoiceConfig,
+    http: &Client,
+    text: &str,
+    ref_clip: &RefClip,
+    speed: f64,
+    pitch: f64,
+    volume: f64,
+) -> Result<reqwest::Response> {
+    let mut last_err = None;
+    for attempt in 0..MAX_SYNTHESIS_ATTEMPTS {
+        match synthesize_stream(config, http, text, ref_clip, speed, pitch, volume).await {
+            Ok(response) => return Ok(response),
+            Err(e) => {
+                warn!(
+                    attempt = attempt + 1,
+                    max_attempts = MAX_SYNTHESIS_ATTEMPTS,
+                    error = %e,
+                    "synthesis request failed"
+                );
+                last_err = Some(e);
+                if let Some(&delay_ms) = RETRY_BACKOFF_MS.get(attempt as usize) {
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("synthesis failed with no captured error")))
+}
+
+/// A short, fixed phrase used only to prove the engine can actually render
+/// audio right now — never spoken to a user.
+const READINESS_PROBE_PHRASE: &str = "Status check.";
+
+/// One readiness check: synthesize the probe phrase and confirm real audio
+/// bytes come back, not just a 200 status. A streaming TTS server can accept
+/// a request and start a 200 response before generation actually succeeds, so
+/// checking only the status — as the previous Docker healthcheck did with a
+/// plain `/docs` ping — misses exactly the "up but broken" failure mode this
+/// exists to catch (GPT-SoVITS has open reports of blank-audio responses
+/// under streaming load).
+async fn probe_synthesis(config: &VoiceConfig, http: &Client) -> Result<()> {
+    let mut response = synthesize_stream(
+        config,
+        http,
+        READINESS_PROBE_PHRASE,
+        &config.emotion_refs.neutral,
+        1.0,
+        1.0,
+        1.0,
+    )
+    .await?;
+
+    match response.chunk().await.context("reading readiness-probe response body")? {
+        Some(bytes) if !bytes.is_empty() => Ok(()),
+        _ => anyhow::bail!("readiness probe got an empty response body"),
+    }
+}
+
+/// Background task: proves the engine works independently of live traffic, so
+/// an outage is caught (and recovery detected) even during silence, and a
+/// live utterance is never the first thing to discover the engine is down.
+/// `interval_secs == 0` disables the probe — useful for local development
+/// against a mock or absent SoVITS server, where a probe would just spam
+/// warnings every tick for no operational benefit.
+fn spawn_readiness_probe(
+    config: VoiceConfig,
+    http: Client,
+    breaker: std::sync::Arc<CircuitBreaker>,
+    interval_secs: u64,
+) {
+    if interval_secs == 0 {
+        info!("TTS readiness probe disabled (TTS_READINESS_PROBE_INTERVAL_SECS=0)");
+        return;
+    }
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+        loop {
+            ticker.tick().await;
+            let now_ms = now_millis();
+            match probe_synthesis(&config, &http).await {
+                Ok(()) => breaker.record_success(),
+                Err(e) => {
+                    warn!("TTS readiness probe failed: {e:#}");
+                    breaker.record_failure(now_ms);
+                }
+            }
+        }
+    });
 }
 
 /// Publish gain for locally-generated PCM that has *not* already had
@@ -1652,66 +1515,6 @@ mod tests {
         assert_eq!(scaled_up_samples[2], 4200);
     }
 
-    fn tone(len: usize, amp: f32) -> Vec<f32> {
-        (0..len).map(|i| amp * (i as f32 * 0.10).sin()).collect()
-    }
-
-    #[test]
-    fn resample_is_identity_at_unity_ratio() {
-        let input = tone(512, 0.5);
-        assert_eq!(resample_by(&input, 1.0).unwrap(), input);
-    }
-
-    #[test]
-    fn resample_rejects_nonsense_ratios() {
-        assert!(resample_by(&tone(64, 0.5), 0.0).is_err());
-        assert!(resample_by(&tone(64, 0.5), -1.0).is_err());
-        assert!(resample_by(&tone(64, 0.5), f64::NAN).is_err());
-    }
-
-    #[test]
-    fn resample_scales_sample_count_by_ratio() {
-        for &ratio in &[0.8f64, 1.25, 1.451] {
-            let out = resample_by(&tone(4000, 0.5), ratio).unwrap();
-            let expected = 4000.0 * ratio;
-            assert!(
-                (out.len() as f64 - expected).abs() / expected < 0.05,
-                "ratio={ratio}: expected ~{expected}, got {}",
-                out.len()
-            );
-        }
-    }
-
-    #[test]
-    fn resample_handles_empty_input() {
-        assert!(resample_by(&[], 1.5).unwrap().is_empty());
-    }
-
-    /// The invariant `synthesize` depends on: generating at length_scale
-    /// `pitch/rate` and then resampling by `(target/native)/pitch` must leave the
-    /// output *duration in seconds* a function of `rate` alone — independent of
-    /// both pitch and the model's native rate.
-    #[test]
-    fn duration_depends_on_rate_alone_across_pitch_and_sample_rate() {
-        const BASE_NATIVE_SAMPLES: f64 = 8000.0;
-        for &(native, target) in &[(22_050u32, 32_000u32), (16_000, 32_000), (32_000, 32_000)] {
-            for &(rate, pitch) in &[(1.0f64, 1.0f64), (1.0, 1.25), (1.4, 0.8), (0.7, 1.5)] {
-                let length_scale = pitch / rate;
-                let generated = (BASE_NATIVE_SAMPLES * length_scale).round() as usize;
-
-                let ratio = (target as f64 / native as f64) / pitch;
-                let out = resample_by(&tone(generated, 0.5), ratio).unwrap();
-
-                let duration_s = out.len() as f64 / target as f64;
-                let expected_s = (BASE_NATIVE_SAMPLES / native as f64) / rate;
-                assert!(
-                    (duration_s - expected_s).abs() / expected_s < 0.05,
-                    "native={native} target={target} rate={rate} pitch={pitch}:                      expected ~{expected_s:.4}s, got {duration_s:.4}s"
-                );
-            }
-        }
-    }
-
     #[test]
     fn utterance_gain_combines_volume_and_noise() {
         let noise = std::sync::Mutex::new(1.2f64);
@@ -1731,249 +1534,353 @@ mod tests {
         assert!((utterance_gain(&noise, 0.5) - 0.5).abs() < 1e-9);
     }
 
+    // ---------------------------------------------------------- select_emotion_bucket
+
+    fn affect(valence: f64, arousal: f64) -> contracts::ChatOutputAffect {
+        contracts::ChatOutputAffect {
+            valence,
+            arousal,
+            ..Default::default()
+        }
+    }
+
     #[test]
-    fn placeholder_onnx_file_errors_instead_of_loading() {
-        // The exact bytes the old exporter wrote under a *.onnx name. This must
-        // surface as a recoverable Err so load_local_engine() can fall through to
-        // the base voice; the old `.ok()` turned this into None and took local
-        // synthesis down with it.
-        let dir = std::env::temp_dir().join(format!("va-placeholder-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let model = dir.join("custom_vits.onnx");
-        std::fs::write(&model, b"MOCK_CUSTOM_VITS_ONNX_CONTENT").unwrap();
+    fn no_affect_selects_neutral() {
+        assert_eq!(select_emotion_bucket(None), EmotionBucket::Neutral);
+    }
 
-        let result = LocalTtsEngine::load(
-            &model,
-            &dir.join("lexicon.txt"),
-            &dir.join("tokens.txt"),
-            32_000,
+    #[test]
+    fn high_valence_high_arousal_is_excited() {
+        let a = affect(0.5, 0.8);
+        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Excited);
+    }
+
+    #[test]
+    fn high_valence_low_arousal_is_warm_not_excited() {
+        let a = affect(0.5, 0.3);
+        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Warm);
+    }
+
+    #[test]
+    fn low_valence_high_arousal_is_concerned() {
+        let a = affect(-0.5, 0.7);
+        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Concerned);
+    }
+
+    #[test]
+    fn low_valence_low_arousal_is_neutral_not_concerned() {
+        // Negative but not aroused reads as flat, not distressed -- concern
+        // needs both the valence and the arousal signal, not valence alone.
+        let a = affect(-0.5, 0.2);
+        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Neutral);
+    }
+
+    #[test]
+    fn near_zero_valence_low_arousal_is_calm() {
+        let a = affect(0.0, 0.1);
+        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Calm);
+    }
+
+    #[test]
+    fn near_zero_valence_high_arousal_is_neutral_not_calm() {
+        // Aroused-but-neither-good-nor-bad (e.g. startled, alert) must not
+        // read as the same settled register as truly low-arousal calm.
+        let a = affect(0.0, 0.9);
+        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Neutral);
+    }
+
+    #[test]
+    fn deadband_boundary_is_exclusive_not_inclusive() {
+        // Exactly at the deadband edge, with arousal high enough to reach
+        // Excited if the edge were inclusive: must land on Neutral, not
+        // Excited. A low-arousal probe here would pass even if `>` regressed
+        // to `>=`, since it would still fall through to Calm either way --
+        // this specifically exercises the branch the boundary guards.
+        let at_edge = affect(0.15, 0.65);
+        assert_eq!(select_emotion_bucket(Some(&at_edge)), EmotionBucket::Neutral);
+    }
+
+    // ---------------------------------------------------------- EmotionRefSet
+
+    fn clip(tag: &str) -> RefClip {
+        RefClip {
+            audio_path: format!("output/{tag}.wav"),
+            text: format!("{tag} reference transcript"),
+        }
+    }
+
+    #[test]
+    fn unconfigured_buckets_fall_back_to_neutral() {
+        let set = EmotionRefSet {
+            neutral: clip("neutral"),
+            calm: None,
+            warm: None,
+            concerned: None,
+            excited: None,
+        };
+        assert_eq!(set.resolve(EmotionBucket::Calm), &clip("neutral"));
+        assert_eq!(set.resolve(EmotionBucket::Warm), &clip("neutral"));
+        assert_eq!(set.resolve(EmotionBucket::Concerned), &clip("neutral"));
+        assert_eq!(set.resolve(EmotionBucket::Excited), &clip("neutral"));
+    }
+
+    #[test]
+    fn configured_bucket_resolves_to_itself_not_neutral() {
+        let set = EmotionRefSet {
+            neutral: clip("neutral"),
+            calm: None,
+            warm: Some(clip("warm")),
+            concerned: None,
+            excited: None,
+        };
+        assert_eq!(set.resolve(EmotionBucket::Warm), &clip("warm"));
+        // Sibling buckets stay on neutral -- configuring one must not leak
+        // into the others.
+        assert_eq!(set.resolve(EmotionBucket::Calm), &clip("neutral"));
+    }
+
+    // ---------------------------------------------------------- optional_ref_clip
+    //
+    // These mutate process env vars, like the STT crate's existing
+    // `backend_defaults_to_whisper_not_mock` does. Var names are unique to
+    // this feature so they cannot collide with another test in this binary.
+
+    #[test]
+    fn missing_env_pair_yields_none() {
+        std::env::remove_var("REF_AUDIO_PATH_TESTBUCKETA");
+        std::env::remove_var("REF_TEXT_TESTBUCKETA");
+        assert_eq!(optional_ref_clip("TESTBUCKETA"), None);
+    }
+
+    #[test]
+    fn audio_without_text_yields_none_not_a_mismatched_pair() {
+        std::env::set_var("REF_AUDIO_PATH_TESTBUCKETB", "output/warm.wav");
+        std::env::remove_var("REF_TEXT_TESTBUCKETB");
+        assert_eq!(optional_ref_clip("TESTBUCKETB"), None);
+        std::env::remove_var("REF_AUDIO_PATH_TESTBUCKETB");
+    }
+
+    #[test]
+    fn both_vars_present_yields_the_clip() {
+        std::env::set_var("REF_AUDIO_PATH_TESTBUCKETC", "output/warm.wav");
+        std::env::set_var("REF_TEXT_TESTBUCKETC", "a warm greeting");
+        assert_eq!(
+            optional_ref_clip("TESTBUCKETC"),
+            Some(RefClip {
+                audio_path: "output/warm.wav".to_string(),
+                text: "a warm greeting".to_string(),
+            })
         );
+        std::env::remove_var("REF_AUDIO_PATH_TESTBUCKETC");
+        std::env::remove_var("REF_TEXT_TESTBUCKETC");
+    }
 
-        let _ = std::fs::remove_dir_all(&dir);
+    // ---------------------------------------------------------- CircuitBreaker
+
+    #[test]
+    fn breaker_starts_closed() {
+        let cb = CircuitBreaker::new(3, 15_000);
+        assert!(cb.allow_request(0));
+        assert!(!cb.is_open(0));
+    }
+
+    #[test]
+    fn breaker_does_not_open_before_threshold() {
+        let cb = CircuitBreaker::new(3, 15_000);
+        cb.record_failure(100);
+        cb.record_failure(200);
+        assert!(
+            !cb.is_open(200),
+            "two failures under a threshold of three must not open the breaker"
+        );
+    }
+
+    #[test]
+    fn breaker_opens_exactly_at_threshold() {
+        let cb = CircuitBreaker::new(3, 15_000);
+        cb.record_failure(100);
+        cb.record_failure(200);
+        cb.record_failure(300);
+        assert!(cb.is_open(300));
+    }
+
+    #[test]
+    fn breaker_stays_open_within_cooldown() {
+        let cb = CircuitBreaker::new(1, 15_000);
+        cb.record_failure(1_000);
+        assert!(cb.is_open(1_000));
+        assert!(cb.is_open(1_000 + 14_999));
+    }
+
+    #[test]
+    fn breaker_allows_half_open_trial_once_cooldown_elapses() {
+        let cb = CircuitBreaker::new(1, 15_000);
+        cb.record_failure(1_000);
+        assert!(
+            cb.allow_request(1_000 + 15_000),
+            "cooldown elapsed must permit exactly one half-open trial"
+        );
+    }
+
+    #[test]
+    fn success_fully_resets_the_breaker() {
+        let cb = CircuitBreaker::new(1, 15_000);
+        cb.record_failure(100);
+        assert!(cb.is_open(100));
+        cb.record_success();
+        assert!(
+            !cb.is_open(100),
+            "success must close an already-open breaker, not just stop \
+             counting toward the next opening"
+        );
+    }
+
+    #[test]
+    fn success_after_a_near_miss_does_not_leave_a_head_start() {
+        let cb = CircuitBreaker::new(3, 15_000);
+        cb.record_failure(100);
+        cb.record_failure(200);
+        cb.record_success();
+        // A prior near-miss must not carry over: it takes a fresh full
+        // threshold of failures to open again, not just one more.
+        cb.record_failure(300);
+        assert!(!cb.is_open(300));
+    }
+
+    #[test]
+    fn failed_half_open_trial_rearms_the_cooldown() {
+        let cb = CircuitBreaker::new(1, 15_000);
+        cb.record_failure(1_000); // opens at t=1000, cooldown until t=16000
+        let trial_time = 1_000 + 15_000; // t=16000, half-open trial begins
+        assert!(cb.allow_request(trial_time));
+        cb.record_failure(trial_time); // trial failed: re-arm from t=16000
+        assert!(
+            cb.is_open(trial_time + 14_999),
+            "a failed half-open trial must restart the cooldown from its own \
+             timestamp, not leave the original one in place"
+        );
+        assert!(cb.allow_request(trial_time + 15_000));
+    }
+
+    // ---------------------------------------------------------- synthesize_stream_with_retry
+    // These hit a real local HTTP mock (wiremock), not the network — no live
+    // model or external service is contacted.
+
+    fn test_voice_config(sovits_url: String) -> VoiceConfig {
+        VoiceConfig {
+            nats_url: "nats://127.0.0.1:4222".to_string(),
+            sovits_url,
+            emotion_refs: EmotionRefSet {
+                neutral: clip("neutral"),
+                calm: None,
+                warm: None,
+                concerned: None,
+                excited: None,
+            },
+            tts_language: "en".to_string(),
+            sample_rate: 32_000,
+        }
+    }
+
+    #[tokio::test]
+    async fn retry_recovers_from_transient_failures() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        // First two calls fail; the third (last allowed attempt) succeeds --
+        // proves retries actually happen and a late success is not treated as
+        // a failure just because earlier attempts were.
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(500))
+            .up_to_n_times(2)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![1, 2, 3]))
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let result = synthesize_stream_with_retry(
+            &config, &http, "hello", &config.emotion_refs.neutral, 1.0, 1.0, 1.0,
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "a transient failure within the retry budget must eventually succeed"
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_gives_up_after_max_attempts() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(MAX_SYNTHESIS_ATTEMPTS as u64)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let result = synthesize_stream_with_retry(
+            &config, &http, "hello", &config.emotion_refs.neutral, 1.0, 1.0, 1.0,
+        )
+        .await;
         assert!(
             result.is_err(),
-            "a placeholder text file must not load as an ONNX model"
+            "a server that never recovers must exhaust the retry budget and fail"
         );
+        // `.expect(N)` above is itself verified when `server` drops at end of
+        // scope -- an unexpected attempt count fails the test.
     }
 
-    /// Path to the provisioned base voice, relative to the crate root (cargo sets
-    /// CWD there for tests). Populated by `scripts/research/export_models.py`.
-    fn base_voice_dir() -> Option<std::path::PathBuf> {
-        let dir = std::path::PathBuf::from("../../../models/base");
-        dir.join("model.onnx").exists().then_some(dir)
-    }
+    // ---------------------------------------------------------- probe_synthesis
 
-    fn load_base_voice() -> Option<LocalTtsEngine> {
-        let dir = base_voice_dir()?;
-        Some(
-            LocalTtsEngine::load(
-                &dir.join("model.onnx"),
-                &dir.join("lexicon.txt"),
-                &dir.join("tokens.txt"),
-                32_000,
-            )
-            .expect("base voice is present but failed to load"),
-        )
-    }
+    #[tokio::test]
+    async fn probe_fails_on_empty_response_body_not_just_bad_status() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn peak(pcm: &[u8]) -> i32 {
-        pcm.chunks_exact(2)
-            .map(|c| (i16::from_le_bytes([c[0], c[1]]) as i32).abs())
-            .max()
-            .unwrap_or(0)
-    }
+        let server = MockServer::start().await;
+        // 200 OK but zero bytes: the exact "up but broken" failure mode a
+        // plain status/health ping would miss.
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
 
-    const PHRASE: &str = "hello world this is a test of the voice";
-
-    #[test]
-    fn real_voice_phonemizes_words_not_just_bos_eos() {
-        let Some(engine) = load_base_voice() else {
-            eprintln!("SKIP: models/base not provisioned");
-            return;
-        };
-        // The regression this guards: a mis-parsed lexicon yields an empty table,
-        // so phonemize() returns only [bos, eos] and VITS renders silence.
-        let phonemized = engine.phonemizer.phonemize(PHRASE);
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let result = probe_synthesis(&config, &http).await;
         assert!(
-            phonemized.ids.len() > 20,
-            "expected real phoneme ids for {PHRASE:?}, got only {} — lexicon likely empty",
-            phonemized.ids.len()
-        );
-        assert!(
-            phonemized.oov.is_empty(),
-            "every word of {PHRASE:?} should be in the lexicon, but these were not: {:?}",
-            phonemized.oov
+            result.is_err(),
+            "a 200 with an empty body must not be reported as healthy"
         );
     }
 
-    #[test]
-    fn real_voice_reports_out_of_vocabulary_words() {
-        let Some(engine) = load_base_voice() else {
-            eprintln!("SKIP: models/base not provisioned");
-            return;
-        };
-        // OOV words used to be dropped with no trace, so the agent silently spoke a
-        // different sentence than it generated. They must now be reported.
-        let phonemized = engine.phonemizer.phonemize("hello zzzqqxyzzy world");
-        assert_eq!(
-            phonemized.oov,
-            vec!["zzzqqxyzzy".to_string()],
-            "expected the nonsense word to be reported as out-of-vocabulary"
-        );
-        assert!(
-            !phonemized.ids.is_empty(),
-            "the in-vocabulary words should still phonemize"
-        );
-    }
+    #[tokio::test]
+    async fn probe_succeeds_when_real_audio_bytes_come_back() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    #[test]
-    fn synthesize_fails_when_no_word_is_pronounceable() {
-        let Some(engine) = load_base_voice() else {
-            eprintln!("SKIP: models/base not provisioned");
-            return;
-        };
-        // Previously this returned Ok(empty) — synthesis "succeeded" with no audio,
-        // so the caller published silence instead of falling back to remote TTS.
-        let err = engine
-            .synthesize("zzzqqxyzzy vvvwwqqjj", 1.0, 1.0, 1.0)
-            .expect_err("unpronounceable text must fail, not return empty audio");
-        let msg = format!("{err:#}");
-        assert!(
-            msg.contains("local lexicon"),
-            "error should explain the lexicon miss, got: {msg}"
-        );
-    }
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0, 1, 2, 3]))
+            .mount(&server)
+            .await;
 
-    #[test]
-    fn real_voice_renders_audible_audio() {
-        let Some(engine) = load_base_voice() else {
-            eprintln!("SKIP: models/base not provisioned");
-            return;
-        };
-        let pcm = engine.synthesize(PHRASE, 1.0, 1.0, 1.0).unwrap();
-        assert!(pcm.len() > 2 * 8_000, "expected >0.25s of audio, got {} bytes", pcm.len());
-        assert!(peak(&pcm) > 1_000, "audio is effectively silent (peak {})", peak(&pcm));
-    }
-
-    #[test]
-    fn real_voice_duration_tracks_rate_and_ignores_pitch() {
-        let Some(engine) = load_base_voice() else {
-            eprintln!("SKIP: models/base not provisioned");
-            return;
-        };
-        let normal = engine.synthesize(PHRASE, 1.0, 1.0, 1.0).unwrap().len() as f64;
-        let high = engine.synthesize(PHRASE, 1.0, 1.3, 1.0).unwrap().len() as f64;
-        let fast = engine.synthesize(PHRASE, 1.5, 1.0, 1.0).unwrap().len() as f64;
-
-        // Pitch must not change duration -- the whole point of the length_scale
-        // compensation. VITS' stochastic duration predictor adds run-to-run
-        // variance, hence the loose bound.
-        assert!(
-            (high - normal).abs() / normal < 0.20,
-            "pitch changed duration: normal={normal} high-pitch={high}"
-        );
-        // Rate must: 1.5x faster => ~2/3 the samples.
-        let expected_fast = normal / 1.5;
-        assert!(
-            (fast - expected_fast).abs() / expected_fast < 0.20,
-            "rate did not drive duration: expected ~{expected_fast}, got {fast}"
-        );
-    }
-
-    #[test]
-    fn real_voice_volume_scales_amplitude() {
-        let Some(engine) = load_base_voice() else {
-            eprintln!("SKIP: models/base not provisioned");
-            return;
-        };
-        // Compare RMS, not peak: VITS draws fresh noise every render
-        // (noise_scale=0.667), so these are two *different* waveforms of the same
-        // sentence. Peak is an extreme-value statistic and varies tens of percent
-        // between independent renders — this test originally used it and flaked
-        // (0.531 one run, 0.353 the next). RMS over ~3s of speech is stable to a
-        // few percent, and volume scales every sample linearly, so the RMS ratio
-        // tracks the volume ratio.
-        let loud = rms_i16(&engine.synthesize(PHRASE, 1.0, 1.0, 1.0).unwrap());
-        let quiet = rms_i16(&engine.synthesize(PHRASE, 1.0, 1.0, 0.5).unwrap());
-        assert!(loud > 0.0);
-        let ratio = quiet / loud;
-        assert!(
-            (ratio - 0.5).abs() < 0.10,
-            "volume 0.5 should halve RMS amplitude; ratio was {ratio:.3}"
-        );
-    }
-
-    fn rms_i16(pcm: &[u8]) -> f64 {
-        let samples: Vec<f64> = pcm
-            .chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]) as f64)
-            .collect();
-        assert!(!samples.is_empty());
-        (samples.iter().map(|s| s * s).sum::<f64>() / samples.len() as f64).sqrt()
-    }
-
-    #[test]
-    fn real_voice_native_rate_is_resampled_to_mesh_rate() {
-        let Some(engine) = load_base_voice() else {
-            eprintln!("SKIP: models/base not provisioned");
-            return;
-        };
-        eprintln!(
-            "native={} target={}",
-            engine.native_sample_rate, engine.target_sample_rate
-        );
-        assert_eq!(engine.target_sample_rate, 32_000);
-        assert!(engine.native_sample_rate > 0);
-    }
-
-    fn wav_bytes(pcm: &[u8], sample_rate: u32) -> Vec<u8> {
-        let mut w = Vec::new();
-        let data_len = pcm.len() as u32;
-        w.extend_from_slice(b"RIFF");
-        w.extend_from_slice(&(36 + data_len).to_le_bytes());
-        w.extend_from_slice(b"WAVEfmt ");
-        w.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size
-        w.extend_from_slice(&1u16.to_le_bytes()); // PCM
-        w.extend_from_slice(&1u16.to_le_bytes()); // mono
-        w.extend_from_slice(&sample_rate.to_le_bytes());
-        w.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
-        w.extend_from_slice(&2u16.to_le_bytes()); // block align
-        w.extend_from_slice(&16u16.to_le_bytes()); // bits
-        w.extend_from_slice(b"data");
-        w.extend_from_slice(&data_len.to_le_bytes());
-        w.extend_from_slice(pcm);
-        w
-    }
-
-    /// Renders WAVs for human listening. Opt-in:
-    ///   cargo test -p voice-agent render_prosody_demo_wavs -- --ignored --nocapture
-    #[test]
-    #[ignore]
-    fn render_prosody_demo_wavs() {
-        let engine = load_base_voice().expect("models/base must be provisioned");
-        let out = std::path::PathBuf::from("../../../voice_demo");
-        std::fs::create_dir_all(&out).unwrap();
-
-        let phrase = "hello my friend it is really good to hear from you today";
-        let cases: &[(&str, f32, f32, f32)] = &[
-            ("neutral", 1.0, 1.0, 1.0),
-            ("excited_fast_high", 1.4, 1.25, 1.0),
-            ("sad_slow_low", 0.75, 0.85, 0.6),
-            ("quiet_half_volume", 1.0, 1.0, 0.5),
-            ("pitch_only_high", 1.0, 1.3, 1.0),
-            ("rate_only_fast", 1.5, 1.0, 1.0),
-        ];
-
-        for (name, rate, pitch, volume) in cases {
-            let pcm = engine.synthesize(phrase, *rate, *pitch, *volume).unwrap();
-            let secs = pcm.len() as f64 / 2.0 / engine.target_sample_rate as f64;
-            let path = out.join(format!("{name}.wav"));
-            std::fs::write(&path, wav_bytes(&pcm, engine.target_sample_rate)).unwrap();
-            eprintln!(
-                "{name:20} rate={rate:.2} pitch={pitch:.2} vol={volume:.2} -> {secs:.2}s peak={} {}",
-                peak(&pcm),
-                path.display()
-            );
-        }
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        assert!(probe_synthesis(&config, &http).await.is_ok());
     }
 }
