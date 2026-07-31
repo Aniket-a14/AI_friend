@@ -271,8 +271,6 @@ class ActionService:
             if phrase in text.lower():
                 return False, f"Forbidden AI persona phrase: '{phrase}'"
 
-        import re
-
         if re.search(r"\b(toxic|hate)\b", text.lower()):
             return False, "Safety/Toxicity boundary violation"
 

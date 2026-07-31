@@ -20,7 +20,7 @@ import re
 import sqlite3
 import time
 import uuid
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -82,7 +82,16 @@ def _get_stem(word: str) -> str:
 # Retrieval scoring constants. These were previously inline "magic numbers"
 # (one reverse-engineered to make a benchmark metric land on exactly 0.6).
 # Named and documented here so the scoring is honest and tunable.
-DIRECT_CUE_BOOST = 5.0  # additive score bump per query cue found in a memory
+# Additive score bump per literal query cue found in a memory (see
+# _apply_direct_cue_boost). Deliberately large relative to the ACT-R
+# base/spread-activation terms it's added to -- those typically run roughly
+# -3..+3 for a given candidate (see _base_activation / _effective_similarity
+# below) -- so that a single literal keyword match can outrank a merely
+# similar ACT-R candidate. Unlike PPR_DAMPING just below, which has a
+# textbook justification, the 5.0 magnitude itself is a design choice, not
+# derived from measurement against real recall data. Flagging it as such
+# rather than presenting it as tuned.
+DIRECT_CUE_BOOST = 5.0
 PPR_DAMPING = 0.85  # canonical PageRank teleport/damping factor
 
 # ACT-R retrieval-scoring weights. These were duplicated inline across three
@@ -217,8 +226,6 @@ class GoalBuffer:
         self.current_turn += 1
 
         # Extract clean keywords
-        import re
-
         new_words = re.findall(r"\b\w{3,}\b", query_text.lower())
         filtered_words = [w for w in new_words if w not in dynamic_stop_words]
 
@@ -804,8 +811,6 @@ class MemoryStore:
                         "MATCH (e:Entity) RETURN e.name AS name", use_cache=True
                     )
                     entity_names = [r["name"] for r in entity_records]
-                    import re
-
                     content_lower = content.lower()
                     for name in entity_names:
                         name_lower = name.lower()
@@ -907,9 +912,6 @@ class MemoryStore:
                     # SQLite fallback: since SQLite doesn't have regexp_split_to_table,
                     # we can just fetch content and count in Python
                     rows = await conn.fetch("SELECT content FROM memories LIMIT 500")
-                    import re
-                    from collections import Counter
-
                     words = []
                     for r in rows:
                         words.extend(re.findall(r"\b\w{3,}\b", r["content"].lower()))

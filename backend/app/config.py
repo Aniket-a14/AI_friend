@@ -16,6 +16,13 @@ class AppSettings(BaseSettings):
     ALLOWED_ORIGINS_STR: str = Field(default="*", alias="ALLOWED_ORIGINS")
     LAN_ONLY: bool = True
     BACKEND_ACCESS_KEY: str | None = None
+    # C4: unchanged default (0.0.0.0) so nothing breaks today -- Docker
+    # deployments need this regardless of LAN_ONLY, since Docker's port
+    # publishing forwards to the container's network interface, not loopback.
+    # This exists for the bare `python main.py` / no-Docker path, where an
+    # operator who wants to restrict exposure (e.g. behind their own reverse
+    # proxy) now has a lever instead of needing a code change.
+    BACKEND_BIND_HOST: str = "0.0.0.0"
     LAN_CORS_ORIGIN_REGEX: str = (
         r"^https?://("
         r"127\.0\.0\.1|"
