@@ -1,9 +1,10 @@
 import asyncio
 import json
-import uuid
 import logging
-from nats.aio.client import Client as NATS
+import uuid
 from datetime import datetime
+
+from nats.aio.client import Client as NATS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("stress_test")

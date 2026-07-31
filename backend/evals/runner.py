@@ -13,7 +13,6 @@ agent's mood, not the model's behavior.
 """
 
 import logging
-from typing import List, Optional
 
 from app import config as config_module
 from app.cognitive.identity import IdentityManager
@@ -51,7 +50,7 @@ async def run_probe(
     manager: IdentityManager,
     probe: Probe,
     system: str,
-    model: Optional[str],
+    model: str | None,
     options: RunOptions,
 ) -> ProbeResult:
     response = await client.generate(
@@ -62,7 +61,7 @@ async def run_probe(
     )
 
     views = response_views(response)
-    checks: List[CheckResult] = []
+    checks: list[CheckResult] = []
     for check in probe.checks:
         if check.kind == "boundary":
             ok, reason = await manager.validate_response(
@@ -87,13 +86,13 @@ async def run_probe(
 async def run_eval(
     client: OllamaClient,
     manager: IdentityManager,
-    probes: List[Probe],
-    model: Optional[str] = None,
+    probes: list[Probe],
+    model: str | None = None,
     options: RunOptions = DEFAULT_OPTIONS,
 ) -> EvalReport:
     system = manager.get_persona_prompt(current_mood_directive=EVAL_MOOD_DIRECTIVE)
 
-    results: List[ProbeResult] = []
+    results: list[ProbeResult] = []
     # Sequential on purpose: one local model, and concurrent generations on a
     # CPU-only box would contend for the same cores and skew nothing useful.
     for probe in probes:

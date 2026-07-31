@@ -1,12 +1,13 @@
+import asyncio
 import base64
 import logging
-import asyncio
 import time
-import livekit.rtc as rtc
+
+from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
-from .base import BaseAgent
 
 from ..config import Config
+from .base import BaseAgent
 
 logger = logging.getLogger("transport_agent")
 
@@ -134,7 +135,7 @@ class TransportAgent(BaseAgent):
             # legacy JSON/base64 shape for compatibility.
             await self.publish("audio.inbound", audio_data, metadata=metadata)
 
-    async def _on_nats_audio(self, data, metadata: dict = None):
+    async def _on_nats_audio(self, data, metadata: dict | None = None):
         """Convert NATS audio events to WebRTC frames for User."""
         try:
             audio_bytes = b""

@@ -1,6 +1,8 @@
-import pytest
 import time
 from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from app.cognitive.core import CognitiveService
 
 

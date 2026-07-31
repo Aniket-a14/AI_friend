@@ -11,7 +11,6 @@ that is tolerable would be a tuning knob nobody has measured yet. Pass/fail
 regressions are unarguable, which is what a gate needs to be.
 """
 
-from typing import Dict, List
 
 from .schema import ComparisonReport, EvalReport, ProbeDelta
 
@@ -23,9 +22,9 @@ def compare_reports(
     cand_by_id = {result.probe_id: result for result in candidate.results}
     shared = [pid for pid in base_by_id if pid in cand_by_id]
 
-    regressions: List[ProbeDelta] = []
-    improvements: List[ProbeDelta] = []
-    declines: List[ProbeDelta] = []
+    regressions: list[ProbeDelta] = []
+    improvements: list[ProbeDelta] = []
+    declines: list[ProbeDelta] = []
     unchanged = 0
 
     for pid in shared:
@@ -46,7 +45,7 @@ def compare_reports(
         else:
             unchanged += 1
 
-    by_category_delta: Dict[str, float] = {}
+    by_category_delta: dict[str, float] = {}
     categories = set(baseline.by_category) | set(candidate.by_category)
     for category in sorted(categories):
         base_mean = (
@@ -78,10 +77,10 @@ def compare_reports(
 
 def render_comparison(comparison: ComparisonReport) -> str:
     lines = [
-        f"baseline:  {comparison.baseline_model} "
-        f"[{comparison.baseline_provenance}]",
-        f"candidate: {comparison.candidate_model} "
-        f"[{comparison.candidate_provenance}]",
+        (f"baseline:  {comparison.baseline_model} "
+        f"[{comparison.baseline_provenance}]"),
+        (f"candidate: {comparison.candidate_model} "
+        f"[{comparison.candidate_provenance}]"),
         "",
     ]
     if "mock" in (comparison.baseline_provenance, comparison.candidate_provenance):

@@ -24,8 +24,8 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.cognitive.identity import IdentityManager  # noqa: E402
-from app.state.conversation_store import ConversationHistoryStore  # noqa: E402
+from app.cognitive.identity import IdentityManager
+from app.state.conversation_store import ConversationHistoryStore
 
 
 def _line(label: str, value) -> str:

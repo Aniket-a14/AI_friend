@@ -14,8 +14,8 @@ its own description; it is not a benchmark.
 """
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -28,10 +28,10 @@ PACK_DIR = Path(__file__).parent / "probes"
 
 class ProbePack(BaseModel):
     description: str = Field(min_length=1)
-    probes: List[Probe] = Field(min_length=1)
+    probes: list[Probe] = Field(min_length=1)
 
 
-def persona_probes(manager: IdentityManager) -> List[Probe]:
+def persona_probes(manager: IdentityManager) -> list[Probe]:
     """Identity and boundary probes derived from the live persona.
 
     Deliberately few and deliberately literal. Each check needs a deterministic
@@ -97,7 +97,7 @@ def persona_probes(manager: IdentityManager) -> List[Probe]:
     ]
 
 
-def load_pack(path: Path) -> List[Probe]:
+def load_pack(path: Path) -> list[Probe]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
         pack = ProbePack.model_validate(raw)
@@ -109,13 +109,13 @@ def load_pack(path: Path) -> List[Probe]:
     return pack.probes
 
 
-def shipped_packs() -> List[Path]:
+def shipped_packs() -> list[Path]:
     return sorted(PACK_DIR.glob("*.json"))
 
 
 def collect_probes(
     manager: IdentityManager, pack_paths: Iterable[Path]
-) -> List[Probe]:
+) -> list[Probe]:
     """All probes for a run, with duplicate ids rejected loudly.
 
     Two probes sharing an id would make the later comparison silently diff

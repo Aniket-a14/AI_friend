@@ -3,7 +3,7 @@ pytest
 pytest-asyncio
 pytest-cov
 pytest-benchmark
-ruff==0.15.15
+ruff==0.16.1
 pre-commit
 codespell
 reportlab>=4.2.0

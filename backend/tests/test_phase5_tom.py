@@ -1,11 +1,12 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from app.cognitive.appraisal import AppraisalVector
+from app.cognitive.decision import ActionPlan, CognitiveEvent, DecisionService
+from app.cognitive.pipeline import CognitivePipeline
 from app.cognitive.tom import UserMentalModel, update_known_concepts
 from app.state.agent_state import StateService
-from app.cognitive.decision import DecisionService, CognitiveEvent
-from app.cognitive.pipeline import CognitivePipeline
-from app.cognitive.appraisal import AppraisalVector
-from app.cognitive.decision import ActionPlan
 
 
 def test_vocabulary_tracker():
@@ -100,10 +101,10 @@ async def test_acoustic_tom_drift(mock_graph_db):
 @pytest.mark.asyncio
 async def test_state_hydration_persistence(mock_graph_db):
     """Mocks SQLite cache hydration/persistence and Neo4j fallback to ensure user mental model fields are cleanly read and saved."""
-    import tempfile
-    import os
     import json
+    import os
     import sqlite3
+    import tempfile
 
     # Create unique temp file
     fd, db_file = tempfile.mkstemp(suffix=".db", prefix="test_tom_state_")

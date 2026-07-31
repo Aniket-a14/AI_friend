@@ -1,7 +1,8 @@
 import asyncio
 import logging
+from collections.abc import Callable
 from enum import Enum
-from typing import List, Callable, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class Node:
 class Composite(Node):
     """Base for nodes with multiple children (Selector, Sequence)"""
 
-    def __init__(self, name: str, children: List[Node]):
+    def __init__(self, name: str, children: list[Node]):
         super().__init__(name)
         self.children = children
 

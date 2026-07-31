@@ -1,10 +1,10 @@
 import copy
-import os
-import sqlite3
 import json
 import logging
+import os
+import sqlite3
 import threading
-from typing import Dict, Any
+from typing import Any
 
 logger = logging.getLogger("identity_core_store")
 
@@ -20,7 +20,7 @@ class IdentityCoreStore:
     def __init__(self, db_path: str = "identity_core.db", publish_cb=None):
         self.db_path = db_path
         self._cache_lock = threading.Lock()
-        self._cached_identity: Dict[str, Any] = {}
+        self._cached_identity: dict[str, Any] = {}
         self.publish_cb = publish_cb
         IdentityCoreStore._instances.append(self)
 
@@ -88,7 +88,7 @@ class IdentityCoreStore:
         }
         self.update_identity(default_data)
 
-    def load_into_cache(self) -> Dict[str, Any]:
+    def load_into_cache(self) -> dict[str, Any]:
         """Loads identity values directly into memory for Tier-1 sub-ms lookups."""
         conn = self._get_connection()
         try:
@@ -117,7 +117,7 @@ class IdentityCoreStore:
             self._release_connection(conn)
         return {}
 
-    def get_identity(self) -> Dict[str, Any]:
+    def get_identity(self) -> dict[str, Any]:
         """Sub-millisecond memory-cached getter."""
         with self._cache_lock:
             cached = self._cached_identity
@@ -125,7 +125,7 @@ class IdentityCoreStore:
             return copy.deepcopy(self.load_into_cache())
         return copy.deepcopy(cached)
 
-    def update_identity(self, data: Dict[str, Any]):
+    def update_identity(self, data: dict[str, Any]):
         """Persists identity mutations to SQLite and updates memory cache."""
         name = data.get("name", "AI Friend")
         values = data.get("values", data.get("values_list", []))

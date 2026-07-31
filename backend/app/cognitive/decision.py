@@ -9,14 +9,15 @@ Intent persistence uses temporal smoothing (§3.2):
     With context gating: if ContextShift > θ → hard reset
 """
 
-import logging
 import json
+import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
-from .perception import CognitiveEvent
-from .bt import Selector, Sequence, Action, Condition, NodeStatus
+from typing import Any
+
 from ..config import Config
+from .bt import Action, Condition, NodeStatus, Selector, Sequence
+from .perception import CognitiveEvent
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ GOALS = ["ENGAGE", "COMFORT", "INFORM", "TEASE", "PROTECT"]
 @dataclass
 class ActionPlan:
     action_type: str  # e.g., "RESPOND_CHAT", "STORE_MEMORY", "BACKGROUND_CONSOLIDATION"
-    payload: Dict[str, Any]
+    payload: dict[str, Any]
     goal: str
     priority: int = 1
 
@@ -56,8 +57,8 @@ class DecisionService:
         # Intent Persistence (§3.2)
         self.persistence_rate = Config.INTENT_PERSISTENCE_RATE  # ρ
         self.shift_threshold = Config.CONTEXT_SHIFT_THRESHOLD  # θ_shift
-        self._previous_goal: Optional[str] = None
-        self._goal_scores: Dict[str, float] = {g: 0.0 for g in GOALS}
+        self._previous_goal: str | None = None
+        self._goal_scores: dict[str, float] = {g: 0.0 for g in GOALS}
 
     def _build_bt(self):
         """Constructs the Behavior Tree."""
@@ -96,7 +97,7 @@ class DecisionService:
         )
 
     async def decide(
-        self, event: CognitiveEvent, state_snapshot: Dict[str, Any]
+        self, event: CognitiveEvent, state_snapshot: dict[str, Any]
     ) -> ActionPlan:
         """Main decision loop with MAUT scoring and intent persistence."""
         # 1. Hybrid Routing: Fast Path for Greetings
@@ -137,9 +138,9 @@ class DecisionService:
 
     def _score_goals_maut(
         self,
-        appraisal: Dict[str, float],
-        state: Dict[str, Any],
-        event_metadata: Optional[Dict[str, Any]] = None,
+        appraisal: dict[str, float],
+        state: dict[str, Any],
+        event_metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Multi-Attribute Utility Theory (§3.1).
@@ -302,7 +303,7 @@ class DecisionService:
         event.metadata.setdefault("preferred_model", Config.LLM_CHAT_MODEL)
 
     async def _classify_intent_and_goal(
-        self, event: CognitiveEvent, state: Dict[str, Any]
+        self, event: CognitiveEvent, state: dict[str, Any]
     ):
         """Uses LLM to classify intent and suggested goal, enriching with Theory of Mind inferences."""
         prompt = f"""
@@ -397,7 +398,7 @@ class DecisionService:
     # --- BT Actions ---
 
     def is_speculative_stop_confirmed(
-        self, backbone_text: str, perception_keywords: list[str] = None
+        self, backbone_text: str, perception_keywords: list[str] | None = None
     ) -> bool:
         """
         Hardened Semantic Conflict Resolver for CVS-3.5.
@@ -478,7 +479,7 @@ class DecisionService:
         )
         return False
 
-    async def _plan_social_response(self, blackboard: Dict[str, Any]) -> bool:
+    async def _plan_social_response(self, blackboard: dict[str, Any]) -> bool:
         event = blackboard["event"]
         goal = event.metadata.get("suggested_goal", "ENGAGE")
 
@@ -495,11 +496,11 @@ class DecisionService:
         )
         return True
 
-    async def _plan_reflection(self, blackboard: Dict[str, Any]) -> bool:
+    async def _plan_reflection(self, blackboard: dict[str, Any]) -> bool:
         blackboard["plan"] = ActionPlan("BACKGROUND_CONSOLIDATION", {}, "REFLECT", 0)
         return True
 
-    async def _plan_storage(self, blackboard: Dict[str, Any]) -> bool:
+    async def _plan_storage(self, blackboard: dict[str, Any]) -> bool:
         blackboard["plan"] = ActionPlan(
             "STORE_MEMORY", {"content": blackboard["event"].raw_content}, "RECALL", 2
         )

@@ -1,8 +1,9 @@
-import os
 import json
 import logging
+import os
 import sqlite3
-from typing import List, Dict, Any, Optional
+from typing import Any
+
 import redis
 
 logger = logging.getLogger("working_memory_store")
@@ -17,8 +18,8 @@ class WorkingMemoryStore:
 
     def __init__(
         self,
-        redis_host: str = None,
-        redis_port: int = None,
+        redis_host: str | None = None,
+        redis_port: int | None = None,
         db_path: str = "working_memory.db",
         max_turns: int = 8,
     ):
@@ -42,7 +43,7 @@ class WorkingMemoryStore:
 
         self.max_turns = max_turns
         self.db_path = db_path
-        self.redis_client: Optional[redis.Redis] = None
+        self.redis_client: redis.Redis | None = None
 
         # 1. Attempt Redis Connection
         try:
@@ -100,7 +101,7 @@ class WorkingMemoryStore:
     # --- Real-Time Turns Playout (Last 5–8 turns) ---
 
     def add_turn(
-        self, role: str, content: str, metadata: Optional[Dict[str, Any]] = None
+        self, role: str, content: str, metadata: dict[str, Any] | None = None
     ):
         """Append a dialogue turn, immediately trimming excess turns to prevent context bloat."""
         meta_json = json.dumps(metadata or {})
@@ -142,7 +143,7 @@ class WorkingMemoryStore:
         except Exception as e:
             logger.error(f"SQLite add_turn failed: {e}")
 
-    def get_recent_turns(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_recent_turns(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Retrieve recent conversation turns in chronological order."""
         limit = limit or self.max_turns
         if self.redis_client:

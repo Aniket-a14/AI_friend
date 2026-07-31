@@ -69,7 +69,7 @@ def test_a_paragraph_carries_the_heading_it_sat_under():
     anything; filed under "How she argues" it is an answer.
     """
     entries = parse_biography(DOC)
-    argues = [e for e in entries if "quiet rather than loud" in e.text][0]
+    argues = next(e for e in entries if "quiet rather than loud" in e.text)
     assert "How she argues" in argues.heading
     assert argues.memory_text.startswith("Biography / How she argues:")
 

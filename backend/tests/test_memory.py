@@ -6,9 +6,11 @@ based on frequency, recency, cosine similarity, and emotional alignment.
 """
 
 import asyncio
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, AsyncMock, patch
+
 from app.state.memory_store import MemoryStore
 
 
@@ -44,7 +46,7 @@ def _make_row(
     emotion=0.0,
 ):
     """Helper to build a mock DB row with all ACT-R fields."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return {
         "content": content,
         "raw_content": raw_content or content,
@@ -63,7 +65,7 @@ def _make_row(
 
 def test_calculate_utility_no_emotion(memory_store, mock_pool):
     """Basic ACT-R retrieval: single memory should pass threshold."""
-    pool, conn = mock_pool
+    _pool, conn = mock_pool
     rows = [_make_row("Old memory", similarity=1.0, hours_ago=10, recall_count=3)]
     conn.fetch.return_value = rows
 
@@ -76,7 +78,7 @@ def test_calculate_utility_no_emotion(memory_store, mock_pool):
 
 def test_emotional_boost(memory_store, mock_pool):
     """Mood-congruent recall: emotionally aligned memory should rank higher."""
-    pool, conn = mock_pool
+    _pool, conn = mock_pool
     rows = [
         _make_row("Mundane Fact", similarity=0.7, valence=0.0),
         _make_row("Emotional Memory", similarity=0.6, valence=0.5, emotion=0.8),
@@ -95,7 +97,7 @@ def test_emotional_boost(memory_store, mock_pool):
 
 def test_time_decay_ranking(memory_store, mock_pool):
     """ACT-R base-level activation: recent memories should outrank stale ones."""
-    pool, conn = mock_pool
+    _pool, conn = mock_pool
     rows = [
         _make_row("Recent memory", similarity=0.7, hours_ago=0, recall_count=2),
         _make_row("Ancient memory", similarity=0.9, hours_ago=2400, recall_count=1),
@@ -112,7 +114,7 @@ def test_time_decay_ranking(memory_store, mock_pool):
 
 def test_recall_frequency_boost(memory_store, mock_pool):
     """ACT-R: frequently recalled memories should have higher activation."""
-    pool, conn = mock_pool
+    _pool, conn = mock_pool
     rows = [
         _make_row("Rarely recalled", similarity=0.8, recall_count=1),
         _make_row("Frequently recalled", similarity=0.7, recall_count=50),

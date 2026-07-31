@@ -46,7 +46,7 @@ def _write(tmp_path, text=AUTHORED, name="persona.toml"):
     return path
 
 
-def _agent(tmp_path, persona_file, personality: dict = None):
+def _agent(tmp_path, persona_file, personality: dict | None = None):
     """An agent whose identity lives in tmp_path.
 
     Passing `personality` makes it a *returning* agent: the file on disk is what

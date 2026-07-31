@@ -1,11 +1,12 @@
 import asyncio
 import json
-import orjson
 import logging
-import time
 import os
+import time
+from typing import Any
+
 import nats
-from typing import Any, Dict, Optional
+import orjson
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ class BaseAgent:
     Communicates via NATS JetStream.
     """
 
-    def __init__(self, name: str, nats_url: str = None):
+    def __init__(self, name: str, nats_url: str | None = None):
         self.name = name
         self.nats_url = nats_url or os.getenv("NATS_URL", "nats://127.0.0.1:4222")
         self.nc = None
@@ -30,7 +31,7 @@ class BaseAgent:
             for subject in tracked_subjects_raw.split(",")
             if subject.strip()
         }
-        self._subject_metrics: Dict[str, Dict[str, float]] = {}
+        self._subject_metrics: dict[str, dict[str, float]] = {}
         self._metrics_log_every = max(
             1, int(os.getenv("SUBJECT_METRICS_LOG_EVERY", "25"))
         )
@@ -79,7 +80,7 @@ class BaseAgent:
             logger.error(f"Failed to connect agent '{self.name}': {e}")
             raise
 
-    async def _on_cache_sync_received(self, data: Dict[str, Any]):
+    async def _on_cache_sync_received(self, data: dict[str, Any]):
         """Receives cross-process cache invalidation broadcast signals."""
         try:
             store_name = data.get("store")
@@ -138,7 +139,7 @@ class BaseAgent:
                 logger.debug(f"Stream bootstrap note: {e}")
 
     async def publish(
-        self, subject: str, data: Any, metadata: Optional[Dict[str, Any]] = None
+        self, subject: str, data: Any, metadata: dict[str, Any] | None = None
     ):
         """Publish an event to the mesh with latency tracking and binary support."""
         if not self.js:
@@ -211,8 +212,8 @@ class BaseAgent:
             logger.error(f"Failed to publish to {subject}: {e}")
 
     def _extract_latency_ms(
-        self, metadata: Optional[Dict[str, Any]]
-    ) -> Optional[float]:
+        self, metadata: dict[str, Any] | None
+    ) -> float | None:
         if not metadata:
             return None
         start_time = metadata.get("start_time")
@@ -227,7 +228,7 @@ class BaseAgent:
         self,
         subject: str,
         direction: str,
-        latency_ms: Optional[float] = None,
+        latency_ms: float | None = None,
     ):
         if subject not in self._tracked_subjects:
             return
@@ -277,10 +278,10 @@ class BaseAgent:
         self,
         subject: str,
         callback,
-        durable: str = None,
+        durable: str | None = None,
         deliver_policy: str = "all",
-        pending_msgs_limit: int = None,
-        pending_bytes_limit: int = None,
+        pending_msgs_limit: int | None = None,
+        pending_bytes_limit: int | None = None,
     ):
         """
         Subscribe to events on the mesh with header validation and fallback.
@@ -333,7 +334,7 @@ class BaseAgent:
             except Exception as e:
                 logger.error(f"Subscription handler error on {subject}: {e}")
                 # Auto-ACK fast-moving media, but NACK critical state/chat flows
-                if subject.startswith("chat.") or subject.startswith("state."):
+                if subject.startswith(("chat.", "state.")):
                     # A3: bound redelivery so a persistently malformed ("poison")
                     # payload cannot spin forever. After MESH_MAX_DELIVER attempts,
                     # terminate delivery and record the drop as a dead-letter.
@@ -422,7 +423,7 @@ class BaseAgent:
                     logger.error(
                         f"Agent '{self.name}' failed to subscribe to {subject}: {e}"
                     )
-                    raise e
+                    raise
 
     async def set_state(self, state: str):
         """Broadcast agent state to the mesh (e.g., 'thinking', 'speaking', 'idle')"""

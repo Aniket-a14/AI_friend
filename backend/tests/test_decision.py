@@ -1,4 +1,5 @@
 import pytest
+
 from app.cognitive.decision import DecisionService
 from app.cognitive.perception import CognitiveEvent
 

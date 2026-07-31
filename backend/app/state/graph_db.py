@@ -1,12 +1,14 @@
 # pyrefly: ignore [missing-import]
 
-from neo4j import AsyncGraphDatabase
+import asyncio
+import json
 import logging
 import re
 import time
-import json
-import asyncio
-from typing import Dict, Any, List
+from typing import Any
+
+from neo4j import AsyncGraphDatabase
+
 from ..config import Config
 
 logger = logging.getLogger("graph_db")
@@ -93,11 +95,11 @@ class GraphDB:
                 pass
         await self.driver.close()
 
-    async def invalidate_cache(self, affected_entity: str = None):
+    async def invalidate_cache(self, affected_entity: str | None = None):
         """Public cache flush hook for stateful services."""
         await self._invalidate_cache(affected_entity)
 
-    async def _invalidate_cache(self, affected_entity: str = None):
+    async def _invalidate_cache(self, affected_entity: str | None = None):
         """Flush cache to prevent stale context."""
         self._belief_cache.clear()
         if affected_entity:
@@ -108,11 +110,11 @@ class GraphDB:
     async def execute_query(
         self,
         query: str,
-        parameters: Dict[str, Any] = None,
+        parameters: dict[str, Any] | None = None,
         use_cache: bool = False,
         write: bool = False,
         strong_consistency: bool = False,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """Generic async query execution with TTL caching and explicit read/write transaction routing."""
         cache_key = (query, json.dumps(parameters) if parameters else None)
 
@@ -163,7 +165,7 @@ class GraphDB:
         subject_name: str,
         relation: str,
         target_name: str,
-        properties: Dict[str, Any] = None,
+        properties: dict[str, Any] | None = None,
         subject_label: str = "Entity",
         target_label: str = "Entity",
     ):
@@ -206,7 +208,7 @@ class GraphDB:
         subject: str,
         relation: str,
         target: str,
-        properties: Dict[str, Any] = None,
+        properties: dict[str, Any] | None = None,
         subject_label: str = "Entity",
         target_label: str = "Entity",
     ):

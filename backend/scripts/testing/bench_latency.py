@@ -1,9 +1,10 @@
 import asyncio
-import time
-import nats
 import json
 import logging
 import os
+import time
+
+import nats
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

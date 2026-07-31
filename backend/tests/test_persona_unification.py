@@ -236,7 +236,7 @@ def test_the_nested_immutable_block_still_cannot_set_the_safety_core(tmp_path):
 class _Store:
     """Minimal stand-in for the durable config store."""
 
-    def __init__(self, personality: dict, history: dict = None):
+    def __init__(self, personality: dict, history: dict | None = None):
         self._personality = personality
         self._history = history or {}
 

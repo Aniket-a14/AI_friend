@@ -1,12 +1,13 @@
-import logging
 import asyncio
 import json
+import logging
 import re
 import time
-from typing import List, Dict, Any
-from .identity import IdentityManager
+from typing import Any
+
 from ..config import Config
 from ..state.graph_db import GraphDB
+from .identity import IdentityManager
 
 logger = logging.getLogger("reflection")
 
@@ -37,7 +38,7 @@ class ReflectionService:
         self.reflection_done = asyncio.Event()
         self.reflection_done.set()
 
-    async def trigger_reflection(self, recent_episodes: List[Dict[str, Any]]):
+    async def trigger_reflection(self, recent_episodes: list[dict[str, Any]]):
         """Non-blocking trigger for background learning."""
         if not getattr(Config, "REFLECTION_ENABLED", True):
             return
@@ -70,7 +71,7 @@ class ReflectionService:
         )
         return asyncio.create_task(self._consolidate(recent_episodes))
 
-    async def _consolidate(self, episodes: List[Dict[str, Any]]):
+    async def _consolidate(self, episodes: list[dict[str, Any]]):
         """
         Background Solid State Consolidation (§7):
         1. Fact Resolution (Deduplication & Gating)

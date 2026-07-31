@@ -1,6 +1,7 @@
 import logging
 import math
-from typing import Dict, Any, AsyncGenerator, List
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from ..contracts import StateUpdate
 
@@ -71,8 +72,8 @@ class CognitivePipeline:
         self._system2_task = None
 
     async def execute(
-        self, raw_event: Dict[str, Any], surfaced_memories: List[Dict[str, Any]] = None
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+        self, raw_event: dict[str, Any], surfaced_memories: list[dict[str, Any]] | None = None
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Executes the master cognitive loop.
         Yields events/chunks for the agent wrapper to handle.

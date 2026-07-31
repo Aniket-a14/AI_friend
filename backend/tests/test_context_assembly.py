@@ -5,13 +5,14 @@ Covers two anti-degradation goals:
   * hallucination — a grounding constraint in the system prompt.
 """
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from app.cognitive.action import (
     ActionService,
-    reorder_for_long_context,
     _memory_relevance,
+    reorder_for_long_context,
 )
 from app.cognitive.decision import ActionPlan
 

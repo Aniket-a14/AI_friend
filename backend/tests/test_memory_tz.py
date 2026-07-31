@@ -10,9 +10,10 @@ recency subtraction now coerces both operands through _as_aware_utc first.
 """
 
 import asyncio
-import pytest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.state.conversation_store import ConversationHistoryStore
 from app.state.memory_store import MemoryStore
@@ -22,14 +23,14 @@ class TestAsAwareUtc:
     def test_naive_is_assumed_utc(self):
         dt = datetime(2026, 5, 1, 12, 0, 0)
         out = MemoryStore._as_aware_utc(dt)
-        assert out.tzinfo is timezone.utc
+        assert out.tzinfo is UTC
         assert out.hour == 12  # naive value read as-is, tagged UTC
 
     def test_aware_is_converted_to_utc(self):
         tz = timezone(timedelta(hours=5, minutes=30))  # +05:30
         dt = datetime(2026, 5, 1, 12, 0, 0, tzinfo=tz)
         out = MemoryStore._as_aware_utc(dt)
-        assert out.tzinfo is timezone.utc
+        assert out.tzinfo is UTC
         assert out.hour == 6 and out.minute == 30  # 12:00+05:30 -> 06:30 UTC
 
     def test_none_passes_through(self):
@@ -37,7 +38,7 @@ class TestAsAwareUtc:
 
     def test_subtraction_never_raises_after_coercion(self):
         naive = datetime(2026, 5, 1, 12, 0, 0)
-        aware = datetime(2026, 5, 1, 10, 0, 0, tzinfo=timezone.utc)
+        aware = datetime(2026, 5, 1, 10, 0, 0, tzinfo=UTC)
         delta = MemoryStore._as_aware_utc(naive) - MemoryStore._as_aware_utc(aware)
         assert delta.total_seconds() == 2 * 3600
 
@@ -78,7 +79,7 @@ class TestApplyDecayMixedTz:
             # aware current_time ~ now, so the memory is recent (not pruned) and
             # its importance decays by the 0.8 factor.
             await mem.apply_actr_decay(
-                ["decay me"], current_time=datetime.now(timezone.utc)
+                ["decay me"], current_time=datetime.now(UTC)
             )
             async with store.pool.acquire() as conn:
                 row = await conn.fetchrow(
@@ -91,7 +92,7 @@ class TestApplyDecayMixedTz:
 
 
 def _make_row_aware(content, similarity, hours_ago=1, recall_count=1):
-    now = datetime.now(timezone.utc)  # aware last_recalled_at / created_at
+    now = datetime.now(UTC)  # aware last_recalled_at / created_at
     return {
         "content": content,
         "raw_content": content,

@@ -8,16 +8,16 @@ Each test below fails against the code as it stood before this branch.
 
 import asyncio
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import orjson
 import pytest
 
 from app.cognitive.action import (
+    _SAFE_FALLBACK_LINE,
     ActionService,
     _ChatStreamState,
-    _SAFE_FALLBACK_LINE,
 )
 from app.cognitive.decision import ActionPlan
 from app.state.memory_store import MemoryStore
@@ -263,15 +263,15 @@ def test_as_aware_utc_parses_sqlite_timestamp_strings():
     """Finding #6: SQLite hands back TEXT, and the archive path did datetime
     arithmetic on it."""
     got = MemoryStore._as_aware_utc("2026-07-18 12:30:00")
-    assert got == datetime(2026, 7, 18, 12, 30, tzinfo=timezone.utc)
+    assert got == datetime(2026, 7, 18, 12, 30, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        ("2026-07-18T12:30:00", datetime(2026, 7, 18, 12, 30, tzinfo=timezone.utc)),
-        ("2026-07-18T12:30:00Z", datetime(2026, 7, 18, 12, 30, tzinfo=timezone.utc)),
-        ("2026-07-18T12:30:00+00:00", datetime(2026, 7, 18, 12, 30, tzinfo=timezone.utc)),
+        ("2026-07-18T12:30:00", datetime(2026, 7, 18, 12, 30, tzinfo=UTC)),
+        ("2026-07-18T12:30:00Z", datetime(2026, 7, 18, 12, 30, tzinfo=UTC)),
+        ("2026-07-18T12:30:00+00:00", datetime(2026, 7, 18, 12, 30, tzinfo=UTC)),
     ],
 )
 def test_as_aware_utc_handles_iso_variants(raw, expected):
@@ -287,7 +287,7 @@ def test_as_aware_utc_degrades_to_none_on_unparseable(bad):
 
 def test_as_aware_utc_preserves_existing_behaviour():
     naive = datetime(2026, 7, 18, 12, 30)
-    aware = datetime(2026, 7, 18, 12, 30, tzinfo=timezone.utc)
+    aware = datetime(2026, 7, 18, 12, 30, tzinfo=UTC)
     assert MemoryStore._as_aware_utc(None) is None
     assert MemoryStore._as_aware_utc(naive) == aware
     assert MemoryStore._as_aware_utc(aware) == aware
@@ -319,27 +319,27 @@ def test_non_schema_errors_are_not_treated_as_missing_columns(exc):
 
 
 def _insert_kwargs():
-    return dict(
-        memory_id="m1",
-        content="c",
-        raw_val="c",
-        wing="personal",
-        room=None,
-        vector_str="[]",
-        importance=0.5,
-        emotion=0.0,
-        valence=0.0,
-        certainty=1.0,
-        source="user",
-        metadata_json="{}",
-        lifespan_stage="",
-        crisis="",
-        virtue="",
-        relations="",
-        relation_circles="",
-        modality="",
-        current_time=None,
-    )
+    return {
+        "memory_id": "m1",
+        "content": "c",
+        "raw_val": "c",
+        "wing": "personal",
+        "room": None,
+        "vector_str": "[]",
+        "importance": 0.5,
+        "emotion": 0.0,
+        "valence": 0.0,
+        "certainty": 1.0,
+        "source": "user",
+        "metadata_json": "{}",
+        "lifespan_stage": "",
+        "crisis": "",
+        "virtue": "",
+        "relations": "",
+        "relation_circles": "",
+        "modality": "",
+        "current_time": None,
+    }
 
 
 def test_insert_row_falls_back_only_on_a_missing_column():
@@ -398,7 +398,7 @@ def test_archive_activation_survives_an_unparseable_stored_timestamp():
         "emotional_weight": 0.2,
         "importance_score": 0.6,
     }
-    score, spread, dist_emo, recall_count, now = store._archive_row_activation(
+    score, _spread, _dist_emo, recall_count, _now = store._archive_row_activation(
         row,
         0.5,
         current_valence=0.0,
@@ -435,7 +435,7 @@ def test_promotion_survives_a_qdrant_failure_after_the_sql_move():
     # Must not raise: the caller uses an exception here to mean "not promoted".
     asyncio.run(
         store._write_promoted_memory(
-            "m1", "content", {}, [0.1], 1, datetime.now(timezone.utc), {}, sql_meta={}
+            "m1", "content", {}, [0.1], 1, datetime.now(UTC), {}, sql_meta={}
         )
     )
     assert conn.execute.await_count == 2  # insert + archive delete
@@ -460,7 +460,7 @@ def test_promotion_propagates_a_sql_failure():
     with pytest.raises(RuntimeError):
         asyncio.run(
             store._write_promoted_memory(
-                "m1", "c", {}, [0.1], 1, datetime.now(timezone.utc), {}, sql_meta={}
+                "m1", "c", {}, [0.1], 1, datetime.now(UTC), {}, sql_meta={}
             )
         )
 

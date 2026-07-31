@@ -32,7 +32,7 @@ decaying burst, so a reward can outlast the mood swing that accompanied it.
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +72,9 @@ class SomaticAppraiser:
     def __init__(self, graph_store=None, *, now_fn=time.time):
         self.graph = graph_store
         self._now = now_fn
-        self._terms: Dict[str, Dict[str, Any]] = {}
+        self._terms: dict[str, dict[str, Any]] = {}
         self._cache_loaded_at: float = 0.0
-        self._last_spike_at: Dict[str, float] = {}
+        self._last_spike_at: dict[str, float] = {}
 
     # -- learned vocabulary -------------------------------------------------
 
@@ -112,7 +112,7 @@ class SomaticAppraiser:
             )
             return len(self._terms)
 
-        terms: Dict[str, Dict[str, Any]] = {}
+        terms: dict[str, dict[str, Any]] = {}
         for row in rows or []:
             name = (row or {}).get("name")
             if not isinstance(name, str):
@@ -136,7 +136,7 @@ class SomaticAppraiser:
         return len(terms)
 
     @property
-    def known_terms(self) -> List[str]:
+    def known_terms(self) -> list[str]:
         return sorted(self._terms)
 
     # -- recognition --------------------------------------------------------
@@ -152,7 +152,7 @@ class SomaticAppraiser:
             return False
         return (self._now() - last) < SOMATIC_REFRACTORY_SECONDS
 
-    def appraise(self, description: str) -> Optional[Dict[str, Any]]:
+    def appraise(self, description: str) -> dict[str, Any] | None:
         """Match a visual description against learned comforts.
 
         Returns None when nothing is recognised — the overwhelmingly common

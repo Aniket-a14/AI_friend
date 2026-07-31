@@ -1,7 +1,7 @@
 from pathlib import Path
-from typing import List, Optional
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from pydantic import Field, computed_field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _env_file = Path(__file__).resolve().parent.parent.parent / ".env"
 
@@ -15,7 +15,7 @@ class AppSettings(BaseSettings):
     TESTING_CONSOLIDATION_BYPASS_SILENCE: bool = False
     ALLOWED_ORIGINS_STR: str = Field(default="*", alias="ALLOWED_ORIGINS")
     LAN_ONLY: bool = True
-    BACKEND_ACCESS_KEY: Optional[str] = None
+    BACKEND_ACCESS_KEY: str | None = None
     LAN_CORS_ORIGIN_REGEX: str = (
         r"^https?://("
         r"127\.0\.0\.1|"
@@ -38,34 +38,34 @@ class AppSettings(BaseSettings):
 
     # LiveKit Configuration
     LIVEKIT_URL: str = "ws://127.0.0.1:7880"
-    LIVEKIT_API_KEY: Optional[str] = None
-    LIVEKIT_API_SECRET: Optional[str] = None
+    LIVEKIT_API_KEY: str | None = None
+    LIVEKIT_API_SECRET: str | None = None
 
     # Memory & Personality
-    DATABASE_URL: Optional[str] = None
-    PERSONALITY_SEED_PATH: Optional[str] = None
-    HISTORY_SEED_PATH: Optional[str] = None
+    DATABASE_URL: str | None = None
+    PERSONALITY_SEED_PATH: str | None = None
+    HISTORY_SEED_PATH: str | None = None
     # A user-authored persona (see app/persona/profile.py). Unset means "use the
     # PSYCH_* / AI_NAME defaults below", which is exactly the previous behaviour.
-    PERSONA_PROFILE_PATH: Optional[str] = None
+    PERSONA_PROFILE_PATH: str | None = None
     # Where `personality.json`/`history.json` live. Unset means "beside the
     # code", which is the historical behaviour and fine for a normal deployment
     # — but it makes the package directory writable state, so anything that
     # builds an `IdentityManager` without a durable store writes into the repo.
-    IDENTITY_BASE_PATH: Optional[str] = None
+    IDENTITY_BASE_PATH: str | None = None
 
     # Neo4j Graph Configuration
-    NEO4J_URI: Optional[str] = None
+    NEO4J_URI: str | None = None
     NEO4J_USER: str = "neo4j"
-    NEO4J_PASSWORD: Optional[str] = None
-    NEO4J_AUTH: Optional[str] = None
+    NEO4J_PASSWORD: str | None = None
+    NEO4J_AUTH: str | None = None
 
     AI_NAME: str = "AI Friend"
     OLLAMA_URL: str = "http://127.0.0.1:11434"
 
     LLM_FAST_MODEL: str = "llama3.2:3b"
-    LLM_CHAT_MODEL: Optional[str] = None
-    LLM_REFLECTION_MODEL: Optional[str] = None
+    LLM_CHAT_MODEL: str | None = None
+    LLM_REFLECTION_MODEL: str | None = None
 
     LLM_STREAM_MAX_SECONDS: int = 120
     LLM_INTENT_CLASSIFICATION_ENABLED: bool = True
@@ -78,7 +78,7 @@ class AppSettings(BaseSettings):
     PROACTIVE_IDLE_THRESHOLD_SECONDS: float = 7200.0
     PROACTIVE_COOLDOWN_SECONDS: float = 3600.0
     PROACTIVE_MIN_ENERGY: float = 0.2
-    PROACTIVE_DEBUG_THRESHOLD_OVERRIDE: Optional[str] = None
+    PROACTIVE_DEBUG_THRESHOLD_OVERRIDE: str | None = None
 
     PSYCH_ALPHA: float = 0.3
     PSYCH_BETA: float = 0.5
@@ -143,7 +143,7 @@ class AppSettings(BaseSettings):
     STT_DEVICE: str = "cpu"
 
     SAMPLE_RATE: int = 32000
-    BINARY_SUBJECTS: List[str] = ["audio.inbound", "audio.stream"]
+    BINARY_SUBJECTS: list[str] = ["audio.inbound", "audio.stream"]
     SYSTEM_TICK_INTERVAL: int = 60
     FEEDBACK_ALPHA: float = 0.70
     MAX_VOICE_QUEUE_SIZE: int = 10
@@ -195,12 +195,12 @@ class AppSettings(BaseSettings):
     # ConfigMeta's job shrinks to "look up the instance," nothing more.
     @computed_field
     @property
-    def ALLOWED_ORIGINS(self) -> List[str]:
+    def ALLOWED_ORIGINS(self) -> list[str]:
         return self.ALLOWED_ORIGINS_STR.split(",")
 
     @computed_field
     @property
-    def OLLAMA_REQUIRED_MODELS(self) -> List[str]:
+    def OLLAMA_REQUIRED_MODELS(self) -> list[str]:
         if self.OLLAMA_REQUIRED_MODELS_STR.strip():
             return [
                 model.strip()

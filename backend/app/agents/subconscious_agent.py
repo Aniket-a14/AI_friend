@@ -1,16 +1,16 @@
 import asyncio
 import logging
-import uuid
 import time
-from typing import Dict, Any
+import uuid
+from typing import Any
 
 from app.agents.base import BaseAgent
-from app.llm.ollama_client import OllamaClient
-from app.state.graph_db import GraphDB
-from app.state.agent_state import StateService
-from app.config import Config
-from app.contracts import Topics, ChatInput, ChatInputMetadata
 from app.cognitive.subconscious import SubconsciousEngine
+from app.config import Config
+from app.contracts import ChatInput, ChatInputMetadata, Topics
+from app.llm.ollama_client import OllamaClient
+from app.state.agent_state import StateService
+from app.state.graph_db import GraphDB
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ class SubconsciousAgent(BaseAgent):
         self._monologue_task = asyncio.create_task(self._continuous_monologue_loop())
         logger.info(f"🧠 {self.name} Online | Subconscious Mesh Interface Active.")
 
-    async def _on_state_broadcast(self, data: Dict[str, Any]):
+    async def _on_state_broadcast(self, data: dict[str, Any]):
         """Asynchronously syncs state changes from NATS state.broadcast into Neo4j."""
         agent_name = data.get("agent_name", "my friend")
 
@@ -184,7 +184,7 @@ class SubconsciousAgent(BaseAgent):
         except Exception as e:
             logger.error(f"[Subconscious] Failed to sync state to Neo4j: {e}")
 
-    async def _on_system_tick(self, data: Dict[str, Any]):
+    async def _on_system_tick(self, data: dict[str, Any]):
         """Delegates thought generation to the engine and routes to the Mesh."""
         last_bench = getattr(self, "_last_benchmark_time", 0.0)
         if time.time() - last_bench < 300:
@@ -317,7 +317,7 @@ class SubconsciousAgent(BaseAgent):
         finally:
             self._is_consolidating = False
 
-    async def _on_chat_input(self, data: Dict[str, Any]):
+    async def _on_chat_input(self, data: dict[str, Any]):
         """Cancel active monologue or dream generation when user speaks/sends message."""
         metadata = data.get("metadata", {})
         source = metadata.get("source") if isinstance(metadata, dict) else None
@@ -332,7 +332,7 @@ class SubconsciousAgent(BaseAgent):
         if source != "subconscious":
             self._cancel_active_subconscious_tasks()
 
-    async def _on_audio_perception(self, data: Dict[str, Any]):
+    async def _on_audio_perception(self, data: dict[str, Any]):
         """Cancel active monologue or dream generation immediately on early user audio detection."""
         self._cancel_active_subconscious_tasks()
 

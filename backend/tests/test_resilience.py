@@ -1,7 +1,8 @@
-import pytest
-import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
-from unittest.mock import patch, MagicMock, AsyncMock
+import pytest
+
 from app.llm.ollama_client import OllamaClient
 
 
@@ -76,7 +77,7 @@ async def test_ollama_backoff_exhaustion_fallback(ollama_client):
 async def test_check_health_robustness(ollama_client):
     """Verify health check respects timeouts and handles failures."""
     with patch("httpx.AsyncClient.get") as mock_get:
-        mock_get.side_effect = asyncio.TimeoutError()
+        mock_get.side_effect = TimeoutError()
 
         is_healthy = await ollama_client.check_health()
         assert is_healthy is False
@@ -195,7 +196,7 @@ async def test_generate_falls_back_on_timeout_to_chat_endpoint(ollama_client):
             "message": {"content": "Recovered after timeout"}
         }
 
-        mock_post.side_effect = [asyncio.TimeoutError(), mock_success]
+        mock_post.side_effect = [TimeoutError(), mock_success]
 
         response = await ollama_client.generate("hello")
         assert response == "Recovered after timeout"
@@ -206,7 +207,7 @@ async def test_generate_stream_falls_back_on_timeout_to_chat_endpoint(ollama_cli
     """If /api/generate stream times out, stream should continue via /api/chat."""
     with patch("httpx.AsyncClient.stream") as mock_stream:
         mock_timeout_cm = MagicMock()
-        mock_timeout_cm.__aenter__.side_effect = asyncio.TimeoutError()
+        mock_timeout_cm.__aenter__.side_effect = TimeoutError()
 
         stream_lines = [
             '{"message": {"content": "Hi "}, "done": false}',

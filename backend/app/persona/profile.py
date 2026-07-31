@@ -60,7 +60,7 @@ import json
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -81,7 +81,7 @@ class Tier(str, Enum):
 # `IdentityManager` already keeps an `immutable` block inside personality.json,
 # but that file is user-editable, so it cannot be the authority on safety. These
 # are merged over whatever a persona file supplies.
-IMMUTABLE_CORE: Dict[str, Any] = {
+IMMUTABLE_CORE: dict[str, Any] = {
     "values": ["Honesty", "Privacy"],
     "boundaries": [
         "Will never share user data",
@@ -170,12 +170,12 @@ class PersonaProfile(BaseModel):
     # `speaking_style` because these are constitutional — the way a person
     # talks is not something the agent should reflect its way out of, whereas
     # the register it adopts with you is.
-    speech_patterns: List[str] = _constitutional(default_factory=list, max_length=20)
-    traits: List[str] = _constitutional(default_factory=list, max_length=8)
+    speech_patterns: list[str] = _constitutional(default_factory=list, max_length=20)
+    traits: list[str] = _constitutional(default_factory=list, max_length=8)
     # Phrases the friend must not say. Constitutional rather than adaptive: a
     # user asking never to hear something is not a preference the agent gets to
     # outgrow through reflection.
-    avoid: List[str] = _constitutional(default_factory=list, max_length=64)
+    avoid: list[str] = _constitutional(default_factory=list, max_length=64)
 
     # -- adaptive: seeded here, then owned by the friend --------------------
     relationship: str = _adaptive(default="Friend", max_length=64)
@@ -186,14 +186,14 @@ class PersonaProfile(BaseModel):
     # implementations, which is how the prosody and affect duplications both
     # began. Homeostatic: a friend that accumulates traits without bound
     # eventually has no character at all, just a list.
-    adaptive_traits: List[str] = _adaptive(default_factory=list, max_length=5)
+    adaptive_traits: list[str] = _adaptive(default_factory=list, max_length=5)
     # `Any`, not `str`. The schema originally said `Dict[str, str]`, which the
     # real personality.json has never satisfied: `common_vocabulary` is a list
     # of words. Nothing noticed because nothing read this field. The moment
     # IdentityManager did, one list-valued key failed validation and took the
     # entire narrative persona down with it — name, tone and traits discarded
     # over a vocabulary entry.
-    speaking_style: Dict[str, Any] = _adaptive(default_factory=dict)
+    speaking_style: dict[str, Any] = _adaptive(default_factory=dict)
 
     # The one field in the per-turn prompt that reflection writes *free text*
     # into. `Dict[str, Any]` cannot bound its own values, so the ceiling has to
@@ -219,7 +219,7 @@ class PersonaProfile(BaseModel):
         return Tier(extra["tier"])
 
     @classmethod
-    def fields_in(cls, tier: Tier) -> List[str]:
+    def fields_in(cls, tier: Tier) -> list[str]:
         return sorted(n for n in cls.model_fields if cls.tier_of(n) is tier)
 
     @classmethod
@@ -236,7 +236,7 @@ class PersonaProfile(BaseModel):
                 return limit
         raise RuntimeError("adaptive_traits lost its max_length constraint")
 
-    def learn_traits(self, new_traits: List[str]) -> List[str]:
+    def learn_traits(self, new_traits: list[str]) -> list[str]:
         """Adopt new adaptive traits, keeping only the newest within the cap.
 
         The one place a trait list grows. Dropping the *oldest* is the point:
@@ -253,7 +253,7 @@ class PersonaProfile(BaseModel):
         return list(self.adaptive_traits)
 
     @property
-    def immutable(self) -> Dict[str, Any]:
+    def immutable(self) -> dict[str, Any]:
         """The safety core. Always the code constant, never the file."""
         # A copy, so a caller mutating what it receives cannot edit the boundary
         # list every other caller reads. deepcopy rather than a JSON round-trip:
@@ -287,7 +287,7 @@ class PersonaProfile(BaseModel):
         return cls._clamped(raw, origin="Config")
 
     @classmethod
-    def _clamped(cls, raw: Dict[str, Any], *, origin: str) -> "PersonaProfile":
+    def _clamped(cls, raw: dict[str, Any], *, origin: str) -> "PersonaProfile":
         """Pull numeric values into their declared bounds, warning on each."""
         fixed = dict(raw)
         for name, value in raw.items():
@@ -336,7 +336,7 @@ class PersonaProfile(BaseModel):
         return any(getattr(m, "gt", None) is not None for m in field.metadata)
 
     @classmethod
-    def load(cls, path: Optional[str] = None) -> "PersonaProfile":
+    def load(cls, path: str | None = None) -> "PersonaProfile":
         """Load a user-authored persona file, falling back to `Config`.
 
         Strict by design. A persona file is someone deliberately describing the
@@ -400,8 +400,8 @@ class PersonaProfile(BaseModel):
 
     @classmethod
     def _reject_immutable_overrides(
-        cls, data: Dict[str, Any], *, origin: str
-    ) -> Dict[str, Any]:
+        cls, data: dict[str, Any], *, origin: str
+    ) -> dict[str, Any]:
         """Drop any attempt to set the safety core from a file."""
         cleaned = dict(data)
         for key in ("immutable", *IMMUTABLE_CORE.keys()):
@@ -418,8 +418,8 @@ class PersonaProfile(BaseModel):
 
     @classmethod
     def flatten_personality_shape(
-        cls, data: Dict[str, Any], *, origin: str = "personality.json"
-    ) -> Dict[str, Any]:
+        cls, data: dict[str, Any], *, origin: str = "personality.json"
+    ) -> dict[str, Any]:
         """Translate the nested `personality.json` layout onto these fields.
 
         `IdentityManager`'s file groups things under `core_personality`,
@@ -471,7 +471,7 @@ class PersonaProfile(BaseModel):
 
     # -- consumption --------------------------------------------------------
 
-    def coefficients(self) -> Dict[str, float]:
+    def coefficients(self) -> dict[str, float]:
         """The psychological coefficients, under StateService's own names."""
         return {
             "alpha": self.valence_drift_rate,
@@ -482,14 +482,14 @@ class PersonaProfile(BaseModel):
             "lambda_decay": self.mood_decay_rate,
         }
 
-    def hormone_halflives(self) -> Dict[str, float]:
+    def hormone_halflives(self) -> dict[str, float]:
         """Phasic decay half-lives, under AgentState's own field names."""
         return {
             "dopamine_halflife_s": self.dopamine_halflife_s,
             "cortisol_halflife_s": self.cortisol_halflife_s,
         }
 
-    def baseline_affect(self) -> Dict[str, float]:
+    def baseline_affect(self) -> dict[str, float]:
         return {
             "valence": self.baseline_valence,
             "arousal": self.baseline_arousal,

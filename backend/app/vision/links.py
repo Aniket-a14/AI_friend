@@ -11,7 +11,6 @@ except ImportError:
     cv2 = None
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,7 @@ class ScreenLink:
             self.monitor = None
             self.headless = True
 
-    def _compress_frame(self, frame: np.ndarray) -> Optional[bytes]:
+    def _compress_frame(self, frame: np.ndarray) -> bytes | None:
         if frame is None:
             return None
         height, width = frame.shape[:2]
@@ -56,7 +55,7 @@ class ScreenLink:
         _, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
         return buffer.tobytes()
 
-    def capture_frame(self) -> Optional[bytes]:
+    def capture_frame(self) -> bytes | None:
         """Captures and returns a compressed JPEG frame of the screen."""
         if self.headless:
             return None
@@ -81,7 +80,7 @@ class CameraLink:
                 "[Vision] cv2 dependency is missing. Camera capture disabled."
             )
 
-    def _compress_frame(self, frame: np.ndarray) -> Optional[bytes]:
+    def _compress_frame(self, frame: np.ndarray) -> bytes | None:
         if frame is None or cv2 is None:
             return None
         height, width = frame.shape[:2]
@@ -101,7 +100,7 @@ class CameraLink:
         if self.cap is None or not self.cap.isOpened():
             self.cap = cv2.VideoCapture(0)
 
-    def capture_frame(self) -> Optional[bytes]:
+    def capture_frame(self) -> bytes | None:
         """Captures and returns a compressed JPEG frame from the camera."""
         try:
             self._ensure_cap()

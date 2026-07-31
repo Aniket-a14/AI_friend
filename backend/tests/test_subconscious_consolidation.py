@@ -2,14 +2,16 @@
 Unit Tests for Subconscious Memory Consolidation & ACT-R Offline Fallbacks.
 """
 
-import pytest
 import time
 from unittest.mock import AsyncMock, MagicMock
-from app.state.conversation_store import ConversationHistoryStore
-from app.state.memory_store import MemoryStore
+
+import pytest
+
 from app.agents.subconscious_agent import SubconsciousAgent
 from app.cognitive.learning import ReflectionService
 from app.config import Config
+from app.state.conversation_store import ConversationHistoryStore
+from app.state.memory_store import MemoryStore
 
 
 @pytest.mark.asyncio
@@ -254,7 +256,7 @@ async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_
 
         # Verify graph write was attempted
         mock_graph_db.create_triplet.assert_called_once()
-        args, kwargs = mock_graph_db.create_triplet.call_args
+        args, _kwargs = mock_graph_db.create_triplet.call_args
         assert args[0] == "User"
         assert args[1] == "LIKES"
         assert args[2] == "Python"

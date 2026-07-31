@@ -1,6 +1,8 @@
-import pytest
 import json
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
+
+import pytest
+
 from app.cognitive.identity import IdentityManager
 
 
@@ -22,11 +24,10 @@ def sample_history():
 def test_identity_load(sample_personality, sample_history):
     m_open = mock_open(read_data=json.dumps(sample_personality))
 
-    with patch("builtins.open", m_open):
-        with patch("os.path.exists", return_value=True):
-            manager = IdentityManager(base_path="/fake/path", persona_file=None)
-            assert manager.personality["name"] == "my friend"
-            assert "Warm" in manager.personality["core_personality"]["traits"]
+    with patch("builtins.open", m_open), patch("os.path.exists", return_value=True):
+        manager = IdentityManager(base_path="/fake/path", persona_file=None)
+        assert manager.personality["name"] == "my friend"
+        assert "Warm" in manager.personality["core_personality"]["traits"]
 
 
 @pytest.mark.asyncio

@@ -25,7 +25,8 @@ what reflection thought; the memory store becomes where it lives.
 
 import hashlib
 import logging
-from typing import Any, Iterable, List, Sequence, Set
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +70,10 @@ def fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def pending_entries(memories: Sequence[Any], already_seeded: Iterable[str]) -> List[str]:
+def pending_entries(memories: Sequence[Any], already_seeded: Iterable[str]) -> list[str]:
     """The memory texts not yet written to the store, de-duplicated."""
-    seen: Set[str] = set(already_seeded or ())
-    pending: List[str] = []
+    seen: set[str] = set(already_seeded or ())
+    pending: list[str] = []
 
     for entry in memories or ():
         text = entry_text(entry)
@@ -93,7 +94,7 @@ async def migrate_history_memories(
     memories: Sequence[Any],
     memory_store: Any,
     already_seeded: Iterable[str] = (),
-) -> List[str]:
+) -> list[str]:
     """Write pending history memories into the episodic store.
 
     Returns the fingerprints actually stored, for the caller to persist. One
@@ -113,7 +114,7 @@ async def migrate_history_memories(
         len(pending),
     )
 
-    stored: List[str] = []
+    stored: list[str] = []
     for text in pending:
         try:
             await memory_store.add_memory(
