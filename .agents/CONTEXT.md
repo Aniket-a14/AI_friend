@@ -4791,3 +4791,29 @@ moment" phrase. Migration candidates researched separately (CosyVoice2,
 Zonos2) were intentionally not touched — this change only hardens and extends
 the existing GPT-SoVITS path, per the staged plan; a full engine migration is
 a later, separate decision.
+
+### 2026-07-31 — CI: pinned `ruff`, discovered as a false-positive lint failure on this same PR
+
+`backend/requirements-dev.txt` pinned `ruff` with no version, so every CI run
+installs whatever is newest on PyPI at that moment. Between main's last green
+CI run (2026-07-21) and this PR's run (2026-07-31), ruff shipped `0.16.0`,
+which enables more rules by default than `0.15.15` did (`I001` import
+sorting, `DTZ001`/`DTZ005` naive-datetime, `RUF059` unused unpacked variables,
+among others). CI's `lint` and `Backend Lint + Tests (macOS)` jobs both failed
+against ~40 pre-existing test files this PR never touched
+(`test_regressions.py`, `test_state.py`, `test_vision.py`, etc.) — the same
+command (`ruff check app/ tests/`) is clean on `0.15.15` and reproduces the
+identical failure list on `0.16.1`, confirmed by installing each locally and
+running both against an unchanged tree. This would have failed identically on
+a fresh branch off `main` with zero code changes; it was pure environment
+drift, not a defect in this PR's diff.
+
+**Fix**: pinned `ruff==0.15.15` in `requirements-dev.txt`. Bundled into this
+branch rather than a separate PR, per explicit instruction — the alternative
+(a standalone pin PR) was the default per this repo's branch-per-change
+convention but was overridden here.
+
+**NOT done:** the underlying rules `0.16.x` newly enables were not evaluated
+or adopted — this only restores the previously-green baseline. Deciding
+whether to move to the newer ruff and clean up the ~40 files it would flag is
+a separate, repo-wide style decision for later.
