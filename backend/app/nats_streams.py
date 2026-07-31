@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from typing import Dict, List, Sequence, Optional
+from collections.abc import Sequence
 
 import nats
 from nats.errors import NoRespondersError
@@ -10,7 +10,7 @@ from nats.js.errors import BadRequestError, ServiceUnavailableError
 logger = logging.getLogger("nats_streams")
 
 
-CORE_STREAMS: Dict[str, Sequence[str]] = {
+CORE_STREAMS: dict[str, Sequence[str]] = {
     "AI_MESSAGES": [
         "chat.>",
         "vision.>",
@@ -41,7 +41,7 @@ def _is_retryable_error(error: Exception) -> bool:
     )
 
 
-def _build_jetstream_error_hint(error: Optional[Exception]) -> str:
+def _build_jetstream_error_hint(error: Exception | None) -> str:
     if error is None:
         return ""
 
@@ -58,7 +58,7 @@ def _build_jetstream_error_hint(error: Optional[Exception]) -> str:
 
 
 async def _wait_for_jetstream_ready(jsm, retries: int, delay_seconds: float) -> None:
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
     for attempt in range(1, retries + 1):
         try:
             await jsm.account_info()
@@ -82,7 +82,7 @@ async def _wait_for_jetstream_ready(jsm, retries: int, delay_seconds: float) -> 
 
 
 async def _ensure_stream(
-    jsm, stream_name: str, subjects: List[str], retries: int, delay_seconds: float
+    jsm, stream_name: str, subjects: list[str], retries: int, delay_seconds: float
 ) -> None:
     last_error: Exception = None
 
@@ -121,9 +121,9 @@ async def _ensure_stream(
 
 
 async def setup_streams(
-    nats_url: str = None,
-    retries: Optional[int] = None,
-    delay_seconds: Optional[float] = None,
+    nats_url: str | None = None,
+    retries: int | None = None,
+    delay_seconds: float | None = None,
 ) -> None:
     """Ensure core JetStream streams are available with startup-race tolerance."""
     nats_url = nats_url or os.getenv("NATS_URL", "nats://127.0.0.1:4222")

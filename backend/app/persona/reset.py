@@ -28,7 +28,8 @@ exactly what re-seeding means.
 """
 
 import logging
-from typing import Any, Dict, List, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from .biography import BIOGRAPHY_SOURCE
 from .history_migration import HISTORY_SOURCE
@@ -46,7 +47,7 @@ SEEDED_SOURCES: Sequence[str] = (BIOGRAPHY_SOURCE, HISTORY_SOURCE)
 _MEMORY_TABLES = ("memories", "archived_memories")
 
 
-async def _seeded_ids(conn: Any, table: str, is_sqlite: bool) -> List[str]:
+async def _seeded_ids(conn: Any, table: str, is_sqlite: bool) -> list[str]:
     """Ids of file-seeded rows in one memory table."""
     if is_sqlite:
         placeholders = ",".join("?" for _ in SEEDED_SOURCES)
@@ -140,7 +141,7 @@ async def clear_persona_row(config_store: Any) -> bool:
         return False
 
 
-async def reset_persona(config_store: Any, memory_store: Any) -> Dict[str, Any]:
+async def reset_persona(config_store: Any, memory_store: Any) -> dict[str, Any]:
     """Reset the friend to whatever `config/` currently describes.
 
     Memories go first. If the process dies between the two steps, the surviving

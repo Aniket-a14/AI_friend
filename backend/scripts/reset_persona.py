@@ -22,9 +22,9 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.persona.reset import reset_persona  # noqa: E402
-from app.state.conversation_store import ConversationHistoryStore  # noqa: E402
-from app.state.memory_store import MemoryStore  # noqa: E402
+from app.persona.reset import reset_persona
+from app.state.conversation_store import ConversationHistoryStore
+from app.state.memory_store import MemoryStore
 
 CONFIRMATION = "reset my friend"
 

@@ -1,9 +1,12 @@
+import asyncio
 import json
 import logging
-import asyncio
-import httpx
 import random
-from typing import AsyncGenerator, Any, Dict, List, Optional, Tuple
+from collections.abc import AsyncGenerator
+from typing import Any
+
+import httpx
+
 from app.config import Config
 
 logger = logging.getLogger("ollama_client")
@@ -24,7 +27,7 @@ class OllamaClient:
         self.max_retries = 3
         self.base_delay = 1.0
         self.timeout = httpx.Timeout(10.0, read=180.0, connect=5.0)
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -39,14 +42,14 @@ class OllamaClient:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
 
-    def _build_generate_prompt(self, prompt: str, system: str = None) -> str:
+    def _build_generate_prompt(self, prompt: str, system: str | None = None) -> str:
         safe_prompt = prompt.replace("System:", "").replace("Assistant:", "")
         return f"{system}\n\nUser: {safe_prompt}\nAssistant:" if system else safe_prompt
 
     def _build_chat_messages(
-        self, prompt: str, system: str = None
-    ) -> List[Dict[str, str]]:
-        messages: List[Dict[str, str]] = []
+        self, prompt: str, system: str | None = None
+    ) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
@@ -59,8 +62,8 @@ class OllamaClient:
         model: str,
         stream: bool,
         num_predict: int,
-        options_override: Optional[Dict[str, Any]] = None,
-    ) -> List[Tuple[str, Dict[str, Any], str]]:
+        options_override: dict[str, Any] | None = None,
+    ) -> list[tuple[str, dict[str, Any], str]]:
         model_variants = self._build_model_variants(model)
 
         options = {
@@ -73,7 +76,7 @@ class OllamaClient:
         if options_override:
             options.update(options_override)
 
-        attempts: List[Tuple[str, Dict[str, Any], str]] = []
+        attempts: list[tuple[str, dict[str, Any], str]] = []
         for model_variant in model_variants:
             generate_payload = {
                 "model": model_variant,
@@ -94,7 +97,7 @@ class OllamaClient:
 
         return attempts
 
-    def _build_model_variants(self, model: str) -> List[str]:
+    def _build_model_variants(self, model: str) -> list[str]:
         variants = [model]
         if ":" not in model:
             variants.append(f"{model}:latest")
@@ -122,7 +125,7 @@ class OllamaClient:
                     return text[:160]
         return ""
 
-    def _extract_response_text(self, payload: Dict[str, Any]) -> str:
+    def _extract_response_text(self, payload: dict[str, Any]) -> str:
         text = payload.get("response")
         if isinstance(text, str):
             return text
@@ -137,9 +140,9 @@ class OllamaClient:
     async def generate_stream(
         self,
         prompt: str,
-        system: str = None,
-        model: str = None,
-        options_override: Optional[Dict[str, Any]] = None,
+        system: str | None = None,
+        model: str | None = None,
+        options_override: dict[str, Any] | None = None,
     ) -> AsyncGenerator[str, None]:
         if getattr(Config, "MOCK_LLM_TEXT", False):
             # Corpus-agnostic deterministic mock: reflect back whatever memory
@@ -161,7 +164,7 @@ class OllamaClient:
             options_override=options_override,
         )
 
-        errors: List[str] = []
+        errors: list[str] = []
         client = await self._get_client()
 
         for attempt in range(self.max_retries):
@@ -190,7 +193,7 @@ class OllamaClient:
                             except json.JSONDecodeError:
                                 continue
                         return
-                except (httpx.HTTPError, asyncio.TimeoutError) as e:
+                except (TimeoutError, httpx.HTTPError) as e:
                     errors.append(f"{endpoint} ({model_variant}): {type(e).__name__}")
                     continue
 
@@ -203,9 +206,9 @@ class OllamaClient:
     async def generate(
         self,
         prompt: str,
-        system: str = None,
-        model: str = None,
-        options_override: Optional[Dict[str, Any]] = None,
+        system: str | None = None,
+        model: str | None = None,
+        options_override: dict[str, Any] | None = None,
     ) -> str:
         if getattr(Config, "MOCK_LLM_TEXT", False):
             lower_prompt = prompt.lower()
@@ -279,7 +282,7 @@ class OllamaClient:
         )
 
         client = await self._get_client()
-        errors: List[str] = []
+        errors: list[str] = []
 
         for attempt in range(self.max_retries):
             for endpoint, payload, model_variant in payload_attempts:
@@ -293,7 +296,7 @@ class OllamaClient:
                     text = self._extract_response_text(result)
                     if text:
                         return text
-                except (httpx.HTTPError, asyncio.TimeoutError) as e:
+                except (TimeoutError, httpx.HTTPError) as e:
                     errors.append(f"{endpoint}: {type(e).__name__}")
                     continue
 
@@ -307,7 +310,7 @@ class OllamaClient:
         self,
         image_b64: str,
         prompt: str = "What do you see?",
-        model: str = None,
+        model: str | None = None,
     ) -> str:
         if getattr(Config, "MOCK_LLM_TEXT", False):
             ai_name = getattr(Config, "AI_NAME", "AI Friend")

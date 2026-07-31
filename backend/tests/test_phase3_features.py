@@ -3,19 +3,20 @@ Comprehensive Unit & Integration Tests for CVS-1.0 stability, ACT-R consolidatio
 neuromodulatory gating, dimensional trust, and dynamic LLM temperature features.
 """
 
-import pytest
 import time
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-from app.state.conversation_store import ConversationHistoryStore
-from app.state.memory_store import MemoryStore
-from app.state.agent_state import StateService, AgentState
-from app.cognitive.appraisal import AppraisalVector
-from app.cognitive.action import ActionService, ActionPlan
+import pytest
+
 from app.agents.subconscious_agent import SubconsciousAgent
+from app.cognitive.action import ActionPlan, ActionService
+from app.cognitive.appraisal import AppraisalVector
 from app.cognitive.learning import ReflectionService
 from app.config import Config
+from app.state.agent_state import AgentState, StateService
+from app.state.conversation_store import ConversationHistoryStore
+from app.state.memory_store import MemoryStore
 
 
 @pytest.mark.asyncio

@@ -4,8 +4,10 @@ Validates cortisol/dopamine derivation from PAD state and
 downstream LLM parameter modulation.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+
 from app.state.agent_state import AgentState, StateService
 
 

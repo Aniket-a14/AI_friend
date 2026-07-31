@@ -14,13 +14,13 @@ once it ages past a biological-timeline cutoff. Two fidelity requirements:
     datetime().
 """
 
-import pytest
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from app.state.conversation_store import ConversationHistoryStore
 from app.state.memory_store import MemoryStore
-
 
 _MEMORIES_SCHEMA = """
     CREATE TABLE IF NOT EXISTS memories (

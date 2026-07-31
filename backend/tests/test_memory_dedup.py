@@ -8,12 +8,12 @@ importance) instead of minting a duplicate row that would inflate retrieval and
 distort ACT-R frequency.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from app.state.conversation_store import ConversationHistoryStore
 from app.state.memory_store import MemoryStore
-
 
 _MEMORIES_SCHEMA = """
     CREATE TABLE IF NOT EXISTS memories (

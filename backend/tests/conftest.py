@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 import tempfile
 
 # Set fallback environment variables for testing before any app modules are loaded
@@ -43,12 +43,13 @@ os.environ.setdefault(
     "IDENTITY_BASE_PATH", tempfile.mkdtemp(prefix="pankudi-identity-")
 )
 
-import types
-import pytest
 import asyncio
-import sqlite3
 import re
-from unittest.mock import MagicMock, AsyncMock
+import sqlite3
+import types
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 # Add the backend directory to Python path
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -101,11 +102,9 @@ class MockJetStream:
     async def publish(self, subject, data, headers=None):
         self.connection._trigger(subject, data, headers)
         await self.connection.drain()
-        return None
 
     async def subscribe(self, subject, cb, durable=None, **kwargs):
         self.connection._subscribe(subject, cb)
-        return None
 
 
 class MockNATSConnection:
@@ -127,27 +126,19 @@ class MockNATSConnection:
         async def run_callback(cb, msg):
             try:
                 await cb(msg)
-            except Exception as e:
+            except Exception:
                 import logging
 
-                logging.getLogger("MockNATS").error(
-                    f"Subscriber callback failed: {e}", exc_info=True
-                )
+                logging.getLogger("MockNATS").exception("Subscriber callback failed")
                 raise
 
         msg = MockMessage(subject, data, headers)
         for sub_subj, callbacks in self.subscribers.items():
             matched = False
-            if sub_subj == subject:
-                matched = True
-            elif sub_subj.endswith(".>") and subject.startswith(sub_subj[:-1]):
-                matched = True
-            elif (
+            if sub_subj == subject or sub_subj.endswith(".>") and subject.startswith(sub_subj[:-1]) or (
                 sub_subj.endswith(".*")
                 and subject.split(".")[:-1] == sub_subj.split(".")[:-1]
-            ):
-                matched = True
-            elif sub_subj == ">":
+            ) or sub_subj == ">":
                 matched = True
 
             if matched:
@@ -298,7 +289,6 @@ class SQLiteConnection:
         cursor = self.conn.cursor()
         cursor.execute(translated, cleaned_args)
         self.conn.commit()
-        return None
 
     async def fetch(self, query, *args):
         translated = self._translate_query(query)

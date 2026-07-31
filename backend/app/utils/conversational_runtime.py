@@ -1,9 +1,11 @@
 import asyncio
-import random
 import logging
-from typing import Dict, Any, AsyncGenerator
-from ..contracts import ChatOutput, ChatOutputAffect, Topics
+import random
+from collections.abc import AsyncGenerator
+from typing import Any
+
 from ..config import Config
+from ..contracts import ChatOutput, ChatOutputAffect, Topics
 
 logger = logging.getLogger("conversational_runtime")
 
@@ -21,15 +23,15 @@ class ConversationalRuntime:
 
     async def monitor_stream_and_fill(
         self,
-        generator: AsyncGenerator[Dict[str, Any], None],
+        generator: AsyncGenerator[dict[str, Any], None],
         turn_id: str,
-        state_snap: Dict[str, Any],
+        state_snap: dict[str, Any],
         user_distance: float = 1.0,
         is_proactive: bool = False,
-        incoming_metadata: Dict[str, Any] = None,
-        incoming_latency_metadata: Dict[str, Any] = None,
-        flow_start_time: float = None,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+        incoming_metadata: dict[str, Any] | None = None,
+        incoming_latency_metadata: dict[str, Any] | None = None,
+        flow_start_time: float | None = None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Monitors TTFT. If first token takes > 400ms, sends an early hesitation filler.
         """
@@ -91,7 +93,7 @@ class ConversationalRuntime:
             if not filler_task.done():
                 filler_task.cancel()
 
-    def calculate_pacing_parameters(self, state_snap: Dict[str, Any]) -> Dict[str, Any]:
+    def calculate_pacing_parameters(self, state_snap: dict[str, Any]) -> dict[str, Any]:
         """
         Calculates turn pacing, silence durations, and turn-taking probabilities.
         """

@@ -28,9 +28,10 @@ still mean something when it surfaces on its own.
 import hashlib
 import logging
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, List, Optional, Sequence, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ class BiographyEntry:
         return f"{self.heading}: {self.text}"
 
 
-def parse_biography(markdown: str) -> List[BiographyEntry]:
+def parse_biography(markdown: str) -> list[BiographyEntry]:
     """Split prose into paragraphs, each tagged with its nearest heading.
 
     Deliberately forgiving. This file is written by a person describing someone
@@ -91,9 +92,9 @@ def parse_biography(markdown: str) -> List[BiographyEntry]:
     kept, blank-line-separated paragraphs are the unit, and heading depth is
     ignored beyond nesting the trail.
     """
-    entries: List[BiographyEntry] = []
-    heading_trail: List[str] = []
-    buffer: List[str] = []
+    entries: list[BiographyEntry] = []
+    heading_trail: list[str] = []
+    buffer: list[str] = []
 
     def flush() -> None:
         text = " ".join(" ".join(buffer).split()).strip()
@@ -127,7 +128,7 @@ def parse_biography(markdown: str) -> List[BiographyEntry]:
     return entries
 
 
-def read_biography(path: Optional[Path]) -> List[BiographyEntry]:
+def read_biography(path: Path | None) -> list[BiographyEntry]:
     """Parse the biography file, returning `[]` on any problem.
 
     Never raises: an unreadable biography must not stop the agent from starting.
@@ -149,7 +150,7 @@ def read_biography(path: Optional[Path]) -> List[BiographyEntry]:
     return parse_biography(text)
 
 
-def find_biography_file(explicit: Optional[str] = None) -> Optional[Path]:
+def find_biography_file(explicit: str | None = None) -> Path | None:
     """Locate `config/biography.md`, walking up from this module.
 
     Same reasoning as the persona file: the agents are launched from the repo
@@ -169,20 +170,20 @@ def find_biography_file(explicit: Optional[str] = None) -> Optional[Path]:
 
 def pending_entries(
     entries: Sequence[BiographyEntry], already_seeded: Iterable[str]
-) -> List[BiographyEntry]:
+) -> list[BiographyEntry]:
     """The paragraphs not yet written to memory.
 
     Per-paragraph rather than a single "seeded" flag so the documentary can be
     *added to*. Writing another page later seeds only the new pages, instead of
     forcing a choice between duplicating the whole file and never extending it.
     """
-    seen: Set[str] = set(already_seeded or ())
+    seen: set[str] = set(already_seeded or ())
     return [entry for entry in entries if entry.fingerprint not in seen]
 
 
 def stale_fingerprints(
     entries: Sequence[BiographyEntry], already_seeded: Iterable[str]
-) -> List[str]:
+) -> list[str]:
     """Seeded passages the biography no longer contains.
 
     The counterpart to `pending_entries`. Adding a paragraph seeded it; deleting
@@ -200,7 +201,7 @@ def stale_fingerprints(
 
 async def prune_biography(
     stale: Sequence[str], memory_store: Any
-) -> List[str]:
+) -> list[str]:
     """Delete memories for passages no longer in the biography.
 
     Returns the fingerprints actually removed, for the caller to drop from the
@@ -301,7 +302,7 @@ async def seed_biography(
     entries: Sequence[BiographyEntry],
     memory_store: Any,
     already_seeded: Iterable[str] = (),
-) -> List[str]:
+) -> list[str]:
     """Write pending paragraphs into episodic memory.
 
     Returns the fingerprints actually stored, for the caller to persist. A
@@ -318,7 +319,7 @@ async def seed_biography(
 
     logger.info("[Biography] Seeding %d new passage(s) into memory.", len(pending))
 
-    stored: List[str] = []
+    stored: list[str] = []
     for entry in pending:
         try:
             await memory_store.add_memory(

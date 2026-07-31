@@ -4853,3 +4853,80 @@ check .` clean.
 
 **NOT done:** nothing else — this was a two-file, self-contained stale-fixture
 fix with no scope beyond the one pre-existing failure flagged in PR #92.
+
+### 2026-07-31 — CI: adopted ruff 0.16.1 for real, and gave the repo its first ruff config
+
+Follow-up to the same-day pin above. The true scope of the `0.15.15` →
+`0.16.1` delta turned out to be much larger than the "~40 files" first
+reported — that number came from `tail`-ing a truncated CI log. The real
+count: **815 violations across 88 files** under `app/`+`tests/`, plus another
+74 in `scripts/`/`evals/`/`main.py`/`tools/` once checked against this repo's
+own documented bar (`ruff check .`, wider than CI's actual `ruff check app/
+tests/`). Also discovered in the process: **the repo had no ruff config file
+at all** — every prior run inherited whichever rule set the installed ruff
+version happened to default to, which is the root mechanism that let the
+same-day pin incident happen in the first place.
+
+Given the size, split the 815+74 by whether ruff itself classifies a fix as
+behavior-preserving, not by file or rule-family guesswork:
+
+- **~620 were mechanical** — `UP006`/`UP035`/`UP045`/`UP037`/`UP008`/`UP017`/
+  `UP041` (typing/syntax modernization to `list`/`dict`/`X | None`, dropping
+  deprecated `typing` aliases, `datetime.UTC`, builtin `TimeoutError`), `I001`
+  (import sorting), `RUF100`/`RUF022`/`RUF023` (stale `noqa`, `__all__`/
+  `__slots__` sorting), `ISC004`, `PLR0402`, `C408`/`C414`, `RET501`,
+  `PLR1711`. Applied via `ruff check --fix` (ruff's own safe-fix bar) plus a
+  second pass with `--unsafe-fixes` scoped explicitly to codes individually
+  verified first — `RUF013` (implicit-`Optional` sites are all plain function
+  parameters, never enforced at runtime, confirmed by reading a sample before
+  trusting the label), `RUF059`, `RUF015`, `PIE810`, `TRY201`, `SIM103`,
+  `SIM102`, `RUF046` (`int(round(x))` — `round()` already returns `int` in
+  Python 3, confirmed by reading the call site).
+- **~15 needed a by-hand read but turned out safe**: `UP031` (2 sites,
+  `%`-format → f-string), `G201` (2 sites, `logger.error(msg, exc_info=True)`
+  → `logger.exception(msg)`, which then surfaced `TRY401` — the message no
+  longer needed to embed `{e}` since `.exception()` already attaches the
+  traceback), `TRY203` (1 site, a `except CancelledError: raise` that did
+  nothing the bare code wouldn't already do), `F841` (2 sites, `except
+  Exception as e` where `e` had gone unused once `G201` was fixed).
+- **One flagged fix was deliberately *not* applied**: `FLY002` on
+  `tests/test_cognitive_safeguards.py:26` wanted to collapse
+  `"".join(["strong_", "pass", "word_123"])` into a plain string literal —
+  but that split exists specifically so this dummy test password doesn't
+  match the Credential Leak Prevention CI grep
+  (`password\s*=\s*['"][^'"]{8,}['"]`, no test-dir exclusion, per this
+  ledger's own CI-gotchas notes). Left as-is with an inline `# noqa: FLY002`
+  and a comment explaining why, rather than "fixing" it into a CI break.
+- **~203 were deferred, not fixed** — every one of these has **no ruff-provided
+  fix at all** (safe or unsafe), confirmed by checking each rule's fix
+  availability individually rather than assuming: `BLE001` (165, blind
+  `except Exception` in `app/`, some plausibly intentional resilience — a
+  cognitive-turn loop that must never die is exactly the kind of thing this
+  ledger already cares about), `DTZ001`/`DTZ003`/`DTZ005`/`DTZ006`/`DTZ007`
+  (22, naive→aware datetime changes the actual computed value, not just its
+  type), `RUF012` (5, mutable class-attribute defaults — possible latent
+  shared-state bug across instances), `S110` (4, silent `except: pass`),
+  `SIM117` (6, mergeable nested `with`), `B023` (1, loop-variable closure
+  capture — a genuine late-binding bug detector, not style). One more
+  surfaced only in a plain unfiltered run, missed by an earlier `grep`
+  rollup with too narrow a rule-code pattern: `ASYNC230` (2 sites in
+  `conversation_store.py`'s startup DB-seeding path, blocking `open()` inside
+  `async def` — the real fix is `asyncio.to_thread`/`aiofiles`, a behavior
+  change earning its own patch, not a lint-sweep rewrite).
+
+**Added `backend/ruff.toml`** — the repo's first ruff config ever. Pins
+`target-version = "py312"` (matching CI's Python version, which is also what
+unlocked the `UP017`/`UP041` suggestions above) and `[lint] ignore` lists the
+eight deferred codes with the reasoning inline, so the next ruff upgrade is a
+reviewed diff instead of a repeat of the same-day pin incident.
+
+**Verified**: full backend suite via junit-xml — 700 passed, 0 failed/
+errored/skipped. `ruff check .` (the repo's own documented bar, wider than
+CI's `app/ tests/`) clean. No Rust files touched, so `cargo` was not rerun.
+
+**NOT done:** the ~203 deferred violations are unresolved, not exempted —
+`ruff.toml`'s ignore list is meant to be worked down, not kept forever.
+`BLE001` in particular is worth a dedicated pass: 165 blind-except sites is
+enough that some are certainly bugs hiding behind a catch-all, and picking
+those out from the ones that are load-bearing resilience needs a slower read
+than this PR's mechanical sweep.

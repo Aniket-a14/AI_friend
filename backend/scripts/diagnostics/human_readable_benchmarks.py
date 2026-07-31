@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
+import glob
 import json
 import os
-import glob
 
 
 def find_latest_benchmark():

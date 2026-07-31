@@ -1,20 +1,22 @@
-import logging
 import json
+import logging
 import secrets
+from contextlib import asynccontextmanager
+
+import nats
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 from livekit import api
-import nats
 
 from app.config import Config
+from app.logging_config import setup_logging
 from app.network import is_lan_client_allowed, is_loopback_client
+
 # scripts.bootstrap, not scripts: the old import pointed at a module that does not
 # exist, so main.py could not even be imported — the Provisioning Guard below,
 # together with its "models verified and locked" log, had never once run.
 from scripts.bootstrap.provision_models import ensure_models_provisioned
-from app.logging_config import setup_logging
 
 # Configure logging
 setup_logging(level=logging.INFO, json_format=getattr(Config, "LOG_JSON", False))

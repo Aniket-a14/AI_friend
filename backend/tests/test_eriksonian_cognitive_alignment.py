@@ -4,12 +4,14 @@ and Python-based Spreading Activation/Cue Boosts.
 """
 
 import asyncio
-import pytest
 import math
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch, MagicMock
-from app.state.sqlite_fallback import SQLitePool
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from app.state.memory_store import DIRECT_CUE_BOOST, MemoryStore
+from app.state.sqlite_fallback import SQLitePool
 
 
 @pytest.fixture
@@ -154,7 +156,7 @@ def test_cue_and_spreading_activation_boosts(temp_store):
 
 def test_pruning_threshold_decay(temp_store):
     """Verify that memories are pruned if base activation drops below self.pruning_threshold (-3.5)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # In SQLite pool, insert two memories manually with different created_at dates
     # so we can control the exact hours_since decay calculation.

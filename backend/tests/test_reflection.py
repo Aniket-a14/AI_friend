@@ -1,5 +1,7 @@
+from unittest.mock import ANY, AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, ANY
+
 from app.cognitive.learning import ReflectionService
 
 

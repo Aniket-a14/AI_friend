@@ -1,7 +1,8 @@
 import asyncio
-import asyncpg
 import os
 import sys
+
+import asyncpg
 from dotenv import load_dotenv
 
 # Add project root to path

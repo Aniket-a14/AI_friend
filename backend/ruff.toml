@@ -1,0 +1,38 @@
+# Previously there was no config at all, so every CI run inherited whatever
+# rule set the installed ruff version happened to default to. That silently
+# broke CI when ruff 0.16 shipped mid-project with more default-on rules
+# than 0.15 (see .agents/CONTEXT.md, 2026-07-31, the "pinned ruff" entry).
+# Pinning the version stops the drift going forward; this file makes the
+# rule set explicit so the next intentional ruff upgrade is a reviewed diff
+# instead of a surprise.
+target-version = "py312"
+
+[lint]
+# Deferred during the 0.15 -> 0.16 upgrade (.agents/CONTEXT.md, 2026-07-31).
+# Each of these flags real behavior, not just style, so a mechanical rewrite
+# risks changing what the code does -- they need a per-site read, not a
+# bulk --fix. Not a permanent exemption: tracked as follow-up work.
+ignore = [
+    "ASYNC230", # blocking `open()` inside an `async def` -- 2 sites in
+                # conversation_store.py's startup DB-seeding path; the real
+                # fix is asyncio.to_thread/aiofiles, a behavior change that
+                # deserves its own reviewed patch, not a lint-sweep rewrite
+    "BLE001", # blind `except Exception` -- 165 sites in app/, some may be
+              # intentional resilience (a loop that must never die)
+    "DTZ001", # datetime.datetime() without tzinfo
+    "DTZ003", # datetime.utcnow()
+    "DTZ005", # datetime.now() without tz
+    "DTZ006", # datetime.fromtimestamp() without tz
+    "DTZ007", # datetime.strptime() without explicit tz
+              # -- naive-to-aware datetime changes the actual computed value,
+              # not just its type; needs individual review
+    "RUF012", # mutable default on a class attribute -- possible latent
+              # shared-state bug across instances, needs a read not a rewrite
+    "S110",   # try/except/pass -- silently swallowed exceptions; deciding
+              # what to log (or whether the swallow is intentional) is a
+              # per-site call
+    "SIM117", # nested `with` statements that could merge -- no autofix
+              # available; deferred with the rest for one focused pass
+    "B023",   # loop variable captured by a closure -- a real late-binding
+              # bug detector, not a style rule; needs a human read
+]

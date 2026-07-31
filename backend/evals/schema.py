@@ -12,8 +12,8 @@ overridden.
 """
 
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -43,7 +43,7 @@ class Check(BaseModel):
     """
 
     kind: CheckKind
-    values: List[str] = Field(default_factory=list)
+    values: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_check_values(self) -> "Check":
@@ -69,7 +69,7 @@ class Probe(BaseModel):
     id: str = Field(min_length=1)
     category: Category
     prompt: str = Field(min_length=1)
-    checks: List[Check] = Field(min_length=1)
+    checks: list[Check] = Field(min_length=1)
     # Where the probe came from: "persona-derived" or the pack filename.
     # Recorded so a report can be audited without the probe files at hand.
     source: str = "unknown"
@@ -86,7 +86,7 @@ class ProbeResult(BaseModel):
     category: Category
     prompt: str
     response: str
-    checks: List[CheckResult]
+    checks: list[CheckResult]
     passed: bool
     score: float  # fraction of checks passed, in [0, 1]
 
@@ -100,14 +100,14 @@ class CategorySummary(BaseModel):
 class EvalReport(BaseModel):
     schema_version: int = REPORT_SCHEMA_VERSION
     created_at: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
     model: str
     persona_name: str
     provenance: Literal["live", "mock"]
-    options: Dict[str, Any]
-    results: List[ProbeResult]
-    by_category: Dict[str, CategorySummary]
+    options: dict[str, Any]
+    results: list[ProbeResult]
+    by_category: dict[str, CategorySummary]
 
 
 class ProbeDelta(BaseModel):
@@ -126,13 +126,13 @@ class ComparisonReport(BaseModel):
     candidate_provenance: Literal["live", "mock"]
     # A regression is a probe the baseline passed and the candidate failed —
     # the hard gate. Score dips that stay above passing land in `declines`.
-    regressions: List[ProbeDelta]
-    improvements: List[ProbeDelta]
-    declines: List[ProbeDelta]
+    regressions: list[ProbeDelta]
+    improvements: list[ProbeDelta]
+    declines: list[ProbeDelta]
     unchanged: int
-    only_in_baseline: List[str]
-    only_in_candidate: List[str]
-    by_category_delta: Dict[str, float]
+    only_in_baseline: list[str]
+    only_in_candidate: list[str]
+    by_category_delta: dict[str, float]
 
     @property
     def gate_passed(self) -> bool:
@@ -152,15 +152,15 @@ class RunOptions(BaseModel):
     top_p: float = 1.0
     num_predict: int = 192
 
-    def as_override(self) -> Dict[str, Any]:
+    def as_override(self) -> dict[str, Any]:
         return self.model_dump()
 
 
 DEFAULT_OPTIONS = RunOptions()
 
 
-def summarize_by_category(results: List[ProbeResult]) -> Dict[str, CategorySummary]:
-    grouped: Dict[str, List[ProbeResult]] = {}
+def summarize_by_category(results: list[ProbeResult]) -> dict[str, CategorySummary]:
+    grouped: dict[str, list[ProbeResult]] = {}
     for result in results:
         grouped.setdefault(result.category, []).append(result)
     return {

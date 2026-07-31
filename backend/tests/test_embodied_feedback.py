@@ -1,8 +1,9 @@
 import asyncio
 
 import pytest
-from app.state import ConversationHistoryStore
+
 from app.agents.brain_agent import BrainAgent
+from app.state import ConversationHistoryStore
 
 
 @pytest.mark.asyncio

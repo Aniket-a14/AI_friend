@@ -7,19 +7,12 @@ Pipeline (psychological_layer.md System Principle):
              └─────────────────────────────────────────────────────────┘
 """
 
+import asyncio
 import logging
 import time
-import asyncio
-from typing import Dict, Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
 
-from .perception import PerceptionService
-from .appraisal import AppraisalEngine, AppraisalVector
-from .reappraisal import ReappraisalEngine
-from ..state import StateService
-from .decision import DecisionService
-from .action import ActionService
-from .learning import ReflectionService
-from .identity import IdentityManager
 from ..persona.biography import (
     find_biography_file,
     prune_biography,
@@ -28,7 +21,15 @@ from ..persona.biography import (
     stale_fingerprints,
 )
 from ..persona.history_migration import migrate_history_memories
+from ..state import StateService
+from .action import ActionService
+from .appraisal import AppraisalEngine, AppraisalVector
+from .decision import DecisionService
+from .identity import IdentityManager
+from .learning import ReflectionService
+from .perception import PerceptionService
 from .pipeline import CognitivePipeline
+from .reappraisal import ReappraisalEngine
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ class CognitiveService:
         }
         self.last_reflection_task = None
 
-    async def publish(self, subject: str, data: Dict[str, Any]):
+    async def publish(self, subject: str, data: dict[str, Any]):
         if self.agent:
             await self.agent.publish(subject, data)
 
@@ -262,12 +263,12 @@ class CognitiveService:
 
         logger.info("[CognitiveService] Hardened Identity Mesh Fully Initialized.")
 
-    async def _on_system_tick(self, data: Dict[str, Any]):
+    async def _on_system_tick(self, data: dict[str, Any]):
         """Mesh-driven idle evolution."""
         self._record_subject_metric("system.tick", data)
         await self.state.handle_system_tick(data)
 
-    async def _on_audio_perception(self, data: Dict[str, Any]):
+    async def _on_audio_perception(self, data: dict[str, Any]):
         """Sensory Intelligence: Handle emotional & event cues from SenseVoice."""
         perception_meta = data.get("metadata", {})
         perception_meta.setdefault("confidence", data.get("confidence", 0.0))
@@ -284,7 +285,7 @@ class CognitiveService:
             }
         await self.state.apply_sensory_perception(perception_meta)
 
-    async def _on_memory_surfaced(self, data: Dict[str, Any]):
+    async def _on_memory_surfaced(self, data: dict[str, Any]):
         """Proactive memory recall (Active influence)."""
         self._record_subject_metric("memory.surfaced", data)
 
@@ -344,8 +345,8 @@ class CognitiveService:
         return asyncio.create_task(wrapped())
 
     async def process_event(
-        self, raw_event: Dict[str, Any]
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+        self, raw_event: dict[str, Any]
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Mesh-aware wrapper for the pure CognitivePipeline.
         Handles transport side-effects like NATS signaling and reflection triggers.
@@ -392,8 +393,8 @@ class CognitiveService:
                 yield output
 
     async def generate_proactive_response(
-        self, thought_prompt: str = None
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+        self, thought_prompt: str | None = None
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Phase 1: Proactive Engagement.
         Generates a spontaneous message grounded in real identity, state, and memory.
@@ -494,8 +495,8 @@ class CognitiveService:
     def _record_subject_metric(
         self,
         subject: str,
-        data: Dict[str, Any],
-        local_latency_ms: float = None,
+        data: dict[str, Any],
+        local_latency_ms: float | None = None,
     ):
         metric = self.subject_metrics.get(subject)
         if metric is None:

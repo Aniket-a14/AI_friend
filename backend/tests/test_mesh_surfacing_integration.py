@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -25,14 +25,14 @@ class _FakeConn:
                     "room": args[4],
                     "importance_score": float(args[6]),
                     "emotional_weight": float(args[7]),
-                    "last_recalled_at": datetime.now(timezone.utc),
+                    "last_recalled_at": datetime.now(UTC),
                 }
             )
             return "INSERT 0 1"
 
         if normalized.startswith("update memories set last_recalled_at"):
             contents = set(args[0] if args else [])
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             for row in self.rows:
                 if row["content"] in contents:
                     row["last_recalled_at"] = now
@@ -56,7 +56,7 @@ class _FakeConn:
                     "emotional_weight": row["emotional_weight"],
                     "valence": row.get("valence", 0.0),
                     "recall_count": row.get("recall_count", 1),
-                    "created_at": row.get("created_at", datetime.now(timezone.utc)),
+                    "created_at": row.get("created_at", datetime.now(UTC)),
                     "last_recalled_at": row["last_recalled_at"],
                     "metadata": row.get("metadata", {}),
                     "similarity": 0.99,

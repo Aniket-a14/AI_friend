@@ -2,9 +2,11 @@ import asyncio
 import logging
 import re
 import time
-from typing import Dict, Any, AsyncGenerator
-from .decision import ActionPlan
+from collections.abc import AsyncGenerator
+from typing import Any
+
 from ..config import Config
+from .decision import ActionPlan
 
 logger = logging.getLogger(__name__)
 
@@ -92,11 +94,11 @@ class _ChatStreamState:
 
     __slots__ = (
         "accumulated_response",
+        "checked_start",
+        "dominance",
+        "has_hesitated",
         "in_thought",
         "thought_buffer",
-        "checked_start",
-        "has_hesitated",
-        "dominance",
     )
 
     def __init__(self, dominance: float = 0.5):
@@ -108,7 +110,7 @@ class _ChatStreamState:
         self.dominance = dominance
 
 
-def _memory_relevance(memory: Dict[str, Any]) -> float:
+def _memory_relevance(memory: dict[str, Any]) -> float:
     """Relevance value used to order a surfaced memory.
 
     ``search_memories`` emits ``score``; the proactive surfacing path in
@@ -248,15 +250,15 @@ class ActionService:
             if len(unsupported_words) >= 2:
                 return (
                     False,
-                    "You referenced a shared memory that is not in the provided "
+                    ("You referenced a shared memory that is not in the provided "
                     "context. Do not invent things the user never told you; only "
-                    "reference facts present in SHARED HISTORY.",
+                    "reference facts present in SHARED HISTORY."),
                 )
         return True, ""
 
     def _validate_partial_response(self, text: str, goal: str) -> tuple[bool, str]:
         stripped = text.strip()
-        if stripped.startswith("{") or stripped.startswith("[") or "```" in text:
+        if stripped.startswith(("{", "[")) or "```" in text:
             return False, "Formatting anomaly (JSON/Markdown)"
 
         forbidden = [
@@ -361,7 +363,7 @@ class ActionService:
         return tom_context
 
     @staticmethod
-    def _compute_endocrine_options(payload: Dict[str, Any]):
+    def _compute_endocrine_options(payload: dict[str, Any]):
         """Map the endocrine state onto LLM sampling parameters.
 
         cortisol -> temperature (stress narrows sampling), dopamine -> top_p
@@ -584,7 +586,7 @@ class ActionService:
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
 
             try:
                 chunk = await asyncio.wait_for(
@@ -845,7 +847,7 @@ class ActionService:
                     yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
                     yield {"type": "done", "data": "finished"}
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     "[Action] Stream timed out after %ss; emitting graceful fallback.",
                     stream_budget,
@@ -890,7 +892,7 @@ class ActionService:
         yield {"type": "content", "data": "Got it, I've committed that to memory."}
         yield {"type": "done", "data": ""}
 
-    async def execute(self, plan: ActionPlan) -> AsyncGenerator[Dict[str, Any], None]:
+    async def execute(self, plan: ActionPlan) -> AsyncGenerator[dict[str, Any], None]:
         """
         Executes the plan and yields output chunks.
         """

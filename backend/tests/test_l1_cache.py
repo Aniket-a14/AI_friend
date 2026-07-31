@@ -12,9 +12,10 @@ properties it must uphold:
     cache rather than let a stale result set be served for up to the TTL.
 """
 
-import pytest
 from collections import OrderedDict
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from app.state.memory_store import MemoryStore
 

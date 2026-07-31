@@ -11,20 +11,23 @@ Base-level activation (simplified):
     Bᵢ ≈ ln(recall_count) - d · ln(hours_since_last_recall + 1)
 """
 
-import logging
-import time
 import asyncio
-import httpx
-import json
-import orjson
 import functools
+import json
+import logging
 import math
 import re
 import sqlite3
+import time
 import uuid
 from collections import OrderedDict
-from datetime import datetime, timezone, timedelta
-from typing import Any, Iterable, List, Sequence, Tuple
+from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+import httpx
+import orjson
+
 from ..config import Config
 
 logger = logging.getLogger(__name__)
@@ -267,8 +270,8 @@ class MemoryStore:
         self._db_stop_words = set()
         self._last_stop_words_update = 0.0
 
-        from .semantic_recall_store import SemanticRecallStore
         from .lexicon_store import MentalLexicon
+        from .semantic_recall_store import SemanticRecallStore
 
         self.qdrant_store = SemanticRecallStore()
         # Learned vocabulary: replaces the old static SYNONYM_MAP. Boots with a
@@ -300,7 +303,7 @@ class MemoryStore:
 
     def _in_predicate(
         self, column: str, values: Sequence[Any], param_index: int = 1
-    ) -> Tuple[str, List[Any]]:
+    ) -> tuple[str, list[Any]]:
         """Build a `column IN (...)` predicate and its arguments for this backend.
 
         The two dialects express set membership differently and neither is
@@ -379,8 +382,8 @@ class MemoryStore:
                 logger.debug("Unparseable stored timestamp %r; treating as missing.", dt)
                 return None
         if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
+            return dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
 
     def _l1_cache_put(self, cache_key, value):
         """Insert into the L1 cache with LRU eviction.
@@ -685,7 +688,7 @@ class MemoryStore:
 
         try:
             await _insert(include_eriksonian=True)
-        except Exception as e:  # noqa: BLE001 - narrowed by _is_missing_column_error
+        except Exception as e:
             # Only an un-migrated schema justifies dropping the Eriksonian
             # columns. Retrying on *any* failure meant a constraint violation,
             # a serialization conflict, or a transient outage would silently
@@ -904,8 +907,8 @@ class MemoryStore:
                     # SQLite fallback: since SQLite doesn't have regexp_split_to_table,
                     # we can just fetch content and count in Python
                     rows = await conn.fetch("SELECT content FROM memories LIMIT 500")
-                    from collections import Counter
                     import re
+                    from collections import Counter
 
                     words = []
                     for r in rows:
@@ -1127,19 +1130,19 @@ class MemoryStore:
                 created_val = meta.get("created_at")
                 try:
                     created = (
-                        datetime.fromtimestamp(float(created_val), timezone.utc)
+                        datetime.fromtimestamp(float(created_val), UTC)
                         if created_val
                         else (
                             current_time
                             if current_time is not None
-                            else datetime.now(timezone.utc)
+                            else datetime.now(UTC)
                         )
                     )
                 except Exception:
                     created = (
                         current_time
                         if current_time is not None
-                        else datetime.now(timezone.utc)
+                        else datetime.now(UTC)
                     )
 
                 custom_metadata = {}
@@ -1169,7 +1172,7 @@ class MemoryStore:
                         "modality": meta.get("modality"),
                         "similarity": similarity,
                         "last_recalled_at": datetime.fromtimestamp(
-                            last_recall_time, timezone.utc
+                            last_recall_time, UTC
                         ),
                     }
                 )
@@ -1214,7 +1217,7 @@ class MemoryStore:
                     return last_recall_time.timestamp()
                 dt = datetime.fromisoformat(str(last_recall_time).replace(" ", "T"))
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.replace(tzinfo=UTC)
                 return dt.timestamp()
             return float(meta.get("last_recalled_at", now_ts))
         except (ValueError, TypeError):
@@ -1252,7 +1255,7 @@ class MemoryStore:
         # a module-level import would break importing MemoryStore entirely.
         import cognitive_rust
 
-        now = current_time if current_time is not None else datetime.now(timezone.utc)
+        now = current_time if current_time is not None else datetime.now(UTC)
         now_ts = now.timestamp()
 
         # Preprocess timestamps for Rust
@@ -1286,7 +1289,7 @@ class MemoryStore:
                 except Exception:
                     last_recall = now
             if last_recall.tzinfo is None:
-                last_recall = last_recall.replace(tzinfo=timezone.utc)
+                last_recall = last_recall.replace(tzinfo=UTC)
 
             created = row.get("created_at")
             if isinstance(created, str):
@@ -1295,7 +1298,7 @@ class MemoryStore:
                 except Exception:
                     created = now
             if created and created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
+                created = created.replace(tzinfo=UTC)
 
             raw_meta = row.get("metadata")
             if isinstance(raw_meta, str):
@@ -1344,7 +1347,7 @@ class MemoryStore:
                 try:
                     dt = datetime.fromisoformat(last_recall.replace(" ", "T"))
                     if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
+                        dt = dt.replace(tzinfo=UTC)
                     return dt.timestamp()
                 except Exception:
                     return now_ts
@@ -1392,7 +1395,7 @@ class MemoryStore:
             now = (
                 self._as_aware_utc(current_time)
                 if current_time is not None
-                else datetime.now(timezone.utc)
+                else datetime.now(UTC)
             )
             # `or now` covers both a missing timestamp and one _as_aware_utc
             # could not parse; either way the row is treated as just-recalled
@@ -1438,7 +1441,7 @@ class MemoryStore:
 
             created = row.get("created_at")
             if created and created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
+                created = created.replace(tzinfo=UTC)
 
             raw_meta = row.get("metadata")
             if isinstance(raw_meta, str):
@@ -1608,10 +1611,9 @@ class MemoryStore:
                     "user" in desc.lower()
                     or "companion" in desc.lower()
                     or "friend" in desc.lower()
-                ):
-                    if r["name"] != agent_node_name:
-                        user_node_name = r["name"]
-                        break
+                ) and r["name"] != agent_node_name:
+                    user_node_name = r["name"]
+                    break
         if not user_node_name and entity_names:
             ai_names = {"ai friend", "my friend", agent_node_name.lower()}
             if getattr(Config, "AI_NAME", None):
@@ -1979,7 +1981,7 @@ class MemoryStore:
         now = (
             self._as_aware_utc(current_time)
             if current_time is not None
-            else datetime.now(timezone.utc)
+            else datetime.now(UTC)
         )
         # `or now`: an unparseable stored timestamp must not raise here and
         # discard otherwise valid archive candidates.
@@ -2363,15 +2365,15 @@ class MemoryStore:
         self,
         query_text,
         wing: str = "personal",
-        room: str = None,
+        room: str | None = None,
         threshold=-1.5,
         limit=5,
         refresh_on_recall=True,
-        exclude_contents: Iterable[str] = None,
+        exclude_contents: Iterable[str] | None = None,
         current_valence: float = 0.0,
         current_arousal: float = 0.5,
         current_cortisol: float = 0.0,
-        user_id: str = None,
+        user_id: str | None = None,
         is_self_reflection: bool = False,
         current_time=None,
     ):
@@ -2859,7 +2861,7 @@ class MemoryStore:
                     now = (
                         self._as_aware_utc(current_time)
                         if current_time is not None
-                        else datetime.now(timezone.utc)
+                        else datetime.now(UTC)
                     )
                     delta = now - (self._as_aware_utc(dt) or now)
                     hours_since = max(0.0, delta.total_seconds() / 3600.0)
@@ -2994,7 +2996,7 @@ class MemoryStore:
                 now_cleanup = (
                     current_time
                     if current_time is not None
-                    else datetime.now(timezone.utc)
+                    else datetime.now(UTC)
                 )
                 cutoff_distractors = now_cleanup - timedelta(days=30)
                 cutoff_anecdotes = now_cleanup - timedelta(days=180)

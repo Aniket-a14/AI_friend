@@ -1,18 +1,15 @@
 import asyncio
 import logging
-import uuid
 import time
+import uuid
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Any
 
 from pydantic import ValidationError
-from .base import BaseAgent
-from ..llm.ollama_client import OllamaClient
-from ..state import GraphDB, MemoryStore, ConversationHistoryStore
-from ..config import Config
+
 from ..cognitive import CognitiveService
 from ..cognitive.somatic import SomaticAppraiser
-from ..runtime_bootstrap import bootstrap_runtime
+from ..config import Config
 from ..contracts import (
     AudioPlaybackProgress,
     AudioResume,
@@ -21,11 +18,15 @@ from ..contracts import (
     Topics,
     UserVoiceProperties,
 )
+from ..llm.ollama_client import OllamaClient
 from ..logging_config import setup_logging
+from ..runtime_bootstrap import bootstrap_runtime
+from ..state import ConversationHistoryStore, GraphDB, MemoryStore
 from ..utils.conversational_runtime import ConversationalRuntime
 from ..utils.interruption_classifier import InterruptionClassifier
 from ..utils.segmentation import HybridSegmenter
 from ..utils.speech import SpeechCoordinator
+from .base import BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +149,7 @@ class BrainAgent(BaseAgent):
 
         logger.info(f"🧠 {self.name} Online | CVS-3.5 Cognitive Mesh Active.")
 
-    async def _on_voice_feedback(self, data: Dict[str, Any]):
+    async def _on_voice_feedback(self, data: dict[str, Any]):
         """Adaptive Tuning Loop (CVS-3.5 alpha-damped loop)."""
         target = data.get("target_chunk_size", 8)
         alpha = getattr(Config, "FEEDBACK_ALPHA", 0.7)
@@ -157,7 +158,7 @@ class BrainAgent(BaseAgent):
         smoothed_size = (alpha * self.coordinator.segmenter.target_size) + (
             (1 - alpha) * target
         )
-        new_size = int(round(smoothed_size))
+        new_size = round(smoothed_size)
 
         if new_size != self.coordinator.segmenter.target_size:
             logger.info(
@@ -165,7 +166,7 @@ class BrainAgent(BaseAgent):
             )
             self.coordinator.segmenter.target_size = new_size
 
-    async def _on_vision_frame(self, data: Dict[str, Any]):
+    async def _on_vision_frame(self, data: dict[str, Any]):
         """Fallback: basic source awareness from raw frames."""
         source = data.get("source", "unknown")
         # Only update if we don't have a richer VLM description yet
@@ -175,7 +176,7 @@ class BrainAgent(BaseAgent):
         ):
             self.last_visual_context = f"I am seeing the user's {source}."
 
-    async def _on_vision_description(self, data: Dict[str, Any]):
+    async def _on_vision_description(self, data: dict[str, Any]):
         """Tier-4 VLM: Rich semantic visual context from the Visual Appraisal pipeline."""
         description = data.get("description", "")
         source = data.get("source", "unknown")
@@ -271,7 +272,7 @@ class BrainAgent(BaseAgent):
             self._active_generation_task = new_task
             return new_task
 
-    async def _on_chat_input(self, message: Dict[str, Any]):
+    async def _on_chat_input(self, message: dict[str, Any]):
         now = datetime.now()
         self.last_interaction_time = now
 
@@ -281,8 +282,8 @@ class BrainAgent(BaseAgent):
         except ValidationError as e:
             logger.warning(f"Dropping invalid chat.input message: {e}")
             return
-        except Exception as e:
-            logger.error(f"Unexpected error processing chat.input: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Unexpected error processing chat.input")
             return
 
         # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio
@@ -314,7 +315,7 @@ class BrainAgent(BaseAgent):
                     self._active_generation_task = None
 
     async def _process_chat_input_flow(
-        self, chat_input: ChatInput, is_subconscious: bool, message: Dict[str, Any]
+        self, chat_input: ChatInput, is_subconscious: bool, message: dict[str, Any]
     ):
         flow_start_time = time.time()
         user_text = chat_input.text
@@ -436,7 +437,7 @@ class BrainAgent(BaseAgent):
                 self.conversation_store.log_message("assistant", full_response)
             )
 
-    async def _on_audio_perception(self, data: Dict[str, Any]):
+    async def _on_audio_perception(self, data: dict[str, Any]):
         """Runs the semantic interruption classifier on partial speech hypotheses."""
         metadata = data.get("metadata", {})
         is_partial = metadata.get("is_partial", False)
@@ -472,7 +473,7 @@ class BrainAgent(BaseAgent):
                 )
                 await self.publish(Topics.AUDIO_RESUME, resume_msg.model_dump())
 
-    async def _on_audio_playback_progress(self, data: Dict[str, Any]):
+    async def _on_audio_playback_progress(self, data: dict[str, Any]):
         """Tracks the current word/character progress of the audio playback."""
         try:
             progress = AudioPlaybackProgress.model_validate(data)
@@ -483,7 +484,7 @@ class BrainAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Error parsing audio playback progress: {e}")
 
-    async def _on_audio_stop(self, data: Dict[str, Any]):
+    async def _on_audio_stop(self, data: dict[str, Any]):
         """Handles confirmed audio stops to truncate the last played utterance in history."""
         try:
             stop_msg = AudioStop.model_validate(data)
@@ -541,7 +542,7 @@ class BrainAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Error handling audio stop truncation: {e}")
 
-    async def _on_user_voice_properties(self, data: Dict[str, Any]):
+    async def _on_user_voice_properties(self, data: dict[str, Any]):
         """Ingest real-time user voice properties (System 1 feature stream)."""
         try:
             props = UserVoiceProperties.model_validate(data)
@@ -557,14 +558,14 @@ class BrainAgent(BaseAgent):
         generator,
         turn_id: str,
         is_proactive: bool = False,
-        incoming_metadata: Dict[str, Any] = None,
-        incoming_latency_metadata: Dict[str, Any] = None,
+        incoming_metadata: dict[str, Any] | None = None,
+        incoming_latency_metadata: dict[str, Any] | None = None,
     ) -> str:
         """Helper method to process text generation streams and segment them into speech chunks."""
         full_response = ""
         current_chunk_words = []
         segment_started_at = None
-        generation_errors: List[str] = []
+        generation_errors: list[str] = []
         fallback_text = "I'm having trouble thinking right now..."
 
         await self.set_state("thinking")
@@ -697,10 +698,10 @@ class BrainAgent(BaseAgent):
 
     async def _publish_speech_chunk(
         self,
-        words: List[str],
-        turn_id: str = None,
-        incoming_metadata: Dict[str, Any] = None,
-        incoming_latency_metadata: Dict[str, Any] = None,
+        words: list[str],
+        turn_id: str | None = None,
+        incoming_metadata: dict[str, Any] | None = None,
+        incoming_latency_metadata: dict[str, Any] | None = None,
     ):
         """
         Publishes a semantically coherent chunk with full PAD affect metadata.

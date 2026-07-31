@@ -16,7 +16,7 @@ Kill-switch: REAPPRAISAL_ENABLED=false
 
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Any
 
 from ..config import Config
 
@@ -39,7 +39,7 @@ class ReappraisalEngine:
 
         # Adaptive appraisal weights (tuned over time by this engine)
         # These feed back into the StateService's mood-pull coefficients
-        self.appraisal_weights: Dict[str, float] = {
+        self.appraisal_weights: dict[str, float] = {
             "w1_g_to_v": 0.6,  # G → Valence weight
             "w2_ri_to_v": 0.4,  # RI → Valence weight
             "w3_n_to_ar": 0.6,  # N → Arousal weight
@@ -49,11 +49,11 @@ class ReappraisalEngine:
         }
 
         # Turn-level state tracking
-        self._pre_response_state: Optional[Dict[str, float]] = None
-        self._expected_valence: Optional[float] = None
+        self._pre_response_state: dict[str, float] | None = None
+        self._expected_valence: float | None = None
         self._last_evaluation_time: float = 0.0
 
-    def record_pre_response_state(self, state_snapshot: Dict[str, Any]):
+    def record_pre_response_state(self, state_snapshot: dict[str, Any]):
         """
         Called before generating a response.
         Captures the emotional baseline for outcome comparison.
@@ -91,7 +91,7 @@ class ReappraisalEngine:
         actual_text_valence: float,
         acoustic_delta: float = 0.0,
         behavioral_signal: float = 0.5,
-    ) -> Optional[float]:
+    ) -> float | None:
         """
         §8.1: Evaluate the outcome of the agent's last response.
 
@@ -166,7 +166,7 @@ class ReappraisalEngine:
         self._reset_turn_state()
         return -delta
 
-    def get_weights(self) -> Dict[str, float]:
+    def get_weights(self) -> dict[str, float]:
         """Returns current adaptive appraisal weights."""
         return self.appraisal_weights.copy()
 

@@ -1,11 +1,12 @@
-import pytest
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.state.memory_store import MemoryStore
+import pytest
+
 from app.agents.subconscious_agent import SubconsciousAgent
 from app.cognitive.learning import ReflectionService
 from app.config import Config
+from app.state.memory_store import MemoryStore
 
 
 @pytest.fixture
@@ -31,19 +32,19 @@ async def test_multi_user_message_logging_and_retrieval(mock_pool):
             "id": "msg-1",
             "role": "Raj",
             "content": "Is Priya going to the park?",
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
         },
         {
             "id": "msg-2",
             "role": "assistant",
             "content": "Yes, Priya is planning to walk there.",
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
         },
         {
             "id": "msg-3",
             "role": "Priya",
             "content": "Actually, I'm heading to the workspace.",
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
         },
     ]
     conn.fetch.return_value = mock_rows
@@ -79,19 +80,19 @@ async def test_subconscious_agent_multi_user_pairing():
             "id": "msg-3",
             "role": "Priya",
             "content": "Actually, I'm heading to the workspace.",
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
         },
         {
             "id": "msg-2",
             "role": "assistant",
             "content": "Yes, Priya is planning to walk there.",
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
         },
         {
             "id": "msg-1",
             "role": "Raj",
             "content": "Is Priya going to the park?",
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
         },
     ]
     mock_mem_store.get_recent_unconsolidated_episodes.return_value = mock_episodes
@@ -180,9 +181,9 @@ async def test_reflection_dynamic_speaker_consolidation():
     prompts = [call[0][0] for call in mock_llm.generate.call_args_list]
 
     # Verify the consolidation prompt contains speaker-specific dialogues
-    consol_prompt = [
+    consol_prompt = next(
         p for p in prompts if "Consolidate the following recent interaction" in p
-    ][0]
+    )
     assert "Raj: Is Priya going to the park?" in consol_prompt
     assert "Priya: I'm going to workspace." in consol_prompt
     assert "User:" not in consol_prompt

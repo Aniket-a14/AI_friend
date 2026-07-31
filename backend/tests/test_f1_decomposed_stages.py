@@ -7,22 +7,22 @@ end. Each stage is now independently testable, which is the point of the
 refactor: it makes the memory and action paths safe to iterate on.
 """
 
+from datetime import UTC
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.cognitive.action import (
+    _CHAT_GUIDELINE,
     ActionService,
     ControlMarkupSanitizer,
     _ChatStreamState,
-    _CHAT_GUIDELINE,
 )
 from app.state.memory_store import (
     DIRECT_CUE_BOOST,
     SEARCH_STOP_WORDS,
     MemoryStore,
 )
-
 
 # --------------------------------------------------------------------------
 # memory_store stages
@@ -69,7 +69,7 @@ def test_mrl_gating_tolerates_none_limit():
 
 def test_pronoun_cues_flip_between_user_and_self_reflection():
     """"I"/"you" swap referents depending on who is speaking."""
-    kwargs = dict(agent_node_name="Aniket", user_node_name="Raj", user_id="Raj")
+    kwargs = {"agent_node_name": "Aniket", "user_node_name": "Raj", "user_id": "Raj"}
 
     user_speaking = MemoryStore._resolve_pronoun_cues(
         "what did I tell you", is_self_reflection=False, **kwargs
@@ -122,9 +122,9 @@ def test_direct_cue_boost_no_cues_is_a_noop():
 
 
 def test_format_results_drops_sub_threshold_and_projects_shape():
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    created = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    created = datetime(2026, 1, 1, tzinfo=UTC)
     raw = [
         {
             "content": "keep me",
@@ -199,10 +199,10 @@ def test_resolve_identity_nodes_falls_back_when_graph_is_empty():
 
 
 def test_normalize_recall_ts_handles_every_stored_shape():
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     now_ts = 1_700_000_000.0
-    dt = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    dt = datetime(2026, 1, 1, tzinfo=UTC)
 
     assert MemoryStore._normalize_recall_ts(None, now_ts) == now_ts
     assert MemoryStore._normalize_recall_ts(dt, now_ts) == dt.timestamp()

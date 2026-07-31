@@ -114,8 +114,7 @@ def _provision_model(config, target_path: Path):
         response = requests.get(config["url"], stream=True, timeout=300)
         response.raise_for_status()
         with open(temp_download, "wb") as f:
-            for chunk in response.iter_content(chunk_size=1 << 16):
-                f.write(chunk)
+            f.writelines(response.iter_content(chunk_size=1 << 16))
 
         logger.info("📦 Extracting model weights...")
         with tarfile.open(temp_download, "r:bz2") as tar:

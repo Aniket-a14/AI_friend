@@ -1460,7 +1460,7 @@ def load_benchmarks():
     all_runs = []
     # Make sure we sort keys numerically
     sorted_run_ids = sorted(
-        list(runs_by_id.keys()), key=lambda x: int(x) if str(x).isdigit() else 999
+        runs_by_id.keys(), key=lambda x: int(x) if str(x).isdigit() else 999
     )
 
     for run_id in sorted_run_ids:

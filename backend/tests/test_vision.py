@@ -3,12 +3,14 @@ Test suite for the Tier-4 Vision Intelligence Agent and Visual Appraisal Service
 Validates VLM appraisals, rate-limiting, source switching controls, and NATS emissions.
 """
 
-import pytest
 import time
-from unittest.mock import MagicMock, AsyncMock, patch
-from app.vision.appraisal import VisualAppraisalService
-from app.vision.agent import VisionAgent
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.contracts import Topics, VisionDescription
+from app.vision.agent import VisionAgent
+from app.vision.appraisal import VisualAppraisalService
 
 
 @pytest.fixture

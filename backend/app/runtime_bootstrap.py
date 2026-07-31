@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import List
 
 import asyncpg
 import httpx
@@ -195,7 +194,7 @@ async def _ensure_ollama_models() -> None:
             logger.info("[Bootstrap] Model ready: %s", model_name)
 
 
-def _normalized_required_models(models: List[str]) -> List[str]:
+def _normalized_required_models(models: list[str]) -> list[str]:
     deduped = []
     seen = set()
     for model in models:
@@ -207,17 +206,11 @@ def _normalized_required_models(models: List[str]) -> List[str]:
     return deduped
 
 
-def _model_exists(required_model: str, available_models: List[str]) -> bool:
+def _model_exists(required_model: str, available_models: list[str]) -> bool:
     if required_model in available_models:
         return True
 
     # Compatibility: treat "model" and "model:latest" as equivalent.
     if ":" not in required_model and f"{required_model}:latest" in available_models:
         return True
-    if (
-        required_model.endswith(":latest")
-        and required_model.split(":", 1)[0] in available_models
-    ):
-        return True
-
-    return False
+    return bool(required_model.endswith(":latest") and required_model.split(":", 1)[0] in available_models)

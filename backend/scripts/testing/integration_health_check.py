@@ -2,10 +2,11 @@ import asyncio
 import logging
 import os
 import sys
+
 import asyncpg
+from dotenv import load_dotenv
 from httpx import AsyncClient
 from neo4j import GraphDatabase
-from dotenv import load_dotenv
 
 # Add project root to path
 sys.path.append(

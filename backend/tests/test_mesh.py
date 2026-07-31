@@ -4,6 +4,7 @@ Tests for the decentralized micro-agent architecture.
 """
 
 import pytest
+
 from app.agents.base import BaseAgent
 from app.config import Config
 
@@ -63,6 +64,7 @@ class TestConfiguration:
     def test_config_environment_override(self, monkeypatch):
         """Verify environment variables override defaults."""
         from importlib import reload
+
         from app import config
 
         with monkeypatch.context() as m:

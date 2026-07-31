@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import time
-from .base import BaseAgent
+
 from ..config import Config
+from .base import BaseAgent
 
 logger = logging.getLogger("system_agent")
 
@@ -13,7 +14,7 @@ class SystemAgent(BaseAgent):
     Emits periodic 'system.tick' events to drive mesh-wide state evolution.
     """
 
-    def __init__(self, tick_interval: int = None):
+    def __init__(self, tick_interval: int | None = None):
         super().__init__(name="system_agent")
         self.tick_interval = tick_interval or Config.SYSTEM_TICK_INTERVAL
         self.is_active = False

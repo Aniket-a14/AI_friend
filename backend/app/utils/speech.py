@@ -1,4 +1,5 @@
-from typing import List, Dict, Any
+from typing import Any
+
 from ..contracts import ChatOutput, ChatOutputAffect
 
 
@@ -29,14 +30,14 @@ class SpeechCoordinator:
 
     def create_chunk_payload(
         self,
-        words: List[str] = None,
-        state_snap: Dict[str, Any] = None,
-        turn_id: str = None,
+        words: list[str] | None = None,
+        state_snap: dict[str, Any] | None = None,
+        turn_id: str | None = None,
         done: bool = False,
-        full_response: str = None,
-        generation_error: str = None,
+        full_response: str | None = None,
+        generation_error: str | None = None,
         proactive: bool = False,
-        user_distance: float = None,
+        user_distance: float | None = None,
     ) -> ChatOutput:
         text = " ".join(words).strip() if words else None
         state_snap = state_snap or {}

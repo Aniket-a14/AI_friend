@@ -1,11 +1,11 @@
-import logging
 import json
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict
 
 import asyncpg
+
 from ..config import Config
 
 logger = logging.getLogger(__name__)
@@ -34,8 +34,8 @@ DEFAULT_HISTORY_JSON = json.dumps(DEFAULT_HISTORY)
 class ConversationHistoryStore:
     def __init__(self):
         self.dsn = Config.DATABASE_URL
-        self.pool: Optional[asyncpg.Pool] = None
-        self.current_session_id: Optional[uuid.UUID] = None
+        self.pool: asyncpg.Pool | None = None
+        self.current_session_id: uuid.UUID | None = None
         self.trust_columns_available: bool = True
         app_dir = Path(__file__).resolve().parents[1]
         self.personality_seed_path = Config.PERSONALITY_SEED_PATH or str(
@@ -157,7 +157,7 @@ class ConversationHistoryStore:
         except Exception as e:
             logger.error(f"Failed to ensure AgentConfig exists: {e}")
 
-    async def get_agent_config(self) -> Dict[str, str]:
+    async def get_agent_config(self) -> dict[str, str]:
         """Fetch personality, history, and evolved learnings from AgentConfig."""
         if not self.pool:
             return {"personality": "{}", "history": "{}", "evolved_learnings": ""}
@@ -292,7 +292,7 @@ class ConversationHistoryStore:
         except Exception as e:
             logger.error(f"Failed to log message: {e}")
 
-    async def get_last_session_time(self) -> Optional[datetime]:
+    async def get_last_session_time(self) -> datetime | None:
         """Fetch the ended_at time of the most recent completed session."""
         if not self.pool:
             return None
@@ -325,7 +325,7 @@ class ConversationHistoryStore:
             logger.error(f"Failed to fetch last session time: {e}")
             return None
 
-    async def get_last_interaction_brief(self) -> Optional[str]:
+    async def get_last_interaction_brief(self) -> str | None:
         """Fetch the very last assistant message content to gauge sentiment."""
         if not self.pool:
             return None

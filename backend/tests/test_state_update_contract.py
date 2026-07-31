@@ -11,14 +11,14 @@ broadcast *through* the model, and the model is the sole owner of the field set
 and its defaults.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from app.cognitive.appraisal import AppraisalVector
 from app.cognitive.decision import ActionPlan
 from app.cognitive.pipeline import CognitivePipeline
 from app.contracts import StateUpdate
-
 
 # ---------------------------------------------------------------- from_snapshot
 
