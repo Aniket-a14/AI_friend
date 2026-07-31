@@ -1,7 +1,8 @@
 import asyncio
-import nats
 import json
 import time
+
+import nats
 
 
 async def main():
@@ -41,7 +42,7 @@ async def main():
                     await msg.ack()
                     break
                 await msg.ack()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 print("\n❌ Timeout: No response from Brain Agent within 30 seconds.")
                 break
 

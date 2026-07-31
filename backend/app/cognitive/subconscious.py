@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +14,8 @@ class SubconsciousEngine:
         self.llm = llm_client
 
     async def evaluate_and_think(
-        self, state_snapshot: Dict[str, Any], proactive_eligible: bool
-    ) -> Optional[str]:
+        self, state_snapshot: dict[str, Any], proactive_eligible: bool
+    ) -> str | None:
         """
         Evaluates conditions and generates a thought string if eligible.
         """

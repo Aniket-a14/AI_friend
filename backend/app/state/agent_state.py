@@ -10,17 +10,19 @@ Relational dimensions: Trust (T), Attachment (At)
 State updates: ALMA mood-pull + exponential decay (Gebhard, 2005)
 """
 
+import asyncio
+import json
 import logging
 import math
-import time
-import sqlite3
-import json
 import os
-import asyncio
-import redis
+import sqlite3
+import time
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, TYPE_CHECKING
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+import redis
+
 from ..config import Config
 from ..persona import PersonaProfile
 
@@ -65,7 +67,7 @@ class AgentState:
 
     # Interaction Tracking
     interaction_count: int = 0  # For Bowlby attachment frequency
-    active_goals: List[str] = field(default_factory=list)
+    active_goals: list[str] = field(default_factory=list)
     last_update: datetime = field(default_factory=datetime.now)
     last_user_interaction: float = field(default_factory=time.time)
     fatigue: float = 0.0  # Metabolic fatigue cycle F(t)
@@ -106,7 +108,7 @@ class AgentState:
 
     # --- Affect Split Properties ---
     @property
-    def personality_baseline_affect(self) -> Dict[str, float]:
+    def personality_baseline_affect(self) -> dict[str, float]:
         """Persistent slow-evolving personality baseline affect."""
         return {
             "valence": self.baseline_valence,
@@ -115,13 +117,13 @@ class AgentState:
         }
 
     @personality_baseline_affect.setter
-    def personality_baseline_affect(self, value: Dict[str, float]):
+    def personality_baseline_affect(self, value: dict[str, float]):
         self.baseline_valence = value.get("valence", self.baseline_valence)
         self.baseline_arousal = value.get("arousal", self.baseline_arousal)
         self.baseline_dominance = value.get("dominance", self.baseline_dominance)
 
     @property
-    def short_term_affect(self) -> Dict[str, float]:
+    def short_term_affect(self) -> dict[str, float]:
         """Transient highly reactive short-term affect."""
         return {
             "valence": self.mood,
@@ -130,7 +132,7 @@ class AgentState:
         }
 
     @short_term_affect.setter
-    def short_term_affect(self, value: Dict[str, float]):
+    def short_term_affect(self, value: dict[str, float]):
         self.mood = value.get("valence", self.mood)
         self.energy = value.get("arousal", self.energy)
         self.dominance = value.get("dominance", self.dominance)
@@ -828,7 +830,7 @@ class StateService:
         """Mark that the user just interacted. Called by BrainAgent on every chat.input."""
         self.current_state.last_user_interaction = time.time()
 
-    async def apply_semantic_appraisal(self, new_pad: Dict[str, float]):
+    async def apply_semantic_appraisal(self, new_pad: dict[str, float]):
         """Apply System-2 background semantic-drift results to short-term affect.
 
         Only the write is serialized under the state lock (A2); the expensive
@@ -843,7 +845,7 @@ class StateService:
                 self.current_state.dominance = float(new_pad["dominance"])
             self._enforce_bounds()
 
-    async def update_from_appraisal(self, appraisal, weights: Dict[str, float] = None):
+    async def update_from_appraisal(self, appraisal, weights: dict[str, float] | None = None):
         """
         PAD + Relational update driven by appraisal vector (§2.3).
 
@@ -946,7 +948,7 @@ class StateService:
         self._enforce_bounds()
         await self.persist_state()
 
-    async def apply_sensory_perception(self, perception_metadata: Dict[str, Any]):
+    async def apply_sensory_perception(self, perception_metadata: dict[str, Any]):
         """
         Acoustic Perception Update (confidence-scaled low weight).
         Triggered by emotional/event cues from an acoustic backend.
@@ -1018,7 +1020,7 @@ class StateService:
             self._enforce_bounds()
         await self._persist_sensory_state_if_due()
 
-    async def apply_somatic_perception(self, somatic: Dict[str, Any]):
+    async def apply_somatic_perception(self, somatic: dict[str, Any]):
         """Visual Somatic Homeostasis — recognising a comfort object feels good.
 
         The visual counterpart to `apply_sensory_perception` above: that folds
@@ -1124,7 +1126,7 @@ class StateService:
             )
         return level
 
-    async def handle_system_tick(self, tick_metadata: Dict[str, Any]):
+    async def handle_system_tick(self, tick_metadata: dict[str, Any]):
         """
         Idle evolution triggered by NATS system.tick.
         Implements ALMA exponential decay (§2.2) and Fatigue updates.
@@ -1259,7 +1261,7 @@ class StateService:
         )
 
     async def update_theory_of_mind(
-        self, user_input: str, tom_inferences: Dict[str, Any] = None
+        self, user_input: str, tom_inferences: dict[str, Any] | None = None
     ):
         """
         Updates the Theory of Mind mental model of the user.
@@ -1311,7 +1313,7 @@ class StateService:
         self._enforce_bounds()
         await self.persist_state()
 
-    def get_context_snapshot(self) -> Dict[str, Any]:
+    def get_context_snapshot(self) -> dict[str, Any]:
         return {
             "emotion": self.get_emotion_label(),
             "mood": self.current_state.mood,

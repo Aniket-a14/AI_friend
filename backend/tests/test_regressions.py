@@ -1,25 +1,24 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 # asyncpg stub is now handled in tests/conftest.py
-
-from app.agents.brain_agent import BrainAgent  # noqa: E402
-from app.agents.surfacing_agent import SurfacingAgent  # noqa: E402
-from app.cognitive.action import ActionService  # noqa: E402
-from app.cognitive.core import CognitiveService  # noqa: E402
-from app.cognitive.decision import ActionPlan  # noqa: E402
-from app.cognitive.identity import IdentityManager  # noqa: E402
-from app.state.graph_db import GraphDB  # noqa: E402
-from app.state.agent_state import StateService  # noqa: E402
-from app.state.conversation_store import ConversationHistoryStore  # noqa: E402
+from app.agents.brain_agent import BrainAgent
+from app.agents.surfacing_agent import SurfacingAgent
+from app.cognitive.action import ActionService
+from app.cognitive.core import CognitiveService
+from app.cognitive.decision import ActionPlan
+from app.cognitive.identity import IdentityManager
+from app.state.agent_state import StateService
+from app.state.conversation_store import ConversationHistoryStore
+from app.state.graph_db import GraphDB
 
 
 def test_get_last_session_time_without_current_session_builds_valid_query():
     store = ConversationHistoryStore()
     conn = AsyncMock()
-    expected = datetime.now(timezone.utc)
+    expected = datetime.now(UTC)
     conn.fetchrow.return_value = {"ended_at": expected}
 
     pool = MagicMock()
@@ -372,8 +371,9 @@ def _fake_request(host, headers=None, query_params=None):
 # test file moved them.
 def test_require_session_auth_allows_loopback_without_a_key(monkeypatch):
     import asyncio as _asyncio
-    from app import config as config_module
+
     import main
+    from app import config as config_module
 
     monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", None)
     _asyncio.run(main.require_session_auth(_fake_request("127.0.0.1")))
@@ -383,9 +383,11 @@ def test_require_session_auth_rejects_lan_client_without_key_configured(
     monkeypatch,
 ):
     import asyncio as _asyncio
+
     from fastapi import HTTPException
-    from app import config as config_module
+
     import main
+    from app import config as config_module
 
     monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", None)
     try:
@@ -397,9 +399,11 @@ def test_require_session_auth_rejects_lan_client_without_key_configured(
 
 def test_require_session_auth_rejects_lan_client_with_wrong_key(monkeypatch):
     import asyncio as _asyncio
+
     from fastapi import HTTPException
-    from app import config as config_module
+
     import main
+    from app import config as config_module
 
     monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", "correct-key")
     try:
@@ -417,8 +421,9 @@ def test_require_session_auth_rejects_lan_client_with_wrong_key(monkeypatch):
 
 def test_require_session_auth_accepts_lan_client_with_correct_key(monkeypatch):
     import asyncio as _asyncio
-    from app import config as config_module
+
     import main
+    from app import config as config_module
 
     monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", "correct-key")
     _asyncio.run(

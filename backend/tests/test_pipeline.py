@@ -1,8 +1,10 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
-from app.cognitive.pipeline import CognitivePipeline
-from app.cognitive.decision import ActionPlan
+
+import pytest
+
 from app.cognitive.appraisal import AppraisalVector
+from app.cognitive.decision import ActionPlan
+from app.cognitive.pipeline import CognitivePipeline
 
 
 @pytest.fixture

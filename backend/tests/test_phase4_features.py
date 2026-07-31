@@ -15,13 +15,14 @@ asserting a formula nobody consumes is worse than no test, because it makes
 dead code look load-bearing and dares the next reader to delete it.
 """
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
-from app.utils.speech import SpeechCoordinator
-from app.utils.segmentation import HybridSegmenter
-from app.contracts import ChatOutput, ChatOutputAffect
+import pytest
+
 from app.agents.brain_agent import BrainAgent
+from app.contracts import ChatOutput, ChatOutputAffect
+from app.utils.segmentation import HybridSegmenter
+from app.utils.speech import SpeechCoordinator
 
 
 def test_the_coordinator_no_longer_computes_prosody():

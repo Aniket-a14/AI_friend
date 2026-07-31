@@ -3,10 +3,11 @@ Record Voice Sample
 Simple script to record audio from microphone for voice cloning
 """
 
+import os
+import time
+
 import sounddevice as sd
 import soundfile as sf
-import time
-import os
 
 
 def record_audio(duration: int = 120, filename: str = "voice_sample.wav"):

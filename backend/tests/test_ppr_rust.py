@@ -10,11 +10,11 @@ and dangling-node redistribution to the seed set.
 """
 
 import random
-
-import pytest
 from unittest.mock import patch
 
-from app.state.memory_store import MemoryStore, PPR_DAMPING
+import pytest
+
+from app.state.memory_store import PPR_DAMPING, MemoryStore
 
 
 def _py_reference(entity_names, adj, seeds, damping, iterations):

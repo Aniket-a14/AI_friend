@@ -30,7 +30,7 @@ distinct from editing a file.
 import logging
 import tomllib
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from .profile import IMMUTABLE_CORE, PersonaProfile, Tier
 
@@ -46,7 +46,7 @@ DEFAULT_PERSONA_FILE = "config/persona.toml"
 AUTO_DISCOVER = object()
 
 
-def find_persona_file(explicit: Optional[str] = None) -> Optional[Path]:
+def find_persona_file(explicit: str | None = None) -> Path | None:
     """Locate the authored persona file.
 
     Walks up from this module rather than trusting the process working
@@ -65,7 +65,7 @@ def find_persona_file(explicit: Optional[str] = None) -> Optional[Path]:
     return None
 
 
-def read_persona_file(path: Path) -> Dict[str, Any]:
+def read_persona_file(path: Path) -> dict[str, Any]:
     """Parse an authored file, returning `{}` on any problem.
 
     Never raises. A malformed persona file must not stop the agent from
@@ -95,7 +95,7 @@ def read_persona_file(path: Path) -> Dict[str, Any]:
     return data
 
 
-def strip_immutable(data: Dict[str, Any], *, origin: str) -> Dict[str, Any]:
+def strip_immutable(data: dict[str, Any], *, origin: str) -> dict[str, Any]:
     """Drop any attempt to set a safety invariant from the file."""
     cleaned = dict(data)
     for key in ("immutable", *IMMUTABLE_CORE.keys()):
@@ -111,17 +111,17 @@ def strip_immutable(data: Dict[str, Any], *, origin: str) -> Dict[str, Any]:
 
 
 def split_by_tier(
-    data: Dict[str, Any],
-) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    data: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Sort authored keys into (constitutional, adaptive, unknown).
 
     Unknown keys are returned rather than dropped silently so a typo can be
     reported. Someone who writes `baseline_valance` and gets no warning will
     conclude the setting does not work, not that they misspelled it.
     """
-    constitutional: Dict[str, Any] = {}
-    adaptive: Dict[str, Any] = {}
-    unknown: Dict[str, Any] = {}
+    constitutional: dict[str, Any] = {}
+    adaptive: dict[str, Any] = {}
+    unknown: dict[str, Any] = {}
 
     for key, value in data.items():
         if key not in PersonaProfile.model_fields:
@@ -134,10 +134,10 @@ def split_by_tier(
 
 
 def authored_overrides(
-    path: Optional[Path],
+    path: Path | None,
     *,
     first_boot: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """The fields an authored file may contribute to *this* boot.
 
     On a first boot, everything it declares. On any later boot, **nothing**.

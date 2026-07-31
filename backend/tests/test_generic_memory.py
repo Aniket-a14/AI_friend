@@ -1,7 +1,9 @@
 import asyncio
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock, patch
+
 from app.state.memory_store import MemoryStore
 
 
@@ -24,8 +26,8 @@ def _make_row(content, similarity=0.8):
         "emotional_weight": 0.5,
         "valence": 0.5,
         "recall_count": 1,
-        "last_recalled_at": datetime.now(timezone.utc),
-        "created_at": datetime.now(timezone.utc),
+        "last_recalled_at": datetime.now(UTC),
+        "created_at": datetime.now(UTC),
         "metadata": "{}",
         "similarity": similarity,
     }

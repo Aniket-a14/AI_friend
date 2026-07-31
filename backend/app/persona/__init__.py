@@ -1,3 +1,3 @@
-from .profile import PersonaProfile, Tier, IMMUTABLE_CORE
+from .profile import IMMUTABLE_CORE, PersonaProfile, Tier
 
-__all__ = ["PersonaProfile", "Tier", "IMMUTABLE_CORE"]
+__all__ = ["IMMUTABLE_CORE", "PersonaProfile", "Tier"]

@@ -81,17 +81,17 @@ class MentalLexicon:
         sqlite_fallback.py (SQLite); these IF-NOT-EXISTS statements only matter
         when the lexicon runs against a bare pool (e.g. a focused unit test)."""
         statements = (
-            "CREATE TABLE IF NOT EXISTS vocabulary ("
+            ("CREATE TABLE IF NOT EXISTS vocabulary ("
             "term text PRIMARY KEY, surface_forms text DEFAULT '[]', "
             "embedding text, times_seen integer DEFAULT 1, "
             "source text DEFAULT 'acquired', "
             "first_seen timestamp DEFAULT current_timestamp, "
-            "last_seen timestamp DEFAULT current_timestamp)",
-            "CREATE TABLE IF NOT EXISTS lexical_associations ("
+            "last_seen timestamp DEFAULT current_timestamp)"),
+            ("CREATE TABLE IF NOT EXISTS lexical_associations ("
             "term_a text NOT NULL, term_b text NOT NULL, "
             "weight real DEFAULT 1.0, "
             "last_reinforced timestamp DEFAULT current_timestamp, "
-            "PRIMARY KEY (term_a, term_b))",
+            "PRIMARY KEY (term_a, term_b))"),
             "CREATE INDEX IF NOT EXISTS lexical_assoc_a_idx ON lexical_associations(term_a)",
             "CREATE INDEX IF NOT EXISTS lexical_assoc_b_idx ON lexical_associations(term_b)",
         )
@@ -180,7 +180,7 @@ class MentalLexicon:
 
     # ---- expansion (recall hot path) --------------------------------------
 
-    def expand(self, cue: str, limit: int = None) -> list[str]:
+    def expand(self, cue: str, limit: int | None = None) -> list[str]:
         """Return the strongest learned associates of a cue, for query-cue
         expansion. Synchronous cache read (no I/O); empty when nothing has been
         learned for the cue, so retrieval degrades to literal matching."""

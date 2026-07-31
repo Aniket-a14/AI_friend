@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -10,8 +10,8 @@ class CognitiveEvent:
     event_id: str
     event_type: str  # e.g. "USER_MESSAGE", "AUDIO_INPUT", "SYSTEM_TICK"
     raw_content: str
-    metadata: Dict[str, Any]
-    intent: Optional[str] = None  # e.g., "CHAT", "REFLECT", "REMEMBER"
+    metadata: dict[str, Any]
+    intent: str | None = None  # e.g., "CHAT", "REFLECT", "REMEMBER"
 
 
 class PerceptionService:
@@ -28,7 +28,7 @@ class PerceptionService:
         """
         self.llm = llm_service
 
-    async def perceive(self, raw_event: Dict[str, Any]) -> CognitiveEvent:
+    async def perceive(self, raw_event: dict[str, Any]) -> CognitiveEvent:
         """
         Takes raw dictionary (e.g. from NATS) and produces a CognitiveEvent.
         """

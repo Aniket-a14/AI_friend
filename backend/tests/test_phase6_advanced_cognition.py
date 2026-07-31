@@ -1,10 +1,12 @@
-import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
+
+import cognitive_rust
+import pytest
+
+from app.agents.subconscious_agent import SubconsciousAgent
 from app.cognitive.action import ActionService
 from app.cognitive.decision import ActionPlan
-from app.agents.subconscious_agent import SubconsciousAgent
-import cognitive_rust
 
 
 @pytest.mark.asyncio
@@ -38,11 +40,8 @@ async def test_subconscious_loop_abort():
 
     # Create a long running monologue task
     async def long_running_task():
-        try:
-            await asyncio.sleep(5)
-            # This shouldn't be reached if cancelled
-        except asyncio.CancelledError:
-            raise
+        await asyncio.sleep(5)
+        # This shouldn't be reached if cancelled
 
     agent._current_monologue_task = asyncio.create_task(long_running_task())
     agent._current_dream_task = asyncio.create_task(long_running_task())

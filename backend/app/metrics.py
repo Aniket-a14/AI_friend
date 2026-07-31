@@ -7,11 +7,11 @@ of duplicated metric methods.
 """
 
 import logging
+import math
 import threading
 import time
-import math
 from collections import deque
-from typing import Any, Dict, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +25,14 @@ class SubjectMetrics:
 
     def __init__(
         self,
-        tracked_subjects: Set[str],
+        tracked_subjects: set[str],
         log_every: int = 25,
         tag: str = "SubjectMetrics",
     ):
         self._tracked_subjects = tracked_subjects
         self._log_every = max(1, log_every)
         self._tag = tag
-        self._metrics: Dict[str, Dict[str, float]] = {}
+        self._metrics: dict[str, dict[str, float]] = {}
 
         # High-performance list-based atomic double buffer
         self._buffer = []
@@ -83,7 +83,7 @@ class SubjectMetrics:
         )
         self._worker_thread.start()
 
-    def _ensure_key(self, key: str) -> Dict[str, Any]:
+    def _ensure_key(self, key: str) -> dict[str, Any]:
         return self._metrics.setdefault(
             key,
             {
@@ -114,8 +114,8 @@ class SubjectMetrics:
         subject: str,
         *,
         direction: str = "rx",
-        latency_ms: Optional[float] = None,
-        data: Optional[Dict[str, Any]] = None,
+        latency_ms: float | None = None,
+        data: dict[str, Any] | None = None,
     ):
         """Record a subject event quickly using atomic appends."""
         if subject not in self._tracked_subjects:
@@ -266,7 +266,7 @@ class SubjectMetrics:
                     pass
 
     @staticmethod
-    def compute_latency(start_time) -> Optional[float]:
+    def compute_latency(start_time) -> float | None:
         """Compute millisecond latency from a monotonic start_time."""
         try:
             return max(0.0, (time.time() - float(start_time)) * 1000)

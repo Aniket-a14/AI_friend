@@ -45,6 +45,7 @@ class VisualAppraisalService:
     def _compute_visual_vector(self, frame_b64: str) -> list[float]:
         """Convert base64 JPEG frame to a downsampled 16x16 grayscale vector."""
         import base64
+
         import numpy as np
 
         try:

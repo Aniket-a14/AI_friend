@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from app import config as config_module
 from app.cognitive.identity import IdentityManager
 from app.persona.profile import IMMUTABLE_CORE
-
+from evals.__main__ import main as evals_main
 from evals.compare import compare_reports
 from evals.probes import collect_probes, load_pack, persona_probes, shipped_packs
 from evals.runner import run_eval
@@ -27,8 +27,6 @@ from evals.schema import (
     summarize_by_category,
 )
 from evals.scoring import evaluate_check, response_views, strip_thoughts
-from evals.__main__ import main as evals_main
-
 
 # ---------------------------------------------------------------- scoring
 

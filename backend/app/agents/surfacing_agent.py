@@ -10,13 +10,16 @@ The agent alternates between channels to provide the cognitive core with both
 """
 
 import asyncio
-import cognitive_rust
 import logging
 import time
-from typing import Dict, Any, Optional, List
+from datetime import UTC
+from typing import Any
+
+import cognitive_rust
+
+from ..contracts import MemoryScope, MemorySurfaced, SurfacedMemory
+from ..state import ConversationHistoryStore, GraphDB, MemoryStore
 from .base import BaseAgent
-from ..state import ConversationHistoryStore, MemoryStore, GraphDB
-from ..contracts import MemorySurfaced, SurfacedMemory, MemoryScope
 
 logger = logging.getLogger("surfacing_agent")
 
@@ -44,7 +47,7 @@ class SurfacingAgent(BaseAgent):
         self.last_surfaced_time = 0
         self.last_sweep_attempt = 0
         self.recently_surfaced = {}
-        self._sweep_task: Optional[asyncio.Task] = None
+        self._sweep_task: asyncio.Task | None = None
 
         # Dual-channel state
         self._last_channel = "episodic"  # Alternate between channels
@@ -84,7 +87,7 @@ class SurfacingAgent(BaseAgent):
         )
         logger.info(f"🧠 {self.name} Online | Dual-Channel Memory Surfacing Active.")
 
-    async def _on_chat_input(self, data: Dict[str, Any], metadata: dict = None):
+    async def _on_chat_input(self, data: dict[str, Any], metadata: dict | None = None):
         """Update recent context tracking."""
         self.last_context = data.get("text", "")
         msg_metadata = data.get("metadata") or {}
@@ -93,7 +96,7 @@ class SurfacingAgent(BaseAgent):
             source_meta = metadata or data.get("latency_metadata") or msg_metadata
             self._schedule_sweep(source_metadata=source_meta, force=is_benchmark)
 
-    async def _on_system_tick(self, data: Dict[str, Any]):
+    async def _on_system_tick(self, data: dict[str, Any]):
         """Periodic background sweep for memory relevance."""
         self._record_surfacing_metric(
             "system.tick", metadata=data.get("latency_metadata")
@@ -101,7 +104,7 @@ class SurfacingAgent(BaseAgent):
         if time.time() - self.last_surfaced_time > self.surfacing_cooldown:
             await self._run_sweep_now(source_metadata=data.get("latency_metadata"))
 
-    async def _on_agent_state(self, data: Dict[str, Any]):
+    async def _on_agent_state(self, data: dict[str, Any]):
         """Track current valence, arousal, and cortisol, and calculate APRA vocal modulations."""
         if isinstance(data, dict):
             self._current_valence = data.get(
@@ -141,7 +144,7 @@ class SurfacingAgent(BaseAgent):
             )
 
     async def _run_sweep_now(
-        self, source_metadata: Optional[Dict[str, Any]] = None, force: bool = False
+        self, source_metadata: dict[str, Any] | None = None, force: bool = False
     ):
         """Run a sweep inline (used by low-frequency control channels like system.tick)."""
         now = time.time()
@@ -157,7 +160,7 @@ class SurfacingAgent(BaseAgent):
         await self._sweep_task
 
     def _schedule_sweep(
-        self, source_metadata: Optional[Dict[str, Any]] = None, force: bool = False
+        self, source_metadata: dict[str, Any] | None = None, force: bool = False
     ):
         """Run at most one surfacing sweep at a time and throttle retry storms."""
         now = time.time()
@@ -172,7 +175,7 @@ class SurfacingAgent(BaseAgent):
         )
 
     async def _surface_relevant_memories(
-        self, source_metadata: Optional[Dict[str, Any]] = None
+        self, source_metadata: dict[str, Any] | None = None
     ):
         """
         Dual-Channel Surfacing Logic (§6-7):
@@ -221,7 +224,7 @@ class SurfacingAgent(BaseAgent):
     # ── Episodic Channel (pgvector + ACT-R) ──
 
     async def _surface_episodic(
-        self, now: float, source_metadata: Optional[Dict[str, Any]] = None
+        self, now: float, source_metadata: dict[str, Any] | None = None
     ) -> bool:
         """
         Episodic retrieval via pgvector with ACT-R scoring and
@@ -299,8 +302,8 @@ class SurfacingAgent(BaseAgent):
         return False
 
     def _build_episode_narrative(
-        self, mem: Dict[str, Any], now: float
-    ) -> Dict[str, Any]:
+        self, mem: dict[str, Any], now: float
+    ) -> dict[str, Any]:
         """
         Transforms a raw memory row into a Tulving-style episode with
         temporal context, emotional color, and narrative framing.
@@ -362,12 +365,12 @@ class SurfacingAgent(BaseAgent):
         if not created_at_iso:
             return ""
         try:
-            from datetime import datetime, timezone
+            from datetime import datetime
 
             created = datetime.fromisoformat(created_at_iso)
             if created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
-            now_dt = datetime.fromtimestamp(now, tz=timezone.utc)
+                created = created.replace(tzinfo=UTC)
+            now_dt = datetime.fromtimestamp(now, tz=UTC)
             delta = now_dt - created
             hours = delta.total_seconds() / 3600
 
@@ -393,7 +396,7 @@ class SurfacingAgent(BaseAgent):
     # ── Semantic Channel (Neo4j Knowledge Graph) ──
 
     async def _surface_semantic(
-        self, now: float, source_metadata: Optional[Dict[str, Any]] = None
+        self, now: float, source_metadata: dict[str, Any] | None = None
     ) -> bool:
         """
         Semantic retrieval from the Neo4j knowledge graph.
@@ -457,7 +460,7 @@ class SurfacingAgent(BaseAgent):
 
         return False
 
-    def _extract_entity_candidates(self, text: str) -> List[str]:
+    def _extract_entity_candidates(self, text: str) -> list[str]:
         """
         Lightweight entity extraction from context text.
         Uses capitalized words as candidate proper nouns.
@@ -539,7 +542,6 @@ class SurfacingAgent(BaseAgent):
             "ok",
             "yeah",
             "yes",
-            "no",
             "oh",
             "ah",
         }
@@ -556,7 +558,7 @@ class SurfacingAgent(BaseAgent):
 
         return list(dict.fromkeys(candidates))[:5]  # Deduplicate, limit to 5
 
-    async def _query_related_facts(self, entities: List[str]) -> List[str]:
+    async def _query_related_facts(self, entities: list[str]) -> list[str]:
         """
         Query Neo4j for all relationships involving the given entity names.
         Returns human-readable fact strings.
@@ -607,7 +609,7 @@ class SurfacingAgent(BaseAgent):
         return (now - surfaced_at) < self.surface_novelty_window
 
     def _record_surfacing_metric(
-        self, subject: str, metadata: Optional[Dict[str, Any]] = None
+        self, subject: str, metadata: dict[str, Any] | None = None
     ):
         metric = self.subject_metrics.get(subject)
         if metric is None:

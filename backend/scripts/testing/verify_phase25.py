@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 # Add backend to path (assuming running from backend root)
 sys.path.append(os.getcwd())
@@ -8,8 +8,8 @@ sys.path.append(os.getcwd())
 def test_soxr_import():
     print("1. Testing 'soxr' import...", end=" ")
     try:
-        import soxr
         import numpy as np
+        import soxr
 
         # Quick Functional Test
         data = np.zeros(100, dtype=np.float32)

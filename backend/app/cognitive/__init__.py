@@ -1,13 +1,13 @@
-from .perception import PerceptionService
-from .decision import DecisionService
 from .action import ActionService
-from .learning import ReflectionService
 from .core import CognitiveService
+from .decision import DecisionService
+from .learning import ReflectionService
+from .perception import PerceptionService
 
 __all__ = [
-    "PerceptionService",
-    "DecisionService",
     "ActionService",
-    "ReflectionService",
     "CognitiveService",
+    "DecisionService",
+    "PerceptionService",
+    "ReflectionService",
 ]

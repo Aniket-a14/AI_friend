@@ -1,5 +1,6 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Any
+
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 
@@ -15,8 +16,8 @@ class SemanticRecallStore:
 
     def __init__(
         self,
-        qdrant_host: str = None,
-        qdrant_port: int = None,
+        qdrant_host: str | None = None,
+        qdrant_port: int | None = None,
         collection_name: str = "ai_friend_memories",
         vector_size: int = 768,
     ):
@@ -27,7 +28,7 @@ class SemanticRecallStore:
 
         self.collection_name = collection_name
         self.vector_size = vector_size
-        self.client: Optional[QdrantClient] = None
+        self.client: QdrantClient | None = None
 
         try:
             self.client = QdrantClient(host=q_host, port=q_port, timeout=2.0)
@@ -67,9 +68,9 @@ class SemanticRecallStore:
     def add_vector_memory(
         self,
         memory_id: str,
-        vector: List[float],
+        vector: list[float],
         content: str,
-        metadata: Dict[str, Any],
+        metadata: dict[str, Any],
     ) -> bool:
         """Upsert memory vector and content payload into Qdrant."""
         if not self.client:
@@ -99,10 +100,10 @@ class SemanticRecallStore:
 
     def search_vector_memories(
         self,
-        query_vector: List[float],
+        query_vector: list[float],
         limit: int = 5,
-        filter_dict: Optional[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
+        filter_dict: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """Search similar memories with option to filter by metadata criteria."""
         if not self.client:
             logger.debug("Qdrant offline. Returning empty search results.")

@@ -1,7 +1,7 @@
 import logging
-import sqlite3
-import re
 import os
+import re
+import sqlite3
 
 logger = logging.getLogger("sqlite_fallback")
 
@@ -347,7 +347,6 @@ class SQLiteConnection:
                     f"SQLite execution failed for query: {query}\nTranslated: {translated}\nError: {e}"
                 )
                 raise
-        return None
 
     async def fetch(self, query, *args):
         translated = self._translate_query(query)

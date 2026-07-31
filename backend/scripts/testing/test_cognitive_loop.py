@@ -1,7 +1,8 @@
 import asyncio
 import logging
-import sys
 import os
+import sys
+
 from dotenv import load_dotenv
 
 # Add project root to path

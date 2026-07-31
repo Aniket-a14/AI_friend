@@ -2,12 +2,13 @@ import asyncio
 import base64
 import logging
 import time
+
 from ..agents.base import BaseAgent
-from .links import ScreenLink, CameraLink
-from ..llm.ollama_client import OllamaClient
-from .appraisal import VisualAppraisalService
 from ..config import Config
 from ..contracts import Topics, VisionDescription
+from ..llm.ollama_client import OllamaClient
+from .appraisal import VisualAppraisalService
+from .links import CameraLink, ScreenLink
 
 try:
     import cv2

@@ -3,7 +3,6 @@ from pathlib import Path
 
 from app.contracts import AudioPerception, AudioStop, ChatInput, ChatOutput
 
-
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "crates" / "contracts" / "fixtures"
 
 

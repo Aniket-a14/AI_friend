@@ -7,12 +7,13 @@ pair-fan-out cap, the guard that keeps learning failures from breaking a memory
 write, and the dialect-neutral SQL shape on the Postgres path.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from app.state.conversation_store import ConversationHistoryStore
-from app.state.memory_store import MemoryStore
 from app.state.lexicon_store import MentalLexicon
+from app.state.memory_store import MemoryStore
 
 
 @pytest.fixture

@@ -1,13 +1,13 @@
-import time
 import json
-import pytest
+import time
 from unittest.mock import mock_open, patch
 
-from app.metrics import SubjectMetrics
-from app.utils.segmentation import HybridSegmenter
-from app.state.agent_state import AgentState
-from app.cognitive.identity import IdentityManager
+import pytest
 
+from app.cognitive.identity import IdentityManager
+from app.metrics import SubjectMetrics
+from app.state.agent_state import AgentState
+from app.utils.segmentation import HybridSegmenter
 
 pytest.importorskip("pytest_benchmark")
 
@@ -226,7 +226,7 @@ def test_memory_semantic_retrieve_benchmark(benchmark):
     """Benchmarks ACT-R semantic memory retrieval scoring (recency/frequency weights) using production formulas."""
     rows = [
         _make_mock_row(
-            "Fact #%d" % i, similarity=0.8 - (i * 0.01), recall_count=max(1, i)
+            f"Fact #{i}", similarity=0.8 - (i * 0.01), recall_count=max(1, i)
         )
         for i in range(50)
     ]
@@ -279,7 +279,7 @@ def test_memory_semantic_retrieve_benchmark(benchmark):
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[0]
 
-    fact, score = benchmark(run)
+    fact, _score = benchmark(run)
     assert fact is not None
 
 
@@ -332,7 +332,7 @@ def test_pipeline_step_dispatch_benchmark(benchmark):
     def run():
         results = []
         for step in steps:
-            results.append("DISPATCHED:%s" % step)
+            results.append(f"DISPATCHED:{step}")
         return results
 
     res = benchmark(run)

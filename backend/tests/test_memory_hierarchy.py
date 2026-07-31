@@ -5,11 +5,13 @@ Validates that the memory store correctly filters by 'wing' and 'room'
 and preserves the 'raw_content' verbatim truth.
 """
 
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock, patch
-from app.state.memory_store import MemoryStore
+
 from app.contracts import MemorySurfaced
+from app.state.memory_store import MemoryStore
 
 
 @pytest.fixture
@@ -32,7 +34,7 @@ def memory_store(mock_pool):
 
 
 def _make_row(content, raw_content=None, wing="personal", room=None, similarity=1.0):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return {
         "content": content,
         "raw_content": raw_content or content,
@@ -75,7 +77,7 @@ async def test_memory_contract_validation():
 @pytest.mark.asyncio
 async def test_scoped_search_query_generation(memory_store, mock_pool):
     """Verify that search_memories routes queries using the correct function and parameters."""
-    pool, conn = mock_pool
+    _pool, conn = mock_pool
     conn.fetch.return_value = []
 
     with patch.object(memory_store, "get_embedding", return_value=[0.1] * 768):
@@ -101,7 +103,7 @@ async def test_scoped_search_query_generation(memory_store, mock_pool):
 @pytest.mark.asyncio
 async def test_verbatim_storage_integrity(memory_store, mock_pool):
     """Verify that add_memory stores both processed and raw content."""
-    pool, conn = mock_pool
+    _pool, conn = mock_pool
 
     with patch.object(memory_store, "get_embedding", return_value=[0.1] * 768):
         await memory_store.add_memory(
@@ -129,7 +131,7 @@ async def test_verbatim_storage_integrity(memory_store, mock_pool):
 @pytest.mark.asyncio
 async def test_search_returns_hierarchical_metadata(memory_store, mock_pool):
     """Verify that search results include wing and room info."""
-    pool, conn = mock_pool
+    _pool, conn = mock_pool
     conn.fetch.return_value = [
         _make_row("Content", "Raw", wing="identity", room="private")
     ]

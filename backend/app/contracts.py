@@ -17,11 +17,10 @@ Usage:
 from __future__ import annotations
 
 import time
-from typing import Any, ClassVar, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator
-
-
 from enum import Enum
+from typing import Any, ClassVar
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class Topics(str, Enum):
@@ -54,7 +53,7 @@ class ChatInputMetadata(BaseModel):
 
     source: str = "whisper"
     confidence: float = 0.9
-    utterance_id: Optional[str] = None
+    utterance_id: str | None = None
 
 
 class ChatInput(BaseModel):
@@ -63,10 +62,10 @@ class ChatInput(BaseModel):
     model_config = {"extra": "allow"}
 
     text: str
-    utterance_id: Optional[str] = None
-    turn_id: Optional[str] = None
+    utterance_id: str | None = None
+    turn_id: str | None = None
     metadata: ChatInputMetadata = Field(default_factory=ChatInputMetadata)
-    latency_metadata: Optional[Dict[str, Any]] = None
+    latency_metadata: dict[str, Any] | None = None
 
 
 # ─── chat.output ─────────────────────────────────────────────
@@ -80,7 +79,7 @@ class ChatOutputAffect(BaseModel):
     attachment: float = 0.1
     emotion: str = "neutral"
     fatigue: float = 0.0
-    user_distance: Optional[float] = None
+    user_distance: float | None = None
 
 
 class ChatOutput(BaseModel):
@@ -88,10 +87,10 @@ class ChatOutput(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    content: Optional[str] = None
+    content: str | None = None
     done: bool = False
-    turn_id: Optional[str] = None
-    affect: Optional[ChatOutputAffect] = None
+    turn_id: str | None = None
+    affect: ChatOutputAffect | None = None
 
     # The deprecated prosody block (confidence, intensity, speaking_rate,
     # pause_bias, paralinguistic_tags) was removed here. Prosody has a single
@@ -108,39 +107,39 @@ class ChatOutput(BaseModel):
 
     # Metadata
     timestamp: float = Field(default_factory=time.time)
-    full_response: Optional[str] = None
-    generation_error: Optional[str] = None
+    full_response: str | None = None
+    generation_error: str | None = None
     proactive: bool = False
-    metadata: Optional[Dict[str, Any]] = None
-    latency_metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
+    latency_metadata: dict[str, Any] | None = None
 
 
 # ─── audio.perception ────────────────────────────────────────
 class SpeculativeIntent(BaseModel):
     name: str = "SPECULATIVE_STOP"
-    keywords: List[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
     confidence: float = 0.0
     text: str = ""
     timestamp: float = 0.0
-    utterance_id: Optional[str] = None
+    utterance_id: str | None = None
 
 
 class AudioPerception(BaseModel):
     """Published by STTAgent on `audio.perception` from the SenseVoice fast path."""
 
     text: str = ""
-    intent: Optional[str] = None
+    intent: str | None = None
     intent_type: str = "CONVERSATIONAL"  # COMMAND, PERCEPTION, CONVERSATIONAL
-    keywords: List[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
     confidence: float = 0.0
     snr: float = 0.0  # Signal-to-Noise Ratio
-    paralinguistic_events: List[str] = Field(
+    paralinguistic_events: list[str] = Field(
         default_factory=list
     )  # [laughter], [cough], etc.
-    speculative_intent: Optional[SpeculativeIntent] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    speculative_intent: SpeculativeIntent | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     timestamp: float = 0.0
-    utterance_id: Optional[str] = None
+    utterance_id: str | None = None
 
 
 # ─── audio.stop / audio.resume ───────────────────────────────
@@ -149,25 +148,25 @@ class AudioStop(BaseModel):
 
     interrupt: bool = True
     speculative: bool = False
-    reason: Optional[str] = None
-    command_text: Optional[str] = None
-    intent: Optional[str] = None
+    reason: str | None = None
+    command_text: str | None = None
+    intent: str | None = None
     intent_type: str = (
         "VOICE_INTERRUPTION"  # VOICE_INTERRUPTION, VISION_INTERRUPTION, SYSTEM_HALT
     )
-    keywords: List[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
     confidence: float = 0.0
-    perception_text: Optional[str] = None
-    utterance_id: Optional[str] = None
-    turn_id: Optional[str] = None
+    perception_text: str | None = None
+    utterance_id: str | None = None
+    turn_id: str | None = None
 
 
 class AudioResume(BaseModel):
     """Published on `audio.resume` to resume voice playback after rejected stop."""
 
     reason: str = "conflict_rejected"
-    perception_text: Optional[str] = None
-    utterance_id: Optional[str] = None
+    perception_text: str | None = None
+    utterance_id: str | None = None
 
 
 # ─── memory.surfaced ─────────────────────────────────────────
@@ -175,8 +174,8 @@ class MemoryScope(BaseModel):
     """Hierarchical scope for memory items (Wings -> Rooms -> Drawers)."""
 
     wing: str = "personal"
-    room: Optional[str] = None
-    drawer_id: Optional[str] = None
+    room: str | None = None
+    drawer_id: str | None = None
 
 
 class SurfacedMemory(BaseModel):
@@ -185,18 +184,18 @@ class SurfacedMemory(BaseModel):
     scope: MemoryScope = Field(default_factory=MemoryScope)
     score: float = 0.0
     valence: float = 0.0
-    created_at: Optional[str] = None
+    created_at: str | None = None
     recall_count: int = 0
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class MemorySurfaced(BaseModel):
     """Published by SurfacingAgent on `memory.surfaced`."""
 
-    memories: List[SurfacedMemory] = Field(default_factory=list)
+    memories: list[SurfacedMemory] = Field(default_factory=list)
     source: str = "episodic"
     provenance: str = "pgvector_actr"  # cognitive source of the memory
-    context: Optional[str] = None
+    context: str | None = None
 
 
 # ─── vision.description ──────────────────────────────────────
@@ -206,7 +205,7 @@ class VisionDescription(BaseModel):
     description: str
     source: str = "screen"
     timestamp: float = Field(default_factory=time.time)
-    user_distance: Optional[float] = None
+    user_distance: float | None = None
 
 
 # ─── state.update ────────────────────────────────────────────
@@ -238,10 +237,10 @@ class StateUpdate(BaseModel):
     cortisol: float = 0.0
     dopamine: float = 0.0
     fatigue: float = 0.0
-    user_mental_model: Optional[Dict[str, Any]] = None
+    user_mental_model: dict[str, Any] | None = None
 
     @classmethod
-    def from_snapshot(cls, snapshot: Dict[str, Any]) -> "StateUpdate":
+    def from_snapshot(cls, snapshot: dict[str, Any]) -> StateUpdate:
         """Build the broadcast from a `StateService.get_context_snapshot()` dict.
 
         Only the modelled fields are pulled; a key the snapshot omits falls back
@@ -282,12 +281,12 @@ class AgentVoiceModulation(BaseModel):
     # frame dropped/merged in transit) reject the *entire* trajectory.
     MAX_FRAME_GAP_MS: ClassVar[int] = 250
 
-    trajectory: List[ProsodyFrame] = Field(..., min_length=1)
+    trajectory: list[ProsodyFrame] = Field(..., min_length=1)
     timestamp: float = Field(default_factory=time.time)
 
     @field_validator("trajectory")
     @classmethod
-    def validate_trajectory(cls, v: List[ProsodyFrame]) -> List[ProsodyFrame]:
+    def validate_trajectory(cls, v: list[ProsodyFrame]) -> list[ProsodyFrame]:
         if not v:
             raise ValueError("Trajectory must not be empty.")
         if v[0].time_offset_ms < 0:

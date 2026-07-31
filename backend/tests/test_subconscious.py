@@ -3,8 +3,10 @@ Test suite for the Tier-5 Subconscious Engine.
 Validates idle checking, internal thought generation, and routing to the BrainAgent.
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+
 from app.contracts import ChatInput, Topics
 
 

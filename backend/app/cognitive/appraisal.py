@@ -11,11 +11,12 @@ Sources:
   - EMA (Gratch & Marsella, 2004) for computational implementation
 """
 
-import logging
 import json
+import logging
 import re
-from dataclasses import dataclass, asdict
-from typing import Dict, Any, List
+from dataclasses import asdict, dataclass
+from typing import Any
+
 import cognitive_rust
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ class AppraisalVector:
     norm_alignment: float = 1.0
     relationship_impact: float = 0.0
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         return asdict(self)
 
 
@@ -57,9 +58,9 @@ class AppraisalEngine:
     from available state signals (acoustic perception, identity boundaries).
     """
 
-    def __init__(self, identity_core_values: List[str] = None):
+    def __init__(self, identity_core_values: list[str] | None = None):
         self.identity_values = identity_core_values or []
-        self._recent_contents: List[str] = []
+        self._recent_contents: list[str] = []
         self._max_recent = 20
 
     def appraise(
@@ -67,9 +68,9 @@ class AppraisalEngine:
         event_content: str,
         event_type: str,
         emotional_bias: float,
-        state_snapshot: Dict[str, Any],
-        identity_boundaries: List[str] = None,
-        user_voice_properties: Dict[str, Any] = None,
+        state_snapshot: dict[str, Any],
+        identity_boundaries: list[str] | None = None,
+        user_voice_properties: dict[str, Any] | None = None,
     ) -> AppraisalVector:
         """
         Heuristic appraisal for the real-time cognitive loop.
@@ -131,8 +132,8 @@ class AppraisalEngine:
         )
 
     async def appraise_semantic_drift(
-        self, user_utterance: str, llm_client, current_pad: Dict[str, float]
-    ) -> Dict[str, float]:
+        self, user_utterance: str, llm_client, current_pad: dict[str, float]
+    ) -> dict[str, float]:
         """
         System 2 deliberative appraisal using LLM.
         Drifts target mood via primary/secondary appraisal analysis.

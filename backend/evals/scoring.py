@@ -21,7 +21,6 @@ Two production behaviors are reused rather than reimplemented:
 """
 
 import re
-from typing import Tuple
 
 from app.cognitive.identity import _match_views
 
@@ -35,12 +34,12 @@ def strip_thoughts(text: str) -> str:
     return _THOUGHT_BLOCK.sub("", text or "").strip()
 
 
-def response_views(text: str) -> Tuple[str, ...]:
+def response_views(text: str) -> tuple[str, ...]:
     """Every lowercased reading of the response a check is judged against."""
     return _match_views(strip_thoughts(text).lower())
 
 
-def evaluate_check(check: Check, views: Tuple[str, ...]) -> CheckResult:
+def evaluate_check(check: Check, views: tuple[str, ...]) -> CheckResult:
     """Apply one check to the precomputed views of a response.
 
     Inclusion checks pass if *any* view contains the needle: a pause marker
