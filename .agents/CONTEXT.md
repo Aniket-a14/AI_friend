@@ -5014,3 +5014,52 @@ files touched.
 **NOT done:** nothing else from the six was left partial. The other 19
 findings from the original audit remain fixed as of the previous
 re-verification; this entry only covers the six that weren't.
+
+## 2026-08-02 — A biography that can live outside the repo
+
+`PERSONA_PROFILE_PATH` has let an authored persona live anywhere since
+`config/persona.toml` landed. The biography never got the counterpart:
+`find_biography_file()` took an `explicit` argument that no caller ever
+supplied, and `core.py` called it bare, so the only readable location was the
+tracked `config/biography.md`.
+
+That is a worse constraint than it was for the persona, and for a reason
+specific to what the two files are. A persona is a temperament — bounded
+numbers and a tone — and living in the repo is defensible. A biography is an
+actual person's life, written by someone who knows them. Requiring it to sit at
+a tracked path means the only way to use the feature is to commit that material.
+
+`BIOGRAPHY_PATH` (`Config`) is now consulted by `find_biography_file()` when no
+explicit argument is given, so nothing else had to change: `core.py`,
+`seed_biography_once` and the scripts all keep their existing signatures and
+pick the setting up for free.
+
+**A set-but-missing path resolves to "no biography" and is deliberately not
+retried through discovery.** The silent fallback is the dangerous branch here,
+more so than for the persona: seeding is fingerprinted and effectively one-way,
+so a typo'd path would plant the shipped *example* person's history in a real
+agent's memory, which then has to be pruned back out passage by passage. It
+warns instead, matching what `IdentityManager` already does for a missing
+persona file.
+
+An explicit argument still beats the setting, so callers that pass a path mean
+it and deployment config cannot override them.
+
+`test_the_shipped_biography_parses` gained a fixture neutralising an ambient
+`BIOGRAPHY_PATH`; it asserts that *discovery* finds the shipped file, and would
+otherwise fail on any machine with the setting exported. No conftest-wide
+isolation was added (unlike `PERSONA_PROFILE_PATH`), precisely because that test
+needs real discovery to work.
+
+**Verified**: 4 new tests; all three mutations caught (ignore the setting, fall
+back to discovery on a missing path, let the setting beat an explicit
+argument). Full backend suite via junit-xml: 708 passed, 0
+failed/errored/skipped. `ruff check .` clean. Also confirmed end to end that
+`BIOGRAPHY_PATH` pointing outside the repo resolves and parses.
+
+**NOT done:** `parse_biography` still mis-nests sibling headings when a file has
+no top-level `#` — `heading_trail = [h for h in heading_trail if h]` compacts
+the trail and destroys depth alignment, so section two is filed as "Section One
+/ Section Two" and every memory carries the first section's name. Real bug,
+separate change. `.env.example` was not touched: it documents no persona paths
+either, so adding only this one would be inconsistent.

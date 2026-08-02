@@ -55,6 +55,11 @@ class AppSettings(BaseSettings):
     # A user-authored persona (see app/persona/profile.py). Unset means "use the
     # PSYCH_* / AI_NAME defaults below", which is exactly the previous behaviour.
     PERSONA_PROFILE_PATH: str | None = None
+    # The authored biography (see app/persona/biography.py). Unset means "walk
+    # up for config/biography.md", the historical behaviour. Set, it can point
+    # anywhere — which is the point: a biography is a real person's life, and
+    # keeping it out of the repo should not require a code change.
+    BIOGRAPHY_PATH: str | None = None
     # Where `personality.json`/`history.json` live. Unset means "beside the
     # code", which is the historical behaviour and fine for a normal deployment
     # — but it makes the package directory writable state, so anything that
