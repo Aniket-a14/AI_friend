@@ -5296,3 +5296,87 @@ observed against a live model. Not re-probed live: the older user-directed
 guideline still deflects these questions before a self-claim is asserted, so
 `self_knowledge_gaps` remains empty and the gate is still unproven outside its
 tests.
+
+
+## 2026-08-02 -- The gap table was write-only, and it was recording the wrong thing
+
+Two defects, and the second explains the first.
+
+**Gaps were harvested from fabrications the prompt exists to prevent.**
+`_record_self_gaps` ran only after the grounding gate *rejected* a response,
+deriving gaps from the ungrounded proper nouns in it. But `_CHAT_GUIDELINE`
+tells her that when she does not know something about her own past she should
+say so and let it go -- so she emits no proper noun, the gate never fires, and
+nothing is recorded. `self_knowledge_gaps` stayed empty across every live run
+*because the system was working*. The instrumentation measured only its own
+failures.
+
+The evidence that actually reveals a hole in a biography is a question it
+cannot answer. `_unanswered_self_question_gaps` now records on three
+conditions, all required: the message is interrogative, it is about *her* life
+(`_SELF_QUERY_RE`, the second-person mirror of the assertion trigger), and
+retrieval surfaced no `source='biography'` passage for it. The third is the
+real test -- it is the store reporting that it looked and found nothing, rather
+than a guess from vocabulary, which would flag "did you enjoy college" over the
+word *enjoy*. Recording happens before generation, since it depends only on the
+question and the store.
+
+**Nothing ever read the table.** Recording holes in an autobiography is only
+useful if something eventually asks about them; a biography that cannot grow is
+a character sheet. `next_gap_to_ask` / `mark_asked` and `_build_wondering_block`
+close the loop: a gap the user has raised at least twice is offered to the
+prompt once, framed as an opening rather than an instruction. `min_hits` is what
+keeps a stray term from becoming a question; `asked_at` is what stops her
+opening every turn with the same one.
+
+**The guideline had to move for it.** SELF-GROUNDING ended "do not ask the user
+to tell you" -- a flat prohibition on the one behaviour the new block
+authorises. Injecting the block under that guideline would have recreated the
+first-boot language bug exactly: a prompt requiring and forbidding the same
+thing. It now forbids only turning *every* blank into a question, and defers to
+the block when one is present. A test asserts the two cannot drift apart again.
+
+**Review pass (CodeRabbit) found a real race.** `next_gap_to_ask` +
+`mark_asked` was a read-then-update, so two overlapping turns could both claim
+the same gap, and `_build_wondering_block` emitted the block even when the mark
+failed -- which would ask a question the table did not record as asked, so it
+would be asked again next turn. Replaced by a single `claim_next_gap_to_ask`:
+one `UPDATE ... WHERE term = (SELECT ...) AND asked_at IS NULL RETURNING`, so a
+caller holding a row knows it is the only one. This is the first mutating
+statement in the codebase to return rows, which exposed a latent bug in the
+SQLite fallback: only `execute()` committed, so an `UPDATE ... RETURNING`
+arriving through `fetchrow()` sat in sqlite3's implicit transaction and was
+lost on close. Both fetch paths now commit DML.
+
+**Verified**: 15 new tests, all 9 mutations caught (drop the biography-surfaced
+check, the interrogative check, the about-her check, the cold-start guard, the
+per-question cap, the min-hits threshold or the already-asked filter; split the
+atomic claim back into a read and an update; emit the block despite a failed
+claim). Full backend suite via junit-xml: 762 passed, 0 failed/errored/skipped.
+`ruff check .` clean.
+
+Worth recording that two of those mutations initially **survived**. The
+already-asked filter in the subselect was masked by the outer claim guard --
+with one gap in the table both forms behave identically, and only a second gap
+behind the first reveals that removing it starves everything after the top row.
+And the concurrency test written for the claim was decorative: the SQLite
+fallback runs each statement to completion without yielding, so `asyncio.gather`
+cannot interleave two claims and the test passed against a deliberately racy
+implementation. It was replaced with a structural assertion that the claim
+issues exactly one statement. The read-committed race itself is only reachable
+on Postgres and is **not** covered by any test.
+
+**NOT done, and this is the important half.** The loop is open at the far end:
+when the user answers her question, nothing writes that answer back into the
+biography. `refresh_known_terms` reads only `source='biography'` rows, so a fact
+given in conversation never becomes something she knows about herself, and the
+same gap can be re-recorded forever. Closing it needs a design for which turn
+counts as the answer, what happens when the user deflects, and how a
+conversationally-acquired fact is marked so it is distinguishable from an
+authored passage -- deliberately not guessed at here. There is also no re-ask
+cooldown: `mark_asked` fires when the question is *offered*, because nothing
+downstream can tell an asked question from a skipped one, so a gap she never
+raises is never retried. And `_SELF_QUERY_RE` misses questions phrased without
+a possessive or a biographical verb ("which college did you go to") --
+precision was preferred over recall, since a noisy table makes the asking
+channel worse, not better. None of this has been run against a live model.

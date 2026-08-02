@@ -395,6 +395,20 @@ class TestThePromptDoesNotContradictItself:
         assert "only in English" not in _CHAT_GUIDELINE
         assert "Hinglish" not in _CHAT_GUIDELINE
 
+    def test_the_guideline_leaves_room_for_the_wondering_block(self):
+        """The same trap as the language directive, one layer down.
+
+        SELF-GROUNDING used to end "do not ask the user to tell you", which is
+        a flat prohibition on the one thing the WONDERING block exists to
+        authorise. Injecting that block while the guideline forbade it would
+        have recreated the first-boot bug exactly: a prompt that requires and
+        forbids the same behaviour, with no way to tell which half won.
+        """
+        from app.cognitive.action import _CHAT_GUIDELINE
+
+        assert "do not ask the user to tell you" not in _CHAT_GUIDELINE
+        assert "WONDERING" in _CHAT_GUIDELINE
+
     def test_language_is_not_hardcoded_into_every_persona(self, tmp_path):
         """Which language an agent speaks is part of who it is.
 

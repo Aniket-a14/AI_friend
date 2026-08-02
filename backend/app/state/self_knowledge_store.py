@@ -91,8 +91,20 @@ class SelfKnowledgeStore:
                         "times_hit integer NOT NULL DEFAULT 1, "
                         "example_prompt text, "
                         "first_seen timestamp DEFAULT current_timestamp, "
-                        "last_seen timestamp DEFAULT current_timestamp)"
+                        "last_seen timestamp DEFAULT current_timestamp, "
+                        "asked_at timestamp)"
                     )
+                    # Tables created before the asking channel existed have no
+                    # asked_at, and CREATE TABLE IF NOT EXISTS will not add it.
+                    # Postgres and SQLite disagree on the guard clause, so the
+                    # portable form is to try and let the duplicate fail.
+                    try:
+                        await conn.execute(
+                            "ALTER TABLE self_knowledge_gaps "
+                            "ADD COLUMN asked_at timestamp"
+                        )
+                    except Exception:
+                        pass
                 self._ready = True
             except Exception as e:
                 logger.debug(f"SelfKnowledgeStore not ready ({e}); gaps not recorded")
@@ -175,6 +187,49 @@ class SelfKnowledgeStore:
                 ", ".join(selected[:5]),
             )
         return written
+
+    async def claim_next_gap_to_ask(self, min_hits: int = 2) -> dict | None:
+        """Take the gap most worth raising with the user, or None.
+
+        This is the read side of the table, and the reason it exists at all.
+        Recording holes in an agent's autobiography is only useful if something
+        eventually asks about them -- a biography that cannot grow is a
+        character sheet, not a life.
+
+        ``min_hits`` is what stops a single stray term becoming a question: a
+        subject the user has raised twice is a subject they care about, and the
+        count is the only evidence available for that. Gaps already claimed are
+        excluded so she does not ask the same thing every turn, which reads as
+        damage rather than curiosity.
+
+        **Selecting and claiming are one statement, deliberately.** A read
+        followed by a separate update lets two overlapping turns both see the
+        same unasked row and both put it in a prompt -- and overlapping turns
+        are not hypothetical here (finding A1). The outer ``asked_at IS NULL``
+        is what makes the claim conditional: the second writer re-evaluates it
+        after the first commits, matches nothing, and returns no row. A caller
+        that gets a row therefore knows it is the only one holding it.
+        """
+        await self._ensure_ready()
+        if not self._ready:
+            return None
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "UPDATE self_knowledge_gaps "
+                    "SET asked_at = current_timestamp "
+                    "WHERE term = ("
+                    "SELECT term FROM self_knowledge_gaps "
+                    "WHERE asked_at IS NULL AND times_hit >= $1 "
+                    "ORDER BY times_hit DESC, last_seen DESC LIMIT 1"
+                    ") AND asked_at IS NULL "
+                    "RETURNING term, times_hit, example_prompt",
+                    int(min_hits),
+                )
+        except Exception as e:
+            logger.debug(f"Could not claim next self-knowledge gap ({e})")
+            return None
+        return dict(row) if row else None
 
     async def top_gaps(self, limit: int = 20) -> list[dict]:
         """The most frequently hit gaps, for inspection and for later asking."""

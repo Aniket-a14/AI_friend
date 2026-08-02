@@ -296,6 +296,223 @@ class TestGapRecording:
         await service._record_self_gaps("My brother Rahul called.", [], "")
 
 
+class TestUnansweredQuestionsBecomeGaps:
+    """The signal that actually reveals a hole in a biography.
+
+    Gaps were originally harvested only from fabrications the grounding gate
+    rejected. But the prompt instructs her not to fabricate, so when it works
+    there is nothing to harvest -- the table stayed empty across every live run
+    while the system was behaving correctly. A question she cannot answer is
+    the evidence that was being thrown away.
+    """
+
+    def test_a_question_her_biography_cannot_answer_is_recorded(self, agent):
+        """This is the signal the whole channel runs on.
+
+        If an unanswerable question about her own past leaves no trace, the
+        table only ever fills from rejected fabrications -- which the prompt
+        prevents -- and she can be asked the same unanswerable thing for
+        months without anything noticing the biography is missing a page.
+        """
+        gaps = agent._unanswered_self_question_gaps("what was your school like?", [])
+        assert "school" in gaps
+
+    def test_a_question_the_biography_answers_is_not_a_gap(self, agent):
+        """Retrieval found an autobiographical passage, so nothing is missing.
+
+        Whether she uses it well is the grounding gate's problem. Recording a
+        gap here would fill the table with subjects she can already discuss and
+        bury the ones she genuinely cannot.
+        """
+        gaps = agent._unanswered_self_question_gaps(
+            "what was your school like?",
+            [{"content": "She went to a convent school", "source": "biography"}],
+        )
+        assert gaps == []
+
+    def test_an_ordinary_memory_does_not_count_as_an_answer(self, agent):
+        """Only biography passages are evidence that her own past is recorded.
+
+        A conversational memory is something the *user* said. Treating it as
+        proof she knows her own history is the same mistake the grounding gate
+        already refuses to make.
+        """
+        gaps = agent._unanswered_self_question_gaps(
+            "what was your school like?",
+            [{"content": "the user mentioned a school", "source": "conversation"}],
+        )
+        assert "school" in gaps
+
+    def test_a_statement_is_not_a_question(self, agent):
+        """"Your voice is lovely" asks nothing, and is not a hole in her past."""
+        assert agent._unanswered_self_question_gaps("your voice is lovely", []) == []
+
+    def test_a_question_that_is_not_about_her_life_is_ignored(self, agent):
+        """A request is not an autobiographical question.
+
+        Without this the table fills with whatever the user wanted help with,
+        and the asking channel starts interrogating them about their own
+        errands as though they were her missing childhood.
+        """
+        gaps = agent._unanswered_self_question_gaps(
+            "can you help me with the groceries?", []
+        )
+        assert gaps == []
+
+    def test_nothing_is_recorded_before_a_biography_exists(self, ungrounded_agent):
+        """Cold start: with no biography, every word is a gap and none is useful."""
+        gaps = ungrounded_agent._unanswered_self_question_gaps(
+            "where did you grow up?", []
+        )
+        assert gaps == []
+
+    def test_one_question_cannot_flood_the_table(self, agent):
+        """A single rambling question must not bury the frequent gaps.
+
+        Selection is by hit count, so a question that writes a dozen one-off
+        terms dilutes the ranking that decides what she asks about, and the
+        subject the user keeps raising loses to a crowd of stray nouns.
+        """
+        gaps = agent._unanswered_self_question_gaps(
+            "what was your school, your street, your teacher, your uniform, "
+            "your canteen and your bus like?",
+            [],
+        )
+        assert len(gaps) <= 4
+
+
+class TestSheAsksAboutHerself:
+    """The read side. Without it the gap table is a write-only log."""
+
+    @pytest.mark.asyncio
+    async def test_a_repeated_gap_becomes_something_she_can_raise(self, gap_store):
+        """Without this the table is write-only and the biography cannot grow.
+
+        Recording holes in an autobiography is only useful if something
+        eventually asks about them. If this returns None for a gap the user has
+        raised twice, nothing ever reaches the prompt and she stays exactly as
+        ignorant of herself as the day she was seeded.
+        """
+        await gap_store.record_gap(["school"], "what was your school like")
+        await gap_store.record_gap(["school"], "did you like school")
+        gap = await gap_store.claim_next_gap_to_ask()
+        assert gap is not None and gap["term"] == "school"
+
+    @pytest.mark.asyncio
+    async def test_a_one_off_is_not_worth_asking_about(self, gap_store):
+        """Frequency is the only evidence available that a subject matters.
+
+        Asking about every term that ever went unmatched turns her into a
+        questionnaire, and the user stops answering.
+        """
+        await gap_store.record_gap(["school"], "x")
+        assert await gap_store.claim_next_gap_to_ask() is None
+
+    @pytest.mark.asyncio
+    async def test_she_does_not_ask_the_same_thing_twice(self, gap_store):
+        """Repeating a question every turn reads as damage, not curiosity."""
+        for _ in range(3):
+            await gap_store.record_gap(["school"], "x")
+        first = await gap_store.claim_next_gap_to_ask()
+        assert first["term"] == "school"
+        assert await gap_store.claim_next_gap_to_ask() is None
+
+    @pytest.mark.asyncio
+    async def test_an_asked_gap_does_not_block_every_gap_behind_it(self, gap_store):
+        """The most-hit gap is claimed first, and must then step aside.
+
+        If the candidate is chosen without excluding already-asked rows, the
+        highest-count gap is picked forever and rejected forever by the claim
+        guard. She would ask exactly one question in her life and go silent,
+        while the table filled with subjects she never raises.
+        """
+        for _ in range(5):
+            await gap_store.record_gap(["school"], "x")
+        for _ in range(2):
+            await gap_store.record_gap(["cousin"], "x")
+
+        first = await gap_store.claim_next_gap_to_ask()
+        assert first["term"] == "school"
+        second = await gap_store.claim_next_gap_to_ask()
+        assert second is not None and second["term"] == "cousin"
+
+    @pytest.mark.asyncio
+    async def test_selecting_and_claiming_are_one_statement(self):
+        """Turns overlap in this system (finding A1), so the claim must be atomic.
+
+        A read followed by a separate update lets two in-flight turns see the
+        same unasked row and both put it in a prompt -- the user gets the same
+        question twice from someone supposed to be tracking her own history.
+        This asserts the structure rather than racing it, because the SQLite
+        fallback runs its statements to completion without ever yielding, so a
+        gathered test cannot interleave them and would pass either way.
+        """
+        conn = AsyncMock()
+        conn.fetchrow.return_value = {
+            "term": "school",
+            "times_hit": 3,
+            "example_prompt": "",
+        }
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        store = SelfKnowledgeStore(pool)
+        store._ready = True
+        gap = await store.claim_next_gap_to_ask()
+
+        assert gap["term"] == "school"
+        conn.fetchrow.assert_awaited_once()
+        sql = conn.fetchrow.await_args.args[0]
+        assert "UPDATE" in sql and "SELECT" in sql
+        conn.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_claimed_gap_reaches_the_prompt(self):
+        """The block is the only path from the table into her behaviour.
+
+        If the term does not reach the prompt, the gap is claimed -- and so
+        never offered again -- without anything ever being asked. The record
+        would then be permanently marked as handled while the biography still
+        has the hole.
+        """
+        recorder = AsyncMock()
+        recorder.claim_next_gap_to_ask.return_value = {
+            "term": "school",
+            "times_hit": 3,
+        }
+        service = ActionService(self_knowledge=recorder)
+
+        block = await service._build_wondering_block()
+
+        assert "school" in block
+        assert "WONDERING" in block
+
+    @pytest.mark.asyncio
+    async def test_a_gap_that_could_not_be_claimed_is_not_asked(self):
+        """A failed claim must produce silence, not an unrecorded question.
+
+        Emitting the block anyway would ask a question the table does not know
+        was asked, so it would be asked again on the next turn, and the next.
+        """
+        recorder = AsyncMock()
+        recorder.claim_next_gap_to_ask.return_value = None
+        service = ActionService(self_knowledge=recorder)
+        assert await service._build_wondering_block() == ""
+
+    @pytest.mark.asyncio
+    async def test_a_broken_store_does_not_break_the_turn(self):
+        """Curiosity is a luxury; the conversation is not.
+
+        A failing read here must degrade to silence rather than aborting a
+        reply the user is waiting on.
+        """
+        recorder = AsyncMock()
+        recorder.claim_next_gap_to_ask.side_effect = RuntimeError("database is gone")
+        service = ActionService(self_knowledge=recorder)
+        assert await service._build_wondering_block() == ""
+
+
 class TestKnownTerms:
     @pytest.mark.asyncio
     async def test_only_biography_memories_ground_the_agents_own_past(self):
