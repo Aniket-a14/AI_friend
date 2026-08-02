@@ -5537,3 +5537,99 @@ so it failed for a reason unrelated to the fix and would have passed with the
 bug restored. Rewritten to a sentence whose only possible guard carries an
 apostrophe. This is the second time in this repo that mutation testing caught a
 test passing for the wrong reason.
+
+## 2026-08-02 -- The memory layer, measured against a fifty-line control
+
+The recall suite could compare `full_history` against `recent_window`, which
+are two bounds and neither is a system. This adds the seam that measures the
+thing the project is actually built on, and then measures it.
+
+**Two retrievers, because one cannot attribute a result.** `LexicalRetriever`
+is Okapi BM25 over the transcript: no embeddings, no database, no decay.
+`MemoryStoreRetriever` is the real `search_memories`, reached through the
+construction `brain_agent.main` uses -- ACT-R activation, the learned lexicon,
+Qdrant vectors, the Neo4j boost. With only the second, a win over
+`full_history` would say nothing about this architecture, since "something
+filtered the context" explains it just as well.
+
+**Two strategy shapes.** `Retrieved` is budget-matched to `recent_window_N`, so
+a difference is attributable to *which* turns were chosen rather than how many.
+`WindowPlusRetrieved` mirrors what the running system does -- recent context
+always present, memories alongside it -- and is deliberately not budget-matched,
+which is why the matched one exists next to it rather than instead of it.
+
+`ContextStrategy.select` became async: a retrieval strategy has to reach a
+database and an embedding model, and the two trivial strategies pay nothing.
+
+**Live result, `qwen2.5:3b`, 48 probes, real Postgres/Qdrant/Neo4j.**
+
+*Name recall*: `full_history` passes at all four distances, up to 482 turns and
+18,361 characters. Both retrievers also pass at all four -- on ~6 turns and
+~248 characters. Same verdicts on **~74x less context**. `recent_window_6`
+fails all four with the plant out, which is the control behaving.
+
+*The memory layer does not beat BM25 on this pack.* Identical verdicts
+everywhere: equal on names, equal-and-failing on details. On this evidence the
+ACT-R, vector and graph machinery is not yet earning its infrastructure against
+a ranking function that fits on a page. That is a finding about the benchmark
+as much as the architecture -- a planted-fact probe with lexical overlap is
+close to the best case for BM25 -- but it is the measurement that exists.
+
+*The real unsolved problem is the semantic gap.* Every detail probe beyond the
+shortest distance failed with **plant out**: asked "is there anything I
+shouldn't eat?", neither retriever surfaced "I'm allergic to walnuts." They
+share no content words. BM25 cannot bridge that and is not expected to; the
+embedding path is supposed to. A follow-up diagnostic confirmed the vector tier
+is live -- 768-dim embeddings, points in Qdrant -- and that it *does* return the
+plant for that query, ranked **fifth of six, below "what's the weather doing"**.
+Reordered to a lexically-overlapping question it ranks the plant first. So this
+is a ranking failure, not a wiring failure, and at realistic transcript sizes
+generic filler crowds the fact out of a six-turn budget.
+
+Also worth recording: at distance 24 and beyond, `full_history` fails the detail
+probes with the plant demonstrably *in* context. Retrieval cannot fix that one.
+
+**A bug of mine invalidated the first run, and the shape of the failure is
+worth keeping.** `retrieved_memory_store_6` returned *zero turns* on five of
+eight probes, which read as a broken memory layer. It was not. `add_memory`
+deduplicates on content across the whole table rather than within a room, and
+probes share filler verbatim -- so the second probe's writes were swallowed as
+duplicates of the first probe's rows, sitting in the first probe's room, and its
+own room came up empty. A room per transcript documents intent; only a purge
+before each index delivers isolation.
+
+The first diagnostic hid it perfectly by deleting between sizes, so every
+iteration started clean and the layer looked healthy. What actually exposed it
+was noticing that a 194-turn transcript wrote 10 rows.
+
+**NOT done.** The gap that would justify the architecture is unmeasured, because
+this pack cannot show it: a planted fact recalled by a lexically overlapping
+question is where BM25 is strongest and where decay, spreading activation and
+consolidation contribute least. A pack built to need them -- facts referred to
+obliquely, across sessions, competing with contradictory later information --
+is the next thing to write, and until it exists "the memory layer ties BM25"
+should be read as a statement about this benchmark.
+
+Nothing here measures write-side behaviour at all: importance scoring, decay,
+pruning and promotion are all bypassed by indexing a transcript in one burst
+and querying it immediately.
+
+**Verified**: 22 new tests across the retrieval suite, every mutation caught --
+drop either budget cap (`Retrieved`, and separately `WindowPlusRetrieved`,
+which was genuinely unbounded until review), remove the re-index skip, let
+duplicate filler claim a slot per copy, accumulate instead of replacing an
+index, skip the purge before indexing, write to the `personal` wing, share one
+room across probes, delete rows before reading their ids, and swallow an
+`add_memory` that returned False. Full backend suite via junit-xml: 830 passed,
+0 failed/errored/skipped. `ruff check .` clean. After every live run the
+relational tier held only the 63 real `personal` memories, checked directly.
+
+Three of those mutations initially **survived**, all for the same reason: the
+test aimed at the wrong thing. The budget test exercised `Retrieved`, whose
+slice masks an over-returning retriever, so the unbounded `WindowPlusRetrieved`
+path had no coverage; the re-index test compared fingerprints, which a
+mutation that deletes the skip recomputes identically; and the purge-order test
+asserted on each call separately, so deleting before reading ids satisfied every
+assertion. A fourth needed its fixture rebuilt -- filler repeats verbatim, so
+the over-return it fed the strategy was filtered as already-visible before any
+cap could matter, and the test passed against the bug it was written for.

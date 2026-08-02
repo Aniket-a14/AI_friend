@@ -83,12 +83,14 @@ class TestTheTranscriptIsReproducible:
 
 
 class TestContextStrategies:
-    def test_full_history_shows_the_plant(self):
+    @pytest.mark.asyncio
+    async def test_full_history_shows_the_plant(self):
         turns = build_transcript(make_probe(filler_turns=50), FILLER)
-        visible = FullHistory().select(turns, "q")
+        visible = await FullHistory().select(turns, "q")
         assert any("Wren" in turn.text for turn in visible)
 
-    def test_a_narrow_window_drops_the_plant(self):
+    @pytest.mark.asyncio
+    async def test_a_narrow_window_drops_the_plant(self):
         """The control condition, and it is supposed to fail.
 
         Once the plant falls outside the window the fact is genuinely absent,
@@ -96,13 +98,14 @@ class TestContextStrategies:
         the probe is measuring the prior, not recall.
         """
         turns = build_transcript(make_probe(filler_turns=50), FILLER)
-        visible = RecentWindow(6).select(turns, "q")
+        visible = await RecentWindow(6).select(turns, "q")
         assert len(visible) == 6
         assert not any("Wren" in turn.text for turn in visible)
 
-    def test_a_window_wider_than_the_conversation_keeps_everything(self):
+    @pytest.mark.asyncio
+    async def test_a_window_wider_than_the_conversation_keeps_everything(self):
         turns = build_transcript(make_probe(filler_turns=1), FILLER)
-        assert RecentWindow(100).select(turns, "q") == turns
+        assert await RecentWindow(100).select(turns, "q") == turns
 
     def test_a_zero_width_window_is_rejected(self):
         """An empty context scores the model's prior with no conversation at all."""
