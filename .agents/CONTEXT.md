@@ -5248,3 +5248,51 @@ with a grammatical trigger in the next change. `self_knowledge_gaps` is still
 empty after three live runs — the older user-directed guideline deflects these
 questions before a self-claim is ever asserted, so the gate remains unproven
 outside its tests.
+
+
+## 2026-08-02 -- The self-grounding trigger was a wordlist; now it is grammar
+
+`_SELF_CLAIM_RE` decided whether a sentence was a biographical claim about the
+agent by matching an enumerated list of possessed nouns -- brother, sister,
+mother, hometown, school, roommate, childhood. That list is production code
+guessing at the shape of a stranger's life. It protected the kinds of life its
+author happened to imagine and silently ignored the rest: "my brother Rahul"
+was caught, "my dog Jolly" was not, and the only fix available was to keep
+adding nouns, which is the same mistake repeated.
+
+The trigger is now grammatical: any first-person possessive (`my <word>`) plus
+the same handful of first-person life verbs. "my" is a claim about English;
+"brother" was a claim about someone's family. Precision does not suffer,
+because a trigger has never been what rejects a response -- rejection still
+requires an *ungrounded proper noun or year* inside the sentence, checked
+against the biography the user actually wrote. What is true of a given person
+comes entirely from their own file; production code only decides what shape a
+claim has.
+
+**`_SELF_CLAIM_STOPWORDS` is gone with it.** It existed because the trigger
+word itself ("brother" in "my brother Daniel") would otherwise be counted as
+the fabricated specific, making every claim indict itself -- so it was a second
+wordlist that had to be kept in sync with the first by hand. The replacement is
+structural: `_self_claim_gaps` records the character spans the trigger matched
+and skips any specific falling inside one. The exemption is now derived from
+the pattern rather than restated alongside it, so the two cannot drift.
+
+`_NON_NAME_CAPITALS` stays. It is about English capitalisation conventions --
+"I", "I've", and interjections that appear capitalised mid-sentence -- not
+about what a biography may contain.
+
+**Verified**: 3 new tests, both mutations caught (narrow the trigger back to a
+noun list; drop the trigger-span exemption -- the second kills three tests,
+including one written for the old stopword list, which is the evidence that the
+structural rule subsumes it). Full backend suite via junit-xml: 746 passed,
+0 failed/errored/skipped. `ruff check .` clean.
+
+**NOT done:** the widened trigger fires on possessives that are opinions rather
+than facts -- "my favourite film is <Title>" now enters the gate where it did
+not before, and will be rejected if the title is ungrounded. That is arguably
+correct for an agent modelled on a real person, since an invented favourite is
+an invented fact about her, but it is a behaviour change and it has not been
+observed against a live model. Not re-probed live: the older user-directed
+guideline still deflects these questions before a self-claim is asserted, so
+`self_knowledge_gaps` remains empty and the gate is still unproven outside its
+tests.
