@@ -13,11 +13,14 @@ from .compare import compare_reports, render_comparison
 from .conversation import (
     FullHistory,
     RecentWindow,
+    Retrieved,
+    WindowPlusRetrieved,
     load_conversation_pack,
     run_conversation_eval,
     shipped_conversation_pack,
 )
 from .probes import collect_probes, shipped_packs
+from .retrieval import LexicalRetriever, MemoryStoreRetriever
 from .runner import run_eval
 from .schema import RunOptions, load_report, save_report
 
@@ -69,6 +72,38 @@ async def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _build_retrievers(args: argparse.Namespace):
+    """Construct the retrievers the caller asked for, plus their teardown.
+
+    The BM25 control needs nothing. The memory-layer retriever needs the real
+    stack, built the way `brain_agent.main` builds it -- a parallel
+    construction here would measure a MemoryStore nobody ships.
+
+    Returns the retrievers and a teardown for the resources *this function*
+    opened; the retrievers clean their own writes.
+    """
+    retrievers = []
+    if "bm25" in args.retrieval:
+        retrievers.append(LexicalRetriever())
+
+    async def teardown() -> None:
+        return None
+
+    if "memory" in args.retrieval:
+        from app.state import ConversationHistoryStore, GraphDB, MemoryStore
+
+        conversation_store = ConversationHistoryStore()
+        await conversation_store.initialize()
+        graph_db = GraphDB()
+        store = MemoryStore(pool=conversation_store.pool, graph_db=graph_db)
+        retrievers.append(MemoryStoreRetriever(store))
+
+        async def teardown() -> None:
+            await graph_db.close()
+
+    return retrievers, teardown
+
+
 async def _cmd_run_conversation(args: argparse.Namespace) -> int:
     if _mock_active() and not args.allow_mock:
         print(
@@ -93,7 +128,7 @@ async def _cmd_run_conversation(args: argparse.Namespace) -> int:
         print("--window needs at least one turn", file=sys.stderr)
         return 2
 
-    strategies = (FullHistory(), RecentWindow(args.window))
+    strategies = [FullHistory(), RecentWindow(args.window)]
     # `num_ctx` is left to the RunOptions default unless the caller sets it, so
     # the two cannot drift apart.
     overrides = {"num_gpu": args.num_gpu}
@@ -102,13 +137,26 @@ async def _cmd_run_conversation(args: argparse.Namespace) -> int:
     options = RunOptions(**overrides)
     manager = IdentityManager(base_path=args.base_path)
     client = OllamaClient(base_url=args.url)
+
+    retrievers, teardown = await _build_retrievers(args)
+    for retriever in retrievers:
+        strategies.append(Retrieved(retriever, args.window))
+        strategies.append(
+            WindowPlusRetrieved(retriever, args.window, args.window)
+        )
+
     try:
         report = await run_conversation_eval(
             client, manager, probes, filler,
-            strategies=strategies, model=args.model, options=options,
+            strategies=tuple(strategies), model=args.model, options=options,
         )
     finally:
         await client.close()
+        # Retriever cleanup deletes what the run wrote to the agent's own
+        # database, so it must survive a failed or interrupted run.
+        for retriever in retrievers:
+            await retriever.close()
+        await teardown()
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -211,6 +259,12 @@ def main(argv=None) -> int:
     conv_parser.add_argument("--num-gpu", type=int, default=None,
                              help="GPU layers to offload; pin it so both sides "
                                   "of a comparison load the model identically")
+    conv_parser.add_argument("--retrieval", action="append", default=[],
+                             choices=["bm25", "memory"],
+                             help="add retrieval-backed strategies "
+                                  "(repeatable). 'bm25' is the infra-free "
+                                  "control; 'memory' is the real MemoryStore "
+                                  "and needs Postgres, Qdrant and Neo4j up")
     conv_parser.add_argument("--allow-mock", action="store_true")
 
     cmp_parser = sub.add_parser("compare", help="diff two reports")

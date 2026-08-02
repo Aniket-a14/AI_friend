@@ -60,11 +60,17 @@ class Turn(NamedTuple):
 
 
 class ContextStrategy(Protocol):
-    """How much of the conversation the model gets to see at recall time."""
+    """How much of the conversation the model gets to see at recall time.
+
+    ``select`` is async because a retrieval-backed strategy has to reach a
+    database and an embedding model to answer. The two trivial strategies do
+    not need it and pay nothing for it; making the *interface* async is what
+    keeps the interesting implementations expressible at all.
+    """
 
     name: str
 
-    def select(self, transcript: list[Turn], query: str) -> list[Turn]:
+    async def select(self, transcript: list[Turn], query: str) -> list[Turn]:
         ...
 
 
@@ -79,7 +85,7 @@ class FullHistory:
 
     name = "full_history"
 
-    def select(self, transcript: list[Turn], query: str) -> list[Turn]:
+    async def select(self, transcript: list[Turn], query: str) -> list[Turn]:
         return list(transcript)
 
 
@@ -98,8 +104,101 @@ class RecentWindow:
         self.turns = turns
         self.name = f"recent_window_{turns}"
 
-    def select(self, transcript: list[Turn], query: str) -> list[Turn]:
+    async def select(self, transcript: list[Turn], query: str) -> list[Turn]:
         return list(transcript[-self.turns:])
+
+
+def _matching_indices(transcript: list[Turn], hits: list[Turn]) -> list[int]:
+    """Where each retrieved turn sits in the transcript.
+
+    Retrievers return turn *values*, and filler repeats verbatim -- "bus was
+    late again" appears every fourth exchange. Matching by value alone would
+    let one hit claim every copy, inflating a retrieval budget of six into
+    sixty. Each hit therefore consumes the earliest position not already
+    spoken for.
+    """
+    taken: set[int] = set()
+    for hit in hits:
+        for index, turn in enumerate(transcript):
+            if index not in taken and turn == hit:
+                taken.add(index)
+                break
+    return sorted(taken)
+
+
+def _in_transcript_order(transcript: list[Turn], hits: list[Turn]) -> list[Turn]:
+    return [transcript[index] for index in _matching_indices(transcript, hits)]
+
+
+class Retrieved:
+    """Only what a retriever picked, in a budget matched to the window.
+
+    The budget is the experiment. Given the same number of turns as
+    `recent_window_N`, any difference is attributable to *which* turns were
+    chosen rather than to how many -- and "we showed it more" is not a claim
+    about a memory architecture.
+
+    Selected turns are returned in transcript order, not relevance order,
+    because a conversation read out of sequence is a different thing to
+    comprehend and that would confound the measurement too.
+    """
+
+    def __init__(self, retriever, turns: int):
+        if turns < 1:
+            raise ValueError("a retrieval budget needs at least one turn")
+        self.retriever = retriever
+        self.turns = turns
+        self.name = f"retrieved_{retriever.name}_{turns}"
+
+    async def select(self, transcript: list[Turn], query: str) -> list[Turn]:
+        await self.retriever.index(transcript)
+        hits = await self.retriever.search(query, self.turns)
+        return _in_transcript_order(transcript, hits)[: self.turns]
+
+
+class WindowPlusRetrieved:
+    """The tail of the conversation plus what a retriever surfaced.
+
+    Closer to what the running system does -- recent context is always present
+    and memories arrive alongside it -- and therefore the more honest predictor
+    of production behaviour. It is *not* budget-matched to `recent_window_N`,
+    so a win here is partly a win for having more room; that is why the
+    budget-matched `Retrieved` exists next to it rather than instead of it.
+
+    Retrieved turns already inside the window are not repeated.
+    """
+
+    def __init__(self, retriever, window: int, turns: int):
+        if window < 1 or turns < 1:
+            raise ValueError("window and retrieval budget both need a turn")
+        self.retriever = retriever
+        self.window = window
+        self.turns = turns
+        self.name = f"window{window}_plus_{retriever.name}_{turns}"
+
+    async def select(self, transcript: list[Turn], query: str) -> list[Turn]:
+        await self.retriever.index(transcript)
+        hits = await self.retriever.search(query, self.turns)
+
+        window_start = max(0, len(transcript) - self.window)
+        keep = set(range(window_start, len(transcript)))
+
+        # Filler repeats verbatim, so a hit can carry text that is already on
+        # screen inside the window. Retrieval cannot say *which* occurrence it
+        # meant -- `MemoryStore` stores content, not position -- and showing
+        # the model the identical line twice spends budget on context it
+        # already has. Text the window covers is therefore dropped, and only
+        # the remainder is placed by position.
+        visible_texts = {transcript[index].text for index in keep}
+        novel = [turn for turn in hits if turn.text not in visible_texts]
+        keep.update(
+            index
+            for index in _matching_indices(transcript, novel)
+            if index < window_start
+        )
+        # Transcript order, so the model reads one coherent excerpt rather than
+        # retrieved fragments followed by a jump backwards.
+        return [transcript[index] for index in sorted(keep)]
 
 
 DEFAULT_STRATEGIES: tuple[ContextStrategy, ...] = (FullHistory(), RecentWindow(6))
@@ -172,7 +271,7 @@ async def run_conversation_probe(
     options: RunOptions,
 ) -> ProbeResult:
     transcript = build_transcript(probe, filler)
-    visible = strategy.select(transcript, probe.recall_prompt)
+    visible = await strategy.select(transcript, probe.recall_prompt)
     context = render_context(visible)
     prompt = f"{context}\nUser: {probe.recall_prompt}\nAssistant:"
 
@@ -232,6 +331,11 @@ async def run_conversation_eval(
     results: list[ProbeResult] = []
     # Sequential for the same reason the single-turn runner is: one local
     # model, and concurrent generations on CPU contend for the same cores.
+    #
+    # Probe-major, strategy-minor: every strategy sees one probe before the
+    # next probe is built. Retrievers index per transcript and skip a repeat,
+    # so this ordering means each transcript is embedded and written to the
+    # database once instead of once per strategy.
     for probe in probes:
         for strategy in strategies:
             result = await run_conversation_probe(
