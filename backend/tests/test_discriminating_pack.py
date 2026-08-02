@@ -50,7 +50,10 @@ _TOO_COMMON = frozenset(
 
 
 def _content_words(text: str) -> set[str]:
-    return {w for w in re.findall(r"[a-z]+", text.lower()) if w not in _TOO_COMMON}
+    # Strip apostrophes so contractions fuse into single tokens that match
+    # the forms in _TOO_COMMON (e.g., "can't" -> "cant", "I've" -> "ive").
+    normalized = text.lower().replace("'", "")
+    return {w for w in re.findall(r"[a-z]+", normalized) if w not in _TOO_COMMON}
 
 
 @pytest.fixture(scope="module")
@@ -191,6 +194,8 @@ class TestProbesThatCouldNotMeasureWhatTheyClaim:
             )
 
     def test_a_probe_planting_nothing_is_rejected(self):
+        """A probe with no plants would leave resolved_plants empty,
+        producing a malformed transcript with no fact to retrieve."""
         with pytest.raises(ValidationError):
             ConversationProbe(
                 id="empty",

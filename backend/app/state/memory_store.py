@@ -972,6 +972,13 @@ class MemoryStore:
         Higher stress/arousal restricts the search to a smaller Matryoshka
         prefix and a smaller candidate pool, bounding retrieval latency when
         the agent is under load.
+
+        The `refresh_on_recall` parameter selects between two candidate-limit
+        tiers: full retrieval (limit*6, used for normal conversation turns)
+        vs. low-latency fallback (limit*3, used for synchronous fallbacks and
+        background surfacing). Eval searches that need production-equivalent
+        gating while disabling recall mutation should use the separate
+        `gating_refresh_on_recall` parameter in `search_memories`.
         """
         stress_index = max(current_arousal, current_cortisol)
         if stress_index > 0.8:
@@ -2378,6 +2385,8 @@ class MemoryStore:
         user_id: str | None = None,
         is_self_reflection: bool = False,
         current_time=None,
+        *,
+        gating_refresh_on_recall: bool | None = None,
     ):
         """
         ACT-R Based Retrieval with Hierarchical & Neuromodulatory Gating:
@@ -2389,6 +2398,13 @@ class MemoryStore:
         (Qdrant, else SQL) -> lexical/graph cue analysis -> spreading-activation
         boosts -> threshold + format -> L3 archive promotion -> sort/limit.
         Each stage is a `_`-prefixed helper defined above.
+
+        Args:
+            gating_refresh_on_recall: If provided, overrides `refresh_on_recall`
+                for the MRL gating tier decision only (candidate limit). Use this
+                to disable recall mutation (`refresh_on_recall=False`) while keeping
+                production-equivalent gating (`gating_refresh_on_recall=True`), e.g.
+                in evals. Defaults to `refresh_on_recall` if not provided.
         """
         # L1 Cache lookup to bypass DB and math activation loops for active topics
         cache_key = (
@@ -2437,8 +2453,15 @@ class MemoryStore:
             if not query_vector:
                 return []
 
+            # Use gating_refresh_on_recall for the tier decision if provided,
+            # otherwise fall back to refresh_on_recall
+            gating_flag = (
+                gating_refresh_on_recall
+                if gating_refresh_on_recall is not None
+                else refresh_on_recall
+            )
             mrl_dim, candidate_limit = self._compute_mrl_gating(
-                current_arousal, current_cortisol, limit, refresh_on_recall
+                current_arousal, current_cortisol, limit, gating_flag
             )
 
             # Slice query_vector to mrl_dim and pad with zeros to 768

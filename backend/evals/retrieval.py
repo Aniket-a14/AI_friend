@@ -251,12 +251,17 @@ class MemoryStoreRetriever:
         # Measured, not assumed -- the frequency term is large enough to
         # reorder these results on its own (see the ledger entry on
         # `_base_activation`), so leaving this on makes probe order a variable.
+        #
+        # `gating_refresh_on_recall=True` ensures eval searches use production-
+        # equivalent candidate limits (limit*6) rather than the low-latency tier
+        # (limit*3) that synchronous fallbacks use.
         results = await self.store.search_memories(
             query_text=query,
             wing=self.wing,
             room=self._room,
             limit=limit,
             refresh_on_recall=False,
+            gating_refresh_on_recall=True,
         )
         turns: list = []
         for row in results:

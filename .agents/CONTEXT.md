@@ -5746,7 +5746,7 @@ burst and querying it immediately.
 
 ### Live result: the memory layer beats the control, on the pack built to test it
 
-`qwen2.5:3b`, 48 probes, real Postgres/Qdrant/Neo4j, `--num-ctx 8192`.
+`qwen2.5:3b`, 8 probes, real Postgres/Qdrant/Neo4j, `--num-ctx 8192`.
 Probes passed, by strategy: **`retrieved_memory_store_6` 5/8, `full_history`
 3/8, `retrieved_bm25_6` 2/8, `recent_window_6` 0/8.** Head to head the memory
 layer **wins three and loses none**.
