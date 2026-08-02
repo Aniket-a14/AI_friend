@@ -313,6 +313,28 @@ class TestTheMemoryStoreRetrieverDoesNotPolluteTheAgent:
         assert kwargs["wing"] == EVAL_WING
         assert kwargs["room"] == retriever._room
 
+    async def test_searching_does_not_strengthen_what_it_retrieves(self):
+        """Retrieval must not reshape the store the next probe is scored against.
+
+        `search_memories` normally takes `recall_count + 1` on every hit, which
+        is right for an agent living its life -- what you think about, you
+        think about more easily. It is wrong for an instrument. Four strategies
+        ask the same room the same question, so with the refresh on, strategy
+        four ranks against a store the first three have already rewritten, and
+        the ranking depends on the order the suite happened to run in.
+
+        Not a theoretical worry: the ln(frequency) term is worth more than the
+        entire spread of the similarity term at these scales, so one extra
+        recall is enough to reorder the results.
+        """
+        store = self._store()
+        retriever = MemoryStoreRetriever(store)
+        await retriever.index([Turn("user", "my sister is called Wren.")])
+
+        await retriever.search("sister", 5)
+
+        assert store.search_memories.await_args.kwargs["refresh_on_recall"] is False
+
     async def test_results_map_back_to_turns_by_content(self):
         store = self._store()
         turn = Turn("user", "my sister is called Wren.")

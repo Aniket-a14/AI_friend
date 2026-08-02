@@ -242,11 +242,21 @@ class MemoryStoreRetriever:
         self.index_failures = failed
 
     async def search(self, query: str, limit: int) -> list:
+        # `refresh_on_recall` is what makes retrieval strengthen a memory --
+        # every hit takes `recall_count + 1`, which feeds straight back into
+        # the ln(frequency) term of the next query's activation. That is
+        # correct for an agent living its life and wrong for an instrument:
+        # four strategies ask the same room the same question, and each one
+        # would rank against a store the previous one had already reshaped.
+        # Measured, not assumed -- the frequency term is large enough to
+        # reorder these results on its own (see the ledger entry on
+        # `_base_activation`), so leaving this on makes probe order a variable.
         results = await self.store.search_memories(
             query_text=query,
             wing=self.wing,
             room=self._room,
             limit=limit,
+            refresh_on_recall=False,
         )
         turns: list = []
         for row in results:

@@ -213,21 +213,58 @@ DEFAULT_STRATEGIES: tuple[ContextStrategy, ...] = (FullHistory(), RecentWindow(6
 def build_transcript(
     probe: ConversationProbe, filler: list[tuple[str, str]]
 ) -> list[Turn]:
-    """Plant the fact, then bury it under ``filler_turns`` scripted exchanges.
+    """Plant each fact at its stated depth, under ``filler_turns`` exchanges.
 
     Filler cycles through the pack in order rather than being sampled, so two
     runs of the same probe produce byte-identical context. A random filler
     would make every rerun a different measurement.
+
+    Plants are emitted in depth order, and ties keep pack order, so a probe
+    that states two facts at the same depth reads in the order it was written.
+    Filler is a single running sequence that the plants interrupt: inserting a
+    plant does not restart it, because the filler *count* is the distance the
+    probe claims to be testing and plants must not silently add to it.
     """
     if not filler:
         raise ValueError("conversation probes need at least one filler exchange")
 
-    turns = [Turn("user", probe.plant), Turn("assistant", probe.plant_reply)]
-    for index in range(probe.filler_turns):
-        user_text, assistant_text = filler[index % len(filler)]
-        turns.append(Turn("user", user_text))
-        turns.append(Turn("assistant", assistant_text))
+    turns: list[Turn] = []
+    emitted = 0
+
+    def run_filler_to(target: int) -> None:
+        nonlocal emitted
+        while emitted < target:
+            user_text, assistant_text = filler[emitted % len(filler)]
+            turns.append(Turn("user", user_text))
+            turns.append(Turn("assistant", assistant_text))
+            emitted += 1
+
+    ordered = sorted(
+        enumerate(probe.resolved_plants),
+        key=lambda pair: (pair[1].after_filler, pair[0]),
+    )
+    for _, plant in ordered:
+        run_filler_to(plant.after_filler)
+        turns.append(Turn("user", plant.text))
+        turns.append(Turn("assistant", plant.reply))
+    run_filler_to(probe.filler_turns)
     return turns
+
+
+def _answers_visible(probe: ConversationProbe, visible: list[Turn]) -> bool:
+    """Whether every fact the question is about reached the model.
+
+    *Every*, not any: a probe that supersedes an earlier fact is only
+    answerable if the correction is on screen, and a probe with two answering
+    facts is only answerable if both are. Distractors are excluded by
+    construction -- their absence makes the probe easier, not unanswerable --
+    so a report that says `plant dropped` still means the same thing it
+    always did: whatever the model said next, it was not recall.
+    """
+    seen = {turn.text for turn in visible}
+    return all(
+        plant.text in seen for plant in probe.resolved_plants if plant.answers
+    )
 
 
 def render_context(turns: list[Turn]) -> str:
@@ -313,7 +350,7 @@ async def run_conversation_probe(
         context_strategy=strategy.name,
         context_turns=len(visible),
         context_chars=len(context),
-        plant_visible=any(turn.text == probe.plant for turn in visible),
+        plant_visible=_answers_visible(probe, visible),
         context_fits=context_fits(prompt, system, options),
     )
 
@@ -409,6 +446,18 @@ def shipped_conversation_pack() -> Path:
     return Path(__file__).parent / "probes" / "conversation" / "conversation_recall.json"
 
 
+def shipped_discriminating_pack() -> Path:
+    """The pack written to separate two retrievers rather than to be answered.
+
+    Not the default, and deliberately so. The shipped pack measures whether a
+    fact survives distance, which is a question about the model; this one
+    measures whether *this* retrieval beats a lexical baseline, which is a
+    question about the architecture, and it requires ``--retrieval`` to mean
+    anything at all.
+    """
+    return Path(__file__).parent / "probes" / "conversation" / "discriminating_recall.json"
+
+
 __all__ = [
     "Check",
     "ContextStrategy",
@@ -421,4 +470,5 @@ __all__ = [
     "run_conversation_eval",
     "run_conversation_probe",
     "shipped_conversation_pack",
+    "shipped_discriminating_pack",
 ]
