@@ -63,14 +63,19 @@ class TestTheLexicalControl:
         turns = build_transcript(make_probe(filler_turns=4), FILLER)
         retriever = LexicalRetriever()
         await retriever.index(turns)
-        first = retriever._fingerprint
+
+        # Identity of the rebuilt state, not the fingerprint. Comparing
+        # fingerprints proves nothing: without the skip, `index` recomputes the
+        # same value and reassigns it, and the assertion still holds. The
+        # observable consequence of skipping is that the work is not redone.
+        docs_before = retriever._docs
 
         await retriever.index(turns)
-        assert retriever._fingerprint == first
+        assert retriever._docs is docs_before
 
         other = build_transcript(make_probe(filler_turns=6), FILLER)
         await retriever.index(other)
-        assert retriever._fingerprint != first
+        assert retriever._docs is not docs_before
 
     async def test_a_different_transcript_replaces_the_index(self):
         """Probes must not pool their evidence. If indexing accumulated, a fact
@@ -181,6 +186,27 @@ class TestTheProductionShapedStrategy:
         assert len(visible) == len({id(t) for t in visible})
         assert len(visible) == 6
 
+    async def test_an_over_returning_retriever_cannot_grow_the_context(self):
+        """This strategy is not budget-matched, but it is still bounded.
+        `search_memories` treats `limit` as one input among several and may
+        return more; unbounded, "window plus six" becomes "window plus
+        everything", which is `full_history` under another name -- and the
+        comparison against `full_history` then compares it to itself.
+        """
+        # Every turn distinct on purpose. Built from the shipped filler, the
+        # early turns repeat the window's text verbatim and are dropped as
+        # already-visible before the cap is ever reached -- so the test would
+        # pass with the cap removed and prove nothing.
+        turns = [Turn("user", f"line {index}") for index in range(46)]
+        retriever = AsyncMock()
+        retriever.name = "stub"
+        # Far more than asked for, all from outside the window.
+        retriever.search.return_value = list(turns[:40])
+
+        visible = await WindowPlusRetrieved(retriever, 6, 6).select(turns, "q")
+
+        assert len(visible) == 12
+
     async def test_it_reaches_past_the_window_for_the_plant(self):
         """The whole point: the fact is outside the window, so `recent_window`
         must fail and this must not."""
@@ -258,6 +284,22 @@ class TestTheMemoryStoreRetrieverDoesNotPolluteTheAgent:
         assert first and retriever._room != first
         assert retriever._room.startswith("probe_")
 
+    async def test_a_write_that_silently_failed_is_counted_not_swallowed(self):
+        """`add_memory` reports failure by returning False rather than raising.
+        Unchecked, a probe whose transcript never reached the store returns
+        nothing and the report reads it as a memory layer that could not
+        recall -- which is exactly how the previous run was invalidated."""
+        store = self._store()
+        store.add_memory = AsyncMock(side_effect=[True, False, True])
+        retriever = MemoryStoreRetriever(store)
+
+        await retriever.index(
+            [Turn("user", "a"), Turn("user", "b"), Turn("user", "c")]
+        )
+
+        assert retriever.indexed == 2
+        assert retriever.index_failures == 1
+
     async def test_the_search_is_scoped_to_the_indexed_room(self):
         """An unscoped search reads every probe's turns and the room is
         decoration."""
@@ -303,6 +345,16 @@ class TestTheMemoryStoreRetrieverDoesNotPolluteTheAgent:
         assert "DELETE" in conn.execute.await_args.args[0]
         assert conn.execute.await_args.args[1] == EVAL_WING
         store.qdrant_store.client.delete.assert_called_once()
+
+        # Order is the entire claim, and asserting on the calls individually
+        # does not check it: a `_purge` that deleted first and read ids
+        # afterwards would satisfy every assertion above while leaving Qdrant
+        # holding vectors it can no longer identify. Both land on one
+        # connection mock, so `mock_calls` records which ran first.
+        sequence = [
+            call[0] for call in conn.mock_calls if call[0] in ("fetch", "execute")
+        ]
+        assert sequence == ["fetch", "execute"]
 
 
 class TestTheFingerprint:

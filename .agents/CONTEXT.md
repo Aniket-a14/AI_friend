@@ -5613,3 +5613,23 @@ should be read as a statement about this benchmark.
 Nothing here measures write-side behaviour at all: importance scoring, decay,
 pruning and promotion are all bypassed by indexing a transcript in one burst
 and querying it immediately.
+
+**Verified**: 22 new tests across the retrieval suite, every mutation caught --
+drop either budget cap (`Retrieved`, and separately `WindowPlusRetrieved`,
+which was genuinely unbounded until review), remove the re-index skip, let
+duplicate filler claim a slot per copy, accumulate instead of replacing an
+index, skip the purge before indexing, write to the `personal` wing, share one
+room across probes, delete rows before reading their ids, and swallow an
+`add_memory` that returned False. Full backend suite via junit-xml: 830 passed,
+0 failed/errored/skipped. `ruff check .` clean. After every live run the
+relational tier held only the 63 real `personal` memories, checked directly.
+
+Three of those mutations initially **survived**, all for the same reason: the
+test aimed at the wrong thing. The budget test exercised `Retrieved`, whose
+slice masks an over-returning retriever, so the unbounded `WindowPlusRetrieved`
+path had no coverage; the re-index test compared fingerprints, which a
+mutation that deletes the skip recomputes identically; and the purge-order test
+asserted on each call separately, so deleting before reading ids satisfied every
+assertion. A fourth needed its fixture rebuilt -- filler repeats verbatim, so
+the over-return it fed the strategy was filtered as already-visible before any
+cap could matter, and the test passed against the bug it was written for.

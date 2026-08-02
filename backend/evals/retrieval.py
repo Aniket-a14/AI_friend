@@ -177,6 +177,10 @@ class MemoryStoreRetriever:
         self._room = ""
         self._by_content: dict[str, Turn] = {}
         self._fingerprint = ""
+        # Counts from the most recent index, so a caller can tell a real recall
+        # failure from a transcript that never made it into the store.
+        self.indexed = 0
+        self.index_failures = 0
 
     async def index(self, turns: list) -> None:
         fingerprint = transcript_fingerprint(turns)
@@ -199,15 +203,43 @@ class MemoryStoreRetriever:
         self._room = f"probe_{fingerprint}"
         self._by_content = {}
 
+        written = 0
+        failed = 0
         for turn in turns:
             content = turn.text
             self._by_content.setdefault(content, turn)
-            await self.store.add_memory(
-                content=content,
-                wing=self.wing,
-                room=self._room,
-                source="eval",
+            try:
+                ok = await self.store.add_memory(
+                    content=content,
+                    wing=self.wing,
+                    room=self._room,
+                    source="eval",
+                )
+            except Exception as exc:
+                failed += 1
+                logger.warning("[eval] add_memory raised for a turn: %s", exc)
+                continue
+            # `add_memory` reports failure by returning False rather than
+            # raising, so an unchecked call cannot distinguish "stored" from
+            # "silently dropped".
+            written += 1 if ok else 0
+            failed += 0 if ok else 1
+
+        # A partly-written index answers queries from a transcript the model
+        # was never given, and the report has no column that would show it. The
+        # last run this suite produced was invalidated by exactly this shape of
+        # silence -- an empty index read as a memory layer that could not
+        # recall -- so it is said out loud rather than inferred later.
+        if failed:
+            logger.error(
+                "[eval] %d of %d turns failed to index; retrieval results for "
+                "this probe describe an incomplete transcript and are not "
+                "evidence about the memory layer",
+                failed,
+                len(turns),
             )
+        self.indexed = written
+        self.index_failures = failed
 
     async def search(self, query: str, limit: int) -> list:
         results = await self.store.search_memories(

@@ -86,20 +86,39 @@ async def _build_retrievers(args: argparse.Namespace):
     if "bm25" in args.retrieval:
         retrievers.append(LexicalRetriever())
 
+    # Everything opened here is registered the moment it exists, so a failure
+    # partway through construction still has a handle to close. `GraphDB()`
+    # raises on a weak or placeholder password, and that happens *after* the
+    # connection pool is up -- without this, that pool leaks with nothing left
+    # holding a reference to it.
+    opened: list = []
+
     async def teardown() -> None:
-        return None
+        for closer in reversed(opened):
+            try:
+                await closer()
+            except Exception as exc:
+                print(f"!! teardown step failed: {exc}", file=sys.stderr)
 
     if "memory" in args.retrieval:
         from app.state import ConversationHistoryStore, GraphDB, MemoryStore
 
-        conversation_store = ConversationHistoryStore()
-        await conversation_store.initialize()
-        graph_db = GraphDB()
-        store = MemoryStore(pool=conversation_store.pool, graph_db=graph_db)
-        retrievers.append(MemoryStoreRetriever(store))
+        try:
+            conversation_store = ConversationHistoryStore()
+            await conversation_store.initialize()
+            opened.append(conversation_store.close)
 
-        async def teardown() -> None:
-            await graph_db.close()
+            graph_db = GraphDB()
+            opened.append(graph_db.close)
+
+            store = MemoryStore(pool=conversation_store.pool, graph_db=graph_db)
+            # `MemoryStore.__init__` opens its own httpx client for embedding
+            # calls and nothing else ever closes it.
+            opened.append(store._http_client.aclose)
+            retrievers.append(MemoryStoreRetriever(store))
+        except Exception:
+            await teardown()
+            raise
 
     return retrievers, teardown
 
@@ -138,25 +157,37 @@ async def _cmd_run_conversation(args: argparse.Namespace) -> int:
     manager = IdentityManager(base_path=args.base_path)
     client = OllamaClient(base_url=args.url)
 
-    retrievers, teardown = await _build_retrievers(args)
-    for retriever in retrievers:
-        strategies.append(Retrieved(retriever, args.window))
-        strategies.append(
-            WindowPlusRetrieved(retriever, args.window, args.window)
-        )
+    retrievers: list = []
+
+    async def teardown() -> None:
+        return None
 
     try:
+        retrievers, teardown = await _build_retrievers(args)
+        for retriever in retrievers:
+            strategies.append(Retrieved(retriever, args.window))
+            strategies.append(
+                WindowPlusRetrieved(retriever, args.window, args.window)
+            )
+
         report = await run_conversation_eval(
             client, manager, probes, filler,
             strategies=tuple(strategies), model=args.model, options=options,
         )
     finally:
-        await client.close()
-        # Retriever cleanup deletes what the run wrote to the agent's own
-        # database, so it must survive a failed or interrupted run.
+        # Deleting what the run wrote to the agent's own database comes first
+        # and is individually guarded. It was previously sequenced after
+        # `client.close()`, so an error closing an HTTP client -- which costs
+        # nothing -- would have skipped the step that keeps scripted filler out
+        # of the agent's memory.
         for retriever in retrievers:
-            await retriever.close()
+            try:
+                await retriever.close()
+            except Exception as exc:
+                print(f"!! failed to clean eval memories: {exc}",
+                      file=sys.stderr)
         await teardown()
+        await client.close()
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -263,8 +294,12 @@ def main(argv=None) -> int:
                              choices=["bm25", "memory"],
                              help="add retrieval-backed strategies "
                                   "(repeatable). 'bm25' is the infra-free "
-                                  "control; 'memory' is the real MemoryStore "
-                                  "and needs Postgres, Qdrant and Neo4j up")
+                                  "control. 'memory' is the real MemoryStore: "
+                                  "it needs Postgres, Qdrant and Neo4j up and "
+                                  "it WRITES every transcript turn into them, "
+                                  "removing them again at the end -- point it "
+                                  "at the agent's live databases only if that "
+                                  "is what you mean to do")
     conv_parser.add_argument("--allow-mock", action="store_true")
 
     cmp_parser = sub.add_parser("compare", help="diff two reports")

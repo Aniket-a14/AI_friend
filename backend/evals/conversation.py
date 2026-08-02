@@ -191,11 +191,17 @@ class WindowPlusRetrieved:
         # the remainder is placed by position.
         visible_texts = {transcript[index].text for index in keep}
         novel = [turn for turn in hits if turn.text not in visible_texts]
-        keep.update(
+        # Bounded, because a retriever may return more than it was asked for --
+        # `search_memories` treats `limit` as one input among several. Without
+        # the cap this strategy's context grows with whatever the retriever
+        # felt like returning, and "window plus six" silently becomes "window
+        # plus everything", which is `full_history` wearing a different name.
+        surfaced = [
             index
             for index in _matching_indices(transcript, novel)
             if index < window_start
-        )
+        ][: self.turns]
+        keep.update(surfaced)
         # Transcript order, so the model reads one coherent excerpt rather than
         # retrieved fragments followed by a jump backwards.
         return [transcript[index] for index in sorted(keep)]
