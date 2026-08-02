@@ -917,23 +917,24 @@ class ActionService:
         read them back. Framed as an opening rather than an instruction, and
         capped at one, because an agent that interrogates the user about its own
         biography every turn is not curious, it is broken.
+
+        The gap is *claimed*, not merely read: the store hands one back only if
+        this turn is the one that marked it asked. Two overlapping turns
+        therefore cannot both put the same question in a prompt, and a claim
+        that fails yields no block rather than an unrecorded question that
+        would be asked again next turn.
         """
         if self.self_knowledge is None:
             return ""
         try:
-            gap = await self.self_knowledge.next_gap_to_ask()
+            gap = await self.self_knowledge.claim_next_gap_to_ask()
         except Exception as e:
-            logger.debug(f"[Action] Could not read next self-knowledge gap: {e}")
+            logger.debug(f"[Action] Could not claim next self-knowledge gap: {e}")
             return ""
         if not gap or not gap.get("term"):
             return ""
 
         term = str(gap["term"])
-        try:
-            await self.self_knowledge.mark_asked(term)
-        except Exception as e:
-            logger.debug(f"[Action] Could not mark gap asked: {e}")
-
         logger.info("[SelfKnowledge] Offering '%s' as a question about herself.", term)
         return (
             "\nSOMETHING YOU HAVE BEEN WONDERING ABOUT YOUR OWN LIFE:\n"

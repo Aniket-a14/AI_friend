@@ -188,8 +188,8 @@ class SelfKnowledgeStore:
             )
         return written
 
-    async def next_gap_to_ask(self, min_hits: int = 2) -> dict | None:
-        """The gap most worth raising with the user, or None.
+    async def claim_next_gap_to_ask(self, min_hits: int = 2) -> dict | None:
+        """Take the gap most worth raising with the user, or None.
 
         This is the read side of the table, and the reason it exists at all.
         Recording holes in an agent's autobiography is only useful if something
@@ -198,49 +198,38 @@ class SelfKnowledgeStore:
 
         ``min_hits`` is what stops a single stray term becoming a question: a
         subject the user has raised twice is a subject they care about, and the
-        count is the only evidence available for that. Gaps already raised are
+        count is the only evidence available for that. Gaps already claimed are
         excluded so she does not ask the same thing every turn, which reads as
         damage rather than curiosity.
+
+        **Selecting and claiming are one statement, deliberately.** A read
+        followed by a separate update lets two overlapping turns both see the
+        same unasked row and both put it in a prompt -- and overlapping turns
+        are not hypothetical here (finding A1). The outer ``asked_at IS NULL``
+        is what makes the claim conditional: the second writer re-evaluates it
+        after the first commits, matches nothing, and returns no row. A caller
+        that gets a row therefore knows it is the only one holding it.
         """
         await self._ensure_ready()
         if not self._ready:
             return None
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT term, times_hit, example_prompt FROM self_knowledge_gaps "
+                row = await conn.fetchrow(
+                    "UPDATE self_knowledge_gaps "
+                    "SET asked_at = current_timestamp "
+                    "WHERE term = ("
+                    "SELECT term FROM self_knowledge_gaps "
                     "WHERE asked_at IS NULL AND times_hit >= $1 "
-                    "ORDER BY times_hit DESC, last_seen DESC LIMIT 1",
+                    "ORDER BY times_hit DESC, last_seen DESC LIMIT 1"
+                    ") AND asked_at IS NULL "
+                    "RETURNING term, times_hit, example_prompt",
                     int(min_hits),
                 )
         except Exception as e:
-            logger.debug(f"Could not read next self-knowledge gap ({e})")
+            logger.debug(f"Could not claim next self-knowledge gap ({e})")
             return None
-        return dict(rows[0]) if rows else None
-
-    async def mark_asked(self, term: str) -> bool:
-        """Record that a gap has been put to the user. Never raises.
-
-        Marked when the question is *offered to the prompt*, not when she is
-        observed asking it, because nothing downstream can reliably tell an
-        asked question from a skipped one. The cost is a gap that goes
-        unmentioned and is never retried; the alternative is her opening every
-        turn with the same question, which is worse.
-        """
-        await self._ensure_ready()
-        if not self._ready or not term:
-            return False
-        try:
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE self_knowledge_gaps SET asked_at = current_timestamp "
-                    "WHERE term = $1",
-                    str(term).lower(),
-                )
-            return True
-        except Exception as e:
-            logger.debug(f"Could not mark self-knowledge gap asked ({e})")
-            return False
+        return dict(row) if row else None
 
     async def top_gaps(self, limit: int = 20) -> list[dict]:
         """The most frequently hit gaps, for inspection and for later asking."""

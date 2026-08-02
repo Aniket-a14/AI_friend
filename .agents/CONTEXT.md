@@ -5336,11 +5336,35 @@ first-boot language bug exactly: a prompt requiring and forbidding the same
 thing. It now forbids only turning *every* blank into a question, and defers to
 the block when one is present. A test asserts the two cannot drift apart again.
 
-**Verified**: 13 new tests, all 8 mutations caught (drop the biography-surfaced
+**Review pass (CodeRabbit) found a real race.** `next_gap_to_ask` +
+`mark_asked` was a read-then-update, so two overlapping turns could both claim
+the same gap, and `_build_wondering_block` emitted the block even when the mark
+failed -- which would ask a question the table did not record as asked, so it
+would be asked again next turn. Replaced by a single `claim_next_gap_to_ask`:
+one `UPDATE ... WHERE term = (SELECT ...) AND asked_at IS NULL RETURNING`, so a
+caller holding a row knows it is the only one. This is the first mutating
+statement in the codebase to return rows, which exposed a latent bug in the
+SQLite fallback: only `execute()` committed, so an `UPDATE ... RETURNING`
+arriving through `fetchrow()` sat in sqlite3's implicit transaction and was
+lost on close. Both fetch paths now commit DML.
+
+**Verified**: 15 new tests, all 9 mutations caught (drop the biography-surfaced
 check, the interrogative check, the about-her check, the cold-start guard, the
-per-question cap, the min-hits threshold, the already-asked filter, or the
-mark-asked call). Full backend suite via junit-xml: 760 passed,
-0 failed/errored/skipped. `ruff check .` clean.
+per-question cap, the min-hits threshold or the already-asked filter; split the
+atomic claim back into a read and an update; emit the block despite a failed
+claim). Full backend suite via junit-xml: 762 passed, 0 failed/errored/skipped.
+`ruff check .` clean.
+
+Worth recording that two of those mutations initially **survived**. The
+already-asked filter in the subselect was masked by the outer claim guard --
+with one gap in the table both forms behave identically, and only a second gap
+behind the first reveals that removing it starves everything after the top row.
+And the concurrency test written for the claim was decorative: the SQLite
+fallback runs each statement to completion without yielding, so `asyncio.gather`
+cannot interleave two claims and the test passed against a deliberately racy
+implementation. It was replaced with a structural assertion that the claim
+issues exactly one statement. The read-committed race itself is only reachable
+on Postgres and is **not** covered by any test.
 
 **NOT done, and this is the important half.** The loop is open at the far end:
 when the user answers her question, nothing writes that answer back into the
