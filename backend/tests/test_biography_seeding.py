@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app import config as config_module
 from app.persona.biography import (
     BIOGRAPHY_SOURCE,
     BiographyEntry,
@@ -229,8 +230,66 @@ async def test_no_memory_store_is_not_an_error():
 # --------------------------------------------------------------------------
 
 
-def test_the_shipped_biography_parses():
+def test_the_shipped_biography_parses(no_biography_setting):
     """The example a user starts from must survive its own parser."""
     found = find_biography_file()
     assert found is not None and found.name == "biography.md"
     assert read_biography(found), "the shipped biography produced no passages"
+
+
+# --------------------------------------------------------------------------
+# locating the file
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def no_biography_setting(monkeypatch):
+    """Neutralise an ambient BIOGRAPHY_PATH so discovery is what is tested."""
+    monkeypatch.setattr(config_module.config_instance, "BIOGRAPHY_PATH", None)
+
+
+def test_biography_path_setting_overrides_discovery(monkeypatch, tmp_path):
+    """A biography is a real person's life; it must be storable outside the repo.
+
+    Without this the only readable location is the tracked `config/biography.md`,
+    which forces that material into git in order to be used at all.
+    """
+    external = tmp_path / "elsewhere.md"
+    external.write_text("# Her\n\nShe is real.\n", encoding="utf-8")
+    monkeypatch.setattr(
+        config_module.config_instance, "BIOGRAPHY_PATH", str(external)
+    )
+    assert find_biography_file() == external
+
+
+def test_a_missing_biography_path_does_not_fall_back_to_the_shipped_file(
+    monkeypatch, tmp_path
+):
+    """A typo'd path must mean "no biography", never "the repo's example".
+
+    Seeding is fingerprinted and effectively one-way, so a silent fallback
+    would plant the shipped example person's history in a real agent's memory,
+    which then has to be pruned back out passage by passage.
+    """
+    monkeypatch.setattr(
+        config_module.config_instance,
+        "BIOGRAPHY_PATH",
+        str(tmp_path / "typo.md"),
+    )
+    assert find_biography_file() is None
+
+
+def test_an_explicit_argument_beats_the_setting(monkeypatch, tmp_path):
+    """Callers that pass a path mean it -- deployment config must not win."""
+    wanted = tmp_path / "wanted.md"
+    wanted.write_text("# Her\n\nThis one.\n", encoding="utf-8")
+    other = tmp_path / "other.md"
+    other.write_text("# Her\n\nNot this one.\n", encoding="utf-8")
+    monkeypatch.setattr(config_module.config_instance, "BIOGRAPHY_PATH", str(other))
+    assert find_biography_file(str(wanted)) == wanted
+
+
+def test_discovery_still_works_when_the_setting_is_unset(no_biography_setting):
+    """The historical behaviour is the default; the setting is opt-in."""
+    found = find_biography_file()
+    assert found is not None and found.name == "biography.md"
