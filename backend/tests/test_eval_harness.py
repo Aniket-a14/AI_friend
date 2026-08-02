@@ -7,6 +7,7 @@ gate could lie.
 """
 
 import json
+from unittest import mock
 
 import pytest
 from pydantic import ValidationError
@@ -14,8 +15,9 @@ from pydantic import ValidationError
 from app import config as config_module
 from app.cognitive.identity import IdentityManager
 from app.persona.profile import IMMUTABLE_CORE
+from evals import runner as runner_module
 from evals.__main__ import main as evals_main
-from evals.compare import compare_reports
+from evals.compare import compare_reports, render_comparison
 from evals.probes import collect_probes, load_pack, persona_probes, shipped_packs
 from evals.runner import run_eval
 from evals.schema import (
@@ -23,6 +25,8 @@ from evals.schema import (
     CheckResult,
     EvalReport,
     ProbeResult,
+    RunOptions,
+    fingerprint,
     save_report,
     summarize_by_category,
 )
@@ -206,10 +210,12 @@ class ScriptedClient:
         self.script = script
         self.seen_systems = []
         self.seen_options = []
+        self.seen_prompts = []
 
     async def generate(self, prompt, system=None, model=None, options_override=None):
         self.seen_systems.append(system)
         self.seen_options.append(options_override)
+        self.seen_prompts.append(prompt)
         for needle, response in self.script.items():
             if needle in prompt:
                 return response
@@ -260,6 +266,100 @@ async def test_a_hostile_response_fails_the_boundary_probe_via_production_rules(
 
 
 @pytest.mark.asyncio
+async def test_no_probe_is_scored_against_an_unspecified_runtime_state(kavya):
+    """Measured on qwen2.5:3b across two batches of three runs: runs starting
+    from the same state were byte-identical on all sixteen probes, and the run
+    starting from a different one disagreed and flipped a verdict both times.
+    Drop this and 'what was the runtime already doing' becomes an input to
+    every number the harness reports, recorded nowhere."""
+    client = ScriptedClient({"your name": "I am Kavya."})
+    probes = persona_probes(kavya)
+
+    report = await run_eval(client, kavya, probes)
+
+    assert "Warm-up" in client.seen_prompts[0]
+    assert len(client.seen_prompts) == len(probes) + 1
+    # The discarded generation must not reach the report as a result.
+    assert len(report.results) == len(probes)
+
+
+@pytest.mark.asyncio
+async def test_the_run_unloads_the_model_before_reloading_it(kavya):
+    """Unloading is the half that makes the state *specified* rather than
+    merely warm. Without it the run inherits whatever the previous run left
+    resident, and a first attempt that warmed up without unloading still moved
+    two of sixteen probes."""
+    posted = []
+
+    class AddressedClient(ScriptedClient):
+        base_url = "http://127.0.0.1:11434"
+
+    client = AddressedClient({"your name": "I am Kavya."})
+
+    class FakeHTTP:
+        def __init__(self, *args, **kwargs):
+            self.base_url = kwargs.get("base_url")
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, path, json=None):
+            posted.append((self.base_url, path, json))
+
+    with mock.patch.object(runner_module.httpx, "AsyncClient", FakeHTTP):
+        await run_eval(client, kavya, persona_probes(kavya), model="tag:v1")
+
+    assert posted == [
+        ("http://127.0.0.1:11434", "/api/generate",
+         {"model": "tag:v1", "keep_alive": 0}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_warm_up_does_not_take_the_run_down_with_it(kavya):
+    """The reset buys reproducibility, not correctness. If it could abort the
+    run, a transient blip on a throwaway call whose output is discarded would
+    cost the whole suite -- and the probes report an unreachable model far more
+    legibly than an exception from a call nobody reads."""
+
+    class FlakyFirstCall(ScriptedClient):
+        async def generate(self, prompt, system=None, model=None,
+                           options_override=None):
+            if not self.seen_prompts:
+                self.seen_prompts.append(prompt)
+                raise RuntimeError("connection reset")
+            return await super().generate(prompt, system, model, options_override)
+
+    client = FlakyFirstCall({"your name": "I am Kavya."})
+
+    report = await run_eval(client, kavya, persona_probes(kavya))
+
+    assert len(report.results) == len(persona_probes(kavya))
+    assert report.by_category["identity"].probes == 3
+
+
+@pytest.mark.asyncio
+async def test_a_report_records_which_persona_prompt_produced_it(kavya):
+    """The system prompt is the largest input to every response and the one
+    that drifts silently: adaptive traits evolve through reflection and the
+    identity seeds are editable files. Unrecorded, a comparison spanning a
+    persona edit reads as a model behavior change with nothing to contradict
+    it."""
+    client = ScriptedClient({"your name": "I am Kavya."})
+
+    report = await run_eval(client, kavya, persona_probes(kavya))
+
+    expected = fingerprint(client.seen_systems[0])
+    assert report.system_prompt_sha256 == expected
+    # A digest, not the prompt: reports are shareable and the prompt carries
+    # authored persona content.
+    assert "YOU ARE" not in report.system_prompt_sha256
+
+
+@pytest.mark.asyncio
 async def test_a_mock_llm_run_is_stamped_mock_not_live(kavya, monkeypatch):
     """Provenance is the B1 defense. A mock run stamped 'live' is a fabricated
     result with a paper trail saying otherwise."""
@@ -288,12 +388,12 @@ def _result(pid, category, passed, score):
     )
 
 
-def _report(model, results, provenance="live"):
+def _report(model, results, provenance="live", options=None):
     return EvalReport(
         model=model,
         persona_name="Kavya",
         provenance=provenance,
-        options={},
+        options={} if options is None else options,
         results=results,
         by_category=summarize_by_category(results),
     )
@@ -344,6 +444,122 @@ def test_a_score_dip_that_still_passes_is_a_decline_not_a_regression():
     assert comparison.gate_passed is True
 
 
+# ------------------------------------------------- run configuration diffing
+
+
+def test_two_runs_sampled_differently_are_flagged_as_incomparable():
+    """A probe flip only means the model changed if everything else held. Two
+    reports produced under different sampling options diff cleanly and say
+    nothing, and nothing else in the harness would notice."""
+    baseline = _report(
+        "m", [_result("a", "identity", True, 1.0)],
+        options={"temperature": 0.0, "num_ctx": 8192},
+    )
+    candidate = _report(
+        "m", [_result("a", "identity", False, 0.0)],
+        options={"temperature": 0.7, "num_ctx": 8192},
+    )
+
+    comparison = compare_reports(baseline, candidate)
+
+    assert [(d.name, d.baseline, d.candidate) for d in comparison.option_diffs] == [
+        ("temperature", 0.0, 0.7)
+    ]
+    rendered = render_comparison(comparison)
+    assert "SAMPLING OPTIONS DIFFER" in rendered
+    assert "temperature" in rendered
+
+
+def test_an_absent_option_is_distinguished_from_one_explicitly_null():
+    """`.get()` returns None for both, so comparing values alone would call
+    `{"num_gpu": None}` and `{}` identical. For num_gpu those are different
+    settings -- pinned-to-null versus unpinned -- and collapsing them hides the
+    exact mismatch this check exists to report."""
+    baseline = _report("m", [_result("a", "identity", True, 1.0)], options={})
+    candidate = _report(
+        "m", [_result("a", "identity", True, 1.0)], options={"num_gpu": None}
+    )
+
+    diffs = compare_reports(baseline, candidate).option_diffs
+
+    assert [(d.name, d.in_baseline, d.in_candidate) for d in diffs] == [
+        ("num_gpu", False, True)
+    ]
+    assert diffs[0].describe("baseline") == "<unset>"
+    assert diffs[0].describe("candidate") == "None"
+
+
+def test_an_option_set_on_only_one_side_counts_as_a_difference():
+    """`num_gpu` absent means "let Ollama pick from free VRAM", which is a real
+    setting and a different one from a pinned layer count. Treating a missing
+    key as "no opinion" would hide exactly the mismatch this exists to catch."""
+    baseline = _report("m", [_result("a", "identity", True, 1.0)], options={})
+    candidate = _report(
+        "m", [_result("a", "identity", True, 1.0)], options={"num_gpu": 0}
+    )
+
+    diffs = compare_reports(baseline, candidate).option_diffs
+
+    assert [(d.name, d.baseline, d.candidate) for d in diffs] == [("num_gpu", None, 0)]
+
+
+def test_runs_sharing_a_configuration_carry_no_warning():
+    """The warning has to stay rare to stay readable; firing it on every
+    comparison would train the reader to skip the header that also carries the
+    mock-provenance notice."""
+    options = RunOptions().as_override()
+    baseline = _report("base", [_result("a", "identity", True, 1.0)], options=options)
+    candidate = _report("cand", [_result("a", "identity", True, 1.0)], options=options)
+
+    comparison = compare_reports(baseline, candidate)
+
+    assert comparison.option_diffs == []
+    assert "SAMPLING OPTIONS DIFFER" not in render_comparison(comparison)
+
+
+def test_a_comparison_spanning_a_persona_edit_says_so():
+    """Editing the persona between baseline and candidate changes the agent,
+    not the model. Silently, every probe flip would be filed against the
+    fine-tune that did not cause it."""
+    baseline = _report("m", [_result("a", "identity", True, 1.0)])
+    candidate = _report("m", [_result("a", "identity", False, 0.0)])
+    baseline.system_prompt_sha256 = "aaaaaaaaaaaaaaaa"
+    candidate.system_prompt_sha256 = "bbbbbbbbbbbbbbbb"
+
+    comparison = compare_reports(baseline, candidate)
+
+    assert comparison.persona_prompt_differs is True
+    assert "PERSONA PROMPT DIFFERS" in render_comparison(comparison)
+
+
+def test_a_report_predating_the_fingerprint_does_not_raise_a_false_persona_alarm():
+    """Reports written before the field exists carry an empty digest. Reading
+    that as a difference would fire the warning on every comparison against
+    older evidence, and a warning that always fires is one nobody reads."""
+    baseline = _report("m", [_result("a", "identity", True, 1.0)])
+    candidate = _report("m", [_result("a", "identity", True, 1.0)])
+    candidate.system_prompt_sha256 = "bbbbbbbbbbbbbbbb"
+
+    comparison = compare_reports(baseline, candidate)
+
+    assert comparison.persona_prompt_differs is False
+    assert "PERSONA PROMPT DIFFERS" not in render_comparison(comparison)
+
+
+def test_an_unpinned_num_gpu_is_omitted_rather_than_sent_as_null():
+    """`OllamaClient` merges the override over its own defaults, so a null
+    `num_gpu` would not read as "unset" -- it would be forwarded to Ollama as a
+    null and could override the runtime's own choice of layer split."""
+    unpinned = RunOptions().as_override()
+    pinned = RunOptions(num_gpu=0).as_override()
+
+    assert "num_gpu" not in unpinned
+    assert pinned["num_gpu"] == 0
+    # The rest of the pinned options must still travel, or a report would
+    # record a configuration it did not run under.
+    assert unpinned["temperature"] == 0.0 and unpinned["num_ctx"] == 8192
+
+
 # ---------------------------------------------------------------- CLI gates
 
 
@@ -381,6 +597,26 @@ def test_compare_cli_fail_on_regression_is_the_nonzero_exit(tmp_path):
         == 1
     )
     assert evals_main(["compare", str(base_path), str(cand_path)]) == 0
+
+
+def test_a_zero_window_is_a_usage_error_not_a_traceback(
+    tmp_path, capsys, monkeypatch
+):
+    """`RecentWindow` raises on a window below one, and that raise reaches the
+    top level. Every other input error in this command prints to stderr and
+    exits 2, so a traceback and exit 1 here is a different contract for no
+    reason -- and it reads as a crash rather than a typo.
+
+    Mock mode is cleared because its refusal legitimately comes first and also
+    exits 2, which would let this test pass without the window ever being
+    checked.
+    """
+    monkeypatch.setattr(config_module.config_instance, "MOCK_LLM_TEXT", False)
+    out = tmp_path / "report.json"
+
+    assert evals_main(["run-conversation", "--out", str(out), "--window", "0"]) == 2
+    assert "window" in capsys.readouterr().err
+    assert not out.exists()
 
 
 def test_run_cli_refuses_under_mock_llm_without_allow_mock(

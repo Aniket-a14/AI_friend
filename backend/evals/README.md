@@ -31,6 +31,76 @@ Three probe sources:
   set. `probes/sample_memory_recall.json` pins the format and is labeled the
   sample it is; against an untrained model its probes *should* fail.
 
+## Multi-turn recall (`run-conversation`)
+
+A second suite, answering a different question: **does a fact survive the
+distance to the question it answers?** A fact is planted, buried under scripted
+filler exchanges, then asked about. Distances span ~4 to ~240 turns so the
+report shows *where* recall breaks rather than one pass/fail.
+
+The variable under test is the **context strategy** — what the model is shown
+at recall time. `full_history` is the naive baseline where lost-in-the-middle
+is observable (the fact *is* present, so a miss is an attention failure).
+`recent_window_N` is the control that is supposed to fail, since the plant
+genuinely falls out. A retrieval-backed strategy fits the same seam, and the
+gap between it and these two is the memory layer's contribution.
+
+Only the final answer is generated; the plant, the filler and the assistant's
+replies are scripted. That isolates distance from compounding model noise and
+costs one generation per probe instead of hundreds — but it therefore measures
+**retrieval from a context window, not conversational degradation**. A model
+that would have derailed on its own output by turn thirty is not penalised.
+
+Two ways a probe can return a confident verdict about nothing, both surfaced
+and neither folded into the score:
+
+- **`plant out`** — the strategy never showed the model the fact, so a pass is
+  a guess against the model's prior.
+- **`fits NO`** — the rendered context exceeded `num_ctx`. Ollama truncates
+  from the *front*, which is exactly where the plant sits. `OllamaClient`
+  defaults `num_ctx` to 2048, so the harness pins it explicitly. The budget
+  counts prompt plus system plus **`num_predict`**, since generated tokens
+  share the same window — leaving the reserve out yields a probe that fits on
+  arrival and loses the plant partway through generation, reported as `fits
+  yes`. The token estimate itself deliberately over-counts, because a false
+  all-clear is far more expensive than a needless rerun.
+
+Filler and probes live in JSON packs, not in code: what a conversation is
+*about* is content, and content belongs to whoever authors the pack.
+
+```bash
+python -m evals run-conversation --model qwen2.5:3b --num-ctx 8192 \
+    --out evals/out/recall_baseline.json
+python -m evals run-conversation --pack my_pack.json --window 10 \
+    --out evals/out/recall_candidate.json
+```
+
+Reports share the single-turn shape, so `compare` works across both suites.
+Probe ids are qualified with the strategy (`recall_name_d96@full_history`) so
+two conditions never collide inside one report.
+
+## What a report has to carry to be comparable
+
+A probe flip means the model changed *only if everything else held*, so a
+report records the everything else and `compare` checks it:
+
+- **Sampling options**, diffed between the two reports. A mismatch prints a
+  banner and taints every delta below it. It is surfaced, never gated on — the
+  caller may have changed an option deliberately, and a gate that blocks a
+  deliberate change just gets bypassed.
+- **A digest of the system prompt.** The persona prompt is the largest single
+  input to every response and the one that drifts silently: adaptive traits
+  evolve through reflection and the identity seeds are editable files. A
+  comparison spanning a persona edit would otherwise read as a model behavior
+  change with nothing in the report to contradict it. A digest rather than the
+  text, because reports are shareable and the prompt is authored character
+  content.
+- **`num_gpu`, if you pin it.** Unset, Ollama picks the layer split at load
+  time from free VRAM, and the split *is* an input to the output — the same
+  prompt all-CPU and part-GPU returns different text. It defaults to unset,
+  because a layer count that does not fit the next machine's VRAM is worse
+  than an honest unpinned run. Pin it for any A/B whose verdict matters.
+
 ## Usage
 
 ```bash
@@ -49,9 +119,11 @@ improved.
 
 ## What it refuses to claim
 
-- **No LLM judge.** Deterministic checks only. Cruder, but a gate that flips
-  between identical runs is worse than one that misses nuance. Tone, warmth,
-  and style drift are real phenomena this harness *does not measure*.
+- **No LLM judge.** Deterministic checks only. Cruder, but a scorer that
+  returns two verdicts for one response is worse than one that misses nuance.
+  This buys reproducible *scoring*, which is not the same as a reproducible
+  *response* — see the cold-model bullet below. Tone, warmth, and style drift
+  are real phenomena this harness *does not measure*.
 - **No scores from mocks.** Under `MOCK_LLM_TEXT` the CLI refuses to run;
   `--allow-mock` exists for plumbing checks and stamps the report
   `provenance: mock`, which `compare` in turn refuses without the same flag.
@@ -59,9 +131,28 @@ improved.
   are exactly what this is designed to make impossible.
 - **No committed results.** `evals/out/` is gitignored. A number only means
   something next to the run that produced it.
-- Determinism is per-build, per-hardware: greedy decoding plus a seed pins
-  Ollama's sampling, not floating-point reality across machines. Compare runs
-  from the same box and binary.
+- **Reproducibility is a property of the starting state, and it had to be
+  bought.** `temperature=0` and a fixed seed were not enough. Two
+  `run-conversation` runs with byte-identical prompts, options, model and
+  persona differed on **3 of 16** probes and flipped two verdicts.
+
+  The sampler was never the culprit. Ollama proved deterministic within a
+  load, across three unload/reload cycles, and with a second model contending
+  for VRAM. The CPU/GPU layer split does change the output but did not drift
+  on its own here. What survived every experiment was narrower: **two runs
+  that started from the same state agreed character for character, on all
+  sixteen probes; runs that started differently did not.**
+
+  So both suites now **unload the model, reload it, and burn one throwaway
+  generation** before the first scored probe. Naming the starting state is
+  what works — an earlier attempt that only warmed up, without unloading,
+  still moved 2 of 16, because "freshly loaded" and "holding the last run's
+  residue" are different places to start from. With the full reset, three
+  consecutive runs were identical on every probe: **0 of 16 moved.**
+
+  Re-measure this before quoting it. The flip rate is a property of a model on
+  a machine, not of the harness, which is exactly why the options and the
+  persona digest now travel inside the report instead of living in a comment.
 
 ## Production stays clean
 
