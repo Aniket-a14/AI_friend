@@ -55,6 +55,57 @@ _GROUNDING_STOPWORDS = frozenset(
     }
 )
 
+# The mirror of _MEMORY_CLAIM_RE, pointed the other way. That gate protects the
+# *user's* facts; nothing protected the agent's own, so a model asked about a
+# sibling it was never told about would invent one -- fluently, in character,
+# and indistinguishable from a real memory. For an agent built to be a
+# particular person, a confident fabrication about itself is worse than a blank:
+# the blank can be filled in, the fabrication has to be noticed first.
+#
+# Restricted to assertions of concrete biographical *fact* -- family, origin,
+# schooling, where it lived. Feelings, opinions and preferences are deliberately
+# out of scope: they come up constantly in ordinary talk, and gating them buys a
+# little fidelity at the cost of making the agent evasive about everything.
+_SELF_CLAIM_RE = re.compile(
+    r"\b("
+    r"my (?:brother|sister|siblings?|mother|father|mom|mum|dad|papa|mama"
+    r"|parents?|family|cousin|uncle|aunt|grand(?:mother|father)"
+    r"|school|college|university|hometown|village|neighbou?rhood"
+    r"|roommate|classmate|childhood)"
+    r"|i (?:grew up|was born|studied|graduated)"
+    r"|i (?:live|lived|moved) (?:in|to|at)"
+    r"|i used to live"
+    r"|i come from"
+    r"|when i was (?:a |an |in |at )?(?:child|kid|little|young|\d+)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Dropped before deciding whether a self-claim is grounded. These are the
+# trigger words themselves: "brother" appearing in "my brother Daniel" is what
+# fired the gate, so counting it as evidence of fabrication would make every
+# claim self-incriminating. What matters is the name next to it.
+_SELF_CLAIM_STOPWORDS = frozenset(
+    {
+        "brother", "sister", "siblings", "mother", "father", "mom", "mum",
+        "dad", "papa", "mama", "parent", "parents", "family", "cousin",
+        "uncle", "aunt", "grandmother", "grandfather", "school", "college",
+        "university", "hometown", "village", "neighborhood", "neighbourhood",
+        "roommate", "classmate", "childhood", "grew", "born", "studied",
+        "graduated", "live", "lived", "moved", "come", "child", "kid",
+        "little", "young", "name", "years", "year", "old",
+    }
+)
+
+# Capitalised words that carry no identifying weight, so they are not treated as
+# proper nouns when they open a clause or stand alone.
+_NON_NAME_CAPITALS = frozenset({"i", "i'm", "i've", "oh", "yeah", "haan", "arre"})
+
+# What counts as a "specific" in a self-claim: a capitalised word that is not
+# sentence-initial (a name, a place, an institution) or a number long enough to
+# be a year rather than an age or a count.
+_SELF_SPECIFIC_RE = re.compile(r"\b([A-Z][A-Za-z']{2,}|\d{3,})\b")
+
 
 # Static half of the chat system prompt, appended after the identity block.
 # Hoisted out of execute() so the prompt contract is visible at module scope
@@ -72,6 +123,11 @@ _CHAT_GUIDELINE = (
     "CONTEXT provided. Do not invent memories or details that are not there. "
     "If the user asks about something you have no memory of, say so naturally "
     '(e.g. "I don\'t think you\'ve told me that") instead of making it up.\n'
+    "- SELF-GROUNDING: Everything you know about your own life comes from your "
+    "biography and from this conversation. Never invent family members, "
+    "places, schools, jobs or dates for yourself. If you are asked something "
+    "about your own past that you do not know, say so plainly in your own "
+    "voice and let it go -- do not guess, and do not ask the user to tell you.\n"
     "- Respond only in English. Do not use Hindi, Hinglish, or any other "
     "language for now.\n"
     "- The voice layer already carries emotion separately. Do not emit XML "
@@ -208,12 +264,16 @@ class ActionService:
     Enforces the Identity Protocol in LLM generations.
     """
 
-    def __init__(self, llm_service=None, memory_store=None):
+    def __init__(self, llm_service=None, memory_store=None, self_knowledge=None):
         self.llm = llm_service
         self.memory = memory_store
+        # Optional, like publish_cb. Absent, the self-grounding gate still runs
+        # against surfaced memories and the user's message -- it simply has a
+        # smaller vocabulary to count as grounded, and records no gaps.
+        self.self_knowledge = self_knowledge
         self.publish_cb = None
 
-    def _check_response_grounding(
+    def _check_user_memory_grounding(
         self, response: str, surfaced, user_message: str
     ) -> tuple[bool, str]:
         """Deterministic anti-hallucination gate for fabricated shared memories.
@@ -255,6 +315,88 @@ class ActionService:
                     "reference facts present in SHARED HISTORY."),
                 )
         return True, ""
+
+    def _self_claim_gaps(self, response: str, surfaced, user_message: str) -> list[str]:
+        """Specifics the response asserts about the agent's own life, ungrounded.
+
+        Fires only on *proper nouns and numbers* inside a biographical
+        self-claim -- invented siblings, hometowns, institutions, years. That is
+        narrower than the user-directed gate's "two unsupported words" rule, and
+        deliberately so: "my family means everything to me" contains two
+        unsupported words and is not a fabrication of anything. Names and dates
+        are where self-invention actually lives, and restricting the gate to
+        them is what keeps the agent warm rather than evasive.
+
+        The known cost is a lowercased fabricated name -- "my brother rahul" --
+        passing through. Precision is worth more here: a gate that misfires on
+        ordinary speech forces a regeneration, costs latency, and fires a
+        cortisol burst every time.
+
+        Grounding is checked against the biography's whole vocabulary, not just
+        the memories surfaced this turn. Retrieval returns what is relevant to
+        the conversation, so grounding against it alone would reject true
+        statements whenever the relevant passage happened not to surface.
+        """
+        if not response or not _SELF_CLAIM_RE.search(response):
+            return []
+
+        grounding_text = " ".join(
+            (m.get("content") or "") for m in (surfaced or [])
+        )
+        grounding_text = f"{grounding_text} {user_message or ''}".lower()
+        grounded = set(re.findall(r"\b[a-z0-9']{3,}\b", grounding_text))
+        grounded |= getattr(self.self_knowledge, "known_terms", None) or set()
+
+        gaps: list[str] = []
+        for raw_sentence in re.split(r"(?<=[.!?])\s+", response):
+            sentence = raw_sentence.strip()
+            if not _SELF_CLAIM_RE.search(sentence):
+                continue
+            for match in _SELF_SPECIFIC_RE.finditer(sentence):
+                # A capital in the first position is sentence case, not a name.
+                if match.start() == 0:
+                    continue
+                token = match.group(1).lower()
+                if token in _NON_NAME_CAPITALS or token in _SELF_CLAIM_STOPWORDS:
+                    continue
+                if token not in grounded:
+                    gaps.append(token)
+        return gaps
+
+    def _check_self_grounding(
+        self, response: str, surfaced, user_message: str
+    ) -> tuple[bool, str]:
+        """Reject a response that invents concrete facts about the agent itself."""
+        if not self._self_claim_gaps(response, surfaced, user_message):
+            return True, ""
+        return (
+            False,
+            (
+                "You stated a specific detail about your own life -- a name, "
+                "place, institution or date -- that appears nowhere in your "
+                "biography or in this conversation. Never invent family "
+                "members, places or events for yourself. If you do not know "
+                "something about your own past, say so plainly in your own "
+                "voice and let the subject go; do not ask the user to fill "
+                "it in."
+            ),
+        )
+
+    def _check_response_grounding(
+        self, response: str, surfaced, user_message: str
+    ) -> tuple[bool, str]:
+        """Both grounding gates: the user's past, then the agent's own.
+
+        Composed under the original name so every existing call site -- the
+        post-generation check and both retry checks -- gains the self gate
+        without the retry path having to grow a second branch.
+        """
+        is_grounded, reason = self._check_user_memory_grounding(
+            response, surfaced, user_message
+        )
+        if not is_grounded:
+            return is_grounded, reason
+        return self._check_self_grounding(response, surfaced, user_message)
 
     def _validate_partial_response(self, text: str, goal: str) -> tuple[bool, str]:
         stripped = text.strip()
@@ -616,9 +758,28 @@ class ActionService:
             state.accumulated_response, surfaced, msg
         )
         if not is_grounded:
+            await self._record_self_gaps(state.accumulated_response, surfaced, msg)
             raise MetacognitiveException(ground_reason)
 
         yield {"type": "done", "data": "finished"}
+
+    async def _record_self_gaps(self, response: str, surfaced, user_message: str):
+        """Note what the agent did not know about itself, and carry on.
+
+        Only reached when the composite gate has already failed, so re-deriving
+        the terms costs one regex pass on a response that is being thrown away
+        regardless. Recording is best-effort: the turn has already been stopped
+        from lying, and losing the note is far cheaper than raising here.
+        """
+        if self.self_knowledge is None:
+            return
+        gaps = self._self_claim_gaps(response, surfaced, user_message)
+        if not gaps:
+            return
+        try:
+            await self.self_knowledge.record_gap(gaps, user_message)
+        except Exception as e:
+            logger.debug(f"[Action] Could not record self-knowledge gap: {e}")
 
     async def _announce_self_correction(self, reason: str):
         """Interrupt playback so the retry is not spoken over the bad take."""

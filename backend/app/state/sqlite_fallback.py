@@ -151,6 +151,22 @@ class SQLiteConnection:
             "CREATE INDEX IF NOT EXISTS lexical_assoc_b_idx ON lexical_associations(term_b)"
         )
 
+        # Specifics the agent tried to assert about its own life but could not
+        # ground in the biography, the surfaced memories or the user's message.
+        # Keyed on the term so repeated hits accumulate.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS self_knowledge_gaps (
+                term TEXT PRIMARY KEY,
+                times_hit INTEGER NOT NULL DEFAULT 1,
+                example_prompt TEXT,
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS self_gap_hits_idx ON self_knowledge_gaps(times_hit DESC)"
+        )
+
         # Migration for existing memories table to add developmental stage columns
         cursor.execute("PRAGMA table_info(memories)")
         existing_mem_cols = {row[1] for row in cursor.fetchall()}

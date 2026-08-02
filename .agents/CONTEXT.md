@@ -5015,6 +5015,84 @@ files touched.
 findings from the original audit remain fixed as of the previous
 re-verification; this entry only covers the six that weren't.
 
+## 2026-08-02 — The grounding gate only ever protected the user's facts
+
+`ActionService._check_response_grounding` has caught fabricated *shared*
+memories since it landed: `_MEMORY_CLAIM_RE` matches "you told me…", "you used
+to", "remember when we…", and rejects the response if the claim's substantive
+words appear in neither the surfaced memories nor the user's message.
+
+Reading it while wiring up biography seeding made the asymmetry obvious. Every
+pattern in that regex is second-person. Nothing looked at what the agent said
+about *itself*. Ask it about a sibling it was never told about and it invents
+one — fluently, in the persona's voice, indistinguishable from a passage the
+user actually wrote. For an agent whose entire premise is being a *particular*
+person, that is the worst-shaped failure available: a blank can be filled in,
+but a confident fabrication has to be noticed first, and nothing surfaces it.
+
+**The gate.** `_SELF_CLAIM_RE` is the mirror image — first-person assertions of
+concrete biographical fact (`my brother`, `i grew up`, `i studied`, `when i was
+a child`). Feelings, opinions and preferences are deliberately out of scope.
+
+The rule for what counts as fabricated is *not* the same as the user-facing
+one, and the difference is the whole design. That gate fires on two unsupported
+words, which is right for a long attributed claim and catastrophic here: "my
+family means everything to me" contains two unsupported words and invents
+nothing. This gate fires only on **ungrounded proper nouns and 3+ digit
+numbers** inside a self-claim — names, places, institutions, years, which is
+where self-invention actually lives. The known cost is a lowercased fabricated
+name ("my brother rahul") slipping through; precision was worth more, because a
+gate that misfires on ordinary speech forces a regeneration, costs latency and
+fires a cortisol burst every time.
+
+**Grounding against the biography, not the turn.** The obvious implementation —
+check self-claims against the surfaced memories, like the user gate does — is
+wrong. Retrieval returns what is relevant to the conversation, so a true
+sentence about her brother would be rejected on every turn where the family
+passage did not happen to surface. `SelfKnowledgeStore` caches the vocabulary of
+all `source='biography'` memories instead. Conversational memories are excluded
+on purpose: they are things the *user* said, and letting them ground
+autobiography would mean one hallucinated detail that reached the store becomes
+the evidence for the next — the gate ratifying its own escapes.
+
+The agent's own name is seeded explicitly, because a biography written in the
+third person ("she talks calmly…") never contains it.
+
+**Gaps are recorded, not discarded.** `self_knowledge_gaps` (both backends)
+keys on the term so repeated hits accumulate: a name that comes up constantly
+and is never grounded outranks a one-off. There is no `resolved` flag — a gap
+the biography now covers simply stops being hit. Nothing reads the table
+automatically yet; it exists so the agent can eventually raise these itself.
+
+**Composition over new call sites.** The original method body became
+`_check_user_memory_grounding` and `_check_response_grounding` now runs both
+gates in sequence, so the post-generation check and both retry checks in
+`_stream_self_correction` gained the new gate without the retry path growing a
+second branch.
+
+**Behaviour when it fires**: the self-correction prompt tells the agent to say
+plainly that it does not know and let the subject go — explicitly *not* to ask
+the user to fill the gap. Confirmed with the maintainer rather than assumed;
+the asking behaviour is a separate decision and the table is the substrate for
+it when it comes.
+
+**Verified**: 26 new tests, all six planned mutations caught. The first pass
+had one survivor — nothing covered the filter that stops a capitalised common
+noun ("My School was strict") reading as a name — so two tests were added and
+the mutation re-run to confirm they catch it. Full backend suite via junit-xml:
+730 passed, 0 failed/errored/skipped. `ruff check .` clean.
+
+**NOT done:** the gate is a backstop, not the mechanism — the prompt guideline
+does the real work, and a lowercase fabricated name still passes. Nothing reads
+`self_knowledge_gaps` yet. `find_biography_file()` still hardcodes a walk to
+`config/biography.md` with no env-var override, so a biography kept outside the
+repo cannot be pointed at without a code change; `PERSONA_PROFILE_PATH` already
+solved exactly this for the persona and the same fix applies. Separately,
+`parse_biography` mis-nests sibling headings when a file has no top-level `#`:
+`heading_trail = [h for h in heading_trail if h]` compacts the trail and
+destroys depth alignment, so section two is filed as "Section One / Section
+Two" and every memory carries the first section's name. Both are real bugs,
+both out of scope here.
 ## 2026-08-02 — A biography that can live outside the repo
 
 `PERSONA_PROFILE_PATH` has let an authored persona live anywhere since

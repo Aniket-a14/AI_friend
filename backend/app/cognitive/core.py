@@ -22,6 +22,7 @@ from ..persona.biography import (
 )
 from ..persona.history_migration import migrate_history_memories
 from ..state import StateService
+from ..state.self_knowledge_store import SelfKnowledgeStore
 from .action import ActionService
 from .appraisal import AppraisalEngine, AppraisalVector
 from .decision import DecisionService
@@ -68,7 +69,19 @@ class CognitiveService:
         self.decision = DecisionService(
             llm_service=llm_service, memory_store=memory_store
         )
-        self.action = ActionService(llm_service=llm_service, memory_store=memory_store)
+        # The agent's own name is seeded explicitly: a biography written in the
+        # third person ("she talks calmly…") never contains it, so without this
+        # the grounding gate would treat the agent stating its own name as an
+        # ungrounded claim.
+        self.self_knowledge = SelfKnowledgeStore(
+            pool=getattr(memory_store, "pool", None),
+            seed_terms={self.identity.persona.name},
+        )
+        self.action = ActionService(
+            llm_service=llm_service,
+            memory_store=memory_store,
+            self_knowledge=self.self_knowledge,
+        )
         self.learning = ReflectionService(
             llm_service=llm_service,
             graph_store=graph_db,
@@ -234,6 +247,11 @@ class CognitiveService:
         # After the biography, so a first boot writes the authored history
         # before anything reflection has since added on top of it.
         await self.migrate_history_once()
+
+        # After seeding, so the grounding vocabulary includes the passages that
+        # were just written. Loading it before would leave the agent unable to
+        # ground its own life on the very boot that gave it one.
+        await self.self_knowledge.refresh_known_terms()
 
         # Initialize appraisal engine with identity boundaries
         boundaries = self.identity.personality.get("boundaries", [])
