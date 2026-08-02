@@ -335,6 +335,25 @@ class TestTheMemoryStoreRetrieverDoesNotPolluteTheAgent:
 
         assert store.search_memories.await_args.kwargs["refresh_on_recall"] is False
 
+    async def test_turning_the_refresh_off_does_not_narrow_the_search(self):
+        """`refresh_on_recall` also picks the candidate-pool tier, sixfold.
+
+        Switching it off to stop the instrument mutating the store silently
+        drops the pool from 120 candidates to 20, so the retriever would be
+        searching a sixth of what production searches while the report claims
+        to be measuring production. The pool has to be asked for separately.
+
+        Found in review of the PR that introduced the refresh change, after a
+        live run had already been published against the narrower pool.
+        """
+        store = self._store()
+        retriever = MemoryStoreRetriever(store)
+        await retriever.index([Turn("user", "my sister is called Wren.")])
+
+        await retriever.search("sister", 5)
+
+        assert store.search_memories.await_args.kwargs["full_candidate_pool"] is True
+
     async def test_results_map_back_to_turns_by_content(self):
         store = self._store()
         turn = Turn("user", "my sister is called Wren.")

@@ -7,6 +7,7 @@ end. Each stage is now independently testable, which is the point of the
 refactor: it makes the memory and action paths safe to iterate on.
 """
 
+import contextlib
 from datetime import UTC
 from unittest.mock import MagicMock
 
@@ -67,81 +68,73 @@ def test_mrl_gating_tolerates_none_limit():
     assert MemoryStore._compute_mrl_gating(0.1, 0.0, None, False) == (768, 20)
 
 
-def test_mrl_gating_tiers_preserve_fallback_behavior():
-    """Production paths that pass refresh_on_recall=False for low-latency
-    (action.py fallback, surfacing_agent) must continue to get the smaller
-    candidate pool (limit*3, min 20) rather than the full tier (limit*6, min 120).
+def test_the_two_unstressed_gating_tiers_stay_six_fold_apart():
+    """The pool a caller gets is the search it gets, and the gap is large.
 
-    This verifies that adding gating_refresh_on_recall for eval searches did not
-    accidentally widen the candidate pool for those unrelated callers.
+    An unstressed conversation turn gathers 120 candidates; a latency-
+    sensitive caller gathers 20. Anything that reads the tier flag off some
+    other property therefore narrows the search sixfold without saying so --
+    which is exactly what happened to the eval retriever when it switched
+    `refresh_on_recall` off, and it published a run before anyone noticed.
     """
-    # Low stress, refresh_on_recall=False: should get the smaller tier
-    dim, candidate_limit = MemoryStore._compute_mrl_gating(0.1, 0.0, 5, False)
-    assert dim == 768
-    assert candidate_limit == 20  # max(20, 5*3) == max(20, 15) == 20
-
-    # Same conditions but refresh_on_recall=True: should get the larger tier
-    dim_full, candidate_limit_full = MemoryStore._compute_mrl_gating(0.1, 0.0, 5, True)
-    assert dim_full == 768
-    assert candidate_limit_full == 120  # max(120, 5*6) == max(120, 30) == 120
-
-    # Verify the tier separation is still present
-    assert candidate_limit < candidate_limit_full
+    assert MemoryStore._compute_mrl_gating(0.1, 0.0, 5, False) == (768, 20)
+    assert MemoryStore._compute_mrl_gating(0.1, 0.0, 5, True) == (768, 120)
 
 
+class _GatingSpy:
+    """The few attributes `search_memories` touches before it picks a tier.
+
+    Hand-written rather than a `MagicMock(spec=MemoryStore)`, because a spec'd
+    mock answers every attribute -- including the one under test -- so the
+    assertion can pass while the real method is never reached. That is how the
+    first version of this test came to assert on an empty list.
+    """
+
+    def __init__(self):
+        self.seen: list[bool] = []
+        self._l1_cache = {}
+        self._l1_cache_ttl = 60.0
+        self._last_stop_words_update = float("inf")
+
+    async def get_embedding(self, text):
+        return [0.1] * 768
+
+    def _compute_mrl_gating(self, arousal, cortisol, limit, full_pool):
+        self.seen.append(full_pool)
+        raise _StopAfterGating
+
+
+class _StopAfterGating(Exception):
+    pass
+
+
+@pytest.mark.parametrize(
+    ("refresh", "explicit", "expected"),
+    [
+        (True, None, True),      # unchanged default: a conversation turn
+        (False, None, False),    # unchanged default: a latency-sensitive caller
+        (False, True, True),     # what the eval retriever needs
+        (True, False, False),    # and the inverse, so the override is real
+    ],
+)
 @pytest.mark.asyncio
-async def test_gating_refresh_on_recall_overrides_for_eval():
-    """The gating_refresh_on_recall parameter allows eval searches to disable
-    recall mutation (refresh_on_recall=False) while using production-equivalent
-    gating (gating_refresh_on_recall=True).
+async def test_the_pool_tier_can_be_asked_for_without_the_recall_refresh(
+    refresh, explicit, expected
+):
+    """`full_candidate_pool` overrides the tier; omitting it changes nothing.
 
-    This decouples the two concerns: recall counters (wrong for evals, which
-    measure four strategies against a constant store) vs. candidate limits
-    (must match production to be a valid measurement).
+    Both halves matter. The override is what lets an eval search production's
+    candidate pool without mutating recall counters. The default is what keeps
+    every existing caller -- `action.py`'s fallback and `surfacing_agent` --
+    on exactly the tier they have always had.
     """
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    # Mock minimal MemoryStore dependencies
-    mock_store = MagicMock(spec=MemoryStore)
-    mock_store._l1_cache = {}
-    mock_store._l1_cache_ttl = 60
-    mock_store._last_query_vector = None
-    mock_store._last_stop_words_update = 0
-    mock_store._refresh_memories = AsyncMock()
-    mock_store.get_embedding = AsyncMock(return_value=[0.1] * 768)
-
-    # Patch the actual search_memories method to track gating decisions
-    gating_calls = []
-    original_compute_gating = MemoryStore._compute_mrl_gating
-
-    def track_gating(*args, **kwargs):
-        result = original_compute_gating(*args, **kwargs)
-        gating_calls.append((args, result))
-        return result
-
-    with patch.object(MemoryStore, "_compute_mrl_gating", side_effect=track_gating):
-        with patch.object(
-            MemoryStore, "_gather_candidate_sources", new_callable=AsyncMock
-        ) as mock_gather:
-            mock_gather.return_value = ([], [], [])
-
-            # Simulate an eval search: refresh_on_recall=False, gating_refresh_on_recall=True
-            await MemoryStore.search_memories(
-                mock_store,
-                query_text="test query",
-                limit=5,
-                refresh_on_recall=False,
-                gating_refresh_on_recall=True,
-            )
-
-    # Verify _compute_mrl_gating was called with gating_flag=True
-    assert len(gating_calls) == 1
-    gating_args, gating_result = gating_calls[0]
-    # Args are: (arousal, cortisol, limit, refresh_flag)
-    # With defaults: (0.5, 0.0, 5, True) because gating_refresh_on_recall=True
-    assert gating_args[3] is True, "Expected gating flag to be True (from gating_refresh_on_recall)"
-    # Result should be the production tier: (768, max(120, 5*6))
-    assert gating_result == (768, 120), "Expected production gating tier (768, 120)"
+    spy = _GatingSpy()
+    with contextlib.suppress(_StopAfterGating):
+        await MemoryStore.search_memories(
+            spy, query_text="q", limit=5,
+            refresh_on_recall=refresh, full_candidate_pool=explicit,
+        )
+    assert spy.seen == [expected]
 
 
 def test_pronoun_cues_flip_between_user_and_self_reflection():

@@ -252,16 +252,19 @@ class MemoryStoreRetriever:
         # reorder these results on its own (see the ledger entry on
         # `_base_activation`), so leaving this on makes probe order a variable.
         #
-        # `gating_refresh_on_recall=True` ensures eval searches use production-
-        # equivalent candidate limits (limit*6) rather than the low-latency tier
-        # (limit*3) that synchronous fallbacks use.
+        # `full_candidate_pool=True` is not optional decoration. That flag is
+        # normally read off `refresh_on_recall`, so switching the refresh off
+        # also drops the candidate pool from 120 to 20 -- and a retriever
+        # searching a sixth of production's candidates is not the thing this
+        # suite claims to be measuring. Found in review, after a live run had
+        # already been published against the narrower pool.
         results = await self.store.search_memories(
             query_text=query,
             wing=self.wing,
             room=self._room,
             limit=limit,
             refresh_on_recall=False,
-            gating_refresh_on_recall=True,
+            full_candidate_pool=True,
         )
         turns: list = []
         for row in results:

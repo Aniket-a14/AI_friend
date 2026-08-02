@@ -5746,10 +5746,25 @@ burst and querying it immediately.
 
 ### Live result: the memory layer beats the control, on the pack built to test it
 
-`qwen2.5:3b`, 8 probes, real Postgres/Qdrant/Neo4j, `--num-ctx 8192`.
+`qwen2.5:3b`, 8 probes under 6 strategies = 48 scored results, real
+Postgres/Qdrant/Neo4j, `--num-ctx 8192`.
 Probes passed, by strategy: **`retrieved_memory_store_6` 5/8, `full_history`
 3/8, `retrieved_bm25_6` 2/8, `recent_window_6` 0/8.** Head to head the memory
 layer **wins three and loses none**.
+
+> **Read this run as a lower bound, and re-run it.** It was measured before
+> review caught that `refresh_on_recall=False` also selects the *candidate
+> pool* tier in `_compute_mrl_gating`. So the memory-layer strategies searched
+> 20 candidates where a production conversation turn searches 120 -- a sixth
+> of the real pool. The finding survives the error in direction, since a
+> handicapped retriever is not how you inflate a win, but the numbers below
+> are not production's numbers. `full_candidate_pool=True` fixes it; the
+> re-run has not happened yet (the infra containers were down when it was
+> attempted), and until it does, every figure in this section is provisional.
+>
+> The general lesson is the one this ledger keeps relearning: a flag that
+> names one thing and controls two will be changed for the first reason by
+> someone who does not know about the second.
 
 Where it wins, and why each one counts:
 
