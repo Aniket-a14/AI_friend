@@ -85,6 +85,32 @@ def test_the_heading_is_folded_into_the_stored_text():
     assert entry.memory_text == "Her sister: They speak every Sunday."
 
 
+def test_sibling_sections_do_not_nest_under_the_first():
+    """A file whose sections all start at `##` must not chain them together.
+
+    The heading trail is indexed by depth, so slot 0 is legitimately empty when
+    nothing sits above `##`. Compacting the trail destroyed that alignment and
+    every section after the first was filed under its predecessor. Because the
+    heading is folded into the stored text, that put the *first* section's name
+    inside every memory in the file — so a cue matching that name matched the
+    entire biography, and retrieval could no longer separate anything.
+    """
+    entries = parse_biography("## How she talks\n\nA.\n\n## Her family\n\nB.\n")
+    assert [e.heading for e in entries] == ["How she talks", "Her family"]
+
+
+def test_a_top_level_heading_still_encloses_its_sections():
+    """Real nesting must survive the fix that stopped the false nesting."""
+    entries = parse_biography("# Bio\n\n## Talks\n\nA.\n\n## Family\n\nB.\n")
+    assert [e.heading for e in entries] == ["Bio / Talks", "Bio / Family"]
+
+
+def test_a_skipped_heading_level_keeps_the_enclosing_section():
+    """People skip levels. `#` then `###` still means "C inside A"."""
+    entries = parse_biography("# A\n\n### C\n\ntext\n")
+    assert entries[0].heading == "A / C"
+
+
 def test_prose_before_any_heading_is_still_kept():
     """The file is written by a person, not authored against a spec."""
     entries = parse_biography("She is stubborn about small things.\n")
