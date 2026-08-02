@@ -5141,3 +5141,48 @@ the trail and destroys depth alignment, so section two is filed as "Section One
 / Section Two" and every memory carries the first section's name. Real bug,
 separate change. `.env.example` was not touched: it documents no persona paths
 either, so adding only this one would be inconsistent.
+
+## 2026-08-02 — Sibling biography sections were nesting under the first one
+
+`parse_biography` keeps a heading trail so "How she argues / With family" reads
+as one place. The trail is indexed by heading *depth*, and the last line of the
+heading branch compacted it:
+
+    heading_trail = [h for h in heading_trail if h]
+
+For a file with a top-level `#`, slot 0 is filled and nothing is lost — which is
+why the shipped `config/biography.md` and every test built on it were fine. For
+a file whose sections all start at `##`, slot 0 is legitimately empty. Dropping
+it left a length-1 trail, so the *next* `##` sliced `[:1]`, kept its
+predecessor, and appended itself underneath.
+
+Every section after the first was therefore filed as "First Section / Second
+Section". Since `memory_text` folds the heading into the stored content, the
+first section's name ended up inside **every memory in the file** — so a cue
+matching that name matched the entire biography and retrieval could no longer
+separate anything. Found while writing a real biography that opened at `##`;
+worked around at the time by using `#` per section.
+
+The fix keeps the trail depth-aligned, with empty slots intact, and filters
+empties only at the point of use in `flush()`. Verified against four shapes:
+siblings with no top-level heading, siblings under one, a skipped level
+(`#` then `###`, which still reads as "A / C"), and sections at `#`.
+
+**Migration note.** For a file without a top-level `#` this changes the heading,
+and the fingerprint covers heading and text — so on the next boot the affected
+passages are pruned and re-seeded under their corrected headings. That is the
+intended outcome (the old headings were wrong), and the existing prune-then-seed
+ordering already handles it in a single pass. Files with a top-level `#`,
+including the shipped example, are unaffected.
+
+**Verified**: 3 new tests; all three mutations caught, including reintroducing
+the original compaction. Full backend suite via junit-xml: 737 passed, 0
+failed/errored/skipped. `ruff check .` clean.
+
+**NOT done:** `PersonaProfile.load()` parses JSON only (`json.loads` at
+profile.py) while the documented authored format is TOML, which
+`authoring.read_persona_file` handles. The boot path goes through
+`IdentityManager` and is fine, but `agent_state.py`'s
+`persona or PersonaProfile.load()` fallback would silently ignore a TOML
+`PERSONA_PROFILE_PATH` and drop to Config defaults. Latent, not hit today
+because `core.py` injects the persona explicitly. Separate change.
