@@ -58,9 +58,12 @@ and neither folded into the score:
   a guess against the model's prior.
 - **`fits NO`** — the rendered context exceeded `num_ctx`. Ollama truncates
   from the *front*, which is exactly where the plant sits. `OllamaClient`
-  defaults `num_ctx` to 2048, so the harness pins it explicitly; the token
-  estimate deliberately over-counts, because a false all-clear is far more
-  expensive than a needless rerun.
+  defaults `num_ctx` to 2048, so the harness pins it explicitly. The budget
+  counts prompt plus system plus **`num_predict`**, since generated tokens
+  share the same window — leaving the reserve out yields a probe that fits on
+  arrival and loses the plant partway through generation, reported as `fits
+  yes`. The token estimate itself deliberately over-counts, because a false
+  all-clear is far more expensive than a needless rerun.
 
 Filler and probes live in JSON packs, not in code: what a conversation is
 *about* is content, and content belongs to whoever authors the pack.

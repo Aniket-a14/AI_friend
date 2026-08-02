@@ -182,6 +182,29 @@ class TestScoringAProbe:
         assert prompt.rstrip().endswith("Assistant:")
 
 
+class TestAPackCannotCollideWithItself:
+    def test_two_probes_sharing_an_id_are_rejected_at_load(self, tmp_path):
+        """`compare_reports` keys on `id@strategy`, so a duplicate id makes one
+        result overwrite the other and the comparison silently diffs the wrong
+        pair. The single-turn loader already refuses this; a pack arriving
+        through --pack must not be the way it gets in."""
+        pack = tmp_path / "dupes.json"
+        probe = {
+            "id": "recall_name",
+            "plant": "my sister is Wren.",
+            "filler_turns": 2,
+            "recall_prompt": "what is her name?",
+            "checks": [{"kind": "must_include", "values": ["wren"]}],
+        }
+        pack.write_text(
+            json.dumps({"filler": [["a", "b"]], "probes": [probe, probe]}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="duplicate probe id"):
+            load_conversation_pack(pack)
+
+
 class TestTheRunStartsFromAKnownState:
     @pytest.fixture
     def manager(self):
@@ -292,6 +315,31 @@ class TestTheShippedPack:
             evaluate_check(check, views).passed for check in probe.checks
         )
 
+    def test_a_typographic_apostrophe_does_not_slip_past_the_guard(self):
+        """Small models emit both apostrophe forms, and this one was observed
+        doing it: two runs of the same probe produced "What's her name?" and
+        "What’s her name?" from identical input. A guard written with a bare
+        `'?` makes only U+0027 optional, so the U+2019 spelling of the very
+        same disclaimer walks through and the probe reports recall the model
+        explicitly denied."""
+        from evals.scoring import evaluate_check, response_views
+
+        probes, _ = load_conversation_pack(shipped_conversation_pack())
+        probe = next(p for p in probes if p.id == "recall_detail_d240")
+        # Deliberately phrased so the *only* guard that can fire is one
+        # carrying an apostrophe: "if you mentioned" and the other guards have
+        # none, and would catch this sentence whatever the apostrophe class
+        # does. It still contains "walnut", so must_include passes and the
+        # probe hangs entirely on the negative guard.
+        curly = "I don’t recall walnuts coming up."
+        straight = "I don't recall walnuts coming up."
+
+        for text in (curly, straight):
+            views = response_views(text)
+            assert not all(
+                evaluate_check(check, views).passed for check in probe.checks
+            ), f"disclaimer slipped through: {text!r}"
+
     def test_the_single_turn_loader_does_not_see_conversation_packs(self):
         """The two suites share a directory tree but not a file format.
 
@@ -334,10 +382,27 @@ class TestTheContextWindowIsAccountedFor:
         Scoring only the transcript would call a context sound while the
         persona block pushed it past the limit.
         """
-        transcript = "x" * 3000
-        options = RunOptions(num_ctx=1100)
+        transcript = "x" * 3000  # ~1000 estimated tokens
+        options = RunOptions(num_ctx=4096, num_predict=192)
         assert context_fits(transcript, "", options) is True
-        assert context_fits(transcript, "y" * 3000, options) is False
+        assert context_fits(transcript, "y" * 12_000, options) is False
+
+    def test_the_generation_reserve_counts_against_the_window_too(self):
+        """`num_predict` shares the window with the prompt.
+
+        Omitting it gives the worst answer this check can give: a probe that
+        fits on arrival, then loses the plant to front-truncation partway
+        through generation, and reports `fits yes` while doing it. Sized so the
+        prompt alone clears num_ctx and only the reserve pushes it over.
+        """
+        transcript = "x" * 3000  # ~1000 estimated tokens
+        options = RunOptions(num_ctx=1100, num_predict=192)
+
+        assert estimate_tokens(transcript) < options.num_ctx
+        assert context_fits(transcript, "", options) is False
+        # Same prompt, same window, no reserve to make room for: it fits.
+        assert context_fits(transcript, "", options.model_copy(
+            update={"num_predict": 0})) is True
 
     def test_the_token_estimate_errs_toward_too_long(self):
         """A false all-clear is the expensive direction of this error.

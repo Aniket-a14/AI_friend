@@ -180,13 +180,23 @@ class ProbeDelta(BaseModel):
 class OptionDiff(BaseModel):
     """One sampling option the two runs did not agree on.
 
-    ``None`` means the option was absent from that report, which for
-    ``num_gpu`` reads as "unpinned" rather than "zero".
+    Presence is carried separately from value because a value alone cannot
+    express it: ``None`` would mean both "absent from that report" and "present
+    and explicitly null", and for ``num_gpu`` those are different settings --
+    unpinned versus a pinned value that happens to be falsy. `as_override`
+    drops nulls so a report this harness wrote never contains one, but reports
+    are long-lived artifacts and hand-edited ones exist.
     """
 
     name: str
     baseline: Any = None
     candidate: Any = None
+    in_baseline: bool = True
+    in_candidate: bool = True
+
+    def describe(self, side: str) -> str:
+        present = self.in_baseline if side == "baseline" else self.in_candidate
+        return repr(getattr(self, side)) if present else "<unset>"
 
 
 class ComparisonReport(BaseModel):

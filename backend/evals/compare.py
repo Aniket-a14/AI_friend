@@ -25,15 +25,28 @@ def diff_options(baseline: EvalReport, candidate: EvalReport) -> list[OptionDiff
     missing field to be forgiven.
     """
     names = sorted(set(baseline.options) | set(candidate.options))
-    return [
-        OptionDiff(
-            name=name,
-            baseline=baseline.options.get(name),
-            candidate=candidate.options.get(name),
+    diffs: list[OptionDiff] = []
+    for name in names:
+        in_baseline = name in baseline.options
+        in_candidate = name in candidate.options
+        base_value = baseline.options.get(name)
+        cand_value = candidate.options.get(name)
+        # Presence is compared before value, so an option that is absent on one
+        # side and explicitly null on the other is still a difference. Reading
+        # both as `None` would collapse "unpinned" and "pinned to null" into
+        # agreement.
+        if (in_baseline, base_value) == (in_candidate, cand_value):
+            continue
+        diffs.append(
+            OptionDiff(
+                name=name,
+                baseline=base_value,
+                candidate=cand_value,
+                in_baseline=in_baseline,
+                in_candidate=in_candidate,
+            )
         )
-        for name in names
-        if baseline.options.get(name) != candidate.options.get(name)
-    ]
+    return diffs
 
 
 def compare_reports(
@@ -130,7 +143,8 @@ def render_comparison(comparison: ComparisonReport) -> str:
         lines.append("!! SAMPLING OPTIONS DIFFER between these runs:")
         for item in comparison.option_diffs:
             lines.append(
-                f"!!   {item.name}: {item.baseline!r} -> {item.candidate!r}"
+                f"!!   {item.name}: {item.describe('baseline')} -> "
+                f"{item.describe('candidate')}"
             )
         lines += [
             "!! Every delta below is attributable to the option change as well",

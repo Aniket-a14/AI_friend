@@ -86,8 +86,20 @@ async def _cmd_run_conversation(args: argparse.Namespace) -> int:
         print(f"no conversation probes in {pack}", file=sys.stderr)
         return 2
 
+    # Checked here so a bad window exits like every other input error in this
+    # command. `RecentWindow` raises, and an uncaught ValueError would print a
+    # traceback and exit 1 where the caller is told to expect 2.
+    if args.window < 1:
+        print("--window needs at least one turn", file=sys.stderr)
+        return 2
+
     strategies = (FullHistory(), RecentWindow(args.window))
-    options = RunOptions(num_ctx=args.num_ctx, num_gpu=args.num_gpu)
+    # `num_ctx` is left to the RunOptions default unless the caller sets it, so
+    # the two cannot drift apart.
+    overrides = {"num_gpu": args.num_gpu}
+    if args.num_ctx is not None:
+        overrides["num_ctx"] = args.num_ctx
+    options = RunOptions(**overrides)
     manager = IdentityManager(base_path=args.base_path)
     client = OllamaClient(base_url=args.url)
     try:
@@ -192,8 +204,9 @@ def main(argv=None) -> int:
                                   "(default: the shipped pack)")
     conv_parser.add_argument("--window", type=int, default=6,
                              help="turns kept by the recent_window strategy")
-    conv_parser.add_argument("--num-ctx", type=int, default=8192,
-                             help="context window; too small and the runtime "
+    conv_parser.add_argument("--num-ctx", type=int, default=None,
+                             help="context window (default: the harness's "
+                                  "pinned value); too small and the runtime "
                                   "truncates the planted fact away")
     conv_parser.add_argument("--num-gpu", type=int, default=None,
                              help="GPU layers to offload; pin it so both sides "

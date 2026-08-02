@@ -84,8 +84,20 @@ async def reset_model_state(
     if isinstance(base_url, str) and base_url:
         try:
             async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as http:
-                await http.post(
+                response = await http.post(
                     "/api/generate", json={"model": target, "keep_alive": 0}
+                )
+            # A refused unload raises nothing -- Ollama answers 404 for an
+            # unknown tag and the previous model simply stays resident. Since
+            # the unload is the half that makes the starting state specified,
+            # a silent no-op removes that property while the report still
+            # implies it. Say so.
+            if response.status_code >= 400:
+                logger.warning(
+                    "[eval] unload of %s refused (HTTP %s); the run starts from "
+                    "whatever was already resident",
+                    target,
+                    response.status_code,
                 )
         except Exception as exc:
             logger.warning(

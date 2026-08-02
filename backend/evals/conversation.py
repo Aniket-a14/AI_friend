@@ -149,8 +149,16 @@ def context_fits(prompt: str, system: str, options: RunOptions) -> bool:
     from its prior with no fact in sight, and the probe would report a clean
     failure that says nothing about memory. Callers surface this rather than
     scoring it.
+
+    ``num_predict`` counts against the same window as the prompt, so the
+    reserve has to be included. Leaving it out gives a probe that fits on
+    arrival and loses the plant partway through generation -- the one case the
+    check exists to catch, reported as ``fits yes``.
     """
-    return estimate_tokens(prompt) + estimate_tokens(system) <= options.num_ctx
+    budget = (
+        estimate_tokens(prompt) + estimate_tokens(system) + options.num_predict
+    )
+    return budget <= options.num_ctx
 
 
 async def run_conversation_probe(
@@ -265,6 +273,18 @@ def load_conversation_pack(path: Path) -> tuple[list[ConversationProbe], list[tu
         ConversationProbe(**{**item, "source": Path(path).name})
         for item in data.get("probes", [])
     ]
+
+    # Two probes sharing an id produce two results with the same
+    # `id@strategy`, and `compare_reports` keys its lookup on exactly that --
+    # so one silently overwrites the other and the comparison diffs the wrong
+    # pair. The single-turn loader already refuses this; a pack arriving
+    # through `--pack` must not be the path where it slips through.
+    seen: set[str] = set()
+    for probe in probes:
+        if probe.id in seen:
+            raise ValueError(f"duplicate probe id in {Path(path).name}: {probe.id}")
+        seen.add(probe.id)
+
     return probes, filler
 
 

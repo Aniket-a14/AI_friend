@@ -5513,3 +5513,27 @@ Full backend suite via junit-xml: 803 passed, 0 failed/errored/skipped. `ruff
 check .` clean. The reproducibility claim was validated end to end: three
 consecutive live `run-conversation` runs on `qwen2.5:3b`, identical on all
 sixteen probes, same persona digest and same options recorded in all three.
+
+**Review pass (CodeRabbit) found six, and one was a real correctness bug in the
+soundness check itself.** `context_fits` compared prompt + system against
+`num_ctx` and ignored `num_predict`, but generated tokens share that window --
+so a probe could report `fits yes`, then lose the plant to front-truncation
+partway through generation, which is precisely the failure the check exists to
+catch. The other five: the disclaimer guards wrote contractions as `don'?t`,
+making only U+0027 optional, so the U+2019 spelling of the same denial walked
+through -- and this model demonstrably emits both, since two runs of one probe
+produced "What's her name?" and "What's her name?" with different apostrophes
+during the determinism work above; `load_conversation_pack` accepted duplicate
+probe ids where the single-turn loader rejects them, and duplicates collide as
+`id@strategy` inside `compare_reports`; the unload ignored its response status,
+so a 404 left the previous model resident while the report implied a named
+starting state; `OptionDiff` read a missing option and an explicit null
+identically; and `--window 0` escaped as a traceback where every other input
+error in that command exits 2.
+
+Worth recording that the first apostrophe test **survived its mutation**. The
+string chosen also tripped an apostrophe-free guard (`if you (mentioned|...)`),
+so it failed for a reason unrelated to the fix and would have passed with the
+bug restored. Rewritten to a sentence whose only possible guard carries an
+apostrophe. This is the second time in this repo that mutation testing caught a
+test passing for the wrong reason.

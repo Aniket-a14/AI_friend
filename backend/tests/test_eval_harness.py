@@ -470,6 +470,25 @@ def test_two_runs_sampled_differently_are_flagged_as_incomparable():
     assert "temperature" in rendered
 
 
+def test_an_absent_option_is_distinguished_from_one_explicitly_null():
+    """`.get()` returns None for both, so comparing values alone would call
+    `{"num_gpu": None}` and `{}` identical. For num_gpu those are different
+    settings -- pinned-to-null versus unpinned -- and collapsing them hides the
+    exact mismatch this check exists to report."""
+    baseline = _report("m", [_result("a", "identity", True, 1.0)], options={})
+    candidate = _report(
+        "m", [_result("a", "identity", True, 1.0)], options={"num_gpu": None}
+    )
+
+    diffs = compare_reports(baseline, candidate).option_diffs
+
+    assert [(d.name, d.in_baseline, d.in_candidate) for d in diffs] == [
+        ("num_gpu", False, True)
+    ]
+    assert diffs[0].describe("baseline") == "<unset>"
+    assert diffs[0].describe("candidate") == "None"
+
+
 def test_an_option_set_on_only_one_side_counts_as_a_difference():
     """`num_gpu` absent means "let Ollama pick from free VRAM", which is a real
     setting and a different one from a pinned layer count. Treating a missing
@@ -578,6 +597,26 @@ def test_compare_cli_fail_on_regression_is_the_nonzero_exit(tmp_path):
         == 1
     )
     assert evals_main(["compare", str(base_path), str(cand_path)]) == 0
+
+
+def test_a_zero_window_is_a_usage_error_not_a_traceback(
+    tmp_path, capsys, monkeypatch
+):
+    """`RecentWindow` raises on a window below one, and that raise reaches the
+    top level. Every other input error in this command prints to stderr and
+    exits 2, so a traceback and exit 1 here is a different contract for no
+    reason -- and it reads as a crash rather than a typo.
+
+    Mock mode is cleared because its refusal legitimately comes first and also
+    exits 2, which would let this test pass without the window ever being
+    checked.
+    """
+    monkeypatch.setattr(config_module.config_instance, "MOCK_LLM_TEXT", False)
+    out = tmp_path / "report.json"
+
+    assert evals_main(["run-conversation", "--out", str(out), "--window", "0"]) == 2
+    assert "window" in capsys.readouterr().err
+    assert not out.exists()
 
 
 def test_run_cli_refuses_under_mock_llm_without_allow_mock(
