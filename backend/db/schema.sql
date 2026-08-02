@@ -237,3 +237,22 @@ create table if not exists lexical_associations (
 
 create index if not exists lexical_assoc_a_idx on lexical_associations(term_a);
 create index if not exists lexical_assoc_b_idx on lexical_associations(term_b);
+
+-- Self-knowledge gaps: specifics the agent tried to assert about its own life
+-- and could not ground in anything the user has written or said. Recorded
+-- rather than silently swallowed, because the gaps are the map of what the
+-- biography is still missing -- and, later, of what the agent could ask about.
+--
+-- Keyed on the term so repeated hits accumulate: a name the user mentions
+-- constantly but never explained climbs times_hit, while a one-off stays low.
+-- There is deliberately no `resolved` flag; a gap the biography now covers
+-- simply stops being hit, and last_seen already carries that.
+create table if not exists self_knowledge_gaps (
+  term text primary key,
+  times_hit integer not null default 1,
+  example_prompt text,
+  first_seen timestamptz default now(),
+  last_seen timestamptz default now()
+);
+
+create index if not exists self_gap_hits_idx on self_knowledge_gaps(times_hit desc);
