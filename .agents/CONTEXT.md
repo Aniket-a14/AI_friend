@@ -5296,3 +5296,63 @@ observed against a live model. Not re-probed live: the older user-directed
 guideline still deflects these questions before a self-claim is asserted, so
 `self_knowledge_gaps` remains empty and the gate is still unproven outside its
 tests.
+
+
+## 2026-08-02 -- The gap table was write-only, and it was recording the wrong thing
+
+Two defects, and the second explains the first.
+
+**Gaps were harvested from fabrications the prompt exists to prevent.**
+`_record_self_gaps` ran only after the grounding gate *rejected* a response,
+deriving gaps from the ungrounded proper nouns in it. But `_CHAT_GUIDELINE`
+tells her that when she does not know something about her own past she should
+say so and let it go -- so she emits no proper noun, the gate never fires, and
+nothing is recorded. `self_knowledge_gaps` stayed empty across every live run
+*because the system was working*. The instrumentation measured only its own
+failures.
+
+The evidence that actually reveals a hole in a biography is a question it
+cannot answer. `_unanswered_self_question_gaps` now records on three
+conditions, all required: the message is interrogative, it is about *her* life
+(`_SELF_QUERY_RE`, the second-person mirror of the assertion trigger), and
+retrieval surfaced no `source='biography'` passage for it. The third is the
+real test -- it is the store reporting that it looked and found nothing, rather
+than a guess from vocabulary, which would flag "did you enjoy college" over the
+word *enjoy*. Recording happens before generation, since it depends only on the
+question and the store.
+
+**Nothing ever read the table.** Recording holes in an autobiography is only
+useful if something eventually asks about them; a biography that cannot grow is
+a character sheet. `next_gap_to_ask` / `mark_asked` and `_build_wondering_block`
+close the loop: a gap the user has raised at least twice is offered to the
+prompt once, framed as an opening rather than an instruction. `min_hits` is what
+keeps a stray term from becoming a question; `asked_at` is what stops her
+opening every turn with the same one.
+
+**The guideline had to move for it.** SELF-GROUNDING ended "do not ask the user
+to tell you" -- a flat prohibition on the one behaviour the new block
+authorises. Injecting the block under that guideline would have recreated the
+first-boot language bug exactly: a prompt requiring and forbidding the same
+thing. It now forbids only turning *every* blank into a question, and defers to
+the block when one is present. A test asserts the two cannot drift apart again.
+
+**Verified**: 13 new tests, all 8 mutations caught (drop the biography-surfaced
+check, the interrogative check, the about-her check, the cold-start guard, the
+per-question cap, the min-hits threshold, the already-asked filter, or the
+mark-asked call). Full backend suite via junit-xml: 760 passed,
+0 failed/errored/skipped. `ruff check .` clean.
+
+**NOT done, and this is the important half.** The loop is open at the far end:
+when the user answers her question, nothing writes that answer back into the
+biography. `refresh_known_terms` reads only `source='biography'` rows, so a fact
+given in conversation never becomes something she knows about herself, and the
+same gap can be re-recorded forever. Closing it needs a design for which turn
+counts as the answer, what happens when the user deflects, and how a
+conversationally-acquired fact is marked so it is distinguishable from an
+authored passage -- deliberately not guessed at here. There is also no re-ask
+cooldown: `mark_asked` fires when the question is *offered*, because nothing
+downstream can tell an asked question from a skipped one, so a gap she never
+raises is never retried. And `_SELF_QUERY_RE` misses questions phrased without
+a possessive or a biographical verb ("which college did you go to") --
+precision was preferred over recall, since a noisy table makes the asking
+channel worse, not better. None of this has been run against a live model.

@@ -296,6 +296,140 @@ class TestGapRecording:
         await service._record_self_gaps("My brother Rahul called.", [], "")
 
 
+class TestUnansweredQuestionsBecomeGaps:
+    """The signal that actually reveals a hole in a biography.
+
+    Gaps were originally harvested only from fabrications the grounding gate
+    rejected. But the prompt instructs her not to fabricate, so when it works
+    there is nothing to harvest -- the table stayed empty across every live run
+    while the system was behaving correctly. A question she cannot answer is
+    the evidence that was being thrown away.
+    """
+
+    def test_a_question_her_biography_cannot_answer_is_recorded(self, agent):
+        gaps = agent._unanswered_self_question_gaps("what was your school like?", [])
+        assert "school" in gaps
+
+    def test_a_question_the_biography_answers_is_not_a_gap(self, agent):
+        """Retrieval found an autobiographical passage, so nothing is missing.
+
+        Whether she uses it well is the grounding gate's problem. Recording a
+        gap here would fill the table with subjects she can already discuss and
+        bury the ones she genuinely cannot.
+        """
+        gaps = agent._unanswered_self_question_gaps(
+            "what was your school like?",
+            [{"content": "She went to a convent school", "source": "biography"}],
+        )
+        assert gaps == []
+
+    def test_an_ordinary_memory_does_not_count_as_an_answer(self, agent):
+        """Only biography passages are evidence that her own past is recorded.
+
+        A conversational memory is something the *user* said. Treating it as
+        proof she knows her own history is the same mistake the grounding gate
+        already refuses to make.
+        """
+        gaps = agent._unanswered_self_question_gaps(
+            "what was your school like?",
+            [{"content": "the user mentioned a school", "source": "conversation"}],
+        )
+        assert "school" in gaps
+
+    def test_a_statement_is_not_a_question(self, agent):
+        """"Your voice is lovely" asks nothing, and is not a hole in her past."""
+        assert agent._unanswered_self_question_gaps("your voice is lovely", []) == []
+
+    def test_a_question_that_is_not_about_her_life_is_ignored(self, agent):
+        """A request is not an autobiographical question.
+
+        Without this the table fills with whatever the user wanted help with,
+        and the asking channel starts interrogating them about their own
+        errands as though they were her missing childhood.
+        """
+        gaps = agent._unanswered_self_question_gaps(
+            "can you help me with the groceries?", []
+        )
+        assert gaps == []
+
+    def test_nothing_is_recorded_before_a_biography_exists(self, ungrounded_agent):
+        """Cold start: with no biography, every word is a gap and none is useful."""
+        gaps = ungrounded_agent._unanswered_self_question_gaps(
+            "where did you grow up?", []
+        )
+        assert gaps == []
+
+    def test_one_question_cannot_flood_the_table(self, agent):
+        gaps = agent._unanswered_self_question_gaps(
+            "what was your school, your street, your teacher, your uniform, "
+            "your canteen and your bus like?",
+            [],
+        )
+        assert len(gaps) <= 4
+
+
+class TestSheAsksAboutHerself:
+    """The read side. Without it the gap table is a write-only log."""
+
+    @pytest.mark.asyncio
+    async def test_a_repeated_gap_becomes_something_she_can_raise(self, gap_store):
+        await gap_store.record_gap(["school"], "what was your school like")
+        await gap_store.record_gap(["school"], "did you like school")
+        gap = await gap_store.next_gap_to_ask()
+        assert gap is not None and gap["term"] == "school"
+
+    @pytest.mark.asyncio
+    async def test_a_one_off_is_not_worth_asking_about(self, gap_store):
+        """Frequency is the only evidence available that a subject matters.
+
+        Asking about every term that ever went unmatched turns her into a
+        questionnaire, and the user stops answering.
+        """
+        await gap_store.record_gap(["school"], "x")
+        assert await gap_store.next_gap_to_ask() is None
+
+    @pytest.mark.asyncio
+    async def test_she_does_not_ask_the_same_thing_twice(self, gap_store):
+        """Repeating a question every turn reads as damage, not curiosity."""
+        for _ in range(3):
+            await gap_store.record_gap(["school"], "x")
+        first = await gap_store.next_gap_to_ask()
+        await gap_store.mark_asked(first["term"])
+        assert await gap_store.next_gap_to_ask() is None
+
+    @pytest.mark.asyncio
+    async def test_the_prompt_carries_the_question_and_marks_it_asked(self):
+        recorder = AsyncMock()
+        recorder.next_gap_to_ask.return_value = {"term": "school", "times_hit": 3}
+        service = ActionService(self_knowledge=recorder)
+
+        block = await service._build_wondering_block()
+
+        assert "school" in block
+        assert "WONDERING" in block
+        recorder.mark_asked.assert_awaited_once_with("school")
+
+    @pytest.mark.asyncio
+    async def test_no_block_when_there_is_nothing_to_ask(self):
+        """An empty gap table must not put an empty invitation in the prompt."""
+        recorder = AsyncMock()
+        recorder.next_gap_to_ask.return_value = None
+        service = ActionService(self_knowledge=recorder)
+        assert await service._build_wondering_block() == ""
+
+    @pytest.mark.asyncio
+    async def test_a_broken_store_does_not_break_the_turn(self):
+        """Curiosity is a luxury; the conversation is not.
+
+        A failing read here must degrade to silence rather than aborting a
+        reply the user is waiting on.
+        """
+        recorder = AsyncMock()
+        recorder.next_gap_to_ask.side_effect = RuntimeError("database is gone")
+        service = ActionService(self_knowledge=recorder)
+        assert await service._build_wondering_block() == ""
+
+
 class TestKnownTerms:
     @pytest.mark.asyncio
     async def test_only_biography_memories_ground_the_agents_own_past(self):

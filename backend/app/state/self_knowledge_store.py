@@ -91,8 +91,20 @@ class SelfKnowledgeStore:
                         "times_hit integer NOT NULL DEFAULT 1, "
                         "example_prompt text, "
                         "first_seen timestamp DEFAULT current_timestamp, "
-                        "last_seen timestamp DEFAULT current_timestamp)"
+                        "last_seen timestamp DEFAULT current_timestamp, "
+                        "asked_at timestamp)"
                     )
+                    # Tables created before the asking channel existed have no
+                    # asked_at, and CREATE TABLE IF NOT EXISTS will not add it.
+                    # Postgres and SQLite disagree on the guard clause, so the
+                    # portable form is to try and let the duplicate fail.
+                    try:
+                        await conn.execute(
+                            "ALTER TABLE self_knowledge_gaps "
+                            "ADD COLUMN asked_at timestamp"
+                        )
+                    except Exception:
+                        pass
                 self._ready = True
             except Exception as e:
                 logger.debug(f"SelfKnowledgeStore not ready ({e}); gaps not recorded")
@@ -175,6 +187,60 @@ class SelfKnowledgeStore:
                 ", ".join(selected[:5]),
             )
         return written
+
+    async def next_gap_to_ask(self, min_hits: int = 2) -> dict | None:
+        """The gap most worth raising with the user, or None.
+
+        This is the read side of the table, and the reason it exists at all.
+        Recording holes in an agent's autobiography is only useful if something
+        eventually asks about them -- a biography that cannot grow is a
+        character sheet, not a life.
+
+        ``min_hits`` is what stops a single stray term becoming a question: a
+        subject the user has raised twice is a subject they care about, and the
+        count is the only evidence available for that. Gaps already raised are
+        excluded so she does not ask the same thing every turn, which reads as
+        damage rather than curiosity.
+        """
+        await self._ensure_ready()
+        if not self._ready:
+            return None
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT term, times_hit, example_prompt FROM self_knowledge_gaps "
+                    "WHERE asked_at IS NULL AND times_hit >= $1 "
+                    "ORDER BY times_hit DESC, last_seen DESC LIMIT 1",
+                    int(min_hits),
+                )
+        except Exception as e:
+            logger.debug(f"Could not read next self-knowledge gap ({e})")
+            return None
+        return dict(rows[0]) if rows else None
+
+    async def mark_asked(self, term: str) -> bool:
+        """Record that a gap has been put to the user. Never raises.
+
+        Marked when the question is *offered to the prompt*, not when she is
+        observed asking it, because nothing downstream can reliably tell an
+        asked question from a skipped one. The cost is a gap that goes
+        unmentioned and is never retried; the alternative is her opening every
+        turn with the same question, which is worse.
+        """
+        await self._ensure_ready()
+        if not self._ready or not term:
+            return False
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE self_knowledge_gaps SET asked_at = current_timestamp "
+                    "WHERE term = $1",
+                    str(term).lower(),
+                )
+            return True
+        except Exception as e:
+            logger.debug(f"Could not mark self-knowledge gap asked ({e})")
+            return False
 
     async def top_gaps(self, limit: int = 20) -> list[dict]:
         """The most frequently hit gaps, for inspection and for later asking."""

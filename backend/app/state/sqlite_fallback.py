@@ -160,7 +160,8 @@ class SQLiteConnection:
                 times_hit INTEGER NOT NULL DEFAULT 1,
                 example_prompt TEXT,
                 first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                asked_at TIMESTAMP
             )
         """)
         cursor.execute(

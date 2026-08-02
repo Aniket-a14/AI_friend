@@ -93,6 +93,40 @@ _NON_NAME_CAPITALS = frozenset({"i", "i'm", "i've", "oh", "yeah", "haan", "arre"
 # be a year rather than an age or a count.
 _SELF_SPECIFIC_RE = re.compile(r"\b([A-Z][A-Za-z']{2,}|\d{3,})\b")
 
+# _SELF_CLAIM_RE catches the agent *asserting* something about its own life.
+# This catches the user *asking* about it, and it is the better signal of the
+# two. Gaps used to be harvested only from fabrications the grounding gate
+# rejected -- but the prompt tells her not to fabricate, so when it works there
+# is nothing to harvest, and the record stayed empty across every live run.
+# What actually reveals a hole in a biography is a question it cannot answer.
+#
+# Same grammatical construction as the self-claim trigger, second person.
+# Same closed set of biographical verbs as the assertion side, conjugated for
+# questions: an assertion is naturally past ("I studied"), a question puts the
+# tense in the auxiliary and leaves the verb bare ("did you study").
+_SELF_QUERY_RE = re.compile(
+    r"\byour\s+[a-z][a-z']*"
+    r"|\byou\s+(?:grow|grew)\s+up\b"
+    r"|\byou\s+(?:was|were)\s+born\b"
+    r"|\byou\s+(?:study|studied|graduate|graduated)\b"
+    r"|\byou\s+(?:live|lived|move|moved)\b"
+    r"|\byou\s+(?:come|came)\s+from\b"
+    r"|\bwhen\s+you\s+were\s+(?:a |an |in |at )?(?:child|kid|little|young|\d+)\b",
+    re.IGNORECASE,
+)
+
+# Interrogative form. "your voice is lovely" mentions her but asks nothing, and
+# recording a gap from it would fill the table with compliments.
+_QUESTION_RE = re.compile(
+    r"\?"
+    r"|^\s*(?:who|what|when|where|why|how|which|do|did|does|is|are|was|were"
+    r"|have|has|had|can|could|will|would|tell me)\b",
+    re.IGNORECASE,
+)
+
+_QUERY_WORD_RE = re.compile(r"\b[a-z][a-z']{2,}\b")
+_MAX_QUESTION_GAPS = 4
+
 
 # Static half of the chat system prompt, appended after the identity block.
 # Hoisted out of execute() so the prompt contract is visible at module scope
@@ -117,7 +151,9 @@ _CHAT_GUIDELINE = (
     "biography and from this conversation. Never invent family members, "
     "places, schools, jobs or dates for yourself. If you are asked something "
     "about your own past that you do not know, say so plainly in your own "
-    "voice and let it go -- do not guess, and do not ask the user to tell you.\n"
+    "voice and let it go -- do not guess. Do not turn every blank into a "
+    "question for the user; ask only about the one thing a SOMETHING YOU HAVE "
+    "BEEN WONDERING block names, and only if it appears.\n"
     # No language directive here. There used to be "Respond only in English.
     # Do not use Hindi, Hinglish, or any other language for now." while the
     # identity block, appended immediately above this one, said "Maintain
@@ -825,6 +861,89 @@ class ActionService:
         except Exception as e:
             logger.debug(f"[Action] Could not record self-knowledge gap: {e}")
 
+    def _unanswered_self_question_gaps(self, user_message: str, surfaced) -> list[str]:
+        """Terms from a question about her own life that her biography cannot meet.
+
+        Three conditions, all required. The message must be interrogative; it
+        must be about *her* life rather than the user's; and retrieval must have
+        surfaced no biography passage for it. That last one is the real test --
+        it is the system stating, from its own store, that it looked and found
+        nothing. Vocabulary alone would flag "did you enjoy college" over the
+        word *enjoy*.
+
+        Returns the content words the biography has never seen, which is what
+        the user would have to write about for the hole to close.
+        """
+        if not user_message or not _QUESTION_RE.search(user_message):
+            return []
+        if not _SELF_QUERY_RE.search(user_message):
+            return []
+
+        known = getattr(self.self_knowledge, "known_terms", None) or set()
+        if not known:
+            # No biography loaded at all. Every word would look like a gap, and
+            # a table full of them says nothing about which passage is missing.
+            return []
+        if any(
+            (m.get("source") or "") == BIOGRAPHY_SOURCE for m in (surfaced or [])
+        ):
+            # She has something autobiographical to answer with; whether she
+            # uses it well is the grounding gate's problem, not a missing life.
+            return []
+
+        gaps = [
+            w
+            for w in dict.fromkeys(_QUERY_WORD_RE.findall(user_message.lower()))
+            if w not in known and w not in _GROUNDING_STOPWORDS
+        ]
+        return gaps[:_MAX_QUESTION_GAPS]
+
+    async def _record_unanswered_self_question(self, user_message: str, surfaced):
+        """Persist a question about her past that her biography could not meet."""
+        if self.self_knowledge is None:
+            return
+        gaps = self._unanswered_self_question_gaps(user_message, surfaced)
+        if not gaps:
+            return
+        try:
+            await self.self_knowledge.record_gap(gaps, user_message)
+        except Exception as e:
+            logger.debug(f"[Action] Could not record unanswered self-question: {e}")
+
+    async def _build_wondering_block(self) -> str:
+        """Offer her one thing to ask about her own life, or nothing.
+
+        The blank half of the loop until now: gaps accumulated and no code ever
+        read them back. Framed as an opening rather than an instruction, and
+        capped at one, because an agent that interrogates the user about its own
+        biography every turn is not curious, it is broken.
+        """
+        if self.self_knowledge is None:
+            return ""
+        try:
+            gap = await self.self_knowledge.next_gap_to_ask()
+        except Exception as e:
+            logger.debug(f"[Action] Could not read next self-knowledge gap: {e}")
+            return ""
+        if not gap or not gap.get("term"):
+            return ""
+
+        term = str(gap["term"])
+        try:
+            await self.self_knowledge.mark_asked(term)
+        except Exception as e:
+            logger.debug(f"[Action] Could not mark gap asked: {e}")
+
+        logger.info("[SelfKnowledge] Offering '%s' as a question about herself.", term)
+        return (
+            "\nSOMETHING YOU HAVE BEEN WONDERING ABOUT YOUR OWN LIFE:\n"
+            f"- \"{term}\" has come up about your past and you find you do not "
+            "know it. If this conversation gives you a natural opening, ask "
+            "the user about it once, in your own voice, the way a person asks "
+            "about a blank in their own history. If there is no natural "
+            "opening, leave it -- do not force it, and do not ask twice.\n"
+        )
+
     async def _announce_self_correction(self, reason: str):
         """Interrupt playback so the retry is not spoken over the bad take."""
         if self.publish_cb:
@@ -965,7 +1084,14 @@ class ActionService:
         if not surfaced and self.memory:
             surfaced = await self._surface_fallback_memories(plan, msg)
 
+        # A question about her own life that retrieval could not answer is the
+        # only reliable evidence of a hole in her biography, so it is recorded
+        # before generation -- it depends on the question and the store, not on
+        # what she goes on to say.
+        await self._record_unanswered_self_question(msg, surfaced)
+
         shared_history = self._build_shared_history(surfaced)
+        wondering = await self._build_wondering_block()
         tom_context = self._build_tom_context(plan.payload.get("user_mental_model"))
 
         # Static System Prompt (cached by inference engines like Ollama/vLLM)
@@ -977,7 +1103,7 @@ class ActionService:
         # answer. The more abstract, lower-cost-to-lose context (goal, emotion,
         # Theory-of-Mind) goes earlier. Within the history block itself, memories
         # are already edge-loaded by reorder_for_long_context().
-        user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{tom_context}{shared_history}\n\nUser: {msg}\nAssistant:"
+        user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{tom_context}{wondering}{shared_history}\n\nUser: {msg}\nAssistant:"
 
         valence = plan.payload.get("valence", 0.0)
         arousal = plan.payload.get("arousal", 0.5)
