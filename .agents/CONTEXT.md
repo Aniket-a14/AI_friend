@@ -5743,3 +5743,64 @@ separate from the rendered context, which is a harness change, not a pack.
 **Write-side behaviour is still entirely unmeasured**: importance scoring,
 decay, pruning and promotion are all bypassed by indexing a transcript in one
 burst and querying it immediately.
+
+### Live result: the memory layer beats the control, on the pack built to test it
+
+`qwen2.5:3b`, 48 probes, real Postgres/Qdrant/Neo4j, `--num-ctx 8192`.
+Probes passed, by strategy: **`retrieved_memory_store_6` 5/8, `full_history`
+3/8, `retrieved_bm25_6` 2/8, `recent_window_6` 0/8.** Head to head the memory
+layer **wins three and loses none**.
+
+Where it wins, and why each one counts:
+
+- **`oblique_activity`, both distances.** Asked "what am I doing to stay fit?"
+  after planting "I've started swimming at the pool", BM25 never surfaces the
+  plant at all -- `plant out` -- because the two share no content word. The
+  memory layer surfaces it and the model answers. This is the designed
+  discrimination, and it is the one the previous pack could not produce.
+- **The same probe at distance 96 beats `full_history`.** Shown all 194 turns
+  and 7,123 characters, the model answers with generic advice and never
+  mentions swimming. Shown 6 turns and 240 characters chosen by retrieval, it
+  gets it right. **~30x less context, and a better answer** -- lost-in-the-
+  middle, and the memory layer stepping over it.
+- **`similars_lexical_d48`.** BM25 *does* retrieve the answering plant here
+  (`plant in`) and the model still fails, replying "Teo's the one who does the
+  long-distance running" and then declining. The memory layer's six turns
+  produce "Halvard, I believe." So the composition of the retrieved set
+  matters, not just whether the answer is somewhere inside it.
+
+Where it does not:
+
+- **`oblique_dislike`, both distances.** Neither retriever surfaces "coriander
+  tastes like soap" for "what should I leave out of tonight's meal?". The
+  standalone rank measurement puts the assistant's acknowledgement -- which
+  also names coriander -- at the very edge of a six-turn budget, so this probe
+  sits right on the boundary rather than failing outright.
+- **`similars_oblique_d48` is a scoring fail, not a retrieval fail**, and the
+  distinction should not be buried. The memory layer retrieved the answer
+  (`plant in`) and the model *named it correctly* -- "Halvard has his
+  allotment" -- but recited three other people around it, which trips the
+  pack's guard against hedging in a crowded field. `must_include` passed;
+  `must_not_match` failed. That guard is deliberate and documented in the
+  pack, and the per-check detail in the report is what keeps it auditable.
+- **`update_*` did not discriminate.** Both retrievers surfaced the correction
+  at both distances and both models answered "the museum". Recency was not put
+  under real pressure by this budget; a sharper version needs the superseded
+  fact to compete for the same slot.
+
+Two model-side findings, cleanly attributable now that retrieval is not the
+confound: `full_history` fails both `similars` probes with all seven facts on
+screen, so picking one of seven near-identical statements is beyond this model
+regardless of memory; and the `oblique_dislike` failures are the only ones
+where retrieval is genuinely the weak link.
+
+**Verified**: full backend suite via junit-xml -- 850 passed, 0
+failed/errored/skipped -- `ruff check .` clean, and every new test
+mutation-tested -- restart the filler per plant, emit plants in pack
+order rather than by depth, accept a plant deeper than its own filler, accept a
+probe with no answering plant, accept a probe written both ways, count
+distractors as answering facts, treat one answering plant as sufficient when
+two are required, and put the recall refresh back. Two pack mutations too:
+leak a content word from an oblique question into its plant, and leak an answer
+into the filler. All caught. After the live run the relational tier held only
+the 63 real `personal` memories, checked directly.
