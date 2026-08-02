@@ -33,6 +33,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..config import Config
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_BIOGRAPHY_FILE = "config/biography.md"
@@ -151,15 +153,37 @@ def read_biography(path: Path | None) -> list[BiographyEntry]:
 
 
 def find_biography_file(explicit: str | None = None) -> Path | None:
-    """Locate `config/biography.md`, walking up from this module.
+    """Locate the biography: an explicit path, then `BIOGRAPHY_PATH`, then discovery.
 
-    Same reasoning as the persona file: the agents are launched from the repo
-    root, from `backend/`, and from a container WORKDIR, so a path relative to
-    the process working directory resolves differently in each.
+    Discovery walks up from this module rather than trusting the process working
+    directory, because the agents are launched from several places (the repo
+    root, `backend/`, and a container WORKDIR) and a relative path would resolve
+    differently in each.
+
+    `BIOGRAPHY_PATH` is the counterpart to `PERSONA_PROFILE_PATH`, and exists
+    for the same reason plus a sharper one. The persona is a temperament and
+    could reasonably live in the repo; a biography is an actual person's life,
+    written by someone who knows them, and a system that can only read it from
+    a tracked path forces that material into git to be used at all.
+
+    A path that is set but missing resolves to "no biography" and is *not*
+    retried through discovery. Falling back would quietly seed the repo's own
+    example file — and seeding is fingerprinted and effectively one-way, so a
+    typo would plant a stranger's history that then has to be pruned back out.
     """
+    if explicit is None:
+        explicit = getattr(Config, "BIOGRAPHY_PATH", None) or None
+
     if explicit:
         path = Path(explicit)
-        return path if path.exists() else None
+        if path.exists():
+            return path
+        logger.warning(
+            "[Biography] No biography file at %s; continuing without one. "
+            "Discovery is deliberately not attempted for an explicit path.",
+            explicit,
+        )
+        return None
 
     for parent in Path(__file__).resolve().parents:
         candidate = parent / DEFAULT_BIOGRAPHY_FILE
