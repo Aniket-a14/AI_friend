@@ -63,39 +63,25 @@ _GROUNDING_STOPWORDS = frozenset(
 # particular person, a confident fabrication about itself is worse than a blank:
 # the blank can be filled in, the fabrication has to be noticed first.
 #
-# Restricted to assertions of concrete biographical *fact* -- family, origin,
-# schooling, where it lived. Feelings, opinions and preferences are deliberately
-# out of scope: they come up constantly in ordinary talk, and gating them buys a
-# little fidelity at the cost of making the agent evasive about everything.
+# The trigger is *grammatical, not lexical*: any first-person possessive, plus
+# the handful of verb phrases that place the speaker's own life in the world.
+# An earlier version enumerated the possessed nouns -- brother, hometown, school
+# -- which meant the gate only protected the kinds of life its author happened
+# to think of. Every biography is different, so a noun list is a guess about
+# someone else's family; "my" is a guess about English. Nothing here decides
+# what is *true* of a given person: that comes entirely from their biography.
+#
+# Feelings and opinions are still out of scope in practice, because a trigger
+# alone never rejects anything -- see _self_claim_gaps, which needs an
+# ungrounded proper noun or year before it will fire.
 _SELF_CLAIM_RE = re.compile(
-    r"\b("
-    r"my (?:brother|sister|siblings?|mother|father|mom|mum|dad|papa|mama"
-    r"|parents?|family|cousin|uncle|aunt|grand(?:mother|father)"
-    r"|school|college|university|hometown|village|neighbou?rhood"
-    r"|roommate|classmate|childhood)"
-    r"|i (?:grew up|was born|studied|graduated)"
-    r"|i (?:live|lived|moved) (?:in|to|at)"
-    r"|i used to live"
-    r"|i come from"
-    r"|when i was (?:a |an |in |at )?(?:child|kid|little|young|\d+)"
-    r")\b",
+    r"\bmy\s+[a-z][a-z']*"
+    r"|\bi\s+(?:grew up|was born|studied|graduated)\b"
+    r"|\bi\s+(?:live|lived|moved)\s+(?:in|to|at)\b"
+    r"|\bi\s+used\s+to\s+live\b"
+    r"|\bi\s+come\s+from\b"
+    r"|\bwhen\s+i\s+was\s+(?:a |an |in |at )?(?:child|kid|little|young|\d+)\b",
     re.IGNORECASE,
-)
-
-# Dropped before deciding whether a self-claim is grounded. These are the
-# trigger words themselves: "brother" appearing in "my brother Daniel" is what
-# fired the gate, so counting it as evidence of fabrication would make every
-# claim self-incriminating. What matters is the name next to it.
-_SELF_CLAIM_STOPWORDS = frozenset(
-    {
-        "brother", "sister", "siblings", "mother", "father", "mom", "mum",
-        "dad", "papa", "mama", "parent", "parents", "family", "cousin",
-        "uncle", "aunt", "grandmother", "grandfather", "school", "college",
-        "university", "hometown", "village", "neighborhood", "neighbourhood",
-        "roommate", "classmate", "childhood", "grew", "born", "studied",
-        "graduated", "live", "lived", "moved", "come", "child", "kid",
-        "little", "young", "name", "years", "year", "old",
-    }
 )
 
 # Capitalised words that carry no identifying weight, so they are not treated as
@@ -360,14 +346,22 @@ class ActionService:
         gaps: list[str] = []
         for raw_sentence in re.split(r"(?<=[.!?])\s+", response):
             sentence = raw_sentence.strip()
-            if not _SELF_CLAIM_RE.search(sentence):
+            triggers = [m.span() for m in _SELF_CLAIM_RE.finditer(sentence)]
+            if not triggers:
                 continue
             for match in _SELF_SPECIFIC_RE.finditer(sentence):
                 # A capital in the first position is sentence case, not a name.
                 if match.start() == 0:
                     continue
+                # Words inside the trigger phrase itself are never the
+                # fabrication -- "My School" fired the gate, so counting
+                # "School" as the invented specific would make every claim
+                # indict itself. Excluding the matched span does this without
+                # a list of trigger words to keep in sync with the pattern.
+                if any(s <= match.start() < e for s, e in triggers):
+                    continue
                 token = match.group(1).lower()
-                if token in _NON_NAME_CAPITALS or token in _SELF_CLAIM_STOPWORDS:
+                if token in _NON_NAME_CAPITALS:
                     continue
                 if token not in grounded:
                     gaps.append(token)

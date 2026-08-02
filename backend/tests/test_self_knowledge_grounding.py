@@ -80,6 +80,20 @@ class TestFabricationIsCaught:
         )
         assert ok is False
 
+    def test_a_possession_nobody_thought_to_list_is_still_gated(self, agent):
+        """The trigger is grammatical, so it cannot miss a kind of life.
+
+        An earlier version enumerated the possessed nouns -- brother, hometown,
+        school -- so "my dog Jolly" sailed through while "my brother Rahul" was
+        caught. The gate then protected only the lives its author happened to
+        imagine, and every biography is a different life. "my" generalises;
+        a noun list is a guess about someone else's family.
+        """
+        ok, _ = agent._check_self_grounding(
+            "My dog Jolly waits by the door.", [], ""
+        )
+        assert ok is False
+
     def test_the_ungrounded_terms_are_returned_for_recording(self, agent):
         """The gap list is what makes the biography's holes visible later."""
         gaps = agent._self_claim_gaps("My brother Rahul lives in Mumbai.", [], "")
@@ -163,6 +177,24 @@ class TestOrdinarySpeechIsNotGated:
         specific would make the gate indict every claim it examines.
         """
         ok, _ = agent._check_self_grounding("My School was strict about it.", [], "")
+        assert ok is True
+
+    def test_the_possessed_noun_is_never_the_fabrication(self, agent):
+        """Whatever follows "my" fired the gate; it cannot also be the evidence.
+
+        This has to hold for any noun, not the ones a stopword list happened to
+        name -- otherwise the pattern and its exemption drift apart, and the
+        first noun added to one and forgotten in the other makes the gate
+        reject a sentence for containing its own trigger.
+        """
+        ok, _ = agent._check_self_grounding(
+            "My Landlord raised the rent again.", [], ""
+        )
+        assert ok is True
+
+    def test_a_first_person_verb_is_never_the_fabrication(self, agent):
+        """The same exemption, on the other half of the pattern."""
+        ok, _ = agent._check_self_grounding("I Studied hard for it.", [], "")
         assert ok is True
 
     def test_a_contraction_of_i_is_not_a_name(self, agent):
