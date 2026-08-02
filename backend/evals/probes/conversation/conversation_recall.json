@@ -1,0 +1,292 @@
+{
+  "_comment": [
+    "Multi-turn recall probes. A fact is planted, buried under `filler_turns`",
+    "scripted exchanges, then asked about.",
+    "",
+    "Distances span roughly two orders of magnitude so the suite reports the",
+    "point where recall breaks rather than a single pass/fail. 4 turns is",
+    "within any window; 240 turns is a context most small models must either",
+    "attend across or lose.",
+    "",
+    "Filler is deliberately bland and must never contain a planted answer --",
+    "if it did, a probe could pass without the fact ever being recalled. The",
+    "content here is invented and generic: what a conversation is about is",
+    "the pack author's business, not production code's.",
+    "",
+    "Every probe carries a must_not_match guard against disclaimers. A model",
+    "that says 'I'm not sure what you're referring to, but if you mentioned",
+    "walnuts earlier...' contains the answer as a substring while explicitly",
+    "denying recall. Without the guard that scores as a pass, and the suite",
+    "reports memory the model does not have. The guard lives in the pack",
+    "because which phrasings count as a non-answer is a property of the",
+    "language a pack is written in, not of the harness."
+  ],
+  "filler": [
+    [
+      "what's the weather doing",
+      "grey. same as yesterday, honestly."
+    ],
+    [
+      "did you eat yet",
+      "not yet. probably later."
+    ],
+    [
+      "this bus is so late",
+      "they always are on that route."
+    ],
+    [
+      "i can't find my charger anywhere",
+      "check the sofa. it's always the sofa."
+    ],
+    [
+      "long day?",
+      "long enough. glad it's over."
+    ],
+    [
+      "do you ever sleep properly",
+      "rarely. i've made peace with it."
+    ],
+    [
+      "my back hurts from sitting all day",
+      "stand up now and then. it helps."
+    ],
+    [
+      "there's nothing on tv",
+      "there never is. that's the point of it."
+    ],
+    [
+      "i should probably go for a walk",
+      "you should. it's not raining yet."
+    ],
+    [
+      "the kettle broke this morning",
+      "annoying. those never last."
+    ],
+    [
+      "i keep forgetting to reply to emails",
+      "everyone does. it's fine."
+    ],
+    [
+      "is it cold out",
+      "bring a jacket. it turns later on."
+    ],
+    [
+      "i burnt the toast again",
+      "the setting is too high. it always is."
+    ],
+    [
+      "can't decide what to cook",
+      "whatever's closest to going off."
+    ],
+    [
+      "my phone's at four percent",
+      "plug it in before it dies mid-sentence."
+    ],
+    [
+      "everything's so loud today",
+      "it's the road works. they'll stop by six."
+    ]
+  ],
+  "probes": [
+    {
+      "id": "recall_name_d4",
+      "plant": "by the way, my youngest sister is called Wren.",
+      "plant_reply": "Wren. noted.",
+      "filler_turns": 4,
+      "recall_prompt": "what's my youngest sister called again?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "wren"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you'?re referring",
+            "i don'?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven'?t|didn'?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recall_name_d24",
+      "plant": "by the way, my youngest sister is called Wren.",
+      "plant_reply": "Wren. noted.",
+      "filler_turns": 24,
+      "recall_prompt": "what's my youngest sister called again?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "wren"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you'?re referring",
+            "i don'?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven'?t|didn'?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recall_name_d96",
+      "plant": "by the way, my youngest sister is called Wren.",
+      "plant_reply": "Wren. noted.",
+      "filler_turns": 96,
+      "recall_prompt": "what's my youngest sister called again?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "wren"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you'?re referring",
+            "i don'?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven'?t|didn'?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recall_name_d240",
+      "plant": "by the way, my youngest sister is called Wren.",
+      "plant_reply": "Wren. noted.",
+      "filler_turns": 240,
+      "recall_prompt": "what's my youngest sister called again?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "wren"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you'?re referring",
+            "i don'?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven'?t|didn'?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recall_detail_d4",
+      "plant": "i'm allergic to walnuts, just so you know.",
+      "plant_reply": "walnuts. i'll remember.",
+      "filler_turns": 4,
+      "recall_prompt": "is there anything i can't eat?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "walnut"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you'?re referring",
+            "i don'?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven'?t|didn'?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recall_detail_d24",
+      "plant": "i'm allergic to walnuts, just so you know.",
+      "plant_reply": "walnuts. i'll remember.",
+      "filler_turns": 24,
+      "recall_prompt": "is there anything i can't eat?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "walnut"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you'?re referring",
+            "i don'?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven'?t|didn'?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recall_detail_d96",
+      "plant": "i'm allergic to walnuts, just so you know.",
+      "plant_reply": "walnuts. i'll remember.",
+      "filler_turns": 96,
+      "recall_prompt": "is there anything i can't eat?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "walnut"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you'?re referring",
+            "i don'?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven'?t|didn'?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recall_detail_d240",
+      "plant": "i'm allergic to walnuts, just so you know.",
+      "plant_reply": "walnuts. i'll remember.",
+      "filler_turns": 240,
+      "recall_prompt": "is there anything i can't eat?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "walnut"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you'?re referring",
+            "i don'?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven'?t|didn'?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    }
+  ]
+}

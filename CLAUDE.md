@@ -122,13 +122,34 @@ adapter changes.
 cd backend
 python -m evals run --model <tag> --out evals/out/baseline.json
 python -m evals compare evals/out/baseline.json evals/out/candidate.json --fail-on-regression
+python -m evals run-conversation --model <tag> --num-ctx 8192 --out evals/out/recall.json
 ```
+
+`run-conversation` is the multi-turn suite: a fact planted early, asked about
+after N scripted filler turns, under two context strategies. It probes the same
+LLM boundary but answers a different question — *does a fact survive distance*.
+Two failure modes are surfaced rather than scored, because both make the number
+meaningless rather than merely low: `plant out` (the strategy never showed the
+model the fact) and `fits NO` (the context exceeded `num_ctx`, and Ollama
+truncates from the front, which is where the plant sits — `OllamaClient`
+defaults it to 2048, so the harness pins it).
 
 Three rules hold it together: **nothing in `app/` may import from `evals/`** (the
 dependency points one way); **scoring is deterministic**, never an LLM judge, so
-the gate cannot flip between identical runs; and **reports carry provenance**, with
-both subcommands refusing mock-sourced data as evidence unless `--allow-mock` is
-passed. A regression is pass→fail on a probe, not a score threshold.
+a given response always yields the same verdict; and **reports carry provenance**,
+with both subcommands refusing mock-sourced data as evidence unless `--allow-mock`
+is passed. A regression is pass→fail on a probe, not a score threshold.
+
+Deterministic scoring does **not** make the gate reproducible on its own — the
+*response* has to be reproducible too, and on `qwen2.5:3b` it was not: two runs
+with byte-identical prompts and pinned sampling differed on 3 of 16 probes and
+flipped two verdicts. The fix was to stop leaving the runtime's starting state
+implicit — both suites now **unload the model, reload it and burn one throwaway
+generation** before the first scored probe (`runner.reset_model_state`), after
+which three consecutive runs were identical on every probe. Reports also carry
+the sampling options and a digest of the system prompt, so `compare` can say
+when two runs were not configured alike instead of diffing them as though they
+were.
 
 ## Integrity constraints
 

@@ -5380,3 +5380,136 @@ raises is never retried. And `_SELF_QUERY_RE` misses questions phrased without
 a possessive or a biographical verb ("which college did you go to") --
 precision was preferred over recall, since a noisy table makes the asking
 channel worse, not better. None of this has been run against a live model.
+
+## 2026-08-02 -- Does a fact survive the distance to the question, and can the instrument that asks be trusted?
+
+Two pieces of work, and the second exists because the first produced a number
+that moved when nothing had changed.
+
+**The multi-turn recall suite.** `evals/conversation.py` plants a fact, buries
+it under scripted filler exchanges, then asks about it at distances of 4, 24,
+96 and 240 turns. The single-turn harness asks whether the model still behaves
+like the persona; this asks the question the memory architecture exists to
+answer.
+
+The variable under test is the **context strategy** -- what the model is shown
+at recall time -- because that is the seam the cognitive layer plugs into.
+`full_history` is the naive baseline, and it is the only condition where
+lost-in-the-middle is observable at all: the fact *is* present, so a miss is an
+attention failure rather than an absence. `recent_window_N` is the control that
+is supposed to fail. A retrieval-backed strategy fits the same `select()`
+interface, and the gap between it and these two is the memory layer's
+contribution stated as a number. That comparison is the point of the whole
+suite; the two shipped strategies are its endpoints.
+
+Only the final answer is generated -- plant, filler and the assistant's replies
+are scripted. That isolates distance from the model's own compounding noise and
+costs one generation per probe instead of forty, but it therefore measures
+*retrieval from a context window*, not conversational degradation.
+
+**Two ways a probe returns a confident verdict about nothing**, both surfaced
+rather than folded into the score, because they make a number invalid rather
+than merely low. `plant out`: the strategy never showed the model the fact, so
+a pass is a guess against the model's prior. `fits NO`: the rendered context
+exceeded `num_ctx` and Ollama truncates from the *front*, which is exactly
+where the plant sits. `OllamaClient` defaults `num_ctx` to 2048, so the harness
+pins it explicitly; the token estimate deliberately over-counts, since a false
+all-clear costs a published number and a false alarm costs a rerun.
+
+Live results on `qwen2.5:3b`, and they are worth recording because they point
+at the next piece of work: **names survive** at every distance under
+`full_history`, up to 482 turns and 18,361 characters. **Details do not** --
+"walnut" is lost past the shortest distance. Every `recent_window_6` probe
+fails with the plant out of context, which is the control behaving correctly,
+and no probe passed with the plant dropped. The failure at 3B is not retrieval
+and not context length; it is that the assistant register overrides recall.
+
+**Then the instrument moved.** Two runs, same model, same seed, temperature 0,
+gave different text on 3 of 16 probes and flipped 2 verdicts. Four experiments
+tried to reproduce it and all four found Ollama deterministic: within a load,
+across three unload/reload cycles, and with a second model contending for VRAM.
+The CPU/GPU layer split does change the output -- all-CPU and part-GPU return
+different text -- but it does not drift on its own. Diffing the two reports
+directly showed byte-identical prompts, identical context sizes, identical
+options, and persona files untouched for a fortnight against a clean tree.
+
+The answer came from measuring instead of theorising, and it took three
+batches of three runs. The first batch -- one cold run, two against an
+already-loaded model -- looked like a clean cold/warm split: the two warm runs
+were byte-identical on all sixteen probes and the cold one disagreed on three.
+So a warm-up generation was added, and **it did not fix it**: the next batch
+still moved two of sixteen and flipped a verdict. The cold/warm framing was
+wrong, or at least too coarse.
+
+What survived both batches was narrower and turned out to be the whole finding:
+**two runs that started from the same state agreed character for character, and
+runs that started differently did not.** The remedy is therefore not to warm a
+run until it converges on some state but to *name* the state. Both suites now
+unload the model (`keep_alive: 0`), let the warm-up generation reload it, and
+only then start scoring. Three consecutive runs under that reset were identical
+on every probe -- **0 of 16 moved**, against 3 of 16 before.
+
+Worth recording that the warm-up alone failing is the informative part. It says
+"freshly loaded" and "holding the previous run's residue" are two different
+starting points and a short generation does not close the distance between
+them, which is also why the unload has to come first rather than instead.
+
+**Three inputs a report was not recording**, each the same class of defect --
+the harness asserting comparability it had not checked:
+
+- `compare` ignored `options` entirely, so two runs at different temperatures
+  diffed as though they were the same experiment. It now diffs them and taints
+  every delta below when they disagree. An option present on one side and
+  absent on the other counts as a difference; absence is a real setting.
+- Reports now carry a digest of the system prompt. It is the largest single
+  input to every response and the one most likely to drift unnoticed, since
+  adaptive traits evolve through reflection and the identity seeds are editable
+  files. Ruling the persona out during this investigation took file-mtime
+  archaeology; it should have taken one field lookup. A digest and not the text,
+  because reports are shareable and the prompt is authored character content.
+- `num_gpu` is now pinnable and travels in the report. It defaults to unset,
+  because a fixed layer count that does not fit the next machine's VRAM is
+  worse than an honest unpinned run.
+
+The option and persona mismatches are **surfaced, never gated on**. The caller
+may have changed something deliberately, and a gate that blocks a deliberate
+change gets bypassed rather than obeyed.
+
+**NOT done.** The retrieval-backed context strategy -- the one that would
+actually measure this repo's memory layer against the naive baseline -- is not
+written. The seam is there and the two shipped strategies bracket it, but until
+something fills it, this suite measures a context window, not the cognitive
+architecture.
+
+The reproducibility finding is characterised, not explained. It is established
+that runs from an identical starting state agree and runs from different ones
+do not, and that unload-then-warm makes the state identical. What specifically
+differs inside Ollama between two starting states is unknown; the reset is a
+remedy chosen because it is cheap and testable, not because the mechanism was
+understood. Three hypotheses were tested and refuted along the way -- the
+CPU/GPU layer split, VRAM contention from a co-resident model, and a plain
+warm-up without an unload -- which is worth knowing mostly so nobody spends the
+afternoon on them again.
+
+Everything above was measured on one model on one machine, `qwen2.5:3b` on a
+CPU-heavy box. The flip rate is a property of the pair, not of the harness, so
+it has to be re-measured before it is quoted anywhere else -- which is exactly
+why the options and the persona digest now travel in the report rather than
+living in a comment. Whether one throwaway generation is enough after an unload
+on hardware that loads the model differently is untested.
+
+The style side of human-likeness is still unmeasured. Since production personas
+are authored per character, there is no reference corpus to score against, so
+similarity metrics are unavailable in principle rather than merely unbuilt; what
+replaces them has to be behavioural probes (unsolicited advice, agreement rate,
+turn length) and none of them exist yet.
+
+**Verified**: 41 new tests across the two eval suites, every mutation caught --
+drop either warm-up call site, narrow the exception guard that keeps a failed
+reset from taking the run down, skip the unload, stop fingerprinting the system
+prompt, make the option diff ignore a key present on only one side, force
+`persona_prompt_differs` false, and let `as_override` emit a null `num_gpu`.
+Full backend suite via junit-xml: 803 passed, 0 failed/errored/skipped. `ruff
+check .` clean. The reproducibility claim was validated end to end: three
+consecutive live `run-conversation` runs on `qwen2.5:3b`, identical on all
+sixteen probes, same persona digest and same options recorded in all three.

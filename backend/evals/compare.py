@@ -12,7 +12,28 @@ regressions are unarguable, which is what a gate needs to be.
 """
 
 
-from .schema import ComparisonReport, EvalReport, ProbeDelta
+from .schema import ComparisonReport, EvalReport, OptionDiff, ProbeDelta
+
+
+def diff_options(baseline: EvalReport, candidate: EvalReport) -> list[OptionDiff]:
+    """Sampling options the two runs did not share.
+
+    Worth its own pass because the harness's whole claim is that a probe flip
+    means the model changed. That holds only if everything else held, and the
+    options are the everything else. An option present in one report and absent
+    from the other counts as a difference: absence is a real setting, not a
+    missing field to be forgiven.
+    """
+    names = sorted(set(baseline.options) | set(candidate.options))
+    return [
+        OptionDiff(
+            name=name,
+            baseline=baseline.options.get(name),
+            candidate=candidate.options.get(name),
+        )
+        for name in names
+        if baseline.options.get(name) != candidate.options.get(name)
+    ]
 
 
 def compare_reports(
@@ -65,6 +86,12 @@ def compare_reports(
         candidate_model=candidate.model,
         baseline_provenance=baseline.provenance,
         candidate_provenance=candidate.provenance,
+        option_diffs=diff_options(baseline, candidate),
+        persona_prompt_differs=bool(
+            baseline.system_prompt_sha256
+            and candidate.system_prompt_sha256
+            and baseline.system_prompt_sha256 != candidate.system_prompt_sha256
+        ),
         regressions=regressions,
         improvements=improvements,
         declines=declines,
@@ -88,6 +115,27 @@ def render_comparison(comparison: ComparisonReport) -> str:
             "!! MOCK PROVENANCE — these responses came from the deterministic",
             "!! mock, not a model. This comparison is a plumbing check, not",
             "!! evidence about model behavior.",
+            "",
+        ]
+
+    if comparison.persona_prompt_differs:
+        lines += [
+            "!! PERSONA PROMPT DIFFERS between these runs. The agent was not",
+            "!! the same one in both, so a probe flip is at least as likely to",
+            "!! be the persona edit as the model.",
+            "",
+        ]
+
+    if comparison.option_diffs:
+        lines.append("!! SAMPLING OPTIONS DIFFER between these runs:")
+        for item in comparison.option_diffs:
+            lines.append(
+                f"!!   {item.name}: {item.baseline!r} -> {item.candidate!r}"
+            )
+        lines += [
+            "!! Every delta below is attributable to the option change as well",
+            "!! as to the model. Re-run both under one configuration before",
+            "!! reading a probe flip as a behavior change.",
             "",
         ]
 
