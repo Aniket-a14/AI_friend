@@ -102,8 +102,12 @@ def parse_biography(markdown: str) -> list[BiographyEntry]:
         text = " ".join(" ".join(buffer).split()).strip()
         buffer.clear()
         if text:
+            # Empty slots are dropped only here, at the point of use. The trail
+            # itself stays depth-aligned -- see below for why that matters.
             entries.append(
-                BiographyEntry(heading=" / ".join(heading_trail), text=text)
+                BiographyEntry(
+                    heading=" / ".join(h for h in heading_trail if h), text=text
+                )
             )
 
     for line in (markdown or "").splitlines():
@@ -117,7 +121,15 @@ def parse_biography(markdown: str) -> list[BiographyEntry]:
             while len(heading_trail) < depth - 1:
                 heading_trail.append("")
             heading_trail.append(match.group(2))
-            heading_trail = [h for h in heading_trail if h]
+            # Deliberately NOT compacted here. The trail is indexed by heading
+            # depth, so dropping empty slots destroys that alignment: in a file
+            # whose sections all start at `##` with no `#` above them, slot 0 is
+            # legitimately empty, and compacting it made the next `##` believe
+            # it was nesting under the previous one. Every section after the
+            # first was then filed as "First Section / Second Section", and
+            # since the heading is folded into the stored text, every single
+            # memory carried the first section's name -- so a cue matching that
+            # name matched the entire biography.
             continue
 
         if not line.strip():
