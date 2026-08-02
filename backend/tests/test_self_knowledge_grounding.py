@@ -24,7 +24,7 @@ from app.state.self_knowledge_store import SelfKnowledgeStore
 # Stands in for a seeded biography. Deliberately small: the gate must work from
 # whatever the user actually wrote, not from a rich world model.
 BIOGRAPHY_TERMS = {
-    "daniel", "marcus", "elena", "punjab", "lpu", "saha", "ada",
+    "daniel", "marcus", "elena", "coast", "riverside", "wren", "ada",
     "brother", "married", "december", "2025", "joint", "family",
 }
 
@@ -107,7 +107,7 @@ class TestTruthIsNotBlocked:
         which is most turns. The biography vocabulary is the fix; this test is
         what proves it is actually being consulted.
         """
-        ok, _ = agent._check_self_grounding("I grew up in Punjab.", [], "")
+        ok, _ = agent._check_self_grounding("I grew up on the coast.", [], "")
         assert ok is True
 
     def test_a_fact_from_the_current_message_is_grounded(self, ungrounded_agent):
@@ -275,7 +275,7 @@ class TestKnownTerms:
         escapes.
         """
         conn = AsyncMock()
-        conn.fetch.return_value = [{"content": "she grew up in Punjab"}]
+        conn.fetch.return_value = [{"content": "she grew up on the coast"}]
         pool = MagicMock()
         pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
         pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -284,7 +284,7 @@ class TestKnownTerms:
         await store.refresh_known_terms()
 
         assert conn.fetch.await_args.args[1] == "biography"
-        assert "punjab" in store.known_terms
+        assert "coast" in store.known_terms
 
     @pytest.mark.asyncio
     async def test_the_agents_own_name_is_grounded_without_a_biography(self):

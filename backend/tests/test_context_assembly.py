@@ -335,3 +335,85 @@ class TestResponseGroundingGate:
         # Safe fallback must be present
         assert "gather my thoughts" in joined
         assert calls["n"] == 2
+
+
+class TestBiographyIsNotSharedHistory:
+    """A biography passage is the agent's own life, not history with the user.
+
+    Rendering both under one "SHARED HISTORY" heading is how the agent came to
+    recite its own biography back as the user's: asked "where did you grow up"
+    it answered "You grew up in a joint in a farming village." Observed against a
+    real model, not hypothesised.
+    """
+
+    def test_biography_memories_get_their_own_block(self):
+        block = ActionService._build_shared_history(
+            [{"content": "She grew up in a farming village.", "source": "biography"}]
+        )
+        assert "ABOUT YOURSELF" in block
+        assert "SHARED HISTORY" not in block
+
+    def test_conversational_memories_stay_shared_history(self):
+        block = ActionService._build_shared_history(
+            [{"content": "You said work was rough.", "source": "user"}]
+        )
+        assert "SHARED HISTORY" in block
+        assert "ABOUT YOURSELF" not in block
+
+    def test_a_memory_with_no_source_is_treated_as_shared(self):
+        """The safe direction: a conversation misfiled as autobiography would
+        invent a life, while the reverse merely loses a little framing."""
+        block = ActionService._build_shared_history([{"content": "Something."}])
+        assert "SHARED HISTORY" in block
+        assert "ABOUT YOURSELF" not in block
+
+    def test_both_kinds_are_kept_separate_in_one_turn(self):
+        block = ActionService._build_shared_history(
+            [
+                {"content": "She grew up in a farming village.", "source": "biography"},
+                {"content": "You said work was rough.", "source": "user"},
+            ]
+        )
+        assert "ABOUT YOURSELF" in block and "SHARED HISTORY" in block
+        assert block.index("village") < block.index("SHARED HISTORY"), (
+            "the agent's own life must not be listed under shared history"
+        )
+
+
+class TestThePromptDoesNotContradictItself:
+    def test_no_global_language_directive_fights_the_persona(self):
+        """The prompt required and forbade Hinglish at the same time.
+
+        `_CHAT_GUIDELINE` said "Respond only in English. Do not use Hindi,
+        Hinglish..." while the identity block, appended immediately before it,
+        said "Maintain Hinglish (Hindi + English) naturally." Whichever won,
+        the other was a lie, and for a persona whose whole idiolect is Hinglish
+        the wrong one winning erases the character entirely.
+        """
+        from app.cognitive.action import _CHAT_GUIDELINE
+
+        assert "only in English" not in _CHAT_GUIDELINE
+        assert "Hinglish" not in _CHAT_GUIDELINE
+
+    def test_language_is_not_hardcoded_into_every_persona(self, tmp_path):
+        """Which language an agent speaks is part of who it is.
+
+        The identity block hardcoded "Maintain Hinglish" for *every* persona,
+        including the ones that are not Hinglish. The persona's own SPEAKING
+        STYLE has to be what carries this, or authoring a persona cannot
+        actually decide how it talks.
+        """
+        from app.cognitive.identity import IdentityManager
+
+        persona = tmp_path / "p.toml"
+        persona.write_text(
+            'name = "Ines"\n\n[speaking_style]\n'
+            'style_description = "Formal Portuguese, never contractions."\n',
+            encoding="utf-8",
+        )
+        prompt = IdentityManager(
+            persona_file=str(persona), base_path=str(tmp_path)
+        ).get_persona_prompt("calm")
+
+        assert "Hinglish" not in prompt
+        assert "Formal Portuguese" in prompt

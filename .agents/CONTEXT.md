@@ -5186,3 +5186,65 @@ profile.py) while the documented authored format is TOML, which
 `persona or PersonaProfile.load()` fallback would silently ignore a TOML
 `PERSONA_PROFILE_PATH` and drop to Config defaults. Latent, not hit today
 because `core.py` injects the persona explicitly. Separate change.
+
+## 2026-08-02 — First real boot: the prompt contradicted itself, and the agent narrated its own life as the user's
+
+First end-to-end run against a live model (qwen2.5:3b, local Ollama) with a real
+authored persona and a 60-passage biography seeded into Postgres. It worked —
+asked about her brother, the agent returned both brothers and the December
+wedding, in the persona's own Hinglish. It also surfaced two defects that no
+unit test could have, because both are properties of the assembled prompt rather
+than of any one function.
+
+**The prompt required and forbade the same thing.** `identity.py`'s mandatory
+rules said "Maintain Hinglish (Hindi + English) naturally"; `_CHAT_GUIDELINE`,
+appended immediately after, said "Respond only in English. Do not use Hindi,
+Hinglish, or any other language for now." Both were hardcoded, so both were
+wrong: the first forces Hinglish on personas that are not Hinglish, the second
+overrides any persona that is. Whichever won, the other was a lie in every
+prompt the system has ever sent.
+
+Both are gone. Which language an agent speaks is part of who it is, so it comes
+from the persona's `SPEAKING STYLE` and `VOCABULARY`, which are authored per
+agent and were already in the prompt.
+
+**Biography passages were rendered as shared history.** `_build_shared_history`
+put every surfaced memory under one heading, "SHARED HISTORY / RECENT CONTEXT" —
+which asserts these are things that passed between the agent and the user. A
+biography written in the third person ("She grew up in a joint family in
+farming village") under that heading reads as a fact about the person being spoken to,
+and was answered back as one:
+
+    User:  where did you grow up
+    Agent: You grew up in a farming village, on the coast...
+
+The agent recited its own life as the user's. `_on_memory_surfaced` was also
+dropping `source` before the prompt was built, so the distinction the store
+already records could not be used. It is carried through now, and biography
+memories render in their own `ABOUT YOURSELF` block.
+
+**The first version of that fix was worse than the bug.** Labelling the block
+"your own life" without saying the list was complete turned it into a writing
+prompt: the agent stopped misattributing its biography and started *extending*
+it, inventing a sister, a childhood backyard and a pet in a single
+run. A list of facts under an encouraging heading invites more facts. The block
+now states that it is complete and that anything absent is unknown — phrased
+structurally, with no enumeration of what a life contains, since production code
+cannot know what any given biography holds.
+
+**Verified**: 6 new tests, all four mutations caught (stop splitting the block;
+treat source-less memories as biography; restore either language directive).
+Full backend suite via junit-xml: 743 passed, 0 failed/errored/skipped.
+`ruff check .` clean. Re-probed against the live model: the pronoun inversion is
+gone.
+
+**NOT done:** output quality at 3B is poor regardless of prompt — long Hinglish
+turns degrade into word salad and one probe fails every run. That is a model
+ceiling, not a prompt bug, and a larger model is not available on this hardware.
+`_SELF_CLAIM_RE` (added in the previous entry) is a hardcoded English kinship
+wordlist and is the same category of mistake as the language directives above:
+production code guessing at what a personal biography contains. Being replaced
+with a grammatical trigger in the next change. `self_knowledge_gaps` is still
+empty after three live runs — the older user-directed guideline deflects these
+questions before a self-claim is ever asserted, so the gate remains unproven
+outside its tests.

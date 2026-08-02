@@ -317,6 +317,11 @@ class CognitiveService:
                         self.surfaced_memories.append(
                             {
                                 "content": memory_text,
+                                # Carried through so the prompt can say whose
+                                # life a passage describes. Dropping it here is
+                                # what let biography material be rendered as
+                                # shared history and attributed to the user.
+                                "source": mem_item.get("source"),
                                 "timestamp": mem_item.get(
                                     "created_at", data.get("timestamp", 0)
                                 ),
@@ -331,6 +336,7 @@ class CognitiveService:
             self.surfaced_memories.append(
                 {
                     "content": memory_text,
+                    "source": data.get("source"),
                     "timestamp": data.get("timestamp", 0),
                     "relevance": data.get("relevance", 1.0),
                 }

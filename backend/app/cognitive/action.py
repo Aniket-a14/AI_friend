@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from ..config import Config
+from ..persona.biography import BIOGRAPHY_SOURCE
 from .decision import ActionPlan
 
 logger = logging.getLogger(__name__)
@@ -119,8 +120,11 @@ _CHAT_GUIDELINE = (
     "preferences, you MUST integrate them explicitly and accurately to answer "
     "the user's question.\n"
     "- GROUNDING: Base any specific claim about the user, your shared past, "
-    "names, dates, places, or events ONLY on the SHARED HISTORY / RECENT "
-    "CONTEXT provided. Do not invent memories or details that are not there. "
+    "names, dates, places, or events ONLY on the ABOUT YOURSELF and SHARED "
+    "HISTORY / RECENT CONTEXT blocks provided. ABOUT YOURSELF describes YOUR "
+    "life; SHARED HISTORY is what has passed between you and the user. Never "
+    "attribute one to the other. "
+    "Do not invent memories or details that are not there. "
     "If the user asks about something you have no memory of, say so naturally "
     '(e.g. "I don\'t think you\'ve told me that") instead of making it up.\n'
     "- SELF-GROUNDING: Everything you know about your own life comes from your "
@@ -128,8 +132,14 @@ _CHAT_GUIDELINE = (
     "places, schools, jobs or dates for yourself. If you are asked something "
     "about your own past that you do not know, say so plainly in your own "
     "voice and let it go -- do not guess, and do not ask the user to tell you.\n"
-    "- Respond only in English. Do not use Hindi, Hinglish, or any other "
-    "language for now.\n"
+    # No language directive here. There used to be "Respond only in English.
+    # Do not use Hindi, Hinglish, or any other language for now." while the
+    # identity block, appended immediately above this one, said "Maintain
+    # Hinglish (Hindi + English) naturally." The prompt required and forbade
+    # the same thing, and this half came second. Language belongs to the
+    # persona -- SPEAKING STYLE and VOCABULARY are authored per agent and are
+    # already in the prompt -- not to a global guideline that cannot know which
+    # agent it is describing.
     "- The voice layer already carries emotion separately. Do not emit XML "
     "wrappers or emotion tags.\n"
     "- You may use <pause=300ms> or <hesitate> when it improves natural timing."
@@ -456,13 +466,53 @@ class ActionService:
 
     @staticmethod
     def _build_shared_history(surfaced: list) -> str:
-        """Render surfaced memories, edge-loaded against lost-in-the-middle."""
+        """Render surfaced memories, edge-loaded against lost-in-the-middle.
+
+        Biography passages are split into their own block. They used to be
+        rendered under "SHARED HISTORY", which says they are history the agent
+        *shares with the user* -- and a biography written in the third person
+        ("She grew up in a farming village") under that heading reads as
+        a fact about the person being spoken to. It was answered back as one:
+        asked where she grew up, the agent replied "You grew up in a joint
+        in a farming village." The agent was reciting its own life as the user's.
+
+        The split is on `source`, which the store already records, so nothing
+        has to be inferred from the text. Memories with no source fall through
+        to the shared block, which is the safe direction: a conversational
+        memory misfiled as autobiography would invent a life.
+        """
         if not surfaced:
             return ""
-        ordered = reorder_for_long_context(surfaced)
-        return "\nSHARED HISTORY / RECENT CONTEXT (Active Influence):\n" + "\n".join(
-            [f"- {m['content']}" for m in ordered]
-        )
+
+        own = [m for m in surfaced if (m.get("source") or "") == BIOGRAPHY_SOURCE]
+        shared = [m for m in surfaced if (m.get("source") or "") != BIOGRAPHY_SOURCE]
+
+        blocks = []
+        if own:
+            # The exhaustiveness clause is not decoration. Labelling the block
+            # "your own life" without it made things worse than the bug it
+            # fixed: the agent stopped misattributing its biography to the user
+            # and started *extending* it instead, inventing a sister, a
+            # childhood backyard and a dog. A list of facts under an
+            # encouraging heading reads as a writing prompt. Saying the list is
+            # complete is what turns it back into a boundary.
+            blocks.append(
+                "\nABOUT YOURSELF (your own life and history, not the user's).\n"
+                "Treat this list as COMPLETE: it is everything you know about "
+                "your own life. Anything not stated below, you do not know -- "
+                "say so plainly rather than describing it:\n"
+                + "\n".join(
+                    f"- {m['content']}" for m in reorder_for_long_context(own)
+                )
+            )
+        if shared:
+            blocks.append(
+                "\nSHARED HISTORY / RECENT CONTEXT (Active Influence):\n"
+                + "\n".join(
+                    f"- {m['content']}" for m in reorder_for_long_context(shared)
+                )
+            )
+        return "".join(blocks)
 
     @staticmethod
     def _build_tom_context(user_tom) -> str:
