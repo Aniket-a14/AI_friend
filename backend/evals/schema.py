@@ -94,26 +94,104 @@ class CheckResult(BaseModel):
     detail: str = ""
 
 
+class Plant(BaseModel):
+    """One fact placed in the transcript at a stated depth.
+
+    ``after_filler`` is how many filler exchanges precede it, which is what
+    makes a probe able to say *when* something was said. One fact needs only
+    position zero; the interesting probes need more than one, and need them
+    apart:
+
+    - a fact and its later correction, to ask whether retrieval returns the
+      current answer or the first one it ever heard;
+    - a crowd of near-identical facts, to ask whether retrieval can pick the
+      one that was asked about rather than the topic they share.
+
+    ``answers`` marks the plants the recall question is actually about.
+    Everything else is a distractor that is *supposed* to compete, and the
+    distinction is load-bearing: `plant_visible` reports whether the answering
+    facts reached the model, because a pass without them is a guess. A
+    strategy that drops a distractor has made the probe easier, not invalid,
+    so distractors must not count towards that flag.
+    """
+
+    text: str = Field(min_length=1)
+    reply: str = "Got it."
+    after_filler: int = Field(default=0, ge=0)
+    answers: bool = True
+
+
 class ConversationProbe(BaseModel):
     """A fact planted early, asked about later.
 
     ``filler_turns`` is the distance the fact has to survive, and it is the
     independent variable of the whole suite: a probe is the same question at a
     different remove, so a pack spans distances rather than repeating one.
+    With several plants it is the *total* filler; a plant's own distance from
+    the question is ``filler_turns - after_filler``.
 
     ``plant_reply`` is scripted like the filler, because the assistant's
     acknowledgement is part of the context the recall has to reach past, and
     generating it would put model noise inside the thing being measured.
+
+    A probe is written either as a single ``plant`` or as a list of ``plants``,
+    never both. The single form is not legacy sugar to be migrated away: most
+    probes plant one fact at position zero, and making them spell out a
+    one-element list would obscure that the multi-plant probes are doing
+    something different.
     """
 
     id: str = Field(min_length=1)
     category: Category = "memory"
-    plant: str = Field(min_length=1)
+    plant: str = ""
     plant_reply: str = "Got it."
+    plants: list[Plant] = Field(default_factory=list)
     filler_turns: int = Field(ge=0)
     recall_prompt: str = Field(min_length=1)
     checks: list[Check] = Field(min_length=1)
     source: str = "unknown"
+
+    @model_validator(mode="after")
+    def validate_plants(self) -> "ConversationProbe":
+        """Reject probes whose plants could not be placed as written.
+
+        Each of these silently produces a transcript that does not match what
+        the pack author described, and the report has no column that would
+        show it -- the probe simply measures something else and reads as a
+        result.
+        """
+        if self.plant and self.plants:
+            raise ValueError(
+                f"probe {self.id!r} sets both 'plant' and 'plants'; use one"
+            )
+        if not self.plant and not self.plants:
+            raise ValueError(f"probe {self.id!r} plants no fact")
+
+        resolved = self.resolved_plants
+        # A plant placed deeper than the filler runs would be emitted after the
+        # last filler exchange, landing next to the question it is supposed to
+        # be remembered across -- a probe that measures nothing but reports a
+        # distance.
+        too_deep = [p.text for p in resolved if p.after_filler > self.filler_turns]
+        if too_deep:
+            raise ValueError(
+                f"probe {self.id!r} plants past its own filler ({self.filler_turns}): "
+                f"{too_deep}"
+            )
+        if not any(p.answers for p in resolved):
+            raise ValueError(
+                f"probe {self.id!r} has no plant marked 'answers'; nothing in "
+                "the transcript is the answer and `plant_visible` would be "
+                "vacuously true"
+            )
+        return self
+
+    @property
+    def resolved_plants(self) -> list[Plant]:
+        """The probe's plants, however it was written."""
+        if self.plants:
+            return list(self.plants)
+        return [Plant(text=self.plant, reply=self.plant_reply)]
 
 
 class ProbeResult(BaseModel):

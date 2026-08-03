@@ -7,6 +7,7 @@ end. Each stage is now independently testable, which is the point of the
 refactor: it makes the memory and action paths safe to iterate on.
 """
 
+import contextlib
 from datetime import UTC
 from unittest.mock import MagicMock
 
@@ -65,6 +66,75 @@ def test_mrl_gating_without_refresh_uses_smaller_pool():
 def test_mrl_gating_tolerates_none_limit():
     assert MemoryStore._compute_mrl_gating(0.9, 0.0, None, True) == (256, 10)
     assert MemoryStore._compute_mrl_gating(0.1, 0.0, None, False) == (768, 20)
+
+
+def test_the_two_unstressed_gating_tiers_stay_six_fold_apart():
+    """The pool a caller gets is the search it gets, and the gap is large.
+
+    An unstressed conversation turn gathers 120 candidates; a latency-
+    sensitive caller gathers 20. Anything that reads the tier flag off some
+    other property therefore narrows the search sixfold without saying so --
+    which is exactly what happened to the eval retriever when it switched
+    `refresh_on_recall` off, and it published a run before anyone noticed.
+    """
+    assert MemoryStore._compute_mrl_gating(0.1, 0.0, 5, False) == (768, 20)
+    assert MemoryStore._compute_mrl_gating(0.1, 0.0, 5, True) == (768, 120)
+
+
+class _GatingSpy:
+    """The few attributes `search_memories` touches before it picks a tier.
+
+    Hand-written rather than a `MagicMock(spec=MemoryStore)`, because a spec'd
+    mock answers every attribute -- including the one under test -- so the
+    assertion can pass while the real method is never reached. That is how the
+    first version of this test came to assert on an empty list.
+    """
+
+    def __init__(self):
+        self.seen: list[bool] = []
+        self._l1_cache = {}
+        self._l1_cache_ttl = 60.0
+        self._last_stop_words_update = float("inf")
+
+    async def get_embedding(self, text):
+        return [0.1] * 768
+
+    def _compute_mrl_gating(self, arousal, cortisol, limit, full_pool):
+        self.seen.append(full_pool)
+        raise _StopAfterGating
+
+
+class _StopAfterGating(Exception):
+    pass
+
+
+@pytest.mark.parametrize(
+    ("refresh", "explicit", "expected"),
+    [
+        (True, None, True),      # unchanged default: a conversation turn
+        (False, None, False),    # unchanged default: a latency-sensitive caller
+        (False, True, True),     # what the eval retriever needs
+        (True, False, False),    # and the inverse, so the override is real
+    ],
+)
+@pytest.mark.asyncio
+async def test_the_pool_tier_can_be_asked_for_without_the_recall_refresh(
+    refresh, explicit, expected
+):
+    """`full_candidate_pool` overrides the tier; omitting it changes nothing.
+
+    Both halves matter. The override is what lets an eval search production's
+    candidate pool without mutating recall counters. The default is what keeps
+    every existing caller -- `action.py`'s fallback and `surfacing_agent` --
+    on exactly the tier they have always had.
+    """
+    spy = _GatingSpy()
+    with contextlib.suppress(_StopAfterGating):
+        await MemoryStore.search_memories(
+            spy, query_text="q", limit=5,
+            refresh_on_recall=refresh, full_candidate_pool=explicit,
+        )
+    assert spy.seen == [expected]
 
 
 def test_pronoun_cues_flip_between_user_and_self_reflection():

@@ -1,0 +1,455 @@
+{
+  "_comment": [
+    "Recall probes written to separate two retrievers, not to be answerable.",
+    "",
+    "The shipped `conversation_recall.json` pack found the memory layer tied",
+    "with a fifty-line BM25 control. That result is uninterpretable, because",
+    "every question in it repeats the words of its own plant -- 'sister' asks",
+    "for 'sister', 'eat' asks about food. A pack like that measures whether",
+    "retrieval happened at all, and both retrievers do that. It cannot measure",
+    "whether *this* retrieval is better, so a tie there is not evidence of",
+    "parity; it is evidence the instrument was blunt.",
+    "",
+    "Every probe here is built so that literal word overlap is either absent or",
+    "actively misleading:",
+    "",
+    "  oblique_*     the question names the topic and never the plant's words.",
+    "                A lexical retriever has nothing above chance to rank on.",
+    "                Anything that passes did so by meaning.",
+    "",
+    "  update_*      a fact, then its correction twelve exchanges later. Both",
+    "                mention the job; only recency distinguishes them. This is",
+    "                the probe ACT-R activation exists for -- a retriever with",
+    "                no notion of when something was said has no way to prefer",
+    "                the true answer.",
+    "",
+    "  similars_*    seven facts of identical shape, one of which is asked",
+    "                about. Shipped in two variants on purpose. The lexical",
+    "                variant is the control: it names the distinguishing word,",
+    "                so both retrievers should pass, which is what establishes",
+    "                that a crowded field is not by itself the difficulty. The",
+    "                oblique variant changes only the question.",
+    "",
+    "NOT here: cross-session recall, where the fact was learned in an earlier",
+    "conversation absent from this transcript. It is the most discriminating",
+    "probe available -- both context baselines would fail by construction --",
+    "but the strategy seam maps retrieved turns back to transcript positions,",
+    "so a hit that is not in the transcript is silently dropped. Expressing it",
+    "needs a retriever index separate from the rendered context, which is a",
+    "change to the harness rather than a pack.",
+    "",
+    "Filler is fresh rather than shared with the other pack, because a filler",
+    "line containing any answer here would let a probe pass without recall.",
+    "All names and facts are invented.",
+    "",
+    "On `must_not_match` in update_*: a blanket ban on the superseded answer",
+    "would be wrong. 'you left the bookshop, you're at the museum now' is a",
+    "correct answer that names the old job, and failing it would penalise the",
+    "clearest phrasing. The guard is narrow on purpose -- it catches only the",
+    "old fact asserted as current."
+  ],
+  "filler": [
+    [
+      "the wifi keeps dropping out",
+      "restart the router. it usually sorts itself."
+    ],
+    [
+      "i slept badly again",
+      "you say that most weeks."
+    ],
+    [
+      "there's a queue at the post office",
+      "there always is on a thursday."
+    ],
+    [
+      "my keys have vanished",
+      "coat pocket. check there first."
+    ],
+    [
+      "it's gone dark early",
+      "it does this time of year."
+    ],
+    [
+      "the printer's jammed",
+      "leave it. it recovers out of spite."
+    ],
+    [
+      "i've got a headache",
+      "water, and sit down for ten minutes."
+    ],
+    [
+      "the train was cancelled",
+      "of course it was."
+    ],
+    [
+      "someone's drilling upstairs",
+      "they'll stop. they always stop."
+    ],
+    [
+      "i need a haircut",
+      "you've been saying that for a month."
+    ],
+    [
+      "my laptop fan is screaming",
+      "it's dusty. it always is."
+    ],
+    [
+      "the milk's turned",
+      "the sniff test has never lied to anyone."
+    ],
+    [
+      "i've lost my umbrella again",
+      "third one this year."
+    ],
+    [
+      "the pipes click all night",
+      "old building. nothing to be done."
+    ],
+    [
+      "i can't remember my password",
+      "you never can. just reset it."
+    ],
+    [
+      "there's a wasp in here",
+      "open the window and back away slowly."
+    ]
+  ],
+  "probes": [
+    {
+      "id": "oblique_activity_d24",
+      "plant": "i've started swimming at the pool before work most mornings.",
+      "plant_reply": "before work. that's discipline.",
+      "filler_turns": 24,
+      "recall_prompt": "what am i doing to stay fit these days?",
+      "checks": [
+        {
+          "kind": "must_include_any",
+          "values": [
+            "swim",
+            "pool"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you['’]?re referring",
+            "i don['’]?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven['’]?t|didn['’]?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oblique_activity_d96",
+      "plant": "i've started swimming at the pool before work most mornings.",
+      "plant_reply": "before work. that's discipline.",
+      "filler_turns": 96,
+      "recall_prompt": "what am i doing to stay fit these days?",
+      "checks": [
+        {
+          "kind": "must_include_any",
+          "values": [
+            "swim",
+            "pool"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you['’]?re referring",
+            "i don['’]?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven['’]?t|didn['’]?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oblique_dislike_d24",
+      "plant": "coriander tastes like soap to me, i can't stand it.",
+      "plant_reply": "understood. never coriander.",
+      "filler_turns": 24,
+      "recall_prompt": "what should i leave out of tonight's meal?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "coriander"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you['’]?re referring",
+            "i don['’]?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven['’]?t|didn['’]?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oblique_dislike_d96",
+      "plant": "coriander tastes like soap to me, i can't stand it.",
+      "plant_reply": "understood. never coriander.",
+      "filler_turns": 96,
+      "recall_prompt": "what should i leave out of tonight's meal?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "coriander"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you['’]?re referring",
+            "i don['’]?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven['’]?t|didn['’]?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "update_job_d24",
+      "plants": [
+        {
+          "text": "i work at the bookshop on the high street.",
+          "reply": "the one by the crossing. i know it.",
+          "after_filler": 0,
+          "answers": false
+        },
+        {
+          "text": "i left the bookshop, by the way. i'm at the museum now.",
+          "reply": "the museum. that suits you better.",
+          "after_filler": 12,
+          "answers": true
+        }
+      ],
+      "filler_turns": 24,
+      "recall_prompt": "where do i work now?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "museum"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "(still|currently) [^.]{0,25}bookshop",
+            "you work at [^.]{0,15}bookshop"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you['’]?re referring",
+            "i don['’]?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven['’]?t|didn['’]?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "update_job_d96",
+      "plants": [
+        {
+          "text": "i work at the bookshop on the high street.",
+          "reply": "the one by the crossing. i know it.",
+          "after_filler": 0,
+          "answers": false
+        },
+        {
+          "text": "i left the bookshop, by the way. i'm at the museum now.",
+          "reply": "the museum. that suits you better.",
+          "after_filler": 48,
+          "answers": true
+        }
+      ],
+      "filler_turns": 96,
+      "recall_prompt": "where do i work now?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "museum"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "(still|currently) [^.]{0,25}bookshop",
+            "you work at [^.]{0,15}bookshop"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you['’]?re referring",
+            "i don['’]?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven['’]?t|didn['’]?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "similars_lexical_d48",
+      "plants": [
+        {
+          "text": "mira's the one who's always losing her phone.",
+          "reply": "every time.",
+          "after_filler": 2,
+          "answers": false
+        },
+        {
+          "text": "teo's the one who does the long-distance running.",
+          "reply": "exhausting to hear about.",
+          "after_filler": 6,
+          "answers": false
+        },
+        {
+          "text": "halvard's the one with the allotment.",
+          "reply": "right. halvard.",
+          "after_filler": 10,
+          "answers": true
+        },
+        {
+          "text": "sunniva's the one who never answers her messages.",
+          "reply": "some people are like that.",
+          "after_filler": 14,
+          "answers": false
+        },
+        {
+          "text": "ravi's the one who plays in the brass band.",
+          "reply": "loudly, i imagine.",
+          "after_filler": 18,
+          "answers": false
+        },
+        {
+          "text": "iris is the one who's frightened of the sea.",
+          "reply": "reasonable, honestly.",
+          "after_filler": 22,
+          "answers": false
+        },
+        {
+          "text": "bo's the one who gets through two books a week.",
+          "reply": "showing off.",
+          "after_filler": 26,
+          "answers": false
+        }
+      ],
+      "filler_turns": 48,
+      "recall_prompt": "who's the one with the allotment?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "halvard"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\b(mira|teo|sunniva|ravi|iris|bo)\\b"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you['’]?re referring",
+            "i don['’]?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven['’]?t|didn['’]?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "similars_oblique_d48",
+      "plants": [
+        {
+          "text": "mira's the one who's always losing her phone.",
+          "reply": "every time.",
+          "after_filler": 2,
+          "answers": false
+        },
+        {
+          "text": "teo's the one who does the long-distance running.",
+          "reply": "exhausting to hear about.",
+          "after_filler": 6,
+          "answers": false
+        },
+        {
+          "text": "halvard's the one with the allotment.",
+          "reply": "right. halvard.",
+          "after_filler": 10,
+          "answers": true
+        },
+        {
+          "text": "sunniva's the one who never answers her messages.",
+          "reply": "some people are like that.",
+          "after_filler": 14,
+          "answers": false
+        },
+        {
+          "text": "ravi's the one who plays in the brass band.",
+          "reply": "loudly, i imagine.",
+          "after_filler": 18,
+          "answers": false
+        },
+        {
+          "text": "iris is the one who's frightened of the sea.",
+          "reply": "reasonable, honestly.",
+          "after_filler": 22,
+          "answers": false
+        },
+        {
+          "text": "bo's the one who gets through two books a week.",
+          "reply": "showing off.",
+          "after_filler": 26,
+          "answers": false
+        }
+      ],
+      "filler_turns": 48,
+      "recall_prompt": "which of them grows their own vegetables?",
+      "checks": [
+        {
+          "kind": "must_include",
+          "values": [
+            "halvard"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\b(mira|teo|sunniva|ravi|iris|bo)\\b"
+          ]
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "not sure what you['’]?re referring",
+            "i don['’]?t (recall|remember|know)",
+            "if you (mentioned|have|had)",
+            "you (haven['’]?t|didn['’]?t|did not) (told|tell|mention|said|say)",
+            "i have no (record|memory|idea)"
+          ]
+        }
+      ]
+    }
+  ]
+}

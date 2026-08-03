@@ -79,6 +79,53 @@ Reports share the single-turn shape, so `compare` works across both suites.
 Probe ids are qualified with the strategy (`recall_name_d96@full_history`) so
 two conditions never collide inside one report.
 
+### Retrieval strategies, and the control next to them
+
+`--retrieval` adds strategies that *choose* what the model sees instead of
+truncating to a rule:
+
+- **`bm25`** — a fifty-line Okapi BM25 over the transcript. No embeddings, no
+  database, no decay. It is the control, and it needs no infrastructure. A
+  memory layer that cannot beat it has not yet earned what it costs to run.
+- **`memory`** — the real `MemoryStore.search_memories`, built the way
+  `brain_agent.main` builds it. **It needs Postgres, Qdrant and Neo4j up, and
+  it writes every transcript turn into them**, into a dedicated `eval_harness`
+  wing that it purges before each index and again at the end. Point it at the
+  agent's live databases only if that is what you mean to do.
+
+Each retriever yields two strategies: `Retrieved` is budget-matched to
+`recent_window_N`, so a difference is attributable to *which* turns were chosen
+rather than how many; `WindowPlusRetrieved` mirrors what the running system
+does and is deliberately not budget-matched.
+
+The eval retriever searches with `refresh_on_recall=False`. Retrieval normally
+strengthens what it returns, which is right for an agent and wrong for an
+instrument — four strategies query the same room, and the frequency term is
+large enough to reorder results on its own, so leaving it on would make ranking
+depend on the order the suite ran in.
+
+### The discriminating pack
+
+`probes/conversation/discriminating_recall.json` exists because the shipped
+pack could not tell the two retrievers apart: every question in it repeats the
+words of its own plant, which is close to the best case for BM25. Three
+families, all written so literal overlap is absent or misleading — `oblique_*`
+(the question names the topic and never the plant's words), `update_*` (a fact,
+then its correction, distinguishable only by recency), and `similars_*` (seven
+facts of identical shape, shipped in a lexical variant as the control and an
+oblique variant as the test).
+
+Probes there use `plants`, a list placing several facts at stated depths, with
+`answers` marking the ones the question is about — so `plant out` still means
+"the answer never reached the model" when distractors are present.
+
+```bash
+python -m evals run-conversation --model qwen2.5:3b --num-ctx 8192 \
+    --pack evals/probes/conversation/discriminating_recall.json \
+    --retrieval bm25 --retrieval memory \
+    --out evals/out/discriminating.json
+```
+
 ## What a report has to carry to be comparable
 
 A probe flip means the model changed *only if everything else held*, so a

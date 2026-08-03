@@ -965,20 +965,29 @@ class MemoryStore:
         current_arousal: float,
         current_cortisol: float,
         limit,
-        refresh_on_recall: bool,
+        full_pool: bool,
     ) -> tuple[int, int]:
         """Dynamic Matryoshka (MRL) dimension gating.
 
         Higher stress/arousal restricts the search to a smaller Matryoshka
         prefix and a smaller candidate pool, bounding retrieval latency when
         the agent is under load.
+
+        `full_pool` picks between the two unstressed tiers: the full pool a
+        conversation turn gets (`limit*6`, floor 120) and the cheaper one a
+        latency-sensitive caller gets (`limit*3`, floor 20). It is named for
+        what it selects. `search_memories` has historically passed
+        `refresh_on_recall` here because its two latency-sensitive callers --
+        the `action.py` fallback and `surfacing_agent` -- also happen not to
+        want recall counters bumped, but those are separate properties and a
+        caller that needs one without the other says so explicitly.
         """
         stress_index = max(current_arousal, current_cortisol)
         if stress_index > 0.8:
             return 256, max(10, limit * 2 if limit is not None else 10)
         if stress_index > 0.6:
             return 512, max(30, limit * 3 if limit is not None else 30)
-        if refresh_on_recall:
+        if full_pool:
             return 768, max(120, limit * 6 if limit is not None else 120)
         return 768, max(20, limit * 3 if limit is not None else 20)
 
@@ -2378,6 +2387,8 @@ class MemoryStore:
         user_id: str | None = None,
         is_self_reflection: bool = False,
         current_time=None,
+        *,
+        full_candidate_pool: bool | None = None,
     ):
         """
         ACT-R Based Retrieval with Hierarchical & Neuromodulatory Gating:
@@ -2389,6 +2400,14 @@ class MemoryStore:
         (Qdrant, else SQL) -> lexical/graph cue analysis -> spreading-activation
         boosts -> threshold + format -> L3 archive promotion -> sort/limit.
         Each stage is a `_`-prefixed helper defined above.
+
+        Args:
+            full_candidate_pool: How wide a candidate pool to gather, when the
+                agent is not stressed. Defaults to `refresh_on_recall`, which is
+                how this has always been decided -- but the two are different
+                properties that happened to coincide, and reading one off the
+                other silently narrows the search for anyone who wants the
+                counters left alone. Pass it explicitly to say which you mean.
         """
         # L1 Cache lookup to bypass DB and math activation loops for active topics
         cache_key = (
@@ -2438,7 +2457,12 @@ class MemoryStore:
                 return []
 
             mrl_dim, candidate_limit = self._compute_mrl_gating(
-                current_arousal, current_cortisol, limit, refresh_on_recall
+                current_arousal,
+                current_cortisol,
+                limit,
+                refresh_on_recall
+                if full_candidate_pool is None
+                else full_candidate_pool,
             )
 
             # Slice query_vector to mrl_dim and pad with zeros to 768

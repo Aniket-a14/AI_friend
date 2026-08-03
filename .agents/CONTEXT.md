@@ -5633,3 +5633,189 @@ asserted on each call separately, so deleting before reading ids satisfied every
 assertion. A fourth needed its fixture rebuilt -- filler repeats verbatim, so
 the over-return it fed the strategy was filtered as already-visible before any
 cap could matter, and the test passed against the bug it was written for.
+
+---
+
+## 2026-08-02 -- The tie was the benchmark's fault, and the ranking bug was not where I said it was
+
+The previous entry closed with "the memory layer ties BM25" and an explicit
+warning that the pack could not show a difference: every question in
+`conversation_recall.json` repeats the words of its own plant. Two things came
+out of building the pack that can.
+
+### A probe can now plant more than one fact
+
+`ConversationProbe` grew a `plants` list of `Plant(text, reply, after_filler,
+answers)` alongside the single `plant` field, which is unchanged and still the
+right way to write the common case. `after_filler` places a fact at a stated
+depth; `answers` marks which plants the question is actually about, so
+`plant_visible` reports whether the *answering* facts reached the model and a
+dropped distractor does not mark an honest result as measuring nothing.
+
+Filler is one running sequence that plants interrupt rather than restart --
+otherwise a probe declaring 24 exchanges of distance emits more, and the axis
+every recall number is reported against means a different amount of text per
+probe. Four probe shapes are rejected at load rather than silently measuring
+something else: a plant deeper than its own filler, a probe with no answering
+plant, a probe written both ways at once, and a probe planting nothing.
+
+### The pack: `probes/conversation/discriminating_recall.json`
+
+Three families, all built so literal word overlap is absent or misleading.
+`oblique_*` names the topic and never the plant's words. `update_*` states a
+job, then corrects it twelve exchanges later -- both plants mention work, and
+only recency separates them, which is the probe ACT-R activation exists for.
+`similars_*` crowds seven facts of identical shape and asks about one, shipped
+in a lexical variant *and* an oblique one; the lexical variant is the control
+that establishes a crowded field is not by itself the difficulty.
+
+Two tests keep the pack honest against itself: no filler line may contain any
+probe's answer, and the oblique probes may share no content word with their
+answering plant. The second is asserted twice -- once as the wording rule, once
+against the actual `LexicalRetriever`, because the rule states the intent and
+only the control states the consequence.
+
+### The ranking failure is real, and my hypothesis about it was wrong
+
+Previous entry: "the vector tier returns the plant ranked fifth of six". The
+guess that followed was that `DIRECT_CUE_BOOST` (5.0 per literal keyword,
+against a similarity term that spans ~0.5) was swamping semantics. Measured
+against live Postgres/Qdrant/Neo4j, on `oblique_dislike_d24`:
+
+- Qdrant alone ranks the answering plant **#1**.
+- The fused `search_memories` puts it **#17 of 34**.
+- Forcing `DIRECT_CUE_BOOST` to zero: still **#17**. Not the cause.
+- Disabling PPR spreading activation entirely: still #17. The eval room has
+  **zero** graph entities, so PPR contributes nothing at all here.
+
+Snapshotting scores at each post-processing stage showed the gap was already
+present *before* any of them: the answer entered the fusion at 1.052 while
+unrelated filler entered at 1.708. That difference is inside `_base_activation`,
+and it is `_ln(recall_count)`. Filler repeats verbatim, `add_memory`
+deduplicates on content, and a duplicate write takes `recall_count + 1` -- so a
+line said twice carries **ln 2 = 0.69**, which is larger than the entire
+observed spread of the similarity term (cosine 0.35-0.48 in these rooms, and
+`ACTR_SPREAD_WEIGHT` is 1.0). Neutralising just the frequency term moves the
+answer from #17 to #2, from #17 to #1, and from #36 to #4 on the three oblique
+probes. **Frequency outranks relevance, structurally, not by tuning.**
+
+One correction to how that is stated. Those depths come from asking for 60
+results; the candidate pool is a function of the requested `limit`, so ranks
+are not stable across limits. At the budget the suite actually uses -- six --
+the answer is present in every case: `oblique_dislike` #6 of 6,
+`oblique_activity` #3 of 6, both `update_job` probes #1, both `similars`
+probes #1. The frequency term costs real rank (6th where it would be 2nd, 3rd
+where it would be 1st) but does not push the answer out of the budget on this
+pack. The earlier "fifth of six" should be read the same way: a rank, at one
+requested limit, not a miss.
+
+### The instrument was rewriting what it measured
+
+`search_memories` takes `recall_count + 1` on every hit. Correct for an agent
+living its life; wrong for a retriever inside an eval, where four strategies
+ask the same room the same question and the fourth would rank against a store
+the first three had reshaped -- by a term just shown to be large enough to
+reorder results on its own. `MemoryStoreRetriever.search` now passes
+`refresh_on_recall=False`. Visible in the numbers: the recall-count histogram
+for a 34-content room went from `{2: 18, 3: 16}` to `{1: 18, 2: 16}`, which is
+exactly the write-time counts and nothing else.
+
+### NOT done, deliberately
+
+**No production scoring constant was changed.** The obvious move is to raise
+`ACTR_SPREAD_WEIGHT` until semantics outranks repetition, and the only evidence
+for any particular value would come from the pack in this same commit. That is
+finding B1 exactly -- a retrieval constant fitted to an eval corpus -- and it
+is not worth repeating for a term that, at the real budget, costs rank rather
+than recall. The principled fix is upstream anyway: `ln(freq) - d*ln(recency)`
+is the standard *approximation* to ACT-R's `B_i = ln(sum_k t_k^-d)`, valid when
+presentations are spread across the lifetime and wrong for bursty ones, which
+is what a conversation produces. Doing it properly needs per-presentation
+timestamps the schema does not store.
+
+**Cross-session recall is designed but not built.** A fact learned in an
+earlier conversation, absent from this transcript, is the most discriminating
+probe available -- both context baselines fail by construction. The strategy
+seam maps retrieved turns back to transcript positions, so a hit that is not in
+the transcript is silently dropped; expressing it needs a retriever index
+separate from the rendered context, which is a harness change, not a pack.
+
+**Write-side behaviour is still entirely unmeasured**: importance scoring,
+decay, pruning and promotion are all bypassed by indexing a transcript in one
+burst and querying it immediately.
+
+### Live result: the memory layer beats the control, on the pack built to test it
+
+`qwen2.5:3b`, 8 probes under 6 strategies = 48 scored results, real
+Postgres/Qdrant/Neo4j, `--num-ctx 8192`.
+Probes passed, by strategy: **`retrieved_memory_store_6` 5/8, `full_history`
+3/8, `retrieved_bm25_6` 2/8, `recent_window_6` 0/8.** Head to head the memory
+layer **wins three and loses none**.
+
+> **Read this run as a lower bound, and re-run it.** It was measured before
+> review caught that `refresh_on_recall=False` also selects the *candidate
+> pool* tier in `_compute_mrl_gating`. So the memory-layer strategies searched
+> 20 candidates where a production conversation turn searches 120 -- a sixth
+> of the real pool. The finding survives the error in direction, since a
+> handicapped retriever is not how you inflate a win, but the numbers below
+> are not production's numbers. `full_candidate_pool=True` fixes it; the
+> re-run has not happened yet (the infra containers were down when it was
+> attempted), and until it does, every figure in this section is provisional.
+>
+> The general lesson is the one this ledger keeps relearning: a flag that
+> names one thing and controls two will be changed for the first reason by
+> someone who does not know about the second.
+
+Where it wins, and why each one counts:
+
+- **`oblique_activity`, both distances.** Asked "what am I doing to stay fit?"
+  after planting "I've started swimming at the pool", BM25 never surfaces the
+  plant at all -- `plant out` -- because the two share no content word. The
+  memory layer surfaces it and the model answers. This is the designed
+  discrimination, and it is the one the previous pack could not produce.
+- **The same probe at distance 96 beats `full_history`.** Shown all 194 turns
+  and 7,123 characters, the model answers with generic advice and never
+  mentions swimming. Shown 6 turns and 240 characters chosen by retrieval, it
+  gets it right. **~30x less context, and a better answer** -- lost-in-the-
+  middle, and the memory layer stepping over it.
+- **`similars_lexical_d48`.** BM25 *does* retrieve the answering plant here
+  (`plant in`) and the model still fails, replying "Teo's the one who does the
+  long-distance running" and then declining. The memory layer's six turns
+  produce "Halvard, I believe." So the composition of the retrieved set
+  matters, not just whether the answer is somewhere inside it.
+
+Where it does not:
+
+- **`oblique_dislike`, both distances.** Neither retriever surfaces "coriander
+  tastes like soap" for "what should I leave out of tonight's meal?". The
+  standalone rank measurement puts the assistant's acknowledgement -- which
+  also names coriander -- at the very edge of a six-turn budget, so this probe
+  sits right on the boundary rather than failing outright.
+- **`similars_oblique_d48` is a scoring fail, not a retrieval fail**, and the
+  distinction should not be buried. The memory layer retrieved the answer
+  (`plant in`) and the model *named it correctly* -- "Halvard has his
+  allotment" -- but recited three other people around it, which trips the
+  pack's guard against hedging in a crowded field. `must_include` passed;
+  `must_not_match` failed. That guard is deliberate and documented in the
+  pack, and the per-check detail in the report is what keeps it auditable.
+- **`update_*` did not discriminate.** Both retrievers surfaced the correction
+  at both distances and both models answered "the museum". Recency was not put
+  under real pressure by this budget; a sharper version needs the superseded
+  fact to compete for the same slot.
+
+Two model-side findings, cleanly attributable now that retrieval is not the
+confound: `full_history` fails both `similars` probes with all seven facts on
+screen, so picking one of seven near-identical statements is beyond this model
+regardless of memory; and the `oblique_dislike` failures are the only ones
+where retrieval is genuinely the weak link.
+
+**Verified**: full backend suite via junit-xml -- 850 passed, 0
+failed/errored/skipped -- `ruff check .` clean, and every new test
+mutation-tested -- restart the filler per plant, emit plants in pack
+order rather than by depth, accept a plant deeper than its own filler, accept a
+probe with no answering plant, accept a probe written both ways, count
+distractors as answering facts, treat one answering plant as sufficient when
+two are required, and put the recall refresh back. Two pack mutations too:
+leak a content word from an oblique question into its plant, and leak an answer
+into the filler. All caught. After the live run the relational tier held only
+the 63 real `personal` memories, checked directly.
