@@ -448,19 +448,36 @@ must be copied from the Windows machine by hand — AirDrop, USB, or `scp`:
 
 | Path | Size | Why it matters |
 |------|------|----------------|
-| `personal/` | ~4 MB | WhatsApp export, cleaned + curated corpus, `persona.toml`, `biography.md`, `style_profile.{json,md}`, `curation_report.md`, `runtime/`. **Irreplaceable** — derived through several curation passes. |
+| `personal/` | ~30 MB | WhatsApp export, cleaned + curated corpus, `persona.toml`, `biography.md`, `style_profile.{json,md}`, `curation_report.md`, `runtime/`, and now `pankudi-branch.bundle`. **Irreplaceable** — derived through several curation passes. |
 | `.env` | 2.6 KB | Real service config. `.env.example` is tracked; the filled one is not. |
 | `models/` | ~113 MB | `GPT_weights`, `SoVITS_weights`, `base` — voice model weights. |
 | `*.db` at repo root | ~60 KB | `app.db`, `identity_core.db`, `state_cache.db` — local SQLite state. Disposable if you are willing to re-seed; copy them if you want continuity. |
 | `backend/evals/out/` | small | `discriminating_qwen3b.json` — the baseline the next comparison runs against. Copy it or the §7 re-run has nothing to compare to. |
 | `.venv/` | large | Do **not** copy. Windows binaries. Recreate on the Mac. |
 
-The `personal/pankudi` branch is local-only and holds `friend_brain/`
-(`parse_whatsapp.py`, `curate_corpus.py`, `extract_style.py`, its own
-`ruff.toml`). It is **never pushed and never merged**. If the Mac is a fresh
-clone, that branch does not come with it — push it to a **private** remote, or
-bundle it (`git bundle create pankudi.bundle personal/pankudi`) and copy the
-bundle across. Do not push it to `origin`.
+### The `personal/pankudi` branch
+
+Six commits, four files (`friend_brain/parse_whatsapp.py`, `curate_corpus.py`,
+`extract_style.py`, and its own `ruff.toml`), branched off `feb7978` (#95) and
+now 11 commits behind `main`. It is **never pushed and never merged**, so it
+exists on exactly one disk — no remote has it, and no upstream is configured.
+
+A fresh `git clone` will not bring it, and a copy of the *working tree* will not
+either: the branch lives inside `.git`, not in the checked-out files. It is
+therefore the one thing here that disappears silently rather than visibly.
+
+It has been bundled to **`personal/pankudi-branch.bundle`** (26 MB, verified
+complete history, no prerequisites) — so if you copy `personal/` as instructed
+above, the branch rides along with it. To restore on the Mac:
+
+```bash
+git fetch personal/pankudi-branch.bundle 'refs/heads/*:refs/heads/*'
+git branch -a | grep pankudi     # expect personal/pankudi
+```
+
+The scripts import only the standard library and are not coupled to `app/`, so
+being 11 commits behind `main` costs nothing functionally — do **not** rebase it
+onto `main` for tidiness. Never `git push origin personal/pankudi`.
 
 ---
 
