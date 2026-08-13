@@ -565,7 +565,14 @@ Run these **after** the receiving session has written the memories in §2 and th
 user has confirmed the transfer took. Three levels — use the lowest one that
 matches how this file actually travelled.
 
-### Preferred: never commit it at all
+> **This copy travelled by git. Level 3 is the applicable one.** It was
+> committed and pushed to public `origin/main` on 2026-08-13 (`6324637`, plus
+> this amendment). `rm` alone will leave it in public history. It was pushed as
+> a direct commit, **not** as a pull request, so no `refs/pull/<n>/head` pins
+> it — a history rewrite can actually remove it, which would not have been true
+> of the PR route.
+
+### Not applicable here: never commit it at all
 
 If this file moved by AirDrop / USB / `scp`, there is no history to purge:
 
