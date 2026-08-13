@@ -448,12 +448,33 @@ must be copied from the Windows machine by hand — AirDrop, USB, or `scp`:
 
 | Path | Size | Why it matters |
 |------|------|----------------|
-| `personal/` | ~30 MB | WhatsApp export, cleaned + curated corpus, `persona.toml`, `biography.md`, `style_profile.{json,md}`, `curation_report.md`, `runtime/`, and now `pankudi-branch.bundle`. **Irreplaceable** — derived through several curation passes. |
+| `personal/` | ~30 MB | Chat export, derived corpus, `persona.toml`, `biography.md`, `style_profile.{json,md}`, `curation_report.md`, `runtime/`, and now `pankudi-branch.bundle`. Never committed on any branch, so **git moves none of it**. See the note below on which parts are reproducible. |
 | `.env` | 2.6 KB | Real service config. `.env.example` is tracked; the filled one is not. |
 | `models/` | ~113 MB | `GPT_weights`, `SoVITS_weights`, `base` — voice model weights. |
 | `*.db` at repo root | ~60 KB | `app.db`, `identity_core.db`, `state_cache.db` — local SQLite state. Disposable if you are willing to re-seed; copy them if you want continuity. |
 | `backend/evals/out/` | small | `discriminating_qwen3b.json` — the baseline the next comparison runs against. Copy it or the §7 re-run has nothing to compare to. |
 | `.venv/` | large | Do **not** copy. Windows binaries. Recreate on the Mac. |
+
+### Which of `personal/` is reproducible, and which is not
+
+Worth knowing before you triage a partial copy. The derived chain regenerates
+end to end from the raw export plus the bundled branch, because every curation
+decision — including the hand-made exclusions — is a constant in
+`curate_corpus.py` rather than a judgement made at the terminal:
+
+> raw export → `parse_whatsapp.py` → cleaned → `curate_corpus.py`
+> (`MANUAL_EXCLUSIONS`) → curated + report → `extract_style.py` → style profile
+
+So `cleaned_chat.json`, `curated_chat.json`, `curation_report.md` and
+`style_profile.{json,md}` are **rebuildable**. What is not:
+
+- **the raw export** — the root of the chain; recoverable only by re-exporting
+  from the phone, and only while that conversation still exists;
+- **`about_her.txt`, `biography.md`, `persona.toml`** — hand-written, derived
+  from nothing;
+- **`runtime/history.json` and `runtime/personality.json`** — the agent's state
+  from her first real boot (2026-08-02). ~6 KB, and the one thing here that no
+  amount of re-running reproduces.
 
 ### The `personal/pankudi` branch
 
