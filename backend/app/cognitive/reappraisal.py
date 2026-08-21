@@ -19,8 +19,11 @@ import time
 from typing import Any
 
 from ..config import Config
+from ..state.adaptive_weights_store import AdaptiveWeightsStore
 
 logger = logging.getLogger(__name__)
+
+_WEIGHT_KEY = "reappraisal_weights"
 
 
 class ReappraisalEngine:
@@ -31,7 +34,11 @@ class ReappraisalEngine:
     §8.2: w_new = clamp(w_old - η·Δ, w_min, w_max)
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        agent_name: str = "my friend",
+        store: AdaptiveWeightsStore | None = None,
+    ):
         self.enabled = getattr(Config, "REAPPRAISAL_ENABLED", True)
         self.learning_rate = getattr(Config, "REAPPRAISAL_LEARNING_RATE", 0.05)  # η
         self.w_min = 0.1
@@ -48,10 +55,40 @@ class ReappraisalEngine:
             "w6_na_to_d": 0.4,  # NA → Dominance weight
         }
 
+        # #117 / H6: these weights used to reset to the hardcoded defaults
+        # above on every process restart, silently discarding whatever the
+        # feedback loop had learned. `hydrate()` restores them; `evaluate_outcome`
+        # persists them each time it actually changes one.
+        self.agent_name = agent_name
+        self._store = store or AdaptiveWeightsStore()
+
         # Turn-level state tracking
         self._pre_response_state: dict[str, float] | None = None
         self._expected_valence: float | None = None
         self._last_evaluation_time: float = 0.0
+
+    async def hydrate(self) -> None:
+        """Restore previously-learned weights, if this agent has any.
+
+        Only known keys are applied, each still passed through `_clamp` — a
+        row written by an older version of this engine (fewer/renamed keys,
+        or values from before a bounds change) must not inject an out-of-range
+        or unrecognized weight into a live appraisal.
+        """
+        saved = await self._store.load(self.agent_name, _WEIGHT_KEY)
+        if not saved:
+            return
+        for key in self.appraisal_weights:
+            if key in saved:
+                try:
+                    self.appraisal_weights[key] = self._clamp(float(saved[key]))
+                except (TypeError, ValueError):
+                    continue
+        logger.info(
+            "[Reappraisal] Hydrated learned appraisal weights for %r: %s",
+            self.agent_name,
+            self.appraisal_weights,
+        )
 
     def record_pre_response_state(self, state_snapshot: dict[str, Any]):
         """
@@ -161,6 +198,10 @@ class ReappraisalEngine:
             effective_lr,
             self.appraisal_weights["w1_g_to_v"],
             self.appraisal_weights["w2_ri_to_v"],
+        )
+
+        await self._store.save(
+            self.agent_name, _WEIGHT_KEY, self.appraisal_weights.copy()
         )
 
         self._reset_turn_state()

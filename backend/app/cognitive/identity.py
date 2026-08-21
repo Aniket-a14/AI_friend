@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
@@ -71,6 +72,22 @@ def _match_views(text: str) -> tuple[str, ...]:
 # what it will refuse to do. Used when personality.json names no base_tone.
 DEFAULT_BASE_TONE = "Warm, intellectual, and slightly protective"
 
+# The package directory, which holds the shipped seed files
+# (`personality.json` / `history.json`, both tracked in git) — the read-only
+# starting point for a friend, never a write target.
+_PACKAGE_DIR = os.path.dirname(os.path.dirname(__file__))
+
+# #113 / H2: runtime identity writes used to default to `_PACKAGE_DIR` itself,
+# so `save()` rewrote the tracked seed files on every boot without a durable
+# store attached. This is a sibling directory instead — outside the tracked
+# tree, gitignored the same way this repo already ignores the SQLite caches it
+# keeps beside the code (`*.db` in backend/.gitignore) — so evolving persona
+# state can never land back in git. Containers should override via
+# `IDENTITY_BASE_PATH` pointed at a mounted volume.
+_DEFAULT_IDENTITY_STATE_DIR = os.path.join(
+    os.path.dirname(_PACKAGE_DIR), ".identity_state"
+)
+
 
 class IdentityManager:
     """
@@ -85,20 +102,35 @@ class IdentityManager:
         persona_file=AUTO_DISCOVER,
     ):
         if base_path is None:
-            # Defaults to the package directory, which makes `app/` writable
-            # state: anything constructing a manager without a durable store —
-            # `ReflectionService`'s fallback, most obviously — writes
-            # `personality.json` and `history.json` right where the code lives.
-            # That is how the test suite came to modify a **git-tracked** file
-            # on every run, via `_consolidate` → `evolve_persona` → `save()`.
-            # Overridable so a deployment (or the suite) can put identity state
-            # somewhere that is not the source tree.
-            base_path = getattr(Config, "IDENTITY_BASE_PATH", None) or os.path.dirname(
-                os.path.dirname(__file__)
-            )
+            # #113 / H2: this used to default to the package directory itself,
+            # making `app/` writable state — anything constructing a manager
+            # without a durable store, `ReflectionService`'s fallback most
+            # obviously, wrote `personality.json`/`history.json` right where
+            # the code (and the git-tracked seed files) lives. Overridable so a
+            # deployment can put identity state on a mounted volume.
+            base_path = getattr(
+                Config, "IDENTITY_BASE_PATH", None
+            ) or _DEFAULT_IDENTITY_STATE_DIR
 
         self.personality_path = os.path.join(base_path, "personality.json")
         self.history_path = os.path.join(base_path, "history.json")
+
+        # The read-only shipped defaults: independent of where runtime state
+        # now gets written, so a fresh write location (no durable store, first
+        # boot ever) still has something to seed from instead of booting an
+        # empty persona. `PERSONALITY_SEED_PATH`/`HISTORY_SEED_PATH` are the
+        # same override knobs `ConversationHistoryStore._ensure_config_exists`
+        # already uses for the identical purpose (seeding `agent_configs`).
+        seed_personality_path = getattr(
+            Config, "PERSONALITY_SEED_PATH", None
+        ) or os.path.join(_PACKAGE_DIR, "personality.json")
+        seed_history_path = getattr(
+            Config, "HISTORY_SEED_PATH", None
+        ) or os.path.join(_PACKAGE_DIR, "history.json")
+
+        if getattr(Config, "IDENTITY_SEED_ON_FIRST_BOOT", True):
+            self._copy_seed_if_missing(self.personality_path, seed_personality_path)
+            self._copy_seed_if_missing(self.history_path, seed_history_path)
 
         # `AUTO_DISCOVER` searches for config/persona.toml; an explicit path
         # uses that file; `None` means this agent has no authored file at all.
@@ -356,6 +388,30 @@ class IdentityManager:
             self.persona.avoid
         )
 
+    def _copy_seed_if_missing(self, write_path: str, seed_path: str) -> None:
+        """Seed a fresh write location from the shipped defaults, once.
+
+        Splitting the write path from the package directory (#113 / H2) means a
+        brand-new deployment finds nothing at `write_path` on its very first
+        boot. Without this, that reads as an empty persona rather than the
+        shipped one — a silent regression traded for the one this fix removes.
+        Copying only when `write_path` doesn't exist yet keeps this a one-time
+        bootstrap: every later boot reads and writes the same runtime file, and
+        `save()` never touches `seed_path`.
+        """
+        if os.path.exists(write_path):
+            return
+        if not os.path.exists(seed_path):
+            return
+        try:
+            os.makedirs(os.path.dirname(write_path) or ".", exist_ok=True)
+            shutil.copyfile(seed_path, write_path)
+            logger.info("[Identity] Seeded %s from %s.", write_path, seed_path)
+        except Exception as e:
+            logger.error(
+                "[Identity] Failed to seed %s from %s: %s", write_path, seed_path, e
+            )
+
     def _load_json(self, path: str) -> dict[str, Any]:
         try:
             if os.path.exists(path):
@@ -533,6 +589,11 @@ class IdentityManager:
                 "base_tone": self.immutable_core["base_tone"]
             }
             self.history.setdefault("memories", [])
+
+            # The write directory may not exist yet: the default (#113) is a
+            # fresh, non-repo directory that nothing else creates ahead of
+            # time, unlike the old package-directory default which always did.
+            os.makedirs(os.path.dirname(self.personality_path) or ".", exist_ok=True)
 
             with open(self.personality_path, "w", encoding="utf-8") as f:
                 json.dump(self.personality, f, indent=2)

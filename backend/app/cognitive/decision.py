@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..config import Config
+from ..state.adaptive_weights_store import AdaptiveWeightsStore
 from .bt import Action, Condition, NodeStatus, Selector, Sequence
 from .json_extract import extract_first_json_value
 from .perception import CognitiveEvent
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 # Available goals for MAUT scoring
 GOALS = ["ENGAGE", "COMFORT", "INFORM", "TEASE", "PROTECT"]
+
+_WEIGHT_KEY = "goal_utilities"
 
 
 @dataclass
@@ -38,7 +41,13 @@ class DecisionService:
     Uses LLM-based Intent Classification, MAUT goal scoring, and a Behavior Tree for routing.
     """
 
-    def __init__(self, llm_service=None, memory_store=None):
+    def __init__(
+        self,
+        llm_service=None,
+        memory_store=None,
+        agent_name: str = "my friend",
+        weights_store: AdaptiveWeightsStore | None = None,
+    ):
         self.llm = llm_service
         self.memory = memory_store
         self.root = self._build_bt()
@@ -53,11 +62,40 @@ class DecisionService:
         self.goal_utilities = {g: 1.0 for g in GOALS}
         self.alpha_rl = 0.1  # TD learning rate
 
+        # #118 / H7: `goal_utilities` used to reset to 1.0 for every goal on
+        # every process restart, discarding whatever reinforcement learning had
+        # accumulated. `hydrate()` restores it; `decide()` persists it whenever
+        # `_score_goals_maut` updates a utility.
+        self.agent_name = agent_name
+        self._weights_store = weights_store or AdaptiveWeightsStore()
+
         # Intent Persistence (§3.2)
         self.persistence_rate = Config.INTENT_PERSISTENCE_RATE  # ρ
         self.shift_threshold = Config.CONTEXT_SHIFT_THRESHOLD  # θ_shift
         self._previous_goal: str | None = None
         self._goal_scores: dict[str, float] = {g: 0.0 for g in GOALS}
+
+    async def hydrate(self) -> None:
+        """Restore previously-learned goal utilities, if this agent has any.
+
+        Only known goals are applied, so a row from an older `GOALS` list (a
+        renamed or retired goal) cannot inject an untracked key that
+        `_score_goals_maut` never reads back out.
+        """
+        saved = await self._weights_store.load(self.agent_name, _WEIGHT_KEY)
+        if not saved:
+            return
+        for goal in GOALS:
+            if goal in saved:
+                try:
+                    self.goal_utilities[goal] = float(saved[goal])
+                except (TypeError, ValueError):
+                    continue
+        logger.info(
+            "[Decision] Hydrated learned goal utilities for %r: %s",
+            self.agent_name,
+            self.goal_utilities,
+        )
 
     def _build_bt(self):
         """Constructs the Behavior Tree."""
@@ -117,6 +155,13 @@ class DecisionService:
                 appraisal, state_snapshot, event.metadata
             )
             event.metadata["suggested_goal"] = maut_goal
+            # #118 / H7: `_score_goals_maut` just updated one entry of
+            # `goal_utilities` via TD learning (unless this was the very first
+            # turn, when `_previous_goal` was still None). Persisting here
+            # rather than inside that method keeps it a pure scoring function.
+            await self._weights_store.save(
+                self.agent_name, _WEIGHT_KEY, self.goal_utilities.copy()
+            )
 
         # 3. Tick BT
         blackboard = {"event": event, "state": state_snapshot, "plan": None}

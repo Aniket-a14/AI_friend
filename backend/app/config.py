@@ -72,11 +72,23 @@ class AppSettings(BaseSettings):
     # anywhere — which is the point: a biography is a real person's life, and
     # keeping it out of the repo should not require a code change.
     BIOGRAPHY_PATH: str | None = None
-    # Where `personality.json`/`history.json` live. Unset means "beside the
-    # code", which is the historical behaviour and fine for a normal deployment
-    # — but it makes the package directory writable state, so anything that
-    # builds an `IdentityManager` without a durable store writes into the repo.
+    # Where `IdentityManager` writes runtime `personality.json`/`history.json`
+    # evolution. Unset means a `.identity_state/` directory beside (not inside)
+    # the `app/` package — outside the git-tracked tree, unlike the historical
+    # default of "beside the code", which made the package directory itself
+    # writable state and let a save without a durable store dirty a tracked
+    # file (see H2 / issue #113). Containers should point this at a mounted
+    # volume, e.g. `/app/data`.
     IDENTITY_BASE_PATH: str | None = None
+    # Whether a fresh write location with no existing personality.json/
+    # history.json gets seeded from the shipped `PERSONALITY_SEED_PATH`/
+    # `HISTORY_SEED_PATH` (or package-directory defaults) on first use. True in
+    # every real deployment, so a fresh install still boots with the shipped
+    # persona instead of an empty one now that the write default no longer
+    # matches the seed location. The test suite disables this (like it already
+    # disables `PERSONA_PROFILE_PATH` discovery) so a fresh per-session temp
+    # directory stays genuinely empty rather than picking up the repo's seed.
+    IDENTITY_SEED_ON_FIRST_BOOT: bool = True
 
     # Neo4j Graph Configuration
     NEO4J_URI: str | None = None

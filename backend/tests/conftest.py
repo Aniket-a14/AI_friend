@@ -43,6 +43,14 @@ os.environ.setdefault(
     "IDENTITY_BASE_PATH", tempfile.mkdtemp(prefix="pankudi-identity-")
 )
 
+# Disable first-boot seeding for the same reason `PERSONA_PROFILE_PATH` above
+# points at nothing: a fresh write directory would otherwise get seeded from
+# the repo's own shipped `personality.json`/`history.json` (#113), and the
+# suite's results would then depend on the repo's persona content instead of
+# genuinely starting empty. Real deployments want the seed; the suite wants
+# isolation.
+os.environ.setdefault("IDENTITY_SEED_ON_FIRST_BOOT", "false")
+
 import asyncio
 import re
 import sqlite3
