@@ -650,6 +650,22 @@ async fn main() -> Result<()> {
     });
 
 
+    // #165: block audio ingress until one full synthesis pass has completed, so
+    // the model's weights are already resident in VRAM before the first real
+    // utterance arrives — otherwise that utterance pays the 2-4s cold-start
+    // tensor-load cost itself, before the periodic background probe above (which
+    // only starts amortizing it on some later tick) ever gets a chance to.
+    // Skipped under the same signal that disables the periodic probe
+    // (TTS_READINESS_PROBE_INTERVAL_SECS=0) — local dev against a mock or
+    // absent SoVITS server should not have startup blocked on a synthesis call
+    // that can never succeed.
+    if env_or("TTS_READINESS_PROBE_INTERVAL_SECS", "45").parse().unwrap_or(45u64) > 0 {
+        match probe_synthesis(&config, &http).await {
+            Ok(()) => info!("TTS warmup pass complete"),
+            Err(e) => warn!("TTS warmup pass failed, continuing startup anyway: {e:#}"),
+        }
+    }
+
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
 
     let mut ola_filter = OlaCrossfadeFilter::new(config.sample_rate);

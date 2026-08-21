@@ -206,6 +206,24 @@ app.add_middleware(
 )
 
 
+# #155: HSTS tells a browser to upgrade this origin to HTTPS on every future
+# visit, but is only safe to promise once TLS is actually terminated in front
+# of this process — gated on ENVIRONMENT=production (the same signal #162
+# added) rather than always-on, so local/LAN HTTP development is untouched.
+# TLS termination itself (the reverse proxy / load balancer that decides
+# whether port 443 exists at all) is deployment-specific infra, not something
+# this process can configure for itself, and stays out of scope here.
+if Config.ENVIRONMENT == "production":
+
+    @app.middleware("http")
+    async def add_hsts_header(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+        return response
+
+
 @app.get("/")
 async def root():
     return {

@@ -6693,3 +6693,88 @@ the wrong list even before removal).
   separate feature (a new loading path for credentials, plus a decision about
   which secret backend this deployment is meant to target) rather than
   something the placeholder check above was blocked on.
+
+## 2026-08-21 GitHub triage: #151/#152 closed as already-resolved, batch 8 (#155, #165) — 2 of 2 fixed
+
+**#151 and #152 closed without new code.** Before starting batch 8, checked
+whether either of batch 6's two 12-Factor architecture issues still applied
+now that #117/#118/#113 were merged. Both had described the exact failure
+modes #180 already fixed: #151 (Factor VI, process statelessness) wanted
+`ReappraisalEngine`/`DecisionService` weights surviving a restart, which
+`AdaptiveWeightsStore` + `hydrate()` now do; #152 (Factor V, build/release
+separation) wanted persona writes off git-tracked seed files, which
+`IdentityManager`'s copy-on-first-boot + `agent_configs`-is-the-authority
+`save()` now does. Closed both with the reasoning on the issue rather than
+leaving them open as duplicates of already-shipped work. One deliberate
+non-match: #151 asked for Postgres/Redis specifically, for share-nothing
+horizontal scaling; `AdaptiveWeightsStore` is SQLite-backed, matching the
+codebase's existing dual-backend convention. That gap is real but moot for
+this deployment target (single instance per family, not horizontally
+scaled - see hardware/deployment notes), so it wasn't worth blocking the
+close on.
+
+**#155 — HSTS.** Scoped down from the issue's full ask (HTTPS/WSS redirect +
+HSTS) to the header half only. TLS termination itself - whether port 443
+exists at all - is a reverse-proxy/load-balancer decision this repo has no
+component for (checked: no nginx/traefik/certbot anywhere in either compose
+file), so an app-level HTTP-to-HTTPS redirect would assume an architecture
+that doesn't exist here; same shape of narrowing as #162's Vault half.
+Added a `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+response header: backend (`main.py`) gates it on `Config.ENVIRONMENT ==
+"production"` (the signal #162 introduced) via `@app.middleware("http")`,
+registered at import time so it either exists for the process's whole
+lifetime or not at all; frontend (`next.config.mjs`) adds it unconditionally
+alongside the existing CSP header, since HSTS is inert until a browser
+receives it over an actual HTTPS response, so serving it in local HTTP dev
+is a no-op rather than a lie.
+
+**#165 — TTS cold-start warmup.** The Rust `voice-agent` already had a
+periodic background `probe_synthesis` call (`TTS_READINESS_PROBE_INTERVAL_
+SECS`, default 45s) that happens to fire immediately on its first tick
+(`tokio::time::interval`'s documented behavior) - but as a fire-and-forget
+spawned task, not awaited, so the main `CHAT_OUTPUT` subscriber loop could
+start consuming (and a real utterance could arrive) before that first probe
+finished loading tensors into VRAM. Added one *awaited* `probe_synthesis`
+call in `main()` right before the subscriber loop starts, gated on the same
+`TTS_READINESS_PROBE_INTERVAL_SECS != 0` signal that disables the periodic
+probe (so local dev against a mock/absent SoVITS server isn't blocked on a
+synthesis call that can never succeed) and non-fatal on failure (logs a
+warning, starts serving anyway - matching the existing probe's own
+failure handling rather than crashing startup on a transient TTS outage).
+NATS messages published to `CHAT_OUTPUT` before the subscriber loop starts
+still queue in the JetStream/core-NATS subscription buffer created earlier
+in `main()`, so this doesn't drop anything - it only delays when the loop
+starts pulling from it.
+
+**Verified:** full backend suite - 970 passed (968 before this batch's 2 new
+tests), 0 failed. `ruff check .` clean. `cargo check --manifest-path
+crates/voice-agent/Cargo.toml` clean; existing `probe_synthesis` unit tests
+(`probe_succeeds_when_real_audio_bytes_come_back`,
+`probe_fails_on_empty_response_body_not_just_bad_status`) still pass
+unchanged - the new call reuses that same function, so its correctness is
+already covered; the `main()`-level sequencing/gating is a few inlined
+lines matching the existing `spawn_readiness_probe` gate's shape and isn't
+independently unit-testable without a live NATS connection, same as that
+existing code. Mutation-tested the new Python test
+(`test_security_headers.py`) by replacing the `if Config.ENVIRONMENT ==
+"production":` guard with `if False:` and confirming
+`test_hsts_header_present_in_production` fails, then restoring. Rust
+toolchain note: `cargo` isn't on `PATH` in this environment even though
+`rustup` reports it installed - resolved by prefixing
+`$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin` onto `PATH`
+for this session; a bare `cargo check` at the workspace root fails with
+"could not execute process `rustc -vV`" until that's done.
+
+**NOT done, deferred (unchanged from prior batches, still legitimate):**
+- #138, #139 (frontend-only, need a browser to verify visually)
+- #154 (accessibility, needs a screen reader to verify)
+- #156, #159, #167, #168 (each a standalone infra/observability/testing
+  project, not a narrow bug)
+- #158 (Alembic migration governance - large, mechanical, but a real
+  multi-file scaffolding project rather than a bounded fix; a candidate for
+  its own dedicated batch rather than folding in here)
+- #161 (LiveKit STUN/TURN - needs a real public IP / TURN credential to
+  configure against, not decidable from code alone)
+- #164 (multi-tenancy - contradicts the documented single-family deployment
+  model; would need an explicit product-direction decision first)
+- #162's Vault/Docker-secrets-file integration (already noted in batch 7)
