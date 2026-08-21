@@ -27,6 +27,7 @@
     "@prisma/config": "^7.7.0",
     "@tailwindcss/postcss": "^4",
     "babel-plugin-react-compiler": "1.0.0",
+    "dotenv": "^17.2.3",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "prisma": "^7.7.0",
