@@ -12,6 +12,13 @@ class AppSettings(BaseSettings):
     )
 
     DEBUG: bool = False
+    # #160: `main.py` already reads this via `getattr(Config, "LOG_JSON",
+    # False)` to pick JSON vs plain-text logging, but the field was never
+    # actually declared here - `extra="ignore"` meant setting LOG_JSON=true
+    # in .env had silently no effect at all, always falling through to the
+    # getattr default. The JSON formatter itself (logging_config.py) was
+    # already correct; only the toggle to reach it was dead.
+    LOG_JSON: bool = False
     TESTING_CONSOLIDATION_BYPASS_SILENCE: bool = False
     ALLOWED_ORIGINS_STR: str = Field(default="*", alias="ALLOWED_ORIGINS")
     LAN_ONLY: bool = True

@@ -239,6 +239,14 @@ async def test_sleep_dreaming_neo4j():
         source="subconscious_dream",
     )
 
+    dream_query = mock_graph_db.execute_query.await_args.args[0]
+    assert "rand()" not in dream_query.lower(), (
+        "Regression for the O(N log N) `ORDER BY rand()` full-graph-scan-and-"
+        "sort fix - the query must use apoc.coll.randomItems (O(N), no sort) "
+        "instead of evaluating and sorting a random value for every node."
+    )
+    assert "apoc.coll.randomitems" in dream_query.lower()
+
 
 @pytest.mark.asyncio
 async def test_mrl_dimension_gating():

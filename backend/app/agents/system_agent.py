@@ -3,7 +3,7 @@ import logging
 import time
 
 from ..config import Config
-from .base import BaseAgent
+from .base import BaseAgent, install_shutdown_signal_handlers
 
 logger = logging.getLogger("system_agent")
 
@@ -64,11 +64,10 @@ class SystemAgent(BaseAgent):
 async def main():
     agent = SystemAgent()
     await agent.start()
-    try:
-        shutdown_trigger = asyncio.Event()
-        await shutdown_trigger.wait()
-    except KeyboardInterrupt:
-        await agent.stop()
+    shutdown_trigger = asyncio.Event()
+    install_shutdown_signal_handlers(shutdown_trigger)
+    await shutdown_trigger.wait()
+    await agent.stop()
 
 
 if __name__ == "__main__":

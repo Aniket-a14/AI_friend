@@ -4,7 +4,7 @@ import time
 import uuid
 from typing import Any
 
-from app.agents.base import BaseAgent
+from app.agents.base import BaseAgent, install_shutdown_signal_handlers
 from app.cognitive.subconscious import SubconsciousEngine
 from app.config import Config
 from app.contracts import ChatInput, ChatInputMetadata, Topics
@@ -437,7 +437,16 @@ class SubconsciousAgent(BaseAgent):
     async def _run_dream_sequence(self):
         try:
             logger.info("[Subconscious] Running dream sequence...")
-            query = "MATCH (e:Entity) WITH e, rand() as r ORDER BY r LIMIT 3 RETURN e.name as name"
+            # `ORDER BY rand()` evaluates a random value for every node before
+            # sorting - O(N log N) over the whole graph on every dream cycle.
+            # apoc.coll.randomItems samples after a single collect() pass,
+            # O(N) with no sort (APOC ships by default, see
+            # docker-compose.infra.yml's NEO4J_PLUGINS).
+            query = (
+                "MATCH (e:Entity) WITH collect(e.name) AS names "
+                "UNWIND apoc.coll.randomItems(names, 3, false) AS name "
+                "RETURN name"
+            )
             records = await self.graph_db.execute_query(query)
             nodes = [record["name"] for record in records]
 
@@ -518,11 +527,10 @@ class SubconsciousAgent(BaseAgent):
 async def main():
     agent = SubconsciousAgent()
     await agent.start()
-    try:
-        shutdown_trigger = asyncio.Event()
-        await shutdown_trigger.wait()
-    except asyncio.CancelledError:
-        await agent.stop()
+    shutdown_trigger = asyncio.Event()
+    install_shutdown_signal_handlers(shutdown_trigger)
+    await shutdown_trigger.wait()
+    await agent.stop()
 
 
 if __name__ == "__main__":

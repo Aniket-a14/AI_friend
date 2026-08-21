@@ -80,3 +80,15 @@ def test_default_settings_load_without_error():
     defaults themselves."""
     settings = _settings()
     assert settings.SYSTEM_TICK_INTERVAL > 0
+
+
+def test_log_json_env_var_actually_reaches_the_setting(monkeypatch):
+    """#160: `main.py` reads `getattr(Config, "LOG_JSON", False)` to choose
+    JSON vs plain-text logging, but `LOG_JSON` was never declared as an
+    `AppSettings` field - with `extra="ignore"`, setting `LOG_JSON=true` in
+    the environment had silently zero effect, always falling through to the
+    getattr default. This proves the env var now actually reaches the field.
+    """
+    monkeypatch.setenv("LOG_JSON", "true")
+    settings = AppSettings(_env_file=None)
+    assert settings.LOG_JSON is True

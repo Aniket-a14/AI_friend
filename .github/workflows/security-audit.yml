@@ -10,6 +10,28 @@ on:
     branches: [main, master]
 
 jobs:
+  gitleaks-scan:
+    name: Gitleaks Secret Scan
+    # #171: the credential-scan job below is a hand-rolled regex over the
+    # current tree - it catches suspicious variable *names* but not actual
+    # leaked *values*, and it never looks at history. gitleaks does both: it
+    # scans the diff introduced by this push/PR against its own signature
+    # and entropy rules, so a real key pasted into any changed file (not
+    # just ones matching "password ="-style patterns) gets caught. A full
+    # history scan was run manually for the initial audit (see .agents/
+    # CONTEXT.md) - this job's job is catching *new* leaks going forward,
+    # not re-scanning the past on every push.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   credential-scan:
     name: Credential Leak Prevention
     runs-on: ubuntu-latest

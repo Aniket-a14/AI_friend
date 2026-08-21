@@ -48,6 +48,41 @@ def test_screen_link_still_works_normally_with_numpy_present():
     assert links_module.np is not None
 
 
+def test_screen_link_retries_display_discovery_after_going_headless():
+    """#169: once `headless=True`, ScreenLink used to never look for a
+    display again - a display attached after startup (or a headless
+    container later given one) left the agent blind for the process's
+    entire remaining life, unlike CameraLink, which already retried
+    `cv2.VideoCapture(0)` on every call.
+    """
+    with patch.object(links_module, "mss", MagicMock()) as mock_mss:
+        mock_mss.mss.side_effect = Exception("no display yet")
+
+        link = links_module.ScreenLink()
+        assert link.headless is True
+        assert link.capture_frame() is None
+
+        # Display becomes available; the next capture attempt (via the same
+        # public entry point the capture loop calls every tick) should
+        # recover without needing the agent to be restarted.
+        recovered_sct = MagicMock()
+        recovered_sct.monitors = [{}, {"width": 1920, "height": 1080}]
+        recovered_sct.grab.return_value = MagicMock()
+        mock_mss.mss.side_effect = None
+        mock_mss.mss.return_value = recovered_sct
+
+        with patch.object(links_module, "np") as mock_np, patch.object(
+            links_module, "cv2"
+        ) as mock_cv2:
+            mock_np.array.return_value = mock_np.array.return_value
+            mock_cv2.cvtColor.return_value = mock_cv2.cvtColor.return_value
+            mock_cv2.imencode.return_value = (True, MagicMock(tobytes=lambda: b"jpg"))
+            link.capture_frame()
+
+        assert link.headless is False
+        assert link.sct is recovered_sct
+
+
 def test_camera_link_releases_stale_handle_before_reopening():
     """M3: `_ensure_cap` used to reassign `self.cap` to a fresh
     `VideoCapture` whenever the existing one reported `isOpened() is False`,

@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import signal
 import time
 from typing import Any
 
@@ -10,6 +11,31 @@ import nats
 import orjson
 
 logger = logging.getLogger(__name__)
+
+
+def install_shutdown_signal_handlers(shutdown_event: asyncio.Event) -> None:
+    """Make SIGTERM trigger the same graceful-shutdown path SIGINT already
+    reaches by accident (#153).
+
+    Worker agent processes run via plain `asyncio.run(main())`, not under a
+    framework like uvicorn (which installs its own signal handling for
+    main.py's FastAPI server for free). Python's default disposition for
+    SIGTERM is to kill the process outright - no exception is raised, so no
+    `except`/`finally` block runs, unlike SIGINT, which Python's default
+    handler turns into a catchable `KeyboardInterrupt`. Docker/Kubernetes
+    send SIGTERM to stop a container, not SIGINT, so every agent's `stop()`
+    (which unsubscribes from NATS, closes GraphDB - see L7's in-flight-query
+    drain - and cancels background tasks) was unreachable in that exact,
+    everyday-deployment scenario.
+    """
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # add_signal_handler is POSIX-only (e.g. unavailable on Windows'
+            # default proactor loop); fall back to the plain signal module.
+            signal.signal(sig, lambda *_args: shutdown_event.set())
 
 # M6: base/cap for exponential backoff with jitter on NATS reconnect. A static
 # `reconnect_time_wait` means every agent process in the mesh (brain, system,
