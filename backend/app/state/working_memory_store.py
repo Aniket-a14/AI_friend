@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -99,8 +100,21 @@ class WorkingMemoryStore:
             conn.commit()
 
     # --- Real-Time Turns Playout (Last 5–8 turns) ---
+    #
+    # Every public method here is a thin `asyncio.to_thread` wrapper around a
+    # `_sync_*` body. Both the Redis client and the sqlite3 fallback are
+    # blocking I/O; called directly from async code (as
+    # scripts/research/estimate_realtime_latency.py does) they stall the
+    # event loop for a network round trip or a disk write. Off-loading to a
+    # worker thread matches the fix already applied to
+    # `StateService.persist_state` (see the ledger's 2026-07-19 entry).
 
-    def add_turn(
+    async def add_turn(
+        self, role: str, content: str, metadata: dict[str, Any] | None = None
+    ) -> None:
+        await asyncio.to_thread(self._sync_add_turn, role, content, metadata)
+
+    def _sync_add_turn(
         self, role: str, content: str, metadata: dict[str, Any] | None = None
     ):
         """Append a dialogue turn, immediately trimming excess turns to prevent context bloat."""
@@ -143,7 +157,14 @@ class WorkingMemoryStore:
         except Exception as e:
             logger.error(f"SQLite add_turn failed: {e}")
 
-    def get_recent_turns(self, limit: int | None = None) -> list[dict[str, Any]]:
+    async def get_recent_turns(
+        self, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._sync_get_recent_turns, limit)
+
+    def _sync_get_recent_turns(
+        self, limit: int | None = None
+    ) -> list[dict[str, Any]]:
         """Retrieve recent conversation turns in chronological order."""
         limit = limit or self.max_turns
         if self.redis_client:
@@ -188,7 +209,10 @@ class WorkingMemoryStore:
             logger.error(f"SQLite get_recent_turns failed: {e}")
             return []
 
-    def clear_turns(self):
+    async def clear_turns(self) -> None:
+        await asyncio.to_thread(self._sync_clear_turns)
+
+    def _sync_clear_turns(self):
         """Reset the active working memory turns (e.g. on new session starts)."""
         if self.redis_client:
             try:
@@ -207,7 +231,10 @@ class WorkingMemoryStore:
 
     # --- Short-Term Affect / Goals / Variables Synchronization ---
 
-    def set_state_var(self, key: str, value: Any):
+    async def set_state_var(self, key: str, value: Any) -> None:
+        await asyncio.to_thread(self._sync_set_state_var, key, value)
+
+    def _sync_set_state_var(self, key: str, value: Any):
         """Set a synced working memory variable (e.g. goals, short-term emotional states)."""
         val_str = json.dumps(value)
         if self.redis_client:
@@ -230,7 +257,10 @@ class WorkingMemoryStore:
         except Exception as e:
             logger.error(f"SQLite set_state_var failed: {e}")
 
-    def get_state_var(self, key: str, default: Any = None) -> Any:
+    async def get_state_var(self, key: str, default: Any = None) -> Any:
+        return await asyncio.to_thread(self._sync_get_state_var, key, default)
+
+    def _sync_get_state_var(self, key: str, default: Any = None) -> Any:
         """Get a synced working memory variable."""
         if self.redis_client:
             try:

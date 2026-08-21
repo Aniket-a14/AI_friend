@@ -371,7 +371,14 @@ class SQLiteConnection:
         cursor = self.conn.cursor()
         cursor.execute(translated, cleaned_args)
         rows = cursor.fetchall()
-        self._commit_if_mutating(translated)
+        # Commits a statement that both writes and returns rows (e.g. `UPDATE
+        # ... RETURNING`), which arrives through the fetch path rather than
+        # execute(). Unconditional rather than prefix-sniffed on the first
+        # keyword: `fetchval` used exactly that check and, having none for
+        # RETURNING statements, never committed one at all. A commit after a
+        # plain SELECT is a no-op -- sqlite3 opens a transaction for DML only
+        # -- so there's no correctness reason to guess whether a query wrote.
+        self.conn.commit()
         return [dict(row) for row in rows]
 
     async def fetchrow(self, query, *args):
@@ -380,20 +387,8 @@ class SQLiteConnection:
         cursor = self.conn.cursor()
         cursor.execute(translated, cleaned_args)
         row = cursor.fetchone()
-        self._commit_if_mutating(translated)
+        self.conn.commit()
         return dict(row) if row else None
-
-    def _commit_if_mutating(self, query: str):
-        """Commit a statement that both writes and returns rows.
-
-        ``UPDATE … RETURNING`` arrives through the fetch path, not execute(),
-        so without this the write sits in sqlite3's implicit transaction and is
-        lost when the connection closes. Only execute() committed, because
-        until RETURNING was used every mutation went through it. A commit after
-        a plain SELECT is a no-op: sqlite3 opens a transaction for DML only.
-        """
-        if query.lstrip()[:6].upper() in ("UPDATE", "INSERT", "DELETE"):
-            self.conn.commit()
 
     async def fetchval(self, query, *args):
         translated = self._translate_query(query)
@@ -401,6 +396,7 @@ class SQLiteConnection:
         cursor = self.conn.cursor()
         cursor.execute(translated, cleaned_args)
         row = cursor.fetchone()
+        self.conn.commit()
         return row[0] if row else None
 
 

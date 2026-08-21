@@ -5819,3 +5819,99 @@ two are required, and put the recall refresh back. Two pack mutations too:
 leak a content word from an oblique question into its plant, and leak an answer
 into the filler. All caught. After the live run the relational tier held only
 the 63 real `personal` memories, checked directly.
+
+---
+
+## 2026-08-21 GitHub triage batch 1 (P0 Critical) — 4 real fixes, 3 stale findings closed
+
+An automated scanner filed 71 issues against the repo. Before touching code,
+cross-referenced the 7 filed as P0/critical against current code and this
+ledger, since several turned out to already be resolved by earlier entries
+above and the scanner had no way to see that.
+
+**Already fixed, closed without a code change:** CORS-allows-all-with-
+LAN_ONLY=false (the 2026-07-18 C1 entry's `_lan_default`/wildcard-credential
+split in `main.py` is exactly this fix) and Cypher-injection-via-f-string (the
+same date's `_safe_relation`/`_safe_label` regex validation runs before every
+f-string interpolation in `graph_db.py`/`learning.py`, with a regression test
+already guarding it). **Closed as intentional, not a bug:**
+`NEXT_PUBLIC_BACKEND_ACCESS_KEY` shipping in the client bundle — the
+2026-07-18 C1 entry chose a query-param shared secret specifically for a
+single-shared-secret personal deployment and documented the tradeoff; there is
+no way to give a browser a secret it can present without the browser holding
+it, and OAuth2/session-exchange machinery is out of proportion to what this
+deployment model needs.
+
+**Fixed — `_on_memory_surfaced` double-counted a surfacing event
+(`core.py`).** A payload carrying both the contract's `memories` list and a
+legacy top-level `content` fallback appended both, and the 5-item trim that
+follows could evict a legitimate older memory to make room for the dupe. Made
+mutually exclusive (`if memories_list: ... else: content fallback`), matching
+what `SurfacingAgent` actually ever sends (always `memories`, contract has no
+top-level `content` field) while keeping the fallback for other producers.
+Two tests pin both branches; reverting the `if`/`else` to the old
+unconditional double-append fails
+`test_memory_surfaced_does_not_double_count_list_and_content_fallback`.
+
+**Fixed — hard `import cognitive_rust` in `appraisal.py` with no fallback.**
+Unlike `memory_store.py`, which already lazy-imports `cognitive_rust` per call
+with a pure-Python fallback for `personalized_pagerank` (see the 2026-07-18
+F1 entry), `appraisal.py` imported it at module level with nothing to catch
+`ImportError` — a host without the compiled extension can't import
+`AppraisalEngine` at all, taking down cognitive service startup. Added
+`_compute_appraisal_fallback` (plus `_compute_novelty_fallback` and
+`_check_norm_alignment_fallback`), a line-for-line mirror of
+`compute_novelty`/`check_norm_alignment`/`compute_appraisal` in
+`cognitive-rust/src/lib.rs`, wired behind a `try: import cognitive_rust /
+except ImportError` at the call site. `test_appraisal_fallback_matches_*` in
+the new `tests/test_appraisal.py` runs both implementations on identical
+inputs and asserts numeric equality — this only proves anything while the
+extension is still installed, which is why the tests run today rather than
+being deferred; a future edit to either side that lets them drift is caught
+immediately rather than only when someone happens to run on a host without
+the wheel.
+
+**Fixed — blocking Redis/sqlite3 calls in `WorkingMemoryStore` reachable from
+async code.** The class's methods were plain `def`s doing blocking I/O;
+`scripts/research/estimate_realtime_latency.py` calls them directly from
+inside `async def run_latency_profile()`, stalling the event loop for the
+Redis round trip or the disk write. Same shape as the `persist_state` fix in
+the 2026-07-19 entry below, applied the same way: every public method is now
+`async def`, delegating to a `_sync_*` body via `asyncio.to_thread`. The one
+caller updated to `await`. Test asserts the sync body runs on a different
+thread than the caller (`test_add_turn_runs_off_the_calling_thread`) rather
+than only checking behavior, since a mistaken direct call would pass every
+behavioral test while still blocking the loop.
+
+**Also fixed while in the area — `SQLiteConnection.fetchval` never
+committed.** Not the "CTE defeats the `query[:6]` keyword sniff" scenario the
+filed issue described — checked directly, and Python's own `sqlite3` module
+has the identical blind spot in its own implicit-transaction detection, so a
+CTE-prefixed write already runs in autocommit mode with nothing to lose
+either way (verified with a two-connection reproduction before writing a test
+that would not have discriminated anything). The real gap: `fetch`/`fetchrow`
+already committed after every call; `fetchval` never did, so `UPDATE ...
+RETURNING <col>` read through it silently lost the write on reconnect.
+Replaced the three call sites' inconsistent commit logic (heuristic prefix
+check on two paths, nothing on the third) with an unconditional
+`self.conn.commit()` on all three — cheaper to reason about than a keyword
+guess, and a commit after a plain `SELECT` is a no-op per sqlite3's own
+transaction semantics.
+
+**Verification:** full backend suite via junit-xml — 869 passed, 0
+failed/errored/skipped — `ruff check .` clean. Mutation-tested: reverting the
+`core.py` if/else to unconditional double-append, reverting
+`sqlite_fallback.py`'s three commits to the old heuristic, and forcing
+`WorkingMemoryStore.add_turn` to call its sync body directly instead of via
+`to_thread` each independently fail the test written for it.
+
+**NOT done:** no WAL mode or `asyncio.Lock` added to `sqlite_fallback.py` —
+the filed issue's "concurrency protection" framing doesn't hold up against
+the actual code. `SQLiteConnection` is a single connection driven entirely
+from the asyncio event loop with no `await` inside any of its methods, so two
+"concurrent" callers can't interleave mid-statement, and nothing moves this
+connection object across threads (unlike `agent_state.py`'s SQLite path,
+which deliberately opens a fresh per-call connection specifically to allow
+`asyncio.to_thread`). Adding locking or WAL here would be defending against a
+race that doesn't exist in the current call graph, for a class that already
+gets a real fix above for the bug that does exist.

@@ -697,3 +697,36 @@ def test_brain_agent_concurrent_chat_inputs_prevent_lost_task_ownership():
     # If the race existed, one task would be orphaned (created but lost ownership)
     for task in created_tasks:
         assert task.done(), "All created tasks should have completed or been cancelled"
+
+
+def test_memory_surfaced_does_not_double_count_list_and_content_fallback():
+    """A payload carrying both `memories` and a top-level `content` fallback
+    must ingest only the structured list, not both. Before the fix, a single
+    surfacing event with both fields present appended twice, and the 5-item
+    trim in `_on_memory_surfaced` could evict a legitimate older memory to make
+    room for the duplicate.
+    """
+    service = CognitiveService(llm_service=None, memory_store=None, graph_db=None)
+
+    asyncio.run(
+        service._on_memory_surfaced(
+            {
+                "memories": [{"content": "structured memory"}],
+                "content": "fallback memory",
+            }
+        )
+    )
+
+    assert len(service.surfaced_memories) == 1
+    assert service.surfaced_memories[0]["content"] == "structured memory"
+
+
+def test_memory_surfaced_uses_content_fallback_when_list_is_empty():
+    service = CognitiveService(llm_service=None, memory_store=None, graph_db=None)
+
+    asyncio.run(
+        service._on_memory_surfaced({"memories": [], "content": "fallback memory"})
+    )
+
+    assert len(service.surfaced_memories) == 1
+    assert service.surfaced_memories[0]["content"] == "fallback memory"
