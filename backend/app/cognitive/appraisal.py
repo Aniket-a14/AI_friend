@@ -17,6 +17,8 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from .json_extract import extract_json_blocks
+
 logger = logging.getLogger(__name__)
 
 _NORM_SKIP_WORDS = frozenset({"not", "no", "don't", "never", "without", "isn't"})
@@ -266,19 +268,21 @@ class AppraisalEngine:
                 options_override={"num_predict": 128},
             )
 
-            # Extract only the block that looks like our appraisal JSON
+            # Extract only the block that looks like our appraisal JSON.
+            # Bracket-depth matched rather than regex-matched: a naive
+            # `\{.*?\}` truncates at the first inner `}` of a nested object
+            # (invalid JSON), and a naive `\{.*\}` spans to the LAST `}` in
+            # the whole response, swallowing any second block or trailing
+            # commentary (H1).
+            candidate_blocks = extract_json_blocks(response, brackets="{")
             json_str = None
-            for m in re.finditer(r"\{.*?\}", response, re.DOTALL):
-                candidate = m.group(0)
+            for candidate in candidate_blocks:
                 if "goal_congruence" in candidate or "norm_alignment" in candidate:
                     json_str = candidate
                     break
 
-            if not json_str:
-                # Fallback to greedy matching if no specific block was found
-                match = re.search(r"\{.*\}", response, re.DOTALL)
-                if match:
-                    json_str = match.group(0)
+            if not json_str and candidate_blocks:
+                json_str = candidate_blocks[0]
 
             if json_str:
                 data = None

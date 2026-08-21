@@ -9,14 +9,13 @@ Intent persistence uses temporal smoothing (§3.2):
     With context gating: if ContextShift > θ → hard reset
 """
 
-import json
 import logging
-import re
 from dataclasses import dataclass
 from typing import Any
 
 from ..config import Config
 from .bt import Action, Condition, NodeStatus, Selector, Sequence
+from .json_extract import extract_first_json_value
 from .perception import CognitiveEvent
 
 logger = logging.getLogger(__name__)
@@ -347,10 +346,8 @@ class DecisionService:
             elif "</think>" in response:
                 json_str = response.split("</think>")[-1].strip()
 
-            match = re.search(r"\{.*\}", json_str, re.DOTALL)
-            if match:
-                data = json.loads(match.group(0))
-
+            data = extract_first_json_value(json_str, brackets="{")
+            if data is not None:
                 # Sanitize/normalize intent: must be CHAT, REMEMBER, or COMMAND
                 raw_intent = data.get("intent", "").upper().strip()
                 if raw_intent in ["CHAT", "REMEMBER", "COMMAND"]:

@@ -86,3 +86,38 @@ async def test_classification_failure_fallback(decision_service, mock_llm_servic
     # Should fallback to default RESPOND_CHAT
     assert plan.action_type == "RESPOND_CHAT"
     assert plan.goal == "ENGAGE"  # Default goal in fallback
+
+
+@pytest.mark.asyncio
+async def test_intent_classification_ignores_a_second_json_block_in_the_response(
+    decision_service, mock_llm_service
+):
+    """H1 regression: a greedy `\\{.*\\}` regex spans from the response's
+    first `{` to its LAST `}`, so a model that appends a second, unrelated
+    JSON-looking aside after the real answer used to produce an invalid
+    combined span that failed json.loads and silently kept whatever the
+    cheap keyword heuristic had already guessed instead of the LLM's actual
+    classification.
+
+    Raw content is deliberately chosen to NOT contain "remember"/"memorize",
+    so the heuristic pre-classifier (`_apply_heuristic_intent_and_goal`)
+    defaults to CHAT/ENGAGE - only a successfully parsed LLM response can
+    produce COMMAND/TASK here, so this fails if the parse silently breaks.
+    """
+    mock_llm_service.generate.return_value = (
+        '{"intent": "COMMAND", "goal": "TASK"}\n'
+        'By the way, an example of a chat object looks like {"intent": "CHAT"}.'
+    )
+
+    event = CognitiveEvent(
+        event_id="5",
+        event_type="USER_MESSAGE",
+        raw_content="please set a timer for five minutes",
+        metadata={},
+    )
+    state = {"emotion": "neutral", "mood": 0.0}
+
+    await decision_service.decide(event, state)
+
+    assert event.intent == "COMMAND"
+    assert event.metadata["suggested_goal"] == "TASK"

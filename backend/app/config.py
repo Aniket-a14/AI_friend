@@ -23,6 +23,11 @@ class AppSettings(BaseSettings):
     # operator who wants to restrict exposure (e.g. behind their own reverse
     # proxy) now has a lever instead of needing a code change.
     BACKEND_BIND_HOST: str = "0.0.0.0"
+    # H3: caps how many session tokens one client IP can mint per window.
+    # BACKEND_ACCESS_KEY already gates *who* can call /token; this bounds how
+    # often, since a valid key doesn't imply unlimited LiveKit room creation.
+    TOKEN_RATE_LIMIT_MAX_REQUESTS: int = 5
+    TOKEN_RATE_LIMIT_WINDOW_SECONDS: float = 60.0
     LAN_CORS_ORIGIN_REGEX: str = (
         r"^https?://("
         r"127\.0\.0\.1|"

@@ -5915,3 +5915,144 @@ which deliberately opens a fresh per-call connection specifically to allow
 `asyncio.to_thread`). Adding locking or WAL here would be defending against a
 race that doesn't exist in the current call graph, for a class that already
 gets a real fix above for the bug that does exist.
+
+---
+
+## 2026-08-21 GitHub triage batch 2 (P1 High) — 7 of 12 fixed, 5 deferred
+
+Continuing the 71-issue triage (see batch 1 above). Same method: read the
+actual code and this ledger before implementing what a scanner asked for.
+
+**H1 — greedy JSON-block regex picks the wrong span.** `decision.py`,
+`learning.py`, and `appraisal.py` each pulled a JSON object out of an LLM
+response with `re.search(r"\{.*\}", text, re.DOTALL)` (`appraisal.py` also
+tried a non-greedy `\{.*?\}` first). Both are wrong in different ways: greedy
+spans from the first `{` to the LAST `}` in the whole response, fusing two
+independent objects into one invalid string if the model emits a second
+JSON-looking aside; non-greedy stops at the first inner `}`, truncating any
+object with nested structure. New `app/cognitive/json_extract.py` does actual
+bracket-depth counting (string/escape aware) to find every syntactically
+complete top-level block, then tries each in order until one parses. All
+three call sites now use it. Mutation-tested by literally reverting to the
+old regex per file: `learning.py` and `appraisal.py`'s tests failed as
+expected, but the first version of the `decision.py` test did not, because
+`decide()` runs a cheap keyword heuristic *before* the LLM classification and
+the test's raw_content happened to contain "remember" — the heuristic alone
+produced the right answer regardless of whether the LLM parse worked, so a
+broken parse was invisible to that test. Rewrote it with raw_content the
+heuristic defaults to CHAT/ENGAGE for, so only a correct LLM-side parse
+produces the asserted COMMAND/TASK. Re-verified it now fails against the
+reverted code before restoring the fix.
+
+**H4 — unguarded `import numpy as np` in `vision/links.py`.** `mss` and `cv2`
+in the same file both have `try/except ImportError` guards; `numpy` didn't,
+so a minimal/headless install without it couldn't import the module at all.
+Guarding the import alone isn't sufficient, though: `frame: np.ndarray` type
+hints are evaluated at class-body execution time by default, so `np.ndarray`
+would still raise `AttributeError` on a `None` guard target. Added
+`from __future__ import annotations` (defers all annotation evaluation) and
+extended `ScreenLink.__init__`'s existing "go headless" branch to also
+trigger when numpy is missing.
+
+**H5 — Postgres→SQLite fallback was a `logger.warning`, easy to miss in
+aggregated logs, with no queryable signal.** `ConversationHistoryStore` now
+sets `used_fallback_storage = True` and logs at `CRITICAL`. Deliberately
+narrow: "expose connection health on a diagnostics endpoint" (the issue's
+other ask) needs a mesh-wide health-check mechanism across agent processes
+that don't share memory with `main.py`'s signaling API — that's the actual
+scope of issue #156 (centralized telemetry), not a one-file patch. The flag
+is a foundation for that, not a substitute.
+
+**H8 — `describe_image` returned `""` for both a VLM failure and a
+confirmed-quiet scene.** Now returns `None` for a failure, `""` only for a
+successful call that found nothing to describe. `VisualAppraisalService`
+falls back to its cached description either way (unchanged), but now also
+only advances the sensory-habituation vector/timestamp on a confirmed-quiet
+result - a failure retries the VLM next tick instead of being treated as an
+observed (quiet) baseline. Broke two existing tests that asserted the old
+`""`-on-failure contract (`test_a_failed_vision_call_is_logged_not_silently_
+empty` in `test_audit_hygiene.py`, plus a dependency-set assertion in the
+same file unrelated to this change - see H3 below); updated both to the new
+contract rather than working around them.
+
+**H10 — Unicode homoglyph bypass of `_HOSTILE_TO_USER`.** The issue's own
+suggested fix (`normalize('NFKD', text).encode('ascii', 'ignore')`) would not
+have worked: cross-script confusables (Cyrillic "а" for Latin "a") have no
+compatibility decomposition, so NFKD leaves them untouched, and the
+encode/ignore step would have *deleted* them rather than mapping them -
+reconstructing neither "hate" nor anything safe, and reintroducing the exact
+"cleaner that can conceal text" failure mode `_match_views`'s own docstring
+already warns against for a different bypass. What NFKD *does* fold is
+same-script stylized Unicode - Mathematical Alphanumeric Symbols, full-width
+forms, ligatures - which is the more common single-script bypass in
+practice. Added a fourth view to `_match_views` (NFKD-normalized, following
+the file's established "views never subtract, only add" pattern) rather than
+replacing the existing three. Verified against a literal
+Mathematical-Bold-Unicode "I hate you" before writing the test. True
+cross-script confusables remain unaddressed - closing that needs a
+confusables table, not a quick fix, and is not attempted here.
+
+**H11 — un-awaited `bootstrap_constraints()` in `GraphDB.__init__`.** Fired
+via `loop.create_task` and never awaited, so a caller could run its first
+query before Neo4j finished creating uniqueness constraints, letting
+duplicate entity nodes form. Removed the fire-and-forget task from `__init__`
+entirely; added `async def initialize()` that creates and awaits the task,
+called explicitly at all three `GraphDB()` construction sites
+(`brain_agent.py`, `surfacing_agent.py`, `subconscious_agent.py`'s `start()`,
+since its constructor is sync). Calling `bootstrap_constraints` twice is
+harmless (`IF NOT EXISTS` throughout), so `subconscious_agent.py` doesn't
+need to know whether it owns or was handed an already-initialized instance.
+
+**H12 — root `.env.example` and `backend/.env.example` had conflicting
+network defaults.** Traced actual usage before merging anything: the live
+`docker-compose.prod.yml` has exactly one `env_file: .env`, pointing at the
+*root* file; `backend/.env.example` is referenced nowhere except
+`_archive/`'s dead old compose setup. It wasn't a second template for a real
+second deployment shape, it was an orphan from before the compose
+consolidation, silently drifting out of sync (missing `RUNTIME_AUTO_
+BOOTSTRAP`, `BACKEND_ACCESS_KEY`, `PROACTIVE_*`, and more). Deleted it rather
+than reconciling two copies of the same information - there was only ever
+one canonical file, the tree just didn't say so.
+
+**H3 — unthrottled `/token`.** `require_session_auth` (added in the 2026-07-18
+C1 fix) gates *who* can call `/token`/`/start-session`; nothing capped *how
+often*, so a valid key (or the always-trusted loopback host) could still mint
+unlimited LiveKit sessions. New `app/rate_limit.py`: a single in-memory
+fixed-window counter per client IP, deliberately not distributed - this
+backend is one process for a personal/family deployment (the same framing
+`require_session_auth`'s own docstring uses), so there's no second worker for
+counts to desync across. Wired as a second dependency on `/token` and
+`/start-session` only, not `/vision/toggle` - a state toggle isn't a
+resource-minting endpoint the same way. Broke an existing audit-hygiene test
+that asserted `/token`'s full dependency set was a subset of `/vision/toggle`'s;
+narrowed that assertion to the specific auth dependency it was actually
+trying to pin, since the two endpoints were never supposed to share a
+DoS-rate-limit dependency, only an authentication one.
+
+**Verified:** full backend suite via junit-xml - 893 passed, 0
+failed/errored/skipped - `ruff check .` clean. Every new test mutation-tested
+by reverting its corresponding fix and confirming failure, including two
+tests that turned out NOT to discriminate on first attempt (the initial
+`decision.py` H1 test, and a `test_vlm_pipeline_failure_...` H8 test that
+happened to hold under old code too since neither `None` nor `""` ever
+advanced the habituation baseline there) - both cases are called out inline
+above/in-test rather than left as silently non-discriminating coverage.
+
+**NOT done, deferred:**
+- **H2** (`IdentityManager.save()` writes to git-tracked `backend/app/
+  personality.json`/`history.json` by default - `IDENTITY_BASE_PATH` exists
+  but defaults to `None`, i.e. opt-in, not fixed) is the same root cause as
+  filed issue #152 (12-Factor Factor V). Bundling them: changing the default
+  write location is a real behavioral/deployment change (volume mounts,
+  docs, "which file do I edit" for persona authors) that deserves one
+  correct pass, not two independent partial ones.
+- **H6/H7** (ReappraisalEngine weights / DecisionService goal utilities reset
+  on restart) need a persistence schema decision (which table, when to
+  flush, how to hydrate) - a design choice, not a bug fix, and risks being
+  fitted to whatever schema shape is fastest to write today rather than the
+  right one.
+- **H9** (duplicate keyword intent classification in `PerceptionService` and
+  `DecisionService`) is a consolidation refactor across two services with
+  behavior-changing potential (whichever one currently "wins" on disagreement
+  is implicit, not tested) - real, but not a same-session drive-by next to
+  the seven fixes above.

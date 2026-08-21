@@ -58,6 +58,7 @@ class SubconsciousAgent(BaseAgent):
 
     async def start(self):
         await self.connect()
+        await self.graph_db.initialize()
 
         # Initialize SQLite/Postgres DB pool and MemoryStore if not provided
         if not self.memory_store:

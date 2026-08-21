@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -54,7 +55,17 @@ def _match_views(text: str) -> tuple[str, ...]:
     detagged = re.sub(r"\s+", " ", _WELL_FORMED_TAG.sub("", raw)).strip()
     # Only the brackets themselves, so nothing is ever swallowed wholesale.
     debracketed = re.sub(r"\s+", " ", raw.replace("<", " ").replace(">", " ")).strip()
-    return tuple({raw, detagged, debracketed})
+    # NFKD folds compatibility variants - mathematical/stylized alphanumerics
+    # ("𝐡𝐚𝐭𝐞"), full-width forms, ligatures - to their canonical ASCII form
+    # (H10), without deleting anything outside that set: an encode/decode
+    # round-trip would silently drop unmapped characters, which is exactly
+    # the "cleaner that can conceal text" failure mode this function's
+    # docstring warns against. This does NOT catch genuine cross-script
+    # confusables (Cyrillic "а" for Latin "a") - those are canonically
+    # distinct code points with no compatibility decomposition to fold - only
+    # the common single-script "stylized Unicode" bypass.
+    normalized = re.sub(r"\s+", " ", unicodedata.normalize("NFKD", raw)).strip()
+    return tuple({raw, detagged, debracketed, normalized})
 
 # Authorable, unlike values and boundaries: tone is how the friend sounds, not
 # what it will refuse to do. Used when personality.json names no base_tone.

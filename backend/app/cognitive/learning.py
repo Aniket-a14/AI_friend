@@ -1,13 +1,12 @@
 import asyncio
-import json
 import logging
-import re
 import time
 from typing import Any
 
 from ..config import Config
 from ..state.graph_db import GraphDB
 from .identity import IdentityManager
+from .json_extract import extract_first_json_value
 
 logger = logging.getLogger("reflection")
 
@@ -347,9 +346,9 @@ class ReflectionService:
             if "<think>" in text:  # Handle deep reasoning prefixes
                 text = text.split("</think>")[-1].strip()
 
-            match = re.search(r"\[.*\]|\{.*\}", text, re.DOTALL)
-            if match:
-                return json.loads(match.group(0))
+            value = extract_first_json_value(text)
+            if value is not None:
+                return value
             return [] if "[" in text else {}
         except Exception as e:
             logger.error(f"JSON extraction failed: {e}")

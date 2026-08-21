@@ -41,14 +41,18 @@ class GraphDB:
         self._belief_cache = {}
         self._cache_ttl = getattr(Config, "GRAPH_CACHE_TTL", 300)
 
-        # Asynchronously bootstrap uniqueness constraints and indexes on startup
-        try:
-            loop = asyncio.get_running_loop()
-            if loop.is_running():
-                self._bootstrap_task = loop.create_task(self.bootstrap_constraints())
-        except RuntimeError:
-            # If no running event loop (e.g. mock setup), bootstrap will run on first query or be skipped
-            pass
+    async def initialize(self) -> None:
+        """Bootstrap schema constraints/indexes and wait for it to finish.
+
+        Previously fired via `loop.create_task` from `__init__` and never
+        awaited (H11): a caller that ran its first query before Neo4j
+        finished creating the uniqueness constraints could create duplicate
+        entity nodes in the window before they existed. Callers must await
+        this during their own startup, immediately after constructing
+        `GraphDB`.
+        """
+        self._bootstrap_task = asyncio.ensure_future(self.bootstrap_constraints())
+        await self._bootstrap_task
 
     async def bootstrap_constraints(self):
         """Asynchronously initialize schema unique constraints and indexes to guarantee O(1) performance."""

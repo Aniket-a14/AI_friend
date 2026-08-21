@@ -331,7 +331,14 @@ class OllamaClient:
         image_b64: str,
         prompt: str = "What do you see?",
         model: str | None = None,
-    ) -> str:
+    ) -> str | None:
+        """Returns the VLM's description, `""` for a genuinely quiet scene,
+        or `None` if the call itself failed (H8). The two empty-ish outcomes
+        used to both come back as `""`, indistinguishable to the caller even
+        though the log line already told them apart - `VisualAppraisalService`
+        falls back to its cached description either way, so this only
+        changes what a caller *can* tell, not what it currently does with it.
+        """
         if getattr(Config, "MOCK_LLM_TEXT", False):
             ai_name = getattr(Config, "AI_NAME", "AI Friend")
             return f"A user sitting at a desk pair-programming with their AI friend {ai_name}."
@@ -369,7 +376,7 @@ class OllamaClient:
                 target_model,
                 exc,
             )
-        return ""
+        return None
 
     async def check_health(self) -> bool:
         client = await self._get_client()
