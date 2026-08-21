@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import time
 from typing import Any
 
@@ -9,6 +10,29 @@ import nats
 import orjson
 
 logger = logging.getLogger(__name__)
+
+# M6: base/cap for exponential backoff with jitter on NATS reconnect. A static
+# `reconnect_time_wait` means every agent process in the mesh (brain, system,
+# subconscious, surfacing, transport) retries at the same fixed interval, so a
+# NATS restart makes them all hammer it in lockstep on every attempt rather
+# than spreading out.
+_RECONNECT_BASE_DELAY_SECONDS = 1.0
+_RECONNECT_MAX_DELAY_SECONDS = 30.0
+
+
+def _reconnect_delay_with_backoff(servers, _server_info):
+    """`reconnect_to_server_handler` callback for `nats.connect`.
+
+    Must return `(selected_server_or_None, delay_seconds)`; `None` keeps the
+    client's own default server selection (there is only ever one configured
+    server here) and we only take over the delay computation.
+    """
+    attempt = servers[0].reconnects if servers else 0
+    delay = min(
+        _RECONNECT_MAX_DELAY_SECONDS,
+        _RECONNECT_BASE_DELAY_SECONDS * (2**attempt),
+    ) + random.uniform(0, 1)
+    return None, delay
 
 
 class BaseAgent:
@@ -60,7 +84,7 @@ class BaseAgent:
                 self.nats_url,
                 connect_timeout=10,
                 max_reconnect_attempts=-1,
-                reconnect_time_wait=2.0,
+                reconnect_to_server_handler=_reconnect_delay_with_backoff,
                 disconnected_cb=self._on_nats_disconnected,
                 reconnected_cb=self._on_nats_reconnected,
                 error_cb=self._on_nats_error,

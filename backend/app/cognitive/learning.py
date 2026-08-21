@@ -10,6 +10,32 @@ from .json_extract import extract_first_json_value
 
 logger = logging.getLogger("reflection")
 
+# M4: the fact-extraction prompt leaves "relation" free-text, so the LLM's
+# word choice (LIKES vs ENJOYS vs PREFERS) becomes a distinct Cypher
+# relationship *type*. The dedup check right below is an exact match on that
+# type, so synonyms never collide - they fragment into parallel edges between
+# the same two nodes instead of one edge whose weight grows. This is a small,
+# conservative canonicalization, not a general thesaurus: it only collapses
+# clusters common enough in everyday reflection output to be worth the risk
+# of losing the verb's original nuance.
+_RELATION_SYNONYMS: dict[str, str] = {
+    "ENJOYS": "LIKES",
+    "LOVES": "LIKES",
+    "ADORES": "LIKES",
+    "PREFERS": "LIKES",
+    "IS_FOND_OF": "LIKES",
+    "DISLIKES": "DISLIKES",
+    "HATES": "DISLIKES",
+    "DETESTS": "DISLIKES",
+    "IS_A": "IS_A",
+    "IS_TYPE_OF": "IS_A",
+    "TYPE_OF": "IS_A",
+}
+
+
+def _canonicalize_relation(rel_type: str) -> str:
+    return _RELATION_SYNONYMS.get(rel_type, rel_type)
+
 
 class ReflectionService:
     """
@@ -189,7 +215,9 @@ class ReflectionService:
                         category = "social"
 
                     try:
-                        rel_type = GraphDB._safe_relation(relation)
+                        rel_type = _canonicalize_relation(
+                            GraphDB._safe_relation(relation)
+                        )
                         GraphDB._safe_label(subject_type)
                         GraphDB._safe_label(object_type)
                         GraphDB._safe_label(category.capitalize())

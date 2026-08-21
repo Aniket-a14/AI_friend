@@ -108,6 +108,11 @@ class CameraLink:
         if cv2 is None:
             raise RuntimeError("cv2 dependency is missing. Camera capture unavailable.")
         if self.cap is None or not self.cap.isOpened():
+            # Release the stale handle before replacing it (M3) - re-assigning
+            # `self.cap` without this leaks the underlying /dev/video0 device
+            # handle every time isOpened() comes back False on a live device.
+            if self.cap is not None:
+                self.cap.release()
             self.cap = cv2.VideoCapture(0)
 
     def capture_frame(self) -> bytes | None:

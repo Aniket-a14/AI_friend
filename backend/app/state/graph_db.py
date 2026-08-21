@@ -5,7 +5,14 @@ import json
 import logging
 import re
 import time
+from collections import OrderedDict
 from typing import Any
+
+# M9: hard cap on the belief cache so a session issuing many distinct
+# use_cache=True queries (different parameter sets) can't grow it without
+# bound. OrderedDict gives us cheap LRU: move a key to the end on access,
+# evict from the front on insert once full.
+MAX_BELIEF_CACHE_ENTRIES = 500
 
 from neo4j import AsyncGraphDatabase
 
@@ -34,11 +41,12 @@ class GraphDB:
                 "A strong, non-default NEO4J_PASSWORD must be provided in your .env file."
             )
 
+        self.uri = uri
         self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
         self._bootstrap_task = None
 
-        # Perceptual Belief Cache
-        self._belief_cache = {}
+        # Perceptual Belief Cache (M9: bounded LRU, see MAX_BELIEF_CACHE_ENTRIES)
+        self._belief_cache: OrderedDict[Any, tuple[float, Any]] = OrderedDict()
         self._cache_ttl = getattr(Config, "GRAPH_CACHE_TTL", 300)
 
     async def initialize(self) -> None:
@@ -50,7 +58,24 @@ class GraphDB:
         entity nodes in the window before they existed. Callers must await
         this during their own startup, immediately after constructing
         `GraphDB`.
+
+        M12: also verifies connectivity with one unambiguous `RETURN 1` before
+        bootstrapping. `bootstrap_constraints` already touches the network,
+        but it swallows every failure per-constraint as a `logger.warning`
+        ("index already exists" and "can't reach Neo4j at all" look
+        identical there) - operators need one clear signal at startup rather
+        than mid-session, when a cognitive turn's first graph write fails.
         """
+        # `execute_query` swallows connection failures internally (returns
+        # `[]`, logged only as a query-level error) so a missing result here,
+        # not an exception, is the connectivity signal.
+        probe = await self.execute_query("RETURN 1")
+        if not probe:
+            logger.critical(
+                "Neo4j is unreachable at startup (uri=%s). Cognitive turns "
+                "that touch the graph will fail until this is fixed.",
+                self.uri,
+            )
         self._bootstrap_task = asyncio.ensure_future(self.bootstrap_constraints())
         await self._bootstrap_task
 
@@ -125,6 +150,7 @@ class GraphDB:
         if use_cache and cache_key in self._belief_cache:
             ts, result = self._belief_cache[cache_key]
             if time.time() - ts < self._cache_ttl:
+                self._belief_cache.move_to_end(cache_key)
                 return result
 
         try:
@@ -159,6 +185,9 @@ class GraphDB:
 
                 if use_cache:
                     self._belief_cache[cache_key] = (time.time(), records)
+                    self._belief_cache.move_to_end(cache_key)
+                    if len(self._belief_cache) > MAX_BELIEF_CACHE_ENTRIES:
+                        self._belief_cache.popitem(last=False)
                 return records
         except Exception as e:
             logger.error(f"Neo4j query failed: {e}")

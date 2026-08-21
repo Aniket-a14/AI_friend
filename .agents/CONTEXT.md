@@ -6056,3 +6056,164 @@ above/in-test rather than left as silently non-discriminating coverage.
   behavior-changing potential (whichever one currently "wins" on disagreement
   is implicit, not tested) - real, but not a same-session drive-by next to
   the seven fixes above.
+
+## 2026-08-21 GitHub triage batch 3 (P2 Medium) — 12 of 18 fixed, 4 false positives closed, 2 deferred
+
+Same discipline as batches 1-2: read the code before trusting the scanner's
+description. Four of the eighteen M-numbered findings turned out to be wrong
+or already-resolved on inspection.
+
+**M2/M7 — `UserMentalModel` mutable defaults and unbounded `known_concepts`.**
+M2's premise doesn't hold under this codebase's actual Pydantic version:
+`list = []`/`dict = {}` class-level defaults on a Pydantic v2 `BaseModel` are
+deep-copied per instance (verified directly - two instances' `known_concepts`
+lists are distinct objects, appending to one leaves the other empty), unlike
+the same pattern on a dataclass or plain function signature. Applied
+`Field(default_factory=...)` anyway since it's the idiomatic v2 style and the
+issue's own concern ("error-prone if refactored to standard dataclasses")
+is a real one to guard against, but this is not a live bug today. M7 is real
+and separate: `update_known_concepts` appended forever with no cap, so a
+multi-hour session's vocabulary list - and the state payload serializing it
+on every persist - grew without bound. Added `MAX_KNOWN_CONCEPTS = 200` with
+sliding-window eviction (oldest concepts drop off, not newest).
+
+**M3 — `CameraLink._ensure_cap` leaked video device handles.** Re-assigned
+`self.cap` to a fresh `cv2.VideoCapture(0)` whenever the existing one failed
+`isOpened()`, without releasing it first. On a flaky `/dev/video0` (common on
+Linux when another process briefly grabs it), every recovery attempt leaked
+another handle. Fixed: release the stale handle before replacing it.
+
+**M4 — reflection's fact extraction fragments the graph on wording alone.**
+The extraction prompt leaves `"relation"` as free text
+(`app/cognitive/learning.py`'s LLM schema has no enum for it), so the LLM's
+exact word choice becomes a distinct Cypher relationship *type* -
+`(user)-[:LIKES]->(tea)` and `(user)-[:ENJOYS]->(tea)` are unrelated edges to
+Neo4j, and the existing dedup check (`MATCH (s)-[r:{rel_type}]->(t)`) is an
+exact match on that already-normalized type, so it can't catch synonyms.
+Added a small, deliberately conservative canonical map
+(`_RELATION_SYNONYMS` in `learning.py`) collapsing the handful of everyday
+synonym clusters worth the risk of losing a verb's nuance (LOVES/ENJOYS/
+ADORES/PREFERS → LIKES; HATES/DETESTS → DISLIKES; IS_TYPE_OF/TYPE_OF → IS_A) -
+not a general thesaurus. Broke `test_fact_consolidation`'s assertion that
+"LOVES" was stored verbatim; updated it, since that's exactly the fragmentation
+this fix removes.
+
+**M6 — NATS reconnects had no backoff or jitter.** `nats.connect(reconnect_
+time_wait=2.0)` meant every process in the mesh (brain, system, subconscious,
+surfacing, transport) retried at the same fixed interval - a NATS restart
+would make all of them hammer it in lockstep on every attempt. `nats-py`
+doesn't expose a built-in backoff/jitter option on `reconnect_time_wait`
+itself (it's a static float), but does support a `reconnect_to_server_handler`
+callback that computes the delay per attempt from `server.reconnects`. Added
+`_reconnect_delay_with_backoff` (base 1s, doubling, capped at 30s, plus
+`random.uniform(0, 1)` jitter), returning `None` for server selection since
+there's only ever one configured server - it only takes over delay timing.
+
+**M8 — `SomaticAppraiser._last_spike_at` never shrank.** Refractory timestamps
+for every recognized comfort entity accumulated forever; a term dropped from
+the graph (renamed, decayed, never re-taught) stayed in the dict
+indefinitely. `refresh()` now prunes to the current term set, and additionally
+drops any timestamp already past `SOMATIC_REFRACTORY_SECONDS` regardless of
+whether the term survives - a stale timestamp is dead weight either way,
+since `_in_refractory` would already treat it as expired.
+
+**M9/M12 — `GraphDB` unbounded cache and no startup connectivity signal.**
+`_belief_cache` was a plain dict with no size cap, cleared only on full
+invalidation. Swapped for an `OrderedDict` with `move_to_end` on both read
+and write and `popitem(last=False)` once over `MAX_BELIEF_CACHE_ENTRIES = 500`
+- real LRU, not FIFO (verified: re-touching an entry protects it from the
+next eviction). Separately, M12's filed premise (main.py checks Ollama on
+startup but not Neo4j) doesn't match this codebase - `main.py` is the
+signaling/token server and doesn't own a `GraphDB` at all; the three
+processes that do (`brain_agent`, `subconscious_agent`, `surfacing_agent`)
+already call `await graph_db.initialize()` from the H11 fix (batch 2). The
+real gap was inside `initialize()` itself: `bootstrap_constraints` touches
+the network but logs every failure as a per-constraint `warning`, so
+"index already exists" and "Neo4j is completely unreachable" look identical
+in the log. Added one `RETURN 1` probe before bootstrapping that logs
+`CRITICAL` on an empty result - `execute_query` swallows connection
+exceptions internally and returns `[]`, so the signal is the empty result,
+not a raised exception.
+
+**M10 — `bt.Condition.tick` couldn't await an async callback.** `Action.tick`
+already checked `asyncio.iscoroutinefunction` before deciding whether to
+await; `Condition.tick` just called `self.func(blackboard)` unconditionally.
+A coroutine function passed as a condition produced an un-awaited coroutine
+*object*, which is truthy - so an async condition that should report FAILURE
+silently reported SUCCESS instead. Mirrored `Action`'s branch.
+
+**M14 — silent failure on `/vision/toggle` HTTP errors.** Re-checked the
+premise first: `page.js`'s `toggleVision` only calls `setVisionSource` *after*
+`res.ok` is confirmed, so it was never actually optimistic - there was no UI
+state to roll back on failure, contrary to the issue's framing. The real gap
+was narrower but still real: an `!res.ok` response (e.g. a backend 500) was
+silently swallowed with no console log and no user-facing signal that the
+toggle didn't take effect. Added a `visionError` state surfaced as a
+dismissing banner, covering both the HTTP-error and network-exception paths.
+
+**M17 — unused frontend dependencies.** Checked actual imports before
+removing anything: `@prisma/client` (plus `prisma`/`@prisma/config` in
+devDependencies) is used by `prisma/seed.js` - not unused, contrary to the
+issue's list, and kept. `dotenv` and `lucide-react` have zero imports anywhere
+in the tree and no npm script references either; removed both via
+`npm uninstall`.
+
+**M18 — no CSP headers.** Added a `headers()` block in `next.config.mjs`.
+Backend/LiveKit origins are per-deployment (self-hosted LAN, custom domain,
+`ws://` vs `wss://`), set via `NEXT_PUBLIC_BACKEND_URL`/`NEXT_PUBLIC_LIVEKIT_URL`
+at build time - so `connect-src` is built from those env vars rather than a
+hardcoded `'self'`-only policy that would break every deployment except the
+literal localhost default. `script-src`/`style-src` include `'unsafe-inline'`
+because Next's App Router injects an unnonced inline hydration bootstrap
+script; tightening further needs nonce-based middleware, a separate change.
+Verified via `npm run build` (succeeds) and `curl -I` against `npm run start`
+(header present, page still returns 200) - not a substitute for an actual
+browser CSP-violation check, which this environment has no browser to run.
+
+**Verified:** full backend suite via junit-xml - 909 passed, 0
+failed/errored/skipped - `ruff check .` clean. `npm run lint` and
+`npm run build` clean on the frontend. Every new backend test mutation-tested
+by reverting its fix and confirming failure (`test_fact_consolidation`'s
+updated assertion caught itself needing an update this way - reverting M4
+alone made it fail even though it predates this batch).
+
+**NOT done, closed as false positive / already resolved (no code change):**
+- **M1** (`sqlite_fallback._translate_query`'s `$1`/`$10`-collision claim):
+  `\$\d+` is a greedy quantifier - it already consumes `$10` as one match,
+  verified directly (`re.sub(r'\$\d+', '?', ...)` on a 10-parameter INSERT
+  translates correctly). The narrower CTE/commit concern in the same issue
+  was already fixed in batch 1 (unconditional commit regardless of query
+  shape, replacing the fragile keyword-prefix heuristic).
+- **M5** (hardcoded English constraint in `action.py`): already removed in a
+  prior commit - the current `_CHAT_GUIDELINE` has an explicit comment at the
+  spot explaining why (it contradicted the identity block's own Hinglish
+  instruction; language belongs to the per-agent persona, not a global
+  guideline).
+- **M11** (`conversation_store.log_message`'s self-healing insert
+  "overwriting" trust): `ON CONFLICT (id) DO NOTHING` cannot overwrite an
+  existing row by definition - `DO NOTHING` performs no write on conflict.
+  The only real effect is a *new* session row (when one didn't exist at all)
+  getting schema-default trust values, but `sessions.trust_*` is write-only:
+  grepped the whole app for reads and found none anywhere - the actual trust
+  state lives in `agent_state.py`'s `AgentState`/`StateService`, the
+  single-owner table CLAUDE.md's architecture notes already point to. Not
+  worth wiring live trust into a column nothing reads back.
+- **M13** (lexicon/semantic-recall stores need standardized SQLite query
+  translation): both stores exclusively call through `self.pool.acquire()`
+  with no bespoke pgvector operators (`<->`, `::vector`, etc.) of their own -
+  grepped for both and found none. They already funnel through the same
+  `_translate_query`/commit path batch 1 fixed; there's no separate
+  translation surface to standardize.
+
+**NOT done, deferred:**
+- **M15** (`useWebRTCVoice.js` never transitions to the `'thinking'` state
+  `AssistantCircle.jsx` already animates for) is a real gap, but validating a
+  voice-state-machine change means actually speaking through a live
+  LiveKit/backend session - this environment has no microphone/audio
+  pipeline to exercise it with, and CLAUDE.md is explicit that UI behavior
+  changes need to be verified in a browser before being called done, not
+  inferred from reading the hook.
+- **M16** (static orbit particle animation in `AssistantCircle.jsx`) is a
+  cosmetic/subjective visual-polish request with no functional bug behind
+  it - lowest priority of the eighteen, left for a session where visual
+  changes can actually be watched render.

@@ -182,6 +182,40 @@ def test_cache_is_reused_within_ttl_then_refreshed():
     assert appraiser.graph.execute_query.await_count == calls_after_initial + 1
 
 
+def test_refresh_prunes_spike_history_for_terms_no_longer_learned():
+    """M8: `_last_spike_at` used to grow forever - a term dropped from the
+    graph (renamed, forgotten, decayed away) stayed in the refractory map
+    indefinitely. `refresh()` must drop spike history for anything no longer
+    in the current term set.
+    """
+    appraiser, clock = _appraiser([{"name": "chai", "confidence": 1.0}])
+    appraiser.appraise("a cup of chai")
+    assert "chai" in appraiser._last_spike_at
+
+    clock.advance(10_000)  # force the TTL to expire so refresh() re-queries
+    appraiser.graph.execute_query = AsyncMock(
+        return_value=[{"name": "sunlight", "confidence": 1.0}]
+    )
+    asyncio.run(appraiser.refresh())
+
+    assert "chai" not in appraiser._last_spike_at
+
+
+def test_refresh_prunes_spike_timestamps_that_have_already_left_refractory():
+    """Even if a term is still learned, a spike timestamp older than the
+    refractory window is dead weight - `_in_refractory` would already treat
+    it as expired, so keeping it around forever serves no purpose.
+    """
+    appraiser, clock = _appraiser([{"name": "chai", "confidence": 1.0}])
+    appraiser.appraise("a cup of chai")
+    assert "chai" in appraiser._last_spike_at
+
+    clock.advance(SOMATIC_REFRACTORY_SECONDS * 2)
+    asyncio.run(appraiser.refresh(force=True))
+
+    assert "chai" not in appraiser._last_spike_at
+
+
 # --------------------------------------------------------------------------
 # state application
 # --------------------------------------------------------------------------

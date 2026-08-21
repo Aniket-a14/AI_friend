@@ -5,7 +5,7 @@ import pytest
 from app.cognitive.appraisal import AppraisalVector
 from app.cognitive.decision import ActionPlan, CognitiveEvent, DecisionService
 from app.cognitive.pipeline import CognitivePipeline
-from app.cognitive.tom import UserMentalModel, update_known_concepts
+from app.cognitive.tom import MAX_KNOWN_CONCEPTS, UserMentalModel, update_known_concepts
 from app.state.agent_state import StateService
 
 
@@ -35,6 +35,22 @@ def test_vocabulary_tracker():
     assert "me" not in updated  # < 4
     assert "code" in updated  # 4 chars, valid
     assert "aaaaaaaaaaaaaaaaa" not in updated  # > 15 chars
+
+
+def test_vocabulary_tracker_evicts_oldest_once_the_cap_is_exceeded():
+    """M7: a multi-hour session used to grow `known_concepts` without bound,
+    inflating the state payload serialized on every persist. Once the cap is
+    hit, the oldest entries must fall off so the tracker reflects recent
+    vocabulary rather than everything ever said.
+    """
+    current = [f"conceptword{i}" for i in range(MAX_KNOWN_CONCEPTS)]
+
+    updated = update_known_concepts(current, "brandnewword")
+
+    assert len(updated) == MAX_KNOWN_CONCEPTS
+    assert "conceptword0" not in updated  # oldest, evicted
+    assert "conceptword1" in updated  # next-oldest, retained
+    assert "brandnewword" in updated  # newest, retained
 
 
 @pytest.mark.asyncio
