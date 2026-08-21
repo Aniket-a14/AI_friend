@@ -42,6 +42,12 @@ services:
       - LOG_LEVEL=INFO
       - QDRANT_HOST=brain_vectors
       - MOCK_LLM_TEXT=${MOCK_LLM_TEXT:-false}
+      # #113 / H2: runtime persona evolution (IdentityManager.save()'s fallback
+      # when agent_configs is unreachable) needs to land on a volume, not the
+      # image's writable layer, or a redeploy silently resets it.
+      - IDENTITY_BASE_PATH=/app/data
+    volumes:
+      - identity_data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -116,6 +122,11 @@ services:
       - LOG_LEVEL=INFO
       - QDRANT_HOST=brain_vectors
       - MOCK_LLM_TEXT=${MOCK_LLM_TEXT:-false}
+      # #113 / H2: ReflectionService's IdentityManager fallback needs the same
+      # persistent, non-image-layer location brain_agent uses above.
+      - IDENTITY_BASE_PATH=/app/data
+    volumes:
+      - identity_data:/app/data
     networks:
       - ai_mesh_network
     depends_on:
@@ -364,3 +375,4 @@ networks:
 volumes:
   voice_samples_data:
   stt_models_data:
+  identity_data:

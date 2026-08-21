@@ -6522,3 +6522,113 @@ documented deployment model):**
   decision (webhook URL, Slack/Discord channel, Sentry project) that
   doesn't exist in this repo's config today - the alerting *mechanism*
   could be built, but would have nowhere real to send anything yet.
+
+## 2026-08-21 GitHub triage batch 6 (P1 previously-deferred, #113/#117/#118/#120) — 4 of 4 fixed
+
+Batches 1-5 closed 59 of the 71 original issues. The remaining 12 were all
+deliberately deferred as needing a real design decision rather than a
+same-session drive-by (see batch 2's H2/H6/H7/H9 entries and batch 5's
+Architecture entries). Picked up the four smallest of those - the P1s left
+over from batch 2 - now that there was room to make each decision properly
+instead of under batching time pressure.
+
+**H9 / #120 — duplicate intent classification.** Traced every consumer of
+`PerceptionService.perceive()`'s `event.intent` before touching anything:
+`AppraisalEngine.appraise()` never reads it, and `DecisionService.decide()`
+unconditionally overwrites it for every `USER_MESSAGE` via
+`_apply_heuristic_intent_and_goal` (hardened with a question-guard in H1,
+batch 2) before any BT tick. Perception's own REMEMBER/memorize keyword
+branch was therefore write-only dead code for the one case the two heuristics
+could disagree on (`"do you remember my hometown?"` - Perception said
+REMEMBER, Decision correctly says CHAT) - it just never won. Deleted it
+outright rather than consolidating two services, since there was nothing to
+consolidate: `SYSTEM_TICK → "REFLECT"` is the only intent Perception sets
+that survives to matter (Decision's heuristic only touches `USER_MESSAGE`),
+and that branch is untouched. Zero behavior change, confirmed by the call-
+graph trace and by a mutation test (reintroducing the branch fails the new
+`test_perception.py`, which didn't exist before this batch - there was no
+coverage of this file at all).
+
+**H2 / #113 — `IdentityManager` writing to git-tracked files.** The default
+`base_path` resolved to `backend/app/` itself, so `personality.json`/
+`history.json` were simultaneously the shipped seed (tracked in git) and the
+runtime write target - any `save()` without a durable store attached (a bare
+`IdentityManager()`, `ReflectionService`'s fallback) dirtied a tracked file.
+Fixing only the write default breaks something else, though: read and write
+shared the same path variables, so a fresh install with no durable store
+would find *nothing* at a relocated default and boot an empty persona instead
+of the shipped one. Split the two: `personality_path`/`history_path` are now
+governed by `IDENTITY_BASE_PATH` (default: a new `.identity_state/` directory
+*beside*, not inside, `backend/app/` - gitignored the same way this repo
+already ignores its SQLite caches), while a separate seed read
+(`PERSONALITY_SEED_PATH`/`HISTORY_SEED_PATH`, both pre-existing but previously
+undocumented Config fields, same convention `ConversationHistoryStore.
+_ensure_config_exists` already uses) copies once into the write location on
+first use via `_copy_seed_if_missing` - only when the write target doesn't
+exist yet, so it never re-clobbers a friend's own accumulated state. New
+`Config.IDENTITY_SEED_ON_FIRST_BOOT` (default `True`) gates this; conftest.py
+sets it `false` for the whole suite for the same reason it already disables
+`PERSONA_PROFILE_PATH` discovery - a fresh per-session temp directory needs to
+stay genuinely empty, not pick up the repo's shipped persona. Also added the
+production half this needed to actually take effect: `docker-compose.prod.
+yml` mounts a new `identity_data` volume at `/app/data` for `brain_agent` and
+`subconscious_agent` (the two services that construct an `IdentityManager`)
+with `IDENTITY_BASE_PATH=/app/data`, and `backend/Dockerfile` pre-creates
+`/app/data` owned by `appuser` in both the `slim` and `full` stages - mirroring
+`Dockerfile.rust`'s existing `stt_models_data`/`/app/models` pattern exactly,
+including the reason it's needed (Docker only inherits a named volume's
+ownership from the image if the mountpoint directory already exists there
+before the volume attaches). Documented all four path env vars in the root
+`.env.example` - none had been documented before this. Still deliberately
+NOT done: issue **#152** (Factor V - retire the JSON-file write path
+entirely once `agent_configs` is reachable, rather than just relocating it)
+stays open. `IdentityManager.save()`'s own docstring argues against removing
+that fallback outright - "a deployment with neither Postgres nor the SQLite
+fallback reachable is exactly when refusing to persist anything is worst" -
+so #152 is a real, larger, independent decision about whether that safety net
+should still exist as a *write* target, not blocked on anything #113 did.
+
+**H6 / #117 and H7 / #118 — ephemeral adaptive weights reset on restart.**
+`ReappraisalEngine.appraisal_weights` (6 floats) and `DecisionService.
+goal_utilities` (5 floats, TD-learned) are each constructed once per agent-
+process lifetime and re-initialized to hardcoded defaults every time - not
+just on a rare crash, on every redeploy. The design question the batch-2
+deferral flagged (which store, what triggers a flush, how hydration interacts
+with tiering) turned out to already have an answer once actually looked for:
+`AgentState`'s existing Redis+SQLite hydrate/persist pair is precedent for
+exactly this shape of data, but folding these two dicts directly into
+`AgentState`/`StateService` would blur the "single owner of PAD/trust/
+attachment" charter CLAUDE.md is explicit about - these aren't affect fields,
+and unlike short-term affect there is no fire-and-forget background task
+racing their mutation (both are only ever touched synchronously, inside a
+single cognitive turn), so they don't need `_state_lock` at all. New `app/
+state/adaptive_weights_store.py::AdaptiveWeightsStore` is a small,
+independent SQLite-backed `(agent_name, weight_key) → JSON dict` store
+(idempotent `CREATE TABLE IF NOT EXISTS`, same file as `StateService`'s
+`state_cache.db` by default, but its own table - no shared row, no shared
+lock). Both engines take an optional `agent_name`/`store` constructor
+argument (defaulting to `"my friend"` and a fresh store, matching every other
+single-tenant assumption in this codebase - see #164's deferral), gained a
+`hydrate()` method, and now persist after the point each already mutates its
+dict: `ReappraisalEngine.evaluate_outcome()` after `_clamp`-ing the two
+valence-related weights it adjusts, `DecisionService.decide()` right after
+`_score_goals_maut` runs (kept out of that method itself, which stays a pure
+scoring function). `CognitiveService.initialize()` calls both `hydrate()`s
+alongside the existing `state.hydrate_state()`. Both loaders only apply
+recognized keys (re-clamped for the reappraisal weights), so a row written by
+an older version of either engine - fewer keys, a renamed goal - can't inject
+an untracked or out-of-range value into a live turn.
+
+**Verified:** full backend suite via junit-xml - 958 passed, 0 failed/errored/
+skipped (948 before this batch's 10 new persistence tests) - `ruff check .`
+clean. Every new test mutation-tested by reverting its fix and confirming
+failure: the perception dead-code deletion, the identity seed-copy-on-first-
+boot call, and all four of the reappraisal/decision hydrate+persist code
+paths independently (4 separate mutations, one per fix, each caught by
+exactly the test written for it).
+
+**NOT done, deferred:**
+- **#152** (Factor V - retire the identity JSON-file fallback as a write
+  target entirely, not just relocate it) - see the #113 writeup above. A real,
+  independent decision about removing a documented safety net, not something
+  #113 was blocked on.

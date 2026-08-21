@@ -51,7 +51,8 @@ COPY --from=slim-builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 # Create a non-root user
 RUN groupadd -g 1001 appgroup && useradd -m -u 1001 -g appgroup appuser \
-    && chown -R appuser:appgroup /app
+    && chown -R appuser:appgroup /app \
+    && install -d -o appuser -g appgroup /app/data
 USER appuser
 COPY --chown=appuser:appgroup . .
 EXPOSE 8000
@@ -64,7 +65,8 @@ FROM base AS full
 COPY --from=full-builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN groupadd -g 1001 appgroup && useradd -m -u 1001 -g appgroup appuser \
-    && chown -R appuser:appgroup /app
+    && chown -R appuser:appgroup /app \
+    && install -d -o appuser -g appgroup /app/data
 USER appuser
 COPY --chown=appuser:appgroup . .
 CMD ["python", "main.py"]

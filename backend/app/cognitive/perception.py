@@ -39,19 +39,21 @@ class PerceptionService:
         metadata = raw_event.get("metadata", {})
 
         # 2. Extract Intent
+        # H9: USER_MESSAGE intent classification (REMEMBER vs CHAT, including the
+        # question-negation guard for phrasing like "do you remember...?") lives
+        # solely in DecisionService._apply_heuristic_intent_and_goal, which runs
+        # unconditionally later in the pipeline and overwrites whatever is set
+        # here. A second keyword heuristic in this method used to disagree with
+        # it (e.g. classifying "do you remember my hometown?" as REMEMBER, which
+        # DecisionService correctly treats as CHAT) without ever being able to
+        # win, since Appraisal never reads `event.intent` either. SYSTEM_TICK is
+        # the one case Perception's intent is load-bearing: DecisionService's
+        # heuristic only applies to USER_MESSAGE, so REFLECT reaches the BT's
+        # IsSystemTick condition untouched.
         intent = "CHAT"  # Default fallback
 
         if event_type == "SYSTEM_TICK":
             intent = "REFLECT"  # Idle reflection trigger
-
-        elif event_type == "USER_MESSAGE" and self.llm:
-            # Here we might use a quick zero-shot local LLM call to classify intent
-            # e.g., "classify this as CHAT or REMEMBER: {content}"
-            # For now, we mock the logic or do basic keyword routing:
-            if "remember" in content.lower() or "memorize" in content.lower():
-                intent = "REMEMBER"
-            else:
-                intent = "CHAT"
 
         logger.debug("[Perception] Extracted intent '%s' from %s", intent, event_type)
 

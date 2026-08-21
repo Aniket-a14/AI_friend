@@ -238,6 +238,11 @@ class CognitiveService:
         if self.identity_store:
             await self.identity.hydrate_from_config_store(self.identity_store)
         await self.state.hydrate_state()
+        # #117 / H6, #118 / H7: restore learned reappraisal weights and goal
+        # utilities so they don't silently reset to hardcoded defaults on
+        # every process restart.
+        await self.reappraisal.hydrate()
+        await self.decision.hydrate()
 
         # After hydration, so the record of what has already been seeded comes
         # from the durable store rather than from a local file that may be
