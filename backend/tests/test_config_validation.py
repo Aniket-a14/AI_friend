@@ -92,3 +92,53 @@ def test_log_json_env_var_actually_reaches_the_setting(monkeypatch):
     monkeypatch.setenv("LOG_JSON", "true")
     settings = AppSettings(_env_file=None)
     assert settings.LOG_JSON is True
+
+
+# --- #162: placeholder-secret guard in production --------------------------
+
+
+@pytest.mark.parametrize(
+    "field,placeholder",
+    [
+        ("DATABASE_URL", "postgresql://ai_friend:your_password_here@127.0.0.1:5432/db"),
+        ("NEO4J_PASSWORD", "your_graph_password_here"),
+        ("NEO4J_AUTH", "neo4j/your_graph_password_here"),
+        ("LIVEKIT_API_KEY", "your_api_key_here"),
+        ("LIVEKIT_API_SECRET", "your_api_secret_here"),
+    ],
+)
+def test_placeholder_secret_rejected_in_production(field, placeholder):
+    """The exact failure mode #162 describes: copying .env.example and
+    deploying without editing it. If this stops firing, a deployment can boot
+    with Postgres/Neo4j/LiveKit auth set to a publicly-known default."""
+    with pytest.raises(ValidationError):
+        _settings(ENVIRONMENT="production", **{field: placeholder})
+
+
+def test_placeholder_secret_allowed_outside_production():
+    """The guard must not fire for local/dev use, where copying .env.example
+    verbatim before filling in real secrets is the documented first step."""
+    settings = _settings(
+        ENVIRONMENT="development", NEO4J_PASSWORD="your_graph_password_here"
+    )
+    assert settings.NEO4J_PASSWORD == "your_graph_password_here"
+
+
+def test_real_looking_secret_allowed_in_production():
+    """A genuine secret must never be rejected just for existing - only the
+    literal shipped placeholder strings are checked."""
+    settings = _settings(
+        ENVIRONMENT="production",
+        NEO4J_PASSWORD="a-real-generated-secret-x9k2m",
+        LIVEKIT_API_KEY="APIabc123real",
+        LIVEKIT_API_SECRET="a-real-secret-value",
+        DATABASE_URL="postgresql://ai_friend:a-real-secret-value@postgres_db:5432/db",
+    )
+    assert settings.NEO4J_PASSWORD == "a-real-generated-secret-x9k2m"
+
+
+def test_unset_secret_fields_do_not_crash_production():
+    """A field an operator hasn't configured at all (None) must not be
+    treated as a placeholder - only an actual placeholder string should."""
+    settings = _settings(ENVIRONMENT="production")
+    assert settings.ENVIRONMENT == "production"

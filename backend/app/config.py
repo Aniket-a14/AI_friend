@@ -12,6 +12,15 @@ class AppSettings(BaseSettings):
     )
 
     DEBUG: bool = False
+    # #162: the one signal `validate_no_placeholder_secrets_in_production`
+    # gates on. Deliberately not derived from `DEBUG` (which defaults False in
+    # every CI run and most local dev sessions too, so gating on it would fire
+    # the placeholder check constantly where it shouldn't) or from `DATABASE_
+    # URL`'s shape (which says nothing about whether this deployment is meant
+    # to be reachable by anyone but its operator). Unset -- the default --
+    # means the check never runs, so nothing about existing behavior changes
+    # until an operator explicitly opts in.
+    ENVIRONMENT: str = "development"
     # #160: `main.py` already reads this via `getattr(Config, "LOG_JSON",
     # False)` to pick JSON vs plain-text logging, but the field was never
     # actually declared here - `extra="ignore"` meant setting LOG_JSON=true
@@ -241,6 +250,49 @@ class AppSettings(BaseSettings):
                 raise ValueError(f"{name} must be >= 1 (got {value!r})")
         if not (0 < self.QDRANT_PORT <= 65535):
             raise ValueError(f"QDRANT_PORT must be a valid port (got {self.QDRANT_PORT!r})")
+        return self
+
+    # #162: the literal placeholder strings this repo's own `.env.example`
+    # ships. Deliberately this narrow set, not a generic "looks like a weak
+    # password" heuristic -- a heuristic strong enough to catch real weak
+    # passwords is also strong enough to reject a legitimate one that happens
+    # to contain a common word, and a false positive here means production
+    # refuses to boot. This only catches the exact templates a deployment gets
+    # by copying `.env.example` and forgetting to edit it, which is the
+    # failure mode the issue describes.
+    _PLACEHOLDER_SECRET_MARKERS = (
+        "your_password_here",
+        "your_graph_password_here",
+        "your_api_key_here",
+        "your_api_secret_here",
+    )
+    # Only the fields that gate a real, network-reachable service if left at
+    # the shipped placeholder -- Postgres/Neo4j auth and the LiveKit room
+    # credentials. Optional integrations (Gemini, ElevenLabs, Porcupine) are
+    # deliberately excluded: a placeholder there disables a feature, it
+    # doesn't expose one.
+    _SECRET_BEARING_FIELDS = (
+        "DATABASE_URL",
+        "NEO4J_PASSWORD",
+        "NEO4J_AUTH",
+        "LIVEKIT_API_KEY",
+        "LIVEKIT_API_SECRET",
+    )
+
+    @model_validator(mode="after")
+    def validate_no_placeholder_secrets_in_production(self):
+        if self.ENVIRONMENT != "production":
+            return self
+        for name in self._SECRET_BEARING_FIELDS:
+            value = getattr(self, name, None)
+            if not value:
+                continue
+            if any(marker in value for marker in self._PLACEHOLDER_SECRET_MARKERS):
+                raise ValueError(
+                    f"{name} still contains a placeholder value from .env.example "
+                    "-- refusing to start with ENVIRONMENT=production. Set a real "
+                    "secret before deploying."
+                )
         return self
 
     @model_validator(mode="after")
