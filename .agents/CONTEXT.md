@@ -6217,3 +6217,115 @@ alone made it fail even though it predates this batch).
   cosmetic/subjective visual-polish request with no functional bug behind
   it - lowest priority of the eighteen, left for a session where visual
   changes can actually be watched render.
+
+## 2026-08-21 GitHub triage batch 4 (P3 Low) — 7 of 9 fixed, 2 false positives closed
+
+Smallest batch, but one finding (L9) turned into the most interesting
+investigation of the whole triage - a fix that looked obviously correct on
+paper and turned out to be a genuine no-op once actually tested.
+
+**L1 — f-string evaluation in disabled debug logs.** Python evaluates an
+f-string's interpolation before `logger.debug` is even called, unlike lazy
+`%s` formatting, which `Logger.debug` only does after confirming the level is
+enabled. Bounded scope (grepped first): exactly 23 `logger.debug(f"...")`
+call sites across 9 files, all simple single/double-value interpolations in
+exception-handler or diagnostic paths. Converted all 23 to lazy `%s`/`%.1f`
+formatting - mechanical, no behavior change, nothing to test (the log output
+is byte-identical, only when the formatting cost is paid changes).
+
+**L2 — `WorkingMemoryStore`'s SQLite fallback opened a connection per call.**
+Confirmed it was worse than just "redundant instantiation": `with self.
+_get_sqlite_connection() as conn:` never closed anything either -
+`sqlite3.Connection.__exit__` only commits/rolls back, it doesn't close - so
+every fallback call opened a handle and then just let it fall out of scope
+uncollected until GC. Added one connection cached for the store's lifetime
+(`check_same_thread=False`, since each call arrives via a different
+`asyncio.to_thread` worker thread) guarded by a `threading.Lock` at every
+call site, since SQLite doesn't support concurrent writers regardless of
+thread-safety settings.
+
+**L3 — "learning.py bypasses PersonaProfile schema".** False premise: line
+239's `self.identity.personality.get("name")` reads from `IdentityManager`
+(`cognitive/identity.py`), not `PersonaProfile` (`persona/profile.py`) - two
+deliberately separate systems per this ledger's own "Persona and identity"
+section. `IdentityManager.personality`/`.history` are plain dicts loaded from
+JSON with no typed schema to bypass; the issue's suggested replacement
+(`self.identity.persona.name`) doesn't correspond to any real attribute on
+either class. Closed as false positive.
+
+**L4 — no OpenGraph/Twitter metadata.** Added both blocks to `layout.js`'s
+`metadata` export, reusing the existing title/description. No `og:image` -
+`public/` only has the unmodified Next.js starter SVGs, and a fabricated
+image reference would be worse than none. Verified via `curl` against
+`npm run start` that the tags actually render in the served HTML.
+
+**L5 — `Config` had no range validation.** Pydantic-settings already
+validates *type* (a non-numeric env value fails to load at all) but not
+*range*. Deliberately did not sweep all ~40 numeric fields - added one
+`model_validator` covering a short, curated list where an out-of-range value
+causes a specific concrete failure: the two phasic hormone halflives and
+`LLM_STREAM_MAX_SECONDS`/`TOKEN_RATE_LIMIT_WINDOW_SECONDS` must be `> 0`
+(zero divides by zero in decay math), `ACTR_DECAY_RATE` must be `>= 0`
+(negative would make memories strengthen with time instead of decaying - an
+inversion, not an edge case), tick interval/rate-limit-count/queue-size
+fields must be `>= 1` (zero busy-loops or blocks everything), and
+`QDRANT_PORT` must be a valid port number. Most of the other ~40 settings
+have no comparable failure mode and were left alone rather than bounded
+speculatively.
+
+**L7 — `GraphDB.close()` didn't wait for in-flight queries.** Added an
+in-flight counter (`_inflight_queries`) and an `asyncio.Event` that's set
+whenever the count reaches zero; `close()` awaits it (bounded by
+`GRAPHDB_CLOSE_DRAIN_TIMEOUT_SECONDS = 10.0`, a module constant specifically
+so a test can shrink it instead of actually waiting out a real timeout) after
+cancelling the bootstrap task and before calling `driver.close()`. A stuck
+query still can't hang shutdown forever - the timeout logs a warning with the
+in-flight count and proceeds anyway.
+
+**L8 — incomplete stop-word list in `update_known_concepts`.** Added the
+issue's own named examples (also/even/still/well) plus a modest additional
+set of clearly-generic filler/connector words (really, actually, maybe,
+kind, sort, much, many, does, doing, because, before, during, while, same,
+only, over, into, under, until) - deliberately not a full NLTK/spaCy import,
+since this is a lightweight zero-LLM-latency tracker, not an NLP pipeline,
+and a full stopword list risks removing more than it should for a set this
+size already gets right.
+
+**L9 — investigated, found to be a genuine no-op, not applied.** The filed
+concern (`float("nan")` bypasses the existing `except (TypeError, ValueError)`
+guard and could propagate into spike arithmetic) is correct as a general
+claim about NaN. But this specific code's clamp, `max(0.0, min(1.0,
+confidence))`, already deterministically resolves NaN to `1.0` - verified
+directly (1000 runs, stable) and reasoned through: NaN compares `False`
+against everything, so `min(1.0, nan)` always keeps the first (non-NaN)
+argument, and the outer `max` repeats the pattern. Wrote the `math.isnan()`
+guard the issue asked for, mutation-tested it by removing it, and the test
+still passed - a real no-op, not a coincidence of the test's inputs. Reverted
+the guard rather than ship dead code with a comment claiming to prevent
+something it structurally cannot affect; kept the regression test (renamed
+to describe what it actually verifies) as a tripwire in case the clamp's
+shape ever changes.
+
+**L6 — git history secret scan.** Ran `gitleaks detect --source . --log-
+opts="--all"` against the full history (957 commits, ~54MB). Two distinct
+findings, both false positives on inspection: (1) `expected_tokens_sha256`
+in `backend/scripts/bootstrap/provision_models.py` is a model-file integrity
+checksum, not a credential - high entropy hex is exactly what a SHA-256
+looks like, which is why the generic-api-key rule flagged it. (2) `sk_live_
+abc123` against `https://api.example.com/...` in a since-renamed
+`API_SPEC.md` (now `docs/API_SPEC.md`, which no longer contains this text at
+all) is an unambiguous documentation placeholder - fake domain, textbook
+fake-token shape. No real secret found; nothing to rotate.
+
+**Verified:** full backend suite via junit-xml - 931 passed, 0
+failed/errored/skipped - `ruff check .` clean. `npm run build` and
+`npm run lint` clean on the frontend; OpenGraph/Twitter tags confirmed
+present in served HTML via `curl`. Every new test mutation-tested by
+reverting its fix and confirming failure - including L9's, which is the one
+that failed to discriminate and led to reverting the "fix" instead of the
+test.
+
+**NOT done, closed as false positive (no code change):**
+- **L3** - reads a different class than the one named in the issue; see above.
+- **L9** - the existing clamp already prevents this; see above. The only
+  applied artifact from this finding is the regression test, not a code fix.

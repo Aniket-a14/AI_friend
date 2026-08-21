@@ -53,7 +53,7 @@ class PerceptionService:
             else:
                 intent = "CHAT"
 
-        logger.debug(f"[Perception] Extracted intent '{intent}' from {event_type}")
+        logger.debug("[Perception] Extracted intent '%s' from %s", intent, event_type)
 
         return CognitiveEvent(
             event_id=event_id,

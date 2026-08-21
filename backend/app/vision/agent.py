@@ -210,7 +210,7 @@ class VisionAgent(BaseAgent):
 
             return 1.0
         except Exception as e:
-            logger.debug(f"Failed to calculate user distance: {e}")
+            logger.debug("Failed to calculate user distance: %s", e)
             return 1.0
 
     async def _run_appraisal(self, frame_b64: str):

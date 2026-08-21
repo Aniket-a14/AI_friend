@@ -8,6 +8,7 @@ probe that makes a blind agent say so instead of failing silently.
 """
 
 import asyncio
+import math
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -101,6 +102,27 @@ def test_non_numeric_confidence_falls_back_rather_than_raising():
     appraiser, _ = _appraiser([{"name": "chai", "confidence": "very"}])
     result = appraiser.appraise("some chai")
     assert result is not None and result["confidence"] == 1.0
+
+
+@pytest.mark.parametrize("nan_value", ["nan", "NaN", float("nan")])
+def test_nan_confidence_from_the_graph_never_reaches_a_spike(nan_value):
+    """L9 was filed as a missing NaN guard, but investigation showed the
+    existing clamp already closes it: `float("nan")` and a literal NaN both
+    parse successfully (the `except (TypeError, ValueError)` never catches
+    either), yet `max(0.0, min(1.0, confidence))` deterministically resolves
+    NaN to 1.0 in CPython - NaN compares False against everything, so
+    `min(1.0, nan)` always keeps the first (non-NaN) argument, and the outer
+    `max` does the same. Verified stable across 1000 runs before trusting it.
+    An explicit `math.isnan()` guard was written and found to be a genuine
+    no-op (mutation-tested: removing it did not make this test fail) - not
+    kept, since dead code claiming to guard something it cannot affect is
+    worse than no comment at all. This test stands as the regression guard
+    should that clamp ever change shape.
+    """
+    appraiser, _ = _appraiser([{"name": "chai", "confidence": nan_value}])
+    result = appraiser.appraise("some chai")
+    assert result is not None
+    assert not math.isnan(result["confidence"])
 
 
 # --------------------------------------------------------------------------

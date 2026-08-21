@@ -99,7 +99,7 @@ class BaseAgent:
                 try:
                     await self.subscribe("cache.sync", self._on_cache_sync_received)
                 except Exception as se:
-                    logger.debug(f"Cache sync auto-subscribe skipped: {se}")
+                    logger.debug("Cache sync auto-subscribe skipped: %s", se)
         except Exception as e:
             logger.error(f"Failed to connect agent '{self.name}': {e}")
             raise
@@ -158,9 +158,9 @@ class BaseAgent:
                             f"✅ Stream '{stream_name}' synchronized successfully."
                         )
                 except Exception as update_err:
-                    logger.debug(f"Stream update note: {update_err}")
+                    logger.debug("Stream update note: %s", update_err)
             except Exception as e:
-                logger.debug(f"Stream bootstrap note: {e}")
+                logger.debug("Stream bootstrap note: %s", e)
 
     async def publish(
         self, subject: str, data: Any, metadata: dict[str, Any] | None = None
@@ -455,7 +455,7 @@ class BaseAgent:
             "state.update",
             {"agent": self.name, "state": state, "timestamp": time.time()},
         )
-        logger.debug(f"Agent '{self.name}' state set to: {state}")
+        logger.debug("Agent '%s' state set to: %s", self.name, state)
 
     async def stop(self):
         """Shutdown the agent."""

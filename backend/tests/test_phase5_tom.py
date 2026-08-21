@@ -53,6 +53,25 @@ def test_vocabulary_tracker_evicts_oldest_once_the_cap_is_exceeded():
     assert "brandnewword" in updated  # newest, retained
 
 
+def test_vocabulary_tracker_filters_conversational_filler_words():
+    """L8: high-frequency filler/connector words ('also', 'even', 'still',
+    'well', etc.) used to pass the length filter and get tracked as if they
+    were distinctive user vocabulary, diluting the concept list with noise.
+    """
+    current = []
+    user_input = "well i also think it was still quite good actually"
+
+    updated = update_known_concepts(current, user_input)
+
+    assert "well" not in updated
+    assert "also" not in updated
+    assert "still" not in updated
+    assert "actually" not in updated
+    # A genuine content word in the same sentence must survive the filter.
+    assert "think" in updated
+    assert "good" in updated
+
+
 @pytest.mark.asyncio
 async def test_state_tom_update_and_bounds(mock_graph_db):
     """Validates that update_theory_of_mind parses concepts and enforces bounds."""

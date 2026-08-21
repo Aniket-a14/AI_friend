@@ -14,6 +14,12 @@ from typing import Any
 # evict from the front on insert once full.
 MAX_BELIEF_CACHE_ENTRIES = 500
 
+# L7: how long close() waits for in-flight Cypher queries to drain before
+# closing the driver anyway. A module-level constant (rather than a literal
+# inline) so tests can shrink it instead of actually waiting out a real
+# multi-second timeout.
+GRAPHDB_CLOSE_DRAIN_TIMEOUT_SECONDS = 10.0
+
 from neo4j import AsyncGraphDatabase
 
 from ..config import Config
@@ -48,6 +54,12 @@ class GraphDB:
         # Perceptual Belief Cache (M9: bounded LRU, see MAX_BELIEF_CACHE_ENTRIES)
         self._belief_cache: OrderedDict[Any, tuple[float, Any]] = OrderedDict()
         self._cache_ttl = getattr(Config, "GRAPH_CACHE_TTL", 300)
+
+        # L7: lets close() wait for in-flight Cypher queries instead of
+        # yanking the driver out from under them.
+        self._inflight_queries = 0
+        self._all_queries_done = asyncio.Event()
+        self._all_queries_done.set()
 
     async def initialize(self) -> None:
         """Bootstrap schema constraints/indexes and wait for it to finish.
@@ -94,7 +106,7 @@ class GraphDB:
                         return await tx.run(query)
 
                     await session.execute_write(_tx)
-                logger.debug(f"Graph Store Schema: Constraint initialized ({query})")
+                logger.debug("Graph Store Schema: Constraint initialized (%s)", query)
             except Exception as e:
                 logger.warning(
                     f"Graph Store Schema: Optional index/constraint initialization skipped ({query}): {e}"
@@ -122,6 +134,27 @@ class GraphDB:
                 await self._bootstrap_task
             except asyncio.CancelledError:
                 pass
+
+        # L7: wait for any in-flight Cypher queries to finish before tearing
+        # down the driver. Closing underneath a concurrent execute_query()
+        # call (e.g. a background reflection/decay task) previously raised
+        # unhandled connection errors in whatever task issued it, instead of
+        # letting it finish or fail cleanly on its own. Bounded so a stuck
+        # query can't hang shutdown forever.
+        if self._inflight_queries > 0:
+            try:
+                await asyncio.wait_for(
+                    self._all_queries_done.wait(),
+                    timeout=GRAPHDB_CLOSE_DRAIN_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "GraphDB.close(): %d Cypher quer(y/ies) still in flight "
+                    "after %.0fs, closing the driver anyway.",
+                    self._inflight_queries,
+                    GRAPHDB_CLOSE_DRAIN_TIMEOUT_SECONDS,
+                )
+
         await self.driver.close()
 
     async def invalidate_cache(self, affected_entity: str | None = None):
@@ -153,6 +186,8 @@ class GraphDB:
                 self._belief_cache.move_to_end(cache_key)
                 return result
 
+        self._inflight_queries += 1
+        self._all_queries_done.clear()
         try:
             async with self.driver.session() as session:
                 attempt = 0
@@ -192,6 +227,10 @@ class GraphDB:
         except Exception as e:
             logger.error(f"Neo4j query failed: {e}")
             return []
+        finally:
+            self._inflight_queries -= 1
+            if self._inflight_queries == 0:
+                self._all_queries_done.set()
 
     async def consolidate_relationship(
         self,

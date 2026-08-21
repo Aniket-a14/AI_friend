@@ -46,7 +46,7 @@ class SystemAgent(BaseAgent):
 
                 # 2. Broadcast to Mesh
                 await self.publish("system.tick", tick_data)
-                logger.debug(f"[Pulse] system.tick broadcasted | Uptime: {uptime:.1f}s")
+                logger.debug("[Pulse] system.tick broadcasted | Uptime: %.1fs", uptime)
 
                 # 3. Wait for next heartbeat
                 await asyncio.sleep(self.tick_interval)

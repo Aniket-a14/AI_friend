@@ -87,3 +87,26 @@ def test_clear_turns_empties_the_store(tmp_path):
 
     turns = asyncio.run(run())
     assert turns == []
+
+
+def test_sqlite_fallback_reuses_one_connection_across_calls(tmp_path):
+    """L2: every fallback method used to call `_get_sqlite_connection()`,
+    which opened a brand new `sqlite3.connect()` handle (and never explicitly
+    closed it - `sqlite3.Connection.__exit__` only commits/rolls back, it
+    doesn't close) on every single call. The store should open one connection
+    for its lifetime and hand back that same object every time.
+    """
+    store = _make_store(str(tmp_path / "working.db"))
+
+    async def run():
+        await store.add_turn(role="user", content="one")
+        conn_after_first_call = store._sqlite_conn
+        await store.add_turn(role="user", content="two")
+        await store.get_recent_turns()
+        await store.set_state_var("k", "v")
+        return conn_after_first_call
+
+    conn_after_first_call = asyncio.run(run())
+
+    assert conn_after_first_call is not None
+    assert store._sqlite_conn is conn_after_first_call

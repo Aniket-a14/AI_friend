@@ -10,6 +10,7 @@ from app.state.graph_db import MAX_BELIEF_CACHE_ENTRIES, GraphDB
 
 def _make_graph_db() -> GraphDB:
     mock_driver = MagicMock()
+    mock_driver.close = AsyncMock()
     mock_session = AsyncMock()
     mock_driver.session.return_value.__aenter__.return_value = mock_session
     with patch("neo4j.AsyncGraphDatabase.driver", return_value=mock_driver):
@@ -121,3 +122,66 @@ async def test_belief_cache_lru_recency_survives_eviction():
     key1 = ("MATCH (n) RETURN n", json.dumps({"i": 1}))
     assert key0 in db._belief_cache  # just re-touched, survives
     assert key1 not in db._belief_cache  # least-recently-used, evicted
+
+
+@pytest.mark.asyncio
+async def test_close_waits_for_an_in_flight_query_before_closing_the_driver():
+    """L7: `close()` used to cancel the bootstrap task and immediately call
+    `driver.close()`, with no regard for a concurrent `execute_query()` call
+    still in flight (e.g. a background reflection/decay task) - that call
+    would then raise an unhandled connection error instead of finishing or
+    failing on its own terms.
+    """
+    db = _make_graph_db()
+    db.bootstrap_constraints = AsyncMock()
+    query_started = asyncio.Event()
+    release_query = asyncio.Event()
+
+    async def slow_session_read(tx_func):
+        query_started.set()
+        await release_query.wait()
+        return []
+
+    mock_session = db.driver.session.return_value.__aenter__.return_value
+    mock_session.execute_read = slow_session_read
+
+    query_task = asyncio.create_task(db.execute_query("MATCH (n) RETURN n"))
+    await query_started.wait()
+
+    close_task = asyncio.create_task(db.close())
+    await asyncio.sleep(0.01)
+    assert not close_task.done()  # must still be waiting on the query
+    assert db.driver.close.await_count == 0
+
+    release_query.set()
+    await query_task
+    await close_task
+
+    assert db.driver.close.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_close_does_not_hang_forever_on_a_stuck_query(monkeypatch):
+    """A query that never finishes must not block shutdown indefinitely -
+    close() should time out and proceed anyway, loudly."""
+    import app.state.graph_db as graph_db_module
+
+    monkeypatch.setattr(graph_db_module, "GRAPHDB_CLOSE_DRAIN_TIMEOUT_SECONDS", 0.05)
+
+    db = _make_graph_db()
+    db.bootstrap_constraints = AsyncMock()
+
+    async def hung_session_read(tx_func):
+        await asyncio.sleep(999)
+        return []
+
+    mock_session = db.driver.session.return_value.__aenter__.return_value
+    mock_session.execute_read = hung_session_read
+
+    query_task = asyncio.create_task(db.execute_query("MATCH (n) RETURN n"))
+    await asyncio.sleep(0.01)
+
+    await db.close()
+
+    assert db.driver.close.await_count == 1
+    query_task.cancel()

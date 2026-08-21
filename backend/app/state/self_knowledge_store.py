@@ -107,7 +107,7 @@ class SelfKnowledgeStore:
                         pass
                 self._ready = True
             except Exception as e:
-                logger.debug(f"SelfKnowledgeStore not ready ({e}); gaps not recorded")
+                logger.debug("SelfKnowledgeStore not ready (%s); gaps not recorded", e)
 
     # ---- known terms -------------------------------------------------------
 
@@ -127,7 +127,7 @@ class SelfKnowledgeStore:
                     "SELECT content FROM memories WHERE source = $1", "biography"
                 )
         except Exception as e:
-            logger.debug(f"Could not refresh self-knowledge terms ({e})")
+            logger.debug("Could not refresh self-knowledge terms (%s)", e)
             return len(self._known_terms)
 
         terms = set(self._seed_terms)
@@ -178,7 +178,7 @@ class SelfKnowledgeStore:
                     )
                     written += 1
         except Exception as e:
-            logger.debug(f"Could not record self-knowledge gap ({e})")
+            logger.debug("Could not record self-knowledge gap (%s)", e)
 
         if written:
             logger.info(
@@ -227,7 +227,7 @@ class SelfKnowledgeStore:
                     int(min_hits),
                 )
         except Exception as e:
-            logger.debug(f"Could not claim next self-knowledge gap ({e})")
+            logger.debug("Could not claim next self-knowledge gap (%s)", e)
             return None
         return dict(row) if row else None
 
@@ -245,5 +245,5 @@ class SelfKnowledgeStore:
                 )
             return [dict(r) for r in rows or ()]
         except Exception as e:
-            logger.debug(f"Could not read self-knowledge gaps ({e})")
+            logger.debug("Could not read self-knowledge gaps (%s)", e)
             return []
