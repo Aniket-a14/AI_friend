@@ -17,9 +17,47 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
-import cognitive_rust
-
 logger = logging.getLogger(__name__)
+
+_NORM_SKIP_WORDS = frozenset({"not", "no", "don't", "never", "without", "isn't"})
+
+
+def _word_set(content: str) -> set[str]:
+    return set(content.lower().split())
+
+
+def _compute_novelty_fallback(content: str, recent_contents: list[str]) -> float:
+    """Mirrors `compute_novelty` in cognitive-rust/src/lib.rs word-for-word."""
+    if not recent_contents:
+        return 0.8
+    content_words = _word_set(content)
+    if not content_words:
+        return 0.5
+    max_overlap = 0.0
+    for recent in recent_contents:
+        recent_words = _word_set(recent)
+        if not recent_words:
+            continue
+        intersection = len(content_words & recent_words)
+        union = len(content_words) + len(recent_words) - intersection
+        if union > 0:
+            max_overlap = max(max_overlap, intersection / union)
+    return min(max(1.0 - max_overlap, 0.0), 1.0)
+
+
+def _check_norm_alignment_fallback(content: str, boundaries: list[str]) -> float:
+    """Mirrors `check_norm_alignment` in cognitive-rust/src/lib.rs word-for-word."""
+    if not boundaries:
+        return 1.0
+    content_lower = content.lower()
+    violations = 0
+    for boundary in boundaries:
+        for keyword in boundary.lower().split():
+            if keyword in _NORM_SKIP_WORDS:
+                continue
+            if len(keyword) > 3 and keyword in content_lower:
+                violations += 1
+    return min(max(1.0 - violations * 0.2, 0.0), 1.0)
 
 
 @dataclass(slots=True)
@@ -47,6 +85,48 @@ class AppraisalVector:
 
     def to_dict(self) -> dict[str, float]:
         return asdict(self)
+
+
+def _compute_appraisal_fallback(
+    event_content: str,
+    event_type: str,
+    emotional_bias: float,
+    trust: float,
+    recent_contents: list[str],
+    identity_boundaries: list[str],
+    pitch_f0: float | None,
+    energy_rms: float | None,
+) -> AppraisalVector:
+    """Pure-Python mirror of `cognitive_rust::compute_appraisal`.
+
+    Used only when the compiled extension isn't installed (e.g. not built for
+    the host target). Kept in lockstep with cognitive-rust/src/lib.rs by hand;
+    `test_appraisal_fallback_matches_rust_extension` in tests/ pins both
+    implementations against the same inputs whenever the extension is present.
+    """
+    relevance = {"USER_MESSAGE": 1.0, "SYSTEM_TICK": 0.1}.get(event_type, 0.5)
+    novelty = _compute_novelty_fallback(event_content, recent_contents)
+    goal_congruence = min(max(emotional_bias, -1.0), 1.0)
+    agency = 0.8 if event_type == "USER_MESSAGE" else 0.3
+    norm_alignment = _check_norm_alignment_fallback(event_content, identity_boundaries)
+    relationship_impact = emotional_bias * 0.5
+    if trust < 0.3:
+        relationship_impact *= 0.5
+
+    pitch = pitch_f0 if pitch_f0 is not None else 150.0
+    energy = energy_rms if energy_rms is not None else 0.0
+    if energy > 0.15 or pitch > 250.0:
+        goal_congruence = min(max(goal_congruence - 0.3, -1.0), 1.0)
+        relationship_impact = min(max(relationship_impact - 0.2, -1.0), 1.0)
+
+    return AppraisalVector(
+        relevance=relevance,
+        novelty=novelty,
+        goal_congruence=goal_congruence,
+        agency=agency,
+        norm_alignment=norm_alignment,
+        relationship_impact=relationship_impact,
+    )
 
 
 class AppraisalEngine:
@@ -96,17 +176,46 @@ class AppraisalEngine:
                     f"🎙️ [Appraisal] High arousal user vocal cues detected (energy={energy:.3f}, pitch={pitch:.1f}Hz). Raising threat level."
                 )
 
-        # Delegate to Rust
-        vector = cognitive_rust.compute_appraisal(
-            event_content,
-            event_type,
-            emotional_bias,
-            state_snapshot.get("trust", 0.5),
-            self._recent_contents,
-            identity_boundaries or [],
-            pitch,
-            energy,
-        )
+        # Delegate to Rust; fall back to the pure-Python mirror if the
+        # compiled extension isn't installed (e.g. not built for this host).
+        try:
+            import cognitive_rust
+
+            rust_vector = cognitive_rust.compute_appraisal(
+                event_content,
+                event_type,
+                emotional_bias,
+                state_snapshot.get("trust", 0.5),
+                self._recent_contents,
+                identity_boundaries or [],
+                pitch,
+                energy,
+            )
+            vector = AppraisalVector(
+                relevance=rust_vector.relevance,
+                novelty=rust_vector.novelty,
+                goal_congruence=rust_vector.goal_congruence,
+                agency=rust_vector.agency,
+                norm_alignment=rust_vector.norm_alignment,
+                relationship_impact=rust_vector.relationship_impact,
+            )
+        except ImportError:
+            logger.warning(
+                "cognitive_rust extension not installed; using pure-Python "
+                "appraisal fallback. Build it with `maturin build --manifest-path "
+                "crates/cognitive-rust/Cargo.toml --out target/wheels` for the "
+                "native implementation."
+            )
+            vector = _compute_appraisal_fallback(
+                event_content,
+                event_type,
+                emotional_bias,
+                state_snapshot.get("trust", 0.5),
+                self._recent_contents,
+                identity_boundaries or [],
+                pitch,
+                energy,
+            )
 
         # Track content for novelty computation
         self._recent_contents.append(event_content[:100])
@@ -122,14 +231,7 @@ class AppraisalEngine:
             vector.norm_alignment,
             vector.relationship_impact,
         )
-        return AppraisalVector(
-            relevance=vector.relevance,
-            novelty=vector.novelty,
-            goal_congruence=vector.goal_congruence,
-            agency=vector.agency,
-            norm_alignment=vector.norm_alignment,
-            relationship_impact=vector.relationship_impact,
-        )
+        return vector
 
     async def appraise_semantic_drift(
         self, user_utterance: str, llm_client, current_pad: dict[str, float]

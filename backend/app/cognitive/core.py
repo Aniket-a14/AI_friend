@@ -307,9 +307,13 @@ class CognitiveService:
         """Proactive memory recall (Active influence)."""
         self._record_subject_metric("memory.surfaced", data)
 
-        # Support both the contract shape (list of memories) and direct content fallback
+        # Support both the contract shape (list of memories) and a direct
+        # content fallback for legacy/alternate payloads. Mutually exclusive:
+        # a payload carrying both used to append the list *and* the fallback,
+        # double-counting a single surfacing event into the 5-item trim below
+        # and evicting older, still-relevant memories to make room for a dupe.
         memories_list = data.get("memories", [])
-        if isinstance(memories_list, list):
+        if isinstance(memories_list, list) and memories_list:
             for mem_item in memories_list:
                 if isinstance(mem_item, dict):
                     memory_text = mem_item.get("content", "")
@@ -330,17 +334,17 @@ class CognitiveService:
                                 ),
                             }
                         )
-
-        memory_text = data.get("content", "")
-        if memory_text:
-            self.surfaced_memories.append(
-                {
-                    "content": memory_text,
-                    "source": data.get("source"),
-                    "timestamp": data.get("timestamp", 0),
-                    "relevance": data.get("relevance", 1.0),
-                }
-            )
+        else:
+            memory_text = data.get("content", "")
+            if memory_text:
+                self.surfaced_memories.append(
+                    {
+                        "content": memory_text,
+                        "source": data.get("source"),
+                        "timestamp": data.get("timestamp", 0),
+                        "relevance": data.get("relevance", 1.0),
+                    }
+                )
 
         self.surfaced_memories = self.surfaced_memories[-5:]
         if self.surfaced_memories:

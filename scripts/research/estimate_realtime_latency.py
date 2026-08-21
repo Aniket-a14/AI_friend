@@ -75,7 +75,7 @@ async def run_latency_profile():
     append_runs = []
     for i in range(50):
         start = time.perf_counter()
-        working_store.add_turn(
+        await working_store.add_turn(
             role="user" if i % 2 == 0 else "assistant",
             content=f"This is turn {i} in the latency benchmark simulation.",
             metadata={"index": i, "timestamp": time.time()},
@@ -89,7 +89,7 @@ async def run_latency_profile():
     fetch_runs = []
     for _ in range(50):
         start = time.perf_counter()
-        _ = working_store.get_recent_turns(limit=8)
+        _ = await working_store.get_recent_turns(limit=8)
         fetch_runs.append((time.perf_counter() - start) * 1000.0)
 
     avg_fetch = np.mean(fetch_runs)
