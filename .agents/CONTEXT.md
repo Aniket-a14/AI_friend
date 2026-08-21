@@ -6632,3 +6632,64 @@ exactly the test written for it).
   target entirely, not just relocate it) - see the #113 writeup above. A real,
   independent decision about removing a documented safety net, not something
   #113 was blocked on.
+
+## 2026-08-21 GitHub triage batch 7 (#162, narrowed) — 1 of 1 fixed (narrow scope), Vault/Docker-secrets integration still deferred
+
+**#162 — strict startup secret validation.** Batch 5 deferred this whole:
+"no `ENVIRONMENT`/production signal exists anywhere in `Config`...this needs
+the same missing-signal problem solved first, a design decision." Solving
+that signal turned out to be the entire narrow, decidable half of this issue
+- the other half (Vault/Docker-secrets-file integration) is a genuinely
+separate, larger scope and stays deferred, same split as #113/#152 in batch 6.
+
+Added `Config.ENVIRONMENT: str = "development"` (opt-in, so nothing about
+existing behavior changes until an operator sets it) and a `model_validator`
+that, only when `ENVIRONMENT == "production"`, checks `DATABASE_URL`,
+`NEO4J_PASSWORD`, `NEO4J_AUTH`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`
+against the literal placeholder strings this repo's own `.env.example` ships
+(`your_password_here`, `your_graph_password_here`, `your_api_key_here`,
+`your_api_secret_here`) and raises `ValueError` - which crashes the process
+at import time, since `config_instance = AppSettings()` runs at module load,
+satisfying the issue's "crash immediately" ask for free. Deliberately this
+narrow literal-string set rather than a generic weak-password heuristic - a
+heuristic strong enough to catch real weak passwords is also strong enough to
+false-positive on a legitimate secret that contains a common substring, and a
+false positive here means production refuses to boot. Scoped to the five
+fields that gate an actually-reachable service (Postgres/Neo4j auth, LiveKit
+room credentials); optional integrations (Gemini, ElevenLabs, Porcupine) are
+excluded, since a placeholder there disables a feature rather than exposing one.
+
+Wired `ENVIRONMENT=${ENVIRONMENT:-production}` into all six Python-based
+services in `docker-compose.prod.yml` (`brain_agent`, `system_agent`,
+`subconscious_agent`, `surfacing_agent`, `transport_agent`, `vision_agent` -
+the Rust `voice_agent`/`stt_agent` don't read this `Config`), defaulting to
+`production` there specifically because that compose file is only ever used
+for a production-shaped deployment (unlike `.env.example`'s own default,
+which stays `development` so copying it during initial local setup - the
+documented first step - doesn't crash before secrets are even filled in).
+Validated the combined `docker-compose.infra.yml` + `docker-compose.prod.yml`
+config resolves `ENVIRONMENT: production` correctly via `docker compose
+config` before committing. Documented the new var in the root `.env.example`.
+
+**Verified:** full backend suite - 966 passed (958 before this batch's 8 new
+tests), 0 failed. `ruff check .` clean. Mutation-tested by disabling the
+validator body and confirming all 5 parametrized placeholder-rejection tests
+fail, then restoring.
+
+**Also fixed in passing:** `frontend/prisma.config.ts`'s `import 'dotenv/
+config'` broke when batch 3 removed `dotenv` from `package.json` as an
+apparently-unused dependency - the "zero imports" check that justified the
+removal only grepped `.js`/`.jsx` source files and missed this `.ts` config
+file. Next.js's own dev/build process loads `.env` itself, but a bare `npx
+prisma validate`/`generate`/`migrate` doesn't, which is exactly what broke:
+a new "Prisma Schema & Identity Seed" CI check (not present when batch 3's
+PR ran, or path-filtered differently then - CLAUDE.md's own CI-gotchas note)
+surfaced it on this batch's PR. Restored `dotenv` to `devDependencies`
+(dev-tooling only, not part of the shipped app bundle, so `dependencies` was
+the wrong list even before removal).
+
+**NOT done, deferred:**
+- **#162's Vault/Docker-secrets-file (`/run/secrets/`) integration** - a real,
+  separate feature (a new loading path for credentials, plus a decision about
+  which secret backend this deployment is meant to target) rather than
+  something the placeholder check above was blocked on.
