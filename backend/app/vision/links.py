@@ -1,9 +1,18 @@
+# Deferred annotation evaluation (H4): `frame: np.ndarray` below is only ever
+# used as a type hint, but without this, Python evaluates it at class-body
+# execution time - so a missing numpy install would raise AttributeError on
+# `np.ndarray` even after guarding the import itself.
+from __future__ import annotations
+
 try:
     import mss
 except ImportError:
     mss = None
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 try:
     import cv2
@@ -19,9 +28,10 @@ class ScreenLink:
     """High-performance primary monitor capture."""
 
     def __init__(self):
-        if mss is None:
+        if mss is None or np is None:
+            missing = "mss" if mss is None else "numpy"
             logger.warning(
-                "[Vision] mss dependency is missing. Running in headless mode."
+                f"[Vision] {missing} dependency is missing. Running in headless mode."
             )
             self.sct = None
             self.monitor = None

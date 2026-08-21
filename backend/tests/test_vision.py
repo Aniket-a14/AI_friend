@@ -81,6 +81,46 @@ class TestVisualAppraisalService:
         assert desc == "A developer coding on a laptop."
 
     @pytest.mark.asyncio
+    async def test_vlm_pipeline_failure_does_not_advance_habituation_baseline(
+        self, mock_appraisal_service, mock_ollama_client
+    ):
+        """H8: `describe_image` returning `None` (the call itself failed)
+        must NOT be treated as an observed baseline - the next tick should
+        still retry the VLM rather than skip it via sensory habituation,
+        which is what advancing `_last_visual_vector`/`_last_appraisal_time`
+        here would cause.
+        """
+        mock_ollama_client.describe_image = AsyncMock(return_value=None)
+        forced_last_appraisal_time = time.time() - 2.0
+        mock_appraisal_service._last_appraisal_time = forced_last_appraisal_time
+
+        desc = await mock_appraisal_service.appraise("new_frame_b64")
+
+        assert desc == ""  # falls back to the (empty) initial cache
+        assert mock_appraisal_service._last_visual_vector is None
+        # Unchanged from what we forced it to, not bumped to "now" - a bump
+        # here would let a subsequent frame's habituation check treat this
+        # failed call as an observed baseline instead of retrying the VLM.
+        assert mock_appraisal_service._last_appraisal_time == forced_last_appraisal_time
+
+    @pytest.mark.asyncio
+    async def test_vlm_confirmed_quiet_scene_advances_habituation_baseline(
+        self, mock_appraisal_service, mock_ollama_client
+    ):
+        """H8: `describe_image` returning `""` (a successful call that found
+        nothing worth describing) IS a real observation and should advance
+        the habituation baseline, unlike a `None` pipeline failure above.
+        """
+        mock_ollama_client.describe_image = AsyncMock(return_value="")
+        mock_appraisal_service._last_appraisal_time = time.time() - 2.0
+
+        desc = await mock_appraisal_service.appraise("new_frame_b64")
+
+        assert desc == ""
+        assert mock_appraisal_service._last_visual_vector is not None
+        assert mock_appraisal_service._last_appraisal_time > 0.0
+
+    @pytest.mark.asyncio
     async def test_sensory_habituation_bypasses_vlm_if_below_threshold(
         self, mock_appraisal_service, mock_ollama_client
     ):

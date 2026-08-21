@@ -743,6 +743,7 @@ async def main():
     await conversation_store.initialize()  # Creates the database pool
 
     graph_db = GraphDB()
+    await graph_db.initialize()
     # Inject the established pool and graph_db into MemoryStore
     memory_store = MemoryStore(pool=conversation_store.pool, graph_db=graph_db)
 

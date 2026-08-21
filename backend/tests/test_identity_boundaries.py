@@ -194,6 +194,33 @@ async def test_control_markup_cannot_smuggle_contempt_past_the_boundary(
 
 
 @pytest.mark.asyncio
+async def test_stylized_unicode_cannot_smuggle_contempt_past_the_boundary(tmp_path):
+    """H10: an LLM (or an injection attempt) can spell "hate"/"you" using
+    Mathematical Alphanumeric Symbols instead of plain ASCII letters - visibly
+    identical in most renderers, but a different code point, so a plain ASCII
+    regex never matches. NFKD compatibility decomposition folds these back to
+    their canonical ASCII form before matching.
+
+    This does not defend against genuine cross-script confusables (Cyrillic
+    "а" standing in for Latin "a") - those are canonically distinct code
+    points with no compatibility decomposition - only single-script stylized
+    variants, which is what NFKD can actually fold.
+    """
+
+    def bold(word: str) -> str:
+        return "".join(
+            chr(0x1D41A + (ord(ch) - ord("a"))) if "a" <= ch <= "z" else ch
+            for ch in word
+        )
+
+    text = f"I {bold('hate')} {bold('you')}."
+    manager = _identity(tmp_path, HOSTILE_FILE)
+    is_valid, reason = await manager.validate_response(text, "CHAT")
+    assert is_valid is False, f"stylized Unicode bypassed the boundary: {text!r}"
+    assert "Non-toxicity" in reason
+
+
+@pytest.mark.asyncio
 async def test_stripping_markup_can_never_conceal_hostile_text(tmp_path):
     """The bug the first version of this fix introduced.
 

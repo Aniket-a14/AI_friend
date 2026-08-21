@@ -441,6 +441,47 @@ def test_require_session_auth_accepts_lan_client_with_correct_key(monkeypatch):
     )
 
 
+def test_require_token_rate_limit_blocks_after_the_configured_max(monkeypatch):
+    """H3: a valid key (or being the trusted loopback host) says who may call
+    /token, not how often. Without this, an authenticated-but-abusive or
+    stuck-in-a-retry-loop client can still flood LiveKit session capacity.
+    """
+    import asyncio as _asyncio
+
+    from fastapi import HTTPException
+
+    import main
+    from app.rate_limit import FixedWindowRateLimiter
+
+    monkeypatch.setattr(
+        main, "_token_rate_limiter", FixedWindowRateLimiter(max_requests=2, window_seconds=60.0)
+    )
+
+    request = _fake_request("192.168.1.42")
+    _asyncio.run(main.require_token_rate_limit(request))
+    _asyncio.run(main.require_token_rate_limit(request))
+    try:
+        _asyncio.run(main.require_token_rate_limit(request))
+        assert False, "expected HTTPException"
+    except HTTPException as e:
+        assert e.status_code == 429
+
+
+def test_require_token_rate_limit_tracks_clients_independently(monkeypatch):
+    import asyncio as _asyncio
+
+    import main
+    from app.rate_limit import FixedWindowRateLimiter
+
+    monkeypatch.setattr(
+        main, "_token_rate_limiter", FixedWindowRateLimiter(max_requests=1, window_seconds=60.0)
+    )
+
+    _asyncio.run(main.require_token_rate_limit(_fake_request("192.168.1.42")))
+    # A different client still has its own budget.
+    _asyncio.run(main.require_token_rate_limit(_fake_request("192.168.1.99")))
+
+
 def test_surfacing_agent_subscribes_to_state_update_subject():
     agent = SurfacingAgent(memory_store=MagicMock())
     agent.connect = AsyncMock()

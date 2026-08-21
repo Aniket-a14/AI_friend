@@ -12,6 +12,7 @@ from livekit import api
 from app.config import Config
 from app.logging_config import setup_logging
 from app.network import is_lan_client_allowed, is_loopback_client
+from app.rate_limit import FixedWindowRateLimiter
 
 # scripts.bootstrap, not scripts: the old import pointed at a module that does not
 # exist, so main.py could not even be imported — the Provisioning Guard below,
@@ -128,6 +129,25 @@ async def require_session_auth(request: Request):
         raise HTTPException(status_code=401, detail="Invalid or missing session key")
 
 
+_token_rate_limiter = FixedWindowRateLimiter(
+    max_requests=Config.TOKEN_RATE_LIMIT_MAX_REQUESTS,
+    window_seconds=Config.TOKEN_RATE_LIMIT_WINDOW_SECONDS,
+)
+
+
+async def require_token_rate_limit(request: Request):
+    """Cap session-token minting per client IP (H3).
+
+    Applies regardless of auth outcome/loopback status: a valid
+    BACKEND_ACCESS_KEY, or being the trusted loopback host, says who may call
+    /token, not how often. Unthrottled, either can still flood LiveKit
+    session capacity and this process's own resources.
+    """
+    host = request.client.host if request.client else "unknown"
+    if not _token_rate_limiter.allow(host):
+        raise HTTPException(status_code=429, detail="Too many token requests")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -201,7 +221,13 @@ async def get_status():
     return {"status": "ok", "ready": backend.is_ready}
 
 
-@app.get("/token", dependencies=[Depends(require_session_auth)])
+@app.get(
+    "/token",
+    dependencies=[
+        Depends(require_session_auth),
+        Depends(require_token_rate_limit),
+    ],
+)
 async def get_token(participant: str = "user"):
     """LiveKit Token Endpoint"""
     try:
@@ -212,7 +238,13 @@ async def get_token(participant: str = "user"):
         raise HTTPException(status_code=500, detail="Token generation failed")
 
 
-@app.post("/start-session", dependencies=[Depends(require_session_auth)])
+@app.post(
+    "/start-session",
+    dependencies=[
+        Depends(require_session_auth),
+        Depends(require_token_rate_limit),
+    ],
+)
 async def start_session(participant: str = "user"):
     """Alias for token generation to support legacy frontend calls."""
     try:

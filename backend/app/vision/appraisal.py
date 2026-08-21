@@ -133,9 +133,24 @@ class VisualAppraisalService:
                     len(description),
                     description[:80],
                 )
+            elif description == "":
+                # A successful call with nothing worth describing (H8) is a
+                # real observation, not a fault: advance the habituation
+                # vector/timestamp so a persistently quiet scene doesn't keep
+                # re-triggering VLM calls every tick the way a genuine
+                # pipeline failure should (below).
+                self._last_visual_vector = current_vector
+                self._last_appraisal_time = time.time()
+                logger.debug(
+                    "[VisualAppraisal] VLM confirmed a quiet scene, using cache."
+                )
             else:
+                # description is None: the call itself failed. Deliberately
+                # does NOT update the habituation vector/timestamp, so the
+                # next tick retries the VLM rather than treating this frame
+                # as an observed (quiet) baseline.
                 logger.warning(
-                    "[VisualAppraisal] VLM returned empty description, using cache."
+                    "[VisualAppraisal] VLM pipeline failure, using cache."
                 )
 
         except Exception as e:

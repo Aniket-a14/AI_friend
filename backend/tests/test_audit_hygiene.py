@@ -46,8 +46,12 @@ def test_vision_toggle_requires_the_same_auth_as_token_issuance():
 
     assert "require_session_auth" in dep_names("/vision/toggle")
     # Pinned against a peer so the test states a rule rather than a constant:
-    # whatever guards token issuance must also guard the camera.
-    assert dep_names("/token") <= dep_names("/vision/toggle")
+    # whatever *authenticates* token issuance must also guard the camera.
+    # Not a full dependency-set comparison: /token also carries
+    # require_token_rate_limit (H3), a DoS/resource-abuse control with no
+    # equivalent need on a state toggle, so that's deliberately not required
+    # here too.
+    assert "require_session_auth" in dep_names("/token")
 
 
 # --------------------------------------------------------------------------
@@ -309,10 +313,12 @@ def test_metrics_join_gives_up_instead_of_hanging_forever():
 def test_a_failed_vision_call_is_logged_not_silently_empty(caplog, monkeypatch):
     """`except Exception: pass` then `return ""`.
 
-    An empty description is indistinguishable from "the model saw nothing worth
-    describing", so a vision backend that is down looked exactly like a quiet
-    room — and the agent narrates that difference to the user as if it were
-    real.
+    An empty description used to be indistinguishable from "the model saw
+    nothing worth describing", so a vision backend that is down looked
+    exactly like a quiet room — and the agent narrates that difference to the
+    user as if it were real. `describe_image` now returns `None` on failure
+    and `""` only for a confirmed-quiet scene (H8), so this also pins that a
+    failure is `None`, not the empty string a quiet scene would produce.
     """
     from app import config as config_module
     from app.llm.ollama_client import OllamaClient
@@ -332,7 +338,7 @@ def test_a_failed_vision_call_is_logged_not_silently_empty(caplog, monkeypatch):
     with caplog.at_level("WARNING"):
         result = asyncio.run(client.describe_image("b64", "what is here"))
 
-    assert result == ""
+    assert result is None
     assert any("connection refused" in r.getMessage() for r in caplog.records), (
         "a failed vision call returned empty with nothing in the log"
     )

@@ -37,6 +37,12 @@ class ConversationHistoryStore:
         self.pool: asyncpg.Pool | None = None
         self.current_session_id: uuid.UUID | None = None
         self.trust_columns_available: bool = True
+        # Set when initialize() falls back to local SQLite after a PostgreSQL
+        # connection failure (H5). A prior conversation's history, stored in
+        # Postgres, becomes silently unreachable from the SQLite session -
+        # queryable here so a health check can surface it rather than the
+        # user just experiencing what looks like sudden memory loss.
+        self.used_fallback_storage: bool = False
         app_dir = Path(__file__).resolve().parents[1]
         self.personality_seed_path = Config.PERSONALITY_SEED_PATH or str(
             app_dir / "personality.json"
@@ -93,8 +99,11 @@ class ConversationHistoryStore:
 
         except Exception as e:
             if self.dsn and not self.dsn.startswith("sqlite"):
-                logger.warning(
-                    f"Failed to connect to PostgreSQL: {e}. Falling back to local SQLite database."
+                self.used_fallback_storage = True
+                logger.critical(
+                    f"PostgreSQL connection failed: {e}. Falling back to local "
+                    "SQLite database - conversation history stored in "
+                    "PostgreSQL is now unreachable from this session."
                 )
                 try:
                     from .sqlite_fallback import SQLitePool

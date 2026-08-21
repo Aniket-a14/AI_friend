@@ -83,3 +83,13 @@ def test_json_extraction_robustness(reflection_service):
     deepseek_text = '<think>Thoughts</think>{"a": 1}'
     data = reflection_service._extract_json(deepseek_text)
     assert data["a"] == 1
+
+
+def test_json_extraction_does_not_fuse_two_separate_blocks(reflection_service):
+    """H1 regression: a greedy `\\{.*\\}`/`\\[.*\\]` regex spans from the
+    first opening bracket to the LAST closing bracket anywhere in the text,
+    so a real answer followed by an unrelated second JSON-looking aside used
+    to be fused into one invalid span and silently dropped."""
+    text = '{"subject": "User"} and separately here is an example: {"unrelated": true}'
+    data = reflection_service._extract_json(text)
+    assert data == {"subject": "User"}
