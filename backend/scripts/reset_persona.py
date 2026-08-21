@@ -2,7 +2,8 @@
 Reset your humanoid back to what `config/` currently describes.
 
     cd backend
-    ../.venv/Scripts/python.exe -m scripts.reset_persona
+    ../.venv/bin/python -m scripts.reset_persona          # macOS/Linux
+    ../.venv/Scripts/python.exe -m scripts.reset_persona  # Windows
 
 Clears the stored persona and every file-seeded memory, so the next boot reads
 `config/persona.toml` and `config/biography.md` again as if it were the first.

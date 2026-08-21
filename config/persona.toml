@@ -13,7 +13,8 @@
 #
 #  To start over from what you have written here:
 #
-#      cd backend && ../.venv/Scripts/python.exe -m scripts.reset_persona
+#      cd backend && ../.venv/bin/python -m scripts.reset_persona   # macOS/Linux
+#      cd backend && ../.venv/Scripts/python.exe -m scripts.reset_persona   # Windows
 #
 #  Every value below belongs to one of three tiers. The tier no longer decides
 #  *when* a value applies — none of them apply after the first boot — but it

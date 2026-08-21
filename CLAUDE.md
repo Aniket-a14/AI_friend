@@ -10,16 +10,29 @@ The polished `README.md` overstates completeness relative to the ledger. Where t
 
 ## Commands
 
-The virtualenv lives at the **repo root** (`.venv`), but pytest must run from `backend/`:
+The virtualenv lives at the **repo root** (`.venv`), but pytest must run from
+`backend/`. Development moved to macOS in 2026-08, so macOS is the primary
+column below; Windows still works unmodified underneath it — the interpreter
+path is the only thing that differs by host, and nothing in the codebase
+branches on OS, so picking the right block for your platform is the whole
+adjustment, no config edit required:
 
 ```bash
 cd backend
 
-../.venv/Scripts/python.exe -m pytest                      # full suite
-../.venv/Scripts/python.exe -m pytest tests/test_foo.py    # one file
-../.venv/Scripts/python.exe -m pytest tests/test_foo.py::test_name   # one test
-../.venv/Scripts/python.exe -m pytest -k "somatic and not vision"    # by expression
-../.venv/Scripts/python.exe -m ruff check .                # lint (CI gate)
+# macOS / Linux
+../.venv/bin/python -m pytest                      # full suite
+../.venv/bin/python -m pytest tests/test_foo.py     # one file
+../.venv/bin/python -m pytest tests/test_foo.py::test_name   # one test
+../.venv/bin/python -m pytest -k "somatic and not vision"    # by expression
+../.venv/bin/python -m ruff check .                 # lint (CI gate)
+
+# Windows
+../.venv/Scripts/python.exe -m pytest
+../.venv/Scripts/python.exe -m pytest tests/test_foo.py
+../.venv/Scripts/python.exe -m pytest tests/test_foo.py::test_name
+../.venv/Scripts/python.exe -m pytest -k "somatic and not vision"
+../.venv/Scripts/python.exe -m ruff check .
 ```
 
 Rust workspace (`backend/crates/`) and the native extension:
@@ -40,9 +53,17 @@ docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up
 docker compose -f docker-compose.prod.yml --profile vision up   # vision is opt-in
 ```
 
-### Getting a reliable test count on Windows
+### Getting a reliable test count
 
-This environment **truncates pytest's terminal summary** — the `N passed` line and the entire `=== FAILURES ===` section are frequently swallowed, so a run can look clean when it is not. Do not trust the dots. Use:
+Pytest's terminal summary is unreliable here — the final `N passed in ...s`
+line (and, when something fails, the whole `=== FAILURES ===` section) is
+frequently swallowed, so a run can look clean when it is not. Originally
+documented as a Windows-terminal quirk; **verified 2026-08-21 to reproduce
+identically on macOS**, including with output redirected straight to a file
+(not just an interactive terminal), which rules out terminal truncation as the
+cause — `pytest-benchmark`'s session-finish hook (the `Saved benchmark data
+in: ...` line) prints where the summary should be, and the summary itself
+never appears, on either host. Do not trust the dots. Use:
 
 ```bash
 ../.venv/Scripts/python.exe -m pytest -q --junit-xml=<scratch>/res.xml

@@ -2,7 +2,9 @@
 Show who your humanoid currently is.
 
     cd backend
-    ../.venv/Scripts/python.exe -m scripts.show_persona
+    ../.venv/bin/python -m scripts.show_persona          # macOS/Linux
+    ../.venv/bin/python -m scripts.show_persona --json
+    ../.venv/Scripts/python.exe -m scripts.show_persona  # Windows
     ../.venv/Scripts/python.exe -m scripts.show_persona --json
 
 Once the durable store became authoritative, `config/persona.toml` stopped
