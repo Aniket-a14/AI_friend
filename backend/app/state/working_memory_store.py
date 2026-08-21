@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 from typing import Any
 
 import redis
@@ -45,6 +46,12 @@ class WorkingMemoryStore:
         self.max_turns = max_turns
         self.db_path = db_path
         self.redis_client: redis.Redis | None = None
+        # L2: one connection reused for the lifetime of the store rather than
+        # opening/closing a fresh handle on every fallback call; guarded by a
+        # lock since each call arrives on a different asyncio.to_thread
+        # worker thread and SQLite doesn't support concurrent writers anyway.
+        self._sqlite_conn: sqlite3.Connection | None = None
+        self._sqlite_lock = threading.Lock()
 
         # 1. Attempt Redis Connection
         try:
@@ -72,15 +79,23 @@ class WorkingMemoryStore:
         self._initialize_sqlite()
 
     def _get_sqlite_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        """Lazily create and cache the fallback connection (L2).
+
+        `check_same_thread=False` is required because callers reach this from
+        whichever `asyncio.to_thread` worker thread happens to run a given
+        call; `self._sqlite_lock` (held by every call site) is what actually
+        makes sharing the connection across threads safe.
+        """
+        if self._sqlite_conn is None:
+            self._sqlite_conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._sqlite_conn.row_factory = sqlite3.Row
+        return self._sqlite_conn
 
     def _initialize_sqlite(self):
         if self.redis_client is not None:
             return
 
-        with self._get_sqlite_connection() as conn:
+        with self._sqlite_lock, self._get_sqlite_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS working_turns (
@@ -134,7 +149,7 @@ class WorkingMemoryStore:
 
         # SQLite Fallback execution
         try:
-            with self._get_sqlite_connection() as conn:
+            with self._sqlite_lock, self._get_sqlite_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO working_turns (role, content, metadata) VALUES (?, ?, ?)",
@@ -188,7 +203,7 @@ class WorkingMemoryStore:
 
         # SQLite Fallback
         try:
-            with self._get_sqlite_connection() as conn:
+            with self._sqlite_lock, self._get_sqlite_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT role, content, metadata FROM working_turns ORDER BY id DESC LIMIT ?",
@@ -222,7 +237,7 @@ class WorkingMemoryStore:
                 logger.error(f"Redis clear_turns failed: {e}. Falling back to SQLite.")
 
         try:
-            with self._get_sqlite_connection() as conn:
+            with self._sqlite_lock, self._get_sqlite_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM working_turns")
                 conn.commit()
@@ -247,7 +262,7 @@ class WorkingMemoryStore:
                 )
 
         try:
-            with self._get_sqlite_connection() as conn:
+            with self._sqlite_lock, self._get_sqlite_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO working_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -274,7 +289,7 @@ class WorkingMemoryStore:
                 )
 
         try:
-            with self._get_sqlite_connection() as conn:
+            with self._sqlite_lock, self._get_sqlite_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT value FROM working_state WHERE key = ?", (key,))
                 row = cursor.fetchone()

@@ -105,6 +105,31 @@ def update_known_concepts(current_concepts: list[str], user_input: str) -> list[
         "very",
         "just",
         "here",
+        # L8: common conversational filler/connector words that otherwise get
+        # tracked as if they were distinctive user vocabulary.
+        "also",
+        "even",
+        "still",
+        "well",
+        "really",
+        "actually",
+        "maybe",
+        "kind",
+        "sort",
+        "much",
+        "many",
+        "does",
+        "doing",
+        "because",
+        "before",
+        "during",
+        "while",
+        "same",
+        "only",
+        "over",
+        "into",
+        "under",
+        "until",
     }
 
     updated = list(current_concepts)

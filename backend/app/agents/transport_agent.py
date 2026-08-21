@@ -7,7 +7,7 @@ from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
 
 from ..config import Config
-from .base import BaseAgent
+from .base import BaseAgent, install_shutdown_signal_handlers
 
 logger = logging.getLogger("transport_agent")
 
@@ -47,6 +47,20 @@ class TransportAgent(BaseAgent):
         )
         self.audio_worker_task = None
         self.dropped_audio_frames = 0
+
+        # #173: mirrors the outbound queue above, for the opposite direction.
+        # `_process_remote_audio` used to `await self.publish(...)` directly
+        # inside LiveKit's `AudioStream` iteration loop - if NATS publishing
+        # stalls (network delay, JetStream backpressure), that await stalls
+        # right there, delaying every subsequent frame the WebRTC stack hands
+        # over. Decoupling capture from publish with a bounded queue and a
+        # dedicated worker means a slow NATS publish drops frames instead of
+        # stalling audio capture.
+        self.inbound_audio_queue = asyncio.Queue(
+            maxsize=max(32, int(getattr(Config, "TRANSPORT_AUDIO_QUEUE_SIZE", 256)))
+        )
+        self.inbound_audio_worker_task = None
+        self.dropped_inbound_audio_frames = 0
 
     async def _connect_livekit_with_retry(self, token: str):
         """Connect to LiveKit with bounded retries for transient SFU startup gaps."""
@@ -91,6 +105,10 @@ class TransportAgent(BaseAgent):
 
         # Capture frames on a dedicated worker so NATS callback can return fast.
         self.audio_worker_task = asyncio.create_task(self._audio_playback_worker())
+        # #173: drains inbound WebRTC frames independently of NATS publish speed.
+        self.inbound_audio_worker_task = asyncio.create_task(
+            self._inbound_audio_worker()
+        )
 
         # 3. Subscribe to NATS Audio Stream (Outbound - AI Speech)
         await self.subscribe(
@@ -120,7 +138,13 @@ class TransportAgent(BaseAgent):
             asyncio.create_task(self._process_remote_audio(track))
 
     async def _process_remote_audio(self, track: rtc.RemoteAudioTrack):
-        """Convert WebRTC audio frames to NATS events for STT"""
+        """Convert WebRTC audio frames to NATS events for STT.
+
+        #173: enqueues rather than publishing inline, so a slow NATS publish
+        never stalls draining `audio_stream` - only the queue backs up, and
+        overflow drops the oldest frame (matching `_on_nats_audio`'s policy)
+        rather than blocking capture.
+        """
         audio_stream = rtc.AudioStream(track)
         async for event in audio_stream:
             frame = event.frame
@@ -131,9 +155,43 @@ class TransportAgent(BaseAgent):
                 "participant": track.sid,
                 "captured_at": time.time(),
             }
-            # Publish raw PCM to the binary mesh path. STT still accepts the
-            # legacy JSON/base64 shape for compatibility.
-            await self.publish("audio.inbound", audio_data, metadata=metadata)
+            try:
+                self.inbound_audio_queue.put_nowait((audio_data, metadata))
+            except asyncio.QueueFull:
+                try:
+                    _ = self.inbound_audio_queue.get_nowait()
+                    self.inbound_audio_queue.task_done()
+                except asyncio.QueueEmpty:
+                    pass
+
+                try:
+                    self.inbound_audio_queue.put_nowait((audio_data, metadata))
+                except asyncio.QueueFull:
+                    pass
+
+                self.dropped_inbound_audio_frames += 1
+                if self.dropped_inbound_audio_frames % 50 == 1:
+                    logger.warning(
+                        "Inbound transport audio queue overloaded; dropped %s frames.",
+                        self.dropped_inbound_audio_frames,
+                    )
+
+    async def _inbound_audio_worker(self):
+        """Drain queued inbound frames and publish to NATS at publish pace."""
+        while True:
+            try:
+                audio_data, metadata = await self.inbound_audio_queue.get()
+                try:
+                    # Publish raw PCM to the binary mesh path. STT still
+                    # accepts the legacy JSON/base64 shape for compatibility.
+                    await self.publish("audio.inbound", audio_data, metadata=metadata)
+                finally:
+                    self.inbound_audio_queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Inbound transport audio worker error: {e}")
+                await asyncio.sleep(0.01)
 
     async def _on_nats_audio(self, data, metadata: dict | None = None):
         """Convert NATS audio events to WebRTC frames for User."""
@@ -234,6 +292,12 @@ class TransportAgent(BaseAgent):
                 await self.audio_worker_task
             except asyncio.CancelledError:
                 pass
+        if self.inbound_audio_worker_task:
+            self.inbound_audio_worker_task.cancel()
+            try:
+                await self.inbound_audio_worker_task
+            except asyncio.CancelledError:
+                pass
         await self.room.disconnect()
         await super().stop()
         logger.info("Transport Agent Stopped.")
@@ -241,12 +305,11 @@ class TransportAgent(BaseAgent):
 
 async def main():
     agent = TransportAgent()
-    try:
-        await agent.start()
-        shutdown_trigger = asyncio.Event()
-        await shutdown_trigger.wait()
-    except KeyboardInterrupt:
-        await agent.stop()
+    await agent.start()
+    shutdown_trigger = asyncio.Event()
+    install_shutdown_signal_handlers(shutdown_trigger)
+    await shutdown_trigger.wait()
+    await agent.stop()
 
 
 if __name__ == "__main__":

@@ -6217,3 +6217,308 @@ alone made it fail even though it predates this batch).
   cosmetic/subjective visual-polish request with no functional bug behind
   it - lowest priority of the eighteen, left for a session where visual
   changes can actually be watched render.
+
+## 2026-08-21 GitHub triage batch 4 (P3 Low) — 7 of 9 fixed, 2 false positives closed
+
+Smallest batch, but one finding (L9) turned into the most interesting
+investigation of the whole triage - a fix that looked obviously correct on
+paper and turned out to be a genuine no-op once actually tested.
+
+**L1 — f-string evaluation in disabled debug logs.** Python evaluates an
+f-string's interpolation before `logger.debug` is even called, unlike lazy
+`%s` formatting, which `Logger.debug` only does after confirming the level is
+enabled. Bounded scope (grepped first): exactly 23 `logger.debug(f"...")`
+call sites across 9 files, all simple single/double-value interpolations in
+exception-handler or diagnostic paths. Converted all 23 to lazy `%s`/`%.1f`
+formatting - mechanical, no behavior change, nothing to test (the log output
+is byte-identical, only when the formatting cost is paid changes).
+
+**L2 — `WorkingMemoryStore`'s SQLite fallback opened a connection per call.**
+Confirmed it was worse than just "redundant instantiation": `with self.
+_get_sqlite_connection() as conn:` never closed anything either -
+`sqlite3.Connection.__exit__` only commits/rolls back, it doesn't close - so
+every fallback call opened a handle and then just let it fall out of scope
+uncollected until GC. Added one connection cached for the store's lifetime
+(`check_same_thread=False`, since each call arrives via a different
+`asyncio.to_thread` worker thread) guarded by a `threading.Lock` at every
+call site, since SQLite doesn't support concurrent writers regardless of
+thread-safety settings.
+
+**L3 — "learning.py bypasses PersonaProfile schema".** False premise: line
+239's `self.identity.personality.get("name")` reads from `IdentityManager`
+(`cognitive/identity.py`), not `PersonaProfile` (`persona/profile.py`) - two
+deliberately separate systems per this ledger's own "Persona and identity"
+section. `IdentityManager.personality`/`.history` are plain dicts loaded from
+JSON with no typed schema to bypass; the issue's suggested replacement
+(`self.identity.persona.name`) doesn't correspond to any real attribute on
+either class. Closed as false positive.
+
+**L4 — no OpenGraph/Twitter metadata.** Added both blocks to `layout.js`'s
+`metadata` export, reusing the existing title/description. No `og:image` -
+`public/` only has the unmodified Next.js starter SVGs, and a fabricated
+image reference would be worse than none. Verified via `curl` against
+`npm run start` that the tags actually render in the served HTML.
+
+**L5 — `Config` had no range validation.** Pydantic-settings already
+validates *type* (a non-numeric env value fails to load at all) but not
+*range*. Deliberately did not sweep all ~40 numeric fields - added one
+`model_validator` covering a short, curated list where an out-of-range value
+causes a specific concrete failure: the two phasic hormone halflives and
+`LLM_STREAM_MAX_SECONDS`/`TOKEN_RATE_LIMIT_WINDOW_SECONDS` must be `> 0`
+(zero divides by zero in decay math), `ACTR_DECAY_RATE` must be `>= 0`
+(negative would make memories strengthen with time instead of decaying - an
+inversion, not an edge case), tick interval/rate-limit-count/queue-size
+fields must be `>= 1` (zero busy-loops or blocks everything), and
+`QDRANT_PORT` must be a valid port number. Most of the other ~40 settings
+have no comparable failure mode and were left alone rather than bounded
+speculatively.
+
+**L7 — `GraphDB.close()` didn't wait for in-flight queries.** Added an
+in-flight counter (`_inflight_queries`) and an `asyncio.Event` that's set
+whenever the count reaches zero; `close()` awaits it (bounded by
+`GRAPHDB_CLOSE_DRAIN_TIMEOUT_SECONDS = 10.0`, a module constant specifically
+so a test can shrink it instead of actually waiting out a real timeout) after
+cancelling the bootstrap task and before calling `driver.close()`. A stuck
+query still can't hang shutdown forever - the timeout logs a warning with the
+in-flight count and proceeds anyway.
+
+**L8 — incomplete stop-word list in `update_known_concepts`.** Added the
+issue's own named examples (also/even/still/well) plus a modest additional
+set of clearly-generic filler/connector words (really, actually, maybe,
+kind, sort, much, many, does, doing, because, before, during, while, same,
+only, over, into, under, until) - deliberately not a full NLTK/spaCy import,
+since this is a lightweight zero-LLM-latency tracker, not an NLP pipeline,
+and a full stopword list risks removing more than it should for a set this
+size already gets right.
+
+**L9 — investigated, found to be a genuine no-op, not applied.** The filed
+concern (`float("nan")` bypasses the existing `except (TypeError, ValueError)`
+guard and could propagate into spike arithmetic) is correct as a general
+claim about NaN. But this specific code's clamp, `max(0.0, min(1.0,
+confidence))`, already deterministically resolves NaN to `1.0` - verified
+directly (1000 runs, stable) and reasoned through: NaN compares `False`
+against everything, so `min(1.0, nan)` always keeps the first (non-NaN)
+argument, and the outer `max` repeats the pattern. Wrote the `math.isnan()`
+guard the issue asked for, mutation-tested it by removing it, and the test
+still passed - a real no-op, not a coincidence of the test's inputs. Reverted
+the guard rather than ship dead code with a comment claiming to prevent
+something it structurally cannot affect; kept the regression test (renamed
+to describe what it actually verifies) as a tripwire in case the clamp's
+shape ever changes.
+
+**L6 — git history secret scan.** Ran `gitleaks detect --source . --log-
+opts="--all"` against the full history (957 commits, ~54MB). Two distinct
+findings, both false positives on inspection: (1) `expected_tokens_sha256`
+in `backend/scripts/bootstrap/provision_models.py` is a model-file integrity
+checksum, not a credential - high entropy hex is exactly what a SHA-256
+looks like, which is why the generic-api-key rule flagged it. (2) `sk_live_
+abc123` against `https://api.example.com/...` in a since-renamed
+`API_SPEC.md` (now `docs/API_SPEC.md`, which no longer contains this text at
+all) is an unambiguous documentation placeholder - fake domain, textbook
+fake-token shape. No real secret found; nothing to rotate.
+
+**Verified:** full backend suite via junit-xml - 931 passed, 0
+failed/errored/skipped - `ruff check .` clean. `npm run build` and
+`npm run lint` clean on the frontend; OpenGraph/Twitter tags confirmed
+present in served HTML via `curl`. Every new test mutation-tested by
+reverting its fix and confirming failure - including L9's, which is the one
+that failed to discriminate and led to reverting the "fix" instead of the
+test.
+
+**NOT done, closed as false positive (no code change):**
+- **L3** - reads a different class than the one named in the issue; see above.
+- **L9** - the existing clamp already prevents this; see above. The only
+  applied artifact from this finding is the regression test, not a code fix.
+
+## 2026-08-21 GitHub triage batch 5 (Architecture/Production-Readiness, #151-175) — 7 fixed, 6 already resolved, 12 deferred
+
+The last batch of the 71-issue triage: 25 thematic/architectural findings,
+much larger in scope than P0-P3. Several turned out to already be resolved
+by earlier, unrelated work - this batch's main job was checking that before
+building anything new.
+
+**#153 - no SIGTERM handling anywhere in the mesh.** Traced what actually
+happens: `main.py`'s FastAPI server gets graceful shutdown for free from
+`uvicorn.run()`, which installs its own signal handling and drives the
+`lifespan` context manager's shutdown phase. Every other agent process
+(`brain_agent`, `system_agent`, `subconscious_agent`, `surfacing_agent`,
+`transport_agent`, `vision/agent.py`) runs via plain `asyncio.run(main())`
+with no signal handling at all - `except KeyboardInterrupt`/`except
+asyncio.CancelledError` blocks only catch SIGINT (which Python's default
+handler already turns into a catchable exception); SIGTERM has no such
+default translation, so it kills the process outright with no exception
+raised, meaning `agent.stop()` (NATS unsubscribe, `GraphDB.close()` with its
+new L7 in-flight-query drain, task cancellation) never ran under the exact
+signal Docker/Kubernetes send to stop a container. Added
+`install_shutdown_signal_handlers()` to `base.py` - wires both SIGTERM and
+SIGINT to the same `asyncio.Event`-based shutdown path - and applied it
+uniformly across all six `main()` functions, replacing each one's ad hoc
+try/except variant. Verified with a real `os.kill(os.getpid(),
+signal.SIGTERM)` inside the test process itself; mutation-testing this one
+was unusually conclusive - removing the handler didn't just fail the test,
+it let the unhandled SIGTERM kill the whole pytest run.
+
+**#160 - JSON logging existed but its toggle was dead.** `main.py` already
+called `setup_logging(json_format=getattr(Config, "LOG_JSON", False))`, and
+`logging_config.py`'s `CustomJsonFormatter` was already correct - but
+`LOG_JSON` was never declared as an `AppSettings` field. With
+`extra="ignore"`, setting `LOG_JSON=true` in `.env` had silently zero
+effect, always falling through to the `getattr` default. Verified directly
+(env var set, field didn't exist on the instantiated settings object) before
+fixing. Added the field; one line closed a gap that no amount of `.env`
+editing could have.
+
+**#169 - `ScreenLink` never retried after going headless.** Compared it
+against `CameraLink`, fixed for the same class of problem back in batch 3
+(M3): `CameraLink._ensure_cap()` already retries `cv2.VideoCapture(0)` on
+every single call. `ScreenLink` decided `headless` once in `__init__` and
+`capture_frame()` just returned `None` forever after - a display attached
+after startup, or a headless container later given one, left the agent
+blind for the rest of the process's life. Added `_ensure_sct()` mirroring
+the camera fix's retry-every-call pattern. First test attempt called
+`_ensure_sct()` directly and passed even with the fix removed from
+`capture_frame()` - not discriminating. Fixed by asserting through
+`capture_frame()` itself, the real call site the capture loop actually uses.
+
+**#171 - CI secret scanning was regex-only, no gitleaks.** The existing
+`security-audit.yml` credential-scan job greps for suspicious *variable
+names* in the current tree; it doesn't look at actual leaked *values* or at
+history. Added a `gitleaks-scan` job using `gitleaks/gitleaks-action@v2`
+against each push/PR's diff - the tool already used for the manual full-
+history scan in batch 4 (L6), now running on every future change instead of
+once. Did not add a pre-commit hook (the issue's other suggestion) - this
+repo has no pre-commit framework in place today, and adopting one changes
+every contributor's local workflow by default, which is a bigger decision
+than a CI-side addition.
+
+**#172 - `ORDER BY rand()` full-graph-scan in the dream sequence.**
+`MATCH (e:Entity) WITH e, rand() as r ORDER BY r LIMIT 3` evaluates a random
+value for every node before sorting - O(N log N) on every dream cycle.
+Confirmed APOC is already provisioned in this deployment
+(`docker-compose.infra.yml`'s `NEO4J_PLUGINS`), so replaced it with
+`apoc.coll.randomItems` over a single `collect()` pass - O(N), no sort -
+keeping the query's returned shape (`{name: ...}` rows) identical so the
+surrounding Python needed no changes.
+
+**#173 - inbound WebRTC audio published to NATS inline.**
+`_process_remote_audio` awaited `self.publish("audio.inbound", ...)`
+directly inside LiveKit's `AudioStream` iteration loop - a slow NATS publish
+stalls that await, delaying every subsequent frame. The fix pattern already
+existed in the same file for the *opposite* direction: `_on_nats_audio` /
+`_audio_playback_worker` already decouple NATS-to-WebRTC playback via a
+bounded queue with oldest-frame-drop overflow. Mirrored it exactly for
+WebRTC-to-NATS: new `inbound_audio_queue` /
+`_inbound_audio_worker`, wired into `start()`/`stop()` alongside the
+existing worker.
+
+**#174 - investigated, the specific claim was false; a narrower true
+observation was left as-is.** The consolidation loop's pairing check
+(`chrono_episodes[i + 1].get("role") == "assistant"`) is role-aware, not
+index-parity-based - traced by hand and confirmed by test that a burst of
+three consecutive user messages before one assistant reply never
+misattributes any message's `speaker` field. What *is* true: only the last
+of the three gets the reply attached, the other two get `response: ""`.
+Left that as-is rather than "fixing" it - attaching one assistant reply to
+three separate reflection episodes would triple-count that single
+exchange's relationship_delta and fact extraction, arguably worse than the
+current behavior.
+
+**#175 - already resolved.** `base.py` already has `_ack_heartbeat()`
+(calls `msg.in_progress()` every 15s for `chat.*` subjects, keeping
+JetStream's AckWait from expiring mid-turn) and `MESH_MAX_DELIVER`-bounded
+poison-message handling - this is finding A1/A3 from an earlier audit,
+already shipped. Confirmed present in current `base.py` before closing.
+
+**Verified:** full backend suite via junit-xml - 941 passed, 0
+failed/errored/skipped - `ruff check .` clean. Every new test mutation-
+tested by reverting its fix and confirming failure, including #169's
+non-discriminating first attempt (caught and fixed) and #153's, where the
+mutation didn't produce a clean test failure but killed the test process
+outright - the strongest possible confirmation available for that one.
+
+**NOT done, closed as already resolved (no code change needed):**
+- **#157** (container hardening): non-root users already in both
+  Dockerfiles, `healthcheck:` directives already on every service in
+  `docker-compose.infra.yml`/`docker-compose.prod.yml` (NATS, Postgres,
+  Neo4j, Redis, LiveKit, Ollama, Qdrant, TTS). One resource cap
+  (`brain_agent`, 2048M) already exists with a comment explaining it was
+  measured, not guessed. The other seven services remain uncapped - left
+  alone rather than adding unverified memory limits that could OOM-kill a
+  service nobody has profiled; more caps isn't strictly better without data.
+- **#163** (CI pipeline): `.github/workflows/ci.yml` already runs pytest,
+  ruff, frontend lint/build, and a Rust `cargo check` on every push/PR - the
+  issue's entire ask.
+- **#165** (TTS warmup): the Rust `voice-agent` crate already has
+  `probe_synthesis()` / `spawn_readiness_probe()` - a periodic (default 45s)
+  background probe that synthesizes a fixed phrase and checks for real
+  audio bytes, not just a 200 status. The narrow gap the issue actually
+  describes - blocking startup readiness on the *first* probe succeeding,
+  rather than monitoring in the background from the start - remains open,
+  but wasn't implemented: it's a behavior change to a compiled binary with
+  no live GPT-SoVITS server in this environment to verify against.
+- **#166** (async ACT-R decay): false premise. Decay scoring is not a
+  synchronous Python loop blocking retrieval - it's computed either inside
+  the `surface_actr_memories()` Postgres function as part of the single
+  retrieval query, or via the compiled `cognitive_rust.score_memories_actr_
+  sqlite` extension for the SQLite fallback. There's no separate expensive
+  step to move to a background job.
+- **#170** (grounding gate regression suite): `tests/test_self_knowledge_
+  grounding.py` already has ~46 tests covering exactly this (fabricated
+  names/hometowns/institutions, gap recording, ranking, claim races). The
+  "calibrate the thresholds" half of the issue was intentionally left
+  undone - there's no held-out dataset to calibrate against, and fitting
+  constants without one is exactly what B1 already forbids.
+
+**NOT done, deferred (large scope, infra decisions, or contradicts the
+documented deployment model):**
+- **#151** (Factor VI - move all runtime psychological state to Redis/
+  Postgres for horizontal scaling) contradicts the single-process
+  personal/family deployment this codebase is actually built for (see
+  `require_session_auth`'s own docstring, and H3/M6's framing throughout
+  batches 2-3). A full statelessness migration serves a multi-instance
+  deployment nobody is running.
+- **#152** duplicates **H2** (batch 2): `IdentityManager.save()` writing to
+  git-tracked files by default. Still bundled with issue #152 for the same
+  reason - one correct pass, not two partial ones.
+- **#154** (accessibility/a11y) is real but needs actual screen-reader
+  testing to verify, which this environment cannot do - CLAUDE.md is
+  explicit that frontend behavior changes need browser verification, not
+  markup added on faith.
+- **#155** (HTTPS/WSS enforcement + HSTS) needs a deployment-topology
+  decision this codebase doesn't currently encode anywhere (behind a
+  reverse proxy that terminates TLS, or not) - redirect logic guessed at
+  either shape risks being wrong for the shape not guessed.
+- **#156** (unified `/healthz` aggregating Neo4j/Postgres/Redis/Ollama/NATS)
+  - `main.py` is the signaling/token server; it doesn't own connections to
+  any of those (the agent processes do, per the mesh's separation of
+  concerns - same finding as M12, batch 3). Per-service Docker healthchecks
+  already cover this at the infra level; centralizing it in `main.py` would
+  mean giving the signaling server new client connections that exist only
+  to answer this endpoint.
+- **#158** (Alembic) is a new framework adoption across a dual Postgres/
+  SQLite backend that Alembic doesn't naturally support well for the SQLite
+  side - a design decision, not a drive-by fix.
+- **#159** (OpenTelemetry tracing across the NATS mesh) is a new dependency
+  plus wiring through every agent and message - large, and needs a tracing
+  backend decision (Jaeger, Tempo, a vendor) this repo hasn't made.
+- **#161** (LiveKit TURN/STUN for production) is an infra/ops decision
+  requiring a real Coturn deployment target - nothing to configure against
+  without one.
+- **#162** (crash on placeholder secrets in production) - no `ENVIRONMENT`/
+  production signal exists anywhere in `Config` (only `DEBUG`, which
+  defaults to `False` even for casual local/CI runs), and `POSTGRES_
+  PASSWORD` isn't a distinct `Config` field to check (only the composed
+  `DATABASE_URL` is). A naive check gated on `DEBUG=False` would fire in
+  every CI run and most local dev sessions; this needs the same missing-
+  signal problem solved first, a design decision.
+- **#164** (multi-session/tenant isolation for `AgentConfig` and `GraphDB`'s
+  belief cache) contradicts the documented single-family-deployment model
+  as directly as #151 - this system is one agent belonging to one
+  family, not a multi-tenant service.
+- **#167** (E2E WebRTC/NATS pipeline test suite) is a large testing-infra
+  investment (mocking full LiveKit audio ingress through the whole
+  cognitive loop) - a project, not a fix.
+- **#168** (real-time security event alerting) needs an external sink
+  decision (webhook URL, Slack/Discord channel, Sentry project) that
+  doesn't exist in this repo's config today - the alerting *mechanism*
+  could be built, but would have nowhere real to send anything yet.

@@ -3,7 +3,7 @@ import logging
 import time
 
 from ..config import Config
-from .base import BaseAgent
+from .base import BaseAgent, install_shutdown_signal_handlers
 
 logger = logging.getLogger("system_agent")
 
@@ -46,7 +46,7 @@ class SystemAgent(BaseAgent):
 
                 # 2. Broadcast to Mesh
                 await self.publish("system.tick", tick_data)
-                logger.debug(f"[Pulse] system.tick broadcasted | Uptime: {uptime:.1f}s")
+                logger.debug("[Pulse] system.tick broadcasted | Uptime: %.1fs", uptime)
 
                 # 3. Wait for next heartbeat
                 await asyncio.sleep(self.tick_interval)
@@ -64,11 +64,10 @@ class SystemAgent(BaseAgent):
 async def main():
     agent = SystemAgent()
     await agent.start()
-    try:
-        shutdown_trigger = asyncio.Event()
-        await shutdown_trigger.wait()
-    except KeyboardInterrupt:
-        await agent.stop()
+    shutdown_trigger = asyncio.Event()
+    install_shutdown_signal_handlers(shutdown_trigger)
+    await shutdown_trigger.wait()
+    await agent.stop()
 
 
 if __name__ == "__main__":

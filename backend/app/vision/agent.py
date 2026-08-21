@@ -3,7 +3,7 @@ import base64
 import logging
 import time
 
-from ..agents.base import BaseAgent
+from ..agents.base import BaseAgent, install_shutdown_signal_handlers
 from ..config import Config
 from ..contracts import Topics, VisionDescription
 from ..llm.ollama_client import OllamaClient
@@ -210,7 +210,7 @@ class VisionAgent(BaseAgent):
 
             return 1.0
         except Exception as e:
-            logger.debug(f"Failed to calculate user distance: {e}")
+            logger.debug("Failed to calculate user distance: %s", e)
             return 1.0
 
     async def _run_appraisal(self, frame_b64: str):
@@ -244,11 +244,10 @@ async def main():
 
     agent = VisionAgent()
     await agent.start()
-    try:
-        while True:
-            await asyncio.sleep(1)
-    except asyncio.CancelledError:
-        await agent.stop()
+    shutdown_trigger = asyncio.Event()
+    install_shutdown_signal_handlers(shutdown_trigger)
+    await shutdown_trigger.wait()
+    await agent.stop()
 
 
 if __name__ == "__main__":

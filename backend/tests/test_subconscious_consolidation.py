@@ -265,3 +265,66 @@ async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_
             await mem_store.close()
         await store.close()
         Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = orig_bypass
+
+
+@pytest.mark.asyncio
+async def test_consecutive_user_messages_are_never_attributed_to_the_wrong_speaker(
+    mock_graph_db,
+):
+    """Issue #174 claimed that a burst of consecutive user messages before a
+    single assistant reply makes the consolidation loop "misidentify message
+    roles". Traced the actual pairing logic in `_on_system_tick`: it checks
+    `chrono_episodes[i + 1].get("role") == "assistant"` explicitly before
+    pairing, rather than assuming alternating roles by index parity - so a
+    message's `speaker` field always comes from that message's own recorded
+    role, never from its position. This test proves that directly with a
+    three-user-messages-then-one-reply burst, the exact scenario the issue
+    describes. (The narrower, real observation - that only the last of the
+    three gets the assistant's reply attached, not all three - is a
+    defensible choice: attaching one reply to three separate reflection
+    episodes would triple-count a single exchange's relationship_delta and
+    fact extraction, arguably worse than the current behavior.)
+    """
+    mock_memory_store = MagicMock()
+    # DESC order (most-recent-first), matching get_recent_unconsolidated_episodes's
+    # real ORDER BY timestamp DESC.
+    mock_memory_store.get_recent_unconsolidated_episodes = AsyncMock(
+        return_value=[
+            {"id": "4", "role": "assistant", "content": "Got it, on all three!"},
+            {"id": "3", "role": "user", "content": "and dinner at 8"},
+            {"id": "2", "role": "user", "content": "also pick up the mail"},
+            {"id": "1", "role": "user", "content": "remind me to call mom"},
+        ]
+    )
+    mock_memory_store.mark_episodes_consolidated = AsyncMock()
+
+    mock_reflection_service = MagicMock()
+    mock_reflection_service.trigger_reflection = AsyncMock(return_value=None)
+
+    agent = SubconsciousAgent(
+        memory_store=mock_memory_store,
+        reflection_service=mock_reflection_service,
+        graph_db=mock_graph_db,
+    )
+    agent.state_service.current_state.last_user_interaction = time.time() - 301
+    agent.engine.evaluate_and_think = AsyncMock(return_value=None)
+
+    await agent._on_system_tick({"uptime": 100})
+
+    mock_reflection_service.trigger_reflection.assert_awaited_once()
+    (episodes,), _ = mock_reflection_service.trigger_reflection.call_args
+
+    by_id = {ep["id"]: ep for ep in episodes}
+    # Every episode's speaker must match who actually sent that message - the
+    # bug under test would show up as a "user" id carrying speaker="assistant"
+    # or vice versa.
+    assert by_id["1"]["speaker"] == "user"
+    assert by_id["1"]["event"] == "remind me to call mom"
+    assert by_id["2"]["speaker"] == "user"
+    assert by_id["2"]["event"] == "also pick up the mail"
+    assert by_id["3"]["speaker"] == "user"
+    assert by_id["3"]["event"] == "and dinner at 8"
+    # Only the message immediately preceding the reply gets it attached.
+    assert by_id["1"]["response"] == ""
+    assert by_id["2"]["response"] == ""
+    assert by_id["3"]["response"] == "Got it, on all three!"

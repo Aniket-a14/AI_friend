@@ -440,7 +440,7 @@ class MemoryStore:
                     wing,
                 )
         except Exception as e:
-            logger.debug(f"Dedup lookup failed, proceeding to insert: {e}")
+            logger.debug("Dedup lookup failed, proceeding to insert: %s", e)
             return None
         if isinstance(rows, list) and rows:
             return rows[0]["id"]
@@ -945,7 +945,7 @@ class MemoryStore:
                     else:
                         self._db_stop_words = set()
         except Exception as e:
-            logger.debug(f"Failed to load dynamic stop words: {e}")
+            logger.debug("Failed to load dynamic stop words: %s", e)
             self._db_stop_words = set()
 
     # ------------------------------------------------------------------
@@ -1005,7 +1005,7 @@ class MemoryStore:
                     )
                     self.goal_buffer.flush()
             except Exception as ts_err:
-                logger.debug(f"Topic-shift calculation failed: {ts_err}")
+                logger.debug("Topic-shift calculation failed: %s", ts_err)
         self._last_query_vector = query_vector
 
     async def _gather_candidate_sources(self, mrl_query_vector, candidate_limit):
@@ -2550,7 +2550,7 @@ class MemoryStore:
                     entity_records, entity_names, adj, user_id
                 )
             except Exception as e:
-                logger.debug(f"Failed to process entities: {e}")
+                logger.debug("Failed to process entities: %s", e)
 
             resolved_cues = self._resolve_pronoun_cues(
                 query_text,

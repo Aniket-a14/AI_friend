@@ -12,6 +12,13 @@ class AppSettings(BaseSettings):
     )
 
     DEBUG: bool = False
+    # #160: `main.py` already reads this via `getattr(Config, "LOG_JSON",
+    # False)` to pick JSON vs plain-text logging, but the field was never
+    # actually declared here - `extra="ignore"` meant setting LOG_JSON=true
+    # in .env had silently no effect at all, always falling through to the
+    # getattr default. The JSON formatter itself (logging_config.py) was
+    # already correct; only the toggle to reach it was dead.
+    LOG_JSON: bool = False
     TESTING_CONSOLIDATION_BYPASS_SILENCE: bool = False
     ALLOWED_ORIGINS_STR: str = Field(default="*", alias="ALLOWED_ORIGINS")
     LAN_ONLY: bool = True
@@ -180,6 +187,49 @@ class AppSettings(BaseSettings):
     MIN_PERCEPTION_CONFIDENCE: float = 0.55
     STATE_SENSORY_WEIGHT: float = 0.20
     STATE_SENSORY_PERSIST_INTERVAL: float = 2.0
+
+    # L5: pydantic-settings already validates *type* (a non-numeric
+    # TOKEN_RATE_LIMIT_WINDOW_SECONDS fails to load at all), but not *range* -
+    # a negative timeout or a zero halflife loads fine and only breaks
+    # something at runtime. This is deliberately a short, curated list of
+    # fields where an out-of-range value causes a specific concrete failure
+    # (division by zero in decay math, a busy-loop tick, a rate limiter that
+    # blocks everything or nothing), not an exhaustive sweep of every numeric
+    # setting - most of the ~40 others have no failure mode worth guarding.
+    _POSITIVE_FLOAT_FIELDS = (
+        "DOPAMINE_PHASIC_HALFLIFE_S",
+        "CORTISOL_PHASIC_HALFLIFE_S",
+        "TOKEN_RATE_LIMIT_WINDOW_SECONDS",
+        "LLM_STREAM_MAX_SECONDS",
+    )
+    _NON_NEGATIVE_FLOAT_FIELDS = ("ACTR_DECAY_RATE",)
+    _POSITIVE_INT_FIELDS = (
+        "SYSTEM_TICK_INTERVAL",
+        "TOKEN_RATE_LIMIT_MAX_REQUESTS",
+        "MAX_VOICE_QUEUE_SIZE",
+        "VOICE_SYNTH_CONCURRENCY",
+        "TRANSPORT_AUDIO_QUEUE_SIZE",
+        "STT_WHISPER_QUEUE_SIZE",
+        "STT_PERCEPTION_QUEUE_SIZE",
+    )
+
+    @model_validator(mode="after")
+    def validate_numeric_ranges(self):
+        for name in self._POSITIVE_FLOAT_FIELDS:
+            value = getattr(self, name)
+            if not (value > 0):
+                raise ValueError(f"{name} must be > 0 (got {value!r})")
+        for name in self._NON_NEGATIVE_FLOAT_FIELDS:
+            value = getattr(self, name)
+            if value < 0:
+                raise ValueError(f"{name} must be >= 0 (got {value!r})")
+        for name in self._POSITIVE_INT_FIELDS:
+            value = getattr(self, name)
+            if value < 1:
+                raise ValueError(f"{name} must be >= 1 (got {value!r})")
+        if not (0 < self.QDRANT_PORT <= 65535):
+            raise ValueError(f"QDRANT_PORT must be a valid port (got {self.QDRANT_PORT!r})")
+        return self
 
     @model_validator(mode="after")
     def set_defaults(self):

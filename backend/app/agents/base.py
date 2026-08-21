@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import signal
 import time
 from typing import Any
 
@@ -10,6 +11,31 @@ import nats
 import orjson
 
 logger = logging.getLogger(__name__)
+
+
+def install_shutdown_signal_handlers(shutdown_event: asyncio.Event) -> None:
+    """Make SIGTERM trigger the same graceful-shutdown path SIGINT already
+    reaches by accident (#153).
+
+    Worker agent processes run via plain `asyncio.run(main())`, not under a
+    framework like uvicorn (which installs its own signal handling for
+    main.py's FastAPI server for free). Python's default disposition for
+    SIGTERM is to kill the process outright - no exception is raised, so no
+    `except`/`finally` block runs, unlike SIGINT, which Python's default
+    handler turns into a catchable `KeyboardInterrupt`. Docker/Kubernetes
+    send SIGTERM to stop a container, not SIGINT, so every agent's `stop()`
+    (which unsubscribes from NATS, closes GraphDB - see L7's in-flight-query
+    drain - and cancels background tasks) was unreachable in that exact,
+    everyday-deployment scenario.
+    """
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, shutdown_event.set)
+        except NotImplementedError:
+            # add_signal_handler is POSIX-only (e.g. unavailable on Windows'
+            # default proactor loop); fall back to the plain signal module.
+            signal.signal(sig, lambda *_args: shutdown_event.set())
 
 # M6: base/cap for exponential backoff with jitter on NATS reconnect. A static
 # `reconnect_time_wait` means every agent process in the mesh (brain, system,
@@ -99,7 +125,7 @@ class BaseAgent:
                 try:
                     await self.subscribe("cache.sync", self._on_cache_sync_received)
                 except Exception as se:
-                    logger.debug(f"Cache sync auto-subscribe skipped: {se}")
+                    logger.debug("Cache sync auto-subscribe skipped: %s", se)
         except Exception as e:
             logger.error(f"Failed to connect agent '{self.name}': {e}")
             raise
@@ -158,9 +184,9 @@ class BaseAgent:
                             f"✅ Stream '{stream_name}' synchronized successfully."
                         )
                 except Exception as update_err:
-                    logger.debug(f"Stream update note: {update_err}")
+                    logger.debug("Stream update note: %s", update_err)
             except Exception as e:
-                logger.debug(f"Stream bootstrap note: {e}")
+                logger.debug("Stream bootstrap note: %s", e)
 
     async def publish(
         self, subject: str, data: Any, metadata: dict[str, Any] | None = None
@@ -455,7 +481,7 @@ class BaseAgent:
             "state.update",
             {"agent": self.name, "state": state, "timestamp": time.time()},
         )
-        logger.debug(f"Agent '{self.name}' state set to: {state}")
+        logger.debug("Agent '%s' state set to: %s", self.name, state)
 
     async def stop(self):
         """Shutdown the agent."""

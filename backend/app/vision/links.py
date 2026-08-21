@@ -65,8 +65,31 @@ class ScreenLink:
         _, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
         return buffer.tobytes()
 
+    def _ensure_sct(self):
+        """Retry display discovery if currently headless (#169).
+
+        Unlike `CameraLink._ensure_cap`, which already retried
+        `cv2.VideoCapture(0)` on every call, `ScreenLink` decided `headless`
+        once at construction and never looked again - a display attached
+        after startup (or a headless container later given one) left the
+        agent blind for the rest of the process's life.
+        """
+        if not self.headless or mss is None or np is None:
+            return
+        try:
+            self.sct = mss.mss()
+            try:
+                self.monitor = self.sct.monitors[1]
+            except IndexError:
+                self.monitor = self.sct.monitors[0]
+            self.headless = False
+            logger.info("[Vision] Screen capture recovered; a display is available.")
+        except Exception:
+            pass  # still headless; capture_frame() below returns None as before
+
     def capture_frame(self) -> bytes | None:
         """Captures and returns a compressed JPEG frame of the screen."""
+        self._ensure_sct()
         if self.headless:
             return None
 

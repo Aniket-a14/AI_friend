@@ -74,7 +74,7 @@ class MentalLexicon:
                 await self._seed_innate()
                 self._ready = True
             except Exception as e:  # never let lexicon setup break a memory op
-                logger.debug(f"MentalLexicon not ready ({e}); expansion disabled")
+                logger.debug("MentalLexicon not ready (%s); expansion disabled", e)
 
     async def _ensure_schema(self):
         """Portable safety-net DDL. Production uses db/schema.sql (Postgres) and
@@ -176,7 +176,7 @@ class MentalLexicon:
                         )
                         self._bump_cache(a, b, 1.0)
         except Exception as e:
-            logger.debug(f"MentalLexicon.learn_from_text skipped: {e}")
+            logger.debug("MentalLexicon.learn_from_text skipped: %s", e)
 
     # ---- expansion (recall hot path) --------------------------------------
 
@@ -212,7 +212,7 @@ class MentalLexicon:
             await self._ensure_ready()
             await self._load_cache()
         except Exception as e:
-            logger.debug(f"MentalLexicon.refresh skipped: {e}")
+            logger.debug("MentalLexicon.refresh skipped: %s", e)
 
     async def _load_cache(self):
         cache: dict[str, dict[str, float]] = {}

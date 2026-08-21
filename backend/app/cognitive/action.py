@@ -859,7 +859,7 @@ class ActionService:
         try:
             await self.self_knowledge.record_gap(gaps, user_message)
         except Exception as e:
-            logger.debug(f"[Action] Could not record self-knowledge gap: {e}")
+            logger.debug("[Action] Could not record self-knowledge gap: %s", e)
 
     def _unanswered_self_question_gaps(self, user_message: str, surfaced) -> list[str]:
         """Terms from a question about her own life that her biography cannot meet.
@@ -908,7 +908,7 @@ class ActionService:
         try:
             await self.self_knowledge.record_gap(gaps, user_message)
         except Exception as e:
-            logger.debug(f"[Action] Could not record unanswered self-question: {e}")
+            logger.debug("[Action] Could not record unanswered self-question: %s", e)
 
     async def _build_wondering_block(self) -> str:
         """Offer her one thing to ask about her own life, or nothing.
@@ -929,7 +929,7 @@ class ActionService:
         try:
             gap = await self.self_knowledge.claim_next_gap_to_ask()
         except Exception as e:
-            logger.debug(f"[Action] Could not claim next self-knowledge gap: {e}")
+            logger.debug("[Action] Could not claim next self-knowledge gap: %s", e)
             return ""
         if not gap or not gap.get("term"):
             return ""
