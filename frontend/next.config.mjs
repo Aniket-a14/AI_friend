@@ -28,10 +28,20 @@ const nextConfig = {
   reactCompiler: true,
   output: 'standalone',
   async headers() {
+    // #155: HSTS is safe to ship unconditionally from Next's own headers()
+    // (unlike the backend's, this isn't gated on an environment flag) because
+    // a browser only honors it after receiving it over an HTTPS response in
+    // the first place — serving it over plain HTTP in local dev is a no-op.
     return [
       {
         source: '/(.*)',
-        headers: [{ key: 'Content-Security-Policy', value: CSP }],
+        headers: [
+          { key: 'Content-Security-Policy', value: CSP },
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=31536000; includeSubDomains',
+          },
+        ],
       },
     ];
   },
