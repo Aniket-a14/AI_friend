@@ -11,10 +11,8 @@
   "dependencies": {
     "@livekit/components-react": "^2.9.19",
     "@prisma/client": "^7.7.0",
-    "dotenv": "^17.2.3",
     "framer-motion": "^12.38.0",
     "livekit-client": "^2.18.3",
-    "lucide-react": "^0.563.0",
     "next": "^16.2.4",
     "react": "19.2.4",
     "react-dom": "19.2.4"
@@ -24,12 +22,12 @@
     "tar": "^7.5.7"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@eslint/js": "^9",
     "@prisma/config": "^7.7.0",
     "@tailwindcss/postcss": "^4",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "@eslint/eslintrc": "^3",
-    "@eslint/js": "^9",
     "eslint-config-next": "16.2.4",
     "prisma": "^7.7.0",
     "tailwindcss": "^4"

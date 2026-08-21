@@ -6,7 +6,12 @@ implied goals, and known concepts.
 
 import re
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+# M7: hard cap on `known_concepts` so a multi-hour session can't grow the list
+# (and its serialized state payload) without bound. Sliding-window eviction in
+# `update_known_concepts` keeps the most recently mentioned concepts.
+MAX_KNOWN_CONCEPTS = 200
 
 
 class UserMentalModel(BaseModel):
@@ -17,13 +22,15 @@ class UserMentalModel(BaseModel):
 
     inferred_valence: float = 0.0  # -1.0 (negative) to 1.0 (positive)
     inferred_arousal: float = 0.5  # 0.0 (calm) to 1.0 (excited/angry)
-    implied_goals: list[str] = []  # List of user's inferred immediate goals
-    known_concepts: list[
-        str
-    ] = []  # Unique case-insensitive list of concepts user knows/mentioned
-    user_beliefs: dict[
-        str, str
-    ] = {}  # Concept name -> user's subjective belief/understanding
+    implied_goals: list[str] = Field(
+        default_factory=list
+    )  # List of user's inferred immediate goals
+    known_concepts: list[str] = Field(
+        default_factory=list
+    )  # Unique case-insensitive list of concepts user knows/mentioned
+    user_beliefs: dict[str, str] = Field(
+        default_factory=dict
+    )  # Concept name -> user's subjective belief/understanding
 
 
 def extract_belief_discrepancies(
@@ -107,5 +114,11 @@ def update_known_concepts(current_concepts: list[str], user_input: str) -> list[
         if word.lower() not in stop_words_lower and word.lower() not in seen_lower:
             updated.append(word)
             seen_lower.add(word.lower())
+
+    # Sliding window: drop the oldest concepts once the cap is exceeded, so a
+    # long session's vocabulary tracker still reflects what the user has
+    # recently talked about rather than growing without bound.
+    if len(updated) > MAX_KNOWN_CONCEPTS:
+        updated = updated[-MAX_KNOWN_CONCEPTS:]
 
     return updated

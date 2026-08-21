@@ -1,6 +1,7 @@
 import contextlib
 import importlib
 import sys
+from unittest.mock import MagicMock, patch
 
 import app.vision.links as links_module
 
@@ -45,3 +46,24 @@ def test_screen_link_goes_headless_without_numpy():
 def test_screen_link_still_works_normally_with_numpy_present():
     # Sanity check that the guard didn't regress the ordinary import path.
     assert links_module.np is not None
+
+
+def test_camera_link_releases_stale_handle_before_reopening():
+    """M3: `_ensure_cap` used to reassign `self.cap` to a fresh
+    `VideoCapture` whenever the existing one reported `isOpened() is False`,
+    without releasing it first - leaking the underlying /dev/video0 handle on
+    every such recovery instead of just the first open.
+    """
+    with patch.object(links_module, "cv2", MagicMock()) as mock_cv2:
+        stale_cap = MagicMock()
+        stale_cap.isOpened.return_value = False
+        fresh_cap = MagicMock()
+        mock_cv2.VideoCapture.return_value = fresh_cap
+
+        link = links_module.CameraLink()
+        link.cap = stale_cap
+
+        link._ensure_cap()
+
+        stale_cap.release.assert_called_once()
+        assert link.cap is fresh_cap

@@ -132,6 +132,19 @@ class SomaticAppraiser:
 
         self._terms = terms
         self._cache_loaded_at = self._now()
+
+        # M8: `_last_spike_at` otherwise grows forever - a term dropped from
+        # the graph (renamed, decayed away) never leaves the refractory map.
+        # Drop keys no longer in `_terms`, and any timestamp already outside
+        # the refractory window (it's dead weight - `_in_refractory` would
+        # reject it anyway).
+        now = self._now()
+        self._last_spike_at = {
+            term: ts
+            for term, ts in self._last_spike_at.items()
+            if term in terms and (now - ts) < SOMATIC_REFRACTORY_SECONDS
+        }
+
         logger.info("[Somatic] %d learned comfort term(s) loaded.", len(terms))
         return len(terms)
 

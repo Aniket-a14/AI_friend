@@ -80,5 +80,12 @@ class Condition(Node):
         self.func = func
 
     async def tick(self, blackboard: Any) -> NodeStatus:
-        result = self.func(blackboard)
+        # M10: mirrors Action.tick's coroutine detection above. Without it, a
+        # coroutine function passed as `func` is never awaited - the
+        # coroutine *object* itself is truthy, so the condition always
+        # reports SUCCESS regardless of what it was actually checking.
+        if asyncio.iscoroutinefunction(self.func):
+            result = await self.func(blackboard)
+        else:
+            result = self.func(blackboard)
         return NodeStatus.SUCCESS if result else NodeStatus.FAILURE

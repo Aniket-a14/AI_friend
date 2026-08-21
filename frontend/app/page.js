@@ -10,6 +10,7 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:800
 export default function Home() {
     const { isConnected, isConnecting, state, startRecording } = useWebRTCVoice();
     const [visionSource, setVisionSource] = useState('screen'); // screen | camera
+    const [visionError, setVisionError] = useState(null);
     const videoRef = useRef(null);
 
     // Automatically start recording once we arrive at this page and socket is connected.
@@ -49,17 +50,32 @@ export default function Home() {
                 method: 'POST'
             });
             if (res.ok) {
+                setVisionError(null);
                 setVisionSource(source);
                 if (source === 'camera') {
                     startWebcamPreview();
                 } else {
                     stopWebcamPreview();
                 }
+            } else {
+                // M14: the backend rejected the switch (e.g. 500) - UI state
+                // was never optimistically changed above, so there is
+                // nothing to roll back, but silently doing nothing here left
+                // the user with no signal the toggle didn't take effect.
+                console.error(`Vision toggle to '${source}' failed: HTTP ${res.status}`);
+                setVisionError(`Could not switch to ${source === 'camera' ? 'Observer 2' : 'Observer 1'}.`);
             }
         } catch (err) {
             console.error("Failed to toggle vision:", err);
+            setVisionError('Vision backend unreachable.');
         }
     };
+
+    useEffect(() => {
+        if (!visionError) return;
+        const timer = setTimeout(() => setVisionError(null), 4000);
+        return () => clearTimeout(timer);
+    }, [visionError]);
 
     return (
         <main className="flex min-h-screen flex-col items-center justify-center bg-black overflow-hidden relative font-sans">
@@ -93,6 +109,20 @@ export default function Home() {
                     Observer 2
                 </button>
             </div>
+
+            {/* Vision Toggle Error Banner */}
+            <AnimatePresence>
+                {visionError && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="absolute top-20 right-6 z-50 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20 backdrop-blur-xl text-red-300 text-[10px] tracking-wide"
+                    >
+                        {visionError}
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Webcam Preview (Holographic) */}
             <AnimatePresence>

@@ -24,10 +24,12 @@ async def test_fact_consolidation(reflection_service, mock_llm_service, mock_gra
     # For testing, we can directly call _consolidate
     await reflection_service._consolidate(episodes)
 
-    # Updated assertion to handle dynamic properties (extracted_at, confidence)
+    # Updated assertion to handle dynamic properties (extracted_at, confidence).
+    # M4: "LOVES" canonicalizes to "LIKES" so it doesn't fragment the graph
+    # from "LIKES"/"ENJOYS"/"PREFERS" edges extracted in other reflection passes.
     mock_graph_db.create_triplet.assert_called_with(
         "User",
-        "LOVES",
+        "LIKES",
         "Coding",
         properties=ANY,
         subject_label="Entity",
@@ -71,6 +73,35 @@ async def test_fact_rejection_low_confidence(
     )
 
     mock_graph_db.create_triplet.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_synonym_relations_are_canonicalized_before_storage(
+    reflection_service, mock_llm_service, mock_graph_db
+):
+    """M4: the extraction prompt leaves "relation" free-text, so the LLM's
+    exact word choice becomes a distinct Cypher relationship type. Without
+    canonicalization, "ENJOYS" and "LIKES" from separate reflection passes
+    create two parallel edges between the same two nodes instead of one edge
+    whose weight grows - fragmenting the graph on wording alone.
+    """
+    mock_llm_service.generate.return_value = (
+        '[{"subject": "User", "relation": "ENJOYS", "object": "Tea", '
+        '"confidence": 0.9}]'
+    )
+
+    await reflection_service._consolidate(
+        [{"content": "I really enjoy tea", "response": "Noted."}]
+    )
+
+    mock_graph_db.create_triplet.assert_called_once_with(
+        "User",
+        "LIKES",
+        "Tea",
+        properties=ANY,
+        subject_label="Entity",
+        target_label="Entity",
+    )
 
 
 def test_json_extraction_robustness(reflection_service):
