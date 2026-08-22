@@ -76,6 +76,50 @@ async def test_fact_rejection_low_confidence(
 
 
 @pytest.mark.asyncio
+async def test_repeated_fact_is_reinforced_not_skipped(
+    reflection_service, mock_llm_service, mock_graph_db
+):
+    """P2-13: `_consolidate` used to MATCH for an existing relationship and
+    `continue` on a hit, logging "Fact RESOLVED" and never writing anything -
+    so a restated fact never reinforced its edge weight, while
+    `decay_relationships` still pushed every edge toward the prune threshold
+    regardless of repetition. `create_triplet` must be called every time the
+    same fact is extracted, so `consolidate_relationship`'s own `ON MATCH SET
+    r.weight = coalesce(r.weight, 1) + 1` actually runs on a repeat instead
+    of being unreachable.
+    """
+    # _consolidate makes three sequential self.llm.generate calls per
+    # invocation (facts, identity suggestion, episodic summary) - all six
+    # must be supplied since the mock's side_effect iterator is shared
+    # across both calls below.
+    mock_llm_service.generate.side_effect = [
+        '[{"subject": "User", "relation": "LIKES", "object": "Tea", "confidence": 0.9}]',
+        "{}",
+        "We talked about tea.",
+        '[{"subject": "User", "relation": "LIKES", "object": "Tea", "confidence": 0.9}]',
+        "{}",
+        "We talked about tea again.",
+    ]
+
+    await reflection_service._consolidate(
+        [{"content": "I like tea", "response": "Noted."}]
+    )
+    await reflection_service._consolidate(
+        [{"content": "I still like tea", "response": "Noted again."}]
+    )
+
+    assert mock_graph_db.create_triplet.call_count == 2
+    mock_graph_db.create_triplet.assert_called_with(
+        "User",
+        "LIKES",
+        "Tea",
+        properties=ANY,
+        subject_label="Entity",
+        target_label="Entity",
+    )
+
+
+@pytest.mark.asyncio
 async def test_synonym_relations_are_canonicalized_before_storage(
     reflection_service, mock_llm_service, mock_graph_db
 ):

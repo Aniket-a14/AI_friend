@@ -1,8 +1,9 @@
+import asyncio
 from datetime import datetime, timedelta
 
 import pytest
 
-from app.state.agent_state import StateService
+from app.state.agent_state import AgentState, StateService
 
 
 @pytest.fixture
@@ -197,3 +198,95 @@ async def test_events_still_apply_without_emotional_bias(state_service):
     assert state_service.current_state.energy > 0.5
     # ...but the absent emotion estimate still must not move mood.
     assert state_service.current_state.mood == baseline_mood
+
+
+# --------------------------------------------------------------------------
+# P1-5: apply_external_state -- subconscious_agent observing the brain's
+# state.broadcast, instead of holding an independent, never-updated copy.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_apply_external_state_updates_fields_from_broadcast(state_service):
+    """The exact payload shape persist_state() publishes on state.broadcast
+    must actually change current_state - this is the behavior that was
+    entirely missing before (M1-A6/M1-A8): a broadcast arrived and nothing
+    read it into the receiving process's own state."""
+    broadcast = {
+        "agent_name": "my friend",
+        "mood": 0.42,
+        "energy": 0.77,
+        "dominance": 0.61,
+        "trust_benevolence": 0.3,
+        "trust_competence": 0.35,
+        "trust_integrity": 0.4,
+        "attachment": 0.55,
+        "fatigue": 0.2,
+        "last_user_interaction": 1234.5,
+        "interaction_count": 7,
+        "inferred_valence": 0.15,
+        "inferred_arousal": 0.6,
+        "implied_goals": ["finish the report"],
+        "known_concepts": ["deadlines"],
+        "baseline_valence": 0.1,
+        "baseline_arousal": 0.5,
+        "baseline_dominance": 0.5,
+    }
+
+    await state_service.apply_external_state(broadcast)
+
+    assert state_service.current_state.mood == 0.42
+    assert state_service.current_state.energy == 0.77
+    assert state_service.current_state.dominance == 0.61
+    assert state_service.current_state.trust_benevolence == 0.3
+    assert state_service.current_state.attachment == 0.55
+    assert state_service.current_state.fatigue == 0.2
+    assert state_service.current_state.interaction_count == 7
+    assert state_service.current_state.user_mental_model.inferred_valence == 0.15
+    assert state_service.current_state.user_mental_model.implied_goals == [
+        "finish the report"
+    ]
+    assert state_service.current_state.baseline_valence == 0.1
+
+
+@pytest.mark.asyncio
+async def test_apply_external_state_holds_the_state_lock():
+    """Same discipline as hydrate_state (test_hydration_holds_the_same_lock_
+    as_every_other_mutation in test_audit_hygiene.py): applying a broadcast
+    that arrives mid fire-and-forget System-2 appraisal must not interleave
+    with it and leave current_state half-overwritten, half-appraised."""
+    service = object.__new__(StateService)
+    service._state_lock = asyncio.Lock()
+    service.current_state = AgentState()
+
+    observed_locked_during_call = []
+
+    original_lock_acquire = service._state_lock.acquire
+
+    async def spying_acquire():
+        result = await original_lock_acquire()
+        observed_locked_during_call.append(service._state_lock.locked())
+        return result
+
+    service._state_lock.acquire = spying_acquire
+
+    await service.apply_external_state({"mood": 0.9})
+
+    assert observed_locked_during_call == [True]
+
+
+@pytest.mark.asyncio
+async def test_apply_external_state_preserves_fields_missing_from_broadcast(
+    state_service,
+):
+    """A partial broadcast must not reset unlisted fields to a hardcoded
+    default the way hydrate_state's Redis/SQLite branches do (there, a
+    missing field means 'never persisted, use a sane zero'; here, a missing
+    field means 'unchanged since the last broadcast', a different case)."""
+    state_service.current_state.dominance = 0.73
+    state_service.current_state.attachment = 0.44
+
+    await state_service.apply_external_state({"mood": 0.1})
+
+    assert state_service.current_state.dominance == 0.73
+    assert state_service.current_state.attachment == 0.44

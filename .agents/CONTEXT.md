@@ -6970,3 +6970,216 @@ every branch of this repo -- this is a project-wide habit change, not a
 one-branch fix, since the same untracked `audit/` directory persists in
 every future working tree until it is either finished with or the
 maintainer decides otherwise.
+## 2026-08-22 -- audit/ implementation, Stage 1 (P1-7, P2-13, P1-6, P1-8, P1-5) -- five zero-prerequisite roadmap items
+
+Second implementation batch from `audit/`'s roadmap (`audit/ROADMAP.md` §7,
+Stage 1): the five items with no dependencies on each other or on Stage 0,
+done in the sequence's stated order.
+
+**P1-7 -- VLM/LLM contention was measured before touching code, not assumed.**
+`HARDWARE.md` §5 reported two resident 3B models costing each other roughly
+40% decode rate. Reproduced this session against the actually-running
+`ollama serve` (llama3.2:3b-instruct + qwen2.5:3b, 100 tokens each): solo
+57-59 tok/s, concurrent 31-32 tok/s, matching the prior measurement closely
+(-44%/-47% here vs -44%/-41% in HARDWARE.md). Also measured the roadmap's
+named alternative, `OLLAMA_MAX_LOADED_MODELS=1`, by starting a second
+`ollama serve` instance on an alternate loopback port sharing the same model
+store (no re-download needed): it removed the decode penalty entirely
+(-0.4%/+0.0%) but serialized the two calls with a ~2.2s model-swap between
+them, consistent with the 1.94s cold-load figure already in `HARDWARE.md`.
+For this system's actual access pattern -- VLM appraisal firing roughly
+once a second, potentially throughout an active conversation -- that
+trades a steady 40% throughput cost for repeated ~2s swap stalls each time
+appraisal and a turn overlap, which is very likely worse, not better.  Went
+with the code-level fix instead: `vision/agent.py` now tracks whether a
+cognitive turn is in flight (`chat.input` seen, no `chat.output`
+`done=True` yet) and suspends `_run_appraisal` for that duration, with a
+watchdog bounded by `LLM_STREAM_MAX_SECONDS` so a dropped `done` can't
+blind vision permanently. Also added a circuit breaker to the VLM caller
+(`appraisal.py`, finding M3-R3 -- no backoff existed, so a down VLM was
+retried every tick with a full base64 frame), modeled directly on the
+existing Rust `CircuitBreaker` in `voice-agent/src/main.rs` (consecutive-
+failure threshold, then a cooldown, then a half-open trial).
+
+**P2-13 -- the cheapest correctness fix in the audit, and it was exactly
+that cheap.** `cognitive/learning.py`'s fact consolidation ran a `MATCH`
+query to check whether a relationship already existed, and on a hit logged
+"Fact RESOLVED" and `continue`d -- past a comment reading `# Optionally
+nudge the weight instead of creating new`. `GraphDB.consolidate_relationship`
+(called by `create_triplet`, which the skip was bypassing) already has
+`ON MATCH SET r.weight = coalesce(r.weight, 1) + 1` -- the reinforcement
+existed and was unreachable. Deleted the pre-check; `create_triplet` now
+runs unconditionally. One graph round-trip per extracted fact was removed
+as a side effect. The bug was invisible to the existing test suite because
+`mock_graph_db.execute_query` defaults to returning `[]` (falsy) in
+`conftest.py`, so the buggy branch was never exercised by any prior test --
+worth knowing before trusting `execute_query.return_value` defaults
+elsewhere in this file's test suite for similar reasons.
+
+**P1-6 -- the Postgres-to-SQLite downgrade is loud now, and fails closed
+in production by default.** `runtime_bootstrap.py`'s `_ensure_database_schema`
+caught a Postgres connection failure, logged at WARNING, and silently
+continued on SQLite -- losing pgvector with no other signal, into a mode a
+prior session's triage (Q-M2-2, this session) established is emergency-only,
+not supported. New `_enter_sqlite_fallback` helper: logs at ERROR, writes a
+JSON sentinel file (`SQLITE_FALLBACK_HEALTH_FILE`, matching the existing
+`VISION_HEALTH_FILE` cross-process-signal pattern) that `main.py`'s
+`/health` now reads and surfaces as `degraded: true`, and raises
+(caught by the existing bootstrap retry loop, which then fails loudly
+after exhausting retries rather than continuing silently) under
+`ENVIRONMENT=production` unless `ALLOW_SQLITE_FALLBACK=true` is set
+explicitly. Deliberately does *not* touch the separate "DATABASE_URL was
+never configured" branch a few lines above -- that is a chosen SQLite-only
+deployment, not a downgrade, and must not fail closed. `/health`'s
+`require_lan_client` dependency (LAN_ONLY defaults true) blocks
+`TestClient`'s synthetic host by default -- the new tests use
+`app.dependency_overrides`, the standard FastAPI pattern, not a `.env`
+change.
+
+**P1-8 -- the category fix, and it found more than the audit did manually.**
+Eight NATS subjects were found wired at one end only across M1/M2/M3,
+because subjects are plain strings with nothing type-checking a publisher
+against a subscriber. New `backend/scripts/check_subject_wiring.py`:
+Python-side via `ast` (walks every `.py` under `app/` plus `main.py`,
+resolving `Topics.NAME` attributes, string literals, and the
+`"subject": "literal"` dict-key shape `cognitive/pipeline.py`'s mesh-signal
+producers use for otherwise-dynamic subjects), Rust-side via regex over the
+`topics::CONST` constants in `crates/contracts/src/lib.rs` used at
+`.publish`/`.publish_with_headers`/`.subscribe` call sites, cross-referenced
+against `nats_streams.py`'s `CORE_STREAMS` wildcard patterns (own NATS
+`>`/`*` matcher, since nothing existing needed one). Wired into
+`mesh-integrity.yml` as a new job, path-filtered on `backend/app/**`,
+`backend/crates/**`, and the checker itself. Building it surfaced **six**
+previously-undiscovered one-ended subjects beyond the audit's original
+eight: `audio.pre_generate` (published by the mesh-signal path, zero
+subscribers, not even in the `Topics` enum), `telemetry.reflection`
+(published by `cognitive/core.py`, matches no declared stream pattern,
+zero subscribers), `state.subconscious` (the internal-monologue thought is
+published, zero subscribers), `voice.segmentation_feedback` (`brain_agent`
+subscribes, zero publishers anywhere), `control.interrupt`
+(`action.py`'s self-correction path publishes it alongside `audio.stop`,
+which *is* wired -- `control.interrupt` itself has none), and `vision.frames`
+(the only publish call is commented out -- `# TEMPORARILY DISABLED FOR
+DIAGNOSTICS` -- while `brain_agent` still subscribes). All six are
+allowlisted with that exact context rather than silently fixed -- each is
+its own scoped question (is `audio.pre_generate` dead code or a missing
+consumer? was `vision.frames` disabled for a reason still live today?) and
+fixing them as a drive-by inside a "add a CI check" item would hide
+exactly the kind of undecided change this repo's own conventions ask to be
+made explicitly. Two earlier scanner bugs were caught and fixed before
+landing: `CORE_STREAMS` is an `ast.AnnAssign` (annotated), not a plain
+`Assign`, which made every subject falsely read as matching no stream; and
+the initial scan missed `main.py` (outside `app/`), which is where
+`vision.control`'s only publisher lives.
+
+**P1-5 -- subconscious_agent now actually observes the brain's state,
+closing the gap that made dreaming unreachable.** `hydrate_state` was
+verified to already hold `_state_lock` (`agent_state.py:475`) before
+implementing anything further -- the roadmap's stated risk here (that it
+didn't) was already retired by prior work and is corrected in this entry
+rather than carried forward. `agent_state.py` lines ~478-829 were read in
+full per the roadmap's stated precondition (previously PARTIAL coverage in
+`audit/`). New `StateService.apply_external_state(data)`: applies the exact
+field set `persist_state` already publishes on `state.broadcast` (every
+real appraisal/interaction update, plus a rate-limited sensory path) onto
+`current_state`, under `_state_lock` -- the fourth source of this same
+field shape (Redis/SQLite/Neo4j were the other three, in `_hydrate_locked`).
+Deliberately defaults each field to its *current* value when absent from a
+partial broadcast, not to a hardcoded zero the way hydration's cold-start
+branches do -- a missing field there means "never persisted"; here it means
+"unchanged since the last broadcast," a different case, and a test pins
+this distinction. `subconscious_agent._on_state_broadcast` now calls this
+in addition to its existing Neo4j sync (kept -- durable graph persistence
+serves a different purpose than live in-process state); `start()` calls
+`hydrate_state()` once as a startup catch-up so the process isn't running
+on pure persona defaults until the first broadcast happens to arrive.
+
+**A tooling trap worth recording for next time.** During mutation testing
+(deliberately breaking `subconscious_agent.py`, confirming a test fails,
+reverting), a test that should have passed cleanly after reverting kept
+failing -- traced to stale `__pycache__/*.pyc` bytecode surviving a rapid
+mutate-revert-reedit cycle on the same file within the same
+filesystem-timestamp granularity window, so Python's import cache
+invalidation (mtime-keyed) didn't detect the change. `find . -name
+__pycache__ -exec rm -rf {} +` (or `python -B`) resolved it. Not a real
+bug in the P1-5 change -- confirmed by reproducing the same false failure
+against a hand-written fake object with no mocking library involved at
+all, before finding the cache explanation.
+
+**Verified:** full backend suite, 995/995 passed (up from 970 before this
+batch's 25 new tests, net of a few consolidated into existing parametrize
+lists), `ruff check .` clean. Every new test mutation-tested individually:
+broke the specific line(s) it exists to catch, confirmed the test failed,
+reverted, confirmed clean again -- done for the VLM turn-suspension gate,
+the VLM circuit breaker, the reflection reinforcement fix, the SQLite
+fail-closed check, the `/health` sentinel read, the subject-wiring
+checker's own core logic (via its synthetic fixture repo), the
+`_on_state_broadcast` wiring, `apply_external_state`'s lock discipline, and
+the startup `hydrate_state` call.
+
+**NOT done:**
+- The six newly-discovered one-ended subjects from P1-8 -- allowlisted
+  with reasons, not fixed; each needs its own investigation.
+- Stages 2-6 of the roadmap sequence (`audit/ROADMAP.md` §7) -- P1-1 (ack
+  model) and P1-2 (retention tiers) still want Docker running to verify
+  properly; Stage 3's six measurements are still blocked on Docker and
+  `backend/models/`.
+
+## 2026-08-22 -- audit/ implementation, Stage 1 review pass -- three defects found in the batch above, all mutation-tested
+
+Self-review of the open PR before merge, on the principle that a batch
+this size shouldn't go in on the strength of its own green suite. Three
+real defects, none of which any test in the batch would have caught.
+
+**VisionAgent's turn-tracking subscriptions used the wrong delivery
+policy.** `BaseAgent.subscribe` defaults `deliver_policy="all"`, and the
+two new subscriptions (`chat.input`, `chat.output`) were the only ones in
+the entire mesh that took that default -- every other call site in
+`app/` names a policy explicitly, overwhelmingly `"new"`, with `"last"` for
+the two snapshot cases. The consequence is specific: durables are named
+`{agent_name}_{subject}`, so vision's are fresh, and under `"all"` a fresh
+durable replays the stream's whole retained history at startup.
+`chat.output` is published once per response *chunk*, so every vision
+restart would re-walk the entire conversation, and would finish in
+whatever state the last replayed message left it -- typically suspended by
+a `chat.input` from hours ago, blind until the `LLM_STREAM_MAX_SECONDS`
+watchdog fired. Both now pass `deliver_policy="new"`. These are liveness
+signals, not work items: a replayed turn boundary carries no information
+about whether the LLM is busy *now*.
+
+**The SQLite-fallback sentinel was write-only.** `_enter_sqlite_fallback`
+wrote it; nothing ever removed it. One transient Postgres outage would
+therefore leave `/health` reporting `degraded: true` for the lifetime of
+the host, long after Postgres came back. That is worse than a subtle bug --
+a degradation signal that never turns off is one an operator learns to
+ignore, which is precisely the silence P1-6 exists to end. Added
+`_clear_sqlite_fallback`, called on the successful-connect path.
+
+**The sentinel's cross-process claim was overstated.** The docstring said
+`/health` (a separate process) reads it, which is true on a single host and
+false under `docker-compose.prod.yml`, where bootstrap runs inside the
+`brain_agent` container and `main.py` is served elsewhere -- `/tmp` is not
+shared between them. Documented as the limitation it is on
+`SQLITE_FALLBACK_HEALTH_FILE`, with the fix (point it at a shared mount)
+stated. Not treated as a blocker: the ERROR log and the production
+fail-closed are the primary signals and neither depends on topology.
+
+**Considered and deliberately not changed:** `apply_external_state` does
+not clamp incoming values to PAD bounds. Checked `_hydrate_locked`, which
+doesn't clamp either -- both are loading a snapshot produced by a
+`StateService` that already enforced bounds on write, so this matches the
+established convention for that shape rather than diverging from it.
+
+**Verified:** full backend suite 998/998 (three new tests: the
+`deliver_policy` assertion, sentinel clearing, and clearing an absent
+sentinel), `ruff check .` clean. Each of the three fixes mutation-tested:
+dropped `deliver_policy="new"` from the `chat.input` subscription, replaced
+the `unlink` with a no-op -- each broke exactly the test written for it and
+nothing else.
+
+**NOT done:**
+- Nothing new attempted beyond the three fixes; the batch's scope is
+  unchanged.
+- The cross-container sentinel path is documented, not solved. Solving it
+  means either a shared volume in `docker-compose.prod.yml` or moving the
+  signal onto the mesh, and neither is in this batch's scope.

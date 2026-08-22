@@ -28,6 +28,8 @@ class VisualAppraisalService:
         model: str = "moondream",
         interval: float = 5.0,
         prompt: str = "Describe what you see in this image briefly. Focus on what the user is doing.",
+        breaker_failure_threshold: int = 3,
+        breaker_cooldown_s: float = 30.0,
     ):
         self.llm = ollama_client
         self.model = model
@@ -37,6 +39,35 @@ class VisualAppraisalService:
         self._last_description: str = ""
         self._last_appraisal_time: float = 0.0
         self._last_visual_vector = None
+
+        # M3-R3: without this, a down VLM (or Ollama, or a model that was
+        # never pulled) got retried every capture tick with a full base64
+        # frame -- no backoff. Modeled on the Rust CircuitBreaker
+        # (crates/voice-agent/src/main.rs): consecutive_failures crosses
+        # breaker_failure_threshold -> opened_at is set; allow_request()
+        # stays False until breaker_cooldown_s has elapsed, then the next
+        # call is a half-open trial whose own result decides close-vs-reopen.
+        # Single-consumer (only `appraise`, called sequentially from
+        # VisionAgent's one capture loop), so no lock is needed -- same
+        # reasoning the Rust breaker documents for its atomics.
+        self._breaker_failure_threshold = max(1, breaker_failure_threshold)
+        self._breaker_cooldown_s = breaker_cooldown_s
+        self._consecutive_failures = 0
+        self._breaker_opened_at: float = 0.0
+
+    def _breaker_allow_request(self) -> bool:
+        if self._breaker_opened_at == 0.0:
+            return True
+        return (time.time() - self._breaker_opened_at) >= self._breaker_cooldown_s
+
+    def _breaker_record_success(self) -> None:
+        self._consecutive_failures = 0
+        self._breaker_opened_at = 0.0
+
+    def _breaker_record_failure(self) -> None:
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self._breaker_failure_threshold:
+            self._breaker_opened_at = time.time()
 
     def should_appraise(self) -> bool:
         """Check if enough time has elapsed since the last VLM call."""
@@ -117,6 +148,14 @@ class VisualAppraisalService:
                 self._last_appraisal_time = time.time()
                 return self._last_description
 
+        if not self._breaker_allow_request():
+            logger.debug(
+                "[VisualAppraisal] Circuit breaker open (%d consecutive failures); "
+                "skipping VLM call, using cache.",
+                self._consecutive_failures,
+            )
+            return self._last_description
+
         try:
             description = await self.llm.describe_image(
                 image_b64=frame_b64,
@@ -125,6 +164,7 @@ class VisualAppraisalService:
             )
 
             if description:
+                self._breaker_record_success()
                 self._last_description = description
                 self._last_visual_vector = current_vector
                 self._last_appraisal_time = time.time()
@@ -139,6 +179,7 @@ class VisualAppraisalService:
                 # vector/timestamp so a persistently quiet scene doesn't keep
                 # re-triggering VLM calls every tick the way a genuine
                 # pipeline failure should (below).
+                self._breaker_record_success()
                 self._last_visual_vector = current_vector
                 self._last_appraisal_time = time.time()
                 logger.debug(
@@ -148,12 +189,14 @@ class VisualAppraisalService:
                 # description is None: the call itself failed. Deliberately
                 # does NOT update the habituation vector/timestamp, so the
                 # next tick retries the VLM rather than treating this frame
-                # as an observed (quiet) baseline.
+                # as an observed (quiet) baseline -- until the breaker opens.
+                self._breaker_record_failure()
                 logger.warning(
                     "[VisualAppraisal] VLM pipeline failure, using cache."
                 )
 
         except Exception as e:
+            self._breaker_record_failure()
             logger.error(
                 "[VisualAppraisal] VLM appraisal failed: %s. Using cached description.",
                 e,

@@ -118,3 +118,69 @@ class TestBrainAgentSubconsciousRouting:
         # 3. Ensure stream_to_speech was called with is_proactive=True
         agent._stream_to_speech.assert_awaited_once()
         assert agent._stream_to_speech.await_args.kwargs["is_proactive"] is True
+
+
+class TestSubconsciousAgentStateSharing:
+    """P1-5: subconscious_agent's AgentState was never hydrated and never
+    updated - an independent copy diverging from the brain's real state
+    from the moment each process started. Every silence gate and the dream
+    path read that same never-synced state."""
+
+    @pytest.mark.asyncio
+    async def test_state_broadcast_is_applied_to_this_process_own_state(self):
+        from app.agents.subconscious_agent import SubconsciousAgent
+
+        mock_state_service = MagicMock()
+        mock_state_service.apply_external_state = AsyncMock()
+        mock_graph_db = MagicMock()
+        mock_graph_db.execute_query = AsyncMock(return_value=[{"name": "my friend"}])
+        mock_graph_db.invalidate_cache = AsyncMock()
+
+        agent = SubconsciousAgent(state_service=mock_state_service, graph_db=mock_graph_db)
+
+        broadcast = {"agent_name": "my friend", "mood": 0.42, "energy": 0.8}
+        await agent._on_state_broadcast(broadcast)
+
+        mock_state_service.apply_external_state.assert_awaited_once_with(broadcast)
+
+    @pytest.mark.asyncio
+    async def test_state_broadcast_with_invalid_agent_name_does_not_touch_state(self):
+        """The existing agent_name validation must still short-circuit
+        before either sync path runs - applying a malformed broadcast is
+        worse than dropping it."""
+        from app.agents.subconscious_agent import SubconsciousAgent
+
+        mock_state_service = MagicMock()
+        mock_state_service.apply_external_state = AsyncMock()
+
+        agent = SubconsciousAgent(state_service=mock_state_service, graph_db=MagicMock())
+
+        await agent._on_state_broadcast({"agent_name": None, "mood": 0.9})
+
+        mock_state_service.apply_external_state.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_start_hydrates_state_before_serving(self, monkeypatch):
+        """A one-time catch-up on startup, so this process isn't running on
+        persona defaults until the first broadcast happens to arrive -
+        mirrors what CognitiveService.initialize() does on the brain side."""
+        from app.agents.subconscious_agent import SubconsciousAgent
+
+        mock_state_service = MagicMock()
+        mock_state_service.hydrate_state = AsyncMock()
+        mock_graph_db = MagicMock()
+        mock_graph_db.initialize = AsyncMock()
+
+        agent = SubconsciousAgent(state_service=mock_state_service, graph_db=mock_graph_db)
+        agent.connect = AsyncMock()
+        agent.subscribe = AsyncMock()
+        agent.memory_store = MagicMock()  # pre-set: skip the init-on-start block
+        agent.reflection_service = MagicMock()  # pre-set: skip the init-on-start block
+        agent._continuous_monologue_loop = AsyncMock()
+
+        await agent.start()
+
+        mock_state_service.hydrate_state.assert_awaited_once()
+        # Hydration must happen before the mesh is serving traffic, not
+        # racing the first tick/broadcast to decide which wins.
+        assert agent.connect.await_count >= 1
