@@ -227,24 +227,15 @@ class ReflectionService:
                         )
                         continue
 
-                    # Search if this relationship already exists with high weight
-                    query = f"""
-                    MATCH (s)-[r:{rel_type}]->(t)
-                    WHERE s.name = $s_name AND t.name = $t_name
-                    RETURN r
-                    """
-                    existing = await self.graph.execute_query(
-                        query, {"s_name": subject, "t_name": object_val}
-                    )
-
-                    if existing:
-                        logger.debug(
-                            f"Fact RESOLVED: Relationship already exists between {subject} and {object_val}."
-                        )
-                        # Optionally nudge the weight instead of creating new
-                        continue
-
-                    # Actual Storage
+                    # P2-13: this used to MATCH for an existing relationship
+                    # first and `continue` on a hit, logging "Fact RESOLVED"
+                    # and never writing anything -- so a restated fact never
+                    # reinforced, while decay_relationships still pushed
+                    # every edge toward the prune threshold regardless of
+                    # repetition. create_triplet -> consolidate_relationship
+                    # already does the right thing on a repeat (`ON MATCH SET
+                    # r.weight = coalesce(r.weight, 1) + 1`); the guard above
+                    # was preventing that path from ever being reached.
                     await self.graph.create_triplet(
                         subject,
                         rel_type,

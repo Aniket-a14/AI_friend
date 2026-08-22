@@ -649,6 +649,90 @@ class StateService:
             except Exception as e:
                 logger.warning(f"Failed fallback hydration from Neo4j: {e}")
 
+    async def apply_external_state(self, data: dict[str, Any]) -> None:
+        """P1-5: apply a `state.broadcast` snapshot from another process's
+        `StateService` onto this one's `current_state`.
+
+        `subconscious_agent` and `brain_agent` run as separate OS processes
+        (`ARCHITECTURE.md`), so they can never share one `AgentState` object
+        -- the only channel between them is the mesh. `persist_state` already
+        broadcasts the full snapshot on `state.broadcast` after every real
+        appraisal/interaction update (rate-limited to
+        `STATE_SENSORY_PERSIST_INTERVAL` on the sensory path, uncapped on
+        appraisal/event/tick/ToM updates), so it is close to real-time,
+        unlike polling `hydrate_state` on a timer -- and it needed no new
+        publisher, since the brain already broadcasts this to no listener
+        that applied it. `_on_state_broadcast` (subconscious_agent.py)
+        called this method's Neo4j-only predecessor and now also calls this.
+
+        Takes `_state_lock` like every other mutation path, same reasoning
+        as `hydrate_state`: applied under the lock, a receiver processing a
+        broadcast mid fire-and-forget System-2 appraisal cannot leave
+        `current_state` half-overwritten and half-appraised.
+
+        Same field set as `_hydrate_locked`'s Redis/SQLite/Neo4j branches,
+        applied from the broadcast dict instead -- this is the fourth
+        source of the same shape, not a new one.
+        """
+        async with self._state_lock:
+            self.current_state.mood = float(data.get("mood", self.current_state.mood))
+            self.current_state.energy = float(
+                data.get("energy", self.current_state.energy)
+            )
+            self.current_state.dominance = float(
+                data.get("dominance", self.current_state.dominance)
+            )
+            self.current_state.trust_benevolence = float(
+                data.get("trust_benevolence", self.current_state.trust_benevolence)
+            )
+            self.current_state.trust_competence = float(
+                data.get("trust_competence", self.current_state.trust_competence)
+            )
+            self.current_state.trust_integrity = float(
+                data.get("trust_integrity", self.current_state.trust_integrity)
+            )
+            self.current_state.attachment = float(
+                data.get("attachment", self.current_state.attachment)
+            )
+            self.current_state.fatigue = float(
+                data.get("fatigue", self.current_state.fatigue)
+            )
+            self.current_state.last_user_interaction = float(
+                data.get(
+                    "last_user_interaction", self.current_state.last_user_interaction
+                )
+            )
+            self.current_state.interaction_count = int(
+                data.get("interaction_count", self.current_state.interaction_count)
+            )
+            self.current_state.user_mental_model.inferred_valence = float(
+                data.get(
+                    "inferred_valence",
+                    self.current_state.user_mental_model.inferred_valence,
+                )
+            )
+            self.current_state.user_mental_model.inferred_arousal = float(
+                data.get(
+                    "inferred_arousal",
+                    self.current_state.user_mental_model.inferred_arousal,
+                )
+            )
+            implied_goals = data.get("implied_goals")
+            if isinstance(implied_goals, list):
+                self.current_state.user_mental_model.implied_goals = implied_goals
+            known_concepts = data.get("known_concepts")
+            if isinstance(known_concepts, list):
+                self.current_state.user_mental_model.known_concepts = known_concepts
+            self.current_state.baseline_valence = float(
+                data.get("baseline_valence", self.current_state.baseline_valence)
+            )
+            self.current_state.baseline_arousal = float(
+                data.get("baseline_arousal", self.current_state.baseline_arousal)
+            )
+            self.current_state.baseline_dominance = float(
+                data.get("baseline_dominance", self.current_state.baseline_dominance)
+            )
+
     async def persist_state(self, agent_name: str = "my friend"):
         """Save state to Redis and the local SQLite cache, then broadcast.
 

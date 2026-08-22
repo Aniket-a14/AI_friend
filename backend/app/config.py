@@ -150,6 +150,17 @@ class AppSettings(BaseSettings):
     RUNTIME_BOOTSTRAP_RETRIES: int = 12
     OLLAMA_REQUIRED_MODELS_STR: str = Field(default="", alias="OLLAMA_REQUIRED_MODELS")
 
+    # P1-6: Q-M2-2 answered SQLite as emergency-only, not a supported runtime
+    # mode. A Postgres connection failure at bootstrap defaults to refusing
+    # to start under ENVIRONMENT=production rather than silently downgrading
+    # (losing pgvector) into a mode nobody chose to run. Set true only for a
+    # deliberate degraded deployment, not as a standing default.
+    ALLOW_SQLITE_FALLBACK: bool = False
+    # Written by runtime_bootstrap.py (a different process than the backend
+    # API) when the SQLite fallback is entered, so /health can surface it.
+    # Same pattern as VISION_HEALTH_FILE below.
+    SQLITE_FALLBACK_HEALTH_FILE: str = "/tmp/sqlite_fallback_active"
+
     SOVITS_URL: str = "http://127.0.0.1:9871"
     STT_LANGUAGE: str = "en"
     TTS_LANGUAGE: str = "en"
@@ -171,6 +182,23 @@ class AppSettings(BaseSettings):
     # Touched on every successful frame capture so a container healthcheck can
     # probe the real path rather than mere process liveness (see finding E1).
     VISION_HEALTH_FILE: str = "/tmp/vision_agent_healthy"
+
+    # P1-7: measured (this repo's audit/) that two resident 3B models roughly
+    # halve each other's decode rate on one GPU/one Ollama endpoint -- the
+    # VLM and the conversational LLM otherwise contend on every turn. Since
+    # OLLAMA_MAX_LOADED_MODELS=1 was measured to trade that for a ~2s
+    # model-swap on every contention event (worse for VLM_APPRAISAL_INTERVAL-
+    # frequency calls than the throughput hit it removes), the fix is
+    # scheduling, not eviction: suspend VLM appraisal for the duration of a
+    # cognitive turn instead.
+    VISION_SUSPEND_DURING_TURN: bool = True
+    # M3-R3: the VLM caller had no circuit breaker, so a failing Ollama (or
+    # missing VLM model) was retried every capture tick with a full base64
+    # frame. Modeled on the Rust CircuitBreaker in
+    # crates/voice-agent/src/main.rs -- consecutive-failure threshold, then a
+    # cooldown before the next real attempt.
+    VLM_BREAKER_FAILURE_THRESHOLD: int = 3
+    VLM_BREAKER_COOLDOWN_S: float = 30.0
 
     # Half-life of a phasic hormone burst, in seconds. Real phasic bursts last
     # only hundreds of milliseconds; these are the *felt* afterglow at

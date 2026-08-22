@@ -61,7 +61,18 @@ class VisionAgent(BaseAgent):
                 model=Config.VLM_MODEL,
                 interval=Config.VLM_APPRAISAL_INTERVAL,
                 prompt=Config.VLM_PROMPT,
+                breaker_failure_threshold=Config.VLM_BREAKER_FAILURE_THRESHOLD,
+                breaker_cooldown_s=Config.VLM_BREAKER_COOLDOWN_S,
             )
+
+        # P1-7: true while a cognitive turn is in flight (chat.input seen,
+        # no chat.output done=True yet), so _capture_loop can suspend VLM
+        # appraisal for its duration rather than contend with the
+        # conversational LLM on the same Ollama endpoint. Bounded by
+        # LLM_STREAM_MAX_SECONDS so a dropped/never-arriving `done` cannot
+        # blind vision permanently.
+        self._turn_in_flight = False
+        self._turn_started_at = 0.0
 
     def preflight(self) -> bool:
         """Probe whether this process can actually see anything.
@@ -119,6 +130,11 @@ class VisionAgent(BaseAgent):
         # Subscribe to control signals from main.py
         await self.subscribe(Topics.VISION_CONTROL, self._handle_control)
 
+        # P1-7: track turn boundaries so appraisal can suspend during one.
+        if Config.VISION_SUSPEND_DURING_TURN:
+            await self.subscribe(Topics.CHAT_INPUT, self._on_chat_input)
+            await self.subscribe(Topics.CHAT_OUTPUT, self._on_chat_output)
+
         self.running = True
         vlm_status = f"VLM={Config.VLM_MODEL}" if self.vlm_enabled else "VLM=disabled"
         self.can_capture = self.preflight()
@@ -135,6 +151,32 @@ class VisionAgent(BaseAgent):
         if new_source in ["screen", "camera"]:
             self.source = new_source
             logger.info(f"Vision source switched to: {new_source}")
+
+    async def _on_chat_input(self, data: dict):
+        """A turn is starting: suspend VLM appraisal until it ends."""
+        self._turn_in_flight = True
+        self._turn_started_at = time.time()
+
+    async def _on_chat_output(self, data: dict):
+        """`done=True` closes the turn; any other chunk leaves it open."""
+        if data.get("done"):
+            self._turn_in_flight = False
+
+    def _is_turn_in_flight(self) -> bool:
+        """Watchdog: a `done` that never arrives (crash, dropped message)
+        must not blind vision forever. Bounded by the same
+        LLM_STREAM_MAX_SECONDS a turn is itself allowed to run for."""
+        if not self._turn_in_flight:
+            return False
+        if time.time() - self._turn_started_at > Config.LLM_STREAM_MAX_SECONDS:
+            logger.warning(
+                "[Vision] Turn-in-flight watchdog fired after %.0fs with no "
+                "chat.output done=True; resuming appraisal.",
+                Config.LLM_STREAM_MAX_SECONDS,
+            )
+            self._turn_in_flight = False
+            return False
+        return True
 
     async def _capture_loop(self):
         while self.running:
@@ -215,6 +257,8 @@ class VisionAgent(BaseAgent):
 
     async def _run_appraisal(self, frame_b64: str):
         """Run VLM appraisal if the interval has elapsed and publish the description."""
+        if Config.VISION_SUSPEND_DURING_TURN and self._is_turn_in_flight():
+            return
         if not self.appraisal.should_appraise():
             return
 

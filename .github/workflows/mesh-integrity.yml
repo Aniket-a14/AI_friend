@@ -14,6 +14,9 @@ on:
       - 'frontend/prisma/**'
       - '.env.example'
       - 'backend/app/cognitive/identity.py'
+      - 'backend/app/**'
+      - 'backend/crates/**'
+      - 'backend/scripts/check_subject_wiring.py'
   pull_request:
     branches: [main, master]
     paths:
@@ -22,6 +25,9 @@ on:
       - 'frontend/prisma/**'
       - '.env.example'
       - 'backend/app/cognitive/identity.py'
+      - 'backend/app/**'
+      - 'backend/crates/**'
+      - 'backend/scripts/check_subject_wiring.py'
 
 jobs:
   compose-validation:
@@ -116,3 +122,17 @@ jobs:
           else
             echo "✅ All compose variables are documented in .env.example"
           fi
+
+  subject-wiring:
+    name: NATS Subject Wiring (P1-8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check every subject is wired at both ends or explicitly allowlisted
+        working-directory: backend
+        run: python scripts/check_subject_wiring.py

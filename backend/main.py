@@ -288,9 +288,28 @@ async def toggle_vision(source: str):
     return await backend.toggle_vision_source(source)
 
 
+def _read_sqlite_fallback_sentinel() -> dict | None:
+    """P1-6: runtime_bootstrap.py runs in a different process (brain_agent
+    or the standalone bootstrap script), so a sentinel file is how it tells
+    this process's /health that the emergency-only SQLite mode is active."""
+    path = getattr(Config, "SQLITE_FALLBACK_HEALTH_FILE", "")
+    if not path:
+        return None
+    try:
+        with open(path) as fh:
+            return json.loads(fh.read())
+    except (OSError, ValueError):
+        return None
+
+
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "nats": backend.is_ready}
+    payload = {"status": "healthy", "nats": backend.is_ready}
+    sqlite_fallback = _read_sqlite_fallback_sentinel()
+    if sqlite_fallback:
+        payload["degraded"] = True
+        payload["degraded_reason"] = sqlite_fallback.get("reason")
+    return payload
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import time
 from pathlib import Path
 
 import asyncpg
@@ -9,6 +11,49 @@ from .config import Config
 from .nats_streams import setup_streams
 
 logger = logging.getLogger("runtime_bootstrap")
+
+
+def _enter_sqlite_fallback(reason: str) -> None:
+    """P1-6: a Postgres connection failure used to log at WARNING and fall
+    back to SQLite with no other signal. Q-M2-2 answered SQLite as
+    emergency-only, not a supported runtime mode, which makes silence here
+    worse than the degradation itself -- M2-P3's synchronous SQLite I/O then
+    blocks the whole mesh's event loop in a mode nobody knows it entered.
+
+    Logs at ERROR, writes a sentinel file `/health` (main.py, a separate
+    process) can read, and fails closed under ENVIRONMENT=production unless
+    explicitly overridden -- silently losing pgvector in production is worse
+    than refusing to start. Deliberately does NOT apply to a deployment that
+    never configured DATABASE_URL at all (see `_ensure_database_schema`'s
+    first branch): that is a chosen SQLite-only configuration, not a
+    downgrade, and must not be made to fail closed.
+    """
+    logger.error(
+        "[Bootstrap] %s. Falling back to SQLite -- this is an EMERGENCY-ONLY "
+        "degraded mode (pgvector is unavailable), not a supported runtime "
+        "configuration.",
+        reason,
+    )
+
+    if Config.ENVIRONMENT == "production" and not getattr(
+        Config, "ALLOW_SQLITE_FALLBACK", False
+    ):
+        raise RuntimeError(
+            f"{reason}. Refusing to silently downgrade to SQLite in production "
+            "(ENVIRONMENT=production). Set ALLOW_SQLITE_FALLBACK=true to permit "
+            "this degraded mode explicitly."
+        )
+
+    health_file = getattr(Config, "SQLITE_FALLBACK_HEALTH_FILE", "")
+    if not health_file:
+        return
+    try:
+        with open(health_file, "w") as fh:
+            fh.write(json.dumps({"reason": reason, "timestamp": time.time()}))
+    except OSError as file_err:
+        logger.debug(
+            "[Bootstrap] Could not write SQLite fallback sentinel: %s", file_err
+        )
 
 
 async def bootstrap_runtime() -> None:
@@ -82,9 +127,8 @@ async def _ensure_database_schema() -> None:
     try:
         conn = await asyncpg.connect(dsn)
     except Exception as e:
-        logger.warning(
-            f"[Bootstrap] PostgreSQL connection failed: {e}. Falling back to SQLite."
-        )
+        _enter_sqlite_fallback(reason=f"PostgreSQL connection failed: {e}")
+
         from .state.sqlite_fallback import SQLiteConnection
 
         SQLiteConnection("app.db")

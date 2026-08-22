@@ -60,6 +60,13 @@ class SubconsciousAgent(BaseAgent):
         await self.connect()
         await self.graph_db.initialize()
 
+        # P1-5: a one-time catch-up so this process's state isn't just the
+        # persona defaults until the brain's next state.broadcast arrives --
+        # mirrors what CognitiveService.initialize() does on the brain side.
+        # Ongoing sync after this is event-driven (_on_state_broadcast,
+        # below), not polled.
+        await self.state_service.hydrate_state()
+
         # Initialize SQLite/Postgres DB pool and MemoryStore if not provided
         if not self.memory_store:
             from app.state.conversation_store import ConversationHistoryStore
@@ -108,7 +115,16 @@ class SubconsciousAgent(BaseAgent):
         logger.info(f"🧠 {self.name} Online | Subconscious Mesh Interface Active.")
 
     async def _on_state_broadcast(self, data: dict[str, Any]):
-        """Asynchronously syncs state changes from NATS state.broadcast into Neo4j."""
+        """Syncs state changes from NATS state.broadcast into Neo4j, and
+        applies them to this process's own live StateService (P1-5).
+
+        Before this, `subconscious_agent`'s AgentState was never hydrated
+        and never updated -- an independent copy holding whatever the
+        persona defaults were at startup, forever. Every silence gate and
+        the dream path (`_run_dream_sequence`) read that same
+        `self.state_service.current_state`, so both were measuring a state
+        that had nothing to do with the brain's actual mood/fatigue/trust.
+        """
         agent_name = data.get("agent_name", "my friend")
 
         # Validate agent_name
@@ -117,6 +133,8 @@ class SubconsciousAgent(BaseAgent):
                 f"[Subconscious] Invalid or missing agent_name in state broadcast. Payload: {data}"
             )
             return
+
+        await self.state_service.apply_external_state(data)
 
         logger.info(
             f"[Subconscious] Received state broadcast for {agent_name}. Syncing to Neo4j..."
