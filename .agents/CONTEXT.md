@@ -6779,6 +6779,197 @@ for this session; a bare `cargo check` at the workspace root fails with
   model; would need an explicit product-direction decision first)
 - #162's Vault/Docker-secrets-file integration (already noted in batch 7)
 
+## 2026-08-22 -- audit/ implementation, Stage 0 (P0-1, P0-2) -- LiveKit credential removed, all infra ports bound to loopback
+
+A forensic audit (`audit/`, untracked -- see AUDIT.md) filed 101 findings and
+ranked them P0-P4. This is the first implementation batch: the two P0 items,
+both security, both with zero prerequisites.
+
+**P0-1 -- the audit's own finding needed correcting before fixing it.** The
+audit assumed `livekit.yaml`'s committed `keys: {devkey: secretsecretsecret}`
+was the live signing credential. It wasn't (or at least, isn't now): compose
+passes `LIVEKIT_KEYS=${LIVEKIT_KEYS}` into the container as an env var, and
+the operator's `.env` holds a distinct real key/secret pair, not the
+committed one. So the fix isn't rotation, it's deletion -- the block can only
+ever have been redundant with or shadowed by the env var. Removed the `keys:`
+block from `livekit.yaml` entirely; a comment in its place explains why.
+Extended `AppSettings._PLACEHOLDER_SECRET_MARKERS` (config.py) with
+`"devkey"` and `"secretsecretsecret"` so the existing production boot guard
+(#162) also refuses to start if either value ever lands in
+`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` -- e.g. from an `.env` copied forward
+from before this fix. Added two parametrized cases to the existing
+`test_placeholder_secret_rejected_in_production` in
+`test_config_validation.py` rather than a new test function, since the
+guard's existing test already states exactly the property being extended.
+
+Added a fourth pattern to `security-audit.yml`'s `credential-scan` job:
+fail on any tracked YAML with an inline `keys:` mapping. This is the actual
+gap that let the original value ship undetected -- gitleaks' entropy rules
+don't fire on a low-entropy, placeholder-shaped string like
+`secretsecretsecret`, and the hand-rolled regex-based scan only walks
+`.py`/`.js`/`.ts`/`.tsx` under `backend/`/`frontend/app/`/`frontend/
+components/`, never touching `livekit.yaml` at the repo root. Verified the
+new check against a scratch file reproducing the original block: it fires
+(non-zero exit). Confirmed no other tracked YAML in the repo has a `keys:`
+block, so the new check adds zero false positives today.
+
+**Not done as part of P0-1, deliberately:** whether livekit-server *merges*
+a config-file `keys:` block with `LIVEKIT_KEYS` or the env var fully
+replaces it is still unconfirmed -- LiveKit's public docs don't state the
+precedence, and it wasn't worth guessing rather than checking. The fix
+(remove the block) is correct under either reading, so this doesn't block
+the fix, only the question of whether the committed value was ever
+*live*. Verifying that needs a running LiveKit container (Docker was down
+this session): mint a token signed with `devkey`/`secretsecretsecret`
+against the server post-fix and confirm it's rejected. If it isn't, the
+value was live and both `.env` and `frontend/.env.local` need a fresh
+LiveKit key pair immediately.
+
+**P0-2 -- all nine `docker-compose.infra.yml` services were reachable from
+the LAN.** Every `ports:` mapping (nats, postgres, neo4j, redis, livekit,
+ollama, gpt-sovits, qdrant -- 16 host bindings total) defaulted to `0.0.0.0`,
+including the LiveKit SFU, which has no authentication of its own and
+combined with P0-1's exposure meant any device on the network could join a
+live voice session. Prefixed every one with `127.0.0.1:`. The maintainer's
+answer (this session): single-host personal/family deployment, no reverse
+proxy, so nothing needs LAN reach -- a comment at the top of the compose
+file records the answer and what to do if that ever changes (narrow the
+binding back on the one service that needs it, don't revert the file).
+`docker-compose.prod.yml` (the agent containers) was already un-published --
+confirmed no `ports:` block exists there at all, so nothing to change.
+
+Added a CI lint to `mesh-integrity.yml`'s existing `compose-validation` job:
+fail if either compose file has a port mapping not prefixed `127.0.0.1:`
+and not carrying a `# lan-exposed: <reason>` annotation. Verified it passes
+clean against the fixed files and (by construction, matching the grep by
+hand) would have failed against the pre-fix ones.
+
+Left `backend/app/config.py`'s `BACKEND_BIND_HOST` (defaults `0.0.0.0`)
+untouched -- that's a different, already-deliberate decision (finding C4,
+`test_audit_hygiene.py`), explicitly kept configurable rather than
+hardcoded, with its own test pinning the `0.0.0.0` default for backward
+compatibility. P0-2 is scoped to the *infra* compose file's nine
+containerized services; the backend API isn't one of them in either compose
+file (no `ports:` for it in `docker-compose.prod.yml`), so this batch
+doesn't touch it.
+
+**Verified:** `backend/tests/test_config_validation.py` +
+`test_audit_hygiene.py`, 38 passed / 0 failed (via `--junit-xml`, per this
+file's own documented pytest-summary-swallowing gotcha -- reproduced again
+this session). `ruff check .` clean. `python -c "import yaml;
+yaml.safe_load(...)"` on all four edited YAML/compose files. `docker
+compose -f docker-compose.infra.yml config --quiet` and the combined
+`-f docker-compose.infra.yml -f docker-compose.prod.yml` form both clean.
+Mutation-tested the new CI grep steps by hand against a scratch fixture
+reproducing each original defect (an inline `keys:` block; an unbound port
+mapping) -- both fire.
+
+**NOT done:**
+- The `devkey` live/dead verification above -- needs Docker, which was down
+  this session.
+- Stages 1-6 of the roadmap sequence (`audit/ROADMAP.md` §7) -- this batch
+  is Stage 0 only.
+
+## 2026-08-22 -- audit/ implementation, Stage 0 review pass -- both new CI checks were inverted; placeholder guard narrowed
+
+Both CI steps added in the batch above failed on their own PR, and the
+failure was more interesting than a typo.
+
+**Both new checks passed only when the repository was broken.** GitHub
+Actions runs `run:` blocks under `bash -e`. A simple assignment
+`var=$(cmd)` takes the command's exit status as its own, and `grep` exits
+1 when it matches nothing -- so `exposed=$(grep ... | grep -v ...)` aborted
+the step the moment every port was correctly loopback-bound. Same for the
+`keys:` scan. The steps were exactly inverted: green required a violation,
+which they would then never get far enough to report. Both now end the
+substitution with `|| true`. Worth recording as a class, not an incident:
+any `set -e` shell check that greps for the *absence* of something has
+this failure mode, and it is invisible in local testing unless `-e` is
+reproduced, because an interactive shell doesn't abort.
+
+Mutation-tested in both directions, which is what distinguishes a working
+check from a check that merely exits 0: re-added a `keys:` block to
+`livekit.yaml` and un-prefixed one port mapping in
+`docker-compose.infra.yml`, confirmed each is caught and named, reverted,
+confirmed clean.
+
+**The placeholder-secret guard was widened by accident.**
+`_PLACEHOLDER_SECRET_MARKERS` is matched as a substring, which the
+surrounding comment justifies at length: the set is deliberately the exact
+`.env.example` template strings, not a weak-password heuristic, because "a
+heuristic strong enough to catch real weak passwords is also strong enough
+to reject a legitimate one," and a false positive here means production
+refuses to boot. Adding `"devkey"` to that tuple quietly broke the
+premise -- it is six characters, so a randomly generated credential
+containing those letters would block a deployment with a misleading
+"placeholder" error. Split into `_PLACEHOLDER_SECRET_EXACT`, matched
+whole. The `.env.example` templates keep substring matching, which they
+genuinely need since `DATABASE_URL` embeds one mid-string. Test added for
+the false-positive direction and mutation-tested against a reverted-to-
+substring implementation.
+
+**Verified:** `test_config_validation.py` 27/27; full backend suite and
+`ruff check .` clean on this branch.
+
+**Addendum, found while opening the PR: a test fixture can trip gitleaks
+even with no real secret involved.** The first version of the false-
+positive test above used two short alphanumeric strings mixing case and
+digits (chosen to prove a credential merely *containing* "devkey" isn't
+rejected) as the LIVEKIT_API_KEY/SECRET values. Gitleaks' `generic-api-key`
+rule scores on Shannon entropy, not on whether the string is real, and
+flagged both as leaks -- CI red on a PR with no actual secret in it.
+(Deliberately not quoting the actual values here: gitleaks scans this
+ledger file too, and the first draft of this very paragraph tripped the
+same rule by quoting one.)
+Worse: because gitleaks scans the full pushed history, not just the
+current tree, a *second* commit correcting the fixture to a low-entropy,
+obviously-fake string (`"livekit-api-key-with-devkey-inside"`) did not
+clear the finding -- the original high-entropy version was still reachable
+in the earlier commit's diff. Fixing it required folding the correction
+into the original commit (`git reset --soft` to before it, recommit) rather
+than adding a commit on top -- a commit-on-top does not remove a finding
+that lives in an earlier commit's diff, only in the tree's current state.
+**The rule to carry forward: a test needing a
+credential-shaped value must pick one that is unmistakably a fixture in
+both name and shape** -- CLAUDE.md already documents the name half
+(don't call a variable `secret`); entropy is the other half, and it applies
+even to values that never leave the repository.
+
+**NOT done:**
+- Still no Docker-based verification that livekit-server rejects
+  `devkey`/`secretsecretsecret` -- the one open question from Stage 0, and
+  the only thing that would turn "remove the block" into "rotate the
+  pair." Unchanged by this review pass.
+
+## 2026-08-22 -- process note: `git add -A` swept the untracked `audit/` deliverables into a public commit
+
+Not a code change; recorded because it is exactly the kind of mistake that
+repeats without a written trace. Committing a review fix on this branch
+used `git add -A`, which staged not just the intended files but the
+untracked `AUDIT.md` and all 12 `audit/*.md` deliverables the earlier
+implementation-phase decision had deliberately left untracked (kept
+visible in `git status` as a standing reminder, no `.gitignore` entry).
+That commit was pushed to the public repo and appeared in the open PR's
+file list before being caught in the next review pass.
+
+No credentials were in the exposed files -- the content was the audit
+findings themselves plus a local filesystem path, not a secret -- but
+publishing an internal engineering audit of a public repo's own security
+posture is a real exposure regardless. Remediated the same way as the
+gitleaks-entropy issue in the entry above: a forward removal commit does
+not clear a finding that lives in an earlier commit's diff, so the fix was
+`git reset --soft` to the commit before the accidental one, followed by a
+force-push of the corrected history. The rewritten commit is fetchable by
+its old SHA via GitHub's API indefinitely (standard GitHub behavior for
+force-pushed commits, not specific to this incident) but is unreachable
+from any branch, PR, or normal browsing path.
+
+**The rule to carry forward:** never use `git add -A` in a repo with
+deliberately-untracked working files. Stage paths explicitly, always, on
+every branch of this repo -- this is a project-wide habit change, not a
+one-branch fix, since the same untracked `audit/` directory persists in
+every future working tree until it is either finished with or the
+maintainer decides otherwise.
 ## 2026-08-22 -- audit/ implementation, Stage 1 (P1-7, P2-13, P1-6, P1-8, P1-5) -- five zero-prerequisite roadmap items
 
 Second implementation batch from `audit/`'s roadmap (`audit/ROADMAP.md` §7,
