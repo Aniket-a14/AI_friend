@@ -121,6 +121,9 @@ async def test_subconscious_agent_multi_user_pairing():
     # Mock dynamic config consolidation silence bypass
     with patch.object(Config, "TESTING_CONSOLIDATION_BYPASS_SILENCE", True):
         await agent._on_system_tick({})
+        # P1-1: consolidation is dispatched, not awaited inline - await the
+        # retained task, still inside the patch context, before asserting.
+        await agent._consolidation_task
 
     # Verify trigger_reflection was called with paired episodes
     mock_reflection.trigger_reflection.assert_called_once()

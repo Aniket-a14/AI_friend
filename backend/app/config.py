@@ -114,6 +114,23 @@ class AppSettings(BaseSettings):
 
     LLM_STREAM_MAX_SECONDS: int = 120
     LLM_INTENT_CLASSIFICATION_ENABLED: bool = True
+
+    # P1-1: the control tier's JetStream consumer settings (system.tick).
+    # Both were previously implicit -- a 30s server-default ack_wait and
+    # UNLIMITED max_deliver -- while the tick callback ran a ~28s
+    # consolidation inline before ack. That combination is what produced
+    # duplicate consolidations and duplicate proactive utterances: the
+    # callback outran the deadline and JetStream redelivered, forever.
+    #
+    # With consolidation dispatched to a worker, the callback's remaining
+    # worst case is one short proactive-thought LLM call, so this deadline
+    # is now a genuine liveness bound rather than a number chosen to
+    # accommodate a defect -- which is exactly why the roadmap requires
+    # P1-1 to land before P1-2 sizes the control tier.
+    MESH_CONTROL_ACK_WAIT_S: float = 30.0
+    # Bounded, unlike the JetStream default. A tick that fails repeatedly is
+    # a bug to surface, not a message to retry forever.
+    MESH_CONTROL_MAX_DELIVER: int = 3
     MOCK_LLM_TEXT: bool = False
 
     REFLECTION_ENABLED: bool = True

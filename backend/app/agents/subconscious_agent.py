@@ -40,6 +40,11 @@ class SubconsciousAgent(BaseAgent):
         self.reflection_service = reflection_service
         self.db_store = None
         self._is_consolidating = False
+        # P1-1: retained so the dispatched consolidation coroutine isn't
+        # only weakly referenced by the event loop and eligible for GC
+        # mid-flight (closes M1-A13 here); also lets a test or caller await
+        # completion explicitly instead of racing the background task.
+        self._consolidation_task = None
         self._current_monologue_task = None
         self._current_dream_task = None
         self._last_monologue_time = 0.0
@@ -92,6 +97,12 @@ class SubconsciousAgent(BaseAgent):
             self._on_system_tick,
             durable=f"{self.name}_system_tick",
             deliver_policy="new",
+            # P1-1: state the control tier's ack deadline instead of
+            # inheriting a 30s default alongside UNLIMITED redelivery. Only
+            # meaningful now that consolidation is dispatched rather than
+            # awaited here -- see _on_system_tick's docstring.
+            ack_wait=Config.MESH_CONTROL_ACK_WAIT_S,
+            max_deliver=Config.MESH_CONTROL_MAX_DELIVER,
         )
         await self.subscribe(
             Topics.CHAT_INPUT,
@@ -204,7 +215,56 @@ class SubconsciousAgent(BaseAgent):
             logger.error(f"[Subconscious] Failed to sync state to Neo4j: {e}")
 
     async def _on_system_tick(self, data: dict[str, Any]):
-        """Delegates thought generation to the engine and routes to the Mesh."""
+        """Delegates thought generation to the engine, routes it to the mesh,
+        then DISPATCHES memory consolidation rather than awaiting it.
+
+        P1-1: consolidation runs reflection (multiple sequential LLM calls),
+        graph writes and ACT-R decay - MEASURED ~16s idle, ~28s under the
+        two-model VLM/LLM contention `HARDWARE.md` §5 measured. This
+        callback used to await all of that inline, before `BaseAgent.
+        subscribe`'s handler acks the message (base.py:383) - against a 30s
+        default AckWait with unlimited MaxDeliver. A slow pass could exceed
+        AckWait, get redelivered mid-flight, and run the same consolidation
+        twice: duplicate graph writes and - the symptom that actually
+        surfaced this - duplicate proactive utterances to the user.
+
+        `_ack_heartbeat` (base.py) already exists for exactly this shape of
+        problem but is gated on `chat.*` subjects; a prior audit weighed it
+        against `audio.*` and never considered `system.tick`, the longest
+        callback in the mesh - issue #175 was then closed as "already
+        resolved" on that basis. Widening `_ack_heartbeat` to every subject
+        was considered and rejected: an ack held in-progress for 28s is a
+        liveness lie regardless of which subject carries it, and doing that
+        everywhere repeats the original scoping mistake rather than fixing
+        it. Dispatching the actual work removes the problem instead of
+        extending the workaround.
+
+        The guard-and-dispatch below is intentionally split from the work
+        itself (`_run_consolidation_pass`): `_is_consolidating` is checked
+        and set HERE, synchronously, before `asyncio.create_task` schedules
+        anything - `create_task` does not run the coroutine body until the
+        event loop yields, so if the guard lived inside the dispatched
+        coroutine instead, two ticks arriving back-to-back could each pass
+        the check before either task actually started and set the flag.
+
+        Scope, deliberately: the proactive-thought LLM call above
+        (`evaluate_and_think`) stays inline. It is gated on
+        `check_proactive_eligibility`, so it is rate-limited rather than
+        per-tick, and it is a single short generation -- seconds, not the
+        ~28s consolidation was. Keeping it inline preserves the ordering
+        between generating a thought, publishing it and calling
+        `mark_proactive_attempt`, which dispatching would race. The ack
+        deadline is sized to cover it (`MESH_CONTROL_ACK_WAIT_S`), so it is
+        bounded work under a stated bound rather than unbounded work under
+        an implicit one.
+
+        Acking before consolidation completes is a genuine semantics change,
+        not just an implementation detail: a crash between dispatch and
+        completion loses that pass. Accepted - consolidation is periodic and
+        runs over *unconsolidated* episodes, so a missed pass is picked up
+        by the next tick, not lost - and recorded here and in the ledger as
+        a decision.
+        """
         last_bench = getattr(self, "_last_benchmark_time", 0.0)
         if time.time() - last_bench < 300:
             logger.info(
@@ -247,7 +307,15 @@ class SubconsciousAgent(BaseAgent):
             )
             return
 
+        # Set synchronously, before dispatch - see the docstring above for
+        # why this cannot move inside _run_consolidation_pass.
         self._is_consolidating = True
+        self._consolidation_task = asyncio.create_task(self._run_consolidation_pass())
+
+    async def _run_consolidation_pass(self) -> None:
+        """The actual consolidation work (P1-1), dispatched by
+        `_on_system_tick` rather than awaited inline so the tick's ack is
+        not held on it. See `_on_system_tick`'s docstring for why."""
         try:
             logger.info("[Subconscious] Initiating subconscious consolidation pass...")
             episodes = await self.memory_store.get_recent_unconsolidated_episodes(

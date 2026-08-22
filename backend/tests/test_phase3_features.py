@@ -301,6 +301,9 @@ async def test_subconscious_agent_silence_check_and_24h_window():
         # Now enable bypass
         Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = True
         await agent._on_system_tick({"uptime": 2})
+        # P1-1: consolidation is dispatched, not awaited inline - await the
+        # retained task before asserting on its result.
+        await agent._consolidation_task
         ref_service.trigger_reflection.assert_called_once()
     finally:
         Config.TESTING_CONSOLIDATION_BYPASS_SILENCE = orig_bypass

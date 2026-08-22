@@ -253,6 +253,9 @@ async def test_subconscious_consolidation_pipeline(mock_llm_service, mock_graph_
 
         # Simulate a system.tick event manually
         await agent._on_system_tick({"uptime": 100})
+        # P1-1: consolidation is now dispatched, not awaited inline by
+        # _on_system_tick - await the retained task to observe its result.
+        await agent._consolidation_task
 
         # Verify graph write was attempted
         mock_graph_db.create_triplet.assert_called_once()
@@ -310,6 +313,7 @@ async def test_consecutive_user_messages_are_never_attributed_to_the_wrong_speak
     agent.engine.evaluate_and_think = AsyncMock(return_value=None)
 
     await agent._on_system_tick({"uptime": 100})
+    await agent._consolidation_task  # P1-1: dispatched, not inline - see above
 
     mock_reflection_service.trigger_reflection.assert_awaited_once()
     (episodes,), _ = mock_reflection_service.trigger_reflection.call_args

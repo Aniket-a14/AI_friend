@@ -324,6 +324,79 @@ class BaseAgent:
         except asyncio.CancelledError:
             return
 
+    async def _reconcile_consumer_config(
+        self,
+        subject: str,
+        durable: str,
+        ack_wait: float | None,
+        max_deliver: int | None,
+    ) -> None:
+        """Delete a durable consumer whose stored config no longer matches
+        what the caller is asking for, so it gets recreated with the new one.
+
+        P1-1: without this, sizing `ack_wait` is a no-op on every deployment
+        that has run before. `JetStreamContext.subscribe` looks up an
+        existing durable and, on a hit, does `config = consumer_info.config`
+        -- it *discards* the ConsumerConfig passed in and adopts whatever the
+        server already stored. nats-py marks the spot itself with
+        `# TODO: Detect configuration drift with any present durable
+        consumer.` So the new ack deadline would apply on a fresh mesh (and
+        in every test), and silently not apply anywhere that matters, while
+        still logging a successful subscribe.
+
+        That is precisely the failure shape this audit keeps finding: the
+        half that fails still compiles, still passes its own tests, and still
+        logs as though it worked. Detect the drift explicitly rather than
+        trusting the client to.
+
+        Deleting a durable consumer discards its delivery cursor, so the
+        recreated one starts from `deliver_policy` rather than resuming.
+        That is acceptable for the control tier this is used on -- ticks are
+        periodic and a missed one is picked up by the next -- but it is the
+        reason this only runs when an explicit config was requested, never
+        by default.
+        """
+        try:
+            stream = await self.js.find_stream_name_by_subject(subject)
+            info = await self.js._jsm.consumer_info(stream, durable)
+        except Exception:
+            # No such consumer (the normal first-run case), or JetStream is
+            # not answering yet -- either way there is nothing to reconcile
+            # and the subscribe below will create or retry as appropriate.
+            return
+
+        current = info.config
+        drifted = (
+            ack_wait is not None and current.ack_wait != ack_wait
+        ) or (max_deliver is not None and current.max_deliver != max_deliver)
+        if not drifted:
+            return
+
+        logger.warning(
+            "Agent '%s': durable '%s' on %s has drifted config "
+            "(ack_wait=%s->%s, max_deliver=%s->%s). Deleting so it is "
+            "recreated with the requested settings.",
+            self.name,
+            durable,
+            subject,
+            current.ack_wait,
+            ack_wait,
+            current.max_deliver,
+            max_deliver,
+        )
+        try:
+            await self.js._jsm.delete_consumer(stream, durable)
+        except Exception as e:
+            # Not fatal: the subscribe still succeeds, just with the old
+            # config. Loud, because the requested deadline is not in force.
+            logger.error(
+                "Agent '%s': could not delete drifted durable '%s': %s. "
+                "Subscription will use the STALE stored config.",
+                self.name,
+                durable,
+                e,
+            )
+
     async def subscribe(
         self,
         subject: str,
@@ -332,9 +405,23 @@ class BaseAgent:
         deliver_policy: str = "all",
         pending_msgs_limit: int | None = None,
         pending_bytes_limit: int | None = None,
+        ack_wait: float | None = None,
+        max_deliver: int | None = None,
     ):
         """
         Subscribe to events on the mesh with header validation and fallback.
+
+        P1-1: `ack_wait`/`max_deliver` let a caller size the JetStream
+        consumer explicitly instead of inheriting server defaults (an
+        unbounded 30s ack_wait with unlimited max_deliver, mesh-wide). Passed
+        straight through as a `ConsumerConfig`. Note `MESH_MAX_DELIVER`
+        (below, in `_handler`'s except branch) is a *different*, client-side
+        mechanism -- it counts deliveries after the fact to drop a poison
+        message, it does not configure the server's own redelivery limit.
+        The two are complementary, not redundant: this one bounds how many
+        times JetStream will attempt redelivery at all; that one decides what
+        happens once redelivery has already happened `MESH_MAX_DELIVER`
+        times.
         """
         if not self.js:
             await self.connect()
@@ -429,7 +516,7 @@ class BaseAgent:
             durable = f"{self.name}_{subject_suffix}"
 
         # Mapping string policy to nats.js.api.DeliverPolicy
-        from nats.js.api import DeliverPolicy
+        from nats.js.api import ConsumerConfig, DeliverPolicy
 
         policy_map = {
             "all": DeliverPolicy.ALL,
@@ -447,6 +534,19 @@ class BaseAgent:
             subscribe_kwargs["pending_msgs_limit"] = pending_msgs_limit
         if pending_bytes_limit is not None:
             subscribe_kwargs["pending_bytes_limit"] = pending_bytes_limit
+        if ack_wait is not None or max_deliver is not None:
+            # `deliver_policy` above still wins: the client library applies
+            # the top-level `deliver_policy` kwarg on top of this `config`
+            # unconditionally, so the two do not fight over that field.
+            subscribe_kwargs["config"] = ConsumerConfig(
+                ack_wait=ack_wait, max_deliver=max_deliver
+            )
+            await self._reconcile_consumer_config(
+                subject=subject,
+                durable=durable,
+                ack_wait=ack_wait,
+                max_deliver=max_deliver,
+            )
 
         # 4. Reliable Subscription (Retry for JetStream availability)
         max_retries = 10
