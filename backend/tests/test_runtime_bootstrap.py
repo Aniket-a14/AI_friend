@@ -12,7 +12,7 @@ import logging
 import pytest
 
 from app import config as config_module
-from app.runtime_bootstrap import _enter_sqlite_fallback
+from app.runtime_bootstrap import _clear_sqlite_fallback, _enter_sqlite_fallback
 
 
 @pytest.fixture(autouse=True)
@@ -74,3 +74,34 @@ def test_fallback_writes_health_sentinel(tmp_path, monkeypatch):
     payload = json.loads(sentinel.read_text())
     assert payload["reason"] == "PostgreSQL connection failed: timeout"
     assert "timestamp" in payload
+
+
+def test_recovery_clears_the_health_sentinel(tmp_path, monkeypatch):
+    """The signal has to turn off again. Without this, one transient
+    Postgres outage leaves /health reporting `degraded: true` for the
+    lifetime of the host, long after Postgres came back - and a warning
+    that never clears is one operators stop reading, which is the same
+    silence this item set out to fix."""
+    sentinel = tmp_path / "sqlite_fallback_active"
+    monkeypatch.setattr(
+        config_module.config_instance, "SQLITE_FALLBACK_HEALTH_FILE", str(sentinel)
+    )
+
+    _enter_sqlite_fallback(reason="PostgreSQL connection failed: timeout")
+    assert sentinel.exists()
+
+    _clear_sqlite_fallback()
+
+    assert not sentinel.exists()
+
+
+def test_clearing_an_absent_sentinel_is_not_an_error(tmp_path, monkeypatch):
+    """The healthy path runs this on every boot, and on almost all of them
+    there is no sentinel to remove. It must not raise into bootstrap."""
+    monkeypatch.setattr(
+        config_module.config_instance,
+        "SQLITE_FALLBACK_HEALTH_FILE",
+        str(tmp_path / "never_written"),
+    )
+
+    _clear_sqlite_fallback()

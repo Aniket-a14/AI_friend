@@ -157,8 +157,17 @@ class AppSettings(BaseSettings):
     # deliberate degraded deployment, not as a standing default.
     ALLOW_SQLITE_FALLBACK: bool = False
     # Written by runtime_bootstrap.py (a different process than the backend
-    # API) when the SQLite fallback is entered, so /health can surface it.
-    # Same pattern as VISION_HEALTH_FILE below.
+    # API) when the SQLite fallback is entered, so /health can surface it,
+    # and removed again once Postgres answers. Same pattern as
+    # VISION_HEALTH_FILE below.
+    #
+    # Scope, stated plainly: bootstrap runs inside the brain_agent container
+    # under docker-compose.prod.yml, while /health is served by main.py
+    # elsewhere, so this path only carries the signal between them if it is
+    # on a shared mount. It is not the primary alarm and is not relied on to
+    # be -- the ERROR log and the production fail-closed are, and both work
+    # regardless of topology. Point this at a shared volume to get the
+    # /health flag in a multi-container deployment.
     SQLITE_FALLBACK_HEALTH_FILE: str = "/tmp/sqlite_fallback_active"
 
     SOVITS_URL: str = "http://127.0.0.1:9871"

@@ -56,6 +56,28 @@ def _enter_sqlite_fallback(reason: str) -> None:
         )
 
 
+def _clear_sqlite_fallback() -> None:
+    """Remove the sentinel once Postgres answers again.
+
+    Without this the flag is write-only: one transient Postgres outage
+    would leave `/health` reporting `degraded: true` for the lifetime of
+    the host, long after the condition cleared. A degradation signal that
+    never turns off is one operators learn to ignore, which is the same
+    silence P1-6 set out to fix.
+    """
+    health_file = getattr(Config, "SQLITE_FALLBACK_HEALTH_FILE", "")
+    if not health_file:
+        return
+    try:
+        Path(health_file).unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as file_err:
+        logger.debug(
+            "[Bootstrap] Could not clear SQLite fallback sentinel: %s", file_err
+        )
+
+
 async def bootstrap_runtime() -> None:
     """Run idempotent runtime bootstrap so one-command deploy reaches a working mesh."""
     retries = max(1, int(getattr(Config, "RUNTIME_BOOTSTRAP_RETRIES", 12)))
@@ -136,6 +158,8 @@ async def _ensure_database_schema() -> None:
             "[Bootstrap] SQLite database schema and core tables verified via fallback."
         )
         return
+
+    _clear_sqlite_fallback()
 
     schema_path = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
     if not schema_path.exists():

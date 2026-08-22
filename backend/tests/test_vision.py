@@ -391,3 +391,31 @@ class TestVisionAgent:
 
         mock_appraisal.appraise.assert_awaited_once()
         agent.publish.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_turn_tracking_subscribes_for_new_messages_only(
+        self, mock_camera_cls, mock_screen_cls
+    ):
+        """These two subscriptions are liveness signals, not work items. On
+        JetStream's "all" default a fresh durable replays the whole retained
+        chat history at startup - and chat.output carries one message per
+        response chunk - so every vision restart would re-walk the entire
+        conversation and end up suspended by a turn that finished hours ago,
+        blind until the watchdog fired. Every other subscription in the mesh
+        names a policy explicitly; these must too."""
+        agent = VisionAgent()
+        agent.connect = AsyncMock()
+        agent.subscribe = AsyncMock()
+        agent.preflight = MagicMock(return_value=False)
+        agent._capture_loop = AsyncMock()
+
+        await agent.start()
+
+        policies = {
+            call.args[0]: call.kwargs.get("deliver_policy")
+            for call in agent.subscribe.await_args_list
+        }
+        assert policies[Topics.CHAT_INPUT] == "new"
+        assert policies[Topics.CHAT_OUTPUT] == "new"

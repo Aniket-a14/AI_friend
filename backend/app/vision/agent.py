@@ -131,9 +131,21 @@ class VisionAgent(BaseAgent):
         await self.subscribe(Topics.VISION_CONTROL, self._handle_control)
 
         # P1-7: track turn boundaries so appraisal can suspend during one.
+        # deliver_policy="new", as every other subscription in the mesh
+        # does, because these are liveness signals rather than work items:
+        # a replayed turn boundary from an hour ago says nothing about
+        # whether the LLM is busy *now*. Under the "all" default a fresh
+        # durable would redeliver the entire retained chat history -- and
+        # chat.output is published once per response chunk -- on every
+        # vision restart, leaving vision suspended by a historical
+        # chat.input until the watchdog cleared it.
         if Config.VISION_SUSPEND_DURING_TURN:
-            await self.subscribe(Topics.CHAT_INPUT, self._on_chat_input)
-            await self.subscribe(Topics.CHAT_OUTPUT, self._on_chat_output)
+            await self.subscribe(
+                Topics.CHAT_INPUT, self._on_chat_input, deliver_policy="new"
+            )
+            await self.subscribe(
+                Topics.CHAT_OUTPUT, self._on_chat_output, deliver_policy="new"
+            )
 
         self.running = True
         vlm_status = f"VLM={Config.VLM_MODEL}" if self.vlm_enabled else "VLM=disabled"
