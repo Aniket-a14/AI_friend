@@ -72,14 +72,16 @@ ALLOWLIST: dict[str, str] = {
     "audio.stream": "ROADMAP P4-11a: Rust-side core-NATS subscriber, not JetStream-visible to this scan",
     # Discovered while building this check (not one of the audit's original
     # eight) -- genuinely new findings, allowlisted so this check can land
-    # enforcing rather than warn-only, per ROADMAP P1-8. Each needs its own
-    # look, tracked here rather than silently fixed as a drive-by.
-    "audio.pre_generate": "NEW (found building this check): published by cognitive/pipeline.py mesh_signal, zero subscribers anywhere -- needs investigation, not yet in ROADMAP",
-    "telemetry.reflection": "NEW (found building this check): published by cognitive/core.py, matches no declared stream pattern and has zero subscribers -- needs investigation, not yet in ROADMAP",
-    "state.subconscious": "NEW (found building this check): subconscious_agent's internal-monologue thought is published, zero subscribers anywhere -- needs investigation, not yet in ROADMAP",
-    "voice.segmentation_feedback": "NEW (found building this check): brain_agent subscribes, zero publishers anywhere in Python or Rust -- needs investigation, not yet in ROADMAP",
-    "control.interrupt": "NEW (found building this check): cognitive/action.py's self-correction path publishes this alongside audio.stop (which IS subscribed); control.interrupt itself has zero subscribers -- needs investigation, not yet in ROADMAP",
-    "vision.frames": "NEW (found building this check): the only publish call is commented out in vision/agent.py ('TEMPORARILY DISABLED FOR DIAGNOSTICS'), brain_agent still subscribes -- deliberately not silently re-enabled by this batch, needs its own investigation",
+    # enforcing rather than warn-only, per ROADMAP P1-8. Investigated during
+    # the 2026-08-22 backlog-clearing pass (see .agents/CONTEXT.md): two
+    # were real gaps now closed (vision.frames wired, control.interrupt
+    # deleted as dead code); the other four are real feature work with no
+    # decided consumer, not unfinished wiring -- reasons sharpened below so
+    # a future pass doesn't re-investigate them from scratch.
+    "audio.pre_generate": "cognitive/pipeline.py publishes on VAP>=0.7 for speculative TTS pre-generation; the consumer side (voice-agent pre-warming TTS on this signal) was never built -- real Rust feature work, out of scope for a wiring fix",
+    "telemetry.reflection": "cognitive/core.py publishes duration_ms + episode count on background reflection; matches no declared stream pattern and has zero subscribers -- a strong candidate for promotion once P3-2 (telemetry) is built, not before",
+    "state.subconscious": "subconscious_agent's internal-monologue thought, zero subscribers -- no consumer has a decided purpose yet (UI surface? persistence sink?); needs a product decision before it needs wiring",
+    "voice.segmentation_feedback": "brain_agent subscribes with an adaptive alpha-damped tuning loop, but voice-agent's Rust source has no chunk-size/segmentation-reporting code at all to hook a publisher into -- real new Rust feature work, not a missing call",
 }
 
 PUBLISH_METHODS = {"publish", "publish_cb", "publish_with_headers", "publish_pcm"}

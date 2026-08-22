@@ -989,9 +989,6 @@ class ActionService:
         if self.publish_cb:
             try:
                 await self.publish_cb(
-                    "control.interrupt", {"reason": reason, "interrupt": True}
-                )
-                await self.publish_cb(
                     "audio.stop", {"interrupt": True, "reason": reason}
                 )
             except Exception as pe:
