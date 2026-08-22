@@ -400,9 +400,11 @@ def test_build_shared_history_edge_loads_most_relevant():
     ]
     block = ActionService._build_shared_history(memories)
     lines = [ln for ln in block.split("\n") if ln.startswith("- ")]
-    # Highest-relevance items bracket the block (A first, B last)
-    assert lines[0] == "- A"
-    assert lines[-1] == "- B"
+    # Highest-relevance items bracket the block (A first, B last). P1-9 wraps
+    # each memory's content in [RETRIEVED-CONTENT] markers -- see
+    # TestRetrievedContentIsDelimited in test_context_assembly.py for why.
+    assert lines[0] == "- [RETRIEVED-CONTENT]A[/RETRIEVED-CONTENT]"
+    assert lines[-1] == "- [RETRIEVED-CONTENT]B[/RETRIEVED-CONTENT]"
 
 
 def test_build_shared_history_empty_for_no_memories():

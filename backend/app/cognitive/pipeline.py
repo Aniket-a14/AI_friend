@@ -306,6 +306,9 @@ class CognitivePipeline:
         plan.payload["speculative"] = (
             event.metadata.get("speculative", False) if event.metadata else False
         )
+        plan.payload["visual_context"] = (
+            event.metadata.get("visuals") if event.metadata else None
+        )
         stage_times["stage_7_action_prep_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # Calculate Pre-LLM total time

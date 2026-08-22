@@ -93,6 +93,59 @@ async def test_pipeline_execution_flow(pipeline, mock_components):
 
 
 @pytest.mark.asyncio
+async def test_pipeline_carries_visual_context_into_the_plan_payload(
+    pipeline, mock_components
+):
+    """P1-9/vision-grounding: `raw_event["metadata"]["visuals"]` (written by
+    brain_agent from vision.frames/vision.description) has to survive the
+    perception -> decision -> action-prep handoff and land in
+    plan.payload["visual_context"], or action.py's `_build_visual_context`
+    has nothing to render regardless of how correctly it's written."""
+    mock_components["state"].last_speculative_intent = None
+    mock_components["perception"].perceive.return_value = MagicMock(
+        event_type="USER_MESSAGE",
+        raw_content="what am I holding?",
+        intent="CHAT",
+        event_id="evt-2",
+        metadata={"visuals": "I am seeing the user's camera."},
+    )
+    mock_components["appraisal"].appraise.return_value = AppraisalVector(
+        relevance=1.0,
+        novelty=0.5,
+        goal_congruence=0.2,
+        agency=0.8,
+        norm_alignment=1.0,
+        relationship_impact=0.1,
+    )
+    mock_components["state"].get_context_snapshot.return_value = {"mood": 0.0}
+    mock_components["state"].get_behavioral_directive.return_value = "be friendly"
+    mock_components["decision"].decide.return_value = ActionPlan(
+        action_type="RESPOND_CHAT", goal="ANSWER", payload={"message": "hi"}
+    )
+    mock_components["identity"].validate_response.return_value = (True, "")
+    mock_components["identity"].get_persona_prompt.return_value = "System prompt"
+
+    seen_payloads = []
+
+    async def mock_execute(plan):
+        seen_payloads.append(plan.payload)
+        yield {"type": "content", "data": "You're holding a mug."}
+        yield {"type": "done", "data": ""}
+
+    mock_components["action"].execute.side_effect = mock_execute
+
+    async for _ in pipeline.execute(
+        {"type": "USER_MESSAGE", "content": "what am I holding?"}
+    ):
+        pass
+
+    assert seen_payloads, "action.execute was never called"
+    assert (
+        seen_payloads[0]["visual_context"] == "I am seeing the user's camera."
+    )
+
+
+@pytest.mark.asyncio
 async def test_pipeline_interruption_confirmed(pipeline, mock_components):
     # Setup Interruption
     mock_components["state"].last_speculative_intent = {

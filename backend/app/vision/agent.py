@@ -211,15 +211,15 @@ class VisionAgent(BaseAgent):
                     # 2. Base64 encode for NATS
                     frame_b64 = base64.b64encode(frame).decode("utf-8")
 
-                    # 3. Publish raw frame to mesh (TEMPORARILY DISABLED FOR DIAGNOSTICS)
-                    # await self.publish(
-                    #     Topics.VISION_FRAMES,
-                    #     {
-                    #         "frame": frame_b64,
-                    #         "source": self.source,
-                    #         "timestamp": time.time(),
-                    #     },
-                    # )
+                    # 3. Publish raw frame to mesh
+                    await self.publish(
+                        Topics.VISION_FRAMES,
+                        {
+                            "frame": frame_b64,
+                            "source": self.source,
+                            "timestamp": time.time(),
+                        },
+                    )
 
                     # 4. Tier-4: VLM Appraisal (rate-limited internally)
                     if self.vlm_enabled and self.appraisal:
