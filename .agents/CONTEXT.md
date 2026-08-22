@@ -7607,3 +7607,105 @@ flag that stays false throughout the entire existing test suite's run.
 - Stage 4 (P1-4 then P1-3, gated on measurement 1.1's still-open worst-case
   question), P1-9 (prompt delimiters), and the six one-ended NATS subjects
   from P1-8 -- all still out of scope for this stage.
+
+## 2026-08-22 -- backlog clearing, Part 1 + Part 2 -- measurement 1.1's real
+gap closed (still `UNKNOWN`, now for the right reason), stt-agent hang
+diagnostic pass (3 hypotheses ruled out, root cause not found)
+
+Stage 3 (#186) left measurement 1.1's worst-case answer `UNKNOWN` and a new,
+undiagnosed stt-agent hang only documented. `audit/ROADMAP.md` lists
+measurement 1.1 as a literal dependency for both P1-3 and P1-4, so this had
+to close (one way or another) before Stage 4 could start on the right
+number. User instruction: "merge it and do whatever you think is next,
+clear all backlog before we move to next stage."
+
+**Part 1 -- `tools/measure/m11_bargein.py`.** The working theory going in was
+that Stage 3's near-zero backlog was an artifact of publishing a track with
+no subscriber -- no real playback-rate backpressure to make buffer 3
+back up. Built `_RealConsumer`: a second, throwaway LiveKit participant that
+joins the same room, subscribes to the published audio track, and drains it
+via `rtc.AudioStream`. Re-ran the same synthetic-burst methodology (50
+frames, `_RealConsumer` connected and subscribed before the burst) --
+**identical near-zero result** (`backlog_frames_at_stop_instant: 0`,
+`residual_drain_time_python_side_s: 0.040s`). Rather than accept a second
+inconclusive negative result, read `rtc.AudioSource.capture_frame()`'s and
+`rtc.AudioSource.wait_for_playout()`'s actual source via
+`inspect.getsource()` (not just the docstring, which claims real-time
+pacing backpressure). Finding: `capture_frame()` only awaits an FFI
+round-trip acknowledgment that the frame reached the native client's
+buffer; the real-time pacing machinery it schedules (`_q_size`, `_join_fut`,
+a `call_later` releasing a waiter) is never awaited inside
+`capture_frame()` -- it's resolved by a separate, unrelated method,
+`wait_for_playout()`, which `TransportAgent` never calls anywhere. Buffer 3
+was never going to show a backlog under the current code, with or without a
+listener -- the real, unbounded, real-time-paced buffer is entirely on the
+native side of the FFI boundary, a fifth buffer M3-R1's original
+four-buffer enumeration did not name and this harness cannot introspect or
+drive from Python.
+
+`worst_case_no_flush_latency` stays `UNKNOWN`, but the `reason` field now
+states the real, code-verified cause instead of the wrong "no consumer
+attached" theory. `buffer4_livekit_frames_received` (new figure, 6 of 50
+frames observed reaching the real consumer by snapshot time) confirms the
+pipeline delivers end-to-end; it just cannot be timed from the Python side
+past `capture_frame()`. Report title and notes rewritten to narrate this as
+a second, sharper negative result rather than a resolved measurement.
+
+**Consequence for P1-3.** Its flush logic (still not built, correctly
+gated on this measurement) needs to reach past `capture_frame()` -- via
+`wait_for_playout()` or a native-side API -- to affect the buffer that
+actually matters. A flush that only clears `TransportAgent.audio_queue`
+would fix nothing a user could hear.
+
+**Part 2 -- stt-agent hang, bounded diagnostic pass.** No interactive
+debugger reachable inside the container from this harness, so this tested
+three cheap, falsifiable hypotheses against fresh single-utterance
+containers, per the approved plan, stopping if none resolved it:
+
+1. `params.set_n_threads(1)` in `whisper.rs::transcribe` (temporary local
+   build) -- still hung. Rules out an internal ggml multi-thread race.
+2. `STT_SENSEVOICE=off` -- still hung (falls the fast path back to Whisper
+   `tiny.en` too, so both paths were pure-Whisper). Rules out SenseVoice/
+   ONNX Runtime resource contention.
+3. A 0.6s utterance, just above the `pcm_16k.len() < 16_000/2` floor --
+   still hung at the identical point. Rules out a length-dependent path.
+
+All three stalled identically: right after whisper's `compute buffer
+(decode)` init log, zero completion, zero error logged, `docker stats`
+pinned at 0.00% CPU for the full observation window (not the near-100%-
+on-one-core signature of slow-but-working inference). A fourth pass under
+`RUST_LOG=trace` added one real finding: the tokio runtime keeps running
+normally for 70+ seconds after the stall begins -- NATS PING/PONG and
+`audio.inbound` dispatch continue in the trace log with no gap -- so this is
+not a runtime-wide stall from a missing `spawn_blocking` (`run_final_job`
+already wraps the accurate call correctly). Only that one spawned blocking
+task itself never returns and burns no CPU while not returning: blocked,
+not busy, consistent with a wait on a synchronization primitive inside
+whisper.cpp's C code that is never signaled, not an infinite compute loop.
+
+No source change ships from this pass, per the plan's own rule against
+shipping a blind fix without the ability to verify it. `whisper.rs` reverted
+to its pre-diagnostic state (`git diff` against `main` is empty). Findings
+written into `tools/measure/m14_stt_cost.py`'s docstring, immediately below
+the original finding, so the next person who reaches for a debugger starts
+from three ruled-out causes and one substantive lead instead of zero.
+
+**Verified:** full backend suite 1019/1019, `ruff check .` clean on the
+changed files. No new tests -- no new decision logic shipped, only measurement-
+harness and docstring changes.
+
+**NOT done:**
+- Root-causing the stt-agent hang -- still open, now with three hypotheses
+  ruled out and one lead (a synchronization primitive inside whisper.cpp)
+  instead of none. Needs an actual debugger (lldb/gdb) attached inside the
+  container, out of reach of this harness.
+- Instrumenting past the LiveKit FFI boundary to get a real
+  `worst_case_no_flush_latency` figure -- would need LiveKit Rust/FFI-level
+  work or calling `wait_for_playout()` from a modified
+  `_audio_playback_worker`, both out of scope for a Python-only measurement
+  harness.
+- `buffer2_nats_pending` -- still `UNKNOWN`, unchanged from Stage 3 (would
+  need nats-py internals not exposed on the public subscription object).
+- Parts 3-5 of the same backlog-clearing pass (visual grounding wiring,
+  P1-9 prompt delimiters, the six one-ended NATS subjects) and Stage 4
+  itself -- all still ahead.

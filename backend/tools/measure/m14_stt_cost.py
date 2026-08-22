@@ -44,6 +44,48 @@ inside the container or bisecting which whisper.cpp call blocks. Filed
 alongside P2-11 (native macOS binary can't even start) as a second,
 independent stt-agent reliability gap worth its own investigation, not
 folded into this measurement's own scope.
+
+**Bounded diagnostic pass, 2026-08-22 (backlog Part 2).** Three cheap,
+falsifiable hypotheses were tested against fresh single-utterance
+containers, in order, each ruled out by an identical symptom (stall
+immediately after whisper's `compute buffer (decode)` init log, zero
+completion, zero error, and `docker stats` pinned at **0.00% CPU** for the
+full observation window rather than the near-100%-on-one-core signature of
+slow-but-working inference):
+
+1. `params.set_n_threads(1)` in `whisper.rs::transcribe` (temporary local
+   build) -- still hung. Rules out an internal ggml multi-thread race: a
+   single decode thread cannot deadlock against other ggml threads that
+   don't exist in this run.
+2. `STT_SENSEVOICE=off` -- still hung (this also falls back the fast path to
+   Whisper `tiny.en`, so both paths were pure-Whisper and it still hung on
+   the accurate call). Rules out resource contention between SenseVoice's
+   ONNX Runtime and whisper.cpp's ggml runtime as the cause.
+3. A 0.6s utterance, just above the `pcm_16k.len() < 16_000/2` floor --
+   still hung at the same point. Rules out a length- or buffer-size-
+   dependent path.
+
+A fourth pass under `RUST_LOG=trace` added one real finding beyond ruling
+hypotheses out: the tokio runtime keeps running normally for 70+ seconds
+after the stall begins -- NATS PING/PONG keepalives and unrelated
+`audio.inbound` message dispatch continue in the trace log throughout, with
+no gap. This means the hang is *not* a runtime-wide stall (e.g. a blocking
+call made without `spawn_blocking`) -- `run_final_job` correctly wraps the
+accurate call in `spawn_blocking`, and that wrapping is doing its job; only
+that one spawned blocking task itself never returns and burns no CPU while
+not returning. That combination -- blocked, not busy -- is the signature of
+a wait on a synchronization primitive (a mutex, condvar, or semaphore)
+inside whisper.cpp's C code that is never signaled, not an infinite compute
+loop.
+
+No source change ships from this pass -- none of the three hypotheses
+produced a fix to verify, and the plan's own rule is not to ship a blind fix
+without the ability to confirm it resolves the real issue. Root-causing
+further needs an actual debugger (lldb/gdb) attached inside the container,
+out of reach of this harness. Filed as the same open reliability gap noted
+above, now with three ruled-out causes and one substantive lead (blocked
+inside a whisper.cpp synchronization primitive, not multi-threading, not
+SenseVoice, not utterance length) for whoever picks up a debugger next.
 """
 
 from __future__ import annotations
