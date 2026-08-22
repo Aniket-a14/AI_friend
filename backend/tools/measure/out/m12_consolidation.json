@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-22T14:18:28.134970+00:00",
+  "measurement_id": "1.2",
+  "title": "Consolidation wall-clock vs control-tier AckWait, idle and under VLM contention",
+  "provenance": "live",
+  "runs": [
+    {
+      "figures": {
+        "consolidation_idle_s": {
+          "label": "MEASURED",
+          "value": 7.475874165999812,
+          "unit": "seconds",
+          "derivation": "",
+          "reason": ""
+        },
+        "consolidation_with_vlm_s": {
+          "label": "MEASURED",
+          "value": 10.079377084000043,
+          "unit": "seconds",
+          "derivation": "",
+          "reason": ""
+        },
+        "control_tier_ack_wait_s": {
+          "label": "MEASURED",
+          "value": 30.0,
+          "unit": "seconds",
+          "derivation": "",
+          "reason": ""
+        },
+        "p1_1_worked": {
+          "label": "MEASURED",
+          "value": "yes",
+          "unit": "",
+          "derivation": "consolidation ran via _run_consolidation_pass(), called from a dispatched asyncio.create_task in _on_system_tick rather than awaited inline -- the tick callback's ack no longer waits on this wall-clock at all, so neither figure above needs to fit under control_tier_ack_wait_s for the system to be correct, unlike the pre-P1-1 code HARDWARE.md §3.3 estimated against.",
+          "reason": ""
+        }
+      },
+      "raw": {
+        "idle_events": [
+          {
+            "duration_s": 7.47582041700025,
+            "ack_wait_s": 30.0
+          }
+        ],
+        "contended": true
+      }
+    }
+  ],
+  "notes": [
+    "6 seed turns (3 exchanges), unconsolidated, per pass -- small relative to HARDWARE.md §3.3's assumption of a fuller history, so these wall-clocks are a floor, not a worst case.",
+    "VLM contention is real (a live moondream describe_image call run concurrently via asyncio.gather), not simulated.",
+    "MESH_CONTROL_ACK_WAIT_S=30.0s is the number this used to have to fit under before P1-1; it no longer gates correctness, only recognizes a tick's remaining worst case (one short proactive-thought call)."
+  ]
+}

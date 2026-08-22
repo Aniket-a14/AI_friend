@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from ..config import Config
+from ..measure_trace import trace as _measure_trace
 from ..state.graph_db import GraphDB
 from .identity import IdentityManager
 from .json_extract import extract_first_json_value
@@ -161,10 +162,14 @@ class ReflectionService:
             """
 
             try:
+                _t0 = time.monotonic()
                 fact_res = await self.llm.generate(
                     fact_prompt,
                     model=Config.LLM_REFLECTION_MODEL,
                     options_override={"num_predict": 256},
+                )
+                _measure_trace(
+                    "reflection", "llm_call_facts", duration_s=time.monotonic() - _t0
                 )
                 facts = self._extract_json(fact_res)
 
@@ -262,10 +267,14 @@ class ReflectionService:
             Output JSON ONLY: {{"new_traits": ["..."], "relationship": "...", "confidence": 0.0}}
             """
             try:
+                _t0 = time.monotonic()
                 ident_res = await self.llm.generate(
                     identity_prompt,
                     model=Config.LLM_REFLECTION_MODEL,
                     options_override={"num_predict": 256},
+                )
+                _measure_trace(
+                    "reflection", "llm_call_identity", duration_s=time.monotonic() - _t0
                 )
                 suggestions = self._extract_json(ident_res)
 
@@ -310,10 +319,16 @@ class ReflectionService:
                 Format: A brief, single-paragraph narrative from the AI's perspective (e.g. "We discussed...").
                 """
 
+                _t0 = time.monotonic()
                 consolidation_res = await self.llm.generate(
                     consolidation_prompt,
                     model=Config.LLM_REFLECTION_MODEL,
                     options_override={"num_predict": 256},
+                )
+                _measure_trace(
+                    "reflection",
+                    "llm_call_consolidation",
+                    duration_s=time.monotonic() - _t0,
                 )
                 consolidated_summary = consolidation_res.strip()
                 if "<think>" in consolidated_summary:

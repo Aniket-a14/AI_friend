@@ -11,21 +11,21 @@ This document provides a highly rigorous, publication-grade academic literature 
 
 The comparative matrix below contrasts the cognitive humanoid brain of CVS-3.5 against similar systems described in key HRI and cognitive robotics literature.
 
-*To ensure high-fidelity reproducibility, our columns are kept blank as placeholders (`[TBP]`) to be populated dynamically by executing the physical benchmarking scripts.*
+*To ensure high-fidelity reproducibility, our columns are kept blank as placeholders (`[TBP]`) to be populated dynamically by executing the physical benchmarking scripts.* **Populated below from Stage 3 (`audit/ROADMAP.md` §7) real measurements where a directly comparable number exists; NOT MEASURED with a stated reason otherwise, rather than an estimate.**
 
 ### Table I: SOTA System-to-System Benchmarking Matrix
 
 | Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.5 Humanoid Brain (Live Bench)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **`[TBP]`** |
-| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **`[TBP]`** |
-| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **`[TBP]`** |
-| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | **`[TBP]`** |
-| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **`[TBP]`** |
-| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **`[TBP]`** |
-| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **`[TBP]`** |
-| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **`[TBP]`** |
-| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **`[TBP]`** |
+| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **NOT MEASURED — no flush mechanism exists (M3-R1); see measurement 1.1** |
+| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **NOT MEASURED — not isolated as a separate stage in measurement 1.5** |
+| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **NOT MEASURED — no CUDA/TTS on this host** |
+| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | **$O(M_{\text{total entities}})$ — unbounded, MEASURED via code path (M2-P2): `_gather_candidate_sources` issues `MATCH (e:Entity)` / `MATCH (s)-[r]-(t)` with no LIMIT; measurement 1.6's graph_fetch_cold_s was near-instant only because this run's graph held 0 entities** |
+| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **NOT MEASURED — no reference corpus; production personas are authored per-deployment by design** |
+| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **NOT MEASURED — no such evaluation exists in this codebase** |
+| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **Dynamic — MEASURED as shipped code, not a benchmark number: tonic+phasic cortisol/dopamine and 3D PAD state are live and mutated per turn (`state/agent_state.py`), not static; see `CLAUDE.md`'s Endocrine layer section** |
+| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **≈996 MiB, MEASURED (`docker stats`, 6 infra containers, idle, 2026-08-22) — agents and STT/LLM not containerized this pass, so this undercounts the full stack; see `frameworks_infrastructure.md` Table I** |
+| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **NOT MEASURED — no power-metering access on this host (HARDWARE.md §0 draws the same line)** |
 | **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** |
 
 ---

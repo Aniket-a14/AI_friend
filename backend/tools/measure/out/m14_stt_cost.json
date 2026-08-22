@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-22T14:47:15.012347+00:00",
+  "measurement_id": "1.4",
+  "title": "Fast-path STT cost vs utterance length (end-to-end final-transcript latency)",
+  "provenance": "live",
+  "runs": [
+    {
+      "figures": {
+        "latency_s_at_1s_utterance": {
+          "label": "UNKNOWN",
+          "value": null,
+          "unit": "",
+          "derivation": "",
+          "reason": "no chat.input arrived within 60.0s (endpointer may not have fired, or stt-agent is not running)"
+        },
+        "latency_s_at_2s_utterance": {
+          "label": "UNKNOWN",
+          "value": null,
+          "unit": "",
+          "derivation": "",
+          "reason": "no chat.input arrived within 60.0s (endpointer may not have fired, or stt-agent is not running)"
+        },
+        "latency_s_at_4s_utterance": {
+          "label": "UNKNOWN",
+          "value": null,
+          "unit": "",
+          "derivation": "",
+          "reason": "no chat.input arrived within 60.0s (endpointer may not have fired, or stt-agent is not running)"
+        }
+      },
+      "raw": {
+        "results": {},
+        "errors": {
+          "1.0": "no chat.input arrived within 60.0s (endpointer may not have fired, or stt-agent is not running)",
+          "2.0": "no chat.input arrived within 60.0s (endpointer may not have fired, or stt-agent is not running)",
+          "4.0": "no chat.input arrived within 60.0s (endpointer may not have fired, or stt-agent is not running)"
+        }
+      }
+    }
+  ],
+  "notes": [
+    "Measures end-to-end latency (last voiced frame published -> chat.input received), the practical form of M3-P1's question. It does NOT isolate per-partial cost on audio.perception in isolation -- that would need partial arrival timestamps correlated per 500ms interval, left for a follow-up if this coarser signal warrants it.",
+    "Synthetic 440Hz tone, not real speech -- exercises the endpointer and buffer-rescan cost path identically (both are RMS/buffer-length driven, not content-driven), but whisper/SenseVoice transcription quality on a pure tone is undefined and irrelevant to this measurement.",
+    "900ms of trailing silence per utterance, above the 700ms default STT_ENDPOINT_SILENCE_MS, to reliably trigger finalization."
+  ]
+}

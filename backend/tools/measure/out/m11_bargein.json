@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-22T14:23:22.773816+00:00",
+  "measurement_id": "1.1",
+  "title": "End-to-end barge-in latency (buffer-drain timing, synthetic PCM)",
+  "provenance": "live",
+  "runs": [
+    {
+      "figures": {
+        "backlog_frames_at_stop_instant": {
+          "label": "MEASURED",
+          "value": 0,
+          "unit": "frames (buffer 3)",
+          "derivation": "",
+          "reason": ""
+        },
+        "burst_publish_time_s": {
+          "label": "MEASURED",
+          "value": 0.02214258299954963,
+          "unit": "seconds",
+          "derivation": "wall-clock to publish 50 frames sequentially",
+          "reason": ""
+        },
+        "ai_audio_stream_bytes_at_stop": {
+          "label": "MEASURED",
+          "value": 3207046,
+          "unit": "bytes (buffer 1)",
+          "derivation": "",
+          "reason": ""
+        },
+        "dropped_frames_before_stop": {
+          "label": "MEASURED",
+          "value": 0,
+          "unit": "frames",
+          "derivation": "",
+          "reason": ""
+        },
+        "residual_drain_time_s": {
+          "label": "MEASURED",
+          "value": 0.0403341659994112,
+          "unit": "seconds",
+          "derivation": "0 frames still queued at the stop instant; wall-clock to the last buffer3_to_4 crossing was 0.040s",
+          "reason": ""
+        },
+        "worst_case_no_flush_latency": {
+          "label": "UNKNOWN",
+          "value": null,
+          "unit": "",
+          "derivation": "",
+          "reason": "this run's queue_depth_at_stop is near zero (see notes): capture_frame() does not pace to real-time or apply backpressure without a connected subscriber actually consuming the published track, so no realistic backlog accumulated in buffer 3 for this harness to time a drain of -- M3-R1's worst-case scenario needs a real (or artificially paced) consumer on the other end, which this run does not attach"
+        },
+        "buffer2_nats_pending": {
+          "label": "UNKNOWN",
+          "value": null,
+          "unit": "",
+          "derivation": "",
+          "reason": "nats-py's JetStream push-subscription pending count is not exposed on the public subscription object used here; would need the client's internal _sub.pending_msgs, not queried to avoid depending on undocumented internals"
+        },
+        "buffer4_livekit_internal": {
+          "label": "UNKNOWN",
+          "value": null,
+          "unit": "",
+          "derivation": "",
+          "reason": "requires a receiving LiveKit client actually subscribed to the published track to observe sink-side buffering; this run publishes a track but attaches no subscriber"
+        }
+      },
+      "raw": {
+        "buffer3_to_4_event_count": 50
+      }
+    }
+  ],
+  "notes": [
+    "Synthetic PCM, not real speech synthesis -- no CUDA/GPT-SoVITS on this host. This measures the buffer-drain portion of the chain (JetStream -> NATS client -> audio_queue -> LiveKit capture_frame), not synthesis latency upstream of it.",
+    "IMPORTANT negative result: 50 of 50 frames had already crossed buffer3_to_4 (reached capture_frame) by the time the 'stop instant' was sampled, leaving only 0 still queued. rtc.AudioSource.capture_frame() does not block or pace to real-time when nothing is actually consuming the published track -- this run publishes a track but attaches no receiving client, so there is no playback-rate backpressure and the queue drains at publish speed instead of speech speed. This is itself informative: it means M3-R1's buffer-3 backlog scenario specifically requires an actively-playing listener, and cannot be reproduced by publishing alone.",
+    "residual_drain_time_s and backlog_frames_at_stop_instant are real measurements of what they say, but do NOT answer M3-R1's actual question (see worst_case_no_flush_latency, UNKNOWN) -- that needs either a real LiveKit-connected client pacing consumption, or capture_frame() driven under an explicit clock budget so backpressure is simulated rather than absent. Left for a follow-up with that harness piece built; recorded here as UNKNOWN rather than reporting this run's near-zero number as if it were the answer.",
+    "TransportAgent still has no audio.stop subscriber (P1-3 not yet built, correctly gated on this measurement per audit/ROADMAP.md §7's sequencing) -- even with a real backlog, nothing today drains it faster than playback pace regardless of when a stop is requested.",
+    "buffer2 and buffer4 are UNKNOWN for the reasons stated per figure, matching HARDWARE.md §0's rule against filling an unmeasured figure with a plausible number."
+  ]
+}

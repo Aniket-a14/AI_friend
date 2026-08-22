@@ -7,6 +7,7 @@ from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
 
 from ..config import Config
+from ..measure_trace import trace as _measure_trace
 from .base import BaseAgent, install_shutdown_signal_handlers
 
 logger = logging.getLogger("transport_agent")
@@ -61,6 +62,14 @@ class TransportAgent(BaseAgent):
         )
         self.inbound_audio_worker_task = None
         self.dropped_inbound_audio_frames = 0
+
+    def _trace(self, event: str, **fields) -> None:
+        """Stage 3 (audit/ROADMAP.md measurement 1.1, M3-R1): one structured
+        log line per buffer-seam crossing along the outbound audio path,
+        parsed out of container logs by backend/tools/measure/m11_bargein.py.
+        See measure_trace.trace for why this is a log line, not a subject.
+        """
+        _measure_trace(self.name, event, **fields)
 
     async def _connect_livekit_with_retry(self, token: str):
         """Connect to LiveKit with bounded retries for transient SFU startup gaps."""
@@ -251,6 +260,12 @@ class TransportAgent(BaseAgent):
                                 self.dropped_audio_frames,
                             )
 
+                    self._trace(
+                        "buffer2_to_3",
+                        qsize=self.audio_queue.qsize(),
+                        dropped=self.dropped_audio_frames,
+                    )
+
             if is_done:
                 logger.info("AI Utterance stream complete.")
 
@@ -277,6 +292,10 @@ class TransportAgent(BaseAgent):
                         samples_per_channel=samples_per_channel,
                     )
                     await self.audio_source.capture_frame(frame)
+                    self._trace(
+                        "buffer3_to_4",
+                        qsize=self.audio_queue.qsize(),
+                    )
                 finally:
                     self.audio_queue.task_done()
             except asyncio.CancelledError:
