@@ -133,6 +133,21 @@ class AppSettings(BaseSettings):
     MESH_CONTROL_MAX_DELIVER: int = 3
     MOCK_LLM_TEXT: bool = False
 
+    # Stage 3 (audit/ROADMAP.md §7): off by default. When true, transport_agent,
+    # subconscious_agent, and ollama_client emit the timestamps and prompt
+    # digests backend/tools/measure/ needs for measurements 1.1, 1.2 and 1.5.
+    # A prompt digest is recorded unconditionally when this is on; the full
+    # prompt text is not, so turning this on in a real deployment does not by
+    # itself start logging conversation content.
+    MEASURE_TRACE: bool = False
+    # Separate from MEASURE_TRACE on purpose: the digest above is safe to log
+    # unconditionally, but measurement 1.5 (prompt-prefix sharing) needs the
+    # literal prompt text to compute a shared prefix across a turn's six LLM
+    # calls -- a hash can't do that. This second flag is what actually opts a
+    # run into logging conversation content, and stays off even when
+    # MEASURE_TRACE is on.
+    MEASURE_TRACE_FULL_PROMPTS: bool = False
+
     REFLECTION_ENABLED: bool = True
     REFLECTION_MIN_INTERVAL_SECONDS: float = 0.0
 

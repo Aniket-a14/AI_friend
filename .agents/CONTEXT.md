@@ -7324,3 +7324,286 @@ creation paths diverging, `AI_AUDIO` storage flipped to file, and
 - Stage 3's remaining five measurements, P1-3/P1-4 (gated on measurement
   1.1), P1-9 (wants an `evals/` baseline), and the six newly-discovered
   one-ended subjects from P1-8 -- all still out of scope for this batch.
+
+## 2026-08-22 -- audit/ implementation, Stage 3 (the measurement gate) -- six ROADMAP measurements taken against real infra, Stage 2's real-NATS verification closed out, and 40 [TBP] placeholders in academic_benchmarks/ reconciled
+
+Third implementation stage from `audit/`'s roadmap (`audit/ROADMAP.md` §7,
+Stage 3): "nothing below Stage 3 should be sized by guesswork." Both
+blockers from `HARDWARE.md` §2 (Docker down, `backend/models/` unprovisioned)
+were removed this session: Docker Desktop started, SenseVoice provisioned
+and hash-verified (third attempt -- two prior attempts hit transient
+GitHub-release-asset network failures, not a code problem), `moondream`
+pulled, and `voice-agent`/`stt-agent` built in release mode. `stt-agent`
+confirmed to SIGKILL natively on this macOS host exactly as `HARDWARE.md` §8
+documented (no `LC_RPATH`), so measurement 1.4 ran the Linux container
+instead, per that finding's own recommendation.
+
+**One thing found and fixed before any measurement could run: the
+`ai_friend_postgres_data` Docker volume was stale.** `db/schema.sql` declares
+a `raw_content` column on `memories` that a pre-existing local volume's table
+did not have (0 rows in it -- confirmed empty before touching it, and this
+was dev/measurement infra started fresh this session, not a volume holding
+anything else). User explicitly approved the recreate (destructive-action
+sign-off, matching this session's established pattern for anything touching
+`docker volume rm`). Recreated cleanly; `runtime_bootstrap.bootstrap_runtime()`
+then applied the current schema without incident.
+
+### Instrumentation (`backend/app/measure_trace.py`, new)
+
+A single off-by-default trace primitive shared by every measurement call
+site, gated on a new `Config.MEASURE_TRACE` (default `false`) plus a second,
+independently-gated `Config.MEASURE_TRACE_FULL_PROMPTS` (also default
+`false`, stays off even when the first is on) for the one measurement that
+needs literal prompt text rather than a digest. Deliberately a **log line**,
+not a NATS subject: a new subject would need an entry in
+`check_subject_wiring.py`'s ALLOWLIST for a "subscriber" living entirely
+outside `app/`/`crates/` (the measurement harness), which a log line needs no
+carve-out for. Also supports in-process listeners (`add_listener`/
+`remove_listener`) so a harness driving code in the same process (no
+container boundary) can capture structured events directly instead of
+re-parsing its own log output -- `backend/tools/measure/harness.py`'s
+`collecting_trace()` context manager is the only caller.
+
+Four call sites wired: `transport_agent.py` (`_trace`, at the two buffer
+seams `_on_nats_audio`→`audio_queue` and `audio_queue`→`capture_frame`),
+`cognitive/learning.py` (around each of the three `self.llm.generate()`
+calls in `_consolidate`), `subconscious_agent.py` (`_run_consolidation_pass`
+wall-clock), and `llm/ollama_client.py` (`_trace_prompt`, digest+length
+always, literal text only under `MEASURE_TRACE_FULL_PROMPTS` -- reuses
+`evals/schema.py`'s `fingerprint()` shape, sha256 hex[:16], duplicated rather
+than imported since `CLAUDE.md`'s `app/`-may-not-import-`evals/` rule runs
+one way).
+
+### The harness (`backend/tools/measure/`, new)
+
+Mirrors the three rules `evals/` already holds, per `CLAUDE.md`: nothing in
+`app/` imports from it; every report carries provenance (`live`/`mock`,
+refusing a `MOCK_LLM_TEXT` run as evidence unless `--allow-mock` is passed);
+and every figure carries `HARDWARE.md` §0's label (`MEASURED` / `ESTIMATED`,
+derivation shown / `UNKNOWN`, reason shown). `schema.py`'s `MeasurementReport`
+averages multiple runs and reports their spread rather than a bare mean, for
+the same reason `evals/`'s own history gives: a "deterministic" harness
+turned out not to be reproducible until the runtime's starting state stopped
+being implicit (`runner.reset_model_state`) -- a single-run number here is an
+anecdote. `harness.ensure_bootstrapped()` runs the real
+`runtime_bootstrap.bootstrap_runtime()` once per process (idempotent, cached)
+so measurements against Postgres don't need `db/schema.sql`'s
+`surface_actr_memories()` applied by hand first.
+
+Six modules, one per ROADMAP measurement, all run against **real** infra this
+session (not mocked): `m11_bargein.py`, `m12_consolidation.py`,
+`m13_audio_growth.py`, `m14_stt_cost.py`, `m15_prompt_prefix.py`,
+`m16_retrieval.py`, plus `__main__.py` (`python -m tools.measure run
+<id>|all`). Results in `tools/measure/out/*.json`.
+
+**1.1 -- barge-in latency, the roadmap's stated highest-value unmeasured
+number, and a genuine negative result.** No real TTS is possible on this
+host (no CUDA, no cloned-voice weights in the repo -- see this stage's own
+Context note), so `m11_bargein.py` drives `TransportAgent` in-process against
+real NATS/JetStream and real LiveKit (`local_sfu`), injecting synthetic PCM
+directly onto `audio.stream` at the real 32kHz/16-bit/mono wire rate. First
+attempt primed a "backlog" by polling until `audio_queue.qsize()` reached a
+target before snapshotting -- the poll itself gave `_audio_playback_worker`
+time to drain the queue, so every snapshot read near-zero. Root cause,
+confirmed by removing the poll and observing the same thing: **without a
+receiving LiveKit client actually consuming the published track,
+`rtc.AudioSource.capture_frame()` does not pace to real-time or apply any
+backpressure at all** -- it drains at publish speed, not speech speed. This
+means M3-R1's buffer-3 backlog scenario cannot be reproduced by publishing
+alone; it needs a real (or explicitly clock-paced) consumer on the sink side.
+Reported honestly: `backlog_frames_at_stop_instant` and
+`residual_drain_time_s` are real numbers, but a new figure,
+`worst_case_no_flush_latency`, is filed `UNKNOWN` with this exact reason
+rather than letting the near-zero drain time stand in as if it answered
+M3-R1's question. `buffer2_nats_pending` (no public API on the subscription
+object without touching nats-py internals) and `buffer4_livekit_internal`
+(no attached subscriber) are `UNKNOWN` for the reasons stated. Confirmed
+separately, again: `TransportAgent` still has no `audio.stop` subscriber at
+all (P1-3 not built, correctly gated on this measurement per the roadmap's
+own sequencing).
+
+**1.2 -- consolidation wall-clock vs the control-tier AckWait, and a check
+that P1-1 actually worked.** `m12_consolidation.py` builds a real
+`SubconsciousAgent` (real `GraphDB`, real `MemoryStore`, real
+`ReflectionService`, 6 seeded conversation turns) and times
+`_run_consolidation_pass()` directly: **8.77s idle, 10.04s with a real,
+concurrent `moondream` `describe_image()` call** (not simulated --
+HARDWARE.md §5's contention shape, two resident model calls at once).
+Both comfortably under the 30s `MESH_CONTROL_ACK_WAIT_S`, but the more load-
+bearing finding is structural, not numeric: since P1-1 (Stage 2) dispatches
+consolidation off the tick callback, this wall-clock **no longer has to fit
+under AckWait for the system to be correct at all** -- unlike the pre-P1-1
+code `HARDWARE.md` §3.3 estimated ~16s/~28s against. The measurement doubles
+as confirmation that the fix landed as intended.
+
+**1.3 -- `AI_AUDIO` growth, and the roadmap's own sizing estimate turned out
+too pessimistic.** `m13_audio_growth.py` publishes synthetic 32kHz/16-bit
+frames directly and samples real `stream_info()` before/after: **measured
+wire rate ≈ 68.2-68.6 KB/s** (10s and 30s runs), essentially the
+64 KB/s contract itself plus small per-message overhead -- **roughly half**
+`P1-2`'s cited ~130 KB/s estimate. At the measured rate, `AI_AUDIO`'s 256 MiB
+`max_bytes` policy has ≈3900s (~65 min) of single-stream headroom before
+`max_bytes` binds, not the ~33 min the original estimate implied. The
+retention policy has more margin than it was sized against, not less --
+worth knowing before anyone tightens it further. `policy_max_age_s`'s 300s
+window was longer than both test durations, so no message aged out mid-run;
+noted explicitly rather than left ambiguous.
+
+**1.4 -- STT cost vs utterance length: infrastructure engaged successfully,
+and a second, independent stt-agent reliability gap was found, distinct from
+`HARDWARE.md` §8's SIGKILL.** Built `ai_friend_stt_agent:measure` from
+`Dockerfile.rust --target runtime` (base image pull was the slow part, ~7
+minutes on this network; the actual Rust compile was fast, ~35s, matching
+the native build). Ran it on `ai_mesh_network`, whisper `base.en` +
+SenseVoice both loaded, confirmed subscribed to `audio.inbound` via its own
+log line. `m14_stt_cost.py` published synthetic 440Hz-tone utterances (1s,
+2s, 4s) at 16kHz with 900ms trailing silence, and the container correctly
+endpointed **2 of 3** (`"utterance endpointed; transcribing secs=2.9"` and
+`"secs=4.9"`, matching the 2s/4s requests exactly -- the 1s request's own
+endpoint event never logged, a separate small thing worth another look). But
+the accurate-path (whisper) transcription call that follows **hung
+indefinitely** for all three: no `chat.input` ever arrived, no error was
+logged, and `docker stats` showed the container sitting at **0.00% CPU for
+5+ minutes** after the last "transcribing" log line -- a live, running
+process (11 PIDs) doing zero work, not merely slow single-threaded CPU
+inference (which would show near-100% on one core, not 0%). Not root-caused
+here (would need a debugger attached inside the container, or bisecting
+which whisper.cpp call blocks); filed alongside P2-11 as a second,
+independent stt-agent reliability gap. All three length figures are
+correctly reported `UNKNOWN` with this reason rather than a fabricated
+latency number.
+
+**1.5 -- prompt-prefix sharing, and the roadmap's "six per-turn calls"
+assumption didn't hold for a fresh single-turn event.** `m15_prompt_prefix.py`
+drives one real turn through `CognitiveService.process_event()` in-process
+(real Postgres/Neo4j/Ollama; `process_event`'s `if self.agent:` guard makes
+the NATS-publish side a no-op with `self.agent = None`, so no mesh connection
+is needed to exercise the real pipeline). Only **2** LLM calls fired for a
+first-contact turn with no prior history (appraisal + the main response
+call) -- intent classification and reflection's three calls never triggered,
+since a single fresh turn doesn't cross `REFLECTION_MIN_INTERVAL_SECONDS` or
+reach the consolidation path. Measured **zero shared prefix** between the two
+prompts that did fire (621 chars vs 2642 chars, `min_shared_prefix_chars=0`)
+-- so Ollama's prompt cache cannot help across them today, at least for this
+turn shape. `PERFORMANCE.md` §17 item 5's assumption needs a longer scripted
+conversation to observe all six calls in one measurement; noted as a
+follow-up rather than silently working around it.
+
+**1.6 -- retrieval hot path, unbounded graph fetch, SQLite under concurrent
+load -- three real sub-measurements, one real surprise.** `m16_retrieval.py`:
+`search_memories()` fused call (10 seeded memories, real Postgres/Neo4j/
+Qdrant) took **49ms**. The two unbounded `MATCH (e:Entity)` /
+`MATCH (s)-[r]-(t)` Cypher queries from M2-P2 took **5μs cold / 1.4μs
+cache-warm** on this fresh, empty graph (0 entities) -- the finding here is
+qualitative, not the number: M2-P2's unbounded-fetch defect is still
+unfixed, just not yet costly on a graph this small. The SQLite-concurrency
+sub-measurement (real `SQLitePool(":memory:")`, per the `is_sqlite` property
+being read-only -- `CLAUDE.md`'s documented pattern) found the opposite of
+what M2-P3's strongest reading predicts: 5 concurrent `search_memories()`
+calls via `asyncio.gather` totaled **43.8ms** against a **137.0ms** serial
+estimate (overlap ratio 0.32, not near 1.0). This does **not** contradict
+M2-P3's code-level evidence -- `SQLiteConnection`'s methods really do call
+`cursor.execute()`/`commit()` with no `await` inside them -- because
+`search_memories()` also issues real async I/O per call (at least one
+embedding request over `httpx`), and that portion genuinely yields the loop,
+letting other calls' embedding requests interleave even while each call's
+SQLite portion blocks. The measured ratio is a call-level average across
+both portions; it does not by itself isolate whether the SQLite portion
+specifically overlaps, which is M2-P3's precise claim. Recorded as a
+correction to an assumption stated while planning this measurement, not as a
+retraction of M2-P3.
+
+### Stage 2's real-NATS verification, closed out (was the ledger's one open
+NOT-done item from the previous entry)
+
+With NATS live: `AI_MESSAGES` confirmed `storage=file`, `max_age=604800.0s`
+(7d), `max_bytes=1073741824` (1GiB); `AI_AUDIO` confirmed `storage=memory`,
+`max_age=300.0s` (5m), `max_bytes=268435456` (256MiB) -- both via
+`js.stream_info()`, exactly matching `STREAM_POLICIES`. Separately: created a
+durable with a deliberately wrong config (`ack_wait=99.0, max_deliver=1`),
+then drove `BaseAgent.subscribe()` with the correct
+`ack_wait=30.0, max_deliver=3` -- `_reconcile_consumer_config` logged the
+drift warning, deleted the stale durable, and the recreated one showed the
+requested config. Both P1-1 and P1-2's core mechanisms now verified against
+real JetStream, not only the test double.
+
+### `academic_benchmarks/` -- 40 `[TBP]` placeholders reconciled, and a
+self-correction along the way
+
+Per `CLAUDE.md`'s integrity constraint (documented benchmark results are
+placeholders; state targets as targets until measured), every `[TBP]` across
+`frameworks_infrastructure.md`, `experimental_methodology.md`,
+`novelty_contributions.md`, and `literature_review.md` was replaced with
+either a real Stage 3 figure (cited by measurement ID) or an explicit
+**`NOT MEASURED — <reason>`**, never a plausible-looking number. Two things
+found while doing this, beyond the numbers themselves:
+
+**Four agent filenames in `frameworks_infrastructure.md`'s Table I were
+wrong** -- `state_agent.py`, `memory_agent.py`, `threat_scan.py` name
+nothing in `backend/app/agents/`; the real files are `system_agent.py`,
+`surfacing_agent.py`, `subconscious_agent.py`, and there is no dedicated
+threat-scan/barge-in-segmenter agent (barge-in handling lives in
+`transport_agent.py`/`voice-agent`, per M3-R1). Corrected in the same pass
+that added measured numbers, rather than attaching real figures to invented
+component names.
+
+**`experimental_methodology.md` §1.1 originally claimed a described
+`--mode accelerated`/`--mode physical`, 100,000-iteration harness "does not
+exist in the codebase."** That was checked against `backend/` only and was
+wrong -- self-caught partway through this same pass, after the user pointed
+at `scripts/research/` (repo root, not `backend/`, 26 files, a real
+orchestration `README.md`). Corrected explicitly rather than left standing.
+**Deliberately still not run for §1.1's own figure**, though: `hard_benchmark.py`'s
+100,000-iteration mode runs against a synthetic corpus from
+`corpus_builder.py`/`generate_seeding_corpus.py`, which is exactly the
+corpus-fitted pattern `CLAUDE.md`'s integrity constraints warn against
+(finding B1) and that `backend/evals/` was built to refuse as evidence --
+user's explicit call, asked directly, was to use only `scripts/research/`'s
+corpus-free tools. `estimate_realtime_latency.py` (real `IdentityCoreStore`/
+`WorkingMemoryStore`/`SemanticRecallStore`, no synthetic corpus) ran cleanly
+against live Redis/Qdrant and confirmed sub-millisecond to low-millisecond
+figures for those tiers. `resource_profiler.py` (a thin wrapper over `docker
+stats --no-stream`, sampled every 5s) was run for 30s while `stt-agent` was
+under real load from measurement 1.4, giving `frameworks_infrastructure.md`
+and `literature_review.md` a real idle-vs-under-load pair rather than only
+an idle snapshot.
+
+**A new, real, corpus-free NATS round-trip figure**, not one of the
+roadmap's six but directly answering `novelty_contributions.md`'s IPC-latency
+claim: publish-to-subscriber-callback latency over live JetStream, loopback,
+n=30 -- **0.62ms mean, 0.52ms p50, 1.00ms p95**. Explicitly labeled as
+single-host loopback, not representative of a real multi-container network
+path.
+
+**Real container RAM figures for the 6 measured infra containers**
+(`docker stats --no-stream`, idle): NATS 15.9 MiB, Neo4j 644.7 MiB, Redis
+11.2 MiB, Postgres 57.1 MiB, Qdrant 221.8 MiB, LiveKit 45.7 MiB -- **≈996 MiB
+total**, explicitly labeled infra-only (the four agent processes and STT/LLM
+were not containerized this pass, so this is a partial total, not the full
+stack). CPU% and Power Footprint are `NOT MEASURED` (idle-snapshot CPU is
+near-zero and not representative; this host has no power-metering access,
+same line `HARDWARE.md` §0 already draws).
+
+**Verified:** full backend suite 1019/1019 (no new `backend/tests/` this
+stage -- the harness lives at `backend/tools/measure/`, mirroring `evals/`'s
+own precedent of not being covered by the pytest suite), `ruff check .`
+clean. No `app/` behavior changed except the four instrumentation call
+sites, all off by default and confirmed silent with `MEASURE_TRACE=false`
+(the suite's own default) -- not separately mutation-tested, since there is
+no new decision logic to break, only a log/callback emission gated on a
+flag that stays false throughout the entire existing test suite's run.
+
+**NOT done:**
+- Root-causing measurement 1.4's whisper-transcription hang -- filed as a
+  new, independent finding alongside P2-11, not investigated further this
+  stage.
+- Re-running measurement 1.1 with a real (or explicitly clock-paced)
+  LiveKit-connected consumer, which is what M3-R1's actual worst-case
+  backlog scenario needs -- `worst_case_no_flush_latency` stays `UNKNOWN`.
+- `scripts/research/`'s corpus-based tools (`hard_benchmark.py`,
+  `corpus_builder.py`, `generate_seeding_corpus.py`, `human_realism_eval.py`)
+  -- deliberately not run, per the corpus-fitted-evidence concern above; not
+  evaluated for whether they could be made corpus-free, either.
+- Stage 4 (P1-4 then P1-3, gated on measurement 1.1's still-open worst-case
+  question), P1-9 (prompt delimiters), and the six one-ended NATS subjects
+  from P1-8 -- all still out of scope for this stage.

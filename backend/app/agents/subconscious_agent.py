@@ -9,6 +9,7 @@ from app.cognitive.subconscious import SubconsciousEngine
 from app.config import Config
 from app.contracts import ChatInput, ChatInputMetadata, Topics
 from app.llm.ollama_client import OllamaClient
+from app.measure_trace import trace as _measure_trace
 from app.state.agent_state import StateService
 from app.state.graph_db import GraphDB
 
@@ -316,6 +317,7 @@ class SubconsciousAgent(BaseAgent):
         """The actual consolidation work (P1-1), dispatched by
         `_on_system_tick` rather than awaited inline so the tick's ack is
         not held on it. See `_on_system_tick`'s docstring for why."""
+        _t0 = time.monotonic()
         try:
             logger.info("[Subconscious] Initiating subconscious consolidation pass...")
             episodes = await self.memory_store.get_recent_unconsolidated_episodes(
@@ -402,6 +404,12 @@ class SubconsciousAgent(BaseAgent):
         except Exception as e:
             logger.error(f"[Subconscious] Consolidation pass failed: {e}")
         finally:
+            _measure_trace(
+                "subconscious",
+                "consolidation_pass",
+                duration_s=time.monotonic() - _t0,
+                ack_wait_s=Config.MESH_CONTROL_ACK_WAIT_S,
+            )
             self._is_consolidating = False
 
     async def _on_chat_input(self, data: dict[str, Any]):

@@ -9,6 +9,8 @@ from typing import Any
 import httpx
 
 from app.config import Config
+from app.measure_trace import fingerprint as _fingerprint
+from app.measure_trace import trace as _measure_trace
 
 logger = logging.getLogger("ollama_client")
 
@@ -117,6 +119,26 @@ class OllamaClient:
 
         return attempts
 
+    def _trace_prompt(self, prompt: str, system: str | None, model: str) -> None:
+        """Stage 3 measurement 1.5 (prompt-prefix sharing): records which
+        model was called and how big the realized prompt was. The digest is
+        cheap and always safe to log once MEASURE_TRACE is on; the literal
+        text -- what the harness actually needs to compute a shared prefix
+        across a turn's six calls -- is gated separately behind
+        MEASURE_TRACE_FULL_PROMPTS, off by default even then.
+        """
+        if not Config.MEASURE_TRACE:
+            return
+        realized = self._build_generate_prompt(prompt, system)
+        fields: dict[str, object] = {
+            "model": model,
+            "digest": _fingerprint(realized),
+            "length": len(realized),
+        }
+        if Config.MEASURE_TRACE_FULL_PROMPTS:
+            fields["text"] = realized
+        _measure_trace("ollama_client", "prompt", **fields)
+
     def _build_model_variants(self, model: str) -> list[str]:
         variants = [model]
         if ":" not in model:
@@ -175,6 +197,7 @@ class OllamaClient:
                 yield "I'm thinking about our conversation, my friend."
             return
 
+        self._trace_prompt(prompt, system, model or self.model)
         payload_attempts = self._build_payload_attempts(
             prompt=prompt,
             system=system,
@@ -292,6 +315,7 @@ class OllamaClient:
                     "I am glad we are chatting, my friend. What should we work on next?"
                 )
 
+        self._trace_prompt(prompt, system, model or self.model)
         payload_attempts = self._build_payload_attempts(
             prompt=prompt,
             system=system,
