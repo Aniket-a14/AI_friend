@@ -147,7 +147,11 @@ class BaseAgent:
 
     async def _bootstrap_mesh(self):
         """Ensure core streams exist on the mesh (CVS-3.5 Hardened)."""
-        from ..nats_streams import CORE_STREAMS
+        from ..nats_streams import (
+            CORE_STREAMS,
+            _apply_policy_to_existing,
+            build_stream_config,
+        )
 
         core_streams = {name: list(subjects) for name, subjects in CORE_STREAMS.items()}
 
@@ -162,7 +166,13 @@ class BaseAgent:
 
         for stream_name, subjects in core_streams.items():
             try:
-                await jsm.add_stream(name=stream_name, subjects=subjects)
+                # P1-2: the same config the bootstrap script uses. This path
+                # runs on every agent start and usually reaches a fresh mesh
+                # first, so if it declared streams with name+subjects only
+                # the retention policy would never be applied in practice.
+                await jsm.add_stream(
+                    config=build_stream_config(stream_name, subjects)
+                )
                 logger.info(f"Created NATS Stream: {stream_name} {subjects}")
             except nats.js.errors.BadRequestError:
                 # Stream likely already exists, verify subjects
@@ -171,14 +181,22 @@ class BaseAgent:
                     current_subjects = set(info.config.subjects or [])
                     required_subjects = set(subjects)
 
+                    config = info.config
+                    changed = False
                     if not required_subjects.issubset(current_subjects):
                         logger.info(
                             f"Updating NATS Stream '{stream_name}' with additional subjects..."
                         )
-                        config = info.config
                         config.subjects = list(
                             current_subjects.union(required_subjects)
                         )
+                        changed = True
+
+                    # P1-2: bring a pre-existing stream's limits up to the
+                    # policy too, not just its subjects.
+                    changed |= _apply_policy_to_existing(config, stream_name)
+
+                    if changed:
                         await jsm.update_stream(config)
                         logger.info(
                             f"✅ Stream '{stream_name}' synchronized successfully."

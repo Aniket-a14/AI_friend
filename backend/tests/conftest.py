@@ -55,6 +55,8 @@ import asyncio
 import re
 import sqlite3
 import types
+from dataclasses import dataclass
+from enum import Enum
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -71,7 +73,11 @@ if backend_dir not in sys.path:
 
 
 class MockJSM:
-    async def add_stream(self, name, subjects):
+    async def add_stream(self, config=None, **params):
+        # Real JetStreamManager.add_stream takes `config: StreamConfig` OR
+        # `**params` (e.g. name=, subjects=) -- app code uses both call
+        # shapes (see nats_streams.py and BaseAgent._bootstrap_mesh), so
+        # the mock has to accept both rather than only the older one.
         return None
 
     async def stream_info(self, name):
@@ -218,7 +224,58 @@ class DeliverPolicy:
     NEW = "new"
 
 
+# P1-1/P1-2: real nats-py's ConsumerConfig/StreamConfig are dataclasses and
+# StorageType/RetentionPolicy/DiscardPolicy are str Enums (nats/js/api.py).
+# Mirrored here, not imported for real -- this whole module exists so the
+# suite never touches a real NATS connection, which means it must also
+# never touch the real `nats` package, since importing the real
+# `nats.js.api` alongside this file's fake `sys.modules["nats"]` would bind
+# `ConsumerConfig`'s dataclass machinery to a parent module that isn't
+# actually there. Field names and defaults match the real classes for the
+# fields this codebase constructs; anything unused by app code is omitted
+# rather than chased for completeness.
+class StorageType(str, Enum):
+    FILE = "file"
+    MEMORY = "memory"
+
+
+class RetentionPolicy(str, Enum):
+    LIMITS = "limits"
+    INTEREST = "interest"
+    WORK_QUEUE = "workqueue"
+
+
+class DiscardPolicy(str, Enum):
+    OLD = "old"
+    NEW = "new"
+
+
+@dataclass
+class ConsumerConfig:
+    name: str | None = None
+    durable_name: str | None = None
+    deliver_policy: str | None = DeliverPolicy.ALL
+    ack_wait: float | None = None
+    max_deliver: int | None = None
+
+
+@dataclass
+class StreamConfig:
+    name: str | None = None
+    subjects: list | None = None
+    retention: RetentionPolicy | None = None
+    max_bytes: int | None = None
+    discard: DiscardPolicy | None = DiscardPolicy.OLD
+    max_age: float | None = None
+    storage: StorageType | None = None
+
+
 nats_js_api_module.DeliverPolicy = DeliverPolicy
+nats_js_api_module.StorageType = StorageType
+nats_js_api_module.RetentionPolicy = RetentionPolicy
+nats_js_api_module.DiscardPolicy = DiscardPolicy
+nats_js_api_module.ConsumerConfig = ConsumerConfig
+nats_js_api_module.StreamConfig = StreamConfig
 
 # Register them in sys.modules to satisfy python's package import system
 sys.modules["nats"] = nats_module
@@ -226,6 +283,19 @@ sys.modules["nats.errors"] = nats_errors_module
 sys.modules["nats.js"] = nats_js_module
 sys.modules["nats.js.errors"] = nats_js_errors_module
 sys.modules["nats.js.api"] = nats_js_api_module
+
+# Real `import nats` followed by dotted attribute access (`nats.js.errors.X`,
+# as base.py's _bootstrap_mesh does) works because CPython's import
+# machinery sets each submodule as an attribute of its parent when it is
+# first imported. Registering only in sys.modules above does not do that --
+# it satisfies `from nats.js.api import X` (which looks the dotted name up
+# in sys.modules directly) but not attribute chains, which would raise
+# AttributeError instead of whatever real exception the code is trying to
+# catch. Wire the same parent/child attributes real import does.
+nats_module.errors = nats_errors_module
+nats_module.js = nats_js_module
+nats_js_module.errors = nats_js_errors_module
+nats_js_module.api = nats_js_api_module
 
 
 # =====================================================================

@@ -10,6 +10,50 @@ from nats.js.errors import BadRequestError, ServiceUnavailableError
 logger = logging.getLogger("nats_streams")
 
 
+# P1-2: the retention policy each stream is created with. Kept SEPARATE
+# from CORE_STREAMS deliberately -- scripts/check_subject_wiring.py parses
+# CORE_STREAMS as an annotated dict-of-lists to cross-reference every
+# publish/subscribe subject against a declared stream pattern (P1-8), so
+# changing that literal's shape would silently break the CI wiring check.
+#
+# Both streams previously inherited JetStream's defaults: limits retention,
+# FILE storage, and unlimited count/bytes/age. NATS' own docs warn that "an
+# unbounded stream will eventually fill the disk", and AI_AUDIO carries raw
+# PCM (ESTIMATED ~130 KB/s; actual growth NOT TESTED). Nobody chose these
+# values -- NATS simply permits a two-field declaration, so the policy
+# decision was never made.
+#
+# The tiers follow ARCHITECTURE.md §28. Note the *control* tier's
+# distinguishing settings -- ack_wait and a bounded max_deliver -- are
+# CONSUMER settings, not stream settings, and landed with P1-1 at the
+# subscription site (subconscious_agent's system.tick). Splitting system.>
+# into its own stream would buy only a different max_age for very small
+# messages, and would cost a destructive subject migration out of
+# AI_MESSAGES. Deferred deliberately; see the ledger.
+_MINUTE = 60.0
+_DAY = 24 * 60 * _MINUTE
+
+STREAM_POLICIES: dict[str, dict[str, object]] = {
+    # Conversational tier: durable, bounded. Long enough that a restart
+    # replays real context, short enough to stay bounded.
+    "AI_MESSAGES": {
+        "storage": "file",
+        "max_age": float(os.getenv("NATS_MESSAGES_MAX_AGE_S") or 7 * _DAY),
+        "max_bytes": int(os.getenv("NATS_MESSAGES_MAX_BYTES") or 1 * 1024**3),
+    },
+    # Sensor tier: raw PCM. MEMORY-backed, which also takes a durable disk
+    # write off the audio hot path, and aged out in minutes -- audio frames
+    # have no value once the utterance they belong to is transcribed.
+    # Losing audio.> durability is correct for this data class but is a
+    # stated decision, not an accident.
+    "AI_AUDIO": {
+        "storage": "memory",
+        "max_age": float(os.getenv("NATS_AUDIO_MAX_AGE_S") or 5 * _MINUTE),
+        "max_bytes": int(os.getenv("NATS_AUDIO_MAX_BYTES") or 256 * 1024**2),
+    },
+}
+
+
 CORE_STREAMS: dict[str, Sequence[str]] = {
     "AI_MESSAGES": [
         "chat.>",
@@ -81,6 +125,86 @@ async def _wait_for_jetstream_ready(jsm, retries: int, delay_seconds: float) -> 
     )
 
 
+def _apply_policy_to_existing(config, stream_name: str) -> bool:
+    """Update an existing stream's limits in place. Returns True if anything
+    changed.
+
+    `storage` is deliberately NOT updated: NATS rejects a storage change on
+    a live stream, so AI_AUDIO moving file->memory needs the stream deleted
+    and recreated. Attempting it here would turn every bootstrap into a
+    failed update. Logged loudly instead, so the migration is a decision
+    someone makes rather than an error they hit.
+    """
+    policy = STREAM_POLICIES.get(stream_name)
+    if policy is None:
+        return False
+
+    from nats.js.api import StorageType
+
+    changed = False
+    if config.max_age != policy["max_age"]:
+        config.max_age = policy["max_age"]
+        changed = True
+    if config.max_bytes != policy["max_bytes"]:
+        config.max_bytes = policy["max_bytes"]
+        changed = True
+
+    desired_storage = (
+        StorageType.MEMORY if policy["storage"] == "memory" else StorageType.FILE
+    )
+    if config.storage != desired_storage:
+        logger.warning(
+            "Stream %s storage is %s but policy wants %s. NATS cannot change "
+            "storage on a live stream -- delete and recreate it to apply "
+            "this. Limits below are still being applied.",
+            stream_name,
+            config.storage,
+            desired_storage,
+        )
+
+    return changed
+
+
+def build_stream_config(stream_name: str, subjects: list[str]):
+    """The single source of truth for how a core stream is declared.
+
+    P1-2: there are TWO stream-creation paths in this codebase, and only one
+    is obvious. `setup_streams()` below is the bootstrap script's path;
+    `BaseAgent._bootstrap_mesh()` (agents/base.py) is the other, and it runs
+    on EVERY agent start. Whichever reaches a fresh mesh first decides the
+    policy -- and in practice that is the agent, not the script. If only one
+    path carried the retention config, the streams would be created
+    unbounded and the fix would look applied while doing nothing. Both call
+    this.
+
+    A stream whose name has no policy entry gets subjects only, exactly as
+    before -- so an unknown stream degrades to today's behaviour instead of
+    inheriting limits meant for something else.
+    """
+    from nats.js.api import DiscardPolicy, RetentionPolicy, StorageType, StreamConfig
+
+    policy = STREAM_POLICIES.get(stream_name)
+    if policy is None:
+        return StreamConfig(name=stream_name, subjects=list(subjects))
+
+    storage = (
+        StorageType.MEMORY if policy["storage"] == "memory" else StorageType.FILE
+    )
+    return StreamConfig(
+        name=stream_name,
+        subjects=list(subjects),
+        retention=RetentionPolicy.LIMITS,
+        storage=storage,
+        max_age=policy["max_age"],
+        max_bytes=policy["max_bytes"],
+        # Drop the oldest messages at the limit rather than refusing new
+        # ones: for both tiers, rejecting a publish would stall a live
+        # conversation or the audio path, which is worse than losing the
+        # oldest history.
+        discard=DiscardPolicy.OLD,
+    )
+
+
 async def _ensure_stream(
     jsm, stream_name: str, subjects: list[str], retries: int, delay_seconds: float
 ) -> None:
@@ -88,21 +212,33 @@ async def _ensure_stream(
 
     for attempt in range(1, retries + 1):
         try:
-            await jsm.add_stream(name=stream_name, subjects=subjects)
+            await jsm.add_stream(config=build_stream_config(stream_name, subjects))
             logger.info("Created %s stream", stream_name)
             return
         except BadRequestError:
             info = await jsm.stream_info(stream_name)
             current_subjects = set(info.config.subjects or [])
             desired_subjects = set(subjects)
-            if desired_subjects.issubset(current_subjects):
+            config = info.config
+            changed = False
+
+            if not desired_subjects.issubset(current_subjects):
+                config.subjects = list(current_subjects.union(desired_subjects))
+                changed = True
+
+            # P1-2: an existing stream predates the retention policy, so
+            # bring its limits up to it too. Without this, every deployment
+            # that has ever run keeps the unbounded defaults and the fix
+            # applies only to brand-new meshes -- the same silent no-op
+            # shape P1-1 hit with durable consumers.
+            changed |= _apply_policy_to_existing(config, stream_name)
+
+            if not changed:
                 logger.info("%s already synchronized", stream_name)
                 return
 
-            config = info.config
-            config.subjects = list(current_subjects.union(desired_subjects))
             await jsm.update_stream(config)
-            logger.info("Updated %s subjects", stream_name)
+            logger.info("Updated %s configuration", stream_name)
             return
         except Exception as error:
             if not _is_retryable_error(error) or attempt >= retries:
