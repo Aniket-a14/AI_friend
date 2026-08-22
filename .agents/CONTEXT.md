@@ -7709,3 +7709,79 @@ harness and docstring changes.
 - Parts 3-5 of the same backlog-clearing pass (visual grounding wiring,
   P1-9 prompt delimiters, the six one-ended NATS subjects) and Stage 4
   itself -- all still ahead.
+
+## 2026-08-22 -- backlog clearing, Part 3 + Part 4 -- vision.frames wired
+end-to-end, P1-9 retrieved-content delimiters shipped and gated
+
+Investigating the six one-ended NATS subjects (P1-8) for Part 5 surfaced
+something Stage 3's own audit missed: `vision.frames`'s subscriber
+(`brain_agent._on_vision_frame`) exists, but `last_visual_context` -- the
+variable it and `_on_vision_description` both write -- was never read by
+anything downstream. P1-9's own finding (M4-S6, "VLM descriptions
+interpolated raw into the prompt") was **false** as filed: nothing
+interpolated a VLM description into the prompt at all. Decided with the
+user: wire it up for real rather than delete or paper over the gap, which
+also gives P1-9 real content to delimit, not just memory.
+
+**Part 3 -- `vision/agent.py`, `brain_agent.py`, `pipeline.py`, `action.py`.**
+Uncommented the `vision.frames` publish in `_capture_loop`
+(`app/vision/agent.py`), disabled "TEMPORARILY FOR DIAGNOSTICS" at some
+earlier point and never re-enabled. `brain_agent.py` already threaded
+`last_visual_context` into `raw_event["metadata"]["visuals"]` on every
+`USER_MESSAGE`; the gap was purely downstream. Traced it through
+`CognitivePipeline.execute()` (`event.metadata` is `raw_event["metadata"]`
+via `perception.perceive()`) into a new `plan.payload["visual_context"]`
+assignment in the action-prep stage, alongside the existing
+`cortisol`/`dopamine`/`speculative` payload fields. `action.py`'s new
+`_build_visual_context(payload)` static method renders it only when present
+and not the `"No visual data available."` sentinel, matching
+`_build_shared_history`'s own not-yet-populated guard.
+
+**Part 4 -- P1-9, `action.py`.** Both `_build_shared_history` and the new
+`_build_visual_context` interpolate retrieved/perceived content raw into
+the system-message side of the prompt, which C3's role-prefix stripping and
+Ollama's `/api/chat` structural role separation don't cover -- that defense
+is about *who* said something, not whether content sitting on the trusted
+side should be obeyed. Added `[RETRIEVED-CONTENT]...[/RETRIEVED-CONTENT]`
+around every individual memory line and the visual-context block, plus one
+guideline line at the top of `_CHAT_GUIDELINE` telling the model those
+markers bound data, never instructions. Escaped the literal marker strings
+inside untrusted content before wrapping (`_wrap_retrieved`, mirroring
+`ollama_client.py`'s `_ROLE_PREFIX_RE` precedent for the same class of
+bypass) -- otherwise a memory containing the literal close marker could
+forge an early boundary and have its own trailing text read as if it sat
+outside the delimited region.
+
+**Gate.** `evals run` (qwen2.5:3b) before and after, `evals compare
+--fail-on-regression`: **PASS, zero regressions, all category deltas
+0.000** -- the delimiter wrapping and the (empty, in these probes) visual
+block did not perturb the model's answers on the existing probe set.
+
+**Tests, mutation-tested.** `tests/test_context_assembly.py`'s new
+`TestRetrievedContentIsDelimited` (7 tests: wrapping present for both
+memory kinds and visual context, an instruction-shaped memory stays bounded
+rather than reading as a bare command, the empty/sentinel visual case
+renders nothing, the guideline text itself). `tests/test_pipeline.py`
+gained a test that `plan.payload["visual_context"]` actually carries
+`event.metadata["visuals"]` through decision and action-prep -- the seam
+between Part 3's wiring and Part 4's renderer, which neither side's own
+tests would catch alone. All mutated (wrapping disabled, escaping disabled,
+the payload assignment removed) and confirmed to fail before reverting.
+One pre-existing test, `test_f1_decomposed_stages.py::test_build_shared_history_edge_loads_most_relevant`,
+asserted the old bare `"- A"` format and needed updating to the delimited
+form -- a real collateral change, not a race (an actual same-run pytest
+failure led to finding it), caught before commit.
+
+**Verified:** full backend suite 1027/1027 (1019 baseline + 8 new),
+`ruff check .` clean.
+
+**NOT done:**
+- Part 5 (the six one-ended NATS subjects, `vision.frames` now resolved as
+  wired here so its `ALLOWLIST` entry can be removed in that pass) --
+  next.
+- Stage 4 (P1-3, P1-4) -- still gated on measurement 1.1's real
+  `worst_case_no_flush_latency`, which stays `UNKNOWN` per the prior entry.
+- `_build_tom_context` (Theory-of-Mind inferences) was deliberately left
+  unwrapped -- it is LLM-inferred *about* the user, not retrieved/perceived
+  raw content, so it does not carry the same untrusted-content risk P1-9
+  was scoped to.
