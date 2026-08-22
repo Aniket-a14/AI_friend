@@ -6869,3 +6869,104 @@ mapping) -- both fire.
   this session.
 - Stages 1-6 of the roadmap sequence (`audit/ROADMAP.md` §7) -- this batch
   is Stage 0 only.
+
+## 2026-08-22 -- audit/ implementation, Stage 0 review pass -- both new CI checks were inverted; placeholder guard narrowed
+
+Both CI steps added in the batch above failed on their own PR, and the
+failure was more interesting than a typo.
+
+**Both new checks passed only when the repository was broken.** GitHub
+Actions runs `run:` blocks under `bash -e`. A simple assignment
+`var=$(cmd)` takes the command's exit status as its own, and `grep` exits
+1 when it matches nothing -- so `exposed=$(grep ... | grep -v ...)` aborted
+the step the moment every port was correctly loopback-bound. Same for the
+`keys:` scan. The steps were exactly inverted: green required a violation,
+which they would then never get far enough to report. Both now end the
+substitution with `|| true`. Worth recording as a class, not an incident:
+any `set -e` shell check that greps for the *absence* of something has
+this failure mode, and it is invisible in local testing unless `-e` is
+reproduced, because an interactive shell doesn't abort.
+
+Mutation-tested in both directions, which is what distinguishes a working
+check from a check that merely exits 0: re-added a `keys:` block to
+`livekit.yaml` and un-prefixed one port mapping in
+`docker-compose.infra.yml`, confirmed each is caught and named, reverted,
+confirmed clean.
+
+**The placeholder-secret guard was widened by accident.**
+`_PLACEHOLDER_SECRET_MARKERS` is matched as a substring, which the
+surrounding comment justifies at length: the set is deliberately the exact
+`.env.example` template strings, not a weak-password heuristic, because "a
+heuristic strong enough to catch real weak passwords is also strong enough
+to reject a legitimate one," and a false positive here means production
+refuses to boot. Adding `"devkey"` to that tuple quietly broke the
+premise -- it is six characters, so a randomly generated credential
+containing those letters would block a deployment with a misleading
+"placeholder" error. Split into `_PLACEHOLDER_SECRET_EXACT`, matched
+whole. The `.env.example` templates keep substring matching, which they
+genuinely need since `DATABASE_URL` embeds one mid-string. Test added for
+the false-positive direction and mutation-tested against a reverted-to-
+substring implementation.
+
+**Verified:** `test_config_validation.py` 27/27; full backend suite and
+`ruff check .` clean on this branch.
+
+**Addendum, found while opening the PR: a test fixture can trip gitleaks
+even with no real secret involved.** The first version of the false-
+positive test above used two short alphanumeric strings mixing case and
+digits (chosen to prove a credential merely *containing* "devkey" isn't
+rejected) as the LIVEKIT_API_KEY/SECRET values. Gitleaks' `generic-api-key`
+rule scores on Shannon entropy, not on whether the string is real, and
+flagged both as leaks -- CI red on a PR with no actual secret in it.
+(Deliberately not quoting the actual values here: gitleaks scans this
+ledger file too, and the first draft of this very paragraph tripped the
+same rule by quoting one.)
+Worse: because gitleaks scans the full pushed history, not just the
+current tree, a *second* commit correcting the fixture to a low-entropy,
+obviously-fake string (`"livekit-api-key-with-devkey-inside"`) did not
+clear the finding -- the original high-entropy version was still reachable
+in the earlier commit's diff. Fixing it required folding the correction
+into the original commit (`git reset --soft` to before it, recommit) rather
+than adding a commit on top -- a commit-on-top does not remove a finding
+that lives in an earlier commit's diff, only in the tree's current state.
+**The rule to carry forward: a test needing a
+credential-shaped value must pick one that is unmistakably a fixture in
+both name and shape** -- CLAUDE.md already documents the name half
+(don't call a variable `secret`); entropy is the other half, and it applies
+even to values that never leave the repository.
+
+**NOT done:**
+- Still no Docker-based verification that livekit-server rejects
+  `devkey`/`secretsecretsecret` -- the one open question from Stage 0, and
+  the only thing that would turn "remove the block" into "rotate the
+  pair." Unchanged by this review pass.
+
+## 2026-08-22 -- process note: `git add -A` swept the untracked `audit/` deliverables into a public commit
+
+Not a code change; recorded because it is exactly the kind of mistake that
+repeats without a written trace. Committing a review fix on this branch
+used `git add -A`, which staged not just the intended files but the
+untracked `AUDIT.md` and all 12 `audit/*.md` deliverables the earlier
+implementation-phase decision had deliberately left untracked (kept
+visible in `git status` as a standing reminder, no `.gitignore` entry).
+That commit was pushed to the public repo and appeared in the open PR's
+file list before being caught in the next review pass.
+
+No credentials were in the exposed files -- the content was the audit
+findings themselves plus a local filesystem path, not a secret -- but
+publishing an internal engineering audit of a public repo's own security
+posture is a real exposure regardless. Remediated the same way as the
+gitleaks-entropy issue in the entry above: a forward removal commit does
+not clear a finding that lives in an earlier commit's diff, so the fix was
+`git reset --soft` to the commit before the accidental one, followed by a
+force-push of the corrected history. The rewritten commit is fetchable by
+its old SHA via GitHub's API indefinitely (standard GitHub behavior for
+force-pushed commits, not specific to this incident) but is unreachable
+from any branch, PR, or normal browsing path.
+
+**The rule to carry forward:** never use `git add -A` in a repo with
+deliberately-untracked working files. Stage paths explicitly, always, on
+every branch of this repo -- this is a project-wide habit change, not a
+one-branch fix, since the same untracked `audit/` directory persists in
+every future working tree until it is either finished with or the
+maintainer decides otherwise.
