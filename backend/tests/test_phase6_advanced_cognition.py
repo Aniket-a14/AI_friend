@@ -116,7 +116,13 @@ async def test_paralinguistic_tag_injection():
 
 @pytest.mark.asyncio
 async def test_metacognitive_self_correction():
-    # Simulates an identity drift detection, verifies that control.interrupt is sent, and asserts that a correction phrase is injected.
+    # Simulates an identity drift detection, verifies that audio.stop is sent
+    # to interrupt playback, and asserts that a correction phrase is injected.
+    # control.interrupt used to be published alongside audio.stop here, but
+    # had zero subscribers anywhere (P1-8) and was redundant with audio.stop,
+    # which already carries the same {"interrupt": True, "reason": ...}
+    # payload and is the one subscribers actually act on -- removed rather
+    # than given a consumer it never needed.
     llm = MagicMock()
 
     async def mock_stream_violating(*args, **kwargs):
@@ -156,10 +162,10 @@ async def test_metacognitive_self_correction():
         chunks.append(chunk)
 
     publish_mock.assert_awaited()
-    assert any(
+    assert any(call.args[0] == "audio.stop" for call in publish_mock.call_args_list)
+    assert not any(
         call.args[0] == "control.interrupt" for call in publish_mock.call_args_list
     )
-    assert any(call.args[0] == "audio.stop" for call in publish_mock.call_args_list)
 
     content_chunks = [c["data"] for c in chunks if c["type"] == "content"]
     assert any("Wait, let me rephrase that..." in c for c in content_chunks)

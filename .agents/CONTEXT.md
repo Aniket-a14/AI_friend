@@ -7785,3 +7785,64 @@ failure led to finding it), caught before commit.
   unwrapped -- it is LLM-inferred *about* the user, not retrieved/perceived
   raw content, so it does not carry the same untrusted-content risk P1-9
   was scoped to.
+
+## 2026-08-22 -- backlog clearing, Part 5 (final) -- the six one-ended NATS
+subjects from P1-8 resolved: two real gaps closed, four sharpened from
+"needs investigation" to a decided disposition
+
+Last item of the backlog-clearing pass (Parts 1-4: #187, #188). Per-subject
+disposition, decided with the user (`check_subject_wiring.py:51`'s
+`ALLOWLIST`):
+
+**`vision.frames` -- RESOLVED, entry removed.** Wired end-to-end in Part 3
+(#188). Rebased this branch onto `main` after #188 merged so the removal
+could be verified against the real checker output rather than asserted --
+`python scripts/check_subject_wiring.py` now reports it fully wired, no
+allowlist entry needed.
+
+**`control.interrupt` -- DELETE, entry removed.** Redundant with `audio.stop`,
+published in the same call (`action.py`'s `_announce_self_correction`) with
+an overlapping payload (`{"interrupt": True, "reason": ...}`); zero
+subscribers ever existed for `control.interrupt` itself, and `audio.stop`'s
+existing subscribers already act on the interruption. Removed the dead
+publish call rather than build it a consumer it never needed.
+`tests/test_phase6_advanced_cognition.py::test_metacognitive_self_correction`
+asserted `control.interrupt` was published -- updated to assert `audio.stop`
+fires and `control.interrupt` does not, and mutation-tested (reintroducing
+the dead publish call makes the updated assertion fail, confirming it is
+load-bearing, not just updated to match).
+
+**Four subjects kept allowlisted, reasons sharpened from "NEW... needs
+investigation" (Stage 3's placeholder, once this check first landed) to a
+decided disposition, so a future pass doesn't re-run this same
+investigation:**
+- `voice.segmentation_feedback` -- `voice-agent`'s Rust source has no
+  chunk-size/segmentation-reporting code at all to hook a publisher into;
+  real new Rust feature work, not a missing call.
+- `audio.pre_generate` -- the speculative-pregeneration consumer
+  (voice-agent pre-warming TTS on a VAP>=0.7 signal) was never built; same
+  shape, real feature work.
+- `telemetry.reflection` -- fire-and-forget observability with zero
+  subscribers; explicitly tied to `P3-2` (telemetry) as its likely future
+  consumer, so the connection isn't re-discovered as new later.
+- `state.subconscious` -- the agent's internal monologue, zero subscribers;
+  no consumer has a decided purpose yet (a UI surface? a persistence
+  sink?), so this needs a product decision before it needs wiring.
+
+**Verified:** `python scripts/check_subject_wiring.py` -- 8 allowlisted
+issues (down from the prior 6+2), `control.interrupt` and `vision.frames`
+absent from its output entirely rather than allowlisted. Full backend suite
+1027/1027 (matching post-#188 `main`'s baseline, no new tests beyond the
+one updated one), `ruff check .` clean.
+
+**NOT done:**
+- Building real publishers for `voice.segmentation_feedback` or
+  `audio.pre_generate` -- both are new Rust feature work, decided against
+  for this pass, per the plan that scoped Parts 1-5.
+- A telemetry sink for `telemetry.reflection` -- `P3-2`'s scope.
+- A consumer/purpose for `state.subconscious` -- no decided purpose to
+  build against yet.
+- Stage 4 (P1-3, P1-4, P2-3, P2-4, P2-6, P2-9) -- this closes what blocked
+  it; Stage 4 itself is the next, separate piece of work. Measurement
+  1.1's `worst_case_no_flush_latency` is still `UNKNOWN` (per the Part 1+2
+  entry above), so P1-3/P1-4 still cannot be built against a real number.
