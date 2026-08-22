@@ -6933,3 +6933,62 @@ the startup `hydrate_state` call.
   model) and P1-2 (retention tiers) still want Docker running to verify
   properly; Stage 3's six measurements are still blocked on Docker and
   `backend/models/`.
+
+## 2026-08-22 -- audit/ implementation, Stage 1 review pass -- three defects found in the batch above, all mutation-tested
+
+Self-review of the open PR before merge, on the principle that a batch
+this size shouldn't go in on the strength of its own green suite. Three
+real defects, none of which any test in the batch would have caught.
+
+**VisionAgent's turn-tracking subscriptions used the wrong delivery
+policy.** `BaseAgent.subscribe` defaults `deliver_policy="all"`, and the
+two new subscriptions (`chat.input`, `chat.output`) were the only ones in
+the entire mesh that took that default -- every other call site in
+`app/` names a policy explicitly, overwhelmingly `"new"`, with `"last"` for
+the two snapshot cases. The consequence is specific: durables are named
+`{agent_name}_{subject}`, so vision's are fresh, and under `"all"` a fresh
+durable replays the stream's whole retained history at startup.
+`chat.output` is published once per response *chunk*, so every vision
+restart would re-walk the entire conversation, and would finish in
+whatever state the last replayed message left it -- typically suspended by
+a `chat.input` from hours ago, blind until the `LLM_STREAM_MAX_SECONDS`
+watchdog fired. Both now pass `deliver_policy="new"`. These are liveness
+signals, not work items: a replayed turn boundary carries no information
+about whether the LLM is busy *now*.
+
+**The SQLite-fallback sentinel was write-only.** `_enter_sqlite_fallback`
+wrote it; nothing ever removed it. One transient Postgres outage would
+therefore leave `/health` reporting `degraded: true` for the lifetime of
+the host, long after Postgres came back. That is worse than a subtle bug --
+a degradation signal that never turns off is one an operator learns to
+ignore, which is precisely the silence P1-6 exists to end. Added
+`_clear_sqlite_fallback`, called on the successful-connect path.
+
+**The sentinel's cross-process claim was overstated.** The docstring said
+`/health` (a separate process) reads it, which is true on a single host and
+false under `docker-compose.prod.yml`, where bootstrap runs inside the
+`brain_agent` container and `main.py` is served elsewhere -- `/tmp` is not
+shared between them. Documented as the limitation it is on
+`SQLITE_FALLBACK_HEALTH_FILE`, with the fix (point it at a shared mount)
+stated. Not treated as a blocker: the ERROR log and the production
+fail-closed are the primary signals and neither depends on topology.
+
+**Considered and deliberately not changed:** `apply_external_state` does
+not clamp incoming values to PAD bounds. Checked `_hydrate_locked`, which
+doesn't clamp either -- both are loading a snapshot produced by a
+`StateService` that already enforced bounds on write, so this matches the
+established convention for that shape rather than diverging from it.
+
+**Verified:** full backend suite 998/998 (three new tests: the
+`deliver_policy` assertion, sentinel clearing, and clearing an absent
+sentinel), `ruff check .` clean. Each of the three fixes mutation-tested:
+dropped `deliver_policy="new"` from the `chat.input` subscription, replaced
+the `unlink` with a no-op -- each broke exactly the test written for it and
+nothing else.
+
+**NOT done:**
+- Nothing new attempted beyond the three fixes; the batch's scope is
+  unchanged.
+- The cross-container sentinel path is documented, not solved. Solving it
+  means either a shared volume in `docker-compose.prod.yml` or moving the
+  signal onto the mesh, and neither is in this batch's scope.
