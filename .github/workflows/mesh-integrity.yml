@@ -55,6 +55,21 @@ jobs:
       - name: Validate Unified Phased Startup (Infra + Agents)
         run: docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml config --quiet
 
+      - name: Check no service publishes off loopback (P0-2)
+        # audit/ (M4-S3, M4-S8) found every infra service bound to 0.0.0.0 by
+        # default, including the unauthenticated LiveKit SFU -- reachable by
+        # anything on the LAN. Every host port mapping must be prefixed
+        # 127.0.0.1: unless the line carries a "# lan-exposed: <reason>"
+        # annotation explaining why that one service needs LAN reach.
+        run: |
+          exposed=$(grep -nE '^[[:space:]]*-[[:space:]]*"[0-9]' docker-compose.infra.yml docker-compose.prod.yml 2>/dev/null | grep -vE '"127\.0\.0\.1:' | grep -v '# lan-exposed:')
+          if [ -n "$exposed" ]; then
+            echo "❌ Port mapping(s) not bound to 127.0.0.1 and not annotated with '# lan-exposed: <reason>':"
+            echo "$exposed"
+            exit 1
+          fi
+          echo "✅ Every published port is loopback-bound (or explicitly annotated as LAN-exposed)"
+
   prisma-validation:
     name: Prisma Schema & Identity Seed
     runs-on: ubuntu-latest

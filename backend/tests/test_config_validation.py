@@ -105,6 +105,12 @@ def test_log_json_env_var_actually_reaches_the_setting(monkeypatch):
         ("NEO4J_AUTH", "neo4j/your_graph_password_here"),
         ("LIVEKIT_API_KEY", "your_api_key_here"),
         ("LIVEKIT_API_SECRET", "your_api_secret_here"),
+        # P0-1: the committed livekit.yaml `keys:` block (now removed) held
+        # `devkey: secretsecretsecret`. If either half ever reaches these
+        # fields -- e.g. an .env carried forward from before the fix -- the
+        # guard must still catch it.
+        ("LIVEKIT_API_KEY", "devkey"),
+        ("LIVEKIT_API_SECRET", "secretsecretsecret"),
     ],
 )
 def test_placeholder_secret_rejected_in_production(field, placeholder):

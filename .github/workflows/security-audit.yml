@@ -67,6 +67,21 @@ jobs:
             errors=$((errors + 1))
           fi
 
+          # Pattern 4 (P0-1): inline `keys:` block in tracked YAML. This is
+          # how livekit.yaml previously shipped a live-looking credential
+          # (`devkey: secretsecretsecret`) undetected by Pattern 1, which
+          # only scans .py/.js/.ts/.tsx — gitleaks' entropy rules also missed
+          # it because the value is low-entropy and placeholder-shaped. A
+          # `keys:` mapping is a LiveKit-specific credential block; nothing
+          # in this repo's tracked YAML legitimately needs one (keys belong
+          # in .env / LIVEKIT_KEYS instead), so any match is a finding.
+          yaml_keys_hits=$(grep -rlE "^[[:space:]]*keys:[[:space:]]*$" --include="*.yml" --include="*.yaml" --exclude-dir=node_modules --exclude-dir=.next . 2>/dev/null | grep -v "^\./\.github/workflows/security-audit\.yml$")
+          if [ -n "$yaml_keys_hits" ]; then
+            echo "❌ Inline 'keys:' block found in tracked YAML — LiveKit (or similar) credentials belong in .env, not committed config"
+            echo "$yaml_keys_hits"
+            errors=$((errors + 1))
+          fi
+
           if [ $errors -gt 0 ]; then
             echo ""
             echo "🚫 $errors security issue(s) found. Fix before merging."

@@ -265,6 +265,12 @@ class AppSettings(BaseSettings):
         "your_graph_password_here",
         "your_api_key_here",
         "your_api_secret_here",
+        # P0-1: the LiveKit dev credential that was committed in
+        # livekit.yaml's `keys:` block (now removed). Catching it here too
+        # means a deployment that still has it in LIVEKIT_API_KEY/SECRET --
+        # e.g. via an old .env copied forward -- also refuses to boot.
+        "devkey",
+        "secretsecretsecret",
     )
     # Only the fields that gate a real, network-reachable service if left at
     # the shipped placeholder -- Postgres/Neo4j auth and the LiveKit room
