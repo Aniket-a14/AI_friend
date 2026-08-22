@@ -10,8 +10,14 @@ rtc:
 redis:
   address: redis:6379
 
-keys:
-  devkey: secretsecretsecret
+# P0-1: no `keys:` block here. Signing keys come solely from the
+# LIVEKIT_KEYS env var (see docker-compose.infra.yml), which livekit-server
+# reads at startup. A `keys:` block was previously committed here holding
+# the value `devkey: secretsecretsecret` -- audit/ found it published in a
+# public repo. It was likely never the operating credential (.env carries a
+# distinct real key/secret pair), but removing it here is correct either
+# way and closes the question for good: this file cannot grant access to
+# anything, regardless of what LIVEKIT_KEYS is set to.
 
 logging:
   level: info

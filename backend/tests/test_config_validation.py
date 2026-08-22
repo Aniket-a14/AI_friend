@@ -105,6 +105,12 @@ def test_log_json_env_var_actually_reaches_the_setting(monkeypatch):
         ("NEO4J_AUTH", "neo4j/your_graph_password_here"),
         ("LIVEKIT_API_KEY", "your_api_key_here"),
         ("LIVEKIT_API_SECRET", "your_api_secret_here"),
+        # P0-1: the committed livekit.yaml `keys:` block (now removed) held
+        # `devkey: secretsecretsecret`. If either half ever reaches these
+        # fields -- e.g. an .env carried forward from before the fix -- the
+        # guard must still catch it.
+        ("LIVEKIT_API_KEY", "devkey"),
+        ("LIVEKIT_API_SECRET", "secretsecretsecret"),
     ],
 )
 def test_placeholder_secret_rejected_in_production(field, placeholder):
@@ -135,6 +141,24 @@ def test_real_looking_secret_allowed_in_production():
         DATABASE_URL="postgresql://ai_friend:a-real-secret-value@postgres_db:5432/db",
     )
     assert settings.NEO4J_PASSWORD == "a-real-generated-secret-x9k2m"
+
+
+def test_real_credential_containing_devkey_is_not_rejected():
+    """P0-1 follow-up: "devkey" is only six characters, so substring-matching
+    it would let a randomly-generated credential that happens to contain
+    those letters stop production from booting. The two LiveKit markers are
+    matched whole for exactly this reason; if that regresses, a valid
+    deployment fails to start with a misleading "placeholder" error."""
+    # Low-entropy, unmistakably-a-fixture values on purpose: a random-looking
+    # string here (even a fake one) trips the repo's own gitleaks scan, which
+    # scores on entropy rather than provenance -- the same trap CLAUDE.md
+    # documents for the credential-scan grep, one layer over.
+    settings = _settings(
+        ENVIRONMENT="production",
+        LIVEKIT_API_KEY="livekit-api-key-with-devkey-inside",
+        LIVEKIT_API_SECRET="livekit-api-secret-with-secretsecretsecret-inside",
+    )
+    assert settings.LIVEKIT_API_KEY == "livekit-api-key-with-devkey-inside"
 
 
 def test_unset_secret_fields_do_not_crash_production():
