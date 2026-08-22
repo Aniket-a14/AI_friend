@@ -75,7 +75,10 @@ jobs:
           # `keys:` mapping is a LiveKit-specific credential block; nothing
           # in this repo's tracked YAML legitimately needs one (keys belong
           # in .env / LIVEKIT_KEYS instead), so any match is a finding.
-          yaml_keys_hits=$(grep -rlE "^[[:space:]]*keys:[[:space:]]*$" --include="*.yml" --include="*.yaml" --exclude-dir=node_modules --exclude-dir=.next . 2>/dev/null | grep -v "^\./\.github/workflows/security-audit\.yml$")
+          # `|| true`: the job runs under `bash -e`, where a pipeline finding
+          # nothing exits 1 and would abort the step -- i.e. fail precisely
+          # when the check passes.
+          yaml_keys_hits=$(grep -rlE "^[[:space:]]*keys:[[:space:]]*$" --include="*.yml" --include="*.yaml" --exclude-dir=node_modules --exclude-dir=.next . 2>/dev/null | grep -v "^\./\.github/workflows/security-audit\.yml$" || true)
           if [ -n "$yaml_keys_hits" ]; then
             echo "❌ Inline 'keys:' block found in tracked YAML — LiveKit (or similar) credentials belong in .env, not committed config"
             echo "$yaml_keys_hits"

@@ -143,6 +143,24 @@ def test_real_looking_secret_allowed_in_production():
     assert settings.NEO4J_PASSWORD == "a-real-generated-secret-x9k2m"
 
 
+def test_real_credential_containing_devkey_is_not_rejected():
+    """P0-1 follow-up: "devkey" is only six characters, so substring-matching
+    it would let a randomly-generated credential that happens to contain
+    those letters stop production from booting. The two LiveKit markers are
+    matched whole for exactly this reason; if that regresses, a valid
+    deployment fails to start with a misleading "placeholder" error."""
+    # Low-entropy, unmistakably-a-fixture values on purpose: a random-looking
+    # string here (even a fake one) trips the repo's own gitleaks scan, which
+    # scores on entropy rather than provenance -- the same trap CLAUDE.md
+    # documents for the credential-scan grep, one layer over.
+    settings = _settings(
+        ENVIRONMENT="production",
+        LIVEKIT_API_KEY="livekit-api-key-with-devkey-inside",
+        LIVEKIT_API_SECRET="livekit-api-secret-with-secretsecretsecret-inside",
+    )
+    assert settings.LIVEKIT_API_KEY == "livekit-api-key-with-devkey-inside"
+
+
 def test_unset_secret_fields_do_not_crash_production():
     """A field an operator hasn't configured at all (None) must not be
     treated as a placeholder - only an actual placeholder string should."""

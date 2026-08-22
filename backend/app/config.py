@@ -265,10 +265,18 @@ class AppSettings(BaseSettings):
         "your_graph_password_here",
         "your_api_key_here",
         "your_api_secret_here",
-        # P0-1: the LiveKit dev credential that was committed in
-        # livekit.yaml's `keys:` block (now removed). Catching it here too
-        # means a deployment that still has it in LIVEKIT_API_KEY/SECRET --
-        # e.g. via an old .env copied forward -- also refuses to boot.
+    )
+    # P0-1: the LiveKit dev credential that was committed in livekit.yaml's
+    # `keys:` block (now removed). Catching it here too means a deployment
+    # still carrying it in LIVEKIT_API_KEY/SECRET -- e.g. via an old .env
+    # copied forward -- also refuses to boot.
+    #
+    # These are matched WHOLE, not as substrings, unlike the markers above.
+    # "devkey" is only six characters; substring-matching it would reinstate
+    # exactly the heuristic the comment above rejects, and a false positive
+    # here means production refuses to start. A real credential is never
+    # equal to one of these, so equality is both sufficient and safe.
+    _PLACEHOLDER_SECRET_EXACT = (
         "devkey",
         "secretsecretsecret",
     )
@@ -293,7 +301,9 @@ class AppSettings(BaseSettings):
             value = getattr(self, name, None)
             if not value:
                 continue
-            if any(marker in value for marker in self._PLACEHOLDER_SECRET_MARKERS):
+            if any(
+                marker in value for marker in self._PLACEHOLDER_SECRET_MARKERS
+            ) or value.strip() in self._PLACEHOLDER_SECRET_EXACT:
                 raise ValueError(
                     f"{name} still contains a placeholder value from .env.example "
                     "-- refusing to start with ENVIRONMENT=production. Set a real "

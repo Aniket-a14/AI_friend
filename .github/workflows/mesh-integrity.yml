@@ -62,7 +62,10 @@ jobs:
         # 127.0.0.1: unless the line carries a "# lan-exposed: <reason>"
         # annotation explaining why that one service needs LAN reach.
         run: |
-          exposed=$(grep -nE '^[[:space:]]*-[[:space:]]*"[0-9]' docker-compose.infra.yml docker-compose.prod.yml 2>/dev/null | grep -vE '"127\.0\.0\.1:' | grep -v '# lan-exposed:')
+          # `|| true`: the job runs under `bash -e`, where a pipeline finding
+          # nothing exits 1 and would abort the step -- i.e. fail precisely
+          # when every port is correctly loopback-bound.
+          exposed=$(grep -nE '^[[:space:]]*-[[:space:]]*"[0-9]' docker-compose.infra.yml docker-compose.prod.yml 2>/dev/null | grep -vE '"127\.0\.0\.1:' | grep -v '# lan-exposed:' || true)
           if [ -n "$exposed" ]; then
             echo "❌ Port mapping(s) not bound to 127.0.0.1 and not annotated with '# lan-exposed: <reason>':"
             echo "$exposed"
