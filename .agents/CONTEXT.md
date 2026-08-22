@@ -7183,3 +7183,144 @@ nothing else.
 - The cross-container sentinel path is documented, not solved. Solving it
   means either a shared volume in `docker-compose.prod.yml` or moving the
   signal onto the mesh, and neither is in this batch's scope.
+
+## 2026-08-22 -- audit/ implementation, Stage 2 (P1-1, P1-2) -- ack model and retention policy, in the roadmap's one mandatory order
+
+`ROADMAP.md` §7 requires P1-1 before P1-2: sizing a control-tier `ack_wait`
+while consolidation still ran inside the tick callback would mean choosing a
+number sized around a ~28s defect. Both landed on `fix/p1-stage2-ack-and-retention`,
+in that order, off `main` after Stages 0 and 1 merged (#183, #184).
+
+**P1-1.** `SubconsciousAgent._on_system_tick` awaited reflection, graph writes
+and ACT-R decay inline -- MEASURED ~16s idle, ~28s under the two-model
+contention `HARDWARE.md` §5 measured -- against `BaseAgent.subscribe`'s
+default 30s AckWait with UNLIMITED MaxDeliver. A slow pass outran the
+deadline, was redelivered mid-flight, and ran again: duplicate graph writes
+and duplicate proactive utterances to the user, the symptom that surfaced it
+originally (issue #175, closed once already as "already resolved" -- a prior
+fix scoped `_ack_heartbeat` to `chat.*` and never considered `system.tick`,
+the longest callback in the mesh).
+
+Consolidation now dispatches to a retained `asyncio.Task` (closing M1-A13
+here too) and the callback returns immediately. `_is_consolidating` is set
+*synchronously in the callback*, before `create_task` schedules anything --
+setting it inside the dispatched coroutine would race, since `create_task`
+does not run the body until the loop yields, so two ticks arriving
+back-to-back could both pass the guard before either body ran. The
+proactive-thought LLM call stays inline deliberately: it is gated on
+eligibility so it does not fire every tick, it is one short generation, and
+inlining preserves the ordering between generating the thought, publishing
+it, and marking the attempt -- dispatching it would race that ordering. The
+new `MESH_CONTROL_ACK_WAIT_S` (30s) is sized to cover it.
+
+**The part that would have made this a no-op, found while implementing.**
+`JetStreamContext.subscribe`, when a durable already exists, does
+`config = consumer_info.config` -- it *discards* the `ConsumerConfig` the
+caller passed and adopts whatever the server already has stored. nats-py
+marks the spot itself: `# TODO: Detect configuration drift with any present
+durable consumer.` So the new `ack_wait` would apply on a fresh mesh and in
+every test, and silently not apply on any deployment that had run before --
+while still logging a successful subscribe. Exactly the failure shape this
+audit keeps finding: the half that fails still compiles and still logs as
+though it worked. `BaseAgent._reconcile_consumer_config` now detects the
+drift explicitly (compares `ack_wait`/`max_deliver` against the stored
+config) and deletes the consumer so it is recreated with the requested
+settings, logging loudly either way. Deleting a durable discards its
+delivery cursor -- acceptable here because ticks are periodic and a missed
+one is picked up by the next, and it only fires when an explicit config was
+requested, never on the default path.
+
+**P1-2.** Both `AI_MESSAGES` and `AI_AUDIO` were declared with `name` and
+`subjects` only, inheriting limits retention, FILE storage, and unlimited
+count/bytes/age. `AI_AUDIO` binds `audio.>` and carries raw PCM (ESTIMATED
+~130 KB/s; actual growth NOT TESTED). `STREAM_POLICIES` in `nats_streams.py`
+now declares two tiers per `ARCHITECTURE.md` §28: conversational
+(`AI_MESSAGES`) file-backed, 7-day `max_age`, 1 GiB cap; sensor (`AI_AUDIO`)
+MEMORY-backed, 5-minute `max_age`, 256 MiB cap -- audio has no value once the
+utterance it belongs to is transcribed, and memory storage also removes a
+durable disk write from the hot path. Both bounds and both `max_age` values
+are overridable by env var; `DiscardPolicy.OLD` on both, since rejecting a
+publish at the limit would stall a live conversation or the audio path,
+which is worse than losing the oldest history.
+
+Deliberately **not** done here: splitting `system.>`/`control.*` into their
+own control-tier stream. `system.>` currently lives inside `AI_MESSAGES`,
+and NATS forbids two streams overlapping on a subject -- moving it out is a
+destructive migration (any retained `system.*` data in `AI_MESSAGES` is
+dropped) for a tier whose only distinguishing settings, `ack_wait` and a
+bounded `max_deliver`, are *consumer* settings, not stream settings, and
+already landed with P1-1 at the subscription site. `STREAM_POLICIES` is
+kept as a structure separate from `CORE_STREAMS` specifically so this stream
+split remains a later, isolated decision rather than something this change
+had to also decide.
+
+**The two-path problem, found while planning and confirmed while
+implementing.** There are two stream-creation call sites --
+`nats_streams.setup_streams()` (the bootstrap script) and
+`BaseAgent._bootstrap_mesh()` (`base.py`, which runs on **every agent
+start**). If only one carried the policy, whichever reaches a fresh mesh
+first silently decides it -- usually the agent, not the script. Both now
+build from one function, `build_stream_config()`, and a stream whose name
+has no `STREAM_POLICIES` entry falls back to `subjects`-only exactly as
+before, so an unrecognized stream degrades to old behavior rather than
+inheriting a policy meant for something else. A structural test
+(`test_both_creation_paths_declare_the_same_config`) drives `_bootstrap_mesh`
+against `build_stream_config` directly and asserts the two never diverge --
+mutation-tested by reverting `base.py`'s call site to bare `name=`/`subjects=`
+and confirming exactly that test catches it.
+
+Existing streams from any prior deployment are brought up to policy too, not
+only newly-created ones -- `_apply_policy_to_existing()`, called from both
+paths' "stream already exists" branch. `storage` is deliberately **not**
+changed there: NATS rejects a storage-type change on a live stream, so
+`AI_AUDIO` moving file-to-memory needs the stream deleted and recreated by
+hand. Attempting it in code would turn every bootstrap into a failed update;
+instead it logs a loud warning naming the mismatch, so the migration is a
+decision an operator makes rather than an error they hit.
+
+**A real gap in the test harness, found and fixed while writing P1-2's
+tests, worth its own note.** `tests/conftest.py` globally replaces
+`sys.modules["nats"]` and its submodules with a hand-built stub for the
+whole suite -- deliberately, so no test ever touches a real NATS connection.
+The stub's `nats.js.api` only ever defined `DeliverPolicy`. Two things had
+apparently never been exercised by any test since P1-1 either: `base.py`'s
+real (non-mocked) `subscribe()` body constructs `ConsumerConfig`, which the
+stub didn't provide, and `_bootstrap_mesh`'s exception handler does
+attribute-chain access (`nats.js.errors.BadRequestError`) which raised
+`AttributeError` regardless of what was actually thrown, because the stub
+registers submodules in `sys.modules` without setting them as attributes of
+their parent module object -- real Python's import machinery does that
+automatically; a hand-built stub does not get it for free. Fixed by adding
+`StorageType`, `RetentionPolicy`, `DiscardPolicy`, `ConsumerConfig` and
+`StreamConfig` to the fake `nats.js.api`, and by wiring `nats.js`,
+`nats.js.errors` and `nats.js.api` as real attributes on their parents. Also
+found and fixed in the same pass: `MockJSM.add_stream` only accepted the
+old `name=`/`subjects=` call shape, not the `config=StreamConfig(...)` shape
+real `nats-py` also supports and this change now uses -- confirmed against
+`nats.js.manager.JetStreamManager.add_stream`'s real signature before fixing.
+
+None of this changes application behavior; it only makes the test double
+match the real library closely enough to exercise code paths it was
+silently skipping before.
+
+**Verified:** full backend suite 1019/1019 (18 new tests: 8 in
+`test_mesh_ack_model.py` for P1-1 including the drift reconciliation, 10 in
+`test_stream_retention.py` for P1-2), `ruff check .` clean. Eight
+mutations tested across both items, each caught by exactly the test written
+for it: inline-await, guard-set-after-dispatch, drift-delete removed,
+tick's ack config removed, guard leaked on exception (P1-1); the two
+creation paths diverging, `AI_AUDIO` storage flipped to file, and
+`_apply_policy_to_existing` never reporting a change (P1-2).
+
+**NOT done:**
+- All Docker-based verification: applying the stream config against a real
+  NATS, confirming `AI_AUDIO` actually lands MEMORY-backed and `AI_MESSAGES`
+  FILE-backed, watching `_reconcile_consumer_config` delete and recreate a
+  real durable. Docker Desktop was not running this session.
+- The control-tier stream split (`system.>`/`control.*` out of
+  `AI_MESSAGES`) -- deferred deliberately, reasoning above.
+- Measurement 1.3 (`AI_AUDIO` growth over a real session), which would
+  validate the sizing rather than the estimate it is built on.
+- Stage 3's remaining five measurements, P1-3/P1-4 (gated on measurement
+  1.1), P1-9 (wants an `evals/` baseline), and the six newly-discovered
+  one-ended subjects from P1-8 -- all still out of scope for this batch.
