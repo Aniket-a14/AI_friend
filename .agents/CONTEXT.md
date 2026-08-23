@@ -8700,3 +8700,75 @@ and the reseed leaving `speech_active` set (caught).
   whisper hang still blocks, and was never this item's gate.
 - Stage 5's remaining parts -- P2-2's outbound ack and the two documentation
   leftovers -- next.
+
+## 2026-08-23 -- Stage 5 Part 3 -- P2-2: the outbound PCM ack comes off the
+critical path, but *not* for the reason the roadmap gives
+
+`ROADMAP.md` P2-2 (M3-P3) says to apply the maintainer's own inbound fix in the
+other direction: `publish_pcm` does `.await?.await?`, the same `.await?.await?`
+already removed on the inbound side, so do the same thing. **The pattern
+matches; the payloads do not, and that changes the fix.**
+
+Inbound (`stt-agent/src/main.rs:712-724`) drops the ack on
+`user.voice_properties`, and its comment is explicit about why that is safe:
+*"ephemeral observability samples superseded by the next chunk"*. Losing one
+costs a metric. `publish_pcm` carries **the agent's actual speech**. Losing a
+chunk is an audible gap in what the user hears. Copying the inbound reasoning
+across would have been copying a justification that does not hold here.
+
+**Measured before deciding.** Against the live `nats_mesh` container, 500
+publishes each way on a memory stream: **0.286 ms/chunk awaiting the ack vs
+0.001 ms not** -- 439x -- and **all 1000 messages arrived either way**. The
+cost is not just per-chunk overhead, it *serializes*: chunk N+1 was not sent
+until chunk N was acknowledged, so at 20ms chunks a five-second utterance paid
+~71ms of pure round-trip on the speech path. On loopback. The
+robot-plus-server split the roadmap anticipates would make that far worse,
+which is the case for fixing it at all.
+
+**Fix.** The first `await?` is kept, so send-side failure (connection down, no
+responders) still reaches the caller exactly as before. The ack is **moved off
+the critical path rather than discarded**: awaited on a spawned task that
+`warn!`s if JetStream rejects the message. A stream that is full or erroring is
+still reported. The residual trade is stated rather than buried: a chunk the
+server never accepts is now noticed a moment *after* the fact, in a log line,
+instead of being returned to the caller at the point of publish. That is a real
+weakening of the error path, accepted deliberately for a payload where the
+alternative was 439x latency on the audio the trade exists to protect.
+
+**Files:** `crates/voice-agent/src/main.rs`.
+
+**Verified.** `publish_pcm_does_not_wait_for_the_jetstream_ack` is a real
+integration test against live NATS -- it calls the production `publish_pcm`,
+not a reimplementation. Two assertions, both necessary: the 200 chunks complete
+in well under the serialized ack time, **and all 200 arrive in the stream**,
+because "faster" is only a fix if nothing was lost to get there. The threshold
+is *calibrated in-test* from a real ack round-trip taken moments earlier rather
+than hardcoded, since the RTT is a fraction of a millisecond on loopback and
+much larger across a machine boundary; a fixed number would be meaningless on
+one of the two. Skips loudly without NATS, and skips rather than touching a
+provisioned `AI_AUDIO` -- same shape as stt-agent's
+`real_model_loads_and_perceives_audio` skipping an unprovisioned model.
+Mutation-tested by restoring the awaited ack: caught, with the message naming
+the numbers (`200 chunks took 63.855ms, one ack round-trip is 329.542µs`).
+`cargo test` 77 across the three crates (voice-agent 35 -> 36),
+`cargo check --workspace` clean, clippy clean on the change.
+
+**NOT done:**
+- No **bounded outstanding-ack window**, which the plan named as preferable if
+  cheap. It is not cheap here: `publish_pcm` is a free function called from
+  five sites with no shared context object to hold the window, so it would mean
+  restructuring all five. The spawned-watch approach gets the observability
+  without that, and is where this stops.
+- The end-to-end barge-in measurement (1.1, `tools/measure/m11_bargein.py`) was
+  **not** re-run. `local_voice` is crash-looping (`Restarting (255)`) and the
+  audio path needs it, so the number would not have been real. The per-chunk
+  measurement above is direct evidence for the change; 1.1 would have shown its
+  effect on the full path, and remains worth taking when that container is
+  healthy.
+- `AI_AUDIO` is not provisioned on the running mesh (only `AI_MESSAGES` exists),
+  noticed while measuring. That means `audio.stream` currently has no stream
+  bound to it at all, so **every** outbound publish there is unacked in
+  practice today -- worth knowing, unrelated to this change, and a separate
+  question about whether `setup_nats_streams.py` has been run against this
+  deployment.
+- Stage 5's last part -- the two documentation leftovers -- next.

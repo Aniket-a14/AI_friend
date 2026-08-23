@@ -1319,10 +1319,44 @@ async fn publish_pcm(
         build_latency_metadata(event).to_string(),
     );
 
-    jetstream
+    // audit/ROADMAP.md P2-2 (M3-P3): this used to be `.await?.await?` -- the
+    // second await being JetStream's publish ack, i.e. a full server round-trip
+    // *per PCM chunk*, on the outbound speech path. Worse than the cost, it
+    // serialized: chunk N+1 was not even sent until chunk N had been
+    // acknowledged, so the ack latency was added to time-to-first-audio and to
+    // every gap after it.
+    //
+    // The roadmap frames the fix as applying the maintainer's own inbound fix
+    // in the other direction. **The pattern matches but the payloads do not**,
+    // and the difference matters. Inbound (`stt-agent`, `user.voice_properties`)
+    // drops the ack on "ephemeral observability samples superseded by the next
+    // chunk" -- losing one costs a metric. This is the agent's actual speech:
+    // losing a chunk is an audible gap in what the user hears. So the ack is
+    // not simply discarded here.
+    //
+    // The first `await?` is kept, and still surfaces send-side failure
+    // (connection down, no responders) to the caller as before. The ack is
+    // moved off the critical path rather than dropped: awaited on a spawned
+    // task, so a stream that is rejecting messages -- full, storage error --
+    // is still reported, just not waited for. The residual trade, stated
+    // plainly: a chunk that the server never accepts is now noticed a moment
+    // *after* the fact, in a log line, instead of being returned to the caller
+    // as an error at the point of publish.
+    let ack = jetstream
         .publish_with_headers(topics::AUDIO_STREAM, headers, Bytes::from(pcm))
-        .await?
         .await?;
+
+    tokio::spawn(async move {
+        if let Err(err) = ack.await {
+            warn!(
+                error = %err,
+                subject = topics::AUDIO_STREAM,
+                "JetStream did not acknowledge an outbound audio chunk; \
+                 the listener may hear a gap"
+            );
+        }
+    });
+
     Ok(())
 }
 
@@ -1937,5 +1971,110 @@ mod tests {
         let config = test_voice_config(server.uri());
         let http = Client::new();
         assert!(probe_synthesis(&config, &http).await.is_ok());
+    }
+
+    const STREAM: &str = "P2_2_PUBLISH_PCM_TEST";
+
+    /// P2-2: `publish_pcm` must not wait for JetStream's publish ack.
+    ///
+    /// Needs a live NATS, and skips loudly without one -- same shape as
+    /// stt-agent's `real_model_loads_and_perceives_audio`, which skips when the
+    /// model is unprovisioned. Also skips if a stream already covers
+    /// `audio.stream`, so it can never disturb a provisioned `AI_AUDIO`.
+    ///
+    /// The threshold is measured in-test rather than hardcoded, because the ack
+    /// round-trip depends entirely on where NATS is: on loopback it is a
+    /// fraction of a millisecond, and across the machine boundary the
+    /// robot-plus-server split implies, far more. Calibrating against a real
+    /// round-trip taken moments earlier keeps the assertion meaningful on both.
+    #[tokio::test]
+    async fn publish_pcm_does_not_wait_for_the_jetstream_ack() {
+        let url = std::env::var("NATS_URL")
+            .unwrap_or_else(|_| "nats://127.0.0.1:4222".to_string());
+        let Ok(client) = async_nats::connect(&url).await else {
+            eprintln!("SKIP: no NATS at {url}");
+            return;
+        };
+        let js = async_nats::jetstream::new(client);
+
+        if js.get_stream(STREAM).await.is_ok()
+            || js
+                .get_stream("AI_AUDIO")
+                .await
+                .is_ok()
+        {
+            eprintln!("SKIP: a stream already covers audio.stream; refusing to touch it");
+            return;
+        }
+
+        js.create_stream(async_nats::jetstream::stream::Config {
+            name: STREAM.to_string(),
+            subjects: vec![topics::AUDIO_STREAM.to_string()],
+            storage: async_nats::jetstream::stream::StorageType::Memory,
+            ..Default::default()
+        })
+        .await
+        .expect("create the test stream");
+
+        let event = ChatOutput {
+            content: None,
+            done: false,
+            turn_id: Some("p2-2-test".to_string()),
+            affect: None,
+            timestamp: 0.0,
+            full_response: None,
+            generation_error: None,
+            proactive: false,
+            latency_metadata: None,
+        };
+        let chunk = || vec![0u8; 640]; // ~20ms of 16-bit PCM at 16 kHz
+
+        // Calibrate: one publish whose ack we *do* wait for.
+        let started = std::time::Instant::now();
+        js.publish(topics::AUDIO_STREAM, Bytes::from(chunk()))
+            .await
+            .expect("publish")
+            .await
+            .expect("ack");
+        let ack_rtt = started.elapsed();
+
+        const N: usize = 200;
+        let started = std::time::Instant::now();
+        for _ in 0..N {
+            publish_pcm(&js, chunk(), &event, 1.0)
+                .await
+                .expect("publish_pcm must succeed");
+        }
+        let elapsed = started.elapsed();
+
+        // Awaiting the ack per chunk costs at least N round-trips. A quarter of
+        // that is a wide margin: the point is the difference in kind, not a
+        // tuned number.
+        let serialized = ack_rtt * (N as u32);
+        assert!(
+            elapsed < serialized / 4,
+            "publish_pcm looks like it is still waiting for acks: {N} chunks took \
+             {elapsed:?}, and one ack round-trip alone is {ack_rtt:?} \
+             (serialized would be ~{serialized:?})"
+        );
+
+        // Not waiting must not mean not delivering. This is the half that
+        // matters: outbound PCM is the agent's actual speech, not the ephemeral
+        // observability sample the inbound side drops acks on.
+        let info = js
+            .get_stream(STREAM)
+            .await
+            .expect("stream")
+            .info()
+            .await
+            .expect("stream info")
+            .state
+            .messages;
+        let _ = js.delete_stream(STREAM).await;
+        assert_eq!(
+            info,
+            (N + 1) as u64,
+            "chunks went missing once the ack stopped being awaited"
+        );
     }
 }
