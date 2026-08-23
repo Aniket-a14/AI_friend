@@ -89,6 +89,34 @@ jobs:
       run: |
         cd backend
         cargo check --workspace
+    - name: Cargo Test Rust Workspace (audit/ROADMAP.md P2-11 / M5-T1, Linux half)
+      # WARN-ONLY on purpose, for now. P2-11 added the enforcing version of this
+      # step to macos-ci.yml, where the fix it depends on (re-signing
+      # sherpa-onnx's dylibs, plus an injected rpath) is macOS-specific and the
+      # result was verified locally. Linux was left out because its behaviour
+      # was never checked, and the same class of problem is plausible here:
+      # build.rs does nothing for Linux, so the stt-agent test binary has to
+      # find libonnxruntime.so through whatever rpath sherpa-onnx-sys emits --
+      # which is exactly the assumption that turned out to be false on macOS.
+      #
+      # Attempting to verify it locally was inconclusive rather than reassuring:
+      # in an arm64 Linux container, whisper-rs-sys fails to build whisper.cpp
+      # at all (GCC 12 rejects the NEON fp16 `vfmaq_f16` path with "target
+      # specific option mismatch"). That is architecture-specific and does not
+      # apply to this x86_64 runner -- `cargo check --workspace` above already
+      # runs these same build scripts here and passes -- so it says nothing
+      # about whether the tests *run*.
+      #
+      # So this lands observing rather than enforcing, per the rollback note
+      # this roadmap uses for P1-8. Drop `continue-on-error` once a few runs
+      # have shown it green. Split into two invocations for the same reason as
+      # macos-ci.yml: a single `cargo test --workspace` breaks cognitive-rust's
+      # PyO3 extension-module link step through feature unification.
+      continue-on-error: true
+      run: |
+        cd backend
+        cargo test --package stt-agent --package voice-agent --package contracts
+        cargo test --package cognitive-rust --lib
     - name: Build cognitive-rust extension
       run: |
         cd backend

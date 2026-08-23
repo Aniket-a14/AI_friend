@@ -8772,3 +8772,83 @@ the numbers (`200 chunks took 63.855ms, one ack round-trip is 329.542µs`).
   question about whether `setup_nats_streams.py` has been run against this
   deployment.
 - Stage 5's last part -- the two documentation leftovers -- next.
+
+## 2026-08-23 -- Stage 5 Part 4 -- M5-T1's Linux half lands observing, not
+enforcing; and the ROADMAP stops understating what shipped
+
+Two leftovers, both documentation-shaped, closing out Stage 5's first pass.
+
+**4a. `cargo test` on Linux CI (M5-T1's remaining half).** P2-11 added the
+enforcing step to `macos-ci.yml` only, and said so: the codesign fix is
+macOS-specific and Linux behaviour was never checked. The concern is concrete
+rather than theoretical -- `build.rs` does nothing at all for Linux, so the
+stt-agent test binary must find `libonnxruntime.so` through whatever rpath
+`sherpa-onnx-sys` emits, and *that exact assumption is the one that turned out
+to be false on macOS*.
+
+Tried to settle it by running the crates in a Linux container. **Inconclusive,
+and worth recording as such rather than as a result**: on arm64 Linux (which is
+what a container gets on this machine) `whisper-rs-sys` cannot build
+whisper.cpp at all -- GCC 12 rejects the NEON fp16 path, `inlining failed in
+call to always_inline vfmaq_f16: target specific option mismatch`. That is
+architecture-specific and does not apply to the x86_64 GitHub runner, where
+`cargo check --workspace` already runs these same build scripts and passes. So
+the experiment says nothing about whether the tests *run* on CI's Linux, which
+is the actual question.
+
+Rather than file it and do nothing, the step lands with
+`continue-on-error: true` -- observing, not enforcing. This is the rollback
+shape this roadmap already uses for P1-8 ("start warn-only if the workspace is
+not yet fully green"), and it is strictly better than the alternatives: it gets
+real x86_64 evidence from the only environment that can produce it, and it
+cannot turn CI red while doing so. Drop `continue-on-error` once a few runs
+show green. Same two-invocation split as macOS, for the same reason
+(`--workspace` in one go breaks cognitive-rust's PyO3 link step).
+
+**4b. `ROADMAP.md` carried `IMPLEMENTATION STATUS` markers for Stage 0 only.**
+Everything from Stages 1-4 -- five P1 items, four P2 items, one documented
+non-ship -- was invisible in the document that is supposed to *be* the work
+queue, so knowing what was left required cross-reading this ledger. That is the
+same drift `CLAUDE.md` warns about between `README.md` and the ledger, except
+inside `audit/`. Added 18 markers, each naming what shipped, where (PR number
+or branch), and what was deliberately left. Merged-to-`main` items say DONE;
+#192/#193/#196 say **IN REVIEW**, distinctly, because a roadmap that reports an
+open PR as shipped is the failure mode this is fixing. The five genuinely
+unstarted items (P2-1, P2-5, P2-7, P2-10, P2-12) are left unmarked, which is
+the correct signal.
+
+Several markers **correct** the item they annotate rather than just stamping it,
+because the finding and the fix diverged: P2-2's inbound-symmetry justification
+does not transfer to outbound audio; P2-8's "deafen" is the wrong direction and
+there is a second entry into the latch that needs no dropout; P2-14's M1-A5
+does not reproduce as filed; P2-11's residual cause is no longer UNKNOWN.
+
+**A constraint worth stating loudly, because it nearly caught this pass out:**
+`audit/` and root `AUDIT.md` are **deliberately untracked**, with no
+`.gitignore` entry, and must never be committed -- publishing an internal
+security audit of a public repo is a real exposure, and the 2026-08-22 incident
+needed a `reset --soft` plus a force-push to remediate. So **4b ships no
+commit**: the markers are a local working-file change only. All four Stage 5
+branches were checked with `git diff --name-only main..<branch> | grep -E
+'^(audit/|AUDIT.md)'` and are clean. Staging explicit paths (never a bare
+`git add -A`) is what kept them that way.
+
+**Files:** `.github/workflows/ci.yml` (committed); `audit/ROADMAP.md` (local
+only, deliberately uncommitted).
+
+**Verified.** Workflow YAML parses and the new step carries
+`continue-on-error: true` (asserted by parsing the file, not by reading it).
+No source changed, so the backend suite and `ruff` are unaffected by this part.
+
+**NOT done:**
+- Whether `cargo test` actually passes on x86_64 Linux is **still unknown**.
+  That is the point of landing it warn-only; the answer arrives with the first
+  CI run on a branch that includes this file.
+- The arm64-Linux whisper.cpp build failure is real and unfixed. It does not
+  affect CI, but it does mean the Rust crates cannot currently be built in a
+  Linux container on this machine -- worth knowing before anyone reaches for
+  containerized Rust builds locally (Q-M5-2, native vs container, touches this).
+- Stage 5's remaining items -- P2-1, P2-5, P2-7, P2-10, P2-12, P2-14's other
+  three findings, and all of P3 -- unstarted. P2-5 and P2-10 are the strongest
+  candidates for the next pass, and P3-2 (telemetry) remains the roadmap's own
+  promotion candidate.
