@@ -1570,8 +1570,65 @@ class MemoryStore:
         return dynamic_stop_words
 
     @staticmethod
+    def _compile_entity_pattern(entity_names) -> re.Pattern | None:
+        """One compiled alternation over every known entity name.
+
+        audit/ROADMAP.md P2-3 (M2-P1): three call sites each used to build
+        and search a fresh `\bname\b` pattern per (candidate, entity) pair
+        -- an uncompiled regex re-created O(candidates x entities) times per
+        `search_memories` call. A single compiled alternation, searched once
+        per candidate via `finditer`, finds the same set of whole-word
+        matches in one pass. Longest names first so that if two entity names
+        were ever identical after lowercasing (not expected, but not
+        enforced anywhere either), the longer alternative is preferred --
+        `\b` boundaries alone already prevent a *shorter* name matching
+        inside a longer one that merely contains it (e.g. "Sam" cannot match
+        inside "Samantha": there is no word boundary between them).
+        """
+        if not entity_names:
+            return None
+        escaped = sorted(
+            (re.escape(n.lower()) for n in entity_names), key=len, reverse=True
+        )
+        return re.compile(r"\b(?:" + "|".join(escaped) + r")\b")
+
+    @staticmethod
+    def _compute_candidate_entities(raw_candidates, entity_names) -> dict:
+        """Base candidate-index -> mentioned-entity-names mapping.
+
+        Computed once and shared by `_build_entity_graph` (co-occurrence
+        edges), `_collect_ppr_seeds` (seed fallback) and the first-person
+        pronoun layer `_apply_ppr_spreading_activation` adds once
+        `agent_node_name` is known (not yet resolved at this point -- see
+        the call site). A candidate's own `metadata["entities"]` wins when
+        present (`add_memory` precomputes it); only candidates without that
+        fall back to scanning content with the compiled pattern below.
+        """
+        pattern = MemoryStore._compile_entity_pattern(entity_names)
+        lower_to_name = {n.lower(): n for n in entity_names}
+
+        cand_entities: dict[int, set] = {}
+        for idx, cand in enumerate(raw_candidates):
+            payload_meta = cand.get("metadata") or {}
+            meta_entities = payload_meta.get("entities")
+            if isinstance(meta_entities, list) and meta_entities:
+                cand_entities[idx] = set(meta_entities)
+                continue
+            if pattern is None:
+                cand_entities[idx] = set()
+                continue
+            content_lower = cand["content"].lower()
+            cand_entities[idx] = {
+                lower_to_name[m.group(0)]
+                for m in pattern.finditer(content_lower)
+                if m.group(0) in lower_to_name
+            }
+        return cand_entities
+
+    @staticmethod
     def _build_entity_graph(entity_records, relation_records, raw_candidates):
-        """Build the entity list and co-occurrence adjacency used by PPR.
+        """Build the entity list, co-occurrence adjacency, and base
+        candidate->entities mapping used by PPR.
 
         Edges come from Neo4j relations plus entity co-occurrence within each
         candidate memory.
@@ -1585,26 +1642,21 @@ class MemoryStore:
             adj.setdefault(src, set()).add(tgt)
             adj.setdefault(tgt, set()).add(src)
 
-        # Add co-occurrence connections from candidate memories
-        for cand in raw_candidates:
-            payload_meta = cand.get("metadata") or {}
-            cand_ents = payload_meta.get("entities", [])
-            if not cand_ents:
-                content_lower = cand["content"].lower()
-                cand_ents = []
-                for name in entity_names:
-                    pattern = rf"\b{re.escape(name.lower())}\b"
-                    if re.search(pattern, content_lower):
-                        cand_ents.append(name)
+        cand_entities = MemoryStore._compute_candidate_entities(
+            raw_candidates, entity_names
+        )
 
-            for i in range(len(cand_ents)):
-                for j in range(i + 1, len(cand_ents)):
-                    e1 = cand_ents[i]
-                    e2 = cand_ents[j]
+        # Add co-occurrence connections from candidate memories
+        for ents in cand_entities.values():
+            ents = list(ents)
+            for i in range(len(ents)):
+                for j in range(i + 1, len(ents)):
+                    e1 = ents[i]
+                    e2 = ents[j]
                     adj.setdefault(e1, set()).add(e2)
                     adj.setdefault(e2, set()).add(e1)
 
-        return entity_names, adj
+        return entity_names, adj, cand_entities
 
     @staticmethod
     def _resolve_identity_nodes(entity_records, entity_names, adj, user_id):
@@ -1736,18 +1788,34 @@ class MemoryStore:
         matched_cues,
         direct_boosted_indices,
         agent_node_name,
+        cand_entities,
     ) -> None:
         """HippoRAG-inspired Personalized PageRank spreading activation.
 
         Seeds are the query's entity cues (or, failing that, the entities of
         directly-cued memories), and each candidate gains a degree-scaled boost
         for the seeded entities it mentions.
+
+        `cand_entities` is the *base* mapping from `_build_entity_graph`,
+        computed before `agent_node_name` was known (see the call site in
+        `search_memories`). The first-person-pronoun addition -- "I"/"me"/
+        etc. count as a mention of the agent itself -- is layered on here,
+        once agent_node_name is available, rather than recomputed from
+        scratch the way the pre-P2-3 `_map_candidate_entities` did.
         """
         if not entity_names:
             return
         try:
+            if agent_node_name:
+                pronoun_pattern = re.compile(
+                    r"\b(?:" + "|".join(re.escape(p) for p in FIRST_PERSON_PRONOUNS) + r")\b"
+                )
+                for idx, cand in enumerate(raw_candidates):
+                    if pronoun_pattern.search(cand["content"].lower()):
+                        cand_entities.setdefault(idx, set()).add(agent_node_name)
+
             seeds = self._collect_ppr_seeds(
-                entity_names, matched_cues, direct_boosted_indices, raw_candidates
+                entity_names, matched_cues, direct_boosted_indices, cand_entities
             )
 
             # Compute Personalized PageRank Vector (3-iteration power method,
@@ -1761,16 +1829,12 @@ class MemoryStore:
                 )
                 ppr = {entity_names[i]: p[i] for i in range(len(entity_names))}
 
-            cand_entities = self._map_candidate_entities(
-                raw_candidates, entity_names, agent_node_name
-            )
-
             # Apply spreading activation boost based on PPR probability
             for idx, cand in enumerate(raw_candidates):
                 if idx in direct_boosted_indices:
                     continue
                 boost_sum = 0.0
-                for ent in cand_entities[idx]:
+                for ent in cand_entities.get(idx, ()):
                     if ent in ppr:
                         deg = len(adj.get(ent, set()))
                         # HippoRAG-inspired degree-scaled activation boost
@@ -1784,75 +1848,32 @@ class MemoryStore:
 
     @staticmethod
     def _collect_ppr_seeds(
-        entity_names, matched_cues, direct_boosted_indices, raw_candidates
+        entity_names, matched_cues, direct_boosted_indices, cand_entities
     ) -> set:
-        """Pick the PPR seed entities for this query."""
+        """Pick the PPR seed entities for this query.
+
+        Reads the shared `cand_entities` mapping (see `_build_entity_graph`)
+        rather than re-scanning candidate content -- this fallback branch
+        used to duplicate the same per-entity regex search a third time.
+        """
         seeds = set()
+        name_to_idx = {name.lower(): i for i, name in enumerate(entity_names)}
 
         # 1. Query cues that match entity names
         for cue in matched_cues:
-            for idx, name in enumerate(entity_names):
-                if name.lower() == cue.lower():
-                    seeds.add(idx)
+            idx = name_to_idx.get(cue.lower())
+            if idx is not None:
+                seeds.add(idx)
 
         # 2. If no direct query seeds, use entities from directly cued memories
         #    (vector-guided associative recall)
         if not seeds:
             for idx in direct_boosted_indices:
-                cand = raw_candidates[idx]
-                payload_meta = cand.get("metadata") or {}
-                cand_ents = payload_meta.get("entities", [])
-                if not cand_ents:
-                    content_lower = cand["content"].lower()
-                    for e_idx, name in enumerate(entity_names):
-                        pattern = rf"\b{re.escape(name.lower())}\b"
-                        if re.search(pattern, content_lower):
-                            seeds.add(e_idx)
-                else:
-                    for ent in cand_ents:
-                        for e_idx, name in enumerate(entity_names):
-                            if name.lower() == ent.lower():
-                                seeds.add(e_idx)
+                for ent in cand_entities.get(idx, ()):
+                    e_idx = name_to_idx.get(ent.lower())
+                    if e_idx is not None:
+                        seeds.add(e_idx)
         return seeds
-
-    @staticmethod
-    def _map_candidate_entities(raw_candidates, entity_names, agent_node_name) -> dict:
-        """Map each candidate index to the entity names it mentions.
-
-        Prefers entities recorded in the memory's metadata; falls back to
-        scanning the content. First-person pronouns count as a mention of the
-        agent itself.
-        """
-
-        def present_entities(content: str) -> set:
-            content_lower = content.lower()
-            present = set()
-            for name in entity_names:
-                pattern = rf"\b{re.escape(name.lower())}\b"
-                if re.search(pattern, content_lower):
-                    present.add(name)
-            if agent_node_name and any(
-                re.search(rf"\b{re.escape(pr)}\b", content_lower)
-                for pr in FIRST_PERSON_PRONOUNS
-            ):
-                present.add(agent_node_name)
-            return present
-
-        cand_entities = {}
-        for idx, cand in enumerate(raw_candidates):
-            payload_meta = cand.get("metadata") or {}
-            if "entities" in payload_meta and isinstance(
-                payload_meta["entities"], list
-            ):
-                cand_entities[idx] = set(payload_meta["entities"])
-                if agent_node_name and any(
-                    re.search(rf"\b{re.escape(pr)}\b", cand["content"].lower())
-                    for pr in FIRST_PERSON_PRONOUNS
-                ):
-                    cand_entities[idx].add(agent_node_name)
-            else:
-                cand_entities[idx] = present_entities(cand["content"])
-        return cand_entities
 
     def _apply_goal_buffer_boost(self, raw_candidates) -> None:
         """Prime candidates that mention concepts held in the active goal buffer."""
@@ -2564,10 +2585,11 @@ class MemoryStore:
 
             entity_names = []
             adj = {}
+            cand_entities = {}
             agent_node_name = None
             user_node_name = None
             try:
-                entity_names, adj = self._build_entity_graph(
+                entity_names, adj, cand_entities = self._build_entity_graph(
                     entity_records, relation_records, raw_candidates
                 )
                 agent_node_name, user_node_name = self._resolve_identity_nodes(
@@ -2597,6 +2619,7 @@ class MemoryStore:
                 matched_cues,
                 direct_boosted_indices,
                 agent_node_name,
+                cand_entities,
             )
             self._apply_goal_buffer_boost(raw_candidates)
 

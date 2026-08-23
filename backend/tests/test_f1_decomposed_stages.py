@@ -239,7 +239,7 @@ def test_build_entity_graph_is_symmetric_and_adds_cooccurrence():
     relation_records = [{"source": "Raj", "target": "Aniket"}]
     candidates = [{"content": "Raj visited Kolkata", "metadata": {}}]
 
-    names, adj = MemoryStore._build_entity_graph(
+    names, adj, cand_entities = MemoryStore._build_entity_graph(
         entity_records, relation_records, candidates
     )
 
@@ -248,6 +248,52 @@ def test_build_entity_graph_is_symmetric_and_adds_cooccurrence():
     assert "Aniket" in adj["Raj"] and "Raj" in adj["Aniket"]
     # co-occurrence discovered from the memory text, both directions
     assert "Kolkata" in adj["Raj"] and "Raj" in adj["Kolkata"]
+    # P2-3: the base candidate->entities mapping is now returned alongside
+    # names/adj, computed once rather than re-derived by three separate
+    # call sites.
+    assert cand_entities == {0: {"Raj", "Kolkata"}}
+
+
+def test_build_entity_graph_prefers_metadata_entities_over_scanning():
+    """P2-3: a candidate whose metadata already names its entities (the
+    add_memory precompute path) must use that list untouched, not re-scan
+    the content -- scanning "Raj visited Kolkata" would also find "Kolkata",
+    which the metadata here deliberately omits.
+    """
+    entity_records = [{"name": "Raj"}, {"name": "Kolkata"}]
+    candidates = [
+        {"content": "Raj visited Kolkata", "metadata": {"entities": ["Raj"]}}
+    ]
+
+    _names, _adj, cand_entities = MemoryStore._build_entity_graph(
+        entity_records, [], candidates
+    )
+
+    assert cand_entities == {0: {"Raj"}}
+
+
+def test_compile_entity_pattern_does_not_match_a_name_inside_a_longer_one():
+    """"Sam" must not match inside "Samantha" -- \b boundaries, not just
+    "the string appears somewhere", is what the compiled alternation has to
+    preserve from the original per-name regex."""
+    pattern = MemoryStore._compile_entity_pattern(["Sam", "Samantha"])
+
+    matches = {m.group(0) for m in pattern.finditer("i saw samantha today")}
+
+    assert matches == {"samantha"}
+    assert "sam" not in matches
+
+
+def test_compile_entity_pattern_requires_a_word_boundary():
+    """A single-entity pattern with no longer alternative to compete with --
+    unlike the "Sam"/"Samantha" case above, nothing here saves a boundary-free
+    match: "art" would match inside "martial" purely as a substring if the
+    pattern were not boundary-anchored."""
+    pattern = MemoryStore._compile_entity_pattern(["art"])
+
+    matches = [m.group(0) for m in pattern.finditer("i love martial arts, and art")]
+
+    assert matches == ["art"]  # the standalone word only, not "art" inside "martial"/"arts"
 
 
 def test_resolve_identity_nodes_prefers_described_agent():
@@ -266,6 +312,69 @@ def test_resolve_identity_nodes_falls_back_when_graph_is_empty():
     agent, user = MemoryStore._resolve_identity_nodes([], [], {}, None)
     assert agent  # configured AI_NAME
     assert user == "user"
+
+
+def test_collect_ppr_seeds_reads_the_shared_mapping_not_raw_candidates():
+    """P2-3: the seed-fallback branch used to re-scan candidate content with
+    its own per-entity regex loop; it now reads the same cand_entities dict
+    _build_entity_graph already computed. A candidate with no matching cue
+    but a directly-boosted index still seeds via its precomputed entities.
+    """
+    entity_names = ["Raj", "Kolkata"]
+    cand_entities = {0: {"Kolkata"}}
+
+    seeds = MemoryStore._collect_ppr_seeds(
+        entity_names,
+        matched_cues=["nothing_matches"],
+        direct_boosted_indices={0},
+        cand_entities=cand_entities,
+    )
+
+    assert seeds == {entity_names.index("Kolkata")}
+
+
+def test_collect_ppr_seeds_prefers_direct_cue_matches():
+    entity_names = ["Raj", "Kolkata"]
+    seeds = MemoryStore._collect_ppr_seeds(
+        entity_names,
+        matched_cues=["kolkata"],
+        direct_boosted_indices={0},
+        cand_entities={0: {"Raj"}},
+    )
+    # A direct cue match on "Kolkata" wins outright; the fallback branch
+    # (which would have seeded "Raj" from cand_entities) never runs.
+    assert seeds == {entity_names.index("Kolkata")}
+
+
+def test_apply_ppr_spreading_activation_adds_agent_on_first_person_pronoun():
+    """The agent-pronoun layer moved out of the deleted _map_candidate_entities
+    and into _apply_ppr_spreading_activation itself; this is the only
+    remaining coverage of "I"/"me"/etc counting as a mention of the agent.
+    """
+    store = _store()
+    entity_names = ["Aniket", "Kolkata"]
+    adj = {"Aniket": {"Kolkata"}, "Kolkata": {"Aniket"}}
+    raw_candidates = [
+        {"content": "I love Kolkata", "score": 0.0, "metadata": {}},
+    ]
+    # Base mapping as _build_entity_graph would hand it over: no agent
+    # mention yet, since agent_node_name was not known when it ran.
+    cand_entities = {0: {"Kolkata"}}
+
+    store._apply_ppr_spreading_activation(
+        raw_candidates,
+        entity_names,
+        adj,
+        matched_cues=["kolkata"],
+        direct_boosted_indices=set(),
+        agent_node_name="Aniket",
+        cand_entities=cand_entities,
+    )
+
+    assert "Aniket" in cand_entities[0]
+    # The pronoun mention should have contributed a spreading-activation
+    # boost via Aniket's PPR mass, not just been recorded in the mapping.
+    assert raw_candidates[0]["score"] > 0.0
 
 
 def test_normalize_recall_ts_handles_every_stored_shape():

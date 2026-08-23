@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "created_at": "2026-08-22T14:16:32.006312+00:00",
+  "created_at": "2026-08-23T04:14:55.749808+00:00",
   "measurement_id": "1.6",
   "title": "Retrieval hot path, unbounded graph fetch, SQLite under concurrent load",
   "provenance": "live",
@@ -9,53 +9,59 @@
       "figures": {
         "pg_search_memories_s": {
           "label": "MEASURED",
-          "value": 0.07581358300012653,
+          "value": 0.5860117910001463,
           "unit": "seconds",
           "derivation": "",
           "reason": ""
         },
         "graph_fetch_cold_s": {
           "label": "MEASURED",
-          "value": 5.207999492995441e-6,
+          "value": 0.056238957999994454,
           "unit": "seconds",
           "derivation": "",
           "reason": ""
         },
         "graph_fetch_cache_warm_s": {
           "label": "MEASURED",
-          "value": 1.207999957841821e-6,
+          "value": 3.5829998523695394e-6,
           "unit": "seconds",
-          "derivation": "0 entities, 0 relations fetched unbounded (M2-P2); cache TTL 300s per graph_db.py",
+          "derivation": "1003 entities, 4002 relations fetched unbounded (M2-P2); cache TTL 300s per graph_db.py",
           "reason": ""
         },
         "sqlite_concurrency_overlap_ratio": {
           "label": "MEASURED",
-          "value": 0.33599630800869196,
+          "value": 0.9399935026184554,
           "unit": "ratio (1.0 = zero overlap, no concurrency gained)",
-          "derivation": "single call 0.0368s; 5 concurrent calls totaled 0.0618s vs 0.1840s serial estimate",
+          "derivation": "single call 0.5525s; 5 concurrent calls totaled 2.5966s vs 2.7624s serial estimate",
           "reason": ""
         }
       },
       "raw": {
         "pg": {
-          "pg_search_memories_s": 0.07581358300012653
+          "pg_search_memories_s": 0.5860117910001463
         },
         "graph": {
-          "graph_fetch_cold_s": 5.207999492995441e-6,
-          "graph_fetch_cache_warm_s": 1.207999957841821e-6,
-          "entity_count": 0,
-          "relation_count": 0
+          "graph_fetch_cold_s": 0.056238957999994454,
+          "graph_fetch_cache_warm_s": 3.5829998523695394e-6,
+          "entity_count": 1003,
+          "relation_count": 4002
         },
         "sqlite": {
-          "sqlite_single_call_s": 0.03680620800059842,
-          "sqlite_5_concurrent_calls_total_s": 0.06183375000000524,
-          "sqlite_5x_serial_estimate_s": 0.18403104000299209,
-          "sqlite_concurrency_overlap_ratio": 0.33599630800869196
+          "sqlite_single_call_s": 0.5524718330002543,
+          "sqlite_5_concurrent_calls_total_s": 2.5965996669997367,
+          "sqlite_5x_serial_estimate_s": 2.7623591650012713,
+          "sqlite_concurrency_overlap_ratio": 0.9399935026184554
+        },
+        "graph_seeding": {
+          "entities_requested": 1000,
+          "relations_seeded": 1998,
+          "graph_seed_s": 0.905732290999822
         }
       }
     }
   ],
   "notes": [
+    "Graph seeded via GraphDB.create_triplet (not add_memory, which creates no :Entity nodes) before the graph sub-measurement ran: 1000 entity names, 1998 relation edges, 0.91s to seed. The first run of this measurement (Stage 3) fetched an empty graph -- M2-P2's 'fetches the entire entity table' cost was never actually stressed; graph_fetch_cold_s and entity_count/relation_count below are the real figures this run closes that gap with.",
     "10 seed memories per store; a fresh Neo4j graph in this run carries whatever entities prior measurements in the same session already wrote (no isolation between sub-measurements sharing one GraphDB instance).",
     "sqlite_concurrency_overlap_ratio near 1.0 would mean zero overlap (M2-P3's claim in its strongest form); near 1/N would mean full overlap. On this run it lands well below 1.0 -- meaningful overlap IS achieved overall. This does not contradict M2-P3's evidence (SQLiteConnection's methods really do call cursor.execute()/commit() with no await inside them): search_memories() also does real async I/O per call (at least one embedding request over httpx), and that portion genuinely yields the loop, letting other tasks' embedding calls interleave even while each call's SQLite portion blocks. The measured ratio is a call-level average across both; it does not by itself show whether the SQLite portion specifically overlaps (M2-P3's precise claim) -- isolating that needs timing inside search_memories() around just the SQLiteConnection calls, which this run does not do."
   ]
