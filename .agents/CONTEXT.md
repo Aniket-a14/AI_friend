@@ -8206,3 +8206,121 @@ note. `ruff check .` clean.
   P2-6's finding named `execute/fetch/fetchrow/fetchval` specifically;
   schema creation runs once at startup, not on the hot path.
 - P2-3, P2-4, P2-9 -- the rest of Stage 4, next.
+## 2026-08-23 -- P2-3 (retrieval hot path), Stage 4 Part 2 -- 1.6's empty-graph
+gap closed, a second self-discovered stale-cache bug fixed alongside it, and
+the O(candidates x entities) regex duplication in `search_memories` unified
+
+Per the Stage 4 plan's own rule ("size it before optimising it"), this
+started by closing measurement 1.6's gap rather than trusting its existing
+number.
+
+**1.6 was measuring an empty graph.** `tools/measure/m16_retrieval.py`
+seeded memories via `add_memory`, which never creates `:Entity` nodes --
+M2-P2's claimed cost ("`_build_entity_graph` fetches the entire entity
+table on every call") was never actually stressed; the harness's own
+`pg_search_memories_s: 0.076s` was real, but `graph_fetch` ran against 0
+entities and 0 relations. Fixed by seeding the graph directly through
+`GraphDB.create_triplet` (the same seam `ReflectionService._consolidate`
+uses in production) before the sub-measurements run --
+`_seed_graph(graph_db, n_entities, avg_degree=2)`, new `--graph-entities`
+CLI flag, default 1000.
+
+**A second bug surfaced while re-running it**: the first corrected run
+produced a suspiciously fast "cold" fetch (5.4us). `GraphDB` caches belief
+queries and only invalidates the *whole* cache on any write
+(`_invalidate_cache` does a full `self._belief_cache.clear()` on every
+`create_triplet`), so `_measure_pg`'s own `search_memories` call --
+running earlier in the same script, against the same DB -- silently warmed
+the exact cache key `_measure_graph_fetch` claims to test cold. Fixed with
+an explicit `await graph_db.invalidate_cache()` immediately before the
+cold-timing block. The real number: `graph_fetch_cold_s: 0.0562`,
+`graph_fetch_cache_warm_s: 3.58e-6`, against 1003 entities / 4002
+relations (`tools/measure/out/m16_retrieval.json`) -- a genuine ~16,000x
+cold/warm ratio, large enough on the cold side to justify Step 2.
+
+**Step 2: the regex duplication.** Verified by reading -- three call sites
+each independently rebuilt and searched a fresh `\bname\b` pattern per
+(candidate, entity) pair on every `search_memories` call:
+`_build_entity_graph` (co-occurrence edges), `_collect_ppr_seeds` (seed
+selection), `_map_candidate_entities` (PPR boost attribution). Unified into
+one compiled longest-first alternation (`_compile_entity_pattern`) and one
+shared base mapping (`_compute_candidate_entities`, metadata-first-then-
+scan), computed once per call and threaded through all three sites.
+`_map_candidate_entities` is deleted -- fully superseded, not deprecated in
+place.
+
+**The one real ordering constraint.** `_build_entity_graph` runs *before*
+`_resolve_identity_nodes`, so `agent_node_name` doesn't exist yet when the
+shared mapping is built -- but PPR boost attribution needs the
+first-person-pronoun addition, which depends on it. Resolved by keeping the
+shared value as the *base* mapping (entity-name-only) and layering the
+pronoun addition on top inside `_apply_ppr_spreading_activation`, once
+`agent_node_name` is known, rather than trying to compute one fully-final
+mapping up front.
+
+**Gate.** Retrieval ranking changed, so `evals/`'s discriminating-recall
+pack (`evals/probes/conversation/discriminating_recall.json` -- built
+specifically because the shipped pack couldn't discriminate BM25 from real
+retrieval, since every question there repeated its plant's literal words)
+is the guard, per the plan. Baseline (`git stash` of this pass's changes,
+`run-conversation --model qwen2.5:3b --num-ctx 8192 --retrieval bm25
+--retrieval memory`): 12/48 probes passed. Candidate (same command, changes
+restored): 12/48, and the per-probe comparison is exact -- 0 regressions
+(pass->fail), 0 incidental improvements (fail->pass).
+
+**Two behavior deltas the pack did not exercise, found on review rather
+than by the gate** -- worth recording because "0/48 moved" is weaker
+evidence than it looks for a mapping three call sites used to derive
+slightly differently from each other:
+
+1. *Fixed before merge.* Unifying the mapping put the first-person-pronoun
+   -> agent attribution in front of `_collect_ppr_seeds`, where pre-P2-3
+   it lived in `_map_candidate_entities` and therefore ran only *after*
+   seeding. That silently let a directly-cued memory mentioning "I" but no
+   named entity seed the agent node, where before it produced no seeds at
+   all -- empty PPR vector, no boost for anyone. Confirmed live, not
+   theoretical: reversing the order makes an un-cued graph neighbour pick
+   up a nonzero spreading-activation boost. The layer now goes on after
+   seed collection, restoring the original semantics exactly, pinned by
+   `test_agent_pronoun_layer_does_not_leak_into_ppr_seed_selection` (which
+   fails under that reversal).
+2. *Accepted deliberately.* A candidate carrying `metadata["entities"] =
+   []` (an explicitly empty list, not a missing key) used to be honoured as
+   authoritative by `_map_candidate_entities` -- no entities, no boost --
+   while `_build_entity_graph` treated the same value as "nothing recorded,
+   go scan the content". The unified mapping keeps the scanning reading for
+   both. That is a real change to the PPR-boost side, kept because the old
+   split was an inconsistency rather than a decision: nothing writes an
+   empty list meaning "this memory genuinely mentions nobody", and having
+   one function's answer contradict the other's on identical input is what
+   the unification exists to remove.
+
+So: behavior-preserving on this pack, and now genuinely behavior-preserving
+on the seeding path, with one disclosed and intentional change on the
+boost-attribution path.
+
+**Files:** `app/state/memory_store.py`, `tools/measure/m16_retrieval.py`,
+`tools/measure/out/m16_retrieval.json`,
+`tests/test_f1_decomposed_stages.py`.
+
+**Verified.** Full backend suite 1043/1043 (1037 baseline + 6 new), `ruff
+check .` clean. New tests each mutation-tested (break the code, confirm
+the corresponding test fails, revert): `_compile_entity_pattern`'s
+longest-first ordering and its word-boundary anchoring (two separate
+tests -- the first mutation attempt at the boundary test used content that
+the longest-first ordering already protected independent of boundaries,
+so it didn't actually catch a `\b`-removal mutation; replaced with content
+carrying a genuine standalone match the anchored pattern must reject
+otherwise), `_build_entity_graph`'s metadata-over-scanning precedence,
+`_collect_ppr_seeds` reading the shared mapping instead of re-scanning raw
+candidates, and `_apply_ppr_spreading_activation`'s first-person-pronoun
+attribution.
+
+**NOT done:**
+- The graph fetch itself is not bounded, and orphaned `:Entity` nodes are
+  not pruned during Hebbian decay (`decay_relationships` deletes edges
+  only, so orphans accumulate permanently and are loaded in full on every
+  cache miss) -- the plan named both as in-scope stretch items; this pass
+  closed the measurement gap and the regex duplication, which the number
+  justified, and stopped there rather than adding unmeasured scope.
+- P2-4, P2-9 (the rest of Stage 4) and Stage 5/6 -- unstarted.

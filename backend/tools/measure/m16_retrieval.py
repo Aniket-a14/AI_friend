@@ -7,12 +7,22 @@ latency against Postgres/Neo4j/Qdrant; the two unbounded Cypher MATCHes from
 M2-P2 cold vs cache-warm; and search_memories() under concurrent load on a
 real (not mocked) SQLitePool, to check M2-P3's claim that the event loop
 blocks for the full call duration.
+
+audit/ROADMAP.md Stage 4 Part 2 (P2-3): the first run of this measurement
+seeded only `add_memory`, which never creates `:Entity` nodes -- the graph
+sub-measurement fetched an empty graph (0 entities, 0 relations), so M2-P2's
+"fetches the entire entity table" cost was never actually stressed. This
+version also seeds the graph directly via `GraphDB.create_triplet`, the same
+path `ReflectionService._consolidate` uses in production, at a scale meant
+to look like a graph that has been running for a while rather than a
+just-booted one.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import random
 import time
 
 from app.state import ConversationHistoryStore, GraphDB, MemoryStore
@@ -20,6 +30,8 @@ from app.state.sqlite_fallback import SQLitePool
 
 from .harness import check_live_llm, ensure_bootstrapped
 from .schema import Figure, MeasurementReport, Run
+
+_GRAPH_RELATION_TYPES = ["KNOWS", "LIKES", "MENTIONED", "RELATED_TO", "WORKS_WITH"]
 
 _SEED_MEMORIES = [
     "We talked about how much I enjoy reading sci-fi novels on weekends.",
@@ -62,7 +74,49 @@ async def _measure_pg(graph_db: GraphDB) -> dict:
     return {"pg_search_memories_s": latency}
 
 
+async def _seed_graph(graph_db: GraphDB, n_entities: int, avg_degree: int = 2) -> int:
+    """Seed a synthetic-but-representative entity graph via `create_triplet`
+    -- unlike `add_memory` (used by `_seed` above), this is the path that
+    actually creates `:Entity` nodes, matching what `ReflectionService.
+    _consolidate` does in production.
+
+    Concurrent batches, not sequential: `create_triplet` -> `consolidate_
+    relationship` is at least two Cypher round trips per call (a cache
+    invalidation plus the MERGE itself), so seeding thousands of relations
+    one at a time would make the seeding step itself the slow part of this
+    script rather than the thing being measured. A fixed random seed keeps
+    the generated graph -- and therefore the entity/relation counts in the
+    report -- reproducible across runs.
+    """
+    names = [f"entity_{i}" for i in range(n_entities)]
+    rng = random.Random(42)
+    edges = []
+    for name in names:
+        for _ in range(avg_degree):
+            target = rng.choice(names)
+            if target != name:
+                edges.append((name, rng.choice(_GRAPH_RELATION_TYPES), target))
+
+    batch_size = 50
+    for start in range(0, len(edges), batch_size):
+        batch = edges[start : start + batch_size]
+        await asyncio.gather(
+            *[graph_db.create_triplet(s, r, t) for s, r, t in batch]
+        )
+    return len(edges)
+
+
 async def _measure_graph_fetch(graph_db: GraphDB) -> dict:
+    # Both `_seed_graph` (every create_triplet call) and `_measure_pg`
+    # (search_memories -> _gather_candidate_sources runs these same two
+    # queries with use_cache=True) can leave the belief cache warm by the
+    # time this runs -- the first version of this measurement did not
+    # account for that, so its "cold" figure was silently a cache hit off
+    # _measure_pg's own read, on an empty graph where cold and warm both
+    # measured near-instantly regardless. Explicit invalidation here makes
+    # "cold" mean what it says, independent of call order elsewhere in run().
+    await graph_db.invalidate_cache()
+
     t0 = time.monotonic()
     entities = await graph_db.execute_query(_GRAPH_ENTITY_QUERY, use_cache=True)
     relations = await graph_db.execute_query(_GRAPH_RELATION_QUERY, use_cache=True)
@@ -115,7 +169,7 @@ async def _measure_sqlite_concurrency(graph_db: GraphDB, n: int = 5) -> dict:
     }
 
 
-async def run(allow_mock: bool = False) -> MeasurementReport:
+async def run(allow_mock: bool = False, graph_entities: int = 1000) -> MeasurementReport:
     # This measurement times DB/graph calls, not the LLM boundary, but the
     # provenance check stays for consistency: a MOCK_LLM_TEXT deployment
     # usually also means synthetic seed data isn't meaningfully "real" either.
@@ -124,6 +178,10 @@ async def run(allow_mock: bool = False) -> MeasurementReport:
 
     graph_db = GraphDB()
     await graph_db.initialize()
+
+    seed_start = time.monotonic()
+    relations_seeded = await _seed_graph(graph_db, graph_entities)
+    graph_seed_s = time.monotonic() - seed_start
 
     pg = await _measure_pg(graph_db)
     graph = await _measure_graph_fetch(graph_db)
@@ -163,8 +221,33 @@ async def run(allow_mock: bool = False) -> MeasurementReport:
         measurement_id="1.6",
         title="Retrieval hot path, unbounded graph fetch, SQLite under concurrent load",
         provenance=provenance,
-        runs=[Run(figures=figures, raw={"pg": pg, "graph": graph, "sqlite": sqlite})],
+        runs=[
+            Run(
+                figures=figures,
+                raw={
+                    "pg": pg,
+                    "graph": graph,
+                    "sqlite": sqlite,
+                    "graph_seeding": {
+                        "entities_requested": graph_entities,
+                        "relations_seeded": relations_seeded,
+                        "graph_seed_s": graph_seed_s,
+                    },
+                },
+            )
+        ],
         notes=[
+            (
+                f"Graph seeded via GraphDB.create_triplet (not add_memory, "
+                f"which creates no :Entity nodes) before the graph "
+                f"sub-measurement ran: {graph_entities} entity names, "
+                f"{relations_seeded} relation edges, {graph_seed_s:.2f}s to "
+                f"seed. The first run of this measurement (Stage 3) fetched "
+                f"an empty graph -- M2-P2's 'fetches the entire entity "
+                f"table' cost was never actually stressed; graph_fetch_cold_s "
+                f"and entity_count/relation_count below are the real figures "
+                f"this run closes that gap with."
+            ),
             (
                 "10 seed memories per store; a fresh Neo4j graph in this run "
                 "carries whatever entities prior measurements in the same "
@@ -196,9 +279,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--allow-mock", action="store_true")
     parser.add_argument("--out", default="tools/measure/out/m16_retrieval.json")
+    parser.add_argument(
+        "--graph-entities",
+        type=int,
+        default=1000,
+        help="Entity names to seed before the graph sub-measurement runs "
+        "(each yields ~2 relation edges on average). Default approximates "
+        "a graph that has been running for a while.",
+    )
     args = parser.parse_args()
 
-    report = asyncio.run(run(allow_mock=args.allow_mock))
+    report = asyncio.run(
+        run(allow_mock=args.allow_mock, graph_entities=args.graph_entities)
+    )
     with open(args.out, "w") as f:
         f.write(report.model_dump_json(indent=2))
     print(f"Wrote {args.out}")
