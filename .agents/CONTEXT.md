@@ -8444,3 +8444,115 @@ instruction was the blocker.
   separately-built prompt. Worth its own pass if `action.py`'s prompt logic
   becomes a recurring source of unverifiable changes.
 - Stage 5/6 -- unstarted.
+
+## 2026-08-23 -- Stage 5 Part 0 -- `evals/` can finally gate a change to
+`action.py`: the harness never once executed the code half its gating claims
+were about
+
+Stage 5's scope was taken with the user as the *correctness cluster* (P2-14's
+unlocked tick, P2-8's endpointer latch, P2-2's per-chunk ack) plus this, plus
+two documentation leftovers. This part comes first because it is the gate the
+rest eventually needs, and because P2-4 already proved it was missing.
+
+**The gap, restated precisely.** `evals/runner.py` built the system prompt
+itself (`IdentityManager.get_persona_prompt`) and called
+`OllamaClient.generate` directly; `conversation.py` does the same. **Neither
+ever constructed an `ActionService`.** So everything `action.py` contributes to
+a real turn -- `_CHAT_GUIDELINE`, `_build_tom_context`, the `- Goal:` line, the
+`User:`/`Assistant:` framing, incremental `<thought>` stripping,
+`ControlMarkupSanitizer`, `_validate_partial_response` and the self-correction
+retry -- was invisible to every report the harness had ever written. P2-4 hit
+this head-on: it appended a classification instruction to that exact system
+prompt, ran `evals run` before and after, and got an identical report both
+times. It was ultimately gated by a hand-written live smoke test, and dropped
+on what that smoke test found (see the P2-4 entry). The eval gap was filed
+there as a "NOT done"; this closes it.
+
+**What was built.** `evals/action_path.py` (new): `PinnedOptionsClient` wraps
+the real client and merges the run's pinned sampling *over* whatever the caller
+passes; `build_action_service` / `build_plan` / `generate_through_action_service`
+assemble a store-free `RESPOND_CHAT` turn and collect the visible `content`
+chunks. `runner.run_eval` grew a `path` parameter; `run_probe` grew an optional
+`generate` callable, so **the checks, the boundary delegation and the scoring
+are shared and unchanged** between paths -- a verdict means the same thing
+either way, and `compare` keeps one implementation. `--path llm|action` on the
+CLI, defaulting to `llm`.
+
+**Two things the design turns on, both found by reading the code rather than
+assumed.** First, `_compute_endocrine_options` maps cortisol to temperature,
+dopamine to top_p and fatigue to num_predict and hands them to
+`generate_stream` as `options_override` -- so without the pinning wrapper the
+eval's sampling would be silently replaced by simulated hormones, reintroducing
+exactly the run-to-run variance `reset_model_state` exists to remove. Second,
+omitting the three endocrine keys is *not* the neutral choice it looks like:
+`_compute_endocrine_options` returns `None` for an absent signal
+(`action.py:637`), and `generate_stream` then falls back to `num_predict=40`
+and `num_ctx=2048`, which truncates every probe answer and re-imposes the
+context ceiling `RunOptions.num_ctx` is pinned to 8192 to escape. They are
+supplied at rest and overridden instead. The consequence is stated rather than
+hidden: **this path does not measure the endocrine mapping.**
+
+The pinning lives in `evals/`, not as a hook in `action.py`. The dependency
+still points one way -- `evals` imports `app`, and nothing in `app` knows this
+file exists.
+
+**`compare` refuses a cross-path diff**, and this is the one input
+disagreement it refuses outright. Sampling options and persona edits are
+surfaced and left to the reader, on `diff_options`'s own stated reasoning: the
+caller may have changed one deliberately, the deltas still mean something, and
+a gate blocking a deliberate change just gets bypassed. A path difference is
+not that kind of disagreement. "llm" and "action" do not sample the same
+quantity, so every probe delta between them is attributable to the harness and
+there is no reading of the diff that says anything about the model. Exit 2
+(usage), deliberately *not* 1 (regression), so a consolidation loop reading
+only the exit code cannot mistake "you compared the wrong things" for "the
+adapter broke behavior". `path` defaults to `"llm"` on load, so every report
+written before the field existed still compares -- retiring valid baselines
+overnight would have been a real cost for no gain.
+
+**Verified against the real model, and the result is the argument for the
+whole part.** `qwen2.5:3b`, shipped packs, both paths. Same headline (6/9), and
+**zero of the nine responses shared** between them. The action path fired five
+metacognitive violations and one safe-fallback -- `persona.name-recall`, for
+instance, produced "My name is Pankudi. How can I assist you today?", tripped
+the forbidden-AI-phrase check, self-corrected, and answered "Pankudi."; the LLM
+path returned "Pankudi." with none of that machinery having run. The system
+prompt digests differ, as they must, because `_execute_respond_chat` appends
+`_CHAT_GUIDELINE` -- and the digest is read back from the client that saw the
+call rather than recomposed in the harness, so it cannot drift out of step with
+`action.py` the way a local copy would (silently, since both sides would still
+produce a plausible digest). Reproducibility carries over intact: two
+consecutive action-path runs were **9/9 byte-identical**, no verdict flips,
+stable digest.
+
+**Files:** `evals/action_path.py` (new), `evals/runner.py`, `evals/schema.py`,
+`evals/compare.py`, `evals/__main__.py`, `evals/README.md`,
+`tests/test_eval_harness.py`.
+
+**Verified.** Full backend suite 1044/1044 (1037 baseline + 7 new), `ruff
+check .` clean. All seven new tests mutation-tested, each against the specific
+defect it exists to catch: the action path not wired at all; the pinning
+removed so endocrine options win; the digest taken from the persona prompt
+instead of what the model saw; the cross-path guard removed; the `path` default
+flipped away from `"llm"`; internal `self_correction` chunks collected as
+speech; the CLI letting `PathMismatch` escape instead of exiting 2. Every one
+was caught. One test needed fixing first -- the sampling assertion originally
+read a combined options list and tripped on `reset_model_state`'s warm-up
+(`num_predict: 8`) rather than on the streamed call, so the stub now records
+stream options separately.
+
+**NOT done:**
+- `run-conversation` still has no action path. It has the same blind spot, and
+  the multi-turn suite is where retrieval actually gets measured, so this is
+  the natural follow-up -- but it needs a decision about how a scripted
+  transcript reaches `ActionService`, which is more than a flag.
+- The endocrine mapping remains ungated by any eval, on either path, by the
+  deliberate trade above. Gating it needs a different instrument: sampling
+  cannot be both pinned for reproducibility and varied to test the mapping.
+- Nothing was re-gated retroactively. P2-4 stays dropped on its live-smoke-test
+  evidence; this does not reopen it. Whether the merged call would now pass an
+  action-path eval is a genuine open question and the obvious first real use of
+  this path, once a model bigger than 3B is available (see
+  `hardware-and-deployment-roadmap`).
+- Stage 5's remaining parts -- P2-14's tick lock, P2-8's noise-floor latch,
+  P2-2's outbound ack, and the two documentation leftovers -- next.

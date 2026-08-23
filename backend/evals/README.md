@@ -31,6 +31,46 @@ Three probe sources:
   set. `probes/sample_memory_recall.json` pins the format and is labeled the
   sample it is; against an untrained model its probes *should* fail.
 
+### `--path action`: the same probes through the real `ActionService`
+
+The LLM boundary is the right seam for an adapter swap, and it stays the
+default. But it is **not** the seam for a change to `action.py` itself, and for
+a long time nothing here said so. P2-4 proposed appending a classification
+instruction to the response call's system prompt, ran `evals run` before and
+after, and got identical reports — because the harness never executed the code
+the change lived in. The item ended up gated by a hand-written live smoke test.
+
+`--path action` closes that. Each probe is driven through a real
+`ActionService.execute()` turn, so the report also covers the chat guideline,
+the Theory-of-Mind block, the goal line, incremental `<thought>` stripping,
+`ControlMarkupSanitizer`, `_validate_partial_response` and the self-correction
+retry it triggers. Stores stay absent (`memory_store=None`,
+`self_knowledge=None`), so it still runs anywhere the model does.
+
+Measured on `qwen2.5:3b` against the shipped packs, the two paths agreed on the
+headline (6/9 both times) and shared **not one** of the nine responses. The
+action path fired five metacognitive violations and one safe-fallback; the LLM
+path, by construction, could not have reported any of them.
+
+Two consequences worth knowing before using it:
+
+- **Sampling is pinned over the endocrine layer.** `_compute_endocrine_options`
+  maps cortisol to temperature, dopamine to top_p and fatigue to num_predict;
+  `PinnedOptionsClient` overrides all three with the run's pinned options. So
+  this path does not measure the endocrine mapping — deliberately, because
+  sampling that drifts with simulated affect cannot answer "did the model
+  change". It is also what stops `generate_stream`'s own `num_predict=40` /
+  `num_ctx=2048` defaults from truncating every answer.
+- **Reports from the two paths cannot be compared.** `compare` refuses with a
+  usage exit rather than diffing them. Sampling and persona differences are
+  surfaced and left to the reader, because a caller may have changed one on
+  purpose; a path difference is not that kind of disagreement — the two do not
+  sample the same quantity, so every delta between them is the harness.
+
+```bash
+python -m evals run --model qwen2.5:3b --path action --out evals/out/action.json
+```
+
 ## Multi-turn recall (`run-conversation`)
 
 A second suite, answering a different question: **does a fact survive the

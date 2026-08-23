@@ -34,6 +34,19 @@ def fingerprint(text: str) -> str:
 
 Category = Literal["identity", "boundary", "memory", "custom"]
 
+# Which code path produced a report's responses.
+#
+# "llm" is the original boundary: the persona prompt straight into
+# `OllamaClient.generate`. "action" drives the same probe through the real
+# `ActionService`, so the report also covers everything `action.py` adds to a
+# turn -- the chat guideline, the ToM block, the goal line, `<thought>`
+# stripping, sanitization, boundary validation and self-correction.
+#
+# This is not a sampling option or a persona edit; it is *which measurement was
+# taken*. Two reports from different paths are not two samples of one quantity,
+# so `compare` refuses to diff them rather than warning -- see `compare.py`.
+EvalPath = Literal["llm", "action"]
+
 CheckKind = Literal[
     "must_include",
     "must_include_any",
@@ -234,6 +247,10 @@ class EvalReport(BaseModel):
     model: str
     persona_name: str
     provenance: Literal["live", "mock"]
+    # Which execution path produced these responses. Defaults to "llm" so that
+    # reports written before this field existed read as what they actually
+    # were, rather than as an unknown that `compare` would have to guess at.
+    path: EvalPath = "llm"
     options: dict[str, Any]
     # Digest of the system prompt every probe in this run was generated under.
     # It is the largest single input to every response and the one most likely
@@ -283,6 +300,12 @@ class ComparisonReport(BaseModel):
     candidate_model: str
     baseline_provenance: Literal["live", "mock"]
     candidate_provenance: Literal["live", "mock"]
+    # Single-valued, not a pair: `compare_reports` refuses a cross-path diff
+    # outright, so by the time a comparison exists both sides agree. Carried so
+    # the rendered output says which measurement was compared -- an "action"
+    # gate and an "llm" gate answer different questions and a reader of the
+    # report months later has no other way to tell them apart.
+    path: EvalPath = "llm"
     # Sampling options the two runs disagreed on. Greedy decoding reproduces
     # only for a fixed load configuration, so a diff here means the comparison
     # is measuring the configuration as much as the model. Surfaced, never
