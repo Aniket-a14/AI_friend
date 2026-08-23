@@ -452,20 +452,31 @@ def test_stt_payload_parsing_benchmark(benchmark):
 def test_vision_frame_encode_benchmark(benchmark):
     """Profiles VisualAppraisalService._compute_visual_vector -- the real
     per-frame downsample-to-vector conversion used for habituation gating
-    (OpenCV resize when available, SHA-256-derived fallback otherwise), not
+    (OpenCV resize when available, PIL resize otherwise -- see M3-A9), not
     a `len(raw_bytes) > 100` structural check that measures nothing about
     encoding at all."""
     import base64
+    import io
+
+    from PIL import Image
 
     from app.vision.appraisal import VisualAppraisalService
 
     service = VisualAppraisalService(ollama_client=None)
-    frame_b64 = base64.b64encode(b"\x00\xff\x80" * 1024).decode("ascii")
+    # A real, decodable JPEG: both the cv2 and PIL downsampling paths need
+    # actual image bytes, not arbitrary data -- neither can decode the
+    # `b"\x00\xff\x80" * 1024` filler this benchmark used before M3-A9
+    # removed the SHA-256 fallback that used to paper over that.
+    img = Image.new("RGB", (64, 64), color=(120, 60, 200))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    frame_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
 
     def run():
         return service._compute_visual_vector(frame_b64)
 
     vector = benchmark(run)
+    assert vector is not None
     assert len(vector) == 256
     assert all(0.0 <= v <= 1.0 for v in vector)
 

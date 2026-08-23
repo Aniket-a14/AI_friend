@@ -241,6 +241,25 @@ class AppSettings(BaseSettings):
     VLM_BREAKER_FAILURE_THRESHOLD: int = 3
     VLM_BREAKER_COOLDOWN_S: float = 30.0
 
+    # M3-A10: `_calculate_user_distance`'s pinhole-camera formula needs a
+    # focal length in pixels, not just a face-width ratio -- the previous
+    # `ASSUMED_FACE_WIDTH_M / (face_width_px / image_width_px)` implicitly
+    # set focal_px == image_width, an unstated assumption equivalent to a
+    # fixed ~53 degree horizontal FOV regardless of the real camera. These
+    # two are calibrated together: VISION_FOCAL_PX is the focal length at
+    # VISION_FOCAL_REFERENCE_WIDTH_PX, the width both CameraLink and
+    # ScreenLink resize captures down to (`_compress_frame`, links.py) before
+    # anything downstream sees them. The default assumes a ~60 degree
+    # horizontal FOV, a typical laptop webcam spec, and is a placeholder
+    # order-of-magnitude choice, not a measured value (see CLAUDE.md's
+    # integrity constraints). Calibration note: place a face of known width
+    # (e.g. 0.15m) at a known distance (e.g. 0.5m) in frame, read the logged
+    # face_width_px, and solve
+    # VISION_FOCAL_PX = (face_width_px * distance_m) / FACE_WIDTH_M,
+    # scaled to VISION_FOCAL_REFERENCE_WIDTH_PX if measured at another width.
+    VISION_FOCAL_PX: float = 443.0
+    VISION_FOCAL_REFERENCE_WIDTH_PX: int = 512
+
     # Half-life of a phasic hormone burst, in seconds. Real phasic bursts last
     # only hundreds of milliseconds; these are the *felt* afterglow at
     # conversational timescale, so both are deliberately much slower than

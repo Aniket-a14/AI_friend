@@ -13,6 +13,25 @@ from app.vision.agent import VisionAgent
 from app.vision.appraisal import VisualAppraisalService
 
 
+def _real_jpeg_frame_b64(color=(120, 60, 200)) -> str:
+    """A genuinely decodable JPEG frame, base64-encoded.
+
+    M3-A9 removed the SHA-256 fallback that used to turn *any* base64
+    string into a stand-in vector; `_compute_visual_vector` now needs bytes
+    a real decoder (cv2 or PIL) can open, so tests exercising habituation
+    need real image bytes rather than arbitrary strings.
+    """
+    import base64
+    import io
+
+    from PIL import Image
+
+    img = Image.new("RGB", (64, 64), color=color)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
 @pytest.fixture
 def mock_ollama_client():
     client = MagicMock()
@@ -114,7 +133,7 @@ class TestVisualAppraisalService:
         mock_ollama_client.describe_image = AsyncMock(return_value="")
         mock_appraisal_service._last_appraisal_time = time.time() - 2.0
 
-        desc = await mock_appraisal_service.appraise("new_frame_b64")
+        desc = await mock_appraisal_service.appraise(_real_jpeg_frame_b64())
 
         assert desc == ""
         assert mock_appraisal_service._last_visual_vector is not None
@@ -125,10 +144,7 @@ class TestVisualAppraisalService:
         self, mock_appraisal_service, mock_ollama_client
     ):
         # 1. Establish the initial frame and cache
-        import base64
-
-        frame_data = b"identical_frame_data"
-        frame_b64 = base64.b64encode(frame_data).decode("utf-8")
+        frame_b64 = _real_jpeg_frame_b64()
 
         desc1 = await mock_appraisal_service.appraise(frame_b64)
         assert desc1 == "A developer coding on a laptop."
@@ -194,6 +210,44 @@ class TestVisualAppraisalService:
         assert desc == "Recovered scene."
         assert mock_appraisal_service._consecutive_failures == 0
         assert mock_appraisal_service._breaker_opened_at == 0.0
+
+    @pytest.mark.asyncio
+    async def test_visual_vector_returns_none_when_undecodable(
+        self, mock_appraisal_service
+    ):
+        """M3-A9: when neither cv2 nor PIL can decode the frame, the vector
+        must come back None rather than a SHA-256 hash of the raw bytes --
+        two near-identical undecodable frames would hash to unrelated
+        vectors, so a habituation delta computed against them always clears
+        threshold and never actually caps the VLM."""
+        import base64
+
+        garbage_b64 = base64.b64encode(b"not a real jpeg").decode("utf-8")
+        assert mock_appraisal_service._compute_visual_vector(garbage_b64) is None
+
+    @pytest.mark.asyncio
+    async def test_undecodable_frames_disable_habituation_and_log_once(
+        self, mock_appraisal_service, mock_ollama_client, caplog
+    ):
+        """With no continuity-preserving vector available, habituation must
+        not silently no-op -- it disables explicitly (VLM stays uncapped)
+        and says so, once, rather than spamming a warning every tick."""
+        import base64
+        import logging
+
+        garbage_b64 = base64.b64encode(b"not a real jpeg").decode("utf-8")
+
+        with caplog.at_level(logging.WARNING, logger="app.vision.appraisal"):
+            await mock_appraisal_service.appraise(garbage_b64)
+            mock_appraisal_service._last_appraisal_time = time.time() - 2.0
+            await mock_appraisal_service.appraise(garbage_b64)
+
+        # Habituation never engaged: both calls hit the VLM.
+        assert mock_ollama_client.describe_image.await_count == 2
+        degradation_warnings = [
+            r for r in caplog.records if "habituation is disabled" in r.message
+        ]
+        assert len(degradation_warnings) == 1
 
     @pytest.mark.asyncio
     async def test_breaker_success_resets_failure_count_below_threshold(
@@ -391,6 +445,92 @@ class TestVisionAgent:
 
         mock_appraisal.appraise.assert_awaited_once()
         agent.publish.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_face_cascade_is_built_once_not_per_call(
+        self, mock_camera_cls, mock_screen_cls
+    ):
+        """M3-P6: the cascade used to be reconstructed from XML on every
+        single call inside the hot capture loop. It must be built once, at
+        construction, and reused."""
+        with patch("app.vision.agent.cv2") as mock_cv2, patch("app.vision.agent.np"):
+            mock_cv2.data.haarcascades = "/fake/"
+            cascade = MagicMock()
+            cascade.detectMultiScale.return_value = []
+            mock_cv2.CascadeClassifier.return_value = cascade
+            mock_cv2.imdecode.return_value = MagicMock(shape=(480, 640, 3))
+
+            agent = VisionAgent()
+            assert mock_cv2.CascadeClassifier.call_count == 1
+
+            agent._calculate_user_distance("Zg==")
+            agent._calculate_user_distance("Zg==")
+
+            # Still exactly one construction across both calls.
+            assert mock_cv2.CascadeClassifier.call_count == 1
+            assert cascade.detectMultiScale.call_count == 2
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_distance_uses_calibrated_focal_length_formula(
+        self, mock_camera_cls, mock_screen_cls
+    ):
+        """M3-A10: distance must come from the pinhole formula
+        (FACE_WIDTH_M * focal_px) / face_width_px, not a focal-length-free
+        ratio that implicitly assumed focal_px == image_width."""
+        from app.config import Config
+        from app.vision.agent import ASSUMED_FACE_WIDTH_M
+
+        with patch("app.vision.agent.cv2") as mock_cv2, patch(
+            "app.vision.agent.np"
+        ) as mock_np:
+            mock_cv2.data.haarcascades = "/fake/"
+            cascade = MagicMock()
+            face_width_px = 100
+            cascade.detectMultiScale.return_value = [(0, 0, face_width_px, 100)]
+            mock_cv2.CascadeClassifier.return_value = cascade
+            image_width = Config.VISION_FOCAL_REFERENCE_WIDTH_PX
+            mock_cv2.imdecode.return_value = MagicMock(shape=(480, image_width, 3))
+            mock_np.clip.side_effect = lambda v, lo, hi: max(lo, min(hi, v))
+
+            agent = VisionAgent()
+            distance = agent._calculate_user_distance("Zg==")
+
+            expected = (ASSUMED_FACE_WIDTH_M * Config.VISION_FOCAL_PX) / face_width_px
+            assert distance == pytest.approx(expected)
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_run_appraisal_offloads_distance_calc_off_the_event_loop(
+        self, mock_camera_cls, mock_screen_cls
+    ):
+        """M3-P6: detectMultiScale is a blocking OpenCV call; it must not
+        run inline on the event loop the way the rest of _run_appraisal
+        does."""
+        import base64
+
+        agent = VisionAgent()
+        agent.publish = AsyncMock()
+        mock_appraisal = MagicMock()
+        mock_appraisal.should_appraise.return_value = True
+        mock_appraisal.appraise = AsyncMock(return_value="A description.")
+        agent.appraisal = mock_appraisal
+        agent._calculate_user_distance = MagicMock(return_value=1.5)
+
+        with patch(
+            "app.vision.agent.asyncio.to_thread", new_callable=AsyncMock
+        ) as mock_to_thread:
+            mock_to_thread.return_value = 1.5
+            blank_frame_b64 = base64.b64encode(b"\x00" * 100).decode("utf-8")
+            await agent._run_appraisal(blank_frame_b64)
+
+            mock_to_thread.assert_awaited_once_with(
+                agent._calculate_user_distance, blank_frame_b64
+            )
 
     @pytest.mark.asyncio
     @patch("app.vision.agent.ScreenLink")

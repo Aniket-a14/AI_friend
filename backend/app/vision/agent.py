@@ -74,6 +74,20 @@ class VisionAgent(BaseAgent):
         self._turn_in_flight = False
         self._turn_started_at = 0.0
 
+        # M3-P6: previously rebuilt from XML on every single call inside the
+        # hot capture loop. Built once here instead, and detection itself
+        # runs off the event loop (see _calculate_user_distance's caller in
+        # _run_appraisal) since detectMultiScale is a blocking C call.
+        self._face_cascade = None
+        if cv2 is not None:
+            try:
+                cascade_path = (
+                    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+                )
+                self._face_cascade = cv2.CascadeClassifier(cascade_path)
+            except Exception as e:
+                logger.warning("[Vision] Failed to load face cascade: %s", e)
+
     def preflight(self) -> bool:
         """Probe whether this process can actually see anything.
 
@@ -235,9 +249,10 @@ class VisionAgent(BaseAgent):
                 await asyncio.sleep(1)
 
     def _calculate_user_distance(self, frame_b64: str) -> float:
-        if cv2 is None or np is None:
+        if cv2 is None or np is None or self._face_cascade is None:
             logger.debug(
-                "OpenCV or NumPy is not installed. Bypassing user distance calculation."
+                "OpenCV/NumPy or the face cascade is not available. Bypassing "
+                "user distance calculation."
             )
             return 1.0
         try:
@@ -248,18 +263,24 @@ class VisionAgent(BaseAgent):
                 return 1.0
 
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            face_cascade = cv2.CascadeClassifier(cascade_path)
 
-            faces = face_cascade.detectMultiScale(
+            faces = self._face_cascade.detectMultiScale(
                 gray, HAAR_SCALE_FACTOR, HAAR_MIN_NEIGHBORS
             )
             if len(faces) > 0:
                 max_w = max(w for (x, y, w, h) in faces)
                 img_width = img.shape[1]
-                S = max_w / img_width if img_width > 0 else 0.0
-                if S > 0.0:
-                    d = ASSUMED_FACE_WIDTH_M / S
+                if max_w > 0 and img_width > 0:
+                    # Pinhole camera model: face_width_px = (FACE_WIDTH_M *
+                    # focal_px) / distance_m. FOCAL_PX is calibrated for
+                    # VISION_FOCAL_REFERENCE_WIDTH_PX (see config.py); scale
+                    # it to the actual frame width in case this image wasn't
+                    # resized down to that reference (e.g. a source narrower
+                    # than the reference, which _compress_frame leaves alone).
+                    focal_px = Config.VISION_FOCAL_PX * (
+                        img_width / Config.VISION_FOCAL_REFERENCE_WIDTH_PX
+                    )
+                    d = (ASSUMED_FACE_WIDTH_M * focal_px) / max_w
                     return float(np.clip(d, MIN_DISTANCE_M, MAX_DISTANCE_M))
 
             return 1.0
@@ -277,7 +298,12 @@ class VisionAgent(BaseAgent):
         try:
             description = await self.appraisal.appraise(frame_b64)
             if description:
-                user_distance = self._calculate_user_distance(frame_b64)
+                # M3-P6: detectMultiScale is a blocking OpenCV call; keep it
+                # off the event loop the way the other three cv2/Qdrant call
+                # sites in this codebase already do.
+                user_distance = await asyncio.to_thread(
+                    self._calculate_user_distance, frame_b64
+                )
                 msg = VisionDescription(
                     description=description,
                     source=self.source,

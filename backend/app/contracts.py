@@ -205,6 +205,10 @@ class VisionDescription(BaseModel):
     description: str
     source: str = "screen"
     timestamp: float = Field(default_factory=time.time)
+    # Estimated distance in metres via a calibrated pinhole-camera formula
+    # (see Config.VISION_FOCAL_PX / _calculate_user_distance in
+    # vision/agent.py); falls back to 1.0 when no face is detected or
+    # calibration inputs are unavailable.
     user_distance: float | None = None
 
 

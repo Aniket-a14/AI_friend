@@ -9229,3 +9229,98 @@ data volumes. Flagging this gate as unmet rather than claiming it passed.
 Carried into later parts of this same branch: vision (Part 4), visual
 episodic memory (Part 5), voice/STT (Part 6), NATS accounts + supply chain
 (Part 7), deployment/docs/cleanup (Part 8).
+
+## 2026-08-23 -- Stage 6 Part 4 (vision) -- P2-7: cascade built once, distance
+off the event loop, calibrated with a real focal length, and the habituation
+fallback stopped lying about continuity
+
+Three findings under one roadmap item, all in `app/vision/`.
+
+**M3-P6.** `_calculate_user_distance` rebuilt a `cv2.CascadeClassifier` from
+XML on every single call inside the capture loop, then ran `detectMultiScale`
+synchronously on the event loop. The cascade is now built once in
+`VisionAgent.__init__` (`self._face_cascade`, `None` if cv2 is unavailable,
+mirroring every other optional-cv2 guard in this file) and reused; the
+distance calculation itself now runs via `asyncio.to_thread` from
+`_run_appraisal`, the same pattern the other three blocking cv2/Qdrant call
+sites in this codebase already use.
+
+**M3-A10.** The old formula, `d = ASSUMED_FACE_WIDTH_M / (face_width_px /
+image_width_px)`, has no focal length in it at all -- it implicitly assumed
+`focal_px == image_width`, an unstated assumption equivalent to a fixed ~53
+degree horizontal FOV regardless of the actual camera. Replaced with the
+real pinhole formula, `d = (FACE_WIDTH_M * focal_px) / face_width_px`, where
+`focal_px` is `Config.VISION_FOCAL_PX` scaled to the frame's actual width
+against `Config.VISION_FOCAL_REFERENCE_WIDTH_PX` (default 512, the width
+both `CameraLink` and `ScreenLink` resize down to in `_compress_frame`
+before anything downstream sees the frame -- confirmed by reading
+`vision/links.py`, not assumed). `VISION_FOCAL_PX` defaults to 443.0,
+derived from a ~60 degree horizontal FOV (a typical laptop webcam spec) at
+the 512px reference width -- stated in `config.py` as a placeholder
+order-of-magnitude choice with a calibration note (known face width at a
+measured distance, solve for `FOCAL_PX`), not presented as a measured value,
+per CLAUDE.md's integrity constraints. `VisionDescription.user_distance`'s
+docstring in `contracts.py` now says what the field means; the field's type
+and wire shape are unchanged, and `setup_nats_streams.py` has zero
+references to `contracts.py` at all (checked directly), so no rerun was
+needed here despite the plan's assumption that this cluster would touch the
+subject-registration path.
+
+**M3-A9.** `_compute_visual_vector`'s fallback (used whenever cv2 is
+unavailable -- confirmed via `import cv2` failing in this dev environment,
+so this was the path actually exercised by every local run) hashed the raw
+JPEG bytes with SHA-256 into a 256-value pseudo-vector. Two near-identical
+frames hash to unrelated digests, so the habituation delta between them is
+never small, the threshold never clears, and the VLM call it exists to skip
+never gets skipped -- the exact "fallback written as graceful degradation
+that silently removes the cost control it feeds" pattern the item is filed
+under. Replaced with a real fix rather than the item's fallback option: cv2
+downsampling is tried first, then PIL (`Pillow`, already a declared
+dependency in `requirements-ai.txt` and confirmed installed in this venv) is
+tried as a second continuity-preserving path -- decode, convert to
+grayscale, resize to 16x16, same shape the cv2 path already produced. Only
+if both fail does `_compute_visual_vector` return `None`, and only then does
+`appraise()` take the explicitly-disabled path: it skips the habituation
+check entirely (every tick calls the VLM, uncapped) and logs a `warning`
+once (`_habituation_disabled_logged`), not every tick, saying exactly that --
+a named degradation instead of a silent one.
+
+**Files:** `app/vision/agent.py`, `app/vision/appraisal.py`, `app/config.py`,
+`app/contracts.py`, plus `tests/test_vision.py` (5 new tests: cascade built
+once, calibrated-formula correctness, distance calc off-loaded via
+`asyncio.to_thread`, undecodable frames return `None`, disabled-habituation
+logs exactly once across repeated calls) and `tests/test_performance.py`
+(the vision-encode benchmark now feeds `_compute_visual_vector` a real
+PIL-generated JPEG instead of `b"\x00\xff\x80" * 1024`, since that filler
+only ever exercised the now-removed SHA-256 path and isn't decodable by
+either real path). Two pre-existing tests in `test_vision.py`
+(`test_vlm_confirmed_quiet_scene_advances_habituation_baseline`,
+`test_sensory_habituation_bypasses_vlm_if_below_threshold`) were also
+relying on the SHA-256 fallback turning arbitrary same-bytes input into a
+matching pseudo-vector; both now use a shared `_real_jpeg_frame_b64()`
+helper instead of arbitrary strings -- the behavior they test (habituation
+firing/advancing on a real repeated/quiet frame) is unchanged, only the
+stand-in frame data changed.
+
+**Verified.** Full suite **1094/1094**, `ruff check .` clean, `cargo check
+--workspace` clean (no Rust touched), `scripts/check_subject_wiring.py`
+clean (no subjects touched, confirmed no new allowlist entries needed). New
+tests were **not mutation-tested**, per the standing instruction from
+Stage 6 Part 3 onward ("no need to do any more mutation tests from now") --
+written and verified green-only, same as the second half of Part 3.
+
+**NOT done.** cv2 is not installed in this dev environment (confirmed:
+`import cv2` raises `ModuleNotFoundError`), so none of this part's cv2-path
+changes -- cascade-once, the calibrated formula, the cv2 branch of
+`_compute_visual_vector` -- have run against a real camera frame or a real
+Haar cascade in this pass; all three were verified by patching `cv2`/`np` at
+the module level and asserting call shape and formula arithmetic, which
+proves the code is structurally correct but not that a live frame produces
+a sane distance number. The PIL fallback path, by contrast, ran for real
+(Pillow is actually installed here) and was verified against real encoded
+JPEG bytes. `VISION_FOCAL_PX`'s default (443.0) is stated as unmeasured in
+its own config comment and remains so -- no physical camera was available to
+calibrate it in this environment. Carried forward: visual episodic memory
+(Part 5, whose salience gating reuses `_compute_visual_vector`'s output and
+therefore inherits this fix directly), voice/STT (Part 6), NATS accounts +
+supply chain (Part 7), deployment/docs/cleanup (Part 8).

@@ -39,6 +39,7 @@ class VisualAppraisalService:
         self._last_description: str = ""
         self._last_appraisal_time: float = 0.0
         self._last_visual_vector = None
+        self._habituation_disabled_logged = False
 
         # M3-R3: without this, a down VLM (or Ollama, or a model that was
         # never pulled) got retried every capture tick with a full base64
@@ -73,19 +74,28 @@ class VisualAppraisalService:
         """Check if enough time has elapsed since the last VLM call."""
         return (time.time() - self._last_appraisal_time) >= self.interval
 
-    def _compute_visual_vector(self, frame_b64: str) -> list[float]:
-        """Convert base64 JPEG frame to a downsampled 16x16 grayscale vector."""
-        import base64
+    def _compute_visual_vector(self, frame_b64: str) -> list[float] | None:
+        """Convert base64 JPEG frame to a downsampled 16x16 grayscale vector.
 
-        import numpy as np
+        Returns None when no perceptually-continuous downsampling path is
+        available, so the caller can disable habituation explicitly rather
+        than feed it a discontinuous vector (M3-A9). A SHA-256 hash of the
+        raw bytes -- the previous fallback -- hashes two near-identical
+        frames to unrelated vectors, so the habituation delta always clears
+        threshold and the VLM-call cap it exists to provide never engages: a
+        fallback that reads as graceful degradation while silently removing
+        the very thing it was supposed to degrade gracefully.
+        """
+        import base64
 
         try:
             jpeg_bytes = base64.b64decode(frame_b64)
         except Exception:
-            return [0.0] * 256
+            return None
 
         try:
             import cv2
+            import numpy as np
 
             img = cv2.imdecode(
                 np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_GRAYSCALE
@@ -95,17 +105,24 @@ class VisualAppraisalService:
                 return (resized.flatten().astype(float) / 255.0).tolist()
         except Exception as e:
             logger.debug(
-                "[VisualAppraisal] OpenCV downsampling failed, falling back to hash: %s",
+                "[VisualAppraisal] OpenCV downsampling failed, trying PIL: %s", e
+            )
+
+        try:
+            import io
+
+            from PIL import Image
+
+            img = Image.open(io.BytesIO(jpeg_bytes)).convert("L").resize((16, 16))
+            return [px / 255.0 for px in img.getdata()]
+        except Exception as e:
+            logger.debug(
+                "[VisualAppraisal] PIL downsampling failed too, no continuity-"
+                "preserving path left: %s",
                 e,
             )
 
-        import hashlib
-
-        h = hashlib.sha256(jpeg_bytes).digest()
-        extended = bytearray()
-        for i in range(8):
-            extended.extend(hashlib.sha256(h + bytes([i])).digest())
-        return [b / 255.0 for b in extended[:256]]
+        return None
 
     async def appraise(self, frame_b64: str) -> str:
         """
@@ -121,7 +138,16 @@ class VisualAppraisalService:
 
         # Compute delta to evaluate sensory habituation
         current_vector = self._compute_visual_vector(frame_b64)
-        if self._last_visual_vector is not None:
+        if current_vector is None:
+            if not self._habituation_disabled_logged:
+                logger.warning(
+                    "[VisualAppraisal] No perceptually-continuous frame "
+                    "downsampling available (cv2 and PIL both failed); "
+                    "sensory habituation is disabled and every appraisal "
+                    "tick will call the VLM uncapped."
+                )
+                self._habituation_disabled_logged = True
+        elif self._last_visual_vector is not None:
             try:
                 import cognitive_rust
 
