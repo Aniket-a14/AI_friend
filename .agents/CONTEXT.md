@@ -8266,9 +8266,38 @@ is the guard, per the plan. Baseline (`git stash` of this pass's changes,
 `run-conversation --model qwen2.5:3b --num-ctx 8192 --retrieval bm25
 --retrieval memory`): 12/48 probes passed. Candidate (same command, changes
 restored): 12/48, and the per-probe comparison is exact -- 0 regressions
-(pass->fail), 0 incidental improvements (fail->pass). The refactor is
-behavior-preserving on this pack, as expected for a pure hot-path
-optimization that changes how the mapping is computed, not what it maps to.
+(pass->fail), 0 incidental improvements (fail->pass).
+
+**Two behavior deltas the pack did not exercise, found on review rather
+than by the gate** -- worth recording because "0/48 moved" is weaker
+evidence than it looks for a mapping three call sites used to derive
+slightly differently from each other:
+
+1. *Fixed before merge.* Unifying the mapping put the first-person-pronoun
+   -> agent attribution in front of `_collect_ppr_seeds`, where pre-P2-3
+   it lived in `_map_candidate_entities` and therefore ran only *after*
+   seeding. That silently let a directly-cued memory mentioning "I" but no
+   named entity seed the agent node, where before it produced no seeds at
+   all -- empty PPR vector, no boost for anyone. Confirmed live, not
+   theoretical: reversing the order makes an un-cued graph neighbour pick
+   up a nonzero spreading-activation boost. The layer now goes on after
+   seed collection, restoring the original semantics exactly, pinned by
+   `test_agent_pronoun_layer_does_not_leak_into_ppr_seed_selection` (which
+   fails under that reversal).
+2. *Accepted deliberately.* A candidate carrying `metadata["entities"] =
+   []` (an explicitly empty list, not a missing key) used to be honoured as
+   authoritative by `_map_candidate_entities` -- no entities, no boost --
+   while `_build_entity_graph` treated the same value as "nothing recorded,
+   go scan the content". The unified mapping keeps the scanning reading for
+   both. That is a real change to the PPR-boost side, kept because the old
+   split was an inconsistency rather than a decision: nothing writes an
+   empty list meaning "this memory genuinely mentions nobody", and having
+   one function's answer contradict the other's on identical input is what
+   the unification exists to remove.
+
+So: behavior-preserving on this pack, and now genuinely behavior-preserving
+on the seeding path, with one disclosed and intentional change on the
+boost-attribution path.
 
 **Files:** `app/state/memory_store.py`, `tools/measure/m16_retrieval.py`,
 `tools/measure/out/m16_retrieval.json`,

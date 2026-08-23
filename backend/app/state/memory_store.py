@@ -1802,21 +1802,32 @@ class MemoryStore:
         etc. count as a mention of the agent itself -- is layered on here,
         once agent_node_name is available, rather than recomputed from
         scratch the way the pre-P2-3 `_map_candidate_entities` did.
+
+        **The layer must go on after `_collect_ppr_seeds`, not before.**
+        Pre-P2-3 the pronoun attribution lived only in
+        `_map_candidate_entities`, which ran *after* seeds were picked, so
+        seeding never saw it -- a directly-cued memory mentioning "I" but no
+        named entity produced no seeds, hence an empty PPR vector and no
+        boost for anyone. Applying the layer first would silently make the
+        agent node seed that case, which is a ranking change, not the
+        behavior-preserving hoist this refactor is meant to be.
         """
         if not entity_names:
             return
         try:
+            seeds = self._collect_ppr_seeds(
+                entity_names, matched_cues, direct_boosted_indices, cand_entities
+            )
+
             if agent_node_name:
                 pronoun_pattern = re.compile(
-                    r"\b(?:" + "|".join(re.escape(p) for p in FIRST_PERSON_PRONOUNS) + r")\b"
+                    r"\b(?:"
+                    + "|".join(re.escape(p) for p in FIRST_PERSON_PRONOUNS)
+                    + r")\b"
                 )
                 for idx, cand in enumerate(raw_candidates):
                     if pronoun_pattern.search(cand["content"].lower()):
                         cand_entities.setdefault(idx, set()).add(agent_node_name)
-
-            seeds = self._collect_ppr_seeds(
-                entity_names, matched_cues, direct_boosted_indices, cand_entities
-            )
 
             # Compute Personalized PageRank Vector (3-iteration power method,
             # delegated to the Rust hot loop with a Python fallback).

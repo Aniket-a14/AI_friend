@@ -377,6 +377,49 @@ def test_apply_ppr_spreading_activation_adds_agent_on_first_person_pronoun():
     assert raw_candidates[0]["score"] > 0.0
 
 
+def test_agent_pronoun_layer_does_not_leak_into_ppr_seed_selection():
+    """P2-3 ordering guard: the pronoun->agent attribution must be layered on
+    *after* _collect_ppr_seeds reads the shared mapping, not before.
+
+    Pre-P2-3 that attribution lived only in the (now deleted)
+    _map_candidate_entities, which ran after seeding, so a directly-cued
+    memory mentioning "I" but no named entity produced no seeds at all --
+    empty PPR vector, no boost for anybody. Applying the layer before
+    seeding instead would silently make the agent node seed that case and
+    boost every agent-adjacent memory, which is a live ranking change, not
+    the behavior-preserving hoist this refactor is meant to be.
+    """
+    store = _store()
+    entity_names = ["Aniket", "Kolkata"]
+    adj = {"Aniket": {"Kolkata"}, "Kolkata": {"Aniket"}}
+    raw_candidates = [
+        # Directly cued: first-person pronoun, no named entity. The only
+        # thing that could seed here is the agent-pronoun layer.
+        {"content": "I was thinking about it again", "score": 0.0, "metadata": {}},
+        # Not directly cued, so it is the one the boost loop can actually
+        # score -- and it is adjacent to the agent in the graph, so it is
+        # exactly what a leaked agent seed would spread onto.
+        {"content": "Kolkata in the monsoon", "score": 0.0, "metadata": {}},
+    ]
+    cand_entities = {0: set(), 1: {"Kolkata"}}
+
+    store._apply_ppr_spreading_activation(
+        raw_candidates,
+        entity_names,
+        adj,
+        matched_cues=["nothing_matches"],
+        direct_boosted_indices={0},
+        agent_node_name="Aniket",
+        cand_entities=cand_entities,
+    )
+
+    # The layer still ran -- the mapping records the agent mention...
+    assert cand_entities[0] == {"Aniket"}
+    # ...but too late to seed, so the PPR vector stayed empty and nothing
+    # spread onto the un-cued neighbour, exactly as before P2-3.
+    assert raw_candidates[1]["score"] == 0.0
+
+
 def test_normalize_recall_ts_handles_every_stored_shape():
     from datetime import datetime
 
