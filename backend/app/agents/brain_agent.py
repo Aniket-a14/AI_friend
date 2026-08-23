@@ -12,7 +12,6 @@ from ..cognitive.somatic import SomaticAppraiser
 from ..config import Config
 from ..contracts import (
     AudioPlaybackProgress,
-    AudioResume,
     AudioStop,
     ChatInput,
     Topics,
@@ -23,7 +22,6 @@ from ..logging_config import setup_logging
 from ..runtime_bootstrap import bootstrap_runtime
 from ..state import ConversationHistoryStore, GraphDB, MemoryStore
 from ..utils.conversational_runtime import ConversationalRuntime
-from ..utils.interruption_classifier import InterruptionClassifier
 from ..utils.segmentation import HybridSegmenter
 from ..utils.speech import SpeechCoordinator
 from .base import BaseAgent, install_shutdown_signal_handlers
@@ -74,7 +72,6 @@ class BrainAgent(BaseAgent):
         self.coordinator = SpeechCoordinator(
             segmenter=HybridSegmenter(target_size=7), formation_buffer_ms=0.030
         )
-        self.interruption_classifier = InterruptionClassifier()
         self.conversational_runtime = ConversationalRuntime(publish_cb=self.publish)
         self._active_generation_task = None
         self._generation_lock = asyncio.Lock()
@@ -119,12 +116,6 @@ class BrainAgent(BaseAgent):
             Topics.VOICE_SEGMENTATION_FEEDBACK,
             self._on_voice_feedback,
             durable=f"{self.name}_voice_segmentation_feedback_live",
-            deliver_policy="new",
-        )
-        await self.subscribe(
-            Topics.AUDIO_PERCEPTION,
-            self._on_audio_perception,
-            durable=f"{self.name}_brain_audio_perception_live",
             deliver_policy="new",
         )
         await self.subscribe(
@@ -220,7 +211,7 @@ class BrainAgent(BaseAgent):
         reset that state, or after _on_audio_stop has already read it for
         truncation. Awaiting the task here closes that race by guaranteeing the
         previous turn has stopped touching shared state before the caller
-        (a new chat.input turn, or a semantic interrupt) proceeds.
+        (a new chat.input turn, or a confirmed audio.stop) proceeds.
         """
         async with self._generation_lock:
             task = self._active_generation_task
@@ -437,42 +428,6 @@ class BrainAgent(BaseAgent):
                 self.conversation_store.log_message("assistant", full_response)
             )
 
-    async def _on_audio_perception(self, data: dict[str, Any]):
-        """Runs the semantic interruption classifier on partial speech hypotheses."""
-        metadata = data.get("metadata", {})
-        is_partial = metadata.get("is_partial", False)
-        text = data.get("text", "")
-
-        # Only run semantic classifier on partial transcripts
-        if is_partial and text:
-            if self.interruption_classifier.is_interruption(text):
-                logger.info(
-                    f"🚨 [Brain] Semantic interrupt detected on partial: '{text}'"
-                )
-
-                # Instantly publish confirmed audio.stop to silence playback
-                stop_msg = AudioStop(
-                    interrupt=True,
-                    speculative=False,
-                    reason=f"semantic_interrupt: {text}",
-                    perception_text=text,
-                    intent="CONFIRMED_STOP",
-                    utterance_id=data.get("utterance_id"),
-                )
-                await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
-
-                # Instantly cancel active LLM generation stream and wait for it to
-                # fully stop before returning, so state left behind is consistent.
-                await self._cancel_active_generation("semantic interrupt")
-            else:
-                # Not a valid semantic interruption! Send an audio resume to restore volume.
-                resume_msg = AudioResume(
-                    reason="not_interruption",
-                    perception_text=text,
-                    utterance_id=data.get("utterance_id"),
-                )
-                await self.publish(Topics.AUDIO_RESUME, resume_msg.model_dump())
-
     async def _on_audio_playback_progress(self, data: dict[str, Any]):
         """Tracks the current word/character progress of the audio playback."""
         try:
@@ -485,12 +440,29 @@ class BrainAgent(BaseAgent):
             logger.error(f"Error parsing audio playback progress: {e}")
 
     async def _on_audio_stop(self, data: dict[str, Any]):
-        """Handles confirmed audio stops to truncate the last played utterance in history."""
+        """Handles confirmed audio stops: cancels in-flight generation for the
+        interrupted turn and truncates the last played utterance in history.
+
+        audit/ROADMAP.md P1-4: this is now the single place that reacts to a
+        confirmed interrupt -- previously a second, unscoped classifier here
+        (`InterruptionClassifier`, regex over every partial) independently
+        cancelled generation the instant a keyword matched, racing with
+        decision.py's `is_speculative_stop_confirmed` (the arbiter that
+        actually decides, using the full utterance and its context -- see
+        `CognitivePipeline.execute`'s conflict-resolution stage). Reacting
+        here instead means there is exactly one path from "confirmed" to
+        "generation cancelled", however the confirmation was reached.
+        """
         try:
             stop_msg = AudioStop.model_validate(data)
 
-            # Truncation only happens on confirmed (non-speculative) interrupts
+            # Truncation, and cancelling the turn that was cut off, only
+            # happen on confirmed (non-speculative) interrupts -- a
+            # speculative duck has not stopped anything yet.
             if not stop_msg.speculative:
+                await self._cancel_active_generation(
+                    stop_msg.reason or "confirmed audio.stop"
+                )
                 progress = self.last_audio_progress
                 if progress and not progress.completed and self.last_assistant_response:
                     offset = progress.character_offset
