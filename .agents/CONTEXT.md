@@ -8135,3 +8135,74 @@ entry beyond the standard pre-existing baseline).
   `backend/models/` provisioned to check end to end, which remains absent.
 - P2-9 (windowed partials, the reason this had to happen first), P2-3,
   P2-4, P2-6 -- Stage 4 Parts 1-4, next.
+## 2026-08-23 -- Stage 4, Part 1 -- P2-6: the SQLite fallback comes off the
+event loop
+
+**Files:** `backend/app/state/sqlite_fallback.py`,
+`backend/app/state/memory_store.py`, `backend/tests/test_sqlite_fallback.py`.
+
+M2-P3 (CRITICAL as filed, stays MEDIUM after Q-M2-2 -- SQLite is
+emergency-only, not a supported mode): `SQLiteConnection.execute/fetch/
+fetchrow/fetchval` were `async def` with no `await` inside them --
+coroutines that never yield. Because every agent in this mesh runs a single
+asyncio loop, a call on this path stalled the NATS client and every other
+in-flight cognitive turn, not just the caller, for the full duration of
+every SQLite call while the fallback was active.
+
+**Fix, mirroring an existing pattern rather than inventing one.**
+`working_memory_store.py`'s own L2 SQLite fallback solved this identically
+already -- its comments name the trap directly: `check_same_thread=False`
+is required because calls arrive on whichever `asyncio.to_thread` worker
+happens to run them, and a `threading.Lock` held by every call site is what
+actually makes sharing one connection across threads safe (the flag alone
+does not). Each of the four public methods is now a thin
+`asyncio.to_thread` wrapper around a `_sync_*` body that holds `self._lock`
+for its duration; `SQLiteConnection.__init__` now connects with
+`check_same_thread=False`. `:memory:` databases stay correct under this --
+the same single `sqlite3.Connection` object is reused across worker
+threads, never recreated, so there is nothing for `:memory:`'s
+connection-scoping to lose track of.
+
+**`_fetch_sqlite_candidates` (`memory_store.py`).** `SELECT * FROM memories
+WHERE wing = ?` had no `LIMIT` at all -- a full-table scan on every cache
+miss, unlike its Postgres sibling `_fetch_postgres_candidates`, which
+already receives and applies `candidate_limit`; that value was already
+computed and in scope at the SQLite call site, just never threaded through.
+Added `candidate_limit` as a parameter and `ORDER BY last_recalled_at DESC
+LIMIT ?` to both query variants (with and without `room`). **`embedding`
+stays in the projection**, despite M2-P3's "excludes embedding where
+unused" phrasing -- read `cognitive_rust::score_memories_actr_sqlite`
+(`crates/cognitive-rust/src/lib.rs:387`) before assuming that applied here:
+SQLite has no pgvector, so this column is exactly what the Rust kernel
+parses to compute cosine similarity in-process; dropping it would silently
+zero every candidate's similarity, not save bytes. `ORDER BY
+last_recalled_at DESC` biases a hard cap toward recently-relevant memories
+rather than an arbitrary rowid-order slice; SQLite sorts NULL as smallest,
+so never-recalled rows land last under DESC and are the right side of the
+cut to lose first.
+
+**Tests, mutation-tested.** `test_execute_does_not_block_the_event_loop`
+proves the yield genuinely happens: a monkeypatched `_sync_execute` sleeps
+0.2s on its worker thread while a concurrent `asyncio.sleep(0.01)` ticker
+keeps advancing -- a blocked loop would stall the ticker for the same
+0.2s regardless of tick interval, so `ticks >= 10` only holds if control
+really returned to the loop. Removing the `to_thread` wrap (calling
+`_sync_execute` directly) makes it fail, confirmed and reverted.
+`test_sqlite_candidate_fetch_does_not_scan_the_whole_table` seeds 5 rows
+with distinct `last_recalled_at` timestamps, requests `candidate_limit=3`,
+and asserts both the count and that the 3 *most recent* rows are the ones
+returned -- proving the cap and the ordering together, not just one. Both
+mutations (dropping `LIMIT`/`ORDER BY`; calling the sync body directly)
+confirmed to fail before reverting.
+
+**Verified:** full backend suite 1039/1039 (1037 baseline + 2 new). Its
+own terminal summary was swallowed again this session -- reproduced even
+with output redirected straight to a file, matching `CLAUDE.md`'s
+documented finding exactly; parsed the JUnit XML instead, per that same
+note. `ruff check .` clean.
+
+**NOT done:**
+- `_create_schema()` (called synchronously from `__init__`) is unchanged --
+  P2-6's finding named `execute/fetch/fetchrow/fetchval` specifically;
+  schema creation runs once at startup, not on the hot path.
+- P2-3, P2-4, P2-9 -- the rest of Stage 4, next.

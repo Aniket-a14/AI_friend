@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import os
 import re
 import sqlite3
+import threading
 
 logger = logging.getLogger("sqlite_fallback")
 
@@ -12,8 +14,18 @@ class SQLiteConnection:
         if db_path != ":memory:":
             os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
 
-        self.conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        # audit/ROADMAP.md P2-6 (M2-P3): every public method below now runs
+        # its body via asyncio.to_thread, so calls arrive on whichever worker
+        # thread happens to run them rather than always the caller's thread.
+        # check_same_thread=False lifts sqlite3's same-thread restriction on
+        # this connection object; it does not make concurrent access safe by
+        # itself, which is what self._lock is for. Mirrors the fix already
+        # applied to working_memory_store.py's own L2 SQLite fallback.
+        self.conn = sqlite3.connect(
+            db_path, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread=False
+        )
         self.conn.row_factory = sqlite3.Row
+        self._lock = threading.Lock()
         self._create_schema()
 
     def _create_schema(self):
@@ -334,7 +346,20 @@ class SQLiteConnection:
 
         return translated
 
+    # Every public method below is a thin `asyncio.to_thread` wrapper
+    # around a `_sync_*` body holding `self._lock`. Called directly (as this
+    # class was before P2-6), each call blocked the event loop for the full
+    # duration of the query -- and because every agent runs a single asyncio
+    # loop, that stalled the NATS client and every concurrent cognitive turn
+    # for as long as the fallback stayed active, not just the caller. See
+    # working_memory_store.py's own `_sqlite_lock` comment for why the lock
+    # (not just check_same_thread=False) is what makes sharing one
+    # connection across to_thread's worker threads safe.
+
     async def execute(self, query, *args):
+        await asyncio.to_thread(self._sync_execute, query, args)
+
+    def _sync_execute(self, query, args):
         translated = self._translate_query(query)
         cleaned_args = [str(arg) if hasattr(arg, "hex") else arg for arg in args]
 
@@ -345,59 +370,72 @@ class SQLiteConnection:
             if not line.strip().startswith("--")
         )
 
-        cursor = self.conn.cursor()
-        try:
-            # Handle multiple SQL statements separated by semicolons
-            if ";" in translated and len(translated.strip().split(";")) > 2:
-                cursor.executescript(translated)
-            else:
-                cursor.execute(translated, cleaned_args)
-            self.conn.commit()
-        except sqlite3.OperationalError as e:
-            # Guard against pg-specific extension checks like "create extension" or indexing
-            if "vector" in str(e) or "hnsw" in str(e) or "pgcrypto" in str(e):
-                logger.debug(
-                    f"SQLite Schema Guard: Ignored PG-specific index/extension statement: {e}"
-                )
-            else:
-                logger.error(
-                    f"SQLite execution failed for query: {query}\nTranslated: {translated}\nError: {e}"
-                )
-                raise
+        with self._lock:
+            cursor = self.conn.cursor()
+            try:
+                # Handle multiple SQL statements separated by semicolons
+                if ";" in translated and len(translated.strip().split(";")) > 2:
+                    cursor.executescript(translated)
+                else:
+                    cursor.execute(translated, cleaned_args)
+                self.conn.commit()
+            except sqlite3.OperationalError as e:
+                # Guard against pg-specific extension checks like "create extension" or indexing
+                if "vector" in str(e) or "hnsw" in str(e) or "pgcrypto" in str(e):
+                    logger.debug(
+                        f"SQLite Schema Guard: Ignored PG-specific index/extension statement: {e}"
+                    )
+                else:
+                    logger.error(
+                        f"SQLite execution failed for query: {query}\nTranslated: {translated}\nError: {e}"
+                    )
+                    raise
 
     async def fetch(self, query, *args):
+        return await asyncio.to_thread(self._sync_fetch, query, args)
+
+    def _sync_fetch(self, query, args):
         translated = self._translate_query(query)
         cleaned_args = [str(arg) if hasattr(arg, "hex") else arg for arg in args]
-        cursor = self.conn.cursor()
-        cursor.execute(translated, cleaned_args)
-        rows = cursor.fetchall()
-        # Commits a statement that both writes and returns rows (e.g. `UPDATE
-        # ... RETURNING`), which arrives through the fetch path rather than
-        # execute(). Unconditional rather than prefix-sniffed on the first
-        # keyword: `fetchval` used exactly that check and, having none for
-        # RETURNING statements, never committed one at all. A commit after a
-        # plain SELECT is a no-op -- sqlite3 opens a transaction for DML only
-        # -- so there's no correctness reason to guess whether a query wrote.
-        self.conn.commit()
-        return [dict(row) for row in rows]
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(translated, cleaned_args)
+            rows = cursor.fetchall()
+            # Commits a statement that both writes and returns rows (e.g. `UPDATE
+            # ... RETURNING`), which arrives through the fetch path rather than
+            # execute(). Unconditional rather than prefix-sniffed on the first
+            # keyword: `fetchval` used exactly that check and, having none for
+            # RETURNING statements, never committed one at all. A commit after a
+            # plain SELECT is a no-op -- sqlite3 opens a transaction for DML only
+            # -- so there's no correctness reason to guess whether a query wrote.
+            self.conn.commit()
+            return [dict(row) for row in rows]
 
     async def fetchrow(self, query, *args):
+        return await asyncio.to_thread(self._sync_fetchrow, query, args)
+
+    def _sync_fetchrow(self, query, args):
         translated = self._translate_query(query)
         cleaned_args = [str(arg) if hasattr(arg, "hex") else arg for arg in args]
-        cursor = self.conn.cursor()
-        cursor.execute(translated, cleaned_args)
-        row = cursor.fetchone()
-        self.conn.commit()
-        return dict(row) if row else None
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(translated, cleaned_args)
+            row = cursor.fetchone()
+            self.conn.commit()
+            return dict(row) if row else None
 
     async def fetchval(self, query, *args):
+        return await asyncio.to_thread(self._sync_fetchval, query, args)
+
+    def _sync_fetchval(self, query, args):
         translated = self._translate_query(query)
         cleaned_args = [str(arg) if hasattr(arg, "hex") else arg for arg in args]
-        cursor = self.conn.cursor()
-        cursor.execute(translated, cleaned_args)
-        row = cursor.fetchone()
-        self.conn.commit()
-        return row[0] if row else None
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(translated, cleaned_args)
+            row = cursor.fetchone()
+            self.conn.commit()
+            return row[0] if row else None
 
 
 class SQLitePoolAcquisition:
