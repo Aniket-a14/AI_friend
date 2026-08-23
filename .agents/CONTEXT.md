@@ -8986,3 +8986,118 @@ existing suite, not assumed safe.
 in Stage 6 -- telemetry + benchmarks (Part 2), memory lifecycle (Part 3),
 vision (Part 4), visual episodic memory (Part 5), voice/STT (Part 6), NATS
 accounts + supply chain (Part 7), deployment/docs/cleanup (Part 8).
+
+## 2026-08-23 -- Stage 6 Part 2 (telemetry, then benchmarks) -- P3-2, P2-10
+
+**P3-2 turned out not to be "build telemetry" but "stop duplicating it."**
+`app/metrics.py::SubjectMetrics` is a complete, thread-safe implementation
+(off-thread aggregation, p95/p99, jitter index) whose own docstring already
+claimed it was "Used by BaseAgent, CognitiveService, and SurfacingAgent." It
+was used by none of them. What each of those three classes actually had was
+its own independently-hand-rolled, ~20-line dict-and-log-line tracker --
+`BaseAgent._subject_metrics`/`_record_subject_metric`,
+`CognitiveService.subject_metrics`/`_record_subject_metric`, and
+`SurfacingAgent.subject_metrics`/`_record_surfacing_metric` -- three real,
+live copies of roughly the same aggregation logic, not stubs. The fix was
+consolidation: all three now construct their own `SubjectMetrics` instance
+and delegate their existing `_record_*` methods to it, rather than adding a
+fourth implementation alongside the unused one.
+
+**A real bug caught while wiring, not shipped.** `SurfacingAgent(BaseAgent)`
+inherits `self._metrics` from `BaseAgent.__init__` (its own generic
+publish/downgrade/rx tracker). The first pass reused that same attribute name
+for `SurfacingAgent`'s business-logic tracker, which silently overwrote the
+base tracker instead of adding a second one -- any inherited `publish()`
+call's rx/publish/downgrade accounting would have vanished the moment a
+`SurfacingAgent` was constructed. `SurfacingAgent` gets its own
+`self._surfacing_metrics` instead; a dedicated regression test
+(`test_surfacing_agent_metric_lands_in_its_own_tracker_not_base_agents`)
+constructs an agent, drives a surfacing-metric event through it, and asserts
+the base tracker's own `_metrics` dict is untouched.
+
+**P2-10: 8 of the 17 benchmarks in `tests/test_performance.py` were fake --
+they would keep passing after the production function they claimed to
+measure was deleted, changed, or renamed.** Confirmed by the plan's own
+mutation check (delete/break the production code, run the benchmark, expect
+a failure) on every one of the 17 before and after:
+
+- `test_personality_modulation_benchmark` hand-copied the
+  cortisol/dopamine/fatigue formula instead of calling
+  `ActionService._compute_endocrine_options` (static method, `action.py:625`).
+- `test_memory_semantic_retrieve_benchmark` reimplemented the ACT-R formula
+  inline with hardcoded weights instead of calling the real, named,
+  shared-and-tunable `MemoryStore._base_activation` /
+  `._effective_similarity` / `.spread_weight` (the emotional-distance term
+  has no shared helper in production either -- it's inlined at three call
+  sites in `memory_store.py` -- so it stays inlined in the benchmark too
+  rather than inventing a fourth copy).
+- `test_conversation_serialization_benchmark`'s docstring named a
+  "ConversationStore" serializer that does not exist --
+  `ConversationHistoryStore` only issues SQL, nothing in it serializes
+  history/turns. Retargeted to the real analogue:
+  `SpeechCoordinator.create_chunk_payload` + `ChatOutput.model_dump_json()`,
+  the actual per-word-chunk payload construction every streamed reply goes
+  through before publish.
+- `test_decision_tree_walk_benchmark` sorted a hardcoded, unrelated list of
+  dicts. Retargeted to `DecisionService._score_goals_maut`, the real
+  Multi-Attribute Utility Theory scoring across
+  ENGAGE/COMFORT/INFORM/TEASE/PROTECT (`decision.py:183`).
+- `test_pipeline_step_dispatch_benchmark` built f-strings in a loop, calling
+  nothing in `app/`. Retargeted to `CognitivePipeline.execute()`'s real
+  dispatch/extraction stage, driven with a below-VAP-threshold speculative
+  signal so it exercises the genuine early-exit branch (taken many times a
+  second during live speech) without needing LLM/action/decision mocking.
+- `test_nats_metadata_serialization_benchmark` used `json.dumps` on a
+  hand-built dict shaped to resemble the wire format. Retargeted to
+  `BaseAgent.publish()` itself (JetStream transport mocked out, metadata/hop
+  construction and `orjson` serialization real), asserting on the actual
+  bytes handed to the transport.
+- `test_stt_payload_parsing_benchmark` did a bare `json.loads` on a shape no
+  production code receives. Retargeted to
+  `CognitiveService._on_audio_perception` (payload shaped to the real
+  `AudioPerception` contract), driving `StateService.apply_sensory_perception`
+  end to end. Its first draft's assertion (`-1.0 <= mood <= 1.0`) would have
+  passed even against a fully mutated no-op handler, since mood is always
+  bounds-enforced into that range regardless -- caught by the mutation check
+  itself, not by review; fixed by resetting mood to a known 0.0 baseline each
+  iteration and asserting the post-call value actually moved in the direction
+  the positive `emotional_bias` implies.
+- `test_vision_frame_encode_benchmark` benchmarked `len(raw_bytes) > 100`.
+  Retargeted to `VisualAppraisalService._compute_visual_vector`, the real
+  per-frame downsample-to-vector conversion used for habituation gating --
+  incidentally the exact function M3-A9/P2-7 (Cluster 4, not yet started)
+  will revisit for its SHA-256 fallback. Confirmed in this dev environment
+  `cv2` is not installed at all, so the fallback path this benchmark measures
+  here is not an edge case locally -- it's the only path that ever runs;
+  worth keeping in mind when Cluster 4 assesses how much OpenCV coverage
+  actually exists.
+
+The other 9 benchmarks (async telemetry buffer x2, identity prompt
+generation, reappraisal outcome evaluation, appraisal threat scan, speculative
+-stop arbitration, endocrine state properties, `HybridSegmenter`, APRA
+prosody trajectory) already called real production code and were left as
+they were.
+
+**Files:** `app/agents/base.py`, `app/cognitive/core.py`,
+`app/agents/surfacing_agent.py`, `tests/test_performance.py`,
+`tests/test_subject_metrics_wiring.py` (new).
+
+**Verified.** Full suite **1076/1076** (1071 baseline + 5 new), `ruff check .`
+clean, `cargo check --workspace` clean (Rust untouched this part),
+`scripts/check_subject_wiring.py` unchanged/clean. The 5 new wiring tests and
+all 8 rewritten benchmarks were mutation-tested (production function
+broken/no-op'd, benchmark or test confirmed to fail, then reverted) --
+including the `SurfacingAgent` attribute-collision guard and the STT-parsing
+benchmark's assertion fix described above, both real issues the mutation step
+caught before they shipped rather than after.
+
+**NOT done (carried into later parts of this same branch):** memory lifecycle
+(Part 3), vision (Part 4), visual episodic memory (Part 5), voice/STT
+(Part 6), NATS accounts + supply chain (Part 7), deployment/docs/cleanup
+(Part 8). Also not done, deliberately out of scope for this part: building a
+mesh subscriber for `telemetry.reflection` (a NATS subject broadcasting
+reflection duration/episode counts, unrelated to the in-process
+`SubjectMetrics` wiring done here) -- its `check_subject_wiring.py` allowlist
+comment says it becomes a candidate for that "once P3-2 is built," which is
+now true, but Cluster 2's scope was consolidating the existing per-process
+metrics trackers, not adding a new mesh-wide telemetry consumer.

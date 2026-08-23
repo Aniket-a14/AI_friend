@@ -10,6 +10,7 @@ from typing import Any
 import nats
 import orjson
 
+from ..metrics import SubjectMetrics
 from ..utils.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
@@ -92,9 +93,15 @@ class BaseAgent:
             for subject in tracked_subjects_raw.split(",")
             if subject.strip()
         }
-        self._subject_metrics: dict[str, dict[str, float]] = {}
         self._metrics_log_every = max(
             1, int(os.getenv("SUBJECT_METRICS_LOG_EVERY", "25"))
+        )
+        # P3-2: shared implementation (percentiles, jitter, off-thread
+        # aggregation) instead of a hand-rolled dict -- see app/metrics.py.
+        self._metrics = SubjectMetrics(
+            tracked_subjects=self._tracked_subjects,
+            log_every=self._metrics_log_every,
+            tag="BaseAgent",
         )
         # P4-8: strong-reference holder for fire-and-forget tasks spawned via
         # self.spawn(); see app/utils/background_tasks.py for why this exists.
@@ -342,32 +349,7 @@ class BaseAgent:
         direction: str,
         latency_ms: float | None = None,
     ):
-        if subject not in self._tracked_subjects:
-            return
-
-        key = f"{direction}:{subject}"
-        metric = self._subject_metrics.setdefault(
-            key,
-            {"count": 0.0, "latency_total_ms": 0.0, "latency_samples": 0.0},
-        )
-        metric["count"] += 1
-
-        if latency_ms is not None:
-            metric["latency_total_ms"] += latency_ms
-            metric["latency_samples"] += 1
-
-        count = int(metric["count"])
-        if count == 1 or count % self._metrics_log_every == 0:
-            avg_latency = 0.0
-            if metric["latency_samples"] > 0:
-                avg_latency = metric["latency_total_ms"] / metric["latency_samples"]
-            logger.info(
-                "[SubjectMetrics][%s] subject=%s count=%s avg_latency_ms=%.2f",
-                direction,
-                subject,
-                count,
-                avg_latency,
-            )
+        self._metrics.record(subject, direction=direction, latency_ms=latency_ms)
 
     async def _ack_heartbeat(self, msg, interval: float = 15.0):
         """Periodically signal JetStream that a long callback is still working.

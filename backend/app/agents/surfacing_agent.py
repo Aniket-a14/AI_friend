@@ -25,6 +25,7 @@ from ..contracts import (
     SurfacedMemory,
     Topics,
 )
+from ..metrics import SubjectMetrics
 from ..state import ConversationHistoryStore, GraphDB, MemoryStore
 from .base import BaseAgent, install_shutdown_signal_handlers
 
@@ -62,14 +63,17 @@ class SurfacingAgent(BaseAgent):
         self._current_arousal = 0.5
         self._current_cortisol = 0.0
 
-        self.subject_metrics = {
-            "system.tick": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
-            "memory.surfaced": {
-                "count": 0,
-                "latency_total_ms": 0.0,
-                "latency_samples": 0,
-            },
-        }
+        # P3-2: shared implementation instead of a hand-rolled dict -- see
+        # app/metrics.py. A distinct attribute from BaseAgent's own
+        # `self._metrics` (set by super().__init__() above): that one tracks
+        # generic mesh-level publish/rx counts, this one tracks this class's
+        # own business-logic subjects -- reusing the name would silently
+        # overwrite the base tracker instead of adding a second one.
+        self._surfacing_metrics = SubjectMetrics(
+            tracked_subjects={"system.tick", "memory.surfaced"},
+            log_every=20,
+            tag="SurfacingMetrics",
+        )
 
     async def start(self):
         await self.connect()
@@ -616,32 +620,12 @@ class SurfacingAgent(BaseAgent):
     def _record_surfacing_metric(
         self, subject: str, metadata: dict[str, Any] | None = None
     ):
-        metric = self.subject_metrics.get(subject)
-        if metric is None:
-            return
-
-        metric["count"] += 1
-
-        if isinstance(metadata, dict) and metadata.get("start_time") is not None:
-            try:
-                latency_ms = max(
-                    0.0, (time.time() - float(metadata["start_time"])) * 1000
-                )
-                metric["latency_total_ms"] += latency_ms
-                metric["latency_samples"] += 1
-            except (TypeError, ValueError):
-                pass
-
-        if metric["count"] == 1 or metric["count"] % 20 == 0:
-            avg_latency = 0.0
-            if metric["latency_samples"] > 0:
-                avg_latency = metric["latency_total_ms"] / metric["latency_samples"]
-            logger.info(
-                "[SurfacingMetrics] subject=%s count=%s avg_latency_ms=%.2f",
-                subject,
-                metric["count"],
-                avg_latency,
-            )
+        start_time = metadata.get("start_time") if isinstance(metadata, dict) else None
+        self._surfacing_metrics.record(
+            subject,
+            direction="surfacing",
+            latency_ms=SubjectMetrics.compute_latency(start_time),
+        )
 
     async def stop(self):
         if self._sweep_task and not self._sweep_task.done():

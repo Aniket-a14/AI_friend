@@ -197,23 +197,21 @@ def test_endocrine_state_decay_benchmark(benchmark):
 
 @pytest.mark.benchmark
 def test_personality_modulation_benchmark(benchmark):
-    """Profiles real-time temperature/top_p/num_predict logic modulation based on endocrine state."""
+    """Profiles ActionService._compute_endocrine_options -- the real
+    cortisol/dopamine/fatigue -> temperature/top_p/num_predict mapping, not a
+    hand-copied reimplementation of its formula that would keep passing after
+    the real one changed."""
+    from app.cognitive.action import ActionService
+
+    payload = {"cortisol": 0.8, "dopamine": 0.2, "fatigue": 0.5}
 
     def run():
-        cortisol = 0.8
-        dopamine = 0.2
-        fatigue = 0.5
+        return ActionService._compute_endocrine_options(payload)
 
-        # Production modulation algorithm matching ActionService exactly
-        endo_temperature = max(0.0, min(1.0, round(0.9 - (cortisol * 0.6), 3)))
-        endo_top_p = max(0.0, min(1.0, round(0.70 + (dopamine * 0.25), 3)))
-        endo_num_predict = int(max(100, min(250, int(250 - (fatigue * 150)))))
-        return endo_temperature, endo_top_p, endo_num_predict
-
-    temp, top_p, num_predict = benchmark(run)
-    assert 0.0 <= temp <= 1.0
-    assert 0.0 <= top_p <= 1.0
-    assert 100 <= num_predict <= 250
+    options = benchmark(run)
+    assert 0.0 <= options["temperature"] <= 1.0
+    assert 0.0 <= options["top_p"] <= 1.0
+    assert 100 <= options["num_predict"] <= 250
 
 
 # ==========================================
@@ -223,17 +221,22 @@ def test_personality_modulation_benchmark(benchmark):
 
 @pytest.mark.benchmark
 def test_memory_semantic_retrieve_benchmark(benchmark):
-    """Benchmarks ACT-R semantic memory retrieval scoring (recency/frequency weights) using production formulas."""
+    """Benchmarks ACT-R semantic memory retrieval scoring using the real,
+    named production formulas -- MemoryStore._base_activation,
+    ._effective_similarity and .spread_weight -- instead of a hand-copied
+    reimplementation that would keep passing after those formulas changed.
+    The emotional-distance term itself has no shared helper in production
+    (it's inlined at each of three call sites in memory_store.py), so it is
+    inlined here too rather than invented as a fourth."""
+    from app.state.memory_store import ACTR_EMO_DISTANCE_PENALTY, MemoryStore
+
+    store = MemoryStore(None, None)
     rows = [
         _make_mock_row(
             f"Fact #{i}", similarity=0.8 - (i * 0.01), recall_count=max(1, i)
         )
         for i in range(50)
     ]
-    import math
-
-    decay_rate = 0.5
-    spread_weight = 2.0
     current_valence = 0.2
     current_arousal = 0.5
     current_cortisol = 0.3
@@ -242,38 +245,28 @@ def test_memory_semantic_retrieve_benchmark(benchmark):
         scored = []
         now_ts = time.time()
         for row in rows:
-            memory_valence = row["valence"]
-            emotion_weight_row = row["emotional_weight"]
-            recall_count = row["recall_count"]
-            last_recall_time = row["last_recalled_at"]
-            importance_score = row["importance_score"]
-            similarity = row["similarity"]
+            hours_since = max(0.001, (now_ts - row["last_recalled_at"]) / 3600.0)
+            dist_emo = (
+                (row["valence"] - current_valence) ** 2
+                + (row["emotional_weight"] - current_arousal) ** 2
+            ) ** 0.5
 
-            hours_since = max(0.001, (now_ts - last_recall_time) / 3600.0)
-
-            # 2D/3D Emotional Distance
-            dist_emo = math.sqrt(
-                (memory_valence - current_valence) ** 2
-                + (emotion_weight_row - current_arousal) ** 2
+            base_activation = store._base_activation(
+                row["recall_count"], hours_since, row["importance_score"], dist_emo
             )
-
-            # Production base_activation
-            base_activation = (
-                math.log(recall_count)
-                - decay_rate * math.log(hours_since + 1.0)
-                + 1.5 * importance_score
-                + 0.15 * (1.0 - dist_emo)
+            effective_similarity = store._effective_similarity(
+                row["similarity"],
+                row["valence"],
+                row["emotional_weight"],
+                current_arousal,
+                current_cortisol,
             )
-
-            # Effective similarity with hormonal gating
-            effective_similarity = similarity * (
-                1.0
-                + 0.1 * memory_valence * emotion_weight_row
-                - 0.2 * current_arousal * current_cortisol
+            spread_activation = store.spread_weight * effective_similarity
+            score = (
+                base_activation
+                + spread_activation
+                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
             )
-
-            spread_activation = spread_weight * effective_similarity
-            score = base_activation + spread_activation - 0.5 * dist_emo
             scored.append((row["content"], score))
 
         scored.sort(key=lambda x: x[1], reverse=True)
@@ -285,19 +278,24 @@ def test_memory_semantic_retrieve_benchmark(benchmark):
 
 @pytest.mark.benchmark
 def test_conversation_serialization_benchmark(benchmark):
-    """Profiles serializing context history and window segments in ConversationStore."""
-    history = {
-        "relationship": "Empathy Guide",
-        "memories": [
-            "First prompt check",
-            "NATS stream initialization",
-            "Subconscious tick evolution",
-        ],
-        "turns": [{"role": "user", "text": "Hello, computer"}] * 50,
-    }
+    """Profiles building and serializing a per-chunk assistant reply via
+    SpeechCoordinator.create_chunk_payload -- the real ChatOutput
+    construction every streamed word-chunk goes through before publish.
+    There is no production 'conversation history/window' serializer to
+    target: ConversationHistoryStore only issues SQL, and per-chunk output
+    construction is the closest real analogue to what this benchmark's name
+    describes."""
+    from app.utils.speech import SpeechCoordinator
+
+    coordinator = SpeechCoordinator(segmenter=None)
+    state_snap = {"valence": 0.3, "arousal": 0.5, "trust": 0.6, "fatigue": 0.1}
+    words = ["Hello,", "computer.", "How", "are", "you", "today?"]
 
     def run():
-        return json.dumps(history)
+        payload = coordinator.create_chunk_payload(
+            words=words, state_snap=state_snap, turn_id="bench-turn"
+        )
+        return payload.model_dump_json()
 
     serialized = benchmark(run)
     assert len(serialized) > 0
@@ -305,55 +303,86 @@ def test_conversation_serialization_benchmark(benchmark):
 
 @pytest.mark.benchmark
 def test_decision_tree_walk_benchmark(benchmark):
-    """Profiles evaluating behavior tree conditions and scoring priority pathways."""
+    """Profiles DecisionService._score_goals_maut -- the real Multi-Attribute
+    Utility Theory scoring that picks among ENGAGE/COMFORT/INFORM/TEASE/
+    PROTECT, not a `sorted()` over an unrelated hardcoded priority list."""
+    from app.cognitive.decision import GOALS, DecisionService
+
+    decision_service = DecisionService(llm_service=None, memory_store=None)
+    appraisal = {
+        "relevance": 0.7,
+        "goal_congruence": 0.4,
+        "novelty": 0.6,
+        "norm_alignment": 1.0,
+    }
+    state = {"mood": 0.2, "energy": 0.6, "trust": 0.5}
 
     def run():
-        pathways = [
-            {"node": "Appraise", "priority": 3, "state": "active"},
-            {"node": "Subconscious", "priority": 1, "state": "idle"},
-            {"node": "TTS", "priority": 4, "state": "active"},
-            {"node": "Arbitration", "priority": 2, "state": "pending"},
-        ]
-        # Walk and score
-        sorted_paths = sorted(
-            [p for p in pathways if p["state"] == "active"], key=lambda x: x["priority"]
-        )
-        return sorted_paths[0]["node"]
+        return decision_service._score_goals_maut(appraisal, state)
 
-    node = benchmark(run)
-    assert node == "Appraise"
+    goal = benchmark(run)
+    assert goal in GOALS
 
 
 @pytest.mark.benchmark
 def test_pipeline_step_dispatch_benchmark(benchmark):
-    """Profiles sequential pipeline dispatching and step routing inside the core pipeline."""
-    steps = ["appraisal", "decision", "action", "telemetry"] * 5
+    """Profiles CognitivePipeline.execute()'s real dispatch/extraction stage
+    for a below-threshold speculative (VAP) signal -- the early-exit branch
+    the real pipeline takes many times per second during live speech --
+    instead of a loop of unrelated f-string formatting that never calls into
+    the pipeline at all."""
+    import asyncio
+
+    from app.cognitive.core import CognitiveService
+
+    service = CognitiveService(llm_service=None, memory_store=None, graph_db=None)
+    raw_event = {
+        "event_type": "VAP_SIGNAL",
+        "is_partial": True,
+        "vap_probability": 0.1,
+    }
 
     def run():
-        results = []
-        for step in steps:
-            results.append(f"DISPATCHED:{step}")
-        return results
+        async def _drain():
+            return [chunk async for chunk in service.pipeline.execute(raw_event)]
 
-    res = benchmark(run)
-    assert len(res) == 20
+        return asyncio.run(_drain())
+
+    chunks = benchmark(run)
+    assert chunks == []
 
 
 @pytest.mark.benchmark
 def test_nats_metadata_serialization_benchmark(benchmark):
-    """Profiles compiling NATS message wrappers with timestamp metadata."""
+    """Profiles BaseAgent.publish()'s real metadata/hop-tracking wrapper
+    construction and orjson serialization (JetStream transport mocked out),
+    not a `json.dumps` on a dict shaped by hand to merely look similar."""
+    import asyncio
+
+    from app.agents.base import BaseAgent
+
+    sent: dict[str, bytes] = {}
+
+    class _NoopJS:
+        async def publish(self, subject, payload, timeout=None, headers=None):
+            sent["payload"] = payload
+
+    agent = BaseAgent(name="metadata_serialization_bench_agent")
+    agent.js = _NoopJS()
     payload = {
         "text": "Streaming reply.",
         "session_id": "8e36780c-a9fe-443b-a212-001a18bc009b",
     }
 
     def run():
-        # Inject metadata
-        payload["latency_metadata"] = {"start_time": time.time()}
-        return json.dumps(payload)
+        asyncio.run(agent.publish("chat.output", dict(payload)))
+        return sent["payload"]
 
-    wrapper = benchmark(run)
-    assert "latency_metadata" in wrapper
+    try:
+        wrapper = benchmark(run)
+        assert b"latency_metadata" in wrapper
+    finally:
+        agent._metrics.shutdown()
 
 
 @pytest.mark.benchmark
@@ -378,37 +407,67 @@ def test_hybrid_segmenter_benchmark(benchmark):
 
 @pytest.mark.benchmark
 def test_stt_payload_parsing_benchmark(benchmark):
-    """Profiles parsing and validating raw STT payload data."""
-    raw_payload = json.dumps(
-        {
-            "text": "This is a simulated speech to text transcription.",
-            "is_final": True,
-            "is_partial": False,
-            "confidence": 0.98,
-            "language": "en",
-        }
-    ).encode("utf-8")
+    """Profiles CognitiveService._on_audio_perception -- the real handler for
+    `audio.perception` events off the STT fast path (payload shape matches
+    the AudioPerception contract), not a bare `json.loads` on a shape no
+    production code actually receives."""
+    import asyncio
+
+    from app.cognitive.core import CognitiveService
+
+    service = CognitiveService(llm_service=None, memory_store=None, graph_db=None)
+    # Pin the rate-limited persistence gate as "just persisted" so the whole
+    # benchmark run (well under its 2s default interval) never takes the real
+    # DB-write side effect -- a deterministic setup choice, not a stubbed-out
+    # formula.
+    service.state._last_sensory_persist = time.time()
+
+    payload = {
+        "text": "That's really funny!",
+        "intent": "REACT",
+        "confidence": 0.9,
+        "metadata": {
+            "confidence": 0.9,
+            "emotional_bias": 0.4,
+            "events": ["Laughter"],
+        },
+    }
 
     def run():
-        parsed = json.loads(raw_payload.decode("utf-8"))
-        return parsed["text"]
+        # Reset to a known baseline each iteration so the assertion below
+        # can tell a real mood blend from a no-op -- 0.0 <= mood <= 1.0 would
+        # pass even if the handler never touched state at all.
+        service.state.current_state.mood = 0.0
+        asyncio.run(service._on_audio_perception(dict(payload)))
+        return service.state.current_state.mood
 
-    text = benchmark(run)
-    assert text == "This is a simulated speech to text transcription."
+    mood = benchmark(run)
+    assert mood > 0.0, (
+        "a positive emotional_bias from a 0.0 baseline must blend mood "
+        "upward -- an unchanged 0.0 means the handler did not run"
+    )
 
 
 @pytest.mark.benchmark
 def test_vision_frame_encode_benchmark(benchmark):
-    """Profiles simulating basic visual frame compression overhead."""
-    # Simulate a small dummy byte array to prevent JSON serialization hangs
-    raw_bytes = b"\x00\xff\x80" * 1024
+    """Profiles VisualAppraisalService._compute_visual_vector -- the real
+    per-frame downsample-to-vector conversion used for habituation gating
+    (OpenCV resize when available, SHA-256-derived fallback otherwise), not
+    a `len(raw_bytes) > 100` structural check that measures nothing about
+    encoding at all."""
+    import base64
+
+    from app.vision.appraisal import VisualAppraisalService
+
+    service = VisualAppraisalService(ollama_client=None)
+    frame_b64 = base64.b64encode(b"\x00\xff\x80" * 1024).decode("ascii")
 
     def run():
-        # Simulate an ultra-fast structural validation
-        return len(raw_bytes) > 100
+        return service._compute_visual_vector(frame_b64)
 
-    valid = benchmark(run)
-    assert valid is True
+    vector = benchmark(run)
+    assert len(vector) == 256
+    assert all(0.0 <= v <= 1.0 for v in vector)
 
 
 @pytest.mark.benchmark
