@@ -290,3 +290,80 @@ async def test_apply_external_state_preserves_fields_missing_from_broadcast(
 
     assert state_service.current_state.dominance == 0.73
     assert state_service.current_state.attachment == 0.44
+
+
+@pytest.mark.asyncio
+async def test_a_system_tick_does_not_let_an_affect_write_land_mid_decay(
+    state_service,
+):
+    """P2-14 (M2-A1): `handle_system_tick` mutated fatigue, mood, energy,
+    dominance and all three trust fields outside `_state_lock`, while every
+    other mutation path in `StateService` held it.
+
+    The tick arrives on a NATS callback, so it genuinely runs concurrently with
+    the paths that do take the lock -- a fire-and-forget System-2 appraisal
+    (finding A2), or an endocrine release. Unlocked, a release can slip in
+    between the tick's decay of `mood`/`energy` and the end of the tick, and
+    the endocrine layer makes that worse than an ordinary race: a burst peak is
+    measured *relative to the tonic floor*, and the tonic floor is a pure
+    function of exactly the valence and arousal this method is rewriting. The
+    burst then records a peak above a floor that never existed.
+
+    Asserted as ordering rather than as "was the lock acquired", because the
+    invariant is that no other affect writer observes the tick half-applied --
+    a spy on `acquire` would still pass if the lock were taken around only part
+    of the body.
+    """
+    order: list[str] = []
+
+    async def slow_persist():
+        # Stands in for the real persist, which is `await`ed inside the tick
+        # and is therefore the point another task can interleave at.
+        order.append("tick-persist-start")
+        await asyncio.sleep(0.05)
+        order.append("tick-persist-end")
+
+    state_service.persist_state = slow_persist
+
+    async def competing_release():
+        # Late enough that the tick is already inside its persist await.
+        await asyncio.sleep(0.01)
+        await state_service.release_dopamine(0.5)
+        order.append("release-done")
+
+    await asyncio.gather(
+        state_service.handle_system_tick(
+            {"timestamp": 123456789.0, "interval": 36000}
+        ),
+        competing_release(),
+    )
+
+    # The release must be serialized *after* the whole tick. Unlocked, it
+    # completes during the tick's persist await and this reads
+    # ["tick-persist-start", "release-done", "tick-persist-end"].
+    assert order == ["tick-persist-start", "tick-persist-end", "release-done"]
+
+
+@pytest.mark.asyncio
+async def test_the_tick_can_still_persist_while_holding_the_state_lock(
+    state_service,
+):
+    """The fix wraps the tick body in `_state_lock` and keeps
+    `await self.persist_state()` inside it. That is only safe because
+    `persist_state` serializes on `_persist_lock`, which is deliberately a
+    different lock -- callers reach it already holding the state lock, and
+    `asyncio.Lock` is not reentrant, so collapsing the two would deadlock the
+    heartbeat rather than fail loudly.
+
+    This would hang, not fail, if that separation were ever undone, so it is
+    given an explicit timeout: a hung test that reports as a timeout names the
+    defect, where a hung suite just looks like CI wedged.
+    """
+    await asyncio.wait_for(
+        state_service.handle_system_tick(
+            {"timestamp": 123456789.0, "interval": 3600}
+        ),
+        timeout=5.0,
+    )
+
+    assert state_service._state_lock.locked() is False

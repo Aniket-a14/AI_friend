@@ -8556,3 +8556,68 @@ stream options separately.
   `hardware-and-deployment-roadmap`).
 - Stage 5's remaining parts -- P2-14's tick lock, P2-8's noise-floor latch,
   P2-2's outbound ack, and the two documentation leftovers -- next.
+
+## 2026-08-23 -- Stage 5 Part 1 -- P2-14/M2-A1: the system tick was mutating
+affect outside `_state_lock`, one method below the docstring explaining why
+that is not allowed
+
+`CLAUDE.md` states the invariant without qualification: `StateService` owns
+**all** mutation behind `self._state_lock`, and bypassing it reintroduces
+finding A2. `handle_system_tick` did not hold it. It mutated `fatigue`,
+`mood`, `energy`, `dominance` and all three trust fields unlocked, on a NATS
+callback, i.e. genuinely concurrently with the paths that do take the lock.
+
+**The placement is the finding.** `release_cortisol` and `release_dopamine` sit
+*immediately above* this method and carry careful docstrings about exactly this
+hazard -- A2 by name, the non-reentrancy of `asyncio.Lock`, and the fact that a
+burst peak is measured relative to the tonic floor so an unlocked release "can
+measure its peak against a floor that no longer exists". `handle_system_tick`
+is the method that rewrites that floor: the tonic terms are pure functions of
+valence and arousal, which is what the ALMA decay here recomputes. So the
+unlocked path was not some distant corner -- it was the other half of the
+hazard the adjacent docstring describes. This is the audit's own root cause
+verbatim ("the lock discipline is genuinely careful everywhere it was thought
+about; the tick path was not thought about").
+
+**Fix.** Wrapped the body in `async with self._state_lock:`, matching every
+other mutation path. `await self.persist_state()` stays *inside* the lock,
+which is correct and not incidental: `persist_state` serializes on
+`_persist_lock`, deliberately a different lock, precisely because callers reach
+it already holding the state lock. Verified before wrapping that
+`_enforce_bounds` and `_update_fatigue_python` are synchronous and take no lock
+(0 references each), so there is no reentrancy path.
+
+**Tests, mutation-tested.**
+`test_a_system_tick_does_not_let_an_affect_write_land_mid_decay` asserts
+*ordering*, not "was the lock acquired": a competing `release_dopamine` fired
+while the tick is inside its persist await must complete strictly after the
+whole tick. Unlocked it completes in the middle, and the recorded order becomes
+`[persist-start, release-done, persist-end]`. Chosen over the
+`_state_lock.acquire` spy already in this file (used by
+`test_apply_external_state_holds_the_state_lock`) because that shape still
+passes if the lock is taken around only *part* of the body, which is the more
+likely future regression. Mutation: unwrapped the body, re-dedented, test
+failed; reverted. The second test pins the `_persist_lock`/`_state_lock`
+separation and carries an explicit `asyncio.wait_for` timeout, because
+collapsing the two would **hang** rather than fail -- a timeout names the
+defect where a wedged suite does not.
+
+**Files:** `app/state/agent_state.py`, `tests/test_state.py`.
+
+**Verified.** Full backend suite 1039/1039 (1037 baseline + 2 new), `ruff
+check .` clean.
+
+**NOT done -- P2-14's other three findings, all deliberately left filed:**
+- **M1-A5** (`state.update` published once per LLM chunk) **does not reproduce
+  as filed.** `pipeline.py:254` and `:287` yield it twice per *turn* -- once
+  after the stage-5 state update, once after post-decision ToM -- not per
+  chunk. Either it was fixed by earlier work or the finding was mis-read at
+  audit time; either way it needs re-sizing before it needs fixing, and
+  "amplification" is the wrong frame for two yields a turn.
+- **M1-A14** (brain_agent subscribes to `audio.stop` at `brain_agent.py:132`
+  and publishes it at `:290`) is real, but it overlaps #190's interruption
+  arbiter directly and should be re-read against that work rather than fixed
+  blind.
+- **M2-A3** (`update_from_event` unlocked) -- dead in production.
+- Stage 5's remaining parts -- P2-8's noise-floor latch, P2-2's outbound ack,
+  and the two documentation leftovers -- next.
