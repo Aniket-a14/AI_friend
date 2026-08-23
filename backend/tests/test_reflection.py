@@ -25,11 +25,15 @@ async def test_fact_consolidation(reflection_service, mock_llm_service, mock_gra
     await reflection_service._consolidate(episodes)
 
     # Updated assertion to handle dynamic properties (extracted_at, confidence).
-    # M4: "LOVES" canonicalizes to "LIKES" so it doesn't fragment the graph
-    # from "LIKES"/"ENJOYS"/"PREFERS" edges extracted in other reflection passes.
+    # P3-11: canonicalization (LOVES -> LIKES) now happens inside
+    # GraphDB.consolidate_relationship itself (see test_regressions.py's
+    # test_consolidate_relationship_canonicalizes_synonyms), not in
+    # ReflectionService -- mock_graph_db stands in for GraphDB here, so it
+    # never runs that real code and this only confirms the safety-normalized
+    # ("LOVES", uppercased) relation is what gets passed downstream.
     mock_graph_db.create_triplet.assert_called_with(
         "User",
-        "LIKES",
+        "LOVES",
         "Coding",
         properties=ANY,
         subject_label="Entity",
@@ -120,32 +124,31 @@ async def test_repeated_fact_is_reinforced_not_skipped(
 
 
 @pytest.mark.asyncio
-async def test_synonym_relations_are_canonicalized_before_storage(
-    reflection_service, mock_llm_service, mock_graph_db
+async def test_unsafe_relation_is_skipped_and_logged_before_reaching_the_graph(
+    reflection_service, mock_llm_service, mock_graph_db, caplog
 ):
-    """M4: the extraction prompt leaves "relation" free-text, so the LLM's
-    exact word choice becomes a distinct Cypher relationship type. Without
-    canonicalization, "ENJOYS" and "LIKES" from separate reflection passes
-    create two parallel edges between the same two nodes instead of one edge
-    whose weight grows - fragmenting the graph on wording alone.
+    """The pre-flight `GraphDB._safe_relation` check in `_consolidate` exists
+    so an unsafe relation string is skipped-and-logged here, rather than
+    raising ValueError from deep inside consolidate_relationship with no
+    context about which extracted fact caused it. P3-11 moved
+    canonicalization (LIKES/ENJOYS/LOVES -> one type) to
+    GraphDB.consolidate_relationship itself -- see test_regressions.py's
+    test_consolidate_relationship_canonicalizes_synonyms for that guarantee;
+    this test covers what's still this layer's job: rejecting an unsafe
+    relation before any graph write is attempted.
     """
     mock_llm_service.generate.return_value = (
-        '[{"subject": "User", "relation": "ENJOYS", "object": "Tea", '
-        '"confidence": 0.9}]'
+        '[{"subject": "User", "relation": "LIKES`) DETACH DELETE n //", '
+        '"object": "Tea", "confidence": 0.9}]'
     )
 
-    await reflection_service._consolidate(
-        [{"content": "I really enjoy tea", "response": "Noted."}]
-    )
+    with caplog.at_level("WARNING"):
+        await reflection_service._consolidate(
+            [{"content": "I really enjoy tea", "response": "Noted."}]
+        )
 
-    mock_graph_db.create_triplet.assert_called_once_with(
-        "User",
-        "LIKES",
-        "Tea",
-        properties=ANY,
-        subject_label="Entity",
-        target_label="Entity",
-    )
+    mock_graph_db.create_triplet.assert_not_called()
+    assert any("unsafe graph fact" in r.getMessage().lower() for r in caplog.records)
 
 
 def test_json_extraction_robustness(reflection_service):

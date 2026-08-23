@@ -55,6 +55,23 @@ def _ln(x: float) -> float:
     return _cached_ln(round(x, 3))
 
 
+def _quantize(value: float, step: float) -> float:
+    """Round `value` to the nearest multiple of `step`. For cache keys where
+    near-identical floats should collide, not for anything that gets scored."""
+    return round(value / step) * step
+
+
+def pool_is_sqlite(pool) -> bool:
+    """Whether `pool` is backed by a stdlib sqlite3 connection under the hood
+    (SQLitePool, or a test double shaped like it), rather than real
+    asyncpg/Postgres. Extracted from `MemoryStore.is_sqlite` (see its
+    docstring for the A5 history) so other dual-backend callers -- e.g.
+    `MentalLexicon` -- can check without needing a MemoryStore instance.
+    """
+    conn = getattr(pool, "connection", None)
+    return isinstance(getattr(conn, "conn", None), sqlite3.Connection)
+
+
 def _get_stem(word: str) -> str:
     w = word.lower()
     if w.endswith("ies") and len(w) > 4:
@@ -107,6 +124,32 @@ ACTR_EMO_PROXIMITY_WEIGHT = 0.15  # bonus for small emotional distance
 ACTR_VALENCE_GAIN = 0.1  # similarity gain from congruent valence×arousal
 ACTR_STRESS_SUPPRESSION = 0.2  # similarity suppression under arousal×cortisol
 ACTR_EMO_DISTANCE_PENALTY = 0.5  # score penalty per unit emotional distance
+
+# P3-9: L1 cache key quantization. The cache key used to carry raw
+# current_valence/arousal/cortisol floats -- affect drifts continuously
+# (StateService blends it in small increments every tick), so two calls
+# milliseconds apart almost never share an exact float and the cache could
+# essentially never hit during a live conversation. The key only needs
+# "close enough to be the same context," not scoring precision, so it
+# rounds to a coarse bucket; the scoring math elsewhere still uses the raw
+# floats. L1_CACHE_TIME_BUCKET_S similarly rounds an explicitly-passed
+# current_time (production call sites never pass one -- it defaults to
+# None -- but a caller that did would otherwise get a guaranteed-unique key
+# on every call, since isoformat() carries microsecond precision).
+L1_CACHE_AFFECT_BUCKET = 0.05
+L1_CACHE_TIME_BUCKET_S = 5.0
+
+# P2-3 stretch: `MATCH (e:Entity) RETURN ...` (entity pre-linking in
+# add_memory, PPR graph-boost candidate gathering in search_memories) had no
+# LIMIT -- an unbounded full-graph scan on every write and every search,
+# growing without end as the graph does. Paired with GraphDB.decay_relationships
+# now also pruning entities orphaned by its own edge-prune, so a capped fetch
+# stays meaningful over time instead of the cap alone masking unbounded growth.
+# An order-of-magnitude safety bound, not a measured ceiling (see CLAUDE.md's
+# integrity rule on unmeasured constants) -- small/mid deployments never reach
+# it, so this is dormant now and only starts truncating results once the graph
+# is genuinely large.
+GRAPH_ENTITY_FETCH_LIMIT = 2000
 
 # Generic English stop words plus a few domain-generic conversational terms,
 # stripped from a query before it is used for lexical cue matching. Hoisted to
@@ -280,6 +323,17 @@ class MemoryStore:
         self._db_stop_words = set()
         self._last_stop_words_update = 0.0
 
+        # P3-6: search_memories's outer except returns [] on any failure, the
+        # same shape a genuine "nothing relevant" result has -- callers can't
+        # tell a broken retrieval from an honest miss. The empty return stays
+        # (callers depend on it), but the last failure is recorded here so
+        # anything that cares (health checks, tests, future callers) can
+        # check it without changing the hot-path return contract. Cleared at
+        # the start of every search_memories call; a later successful call
+        # is the only thing that clears a stale failure.
+        self.last_search_error: str | None = None
+        self.last_search_error_at: float | None = None
+
         from .lexicon_store import MentalLexicon
         from .semantic_recall_store import SemanticRecallStore
 
@@ -308,8 +362,7 @@ class MemoryStore:
         the one thing both the production SQLitePool and its test doubles genuinely
         share) is a structural fact instead of a name-matching guess.
         """
-        conn = getattr(self.pool, "connection", None)
-        return isinstance(getattr(conn, "conn", None), sqlite3.Connection)
+        return pool_is_sqlite(self.pool)
 
     def _in_predicate(
         self, column: str, values: Sequence[Any], param_index: int = 1
@@ -811,7 +864,10 @@ class MemoryStore:
             if self.graph_db:
                 try:
                     entity_records = await self.graph_db.execute_query(
-                        "MATCH (e:Entity) RETURN e.name AS name", use_cache=True
+                        "MATCH (e:Entity) RETURN e.name AS name "
+                        "LIMIT $limit",
+                        {"limit": GRAPH_ENTITY_FETCH_LIMIT},
+                        use_cache=True,
                     )
                     entity_names = [r["name"] for r in entity_records]
                     content_lower = content.lower()
@@ -886,7 +942,12 @@ class MemoryStore:
                 if metadata:
                     metadata_qdrant["custom_metadata"] = orjson.dumps(metadata).decode()
 
-                self.qdrant_store.add_vector_memory(
+                # P3-13a: the three other add_vector_memory call sites in this
+                # file all wrap the Qdrant client's synchronous network I/O in
+                # asyncio.to_thread; this one didn't, blocking the event loop
+                # for the duration of every memory write.
+                await asyncio.to_thread(
+                    self.qdrant_store.add_vector_memory,
                     memory_id=memory_id,
                     vector=vector,
                     content=content,
@@ -1032,13 +1093,17 @@ class MemoryStore:
         candidates, entity_records, relation_records = await asyncio.gather(
             safe_qdrant_search(),
             self.graph_db.execute_query(
-                "MATCH (e:Entity) RETURN e.name AS name, e.description AS description",
+                "MATCH (e:Entity) RETURN e.name AS name, e.description AS description "
+                "LIMIT $limit",
+                {"limit": GRAPH_ENTITY_FETCH_LIMIT},
                 use_cache=True,
             )
             if self.graph_db
             else _dummy_list(),
             self.graph_db.execute_query(
-                "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target",
+                "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target "
+                "LIMIT $limit",
+                {"limit": GRAPH_ENTITY_FETCH_LIMIT},
                 use_cache=True,
             )
             if self.graph_db
@@ -2467,23 +2532,34 @@ class MemoryStore:
                 other silently narrows the search for anyone who wants the
                 counters left alone. Pass it explicitly to say which you mean.
         """
-        # L1 Cache lookup to bypass DB and math activation loops for active topics
+        self.last_search_error = None
+        self.last_search_error_at = None
+
+        # L1 Cache lookup to bypass DB and math activation loops for active topics.
+        # P3-9: valence/arousal/cortisol and current_time are quantized (see
+        # L1_CACHE_AFFECT_BUCKET / L1_CACHE_TIME_BUCKET_S above) -- this key is
+        # "close enough to be the same context," not the precise floats scoring
+        # uses below.
         cache_key = (
             query_text,
             wing,
             room,
             threshold,
             limit,
-            current_valence,
-            current_arousal,
-            current_cortisol,
+            _quantize(current_valence, L1_CACHE_AFFECT_BUCKET),
+            _quantize(current_arousal, L1_CACHE_AFFECT_BUCKET),
+            _quantize(current_cortisol, L1_CACHE_AFFECT_BUCKET),
             tuple(sorted(exclude_contents or [])),
             user_id,
             # Pronoun cues resolve in opposite directions depending on this flag
             # ("I"/"my" bind to the agent when self-reflecting, to the user
             # otherwise), so the two modes must not share a cache entry.
             is_self_reflection,
-            current_time.isoformat() if current_time is not None else None,
+            (
+                int(current_time.timestamp() // L1_CACHE_TIME_BUCKET_S)
+                if current_time is not None
+                else None
+            ),
         )
         now_ts = current_time.timestamp() if current_time is not None else time.time()
         if cache_key in self._l1_cache:
@@ -2703,6 +2779,11 @@ class MemoryStore:
 
             traceback.print_exc()
             logger.error(f"Memory search failed: {e}")
+            # P3-6: the empty return below is indistinguishable from a
+            # genuine "nothing relevant" result on its own -- record the
+            # failure so a caller that cares can tell the difference.
+            self.last_search_error = str(e)
+            self.last_search_error_at = time.time()
             return []
 
 

@@ -43,6 +43,7 @@ async def test_neo4j_relationship_decay():
         # Verify weight decay query was run
         decay_query_found = False
         prune_query_found = False
+        orphan_prune_query_found = False
         for query, params in queries_run:
             if "SET r.weight = coalesce(r.weight, 1.0) * $decay_factor" in query:
                 assert params["decay_factor"] == 0.90
@@ -53,9 +54,17 @@ async def test_neo4j_relationship_decay():
             ):
                 assert params["prune_threshold"] == 0.20
                 prune_query_found = True
+            # P2-3 stretch: an edge prune above can leave an :Entity node
+            # with no relationships in either direction. Without this,
+            # orphans accumulate forever -- never touched by edge decay, and
+            # still returned by the unbounded-until-now entity fetches used
+            # for pre-linking and PPR graph-boost scoring.
+            if "MATCH (e:Entity) WHERE NOT (e)--() DELETE e" in query:
+                orphan_prune_query_found = True
 
         assert decay_query_found, "Decay query not executed"
         assert prune_query_found, "Prune query not executed"
+        assert orphan_prune_query_found, "Orphaned-entity prune query not executed"
 
 
 # ----------------- Memory Store Habituation (PTSD Extinction) Tests -----------------

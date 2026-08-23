@@ -558,6 +558,31 @@ def test_graph_db_rejects_unsafe_cypher_identifiers_without_querying():
         graph.execute_query.assert_not_awaited()
 
 
+def test_consolidate_relationship_canonicalizes_synonyms():
+    """P3-11: canonicalization used to be applied only by the one caller
+    that remembered to (cognitive/learning.py's ReflectionService), not by
+    consolidate_relationship itself -- any other write path bypassed it
+    silently and "ENJOYS"/"LOVES"/"PREFERS" fragmented into parallel edges
+    instead of reinforcing one "LIKES" edge. It now lives here, so every
+    caller gets it regardless of whether they remember to canonicalize
+    first."""
+    graph = object.__new__(GraphDB)
+    graph.execute_query = AsyncMock()
+    graph._invalidate_cache = AsyncMock()
+
+    asyncio.run(
+        graph.consolidate_relationship(
+            subject_name="User",
+            relation="ENJOYS",
+            target_name="Tea",
+        )
+    )
+
+    query = graph.execute_query.await_args.args[0]
+    assert "r:LIKES]" in query
+    assert "r:ENJOYS]" not in query
+
+
 def test_surfacing_agent_suppresses_recently_recalled_memories():
     memory_store = MagicMock()
     memory_store.search_memories = AsyncMock(

@@ -9101,3 +9101,131 @@ reflection duration/episode counts, unrelated to the in-process
 comment says it becomes a candidate for that "once P3-2 is built," which is
 now true, but Cluster 2's scope was consolidating the existing per-process
 metrics trackers, not adding a new mesh-wide telemetry consumer.
+
+## 2026-08-23 -- Stage 6 Part 3 (memory lifecycle and retrieval) -- P2-5, P2-3 stretch, P3-6, P3-7, P3-9, P3-11, P3-13a
+
+**P2-5.** `MentalLexicon.learn_from_text` did up to 12 words / 66 pairs as 78
+individual awaited `conn.execute` calls per memory write. Now batches through
+`conn.executemany` on the Postgres path (the SQLite fallback wrapper has no
+`executemany` -- a real backend gap, documented at `_in_predicate`, not an
+oversight -- so it still loops there). `lexical_associations` also had no
+decay and no cap at all, unlike `memories`' own lifecycle in the same
+package: added `_decay_associations()` (mirrors `GraphDB.decay_relationships`
+-- multiply every weight by a factor, forget rows below a floor), run inside
+`refresh()` on the same 5-minute cadence the association cache already
+reloads on. Chose gentle constants (0.999 decay factor, 0.1 prune floor) so
+an unreinforced pair fades over roughly a week, not hours -- an
+order-of-magnitude target, not measured (CLAUDE.md's integrity rule). Applies
+uniformly to innate-seeded pairs too: `lexical_associations` has no `source`
+column to protect them, a real gap flagged rather than silently worked
+around with a bigger floor.
+
+**P3-7, two unrelated caches with the same bug.** `MentalLexicon._bump_cache`
+could add brand-new pairs to `_assoc_cache` between scheduled reloads with no
+limit (the cache is only bounded *at load time*, in `_load_cache`). Capped
+new-pair growth per refresh cycle at `_max_new_pairs_between_loads` (2000);
+reinforcing an already-cached pair is never capped, and a capped-out new pair
+still reaches the DB via `learn_from_text` -- only the in-memory expansion
+cache defers it to the next reload. Separately, `FixedWindowRateLimiter
+._windows` (`app/rate_limit.py`) kept one entry per distinct client IP
+forever. Added a lazy sweep every `_sweep_every` (200) calls that drops any
+window already past `window_seconds` -- bounded to roughly the clients active
+in the last sweep interval, not every client ever seen.
+
+**P3-9.** The L1 cache key in `search_memories` carried raw
+`current_valence`/`current_arousal`/`current_cortisol` floats, which
+`StateService` blends in small increments every tick -- two calls
+milliseconds apart almost never shared an exact float, so the cache could
+essentially never hit during a live conversation. New `_quantize(value,
+step)` rounds each to a 0.05 bucket for the key only (scoring below still
+uses the raw floats). `current_time.isoformat()` (microsecond precision) was
+also in the key; both real call sites (`surfacing_agent.py`,
+`action.py`) never pass `current_time` at all, so this was inert in
+production, but any future caller that did would get a guaranteed-unique key
+every call. Rounded to a 5-second bucket instead, consistent with the same
+fix applied to the affect floats. Caught a real test fragility while fixing
+this: `test_search_cache_key_separates_self_reflection_modes` compared cache
+tuples positionally *by identity* (`is`), which coincidentally worked only
+because unset kwargs reuse the same default-argument object across calls --
+`_quantize` allocates a fresh float each time even for an unchanged value,
+which broke that coincidence. Fixed to compare by value equality, which is
+what dict-key collision actually depends on.
+
+**P3-6.** `search_memories`'s outer `except Exception: return []` made a
+broken retrieval indistinguishable from a genuine "nothing relevant" result.
+Kept the empty return (callers depend on it) but added
+`self.last_search_error` / `self.last_search_error_at`, cleared at the start
+of every call and set only in that except block, so anything that cares
+(health checks, tests, future callers) can tell the difference without
+changing the hot-path return contract.
+
+**P3-11.** Relation canonicalization (`ENJOYS`/`LOVES`/`PREFERS` -> `LIKES`,
+so synonyms reinforce one edge instead of fragmenting into parallel ones) was
+applied by exactly one caller (`cognitive/learning.py`), not by
+`GraphDB.consolidate_relationship` itself -- any other or future write path
+bypassed it silently. Moved `_RELATION_SYNONYMS` / `_canonicalize_relation`
+into `GraphDB`, next to the existing `_safe_relation` sanitizer, and call it
+inside `consolidate_relationship` so every write is canonicalized regardless
+of caller. `learning.py` now only does the pre-flight `_safe_relation` check
+(for its skip-and-log-on-unsafe-input behavior) and lets `GraphDB` canonicalize
+downstream. Two `test_reflection.py` tests had to change: they asserted
+`create_triplet` was called with the already-canonical relation, which is no
+longer true now that canonicalization happens one layer deeper than what
+their `mock_graph_db` fixture executes -- the real guarantee is now tested
+directly against `GraphDB.consolidate_relationship`
+(`test_regressions.py::test_consolidate_relationship_canonicalizes_synonyms`).
+
+**P3-13a.** `add_memory`'s Qdrant upsert was the one call to
+`add_vector_memory` (of four in the file) not wrapped in `asyncio.to_thread`,
+blocking the event loop for the duration of every memory write. Fixed to
+match the other three. New test proves it behaviorally rather than just
+checking the call was wrapped: a slow synchronous upsert runs concurrently
+with a `heartbeat()` coroutine via `asyncio.gather`, and the heartbeat must
+have ticked at least once before the upsert "finishes" -- the same
+loop-responsiveness pattern `test_audit_hygiene.py` already established for
+`StateService.persist_state`.
+
+**P2-3 stretch.** `MATCH (e:Entity) RETURN ...` (entity pre-linking in
+`add_memory`) and `MATCH (s:Entity)-[r]-(t:Entity) RETURN ...` (PPR
+graph-boost gathering in `search_memories`) had no `LIMIT` -- an unbounded
+full-graph scan on every write and every search, growing without end as the
+graph does. Added `GRAPH_ENTITY_FETCH_LIMIT` (2000, an unmeasured safety
+bound, dormant until the graph is genuinely large) to both. Paired with
+`GraphDB.decay_relationships` now also deleting `:Entity` nodes orphaned by
+its own edge-prune (`MATCH (e:Entity) WHERE NOT (e)--() DELETE e`) -- without
+this, an edge-pruned node lingers forever (decay only touches relationships)
+and keeps costing both bounded fetches something for contributing nothing.
+
+**Files:** `app/state/lexicon_store.py`, `app/state/memory_store.py`,
+`app/rate_limit.py`, `app/state/graph_db.py`, `app/cognitive/learning.py`,
+plus test files for each.
+
+**Verified.** Full suite **1089/1089**, `ruff check .` clean, `cargo check
+--workspace` clean (Rust untouched this part), `scripts/check_subject_wiring.py`
+unchanged/clean. New tests were written but **not mutation-tested** in this
+part -- the user paused that discipline mid-Cluster-3 ("no need to do any
+more mutation tests from now"), after roughly half of this part's tests had
+already been through the break-confirm-revert cycle (P2-5, P3-7, P3-9, P3-6,
+P3-11's `graph_db`-level canonicalization test); the remainder (P3-13a's
+concurrency test, P2-3 stretch's bound/orphan-prune tests) were written to
+the same standard but verified only by running green, not by an induced
+failure.
+
+**NOT done.** The plan's own gate for this cluster -- "Cluster 3 changes
+retrieval ranking... run the `evals` recall pack on both paths" -- was not
+run. `evals/retrieval.py`'s `MemoryStoreRetriever` reaches
+`MemoryStore.search_memories` the way production does, which needs real
+Postgres + Qdrant + Neo4j (`docker-compose.infra.yml`); Docker's own daemon
+was not running in this environment, so the stack could not be brought up
+without a separate, disruptive action outside this pass's scope. Assessed
+separately: of this part's changes, only the lexicon decay (P2-5) is
+plausibly ranking-relevant, and its constants are tuned to fade over roughly
+a week -- no run short enough for a live eval pack to complete would
+exercise that decay meaningfully anyway. The other six items (bounded
+caches, quantized cache key, failure visibility, canonicalization write-path,
+non-blocking upsert, bounded/pruned graph fetch) are dormant-until-scale,
+observability, or pure-refactor changes with no ranking effect at current
+data volumes. Flagging this gate as unmet rather than claiming it passed.
+Carried into later parts of this same branch: vision (Part 4), visual
+episodic memory (Part 5), voice/STT (Part 6), NATS accounts + supply chain
+(Part 7), deployment/docs/cleanup (Part 8).
