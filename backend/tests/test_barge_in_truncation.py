@@ -24,6 +24,12 @@ def _agent(progress=None, response=REPLY):
     agent.conversation_store = SimpleNamespace(
         update_last_assistant_message=AsyncMock()
     )
+    # P1-4: a confirmed stop now also cancels the interrupted turn's
+    # generation task (`_on_audio_stop` -> `_cancel_active_generation`),
+    # which reads this state -- set here the same way BrainAgent.__init__
+    # does, since these tests build the agent via object.__new__.
+    agent._active_generation_task = None
+    agent._generation_lock = asyncio.Lock()
     return agent
 
 
@@ -37,6 +43,31 @@ def _stop(speculative=False):
         "utterance_id": "u1",
         "turn_id": None,
     }
+
+
+def test_a_confirmed_stop_cancels_the_interrupted_turns_generation():
+    """P1-4: this is now the only place a confirmed interrupt cancels
+    generation -- the second, unscoped classifier that used to do it inline
+    on every matching partial (`InterruptionClassifier` in brain_agent.py)
+    is gone; decision.py's `is_speculative_stop_confirmed` is the sole
+    arbiter, and this handler is what turns its confirmation into action."""
+    agent = _agent(progress=None)
+    agent._cancel_active_generation = AsyncMock()
+
+    asyncio.run(agent._on_audio_stop(_stop()))
+
+    agent._cancel_active_generation.assert_awaited_once()
+
+
+def test_a_speculative_stop_does_not_cancel_generation():
+    """Nothing has been confirmed yet -- a duck must not cancel a turn that
+    may turn out not to have been interrupted at all."""
+    agent = _agent(progress=None)
+    agent._cancel_active_generation = AsyncMock()
+
+    asyncio.run(agent._on_audio_stop(_stop(speculative=True)))
+
+    agent._cancel_active_generation.assert_not_awaited()
 
 
 def test_real_playback_progress_still_truncates_where_it_says():

@@ -1338,6 +1338,13 @@ fn build_latency_metadata(event: &ChatOutput) -> serde_json::Value {
     if let Some(obj) = meta.as_object_mut() {
         obj.entry("start_time").or_insert(json!(now));
         obj.entry("source").or_insert(json!("voice_agent"));
+        // P1-3: transport_agent has no other way to know which turn a queued
+        // PCM chunk belongs to, and needs that to decide whether a confirmed
+        // audio.stop for an *older* turn should flush a queue that already
+        // holds the *next* one. Always the current event's turn_id, not
+        // inherited -- a carried-over `latency_metadata` blob from upstream
+        // must not leave a stale value here.
+        obj.insert("turn_id".to_string(), json!(event.turn_id));
         let hops = obj.entry("hops").or_insert(json!([]));
         if let Some(hops) = hops.as_array_mut() {
             hops.push(json!({
@@ -1387,6 +1394,38 @@ mod tests {
 
         assert_eq!(hops.last().unwrap()["agent"], "voice_agent");
         assert_eq!(hops.last().unwrap()["subject"], topics::AUDIO_STREAM);
+    }
+
+    /// P1-3: transport_agent scopes a confirmed audio.stop to the turn it
+    /// names by reading this field back out of the X-Latency-Meta header --
+    /// see `_on_nats_audio` / `_on_audio_stop` in transport_agent.py.
+    #[test]
+    fn latency_metadata_carries_the_current_events_turn_id() {
+        let mut event: ChatOutput = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/chat_output_chunk.json"
+        ))
+        .unwrap();
+        event.turn_id = Some("turn-abc".to_string());
+        let meta = build_latency_metadata(&event);
+        assert_eq!(meta["turn_id"], "turn-abc");
+    }
+
+    #[test]
+    fn latency_metadata_overwrites_a_stale_inherited_turn_id() {
+        let mut event: ChatOutput = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/chat_output_chunk.json"
+        ))
+        .unwrap();
+        event.turn_id = Some("turn-new".to_string());
+        event.latency_metadata = Some(contracts::LatencyMetadata {
+            start_time: 0.0,
+            hops: vec![],
+            source: "stt_agent".to_string(),
+            channels: None,
+            sample_rate: None,
+        });
+        let meta = build_latency_metadata(&event);
+        assert_eq!(meta["turn_id"], "turn-new");
     }
 
     #[test]

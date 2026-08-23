@@ -48,6 +48,17 @@ class TransportAgent(BaseAgent):
         )
         self.audio_worker_task = None
         self.dropped_audio_frames = 0
+        # Set for real once `start()` publishes the initial track; needed to
+        # unpublish it by sid when P1-3's flush rotates to a fresh one.
+        self.audio_publication = None
+        # P1-3: which turn's PCM is currently flowing through audio.stream,
+        # read off the X-Latency-Meta header voice-agent now stamps with
+        # `event.turn_id` (see `build_latency_metadata` in voice-agent). Mirrors
+        # voice-agent's own `stop_applies_to_active_turn`: an unscoped stop
+        # (turn_id=None) always applies; a named one must match, so a stop
+        # delayed in the mesh for a turn that has already finished cannot flush
+        # audio for the turn speaking now.
+        self._active_turn_id = None
 
         # #173: mirrors the outbound queue above, for the opposite direction.
         # `_process_remote_audio` used to `await self.publish(...)` directly
@@ -110,6 +121,7 @@ class TransportAgent(BaseAgent):
 
         # 2. Publish Audio Track
         publication = await self.room.local_participant.publish_track(self.audio_track)
+        self.audio_publication = publication
         logger.info(f"Published Audio Track: {publication.sid}")
 
         # Capture frames on a dedicated worker so NATS callback can return fast.
@@ -129,6 +141,15 @@ class TransportAgent(BaseAgent):
             pending_bytes_limit=268435456,
         )
         logger.info("Subscribed to NATS audio.stream. Outbound Bridge Active.")
+
+        # P1-3 (audit/ROADMAP.md): flush buffers 2->4 on a confirmed barge-in.
+        await self.subscribe(
+            "audio.stop",
+            callback=self._on_audio_stop,
+            durable=f"{self.name}_audio_stop_live",
+            deliver_policy="new",
+        )
+        logger.info("Subscribed to NATS audio.stop. Barge-in flush active.")
 
         # 4. Listen for Remote Tracks (Inbound - User Speech)
         self.room.on("track_subscribed", self._on_track_subscribed)
@@ -205,6 +226,12 @@ class TransportAgent(BaseAgent):
     async def _on_nats_audio(self, data, metadata: dict | None = None):
         """Convert NATS audio events to WebRTC frames for User."""
         try:
+            # P1-3: track which turn is currently flowing so a later
+            # audio.stop can tell whether it names this turn or a stale one.
+            turn_id = metadata.get("turn_id") if metadata else None
+            if turn_id:
+                self._active_turn_id = turn_id
+
             audio_bytes = b""
             sample_rate = self.output_sample_rate
             num_channels = self.output_channels
@@ -303,6 +330,88 @@ class TransportAgent(BaseAgent):
             except Exception as e:
                 logger.error(f"Transport playback worker error: {e}")
                 await asyncio.sleep(0.01)
+
+    async def _on_audio_stop(self, data: dict) -> None:
+        """P1-3 (audit/ROADMAP.md): flush audio already in flight on a
+        confirmed barge-in.
+
+        A speculative stop is only a duck (see decision.py's
+        `is_speculative_stop_confirmed`, the sole arbiter that ever confirms
+        one) -- nothing has been cancelled yet, so there is nothing here to
+        flush. `turn_id` scoping mirrors voice-agent's own
+        `stop_applies_to_active_turn`: unscoped (turn_id=None) always
+        applies; a named one must match what is currently flowing, so a stop
+        that arrives late for a turn that has already finished cannot flush
+        audio queued for the turn speaking now.
+        """
+        if data.get("speculative"):
+            return
+
+        stop_turn_id = data.get("turn_id")
+        if (
+            stop_turn_id is not None
+            and self._active_turn_id is not None
+            and stop_turn_id != self._active_turn_id
+        ):
+            logger.info(
+                "Ignoring AUDIO_STOP for turn %s; transport is currently playing %s.",
+                stop_turn_id,
+                self._active_turn_id,
+            )
+            return
+
+        await self._flush_downstream_audio()
+
+    async def _flush_downstream_audio(self) -> None:
+        """Discard queued PCM (buffer 3) and rotate the published LiveKit
+        track so audio already handed to its native, time-paced send buffer
+        (buffer 4) stops playing rather than draining out over however much
+        it holds.
+
+        Stage 3's measurement work (audit/ROADMAP.md measurement 1.1) found
+        buffer 4 has no public API to inspect or drain from here:
+        `capture_frame()` only acknowledges the frame reached the client's
+        buffer, and `wait_for_playout()` paces a *different*, unrelated wait
+        -- neither exposes or clears what is already queued natively.
+        `rtc.AudioSource`'s own default (`queue_size_ms=1000`) is the
+        code-level bound on how much that buffer can hold: up to a second of
+        stale audio, worst case, if nothing else is done about it.
+
+        Recreating the published track routes around that boundary instead
+        of reaching through it: the client stops receiving the *old* track
+        (and whatever was queued for it) the moment it is unpublished, and
+        only audio for the *new* track plays from here on. The two publishes
+        overlap deliberately -- the new track goes live before the old one
+        is torn down -- so this costs a brief SDP renegotiation, not a gap
+        in the output track.
+        """
+        drained = 0
+        while not self.audio_queue.empty():
+            try:
+                self.audio_queue.get_nowait()
+                self.audio_queue.task_done()
+                drained += 1
+            except asyncio.QueueEmpty:
+                break
+
+        new_source = rtc.AudioSource(self.output_sample_rate, self.output_channels)
+        new_track = rtc.LocalAudioTrack.create_audio_track("ai-voice", new_source)
+        new_publication = await self.room.local_participant.publish_track(new_track)
+
+        old_publication = self.audio_publication
+        self.audio_source = new_source
+        self.audio_track = new_track
+        self.audio_publication = new_publication
+
+        if old_publication is not None:
+            await self.room.local_participant.unpublish_track(old_publication.sid)
+
+        self._trace("buffer3_4_flush", drained_frames=drained)
+        logger.info(
+            "Flushed %d queued frame(s) and rotated the LiveKit audio track "
+            "after a confirmed barge-in.",
+            drained,
+        )
 
     async def stop(self):
         if self.audio_worker_task:

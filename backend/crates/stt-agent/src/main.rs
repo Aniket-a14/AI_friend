@@ -160,6 +160,15 @@ struct SttState {
     utterance_latency: Option<LatencyMetadata>,
     last_partial_at: f64,
     last_noise_publish: f64,
+    /// audit/ROADMAP.md P1-4: the keyword duck is a *hint*, not the arbiter --
+    /// the brain's `is_speculative_stop_confirmed` (decision.py) is the one
+    /// component allowed to turn it into a real abort. Partials are cumulative
+    /// re-transcriptions of the same utterance (P2-9), so a keyword that
+    /// appears once stays in every later partial; without this, each of those
+    /// re-published a fresh speculative `audio.stop`. Tracks which
+    /// `utterance_id` has already fired one, so a new one only fires when a
+    /// new utterance starts.
+    speculative_fired_for: Option<String>,
 }
 
 #[tokio::main]
@@ -184,6 +193,7 @@ async fn main() -> Result<()> {
         utterance_latency: None,
         last_partial_at: 0.0,
         last_noise_publish: 0.0,
+        speculative_fired_for: None,
     }));
 
     // Latest-wins slot for partials: if the fast model is still busy, a newer
@@ -377,7 +387,9 @@ async fn run_partial_job(
         return;
     }
 
-    if let Err(err) = publish_partial(jetstream, &perception, &job.utterance_id).await {
+    if let Err(err) =
+        publish_partial(jetstream, &perception, &job.utterance_id, Some(state)).await
+    {
         error!("stt-agent failed to publish perception: {err:#}");
     }
 }
@@ -385,6 +397,19 @@ async fn run_partial_job(
 /// Whether `utterance_id` is still the utterance the endpointer has open.
 async fn is_current_utterance(state: &Arc<Mutex<SttState>>, utterance_id: &str) -> bool {
     state.lock().await.utterance_id == utterance_id
+}
+
+/// Claim the one speculative-duck fire allowed per utterance. Returns `true`
+/// (and records the claim) the first time it is called for `utterance_id`;
+/// every later call for the same utterance returns `false`.
+async fn claim_speculative_fire(state: &Arc<Mutex<SttState>>, utterance_id: &str) -> bool {
+    let mut guard = state.lock().await;
+    if guard.speculative_fired_for.as_deref() == Some(utterance_id) {
+        false
+    } else {
+        guard.speculative_fired_for = Some(utterance_id.to_string());
+        true
+    }
 }
 
 /// Choose the fast-path model: SenseVoice when available, Whisper otherwise.
@@ -460,7 +485,7 @@ fn spawn_mock_workers(
                 text: text.clone(),
                 ..Default::default()
             };
-            if let Err(err) = publish_partial(&js, &perception, &job.utterance_id).await {
+            if let Err(err) = publish_partial(&js, &perception, &job.utterance_id, None).await {
                 error!("mock partial publish failed: {err:#}");
             }
         }
@@ -540,6 +565,7 @@ async fn publish_partial(
     jetstream: &async_nats::jetstream::Context,
     heard: &sensevoice::Perception,
     utterance_id: &str,
+    state: Option<&Arc<Mutex<SttState>>>,
 ) -> Result<()> {
     let (perception, speculative) = build_partial_perception(heard, utterance_id);
 
@@ -552,23 +578,35 @@ async fn publish_partial(
         .await?;
 
     if let Some(spec) = speculative {
-        let stop = AudioStop {
-            interrupt: true,
-            speculative: true,
-            reason: None,
-            command_text: None,
-            intent: Some(spec.name.clone()),
-            intent_type: "VOICE_INTERRUPTION".to_string(),
-            keywords: spec.keywords.clone(),
-            confidence: spec.confidence,
-            perception_text: Some(spec.text.clone()),
-            utterance_id: spec.utterance_id.clone(),
-            turn_id: None,
+        // P1-4: only ever a duck, never the abort -- decision.py's
+        // `is_speculative_stop_confirmed` is the sole component allowed to
+        // turn this into a real interruption. Scoped to fire once per
+        // utterance (see `speculative_fired_for`); mock mode has no `state`
+        // and always fires, which is fine -- it never drives production
+        // barge-in.
+        let should_fire = match state {
+            Some(state) => claim_speculative_fire(state, utterance_id).await,
+            None => true,
         };
-        jetstream
-            .publish(topics::AUDIO_STOP, Bytes::from(serde_json::to_vec(&stop)?))
-            .await?
-            .await?;
+        if should_fire {
+            let stop = AudioStop {
+                interrupt: true,
+                speculative: true,
+                reason: None,
+                command_text: None,
+                intent: Some(spec.name.clone()),
+                intent_type: "VOICE_INTERRUPTION".to_string(),
+                keywords: spec.keywords.clone(),
+                confidence: spec.confidence,
+                perception_text: Some(spec.text.clone()),
+                utterance_id: spec.utterance_id.clone(),
+                turn_id: None,
+            };
+            jetstream
+                .publish(topics::AUDIO_STOP, Bytes::from(serde_json::to_vec(&stop)?))
+                .await?
+                .await?;
+        }
     }
 
     Ok(())
@@ -843,14 +881,16 @@ fn build_speculative_intent(text: &str, utterance_id: &str) -> Option<Speculativ
     let tokens = normalized
         .split_whitespace()
         .collect::<std::collections::HashSet<_>>();
-    let keywords = [
-        "stop", "wait", "hold", "no", "wrong", "quiet", "alex", "friend",
-    ]
-    .iter()
-    .copied()
-    .filter(|keyword| tokens.contains(keyword))
-    .map(ToString::to_string)
-    .collect::<Vec<_>>();
+    // audit/ROADMAP.md P1-4 (M3-A13): this used to include "alex"/"friend" --
+    // a persona name hardcoded into a generic crate. Deleted regardless of
+    // which arbiter survives; this list is only ever a duck hint now (see
+    // `speculative_fired_for`), never the abort.
+    let keywords = ["stop", "wait", "hold", "no", "wrong", "quiet"]
+        .iter()
+        .copied()
+        .filter(|keyword| tokens.contains(keyword))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
 
     if keywords.is_empty() {
         return None;
@@ -1031,6 +1071,39 @@ mod tests {
     #[test]
     fn speculative_stop_avoids_partial_keyword_matches() {
         assert!(build_speculative_intent("knowledge now", "utt-1").is_none());
+    }
+
+    fn test_state() -> Arc<Mutex<SttState>> {
+        Arc::new(Mutex::new(SttState {
+            endpointer: Endpointer::new(600.0, 200.0),
+            buffer: Vec::new(),
+            source_rate: 16000,
+            utterance_id: "utt-1".to_string(),
+            utterance_latency: None,
+            last_partial_at: 0.0,
+            last_noise_publish: 0.0,
+            speculative_fired_for: None,
+        }))
+    }
+
+    /// P1-4 (M3-A13): partials are cumulative re-transcriptions of the same
+    /// utterance, so a keyword that appears once would otherwise still be
+    /// present -- and re-detected -- in every partial after it. Only the
+    /// first claim for a given utterance may succeed.
+    #[tokio::test]
+    async fn speculative_fire_is_claimed_once_per_utterance() {
+        let state = test_state();
+        assert!(claim_speculative_fire(&state, "utt-1").await);
+        assert!(!claim_speculative_fire(&state, "utt-1").await);
+        assert!(!claim_speculative_fire(&state, "utt-1").await);
+    }
+
+    #[tokio::test]
+    async fn speculative_fire_claim_resets_on_a_new_utterance() {
+        let state = test_state();
+        assert!(claim_speculative_fire(&state, "utt-1").await);
+        assert!(!claim_speculative_fire(&state, "utt-1").await);
+        assert!(claim_speculative_fire(&state, "utt-2").await);
     }
 
     #[test]

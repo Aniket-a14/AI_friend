@@ -7846,3 +7846,133 @@ one updated one), `ruff check .` clean.
   it; Stage 4 itself is the next, separate piece of work. Measurement
   1.1's `worst_case_no_flush_latency` is still `UNKNOWN` (per the Part 1+2
   entry above), so P1-3/P1-4 still cannot be built against a real number.
+
+## 2026-08-23 -- P1-3 (barge-in flush) and P1-4 (one interruption arbiter),
+built without measurement 1.1's number -- one real design bug found reading
+the code, two workarounds for the FFI boundary Stage 3 found unmeasurable
+
+Measurement 1.1's `worst_case_no_flush_latency` is still `UNKNOWN` (prior
+entry) and cannot be closed from Python -- the backlog it would measure lives
+past a LiveKit FFI boundary this harness cannot introspect. User instruction
+was to build P1-3/P1-4 anyway, bounded effort, and prefer a different method
+over repeating what Stage 3 already showed doesn't work.
+
+**P1-4 turned out to be three arbiters, not two, and the roadmap's "brain's
+semantic classifier" was the wrong one.** Reading `_on_audio_perception`
+across the codebase found it registered *twice*, independently, on the same
+`audio.perception` subject: `CognitiveService._on_audio_perception`
+(core.py, state-priming only) and `BrainAgent._on_audio_perception`
+(brain_agent.py) -- the audit's own evidence (M3-A2/A11/A13) did not
+distinguish them. A third path, `decision.py`'s
+`is_speculative_stop_confirmed`, is wired into `CognitivePipeline.execute()`'s
+"Conflict Resolution" stage and is the one with real linguistic care
+(pivot-position and conversational-connector checks, covered by
+`tests/test_arbitration.py`'s "Wait, I actually agree with your point." ->
+not an interrupt case) -- this is what the roadmap almost certainly meant by
+"semantic classifier". `BrainAgent._on_audio_perception` was an undocumented
+fourth: a flat regex over every partial that hard-cancelled generation
+*immediately*, with no scoping, racing the two real arbiters (Rust's keyword
+duck primes `state.last_speculative_intent`; decision.py's method later
+confirms or rejects it once the full utterance is known) and matching the
+roadmap's own description of the bug precisely -- "the one that actually
+aborts is unscoped and re-fires on every subsequent partial once a keyword
+appears" is `BrainAgent._on_audio_perception`, not the Rust list.
+
+**Fix: removed `BrainAgent._on_audio_perception` and its subscription
+entirely** (`app/agents/brain_agent.py`), deleted the now-dead
+`app/utils/interruption_classifier.py` (imported nowhere else). Kept the
+Rust keyword duck and decision.py's confirm/reject as the surviving two-stage
+design -- this satisfies "exactly one component may emit an abort" as the
+codebase's own code already frames it (voice-agent.rs: `speculative` ->
+duck only; `speculative: false` -> the only real abort, published solely by
+decision.py's confirmed branch now). Generation-cancellation, previously
+inline in the deleted classifier, moved to `_on_audio_stop` -- already the
+one place that reacts to every confirmed stop regardless of origin, so it
+is the correct single owner rather than duplicating the reaction at the
+detection site.
+
+**Two roadmap-mandated fixes applied to the surviving Rust duck regardless
+of which arbiter won:** deleted "alex"/"friend" from
+`build_speculative_intent`'s keyword list (M3-A13, a persona name in a
+generic crate); scoped it to fire once per utterance
+(`SttState.speculative_fired_for`, claimed under the existing state lock) --
+partials are cumulative re-transcriptions (P2-9), so a keyword that appears
+once used to still be present, and re-detected, in every later partial of
+the same utterance.
+
+**P1-3: transport_agent never subscribed to `audio.stop` at all** (confirmed
+by reading the whole file) -- voice-agent's own abort_flag already stops
+*generating* more audio, but everything already published to `audio.stream`
+kept playing out completely. Buffer 3 (`TransportAgent.audio_queue`) is a
+local `asyncio.Queue`, drained directly. Buffer 4 -- LiveKit's native,
+time-paced send buffer past `capture_frame()` -- is the one Stage 3 proved
+has no public API to inspect or drain from Python (`capture_frame()` only
+acks the frame reached the client buffer; `wait_for_playout()` paces an
+unrelated wait). Rather than retry that boundary, this reaches *around* it:
+a confirmed stop drains buffer 3, then unpublishes the current LiveKit track
+and publishes a fresh one (new `AudioSource`/`LocalAudioTrack`, new track
+published before the old one is torn down). The client stops receiving the
+old track -- and whatever native buffer held for it -- the moment it is
+unpublished; only the new track's audio plays from there. Costs one SDP
+renegotiation per confirmed interrupt, not a gap in output.
+
+**One incidental, useful number surfaced while implementing this**:
+`rtc.AudioSource.__init__`'s own signature carries `queue_size_ms: int =
+1000` -- a real, code-level bound on buffer 4's worst case (up to ~1s of
+stale audio, by the SDK's own default), the first concrete figure this
+investigation has produced for measurement 1.1's question, short of an
+actual measured latency.
+
+**Turn scoping.** `AudioStop.turn_id` was already respected by voice-agent
+(`stop_applies_to_active_turn`, an earlier fix -- "a stop that had been
+delayed in the mesh...aborted whatever the agent had started saying next").
+transport_agent had no equivalent and needed one: flushing unconditionally
+on any confirmed stop could wipe a *new* turn's already-queued audio if the
+stop for an *old* turn arrived late. Added the same rule to
+transport_agent, fed by a new `turn_id` field this pass adds to the
+`X-Latency-Meta` JSON blob voice-agent already stamps on every
+`audio.stream` publish (`build_latency_metadata` in voice-agent's
+`main.rs`) -- untyped JSON on both ends already, so no shared-contract
+struct needed changing.
+
+**Files:** `app/agents/brain_agent.py`, `app/agents/transport_agent.py`,
+`app/utils/interruption_classifier.py` (deleted),
+`crates/stt-agent/src/main.rs`, `crates/voice-agent/src/main.rs`,
+`tests/test_barge_in_truncation.py`,
+`tests/test_transport_agent_barge_in_flush.py` (new).
+
+**Verified.** Full backend suite 1037/1037 (1027 baseline + 10 new),
+`ruff check .` clean, `scripts/check_subject_wiring.py` still reports every
+subject fully wired (transport_agent's new `audio.stop` subscription and
+voice-agent's `turn_id` field are not subject-shaped changes, so this was
+mostly a check that nothing regressed). `cargo test --package voice-agent`:
+35/35, including the two new turn_id tests, each mutation-tested (removed
+the `insert` call, confirmed both new tests fail; restored, confirmed they
+pass). Python turn-scoping and generation-cancel wiring each
+mutation-tested the same way (disabled the guard / removed the call,
+confirmed the corresponding test fails; reverted).
+`cargo test --package stt-agent` could not run at all -- confirmed this
+reproduces identically on unmodified `main` (P2-11: the test binary is
+SIGKILLed at load, root cause unknown, three hypotheses already ruled out
+in an earlier pass). The Rust stt-agent changes (once-per-utterance
+scoping, persona-name removal) are compile-checked and manually traced but
+**not executed or mutation-tested** -- a pre-existing environment
+limitation, not something this pass introduced or could work around within
+its bound.
+
+**NOT done:**
+- Measurement 1.1's `worst_case_no_flush_latency` is still `UNKNOWN`. This
+  pass does not change that -- it builds the fix the measurement was meant
+  to size, using the `queue_size_ms=1000` code-level bound and the
+  track-rotation design instead of a number. Re-measuring after this lands
+  (with `_RealConsumer` from the Part 1 pass) would now show a real
+  before/after, which the original measurement attempt never could.
+- `check_subject_wiring.py`'s own script was not taught to look inside the
+  `X-Latency-Meta` JSON blob for `turn_id` -- there was nothing to teach it,
+  since this isn't a subject-wiring change, but noting it in case a future
+  pass wants that field statically checked too.
+- `tools/measure/m11_bargein.py` was not updated to look for the new
+  `buffer3_4_flush` trace event this pass adds -- P2-10-adjacent, left for
+  whoever next touches that harness rather than expanding this pass's
+  scope.
+- P2-3, P2-4, P2-6, P2-9 (the rest of Stage 4) and Stage 5/6 -- unstarted.
