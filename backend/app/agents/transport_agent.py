@@ -165,7 +165,7 @@ class TransportAgent(BaseAgent):
             logger.info(
                 f"Subscribed to remote audio track: {track.sid} from {participant.identity}"
             )
-            asyncio.create_task(self._process_remote_audio(track))
+            self.spawn(self._process_remote_audio(track))
 
     async def _process_remote_audio(self, track: rtc.RemoteAudioTrack):
         """Convert WebRTC audio frames to NATS events for STT.

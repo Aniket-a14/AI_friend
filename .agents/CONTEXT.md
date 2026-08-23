@@ -8852,3 +8852,137 @@ No source changed, so the backend suite and `ruff` are unaffected by this part.
   three findings, and all of P3 -- unstarted. P2-5 and P2-10 are the strongest
   candidates for the next pass, and P3-2 (telemetry) remains the roadmap's own
   promotion candidate.
+
+## 2026-08-23 -- Stage 6 Part 1 (mesh semantics) -- P3-5, P3-8, P4-1, P4-8,
+P4-11b, and the P2-14 remainder resolved by confirmation
+
+Stage 6 takes the entire remaining roadmap -- P2's stragglers, all of P3, all
+of P4 -- as one branch, eight thematic commits, one PR. Part 1 is the mesh's
+own semantics: message disposition, cache invalidation, task lifetime, stream
+reconciliation, and the three P2-14 findings Stage 5 left filed.
+
+**P3-5: every subject now gets bounded redelivery and a real dead-letter, not
+just chat./state..** `BaseAgent._handler`'s exception branch used to ack-and-
+discard any subject outside those two prefixes on its *first* failure -- a
+poison `audio.*`/`vision.*`/`memory.*` message vanished with no redelivery and
+no record beyond a log line, the exact "the failing half still compiles, still
+logs as though it worked" shape this audit keeps finding. Extended A3's
+existing bounded-redelivery-then-dead-letter machinery to every subject; the
+media/control tier gets its own smaller budget (`MESH_MEDIA_MAX_DELIVER`,
+default 2, vs `MESH_MAX_DELIVER`'s 5) so a poison frame on a hot audio path
+doesn't sit in redelivery as long as a poison chat message legitimately can.
+Separately, `publish()`'s JetStream-to-core-NATS downgrade gained an opt-out
+(`allow_core_fallback=False`, raising `JetStreamPublishFailed`) for a caller
+that needs to know durable delivery failed rather than have it silently
+downgrade to best-effort.
+
+**P3-8: `cache.sync` subscribes with `deliver_policy="new"`.** It defaulted to
+`"all"`, so every agent restart replayed the subject's *entire* retained
+history -- an invalidation from an hour ago says nothing about whether a
+freshly started agent's not-yet-built cache is stale now. Same reasoning
+`vision/agent.py` already documents for `chat.input`/`chat.output`.
+
+**P4-1: `IdentityCoreStore` is wired, not deleted.** It was a complete, tested
+Tier-1 SQLite cache with its own `cache.sync` broadcast that nothing in `app/`
+ever constructed -- `BaseAgent` both publishes *and subscribes* to `cache.sync`
+for exactly this store (`_on_cache_sync_received`), so the channel was live on
+one end and dead on the other. `IdentityManager` now constructs one (falling
+back to an in-memory instance if the on-disk path can't be opened -- this
+caught four existing tests that build `IdentityManager(base_path="/fake/path")`
+under a mocked `open()`, which SQLite still needs a real directory for) and
+mirrors the immutable core into it on every `_refresh_immutable_core()`, with
+`publish_cb` threaded through `CognitiveService` from `brain_agent.py`'s own
+`self.publish`. `scripts/check_subject_wiring.py`'s `cache.sync` allowlist
+entry is corrected to say why it's *still* allowlisted post-fix: the subscribe
+side lives in `agents/base.py`, which is `TRANSPORT_IMPL_FILES`-excluded from
+the static scan as generic transport code, not because anything is missing.
+
+**P4-11b: stream reconciliation now verifies and retries instead of trusting a
+blind read-modify-write.** Up to six agent processes (plus the bootstrap
+script) can reach the same stream's subject/policy reconciliation at startup,
+and JetStream's `STREAM.UPDATE` has no compare-and-set (unlike its KV API).
+The old code read `stream_info`, computed a union, and wrote it back --
+between one caller's read and its write, another caller's write could already
+have landed, and the loser's write would silently overwrite it based on a
+stale snapshot, dropping whichever subject that snapshot never saw.
+`nats_streams.reconcile_existing_stream` now re-reads immediately after
+writing and checks the caller's own desired subjects actually survived; if
+not, it recomputes from fresh state and retries (bounded, `max_retries=3`).
+Both call sites (`nats_streams._ensure_stream` and `BaseAgent._bootstrap_mesh`,
+previously two separate copies of the same read-modify-write) now share this
+one implementation.
+
+**P4-8: fire-and-forget tasks keep a strong reference until they finish.**
+`asyncio.create_task(...)` with the result discarded is a documented GC
+pitfall -- the event loop holds only a weak reference, so nothing stops a task
+from being silently reclaimed mid-execution. New shared helper
+(`app/utils/background_tasks.py:spawn_background`) plus `BaseAgent.spawn()`;
+applied at every genuinely-unretained call site found (`brain_agent.py` x2,
+`surfacing_agent.py`, `transport_agent.py`, `system_agent.py`,
+`vision/agent.py`, plus the three non-`BaseAgent` classes that fire off tasks:
+`MemoryStore`, `StateService`, `IdentityCoreStore`). Sites already retained via
+an instance attribute or a returned/stored task (`subconscious_agent`'s dream
+and monologue tasks, `pipeline.py`'s System-2 task, `conversational_runtime`'s
+filler task) were left alone -- they were never the bug.
+
+**P2-14's three remaining findings, each re-checked against #190 before being
+touched, per Stage 5's own instruction not to fix them blind:**
+
+- **M1-A14 (real, fixed).** `last_audio_progress`/`last_assistant_response`
+  are written from three independent NATS subscription tasks --
+  `chat.input`'s turn flow, `audio.playback.progress`'s tracker, `audio.stop`'s
+  truncation handler -- and read-then-written together by truncation.
+  `_generation_lock` only ever guarded which task owns
+  `_active_generation_task`; it said nothing about this data, and
+  `_cancel_active_generation`'s `await task` is exactly the scheduling gap a
+  concurrent reset can land in (awaiting a completed Task always round-trips
+  through the event loop before the awaiter resumes). #190 did not touch this
+  -- it consolidated *which* classifier decides to fire `audio.stop`, not the
+  shared-state race between subscriptions once one fires. Fixed with a new
+  `_turn_state_lock` held across truncation's entire read-compute-write
+  (`_truncate_interrupted_reply`, extracted from `_on_audio_stop`'s inline
+  body), including the awaited conversation-store write, and around every
+  other writer of the same two fields. Test forces the actual race via the
+  code's real suspension point (the DB write), not a contrived stall.
+- **M1-A5 (confirmed inaccurate, no fix).** Re-checked against current
+  `pipeline.py`: `state.update` is yielded at exactly two sites (`:254`,
+  `:287`), both once per *turn*, never once per LLM chunk. Not an
+  amplification bug at any streamed-chunk multiplier -- Stage 5's finding
+  stands, now with the exact confirmation.
+- **M1-A18 (confirmed dead-but-harmless, no fix).** Traced `_on_chat_input`'s
+  `_replace_active_generation` call against #190: `_on_chat_input` still
+  `await`s the whole turn before returning, nats-py still dispatches one
+  callback at a time per subscription, so a second `chat.input` genuinely
+  cannot arrive while the first is in flight -- the cancel-and-replace branch
+  inside `_replace_active_generation` can never see a non-done prior task from
+  this call site. The finding's own conclusion still holds: "not a live bug --
+  the machinery is correct and the outcome is right," defensive code for a
+  race the transport layer already prevents. Left as filed, DEFER, per the
+  finding's own warning that removing it would be a real risk if concurrent
+  dispatch ever changes.
+
+**Files:** `app/agents/base.py`, `app/agents/brain_agent.py`,
+`app/agents/surfacing_agent.py`, `app/agents/transport_agent.py`,
+`app/agents/system_agent.py`, `app/vision/agent.py`, `app/nats_streams.py`,
+`app/cognitive/identity.py`, `app/cognitive/core.py`,
+`app/state/memory_store.py`, `app/state/agent_state.py`,
+`app/state/identity_core_store.py`, `app/utils/background_tasks.py` (new),
+`scripts/check_subject_wiring.py`.
+
+**Verified.** Full suite **1071/1071** (1055 baseline + 16 new), `ruff check .`
+clean, `cargo check --workspace` clean (Rust untouched this part),
+`scripts/check_subject_wiring.py` reports every subject wired or explicitly
+allowlisted. All 16 new tests mutation-tested: P3-5's dead-letter bound
+(chat/media threshold and default parity), P4-11b's retry loop (no-retry and
+always-race mutants), and M1-A14's lock (removed-lock mutant) each caught
+their targeted mutation; the rest were confirmed by the whole-file collection
+failure a reverted `base.py` produces (`JetStreamPublishFailed` doesn't exist
+pre-fix). Fixing P4-1 surfaced and fixed a real regression in four *existing*
+`test_identity.py` tests (`IdentityCoreStore`'s unconditional construction
+broke on their mocked `/fake/path`) before it shipped -- caught by running the
+existing suite, not assumed safe.
+
+**NOT done (carried into later parts of this same branch):** everything else
+in Stage 6 -- telemetry + benchmarks (Part 2), memory lifecycle (Part 3),
+vision (Part 4), visual episodic memory (Part 5), voice/STT (Part 6), NATS
+accounts + supply chain (Part 7), deployment/docs/cleanup (Part 8).

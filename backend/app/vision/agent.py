@@ -155,7 +155,7 @@ class VisionAgent(BaseAgent):
             f"📸 {self.name} started. {vlm_status} | {self.fps} FPS | {sight}"
         )
 
-        asyncio.create_task(self._capture_loop())
+        self.spawn(self._capture_loop())
 
     async def _handle_control(self, data: dict):
         """Handle vision source switching"""

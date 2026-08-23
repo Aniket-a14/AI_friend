@@ -142,7 +142,7 @@ class SurfacingAgent(BaseAgent):
                 trajectory=trajectory,
                 timestamp=time.time(),
             )
-            asyncio.create_task(
+            self.spawn(
                 self.publish(
                     Topics.AGENT_VOICE_MODULATION.value, modulation.model_dump()
                 )

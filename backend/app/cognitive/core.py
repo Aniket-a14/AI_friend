@@ -48,8 +48,11 @@ class CognitiveService:
         graph_db,
         identity_store=None,
         base_path=None,
+        publish_cb=None,
     ):
-        self.identity = IdentityManager(base_path=base_path)
+        # P4-1: threaded through so IdentityManager's IdentityCoreStore can
+        # broadcast `cache.sync` invalidations to the rest of the mesh.
+        self.identity = IdentityManager(base_path=base_path, publish_cb=publish_cb)
         self.identity_store = identity_store
         # Kept so the biography can be seeded into episodic memory at startup.
         self.memory_store = memory_store

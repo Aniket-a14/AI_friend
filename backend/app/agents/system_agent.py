@@ -27,7 +27,7 @@ class SystemAgent(BaseAgent):
         logger.info(
             f"⚡ {self.name} Online | Heartbeat Interval: {self.tick_interval}s"
         )
-        asyncio.create_task(self._pulse_loop())
+        self.spawn(self._pulse_loop())
 
     async def _pulse_loop(self):
         """The core heartbeat loop."""

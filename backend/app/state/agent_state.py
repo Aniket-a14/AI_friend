@@ -25,6 +25,7 @@ import redis
 
 from ..config import Config
 from ..persona import PersonaProfile
+from ..utils.background_tasks import spawn_background
 
 if TYPE_CHECKING:
     from ..cognitive.tom import UserMentalModel
@@ -386,6 +387,10 @@ class StateService:
         # dispatch; callers reach `persist_state` from methods already holding
         # `_state_lock`, so reusing it would deadlock.
         self._persist_lock = asyncio.Lock()
+
+        # P4-8: strong-reference holder for the fire-and-forget
+        # state.broadcast publish below.
+        self._background_tasks: set[asyncio.Task] = set()
 
         # Connect to Redis
         try:
@@ -849,8 +854,13 @@ class StateService:
                 "timestamp": time.time(),
             }
             try:
-                # Fire and forget publishing
-                asyncio.create_task(self.publish_cb("state.broadcast", state_data))
+                # Fire and forget publishing. P4-8: spawn_background retains
+                # a strong reference so the broadcast cannot be silently
+                # cancelled by the garbage collector mid-publish.
+                spawn_background(
+                    self._background_tasks,
+                    self.publish_cb("state.broadcast", state_data),
+                )
             except Exception as e:
                 logger.warning(f"Failed to trigger NATS state broadcast task: {e}")
 

@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from ..config import Config
 from ..persona import IMMUTABLE_CORE, PersonaProfile
 from ..persona.authoring import AUTO_DISCOVER, authored_overrides, find_persona_file
+from ..state.identity_core_store import IdentityCoreStore
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ class IdentityManager:
         base_path: str | None = None,
         persona: "PersonaProfile" = None,
         persona_file=AUTO_DISCOVER,
+        publish_cb=None,
     ):
         if base_path is None:
             # #113 / H2: this used to default to the package directory itself,
@@ -181,6 +183,40 @@ class IdentityManager:
 
         self._seed_relationship_from_profile()
         self._stamp_seed_marker()
+
+        # P4-1: IdentityCoreStore was a complete, tested Tier-1 SQLite cache
+        # (sub-ms lookups, its own `cache.sync` invalidation broadcast) that
+        # nothing in app/ ever constructed -- BaseAgent both publishes and
+        # subscribes to `cache.sync` (agents/base.py:126, :_on_cache_sync_received)
+        # for exactly this store, so the channel was live on one end and dead
+        # on the other. It is not the source of truth (this class, backed by
+        # `agent_configs` via `config_store`, is); it mirrors the immutable
+        # core so a fast synchronous read is available without going through
+        # async config-store I/O, and its broadcast is what makes a change on
+        # one process actually invalidate another's local cache.
+        identity_core_db_path = getattr(
+            Config, "IDENTITY_CORE_DB_PATH", None
+        ) or os.path.join(base_path, "identity_core.db")
+        try:
+            self.identity_core = IdentityCoreStore(
+                db_path=identity_core_db_path, publish_cb=publish_cb
+            )
+        except Exception as e:
+            # Never let the Tier-1 cache's own storage keep the agent from
+            # having an identity at all -- degrade to an in-memory instance
+            # (still fully functional, just not durable or cross-process)
+            # rather than raising out of __init__. Seen in practice with a
+            # base_path a test mocks `open()` for but never actually creates
+            # on disk, which SQLite still needs a real directory for.
+            logger.warning(
+                "[Identity] Could not open IdentityCoreStore at %s (%s); "
+                "falling back to an in-memory instance.",
+                identity_core_db_path,
+                e,
+            )
+            self.identity_core = IdentityCoreStore(
+                db_path=":memory:", publish_cb=publish_cb
+            )
 
         # CVS-3.5: Immutable Core Trait seeding
         self._refresh_immutable_core()
@@ -458,6 +494,25 @@ class IdentityManager:
             # Via the profile, which applied the schema's bounds to it.
             "base_tone": self.persona.base_tone or DEFAULT_BASE_TONE,
         }
+
+        # P4-1: mirror into the Tier-1 cache and broadcast the change to any
+        # other process holding a stale copy. Guarded: a broken local cache
+        # must never take down identity refresh, which every turn depends on.
+        try:
+            self.identity_core.update_identity(
+                {
+                    "name": self.personality.get("name", "AI Friend"),
+                    "values": self.immutable_core["values"],
+                    "base_tone": self.immutable_core["base_tone"],
+                    "boundaries": self.immutable_core["boundaries"],
+                    "avoid_rules": self.personality.get(
+                        "conversation_rules", {}
+                    ).get("avoid", []),
+                    "relationship": self.history.get("relationship", "Friend"),
+                }
+            )
+        except Exception as e:
+            logger.debug("[Identity] Tier-1 cache mirror skipped: %s", e)
 
     async def hydrate_from_config_store(self, config_store):
         """

@@ -29,6 +29,7 @@ import httpx
 import orjson
 
 from ..config import Config
+from ..utils.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 
@@ -255,6 +256,8 @@ class MemoryStore:
         ).rstrip("/")
         self.embedding_model = "nomic-embed-text"
         self._http_client = httpx.AsyncClient(timeout=30.0)
+        # P4-8: strong-reference holder for the background refresh task below.
+        self._background_tasks: set[asyncio.Task] = set()
 
         # ACT-R Parameters (§6.2)
         self.decay_rate = Config.ACTR_DECAY_RATE  # d
@@ -2678,12 +2681,16 @@ class MemoryStore:
                     except Exception as e:
                         logger.error(f"Background Memory Refresh Failed: {e}")
 
-                task = asyncio.create_task(
+                # P4-8: spawn_background keeps a strong reference so this
+                # task cannot be GC'd mid-refresh; _done_callback is chained
+                # after it purely for the existing error-logging behavior.
+                task = spawn_background(
+                    self._background_tasks,
                     self._refresh_memories(
                         results,
                         current_valence=current_valence,
                         current_time=current_time,
-                    )
+                    ),
                 )
                 task.add_done_callback(_done_callback)
 

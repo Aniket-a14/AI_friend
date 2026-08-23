@@ -22,6 +22,9 @@ class IdentityCoreStore:
         self._cache_lock = threading.Lock()
         self._cached_identity: dict[str, Any] = {}
         self.publish_cb = publish_cb
+        # P4-8: strong-reference holder for the fire-and-forget cache.sync
+        # broadcast below.
+        self._background_tasks: set = set()
         IdentityCoreStore._instances.append(self)
 
         if db_path == ":memory:":
@@ -177,12 +180,15 @@ class IdentityCoreStore:
                 try:
                     import asyncio
 
+                    from ..utils.background_tasks import spawn_background
+
                     if asyncio.iscoroutinefunction(self.publish_cb):
-                        asyncio.create_task(
+                        spawn_background(
+                            self._background_tasks,
                             self.publish_cb(
                                 "cache.sync",
                                 {"store": "identity_core", "action": "invalidate"},
-                            )
+                            ),
                         )
                     else:
                         self.publish_cb(

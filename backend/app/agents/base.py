@@ -10,7 +10,18 @@ from typing import Any
 import nats
 import orjson
 
+from ..utils.background_tasks import spawn_background
+
 logger = logging.getLogger(__name__)
+
+
+class JetStreamPublishFailed(RuntimeError):
+    """Raised by `BaseAgent.publish(..., allow_core_fallback=False)` when the
+    JetStream publish itself failed. Distinguished from a generic publish
+    failure so it can be let through the outer `except Exception` in
+    `publish()` instead of being logged-and-swallowed like every other
+    publish error -- a caller that opted out of the core-NATS downgrade is
+    explicitly asking to know when durable delivery did not happen."""
 
 
 def install_shutdown_signal_handlers(shutdown_event: asyncio.Event) -> None:
@@ -85,6 +96,15 @@ class BaseAgent:
         self._metrics_log_every = max(
             1, int(os.getenv("SUBJECT_METRICS_LOG_EVERY", "25"))
         )
+        # P4-8: strong-reference holder for fire-and-forget tasks spawned via
+        # self.spawn(); see app/utils/background_tasks.py for why this exists.
+        self._background_tasks: set[asyncio.Task] = set()
+
+    def spawn(self, coro) -> asyncio.Task:
+        """Fire `coro` off as a background task without losing it to GC.
+        Prefer this over a bare `asyncio.create_task(...)` whose result is
+        discarded -- see `app/utils/background_tasks.py`."""
+        return spawn_background(self._background_tasks, coro)
 
     async def _on_nats_disconnected(self):
         logger.warning(
@@ -120,10 +140,23 @@ class BaseAgent:
             await self._bootstrap_mesh()
             logger.info(f"Agent '{self.name}' connected to mesh at {self.nats_url}")
 
-            # Auto-subscribe active agents to cache synchronization broadcasts
+            # Auto-subscribe active agents to cache synchronization broadcasts.
+            # P3-8: deliver_policy="new", matching every other liveness/control
+            # signal in the mesh (see vision/agent.py's chat.input/chat.output
+            # subscriptions for the same reasoning). Under the default "all" a
+            # freshly (re)started agent -- or one recovering from a deleted
+            # durable -- replays the subject's ENTIRE retained history before
+            # it sees anything current. An invalidation broadcast from an hour
+            # ago says nothing about whether a local cache is stale *now*; it
+            # only wastes a startup invalidating caches that were never built
+            # yet, and does so once per cache.sync ever published, on every
+            # restart, forever, because the stream default retains it all.
             if self.name != "test_publisher" and not self.name.startswith("test_"):
                 try:
-                    await self.subscribe("cache.sync", self._on_cache_sync_received)
+                    await self.subscribe(
+                        "cache.sync", self._on_cache_sync_received,
+                        deliver_policy="new",
+                    )
                 except Exception as se:
                     logger.debug("Cache sync auto-subscribe skipped: %s", se)
         except Exception as e:
@@ -147,11 +180,7 @@ class BaseAgent:
 
     async def _bootstrap_mesh(self):
         """Ensure core streams exist on the mesh (CVS-3.5 Hardened)."""
-        from ..nats_streams import (
-            CORE_STREAMS,
-            _apply_policy_to_existing,
-            build_stream_config,
-        )
+        from ..nats_streams import CORE_STREAMS, build_stream_config
 
         core_streams = {name: list(subjects) for name, subjects in CORE_STREAMS.items()}
 
@@ -175,29 +204,18 @@ class BaseAgent:
                 )
                 logger.info(f"Created NATS Stream: {stream_name} {subjects}")
             except nats.js.errors.BadRequestError:
-                # Stream likely already exists, verify subjects
+                # Stream likely already exists, verify subjects.
+                # P4-11b: reconcile_existing_stream both applies P1-2's
+                # retention policy to a pre-existing stream and retries
+                # against a concurrent writer -- up to six agent processes
+                # (plus the bootstrap script) can all reach this branch for
+                # the same stream at startup, and JetStream's STREAM.UPDATE
+                # has no compare-and-set, so a naive read-modify-write here
+                # could silently drop another agent's subject addition.
                 try:
-                    info = await jsm.stream_info(stream_name)
-                    current_subjects = set(info.config.subjects or [])
-                    required_subjects = set(subjects)
+                    from ..nats_streams import reconcile_existing_stream
 
-                    config = info.config
-                    changed = False
-                    if not required_subjects.issubset(current_subjects):
-                        logger.info(
-                            f"Updating NATS Stream '{stream_name}' with additional subjects..."
-                        )
-                        config.subjects = list(
-                            current_subjects.union(required_subjects)
-                        )
-                        changed = True
-
-                    # P1-2: bring a pre-existing stream's limits up to the
-                    # policy too, not just its subjects.
-                    changed |= _apply_policy_to_existing(config, stream_name)
-
-                    if changed:
-                        await jsm.update_stream(config)
+                    if await reconcile_existing_stream(jsm, stream_name, subjects):
                         logger.info(
                             f"✅ Stream '{stream_name}' synchronized successfully."
                         )
@@ -207,9 +225,27 @@ class BaseAgent:
                 logger.debug("Stream bootstrap note: %s", e)
 
     async def publish(
-        self, subject: str, data: Any, metadata: dict[str, Any] | None = None
+        self,
+        subject: str,
+        data: Any,
+        metadata: dict[str, Any] | None = None,
+        *,
+        allow_core_fallback: bool = True,
     ):
-        """Publish an event to the mesh with latency tracking and binary support."""
+        """Publish an event to the mesh with latency tracking and binary support.
+
+        P3-5: a JetStream publish failure has always fallen through to core
+        NATS -- best-effort, no durability, no replay. That is the right
+        default for most subjects (the mesh should stay up over a transient
+        JetStream hiccup), but it is a real downgrade and was previously only
+        a `warning` log line, indistinguishable from routine noise. Set
+        ``allow_core_fallback=False`` for a subject where silent best-effort
+        delivery is wrong -- the failure then propagates to the caller instead
+        of being swallowed as a successful publish. The downgrade is also
+        counted through the same subject-metrics path as everything else, so
+        it is visible in aggregate, not just in a log line someone has to be
+        watching for.
+        """
         if not self.js:
             await self.connect()
 
@@ -262,9 +298,12 @@ class BaseAgent:
                 try:
                     await self.js.publish(subject, payload, timeout=10)
                 except Exception as js_err:
+                    if not allow_core_fallback:
+                        raise JetStreamPublishFailed(str(js_err)) from js_err
                     logger.warning(
                         f"JetStream publish to {subject} failed ({js_err}), falling back to core NATS"
                     )
+                    self._record_subject_metric(subject, direction="downgrade")
                     await self.nc.publish(subject, payload)
 
             self._record_subject_metric(
@@ -276,6 +315,11 @@ class BaseAgent:
             logger.debug(
                 f"Agent '{self.name}' published to {subject} ({'binary' if is_binary else 'json'})"
             )
+        except JetStreamPublishFailed:
+            # Let it through: `allow_core_fallback=False` means the caller
+            # wants to know durable delivery failed, not have it logged as
+            # routine and treated as a successful publish.
+            raise
         except Exception as e:
             logger.error(f"Failed to publish to {subject}: {e}")
 
@@ -488,38 +532,57 @@ class BaseAgent:
                 await msg.ack()
             except Exception as e:
                 logger.error(f"Subscription handler error on {subject}: {e}")
-                # Auto-ACK fast-moving media, but NACK critical state/chat flows
-                if subject.startswith(("chat.", "state.")):
-                    # A3: bound redelivery so a persistently malformed ("poison")
-                    # payload cannot spin forever. After MESH_MAX_DELIVER attempts,
-                    # terminate delivery and record the drop as a dead-letter.
+                # P3-5: every subject now gets bounded redelivery and an
+                # explicit dead-letter, not just chat./state.. The original
+                # split -- "auto-ACK fast-moving media, NACK critical
+                # state/chat flows" -- meant a handler exception on any other
+                # subject (audio.*, vision.*, memory.*, ...) acked and
+                # silently discarded the message on its *first* failure, with
+                # no redelivery and no record beyond a log line. That is
+                # exactly the failure shape this audit keeps finding: the
+                # half that fails still compiles, still passes its own tests,
+                # and still looks like it worked.
+                #
+                # The media/control tier keeps a materially smaller
+                # redelivery budget than chat./state. -- a poison frame on a
+                # hot audio path should not sit in redelivery as long as a
+                # poison chat message legitimately can -- but it is bounded
+                # and dead-lettered rather than unconditionally discarded on
+                # attempt one. A3's original reasoning (bound redelivery so a
+                # persistently malformed payload cannot spin forever) applies
+                # to every subject, not only two prefixes.
+                is_conversational = subject.startswith(("chat.", "state."))
+                max_deliver_env = (
+                    "MESH_MAX_DELIVER" if is_conversational else "MESH_MEDIA_MAX_DELIVER"
+                )
+                max_deliver_default = "5" if is_conversational else "2"
+                max_deliver = max(
+                    1, int(os.getenv(max_deliver_env, max_deliver_default))
+                )
+                num_delivered = None
+                try:
+                    num_delivered = msg.metadata.num_delivered
+                except Exception:
                     num_delivered = None
+                if num_delivered is not None and num_delivered >= max_deliver:
                     try:
-                        num_delivered = msg.metadata.num_delivered
+                        preview = msg.data.decode(errors="replace")[:500]
                     except Exception:
-                        num_delivered = None
-                    max_deliver = max(1, int(os.getenv("MESH_MAX_DELIVER", "5")))
-                    if num_delivered is not None and num_delivered >= max_deliver:
-                        try:
-                            preview = msg.data.decode(errors="replace")[:500]
-                        except Exception:
-                            preview = "<undecodable>"
-                        logger.error(
-                            "[DeadLetter] Dropping poison message on %s after %s "
-                            "deliveries: %s | payload=%s",
-                            subject,
-                            num_delivered,
-                            e,
-                            preview,
-                        )
-                        if hasattr(msg, "term"):
-                            await msg.term()
-                        else:
-                            await msg.ack()
+                        preview = "<undecodable>"
+                    logger.error(
+                        "[DeadLetter] Dropping poison message on %s after %s "
+                        "deliveries: %s | payload=%s",
+                        subject,
+                        num_delivered,
+                        e,
+                        preview,
+                    )
+                    if hasattr(msg, "term"):
+                        await msg.term()
                     else:
-                        await msg.nak()
+                        await msg.ack()
                 else:
-                    await msg.ack()
+                    await msg.nak()
             finally:
                 if hb_task:
                     hb_task.cancel()
