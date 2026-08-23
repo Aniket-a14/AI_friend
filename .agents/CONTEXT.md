@@ -7976,3 +7976,100 @@ its bound.
   whoever next touches that harness rather than expanding this pass's
   scope.
 - P2-3, P2-4, P2-6, P2-9 (the rest of Stage 4) and Stage 5/6 -- unstarted.
+
+## 2026-08-23 -- Stage 4, Part 0 -- P2-11's SIGKILL root-caused and fixed: an
+invalid code signature, not the missing rpath alone
+
+Stage 4 (P1-3/P1-4 done in #190; P2-3/P2-4/P2-6/P2-9 remain) needs
+`cargo test --package stt-agent` to actually run before P2-9 (windowed
+partials) can ship verified rather than compile-checked-only, the way #190's
+stt-agent changes had to. `audit/ISSUES.md` M5-T2 filed this as P2-11: the
+test binary SIGKILLs at load on macOS, three hypotheses tried, residual
+cause **explicitly UNKNOWN**, with the roadmap's own instruction not to
+schedule it as a known-size task.
+
+**Root cause.** `otool -l` on the test binary confirms M5-T2's first finding
+-- no `LC_RPATH` entry at all, despite `build.rs`'s comment claiming macOS
+"resolves via the `$ORIGIN`/`@loader_path` rpath that sherpa-onnx-sys
+already emits." That claim was asserted, never exercised (`cargo test` was
+never in CI -- M5-T1), and it was wrong. But injecting an rpath alone (M5-T2's
+own recommendation, tried and still-SIGKILLed) does not fix it either,
+because there is a second, independent defect: `codesign -v` on the staged
+`libonnxruntime.1.27.0.dylib` reports "invalid signature (code or signature
+have been modified)". Arm64 macOS SIGKILLs any process that loads a dylib
+with an *invalid* (present-but-mismatched) signature, silently -- no output,
+no catchable error, which is exactly why M5-T2's `RUST_BACKTRACE=1` note and
+three separate mitigation attempts all just "still SIGKILLed" and never
+surfaced a cause. Notably, an *absent* signature (`codesign
+--remove-signature`) does **not** trigger the same kill -- only a signature
+that's present and wrong does. This distinction is why the failure looked
+unknowable: every debugging instinct reaches for "is this signed" rather
+than "is this signature *right*".
+
+**Verified non-destructively before touching anything**: re-signed *copies*
+of the extracted dylibs in scratch, pointed `DYLD_FALLBACK_LIBRARY_PATH` at
+them, and the never-rebuilt, original test binary loaded and ran (`31
+passed`, the only 2 "failures" being a stale binary that predated an
+in-progress edit -- confirmed by comparing file mtimes, and independently
+re-confirming that #190's own mutation test was genuine).
+
+**Fix, `backend/crates/stt-agent/build.rs`.** Restructured into a per-OS
+dispatch (`stage_windows_dlls` unchanged; new `fix_macos_dylibs`). Emits
+`-Wl,-rpath,@loader_path` (covers the production binary, colocated with the
+dylibs) and `-Wl,-rpath,@loader_path/..` (covers a test binary one level
+down in `deps/`), then ad-hoc re-signs (`codesign -f -s -`) every `.dylib`
+sherpa-onnx-sys places in the profile directory. Ad-hoc signing is a local,
+unnotarized signature -- enough to satisfy the "is this signature valid"
+kernel check, not a substitute for a real one, and nothing here ships
+outside a local build. Corrected the file's stale macOS doc comment in the
+same change, since that false claim sitting next to a genuinely good Windows
+workaround is what let this go unexamined for as long as it did.
+
+**Verified, real artifacts, not scratch copies:** rebuilt
+`cargo build --package stt-agent --tests`; the resulting binary carries both
+new `LC_RPATH` entries and the dylibs verify clean under `codesign -v`;
+running the test binary directly (no env var workarounds) and via
+`cargo test --package stt-agent` both give **33/33 passed**, including
+#190's `speculative_fire_*` tests -- which had only ever been
+compile-checked, never executed, until now. Additionally re-broke the real
+(already-fixed) dylib's signature directly (`codesign --remove-signature`,
+then confirmed still-runs; the true "invalid, present, mismatched" state
+needs a byte-level tamper this session did not attempt to reproduce a second
+time -- the original archive's own broken signature and this fix closing it
+were both verified against the real, unmodified artifact chain, which is
+the stronger evidence).
+
+**CI, `.github/workflows/macos-ci.yml`.** Added a `cargo test` step after
+the existing `cargo check --workspace` (M5-T1: CI ran `cargo check` and
+`maturin build`, never `cargo test`, on any platform). Two invocations, not
+one `--workspace` run: `cargo test --workspace` (tried while verifying this)
+fails to *link* `cognitive-rust`'s test binary -- a PyO3 extension-module
+feature-unification interaction with the other crates' dependency graphs
+that only appears when Cargo unifies features across every workspace member
+in one invocation, not a defect in this repository's code (confirmed:
+`cargo test --package cognitive-rust --lib` alone is clean, 11/11). Split
+into `cargo test --package stt-agent --package voice-agent --package
+contracts` (74 tests) plus `cargo test --package cognitive-rust --lib` (11
+tests) -- both verified clean, together covering all four crates without
+hitting the combination that breaks. Scoped to `macos-ci.yml` only: the fix
+itself is macOS-specific (guarded on `CARGO_CFG_TARGET_OS == "macos"`), and
+Linux's `cargo test` behavior for these crates was not verified this pass --
+`ci.yml` (`ubuntu-latest`) is untouched, left as M5-T1's remaining half.
+
+**Verified:** described above; no Python changed, so the backend pytest
+suite and `ruff check .` are unaffected by this pass (not re-run for this
+entry beyond the standard pre-existing baseline).
+
+**NOT done:**
+- `ci.yml` (Linux) still runs only `cargo check` / `maturin build`, never
+  `cargo test` -- M5-T1's Linux half, unverified, left for a future pass.
+- The "invalid, present, mismatched" signature state was reproduced once,
+  from the real unmodified archive, then fixed; a second, deliberate
+  byte-level tamper to re-prove the specific state (rather than the simpler
+  "removed" state, which behaves differently) was not attempted -- the
+  first reproduction is real, unmanufactured evidence and judged sufficient.
+- Whether the *production* `stt-agent` binary (not just its tests) now
+  starts natively on macOS -- M5-T2's wider consequence -- still needs
+  `backend/models/` provisioned to check end to end, which remains absent.
+- P2-9 (windowed partials, the reason this had to happen first), P2-3,
+  P2-4, P2-6 -- Stage 4 Parts 1-4, next.

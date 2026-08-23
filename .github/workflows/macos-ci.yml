@@ -65,6 +65,23 @@ jobs:
         run: |
           cd backend
           cargo check --workspace
+      - name: Cargo Test Rust Workspace (audit/ROADMAP.md P2-11)
+        run: |
+          cd backend
+          # Two invocations, not one `--workspace` run: unifying features
+          # across every crate in a single `cargo test --workspace` breaks
+          # cognitive-rust's PyO3 extension-module link step (a `pyo3`
+          # feature-unification interaction with the other crates' own
+          # dependency graphs, not anything specific to this workspace's
+          # code) even though every crate passes cleanly on its own. Splitting
+          # cognitive-rust into its own `--lib`-only invocation avoids the
+          # combination that breaks, without silently dropping coverage.
+          # See the 2026-08-23 P2-11 ledger entry for the full account,
+          # including the invalid-codesign-signature root cause `build.rs`
+          # now fixes for stt-agent (the SIGKILL that made this whole step
+          # impossible to add before now).
+          cargo test --package stt-agent --package voice-agent --package contracts
+          cargo test --package cognitive-rust --lib
       - name: Build cognitive-rust extension
         run: |
           cd backend
