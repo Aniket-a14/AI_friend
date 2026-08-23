@@ -260,6 +260,24 @@ class AppSettings(BaseSettings):
     VISION_FOCAL_PX: float = 443.0
     VISION_FOCAL_REFERENCE_WIDTH_PX: int = 512
 
+    # P3-1: salience-gated visual episodic memory. Screen captures are far
+    # more privacy-sensitive than camera captures -- a screen can show
+    # anything open on the machine, not just the user's face -- so
+    # screen-sourced visual traces get a hard TTL instead of the graded
+    # ACT-R fade camera-sourced ones get through `memories`. This is a
+    # privacy boundary, not temperament, so it is a deployment setting here
+    # rather than a PersonaProfile field.
+    VISUAL_SCREEN_TRACE_TTL_H: float = 24.0
+    # A visual trace is stored only when the frame is perceptually novel
+    # (VisualAppraisalService.last_frame_was_novel), the appraisal produced
+    # a description, and the moment was affectively significant -- current
+    # arousal or |valence| clears one of these two thresholds. Unmeasured
+    # placeholders (CLAUDE.md integrity constraints): both are a modest
+    # deviation from the neutral baseline (arousal=0.5, valence=0.0), not
+    # tuned values.
+    VISUAL_MEMORY_AROUSAL_THRESHOLD: float = 0.55
+    VISUAL_MEMORY_VALENCE_THRESHOLD: float = 0.15
+
     # Half-life of a phasic hormone burst, in seconds. Real phasic bursts last
     # only hundreds of milliseconds; these are the *felt* afterglow at
     # conversational timescale, so both are deliberately much slower than

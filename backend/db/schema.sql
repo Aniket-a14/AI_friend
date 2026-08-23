@@ -66,6 +66,24 @@ create index if not exists memories_embedding_idx
 create index if not exists archived_memories_embedding_idx
   on archived_memories using hnsw (embedding halfvec_cosine_ops);
 
+-- Screen-sourced salient visual episodes (P3-1). Screen captures are more
+-- privacy-sensitive than camera captures -- a screen can show anything open
+-- on the machine, not just the user's face -- so these get a hard TTL
+-- (VISUAL_SCREEN_TRACE_TTL_H, pruned by MemoryStore.prune_expired_visual_screen_traces)
+-- instead of the graded ACT-R fade `memories` rows get. Camera-sourced
+-- visual traces go through `memories` instead (modality='visual') and do
+-- follow that normal lifecycle.
+create table if not exists visual_screen_traces (
+  id uuid primary key default gen_random_uuid(),
+  description text not null,
+  valence double precision not null default 0.0,
+  arousal double precision not null default 0.5,
+  created_at timestamptz default now()
+);
+
+create index if not exists visual_screen_traces_created_at_idx
+  on visual_screen_traces (created_at);
+
 create table if not exists sessions (
   id uuid primary key,
   started_at timestamptz default now(),

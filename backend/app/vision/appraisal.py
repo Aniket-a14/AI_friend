@@ -41,6 +41,17 @@ class VisualAppraisalService:
         self._last_visual_vector = None
         self._habituation_disabled_logged = False
 
+        # P3-1: reuses the same delta this class already computes for
+        # habituation (`appraise()` below), rather than a second novelty
+        # computation, as the salience signal for whether a frame is worth
+        # persisting as a visual memory. True whenever the frame was NOT
+        # skipped by habituation -- the first frame ever (nothing to diff
+        # against yet) and a frame where continuity-preserving downsampling
+        # is unavailable both default True, since "cannot tell" must not
+        # silently suppress storage the way it must not silently suppress a
+        # VLM call.
+        self.last_frame_was_novel: bool = True
+
         # M3-R3: without this, a down VLM (or Ollama, or a model that was
         # never pulled) got retried every capture tick with a full base64
         # frame -- no backoff. Modeled on the Rust CircuitBreaker
@@ -136,6 +147,10 @@ class VisualAppraisalService:
         if not self.should_appraise():
             return self._last_description
 
+        # Reset before evaluating this frame; the habituation-bypass branch
+        # below is the only place that turns it False.
+        self.last_frame_was_novel = True
+
         # Compute delta to evaluate sensory habituation
         current_vector = self._compute_visual_vector(frame_b64)
         if current_vector is None:
@@ -172,6 +187,7 @@ class VisualAppraisalService:
                 )
                 self._last_visual_vector = current_vector
                 self._last_appraisal_time = time.time()
+                self.last_frame_was_novel = False
                 return self._last_description
 
         if not self._breaker_allow_request():

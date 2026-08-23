@@ -210,6 +210,14 @@ class VisionDescription(BaseModel):
     # vision/agent.py); falls back to 1.0 when no face is detected or
     # calibration inputs are unavailable.
     user_distance: float | None = None
+    # P3-1: whether this frame cleared VisualAppraisalService's own
+    # habituation delta (reused, not recomputed) rather than being a cached
+    # repeat. Downstream salience gating for visual episodic memory
+    # (SubconsciousAgent) uses this so a static scene doesn't mint a new
+    # memory every VLM_APPRAISAL_INTERVAL. Defaults True so a producer that
+    # predates this field (or genuinely can't tell) does not silently
+    # suppress storage.
+    is_novel: bool = True
 
 
 # ─── state.update ────────────────────────────────────────────

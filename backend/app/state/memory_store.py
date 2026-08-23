@@ -3228,6 +3228,85 @@ class MemoryStore:
         except Exception as e:
             logger.error(f"Failed to apply ACT-R decay pruning: {e}")
 
+    async def add_visual_screen_trace(
+        self, description: str, valence: float = 0.0, arousal: float = 0.5
+    ) -> None:
+        """Stores a screen-sourced salient visual episode (P3-1).
+
+        Screen captures are more privacy-sensitive than camera captures -- a
+        screen can show anything open on the machine, not just the user's
+        face -- so these go through a dedicated table with a hard TTL
+        (`prune_expired_visual_screen_traces`, `Config.VISUAL_SCREEN_TRACE_TTL_H`)
+        rather than the graded ACT-R fade `memories` rows get. Camera-sourced
+        visual traces go through `add_memory` instead (modality="visual",
+        source="vision_camera") and do follow that normal lifecycle -- both
+        paths are gated by the same salience check in the caller
+        (SubconsciousAgent._on_vision_description).
+        """
+        trace_id = str(uuid.uuid4())
+        try:
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    await conn.execute(
+                        "INSERT INTO visual_screen_traces "
+                        "(id, description, valence, arousal) VALUES (?, ?, ?, ?)",
+                        trace_id,
+                        description,
+                        valence,
+                        arousal,
+                    )
+                else:
+                    await conn.execute(
+                        "INSERT INTO visual_screen_traces "
+                        "(id, description, valence, arousal) VALUES ($1, $2, $3, $4)",
+                        trace_id,
+                        description,
+                        valence,
+                        arousal,
+                    )
+        except Exception as e:
+            logger.error(f"Failed to store visual screen trace: {e}")
+
+    async def prune_expired_visual_screen_traces(
+        self, ttl_hours: float | None = None, current_time=None
+    ) -> None:
+        """Deletes screen-sourced visual traces past their privacy TTL.
+
+        Called from the same periodic maintenance pass that already runs
+        ACT-R decay (`SubconsciousAgent._run_consolidation_pass`), not a new
+        tick path. Unlike `apply_actr_decay`'s pruning, this has no rowcount
+        to report back: the SQLite fallback's `execute()` discards its
+        cursor result (`SQLiteConnection.execute`, sqlite_fallback.py), so a
+        count would be accurate on Postgres and silently wrong on SQLite --
+        this stays honest about that rather than fabricate one.
+        """
+        ttl = ttl_hours if ttl_hours is not None else Config.VISUAL_SCREEN_TRACE_TTL_H
+        now = (
+            self._as_aware_utc(current_time)
+            if current_time is not None
+            else datetime.now(UTC)
+        )
+        cutoff = now - timedelta(hours=ttl)
+        try:
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    # Normalise via datetime(): stored as text, and a raw
+                    # string comparison of differing ISO precision/offsets is
+                    # unreliable (same reasoning as apply_actr_decay's archive
+                    # cleanup above).
+                    await conn.execute(
+                        "DELETE FROM visual_screen_traces "
+                        "WHERE datetime(created_at) < datetime(?)",
+                        cutoff.isoformat(),
+                    )
+                else:
+                    await conn.execute(
+                        "DELETE FROM visual_screen_traces WHERE created_at < $1",
+                        cutoff,
+                    )
+        except Exception as e:
+            logger.error(f"Failed to prune expired visual screen traces: {e}")
+
     async def close(self):
         """Close the persistent HTTP client."""
         await self._http_client.aclose()

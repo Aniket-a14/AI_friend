@@ -161,6 +161,44 @@ class TestVisualAppraisalService:
         mock_ollama_client.describe_image.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_habituation_bypass_marks_the_frame_not_novel(
+        self, mock_appraisal_service, mock_ollama_client
+    ):
+        """P3-1: `last_frame_was_novel` reuses this same habituation delta as
+        the salience signal for visual episodic memory -- a habituated
+        (skipped) frame must be flagged not-novel, not left at its default."""
+        frame_b64 = _real_jpeg_frame_b64()
+
+        await mock_appraisal_service.appraise(frame_b64)
+        assert mock_appraisal_service.last_frame_was_novel is True
+
+        mock_ollama_client.describe_image.reset_mock()
+        mock_appraisal_service._last_appraisal_time = time.time() - 2.0
+        await mock_appraisal_service.appraise(frame_b64)
+
+        assert mock_appraisal_service.last_frame_was_novel is False
+
+    @pytest.mark.asyncio
+    async def test_novel_frame_after_a_habituated_one_resets_the_flag(
+        self, mock_appraisal_service, mock_ollama_client
+    ):
+        """The flag must not stick at False forever once a scene actually
+        changes -- otherwise every visual memory after the first habituated
+        frame would be silently suppressed."""
+        same_frame = _real_jpeg_frame_b64()
+        different_frame = _real_jpeg_frame_b64(color=(10, 200, 30))
+
+        await mock_appraisal_service.appraise(same_frame)
+        mock_ollama_client.describe_image.reset_mock()
+        mock_appraisal_service._last_appraisal_time = time.time() - 2.0
+        await mock_appraisal_service.appraise(same_frame)
+        assert mock_appraisal_service.last_frame_was_novel is False
+
+        mock_appraisal_service._last_appraisal_time = time.time() - 2.0
+        await mock_appraisal_service.appraise(different_frame)
+        assert mock_appraisal_service.last_frame_was_novel is True
+
+    @pytest.mark.asyncio
     async def test_breaker_opens_after_consecutive_failures_and_stops_calling_vlm(
         self, mock_appraisal_service, mock_ollama_client
     ):
@@ -317,6 +355,7 @@ class TestVisionAgent:
         mock_appraisal.appraise = AsyncMock(
             return_value="A clean glass desk with three monitors."
         )
+        mock_appraisal.last_frame_was_novel = True
         agent.appraisal = mock_appraisal
 
         # We pass a simple valid base64 string for a tiny 1x1 black png or blank bytes
@@ -338,6 +377,7 @@ class TestVisionAgent:
         assert msg.source == "screen"
         assert msg.user_distance is not None
         assert msg.user_distance == 1.0  # Fallback since frame is invalid/blank
+        assert msg.is_novel is True
 
     @pytest.mark.asyncio
     @patch("app.vision.agent.ScreenLink")
@@ -438,6 +478,7 @@ class TestVisionAgent:
         mock_appraisal = MagicMock()
         mock_appraisal.should_appraise.return_value = True
         mock_appraisal.appraise = AsyncMock(return_value="Seen anyway.")
+        mock_appraisal.last_frame_was_novel = True
         agent.appraisal = mock_appraisal
 
         blank_frame_b64 = base64.b64encode(b"\x00" * 100).decode("utf-8")
@@ -518,6 +559,7 @@ class TestVisionAgent:
         mock_appraisal = MagicMock()
         mock_appraisal.should_appraise.return_value = True
         mock_appraisal.appraise = AsyncMock(return_value="A description.")
+        mock_appraisal.last_frame_was_novel = True
         agent.appraisal = mock_appraisal
         agent._calculate_user_distance = MagicMock(return_value=1.5)
 

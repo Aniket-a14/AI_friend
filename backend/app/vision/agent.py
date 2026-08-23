@@ -308,6 +308,7 @@ class VisionAgent(BaseAgent):
                     description=description,
                     source=self.source,
                     user_distance=user_distance,
+                    is_novel=self.appraisal.last_frame_was_novel,
                 )
                 await self.publish(Topics.VISION_DESCRIPTION, msg.model_dump())
         except Exception as e:

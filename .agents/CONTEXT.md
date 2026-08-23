@@ -9324,3 +9324,109 @@ calibrate it in this environment. Carried forward: visual episodic memory
 (Part 5, whose salience gating reuses `_compute_visual_vector`'s output and
 therefore inherits this fix directly), voice/STT (Part 6), NATS accounts +
 supply chain (Part 7), deployment/docs/cleanup (Part 8).
+
+## 2026-08-23 -- Stage 6 Part 5 (salience-gated visual episodic memory) -- P3-1,
+the one genuine feature build in this roadmap
+
+Three signals gate whether a `vision.description` frame becomes a stored
+memory, per the plan's own framing: perceptually novel, produced a
+description, and affectively significant. The first two already existed in
+some form; this part wires all three together and adds the two storage
+lifecycles the plan specified.
+
+**Novelty, reused not recomputed.** `VisualAppraisalService` already
+computes a delta between consecutive frames for VLM-call habituation
+(`appraisal.py`) but discarded it once used. Added `last_frame_was_novel`
+(public bool, defaults `True`), set `False` only in the habituation-bypass
+branch and reset `True` at the top of every `appraise()` call -- so a scene
+that changes again after being static is not stuck flagged "not novel"
+forever. `VisionAgent._run_appraisal` carries it onto the wire as
+`VisionDescription.is_novel` (new field, `contracts.py`, default `True` so a
+producer that predates the field -- or genuinely can't tell, e.g. the
+cv2-and-PIL-both-unavailable path Part 4 added -- never silently suppresses
+storage).
+
+**Affective significance, evaluated where affect lives.** `VisionAgent`
+deliberately has no state/DB access (the same boundary `BrainAgent`'s
+`SomaticAppraiser` placement already argues for -- see that class's own
+docstring), so this can't be decided in the vision process. `SubconsciousAgent`
+already holds both a `StateService` and a `MemoryStore`, so the new
+`_on_vision_description` handler lives there: subscribes to
+`Topics.VISION_DESCRIPTION` with `deliver_policy="new"` (a fresh durable must
+not re-walk history and re-evaluate salience against affect states that no
+longer hold -- same reasoning as every other liveness subscription in the
+mesh), and stores only when `is_novel`, `description` is non-empty, and
+either `current_state.arousal >= Config.VISUAL_MEMORY_AROUSAL_THRESHOLD`
+(0.55) or `abs(current_state.valence) >= Config.VISUAL_MEMORY_VALENCE_THRESHOLD`
+(0.15) -- both unmeasured placeholders, a modest deviation from the neutral
+baseline (arousal=0.5, valence=0.0), documented as such in `config.py` per
+CLAUDE.md's integrity constraints. Which affect fields to gate on and how to
+combine them was this part's own design call, not named by the plan.
+
+**Two storage lifecycles, per the plan's retention answer.** Camera-sourced
+traces go through `MemoryStore.add_memory` (`modality="visual"`,
+`source="vision_camera"`, `emotion=arousal`) and follow the normal ACT-R
+fade. Screen-sourced traces go through a new dedicated table,
+`visual_screen_traces` (`db/schema.sql` and `sqlite_fallback.py`, matching
+the dual-backend invariant nearly every other query in `memory_store.py`
+already holds), and a hard TTL --
+`Config.VISUAL_SCREEN_TRACE_TTL_H` (default 24h) -- rather than ACT-R fade,
+because a screen can show anything open on the machine, not just the user's
+face: a stronger privacy guarantee than "importance decayed toward
+irrelevance" provides. New `MemoryStore.add_visual_screen_trace` (insert)
+and `prune_expired_visual_screen_traces` (delete by cutoff, mirroring
+`apply_actr_decay`'s own archived-memories cleanup's cutoff-timestamp
+pattern) wired into `SubconsciousAgent._run_consolidation_pass` --
+unconditionally on every pass, not gated behind `if episodes:`, since it has
+nothing to do with whether there were unconsolidated chat episodes that
+tick. The prune method deliberately does not report a row count: the SQLite
+fallback's `execute()` discards its cursor result, so a count would be
+accurate on Postgres and silently wrong on SQLite -- stated honestly in the
+method's own docstring rather than fabricated.
+
+**Deviation from the plan's file list.** The plan named
+`app/vision/appraisal.py, app/vision/agent.py, app/state/memory_store.py,
+db/schema.sql, app/state/sqlite_fallback.py, app/agents/subconscious_agent.py,
+app/config.py` but not `contracts.py`. Carrying the novelty signal from the
+vision process (where the delta is computed) to the subconscious process
+(where affect lives) genuinely needs a new wire field -- there was no way to
+build the three-signal gate as specified without it. Checked, as Part 4 did:
+`scripts/bootstrap/setup_nats_streams.py` has zero references to
+`contracts.py` at all, so no rerun was needed despite touching the contract.
+
+**Files:** `app/vision/appraisal.py`, `app/vision/agent.py`,
+`app/contracts.py`, `app/config.py`, `app/state/memory_store.py`,
+`db/schema.sql`, `app/state/sqlite_fallback.py`, `app/agents/subconscious_agent.py`,
+plus `tests/test_vision.py` (2 new: habituation bypass flags a frame
+not-novel, a subsequent genuinely-different frame resets the flag; 3
+existing `MagicMock()`-backed appraisal tests updated to set
+`last_frame_was_novel` explicitly, since an unset MagicMock attribute is not
+a valid Pydantic bool and was failing `VisionDescription` construction
+silently inside `_run_appraisal`'s broad except) and new
+`tests/test_visual_episodic_memory.py` (10 tests: trace persistence and
+TTL-cutoff pruning against a real in-memory SQLite-backed `MemoryStore`; the
+three-signal gate's four failure/success combinations on
+`SubconsciousAgent._on_vision_description`; the missing-`is_novel`-defaults-
+to-stored case; unconditional pruning inside the consolidation pass).
+
+**Verified.** Full suite **1106/1106**, `ruff check .` clean, `cargo check
+--workspace` clean (no Rust touched), `scripts/check_subject_wiring.py`
+clean -- `vision.description` is now both published and subscribed with no
+new allowlist entry needed. New tests were **not mutation-tested**, per the
+standing instruction ("no need to do any more mutation tests from now"):
+written and verified green-only.
+
+**NOT done.** Screen-sourced traces are stored and pruned but not wired into
+`search_memories`'s retrieval fusion (L1 cache, Qdrant, PageRank, cue
+expansion) -- the plan's file list names no Qdrant/graph_db work for this
+table, and doing that properly is a substantially larger endeavor than this
+part's scope; they are a write/prune surface only for now, not yet
+recallable through normal conversation. No live-NATS test exercises
+`SubconsciousAgent`'s new `vision.description` subscription against a real
+JetStream stream -- unit-level only, consistent with how this same branch's
+earlier parts have handled subject wiring. `cv2` remains uninstalled in this
+dev environment (per Part 4), so the camera-path habituation/vector code
+this part depends on for its novelty signal was not independently
+re-exercised against real hardware here either. Carried forward: voice/STT
+(Part 6), NATS accounts + supply chain (Part 7), deployment/docs/cleanup
+(Part 8).
