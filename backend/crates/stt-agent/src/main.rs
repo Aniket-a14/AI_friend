@@ -775,6 +775,21 @@ async fn handle_audio_inbound(
         }
         _ => {
             // Endpoint (or forced cut): close the utterance and transcribe it.
+            if force_cut {
+                // P2-8: a forced cut means the endpointer has claimed one
+                // continuous utterance for longer than `max_utterance_secs`,
+                // which is the exact symptom of a latched noise floor -- a
+                // floor that fell below the room's ambient level, after which
+                // every chunk reads as voiced and the non-speech adaptation
+                // branch that would lift it never runs again. Re-seed from the
+                // current chunk, which is a live sample of whatever the room
+                // actually sounds like now.
+                //
+                // Deliberately not done on a normal endpoint: that path means
+                // the detector is working, and resetting a correctly-adapted
+                // floor after every utterance would throw away the adaptation.
+                guard.endpointer.reseed_noise_floor(chunk_rms);
+            }
             let pcm = std::mem::take(&mut guard.buffer);
             let utt = guard.utterance_id.clone();
             let latency = guard.utterance_latency.take();
