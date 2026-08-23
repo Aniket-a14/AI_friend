@@ -1214,56 +1214,89 @@ class StateService:
         """
         Idle evolution triggered by NATS system.tick.
         Implements ALMA exponential decay (§2.2) and Fatigue updates.
+
+        audit/ROADMAP.md P2-14 (M2-A1): this ran **outside `_state_lock`**,
+        mutating fatigue, mood, energy, dominance and all three trust fields
+        while every other mutation path in this class held it -- including
+        `release_cortisol` and `release_dopamine` directly above, whose
+        docstrings spell out why affect mutation must be serialized. That is
+        the audit's own stated root cause for this finding: the lock discipline
+        is careful everywhere it was thought about, and the tick path was not
+        thought about.
+
+        Concretely, the tick arrives on a NATS callback while a fire-and-forget
+        System-2 appraisal can be writing affect (finding A2), so an unlocked
+        decay could read `mood` before that write and store its result after,
+        discarding it. The endocrine layer makes it worse rather than merely
+        racy: burst peaks are measured relative to the tonic floor, and the
+        tonic floor is a pure function of the valence and arousal this method
+        rewrites -- so a release interleaving with an unlocked decay measures
+        its peak against a floor that never existed.
+
+        `persist_state` is called from inside the lock deliberately. It
+        serializes on `_persist_lock`, which is **not** `_state_lock` precisely
+        because callers reach it already holding the state lock (see its own
+        docstring); `asyncio.Lock` is not reentrant, so the separation is what
+        makes this safe. `_enforce_bounds` and `_update_fatigue_python` are
+        synchronous and take no lock.
         """
         now = tick_metadata.get("timestamp", time.time())
         dt_hours = tick_metadata.get("interval", 60) / 3600.0
 
-        # Evolve fatigue
-        hour = datetime.fromtimestamp(now).hour
-        is_night = hour >= 22 or hour < 6
-        try:
-            import cognitive_rust
+        async with self._state_lock:
+            # Evolve fatigue
+            hour = datetime.fromtimestamp(now).hour
+            is_night = hour >= 22 or hour < 6
+            try:
+                import cognitive_rust
 
-            rust_state = cognitive_rust.FatigueState(
-                self.current_state.fatigue, self.current_state.last_user_interaction
-            )
-            updated_rust = cognitive_rust.update_fatigue(
-                rust_state, now, dt_hours, is_night
-            )
-            self.current_state.fatigue = updated_rust.fatigue
-        except ImportError:
-            self._update_fatigue_python(now, dt_hours, is_night)
-        except Exception:
-            logger.exception(
-                "[State] Unexpected Rust fatigue update error; using Python fallback."
-            )
-            self._update_fatigue_python(now, dt_hours, is_night)
+                rust_state = cognitive_rust.FatigueState(
+                    self.current_state.fatigue,
+                    self.current_state.last_user_interaction,
+                )
+                updated_rust = cognitive_rust.update_fatigue(
+                    rust_state, now, dt_hours, is_night
+                )
+                self.current_state.fatigue = updated_rust.fatigue
+            except ImportError:
+                self._update_fatigue_python(now, dt_hours, is_night)
+            except Exception:
+                logger.exception(
+                    "[State] Unexpected Rust fatigue update error; using Python fallback."
+                )
+                self._update_fatigue_python(now, dt_hours, is_night)
 
-        # ALMA Decay (§2.2): short-term affect decays back to baseline
-        base_v = self.current_state.baseline_valence
-        base_ar = self.current_state.baseline_arousal
-        base_d = self.current_state.baseline_dominance
+            # ALMA Decay (§2.2): short-term affect decays back to baseline
+            base_v = self.current_state.baseline_valence
+            base_ar = self.current_state.baseline_arousal
+            base_d = self.current_state.baseline_dominance
 
-        self.current_state.mood = base_v + (
-            self.current_state.mood - base_v
-        ) * math.exp(-self.lambda_decay * dt_hours)
-        self.current_state.energy = base_ar + (
-            self.current_state.energy - base_ar
-        ) * math.exp(-self.lambda_decay * dt_hours)
-        self.current_state.dominance = base_d + (
-            self.current_state.dominance - base_d
-        ) * math.exp(-self.lambda_decay * dt_hours)
+            self.current_state.mood = base_v + (
+                self.current_state.mood - base_v
+            ) * math.exp(-self.lambda_decay * dt_hours)
+            self.current_state.energy = base_ar + (
+                self.current_state.energy - base_ar
+            ) * math.exp(-self.lambda_decay * dt_hours)
+            self.current_state.dominance = base_d + (
+                self.current_state.dominance - base_d
+            ) * math.exp(-self.lambda_decay * dt_hours)
 
-        tb_drift = (self.trust_baseline - self.current_state.trust_benevolence) * 0.01
-        tc_drift = (self.trust_baseline - self.current_state.trust_competence) * 0.01
-        ti_drift = (self.trust_baseline - self.current_state.trust_integrity) * 0.01
-        self.current_state.trust_benevolence += tb_drift
-        self.current_state.trust_competence += tc_drift
-        self.current_state.trust_integrity += ti_drift
+            tb_drift = (
+                self.trust_baseline - self.current_state.trust_benevolence
+            ) * 0.01
+            tc_drift = (
+                self.trust_baseline - self.current_state.trust_competence
+            ) * 0.01
+            ti_drift = (
+                self.trust_baseline - self.current_state.trust_integrity
+            ) * 0.01
+            self.current_state.trust_benevolence += tb_drift
+            self.current_state.trust_competence += tc_drift
+            self.current_state.trust_integrity += ti_drift
 
-        self.current_state.last_update = datetime.fromtimestamp(now)
-        self._enforce_bounds()
-        await self.persist_state()
+            self.current_state.last_update = datetime.fromtimestamp(now)
+            self._enforce_bounds()
+            await self.persist_state()
         logger.debug(
             "[State Heartbeat] V=%.3f Ar=%.3f D=%.3f F=%.3f",
             self.current_state.mood,
