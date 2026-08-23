@@ -7977,6 +7977,68 @@ its bound.
   scope.
 - P2-3, P2-4, P2-6, P2-9 (the rest of Stage 4) and Stage 5/6 -- unstarted.
 
+## 2026-08-23 -- P2-9 (windowed partials), Stage 4 Part 3 -- stt-agent partial
+transcription bounded to a trailing window, the first change this crate has
+ever had genuinely test-executed rather than compile-checked
+
+Depends on Part 0 (P2-11): this branch is stacked on
+`fix/p2-11-stt-agent-tests-runnable`, not `main`, because `cargo test
+--package stt-agent` needs that branch's build.rs fix to run at all rather
+than being SIGKILLed at load. Neither P2-11 nor P2-6 is merged to `main`
+yet, so this PR should target `main` and be rebased once P2-11 lands --
+noted here rather than silently stacking without explanation.
+
+**The bug.** `crates/stt-agent/src/main.rs`'s `SpeechContinues` handler
+cloned the *entire* accumulated buffer on every partial
+(`let pcm = guard.buffer.clone()`), gated only by `partial_interval_ms`
+(default 500ms). A 30s utterance against `max_utterance_secs` issued ~60
+partials, each transcribing more of the same early audio than the last --
+summing to minutes of redundant inference and up to 5.8MB cloned twice a
+second by the end of a long utterance.
+
+**The fix.** New pure function `trailing_window(buffer, sample_rate,
+window_secs) -> &[f32]`, called at the `SpeechContinues` site instead of
+`.clone()`; new `STT_PARTIAL_WINDOW_SECS` config field (default 8.0). This
+is safe specifically because of what a partial feeds: barge-in keyword
+detection and acoustic affect, both fast/disposable by design -- the
+*final* transcript is untouched, since the endpoint branch still takes the
+whole buffer via `std::mem::take` (`:772` area, unchanged). A trailing
+window is arguably more correct for barge-in besides being cheaper: a
+keyword spoken 20 seconds ago should not still be able to interrupt the
+agent now. Interacts cleanly with #190's `speculative_fired_for`
+once-per-utterance duck scoping, which is what stops a windowed keyword
+from re-firing across successive partials.
+
+**Files:** `crates/stt-agent/src/main.rs`.
+
+**Verified -- for the first time against real execution, not just
+compiled.** `cargo test --package stt-agent`: 35/35, including the two new
+`trailing_window` tests and, notably, the two `speculative_fire_*` tests
+from #190's P1-4 work, which had only ever been compile-checked and
+manually traced (P2-11 blocked them at the time). Both pass unmodified
+against real code now that they can actually run. `cargo check
+--workspace`: clean. New tests mutation-tested: (1) `trailing_window`
+short-circuited to always return the full buffer (the exact bug this pass
+removes) -- the long-buffer test caught it (`left: 160000, right: 64000`);
+reverted. (2) confirmed the short-buffer pass-through path independently
+via its own dedicated test rather than relying on the long-buffer test to
+also cover it.
+
+**NOT done:**
+- Measurement 1.4 (end-to-end partial-transcription latency) is not
+  re-measured here -- per the plan, 1.4 profiles the *final*/accurate
+  path, which the still-unresolved whisper hang blocks regardless of this
+  change, so it was never this item's gate.
+- `STT_PARTIAL_WINDOW_SECS`'s default (8.0s) is a judgment call, not a
+  measured optimum -- chosen as generously larger than
+  `endpoint_silence_ms` (700ms) and typical barge-in reaction time, with
+  headroom. Worth revisiting once/if 1.4 is unblocked and partial-path
+  latency can be measured directly.
+- This branch is stacked on Part 0's, per the dependency above -- retarget
+  to `main` once `fix/p2-11-stt-agent-tests-runnable` merges, per
+  CLAUDE.md's stacked-PR convention.
+- P2-4 (the rest of Stage 4) and Stage 5/6 -- unstarted.
+
 ## 2026-08-23 -- Stage 4, Part 0 -- P2-11's SIGKILL root-caused and fixed: an
 invalid code signature, not the missing rpath alone
 

@@ -65,6 +65,10 @@ struct SttConfig {
     min_speech_ms: f64,
     partial_interval_ms: f64,
     max_utterance_secs: f64,
+    /// P2-9: partials transcribe only this trailing window of the buffer, not the
+    /// whole accumulated utterance. A keyword from 20 seconds ago should not still
+    /// be able to interrupt the agent.
+    partial_window_secs: f64,
 }
 
 impl SttConfig {
@@ -94,6 +98,7 @@ impl SttConfig {
             min_speech_ms: parse_env("STT_MIN_SPEECH_MS", 250.0),
             partial_interval_ms: parse_env("STT_PARTIAL_INTERVAL_MS", 500.0),
             max_utterance_secs: parse_env("STT_MAX_UTTERANCE_SECS", 30.0),
+            partial_window_secs: parse_env("STT_PARTIAL_WINDOW_SECS", 8.0),
         }
     }
 }
@@ -749,7 +754,9 @@ async fn handle_audio_inbound(
             let confirmed = guard.endpointer.speech_confirmed();
             if confirmed && now - guard.last_partial_at >= config.partial_interval_ms / 1000.0 {
                 guard.last_partial_at = now;
-                let pcm = guard.buffer.clone();
+                let pcm =
+                    trailing_window(&guard.buffer, source_rate, config.partial_window_secs)
+                        .to_vec();
                 let utt = guard.utterance_id.clone();
                 let rate = source_rate;
                 drop(guard);
@@ -796,6 +803,25 @@ async fn handle_audio_inbound(
     }
 
     Ok(())
+}
+
+/// P2-9: the trailing slice of `buffer` a partial should transcribe, instead of
+/// the whole accumulated utterance.
+///
+/// Every `SpeechContinues` partial used to clone the entire buffer, so a 30s
+/// utterance issued ~60 partials (one per `partial_interval_ms`) summing to
+/// minutes of inference over the same early seconds, transcribed again and
+/// again. This does not change what the *final* transcript sees — that still
+/// takes the whole buffer via `std::mem::take` on the endpoint branch — only
+/// the fast, disposable hypothesis partials feed to barge-in keyword detection
+/// and acoustic affect.
+fn trailing_window(buffer: &[f32], sample_rate: u32, window_secs: f64) -> &[f32] {
+    let window_samples = (sample_rate as f64 * window_secs) as usize;
+    if buffer.len() > window_samples {
+        &buffer[buffer.len() - window_samples..]
+    } else {
+        buffer
+    }
 }
 
 /// Autocorrelation pitch estimate over the 80-400 Hz band, at the true rate.
@@ -943,6 +969,41 @@ mod tests {
         let decoded = audio::decode_mono_f32(br#"{"audio":"legacy-json"}"#, 1);
         assert!(!decoded.is_empty());
         assert!(build_speculative_intent("", "utt-1").is_none());
+    }
+
+    /// P2-9: a buffer longer than the configured window must be clipped to the
+    /// trailing slice, not transcribed in full -- this is the whole point of the
+    /// fix, so a mutation that drops the clipping (e.g. always returning `buffer`)
+    /// must fail this test.
+    #[test]
+    fn trailing_window_clips_a_long_buffer_to_the_tail() {
+        let sample_rate = 16_000u32;
+        // 10s of buffer, distinguishable by value so we can check *which* end survives.
+        let mut buffer = vec![0.0f32; sample_rate as usize * 10];
+        for (i, sample) in buffer.iter_mut().enumerate() {
+            *sample = i as f32;
+        }
+
+        let windowed = trailing_window(&buffer, sample_rate, 4.0);
+
+        assert_eq!(windowed.len(), sample_rate as usize * 4);
+        // It's the tail, not the head, that survives.
+        assert_eq!(windowed[0], buffer[buffer.len() - windowed.len()]);
+        assert_eq!(windowed.last(), buffer.last());
+    }
+
+    /// A buffer shorter than the window must pass through unclipped -- there is
+    /// nothing to trim yet, and clipping here would silently drop early speech
+    /// from a short utterance rather than leaving it whole.
+    #[test]
+    fn trailing_window_does_not_pad_or_clip_a_short_buffer() {
+        let sample_rate = 16_000u32;
+        let buffer = vec![1.0f32; sample_rate as usize * 2]; // 2s, window is 4s.
+
+        let windowed = trailing_window(&buffer, sample_rate, 4.0);
+
+        assert_eq!(windowed.len(), buffer.len());
+        assert_eq!(windowed, buffer.as_slice());
     }
 
     fn job(utterance_id: &str) -> Job {
