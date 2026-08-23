@@ -8621,3 +8621,82 @@ check .` clean.
 - **M2-A3** (`update_from_event` unlocked) -- dead in production.
 - Stage 5's remaining parts -- P2-8's noise-floor latch, P2-2's outbound ack,
   and the two documentation leftovers -- next.
+
+## 2026-08-23 -- Stage 5 Part 2 -- P2-8: the endpointer noise floor does not
+"deafen", it *latches* -- and a second way into the latch needs no dropout at
+all
+
+`ROADMAP.md` P2-8 (M3-R2) says the floor "can latch near zero" and "one
+near-silent chunk can deafen detection for a long time". The latching is real;
+**"deafen" is the wrong direction**, and getting it right changed the fix.
+
+**The actual mechanism.** `Endpointer::push` adapts the floor *only on
+non-voiced chunks* -- deliberately, so sustained talking cannot drag it up
+mid-utterance. The descent was unbounded: `if chunk_rms < self.noise_floor {
+self.noise_floor = chunk_rms; }`, a straight assignment. So one anomalous frame
+(a dropout, a muted mic, a lost packet) put the floor at ~0. `threshold` then
+collapsed to the flat `min_speech_rms` (0.008), and **in any room whose ambient
+level is above 0.008, every subsequent chunk reads as voiced** -- so the
+adaptation branch never runs again and the floor can never recover. The
+detector is not deaf, it is permanently *triggered*: utterances stop
+endpointing (until the `max_utterance_secs` force-cut), and barge-in fires on
+room noise. Note the comment on `min_speech_rms` claims it exists "so a silent
+room cannot make noise_floor ~0 and trigger on hiss" -- it guards the
+*threshold*, not the floor, so it never could.
+
+**A second entry, found by a failing test rather than by reading.** While
+writing the "floor still follows a quiet room" test, the assertion failed with
+`0.01 -> 0.00104` and the floor had never risen at all. Cause: the floor is
+constructed at 0.01, so the opening threshold is 0.03, and at an ambient level
+of 0.05 the *very first chunk* reads as voiced. The non-speech branch never
+executes even once and the floor stays pinned at its default forever. **No
+dropout is needed** -- a moderately noisy room at startup is enough. This is
+not in M3-R2, and it is the clearest argument that bounding the descent alone
+is insufficient: here the floor never descends.
+
+**Fix, two parts, both required.**
+1. **Bounded descent** (`NOISE_FLOOR_DESCENT = 0.1`): one chunk may close a
+   tenth of the gap downward, instead of assigning outright. Still fast (a
+   genuine drop is mostly tracked within half a second at 20ms chunks) but no
+   single frame can latch it. Asymmetric with the 0.005 rise on purpose, and
+   the asymmetry is the existing design's, not a new one: a room getting
+   quieter should be tracked promptly; a room getting louder must not drag the
+   floor up mid-utterance.
+2. **An escape hatch** (`reseed_noise_floor`), called from
+   `handle_audio_inbound`'s forced-cut branch only. A forced cut means the
+   endpointer has claimed one continuous utterance for longer than
+   `max_utterance_secs` -- precisely the latch's symptom -- so the caller
+   already computes the signal; it just never acted on it. Re-seeds from the
+   current `chunk_rms`, a live sample of the room, and clears the speech run.
+   Deliberately *not* done on a normal endpoint: that path means the detector
+   is working, and resetting a correctly-adapted floor after every utterance
+   would throw the adaptation away. This does not weaken the "adapt only on
+   non-speech" rule, because a voiced run that long is by the caller's own
+   definition not speech.
+
+Part 2 is what covers the startup case, which part 1 structurally cannot.
+
+**Files:** `crates/stt-agent/src/audio.rs`, `crates/stt-agent/src/main.rs`.
+
+**Verified.** `cargo test --package stt-agent` 39/39 (35 + 4 new);
+`--package voice-agent --package contracts` also green (80 tests across the
+three); `cargo check --workspace` clean. No Python changed. All four new tests
+mutation-tested against the specific defect each exists to catch: the descent
+restored to an outright assignment (the original bug -- caught), the descent
+rate set to zero so it never moves (caught), the reseed made a no-op (caught),
+and the reseed leaving `speech_active` set (caught).
+
+**NOT done:**
+- `NOISE_FLOOR_DESCENT = 0.1` is a reasoned choice, not a measured optimum.
+  M3-R2's own note ("tune against recorded audio") still stands; no recorded
+  room audio exists in this repo, and the synthetic sequences here prove the
+  latch is gone and the descent still tracks, not that 0.1 is the best value.
+- The **initial** `noise_floor` of 0.01 is left as-is. The startup latch is now
+  *recoverable* (after one forced cut, i.e. up to `max_utterance_secs` of false
+  speech) rather than *fixed*; seeding the floor from the first few chunks of
+  real audio would prevent it outright and is the better fix, but it changes
+  startup behaviour and belongs with the tuning pass above.
+- Measurement 1.4 is not re-run; it profiles the final/accurate path, which the
+  whisper hang still blocks, and was never this item's gate.
+- Stage 5's remaining parts -- P2-2's outbound ack and the two documentation
+  leftovers -- next.
