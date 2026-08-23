@@ -1247,19 +1247,42 @@ class MemoryStore:
         current_arousal,
         current_cortisol,
         current_time,
+        candidate_limit,
     ) -> tuple[list, float]:
         """SQLite fallback: fetch rows and score them via the Rust ACT-R kernel.
 
         Returns the candidates plus the `now_ts` it computed, because the
         original inlined body rebound the enclosing now_ts here and that value
         is what later stamps the L1 cache entry.
+
+        audit/ROADMAP.md P2-6 (M2-P3): this used to `SELECT *` with no
+        `LIMIT` -- a full-table scan on every cache miss, unlike its Postgres
+        sibling (`_fetch_postgres_candidates`), which already receives and
+        applies `candidate_limit`. `embedding` stays in the projection
+        despite M2-P3's "excludes embedding where unused" suggestion --
+        SQLite has no pgvector, so `cognitive_rust.score_memories_actr_sqlite`
+        computes cosine similarity from this column in Rust; dropping it
+        would silently zero out every candidate's similarity, not just save
+        bytes. `ORDER BY last_recalled_at DESC` biases a hard cap toward
+        recently-relevant memories rather than an arbitrary rowid-order
+        slice; SQLite sorts NULL as smallest, so never-recalled rows land
+        last under DESC, which is the right side of the cut to lose first.
         """
         if room is not None:
             rows = await conn.fetch(
-                "SELECT * FROM memories WHERE wing = ? AND room = ?", wing, room
+                "SELECT * FROM memories WHERE wing = ? AND room = ? "
+                "ORDER BY last_recalled_at DESC LIMIT ?",
+                wing,
+                room,
+                candidate_limit,
             )
         else:
-            rows = await conn.fetch("SELECT * FROM memories WHERE wing = ?", wing)
+            rows = await conn.fetch(
+                "SELECT * FROM memories WHERE wing = ? "
+                "ORDER BY last_recalled_at DESC LIMIT ?",
+                wing,
+                candidate_limit,
+            )
 
         # Manual cosine similarity and ACT-R scoring (delegated to Rust PyO3).
         # Imported lazily: the compiled extension is optional in some envs and
@@ -2516,6 +2539,7 @@ class MemoryStore:
                             current_arousal=current_arousal,
                             current_cortisol=current_cortisol,
                             current_time=current_time,
+                            candidate_limit=candidate_limit,
                         )
                     else:
                         raw_candidates = await self._fetch_postgres_candidates(
