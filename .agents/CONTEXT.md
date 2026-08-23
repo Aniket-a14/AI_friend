@@ -8324,3 +8324,123 @@ attribution.
   closed the measurement gap and the regex duplication, which the number
   justified, and stopped there rather than adding unmeasured scope.
 - P2-4, P2-9 (the rest of Stage 4) and Stage 5/6 -- unstarted.
+## 2026-08-23 -- P2-4 (merge the two in-turn LLM calls), Stage 4 Part 4 --
+attempted, built, verified against a real model, and reverted: qwen2.5:3b does
+not reliably continue past a JSON classification block into prose
+
+Per the Stage 4 plan's own explicit fallback for this item ("If evals regress
+and cannot be recovered inside this pass, ship Parts 0-3 and drop Part 4
+rather than degrade the agent for a latency win"), this is a documented
+negative result, not a shipped change. **No code from this investigation
+merged to `main`.**
+
+**1.5's negative result, restated for the record**: the two in-turn LLM calls
+(`decision.py`'s intent/goal/ToM classification, `action.py`'s response
+generation) share 0 characters of prompt prefix, so prefix caching was never
+a lever here (already recorded in the backlog-clearing pass that took
+measurement 1.5). The only real win available was eliminating the second
+network round-trip entirely by merging the two calls into one.
+
+**What was built.** `decision.py`'s `decide()` stopped awaiting
+`_classify_intent_and_goal` (deleted; superseded); its prompt schema and
+parsing logic survived as two pure, reusable pieces --
+`CLASSIFICATION_INSTRUCTION` (the `<thought>` then JSON-object instruction
+text) and `normalize_classification()` (sanitizes intent/goal/ToM,
+side-effect-free). `plan.payload["classify_intent"]` threads
+`Config.LLM_INTENT_CLASSIFICATION_ENABLED` from `decide()` through to
+`ActionService`, which appends `CLASSIFICATION_INSTRUCTION` to the response
+call's system prompt and extends the existing incremental `<thought>` parser
+with a second stripping phase (`_advance_classification` /
+`_scan_json_prefix`) that isolates the JSON block the same way `<thought>` is
+isolated -- string/escape-aware brace counting, buffered across chunk
+boundaries, with a bounded safety valve (`_MAX_CLASSIFICATION_CHARS`) and a
+graceful give-up path (leak the buffered text as ordinary prose) if the model
+never produces a `{`. The causality constraint the plan named --
+`preferred_model`/`plan.goal`/ToM context are all consumed while building the
+very prompt the merged call is about to answer, so its own classification
+output cannot feed its own prompt -- resolved cleanly: those three stay
+heuristic-only for the turn's prompt, and the merged call's classification is
+applied to state (`update_theory_of_mind`) and telemetry only *after* the
+response streams, moved from before stage 8 to after stage 9 in
+`pipeline.py`'s `execute()` so a self-correction retry's classification (if
+any) is what's used, not the rejected first pass's.
+
+**All of this worked and was mutation-tested** -- 60+ new/updated unit and
+end-to-end tests (scripted-LLM streams through `ActionService.execute()`,
+`decide()` no longer calling the LLM at all, `normalize_classification`'s
+fallbacks) all passed, and every new assertion was verified against a
+deliberately broken version of the code it covered. The parser correctly
+strips a JSON block that arrives whole, split across arbitrary chunk
+boundaries, or preceded by no `<thought>` block at all; correctly recovers
+from JSON that balances its braces but fails `json.loads` (a trailing comma);
+correctly never re-enters classification mode for a JSON-looking aside later
+in the same reply (a structural guarantee the old standalone-call parser
+had to defend against explicitly, and this design doesn't need to).
+
+**What killed it: a live smoke test against the real model.**
+`evals/runner.py` and `evals/conversation.py` both build their own system
+prompt via `IdentityManager.get_persona_prompt(...)` and call
+`OllamaClient.generate` directly -- neither ever calls
+`ActionService`/`_execute_respond_chat`, so the plan's stated gate ("evals
+run before/after + compare --fail-on-regression") cannot see this change at
+all; the classification prompt and the merged-call parser live entirely
+inside `action.py`, outside evals' probed boundary. Discovering this made a
+live smoke test the only real verification available, so one was run
+directly against `qwen2.5:3b` (the actual configured chat model) through the
+real `ActionService`/`OllamaClient`, not a scripted one.
+
+The first run: 3/3 scenarios ended in `_validate_partial_response`'s
+"Formatting anomaly (JSON/Markdown)" gate firing, self-correction, and the
+retry also failing -- every turn fell back to the canned "I need a moment to
+gather my thoughts..." line. Root-caused to two real, fixed bugs:
+`num_predict` (bounded 100-250, sized only for the spoken reply) had no
+headroom for the classification JSON's ~40-60 extra tokens, so the JSON
+itself was routinely truncated mid-object; the incomplete fragment then hit
+`_advance_classification`'s own graceful-leak safety valve (correct
+behavior in isolation) and landed in the validator as literal unstripped
+JSON. Fixed both: `+100` to `num_predict` when `classify_intent` is set, and
+an explicit instruction addition ("do not stop after the JSON, do not prefix
+the reply with a name or label") after a first live sample showed the model,
+even once given more budget, alternately stopping cold right after the
+closing brace with no reply at all, or prefixing its reply with "Pankudi: "
+like a chat-transcript line -- neither of which the original instruction
+text had anticipated or forbidden.
+
+**After both fixes, the failure rate dropped but did not go to zero.**
+Re-running the same three-scenario smoke test still produced one empty
+response (model stopped cold after the JSON, no self-correction even
+triggered since an empty response is trivially "grounded") and one
+safe-fallback (formatting anomaly recurred) out of three turns -- roughly
+consistent across repeated manual sampling at `num_predict=300` in isolation,
+where continuation succeeded 4/4 times with a stronger instruction but still
+occasionally added an unwanted "User, " address. At 3B scale, reliably
+following a compound "emit structured JSON, then unconditionally continue
+into free-form prose in the same generation" instruction is not something
+this model does consistently across samples -- this reads as a real
+instruction-following ceiling at this parameter count, not a prompt-wording
+problem still waiting for a fourth try.
+
+**Decision:** per the plan's own pre-authorized fallback, Part 4 is dropped.
+All code changes (`decision.py`, `action.py`, `pipeline.py`, three test
+files) were `git stash`'d off the working tree rather than committed --
+`git stash list` on this branch names the stash if anyone wants to look at
+the built-and-tested-but-not-shipped version. Nothing from this pass reached
+`main`.
+
+**Worth revisiting when**: the model serving the chat path is no longer
+3B-class. [[hardware-and-deployment-roadmap]] (session memory, not a repo
+file) already frames the current model as a temporary ceiling pending rented
+GPU / server hardware -- this specific merge is a reasonable candidate to
+re-attempt once a materially larger model is in the loop, since the
+architecture (parser, causality resolution, state/telemetry timing) needed
+no changes to work correctly; only the model's compliance with the compound
+instruction was the blocker.
+
+**NOT done:**
+- P2-4 itself: not shipped, per the above.
+- The `evals/` harness gap this investigation surfaced -- neither `run` nor
+  `run-conversation` can gate a change to `ActionService`'s own prompt
+  construction, only to persona/model behavior probed through evals' own
+  separately-built prompt. Worth its own pass if `action.py`'s prompt logic
+  becomes a recurring source of unverifiable changes.
+- Stage 5/6 -- unstarted.
