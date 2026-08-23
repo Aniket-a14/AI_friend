@@ -9,7 +9,7 @@ from app import config as config_module
 from app.cognitive.identity import IdentityManager
 from app.llm.ollama_client import OllamaClient
 
-from .compare import compare_reports, render_comparison
+from .compare import PathMismatch, compare_reports, render_comparison
 from .conversation import (
     FullHistory,
     RecentWindow,
@@ -51,6 +51,7 @@ async def _cmd_run(args: argparse.Namespace) -> int:
             client, manager, probes,
             model=args.model,
             options=RunOptions(num_gpu=args.num_gpu),
+            path=args.path,
         )
     finally:
         await client.close()
@@ -62,7 +63,7 @@ async def _cmd_run(args: argparse.Namespace) -> int:
     total = len(report.results)
     passed = sum(1 for item in report.results if item.passed)
     print(f"model={report.model} persona={report.persona_name!r} "
-          f"provenance={report.provenance}")
+          f"provenance={report.provenance} path={report.path}")
     for category, summary in report.by_category.items():
         print(f"  {category:<10} {summary.passed}/{summary.probes} "
               f"(mean {summary.mean_score:.2f})")
@@ -240,7 +241,14 @@ def _cmd_compare(args: argparse.Namespace) -> int:
         )
         return 2
 
-    comparison = compare_reports(baseline, candidate)
+    try:
+        comparison = compare_reports(baseline, candidate)
+    except PathMismatch as exc:
+        # Exit 2 like the other input errors in this CLI: the reports are
+        # individually fine, the pairing is not.
+        print(str(exc), file=sys.stderr)
+        return 2
+
     print(render_comparison(comparison))
     if args.fail_on_regression and not comparison.gate_passed:
         return 1
@@ -268,6 +276,16 @@ def main(argv=None) -> int:
     run_parser.add_argument("--allow-mock", action="store_true",
                             help="permit running under MOCK_LLM_TEXT "
                                  "(report is stamped mock)")
+    run_parser.add_argument("--path", choices=["llm", "action"], default="llm",
+                            help="what to measure. 'llm' (default) probes the "
+                                 "persona prompt straight into the model -- "
+                                 "the seam a fine-tuned adapter changes. "
+                                 "'action' runs each probe through the real "
+                                 "ActionService, so the report also covers "
+                                 "action.py's prompt construction, <thought> "
+                                 "stripping, sanitization and self-correction. "
+                                 "Reports from the two paths cannot be "
+                                 "compared with each other")
 
     conv_parser = sub.add_parser(
         "run-conversation",

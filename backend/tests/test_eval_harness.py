@@ -6,6 +6,7 @@ with a green gate saying it didn't. Every test here names the specific way the
 gate could lie.
 """
 
+import asyncio
 import json
 from unittest import mock
 
@@ -13,11 +14,17 @@ import pytest
 from pydantic import ValidationError
 
 from app import config as config_module
+from app.cognitive.action import _CHAT_GUIDELINE
 from app.cognitive.identity import IdentityManager
 from app.persona.profile import IMMUTABLE_CORE
 from evals import runner as runner_module
 from evals.__main__ import main as evals_main
-from evals.compare import compare_reports, render_comparison
+from evals.action_path import (
+    build_action_service,
+    build_plan,
+    generate_through_action_service,
+)
+from evals.compare import PathMismatch, compare_reports, render_comparison
 from evals.probes import collect_probes, load_pack, persona_probes, shipped_packs
 from evals.runner import run_eval
 from evals.schema import (
@@ -388,11 +395,12 @@ def _result(pid, category, passed, score):
     )
 
 
-def _report(model, results, provenance="live", options=None):
+def _report(model, results, provenance="live", options=None, path="llm"):
     return EvalReport(
         model=model,
         persona_name="Kavya",
         provenance=provenance,
+        path=path,
         options={} if options is None else options,
         results=results,
         by_category=summarize_by_category(results),
@@ -560,7 +568,214 @@ def test_an_unpinned_num_gpu_is_omitted_rather_than_sent_as_null():
     assert unpinned["temperature"] == 0.0 and unpinned["num_ctx"] == 8192
 
 
+# ------------------------------------------------- the ActionService path
+#
+# P2-4 proposed appending a classification instruction to `action.py`'s system
+# prompt, ran `evals run` before and after, and got identical reports -- the
+# harness never executed the code the change lived in. These cover the path
+# added to close that.
+
+
+class ScriptedStreamClient:
+    """Stands in for OllamaClient on the streaming path ActionService uses.
+
+    Records what it was actually handed, because that is the whole question:
+    the action path's claim is that the prompt reaching the model is the one
+    production builds, not the bare probe text.
+    """
+
+    def __init__(self, reply="I am Kavya, and I'm glad you asked."):
+        self.model = "scripted:test"
+        self.reply = reply
+        self.seen_systems = []
+        self.seen_prompts = []
+        self.seen_options = []
+        # Kept apart from `seen_options` on purpose. `reset_model_state`'s
+        # warm-up goes through `generate` with its own deliberate
+        # `num_predict: 8`, so a single combined list would make an assertion
+        # about the streamed sampling pass or fail on the warm-up instead.
+        self.seen_stream_options = []
+
+    async def generate(self, prompt, system=None, model=None, options_override=None):
+        self.seen_systems.append(system)
+        self.seen_prompts.append(prompt)
+        self.seen_options.append(options_override)
+        return self.reply
+
+    async def generate_stream(
+        self, prompt, system=None, model=None, options_override=None
+    ):
+        self.seen_systems.append(system)
+        self.seen_prompts.append(prompt)
+        self.seen_options.append(options_override)
+        self.seen_stream_options.append(options_override)
+        # Split so the incremental parsing in `_visible_segments` is genuinely
+        # exercised across chunk boundaries rather than handed one whole string.
+        for word in self.reply.split(" "):
+            yield word + " "
+
+
+@pytest.mark.asyncio
+async def test_the_action_path_prompts_the_model_the_way_production_does(kavya):
+    """The reason this path exists. On the llm path the model receives the
+    persona prompt and the bare probe; a change to `action.py`'s own prompt
+    construction is invisible to it, which is exactly how P2-4's classification
+    instruction passed an unchanged eval twice. Here the model must receive
+    what a real turn builds -- the chat guideline in the system prompt, and the
+    goal line and `User:`/`Assistant:` framing in the user prompt."""
+    client = ScriptedStreamClient()
+
+    report = await run_eval(
+        client, kavya, persona_probes(kavya), path="action"
+    )
+
+    # The system prompt is the persona *plus* what action.py appends.
+    system = client.seen_systems[-1]
+    assert "YOU ARE Kavya" in system
+    assert _CHAT_GUIDELINE in system
+
+    # The user prompt is production's, not the probe string on its own.
+    user_prompt = client.seen_prompts[-1]
+    assert "- Goal: ENGAGE" in user_prompt
+    assert "User: " in user_prompt and user_prompt.rstrip().endswith("Assistant:")
+
+    assert report.path == "action"
+    assert len(report.results) == len(persona_probes(kavya))
+
+
+@pytest.mark.asyncio
+async def test_the_action_path_pins_sampling_over_the_endocrine_layer(kavya):
+    """`_compute_endocrine_options` maps cortisol to temperature, dopamine to
+    top_p and fatigue to num_predict, and hands them to `generate_stream` as an
+    override. Unpinned, the eval's sampling would be silently replaced by
+    simulated hormones and every run would be free to differ -- the exact
+    variance `reset_model_state` exists to remove. Worse, with no override at
+    all `generate_stream` defaults to num_predict=40 and num_ctx=2048, which
+    truncates answers mid-sentence."""
+    client = ScriptedStreamClient()
+
+    await run_eval(client, kavya, persona_probes(kavya), path="action")
+
+    # The streaming calls are the ones ActionService makes.
+    streamed = client.seen_stream_options
+    assert streamed, "the action path never reached generate_stream"
+    for opts in streamed:
+        assert opts["temperature"] == 0.0
+        assert opts["seed"] == 42
+        assert opts["num_ctx"] == 8192
+        # 250 is what the endocrine layer computes at zero fatigue; the pinned
+        # value must win over it.
+        assert opts["num_predict"] == 192
+
+
+@pytest.mark.asyncio
+async def test_the_action_report_fingerprints_the_prompt_the_model_really_saw(kavya):
+    """The digest exists so a comparison across a prompt edit cannot read as a
+    model change. On the action path the persona prompt is not what the model
+    got -- action.py appends the chat guideline -- so fingerprinting the
+    persona prompt here would stamp every action-path report with a digest for
+    text no model ever received, and two runs whose guideline differed would
+    still fingerprint identically."""
+    client = ScriptedStreamClient()
+
+    llm_report = await run_eval(client, kavya, persona_probes(kavya))
+    action_report = await run_eval(
+        client, kavya, persona_probes(kavya), path="action"
+    )
+
+    assert llm_report.system_prompt_sha256
+    assert action_report.system_prompt_sha256
+    assert action_report.system_prompt_sha256 != llm_report.system_prompt_sha256
+    assert action_report.system_prompt_sha256 == fingerprint(
+        client.seen_systems[-1]
+    )
+
+
+def test_a_cross_path_comparison_is_refused_rather_than_diffed():
+    """Sampling and persona differences are surfaced and left to the reader,
+    because the caller may have changed one deliberately and the deltas still
+    mean something. A path difference is not that: "llm" and "action" do not
+    sample the same quantity, so every probe delta between them is the harness
+    rather than the model, and there is no reading of the diff worth
+    printing."""
+    baseline = _report("m", [_result("a", "identity", True, 1.0)], path="llm")
+    candidate = _report("m", [_result("a", "identity", False, 0.0)], path="action")
+
+    with pytest.raises(PathMismatch) as excinfo:
+        compare_reports(baseline, candidate)
+
+    # The message must name both sides; "incomparable" alone leaves the reader
+    # guessing which report to re-run.
+    assert "'llm'" in str(excinfo.value) and "'action'" in str(excinfo.value)
+
+
+def test_reports_predating_the_path_field_compare_as_the_path_they_were_run_on():
+    """Every report written before this field existed came from the llm path.
+    Defaulting to anything else -- or to an "unknown" that refuses -- would make
+    the existing baselines uncomparable overnight, retiring evidence that is
+    still valid."""
+    old = EvalReport.model_validate_json(
+        json.dumps(
+            {
+                "model": "m",
+                "persona_name": "Kavya",
+                "provenance": "live",
+                "options": {},
+                "results": [],
+                "by_category": {},
+            }
+        )
+    )
+    assert old.path == "llm"
+
+    fresh = _report("m", [], path="llm")
+    assert compare_reports(old, fresh).path == "llm"
+
+
+def test_the_action_path_scores_speech_not_the_internal_chunks(kavya):
+    """`execute()` yields more than speech: `self_correction` is the internal
+    signal `pipeline.py` intercepts and never forwards to transport. Scoring it
+    would measure text no listener receives, and would let a probe pass on the
+    strength of an error report."""
+    service = build_action_service(ScriptedStreamClient())
+
+    class _FakeService:
+        async def execute(self, plan):
+            yield {"type": "content", "data": "Hello "}
+            yield {"type": "self_correction", "data": "boundary violation"}
+            yield {"type": "content", "data": "there."}
+            yield {"type": "done", "data": ""}
+
+    heard = asyncio.run(
+        generate_through_action_service(_FakeService(), build_plan("hi", "p", None))
+    )
+
+    assert heard == "Hello there."
+    assert "boundary violation" not in heard
+    # The real service is constructed without stores, and that must stay true:
+    # the harness runs wherever the model does, with no Postgres/Qdrant/Neo4j.
+    assert service.memory is None and service.self_knowledge is None
+
+
 # ---------------------------------------------------------------- CLI gates
+
+
+def test_compare_cli_refuses_a_cross_path_compare_with_a_usage_exit(
+    tmp_path, capsys
+):
+    """The reports are individually fine; the pairing is not. Exiting 2 like
+    every other input error keeps a mistaken pairing distinguishable from a
+    genuine regression, which exits 1 -- a consolidation loop reading only the
+    exit code would otherwise treat "you compared the wrong things" as "the
+    adapter broke behavior"."""
+    llm = _report("base", [_result("a", "identity", True, 1.0)], path="llm")
+    action = _report("cand", [_result("a", "identity", True, 1.0)], path="action")
+    llm_path, action_path = tmp_path / "llm.json", tmp_path / "action.json"
+    save_report(llm, str(llm_path))
+    save_report(action, str(action_path))
+
+    assert evals_main(["compare", str(llm_path), str(action_path)]) == 2
+    assert "path" in capsys.readouterr().err.lower()
 
 
 def test_compare_cli_refuses_mock_reports_without_allow_mock(tmp_path, capsys):

@@ -20,9 +20,16 @@ from app import config as config_module
 from app.cognitive.identity import IdentityManager
 from app.llm.ollama_client import OllamaClient
 
+from .action_path import (
+    PinnedOptionsClient,
+    build_action_service,
+    build_plan,
+    generate_through_action_service,
+)
 from .schema import (
     DEFAULT_OPTIONS,
     CheckResult,
+    EvalPath,
     EvalReport,
     Probe,
     ProbeResult,
@@ -122,13 +129,27 @@ async def run_probe(
     system: str,
     model: str | None,
     options: RunOptions,
+    generate=None,
 ) -> ProbeResult:
-    response = await client.generate(
-        prompt=probe.prompt,
-        system=system,
-        model=model,
-        options_override=options.as_override(),
-    )
+    """Score one probe.
+
+    `generate` is how the response is produced: `None` keeps the original LLM
+    boundary (persona prompt straight into `OllamaClient.generate`). The action
+    path passes a callable that drives the same probe through the real
+    `ActionService` instead. Everything after the response -- the checks, the
+    boundary delegation to `IdentityManager.validate_response`, the scoring --
+    is deliberately shared and unchanged, so a verdict means the same thing on
+    either path and `compare` has one implementation to serve both.
+    """
+    if generate is None:
+        response = await client.generate(
+            prompt=probe.prompt,
+            system=system,
+            model=model,
+            options_override=options.as_override(),
+        )
+    else:
+        response = await generate(probe.prompt)
 
     views = response_views(response)
     checks: list[CheckResult] = []
@@ -159,15 +180,45 @@ async def run_eval(
     probes: list[Probe],
     model: str | None = None,
     options: RunOptions = DEFAULT_OPTIONS,
+    path: EvalPath = "llm",
 ) -> EvalReport:
-    system = manager.get_persona_prompt(current_mood_directive=EVAL_MOOD_DIRECTIVE)
-    await reset_model_state(client, system, model, options)
+    """Probe a model and write a report.
+
+    `path` chooses what is measured. "llm" is the original seam and stays the
+    default, because it is the one a fine-tuned adapter changes and every
+    existing baseline was taken there. "action" runs each probe through the
+    real `ActionService`, which is the only way to gate a change to
+    `action.py`'s own prompt construction -- see `action_path.py` for why that
+    gap existed and what it let through.
+    """
+    persona_prompt = manager.get_persona_prompt(
+        current_mood_directive=EVAL_MOOD_DIRECTIVE
+    )
+
+    generate = None
+    pinned: PinnedOptionsClient | None = None
+    if path == "action":
+        pinned = PinnedOptionsClient(client, options)
+        service = build_action_service(pinned)
+
+        async def generate(prompt: str) -> str:
+            return await generate_through_action_service(
+                service, build_plan(prompt, persona_prompt, model)
+            )
+
+    # Warm-up goes through the plain client either way: it is discarded text
+    # whose only job is to leave the runtime in a named state, and routing it
+    # through ActionService would add a turn's worth of failure modes to a call
+    # nobody scores.
+    await reset_model_state(client, persona_prompt, model, options)
 
     results: list[ProbeResult] = []
     # Sequential on purpose: one local model, and concurrent generations on a
     # CPU-only box would contend for the same cores and skew nothing useful.
     for probe in probes:
-        result = await run_probe(client, manager, probe, system, model, options)
+        result = await run_probe(
+            client, manager, probe, persona_prompt, model, options, generate
+        )
         logger.info(
             "[eval] %-32s %s (%.2f)",
             probe.id,
@@ -176,12 +227,20 @@ async def run_eval(
         )
         results.append(result)
 
+    # Fingerprint what the model was actually given. On the action path that is
+    # not the persona prompt: `_execute_respond_chat` appends `_CHAT_GUIDELINE`
+    # to it. Read back from the client that saw the call rather than rebuilt
+    # here, so this cannot drift out of step with `action.py` -- a local copy of
+    # that composition would keep producing a plausible digest after the
+    # composition changed, which is the failure mode a digest exists to catch.
+    observed = pinned.observed_system if pinned else None
     return EvalReport(
         model=model or client.model,
         persona_name=manager.persona.name,
         provenance=_provenance(),
+        path=path,
         options=options.as_override(),
-        system_prompt_sha256=fingerprint(system),
+        system_prompt_sha256=fingerprint(observed or persona_prompt),
         results=results,
         by_category=summarize_by_category(results),
     )
