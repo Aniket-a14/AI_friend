@@ -10662,3 +10662,42 @@ carries this same status.
 
 **NOT done, overall.** 4a (`pause_bias` wiring) and 4c (`tempo_wpm` fix,
 verify, wire) remain, blocked as described above.
+
+---
+
+## 2026-08-24 -- Roadmap leftovers: Item 5d's own fix was wrong, broke 5 CI
+## jobs on PR #203, restored
+
+**Item 5d dropped `backend/pyproject.toml`'s `[build-system]` table**,
+reasoning that `pip install ./backend` was dead and cognitive-rust builds
+from its own `crates/cognitive-rust/Cargo.toml` manifest. That reasoning
+was correct about `pip install ./backend` and wrong about the actual
+dependency: **CI's "Build cognitive-rust extension" step runs
+`maturin build --manifest-path crates/cognitive-rust/Cargo.toml --out
+target/wheels` from `backend/`** -- the exact command this repo's own
+`CLAUDE.md` documents -- and maturin validates whatever `pyproject.toml`
+sits in the current working directory regardless of the explicit
+`--manifest-path` pointing elsewhere, requiring `[build-system]` to be
+present or refusing to run at all (`TOML parse error ... missing field
+'build-system'`).
+
+**Caught by:** PR #203's own CI, not local verification. None of this
+session's local checks (`pytest`, `ruff`, `cargo check --workspace`,
+`cargo test`) invoke `maturin build`, so the break was invisible until
+GitHub Actions ran it. Five jobs failed identically: Backend Lint + Tests
+(macOS), Backend Regression Suite, Identity Continuity Check,
+backend-test, backend-benchmark -- all at the same "Build cognitive-rust
+extension" step, same error.
+
+**Fixed.** Restored `[build-system]` (`requires = ["maturin>=1.0,<2.0"]`,
+`build-backend = "maturin"`) verbatim, corrected the header comment to
+state the real dependency instead of the wrong one, and verified locally
+by running the exact CI command:
+`maturin build --manifest-path crates/cognitive-rust/Cargo.toml --out
+<scratch>` -- builds clean, produces the wheel.
+
+**Files.** `backend/pyproject.toml` -- `[build-system]` restored,
+`[tool.mutmut]` untouched.
+
+**NOT done.** Waiting on PR #203's CI to confirm the fix (all five jobs
+re-run green) before considering the branch done.

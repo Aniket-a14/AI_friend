@@ -1,12 +1,17 @@
-# Roadmap leftovers Item 5d: this file previously declared a maturin
-# [build-system] at a path with no Rust project of its own -- cognitive-rust
-# has its own manifest under crates/cognitive-rust/Cargo.toml, and this
-# pyproject.toml exists only to hold [tool.mutmut] below. `pip install
-# ./backend` was never exercised by anything in this repo's CI (confirmed
-# 2026-08-25), so the [build-system] table was dead rather than actively
-# broken -- but a `pip install ./backend` attempted by anyone, now or later,
-# would fail where it previously did nothing meaningful. Dropped; mutmut
-# reads [tool.mutmut] regardless of whether a build backend is declared.
+# Roadmap leftovers Item 5d (2026-08-24): originally dropped this table,
+# reasoning that `pip install ./backend` was dead and cognitive-rust has its
+# own manifest under crates/cognitive-rust/Cargo.toml. That was wrong --
+# CI's "Build cognitive-rust extension" step runs `maturin build
+# --manifest-path crates/cognitive-rust/Cargo.toml --out target/wheels`
+# from this directory (documented in the repo's own CLAUDE.md), and maturin
+# validates whatever pyproject.toml sits in the cwd regardless of the
+# explicit --manifest-path, requiring [build-system] to be present. Its
+# absence broke five CI jobs (macOS lint+tests, Backend Regression Suite,
+# Identity Continuity Check, backend-test, backend-benchmark) on this same
+# PR. Restored.
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
 [tool.mutmut]
 # Stage 6 targeted mutation gate. Keep the first enforced scope explicit so a
