@@ -263,6 +263,12 @@ class AppSettings(BaseSettings):
     VISION_FOCAL_PX: float = 443.0
     VISION_FOCAL_REFERENCE_WIDTH_PX: int = 512
 
+    # Roadmap leftovers Item 1 (P4-12, M5-P3 MEASURED): nomic-embed-text,
+    # 768-dim, per-item embedding cost at batch 1 (warm) ~19ms, batch 8
+    # 9.2ms, batch 32 8.0ms -- 32 is the measured knee, not a guess.
+    # `MemoryStore.get_embeddings` chunks at this size.
+    EMBEDDING_BATCH_SIZE: int = 32
+
     # P3-1: salience-gated visual episodic memory. Screen captures are far
     # more privacy-sensitive than camera captures -- a screen can show
     # anything open on the machine, not just the user's face -- so
@@ -450,6 +456,13 @@ class AppSettings(BaseSettings):
             return "wss://" + v[len("https://") :]
         if v.startswith("http://"):
             return "ws://" + v[len("http://") :]
+        return v
+
+    @field_validator("EMBEDDING_BATCH_SIZE")
+    @classmethod
+    def validate_embedding_batch_size(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("EMBEDDING_BATCH_SIZE must be positive")
         return v
 
     @field_validator("VISUAL_SCREEN_TRACE_TTL_H")

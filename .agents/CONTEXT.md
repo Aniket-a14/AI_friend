@@ -10218,3 +10218,103 @@ rotation test), 3 (eval recall gate), and 4a/4b/4c (the three P4-10
 signals, each behind its own verify-first gate) remain, per the plan's
 sequencing -- Item 1 next, since it must land before Item 3 measures the
 retrieval baseline.
+
+---
+
+## 2026-08-25 -- Roadmap leftovers, Group 2 -- P4-12: batch the embedding
+## calls (Item 1)
+
+Plan: `.claude/plans/async-stirring-clarke.md`. The only roadmap item that
+was neither shipped nor deliberately declined across all eight Stage 6
+clusters -- absent from the Stage 6 plan, no ledger entry. M5-P3 measured
+nomic-embed-text at ~19ms/item sequential (batch 1, warm) vs 8.0ms/item at
+batch 32 -- 2.4x cheaper -- and the roadmap's own severity note said this
+matters on paths that embed in a loop, not on the one-per-turn conversational
+path.
+
+**`MemoryStore.get_embeddings(texts)`** added beside `get_embedding`
+(`app/state/memory_store.py`). Order-preserving and length-preserving on
+partial failure -- a failed item yields `None` in its slot rather than
+shortening the list, since a silently shortened list would misalign every
+downstream row with the wrong vector. Chunks at the new
+`Config.EMBEDDING_BATCH_SIZE` (default 32, the measured knee, with a
+positivity validator matching the `VISUAL_SCREEN_TRACE_TTL_H` pattern
+already in the file). Falls back to sequential `get_embedding()` per item
+when `/api/embed` 404s or returns a response whose length doesn't match the
+request -- preserving the existing two-endpoint fallback shape rather than
+inventing a second one. `MOCK_LLM_TEXT` path returns N vectors, not one.
+
+**`add_memory` gained an optional `embedding=None` parameter.** When
+provided, skips the internal `get_embedding` call; default `None` preserves
+every existing caller's behavior byte-for-byte (verified by a test
+asserting the no-argument call still awaits `get_embedding` exactly once).
+Rejected a separate `add_memories(list)` bulk method -- it would duplicate
+`add_memory`'s ~100 lines of entity pre-linking, Eriksonian column
+fallback and dual-backend insert logic, the exact duplication P3-11 was
+filed about.
+
+**All four loop sites converted to two-phase (batch, then per-item):**
+- `_promote_archived_rows` (`memory_store.py`) -- the only one with
+  live-latency impact, since it runs on the search path. Restructured
+  around the loop's mid-body `continue` (the threshold check happens after
+  the original embedding fetch): a pre-scan collects which archived rows
+  are actually missing a stored embedding, batches only those via
+  `get_embeddings`, then the main loop indexes into the pre-fetched result.
+- `seed_biography` (`app/persona/biography.py`) and the history migration
+  loop (`app/persona/history_migration.py`) -- both boot-time seeding
+  loops.
+- The eval corpus indexer (`evals/retrieval.py`'s `MemoryStoreRetriever.index`)
+  -- every transcript turn in one shot instead of one embedding call per
+  turn.
+
+**Found and fixed during implementation, not anticipated in the plan:** the
+three non-`memory_store.py` sites (`biography.py`, `history_migration.py`,
+`evals/retrieval.py`) needed a defensive length check around the batch
+call, not just a bare `await get_embeddings(...)`. The plan's stated
+requirement was correct in spirit but the first pass broke five existing
+tests in `test_biography_seeding.py` (`ValueError: zip() argument 2 is
+shorter than argument 1`) -- a `MagicMock()`'s default `__iter__` returns
+`iter([])`, so an un-configured mock `get_embeddings` on a test double
+produces a zero-length iterable that `zip(..., strict=True)` correctly
+rejects rather than silently misaligning. Fixed by validating the batch
+result is a list of the expected length before trusting it, falling back
+to a `None`-filled list (which routes through `add_memory`'s own internal
+per-item fetch) otherwise -- the same shape `_embed_batch_chunk`'s
+internal 404/length-mismatch handling already uses, applied one level up
+at each of the three external call sites. Caught by running the affected
+test suites, not anticipated in the plan text.
+
+**Tests.** New file `backend/tests/test_embedding_batching.py`, 10 tests
+via `httpx.MockTransport` (no live Ollama needed): batch preserves order
+with exactly one HTTP call for N texts; empty input makes no call; a
+response shorter than the request falls back to sequential
+`get_embedding` per item; a single `None` entry inside an otherwise-valid
+batch response surfaces as `None` at the same index rather than shifting
+later items left; chunking at a configured batch size (70 items at 32 ->
+requests of `[32, 32, 6]`, still one aligned 70-item result; also verified
+at batch size 1); a 404 from `/api/embed` falls back to `get_embedding`
+per item, args verified in order; `MOCK_LLM_TEXT` returns three distinct
+768-d vectors for three inputs, not one reused; `add_memory(embedding=...)`
+never awaits `get_embedding` (asserted via a side-effect `AssertionError`
+in the mock, not just a call-count check); `add_memory()` with no
+embedding argument awaits `get_embedding` exactly once with the original
+content. **Mutation-verified the chunking test specifically**: changed
+`batch_size` to `batch_size + 100` in the chunking loop, confirmed both
+`TestChunking` tests failed, then restored and reran green -- the one
+exception to this branch's "written and verified green-only" norm, same
+standard applied to Item 4d's dead-code-test fix.
+
+**Files.** `app/config.py`, `app/state/memory_store.py`,
+`app/persona/biography.py`, `app/persona/history_migration.py`,
+`evals/retrieval.py`, plus the new test file.
+
+**Verified.** Full suite **1168/1168** (1158 baseline + 10 new), 0
+failures, 0 skips (JUnit XML). `ruff check .` clean (one TRY004 finding on
+the new code -- `RuntimeError` where ruff wants `TypeError` for an
+invalid-type condition -- fixed). `scripts/check_subject_wiring.py` clean,
+unchanged (this item touches no NATS subjects).
+
+**NOT done, this group.** Items 2 (P0-1 key rotation test), 3 (eval recall
+gate -- now unblocked, since it needed Item 1 to land first so the
+baseline and candidate measure the same embedding path), and 4a/4b/4c (the
+three P4-10 signals) remain.

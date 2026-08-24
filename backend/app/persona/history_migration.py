@@ -114,8 +114,27 @@ async def migrate_history_memories(
         len(pending),
     )
 
+    # P4-12 (roadmap leftovers Item 1): one batched embedding call for all
+    # pending entries instead of one per entry. Defensive against a
+    # get_embeddings that doesn't honor the order/length contract (a test
+    # double, or a future implementation) -- falls back to per-entry
+    # internal embedding via add_memory rather than misaligning vectors.
+    embeddings = [None] * len(pending)
+    get_embeddings = getattr(memory_store, "get_embeddings", None)
+    if callable(get_embeddings):
+        try:
+            candidate = await get_embeddings(list(pending))
+            if isinstance(candidate, list) and len(candidate) == len(pending):
+                embeddings = candidate
+        except Exception as exc:
+            logger.warning(
+                "[History] Batched embedding fetch failed (%s); falling back "
+                "to per-entry embedding.",
+                exc,
+            )
+
     stored: list[str] = []
-    for text in pending:
+    for text, embedding in zip(pending, embeddings, strict=True):
         try:
             await memory_store.add_memory(
                 content=text,
@@ -123,6 +142,7 @@ async def migrate_history_memories(
                 importance=HISTORY_IMPORTANCE,
                 source=HISTORY_SOURCE,
                 metadata={"history_fingerprint": fingerprint(text)},
+                embedding=embedding,
             )
         except Exception as exc:
             logger.error(

@@ -799,6 +799,85 @@ class MemoryStore:
                 return (vec / norm).tolist()
             return None
 
+    def _mock_embedding_vector(self):
+        """A unit-norm random 768-d vector, matching get_embedding's MOCK_LLM_TEXT path."""
+        import numpy as np
+
+        vec = np.random.randn(768)
+        norm = np.linalg.norm(vec)
+        if norm < 1e-6:
+            vec = np.zeros(768)
+            vec[0] = 1.0
+            return vec.tolist()
+        return (vec / norm).tolist()
+
+    async def get_embeddings(self, texts: list[str]) -> list[list[float] | None]:
+        """Batched form of get_embedding (P4-12, M5-P3 MEASURED: 2.4x cheaper
+        per item at batch 32 vs sequential batch 1 -- see Config.EMBEDDING_BATCH_SIZE).
+
+        Order-preserving and length-preserving: the returned list has exactly
+        len(texts) entries, aligned 1:1 with the input. A per-item failure
+        yields None in that slot rather than shortening the list -- a
+        silently shortened list would misalign every downstream row with the
+        wrong vector, which is worse than no embedding at all.
+
+        Falls back to sequential get_embedding() when the batch endpoint
+        404s, preserving the existing two-endpoint fallback shape rather than
+        introducing a second one (the legacy /api/embeddings endpoint is
+        single-input only and cannot serve a batch request).
+        """
+        if not texts:
+            return []
+
+        batch_size = max(1, int(getattr(Config, "EMBEDDING_BATCH_SIZE", 32)))
+        results: list[list[float] | None] = []
+
+        for start in range(0, len(texts), batch_size):
+            chunk = texts[start : start + batch_size]
+            chunk_results = await self._embed_batch_chunk(chunk)
+            results.extend(chunk_results)
+
+        return results
+
+    async def _embed_batch_chunk(self, chunk: list[str]) -> list[list[float] | None]:
+        """Embed one chunk (<= EMBEDDING_BATCH_SIZE items) via /api/embed,
+        falling back to sequential get_embedding() calls on a 404."""
+        try:
+            client = self._http_client
+            response = await client.post(
+                f"{self.ollama_base_url}/api/embed",
+                json={"model": self.embedding_model, "input": chunk},
+            )
+
+            if response.status_code == 404:
+                return [await self.get_embedding(text) for text in chunk]
+
+            response.raise_for_status()
+            result = response.json()
+
+            embeddings = result.get("embeddings")
+            if not isinstance(embeddings, list):
+                raise TypeError("No embeddings payload returned by /api/embed")
+
+            if len(embeddings) != len(chunk):
+                logger.error(
+                    "Ollama batch embed returned %d vectors for %d inputs; "
+                    "falling back to sequential calls for this chunk.",
+                    len(embeddings),
+                    len(chunk),
+                )
+                return [await self.get_embedding(text) for text in chunk]
+
+            return [
+                (vec if isinstance(vec, list) and vec else None)
+                for vec in embeddings
+            ]
+        except Exception as e:
+            logger.error(f"Ollama batch embedding failed: {e}")
+            if getattr(Config, "MOCK_LLM_TEXT", False):
+                return [self._mock_embedding_vector() for _ in chunk]
+            return [None] * len(chunk)
+
     async def add_memory(
         self,
         content,
@@ -818,8 +897,17 @@ class MemoryStore:
         relation_circles=None,
         modality=None,
         current_time=None,
+        embedding=None,
     ):
-        """Adds a new memory with ACT-R metadata and hierarchical scope."""
+        """Adds a new memory with ACT-R metadata and hierarchical scope.
+
+        embedding: optional pre-computed vector (P4-12, roadmap leftovers
+        Item 1). When provided, skips the internal get_embedding() call --
+        lets a caller batch embeddings across many memories (via
+        get_embeddings()) and hand each one in, rather than this method
+        embedding one-at-a-time in a loop. Default None preserves every
+        existing caller's behavior byte-for-byte.
+        """
         try:
             import uuid
 
@@ -875,7 +963,7 @@ class MemoryStore:
                 metadata = {}
             metadata["entities"] = present_entities
 
-            vector = await self.get_embedding(content)
+            vector = embedding if embedding is not None else await self.get_embedding(content)
             if not vector:
                 return False
 
@@ -2377,16 +2465,32 @@ class MemoryStore:
         current_time,
     ) -> list:
         """Promote qualifying archived rows to the active tier and return them."""
+        # P4-12 (roadmap leftovers Item 1): archived rows missing a stored
+        # embedding used to fetch it one HTTP round trip at a time, on this
+        # search-path loop. Pre-scan for which rows actually need a fetch,
+        # then batch them in one get_embeddings() call -- order-preserving,
+        # so row index i's embedding is embeddings_by_index[i].
+        parsed_embeddings = [
+            self._parse_stored_embedding(row.get("embedding"))
+            for _rs, _s, _sim, row in scored_archive_rows
+        ]
+        missing_indices = [i for i, emb in enumerate(parsed_embeddings) if not emb]
+        if missing_indices:
+            fetched = await self.get_embeddings(
+                [scored_archive_rows[i][3]["content"] for i in missing_indices]
+            )
+            for idx, vec in zip(missing_indices, fetched, strict=True):
+                parsed_embeddings[idx] = vec
+
         promoted_results = []
-        for _ranking_score, score, similarity, row in scored_archive_rows:
+        for row_index, (_ranking_score, score, similarity, row) in enumerate(
+            scored_archive_rows
+        ):
             content = row["content"]
 
-            emb = self._parse_stored_embedding(row.get("embedding"))
-            # Fallback to the embedding API if the archived row has none
+            emb = parsed_embeddings[row_index]
             if not emb:
-                emb = await self.get_embedding(content)
-                if not emb:
-                    continue
+                continue
 
             (
                 _score,
