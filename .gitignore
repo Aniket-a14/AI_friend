@@ -81,3 +81,11 @@ scripts/research/flooded_seeding_corpus.json
 # Eval harness reports -- a number only means something next to the run
 # that produced it, so results are never committed.
 backend/evals/out/
+
+# Internal security/engineering audit -- local-only by design. A prior sweep
+# committed this once and needed a force-push to undo; ignored here instead
+# of relying on every future session remembering not to `git add -A` it.
+# Superseded as a work queue by docs/FUTURE_WORK.md (see audit/INDEX.md);
+# kept locally as the evidentiary record the findings cite back to.
+/AUDIT.md
+/audit/
