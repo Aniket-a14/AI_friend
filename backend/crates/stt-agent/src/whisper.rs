@@ -8,13 +8,68 @@
 //! therefore NOT inferred here; those fields are left empty rather than fabricated.
 
 use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{info, warn};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 /// Upstream ggml weights published alongside whisper.cpp.
 const MODEL_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
+
+/// P2-12: pinned SHA256 checksums for the ggml weights this repo actually
+/// ships defaults for, mirroring `provision_models.py`'s existing SenseVoice
+/// pin -- computed directly from a fresh download of each file, not copied
+/// from an unverified source (`shasum -a 256 ggml-<name>.bin`).
+///
+/// `STT_FAST_MODEL`/`STT_ACCURATE_MODEL` are operator-configurable to any
+/// whisper.cpp release name, not just these two, so this is deliberately
+/// not exhaustive: an unlisted model name logs a warning and proceeds
+/// unverified (`expected_sha256` returns `None`) rather than refusing to
+/// start, since a real absent entry and a would-be-wrong hardcoded one are
+/// indistinguishable to a hard gate but very different in consequence -- a
+/// wrong pin permanently blocks a legitimate model, an absent one just
+/// means "not verified," honestly labeled as such in the log.
+const PINNED_MODEL_SHA256: &[(&str, &str)] = &[
+    (
+        "tiny.en",
+        "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
+    ),
+    (
+        "base.en",
+        "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+    ),
+];
+
+fn expected_sha256(model_name: &str) -> Option<&'static str> {
+    PINNED_MODEL_SHA256
+        .iter()
+        .find(|(name, _)| *name == model_name)
+        .map(|(_, sha)| *sha)
+}
+
+/// Streamed in fixed-size chunks rather than `tokio::fs::read` (whole file
+/// into memory at once) -- the same reasoning the download loop below
+/// already documents for itself: ggml weights run to hundreds of MB, and
+/// this runs on every cache hit, not just fresh downloads.
+async fn sha256_hex(path: &Path) -> Result<String> {
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .with_context(|| format!("open {} for checksum", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 1 << 16];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .await
+            .with_context(|| format!("read {} for checksum", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
 
 pub struct WhisperModel {
     ctx: WhisperContext,
@@ -126,17 +181,42 @@ pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf>
     let file_name = format!("ggml-{model_name}.bin");
     let target = cache_dir.join(&file_name);
 
+    let pin = expected_sha256(model_name);
+
     if tokio::fs::try_exists(&target).await.unwrap_or(false) {
         let size = tokio::fs::metadata(&target).await.map(|m| m.len()).unwrap_or(0);
         if size > 1_000_000 {
-            info!(model = model_name, path = %target.display(), size, "using cached whisper model");
-            return Ok(target);
+            match pin {
+                None => {
+                    info!(model = model_name, path = %target.display(), size, "using cached whisper model (no pinned checksum for this model name)");
+                    return Ok(target);
+                }
+                Some(expected) => match sha256_hex(&target).await {
+                    Ok(actual) if actual.eq_ignore_ascii_case(expected) => {
+                        info!(model = model_name, path = %target.display(), size, "using cached whisper model (SHA256 verified)");
+                        return Ok(target);
+                    }
+                    Ok(actual) => {
+                        warn!(
+                            model = model_name,
+                            path = %target.display(),
+                            expected,
+                            actual,
+                            "cached whisper model failed SHA256 verification; re-downloading"
+                        );
+                    }
+                    Err(e) => {
+                        warn!(model = model_name, path = %target.display(), "failed to checksum cached model ({e:#}); re-downloading");
+                    }
+                },
+            }
+        } else {
+            warn!(
+                path = %target.display(),
+                size,
+                "cached whisper model looks truncated; re-downloading"
+            );
         }
-        warn!(
-            path = %target.display(),
-            size,
-            "cached whisper model looks truncated; re-downloading"
-        );
         let _ = tokio::fs::remove_file(&target).await;
     }
 
@@ -181,6 +261,28 @@ pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf>
         .await
         .with_context(|| format!("finalise {}", target.display()))?;
 
+    // P2-12: verify before trusting a fresh download, the same way
+    // provision_models.py refuses to report SenseVoice provisioned until
+    // both artifacts hash correctly -- a truncated or tampered download
+    // must not become "the cached model" for every run after this one.
+    match pin {
+        None => warn!(
+            model = model_name,
+            "no pinned SHA256 for this model name; downloaded but unverified"
+        ),
+        Some(expected) => {
+            let actual = sha256_hex(&target).await?;
+            if !actual.eq_ignore_ascii_case(expected) {
+                let _ = tokio::fs::remove_file(&target).await;
+                anyhow::bail!(
+                    "whisper model {model_name} failed SHA256 verification after download: \
+                     expected {expected}, got {actual}. Refusing to use it."
+                );
+            }
+            info!(model = model_name, "downloaded whisper model verified (SHA256 match)");
+        }
+    }
+
     info!(model = model_name, bytes = written, "whisper model ready");
     Ok(target)
 }
@@ -188,6 +290,66 @@ pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expected_sha256_returns_the_pin_for_a_known_model() {
+        assert_eq!(
+            expected_sha256("tiny.en"),
+            Some("921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f")
+        );
+        assert_eq!(
+            expected_sha256("base.en"),
+            Some("a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002")
+        );
+    }
+
+    #[test]
+    fn expected_sha256_is_none_for_an_unpinned_model() {
+        // STT_FAST_MODEL/STT_ACCURATE_MODEL are operator-configurable to any
+        // whisper.cpp release name -- an unlisted one must not panic or
+        // silently match, it must come back None so the caller can log a
+        // named "unverified" warning instead of a false pass.
+        assert_eq!(expected_sha256("large-v3"), None);
+        assert_eq!(expected_sha256("not-a-real-model"), None);
+    }
+
+    #[tokio::test]
+    async fn sha256_hex_matches_a_known_digest_of_small_content() {
+        let dir = std::env::temp_dir().join(format!("whisper-sha-test-{}", std::process::id()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let path = dir.join("sample.bin");
+        tokio::fs::write(&path, b"hello world").await.unwrap();
+
+        let digest = sha256_hex(&path).await.unwrap();
+
+        // echo -n "hello world" | shasum -a 256
+        assert_eq!(
+            digest,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn sha256_hex_is_sensitive_to_a_single_changed_byte() {
+        let dir = std::env::temp_dir().join(format!("whisper-sha-test2-{}", std::process::id()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let a = dir.join("a.bin");
+        let b = dir.join("b.bin");
+        tokio::fs::write(&a, b"identical content except one byte-A").await.unwrap();
+        tokio::fs::write(&b, b"identical content except one byte-B").await.unwrap();
+
+        let digest_a = sha256_hex(&a).await.unwrap();
+        let digest_b = sha256_hex(&b).await.unwrap();
+
+        assert_ne!(
+            digest_a, digest_b,
+            "a tampered/corrupted download must not hash the same as the real file"
+        );
+
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
 
     #[test]
     fn clean_strips_bracketed_non_speech() {

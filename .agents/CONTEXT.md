@@ -9610,3 +9610,130 @@ speech) -- verification here is unit/component-level with wiremock/mocked
 LiveKit objects, consistent with how earlier parts of this branch have
 handled subjects this repo has no live-infra CI for. Carried forward: NATS
 accounts + supply chain (Part 7), deployment/docs/cleanup (Part 8).
+
+## 2026-08-24 -- Stage 6 Part 7 (security and supply chain) -- P2-1 (opt-in),
+P2-12
+
+**P2-1: per-agent NATS accounts, and this time actually proven, not just
+argued.** `nats-accounts.conf` (new, repo root) declares eight users -- the
+six Python agents plus `stt_agent`/`voice_agent` -- each scoped to publish
+and subscribe only the business subjects that file grepping every agent's
+own `self.publish`/`self.subscribe` (Python) and `topics::` (Rust) call
+sites actually showed it uses. Every grant also carries `$JS.API.>`
+(publish) and `_INBOX.>` (subscribe): `_bootstrap_mesh`
+(app/agents/base.py) calls `jsm.add_stream`/`reconcile_existing_stream` on
+*every* agent startup, so JetStream administration cannot be narrowed
+per-agent without breaking the mesh's own self-healing bootstrap --
+documented in the file's own header as a stated scope boundary (data-plane
+subjects are gated; control-plane stream admin is not), not a silent gap.
+
+The roadmap's own bar for this item -- "a test asserts the scoping actually
+denies a subject outside an agent's grant; without that, the accounts file
+is decoration" -- could not be met with a plausible-looking config and a
+mocked client, so `nats-server` was installed (`brew install nats-server`,
+none was present) and the whole thing verified against a real one: a real
+`nats-server` process, booted from the actual shipped
+`nats-accounts.conf`, with a real `nats.py`/`async-nats` client connecting
+as a scoped user. Confirmed directly, not assumed: a denied *publish*
+through JetStream raises on the caller (the ack request times out, since
+the message never reaches a stream to ack), while a denied *subscribe*
+does not -- `nc.subscribe(...)` returns normally and the denial surfaces
+only through `error_cb` (`BaseAgent._on_nats_error`, already registered,
+already logging at ERROR). Written into the accounts file's own "KNOWN
+LIMITATION" section rather than left for an operator to discover the hard
+way: a subscribe-permission mistake fails as a logged error and a quietly
+deaf subscription, not a crash.
+
+Client-side wiring, opt-in exactly as specified: `BaseAgent.connect`
+(`app/agents/base.py`) adds `user`/`password` to its `nats.connect` call
+only when both `NATS_USER` and `NATS_PASSWORD` are set in the process's own
+environment (one pair per container, since every agent already runs in its
+own container in `docker-compose.prod.yml` -- there is nowhere else for a
+per-agent value to come from). `stt-agent`/`voice-agent` (Rust) get the
+symmetric `connect_nats()` helper using `async-nats`'s
+`ConnectOptions::user_and_password` -- needed because the opt-in half of
+this item is only real if *every* NATS client in the mesh honours it: had
+only `BaseAgent` learned credentials, turning auth on server-side would
+have silently locked the two Rust agents out entirely. Deliberately takes
+credentials as parameters rather than reading the env vars internally,
+so parallel Rust tests (`cargo test` runs threads in one process, sharing
+one environment) can exercise both branches without a global-mutable-state
+race -- found this the straightforward way, by writing the naive
+env-mutating version first and recognizing the hazard before it shipped.
+
+**P2-12: three unrelated fixes filed under one number.** (1)
+`.env.example` shipped `ENVIRONMENT=development`, so the placeholder-secret
+guard built specifically to catch this file's own placeholders
+(`config.py`'s `validate_no_placeholder_secrets_in_production`, #162)
+could never fire in the file it exists for. Flipped to `production`.
+Checking what else reads this file directly turned up
+`scripts/integration/deploy-cloud.sh`, which does a bare `cp .env.example
+.env` with no secret substitution at all -- meaning this script was
+relying on exactly the gap being closed to boot at all, and would have
+started refusing to run the moment this file's default changed. Rather
+than leave that broken (or revert the fix to avoid breaking it), fixed the
+script to generate real random secrets (`openssl rand -hex`) for
+`POSTGRES_PASSWORD`/`NEO4J_PASSWORD`/`NEO4J_AUTH`/`LIVEKIT_API_KEY`/
+`LIVEKIT_API_SECRET` after copying the template -- closing the same
+placeholder-credential gap on a publicly-reachable cloud GPU instance the
+guard exists to catch everywhere else, instead of papering over it.
+
+(2) `requirements-ai.txt`'s six entries were bare names -- pinned to a
+compatible-release range (`>=current,<next-major`), matching
+`requirements-base.txt`'s own existing convention, at each package's actual
+current PyPI version (queried directly, not guessed) and confirmed
+resolvable with `pip install --dry-run -r requirements-ai.txt`.
+
+(3) Whisper weights (`whisper.rs::ensure_model`) downloaded from
+HuggingFace with only a >1MB size sanity check, no integrity verification
+at all -- unlike SenseVoice, which `provision_models.py` already SHA256-pins
+and verifies before trusting. Added the same pattern: pinned SHA256 for the
+two models this repo ships defaults for (`tiny.en`, `base.en`), computed
+directly from a fresh download of each (`shasum -a 256`), not copied from
+an unverified source -- one transcription slip caught and fixed this way
+mid-implementation, when a hand-typed test fixture hash came back one
+character short and the test failed exactly as it should have.
+`STT_FAST_MODEL`/`STT_ACCURATE_MODEL` are operator-configurable to any
+whisper.cpp release name, so an unpinned model name logs a warning and
+proceeds unverified rather than hard-failing -- a wrong hardcoded pin would
+permanently block a legitimate model, which is worse than an honestly-labeled
+absence of verification.
+
+**Files:** `nats-accounts.conf` (new), `app/agents/base.py`,
+`crates/stt-agent/src/main.rs`, `crates/stt-agent/src/whisper.rs`,
+`crates/voice-agent/src/main.rs`, `Cargo.toml`/`Cargo.lock` (workspace,
+`sha2` added), `crates/stt-agent/Cargo.toml`, `.env.example`,
+`scripts/integration/deploy-cloud.sh`, `requirements-ai.txt`, plus new test
+files `backend/tests/test_nats_accounts_enforcement.py` (6 tests, all
+against a real spawned `nats-server`), `backend/tests/test_nats_credential_loading.py`
+(5 tests, mocked `nats.connect`, no live infra needed), 3 new
+`connect_nats` tests in `voice-agent` (2 against a real spawned
+`nats-server`, 1 skip-gracefully-without-plain-NATS), and 6 new tests in
+`whisper.rs` (checksum-lookup and hashing behavior).
+
+**Verified.** Full Python suite **1137/1137**, `ruff check .` clean,
+`scripts/check_subject_wiring.py` clean (no subjects touched).
+`cargo check --workspace` clean. `cargo test --package stt-agent --package
+voice-agent --package contracts`: 47 + 50 + 6 passed.
+`cargo test --package cognitive-rust --lib`: 11/11, untouched.
+`pip install --dry-run -r requirements-ai.txt` resolves cleanly. New tests
+were **not mutation-tested**, per the standing instruction, but the accounts-
+enforcement tests are themselves closer to that spirit than most: they run
+against a real server and a real client, so a broken permission grant in
+`nats-accounts.conf` fails them for real, not hypothetically.
+
+**NOT done.** Only `stt_agent`/`voice_agent`'s subject GRANTS were derived
+from a full grep of the Rust sources; the SenseVoice/whisper model
+provisioning paths themselves were not re-audited for other supply-chain
+gaps beyond the one item named. `requirements-ai.txt`'s pins are
+compatible-release ranges, not exact hashes -- the roadmap's own scoping
+decision was "pin versions + SHA-pin whisper, no lockfile," so this
+matches what was asked, but it is worth being explicit that a compatible-
+range pin still permits a compromised patch/minor release within range,
+which only a hash-pinned lockfile (deliberately out of scope here) would
+close. `nats-accounts.conf`'s passwords are placeholders
+(`changeme_<agent>`); real deployment requires generating and distributing
+real ones, which this pass does not automate (no secrets-management
+integration was in scope). TLS remains explicitly deferred, per the plan's
+own reasoning, until the mesh crosses a machine boundary. Carried forward:
+deployment/docs/cleanup (Part 8).

@@ -59,6 +59,31 @@ fn stop_applies_to_active_turn(active: &ActiveTurn, stop_turn: Option<&str>) -> 
     }
 }
 
+/// P2-1, opt-in: connects with a username/password only when both are
+/// given, mirroring `BaseAgent.connect` (Python) so both halves of the mesh
+/// honour the same opt-in credential -- see nats-accounts.conf's own header
+/// for how an operator turns this on. With neither given (the default),
+/// this is `async_nats::connect(url)`, unchanged from before this existed.
+/// Takes the credentials as parameters rather than reading
+/// `NATS_USER`/`NATS_PASSWORD` internally so tests can exercise both
+/// branches without mutating this process's real environment (`cargo test`
+/// runs tests in parallel by default, and threads share one environment).
+async fn connect_nats(
+    url: &str,
+    user: Option<String>,
+    password: Option<String>,
+) -> std::result::Result<async_nats::Client, async_nats::ConnectError> {
+    match (user, password) {
+        (Some(user), Some(password)) => {
+            async_nats::ConnectOptions::new()
+                .user_and_password(user, password)
+                .connect(url)
+                .await
+        }
+        _ => async_nats::connect(url).await,
+    }
+}
+
 fn clamp_prosody(mut prosody: contracts::Prosody) -> contracts::Prosody {
     prosody.rate = prosody.rate.clamp(MIN_RATE as f64, MAX_RATE as f64);
     prosody.pitch = prosody.pitch.clamp(MIN_PITCH as f64, MAX_PITCH as f64);
@@ -514,9 +539,13 @@ async fn main() -> Result<()> {
         .init();
 
     let config = VoiceConfig::from_env();
-    let client = async_nats::connect(config.nats_url.clone())
-        .await
-        .with_context(|| format!("connect to NATS at {}", config.nats_url))?;
+    let client = connect_nats(
+        &config.nats_url,
+        std::env::var("NATS_USER").ok(),
+        std::env::var("NATS_PASSWORD").ok(),
+    )
+    .await
+    .with_context(|| format!("connect to NATS at {}", config.nats_url))?;
     let jetstream = async_nats::jetstream::new(client.clone());
     let mut subscriber = client.subscribe(topics::CHAT_OUTPUT).await?;
     let http = Client::builder()
@@ -2486,5 +2515,121 @@ mod tests {
             (N + 1) as u64,
             "chunks went missing once the ack stopped being awaited"
         );
+    }
+
+    // ---------------------------------------------------------- P2-1: connect_nats
+
+    /// Kills the spawned nats-server on drop, including on test panic, so a
+    /// failed assertion never leaves an orphaned server bound to the port.
+    struct NatsServerGuard(std::process::Child);
+
+    impl Drop for NatsServerGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    fn free_port() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        listener.local_addr().expect("local addr").port()
+    }
+
+    /// Spawns a real nats-server from the actual shipped `nats-accounts.conf`
+    /// (same file Python's `test_nats_accounts_enforcement.py` boots), or
+    /// returns `None` (skip) if the binary is not on PATH.
+    async fn spawn_accounts_server() -> Option<(NatsServerGuard, u16)> {
+        if std::process::Command::new("nats-server")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("SKIP: no nats-server binary on PATH -- install it to run these");
+            return None;
+        }
+
+        let conf = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../nats-accounts.conf");
+        let port = free_port();
+        let store_dir = std::env::temp_dir().join(format!(
+            "voice-agent-nats-test-{}-{}",
+            std::process::id(),
+            port
+        ));
+
+        let child = std::process::Command::new("nats-server")
+            .args(["-p", &port.to_string(), "-c", conf, "-sd"])
+            .arg(&store_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn nats-server");
+        let guard = NatsServerGuard(child);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                break;
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("nats-server did not open its port in time");
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        Some((guard, port))
+    }
+
+    /// P2-1: `connect_nats` must actually authenticate against the real
+    /// shipped accounts file when `NATS_USER`/`NATS_PASSWORD` are set --
+    /// the Rust half of the same opt-in mechanism
+    /// `test_nats_accounts_enforcement.py` proves for the Python half.
+    #[tokio::test]
+    async fn connect_nats_authenticates_with_correct_credentials() {
+        let Some((_guard, port)) = spawn_accounts_server().await else {
+            return;
+        };
+
+        let result = connect_nats(
+            &format!("nats://127.0.0.1:{port}"),
+            Some("voice_agent".to_string()),
+            Some("changeme_voice_agent".to_string()),
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "connect_nats with the real voice_agent credentials must succeed: {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_nats_rejects_wrong_credentials() {
+        let Some((_guard, port)) = spawn_accounts_server().await else {
+            return;
+        };
+
+        let result = connect_nats(
+            &format!("nats://127.0.0.1:{port}"),
+            Some("voice_agent".to_string()),
+            Some("not-the-real-password".to_string()),
+        )
+        .await;
+
+        assert!(result.is_err(), "a wrong password must not be allowed to connect");
+    }
+
+    #[tokio::test]
+    async fn connect_nats_connects_anonymously_when_no_credentials_are_given() {
+        // No accounts server here -- an ordinary, unauthenticated local
+        // nats-server (or none at all) is the default-deployment case this
+        // opt-in feature must leave completely unchanged.
+        let url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_string());
+        if async_nats::connect(&url).await.is_err() {
+            eprintln!("SKIP: no plain NATS at {url}");
+            return;
+        }
+
+        let result = connect_nats(&url, None, None).await;
+        assert!(result.is_ok(), "no credentials given must still connect normally");
     }
 }

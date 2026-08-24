@@ -18,6 +18,26 @@ if [ ! -f .env ]; then
   cp .env.example .env
   # Update NATS to listen on all interfaces for the cloud bridge
   sed -i 's/127.0.0.1/0.0.0.0/g' .env
+
+  # P2-12: .env.example ships ENVIRONMENT=production as of this fix, so
+  # config.py's placeholder-secret guard now refuses to boot with the
+  # example's literal "your_..._here" values still in place -- which is the
+  # guard doing exactly its job. Before this, that guard could never fire
+  # here at all (ENVIRONMENT was "development" by default), so this script
+  # was shipping a publicly-reachable cloud instance with well-known
+  # placeholder Postgres/Neo4j/LiveKit credentials. Generate real random
+  # ones instead of working around the guard.
+  echo "🔐 Generating random secrets for this cloud deployment..."
+  PG_PASS=$(openssl rand -hex 24)
+  NEO4J_PASS=$(openssl rand -hex 24)
+  LK_KEY=$(openssl rand -hex 16)
+  LK_SECRET=$(openssl rand -hex 32)
+  sed -i "s#POSTGRES_PASSWORD=your_password_here#POSTGRES_PASSWORD=${PG_PASS}#" .env
+  sed -i "s#NEO4J_PASSWORD=your_graph_password_here#NEO4J_PASSWORD=${NEO4J_PASS}#" .env
+  sed -i "s#NEO4J_AUTH=neo4j/your_graph_password_here#NEO4J_AUTH=neo4j/${NEO4J_PASS}#" .env
+  sed -i "s#LIVEKIT_API_KEY=your_api_key_here#LIVEKIT_API_KEY=${LK_KEY}#" .env
+  sed -i "s#LIVEKIT_API_SECRET=your_api_secret_here#LIVEKIT_API_SECRET=${LK_SECRET}#" .env
+  sed -i "s#LIVEKIT_KEYS=\"your_api_key: your_api_secret\"#LIVEKIT_KEYS=\"${LK_KEY}: ${LK_SECRET}\"#" .env
 fi
 
 # 3. Pull & Build Mesh
