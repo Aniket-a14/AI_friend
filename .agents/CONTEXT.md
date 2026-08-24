@@ -9950,3 +9950,147 @@ and briefly during this investigation, is unrelated to anything in this
 cluster and was not investigated. This is the **final part of the 8-cluster
 roadmap-completion branch** -- next step is opening the PR bundling all
 eight parts' commits.
+
+---
+
+## 2026-08-24 -- Stage 6 Part 9 (review round on PR #202) -- fixes landed
+## after the eight-cluster branch was opened, before merge
+
+**What this is.** Parts 1-8 were pushed as PR #202 and then went through
+several review passes (CodeRabbit plus a second assistant review). Five
+follow-up commits landed on the same branch: `3df757b`, `7b60f7c`,
+`d0379c8`, `5f42513`, `8a99b80`. They are recorded here rather than folded
+into Parts 1-8, because the earlier entries describe what was true when
+those clusters landed and rewriting them would erase the fact that review
+found these at all.
+
+**LiveKit URL split (the item Part 8 filed as NOT done).** Part 8 found,
+while deploying `signaling` for the first time, that `/token` and
+`/start-session` return `Config.LIVEKIT_URL` to the browser --
+`ws://local_sfu:7880`, a Compose-network name a browser cannot resolve --
+and deliberately left it as a separate scoped decision. The review round
+made the decision: `LIVEKIT_PUBLIC_URL` is now its own `Config` field with
+its own `http(s)->ws(s)` normalizing validator, `main.py`'s two token
+responses return it, and `docker-compose.prod.yml` passes both (internal
+`ws://local_sfu:7880`, public `ws://127.0.0.1:7880`). One field serving two
+audiences became two fields serving one each. Part 8's "NOT done" paragraph
+was updated in place to say so.
+
+**NATS accounts narrowed from data-plane to control-plane (P2-1).** Part 7
+granted every agent `$JS.API.>` publish and argued in the file that this was
+necessary, because `BaseAgent._bootstrap_mesh` runs stream administration on
+every agent start. Review rejected the premise rather than the grant: a
+compromised agent could create, delete or inspect arbitrary streams. The fix
+adds a dedicated `nats_provisioner` identity that owns `$JS.API.>`, narrows
+every runtime agent to the specific PUB/CONSUMER/ACK/STREAM.INFO subjects its
+own subscriptions need, and makes `BaseAgent.connect` **skip** `_bootstrap_mesh`
+entirely when runtime credentials are configured -- so the self-healing
+bootstrap is not broken, it is moved to the identity that should have owned
+it. `docker-compose.prod.yml` gained a one-shot `nats_provisioner` service
+running `setup_nats_streams.py`, which every agent now waits on with
+`condition: service_completed_successfully`, and `setup_streams()` itself
+learned to read `NATS_USER`/`NATS_PASSWORD`. A `signaling` identity was added
+(it publishes `vision.control` and nothing else). The hardcoded
+`changeme_<agent>` literals became `$NATS_*_PASSWORD` environment
+substitutions, so no credential-shaped string is stored in the repo at all;
+`.env.example` declares the eleven pairs, all empty, and the Rust
+accounts-enforcement test sets them on the server it spawns.
+
+**Graph retrieval: query-scoped instead of capped.** Part 3's
+`GRAPH_ENTITY_FETCH_LIMIT = 2000` bounded an unordered corpus-wide
+`MATCH (e:Entity)` scan -- which review correctly read as a cap that
+silently drops relevant entities once the graph is large, since nothing
+orders the truncated set. It is gone. `add_memory` now matches only entities
+whose name appears in the content being written, and `search_memories`'
+`_gather_candidate_sources` seeds from entities named by the query, expands
+one hop for PPR, and fetches only relations touching that seed set. Pronoun
+queries ("do you remember when I...") additionally seed from `AI_NAME` and
+`user_id`, since a first/second-person query names no entity at all and
+would otherwise retrieve an empty graph context. **This changes retrieval
+ranking** -- the same caveat Part 3 carried.
+
+**Correctness fixes found by review, each small and each real.**
+`reconcile_existing_stream` returned `False` on an exhausted retry budget,
+which the caller read as "already synchronized" -- it now raises
+`StreamReconciliationError` and `_bootstrap_mesh` propagates it instead of
+logging at debug. `publish(allow_core_fallback=False)` did not actually
+suppress the core-NATS downgrade on the binary path; it does now.
+`brain_agent` tracks `_active_response_turn_id` and ignores
+`audio.playback.progress` / `audio.stop` for a stale turn, so a late message
+from a finished turn cannot truncate the current one. The dead-letter log
+printed 500 bytes of the poison payload; it now logs length plus a SHA-256
+digest, which is diagnosable without putting user speech in a log file.
+`BaseAgent._prepare_stop` cancels retained background tasks before
+subclasses tear down the resources those tasks are using, and
+`MemoryStore.close` does the same for its own refresh work.
+`IdentityCoreStore.update_identity` no longer builds an un-runnable coroutine
+when called from a synchronous constructor -- it defers, and
+`flush_pending_cache_sync` publishes once a loop exists.
+`_refresh_immutable_core` reads `self.persona.name`/`self.persona.avoid`
+rather than re-reading raw `personality.json` keys.
+`VisualAppraisalService.appraise` sets `last_frame_was_novel = False` on all
+four paths that return a **cached** description (habituated, breaker open,
+VLM failure, VLM-confirmed-quiet) -- otherwise a stale description reached
+`subconscious_agent` looking novel and got stored as a new visual trace; the
+consumer side tightened to `data.get("is_novel") is not True`.
+`brain_agent` emitted `char_offset` while `voice-agent` read
+`character_offset`, so P4-2's playback-progress metadata never survived the
+Rust hop -- both sides now say `character_offset`. `visual_screen_traces`'
+`created_at` is `NOT NULL` in both backends (a NULL there makes the TTL prune
+skip the row forever). `Config` gained validators rejecting a non-positive
+`VISUAL_SCREEN_TRACE_TTL_H` and out-of-range visual-memory thresholds.
+`search_memories` records `last_search_error` when the embedding service
+returns nothing, closing one more P3-6 path where a failure was
+indistinguishable from a miss.
+
+**Mutation testing, configured rather than performed.** The standing
+instruction from Cluster 3 onward was to stop mutation-testing new tests by
+hand, and Parts 3-8 say so in their own entries. Review asked for the
+discipline back; `5f42513` answers it with automation instead of manual
+passes -- `backend/pyproject.toml` declares a `mutmut` scope deliberately
+limited to `lexicon_store.py` and the two vision modules with an explicit
+test selection, and `.github/workflows/mutation.yml` runs it path-filtered.
+Survivors are reported as a warning, not a hard gate. **Stated plainly: this
+is a report, not enforcement**, and it covers three files, not the branch.
+
+**`docker-compose.light.yml`** puts `signaling` behind the `heavy` profile,
+matching how `livekit` is already handled there -- light mode is for the
+cognitive/state services and should not start a WebRTC token endpoint.
+
+**Files.** `app/agents/base.py`, `app/agents/brain_agent.py`,
+`app/agents/subconscious_agent.py`, `app/agents/surfacing_agent.py`,
+`app/agents/transport_agent.py`, `app/nats_streams.py`, `app/config.py`,
+`app/cognitive/core.py`, `app/cognitive/identity.py`,
+`app/state/identity_core_store.py`, `app/state/memory_store.py`,
+`app/state/sqlite_fallback.py`, `app/vision/agent.py`,
+`app/vision/appraisal.py`, `backend/main.py`, `backend/db/schema.sql`,
+`backend/pyproject.toml` (new), `backend/requirements-dev.txt`,
+`crates/contracts/src/lib.rs`, `crates/voice-agent/src/main.rs`,
+`nats-accounts.conf`, `docker-compose.prod.yml`,
+`docker-compose.light.yml`, `.env.example`, `README.md`,
+`.github/workflows/mutation.yml` (new), plus the test files for each.
+
+**Verified (this review pass, re-run locally before merging).** Full Python
+suite **1158/1158**, 0 failures, 0 skips (JUnit XML, not the terminal
+summary). `ruff check .` clean. `scripts/check_subject_wiring.py` clean --
+21 declared subjects, 7 allowlisted known issues, unchanged.
+`cargo check --workspace` clean. `cargo test --package stt-agent --package
+voice-agent --package contracts`: 47 + 50 + 6 passed.
+`cargo test --package cognitive-rust --lib`: 11/11. All 26 PR checks green
+on GitHub, including Persona Guard, Credential Leak Prevention, the five
+agent image builds, both compose validations, and the new mutation report.
+
+**NOT done.** The earlier entries' per-part test counts were removed during
+review (Parts 1-8 now read "Full suite passed" instead of a number); the
+counts are still recoverable from each commit, but the ledger no longer
+carries them, which is a loss of exactly the provenance this file exists
+for. Mutation coverage is three files with a warn-only gate, not the
+branch-wide discipline `CLAUDE.md` describes. The query-scoped graph
+retrieval above was **not** run against the `evals` recall pack -- Part 3's
+own gate -- so its ranking effect is argued and unit-tested, not measured.
+P4-10's "test that pins dead code" sub-item remains unidentified.
+`backend/pyproject.toml` declares a `maturin` build backend at a path with
+no Rust project of its own (`cognitive-rust` has its own manifest), so
+`pip install ./backend` would now fail where it previously did nothing
+meaningful -- harmless for every documented workflow, but not intentional
+design.
