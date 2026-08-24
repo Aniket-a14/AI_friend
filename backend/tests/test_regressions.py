@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 # asyncpg stub is now handled in tests/conftest.py
 from app.agents.brain_agent import BrainAgent
 from app.agents.surfacing_agent import SurfacingAgent
@@ -276,6 +278,23 @@ def test_config_normalizes_livekit_url_scheme_to_websocket():
     assert AppSettings(LIVEKIT_URL="ws://already-correct:7880").LIVEKIT_URL == (
         "ws://already-correct:7880"
     )
+
+    assert AppSettings(LIVEKIT_PUBLIC_URL="https://public.example.com").LIVEKIT_PUBLIC_URL == (
+        "wss://public.example.com"
+    )
+
+
+def test_config_rejects_invalid_visual_memory_policy():
+    from pydantic import ValidationError
+
+    from app.config import AppSettings
+
+    with pytest.raises(ValidationError):
+        AppSettings(VISUAL_SCREEN_TRACE_TTL_H=0)
+    with pytest.raises(ValidationError):
+        AppSettings(VISUAL_MEMORY_AROUSAL_THRESHOLD=-0.1)
+    with pytest.raises(ValidationError):
+        AppSettings(VISUAL_MEMORY_VALENCE_THRESHOLD=1.1)
 
 
 def test_config_allowed_origins_computed_field_splits_csv():
@@ -556,6 +575,31 @@ def test_graph_db_rejects_unsafe_cypher_identifiers_without_querying():
             raise AssertionError(f"unsafe {what} should be rejected")
 
         graph.execute_query.assert_not_awaited()
+
+
+def test_consolidate_relationship_canonicalizes_synonyms():
+    """P3-11: canonicalization used to be applied only by the one caller
+    that remembered to (cognitive/learning.py's ReflectionService), not by
+    consolidate_relationship itself -- any other write path bypassed it
+    silently and "ENJOYS"/"LOVES"/"PREFERS" fragmented into parallel edges
+    instead of reinforcing one "LIKES" edge. It now lives here, so every
+    caller gets it regardless of whether they remember to canonicalize
+    first."""
+    graph = object.__new__(GraphDB)
+    graph.execute_query = AsyncMock()
+    graph._invalidate_cache = AsyncMock()
+
+    asyncio.run(
+        graph.consolidate_relationship(
+            subject_name="User",
+            relation="ENJOYS",
+            target_name="Tea",
+        )
+    )
+
+    query = graph.execute_query.await_args.args[0]
+    assert "r:LIKES]" in query
+    assert "r:ENJOYS]" not in query
 
 
 def test_surfacing_agent_suppresses_recently_recalled_memories():

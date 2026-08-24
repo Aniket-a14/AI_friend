@@ -519,12 +519,17 @@ def test_search_cache_key_separates_self_reflection_modes():
 
     assert len(probed) == 2
     assert probed[0] != probed[1], "self-reflection modes must not share a cache entry"
-    # The flag is the only component that differs. Compared positionally by
-    # identity, since 0.0 == False would make a value comparison lie here.
+    # The flag is the only component that *means* to differ. Compared
+    # positionally by value equality -- what dict-key collision actually
+    # depends on, since lookup uses __eq__/__hash__, never `is`. P3-9's
+    # quantization (memory_store.py: _quantize) allocates a fresh float each
+    # call even for an unchanged value, so identity comparison here would
+    # flag the untouched valence/arousal/cortisol positions as "differing"
+    # for a reason that has nothing to do with self-reflection mode.
     differing = [
         i
         for i, (a, b) in enumerate(zip(probed[0], probed[1]))
-        if a is not b
+        if a != b
     ]
     assert len(differing) == 1
     assert (probed[0][differing[0]], probed[1][differing[0]]) == (False, True)

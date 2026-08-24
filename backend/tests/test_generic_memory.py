@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config import Config
 from app.state.memory_store import MemoryStore
 
 
@@ -47,16 +48,28 @@ def test_context_aware_pronoun_mapping_user_speaking(mock_pool):
     conn.fetch.return_value = rows
 
     mock_graph = MagicMock()
+    seed_params = {}
 
     # Mock Neo4j graph nodes and relations
     async def mock_execute_query(query, *args, **kwargs):
-        if "MATCH (e:Entity)" in query:
-            return [
-                {"name": "Aniket", "description": "The central cognitive system."},
+        if "MATCH (seed:Entity)" in query:
+            params = args[0] if args else kwargs.get("parameters", {})
+            seed_params.update(params)
+            identity_names = {
+                str(name).lower() for name in params.get("identity_names", [])
+            }
+            identities = [
+                {
+                    "name": Config.AI_NAME,
+                    "description": "The central cognitive system.",
+                },
                 {"name": "Raj", "description": "User / Companion"},
             ]
+            return [
+                row for row in identities if row["name"].lower() in identity_names
+            ]
         elif "MATCH (s:Entity)-[r]-(t:Entity)" in query:
-            return [{"source": "Aniket", "target": "Raj"}]
+            return [{"source": Config.AI_NAME, "target": "Raj"}]
         return []
 
     mock_graph.execute_query = mock_execute_query
@@ -77,7 +90,7 @@ def test_context_aware_pronoun_mapping_user_speaking(mock_pool):
         )
         assert len(results) > 0
 
-        # Also verify second-person maps to agent: "Where were you?" -> "you" maps to "Aniket"
+        # Also verify second-person maps to agent: "Where were you?" -> "you" maps to the configured identity.
         results_you = asyncio.run(
             store.search_memories(
                 query_text="Where were you?",
@@ -88,6 +101,11 @@ def test_context_aware_pronoun_mapping_user_speaking(mock_pool):
             )
         )
         assert len(results_you) > 0
+
+    assert seed_params["has_pronoun"] is True
+    assert {"raj", Config.AI_NAME.lower()} <= {
+        str(name).lower() for name in seed_params["identity_names"]
+    }
 
 
 def test_context_aware_pronoun_mapping_self_reflection(mock_pool):
@@ -102,10 +120,20 @@ def test_context_aware_pronoun_mapping_self_reflection(mock_pool):
     mock_graph = MagicMock()
 
     async def mock_execute_query(query, *args, **kwargs):
-        if "MATCH (e:Entity)" in query:
-            return [
-                {"name": "Aniket", "description": "The central cognitive system."},
+        if "MATCH (seed:Entity)" in query:
+            params = args[0] if args else kwargs.get("parameters", {})
+            identity_names = {
+                str(name).lower() for name in params.get("identity_names", [])
+            }
+            identities = [
+                {
+                    "name": Config.AI_NAME,
+                    "description": "The central cognitive system.",
+                },
                 {"name": "Raj", "description": "User / Companion"},
+            ]
+            return [
+                row for row in identities if row["name"].lower() in identity_names
             ]
         elif "MATCH (s:Entity)-[r]-(t:Entity)" in query:
             return []
@@ -128,3 +156,45 @@ def test_context_aware_pronoun_mapping_self_reflection(mock_pool):
             )
         )
         assert len(results) > 0
+
+
+def test_entity_and_relation_fetches_are_query_scoped(mock_pool):
+    """Graph retrieval expands only from entities relevant to the query."""
+    pool, conn = mock_pool
+    conn.fetch.return_value = []
+
+    queries_run = []
+
+    async def mock_execute_query(query, *args, **kwargs):
+        params = args[0] if args else kwargs.get("parameters")
+        queries_run.append((query, params))
+        if query.startswith("MATCH (seed:Entity)"):
+            return [{"name": "anything", "description": "query entity"}]
+        return []
+
+    mock_graph = MagicMock()
+    mock_graph.execute_query = mock_execute_query
+
+    store = MemoryStore(pool, mock_graph)
+    store.qdrant_store.client = None
+
+    with patch.object(store, "get_embedding", return_value=[0.1] * 768):
+        asyncio.run(store.search_memories(query_text="anything", threshold=-10.0))
+
+    entity_queries = [
+        (q, p) for q, p in queries_run if q.startswith("MATCH (seed:Entity)")
+    ]
+    relation_queries = [
+        (q, p)
+        for q, p in queries_run
+        if q.startswith("MATCH (s:Entity)-[r]-(t:Entity)")
+    ]
+    assert entity_queries, "entity fetch query never ran"
+    assert relation_queries, "relation fetch query never ran"
+    entity_query, entity_params = entity_queries[0]
+    relation_query, relation_params = relation_queries[0]
+    assert "LIMIT" not in entity_query.upper()
+    assert "LIMIT" not in relation_query.upper()
+    assert entity_params["query_text"] == "anything"
+    assert "query_terms" in entity_params
+    assert "entity_names" in relation_params

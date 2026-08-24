@@ -30,6 +30,12 @@ def _agent(progress=None, response=REPLY):
     # does, since these tests build the agent via object.__new__.
     agent._active_generation_task = None
     agent._generation_lock = asyncio.Lock()
+    # P2-14/M1-A14: _truncate_interrupted_reply now serializes the
+    # read-compute-write against concurrent writers (chat.input's turn
+    # reset, audio.playback.progress's tracker) via this lock -- set here
+    # for the same reason the two locks above are, since object.__new__
+    # skips BrainAgent.__init__ entirely.
+    agent._turn_state_lock = asyncio.Lock()
     return agent
 
 

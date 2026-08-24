@@ -13,6 +13,7 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from ..metrics import SubjectMetrics
 from ..persona.biography import (
     find_biography_file,
     prune_biography,
@@ -48,8 +49,11 @@ class CognitiveService:
         graph_db,
         identity_store=None,
         base_path=None,
+        publish_cb=None,
     ):
-        self.identity = IdentityManager(base_path=base_path)
+        # P4-1: threaded through so IdentityManager's IdentityCoreStore can
+        # broadcast `cache.sync` invalidations to the rest of the mesh.
+        self.identity = IdentityManager(base_path=base_path, publish_cb=publish_cb)
         self.identity_store = identity_store
         # Kept so the biography can be seeded into episodic memory at startup.
         self.memory_store = memory_store
@@ -103,21 +107,34 @@ class CognitiveService:
         self.surfaced_memories = []
         self.agent = None  # NATS Mesh connection
         self._last_appraisal: AppraisalVector = None  # Cache for downstream consumers
-        self.subject_metrics = {
-            "system.tick": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
-            "memory.surfaced": {
-                "count": 0,
-                "latency_total_ms": 0.0,
-                "latency_samples": 0,
+        # P3-2: shared implementation instead of a hand-rolled dict -- see
+        # app/metrics.py. log_every=20 matches this class's prior cadence.
+        self._metrics = SubjectMetrics(
+            tracked_subjects={
+                "system.tick",
+                "memory.surfaced",
+                "audio.stop",
+                "audio.resume",
             },
-            "audio.stop": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
-            "audio.resume": {"count": 0, "latency_total_ms": 0.0, "latency_samples": 0},
-        }
+            log_every=20,
+            tag="CognitiveMetrics",
+        )
         self.last_reflection_task = None
 
     async def publish(self, subject: str, data: dict[str, Any]):
         if self.agent:
             await self.agent.publish(subject, data)
+
+    def close(self) -> None:
+        """P3-4: stop this service's own SubjectMetrics background thread.
+
+        Separate from (and not reached by) `BaseAgent.stop()`'s own
+        `self._metrics.shutdown()` -- this `_metrics` belongs to
+        `CognitiveService`, held by `BrainAgent` as `self.cognitive_core`,
+        not to the agent object itself. Nothing called this anywhere before;
+        `BrainAgent.stop()` now does.
+        """
+        self._metrics.shutdown()
 
     async def _seed_once(self, key: str, items: Any, migrate: Any, label: str) -> int:
         """Write whatever `migrate` accepts into memory, exactly once each.
@@ -283,6 +300,8 @@ class CognitiveService:
                 durable=f"{agent.name}_audio_perception_live",
                 deliver_policy="new",
             )
+
+        await self.identity.identity_core.flush_pending_cache_sync()
 
         logger.info("[CognitiveService] Hardened Identity Mesh Fully Initialized.")
 
@@ -531,34 +550,9 @@ class CognitiveService:
         data: dict[str, Any],
         local_latency_ms: float | None = None,
     ):
-        metric = self.subject_metrics.get(subject)
-        if metric is None:
-            return
-
-        metric["count"] += 1
-
-        metadata = data.get("latency_metadata") if isinstance(data, dict) else None
-        if isinstance(metadata, dict) and metadata.get("start_time") is not None:
-            try:
-                latency_ms = max(
-                    0.0, (time.time() - float(metadata["start_time"])) * 1000
-                )
-                metric["latency_total_ms"] += latency_ms
-                metric["latency_samples"] += 1
-            except (TypeError, ValueError):
-                pass
-
-        if local_latency_ms is not None:
-            metric["latency_total_ms"] += local_latency_ms
-            metric["latency_samples"] += 1
-
-        if metric["count"] == 1 or metric["count"] % 20 == 0:
-            avg_latency = 0.0
-            if metric["latency_samples"] > 0:
-                avg_latency = metric["latency_total_ms"] / metric["latency_samples"]
-            logger.info(
-                "[CognitiveMetrics] subject=%s count=%s avg_latency_ms=%.2f",
-                subject,
-                metric["count"],
-                avg_latency,
-            )
+        self._metrics.record(
+            subject,
+            direction="cognitive",
+            latency_ms=local_latency_ms,
+            data=data,
+        )

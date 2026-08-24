@@ -66,6 +66,9 @@ class AppSettings(BaseSettings):
 
     # LiveKit Configuration
     LIVEKIT_URL: str = "ws://127.0.0.1:7880"
+    # Browser-facing URL. In Compose this differs from LIVEKIT_URL, which is
+    # resolvable only by services on the internal Docker network.
+    LIVEKIT_PUBLIC_URL: str = "ws://127.0.0.1:7880"
     LIVEKIT_API_KEY: str | None = None
     LIVEKIT_API_SECRET: str | None = None
 
@@ -241,6 +244,43 @@ class AppSettings(BaseSettings):
     VLM_BREAKER_FAILURE_THRESHOLD: int = 3
     VLM_BREAKER_COOLDOWN_S: float = 30.0
 
+    # M3-A10: `_calculate_user_distance`'s pinhole-camera formula needs a
+    # focal length in pixels, not just a face-width ratio -- the previous
+    # `ASSUMED_FACE_WIDTH_M / (face_width_px / image_width_px)` implicitly
+    # set focal_px == image_width, an unstated assumption equivalent to a
+    # fixed ~53 degree horizontal FOV regardless of the real camera. These
+    # two are calibrated together: VISION_FOCAL_PX is the focal length at
+    # VISION_FOCAL_REFERENCE_WIDTH_PX, the width both CameraLink and
+    # ScreenLink resize captures down to (`_compress_frame`, links.py) before
+    # anything downstream sees them. The default assumes a ~60 degree
+    # horizontal FOV, a typical laptop webcam spec, and is a placeholder
+    # order-of-magnitude choice, not a measured value (see CLAUDE.md's
+    # integrity constraints). Calibration note: place a face of known width
+    # (e.g. 0.15m) at a known distance (e.g. 0.5m) in frame, read the logged
+    # face_width_px, and solve
+    # VISION_FOCAL_PX = (face_width_px * distance_m) / FACE_WIDTH_M,
+    # scaled to VISION_FOCAL_REFERENCE_WIDTH_PX if measured at another width.
+    VISION_FOCAL_PX: float = 443.0
+    VISION_FOCAL_REFERENCE_WIDTH_PX: int = 512
+
+    # P3-1: salience-gated visual episodic memory. Screen captures are far
+    # more privacy-sensitive than camera captures -- a screen can show
+    # anything open on the machine, not just the user's face -- so
+    # screen-sourced visual traces get a hard TTL instead of the graded
+    # ACT-R fade camera-sourced ones get through `memories`. This is a
+    # privacy boundary, not temperament, so it is a deployment setting here
+    # rather than a PersonaProfile field.
+    VISUAL_SCREEN_TRACE_TTL_H: float = 24.0
+    # A visual trace is stored only when the frame is perceptually novel
+    # (VisualAppraisalService.last_frame_was_novel), the appraisal produced
+    # a description, and the moment was affectively significant -- current
+    # arousal or |valence| clears one of these two thresholds. Unmeasured
+    # placeholders (CLAUDE.md integrity constraints): both are a modest
+    # deviation from the neutral baseline (arousal=0.5, valence=0.0), not
+    # tuned values.
+    VISUAL_MEMORY_AROUSAL_THRESHOLD: float = 0.55
+    VISUAL_MEMORY_VALENCE_THRESHOLD: float = 0.15
+
     # Half-life of a phasic hormone burst, in seconds. Real phasic bursts last
     # only hundreds of milliseconds; these are the *felt* afterglow at
     # conversational timescale, so both are deliberately much slower than
@@ -401,6 +441,31 @@ class AppSettings(BaseSettings):
             return "wss://" + v[len("https://") :]
         if v.startswith("http://"):
             return "ws://" + v[len("http://") :]
+        return v
+
+    @field_validator("LIVEKIT_PUBLIC_URL")
+    @classmethod
+    def normalize_livekit_public_scheme(cls, v: str) -> str:
+        if v.startswith("https://"):
+            return "wss://" + v[len("https://") :]
+        if v.startswith("http://"):
+            return "ws://" + v[len("http://") :]
+        return v
+
+    @field_validator("VISUAL_SCREEN_TRACE_TTL_H")
+    @classmethod
+    def validate_visual_trace_ttl(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("VISUAL_SCREEN_TRACE_TTL_H must be positive")
+        return v
+
+    @field_validator(
+        "VISUAL_MEMORY_AROUSAL_THRESHOLD", "VISUAL_MEMORY_VALENCE_THRESHOLD"
+    )
+    @classmethod
+    def validate_visual_memory_threshold(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("visual-memory thresholds must be between 0 and 1")
         return v
 
     # F4: these were previously computed in ConfigMeta.__getattr__, which

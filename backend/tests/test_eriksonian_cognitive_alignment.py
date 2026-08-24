@@ -21,7 +21,7 @@ def temp_store():
     mock_graph = MagicMock()
 
     async def mock_execute_query(query, *args, **kwargs):
-        if "MATCH (e:Entity)" in query:
+        if "MATCH (e:Entity)" in query or "MATCH (seed:Entity)" in query:
             return [{"name": "Kolkata"}, {"name": "Priya"}]
         return []
 

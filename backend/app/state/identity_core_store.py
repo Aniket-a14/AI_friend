@@ -22,6 +22,13 @@ class IdentityCoreStore:
         self._cache_lock = threading.Lock()
         self._cached_identity: dict[str, Any] = {}
         self.publish_cb = publish_cb
+        # P4-8: strong-reference holder for the fire-and-forget cache.sync
+        # broadcast below.
+        self._background_tasks: set = set()
+        # IdentityManager is also constructed by synchronous callers. Keep the
+        # local write valid there, but defer cross-process invalidation until an
+        # event loop is available instead of creating an un-runnable coroutine.
+        self._cache_sync_pending = False
         IdentityCoreStore._instances.append(self)
 
         if db_path == ":memory:":
@@ -177,13 +184,24 @@ class IdentityCoreStore:
                 try:
                     import asyncio
 
+                    from ..utils.background_tasks import spawn_background
+
                     if asyncio.iscoroutinefunction(self.publish_cb):
-                        asyncio.create_task(
-                            self.publish_cb(
-                                "cache.sync",
-                                {"store": "identity_core", "action": "invalidate"},
+                        try:
+                            asyncio.get_running_loop()
+                        except RuntimeError:
+                            self._cache_sync_pending = True
+                            logger.debug(
+                                "Deferring identity cache sync until an event loop is running."
                             )
-                        )
+                        else:
+                            spawn_background(
+                                self._background_tasks,
+                                self.publish_cb(
+                                    "cache.sync",
+                                    {"store": "identity_core", "action": "invalidate"},
+                                ),
+                            )
                     else:
                         self.publish_cb(
                             "cache.sync",
@@ -198,6 +216,19 @@ class IdentityCoreStore:
             raise
         finally:
             self._release_connection(conn)
+
+    async def flush_pending_cache_sync(self) -> None:
+        """Publish a sync deferred by synchronous identity construction."""
+        if not self._cache_sync_pending or not self.publish_cb:
+            return
+        self._cache_sync_pending = False
+        try:
+            await self.publish_cb(
+                "cache.sync", {"store": "identity_core", "action": "invalidate"}
+            )
+        except Exception:
+            self._cache_sync_pending = True
+            logger.warning("Failed to flush deferred identity cache sync.")
 
     @classmethod
     def invalidate_all_local_caches(cls):

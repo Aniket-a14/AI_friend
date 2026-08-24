@@ -10,6 +10,10 @@ from nats.js.errors import BadRequestError, ServiceUnavailableError
 logger = logging.getLogger("nats_streams")
 
 
+class StreamReconciliationError(RuntimeError):
+    """Raised when concurrent stream writers prevent convergence."""
+
+
 # P1-2: the retention policy each stream is created with. Kept SEPARATE
 # from CORE_STREAMS deliberately -- scripts/check_subject_wiring.py parses
 # CORE_STREAMS as an annotated dict-of-lists to cross-reference every
@@ -165,17 +169,97 @@ def _apply_policy_to_existing(config, stream_name: str) -> bool:
     return changed
 
 
+async def reconcile_existing_stream(
+    jsm, stream_name: str, subjects: list[str], max_retries: int = 3
+) -> bool:
+    """Read-modify-write an existing stream's subjects and policy, with a
+    verify-and-retry loop in place of compare-and-set.
+
+    P4-11b: up to six agent processes can reach `_bootstrap_mesh` (or the
+    bootstrap script) for the same stream at startup. Each fetches a
+    `stream_info()` snapshot, computes its own desired subject union from
+    it, and writes back with `update_stream()`. Between one caller's read
+    and its write, another caller's write can already have landed --
+    `update_stream` has no compare-and-set parameter (unlike JetStream's KV
+    API, which does support revision-checked writes), so the second write
+    silently overwrites the first based on a snapshot that no longer
+    reflects the server's state. The subject that snapshot never saw is
+    dropped, not merged -- the stream ends up wired for whichever caller
+    wrote last, not for the union of everyone who tried.
+
+    Rather than assume the write landed, this re-reads the stream
+    immediately after writing and checks that the CALLER's own desired
+    subjects actually made it into the saved config. If they did not --
+    someone else's write raced in between -- it recomputes from the fresh
+    state and retries. Every retry starts from a real read, so concurrent
+    callers converge on the union rather than compounding the race.
+
+    Policy fields (max_age/max_bytes/storage) are not re-verified the same
+    way: every caller computes the identical desired policy from the same
+    `STREAM_POLICIES` constant, so a lost policy update just means someone
+    else already applied the same values -- there is nothing to converge
+    that isn't already converged. Only `subjects` can legitimately differ
+    between concurrent callers, so only `subjects` needs the retry.
+
+    Returns True if the stream ended up changed by this call (even if a
+    retry was needed), False if it was already synchronized. Raises
+    StreamReconciliationError if the retry budget is exhausted.
+    """
+    desired_subjects = set(subjects)
+    last_seen_subjects: set[str] = set()
+
+    for attempt in range(1, max_retries + 1):
+        info = await jsm.stream_info(stream_name)
+        current_subjects = set(info.config.subjects or [])
+        config = info.config
+        changed = False
+
+        if not desired_subjects.issubset(current_subjects):
+            config.subjects = list(current_subjects.union(desired_subjects))
+            changed = True
+
+        changed |= _apply_policy_to_existing(config, stream_name)
+
+        if not changed:
+            return False
+
+        await jsm.update_stream(config)
+
+        verify = await jsm.stream_info(stream_name)
+        last_seen_subjects = set(verify.config.subjects or [])
+        if desired_subjects.issubset(last_seen_subjects):
+            return True
+
+        logger.warning(
+            "Stream %s: update lost a concurrent race (attempt %s/%s); "
+            "retrying against fresh state.",
+            stream_name,
+            attempt,
+            max_retries,
+        )
+
+    logger.error(
+        "Stream %s: could not reconcile subjects after %s attempts "
+        "(concurrent writers kept racing). Last observed subjects: %s",
+        stream_name,
+        max_retries,
+        last_seen_subjects,
+    )
+    raise StreamReconciliationError(
+        f"Stream {stream_name} could not be reconciled after {max_retries} attempts"
+    )
+
+
 def build_stream_config(stream_name: str, subjects: list[str]):
     """The single source of truth for how a core stream is declared.
 
     P1-2: there are TWO stream-creation paths in this codebase, and only one
     is obvious. `setup_streams()` below is the bootstrap script's path;
-    `BaseAgent._bootstrap_mesh()` (agents/base.py) is the other, and it runs
-    on EVERY agent start. Whichever reaches a fresh mesh first decides the
-    policy -- and in practice that is the agent, not the script. If only one
-    path carried the retention config, the streams would be created
-    unbounded and the fix would look applied while doing nothing. Both call
-    this.
+    `BaseAgent._bootstrap_mesh()` (agents/base.py) is the other default path,
+    and it runs on every anonymous agent start. Authenticated runtime agents
+    intentionally skip that administrative path; the dedicated provisioner
+    must call this setup function first. Whichever enabled path reaches a
+    fresh mesh first decides the policy -- both carry the same config.
 
     A stream whose name has no policy entry gets subjects only, exactly as
     before -- so an unknown stream degrades to today's behaviour instead of
@@ -216,29 +300,15 @@ async def _ensure_stream(
             logger.info("Created %s stream", stream_name)
             return
         except BadRequestError:
-            info = await jsm.stream_info(stream_name)
-            current_subjects = set(info.config.subjects or [])
-            desired_subjects = set(subjects)
-            config = info.config
-            changed = False
-
-            if not desired_subjects.issubset(current_subjects):
-                config.subjects = list(current_subjects.union(desired_subjects))
-                changed = True
-
-            # P1-2: an existing stream predates the retention policy, so
-            # bring its limits up to it too. Without this, every deployment
-            # that has ever run keeps the unbounded defaults and the fix
-            # applies only to brand-new meshes -- the same silent no-op
-            # shape P1-1 hit with durable consumers.
-            changed |= _apply_policy_to_existing(config, stream_name)
-
-            if not changed:
+            # P4-11b: reconcile_existing_stream both applies P1-2's
+            # retention policy to a pre-existing stream and retries against
+            # a concurrent writer (this script and up to six agent
+            # processes can all reach this same branch at startup).
+            changed = await reconcile_existing_stream(jsm, stream_name, subjects)
+            if changed:
+                logger.info("Updated %s configuration", stream_name)
+            else:
                 logger.info("%s already synchronized", stream_name)
-                return
-
-            await jsm.update_stream(config)
-            logger.info("Updated %s configuration", stream_name)
             return
         except Exception as error:
             if not _is_retryable_error(error) or attempt >= retries:
@@ -281,7 +351,13 @@ async def setup_streams(
     )
     logger.info("Connecting to NATS at %s", nats_url)
 
-    nc = await nats.connect(nats_url)
+    connect_kwargs = {}
+    nats_user = os.getenv("NATS_USER")
+    nats_password = os.getenv("NATS_PASSWORD")
+    if nats_user and nats_password:
+        connect_kwargs.update(user=nats_user, password=nats_password)
+
+    nc = await nats.connect(nats_url, **connect_kwargs)
     try:
         jsm = nc.jsm()
         await _wait_for_jetstream_ready(

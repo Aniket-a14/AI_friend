@@ -6,6 +6,9 @@
 //! reinterpreted. The previous implementation named its buffer `pcm_16k_mono` but
 //! never resampled at all, and discarded `STT_TARGET_SAMPLE_RATE` outright.
 
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
@@ -35,40 +38,122 @@ pub fn decode_mono_f32(bytes: &[u8], channels: usize) -> Vec<f32> {
         .collect()
 }
 
-/// Resample mono f32 audio to 16 kHz for Whisper.
-///
-/// Uses a windowed-sinc resampler rather than naive linear interpolation: the
-/// common case here is *downsampling* (48k/32k -> 16k), where dropping samples
-/// without band-limiting folds high-frequency energy back into the speech band as
-/// aliasing and measurably degrades recognition.
-pub fn resample_to_16k(input: &[f32], source_rate: u32) -> Result<Vec<f32>> {
-    if input.is_empty() {
-        return Ok(Vec::new());
-    }
-    if source_rate == WHISPER_SAMPLE_RATE {
-        return Ok(input.to_vec());
-    }
-    if source_rate == 0 {
-        anyhow::bail!("source sample rate is zero");
-    }
-
-    let ratio = WHISPER_SAMPLE_RATE as f64 / source_rate as f64;
-    let params = SincInterpolationParameters {
+fn sinc_params() -> SincInterpolationParameters {
+    SincInterpolationParameters {
         sinc_len: 128,
         f_cutoff: 0.95,
         interpolation: SincInterpolationType::Linear,
         oversampling_factor: 128,
         window: WindowFunction::BlackmanHarris2,
-    };
+    }
+}
 
-    let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, input.len(), 1)
-        .context("construct sinc resampler")?;
+fn new_sinc_resampler(source_rate: u32, chunk_size: usize) -> Result<SincFixedIn<f32>> {
+    let ratio = WHISPER_SAMPLE_RATE as f64 / source_rate as f64;
+    SincFixedIn::<f32>::new(ratio, 2.0, sinc_params(), chunk_size.max(1), 1)
+        .context("construct sinc resampler")
+}
 
+/// One-shot resample: builds a resampler, uses it once, discards it.
+///
+/// This is what every call used to do (M3-P5) -- kept as the fallback for
+/// input longer than a `ResamplerCache`'s cached bound, so a pathological
+/// input still resamples correctly rather than erroring.
+fn resample_one_shot(input: &[f32], source_rate: u32) -> Result<Vec<f32>> {
+    let mut resampler = new_sinc_resampler(source_rate, input.len())?;
     let output = resampler
         .process(&[input.to_vec()], None)
         .context("resample to 16 kHz")?;
-
     Ok(output.into_iter().next().unwrap_or_default())
+}
+
+/// Caches a `SincFixedIn` resampler per source sample rate.
+///
+/// M3-P5: every call to resample a chunk used to construct a brand-new
+/// `SincFixedIn`, which builds a sinc/window interpolation table
+/// (`oversampling_factor` 128 x `sinc_len` 128) from scratch -- on the STT
+/// hot path, called for every speech-confirmed partial (up to one per
+/// `partial_interval_ms`) and every endpointed utterance.
+///
+/// Reuse is safe because of how rubato splits its own state: `reset()`
+/// clears only the internal delay-line buffer and restores `chunk_size` to
+/// the value passed at construction (`asyncro_sinc.rs::reset`); it does not
+/// touch the interpolator table, which `new()` builds once and never
+/// rebuilds. Calling `reset()` before every use, then `set_chunk_size()` for
+/// the call's actual length, therefore produces output identical to
+/// constructing fresh each time -- only the (expensive) interpolator build
+/// is skipped, not any state that would make reuse observable.
+pub struct ResamplerCache {
+    max_utterance_secs: f64,
+    resamplers: HashMap<u32, SincFixedIn<f32>>,
+}
+
+impl ResamplerCache {
+    /// `max_utterance_secs` sizes each rate's cached resampler generously
+    /// enough (with a 5% margin) to cover the longest single call it will
+    /// ever see for that rate, since a caller bounding utterance length to
+    /// this same value (as `handle_audio_inbound`'s force-cut does) can
+    /// never hand this cache a longer chunk than that bound implies.
+    pub fn new(max_utterance_secs: f64) -> Self {
+        Self {
+            max_utterance_secs: max_utterance_secs.max(0.001),
+            resamplers: HashMap::new(),
+        }
+    }
+
+    fn max_chunk_size_for(&self, source_rate: u32) -> usize {
+        ((source_rate as f64 * self.max_utterance_secs * 1.05).ceil() as usize).max(1)
+    }
+
+    /// Resample mono f32 audio to 16 kHz for Whisper.
+    ///
+    /// Uses a windowed-sinc resampler rather than naive linear interpolation:
+    /// the common case here is *downsampling* (48k/32k -> 16k), where
+    /// dropping samples without band-limiting folds high-frequency energy
+    /// back into the speech band as aliasing and measurably degrades
+    /// recognition.
+    pub fn resample_to_16k(&mut self, input: &[f32], source_rate: u32) -> Result<Vec<f32>> {
+        if input.is_empty() {
+            return Ok(Vec::new());
+        }
+        if source_rate == WHISPER_SAMPLE_RATE {
+            return Ok(input.to_vec());
+        }
+        if source_rate == 0 {
+            anyhow::bail!("source sample rate is zero");
+        }
+
+        let max_chunk_size = self.max_chunk_size_for(source_rate);
+        if input.len() > max_chunk_size {
+            // Longer than this rate's cached bound -- should not happen
+            // given upstream callers bound utterance length to
+            // max_utterance_secs, but resample correctly regardless of
+            // whether that bound holds, rather than erroring or truncating.
+            return resample_one_shot(input, source_rate);
+        }
+
+        let resampler = match self.resamplers.entry(source_rate) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                entry.insert(new_sinc_resampler(source_rate, max_chunk_size)?)
+            }
+        };
+
+        resampler.reset();
+        resampler
+            .set_chunk_size(input.len())
+            .context("set resampler chunk size")?;
+        let output = resampler
+            .process(&[input.to_vec()], None)
+            .context("resample to 16 kHz")?;
+
+        Ok(output.into_iter().next().unwrap_or_default())
+    }
+
+    #[cfg(test)]
+    fn cached_rate_count(&self) -> usize {
+        self.resamplers.len()
+    }
 }
 
 /// Root-mean-square energy of a mono f32 buffer.
@@ -269,7 +354,8 @@ mod tests {
     #[test]
     fn resample_48k_to_16k_thirds_the_length() {
         let input = tone(4800, 0.5);
-        let out = resample_to_16k(&input, 48_000).unwrap();
+        let mut cache = ResamplerCache::new(30.0);
+        let out = cache.resample_to_16k(&input, 48_000).unwrap();
         let expected = 1600.0;
         assert!(
             (out.len() as f64 - expected).abs() / expected < 0.05,
@@ -281,8 +367,83 @@ mod tests {
     #[test]
     fn resample_is_identity_at_16k() {
         let input = tone(320, 0.25);
-        let out = resample_to_16k(&input, 16_000).unwrap();
+        let mut cache = ResamplerCache::new(30.0);
+        let out = cache.resample_to_16k(&input, 16_000).unwrap();
         assert_eq!(out, input);
+    }
+
+    /// M3-P5: the whole point of caching. A reused, reset resampler must
+    /// produce the same output a fresh one would -- otherwise the
+    /// optimization would be trading transcription quality for CPU time
+    /// without anyone deciding to make that trade.
+    #[test]
+    fn reused_resampler_matches_a_fresh_one_shot_resample() {
+        let input = tone(4800, 0.5);
+
+        let mut cache = ResamplerCache::new(30.0);
+        // Warm the cache with an unrelated call first, so the second call
+        // below genuinely exercises reuse (reset + set_chunk_size), not a
+        // first-ever construction.
+        let _ = cache.resample_to_16k(&tone(1600, 0.3), 48_000).unwrap();
+        let cached_out = cache.resample_to_16k(&input, 48_000).unwrap();
+
+        let one_shot_out = resample_one_shot(&input, 48_000).unwrap();
+
+        assert_eq!(
+            cached_out, one_shot_out,
+            "a reused resampler must be bit-identical to a fresh one-shot resample"
+        );
+    }
+
+    /// Consecutive calls with different lengths at the same rate exercise
+    /// `set_chunk_size` shrinking and growing back -- the partial path
+    /// (fixed short window) and the final path (variable, up to a full
+    /// utterance) genuinely differ in length at the same source rate.
+    #[test]
+    fn cache_handles_varying_chunk_lengths_at_the_same_rate() {
+        let mut cache = ResamplerCache::new(30.0);
+
+        let short = tone(1600, 0.3); // ~100ms partial window
+        let long = tone(4800, 0.5); // a full-length final utterance
+
+        let short_out = cache.resample_to_16k(&short, 48_000).unwrap();
+        let long_out = cache.resample_to_16k(&long, 48_000).unwrap();
+        let short_out_again = cache.resample_to_16k(&short, 48_000).unwrap();
+
+        assert_eq!(
+            short_out, short_out_again,
+            "resampling the same input twice, with a differently-sized call \
+             in between, must produce the same output both times"
+        );
+        assert!(long_out.len() > short_out.len());
+        assert_eq!(cache.cached_rate_count(), 1, "one rate, one cache entry");
+    }
+
+    #[test]
+    fn cache_builds_one_entry_per_distinct_source_rate() {
+        let mut cache = ResamplerCache::new(30.0);
+        cache.resample_to_16k(&tone(4800, 0.5), 48_000).unwrap();
+        cache.resample_to_16k(&tone(3200, 0.5), 32_000).unwrap();
+        assert_eq!(cache.cached_rate_count(), 2);
+    }
+
+    /// Input longer than the cache's bound for that rate must still
+    /// resample correctly (via the one-shot fallback), not error or get
+    /// silently truncated.
+    #[test]
+    fn input_longer_than_the_cached_bound_still_resamples_correctly() {
+        // A tiny bound (0.01s at 48kHz is 480 samples) so a normal-sized
+        // call clearly exceeds it.
+        let mut cache = ResamplerCache::new(0.01);
+        let input = tone(4800, 0.5);
+
+        let out = cache.resample_to_16k(&input, 48_000).unwrap();
+        let expected = 1600.0;
+        assert!(
+            (out.len() as f64 - expected).abs() / expected < 0.05,
+            "expected ~{expected} samples even past the cached bound, got {}",
+            out.len()
+        );
     }
 
     /// P2-8: one anomalous near-silent chunk must not latch the detector into

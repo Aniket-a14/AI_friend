@@ -123,6 +123,18 @@ class SubconsciousAgent(BaseAgent):
             durable=f"{self.name}_audio_perception_monologue",
             deliver_policy="new",
         )
+        # P3-1: liveness signal, not a work item, like every other
+        # subscription in the mesh whose replayed history says nothing about
+        # the present moment (see VisionAgent's own reasoning for chat.input/
+        # chat.output) -- a fresh durable under the "all" default would
+        # re-walk every past vision.description and re-evaluate salience
+        # against affect states that no longer hold.
+        await self.subscribe(
+            Topics.VISION_DESCRIPTION,
+            self._on_vision_description,
+            durable=f"{self.name}_vision_description",
+            deliver_policy="new",
+        )
         self._monologue_task = asyncio.create_task(self._continuous_monologue_loop())
         logger.info(f"🧠 {self.name} Online | Subconscious Mesh Interface Active.")
 
@@ -398,6 +410,12 @@ class SubconsciousAgent(BaseAgent):
                     ]
                     await self.memory_store.apply_actr_decay(contents)
 
+            # P3-1: screen-sourced visual traces get a hard privacy TTL
+            # rather than the graded ACT-R fade above -- pruned here,
+            # unconditionally on every pass, since it has nothing to do with
+            # whether there were unconsolidated chat episodes this tick.
+            await self.memory_store.prune_expired_visual_screen_traces()
+
             logger.info(
                 "[Subconscious] Subconscious consolidation pass completed successfully."
             )
@@ -430,6 +448,57 @@ class SubconsciousAgent(BaseAgent):
     async def _on_audio_perception(self, data: dict[str, Any]):
         """Cancel active monologue or dream generation immediately on early user audio detection."""
         self._cancel_active_subconscious_tasks()
+
+    async def _on_vision_description(self, data: dict[str, Any]) -> None:
+        """P3-1: salience-gated visual episodic memory.
+
+        Three signals must all hold before a frame becomes a stored memory,
+        or a static, affectively-neutral scene would mint one every
+        VLM_APPRAISAL_INTERVAL: the frame must be perceptually novel
+        (`is_novel`, reusing VisualAppraisalService's own habituation delta
+        rather than a second novelty computation -- lives on the wire
+        because that delta is computed inside the vision_agent process, not
+        here), the VLM must have produced a description, and the moment must
+        be affectively significant -- evaluated here, where affect actually
+        lives, not in vision_agent (kept a pure sensor with no state/DB
+        access, the same boundary SomaticAppraiser's placement in
+        BrainAgent already argues for).
+
+        Camera-sourced traces go through `add_memory` (modality="visual")
+        and follow the normal ACT-R lifecycle. Screen-sourced traces go
+        through `add_visual_screen_trace` and get a hard privacy TTL instead
+        -- see that method's docstring.
+        """
+        description = data.get("description", "")
+        if not description or data.get("is_novel") is not True:
+            return
+
+        valence = self.state_service.current_state.valence
+        arousal = self.state_service.current_state.arousal
+        worth_keeping = (
+            arousal >= Config.VISUAL_MEMORY_AROUSAL_THRESHOLD
+            or abs(valence) >= Config.VISUAL_MEMORY_VALENCE_THRESHOLD
+        )
+        if not worth_keeping:
+            return
+
+        source = data.get("source", "unknown")
+        try:
+            if source == "screen":
+                await self.memory_store.add_visual_screen_trace(
+                    description=description, valence=valence, arousal=arousal
+                )
+            else:
+                await self.memory_store.add_memory(
+                    content=description,
+                    emotion=arousal,
+                    valence=valence,
+                    source="vision_camera",
+                    modality="visual",
+                    metadata={"visual_source": source},
+                )
+        except Exception as e:
+            logger.error(f"[Subconscious] Failed to store visual episodic trace: {e}")
 
     def _cancel_active_subconscious_tasks(self):
         if self._current_monologue_task and not self._current_monologue_task.done():
@@ -587,6 +656,7 @@ class SubconsciousAgent(BaseAgent):
             logger.error(f"[Subconscious] Error in dream sequence: {e}")
 
     async def stop(self):
+        await self._prepare_stop()
         if self._monologue_task:
             self._monologue_task.cancel()
             try:
@@ -609,11 +679,27 @@ class SubconsciousAgent(BaseAgent):
             except asyncio.CancelledError:
                 pass
 
+        if self._consolidation_task and not self._consolidation_task.done():
+            self._consolidation_task.cancel()
+            try:
+                await self._consolidation_task
+            except asyncio.CancelledError:
+                pass
+        self._consolidation_task = None
+
         await self.llm.close()
         if self.db_store and self._owns_db_store:
             await self.db_store.close()
         if self.memory_store and self._owns_memory_store:
             await self.memory_store.close()
+        # P3-4: unlike db_store/memory_store, graph_db has no ownership flag
+        # -- it is always constructed here or injected, never shared with
+        # another agent, so it was simply never closed at all.
+        if self.graph_db:
+            try:
+                await self.graph_db.close()
+            except Exception as e:
+                logger.warning(f"[Subconscious] GraphDB close warning: {e}")
         await super().stop()
         logger.info(f"🧠 {self.name} Offline.")
 

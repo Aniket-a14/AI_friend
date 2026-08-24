@@ -7,6 +7,7 @@ from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
 
 from ..config import Config
+from ..contracts import AudioPlaybackProgress, Topics
 from ..measure_trace import trace as _measure_trace
 from .base import BaseAgent, install_shutdown_signal_handlers
 
@@ -59,6 +60,20 @@ class TransportAgent(BaseAgent):
         # delayed in the mesh for a turn that has already finished cannot flush
         # audio for the turn speaking now.
         self._active_turn_id = None
+        # P4-2: this process is the closest observable "reached the speaker"
+        # point in this architecture -- there is no frontend PCM player to
+        # publish playback progress from (the browser side plays a LiveKit
+        # WebRTC audio track via `track.attach()`, opaque to application
+        # code; there is nothing there to instrument). `character_offset`/
+        # `word_index` arrive pass-through in the same X-Latency-Meta header
+        # `turn_id` already does (brain_agent stamps them, voice-agent
+        # forwards them unchanged). Tracks the last value actually published
+        # so a turn's PCM chunks -- several per text chunk, all carrying the
+        # same offset -- don't republish identical progress repeatedly, and
+        # resets whenever `turn_id` changes so a new turn cannot inherit a
+        # stale offset from the previous one.
+        self._last_progress_turn_id = None
+        self._last_progress_offset = -1
 
         # #173: mirrors the outbound queue above, for the opposite direction.
         # `_process_remote_audio` used to `await self.publish(...)` directly
@@ -165,7 +180,7 @@ class TransportAgent(BaseAgent):
             logger.info(
                 f"Subscribed to remote audio track: {track.sid} from {participant.identity}"
             )
-            asyncio.create_task(self._process_remote_audio(track))
+            self.spawn(self._process_remote_audio(track))
 
     async def _process_remote_audio(self, track: rtc.RemoteAudioTrack):
         """Convert WebRTC audio frames to NATS events for STT.
@@ -231,6 +246,12 @@ class TransportAgent(BaseAgent):
             turn_id = metadata.get("turn_id") if metadata else None
             if turn_id:
                 self._active_turn_id = turn_id
+            # P4-2: pass-through values (brain_agent computes them, voice-agent
+            # forwards them) carried in the same header `turn_id` above comes
+            # from. `None` when absent -- e.g. the exception-fallback chunk
+            # brain_agent deliberately omits them for.
+            character_offset = metadata.get("character_offset") if metadata else None
+            word_index = metadata.get("word_index") if metadata else None
 
             audio_bytes = b""
             sample_rate = self.output_sample_rate
@@ -261,10 +282,16 @@ class TransportAgent(BaseAgent):
                     pcm_data = audio_bytes
 
                 if pcm_data:
+                    queued_frame = (
+                        pcm_data,
+                        sample_rate,
+                        num_channels,
+                        turn_id,
+                        character_offset,
+                        word_index,
+                    )
                     try:
-                        self.audio_queue.put_nowait(
-                            (pcm_data, sample_rate, num_channels)
-                        )
+                        self.audio_queue.put_nowait(queued_frame)
                     except asyncio.QueueFull:
                         # Drop the oldest frame to keep playout near real-time.
                         try:
@@ -274,9 +301,7 @@ class TransportAgent(BaseAgent):
                             pass
 
                         try:
-                            self.audio_queue.put_nowait(
-                                (pcm_data, sample_rate, num_channels)
-                            )
+                            self.audio_queue.put_nowait(queued_frame)
                         except asyncio.QueueFull:
                             pass
 
@@ -303,7 +328,14 @@ class TransportAgent(BaseAgent):
         """Drain queued PCM frames and push to LiveKit at sink pace."""
         while True:
             try:
-                pcm_data, sample_rate, num_channels = await self.audio_queue.get()
+                (
+                    pcm_data,
+                    sample_rate,
+                    num_channels,
+                    turn_id,
+                    character_offset,
+                    word_index,
+                ) = await self.audio_queue.get()
                 try:
                     if not pcm_data or num_channels <= 0:
                         continue
@@ -323,6 +355,9 @@ class TransportAgent(BaseAgent):
                         "buffer3_to_4",
                         qsize=self.audio_queue.qsize(),
                     )
+                    self._maybe_publish_playback_progress(
+                        turn_id, character_offset, word_index
+                    )
                 finally:
                     self.audio_queue.task_done()
             except asyncio.CancelledError:
@@ -330,6 +365,36 @@ class TransportAgent(BaseAgent):
             except Exception as e:
                 logger.error(f"Transport playback worker error: {e}")
                 await asyncio.sleep(0.01)
+
+    def _maybe_publish_playback_progress(
+        self, turn_id, character_offset, word_index
+    ) -> None:
+        """P4-2: fires once a PCM frame carrying a *new* offset has actually
+        reached the LiveKit audio source -- the closest observable "reached
+        the speaker" point available in this architecture (see the
+        `_last_progress_turn_id` docstring in `__init__`).
+
+        Not awaited inline: this is a real-time audio drain loop, and a
+        JetStream ack round-trip for an observability-shaped message must not
+        delay the next PCM frame -- the same reasoning voice-agent's own
+        `publish_pcm` documents for its own ack.
+        """
+        if character_offset is None or word_index is None:
+            return
+        if turn_id != self._last_progress_turn_id:
+            self._last_progress_turn_id = turn_id
+            self._last_progress_offset = -1
+        if character_offset <= self._last_progress_offset:
+            return
+        self._last_progress_offset = character_offset
+
+        progress = AudioPlaybackProgress(
+            utterance_id=turn_id or "",
+            character_offset=character_offset,
+            word_index=word_index,
+            completed=False,
+        )
+        self.spawn(self.publish(Topics.AUDIO_PLAYBACK_PROGRESS, progress.model_dump()))
 
     async def _on_audio_stop(self, data: dict) -> None:
         """P1-3 (audit/ROADMAP.md): flush audio already in flight on a
@@ -414,6 +479,7 @@ class TransportAgent(BaseAgent):
         )
 
     async def stop(self):
+        await self._prepare_stop()
         if self.audio_worker_task:
             self.audio_worker_task.cancel()
             try:

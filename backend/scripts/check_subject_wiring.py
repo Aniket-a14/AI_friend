@@ -49,8 +49,15 @@ CONTRACTS_RS = CRATES_ROOT / "contracts" / "src" / "lib.rs"
 # audit/ROADMAP.md (or a deliberate cross-boundary design, annotated as
 # such), not something this check should keep discovering as new.
 ALLOWLIST: dict[str, str] = {
-    # M1-D1 / M0-D11: wired for cache invalidation, never published anywhere.
-    "cache.sync": "ROADMAP P4-1: wire or delete IdentityCoreStore/cache.sync",
+    # M1-D1 / M0-D11: ROADMAP P4-1 is DONE (Stage 6) -- IdentityManager now
+    # constructs a real IdentityCoreStore and its cache.sync broadcast is
+    # live. This entry stays allowlisted for a structural reason, not an
+    # open decision: the subscribe side lives in agents/base.py, which is
+    # TRANSPORT_IMPL_FILES-excluded from this scan (it is generic transport
+    # code, not per-subject business wiring), so the subscribe site is
+    # invisible to this static scan regardless of whether it exists -- and
+    # it does (BaseAgent.connect(), deliver_policy="new" per P3-8).
+    "cache.sync": "subscriber lives in agents/base.py, excluded from this scan as generic transport code (TRANSPORT_IMPL_FILES) -- not missing, just invisible to it",
     # M2-A2 / M2-A4: AGENT_VOICE_MODULATION and AUDIO_PLAYBACK_VISEMES are
     # published to NATS but consumed by the frontend voice UI directly
     # (LiveKit data track / browser client), not by another backend agent --

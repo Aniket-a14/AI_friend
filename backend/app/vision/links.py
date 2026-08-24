@@ -102,6 +102,20 @@ class ScreenLink:
             logger.error(f"Screen capture failed: {e}")
             return None
 
+    def close(self):
+        """Release the mss display connection (P3-4).
+
+        Unlike `CameraLink.close()`, which existed already, nothing ever
+        released `self.sct` -- `mss.mss()` holds an X11/display connection
+        that outlives the process otherwise.
+        """
+        if self.sct:
+            try:
+                self.sct.close()
+            except Exception as e:
+                logger.debug("[Vision] Error closing screen capture: %s", e)
+            self.sct = None
+
 
 class CameraLink:
     """Local camera capture for visual grounding."""

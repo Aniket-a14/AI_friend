@@ -163,6 +163,24 @@ class SQLiteConnection:
             "CREATE INDEX IF NOT EXISTS lexical_assoc_b_idx ON lexical_associations(term_b)"
         )
 
+        # Screen-sourced salient visual episodes (P3-1). Privacy-sensitive --
+        # a screen can show anything open on the machine -- so these are
+        # pruned on a hard TTL rather than the ACT-R fade `memories` rows
+        # get; see MemoryStore.add_visual_screen_trace's docstring.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS visual_screen_traces (
+                id TEXT PRIMARY KEY,
+                description TEXT NOT NULL,
+                valence REAL DEFAULT 0.0,
+                arousal REAL DEFAULT 0.5,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS visual_screen_traces_created_at_idx "
+            "ON visual_screen_traces(created_at)"
+        )
+
         # Specifics the agent tried to assert about its own life but could not
         # ground in the biography, the surfaced memories or the user's message.
         # Keyed on the term so repeated hits accumulate.

@@ -36,6 +36,31 @@ use audio::{Endpointer, VadEvent};
 use sensevoice::SenseVoiceModel;
 use whisper::WhisperModel;
 
+/// P2-1, opt-in: connects with a username/password only when both are
+/// given, mirroring `BaseAgent.connect` (Python) so both halves of the mesh
+/// honour the same opt-in credential -- see nats-accounts.conf's own header
+/// for how an operator turns this on. With neither given (the default),
+/// this is `async_nats::connect(url)`, unchanged from before this existed.
+/// Takes the credentials as parameters rather than reading
+/// `NATS_USER`/`NATS_PASSWORD` internally so tests can exercise both
+/// branches without mutating this process's real environment (`cargo test`
+/// runs tests in parallel by default, and threads share one environment).
+async fn connect_nats(
+    url: &str,
+    user: Option<String>,
+    password: Option<String>,
+) -> std::result::Result<async_nats::Client, async_nats::ConnectError> {
+    match (user, password) {
+        (Some(user), Some(password)) => {
+            async_nats::ConnectOptions::new()
+                .user_and_password(user, password)
+                .connect(url)
+                .await
+        }
+        _ => async_nats::connect(url).await,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Backend {
     Whisper,
@@ -184,9 +209,13 @@ async fn main() -> Result<()> {
 
     let config = SttConfig::from_env();
 
-    let client = async_nats::connect(config.nats_url.clone())
-        .await
-        .with_context(|| format!("connect to NATS at {}", config.nats_url))?;
+    let client = connect_nats(
+        &config.nats_url,
+        std::env::var("NATS_USER").ok(),
+        std::env::var("NATS_PASSWORD").ok(),
+    )
+    .await
+    .with_context(|| format!("connect to NATS at {}", config.nats_url))?;
     let jetstream = async_nats::jetstream::new(client.clone());
     let mut subscriber = client.subscribe(topics::AUDIO_INBOUND).await?;
 
@@ -254,6 +283,12 @@ async fn main() -> Result<()> {
 
     info!("rust stt-agent subscribed to {}", topics::AUDIO_INBOUND);
 
+    // M3-P5: this loop processes audio.inbound messages one at a time (no
+    // per-message spawn below), so a single cache owned here and threaded
+    // through by &mut needs no lock -- unlike `state`, which spawned
+    // partial/final workers also touch concurrently.
+    let mut resampler_cache = audio::ResamplerCache::new(config.max_utterance_secs);
+
     while let Some(message) = subscriber.next().await {
         if let Err(err) = handle_audio_inbound(
             &config,
@@ -262,6 +297,7 @@ async fn main() -> Result<()> {
             state.clone(),
             &partial_slot,
             &final_tx,
+            &mut resampler_cache,
         )
         .await
         {
@@ -653,6 +689,7 @@ async fn handle_audio_inbound(
     state: Arc<Mutex<SttState>>,
     partial_slot: &Arc<PartialSlot>,
     final_tx: &mpsc::Sender<Job>,
+    resampler_cache: &mut audio::ResamplerCache,
 ) -> Result<()> {
     let metadata = metadata_from_headers(&message);
     let channels = metadata.as_ref().and_then(|m| m.channels).unwrap_or(1) as usize;
@@ -761,7 +798,7 @@ async fn handle_audio_inbound(
                 let rate = source_rate;
                 drop(guard);
 
-                if let Ok(pcm_16k) = audio::resample_to_16k(&pcm, rate) {
+                if let Ok(pcm_16k) = resampler_cache.resample_to_16k(&pcm, rate) {
                     // Latest-wins: replaces any hypothesis the fast model has not
                     // started yet, rather than being dropped in favour of it.
                     partial_slot.offer(Job {
@@ -798,7 +835,7 @@ async fn handle_audio_inbound(
             let rate = source_rate;
             drop(guard);
 
-            let pcm_16k = audio::resample_to_16k(&pcm, rate)?;
+            let pcm_16k = resampler_cache.resample_to_16k(&pcm, rate)?;
             if !pcm_16k.is_empty() {
                 info!(
                     secs = pcm_16k.len() as f64 / 16_000.0,

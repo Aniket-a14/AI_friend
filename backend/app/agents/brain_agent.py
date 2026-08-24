@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 import uuid
 from datetime import datetime
@@ -29,6 +30,27 @@ from .base import BaseAgent, install_shutdown_signal_handlers
 logger = logging.getLogger(__name__)
 
 
+def _char_offset_after_word(text: str, word_count: int) -> int:
+    """P4-2: the exact character offset in `text` right after its
+    `word_count`-th whitespace-delimited token.
+
+    Used to stamp each published speech chunk with where it ends in the
+    *true* response text, so `_truncate_interrupted_reply` can later slice
+    `last_assistant_response` at a real boundary instead of the reconstructed
+    (`" ".join(words)`) text actually sent to TTS, which does not
+    byte-for-byte match `text` wherever the source stream's whitespace was
+    collapsed by `.split()`/`.join()`. `re.finditer` walks `text` itself, so
+    the offset it returns is always a true index into `text`, independent of
+    that mismatch.
+    """
+    if word_count <= 0:
+        return 0
+    matches = list(re.finditer(r"\S+", text))
+    if not matches:
+        return 0
+    return matches[min(word_count, len(matches)) - 1].end()
+
+
 class BrainAgent(BaseAgent):
     """
     The Brain Agent (CVS-3.5 Edition).
@@ -54,6 +76,7 @@ class BrainAgent(BaseAgent):
             memory_store=memory_store,
             graph_db=graph_db,
             identity_store=conversation_store,
+            publish_cb=self.publish,
         )
 
         # Visual Somatic Homeostasis: recognising a learned comfort object in
@@ -77,6 +100,17 @@ class BrainAgent(BaseAgent):
         self._generation_lock = asyncio.Lock()
         self.last_audio_progress = None
         self.last_assistant_response = None
+        self._active_response_turn_id: str | None = None
+        # P2-14/M1-A14: `last_audio_progress` and `last_assistant_response`
+        # are written from three independent NATS subscription tasks --
+        # chat.input's turn flow, audio.playback.progress's tracker, and
+        # audio.stop's truncation handler -- and read-then-written together
+        # by audio.stop's truncation. `_generation_lock` guards only which
+        # task owns `_active_generation_task`; it says nothing about this
+        # data, and `_cancel_active_generation` yields back to the event
+        # loop when its awaited task finishes, which is exactly the window a
+        # concurrent chat.input reset can land in. See _truncate_interrupted_reply.
+        self._turn_state_lock = asyncio.Lock()
 
     async def start(self):
         await self.connect()
@@ -229,6 +263,73 @@ class BrainAgent(BaseAgent):
                 if self._active_generation_task is task:
                     self._active_generation_task = None
 
+    async def _truncate_interrupted_reply(self):
+        """Rewrite the stored assistant reply down to what was actually
+        heard, using `last_audio_progress`, then clear both fields.
+
+        P2-14/M1-A14: this used to read `last_audio_progress` and
+        `last_assistant_response`, compute a truncation offset, and (on one
+        branch) `await` a conversation-store write, all without a lock --
+        while `_process_chat_input_flow` (a different NATS subscription,
+        therefore a different task) can reset both fields to start a new
+        turn, and `_on_audio_playback_progress` (a third subscription) can
+        overwrite `last_audio_progress` mid-computation. `_cancel_active_generation`
+        guarantees the turn that WROTE this reply has stopped -- it does not
+        guarantee nothing else reads or resets it while this method runs.
+        Holding `_turn_state_lock` for the whole read-compute-write section
+        (including the DB write) makes this atomic with respect to those
+        other writers rather than merely reducing the window.
+        """
+        async with self._turn_state_lock:
+            progress = self.last_audio_progress
+            if progress and not progress.completed and self.last_assistant_response:
+                offset = progress.character_offset
+                if 0 < offset < len(self.last_assistant_response):
+                    truncated_text = self.last_assistant_response[:offset].strip()
+                    original_length = len(self.last_assistant_response)
+                    truncated_length = len(truncated_text)
+                    logger.info(
+                        f"Truncating history (via progress): original_length={original_length}, truncated_length={truncated_length}, offset={offset}"
+                    )
+                    if self.conversation_store:
+                        await self.conversation_store.update_last_assistant_message(
+                            truncated_text
+                        )
+            elif not progress and self.last_assistant_response:
+                # No real playback progress, so we do not know how much of
+                # the reply was actually heard -- and we no longer guess.
+                #
+                # This used to estimate `int(elapsed * 15)`, a hardcoded
+                # 15 characters per second, and rewrite the stored reply at
+                # that offset. Two things were wrong with it. The rate was
+                # invented and unbounded in error: real speech rate varies
+                # with prosody, pauses and the synthesiser, so the cut
+                # landed wherever the arithmetic said. And
+                # `assistant_response_start_time` is only set on one of the
+                # two streaming paths, so `elapsed` could be measured from a
+                # *previous* turn entirely.
+                #
+                # The transcript is not a log; it is what memory and the
+                # persona prompt read back later. A wrong cut point puts
+                # words in the agent's mouth that it never said, or deletes
+                # ones it did, and nothing downstream can tell that the
+                # sentence was reconstructed. Keeping the full text is also
+                # wrong -- the agent may believe it said more than was heard
+                # -- but it is wrong in a way that is honest and visible in
+                # the log, rather than silently fabricated.
+                logger.info(
+                    "Interrupted with no playback progress; keeping the full "
+                    "reply (%d chars) rather than guessing a cut point.",
+                    len(self.last_assistant_response),
+                )
+
+            # Cleared however this turn resolved. It was previously reset
+            # only on the branch that actually truncated, so a stop that
+            # matched none of the guards left the progress marker in place
+            # for the *next* interrupt to truncate against -- a stale offset
+            # from a reply that had already ended.
+            self.last_audio_progress = None
+
     async def _replace_active_generation(self, coro, reason: str):
         """Atomically replace the active generation task with a new one.
 
@@ -322,6 +423,9 @@ class BrainAgent(BaseAgent):
         if not user_text:
             return
 
+        async with self._turn_state_lock:
+            self._active_response_turn_id = turn_id
+
         # Pacing Conversational Turn: calculate silence duration and pause
         state_snap = self.cognitive_core.state.get_context_snapshot()
         pacing = self.conversational_runtime.calculate_pacing_parameters(state_snap)
@@ -380,7 +484,7 @@ class BrainAgent(BaseAgent):
         }
 
         if self.conversation_store and not is_subconscious:
-            asyncio.create_task(self.conversation_store.log_message(user_id, user_text))
+            self.spawn(self.conversation_store.log_message(user_id, user_text))
 
         if is_subconscious:
             logger.info("💭 [Brain] Processing subconscious thought: %s", user_text)
@@ -388,8 +492,12 @@ class BrainAgent(BaseAgent):
                 thought_prompt=user_text
             )
         else:
-            self.last_assistant_response = None
-            self.last_audio_progress = None
+            # P2-14/M1-A14: locked so this reset cannot land mid-computation
+            # inside _truncate_interrupted_reply, running concurrently on the
+            # audio.stop subscription's own task for a still-unwinding turn.
+            async with self._turn_state_lock:
+                self.last_assistant_response = None
+                self.last_audio_progress = None
             generator = self.cognitive_core.process_event(raw_event)
 
         # Wrap generator to monitor TTFT and inject fillers
@@ -405,7 +513,8 @@ class BrainAgent(BaseAgent):
         )
 
         if not is_subconscious:
-            self.last_assistant_response = ""
+            async with self._turn_state_lock:
+                self.last_assistant_response = ""
             # `assistant_response_start_time` used to be stamped here, read only
             # by the character-rate truncation guess in `_on_audio_stop`. That
             # guess is gone, and it was set on this path only -- the other
@@ -421,10 +530,11 @@ class BrainAgent(BaseAgent):
         )
 
         if not is_subconscious:
-            self.last_assistant_response = full_response
+            async with self._turn_state_lock:
+                self.last_assistant_response = full_response
 
         if self.conversation_store and full_response:
-            asyncio.create_task(
+            self.spawn(
                 self.conversation_store.log_message("assistant", full_response)
             )
 
@@ -432,7 +542,16 @@ class BrainAgent(BaseAgent):
         """Tracks the current word/character progress of the audio playback."""
         try:
             progress = AudioPlaybackProgress.model_validate(data)
-            self.last_audio_progress = progress
+            async with self._turn_state_lock:
+                active_turn_id = getattr(self, "_active_response_turn_id", None)
+                if active_turn_id and progress.utterance_id != active_turn_id:
+                    logger.debug(
+                        "Ignoring playback progress for stale turn %s; active turn is %s.",
+                        progress.utterance_id,
+                        active_turn_id,
+                    )
+                    return
+                self.last_audio_progress = progress
             logger.debug(
                 f"🔊 Audio Playback Progress | Word Index: {progress.word_index} | Offset: {progress.character_offset} | Completed: {progress.completed}"
             )
@@ -460,57 +579,23 @@ class BrainAgent(BaseAgent):
             # happen on confirmed (non-speculative) interrupts -- a
             # speculative duck has not stopped anything yet.
             if not stop_msg.speculative:
+                async with self._turn_state_lock:
+                    active_turn_id = getattr(self, "_active_response_turn_id", None)
+                if (
+                    stop_msg.turn_id
+                    and active_turn_id
+                    and stop_msg.turn_id != active_turn_id
+                ):
+                    logger.debug(
+                        "Ignoring audio stop for stale turn %s; active turn is %s.",
+                        stop_msg.turn_id,
+                        active_turn_id,
+                    )
+                    return
                 await self._cancel_active_generation(
                     stop_msg.reason or "confirmed audio.stop"
                 )
-                progress = self.last_audio_progress
-                if progress and not progress.completed and self.last_assistant_response:
-                    offset = progress.character_offset
-                    if 0 < offset < len(self.last_assistant_response):
-                        truncated_text = self.last_assistant_response[:offset].strip()
-                        original_length = len(self.last_assistant_response)
-                        truncated_length = len(truncated_text)
-                        logger.info(
-                            f"Truncating history (via progress): original_length={original_length}, truncated_length={truncated_length}, offset={offset}"
-                        )
-                        if self.conversation_store:
-                            await self.conversation_store.update_last_assistant_message(
-                                truncated_text
-                            )
-                elif not progress and self.last_assistant_response:
-                    # No real playback progress, so we do not know how much of
-                    # the reply was actually heard -- and we no longer guess.
-                    #
-                    # This used to estimate `int(elapsed * 15)`, a hardcoded
-                    # 15 characters per second, and rewrite the stored reply at
-                    # that offset. Two things were wrong with it. The rate was
-                    # invented and unbounded in error: real speech rate varies
-                    # with prosody, pauses and the synthesiser, so the cut
-                    # landed wherever the arithmetic said. And
-                    # `assistant_response_start_time` is only set on one of the
-                    # two streaming paths, so `elapsed` could be measured from a
-                    # *previous* turn entirely.
-                    #
-                    # The transcript is not a log; it is what memory and the
-                    # persona prompt read back later. A wrong cut point puts
-                    # words in the agent's mouth that it never said, or deletes
-                    # ones it did, and nothing downstream can tell that the
-                    # sentence was reconstructed. Keeping the full text is also
-                    # wrong -- the agent may believe it said more than was heard
-                    # -- but it is wrong in a way that is honest and visible in
-                    # the log, rather than silently fabricated.
-                    logger.info(
-                        "Interrupted with no playback progress; keeping the full "
-                        "reply (%d chars) rather than guessing a cut point.",
-                        len(self.last_assistant_response),
-                    )
-
-                # Cleared however this turn resolved. It was previously reset
-                # only on the branch that actually truncated, so a stop that
-                # matched none of the guards left the progress marker in place
-                # for the *next* interrupt to truncate against -- a stale offset
-                # from a reply that had already ended.
-                self.last_audio_progress = None
+                await self._truncate_interrupted_reply()
         except Exception as e:
             logger.error(f"Error handling audio stop truncation: {e}")
 
@@ -539,6 +624,29 @@ class BrainAgent(BaseAgent):
         segment_started_at = None
         generation_errors: list[str] = []
         fallback_text = "I'm having trouble thinking right now..."
+        # P4-2: cumulative word count across every chunk published so far
+        # this turn, used to derive each chunk's (character_offset,
+        # word_index) into `source_text`. Correct regardless of exactly when
+        # `full_response` was last extended relative to a given flush,
+        # because every word that ever enters `current_chunk_words` came
+        # from a `chunk_text` already appended to `full_response` -- the
+        # published word sequence is always a prefix of `full_response`'s
+        # own word sequence.
+        published_word_count = 0
+
+        async def _publish_tracked(words: list[str], source_text: str) -> None:
+            nonlocal published_word_count
+            new_word_count = published_word_count + len(words)
+            offset = _char_offset_after_word(source_text, new_word_count)
+            await self._publish_speech_chunk(
+                words,
+                turn_id,
+                incoming_metadata=incoming_metadata,
+                incoming_latency_metadata=incoming_latency_metadata,
+                character_offset=offset,
+                word_index=new_word_count,
+            )
+            published_word_count = new_word_count
 
         await self.set_state("thinking")
 
@@ -549,7 +657,13 @@ class BrainAgent(BaseAgent):
                     chunk_text = output["data"]
                     full_response += chunk_text
                     if not is_proactive:
-                        self.last_assistant_response = full_response
+                        # P2-14/M1-A14: this fires once per streamed chunk,
+                        # so contention is rare, but an uncontended
+                        # asyncio.Lock acquire/release is cheap and
+                        # correctness here matters more than the microscopic
+                        # saving from skipping it.
+                        async with self._turn_state_lock:
+                            self.last_assistant_response = full_response
 
                     now_monotonic = time.perf_counter()
                     if (
@@ -559,12 +673,7 @@ class BrainAgent(BaseAgent):
                         >= self.coordinator.formation_buffer_ms
                         and len(current_chunk_words) >= 3
                     ):
-                        await self._publish_speech_chunk(
-                            current_chunk_words,
-                            turn_id,
-                            incoming_metadata=incoming_metadata,
-                            incoming_latency_metadata=incoming_latency_metadata,
-                        )
+                        await _publish_tracked(current_chunk_words, full_response)
                         current_chunk_words = []
                         segment_started_at = None
 
@@ -578,12 +687,7 @@ class BrainAgent(BaseAgent):
                             word, len(current_chunk_words)
                         )
                         if score > 0.7 or len(current_chunk_words) > 12:
-                            await self._publish_speech_chunk(
-                                current_chunk_words,
-                                turn_id,
-                                incoming_metadata=incoming_metadata,
-                                incoming_latency_metadata=incoming_latency_metadata,
-                            )
+                            await _publish_tracked(current_chunk_words, full_response)
                             current_chunk_words = []
                             segment_started_at = None
 
@@ -605,12 +709,7 @@ class BrainAgent(BaseAgent):
 
                 elif output["type"] == "done":
                     if current_chunk_words:
-                        await self._publish_speech_chunk(
-                            current_chunk_words,
-                            turn_id,
-                            incoming_metadata=incoming_metadata,
-                            incoming_latency_metadata=incoming_latency_metadata,
-                        )
+                        await _publish_tracked(current_chunk_words, full_response)
                         current_chunk_words = []
 
                     if not full_response.strip() and not is_proactive:
@@ -619,13 +718,8 @@ class BrainAgent(BaseAgent):
                             turn_id,
                             generation_errors[-3:],
                         )
-                        await self._publish_speech_chunk(
-                            fallback_text.split(),
-                            turn_id,
-                            incoming_metadata=incoming_metadata,
-                            incoming_latency_metadata=incoming_latency_metadata,
-                        )
                         full_response = fallback_text
+                        await _publish_tracked(fallback_text.split(), full_response)
 
                     if full_response.strip() or not is_proactive:
                         state_snap = self.cognitive_core.state.get_context_snapshot()
@@ -648,6 +742,17 @@ class BrainAgent(BaseAgent):
             logger.error("Cognitive Loop error on turn_id=%s: %s", turn_id, e)
             if not is_proactive:
                 error_msg = str(e)
+                # P4-2: deliberately untracked (no character_offset/word_index)
+                # -- unlike the empty-generation fallback above, `full_response`
+                # is NOT reassigned to `fallback_text` here, and the caller
+                # will set `last_assistant_response` to whatever partial
+                # `full_response` this method returns below, not to
+                # `fallback_text`. Stamping this chunk's audio against
+                # `fallback_text` would produce an offset that indexes into a
+                # string `last_assistant_response` never actually holds -- a
+                # pre-existing gap (that mismatch exists whether or not this
+                # chunk carries progress metadata), not one to paper over with
+                # a fabricated-looking offset.
                 await self._publish_speech_chunk(
                     fallback_text.split(),
                     turn_id,
@@ -674,6 +779,8 @@ class BrainAgent(BaseAgent):
         turn_id: str | None = None,
         incoming_metadata: dict[str, Any] | None = None,
         incoming_latency_metadata: dict[str, Any] | None = None,
+        character_offset: int | None = None,
+        word_index: int | None = None,
     ):
         """
         Publishes a semantically coherent chunk with full PAD affect metadata.
@@ -696,11 +803,61 @@ class BrainAgent(BaseAgent):
             turn_id=turn_id,
             user_distance=self.last_user_distance,
         )
-        payload.metadata = incoming_metadata
+        # P4-2: non-destructive merge -- `incoming_metadata` originates from
+        # the user's own chat.input and must reach voice/transport unchanged;
+        # this only adds two keys alongside it. voice-agent passes them
+        # through unchanged on every PCM chunk it publishes for this text, and
+        # transport_agent relays them as `audio.playback.progress` once that
+        # PCM has actually reached the LiveKit audio source -- the closest
+        # observable "reached the speaker" point in this architecture.
+        # Deliberately omitted (None) for the one caller that cannot make
+        # them meaningful (see _stream_to_speech's exception-handler
+        # fallback) -- absent metadata is honest; a fabricated offset is not.
+        if character_offset is not None and word_index is not None:
+            metadata = dict(incoming_metadata) if incoming_metadata else {}
+            metadata["character_offset"] = character_offset
+            metadata["word_index"] = word_index
+            payload.metadata = metadata
+        else:
+            payload.metadata = incoming_metadata
         payload.latency_metadata = incoming_latency_metadata
         await self.publish(Topics.CHAT_OUTPUT, payload.model_dump())
 
     async def stop(self):
+        """P3-4: brain_agent owns the most resources of any agent in the
+        mesh (the LLM client, the graph driver, two DB pools, the whole
+        cognitive core) and used to close none of them -- the exact "owns
+        the most, cleans up least" asymmetry this item names. Cancel first,
+        close second: an in-flight generation still holding `memory_store`/
+        `graph_db` must stop before those are torn out from under it.
+        """
+        await self._prepare_stop()
+        async with self._generation_lock:
+            task = self._active_generation_task
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.exception("Active generation task raised while being cancelled")
+
+        self.cognitive_core.close()
+
+        for resource, label in (
+            (self.ollama, "OllamaClient"),
+            (self.graph_db, "GraphDB"),
+            (self.memory_store, "MemoryStore"),
+            (self.conversation_store, "ConversationHistoryStore"),
+        ):
+            if resource is None:
+                continue
+            try:
+                await resource.close()
+            except Exception as e:
+                logger.warning(f"[Brain] {label} close warning: {e}")
+
         await super().stop()
         logger.info(f"🧠 {self.name} Offline.")
 

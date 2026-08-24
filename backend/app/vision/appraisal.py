@@ -39,6 +39,18 @@ class VisualAppraisalService:
         self._last_description: str = ""
         self._last_appraisal_time: float = 0.0
         self._last_visual_vector = None
+        self._habituation_disabled_logged = False
+
+        # P3-1: reuses the same delta this class already computes for
+        # habituation (`appraise()` below), rather than a second novelty
+        # computation, as the salience signal for whether a frame is worth
+        # persisting as a visual memory. True whenever the frame was NOT
+        # skipped by habituation -- the first frame ever (nothing to diff
+        # against yet) and a frame where continuity-preserving downsampling
+        # is unavailable both default True, since "cannot tell" must not
+        # silently suppress storage the way it must not silently suppress a
+        # VLM call.
+        self.last_frame_was_novel: bool = True
 
         # M3-R3: without this, a down VLM (or Ollama, or a model that was
         # never pulled) got retried every capture tick with a full base64
@@ -73,19 +85,28 @@ class VisualAppraisalService:
         """Check if enough time has elapsed since the last VLM call."""
         return (time.time() - self._last_appraisal_time) >= self.interval
 
-    def _compute_visual_vector(self, frame_b64: str) -> list[float]:
-        """Convert base64 JPEG frame to a downsampled 16x16 grayscale vector."""
-        import base64
+    def _compute_visual_vector(self, frame_b64: str) -> list[float] | None:
+        """Convert base64 JPEG frame to a downsampled 16x16 grayscale vector.
 
-        import numpy as np
+        Returns None when no perceptually-continuous downsampling path is
+        available, so the caller can disable habituation explicitly rather
+        than feed it a discontinuous vector (M3-A9). A SHA-256 hash of the
+        raw bytes -- the previous fallback -- hashes two near-identical
+        frames to unrelated vectors, so the habituation delta always clears
+        threshold and the VLM-call cap it exists to provide never engages: a
+        fallback that reads as graceful degradation while silently removing
+        the very thing it was supposed to degrade gracefully.
+        """
+        import base64
 
         try:
             jpeg_bytes = base64.b64decode(frame_b64)
         except Exception:
-            return [0.0] * 256
+            return None
 
         try:
             import cv2
+            import numpy as np
 
             img = cv2.imdecode(
                 np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_GRAYSCALE
@@ -95,17 +116,24 @@ class VisualAppraisalService:
                 return (resized.flatten().astype(float) / 255.0).tolist()
         except Exception as e:
             logger.debug(
-                "[VisualAppraisal] OpenCV downsampling failed, falling back to hash: %s",
+                "[VisualAppraisal] OpenCV downsampling failed, trying PIL: %s", e
+            )
+
+        try:
+            import io
+
+            from PIL import Image
+
+            img = Image.open(io.BytesIO(jpeg_bytes)).convert("L").resize((16, 16))
+            return [px / 255.0 for px in img.getdata()]
+        except Exception as e:
+            logger.debug(
+                "[VisualAppraisal] PIL downsampling failed too, no continuity-"
+                "preserving path left: %s",
                 e,
             )
 
-        import hashlib
-
-        h = hashlib.sha256(jpeg_bytes).digest()
-        extended = bytearray()
-        for i in range(8):
-            extended.extend(hashlib.sha256(h + bytes([i])).digest())
-        return [b / 255.0 for b in extended[:256]]
+        return None
 
     async def appraise(self, frame_b64: str) -> str:
         """
@@ -117,11 +145,25 @@ class VisualAppraisalService:
         - The VLM call fails
         """
         if not self.should_appraise():
+            self.last_frame_was_novel = False
             return self._last_description
+
+        # Reset before evaluating this frame; the habituation-bypass branch
+        # below is the only place that turns it False.
+        self.last_frame_was_novel = True
 
         # Compute delta to evaluate sensory habituation
         current_vector = self._compute_visual_vector(frame_b64)
-        if self._last_visual_vector is not None:
+        if current_vector is None:
+            if not self._habituation_disabled_logged:
+                logger.warning(
+                    "[VisualAppraisal] No perceptually-continuous frame "
+                    "downsampling available (cv2 and PIL both failed); "
+                    "sensory habituation is disabled and every appraisal "
+                    "tick will call the VLM uncapped."
+                )
+                self._habituation_disabled_logged = True
+        elif self._last_visual_vector is not None:
             try:
                 import cognitive_rust
 
@@ -146,9 +188,11 @@ class VisualAppraisalService:
                 )
                 self._last_visual_vector = current_vector
                 self._last_appraisal_time = time.time()
+                self.last_frame_was_novel = False
                 return self._last_description
 
         if not self._breaker_allow_request():
+            self.last_frame_was_novel = False
             logger.debug(
                 "[VisualAppraisal] Circuit breaker open (%d consecutive failures); "
                 "skipping VLM call, using cache.",
@@ -182,6 +226,10 @@ class VisualAppraisalService:
                 self._breaker_record_success()
                 self._last_visual_vector = current_vector
                 self._last_appraisal_time = time.time()
+                # The VLM observed no description. If a previous cached
+                # description exists, returning it must not make stale
+                # content look like a novel frame downstream.
+                self.last_frame_was_novel = False
                 logger.debug(
                     "[VisualAppraisal] VLM confirmed a quiet scene, using cache."
                 )
@@ -191,12 +239,14 @@ class VisualAppraisalService:
                 # next tick retries the VLM rather than treating this frame
                 # as an observed (quiet) baseline -- until the breaker opens.
                 self._breaker_record_failure()
+                self.last_frame_was_novel = False
                 logger.warning(
                     "[VisualAppraisal] VLM pipeline failure, using cache."
                 )
 
         except Exception as e:
             self._breaker_record_failure()
+            self.last_frame_was_novel = False
             logger.error(
                 "[VisualAppraisal] VLM appraisal failed: %s. Using cached description.",
                 e,

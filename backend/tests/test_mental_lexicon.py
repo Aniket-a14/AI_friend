@@ -68,18 +68,21 @@ class TestLearning:
     async def test_cooccurrence_is_reinforced_and_symmetric(self, sqlite_lexicon):
         await sqlite_lexicon.learn_from_text("quantum physics fascinating")
         await sqlite_lexicon.learn_from_text("quantum physics again")
-        # Fresh instance forces the association to come from the DB, not the
-        # incrementally-updated in-memory cache.
-        fresh = MentalLexicon(sqlite_lexicon.pool)
-        await fresh.refresh()
-        assert "physic" in fresh.expand("quantum")
-        assert "quantum" in fresh.expand("physic")  # symmetric
+        # Checked before any refresh(): refresh() now also decays (P2-5), so
+        # this raw weight must be read before that side effect touches it.
         async with sqlite_lexicon.pool.acquire() as conn:
             weight = await conn.fetchval(
                 "SELECT weight FROM lexical_associations "
                 "WHERE term_a = 'physic' AND term_b = 'quantum'"
             )
         assert float(weight) == pytest.approx(2.0)
+
+        # Fresh instance forces the association to come from the DB, not the
+        # incrementally-updated in-memory cache.
+        fresh = MentalLexicon(sqlite_lexicon.pool)
+        await fresh.refresh()
+        assert "physic" in fresh.expand("quantum")
+        assert "quantum" in fresh.expand("physic")  # symmetric
 
     @pytest.mark.asyncio
     async def test_expand_ranks_by_weight(self, sqlite_lexicon):
@@ -122,7 +125,9 @@ class TestPostgresDialect:
     @pytest.mark.asyncio
     async def test_learn_emits_placeholder_upserts(self):
         # No real Postgres: assert the dialect-neutral SQL shape (the same string
-        # asyncpg would run, and the SQLite pool translates).
+        # asyncpg would run, and the SQLite pool translates). On this path
+        # (pool_is_sqlite -> False for a bare MagicMock) learn_from_text
+        # batches through executemany (P2-5), not per-pair execute calls.
         pool = MagicMock()
         conn = AsyncMock()
         pool.acquire.return_value.__aenter__.return_value = conn
@@ -131,13 +136,92 @@ class TestPostgresDialect:
         lex = MentalLexicon(pool)
         await lex.learn_from_text("rocket engine")
 
-        calls = [c.args[0] for c in conn.execute.await_args_list]
+        calls = [c.args[0] for c in conn.executemany.await_args_list]
         vocab_upserts = [s for s in calls if "INSERT INTO vocabulary" in s]
         assoc_upserts = [s for s in calls if "INSERT INTO lexical_associations" in s]
         assert vocab_upserts and all("$1" in s and "ON CONFLICT" in s for s in vocab_upserts)
         assert assoc_upserts and all(
             "$1" in s and "$2" in s and "DO UPDATE" in s for s in assoc_upserts
         )
+
+
+class TestAssociationLifecycle:
+    """P2-5: lexical_associations had no decay and no cap -- every
+    co-occurrence ever learned was retained and reinforced forever."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_decays_every_associations_weight(self, sqlite_lexicon):
+        await sqlite_lexicon.learn_from_text("alpha beta")
+        async with sqlite_lexicon.pool.acquire() as conn:
+            before = await conn.fetchval(
+                "SELECT weight FROM lexical_associations "
+                "WHERE term_a = 'alpha' AND term_b = 'beta'"
+            )
+
+        await sqlite_lexicon.refresh()
+
+        async with sqlite_lexicon.pool.acquire() as conn:
+            after = await conn.fetchval(
+                "SELECT weight FROM lexical_associations "
+                "WHERE term_a = 'alpha' AND term_b = 'beta'"
+            )
+        assert float(after) == pytest.approx(
+            float(before) * sqlite_lexicon._assoc_decay_factor
+        )
+
+    @pytest.mark.asyncio
+    async def test_decay_prunes_weights_that_fall_below_the_floor(
+        self, sqlite_lexicon
+    ):
+        await sqlite_lexicon._ensure_ready()
+        async with sqlite_lexicon.pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO lexical_associations (term_a, term_b, weight) "
+                "VALUES ($1, $2, $3)",
+                "zeta",
+                "omega",
+                0.05,
+            )
+
+        await sqlite_lexicon._decay_associations()
+
+        async with sqlite_lexicon.pool.acquire() as conn:
+            row = await conn.fetchval(
+                "SELECT weight FROM lexical_associations "
+                "WHERE term_a = 'zeta' AND term_b = 'omega'"
+            )
+        assert row is None, (
+            "a weight already below the prune floor must be forgotten, not "
+            "merely decayed further and left in the table forever"
+        )
+
+
+class TestBumpCacheGrowthCap:
+    """P3-7: _load_cache() bounds the cache at load time, but _bump_cache
+    could add brand-new pairs between reloads with no limit at all."""
+
+    def test_new_pairs_are_capped_between_loads(self):
+        lex = MentalLexicon(pool=MagicMock())
+        lex._max_new_pairs_between_loads = 2
+
+        lex._bump_cache("a", "b", 1.0)
+        lex._bump_cache("a", "c", 1.0)
+        lex._bump_cache("a", "d", 1.0)  # cap already reached -- must be dropped
+
+        assert lex._new_pairs_since_load == 2
+        assert "d" not in lex._assoc_cache.get("a", {})
+        assert "b" in lex._assoc_cache.get("a", {})
+        assert "c" in lex._assoc_cache.get("a", {})
+
+    def test_reinforcing_an_already_cached_pair_is_never_capped(self):
+        lex = MentalLexicon(pool=MagicMock())
+        lex._max_new_pairs_between_loads = 1
+
+        lex._bump_cache("a", "b", 1.0)  # uses up the one new-pair slot
+        lex._bump_cache("a", "b", 1.0)  # not new -- must still apply
+
+        assert lex._assoc_cache["a"]["b"] == pytest.approx(2.0)
+        assert lex._new_pairs_since_load == 1
 
 
 class TestMemoryStoreIntegration:

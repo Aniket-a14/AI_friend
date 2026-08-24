@@ -24,6 +24,11 @@ wake_up_file/
 tests/
 scripts/
 !scripts/bootstrap/sovits_bootstrap.sh
+# P3-3 (M1-A4): main.py imports this at module level (Provisioning Guard),
+# so excluding it made the signaling server's image unable to even start --
+# confirmed live: ModuleNotFoundError on every container start, the first
+# time this service was ever actually deployed via compose.
+!scripts/bootstrap/provision_models.py
 models/
 checkpoint*/
 *.wav

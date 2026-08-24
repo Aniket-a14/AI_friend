@@ -127,6 +127,38 @@ class GraphDB:
             raise ValueError(f"Unsafe Cypher relation: {relation!r}")
         return rel_type
 
+    # P3-11: the fact-extraction prompt leaves "relation" free-text, so the
+    # LLM's word choice (LIKES vs ENJOYS vs PREFERS) becomes a distinct
+    # Cypher relationship *type*, and consolidate_relationship's MERGE dedups
+    # on exact type -- synonyms never collide, they fragment into parallel
+    # edges between the same two nodes instead of one edge whose weight
+    # grows. This used to be applied only by the one caller that remembered
+    # to (cognitive/learning.py), not by consolidate_relationship itself --
+    # any other or future write path bypassed it silently. Living here, next
+    # to _safe_relation, makes it apply to every write regardless of caller.
+    # A small, conservative canonicalization, not a general thesaurus: it
+    # only collapses clusters common enough in everyday reflection output to
+    # be worth the risk of losing the verb's original nuance.
+    _RELATION_SYNONYMS: dict[str, str] = {
+        "ENJOYS": "LIKES",
+        "LOVES": "LIKES",
+        "ADORES": "LIKES",
+        "PREFERS": "LIKES",
+        "IS_FOND_OF": "LIKES",
+        "DISLIKES": "DISLIKES",
+        "HATES": "DISLIKES",
+        "DETESTS": "DISLIKES",
+        "IS_A": "IS_A",
+        "IS_TYPE_OF": "IS_A",
+        "TYPE_OF": "IS_A",
+    }
+
+    @classmethod
+    def _canonicalize_relation(cls, rel_type: str) -> str:
+        """Expects an already-`_safe_relation`-normalized (uppercased,
+        underscored) type; the synonym keys above are written in that form."""
+        return cls._RELATION_SYNONYMS.get(rel_type, rel_type)
+
     async def close(self):
         if self._bootstrap_task and not self._bootstrap_task.done():
             self._bootstrap_task.cancel()
@@ -245,7 +277,7 @@ class GraphDB:
         Consolidates a relationship, incrementing weight on match or setting default properties.
         """
         await self._invalidate_cache(subject_name)
-        rel_type = self._safe_relation(relation)
+        rel_type = self._canonicalize_relation(self._safe_relation(relation))
         s_lbl = self._safe_label(subject_label)
         t_lbl = self._safe_label(target_label)
 
@@ -319,7 +351,18 @@ class GraphDB:
             prune_query, {"prune_threshold": prune_threshold}, write=True
         )
 
+        # P2-3 stretch: an edge prune above can leave an :Entity node with no
+        # relationships in either direction -- e.g. the one node in a pair
+        # whose only edge just got deleted. Left alone, these orphans
+        # accumulate forever: never decayed themselves (decay only touches
+        # relationships), and still returned by the unbounded `MATCH
+        # (e:Entity)` fetches in memory_store.py's entity pre-linking and PPR
+        # graph-boost scoring, growing the cost of both on every write and
+        # every search for nodes contributing nothing.
+        orphan_prune_query = "MATCH (e:Entity) WHERE NOT (e)--() DELETE e"
+        await self.execute_query(orphan_prune_query, {}, write=True)
+
         logger.info(
-            f"Graph Store: Decayed relationship weights (factor: {decay_factor}) and pruned edges below {prune_threshold}"
+            f"Graph Store: Decayed relationship weights (factor: {decay_factor}) and pruned edges below {prune_threshold}, plus any entities orphaned by that prune"
         )
 

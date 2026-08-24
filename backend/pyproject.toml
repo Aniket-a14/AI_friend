@@ -1,0 +1,44 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[tool.mutmut]
+# Stage 6 targeted mutation gate. Keep the first enforced scope explicit so a
+# new production module cannot silently enter a very expensive mutation run.
+source_paths = ["app/"]
+only_mutate = [
+    "app/state/lexicon_store.py",
+    "app/vision/appraisal.py",
+    "app/vision/agent.py",
+]
+mutate_only_covered_lines = true
+pytest_add_cli_args_test_selection = [
+    "tests/test_mental_lexicon.py::TestInnateSeed::test_seed_present_and_expands_after_refresh",
+    "tests/test_mental_lexicon.py::TestInnateSeed::test_seed_runs_only_once",
+    "tests/test_mental_lexicon.py::TestLearning::test_learn_upserts_vocab_and_increments_times_seen",
+    "tests/test_mental_lexicon.py::TestLearning::test_cooccurrence_is_reinforced_and_symmetric",
+    "tests/test_mental_lexicon.py::TestLearning::test_expand_ranks_by_weight",
+    "tests/test_mental_lexicon.py::TestLearning::test_unknown_cue_returns_empty",
+    "tests/test_mental_lexicon.py::TestLearning::test_empty_cue_returns_empty",
+    "tests/test_mental_lexicon.py::TestLearning::test_tokenize_caps_pair_fanout",
+    "tests/test_mental_lexicon.py::TestGuards::test_learn_never_raises_on_broken_pool",
+    "tests/test_mental_lexicon.py::TestPostgresDialect::test_learn_emits_placeholder_upserts",
+    "tests/test_mental_lexicon.py::TestAssociationLifecycle::test_refresh_decays_every_associations_weight",
+    "tests/test_mental_lexicon.py::TestAssociationLifecycle::test_decay_prunes_weights_that_fall_below_the_floor",
+    "tests/test_mental_lexicon.py::TestBumpCacheGrowthCap::test_new_pairs_are_capped_between_loads",
+    "tests/test_mental_lexicon.py::TestBumpCacheGrowthCap::test_reinforcing_an_already_cached_pair_is_never_capped",
+    "tests/test_vision.py::TestVisualAppraisalService::test_habituation_bypass_marks_the_frame_not_novel",
+    "tests/test_vision.py::TestVisualAppraisalService::test_novel_frame_after_a_habituated_one_resets_the_flag",
+    "tests/test_vision.py::TestVisualAppraisalService::test_breaker_opens_after_consecutive_failures_and_stops_calling_vlm",
+    "tests/test_vision.py::TestVisualAppraisalService::test_visual_vector_returns_none_when_undecodable",
+    "tests/test_vision.py::TestVisualAppraisalService::test_undecodable_frames_disable_habituation_and_log_once",
+    "tests/test_vision.py::TestVisionAgent::test_face_cascade_is_built_once_not_per_call",
+    "tests/test_vision.py::TestVisionAgent::test_distance_uses_calibrated_focal_length_formula",
+    "tests/test_vision.py::TestVisionAgent::test_run_appraisal_offloads_distance_calc_off_the_event_loop",
+]
+also_copy = ["pytest.ini", "tests"]
+max_stack_depth = 8
+use_setproctitle = false
+# Benchmark assertions are tested, but benchmark timing itself is not part of
+# mutation correctness and only adds noise and runtime.
+pytest_add_cli_args = ["--benchmark-disable"]

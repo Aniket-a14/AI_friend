@@ -60,6 +60,29 @@ class MentalLexicon:
         self._max_words_per_text = 12   # cap pair fan-out per learned memory
         self._cache_row_limit = 8000    # bound the in-memory association cache
 
+        # P2-5: Hebbian decay + prune for lexical_associations, applied once
+        # per refresh() cycle (the same 5-minute cadence the cache already
+        # reloads on -- see the call site in memory_store.py). Chosen so an
+        # association that is never reinforced again fades below the prune
+        # floor after roughly a week of active use, not hours or months --
+        # an order-of-magnitude target, not measured against real usage (see
+        # CLAUDE.md's integrity rule on unmeasured constants). Applies
+        # uniformly to innate-seeded pairs too: lexical_associations has no
+        # `source` column to protect them (unlike vocabulary), so a seed pair
+        # untouched by real conversation for that long is forgotten the same
+        # as a learned one -- a real gap, not a silent one.
+        self._assoc_decay_factor = 0.999
+        self._assoc_prune_threshold = 0.1
+
+        # P3-7: _load_cache() bounds the cache at load time (_cache_row_limit
+        # rows), but _bump_cache can add brand-new pairs between reloads with
+        # no limit. Cap how many *new* keys a single refresh cycle may add;
+        # further reinforcement of already-cached pairs is unaffected, and a
+        # capped-out new pair is still written to the DB -- it just waits for
+        # the next scheduled _load_cache() to earn a cache slot on weight.
+        self._max_new_pairs_between_loads = 2000
+        self._new_pairs_since_load = 0
+
     # ---- schema + seed -----------------------------------------------------
 
     async def _ensure_ready(self):
@@ -154,19 +177,30 @@ class MentalLexicon:
             words = self._tokenize(text)
             if not words:
                 return
+
+            pairs: list[tuple[str, str]] = []
+            for i in range(len(words)):
+                for j in range(i + 1, len(words)):
+                    a, b = sorted((words[i], words[j]))
+                    if a != b:
+                        pairs.append((a, b))
+
             async with self.pool.acquire() as conn:
-                for term in words:
-                    await conn.execute(
-                        "INSERT INTO vocabulary (term, source) VALUES ($1, 'acquired') "
-                        "ON CONFLICT (term) DO UPDATE SET "
-                        "times_seen = times_seen + 1, last_seen = current_timestamp",
-                        term,
-                    )
-                for i in range(len(words)):
-                    for j in range(i + 1, len(words)):
-                        a, b = sorted((words[i], words[j]))
-                        if a == b:
-                            continue
+                # P2-5: up to 12 words / 66 pairs used to be one `execute`
+                # each -- up to 78 awaited round-trips per memory write.
+                # `executemany` batches Postgres into one; the SQLite
+                # fallback wrapper has no executemany (see the note on
+                # `_in_predicate` above), so it keeps looping -- a real
+                # backend difference, not an oversight.
+                if self.is_sqlite:
+                    for term in words:
+                        await conn.execute(
+                            "INSERT INTO vocabulary (term, source) VALUES ($1, 'acquired') "
+                            "ON CONFLICT (term) DO UPDATE SET "
+                            "times_seen = times_seen + 1, last_seen = current_timestamp",
+                            term,
+                        )
+                    for a, b in pairs:
                         await conn.execute(
                             "INSERT INTO lexical_associations (term_a, term_b, weight) "
                             "VALUES ($1, $2, 1.0) ON CONFLICT (term_a, term_b) DO UPDATE SET "
@@ -174,9 +208,31 @@ class MentalLexicon:
                             a,
                             b,
                         )
-                        self._bump_cache(a, b, 1.0)
+                else:
+                    await conn.executemany(
+                        "INSERT INTO vocabulary (term, source) VALUES ($1, 'acquired') "
+                        "ON CONFLICT (term) DO UPDATE SET "
+                        "times_seen = times_seen + 1, last_seen = current_timestamp",
+                        [(term,) for term in words],
+                    )
+                    if pairs:
+                        await conn.executemany(
+                            "INSERT INTO lexical_associations (term_a, term_b, weight) "
+                            "VALUES ($1, $2, 1.0) ON CONFLICT (term_a, term_b) DO UPDATE SET "
+                            "weight = weight + 1.0, last_reinforced = current_timestamp",
+                            pairs,
+                        )
+
+            for a, b in pairs:
+                self._bump_cache(a, b, 1.0)
         except Exception as e:
             logger.debug("MentalLexicon.learn_from_text skipped: %s", e)
+
+    @property
+    def is_sqlite(self) -> bool:
+        from .memory_store import pool_is_sqlite
+
+        return pool_is_sqlite(self.pool)
 
     # ---- expansion (recall hot path) --------------------------------------
 
@@ -206,13 +262,30 @@ class MentalLexicon:
     # ---- cache refresh -----------------------------------------------------
 
     async def refresh(self):
-        """Ensure the store is ready and (re)load the association cache from the
-        DB. Called on the same periodic cadence as the dynamic stop words."""
+        """Ensure the store is ready, decay + prune associations, and (re)load
+        the association cache from the DB. Called on the same periodic
+        cadence as the dynamic stop words."""
         try:
             await self._ensure_ready()
+            await self._decay_associations()
             await self._load_cache()
         except Exception as e:
             logger.debug("MentalLexicon.refresh skipped: %s", e)
+
+    async def _decay_associations(self):
+        """Hebbian decay + prune for lexical_associations, mirroring
+        GraphDB.decay_relationships: multiply every weight by a decay
+        factor, then forget rows that fall below a floor. An association
+        earns its keep by being reinforced faster than it decays."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE lexical_associations SET weight = weight * $1",
+                self._assoc_decay_factor,
+            )
+            await conn.execute(
+                "DELETE FROM lexical_associations WHERE weight < $1",
+                self._assoc_prune_threshold,
+            )
 
     async def _load_cache(self):
         cache: dict[str, dict[str, float]] = {}
@@ -232,10 +305,21 @@ class MentalLexicon:
             cache.setdefault(a, {})[b] = w
             cache.setdefault(b, {})[a] = w
         self._assoc_cache = cache
+        self._new_pairs_since_load = 0
 
     # ---- helpers -----------------------------------------------------------
 
     def _bump_cache(self, a: str, b: str, delta: float):
+        is_new_pair = b not in self._assoc_cache.get(a, {})
+        if is_new_pair:
+            if self._new_pairs_since_load >= self._max_new_pairs_between_loads:
+                # Already at this cycle's growth cap. The DB write already
+                # happened in learn_from_text -- this only skips the
+                # in-memory expansion cache, so nothing is lost, just
+                # deferred to the next scheduled _load_cache().
+                return
+            self._new_pairs_since_load += 1
+
         a_assoc = self._assoc_cache.setdefault(a, {})
         a_assoc[b] = a_assoc.get(b, 0.0) + delta
         b_assoc = self._assoc_cache.setdefault(b, {})
