@@ -89,3 +89,16 @@ backend/evals/out/
 # kept locally as the evidentiary record the findings cite back to.
 /AUDIT.md
 /audit/
+
+# Live agent identity state (cognitive/identity.py's default when
+# IDENTITY_STATE_DIR is unset) -- a SQLite db plus the persona's own working
+# copy of personality.json/history.json, written by any local run. Runtime
+# output, not source; the seeded defaults it starts from live tracked at
+# backend/app/personality.json / history.json.
+backend/.identity_state/
+
+# scripts/results/ (root) is the curated benchmark-evidence directory docs
+# cite by path -- see the note above. backend/scripts/results/ is not that
+# directory; it exists only because a profiling script was once run from
+# backend/ instead of the repo root and wrote a stray duplicate there.
+backend/scripts/results/

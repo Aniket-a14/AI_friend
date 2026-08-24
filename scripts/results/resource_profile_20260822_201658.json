@@ -1,0 +1,417 @@
+[
+  {
+    "timestamp": "2026-08-22T20:16:58.266575",
+    "elapsed": 7.104873657226562e-05,
+    "stats": [
+      {
+        "BlockIO": "0B / 148MB",
+        "CPUPerc": "0.00%",
+        "Container": "eb1ace5dccfc1e49a3d10edf7d4a46e8a928e0029ac6839807ce7adffc823de9",
+        "ID": "eb1ace5dccfc",
+        "MemPerc": "6.59%",
+        "MemUsage": "522.6MiB / 7.748GiB",
+        "Name": "stt_agent_measure",
+        "NetIO": "152MB / 2.75MB",
+        "PIDs": "11"
+      },
+      {
+        "BlockIO": "30.5MB / 64.8MB",
+        "CPUPerc": "0.00%",
+        "Container": "0e989939619f749148ea6eabae969a6be5031966a38ee2b4d1dbf670f641e24a",
+        "ID": "0e989939619f",
+        "MemPerc": "0.72%",
+        "MemUsage": "57.2MiB / 7.748GiB",
+        "Name": "postgres_db",
+        "NetIO": "884kB / 369kB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.10%",
+        "Container": "eed881ee78fafadaec5d42062f6949f8f2e31763f193649d0ce403dcb860c188",
+        "ID": "eed881ee78fa",
+        "MemPerc": "0.57%",
+        "MemUsage": "45.58MiB / 7.748GiB",
+        "Name": "local_sfu",
+        "NetIO": "1.02MB / 1.64MB",
+        "PIDs": "13"
+      },
+      {
+        "BlockIO": "203MB / 178MB",
+        "CPUPerc": "0.45%",
+        "Container": "f19314940f3fd513cb5ad1277d12d0e11820e4f9f58872c933653c64a840467c",
+        "ID": "f19314940f3f",
+        "MemPerc": "8.18%",
+        "MemUsage": "648.7MiB / 7.748GiB",
+        "Name": "brain_graph",
+        "NetIO": "52.8kB / 69.3kB",
+        "PIDs": "84"
+      },
+      {
+        "BlockIO": "10.3MB / 10.3MB",
+        "CPUPerc": "0.74%",
+        "Container": "7e740cd2ba938107e1291d7c997123c8f5c63baa10830d9bf8d864c0f9d60c09",
+        "ID": "7e740cd2ba93",
+        "MemPerc": "0.14%",
+        "MemUsage": "11.32MiB / 7.748GiB",
+        "Name": "brain_cache",
+        "NetIO": "1.77MB / 1.08MB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "12.3kB / 3.6MB",
+        "CPUPerc": "0.25%",
+        "Container": "7d359a56575593779553bc9f88d55b836b00120cd9968f742d7de45ac1d1c78d",
+        "ID": "7d359a565755",
+        "MemPerc": "3.00%",
+        "MemUsage": "237.8MiB / 7.748GiB",
+        "Name": "brain_vectors",
+        "NetIO": "1.48MB / 250kB",
+        "PIDs": "47"
+      },
+      {
+        "BlockIO": "164kB / 246kB",
+        "CPUPerc": "0.07%",
+        "Container": "09665e2ddd27b30d52cc2962c663433f11acd34beaf38bbb231e6410fb06caf2",
+        "ID": "09665e2ddd27",
+        "MemPerc": "0.20%",
+        "MemUsage": "16.07MiB / 7.748GiB",
+        "Name": "nats_mesh",
+        "NetIO": "4.23MB / 1.46MB",
+        "PIDs": "12"
+      }
+    ]
+  },
+  {
+    "timestamp": "2026-08-22T20:17:05.140790",
+    "elapsed": 6.874303102493286,
+    "stats": [
+      {
+        "BlockIO": "0B / 148MB",
+        "CPUPerc": "0.00%",
+        "Container": "eb1ace5dccfc1e49a3d10edf7d4a46e8a928e0029ac6839807ce7adffc823de9",
+        "ID": "eb1ace5dccfc",
+        "MemPerc": "6.59%",
+        "MemUsage": "522.6MiB / 7.748GiB",
+        "Name": "stt_agent_measure",
+        "NetIO": "152MB / 2.75MB",
+        "PIDs": "11"
+      },
+      {
+        "BlockIO": "30.5MB / 64.8MB",
+        "CPUPerc": "3.37%",
+        "Container": "0e989939619f749148ea6eabae969a6be5031966a38ee2b4d1dbf670f641e24a",
+        "ID": "0e989939619f",
+        "MemPerc": "0.72%",
+        "MemUsage": "57.38MiB / 7.748GiB",
+        "Name": "postgres_db",
+        "NetIO": "884kB / 369kB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.14%",
+        "Container": "eed881ee78fafadaec5d42062f6949f8f2e31763f193649d0ce403dcb860c188",
+        "ID": "eed881ee78fa",
+        "MemPerc": "0.57%",
+        "MemUsage": "45.58MiB / 7.748GiB",
+        "Name": "local_sfu",
+        "NetIO": "1.02MB / 1.64MB",
+        "PIDs": "13"
+      },
+      {
+        "BlockIO": "203MB / 178MB",
+        "CPUPerc": "0.39%",
+        "Container": "f19314940f3fd513cb5ad1277d12d0e11820e4f9f58872c933653c64a840467c",
+        "ID": "f19314940f3f",
+        "MemPerc": "8.18%",
+        "MemUsage": "649.1MiB / 7.748GiB",
+        "Name": "brain_graph",
+        "NetIO": "52.8kB / 69.3kB",
+        "PIDs": "84"
+      },
+      {
+        "BlockIO": "10.3MB / 10.3MB",
+        "CPUPerc": "0.75%",
+        "Container": "7e740cd2ba938107e1291d7c997123c8f5c63baa10830d9bf8d864c0f9d60c09",
+        "ID": "7e740cd2ba93",
+        "MemPerc": "0.14%",
+        "MemUsage": "10.81MiB / 7.748GiB",
+        "Name": "brain_cache",
+        "NetIO": "1.77MB / 1.08MB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "12.3kB / 3.6MB",
+        "CPUPerc": "0.14%",
+        "Container": "7d359a56575593779553bc9f88d55b836b00120cd9968f742d7de45ac1d1c78d",
+        "ID": "7d359a565755",
+        "MemPerc": "2.99%",
+        "MemUsage": "237.4MiB / 7.748GiB",
+        "Name": "brain_vectors",
+        "NetIO": "1.48MB / 250kB",
+        "PIDs": "47"
+      },
+      {
+        "BlockIO": "164kB / 246kB",
+        "CPUPerc": "1.15%",
+        "Container": "09665e2ddd27b30d52cc2962c663433f11acd34beaf38bbb231e6410fb06caf2",
+        "ID": "09665e2ddd27",
+        "MemPerc": "0.20%",
+        "MemUsage": "16.08MiB / 7.748GiB",
+        "Name": "nats_mesh",
+        "NetIO": "4.23MB / 1.46MB",
+        "PIDs": "12"
+      }
+    ]
+  },
+  {
+    "timestamp": "2026-08-22T20:17:12.254960",
+    "elapsed": 13.98849105834961,
+    "stats": [
+      {
+        "BlockIO": "0B / 148MB",
+        "CPUPerc": "0.00%",
+        "Container": "eb1ace5dccfc1e49a3d10edf7d4a46e8a928e0029ac6839807ce7adffc823de9",
+        "ID": "eb1ace5dccfc",
+        "MemPerc": "6.59%",
+        "MemUsage": "522.6MiB / 7.748GiB",
+        "Name": "stt_agent_measure",
+        "NetIO": "152MB / 2.75MB",
+        "PIDs": "11"
+      },
+      {
+        "BlockIO": "30.5MB / 64.8MB",
+        "CPUPerc": "0.01%",
+        "Container": "0e989939619f749148ea6eabae969a6be5031966a38ee2b4d1dbf670f641e24a",
+        "ID": "0e989939619f",
+        "MemPerc": "0.72%",
+        "MemUsage": "57.08MiB / 7.748GiB",
+        "Name": "postgres_db",
+        "NetIO": "884kB / 369kB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.19%",
+        "Container": "eed881ee78fafadaec5d42062f6949f8f2e31763f193649d0ce403dcb860c188",
+        "ID": "eed881ee78fa",
+        "MemPerc": "0.57%",
+        "MemUsage": "45.51MiB / 7.748GiB",
+        "Name": "local_sfu",
+        "NetIO": "1.02MB / 1.64MB",
+        "PIDs": "13"
+      },
+      {
+        "BlockIO": "203MB / 178MB",
+        "CPUPerc": "0.51%",
+        "Container": "f19314940f3fd513cb5ad1277d12d0e11820e4f9f58872c933653c64a840467c",
+        "ID": "f19314940f3f",
+        "MemPerc": "8.18%",
+        "MemUsage": "649.2MiB / 7.748GiB",
+        "Name": "brain_graph",
+        "NetIO": "52.8kB / 69.3kB",
+        "PIDs": "84"
+      },
+      {
+        "BlockIO": "10.3MB / 10.4MB",
+        "CPUPerc": "0.86%",
+        "Container": "7e740cd2ba938107e1291d7c997123c8f5c63baa10830d9bf8d864c0f9d60c09",
+        "ID": "7e740cd2ba93",
+        "MemPerc": "0.14%",
+        "MemUsage": "10.94MiB / 7.748GiB",
+        "Name": "brain_cache",
+        "NetIO": "1.77MB / 1.08MB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "12.3kB / 3.6MB",
+        "CPUPerc": "0.17%",
+        "Container": "7d359a56575593779553bc9f88d55b836b00120cd9968f742d7de45ac1d1c78d",
+        "ID": "7d359a565755",
+        "MemPerc": "3.00%",
+        "MemUsage": "237.8MiB / 7.748GiB",
+        "Name": "brain_vectors",
+        "NetIO": "1.48MB / 250kB",
+        "PIDs": "47"
+      },
+      {
+        "BlockIO": "164kB / 246kB",
+        "CPUPerc": "0.08%",
+        "Container": "09665e2ddd27b30d52cc2962c663433f11acd34beaf38bbb231e6410fb06caf2",
+        "ID": "09665e2ddd27",
+        "MemPerc": "0.20%",
+        "MemUsage": "16.07MiB / 7.748GiB",
+        "Name": "nats_mesh",
+        "NetIO": "4.23MB / 1.46MB",
+        "PIDs": "12"
+      }
+    ]
+  },
+  {
+    "timestamp": "2026-08-22T20:17:19.368124",
+    "elapsed": 21.101659059524536,
+    "stats": [
+      {
+        "BlockIO": "0B / 148MB",
+        "CPUPerc": "0.00%",
+        "Container": "eb1ace5dccfc1e49a3d10edf7d4a46e8a928e0029ac6839807ce7adffc823de9",
+        "ID": "eb1ace5dccfc",
+        "MemPerc": "6.59%",
+        "MemUsage": "522.9MiB / 7.748GiB",
+        "Name": "stt_agent_measure",
+        "NetIO": "152MB / 2.75MB",
+        "PIDs": "11"
+      },
+      {
+        "BlockIO": "30.5MB / 64.8MB",
+        "CPUPerc": "0.00%",
+        "Container": "0e989939619f749148ea6eabae969a6be5031966a38ee2b4d1dbf670f641e24a",
+        "ID": "0e989939619f",
+        "MemPerc": "0.72%",
+        "MemUsage": "57.27MiB / 7.748GiB",
+        "Name": "postgres_db",
+        "NetIO": "884kB / 369kB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.21%",
+        "Container": "eed881ee78fafadaec5d42062f6949f8f2e31763f193649d0ce403dcb860c188",
+        "ID": "eed881ee78fa",
+        "MemPerc": "0.57%",
+        "MemUsage": "45.51MiB / 7.748GiB",
+        "Name": "local_sfu",
+        "NetIO": "1.03MB / 1.64MB",
+        "PIDs": "13"
+      },
+      {
+        "BlockIO": "203MB / 178MB",
+        "CPUPerc": "0.47%",
+        "Container": "f19314940f3fd513cb5ad1277d12d0e11820e4f9f58872c933653c64a840467c",
+        "ID": "f19314940f3f",
+        "MemPerc": "8.18%",
+        "MemUsage": "648.7MiB / 7.748GiB",
+        "Name": "brain_graph",
+        "NetIO": "52.8kB / 69.3kB",
+        "PIDs": "84"
+      },
+      {
+        "BlockIO": "10.3MB / 10.4MB",
+        "CPUPerc": "0.88%",
+        "Container": "7e740cd2ba938107e1291d7c997123c8f5c63baa10830d9bf8d864c0f9d60c09",
+        "ID": "7e740cd2ba93",
+        "MemPerc": "0.14%",
+        "MemUsage": "11.11MiB / 7.748GiB",
+        "Name": "brain_cache",
+        "NetIO": "1.78MB / 1.08MB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "12.3kB / 3.6MB",
+        "CPUPerc": "0.12%",
+        "Container": "7d359a56575593779553bc9f88d55b836b00120cd9968f742d7de45ac1d1c78d",
+        "ID": "7d359a565755",
+        "MemPerc": "2.99%",
+        "MemUsage": "237.6MiB / 7.748GiB",
+        "Name": "brain_vectors",
+        "NetIO": "1.48MB / 250kB",
+        "PIDs": "47"
+      },
+      {
+        "BlockIO": "164kB / 246kB",
+        "CPUPerc": "0.07%",
+        "Container": "09665e2ddd27b30d52cc2962c663433f11acd34beaf38bbb231e6410fb06caf2",
+        "ID": "09665e2ddd27",
+        "MemPerc": "0.20%",
+        "MemUsage": "15.6MiB / 7.748GiB",
+        "Name": "nats_mesh",
+        "NetIO": "4.23MB / 1.46MB",
+        "PIDs": "12"
+      }
+    ]
+  },
+  {
+    "timestamp": "2026-08-22T20:17:26.159313",
+    "elapsed": 27.892845153808594,
+    "stats": [
+      {
+        "BlockIO": "0B / 148MB",
+        "CPUPerc": "0.00%",
+        "Container": "eb1ace5dccfc1e49a3d10edf7d4a46e8a928e0029ac6839807ce7adffc823de9",
+        "ID": "eb1ace5dccfc",
+        "MemPerc": "6.59%",
+        "MemUsage": "522.9MiB / 7.748GiB",
+        "Name": "stt_agent_measure",
+        "NetIO": "152MB / 2.75MB",
+        "PIDs": "11"
+      },
+      {
+        "BlockIO": "30.5MB / 64.8MB",
+        "CPUPerc": "0.45%",
+        "Container": "0e989939619f749148ea6eabae969a6be5031966a38ee2b4d1dbf670f641e24a",
+        "ID": "0e989939619f",
+        "MemPerc": "0.72%",
+        "MemUsage": "56.98MiB / 7.748GiB",
+        "Name": "postgres_db",
+        "NetIO": "884kB / 369kB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "1.19%",
+        "Container": "eed881ee78fafadaec5d42062f6949f8f2e31763f193649d0ce403dcb860c188",
+        "ID": "eed881ee78fa",
+        "MemPerc": "0.57%",
+        "MemUsage": "45.53MiB / 7.748GiB",
+        "Name": "local_sfu",
+        "NetIO": "1.03MB / 1.65MB",
+        "PIDs": "13"
+      },
+      {
+        "BlockIO": "203MB / 178MB",
+        "CPUPerc": "0.44%",
+        "Container": "f19314940f3fd513cb5ad1277d12d0e11820e4f9f58872c933653c64a840467c",
+        "ID": "f19314940f3f",
+        "MemPerc": "8.18%",
+        "MemUsage": "648.8MiB / 7.748GiB",
+        "Name": "brain_graph",
+        "NetIO": "52.8kB / 69.3kB",
+        "PIDs": "84"
+      },
+      {
+        "BlockIO": "10.3MB / 10.4MB",
+        "CPUPerc": "0.81%",
+        "Container": "7e740cd2ba938107e1291d7c997123c8f5c63baa10830d9bf8d864c0f9d60c09",
+        "ID": "7e740cd2ba93",
+        "MemPerc": "0.14%",
+        "MemUsage": "11.14MiB / 7.748GiB",
+        "Name": "brain_cache",
+        "NetIO": "1.78MB / 1.08MB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "12.3kB / 3.6MB",
+        "CPUPerc": "0.15%",
+        "Container": "7d359a56575593779553bc9f88d55b836b00120cd9968f742d7de45ac1d1c78d",
+        "ID": "7d359a565755",
+        "MemPerc": "2.99%",
+        "MemUsage": "237.5MiB / 7.748GiB",
+        "Name": "brain_vectors",
+        "NetIO": "1.48MB / 250kB",
+        "PIDs": "47"
+      },
+      {
+        "BlockIO": "164kB / 246kB",
+        "CPUPerc": "0.07%",
+        "Container": "09665e2ddd27b30d52cc2962c663433f11acd34beaf38bbb231e6410fb06caf2",
+        "ID": "09665e2ddd27",
+        "MemPerc": "0.20%",
+        "MemUsage": "15.57MiB / 7.748GiB",
+        "Name": "nats_mesh",
+        "NetIO": "4.23MB / 1.46MB",
+        "PIDs": "12"
+      }
+    ]
+  }
+]
