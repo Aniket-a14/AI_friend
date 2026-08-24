@@ -67,6 +67,45 @@ fn clamp_prosody(mut prosody: contracts::Prosody) -> contracts::Prosody {
     prosody
 }
 
+/// P3-13: `generate_apra_trajectory` (cognitive-rust) models one breath
+/// group's ~3s prosodic arc as 60 frames spaced 50ms apart -- onset
+/// breathing dampening under 200ms, a steady middle, tail dampening past
+/// 2700ms, volume fade-in/out at the very ends. The consumer used to
+/// collapse all 60 frames to a single averaged (rate, pitch, volume) and
+/// apply that same static value to every chat.output chunk of the whole
+/// response, discarding the arc entirely. This holds the trajectory plus
+/// when it arrived, so each chunk can instead sample the frame nearest how
+/// long *that trajectory* has been playing -- prosody genuinely drifts
+/// chunk to chunk as time passes, and a new trajectory (published on every
+/// affect update, `surfacing_agent.py::_on_agent_state`) simply restarts
+/// the arc from its own arrival.
+struct ProsodyTrajectory {
+    received_at: std::time::Instant,
+    frames: Vec<contracts::ProsodyFrame>,
+}
+
+impl ProsodyTrajectory {
+    /// The prosody for right now, drawn from the frame nearest how long ago
+    /// this trajectory was received. Once elapsed time exceeds the
+    /// trajectory's own ~3s span, the nearest frame is simply its last one
+    /// (the modeled steady-state tail) -- no extra clamping needed, nearest-
+    /// frame search finds that on its own.
+    fn prosody_now(&self) -> Option<contracts::Prosody> {
+        let elapsed_ms = self.received_at.elapsed().as_millis() as f64;
+        let nearest = self.frames.iter().min_by(|a, b| {
+            let da = (a.time_offset_ms as f64 - elapsed_ms).abs();
+            let db = (b.time_offset_ms as f64 - elapsed_ms).abs();
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })?;
+        Some(contracts::Prosody {
+            rate: nearest.rate,
+            pitch: nearest.pitch,
+            volume: nearest.volume,
+            pause_bias: 1.0,
+        })
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 struct VisionDescriptionMsg {
     user_distance: Option<f64>,
@@ -284,7 +323,7 @@ struct RefClip {
 /// unconditional default); the other four are optional overrides that fall
 /// back to `Neutral` when unset, so an unconfigured deployment behaves exactly
 /// as it did before this feature existed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum EmotionBucket {
     Calm,
     Warm,
@@ -559,7 +598,9 @@ async fn main() -> Result<()> {
     let abort_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let active_turn: ActiveTurn = std::sync::Arc::new(std::sync::Mutex::new(None));
     let attenuation_factor = std::sync::Arc::new(std::sync::Mutex::new(1.0f64));
-    let dynamic_prosody = std::sync::Arc::new(std::sync::Mutex::new(None::<contracts::Prosody>));
+    let dynamic_prosody = std::sync::Arc::new(std::sync::Mutex::new(None::<ProsodyTrajectory>));
+    let hesitation_cache: HesitationCache =
+        std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
     // Subscribe to audio.stop and set abort flag or duck volume (attenuate)
     let abort_flag_stop = abort_flag.clone();
@@ -616,32 +657,14 @@ async fn main() -> Result<()> {
         while let Some(msg) = modulation_sub.next().await {
             if let Ok(mod_payload) = serde_json::from_slice::<contracts::AgentVoiceModulation>(&msg.payload) {
                 if !mod_payload.trajectory.is_empty() {
-                    let steady_frames: Vec<&contracts::ProsodyFrame> = mod_payload.trajectory.iter()
-                        .filter(|f| f.time_offset_ms >= 200 && f.time_offset_ms <= 2700)
-                        .collect();
-
-                    let target_frames = if !steady_frames.is_empty() {
-                        steady_frames
-                    } else {
-                        mod_payload.trajectory.iter().collect()
-                    };
-
-                    let count = target_frames.len() as f64;
-                    let sum_rate: f64 = target_frames.iter().map(|f| f.rate).sum();
-                    let sum_pitch: f64 = target_frames.iter().map(|f| f.pitch).sum();
-                    let sum_volume: f64 = target_frames.iter().map(|f| f.volume).sum();
-
-                    let rep_rate = sum_rate / count;
-                    let rep_pitch = sum_pitch / count;
-                    let rep_volume = sum_volume / count;
-
-                    info!("Received AGENT_VOICE_MODULATION (steady-state): rate={:.2}, pitch={:.2}, volume={:.2}", rep_rate, rep_pitch, rep_volume);
+                    info!(
+                        frames = mod_payload.trajectory.len(),
+                        "Received AGENT_VOICE_MODULATION trajectory"
+                    );
                     if let Ok(mut guard) = dynamic_prosody_clone.lock() {
-                        *guard = Some(contracts::Prosody {
-                            rate: rep_rate,
-                            pitch: rep_pitch,
-                            volume: rep_volume,
-                            pause_bias: 1.0,
+                        *guard = Some(ProsodyTrajectory {
+                            received_at: std::time::Instant::now(),
+                            frames: mod_payload.trajectory,
                         });
                     }
                 }
@@ -669,6 +692,17 @@ async fn main() -> Result<()> {
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
 
     let mut ola_filter = OlaCrossfadeFilter::new(config.sample_rate);
+    // P4-9: both used to be constructed fresh inside `handle_chat_output`,
+    // i.e. once per chat.output chunk rather than once per stream -- unlike
+    // `ola_filter` above, which already gets this right. `ReverbFilter`
+    // carries a real delay-line buffer; resetting it every chunk drops the
+    // previous chunk's echo tail at every boundary. `current_attenuation_val`
+    // is the smoothed *current* value ducking/restoring ramps toward the
+    // shared target; resetting it to 1.0 every chunk means a chunk that
+    // starts while still ducked flares back up to full volume before ramping
+    // back down, audibly, every single chunk boundary during an ongoing duck.
+    let mut reverb_filter = ReverbFilter::new((config.sample_rate as f32 * 0.05) as usize, 0.5);
+    let mut current_attenuation_val = 1.0f64;
 
     while let Some(message) = subscriber.next().await {
         match serde_json::from_slice::<ChatOutput>(&message.payload) {
@@ -713,11 +747,14 @@ async fn main() -> Result<()> {
                     event,
                     last_distance.clone(),
                     &mut ola_filter,
+                    &mut reverb_filter,
+                    &mut current_attenuation_val,
                     abort_flag.clone(),
                     attenuation_factor.clone(),
                     dynamic_prosody.clone(),
                     noise_scale_factor.clone(),
                     circuit_breaker.clone(),
+                    &hesitation_cache,
                 )
                 .await
                 {
@@ -747,14 +784,17 @@ fn load_vocalization_pcm(name: &str, sample_rate: u32) -> Vec<u8> {
             }
         }
     }
-    warn!("Vocalization file not found: {}. Generating synthetic fallback.", name);
-    let num_samples = (sample_rate as f32 * 0.5) as usize;
-    let mut pcm = Vec::with_capacity(num_samples * 2);
-    for i in 0..num_samples {
-        let val = (((i * 1103515245 + 12345) / 65536) % 2001) as i32 - 1000;
-        pcm.extend_from_slice(&(val as i16).to_le_bytes());
-    }
-    pcm
+    // P4-9: this used to generate a synthetic sine/LCG-noise buzz here -- a
+    // sound in a voice that is neither the cloned voice nor silence,
+    // contradicting the no-fallback-voice principle this file states
+    // elsewhere (see `TemporalPart::Text`'s comment). A named degradation
+    // (logged) plus silence of the same nominal duration is honest about
+    // what happened; a buzz reads as a bug, not a missing asset.
+    warn!(
+        "Vocalization asset not found: {}. Playing silence instead of a synthetic buzz.",
+        name
+    );
+    contracts::silence_pcm(500, sample_rate)
 }
 
 fn extract_wav_data(data: &[u8]) -> Option<Vec<u8>> {
@@ -784,18 +824,91 @@ fn extract_wav_data(data: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
-fn generate_hesitation_pcm(duration_ms: u32, sample_rate: u32, pitch: f64) -> Vec<u8> {
-    let num_samples = (sample_rate as f64 * (duration_ms as f64 / 1000.0)) as usize;
-    let mut pcm = Vec::with_capacity(num_samples * 2);
-    let f0 = 150.0 * pitch;
-    let omega = 2.0 * std::f64::consts::PI * f0 / (sample_rate as f64);
+/// A short, natural non-verbal hesitation sound -- not a word, just the
+/// "mm" a person makes mid-thought. Synthesized through the real cloned
+/// voice like any other text, so `<hesitate>` no longer speaks in a
+/// different, synthetic voice than the rest of the turn.
+const HESITATION_FILLER_TEXT: &str = "Mm...";
 
-    for i in 0..num_samples {
-        let sine = (omega * i as f64).sin() * 300.0;
-        let noise = (((i * 1103515245 + 12345) / 65536) % 201) as f64 - 100.0;
-        let val = (sine + noise) as i16;
-        pcm.extend_from_slice(&val.to_le_bytes());
+/// One cached PCM buffer per delivery register (`EmotionBucket`), so a
+/// hesitation later in the same turn -- or in a later turn with the same
+/// register -- reuses the already-synthesized audio instead of paying a
+/// second real-TTS round-trip for what is deliberately always the same
+/// short phrase. Bounded by construction: there are exactly five buckets,
+/// so this can never grow past five entries.
+type HesitationCache = std::sync::Arc<tokio::sync::Mutex<std::collections::HashMap<EmotionBucket, Vec<u8>>>>;
+
+/// P4-9: `<hesitate>` used to synthesize a sine+noise buzz locally --
+/// audio in neither the cloned voice nor silence, the same contradiction
+/// `load_vocalization_pcm`'s missing-asset fallback had. Routes through the
+/// real TTS engine instead, cached per delivery register so the latency a
+/// hesitation exists to cover is not doubled by the call covering it.
+///
+/// Falls back to silence of `duration_ms` -- never a buzz -- when the
+/// circuit breaker is open (a known-down engine) or when this specific
+/// synthesis attempt fails; a failed attempt records on the same breaker
+/// real speech does, since a TTS engine down for one is down for both.
+async fn hesitation_pcm(
+    config: &VoiceConfig,
+    http: &Client,
+    circuit_breaker: &CircuitBreaker,
+    cache: &HesitationCache,
+    bucket: EmotionBucket,
+    ref_clip: &RefClip,
+    duration_ms: u32,
+    sample_rate: u32,
+    prosody: &contracts::Prosody,
+) -> Vec<u8> {
+    if let Some(cached) = cache.lock().await.get(&bucket) {
+        return cached.clone();
     }
+
+    let now_ms = now_millis();
+    if circuit_breaker.is_open(now_ms) {
+        return contracts::silence_pcm(duration_ms, sample_rate);
+    }
+
+    let result = synthesize_stream_with_retry(
+        config,
+        http,
+        HESITATION_FILLER_TEXT,
+        ref_clip,
+        prosody.rate,
+        prosody.pitch,
+        prosody.volume,
+    )
+    .await;
+
+    let mut response = match result {
+        Ok(response) => response,
+        Err(e) => {
+            warn!("hesitation synthesis failed, playing silence instead: {e:#}");
+            circuit_breaker.record_failure(now_ms);
+            return contracts::silence_pcm(duration_ms, sample_rate);
+        }
+    };
+
+    let mut pcm = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => pcm.extend_from_slice(&chunk),
+            Ok(None) => break,
+            Err(e) => {
+                warn!("hesitation synthesis stream failed mid-read, playing silence instead: {e:#}");
+                circuit_breaker.record_failure(now_ms);
+                return contracts::silence_pcm(duration_ms, sample_rate);
+            }
+        }
+    }
+
+    if pcm.is_empty() {
+        warn!("hesitation synthesis returned no audio, playing silence instead");
+        circuit_breaker.record_failure(now_ms);
+        return contracts::silence_pcm(duration_ms, sample_rate);
+    }
+
+    circuit_breaker.record_success();
+    cache.lock().await.insert(bucket, pcm.clone());
     pcm
 }
 
@@ -886,20 +999,18 @@ async fn handle_chat_output(
     event: ChatOutput,
     last_distance: std::sync::Arc<std::sync::Mutex<f64>>,
     ola_filter: &mut OlaCrossfadeFilter,
+    reverb_filter: &mut ReverbFilter,
+    current_attenuation_val: &mut f64,
     abort_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     attenuation_factor: std::sync::Arc<std::sync::Mutex<f64>>,
-    dynamic_prosody: std::sync::Arc<std::sync::Mutex<Option<contracts::Prosody>>>,
+    dynamic_prosody: std::sync::Arc<std::sync::Mutex<Option<ProsodyTrajectory>>>,
     noise_scale_factor: std::sync::Arc<std::sync::Mutex<f64>>,
     circuit_breaker: std::sync::Arc<CircuitBreaker>,
+    hesitation_cache: &HesitationCache,
 ) -> Result<()> {
     if event.done {
         return Ok(());
     }
-
-    let mut reverb_filter = ReverbFilter::new(
-        (config.sample_rate as f32 * 0.05) as usize, // 50ms delay
-        0.5,
-    );
 
     let Some(content) = event
         .content
@@ -911,18 +1022,20 @@ async fn handle_chat_output(
     };
 
     let prosody = clamp_prosody(if let Ok(guard) = dynamic_prosody.lock() {
-        (*guard).unwrap_or_else(|| vad_to_prosody(event.affect.as_ref()))
+        guard
+            .as_ref()
+            .and_then(ProsodyTrajectory::prosody_now)
+            .unwrap_or_else(|| vad_to_prosody(event.affect.as_ref()))
     } else {
         vad_to_prosody(event.affect.as_ref())
     });
     ola_filter.notify_new_prosody(prosody);
 
     // Computed once per event, like prosody above: the delivery register does
-    // not change mid-utterance, only which reference clip carries it.
-    let ref_clip = config
-        .emotion_refs
-        .resolve(select_emotion_bucket(event.affect.as_ref()))
-        .clone();
+    // not change mid-utterance, only which reference clip carries it. `bucket`
+    // doubles as the hesitation cache key below.
+    let bucket = select_emotion_bucket(event.affect.as_ref());
+    let ref_clip = config.emotion_refs.resolve(bucket).clone();
 
     let distance = event
         .affect
@@ -936,8 +1049,6 @@ async fn handle_chat_output(
             }
         });
 
-    let mut current_attenuation_val = 1.0f64;
-
     for part in split_temporal_parts(content)? {
         if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
             info!("Aborting playback due to AUDIO_STOP event.");
@@ -948,7 +1059,7 @@ async fn handle_chat_output(
                 ola_filter.clear_history();
                 let pcm = contracts::silence_pcm(ms, config.sample_rate);
                 if let Ok(guard) = attenuation_factor.lock() {
-                    current_attenuation_val = *guard;
+                    *current_attenuation_val = *guard;
                 }
                 let noise_scale = if let Ok(guard) = noise_scale_factor.lock() {
                     *guard
@@ -963,7 +1074,7 @@ async fn handle_chat_output(
                 pcm = reverb_filter.process(&pcm, 0.1);
 
                 let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
-                apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
+                apply_attenuation(&mut pcm, current_attenuation_val, target_att);
                 let _ = generate_and_publish_visemes(jetstream, &pcm);
 
                 let gain = utterance_gain(&noise_scale_factor, prosody.volume);
@@ -971,11 +1082,22 @@ async fn handle_chat_output(
             }
             TemporalPart::Hesitation(ms) => {
                 ola_filter.clear_history();
-                let mut pcm = generate_hesitation_pcm(ms, config.sample_rate, prosody.pitch);
+                let mut pcm = hesitation_pcm(
+                    config,
+                    http,
+                    &circuit_breaker,
+                    hesitation_cache,
+                    bucket,
+                    &ref_clip,
+                    ms,
+                    config.sample_rate,
+                    &prosody,
+                )
+                .await;
                 pcm = reverb_filter.process(&pcm, 0.1);
 
                 let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
-                apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
+                apply_attenuation(&mut pcm, current_attenuation_val, target_att);
                 let _ = generate_and_publish_visemes(jetstream, &pcm);
 
                 let gain = utterance_gain(&noise_scale_factor, prosody.volume);
@@ -1022,10 +1144,10 @@ async fn handle_chat_output(
                     // No network call, or one that failed after retries: play
                     // the same-voice "one moment" vocalization instead of
                     // dropping the turn silently. `load_vocalization_pcm`
-                    // already degrades to a synthetic tone (not a different
-                    // voice, not silence) if `voice_engine_unavailable.wav`
-                    // has not been recorded yet — safe before the cloned
-                    // voice exists, better once it does.
+                    // degrades to silence (P4-9), never a different voice or
+                    // a synthetic buzz, if `voice_engine_unavailable.wav` has
+                    // not been recorded yet — safe before the cloned voice
+                    // exists, better once it does.
                     ola_filter.clear_history();
                     let mut pcm =
                         load_vocalization_pcm("voice_engine_unavailable", config.sample_rate);
@@ -1036,7 +1158,7 @@ async fn handle_chat_output(
                     } else {
                         1.0
                     };
-                    apply_attenuation(&mut pcm, &mut current_attenuation_val, target_att);
+                    apply_attenuation(&mut pcm, current_attenuation_val, target_att);
                     let _ = generate_and_publish_visemes(jetstream, &pcm);
 
                     let gain = utterance_gain(&noise_scale_factor, prosody.volume);
@@ -1076,7 +1198,7 @@ async fn handle_chat_output(
                         pcm_bytes = ola_filter.process(&pcm_bytes);
 
                         let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
-                        apply_attenuation(&mut pcm_bytes, &mut current_attenuation_val, target_att);
+                        apply_attenuation(&mut pcm_bytes, current_attenuation_val, target_att);
                         let _ = generate_and_publish_visemes(jetstream, &pcm_bytes);
 
                         publish_pcm(jetstream, pcm_bytes, &event, noise_scale).await?;
@@ -1379,6 +1501,19 @@ fn build_latency_metadata(event: &ChatOutput) -> serde_json::Value {
         // inherited -- a carried-over `latency_metadata` blob from upstream
         // must not leave a stale value here.
         obj.insert("turn_id".to_string(), json!(event.turn_id));
+        // P4-2: pass-through, not computed here -- brain_agent already knows
+        // where this chunk's text ends within the true response
+        // (`_char_offset_after_word`), and this process has no way to
+        // recompute that itself (it only ever sees one chunk's `content` at
+        // a time, never the accumulating full response). transport_agent
+        // relays these onward as `audio.playback.progress` once the PCM
+        // carrying them has actually reached the LiveKit audio source.
+        if let Some(offset) = event.metadata.get("char_offset") {
+            obj.insert("character_offset".to_string(), offset.clone());
+        }
+        if let Some(word_index) = event.metadata.get("word_index") {
+            obj.insert("word_index".to_string(), word_index.clone());
+        }
         let hops = obj.entry("hops").or_insert(json!([]));
         if let Some(hops) = hops.as_array_mut() {
             hops.push(json!({
@@ -1403,6 +1538,16 @@ fn now_seconds() -> f64 {
 mod tests {
     use super::*;
 
+    /// P4-9: a missing vocalization asset used to synthesize a sine/LCG-noise
+    /// buzz -- audio in neither the cloned voice nor silence. It must now
+    /// degrade to silence of the same nominal duration.
+    #[test]
+    fn missing_vocalization_asset_falls_back_to_silence_not_a_buzz() {
+        let name = format!("definitely_missing_asset_{}", std::process::id());
+        let pcm = load_vocalization_pcm(&name, 32_000);
+        assert_eq!(pcm, contracts::silence_pcm(500, 32_000));
+    }
+
     #[test]
     fn timing_tags_become_silence_parts_not_text() {
         let parts = split_temporal_parts("hello<pause=20ms>there<hesitate>").unwrap();
@@ -1415,6 +1560,88 @@ mod tests {
                 TemporalPart::Hesitation(350),
             ]
         );
+    }
+
+    fn frame(t_ms: u32, rate: f64) -> contracts::ProsodyFrame {
+        // Distinct, easily-traced values per frame: rate carries the frame's
+        // identity, pitch/volume just need to differ from clamp_prosody's
+        // defaults so a wrong-frame pick is visible.
+        contracts::ProsodyFrame {
+            time_offset_ms: t_ms,
+            rate,
+            pitch: 1.0 + rate * 0.01,
+            volume: 0.5,
+        }
+    }
+
+    /// P3-13: the whole point of the change. Before this, every chunk of a
+    /// response used the same trajectory-wide average; now different points
+    /// in time must read different frames.
+    #[test]
+    fn prosody_now_picks_the_frame_nearest_elapsed_time() {
+        let frames: Vec<_> = (0..60).map(|i| frame(i * 50, 1.0 + i as f64 * 0.01)).collect();
+        let traj = ProsodyTrajectory {
+            // Backdated so `elapsed()` reads a known, already-elapsed value
+            // instead of a real-time sleep.
+            received_at: std::time::Instant::now() - std::time::Duration::from_millis(500),
+            frames,
+        };
+
+        let p = traj.prosody_now().unwrap();
+        // 500ms in -> frame index 10 (t_ms = 500) -> rate = 1.0 + 10*0.01.
+        assert!(
+            (p.rate - 1.10).abs() < 1e-9,
+            "expected the frame at ~500ms, got rate {}",
+            p.rate
+        );
+    }
+
+    /// Past the trajectory's own ~3s span, nearest-frame search must land on
+    /// the last frame (the modeled steady-state tail) rather than panicking
+    /// or picking the first one by default.
+    #[test]
+    fn prosody_now_past_the_trajectory_span_uses_the_last_frame() {
+        let frames: Vec<_> = (0..60).map(|i| frame(i * 50, 1.0 + i as f64 * 0.01)).collect();
+        let traj = ProsodyTrajectory {
+            received_at: std::time::Instant::now() - std::time::Duration::from_secs(30),
+            frames,
+        };
+
+        let p = traj.prosody_now().unwrap();
+        let last_rate = 1.0 + 59.0 * 0.01;
+        assert!(
+            (p.rate - last_rate).abs() < 1e-9,
+            "expected the last frame's rate {last_rate}, got {}",
+            p.rate
+        );
+    }
+
+    #[test]
+    fn prosody_now_is_none_for_an_empty_trajectory() {
+        let traj = ProsodyTrajectory {
+            received_at: std::time::Instant::now(),
+            frames: vec![],
+        };
+        assert!(traj.prosody_now().is_none());
+    }
+
+    /// A trajectory received a moment ago (the onset of a fresh breath
+    /// group, elapsed ~0ms) must read differently from one that has been
+    /// playing for a while -- this is the drift itself, not just a lookup
+    /// sanity check.
+    #[test]
+    fn two_points_in_the_same_trajectory_can_read_different_prosody() {
+        let frames: Vec<_> = (0..60).map(|i| frame(i * 50, 1.0 + i as f64 * 0.01)).collect();
+        let early = ProsodyTrajectory {
+            received_at: std::time::Instant::now(),
+            frames: frames.clone(),
+        };
+        let later = ProsodyTrajectory {
+            received_at: std::time::Instant::now() - std::time::Duration::from_millis(1000),
+            frames,
+        };
+
+        assert_ne!(early.prosody_now().unwrap().rate, later.prosody_now().unwrap().rate);
     }
 
     #[test]
@@ -1460,6 +1687,40 @@ mod tests {
         });
         let meta = build_latency_metadata(&event);
         assert_eq!(meta["turn_id"], "turn-new");
+    }
+
+    /// P4-2: brain_agent computes where this chunk ends in the true response
+    /// text and stamps it into `ChatOutput.metadata`; this process has no
+    /// way to derive that itself (it only ever sees one chunk's `content`),
+    /// so it must pass the values through unchanged rather than drop them.
+    #[test]
+    fn latency_metadata_passes_through_playback_progress_fields() {
+        let mut event: ChatOutput = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/chat_output_chunk.json"
+        ))
+        .unwrap();
+        event.metadata.insert("char_offset".to_string(), json!(42));
+        event.metadata.insert("word_index".to_string(), json!(7));
+
+        let meta = build_latency_metadata(&event);
+
+        assert_eq!(meta["character_offset"], 42);
+        assert_eq!(meta["word_index"], 7);
+    }
+
+    /// A chunk with no progress metadata (the exception-fallback path in
+    /// brain_agent, which deliberately omits it) must not fabricate values.
+    #[test]
+    fn latency_metadata_omits_playback_progress_fields_when_absent() {
+        let event: ChatOutput = serde_json::from_str(include_str!(
+            "../../contracts/fixtures/chat_output_chunk.json"
+        ))
+        .unwrap();
+
+        let meta = build_latency_metadata(&event);
+
+        assert!(meta.get("character_offset").is_none());
+        assert!(meta.get("word_index").is_none());
     }
 
     #[test]
@@ -1973,6 +2234,154 @@ mod tests {
         assert!(probe_synthesis(&config, &http).await.is_ok());
     }
 
+    // ---------------------------------------------------------- hesitation_pcm
+
+    fn empty_hesitation_cache() -> HesitationCache {
+        std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()))
+    }
+
+    fn test_prosody() -> contracts::Prosody {
+        contracts::Prosody { rate: 1.0, pitch: 1.0, volume: 1.0, pause_bias: 1.0 }
+    }
+
+    /// P4-9: an open breaker must skip the network entirely and return
+    /// silence -- never the old sine/noise buzz, and never a network call
+    /// against a known-down engine. `.expect(0)` on the mock fails the test
+    /// if a request happens anyway.
+    #[tokio::test]
+    async fn hesitation_pcm_returns_silence_when_breaker_is_open() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![9, 9, 9, 9]))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let breaker = CircuitBreaker::new(1, 60_000);
+        breaker.record_failure(now_millis());
+        assert!(breaker.is_open(now_millis()), "precondition: breaker must be open");
+        let cache = empty_hesitation_cache();
+
+        let pcm = hesitation_pcm(
+            &config, &http, &breaker, &cache, EmotionBucket::Neutral,
+            &config.emotion_refs.neutral, 350, config.sample_rate, &test_prosody(),
+        )
+        .await;
+
+        assert_eq!(pcm, contracts::silence_pcm(350, config.sample_rate));
+    }
+
+    /// A cache hit must return the cached audio without touching the
+    /// network at all, regardless of breaker state.
+    #[tokio::test]
+    async fn hesitation_pcm_returns_cached_bytes_without_a_network_call() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![9, 9, 9, 9]))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let breaker = CircuitBreaker::new(3, 60_000);
+        let cache = empty_hesitation_cache();
+        let cached_bytes = vec![7, 7, 7, 7];
+        cache.lock().await.insert(EmotionBucket::Neutral, cached_bytes.clone());
+
+        let pcm = hesitation_pcm(
+            &config, &http, &breaker, &cache, EmotionBucket::Neutral,
+            &config.emotion_refs.neutral, 350, config.sample_rate, &test_prosody(),
+        )
+        .await;
+
+        assert_eq!(pcm, cached_bytes);
+    }
+
+    /// The success path: a real synthesis call must both return the
+    /// synthesized audio and populate the cache for the next call.
+    #[tokio::test]
+    async fn hesitation_pcm_synthesizes_and_caches_on_success() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        let synthesized = vec![1, 2, 3, 4, 5, 6];
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(synthesized.clone()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let breaker = CircuitBreaker::new(3, 60_000);
+        let cache = empty_hesitation_cache();
+
+        let pcm = hesitation_pcm(
+            &config, &http, &breaker, &cache, EmotionBucket::Neutral,
+            &config.emotion_refs.neutral, 350, config.sample_rate, &test_prosody(),
+        )
+        .await;
+
+        assert_eq!(pcm, synthesized);
+        assert_eq!(
+            cache.lock().await.get(&EmotionBucket::Neutral),
+            Some(&synthesized),
+            "a successful synthesis must be cached for the next hesitation"
+        );
+        assert!(!breaker.is_open(now_millis()), "a success must not leave the breaker open");
+    }
+
+    /// Synthesis failing (engine reachable but erroring, within the retry
+    /// budget) must fall back to silence, not a buzz, and must record onto
+    /// the shared breaker so a real outage still trips it.
+    #[tokio::test]
+    async fn hesitation_pcm_falls_back_to_silence_on_synthesis_failure() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(MAX_SYNTHESIS_ATTEMPTS as u64)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let breaker = CircuitBreaker::new(1, 60_000);
+        let cache = empty_hesitation_cache();
+
+        let pcm = hesitation_pcm(
+            &config, &http, &breaker, &cache, EmotionBucket::Neutral,
+            &config.emotion_refs.neutral, 350, config.sample_rate, &test_prosody(),
+        )
+        .await;
+
+        assert_eq!(pcm, contracts::silence_pcm(350, config.sample_rate));
+        assert!(
+            breaker.is_open(now_millis()),
+            "a real synthesis failure must count toward the shared breaker"
+        );
+        assert!(
+            cache.lock().await.get(&EmotionBucket::Neutral).is_none(),
+            "a failed attempt must not be cached"
+        );
+    }
+
     const STREAM: &str = "P2_2_PUBLISH_PCM_TEST";
 
     /// P2-2: `publish_pcm` must not wait for JetStream's publish ack.
@@ -2025,6 +2434,7 @@ mod tests {
             full_response: None,
             generation_error: None,
             proactive: false,
+            metadata: Default::default(),
             latency_metadata: None,
         };
         let chunk = || vec![0u8; 640]; // ~20ms of 16-bit PCM at 16 kHz

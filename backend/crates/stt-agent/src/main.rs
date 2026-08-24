@@ -254,6 +254,12 @@ async fn main() -> Result<()> {
 
     info!("rust stt-agent subscribed to {}", topics::AUDIO_INBOUND);
 
+    // M3-P5: this loop processes audio.inbound messages one at a time (no
+    // per-message spawn below), so a single cache owned here and threaded
+    // through by &mut needs no lock -- unlike `state`, which spawned
+    // partial/final workers also touch concurrently.
+    let mut resampler_cache = audio::ResamplerCache::new(config.max_utterance_secs);
+
     while let Some(message) = subscriber.next().await {
         if let Err(err) = handle_audio_inbound(
             &config,
@@ -262,6 +268,7 @@ async fn main() -> Result<()> {
             state.clone(),
             &partial_slot,
             &final_tx,
+            &mut resampler_cache,
         )
         .await
         {
@@ -653,6 +660,7 @@ async fn handle_audio_inbound(
     state: Arc<Mutex<SttState>>,
     partial_slot: &Arc<PartialSlot>,
     final_tx: &mpsc::Sender<Job>,
+    resampler_cache: &mut audio::ResamplerCache,
 ) -> Result<()> {
     let metadata = metadata_from_headers(&message);
     let channels = metadata.as_ref().and_then(|m| m.channels).unwrap_or(1) as usize;
@@ -761,7 +769,7 @@ async fn handle_audio_inbound(
                 let rate = source_rate;
                 drop(guard);
 
-                if let Ok(pcm_16k) = audio::resample_to_16k(&pcm, rate) {
+                if let Ok(pcm_16k) = resampler_cache.resample_to_16k(&pcm, rate) {
                     // Latest-wins: replaces any hypothesis the fast model has not
                     // started yet, rather than being dropped in favour of it.
                     partial_slot.offer(Job {
@@ -798,7 +806,7 @@ async fn handle_audio_inbound(
             let rate = source_rate;
             drop(guard);
 
-            let pcm_16k = audio::resample_to_16k(&pcm, rate)?;
+            let pcm_16k = resampler_cache.resample_to_16k(&pcm, rate)?;
             if !pcm_16k.is_empty() {
                 info!(
                     secs = pcm_16k.len() as f64 / 16_000.0,

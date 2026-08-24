@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 import uuid
 from datetime import datetime
@@ -27,6 +28,27 @@ from ..utils.speech import SpeechCoordinator
 from .base import BaseAgent, install_shutdown_signal_handlers
 
 logger = logging.getLogger(__name__)
+
+
+def _char_offset_after_word(text: str, word_count: int) -> int:
+    """P4-2: the exact character offset in `text` right after its
+    `word_count`-th whitespace-delimited token.
+
+    Used to stamp each published speech chunk with where it ends in the
+    *true* response text, so `_truncate_interrupted_reply` can later slice
+    `last_assistant_response` at a real boundary instead of the reconstructed
+    (`" ".join(words)`) text actually sent to TTS, which does not
+    byte-for-byte match `text` wherever the source stream's whitespace was
+    collapsed by `.split()`/`.join()`. `re.finditer` walks `text` itself, so
+    the offset it returns is always a true index into `text`, independent of
+    that mismatch.
+    """
+    if word_count <= 0:
+        return 0
+    matches = list(re.finditer(r"\S+", text))
+    if not matches:
+        return 0
+    return matches[min(word_count, len(matches)) - 1].end()
 
 
 class BrainAgent(BaseAgent):
@@ -577,6 +599,29 @@ class BrainAgent(BaseAgent):
         segment_started_at = None
         generation_errors: list[str] = []
         fallback_text = "I'm having trouble thinking right now..."
+        # P4-2: cumulative word count across every chunk published so far
+        # this turn, used to derive each chunk's (character_offset,
+        # word_index) into `source_text`. Correct regardless of exactly when
+        # `full_response` was last extended relative to a given flush,
+        # because every word that ever enters `current_chunk_words` came
+        # from a `chunk_text` already appended to `full_response` -- the
+        # published word sequence is always a prefix of `full_response`'s
+        # own word sequence.
+        published_word_count = 0
+
+        async def _publish_tracked(words: list[str], source_text: str) -> None:
+            nonlocal published_word_count
+            new_word_count = published_word_count + len(words)
+            offset = _char_offset_after_word(source_text, new_word_count)
+            await self._publish_speech_chunk(
+                words,
+                turn_id,
+                incoming_metadata=incoming_metadata,
+                incoming_latency_metadata=incoming_latency_metadata,
+                character_offset=offset,
+                word_index=new_word_count,
+            )
+            published_word_count = new_word_count
 
         await self.set_state("thinking")
 
@@ -603,12 +648,7 @@ class BrainAgent(BaseAgent):
                         >= self.coordinator.formation_buffer_ms
                         and len(current_chunk_words) >= 3
                     ):
-                        await self._publish_speech_chunk(
-                            current_chunk_words,
-                            turn_id,
-                            incoming_metadata=incoming_metadata,
-                            incoming_latency_metadata=incoming_latency_metadata,
-                        )
+                        await _publish_tracked(current_chunk_words, full_response)
                         current_chunk_words = []
                         segment_started_at = None
 
@@ -622,12 +662,7 @@ class BrainAgent(BaseAgent):
                             word, len(current_chunk_words)
                         )
                         if score > 0.7 or len(current_chunk_words) > 12:
-                            await self._publish_speech_chunk(
-                                current_chunk_words,
-                                turn_id,
-                                incoming_metadata=incoming_metadata,
-                                incoming_latency_metadata=incoming_latency_metadata,
-                            )
+                            await _publish_tracked(current_chunk_words, full_response)
                             current_chunk_words = []
                             segment_started_at = None
 
@@ -649,12 +684,7 @@ class BrainAgent(BaseAgent):
 
                 elif output["type"] == "done":
                     if current_chunk_words:
-                        await self._publish_speech_chunk(
-                            current_chunk_words,
-                            turn_id,
-                            incoming_metadata=incoming_metadata,
-                            incoming_latency_metadata=incoming_latency_metadata,
-                        )
+                        await _publish_tracked(current_chunk_words, full_response)
                         current_chunk_words = []
 
                     if not full_response.strip() and not is_proactive:
@@ -663,13 +693,8 @@ class BrainAgent(BaseAgent):
                             turn_id,
                             generation_errors[-3:],
                         )
-                        await self._publish_speech_chunk(
-                            fallback_text.split(),
-                            turn_id,
-                            incoming_metadata=incoming_metadata,
-                            incoming_latency_metadata=incoming_latency_metadata,
-                        )
                         full_response = fallback_text
+                        await _publish_tracked(fallback_text.split(), full_response)
 
                     if full_response.strip() or not is_proactive:
                         state_snap = self.cognitive_core.state.get_context_snapshot()
@@ -692,6 +717,17 @@ class BrainAgent(BaseAgent):
             logger.error("Cognitive Loop error on turn_id=%s: %s", turn_id, e)
             if not is_proactive:
                 error_msg = str(e)
+                # P4-2: deliberately untracked (no character_offset/word_index)
+                # -- unlike the empty-generation fallback above, `full_response`
+                # is NOT reassigned to `fallback_text` here, and the caller
+                # will set `last_assistant_response` to whatever partial
+                # `full_response` this method returns below, not to
+                # `fallback_text`. Stamping this chunk's audio against
+                # `fallback_text` would produce an offset that indexes into a
+                # string `last_assistant_response` never actually holds -- a
+                # pre-existing gap (that mismatch exists whether or not this
+                # chunk carries progress metadata), not one to paper over with
+                # a fabricated-looking offset.
                 await self._publish_speech_chunk(
                     fallback_text.split(),
                     turn_id,
@@ -718,6 +754,8 @@ class BrainAgent(BaseAgent):
         turn_id: str | None = None,
         incoming_metadata: dict[str, Any] | None = None,
         incoming_latency_metadata: dict[str, Any] | None = None,
+        character_offset: int | None = None,
+        word_index: int | None = None,
     ):
         """
         Publishes a semantically coherent chunk with full PAD affect metadata.
@@ -740,7 +778,23 @@ class BrainAgent(BaseAgent):
             turn_id=turn_id,
             user_distance=self.last_user_distance,
         )
-        payload.metadata = incoming_metadata
+        # P4-2: non-destructive merge -- `incoming_metadata` originates from
+        # the user's own chat.input and must reach voice/transport unchanged;
+        # this only adds two keys alongside it. voice-agent passes them
+        # through unchanged on every PCM chunk it publishes for this text, and
+        # transport_agent relays them as `audio.playback.progress` once that
+        # PCM has actually reached the LiveKit audio source -- the closest
+        # observable "reached the speaker" point in this architecture.
+        # Deliberately omitted (None) for the one caller that cannot make
+        # them meaningful (see _stream_to_speech's exception-handler
+        # fallback) -- absent metadata is honest; a fabricated offset is not.
+        if character_offset is not None and word_index is not None:
+            metadata = dict(incoming_metadata) if incoming_metadata else {}
+            metadata["char_offset"] = character_offset
+            metadata["word_index"] = word_index
+            payload.metadata = metadata
+        else:
+            payload.metadata = incoming_metadata
         payload.latency_metadata = incoming_latency_metadata
         await self.publish(Topics.CHAT_OUTPUT, payload.model_dump())
 

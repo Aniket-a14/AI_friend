@@ -9430,3 +9430,183 @@ this part depends on for its novelty signal was not independently
 re-exercised against real hardware here either. Carried forward: voice/STT
 (Part 6), NATS accounts + supply chain (Part 7), deployment/docs/cleanup
 (Part 8).
+
+## 2026-08-24 -- Stage 6 Part 6 (voice and STT) -- P3-10, P3-13, P4-9, P4-2
+
+Four items, two crates (`stt-agent`, `voice-agent`) plus `contracts` and two
+Python agents (`brain_agent`, `transport_agent`). One item's own file list
+turned out to name a component that does not exist in this codebase --
+confirmed by reading the actual frontend before writing anything, and
+rebuilt against what is actually there instead of what the plan assumed.
+
+**P3-10: the STT resampler was rebuilt from scratch on every call.**
+`resample_to_16k` constructed a fresh `SincFixedIn` -- which builds a
+sinc/window interpolation table, `oversampling_factor` 128 x `sinc_len`
+128 -- on every partial (up to one per `partial_interval_ms`) and every
+endpointed utterance. Read rubato 0.16.2's actual source
+(`~/.cargo/registry/.../rubato-0.16.2/src/asynchro_sinc.rs`) before touching
+this: `reset()` clears only the internal delay-line buffer and restores
+`chunk_size` to the value passed at construction; it does not rebuild the
+interpolator table, which `new()` builds once. `set_chunk_size()` only
+mutates a `usize` field, bounded by the `max_chunk_size` passed at
+construction. Reusing an instance across genuinely unrelated calls (reset,
+then set_chunk_size, then process) is therefore provably output-identical
+to constructing fresh every time -- verified directly, not just reasoned
+about: a new test asserts a reused-and-reset resampler produces bit-identical
+output to a one-shot fresh one on the same input. `ResamplerCache` (new,
+`audio.rs`) caches one `SincFixedIn` per source sample rate, sized to
+`max_utterance_secs` with a 5% margin (falls back to a one-shot build for
+anything longer, which should never happen given that bound but stays
+correct if it ever does). Investigated whether M3-P4 named a second,
+separate finding (a model reloaded per-call) and found none: `WhisperModel`/
+`SenseVoiceModel` are already loaded once at startup and reused via `Arc` --
+confirmed, not a bug, so nothing there needed fixing.
+
+**P3-13: the 60-frame prosody trajectory was averaged to one static
+number for the whole turn.** `generate_apra_trajectory` (cognitive-rust)
+models one breath group's ~3s arc -- onset breathing dampening under 200ms,
+steady middle, tail dampening past 2700ms, volume fade at the very ends --
+and voice-agent's `agent.voice.modulation` subscriber collapsed all 60
+frames into a single (rate, pitch, volume) applied unchanged to every
+`chat.output` chunk of the entire response. `ProsodyTrajectory` (new)
+stores the frames plus when they arrived; `prosody_now()` picks the frame
+nearest how long *that trajectory* has been playing, so different chunks of
+the same response read different points in the arc, and a fresh trajectory
+(published on every affect update) simply restarts it. Nearest-frame search
+handles the "played longer than the trajectory's ~3s span" case for free --
+it just lands on the last frame, the modeled steady-state tail -- so no
+extra clamping was needed.
+
+**P4-9: three related fixes, one shared root cause.** Both
+`generate_hesitation_pcm` (a sine+noise buzz for `<hesitate>`) and
+`load_vocalization_pcm`'s missing-asset fallback (a different synthetic
+buzz) violated the same principle this file states elsewhere for text
+synthesis: no fallback voice, ever, only the cloned voice or silence.
+`load_vocalization_pcm` now falls back to `contracts::silence_pcm` with a
+named warning log instead of generating anything. `<hesitate>` now
+synthesizes a short real phrase (`"Mm..."`) through the same TTS engine and
+reference-clip machinery real speech uses, cached per `EmotionBucket` (five
+delivery registers, so at most five cache entries -- bounded by
+construction) so the latency a hesitation exists to cover is not doubled by
+covering it. Falls back to `contracts::silence_pcm` -- never the old buzz --
+when the shared circuit breaker is open or this specific synthesis attempt
+fails; a failed attempt records onto that same breaker, since an engine down
+for real speech is down for hesitation too. Third fix, found while reading
+the surrounding code rather than named up front: `reverb_filter` and
+`current_attenuation_val` were both constructed fresh inside
+`handle_chat_output`, i.e. once per chunk rather than once per stream --
+unlike `ola_filter`, a few lines away, which already gets this right.
+`ReverbFilter` carries a real delay-line buffer, so resetting it every
+chunk dropped the previous chunk's echo tail at every boundary;
+`current_attenuation_val` resetting to 1.0 every chunk meant a chunk that
+began while still ducked flared back to full volume before ramping back
+down, audibly, at every boundary during an ongoing duck. Both now live
+outside the main loop next to `ola_filter` and are threaded through by
+`&mut`, matching the pattern that was already correct one line over.
+
+**P4-2: the plan's own file list was wrong, and the architecture doesn't
+support what it assumed.** The plan named `frontend/src/` (PCM player) as
+the file to build a publisher in. There is no `frontend/src/`, no PCM
+player, and no manual PCM decoding anywhere in the frontend at all --
+confirmed by reading `hooks/useWebRTCVoice.js`, the only frontend file
+touching audio. The browser subscribes to a LiveKit WebRTC audio *track*
+and plays it via `track.attach()`, entirely opaque to application code;
+there is nothing there to instrument. The actual component that bridges
+backend PCM onto that track -- and therefore the closest thing in this
+architecture to "knows what reached the speaker" -- is `transport_agent.py`,
+a server-side Python process neither the plan's file list nor its own
+framing ("the frontend PCM player") mentioned. Built there instead.
+
+The harder problem underneath: `AudioPlaybackProgress.character_offset`
+must index into `last_assistant_response`, the full accumulated response
+text living in `brain_agent`, but neither `voice-agent` nor
+`transport_agent` ever sees that full text -- each only ever sees one
+`ChatOutput.content` chunk at a time. Considered reconstructing an offset
+from the published chunk's own words (`" ".join(words)`) and rejected it:
+that reconstruction does not byte-for-byte match the source stream wherever
+whitespace was collapsed by `.split()`/`.join()`, and a wrong cut point in
+this specific string is not cosmetic -- `_truncate_interrupted_reply` writes
+it back as what the agent believes it said. Built `_char_offset_after_word`
+instead (`re.finditer(r"\S+", text)`, take the `end()` of the Nth match): an
+exact index into the *real* string, immune to that whitespace mismatch by
+construction, not by approximation. `brain_agent` tracks a cumulative
+published-word count (correct regardless of exactly when `full_response`
+was last extended relative to a given flush, because every word ever
+queued came from text already appended to `full_response` -- the published
+sequence is always a prefix of `full_response`'s own word sequence) and
+stamps each chunk with `(character_offset, word_index)` in its `metadata`,
+merged non-destructively so `incoming_metadata` (the user's own chat.input
+metadata) reaches voice/transport unchanged. Deliberately **not** stamped on
+the exception-handler fallback chunk: `full_response` is not reassigned to
+`fallback_text` on that path, so `last_assistant_response` will not equal
+what was actually spoken there, and a computed offset against a string
+`last_assistant_response` never holds would be actively misleading, not
+merely imprecise -- documented in place rather than silently worked around.
+The empty-generation fallback, by contrast, *does* reassign `full_response =
+fallback_text` first, so it is safe to stamp and is.
+
+`contracts::ChatOutput` had no `metadata` field in Rust at all -- present in
+Pydantic (`extra: "allow"`), silently dropped by `serde_json` deserialization
+on the Rust side (no `deny_unknown_fields`), so brain_agent's two new keys
+would have gone nowhere. Added as `JsonMap`, the same type
+`AudioPerception::metadata` already uses for a caller-defined dict.
+voice-agent passes `char_offset`/`word_index` through unchanged inside the
+existing `X-Latency-Meta` header (the same one `turn_id` already rides in) --
+pure pass-through, no computation, since this process never sees more than
+one chunk's text. `transport_agent` reads them back out of that same header
+(already parsed for `turn_id`), and once a PCM frame carrying a *new* offset
+has actually reached `audio_source.capture_frame` -- the LiveKit hand-off
+point -- publishes `audio.playback.progress` with it, deduped against the
+last offset actually published and reset on turn change so a new turn's
+first (numerically smaller) offset is never mistaken for a regression. Not
+awaited inline: a JetStream ack round-trip must not delay the next PCM
+frame in a real-time audio drain loop, the same reasoning voice-agent's own
+`publish_pcm` already documents for its own ack.
+
+No change was needed in `_truncate_interrupted_reply` itself -- it already
+had both branches fully implemented and correctly ordered (progress-known
+truncation, and the honest "no progress, keep everything" fallback), it
+simply never had real progress data to exercise the first one with, in
+production or in this repo's own tests. This part makes that branch live.
+
+**Files:** `crates/stt-agent/src/audio.rs`, `crates/stt-agent/src/main.rs`,
+`crates/voice-agent/src/main.rs`, `crates/contracts/src/lib.rs`,
+`crates/contracts/fixtures/chat_output_chunk.json`, `app/agents/brain_agent.py`,
+`app/agents/transport_agent.py`, plus `backend/tests/test_playback_progress.py`
+(new, 26 tests across `_char_offset_after_word`, `_publish_speech_chunk`'s
+non-destructive metadata merge, `_stream_to_speech`'s end-to-end offset
+tracking including both fallback paths, and `transport_agent`'s dedup/reset/
+end-to-end publish behavior) and in-crate Rust tests: 5 new in `audio.rs`
+(cache correctness, varying chunk lengths, per-rate isolation, past-bound
+fallback), 4 new in `voice-agent` (`ProsodyTrajectory` lookup/drift/
+past-span/empty), 5 new hesitation tests + 1 vocalization-fallback test, 2
+new `build_latency_metadata` pass-through tests.
+
+**Verified.** Full Python suite **1126/1126**, `ruff check .` clean,
+`scripts/check_subject_wiring.py` clean -- `audio.playback.progress`'s
+allowlist entry ("subscribed but never published") is gone, the wiring
+script confirms it is now genuinely both. `cargo check --workspace` clean.
+`cargo test --package stt-agent --package voice-agent --package contracts`:
+**47 + 6** passed (voice-agent's count includes stt-agent's and contracts'
+own suites are reported separately; contracts' round-trip fixture updated
+to include the new `metadata` field, since it now always serializes).
+`cargo test --package cognitive-rust --lib`: 11/11, untouched. New tests
+were **not mutation-tested**, per the standing instruction: written and
+verified green-only, but P3-10's resampler-equivalence test and P4-2's
+`_char_offset_after_word` exact-boundary tests were specifically designed
+to fail on the class of subtle bug each fix could plausibly introduce
+(state leakage between reused resamplers; an approximated rather than exact
+offset), not just to exercise the happy path.
+
+**NOT done.** `audio.playback.progress` operates at per-chunk granularity
+(several PCM messages per chunk, all carrying that chunk's end-offset,
+deduped to one publish) -- not per-word or per-syllable. True word-level
+timing would need phoneme/word timestamps from the TTS engine itself, which
+this pass did not investigate GPT-SoVITS's API for; per-chunk is coarser
+but honest, and a large improvement over "no signal, ever." No live audio
+or live-NATS test exercises any of this cluster's changes end-to-end against
+real infrastructure (real SoVITS synthesis, a real LiveKit room, real
+speech) -- verification here is unit/component-level with wiremock/mocked
+LiveKit objects, consistent with how earlier parts of this branch have
+handled subjects this repo has no live-infra CI for. Carried forward: NATS
+accounts + supply chain (Part 7), deployment/docs/cleanup (Part 8).
