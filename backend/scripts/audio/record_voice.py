@@ -40,8 +40,16 @@ def record_audio(duration: int = 120, filename: str = "voice_sample.wav"):
     sd.wait()
     print("⏹️ Recording complete!")
 
-    # Save file
-    output_dir = os.path.join(os.path.dirname(__file__), "voice_samples")
+    # `backend/voice_samples/`, which is the only location the synthesiser can
+    # see: `docker-compose.infra.yml` bind-mounts it to
+    # `/workspace/GPT-SoVITS/output`, and that is what `REF_AUDIO_PATH=output/...`
+    # in `.env` resolves against. This previously wrote to
+    # `backend/scripts/audio/voice_samples/`, so a clip recorded here never
+    # reached the container and the reference-clip setup silently could not work.
+    output_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "voice_samples",
+    )
     os.makedirs(output_dir, exist_ok=True)
     filepath = os.path.join(output_dir, filename)
 

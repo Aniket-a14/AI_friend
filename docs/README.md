@@ -13,6 +13,12 @@ organic memory, and future robotics compatibility.
 
 ## Start Here
 
+- **[BRINGING_IT_TO_LIFE.md](./BRINGING_IT_TO_LIFE.md)** — how to actually run the
+  brain, voice and eyes on one laptop, and how to give the agent a personality and
+  a cloned voice of its own. Start here if you want it *running*.
+- **[FUTURE_WORK.md](./FUTURE_WORK.md)** — everything still open, with the
+  decision, the reasoning, and the alternatives that were rejected. Start here if
+  you want to *build on it*. Supersedes the `audit/` documents as a work queue.
 - [ARCHITECTURE.md](./ARCHITECTURE.md) gives the system-level map: NATS mesh,
   agents, cognition, state, memory, voice, and feedback loops.
 - [API_SPEC.md](./API_SPEC.md) defines the REST endpoints and NATS subjects used
