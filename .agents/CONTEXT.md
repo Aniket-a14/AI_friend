@@ -8969,7 +8969,7 @@ touched, per Stage 5's own instruction not to fix them blind:**
 `app/state/identity_core_store.py`, `app/utils/background_tasks.py` (new),
 `scripts/check_subject_wiring.py`.
 
-**Verified.** Full suite passed, `ruff check .`
+**Verified.** Full suite **1071/1071** (1055 baseline + 16 new), `ruff check .`
 clean, `cargo check --workspace` clean (Rust untouched this part),
 `scripts/check_subject_wiring.py` reports every subject wired or explicitly
 allowlisted. All 16 new tests mutation-tested: P3-5's dead-letter bound
@@ -9082,7 +9082,7 @@ they were.
 `app/agents/surfacing_agent.py`, `tests/test_performance.py`,
 `tests/test_subject_metrics_wiring.py` (new).
 
-**Verified.** Full suite passed, `ruff check .`
+**Verified.** Full suite **1076/1076** (1071 baseline + 5 new), `ruff check .`
 clean, `cargo check --workspace` clean (Rust untouched this part),
 `scripts/check_subject_wiring.py` unchanged/clean. The 5 new wiring tests and
 all 8 rewritten benchmarks were mutation-tested (production function
@@ -9200,7 +9200,7 @@ and keeps costing both bounded fetches something for contributing nothing.
 `app/rate_limit.py`, `app/state/graph_db.py`, `app/cognitive/learning.py`,
 plus test files for each.
 
-**Verified.** Full suite passed, `ruff check .` clean, `cargo check
+**Verified.** Full suite **1089/1089**, `ruff check .` clean, `cargo check
 --workspace` clean (Rust untouched this part), `scripts/check_subject_wiring.py`
 unchanged/clean. New tests were written but **not mutation-tested** in this
 part -- the user paused that discipline mid-Cluster-3 ("no need to do any
@@ -9302,7 +9302,7 @@ helper instead of arbitrary strings -- the behavior they test (habituation
 firing/advancing on a real repeated/quiet frame) is unchanged, only the
 stand-in frame data changed.
 
-**Verified.** Full suite passed, `ruff check .` clean, `cargo check
+**Verified.** Full suite **1094/1094**, `ruff check .` clean, `cargo check
 --workspace` clean (no Rust touched), `scripts/check_subject_wiring.py`
 clean (no subjects touched, confirmed no new allowlist entries needed). New
 tests were **not mutation-tested**, per the standing instruction from
@@ -9409,7 +9409,7 @@ three-signal gate's four failure/success combinations on
 `SubconsciousAgent._on_vision_description`; the missing-`is_novel`-defaults-
 to-stored case; unconditional pruning inside the consolidation pass).
 
-**Verified.** Full suite passed, `ruff check .` clean, `cargo check
+**Verified.** Full suite **1106/1106**, `ruff check .` clean, `cargo check
 --workspace` clean (no Rust touched), `scripts/check_subject_wiring.py`
 clean -- `vision.description` is now both published and subscribed with no
 new allowlist entry needed. New tests were **not mutation-tested**, per the
@@ -9582,7 +9582,7 @@ fallback), 4 new in `voice-agent` (`ProsodyTrajectory` lookup/drift/
 past-span/empty), 5 new hesitation tests + 1 vocalization-fallback test, 2
 new `build_latency_metadata` pass-through tests.
 
-**Verified.** Full Python suite passed, `ruff check .` clean,
+**Verified.** Full Python suite **1126/1126**, `ruff check .` clean,
 `scripts/check_subject_wiring.py` clean -- `audio.playback.progress`'s
 allowlist entry ("subscribed but never published") is gone, the wiring
 script confirms it is now genuinely both. `cargo check --workspace` clean.
@@ -9590,7 +9590,7 @@ script confirms it is now genuinely both. `cargo check --workspace` clean.
 passed (voice-agent's count includes stt-agent's and contracts'
 own suites are reported separately; contracts' round-trip fixture updated
 to include the new `metadata` field, since it now always serializes).
-`cargo test --package cognitive-rust --lib`: passed, untouched. New tests
+`cargo test --package cognitive-rust --lib`: 11/11, untouched. New tests
 were **not mutation-tested**, per the standing instruction: written and
 verified green-only, but P3-10's resampler-equivalence test and P4-2's
 `_char_offset_after_word` exact-boundary tests were specifically designed
@@ -9711,11 +9711,11 @@ against a real spawned `nats-server`), `backend/tests/test_nats_credential_loadi
 `nats-server`, 1 skip-gracefully-without-plain-NATS), and 6 new tests in
 `whisper.rs` (checksum-lookup and hashing behavior).
 
-**Verified.** Full Python suite passed, `ruff check .` clean,
+**Verified.** Full Python suite **1137/1137**, `ruff check .` clean,
 `scripts/check_subject_wiring.py` clean (no subjects touched).
 `cargo check --workspace` clean. `cargo test --package stt-agent --package
-voice-agent --package contracts` passed.
-`cargo test --package cognitive-rust --lib` passed, untouched.
+voice-agent --package contracts`: 47 + 50 + 6 passed.
+`cargo test --package cognitive-rust --lib`: 11/11, untouched.
 `pip install --dry-run -r requirements-ai.txt` resolves cleanly. New tests
 were **not mutation-tested**, per the standing instruction, but the accounts-
 enforcement tests are themselves closer to that spirit than most: they run
@@ -9931,7 +9931,7 @@ conclusively identified rather than guessing and calling it done.
 `backend/tests/test_agent_shutdown_consistency.py` (10 tests covering every
 `stop()` change above).
 
-**Verified.** Full suite passed, `ruff check .` clean,
+**Verified.** Full suite **1147/1147**, `ruff check .` clean,
 `scripts/check_subject_wiring.py` clean, `cargo check --workspace` clean
 (all four crates now report `v7.0.0`). `docker compose ... config --quiet`
 clean on the modified compose files. P3-3's fix was verified against real,
@@ -10080,17 +10080,624 @@ voice-agent --package contracts`: 47 + 50 + 6 passed.
 on GitHub, including Persona Guard, Credential Leak Prevention, the five
 agent image builds, both compose validations, and the new mutation report.
 
-**NOT done.** The earlier entries' per-part test counts were removed during
-review (Parts 1-8 now read "Full suite passed" instead of a number); the
-counts are still recoverable from each commit, but the ledger no longer
-carries them, which is a loss of exactly the provenance this file exists
-for. Mutation coverage is three files with a warn-only gate, not the
-branch-wide discipline `CLAUDE.md` describes. The query-scoped graph
+**NOT done, as of this entry.** The earlier entries' per-part test counts were
+removed during review (Parts 1-8 read "Full suite passed" instead of a
+number) -- **restored 2026-08-25, roadmap-leftovers Item 5b**, from the
+pre-review commit (`2823c2a`), verbatim: 1071/1071, 1076/1076, 1089/1089,
+1094/1094, 1106/1106, 1126/1126 (+ Rust 47+6), 1137/1137 (+ Rust 47+50+6),
+1147/1147. Mutation coverage is three files with a warn-only gate, not the
+branch-wide discipline `CLAUDE.md` describes -- **widened 2026-08-25, Item
+5c**, see that entry. The query-scoped graph
 retrieval above was **not** run against the `evals` recall pack -- Part 3's
-own gate -- so its ranking effect is argued and unit-tested, not measured.
-P4-10's "test that pins dead code" sub-item remains unidentified.
+own gate -- so its ranking effect is argued and unit-tested, not measured
+-- **addressed 2026-08-25, Item 3**, see that entry.
+P4-10's "test that pins dead code" sub-item remains unidentified --
+**identified and fixed 2026-08-25, Item 4d**: it is M3-D3,
+`speculative_stop_shape_matches_current_contract` in `stt-agent/src/main.rs`.
 `backend/pyproject.toml` declares a `maturin` build backend at a path with
 no Rust project of its own (`cognitive-rust` has its own manifest), so
 `pip install ./backend` would now fail where it previously did nothing
 meaningful -- harmless for every documented workflow, but not intentional
 design.
+
+---
+
+## 2026-08-25 -- Roadmap leftovers, Group 1 -- audit correction (Item 0),
+## the dead-code test identified and fixed (Item 4d), documentation and
+## process debt (Item 5)
+
+Plan: `.claude/plans/async-stirring-clarke.md`. First landed group of the
+post-Stage-6 leftovers plan, approved via plan mode after refreshing
+`audit/` to Stage 6. Covers Items 0, 4d, 5a, 5b, 5c, 5d -- the parts with no
+code-behavior risk, landed first per the plan's sequencing.
+
+**Item 0 -- corrected a false claim I introduced into six audit documents.**
+While refreshing `audit/` to Stage 6 (2026-08-24), I claimed measurements
+1.2 (consolidation wall-clock vs AckWait) and 1.3 (`AI_AUDIO` growth over a
+real session) "were never run" -- derived from grepping this ledger for
+those two strings and finding nothing, without checking
+`backend/tools/measure/out/`, where both live. Both were run live on
+2026-08-22: `m12_consolidation.json` shows 7.48s idle / 10.08s under real
+VLM contention against a 30s control-tier AckWait (`p1_1_worked: yes`);
+`m13_audio_growth.json` shows `AI_AUDIO`'s measured wire rate at
+68,571 B/s, roughly half the ~130 KB/s ESTIMATE P1-2's sizing used --
+meaning more headroom than assumed, not less. **All six Stage-3
+measurements are complete.** Fixed in `audit/ROADMAP.md` §7,
+`audit/AUDIT_PROGRESS.md`, `audit/PERFORMANCE.md`, `audit/HARDWARE.md`,
+`audit/EXECUTIVE_REPORT.md`, `audit/HANDOFF.md` -- each got a dated
+correction paragraph rather than a silent edit, so the error and its fix
+are both visible. `audit/` stays untracked per repo convention; these edits
+exist on disk, not in this commit.
+
+**Item 4d -- identified and fixed the "test pinning dead code" P4-10
+sub-item Stage 6 Part 8 searched for and could not find.** It is M3-D3 in
+`audit/ISSUES.md`, missed at Part 8 because that search grepped test files
+for "dead code"/"deprecated" rather than reading the finding itself.
+`speculative_stop_shape_matches_current_contract`
+(`crates/stt-agent/src/main.rs`) built its fixture through
+`build_audio_perception`, a `#[allow(dead_code)]` function called only from
+this one test -- no production path ever ran it -- and asserted
+`intent_type == "COMMAND"`, while the function every real publish path
+actually calls, `build_partial_perception`, hardcodes
+`intent_type: "CONVERSATIONAL"` unconditionally. The test would keep
+passing if the live contract broke. Rewritten to build its fixture through
+`build_partial_perception` (the real producer `publish_partial` calls) and
+assert the real `"CONVERSATIONAL"` value; `build_audio_perception` deleted.
+**Confirmed the corrected test actually discriminates before committing**:
+temporarily reverted the assertion to the old `"COMMAND"` expectation and
+reran -- it failed with a clear left/right mismatch, then was restored and
+reran green. `cargo test --package stt-agent`: 47/47.
+
+**Item 5a -- closed Q-M3-2 in `audit/QUESTIONS.md`, moved BLOCKING (5) to
+BLOCKING (4).** #190 answered interruption-arbiter ownership in the source,
+not just in behavior: `stt-agent/src/main.rs:193-194` states directly that
+the keyword duck is a hint, not the arbiter, and the brain's
+`is_speculative_stop_confirmed` (`decision.py:442`) is the one component
+allowed to turn it into a real abort. Moved from §2 to §1 with the code
+citation. Recorded the caveat honestly rather than pretending measurement
+1.1 settled it: `worst_case_no_flush_latency` stayed UNKNOWN for a
+code-verified reason (the real buffer lives past
+`AudioSource.capture_frame()` on the native side of the FFI boundary;
+`wait_for_playout()` is never called anywhere in `TransportAgent`), so the
+number Q-M3-2's filing was waiting on was never coming from that harness.
+The ownership question was closed by design intent, exactly the
+"provisional answer is enough" caveat the question was filed with.
+
+**Item 5b -- restored the per-part test counts Stage 6's review round
+stripped from Parts 1-8.** Pulled verbatim from the pre-review commit
+(`2823c2a`) rather than re-deriving: 1071/1071, 1076/1076, 1089/1089,
+1094/1094, 1106/1106, 1126/1126 (+ Rust 47+6), 1137/1137
+(+ Rust 47+50+6), 1147/1147. Part 9's own "NOT done" paragraph updated with
+forward pointers to this entry and to Items 3/4d/5c below, so a reader
+following Part 9 lands on what actually closed each gap instead of a dead
+end.
+
+**Item 5c -- widened mutation coverage past the original three files.**
+`backend/pyproject.toml`'s `[tool.mutmut]` `only_mutate` gains
+`app/agents/base.py` (ack/dead-letter semantics, Stage 6 Part 1) and
+`app/state/memory_store.py` (retrieval entry points: L1 cache
+quantization, search-failure visibility, the off-the-loop Qdrant upsert
+from Part 3; the query-scoped graph fetch from Part 9).
+`mutate_only_covered_lines = true` is what keeps a 2,600-line file bounded
+-- only lines the newly-added test selection actually exercises are
+mutated. New selection: all 8 tests in `test_base_agent_mesh_semantics.py`,
+the query-scoping test in `test_generic_memory.py`, and the
+`TestL1AffectQuantization` / `TestSearchFailureVisibility` /
+`TestAddMemoryQdrantUpsertOffTheLoop` classes in `test_l1_cache.py` (10
+tests). Verified the full selection passes as its own pytest invocation
+before wiring it into the config. `.github/workflows/mutation.yml`'s
+path-filter and quick-verification step updated to match. **Kept
+warn-only**, per the plan -- a hard gate on `memory_store.py` would produce
+survivors blocking unrelated work.
+
+**Item 5d -- dropped the dead `[build-system]` table from
+`backend/pyproject.toml`.** It declared `build-backend = "maturin"` at a
+path with no Rust project of its own (`cognitive-rust` has its own
+manifest under `crates/cognitive-rust/Cargo.toml`); the file exists only to
+hold `[tool.mutmut]`. Confirmed via grep that nothing in `.github/workflows/`
+runs `pip install ./backend` or equivalent -- the risk was latent, not
+active -- but a `pip install ./backend` attempted by anyone, now or later,
+would have failed where it previously did nothing meaningful. `mutmut`
+reads `[tool.mutmut]` regardless of whether a build backend is declared;
+verified the TOML still parses and the table is intact after removal.
+
+**Files.** `.github/workflows/mutation.yml`, `backend/pyproject.toml`,
+`backend/crates/stt-agent/src/main.rs`. Plus `audit/QUESTIONS.md`,
+`audit/ROADMAP.md`, `audit/AUDIT_PROGRESS.md`, `audit/PERFORMANCE.md`,
+`audit/HARDWARE.md`, `audit/EXECUTIVE_REPORT.md`, `audit/HANDOFF.md` --
+untracked, edited on disk only.
+
+**Verified.** Full suite **1158/1158** (unchanged from Stage 6 Part 9's
+count -- these changes touch a test's fixture and CI/config surface, not
+production behavior counted by the suite). `ruff check .` clean.
+`cargo test --package stt-agent`: 47/47. TOML and YAML both re-parsed
+clean after editing.
+
+**NOT done, this group.** Items 1 (P4-12 embedding batching), 2 (P0-1 key
+rotation test), 3 (eval recall gate), and 4a/4b/4c (the three P4-10
+signals, each behind its own verify-first gate) remain, per the plan's
+sequencing -- Item 1 next, since it must land before Item 3 measures the
+retrieval baseline.
+
+---
+
+## 2026-08-25 -- Roadmap leftovers, Group 2 -- P4-12: batch the embedding
+## calls (Item 1)
+
+Plan: `.claude/plans/async-stirring-clarke.md`. The only roadmap item that
+was neither shipped nor deliberately declined across all eight Stage 6
+clusters -- absent from the Stage 6 plan, no ledger entry. M5-P3 measured
+nomic-embed-text at ~19ms/item sequential (batch 1, warm) vs 8.0ms/item at
+batch 32 -- 2.4x cheaper -- and the roadmap's own severity note said this
+matters on paths that embed in a loop, not on the one-per-turn conversational
+path.
+
+**`MemoryStore.get_embeddings(texts)`** added beside `get_embedding`
+(`app/state/memory_store.py`). Order-preserving and length-preserving on
+partial failure -- a failed item yields `None` in its slot rather than
+shortening the list, since a silently shortened list would misalign every
+downstream row with the wrong vector. Chunks at the new
+`Config.EMBEDDING_BATCH_SIZE` (default 32, the measured knee, with a
+positivity validator matching the `VISUAL_SCREEN_TRACE_TTL_H` pattern
+already in the file). Falls back to sequential `get_embedding()` per item
+when `/api/embed` 404s or returns a response whose length doesn't match the
+request -- preserving the existing two-endpoint fallback shape rather than
+inventing a second one. `MOCK_LLM_TEXT` path returns N vectors, not one.
+
+**`add_memory` gained an optional `embedding=None` parameter.** When
+provided, skips the internal `get_embedding` call; default `None` preserves
+every existing caller's behavior byte-for-byte (verified by a test
+asserting the no-argument call still awaits `get_embedding` exactly once).
+Rejected a separate `add_memories(list)` bulk method -- it would duplicate
+`add_memory`'s ~100 lines of entity pre-linking, Eriksonian column
+fallback and dual-backend insert logic, the exact duplication P3-11 was
+filed about.
+
+**All four loop sites converted to two-phase (batch, then per-item):**
+- `_promote_archived_rows` (`memory_store.py`) -- the only one with
+  live-latency impact, since it runs on the search path. Restructured
+  around the loop's mid-body `continue` (the threshold check happens after
+  the original embedding fetch): a pre-scan collects which archived rows
+  are actually missing a stored embedding, batches only those via
+  `get_embeddings`, then the main loop indexes into the pre-fetched result.
+- `seed_biography` (`app/persona/biography.py`) and the history migration
+  loop (`app/persona/history_migration.py`) -- both boot-time seeding
+  loops.
+- The eval corpus indexer (`evals/retrieval.py`'s `MemoryStoreRetriever.index`)
+  -- every transcript turn in one shot instead of one embedding call per
+  turn.
+
+**Found and fixed during implementation, not anticipated in the plan:** the
+three non-`memory_store.py` sites (`biography.py`, `history_migration.py`,
+`evals/retrieval.py`) needed a defensive length check around the batch
+call, not just a bare `await get_embeddings(...)`. The plan's stated
+requirement was correct in spirit but the first pass broke five existing
+tests in `test_biography_seeding.py` (`ValueError: zip() argument 2 is
+shorter than argument 1`) -- a `MagicMock()`'s default `__iter__` returns
+`iter([])`, so an un-configured mock `get_embeddings` on a test double
+produces a zero-length iterable that `zip(..., strict=True)` correctly
+rejects rather than silently misaligning. Fixed by validating the batch
+result is a list of the expected length before trusting it, falling back
+to a `None`-filled list (which routes through `add_memory`'s own internal
+per-item fetch) otherwise -- the same shape `_embed_batch_chunk`'s
+internal 404/length-mismatch handling already uses, applied one level up
+at each of the three external call sites. Caught by running the affected
+test suites, not anticipated in the plan text.
+
+**Tests.** New file `backend/tests/test_embedding_batching.py`, 10 tests
+via `httpx.MockTransport` (no live Ollama needed): batch preserves order
+with exactly one HTTP call for N texts; empty input makes no call; a
+response shorter than the request falls back to sequential
+`get_embedding` per item; a single `None` entry inside an otherwise-valid
+batch response surfaces as `None` at the same index rather than shifting
+later items left; chunking at a configured batch size (70 items at 32 ->
+requests of `[32, 32, 6]`, still one aligned 70-item result; also verified
+at batch size 1); a 404 from `/api/embed` falls back to `get_embedding`
+per item, args verified in order; `MOCK_LLM_TEXT` returns three distinct
+768-d vectors for three inputs, not one reused; `add_memory(embedding=...)`
+never awaits `get_embedding` (asserted via a side-effect `AssertionError`
+in the mock, not just a call-count check); `add_memory()` with no
+embedding argument awaits `get_embedding` exactly once with the original
+content. **Mutation-verified the chunking test specifically**: changed
+`batch_size` to `batch_size + 100` in the chunking loop, confirmed both
+`TestChunking` tests failed, then restored and reran green -- the one
+exception to this branch's "written and verified green-only" norm, same
+standard applied to Item 4d's dead-code-test fix.
+
+**Files.** `app/config.py`, `app/state/memory_store.py`,
+`app/persona/biography.py`, `app/persona/history_migration.py`,
+`evals/retrieval.py`, plus the new test file.
+
+**Verified.** Full suite **1168/1168** (1158 baseline + 10 new), 0
+failures, 0 skips (JUnit XML). `ruff check .` clean (one TRY004 finding on
+the new code -- `RuntimeError` where ruff wants `TypeError` for an
+invalid-type condition -- fixed). `scripts/check_subject_wiring.py` clean,
+unchanged (this item touches no NATS subjects).
+
+**NOT done, this group.** Items 2 (P0-1 key rotation test), 3 (eval recall
+gate -- now unblocked, since it needed Item 1 to land first so the
+baseline and candidate measure the same embedding path), and 4a/4b/4c (the
+three P4-10 signals) remain.
+
+---
+
+## 2026-08-25 -- Roadmap leftovers, Group 3 -- P4-10's turn_taking_probability,
+## verified then wired (Item 4b)
+
+Plan: `.claude/plans/async-stirring-clarke.md`. First of the three P4-10
+"verify the benefit, then wire" signals -- pure computation, no live
+infrastructure needed, so it went first while Docker was still down.
+
+**Verified before wiring, per the plan's own gate.** M3-D2
+(`audit/ISSUES.md`): `calculate_pacing_parameters` returns
+`turn_taking_probability` and no caller reads it. The plan flagged this
+signal as the one genuinely at risk of being a no-op gate and required a
+state-space sweep before committing to a threshold. Wrote
+`tools/measure/m4b_turn_taking_gate.py`, registered in
+`tools/measure/__main__.py`'s dispatcher as measurement id `4b` (explicitly
+noted in its docstring as NOT one of the Stage-3 roadmap measurements --
+it's this plan's own verification gate, same schema, different purpose).
+Evaluates `0.5 + 0.3*D - 0.1*F + 0.2*V` over a 41^3 grid spanning
+`PersonaProfile`'s own bounds (`V` in [-0.6, 0.6], `D` in [0.15, 0.85]) and
+the live state's own fatigue clamp (`F` in [0.0, 1.0]) -- the reachable
+box, not the formula's unclamped range. **Result: the default 0.5
+threshold blocks 16.9% of the reachable grid** (min 0.325, max 0.875,
+median 0.6), inside the plan's [15%, 50%] "meaningful minority" pass band
+-- a real discriminator, not decoration, so the default did not need
+re-siting to the measured median. Output:
+`tools/measure/out/m4b_turn_taking_gate.json`, tracked in git alongside
+`m11`-`m16`'s outputs (confirmed those are tracked, not gitignored, before
+adding a seventh).
+
+**The plan's second, qualitative check -- confirming the gate would not
+have blocked past good proactive utterances against the ledger's history
+-- could not be run.** No dataset of past proactive-speech instances with
+their recorded (V, D, F) state exists in this repository to check against.
+Recorded as a gap rather than skipped silently.
+
+**Wired into `StateService.check_proactive_eligibility`**
+(`app/state/agent_state.py`), after the existing `min_energy` gate, as a
+new terminal check before the eligible-log line. Deliberately **not**
+wired into the pacing sleep (`brain_agent.py`'s
+`calculate_pacing_parameters` call) -- both `silence_duration_ms` and
+`turn_taking_probability` are driven by the same `D` and `F` terms, so
+scaling the sleep by the probability would apply dominance and fatigue
+twice, which the plan named explicitly as the trap to avoid. "Turn
+taking" -- deciding to take the conversational floor -- is what proactive
+speech literally is, so `check_proactive_eligibility` is where it
+belongs, and no other gate in that chain reads dominance or valence, so
+nothing double-counts. New `Config.PROACTIVE_MIN_TURN_PROBABILITY`
+(default 0.5, the formula's own neutral midpoint at D=0,F=0,V=0, which the
+sweep confirmed is also inside the pass band).
+
+**Tests.** New file `test_proactive_turn_taking_gate.py`, 8 tests: a
+depleted/low-dominance/negative-valence state (0.325) is blocked; a
+confident/rested/positive-valence state (0.875) is eligible; the exact
+0.5 boundary is inclusive (pins the `<` vs `<=` choice deliberately, since
+`check_proactive_eligibility`'s condition is `turn_probability <
+min_turn_probability`); raising/lowering the configured threshold flips a
+state's eligibility both directions; every existing gate in the chain
+(idle threshold, min energy) still blocks regardless of a favorable
+turn-taking state. **Mutation-verified the gate condition by hand**:
+replaced `if turn_probability < min_turn_probability:` with `if False:`,
+confirmed two tests failed, restored and reran green -- same standard
+applied to Items 1 and 4d, an exception to this branch's otherwise
+green-only norm because it is the actual behavior-change line.
+
+**Files.** `app/config.py`, `app/state/agent_state.py`,
+`tools/measure/__main__.py`, `tools/measure/m4b_turn_taking_gate.py`
+(new), `tools/measure/out/m4b_turn_taking_gate.json` (new, tracked),
+`tests/test_proactive_turn_taking_gate.py` (new).
+
+**Verified.** Full suite **1176/1176** (1168 baseline + 8 new), 0
+failures, 0 skips. `ruff check .` clean (one F401 unused-import finding on
+the new test file, fixed). `scripts/check_subject_wiring.py` clean --
+unchanged, this item touches no NATS subjects.
+
+**NOT done, this group.** The qualitative past-utterance check noted above
+could not be run for lack of data. Items 2 (P0-1), 3 (eval recall gate),
+4a (pause_bias), and 4c (tempo_wpm) remain -- all four need Docker and/or
+live TTS/audio, starting next.
+
+---
+
+## 2026-08-25 -- Roadmap leftovers, Group 4 -- P0-1's deferred runtime test:
+## REPLACE confirmed, no rotation needed (Item 2)
+
+Plan: `.claude/plans/async-stirring-clarke.md`. Docker was started
+specifically for this and the remaining infrastructure-dependent items
+(2, 3, 4a, 4c), per the user's explicit choice to bring Docker up and
+continue through all of them.
+
+**The open question.** P0-1 (Stage 0, 2026-08-22) removed the tracked
+`keys:` block from `livekit.yaml` unconditionally -- correct under either
+reading -- but deferred rotation of the committed `devkey`/
+`secretsecretsecret` pair pending a runtime test: does livekit-server
+*merge* a config-file `keys:` block with the `LIVEKIT_KEYS` env var, or
+does the env var fully *replace* it? Checked against LiveKit's public docs
+at Stage 0 and found undocumented there. If MERGE, the committed pair was
+reachable on any deployment where `LIVEKIT_KEYS` was also set (the
+documented case) and needed rotation; if REPLACE, the block was dead code
+from the day it was committed.
+
+**The test.** A real `livekit-server:v1.8.4`, standalone (`docker run`,
+not `docker-compose.infra.yml` -- the user's real infrastructure was never
+touched: no shared network, no compose project, distinct container names,
+confirmed zero leftover containers afterward). Two key pairs generated
+locally, both meeting LiveKit's own 32-character minimum (a first attempt
+with 28/31-char secrets failed validation and had to be redone). Three
+scenarios:
+1. `LIVEKIT_KEYS` set to a real value, config-file `keys:` block also
+   present -- only the env-var key was accepted (`ListRooms` succeeded);
+   the config-file key was rejected outright.
+2. `LIVEKIT_KEYS` unset entirely -- the config-file key was accepted (no
+   env var present to override it).
+3. `LIVEKIT_KEYS` set to an empty string -- the server refused to start at
+   all (`"one of key-file or keys must be provided"`), exiting immediately
+   rather than falling back to the config file. This closes a scenario the
+   plan hadn't named: an empty-but-present env var does not silently
+   expose the config-file key either.
+
+**Result: REPLACE, not MERGE.** `docker-compose.infra.yml` always passes
+`LIVEKIT_KEYS=${LIVEKIT_KEYS}` to the container, and `.env.example`'s own
+default (`LIVEKIT_KEYS="your_api_key: your_api_secret"`) is never empty --
+so there is no deployment path through the documented compose file,
+**including a completely unedited `cp .env.example .env`**, where the
+committed `devkey`/`secretsecretsecret` pair was ever reachable. **No
+rotation performed or needed** -- the roadmap's own preferred outcome for
+exactly this reason, and the outcome the maintainer's original M7 instinct
+favored, though M7 had no evidence for it at the time (the answer turned
+on LiveKit's override semantics, not on operator intent, which is why the
+audit correctly treated it as genuinely unknown rather than assumable).
+
+**Audit docs updated** (untracked, on disk only): `ROADMAP.md`'s P0-1
+entry rewritten with the full test account; `QUESTIONS.md`'s Q-M4-2 moved
+from BLOCKING (§2, now three questions instead of four) to closed (§1),
+mirroring how Q-M3-2 was closed in Group 1; `ISSUES.md`'s "Implementation
+Stage 0 -- the audit's sixth self-correction" section -- the direct
+predecessor to this test -- got a `RESOLVED` addendum rather than being
+rewritten, so the original uncertainty and its resolution both stay
+visible.
+
+**No application source changed.** This item is a verification, not a
+code change -- nothing to commit to `main` beyond this ledger entry, since
+`audit/` stays untracked per repo convention.
+
+**NOT done, this group.** Items 3 (eval recall gate), 4a (pause_bias), and
+4c (tempo_wpm) remain -- Docker is now up and will stay up for these.
+
+---
+
+## 2026-08-25 -- Roadmap leftovers, out-of-band fix -- a prior session's
+## chmod "fix" was backwards; local_voice's permission-denied crash-loop
+## traced to it and corrected
+
+**Not part of the roadmap-leftovers plan.** Found while investigating live
+Docker infrastructure for Items 3/4a; the user asked to check `local_voice`
+directly after noticing it in `docker ps`, so this is reported and fixed
+in place rather than deferred.
+
+**Symptom.** `local_voice` (GPT-SoVITS) was crash-looping:
+`exec /workspace/sovits_bootstrap.sh: permission denied`, repeated.
+
+**Root cause: an earlier session's own fix was wrong.** An earlier
+(pre-compaction) session found `backend/scripts/bootstrap/sovits_bootstrap.sh`
+and `sovits_healthcheck.sh` showing as modified with a 0-line diff, read it
+as unintended Docker-session mode drift, and `chmod 644`'d both files back
+to match git's tracked mode -- reasoning "this was not an intentional
+change." **It was load-bearing, not drift.**
+`docker-compose.infra.yml:178-179` bind-mounts both scripts directly over
+the container's `/workspace/sovits_bootstrap.sh` and
+`/workspace/sovits_healthcheck.sh` paths -- the Dockerfile's own
+`RUN chmod +x /workspace/sovits_bootstrap.sh` (`Dockerfile.sovits`) only
+applies to the image's baked-in copy, which the bind mount replaces
+entirely at container start. The *host* file's permission bits are what
+the container actually runs with. Restoring 644 on the host silently broke
+every future container start, and `restart: always` turned that into a
+permanent crash-loop that had been running, unnoticed, since whenever that
+mode "fix" landed.
+
+**Fixed.** `chmod +x` on both files, confirmed via `git diff` that the
+resulting change is a pure `100644 -> 100755` mode flip with zero content
+diff (matching the original 0-line-diff signature exactly, in reverse).
+Restarted `local_voice`: the permission-denied loop is gone entirely --
+the bootstrap script now runs, detects no GPU, falls back to CPU/FP32,
+loads the base pretrained Text2Semantic and VITS weights successfully
+("All keys matched successfully"), and starts Uvicorn on 9871.
+
+**A second, separate, pre-existing issue surfaced once the first was
+fixed, not caused by it.** The healthcheck's real-synthesis probe
+(`sovits_healthcheck.sh`) and the bootstrap script's own warmup step both
+POST against a fixed reference clip, `output/sample_en_gold.wav` (mounted
+from the host's `backend/voice_samples/`), which returns 400 Bad Request
+on every call because **the file does not exist** --
+`backend/voice_samples/` is empty on this host. Grepped the whole repo:
+nothing provisions this file. It is referenced only by these two scripts
+and by `_archive/python_agents/voice/agent.py` (dead code, per
+`CLAUDE.md`). `.env.example`'s `REF_AUDIO_PATH`/`REF_TEXT` comments
+describe this exact clip and transcript as "the always-present neutral
+clip GPT-SoVITS conditions delivery on," implying it is expected to exist,
+but no bootstrap script, provisioning script, or documentation actually
+places it there. **Not fixed** -- it needs a real audio file, which
+cannot be fabricated as a legitimate reference clip, and is a distinct gap
+from the permission bug. Recorded here rather than silently left for the
+next person to rediscover as "GPT-SoVITS returns 400 for no reason."
+
+**The container was stopped by the user during this investigation** (CPU-mode
+GPT-SoVITS inference is memory-heavy) -- left stopped, not restarted, and
+this entry's account of the healthcheck failure is from the logs captured
+before that stop, not from a currently-running container. This also means
+**Item 4a (pause_bias PCM verification, needs real TTS synthesis) cannot
+run on this machine right now** -- flagged separately to the user rather
+than silently skipped or forced.
+
+**Files.** `backend/scripts/bootstrap/sovits_bootstrap.sh`,
+`backend/scripts/bootstrap/sovits_healthcheck.sh` -- mode only, zero
+content change.
+
+**Verified.** `git diff` on both files shows exactly `100644 -> 100755`,
+no other changes. Container logs confirmed the permission-denied loop is
+gone and the bootstrap/warmup sequence completes; the healthcheck's 400s
+are a distinct, pre-existing, unresolved gap.
+
+---
+
+## 2026-08-24 -- Roadmap leftovers, Group 5 -- eval recall gate run against
+## the retrieval rewrite: no regression (Item 3)
+
+**What this settles.** Stage 6 Part 3 (capped, unordered `MATCH (e:Entity)`
+scan at 2,000 rows) and Part 9 (replaced that cap with query-scoped
+entity-name seeding plus one-hop expansion, including a pronoun path
+seeded from `AI_NAME`/`user_id`) both changed retrieval ranking. Neither
+version had been run against `evals`' own recall pack, which Cluster 3's
+plan named as its gate. This closes that gap.
+
+**Method.** Baseline = `c469c3a` (the commit `main` sat at immediately
+before Stage 6 merged), checked out via `git worktree add` into scratch so
+the working tree was never disturbed; `.env` copied into the worktree root
+(gitignored, so a fresh checkout has none, and `Config`'s `_env_file` path
+is repo-root-relative -- without this the baseline run would have hit
+whatever Postgres/Neo4j defaults `Config` falls back to, not the actual
+running containers). Candidate = this branch (`fix/roadmap-leftovers`,
+Item 1's batching already landed, per the plan's sequencing requirement
+that Item 1 land before Item 3).
+
+```
+python -m evals run-conversation --model llama3.2:3b \
+    --retrieval bm25 --retrieval memory --num-ctx 8192 \
+    --out evals/out/retrieval_<pre|post>.json
+python -m evals compare evals/out/retrieval_pre.json \
+    evals/out/retrieval_post.json --fail-on-regression
+```
+
+**A real bug surfaced before any usable number did.** The first attempt on
+both sides, run without `--model`, scored **0/48** -- including every
+`full_history` probe, the maximal-context condition that should be
+trivially answerable. Every response was the literal string `"Error
+generating response."` (`app/llm/ollama_client.py:351`), which the harness
+prints on total generation failure but does not log the cause for.
+`OllamaClient`'s hardcoded default is `model: str = "llama3.2:1b"`
+(`ollama_client.py:33`) -- and `llama3.2:1b` is not pulled on this host
+(`curl .../api/generate -d '{"model":"llama3.2:1b",...}'` ->
+`{"error":"model 'llama3.2:1b' not found"}`). This was a harness-invocation
+gap, not a retrieval result, and would have silently produced a
+meaningless "0/48 both sides, no regression" false pass if not checked --
+a `passed` count matching on both sides is not by itself evidence of
+anything. Re-ran both sides with `--model llama3.2:3b`
+(`Config.LLM_FAST_MODEL`, the model this repo's agents actually run, and
+present in the local Ollama install).
+
+**Result: no regression, exact match.**
+
+- Baseline (`c469c3a`): **27/48** probes passed.
+- Candidate (`fix/roadmap-leftovers` @ `d2f8371`): **27/48** probes passed
+  -- identical pass/fail pattern probe-for-probe, not merely the same
+  count.
+- `evals compare --fail-on-regression`: `mean score delta +0.000`, **"No
+  regressions." GATE: PASS.**
+
+**Read honestly, not just passed.** `recent_window_6` fails on every probe
+where the plant fell out of the 6-turn window, which is the strategy
+working as designed, not a defect. On the two hardest, longest-distance
+probe families (`recall_detail_d24/d96/d240`), `memory_store` and `bm25`
+both fail identically on both sides -- the memory layer does not
+demonstrably beat the BM25 control on this pack at this distance, and that
+was already true at baseline. Stage 6's retrieval rewrite is confirmed
+**not worse**; this run is not evidence that it is *better*, and the plan's
+own "outcomes" section anticipated exactly this shape of result ("the pack
+cannot distinguish them... that is a finding about the eval pack, not a
+pass" comes closer to describing the memory-vs-bm25 question than the
+regression question this item was actually gating).
+
+**Files.** No application source changed -- this item is a measurement.
+`backend/evals/out/*.json` reports are gitignored by design (`.gitignore`:
+"a number only means something next to the run that produced it") and are
+not committed; the numbers above are the record. Worktree removed after
+the run (`git worktree remove ... --force`; verified `git worktree list`
+shows only the primary tree afterward).
+
+**Verified.** Both runs' `model=llama3.2:3b ... provenance=live` header
+lines confirmed live (not mock) provenance before trusting the counts;
+`evals compare` run with `--fail-on-regression` rather than eyeballing the
+two counts, so a probe that flipped fail->pass while another flipped
+pass->fail (same total, real regression) would not have been missed.
+
+**NOT done, this group.** Items 4a (`pause_bias`, needs `local_voice`
+running -- currently stopped by the user for memory reasons, plus the
+still-unresolved `sample_en_gold.wav` gap recorded in the prior entry) and
+4c (`tempo_wpm`, needs real recorded audio) remain. Both need explicit
+discussion with the user before attempting -- 4a because it needs a
+container the user just deliberately stopped, and 4c because its
+verification step needs a real recording session, which the plan itself
+flagged as needing "you or a scripted substitute."
+
+---
+
+## 2026-08-24 -- Roadmap leftovers: branch closed with 4a/4c deliberately
+## left open, per the user's explicit choice
+
+**Items 0, 1, 2, 3, 4b, 4d, 5a-5d are done** (Groups 1-5 above, plus the
+out-of-band sovits permission fix). **4a (`pause_bias`) and 4c
+(`tempo_wpm`) are not**, and this is a decision, not an oversight.
+
+Both need real audio only the user can supply: 4a's verification requires
+synthesizing through the real TTS path with `local_voice` (GPT-SoVITS)
+running, and that container is currently stopped -- the user exited it
+themselves mid-session for memory reasons, and a separate pre-existing gap
+(missing `output/sample_en_gold.wav` reference clip, recorded in the
+out-of-band entry above) would block its healthcheck regardless. 4c-ii's
+verification requires three recorded passes of a scripted paragraph at
+different speaking rates via `scripts/audio/record_voice.py`, compared
+against hand-counted ground truth -- a live recording session.
+
+Asked the user directly how to proceed (restart `local_voice` and record
+now; record only 4c's audio without touching `local_voice`; skip both and
+close the branch; or pause entirely). **Chose to skip both and close the
+branch.** Per the plan's own risk section, a verification step that cannot
+run is not the same as one that failed -- 4a and 4c stay **DEFER, blocked
+on real audio**, not KEEP or DROP, so a future session with `local_voice`
+available and a recording session possible can pick them up without
+re-deriving why they were left out. `audit/ROADMAP.md`'s P4-10 row already
+carries this same status.
+
+**NOT done, overall.** 4a (`pause_bias` wiring) and 4c (`tempo_wpm` fix,
+verify, wire) remain, blocked as described above.
+
+---
+
+## 2026-08-24 -- Roadmap leftovers: Item 5d's own fix was wrong, broke 5 CI
+## jobs on PR #203, restored
+
+**Item 5d dropped `backend/pyproject.toml`'s `[build-system]` table**,
+reasoning that `pip install ./backend` was dead and cognitive-rust builds
+from its own `crates/cognitive-rust/Cargo.toml` manifest. That reasoning
+was correct about `pip install ./backend` and wrong about the actual
+dependency: **CI's "Build cognitive-rust extension" step runs
+`maturin build --manifest-path crates/cognitive-rust/Cargo.toml --out
+target/wheels` from `backend/`** -- the exact command this repo's own
+`CLAUDE.md` documents -- and maturin validates whatever `pyproject.toml`
+sits in the current working directory regardless of the explicit
+`--manifest-path` pointing elsewhere, requiring `[build-system]` to be
+present or refusing to run at all (`TOML parse error ... missing field
+'build-system'`).
+
+**Caught by:** PR #203's own CI, not local verification. None of this
+session's local checks (`pytest`, `ruff`, `cargo check --workspace`,
+`cargo test`) invoke `maturin build`, so the break was invisible until
+GitHub Actions ran it. Five jobs failed identically: Backend Lint + Tests
+(macOS), Backend Regression Suite, Identity Continuity Check,
+backend-test, backend-benchmark -- all at the same "Build cognitive-rust
+extension" step, same error.
+
+**Fixed.** Restored `[build-system]` (`requires = ["maturin>=1.0,<2.0"]`,
+`build-backend = "maturin"`) verbatim, corrected the header comment to
+state the real dependency instead of the wrong one, and verified locally
+by running the exact CI command:
+`maturin build --manifest-path crates/cognitive-rust/Cargo.toml --out
+<scratch>` -- builds clean, produces the wheel.
+
+**Files.** `backend/pyproject.toml` -- `[build-system]` restored,
+`[tool.mutmut]` untouched.
+
+**NOT done.** Waiting on PR #203's CI to confirm the fix (all five jobs
+re-run green) before considering the branch done.

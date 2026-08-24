@@ -1351,11 +1351,44 @@ class StateService:
             )
             return False
 
+        # Roadmap leftovers Item 4b (M3-D2): turn_taking_probability was
+        # computed by calculate_pacing_parameters and read by no caller.
+        # "Turn taking" -- deciding to take the conversational floor -- is
+        # what proactive speech literally is, so this is where it belongs,
+        # NOT scaling the pacing sleep above: silence_duration_ms and
+        # turn_taking_probability are both driven by the same dominance and
+        # fatigue terms, so applying the probability there would apply D and
+        # F twice. No other gate here reads dominance or valence, so this
+        # does not double-count anything. Verified before wiring
+        # (tools/measure/m4b_turn_taking_gate.py): at the default 0.5
+        # threshold the gate blocks 16.9% of the (valence, dominance,
+        # fatigue) states the persona schema and live-state clamp actually
+        # permit -- inside the plan's [15%, 50%] "meaningful minority" pass
+        # band, so this is a real discriminator, not decoration.
+        turn_probability = (
+            0.5
+            + 0.3 * self.current_state.dominance
+            - 0.1 * self.current_state.fatigue
+            + 0.2 * self.current_state.valence
+        )
+        min_turn_probability = getattr(
+            Config, "PROACTIVE_MIN_TURN_PROBABILITY", 0.5
+        )
+        if turn_probability < min_turn_probability:
+            logger.debug(
+                "[State] Proactive SKIPPED: turn_taking_probability %.2f < min %.2f",
+                turn_probability,
+                min_turn_probability,
+            )
+            return False
+
         logger.info(
-            "[State] Proactive ELIGIBLE: idle=%.0fs threshold=%.0fs energy=%.2f",
+            "[State] Proactive ELIGIBLE: idle=%.0fs threshold=%.0fs energy=%.2f "
+            "turn_taking_probability=%.2f",
             idle_duration,
             threshold,
             self.current_state.energy,
+            turn_probability,
         )
         return True
 

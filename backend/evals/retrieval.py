@@ -203,9 +203,31 @@ class MemoryStoreRetriever:
         self._room = f"probe_{fingerprint}"
         self._by_content = {}
 
+        # P4-12 (roadmap leftovers Item 1): one batched embedding call for the
+        # whole transcript instead of one per turn -- indexing a probe writes
+        # every turn in one shot, exactly the loop-that-embeds shape this item
+        # targets. Defensive against a get_embeddings that doesn't honor the
+        # order/length contract (a test double's MagicMock, or a future
+        # implementation): falls back to per-turn internal embedding via
+        # add_memory rather than misaligning vectors to turns.
+        turns_list = list(turns)
+        embeddings = [None] * len(turns_list)
+        get_embeddings = getattr(self.store, "get_embeddings", None)
+        if callable(get_embeddings):
+            try:
+                candidate = await get_embeddings([t.text for t in turns_list])
+                if isinstance(candidate, list) and len(candidate) == len(turns_list):
+                    embeddings = candidate
+            except Exception as exc:
+                logger.warning(
+                    "[eval] Batched embedding fetch failed (%s); falling back "
+                    "to per-turn embedding.",
+                    exc,
+                )
+
         written = 0
         failed = 0
-        for turn in turns:
+        for turn, embedding in zip(turns_list, embeddings, strict=True):
             content = turn.text
             self._by_content.setdefault(content, turn)
             try:
@@ -214,6 +236,7 @@ class MemoryStoreRetriever:
                     wing=self.wing,
                     room=self._room,
                     source="eval",
+                    embedding=embedding,
                 )
             except Exception as exc:
                 failed += 1

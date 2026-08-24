@@ -355,8 +355,31 @@ async def seed_biography(
 
     logger.info("[Biography] Seeding %d new passage(s) into memory.", len(pending))
 
+    # P4-12 (roadmap leftovers Item 1): one boot-time embedding call for all
+    # pending passages instead of one per passage. get_embeddings() is
+    # order-preserving and length-preserving even on partial failure, so a
+    # None here just means add_memory falls back to its own internal fetch
+    # for that one passage rather than the whole batch degrading. The length
+    # check below is defensive against a test double or future memory_store
+    # implementation whose get_embeddings doesn't honor that contract --
+    # falling back to per-item internal embedding rather than misaligning
+    # embeddings to passages if it doesn't.
+    embeddings = [None] * len(pending)
+    get_embeddings = getattr(memory_store, "get_embeddings", None)
+    if callable(get_embeddings):
+        try:
+            candidate = await get_embeddings([entry.memory_text for entry in pending])
+            if isinstance(candidate, list) and len(candidate) == len(pending):
+                embeddings = candidate
+        except Exception as exc:
+            logger.warning(
+                "[Biography] Batched embedding fetch failed (%s); falling back "
+                "to per-passage embedding.",
+                exc,
+            )
+
     stored: list[str] = []
-    for entry in pending:
+    for entry, embedding in zip(pending, embeddings, strict=True):
         try:
             await memory_store.add_memory(
                 content=entry.memory_text,
@@ -368,6 +391,7 @@ async def seed_biography(
                     "biography_heading": entry.heading,
                     "biography_fingerprint": entry.fingerprint,
                 },
+                embedding=embedding,
             )
         except Exception as exc:
             logger.error(

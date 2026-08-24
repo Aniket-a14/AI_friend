@@ -984,27 +984,6 @@ fn build_speculative_intent(text: &str, utterance_id: &str) -> Option<Speculativ
     })
 }
 
-#[allow(dead_code)]
-fn build_audio_perception(text: &str, speculative: &SpeculativeIntent) -> AudioPerception {
-    let mut metadata = JsonMap::new();
-    metadata.insert("text".to_string(), json!(text));
-    metadata.insert("confidence".to_string(), json!(speculative.confidence));
-
-    AudioPerception {
-        text: text.to_string(),
-        intent: Some(speculative.name.clone()),
-        intent_type: "COMMAND".to_string(),
-        keywords: speculative.keywords.clone(),
-        confidence: speculative.confidence,
-        snr: 0.0,
-        paralinguistic_events: Vec::new(),
-        speculative_intent: Some(speculative.clone()),
-        metadata,
-        timestamp: speculative.timestamp,
-        utterance_id: speculative.utterance_id.clone(),
-    }
-}
-
 fn now_seconds() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1169,14 +1148,34 @@ mod tests {
 
     #[test]
     fn speculative_stop_shape_matches_current_contract() {
-        let spec = build_speculative_intent("stop now", "utt-1").unwrap();
-        let perception = build_audio_perception("stop now", &spec);
+        // Roadmap leftovers Item 4d (M3-D3): this test used to build its
+        // fixture through `build_audio_perception`, a `#[allow(dead_code)]`
+        // function called only from this test -- no production code path ever
+        // ran it. It asserted `intent_type == "COMMAND"`, while the function
+        // every real publish path actually calls, `build_partial_perception`,
+        // hardcodes `intent_type: "CONVERSATIONAL".to_string()` unconditionally
+        // (see its struct literal above). A test named for "the current
+        // contract" was validating a contract nothing on the wire produced,
+        // and asserting a field value the real producer contradicts -- it
+        // would keep passing if the live contract broke. Now built through the
+        // real producer, matching `publish_partial`'s own call.
+        let heard = sensevoice::Perception {
+            text: "stop now".to_string(),
+            emotion: None,
+            emotional_bias: None,
+            events: Vec::new(),
+        };
+        let (perception, speculative) = build_partial_perception(&heard, "utt-1");
 
         assert_eq!(perception.intent.as_deref(), Some("SPECULATIVE_STOP"));
-        assert_eq!(perception.intent_type, "COMMAND");
+        assert_eq!(perception.intent_type, "CONVERSATIONAL");
         assert_eq!(perception.keywords, vec!["stop"]);
         assert_eq!(
-            perception.speculative_intent.unwrap().utterance_id.as_deref(),
+            perception.speculative_intent.as_ref().unwrap().utterance_id.as_deref(),
+            Some("utt-1")
+        );
+        assert_eq!(
+            speculative.unwrap().utterance_id.as_deref(),
             Some("utt-1")
         );
     }
