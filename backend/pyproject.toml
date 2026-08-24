@@ -1,18 +1,55 @@
-[build-system]
-requires = ["maturin>=1.0,<2.0"]
-build-backend = "maturin"
+# Roadmap leftovers Item 5d: this file previously declared a maturin
+# [build-system] at a path with no Rust project of its own -- cognitive-rust
+# has its own manifest under crates/cognitive-rust/Cargo.toml, and this
+# pyproject.toml exists only to hold [tool.mutmut] below. `pip install
+# ./backend` was never exercised by anything in this repo's CI (confirmed
+# 2026-08-25), so the [build-system] table was dead rather than actively
+# broken -- but a `pip install ./backend` attempted by anyone, now or later,
+# would fail where it previously did nothing meaningful. Dropped; mutmut
+# reads [tool.mutmut] regardless of whether a build backend is declared.
 
 [tool.mutmut]
 # Stage 6 targeted mutation gate. Keep the first enforced scope explicit so a
 # new production module cannot silently enter a very expensive mutation run.
+#
+# Roadmap leftovers Item 5c (2026-08-25): widened past the original three
+# files to cover the two areas Stage 6 changed the most behaviour in and
+# where a wrong test would be most costly -- base.py's ack/dead-letter
+# semantics (P3-5, Stage 6 Part 1) and memory_store.py's retrieval entry
+# points (L1 cache quantization / search-failure visibility / the
+# off-the-loop Qdrant upsert, Stage 6 Part 3; the query-scoped graph fetch,
+# Stage 6 Part 9). `mutate_only_covered_lines = true` is what keeps
+# memory_store.py -- ~2,600 lines -- bounded to what the selected retrieval
+# tests actually exercise, rather than mutating the whole file. Still
+# warn-only: a hard gate on a file this size would produce survivors that
+# block unrelated work, which is why this file's own header says "report,
+# not enforcement."
 source_paths = ["app/"]
 only_mutate = [
     "app/state/lexicon_store.py",
     "app/vision/appraisal.py",
     "app/vision/agent.py",
+    "app/agents/base.py",
+    "app/state/memory_store.py",
 ]
 mutate_only_covered_lines = true
 pytest_add_cli_args_test_selection = [
+    "tests/test_base_agent_mesh_semantics.py::test_media_subject_is_not_discarded_on_first_failure",
+    "tests/test_base_agent_mesh_semantics.py::test_media_subject_dead_letters_after_its_own_bound",
+    "tests/test_base_agent_mesh_semantics.py::test_media_tier_bound_is_smaller_than_conversational_tier",
+    "tests/test_base_agent_mesh_semantics.py::test_publish_propagates_jetstream_failure_when_fallback_disallowed",
+    "tests/test_base_agent_mesh_semantics.py::test_binary_publish_propagates_jetstream_failure_when_fallback_disallowed",
+    "tests/test_base_agent_mesh_semantics.py::test_publish_default_still_falls_back_to_core_nats",
+    "tests/test_base_agent_mesh_semantics.py::test_cache_sync_autosubscribe_uses_deliver_policy_new",
+    "tests/test_base_agent_mesh_semantics.py::test_spawn_retains_a_strong_reference_until_the_task_completes",
+    "tests/test_generic_memory.py::test_entity_and_relation_fetches_are_query_scoped",
+    "tests/test_l1_cache.py::TestL1AffectQuantization::test_quantize_rounds_to_the_nearest_bucket",
+    "tests/test_l1_cache.py::TestL1AffectQuantization::test_near_identical_affect_hits_the_same_cache_entry",
+    "tests/test_l1_cache.py::TestL1AffectQuantization::test_affect_outside_the_bucket_is_a_genuine_cache_miss",
+    "tests/test_l1_cache.py::TestSearchFailureVisibility::test_failure_is_recorded_alongside_the_empty_return",
+    "tests/test_l1_cache.py::TestSearchFailureVisibility::test_empty_embedding_is_recorded_as_a_failure",
+    "tests/test_l1_cache.py::TestSearchFailureVisibility::test_a_later_successful_search_clears_the_stale_failure",
+    "tests/test_l1_cache.py::TestAddMemoryQdrantUpsertOffTheLoop::test_a_slow_qdrant_upsert_does_not_block_the_loop",
     "tests/test_mental_lexicon.py::TestInnateSeed::test_seed_present_and_expands_after_refresh",
     "tests/test_mental_lexicon.py::TestInnateSeed::test_seed_runs_only_once",
     "tests/test_mental_lexicon.py::TestLearning::test_learn_upserts_vocab_and_increments_times_seen",

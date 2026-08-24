@@ -5,9 +5,16 @@ on:
     paths:
       - "backend/app/state/lexicon_store.py"
       - "backend/app/vision/**"
+      # Roadmap leftovers Item 5c: scope widened to base.py's ack/dead-letter
+      # semantics and memory_store.py's retrieval entry points.
+      - "backend/app/agents/base.py"
+      - "backend/app/state/memory_store.py"
       - "backend/tests/test_mental_lexicon.py"
       - "backend/tests/test_vision.py"
       - "backend/tests/test_performance.py"
+      - "backend/tests/test_base_agent_mesh_semantics.py"
+      - "backend/tests/test_generic_memory.py"
+      - "backend/tests/test_l1_cache.py"
       - "backend/pyproject.toml"
       - "backend/requirements-dev.txt"
       - ".github/workflows/mutation.yml"
@@ -48,6 +55,11 @@ jobs:
             tests/test_vision.py::TestVisionAgent::test_face_cascade_is_built_once_not_per_call \
             tests/test_vision.py::TestVisionAgent::test_distance_uses_calibrated_focal_length_formula \
             tests/test_vision.py::TestVisionAgent::test_run_appraisal_offloads_distance_calc_off_the_event_loop \
+            tests/test_base_agent_mesh_semantics.py \
+            tests/test_generic_memory.py::test_entity_and_relation_fetches_are_query_scoped \
+            tests/test_l1_cache.py::TestL1AffectQuantization \
+            tests/test_l1_cache.py::TestSearchFailureVisibility \
+            tests/test_l1_cache.py::TestAddMemoryQdrantUpsertOffTheLoop \
             --benchmark-disable
       - name: Run targeted mutation suite
         run: |

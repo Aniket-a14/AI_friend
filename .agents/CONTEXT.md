@@ -8969,7 +8969,7 @@ touched, per Stage 5's own instruction not to fix them blind:**
 `app/state/identity_core_store.py`, `app/utils/background_tasks.py` (new),
 `scripts/check_subject_wiring.py`.
 
-**Verified.** Full suite passed, `ruff check .`
+**Verified.** Full suite **1071/1071** (1055 baseline + 16 new), `ruff check .`
 clean, `cargo check --workspace` clean (Rust untouched this part),
 `scripts/check_subject_wiring.py` reports every subject wired or explicitly
 allowlisted. All 16 new tests mutation-tested: P3-5's dead-letter bound
@@ -9082,7 +9082,7 @@ they were.
 `app/agents/surfacing_agent.py`, `tests/test_performance.py`,
 `tests/test_subject_metrics_wiring.py` (new).
 
-**Verified.** Full suite passed, `ruff check .`
+**Verified.** Full suite **1076/1076** (1071 baseline + 5 new), `ruff check .`
 clean, `cargo check --workspace` clean (Rust untouched this part),
 `scripts/check_subject_wiring.py` unchanged/clean. The 5 new wiring tests and
 all 8 rewritten benchmarks were mutation-tested (production function
@@ -9200,7 +9200,7 @@ and keeps costing both bounded fetches something for contributing nothing.
 `app/rate_limit.py`, `app/state/graph_db.py`, `app/cognitive/learning.py`,
 plus test files for each.
 
-**Verified.** Full suite passed, `ruff check .` clean, `cargo check
+**Verified.** Full suite **1089/1089**, `ruff check .` clean, `cargo check
 --workspace` clean (Rust untouched this part), `scripts/check_subject_wiring.py`
 unchanged/clean. New tests were written but **not mutation-tested** in this
 part -- the user paused that discipline mid-Cluster-3 ("no need to do any
@@ -9302,7 +9302,7 @@ helper instead of arbitrary strings -- the behavior they test (habituation
 firing/advancing on a real repeated/quiet frame) is unchanged, only the
 stand-in frame data changed.
 
-**Verified.** Full suite passed, `ruff check .` clean, `cargo check
+**Verified.** Full suite **1094/1094**, `ruff check .` clean, `cargo check
 --workspace` clean (no Rust touched), `scripts/check_subject_wiring.py`
 clean (no subjects touched, confirmed no new allowlist entries needed). New
 tests were **not mutation-tested**, per the standing instruction from
@@ -9409,7 +9409,7 @@ three-signal gate's four failure/success combinations on
 `SubconsciousAgent._on_vision_description`; the missing-`is_novel`-defaults-
 to-stored case; unconditional pruning inside the consolidation pass).
 
-**Verified.** Full suite passed, `ruff check .` clean, `cargo check
+**Verified.** Full suite **1106/1106**, `ruff check .` clean, `cargo check
 --workspace` clean (no Rust touched), `scripts/check_subject_wiring.py`
 clean -- `vision.description` is now both published and subscribed with no
 new allowlist entry needed. New tests were **not mutation-tested**, per the
@@ -9582,7 +9582,7 @@ fallback), 4 new in `voice-agent` (`ProsodyTrajectory` lookup/drift/
 past-span/empty), 5 new hesitation tests + 1 vocalization-fallback test, 2
 new `build_latency_metadata` pass-through tests.
 
-**Verified.** Full Python suite passed, `ruff check .` clean,
+**Verified.** Full Python suite **1126/1126**, `ruff check .` clean,
 `scripts/check_subject_wiring.py` clean -- `audio.playback.progress`'s
 allowlist entry ("subscribed but never published") is gone, the wiring
 script confirms it is now genuinely both. `cargo check --workspace` clean.
@@ -9590,7 +9590,7 @@ script confirms it is now genuinely both. `cargo check --workspace` clean.
 passed (voice-agent's count includes stt-agent's and contracts'
 own suites are reported separately; contracts' round-trip fixture updated
 to include the new `metadata` field, since it now always serializes).
-`cargo test --package cognitive-rust --lib`: passed, untouched. New tests
+`cargo test --package cognitive-rust --lib`: 11/11, untouched. New tests
 were **not mutation-tested**, per the standing instruction: written and
 verified green-only, but P3-10's resampler-equivalence test and P4-2's
 `_char_offset_after_word` exact-boundary tests were specifically designed
@@ -9711,11 +9711,11 @@ against a real spawned `nats-server`), `backend/tests/test_nats_credential_loadi
 `nats-server`, 1 skip-gracefully-without-plain-NATS), and 6 new tests in
 `whisper.rs` (checksum-lookup and hashing behavior).
 
-**Verified.** Full Python suite passed, `ruff check .` clean,
+**Verified.** Full Python suite **1137/1137**, `ruff check .` clean,
 `scripts/check_subject_wiring.py` clean (no subjects touched).
 `cargo check --workspace` clean. `cargo test --package stt-agent --package
-voice-agent --package contracts` passed.
-`cargo test --package cognitive-rust --lib` passed, untouched.
+voice-agent --package contracts`: 47 + 50 + 6 passed.
+`cargo test --package cognitive-rust --lib`: 11/11, untouched.
 `pip install --dry-run -r requirements-ai.txt` resolves cleanly. New tests
 were **not mutation-tested**, per the standing instruction, but the accounts-
 enforcement tests are themselves closer to that spirit than most: they run
@@ -9931,7 +9931,7 @@ conclusively identified rather than guessing and calling it done.
 `backend/tests/test_agent_shutdown_consistency.py` (10 tests covering every
 `stop()` change above).
 
-**Verified.** Full suite passed, `ruff check .` clean,
+**Verified.** Full suite **1147/1147**, `ruff check .` clean,
 `scripts/check_subject_wiring.py` clean, `cargo check --workspace` clean
 (all four crates now report `v7.0.0`). `docker compose ... config --quiet`
 clean on the modified compose files. P3-3's fix was verified against real,
@@ -10080,17 +10080,141 @@ voice-agent --package contracts`: 47 + 50 + 6 passed.
 on GitHub, including Persona Guard, Credential Leak Prevention, the five
 agent image builds, both compose validations, and the new mutation report.
 
-**NOT done.** The earlier entries' per-part test counts were removed during
-review (Parts 1-8 now read "Full suite passed" instead of a number); the
-counts are still recoverable from each commit, but the ledger no longer
-carries them, which is a loss of exactly the provenance this file exists
-for. Mutation coverage is three files with a warn-only gate, not the
-branch-wide discipline `CLAUDE.md` describes. The query-scoped graph
+**NOT done, as of this entry.** The earlier entries' per-part test counts were
+removed during review (Parts 1-8 read "Full suite passed" instead of a
+number) -- **restored 2026-08-25, roadmap-leftovers Item 5b**, from the
+pre-review commit (`2823c2a`), verbatim: 1071/1071, 1076/1076, 1089/1089,
+1094/1094, 1106/1106, 1126/1126 (+ Rust 47+6), 1137/1137 (+ Rust 47+50+6),
+1147/1147. Mutation coverage is three files with a warn-only gate, not the
+branch-wide discipline `CLAUDE.md` describes -- **widened 2026-08-25, Item
+5c**, see that entry. The query-scoped graph
 retrieval above was **not** run against the `evals` recall pack -- Part 3's
-own gate -- so its ranking effect is argued and unit-tested, not measured.
-P4-10's "test that pins dead code" sub-item remains unidentified.
+own gate -- so its ranking effect is argued and unit-tested, not measured
+-- **addressed 2026-08-25, Item 3**, see that entry.
+P4-10's "test that pins dead code" sub-item remains unidentified --
+**identified and fixed 2026-08-25, Item 4d**: it is M3-D3,
+`speculative_stop_shape_matches_current_contract` in `stt-agent/src/main.rs`.
 `backend/pyproject.toml` declares a `maturin` build backend at a path with
 no Rust project of its own (`cognitive-rust` has its own manifest), so
 `pip install ./backend` would now fail where it previously did nothing
 meaningful -- harmless for every documented workflow, but not intentional
 design.
+
+---
+
+## 2026-08-25 -- Roadmap leftovers, Group 1 -- audit correction (Item 0),
+## the dead-code test identified and fixed (Item 4d), documentation and
+## process debt (Item 5)
+
+Plan: `.claude/plans/async-stirring-clarke.md`. First landed group of the
+post-Stage-6 leftovers plan, approved via plan mode after refreshing
+`audit/` to Stage 6. Covers Items 0, 4d, 5a, 5b, 5c, 5d -- the parts with no
+code-behavior risk, landed first per the plan's sequencing.
+
+**Item 0 -- corrected a false claim I introduced into six audit documents.**
+While refreshing `audit/` to Stage 6 (2026-08-24), I claimed measurements
+1.2 (consolidation wall-clock vs AckWait) and 1.3 (`AI_AUDIO` growth over a
+real session) "were never run" -- derived from grepping this ledger for
+those two strings and finding nothing, without checking
+`backend/tools/measure/out/`, where both live. Both were run live on
+2026-08-22: `m12_consolidation.json` shows 7.48s idle / 10.08s under real
+VLM contention against a 30s control-tier AckWait (`p1_1_worked: yes`);
+`m13_audio_growth.json` shows `AI_AUDIO`'s measured wire rate at
+68,571 B/s, roughly half the ~130 KB/s ESTIMATE P1-2's sizing used --
+meaning more headroom than assumed, not less. **All six Stage-3
+measurements are complete.** Fixed in `audit/ROADMAP.md` §7,
+`audit/AUDIT_PROGRESS.md`, `audit/PERFORMANCE.md`, `audit/HARDWARE.md`,
+`audit/EXECUTIVE_REPORT.md`, `audit/HANDOFF.md` -- each got a dated
+correction paragraph rather than a silent edit, so the error and its fix
+are both visible. `audit/` stays untracked per repo convention; these edits
+exist on disk, not in this commit.
+
+**Item 4d -- identified and fixed the "test pinning dead code" P4-10
+sub-item Stage 6 Part 8 searched for and could not find.** It is M3-D3 in
+`audit/ISSUES.md`, missed at Part 8 because that search grepped test files
+for "dead code"/"deprecated" rather than reading the finding itself.
+`speculative_stop_shape_matches_current_contract`
+(`crates/stt-agent/src/main.rs`) built its fixture through
+`build_audio_perception`, a `#[allow(dead_code)]` function called only from
+this one test -- no production path ever ran it -- and asserted
+`intent_type == "COMMAND"`, while the function every real publish path
+actually calls, `build_partial_perception`, hardcodes
+`intent_type: "CONVERSATIONAL"` unconditionally. The test would keep
+passing if the live contract broke. Rewritten to build its fixture through
+`build_partial_perception` (the real producer `publish_partial` calls) and
+assert the real `"CONVERSATIONAL"` value; `build_audio_perception` deleted.
+**Confirmed the corrected test actually discriminates before committing**:
+temporarily reverted the assertion to the old `"COMMAND"` expectation and
+reran -- it failed with a clear left/right mismatch, then was restored and
+reran green. `cargo test --package stt-agent`: 47/47.
+
+**Item 5a -- closed Q-M3-2 in `audit/QUESTIONS.md`, moved BLOCKING (5) to
+BLOCKING (4).** #190 answered interruption-arbiter ownership in the source,
+not just in behavior: `stt-agent/src/main.rs:193-194` states directly that
+the keyword duck is a hint, not the arbiter, and the brain's
+`is_speculative_stop_confirmed` (`decision.py:442`) is the one component
+allowed to turn it into a real abort. Moved from §2 to §1 with the code
+citation. Recorded the caveat honestly rather than pretending measurement
+1.1 settled it: `worst_case_no_flush_latency` stayed UNKNOWN for a
+code-verified reason (the real buffer lives past
+`AudioSource.capture_frame()` on the native side of the FFI boundary;
+`wait_for_playout()` is never called anywhere in `TransportAgent`), so the
+number Q-M3-2's filing was waiting on was never coming from that harness.
+The ownership question was closed by design intent, exactly the
+"provisional answer is enough" caveat the question was filed with.
+
+**Item 5b -- restored the per-part test counts Stage 6's review round
+stripped from Parts 1-8.** Pulled verbatim from the pre-review commit
+(`2823c2a`) rather than re-deriving: 1071/1071, 1076/1076, 1089/1089,
+1094/1094, 1106/1106, 1126/1126 (+ Rust 47+6), 1137/1137
+(+ Rust 47+50+6), 1147/1147. Part 9's own "NOT done" paragraph updated with
+forward pointers to this entry and to Items 3/4d/5c below, so a reader
+following Part 9 lands on what actually closed each gap instead of a dead
+end.
+
+**Item 5c -- widened mutation coverage past the original three files.**
+`backend/pyproject.toml`'s `[tool.mutmut]` `only_mutate` gains
+`app/agents/base.py` (ack/dead-letter semantics, Stage 6 Part 1) and
+`app/state/memory_store.py` (retrieval entry points: L1 cache
+quantization, search-failure visibility, the off-the-loop Qdrant upsert
+from Part 3; the query-scoped graph fetch from Part 9).
+`mutate_only_covered_lines = true` is what keeps a 2,600-line file bounded
+-- only lines the newly-added test selection actually exercises are
+mutated. New selection: all 8 tests in `test_base_agent_mesh_semantics.py`,
+the query-scoping test in `test_generic_memory.py`, and the
+`TestL1AffectQuantization` / `TestSearchFailureVisibility` /
+`TestAddMemoryQdrantUpsertOffTheLoop` classes in `test_l1_cache.py` (10
+tests). Verified the full selection passes as its own pytest invocation
+before wiring it into the config. `.github/workflows/mutation.yml`'s
+path-filter and quick-verification step updated to match. **Kept
+warn-only**, per the plan -- a hard gate on `memory_store.py` would produce
+survivors blocking unrelated work.
+
+**Item 5d -- dropped the dead `[build-system]` table from
+`backend/pyproject.toml`.** It declared `build-backend = "maturin"` at a
+path with no Rust project of its own (`cognitive-rust` has its own
+manifest under `crates/cognitive-rust/Cargo.toml`); the file exists only to
+hold `[tool.mutmut]`. Confirmed via grep that nothing in `.github/workflows/`
+runs `pip install ./backend` or equivalent -- the risk was latent, not
+active -- but a `pip install ./backend` attempted by anyone, now or later,
+would have failed where it previously did nothing meaningful. `mutmut`
+reads `[tool.mutmut]` regardless of whether a build backend is declared;
+verified the TOML still parses and the table is intact after removal.
+
+**Files.** `.github/workflows/mutation.yml`, `backend/pyproject.toml`,
+`backend/crates/stt-agent/src/main.rs`. Plus `audit/QUESTIONS.md`,
+`audit/ROADMAP.md`, `audit/AUDIT_PROGRESS.md`, `audit/PERFORMANCE.md`,
+`audit/HARDWARE.md`, `audit/EXECUTIVE_REPORT.md`, `audit/HANDOFF.md` --
+untracked, edited on disk only.
+
+**Verified.** Full suite **1158/1158** (unchanged from Stage 6 Part 9's
+count -- these changes touch a test's fixture and CI/config surface, not
+production behavior counted by the suite). `ruff check .` clean.
+`cargo test --package stt-agent`: 47/47. TOML and YAML both re-parsed
+clean after editing.
+
+**NOT done, this group.** Items 1 (P4-12 embedding batching), 2 (P0-1 key
+rotation test), 3 (eval recall gate), and 4a/4b/4c (the three P4-10
+signals, each behind its own verify-first gate) remain, per the plan's
+sequencing -- Item 1 next, since it must land before Item 3 measures the
+retrieval baseline.
