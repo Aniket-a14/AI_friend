@@ -10539,3 +10539,94 @@ content change.
 no other changes. Container logs confirmed the permission-denied loop is
 gone and the bootstrap/warmup sequence completes; the healthcheck's 400s
 are a distinct, pre-existing, unresolved gap.
+
+---
+
+## 2026-08-24 -- Roadmap leftovers, Group 5 -- eval recall gate run against
+## the retrieval rewrite: no regression (Item 3)
+
+**What this settles.** Stage 6 Part 3 (capped, unordered `MATCH (e:Entity)`
+scan at 2,000 rows) and Part 9 (replaced that cap with query-scoped
+entity-name seeding plus one-hop expansion, including a pronoun path
+seeded from `AI_NAME`/`user_id`) both changed retrieval ranking. Neither
+version had been run against `evals`' own recall pack, which Cluster 3's
+plan named as its gate. This closes that gap.
+
+**Method.** Baseline = `c469c3a` (the commit `main` sat at immediately
+before Stage 6 merged), checked out via `git worktree add` into scratch so
+the working tree was never disturbed; `.env` copied into the worktree root
+(gitignored, so a fresh checkout has none, and `Config`'s `_env_file` path
+is repo-root-relative -- without this the baseline run would have hit
+whatever Postgres/Neo4j defaults `Config` falls back to, not the actual
+running containers). Candidate = this branch (`fix/roadmap-leftovers`,
+Item 1's batching already landed, per the plan's sequencing requirement
+that Item 1 land before Item 3).
+
+```
+python -m evals run-conversation --model llama3.2:3b \
+    --retrieval bm25 --retrieval memory --num-ctx 8192 \
+    --out evals/out/retrieval_<pre|post>.json
+python -m evals compare evals/out/retrieval_pre.json \
+    evals/out/retrieval_post.json --fail-on-regression
+```
+
+**A real bug surfaced before any usable number did.** The first attempt on
+both sides, run without `--model`, scored **0/48** -- including every
+`full_history` probe, the maximal-context condition that should be
+trivially answerable. Every response was the literal string `"Error
+generating response."` (`app/llm/ollama_client.py:351`), which the harness
+prints on total generation failure but does not log the cause for.
+`OllamaClient`'s hardcoded default is `model: str = "llama3.2:1b"`
+(`ollama_client.py:33`) -- and `llama3.2:1b` is not pulled on this host
+(`curl .../api/generate -d '{"model":"llama3.2:1b",...}'` ->
+`{"error":"model 'llama3.2:1b' not found"}`). This was a harness-invocation
+gap, not a retrieval result, and would have silently produced a
+meaningless "0/48 both sides, no regression" false pass if not checked --
+a `passed` count matching on both sides is not by itself evidence of
+anything. Re-ran both sides with `--model llama3.2:3b`
+(`Config.LLM_FAST_MODEL`, the model this repo's agents actually run, and
+present in the local Ollama install).
+
+**Result: no regression, exact match.**
+
+- Baseline (`c469c3a`): **27/48** probes passed.
+- Candidate (`fix/roadmap-leftovers` @ `d2f8371`): **27/48** probes passed
+  -- identical pass/fail pattern probe-for-probe, not merely the same
+  count.
+- `evals compare --fail-on-regression`: `mean score delta +0.000`, **"No
+  regressions." GATE: PASS.**
+
+**Read honestly, not just passed.** `recent_window_6` fails on every probe
+where the plant fell out of the 6-turn window, which is the strategy
+working as designed, not a defect. On the two hardest, longest-distance
+probe families (`recall_detail_d24/d96/d240`), `memory_store` and `bm25`
+both fail identically on both sides -- the memory layer does not
+demonstrably beat the BM25 control on this pack at this distance, and that
+was already true at baseline. Stage 6's retrieval rewrite is confirmed
+**not worse**; this run is not evidence that it is *better*, and the plan's
+own "outcomes" section anticipated exactly this shape of result ("the pack
+cannot distinguish them... that is a finding about the eval pack, not a
+pass" comes closer to describing the memory-vs-bm25 question than the
+regression question this item was actually gating).
+
+**Files.** No application source changed -- this item is a measurement.
+`backend/evals/out/*.json` reports are gitignored by design (`.gitignore`:
+"a number only means something next to the run that produced it") and are
+not committed; the numbers above are the record. Worktree removed after
+the run (`git worktree remove ... --force`; verified `git worktree list`
+shows only the primary tree afterward).
+
+**Verified.** Both runs' `model=llama3.2:3b ... provenance=live` header
+lines confirmed live (not mock) provenance before trusting the counts;
+`evals compare` run with `--fail-on-regression` rather than eyeballing the
+two counts, so a probe that flipped fail->pass while another flipped
+pass->fail (same total, real regression) would not have been missed.
+
+**NOT done, this group.** Items 4a (`pause_bias`, needs `local_voice`
+running -- currently stopped by the user for memory reasons, plus the
+still-unresolved `sample_en_gold.wav` gap recorded in the prior entry) and
+4c (`tempo_wpm`, needs real recorded audio) remain. Both need explicit
+discussion with the user before attempting -- 4a because it needs a
+container the user just deliberately stopped, and 4c because its
+verification step needs a real recording session, which the plan itself
+flagged as needing "you or a scripted substitute."
