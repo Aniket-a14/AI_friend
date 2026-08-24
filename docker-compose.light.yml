@@ -1,6 +1,9 @@
 services:
   # Light mode focuses on cognitive/state services and keeps expensive
   # real-time media services disabled unless explicitly requested.
+  signaling:
+    profiles: ["heavy"]
+
   livekit:
     profiles: ["heavy"]
 
