@@ -799,6 +799,39 @@ class BrainAgent(BaseAgent):
         await self.publish(Topics.CHAT_OUTPUT, payload.model_dump())
 
     async def stop(self):
+        """P3-4: brain_agent owns the most resources of any agent in the
+        mesh (the LLM client, the graph driver, two DB pools, the whole
+        cognitive core) and used to close none of them -- the exact "owns
+        the most, cleans up least" asymmetry this item names. Cancel first,
+        close second: an in-flight generation still holding `memory_store`/
+        `graph_db` must stop before those are torn out from under it.
+        """
+        async with self._generation_lock:
+            task = self._active_generation_task
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.exception("Active generation task raised while being cancelled")
+
+        self.cognitive_core.close()
+
+        for resource, label in (
+            (self.ollama, "OllamaClient"),
+            (self.graph_db, "GraphDB"),
+            (self.memory_store, "MemoryStore"),
+            (self.conversation_store, "ConversationHistoryStore"),
+        ):
+            if resource is None:
+                continue
+            try:
+                await resource.close()
+            except Exception as e:
+                logger.warning(f"[Brain] {label} close warning: {e}")
+
         await super().stop()
         logger.info(f"🧠 {self.name} Offline.")
 

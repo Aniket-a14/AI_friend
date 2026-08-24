@@ -10,6 +10,75 @@ services:
   # AGENT MICROSERVICES
   # ---------------------------------------------------------------------------
 
+  # 0. SIGNALING SERVER (LiveKit token issuance -- backend/main.py)
+  #
+  # P3-3 (M1-A4): main.py existed and worked when run directly (`python
+  # main.py`, per backend/README.md) but had no compose service at all --
+  # confirmed by grepping this whole repo for `uvicorn`/`main:app`/`main.py`
+  # and finding zero references in either compose file. The frontend's
+  # `useWebRTCVoice.js` fetches `${BACKEND_URL}/token` before it can even
+  # open a WebRTC session, so without this the default deployment could
+  # bring up every agent cleanly and a user still could not start a
+  # conversation -- there was nothing to hand out a LiveKit token at all.
+  #
+  # DISCOVERED BUT NOT FIXED HERE, scope-adjacent to M1-A4 rather than it:
+  # main.py returns `Config.LIVEKIT_URL` to the browser as the WebSocket URL
+  # to connect to (main.py's `/token` handler). That value is
+  # `ws://local_sfu:7880` by default -- correct for a server-side process
+  # inside this compose network, unresolvable from a browser on the host.
+  # `useWebRTCVoice.js` only falls back to its own `NEXT_PUBLIC_LIVEKIT_URL`
+  # when the token response omits a URL, which main.py's response never
+  # does. One Config field is serving two audiences (server-internal and
+  # browser-facing) that need different addresses once containerized. Real,
+  # but a separate, scoped decision -- not something to fix as a rushed
+  # addition to an already-large item.
+  signaling:
+    build:
+      context: ./backend
+      target: slim
+    container_name: signaling
+    command: [ "python", "main.py" ]
+    env_file: .env
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
+      - NATS_URL=nats://nats_mesh:4222
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://local_sfu:7880}
+      - BACKEND_BIND_HOST=0.0.0.0
+    # main.py's own Provisioning Guard (ensure_models_provisioned) is the
+    # mechanism that populates this host path in the first place -- without
+    # this mount its download lands inside this container's own ephemeral
+    # layer instead, at the same /app/models/sensevoice path, so the
+    # provisioning happens, is thrown away on the next `up`, and stt_agent's
+    # OWN read-only bind mount of this same host directory (see stt_agent's
+    # `volumes:` below) never actually gets populated by it. Confirmed live:
+    # SenseVoice downloaded successfully into the container but this mount
+    # was missing on the first version of this service.
+    volumes:
+      - ./backend/models/sensevoice:/app/models/sensevoice
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - ai_mesh_network
+    depends_on:
+      nats:
+        condition: service_healthy
+      livekit:
+        condition: service_healthy
+    restart: always
+    # `wget` (used by vision_agent's own healthcheck, on the `full` target)
+    # is not installed on `slim` -- confirmed live: every check failed with
+    # "wget: not found" and the container sat marked unhealthy despite
+    # actually being fine. `curl` is present on `slim` (the same image
+    # brain_agent/subconscious_agent/surfacing_agent already run on); used
+    # here instead, matching this service's own real /health endpoint the
+    # way those three's `nc -z nats_mesh 4222` probes NATS instead.
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   # 1. BRAIN AGENT (Logic, RAG, Ollama Client)
   brain_agent:
     build:
@@ -20,7 +89,18 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - NATS_URL=nats://nats_mesh:4222
-      - OLLAMA_URL=${OLLAMA_URL:-http://local_brain:11434}
+      # P3-3 (M1-A3): this used to default to http://local_brain:11434 --
+      # the container_name of docker-compose.infra.yml's `ollama` service,
+      # which is profiles: ["docker-ollama"] and therefore NOT started by
+      # a default `docker compose up`. "Ollama host-native" is the
+      # documented default (see CLAUDE.md), so the default here must be
+      # host.docker.internal, which extra_hosts below maps to the host --
+      # not a container hostname nothing started. Confirmed live: the old
+      # default made bootstrap_runtime's ollama-models step fail every
+      # retry ("All connection attempts failed") until it exhausted
+      # RUNTIME_BOOTSTRAP_RETRIES and crashed, and restart: always turned
+      # that into an unbounded crash-loop -- exactly M1-A3's claim.
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
       - LLM_FAST_MODEL=${LLM_FAST_MODEL:-llama3.2:3b}
       - LLM_CHAT_MODEL=${LLM_CHAT_MODEL:-llama3.2:3b}
       - LLM_REFLECTION_MODEL=${LLM_REFLECTION_MODEL:-llama3.2:3b}
@@ -113,7 +193,9 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - NATS_URL=nats://nats_mesh:4222
-      - OLLAMA_URL=${OLLAMA_URL:-http://local_brain:11434}
+      # P3-3 (M1-A3): see brain_agent's own OLLAMA_URL comment above -- same
+      # bug, same fix.
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
       - DATABASE_URL=postgresql://ai_friend:${POSTGRES_PASSWORD}@postgres_db:5432/ai_friend_db
       - NEO4J_URI=bolt://brain_graph:7687
       - NEO4J_USER=neo4j
@@ -130,6 +212,11 @@ services:
       - IDENTITY_BASE_PATH=/app/data
     volumes:
       - identity_data:/app/data
+    # P3-3 (M1-A3): brain_agent already had this; this service reaches
+    # Ollama the same way and was simply missing it, so host.docker.internal
+    # never resolved here even after the URL itself pointed at it.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ai_mesh_network
     depends_on:
@@ -158,13 +245,18 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - NATS_URL=nats://nats_mesh:4222
-      - OLLAMA_URL=${OLLAMA_URL:-http://local_brain:11434}
+      # P3-3 (M1-A3): see brain_agent's own OLLAMA_URL comment above -- same
+      # bug, same fix.
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
       - DATABASE_URL=postgresql://ai_friend:${POSTGRES_PASSWORD}@postgres_db:5432/ai_friend_db
       - NEO4J_URI=bolt://brain_graph:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
       - QDRANT_HOST=brain_vectors
       - MOCK_LLM_TEXT=${MOCK_LLM_TEXT:-false}
+    # P3-3 (M1-A3): see subconscious_agent's own comment above.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ai_mesh_network
     depends_on:
@@ -352,7 +444,10 @@ services:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - AGENT_NAME=vision_agent
       - NATS_URL=nats://nats_mesh:4222
-      - OLLAMA_URL=${OLLAMA_URL}
+      # P3-3 (M1-A3): this had no fallback at all (an unset OLLAMA_URL
+      # resolved to an empty string) -- see brain_agent's own OLLAMA_URL
+      # comment above for the same host.docker.internal reasoning.
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
       - VISION_HEALTH_FILE=/tmp/vision_agent_healthy
       # Linux host + screen capture: also uncomment the X11 volume below.
       # - DISPLAY=${DISPLAY}
@@ -360,6 +455,8 @@ services:
     #   - /tmp/.X11-unix:/tmp/.X11-unix:ro
     # devices:
     #   - /dev/video0:/dev/video0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       nats:
         condition: service_started

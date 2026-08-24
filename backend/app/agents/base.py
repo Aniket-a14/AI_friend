@@ -664,6 +664,14 @@ class BaseAgent:
 
     async def stop(self):
         """Shutdown the agent."""
+        # P3-4: deferred from Cluster 2 (P3-2/telemetry) -- self._metrics'
+        # background aggregation thread was never stopped anywhere, on any
+        # agent, since every agent inherits this method. Harmless in a
+        # container about to exit, genuinely wrong in a test process or
+        # anything that restarts an agent in-process. `shutdown()` is
+        # synchronous (a plain `threading.Thread.join`), and briefly
+        # blocking the loop here is the shutdown path, not a hot one.
+        self._metrics.shutdown()
         if self.nc:
             await self.nc.drain()
             logger.info(f"Agent '{self.name}' shut down.")

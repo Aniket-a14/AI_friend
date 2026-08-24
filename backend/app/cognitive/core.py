@@ -125,6 +125,17 @@ class CognitiveService:
         if self.agent:
             await self.agent.publish(subject, data)
 
+    def close(self) -> None:
+        """P3-4: stop this service's own SubjectMetrics background thread.
+
+        Separate from (and not reached by) `BaseAgent.stop()`'s own
+        `self._metrics.shutdown()` -- this `_metrics` belongs to
+        `CognitiveService`, held by `BrainAgent` as `self.cognitive_core`,
+        not to the agent object itself. Nothing called this anywhere before;
+        `BrainAgent.stop()` now does.
+        """
+        self._metrics.shutdown()
+
     async def _seed_once(self, key: str, items: Any, migrate: Any, label: str) -> int:
         """Write whatever `migrate` accepts into memory, exactly once each.
 

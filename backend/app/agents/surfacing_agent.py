@@ -643,6 +643,21 @@ class SurfacingAgent(BaseAgent):
             except Exception as e:
                 logger.warning(f"[Surfacing] Conversation store close warning: {e}")
 
+        # P3-4: self.memory (MemoryStore) held its own HTTP client
+        # (get_embedding's network calls) and was never closed here at all.
+        if self.memory:
+            try:
+                await self.memory.close()
+            except Exception as e:
+                logger.warning(f"[Surfacing] MemoryStore close warning: {e}")
+
+        # P3-4: a second SubjectMetrics instance, deliberately named
+        # `_surfacing_metrics` rather than `_metrics` (P3-2) so it would not
+        # silently clobber BaseAgent's own -- but that also means
+        # BaseAgent.stop()'s `self._metrics.shutdown()` never reaches this
+        # one; it needs its own call.
+        self._surfacing_metrics.shutdown()
+
         await super().stop()
         logger.info(f"🧠 {self.name} Offline.")
 

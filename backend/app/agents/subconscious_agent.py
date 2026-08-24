@@ -683,6 +683,14 @@ class SubconsciousAgent(BaseAgent):
             await self.db_store.close()
         if self.memory_store and self._owns_memory_store:
             await self.memory_store.close()
+        # P3-4: unlike db_store/memory_store, graph_db has no ownership flag
+        # -- it is always constructed here or injected, never shared with
+        # another agent, so it was simply never closed at all.
+        if self.graph_db:
+            try:
+                await self.graph_db.close()
+            except Exception as e:
+                logger.warning(f"[Subconscious] GraphDB close warning: {e}")
         await super().stop()
         logger.info(f"🧠 {self.name} Offline.")
 

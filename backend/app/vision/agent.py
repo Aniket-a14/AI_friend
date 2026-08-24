@@ -317,6 +317,15 @@ class VisionAgent(BaseAgent):
     async def stop(self):
         self.running = False
         self.camera.close()
+        # P3-4: self.screen (ScreenLink) held an mss display connection with
+        # no close() to release it at all until now; self.vlm_client (when
+        # VLM_ENABLED) held its own HTTP client, never closed either.
+        self.screen.close()
+        if self.vlm_client:
+            try:
+                await self.vlm_client.close()
+            except Exception as e:
+                logger.warning("[Vision] VLM client close warning: %s", e)
         await super().stop()
 
 

@@ -1,15 +1,17 @@
 -r requirements-base.txt
-# P2-12: all six of these used to be bare names -- no floor, no ceiling, so
-# `pip install` picked up whatever the resolver found on the day it ran.
-# Pinned to a compatible-release range, matching requirements-base.txt's own
-# convention: floor is the latest version as of this pin, ceiling blocks a
+# P2-12: pinned to a compatible-release range, matching requirements-base.txt's
+# own convention: floor is the latest version as of this pin, ceiling blocks a
 # breaking major bump from being silently pulled in.
-webrtcvad-wheels>=2.0.14,<3.0.0
-faster-whisper>=1.2.1,<2.0.0
+#
+# P4-4/P4-5: webrtcvad-wheels, faster-whisper and sherpa-onnx (the Python
+# package -- unrelated to the Rust `sherpa-onnx` crate stt-agent gets through
+# Cargo) were removed from here entirely, not just left unpinned. STT moved
+# to the Rust agents; these three had zero imports left anywhere in `app/`
+# (confirmed by grep across the whole backend/ tree, not assumed), and
+# faster-whisper was the only reason `torch` was ever pulled in transitively
+# -- vision's own remaining deps (mss, opencv-python, pillow, pyautogui) need
+# no torch, so that dependency is gone too, not just hidden.
 mss>=10.2.0,<11.0.0
 opencv-python>=5.0.0.93,<6.0.0.0
 pillow>=12.3.0,<13.0.0
 pyautogui>=0.9.54,<1.0.0
-sherpa-onnx>=1.13.6,<2.0.0
-# torch is handled by transitive deps of faster-whisper (usually)
-# Use torch-cpu in requirements-slim if ever needed.

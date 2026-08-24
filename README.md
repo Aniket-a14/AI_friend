@@ -57,11 +57,11 @@ The platform utilizes **NATS JetStream** as its central nervous system, routing 
 
 > [!NOTE]
 > **Architecture Description**:
-> The system follows a decoupled "Signal Bus" pattern. The **NATS JetStream** serves as the message backbone, enforcing strict communication contracts across nine core subjects.
+> The system follows a decoupled "Signal Bus" pattern. The **NATS JetStream** serves as the message backbone, enforcing strict communication contracts across 21 declared subjects (`backend/scripts/check_subject_wiring.py` audits every publish/subscribe call site against this count on every run).
 >
 > * **Sensory Agents**: The **STT Agent** and **Vision Agent** publish perceptual signals to the bus.
 > * **Cognitive Agents**: The **Brain Agent** (Decision Core), **Subconscious Agent** (Idle reflection), and **Surfacing Agent** (Memory) process these signals asynchronously.
-> * **Infrastructure**: **Neo4j** stores the high-dimensional knowledge graph, while **PostgreSQL** with `pgvector` manages episodic memories and relational identity state.
+> * **Infrastructure**: **Neo4j** stores the high-dimensional knowledge graph, **PostgreSQL** with `pgvector` manages episodic memories and relational identity state, and **Qdrant** serves the vector-similarity half of memory retrieval (fused with Neo4j graph-boost and Postgres/SQLite candidates in `search_memories`).
 > * **Signal Rendering**: The **Voice Agent** consumes decision events to produce high-fidelity 32kHz PCM audio.
 
 ```mermaid
@@ -114,6 +114,7 @@ graph TD
     subgraph "Infrastructure"
         Brain <--> Neo4j[("Neo4j: Knowledge Graph")]
         Brain <--> Postgres[("Postgres + pgvector")]
+        Brain <--> Qdrant[("Qdrant: Vector Similarity")]
         Action --> Ollama["Ollama: Local LLM"]
         Voice --> SoVITS["GPT-SoVITS (voice cloning, no fallback engine)"]
     end
@@ -240,14 +241,15 @@ The Sovereign Mesh consists of specialized agents, each serving a distinct role 
 
 | Agent | Technology | Primary Responsibility | NATS Subjects |
 | :--- | :--- | :--- | :--- |
+| **Signaling** | Python / FastAPI | LiveKit token issuance for the frontend (`main.py`, `uvicorn`). Not a NATS agent -- the frontend's REST entry point into the mesh; every WebRTC session starts by calling its `/token` route. Had no compose service at all until this pass (confirmed: zero references to `main.py`/`uvicorn` in either compose file); adding one surfaced two more real gaps closed in the same pass -- `scripts/` is `.dockerignore`d wholesale and `provision_models.py` (imported at module scope) needs an explicit exception like `sovits_bootstrap.sh` already has, and `requests` (which that same module uses) was never a declared dependency anywhere, only ever riding along as some other package's transitive pull. | *(none — REST only)* |
 | **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
 | **Voice Agent** | Rust / GPT-SoVITS | CVS-3.5 synthesis runtime; renders affect-aware 32kHz audio through a single cloned-voice engine, no fallback to a different voice. | `chat.output`, `audio.stream`, `audio.stop` |
-| **STT Agent** ⚠️ | Rust / whisper.cpp + sherpa-onnx | Real speech recognition, dual-path: whisper.cpp (`whisper-rs`) produces the final transcript; SenseVoice (`sherpa-onnx`) serves the fast path with speech-emotion + audio-event classification (falls back to a small Whisper model — words, no tone — when unprovisioned). Scripted transcript is opt-in behind `STT_BACKEND=mock`. Build-verified (both backends compile and link; 30 unit tests pass), but **no live transcription or emotion classification has been observed** — accuracy and latency are unmeasured. | `audio.inbound`, `chat.input`, `audio.perception` |
-| **Transport Agent**| Node / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
+| **STT Agent** ⚠️ | Rust / whisper.cpp + sherpa-onnx | Real speech recognition, dual-path: whisper.cpp (`whisper-rs`) produces the final transcript; SenseVoice (`sherpa-onnx`) serves the fast path with speech-emotion + audio-event classification (falls back to a small Whisper model — words, no tone — when unprovisioned). Scripted transcript is opt-in behind `STT_BACKEND=mock`. Build-verified (both backends compile and link; 47 unit tests pass), but **no live transcription or emotion classification has been observed** — accuracy and latency are unmeasured. | `audio.inbound`, `chat.input`, `audio.perception` |
+| **Transport Agent**| Python / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
 | **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
 | **Subconscious** | Python / Neo4j | Background reflection, internal monologue generation (Tier-5). | `chat.input`, `system.tick`, `knowledge.*` |
-| **Vision Agent** ⚠️ | Ollama / moondream | Host-native visual appraisal and spatial reasoning (Tier-4). **Experimental — currently commented out in `docker-compose.prod.yml` and not deployed by default.** | `vision.frames`, `vision.control`, `vision.description` |
-| **Pulse Agent** | Python / Cron | Mesh heartbeat emitter; triggers maturation cycles. | `system.tick` |
+| **Vision Agent** ⚠️ | Ollama / moondream | Host-native visual appraisal and spatial reasoning (Tier-4). **Opt-in — a real, working `docker-compose.prod.yml` service gated behind `profiles: [vision]` (start with `docker compose --profile vision up vision_agent`), not deployed by the plain default `up`.** | `vision.frames`, `vision.control`, `vision.description` |
+| **Pulse Agent** | Python / asyncio | Mesh heartbeat emitter (`SYSTEM_TICK_INTERVAL`, default 60s via a plain `asyncio.sleep` loop, not a cron library -- `APScheduler` was a declared-but-unimported dependency, removed). | `system.tick` |
 
 ---
 
@@ -442,19 +444,24 @@ Communication is strictly governed by a **Typed Contract Mesh** (Pydantic). Ever
 
 ### Example: `chat.output` Schema
 
+Fields as actually defined on `ChatOutput`/`ChatOutputAffect` in `backend/app/contracts.py` -- no `timing` block or `utterance_id` field exists on this contract (that shape belonged to an earlier draft; `turn_id` is the real correlation field, and pacing markers like `<pause=Nms>` travel inline in `content` instead, parsed by the voice agent's own `split_temporal_parts`):
+
 ```json
 {
   "content": "Hey, I remember that!",
+  "done": false,
+  "turn_id": "uuid-v4",
   "affect": {
     "valence": 0.8,
     "arousal": 0.6,
-    "dominance": 0.5
+    "dominance": 0.5,
+    "trust": 0.5,
+    "attachment": 0.1,
+    "emotion": "happy",
+    "fatigue": 0.0,
+    "user_distance": 1.0
   },
-  "timing": {
-    "pause_ms": 250,
-    "hesitate": false
-  },
-  "utterance_id": "uuid-v4"
+  "timestamp": 1713330000.0
 }
 ```
 
@@ -463,13 +470,15 @@ Communication is strictly governed by a **Typed Contract Mesh** (Pydantic). Ever
 | `chat.input` | `ChatInput` | User utterances and manual injections. |
 | `chat.output` | `ChatOutput` | Cognitive responses with affect metadata. |
 | `audio.perception` | `AudioPerception` | Real-time emotional bias and speculative intent. |
-| `audio.stop` | `ControlEvent` | Speculative or final interruption commands. |
+| `audio.stop` | `AudioStop` | Speculative or final interruption commands. |
 | `state.update` | `StateUpdate` | Broadcast of PAD/Relational coordinate shifts. |
-| `memory.surfaced` | `MemoryEvent` | Proactive episodic or semantic recall triggers. |
-| `system.tick` | `PulseEvent` | The 60s mesh-wide maturation heartbeat. |
+| `memory.surfaced` | `MemorySurfaced` | Proactive episodic or semantic recall triggers. |
+| `system.tick` | *(untyped dict)* | The mesh-wide heartbeat (`SYSTEM_TICK_INTERVAL`, default 60s) -- carries no dedicated Pydantic model. |
 | `user.voice.properties` | `UserVoiceProperties` | Real-time user pitch, energy, and speech rate telemetry. |
 | `agent.voice.modulation` | `AgentVoiceModulation` | Continuous frame-wise time-series trajectory of `ProsodyFrame`s (ordered ascending by `time_offset_ms` [integer, ms >= 0] at exactly 50ms intervals, containing `rate` [float], `pitch` [float], and `volume` [float]) representing fine-grained vocal dynamics driven by the emotional appraisal loop. |
 | `audio.playback.visemes` | `PlaybackVisemes` | Sample-accurate mouth shape triggers for synchronized rendering. |
+| `audio.playback.progress` | `AudioPlaybackProgress` | Character/word offset into the response actually reached the speaker, used to truncate an interrupted reply at a real boundary instead of guessing. |
+| `ambient.noise.telemetry` | `AmbientNoiseTelemetry` | Endpointer noise-floor readings for barge-in/VAD tuning. |
 
 ---
 
@@ -501,7 +510,7 @@ The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
 ```text
 AI_friend/
 ├── backend/                         # Unified backend workspace (Python + Rust)
-│   ├── app/                         # Python runtime (agents, cognition, state, vision, stt)
+│   ├── app/                         # Python runtime (agents, cognition, state, vision)
 │   ├── crates/                      # Rust runtime crates
 │   │   ├── contracts/               # Shared signal contracts
 │   │   ├── cognitive-rust/          # Rust cognitive engine components
@@ -593,6 +602,19 @@ Follow this standardized, cross-platform sequence to initialize the Sovereign Me
    docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d postgres neo4j redis nats livekit
    ```
 
+> [!IMPORTANT]
+> **Ollama is host-native by default, not containerized.** Notice `ollama` is
+> not in the command above -- that is deliberate, not an omission. Install
+> and run Ollama directly on your machine (`ollama serve`); the agent
+> containers reach it at `http://host.docker.internal:11434`. A containerized
+> Ollama exists (`docker-compose.infra.yml`'s `ollama` service) but is
+> opt-in behind the `docker-ollama` profile
+> (`docker compose --profile docker-ollama up -d ollama`) -- it is not part
+> of the default `up`. Confirmed live: pointing `OLLAMA_URL` at the
+> containerized service's hostname when that profile was never started left
+> `brain_agent` unable to resolve it at all, exhausting every bootstrap
+> retry and crash-looping under `restart: always`.
+
 ### **Step 2: Hydrate the Database Schema**
 
 To prevent database port contentions and host network routing bugs, the containerized PostgreSQL database is mapped to the isolated external port **`5433`** on your host.
@@ -636,7 +658,7 @@ Select your launching profile based on your operating system and hardware resour
 
 #### **A. Standard Production Launch (Linux / Windows Host)**
 
-This command boots up the entire 14-container real-time voice, STT, and voice cloning mesh:
+This command boots up the default 13-container real-time voice, STT, and voice cloning mesh (5 infra services + 8 agents; `ollama` and `vision_agent` are each their own opt-in `profiles:` entry, not part of this count -- see the callout above and the Vision Agent row in the [Detailed Agent Registry](#detailed-agent-registry)):
 
 ```bash
 docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build

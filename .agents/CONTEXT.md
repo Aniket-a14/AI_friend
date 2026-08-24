@@ -9737,3 +9737,219 @@ real ones, which this pass does not automate (no secrets-management
 integration was in scope). TLS remains explicitly deferred, per the plan's
 own reasoning, until the mesh crosses a machine boundary. Carried forward:
 deployment/docs/cleanup (Part 8).
+
+## 2026-08-24 -- Stage 6 Part 8 (deployment, docs, cleanup) -- P3-3, P3-4,
+P3-12, P4-4, P4-5, P4-6, P4-10 -- final part of this branch
+
+**P3-3, confirm-first, and it confirmed: the default compose deployment
+really does crash-loop, live-verified against real infrastructure, not
+inferred.** Installed `nats-server` earlier this branch for Part 7's
+enforcement tests; used the SAME willingness to actually run things here.
+Docker was started, the existing infra stack (already up from a prior
+session) was used as-is, and `brain_agent` was built and started against a
+temporary env file mirroring a genuine `cp .env.example .env` with nothing
+edited -- never touching the user's own real `.env` for any of this.
+Observed directly: `"ollama models failed on attempt 1/15: All connection
+attempts failed"`, retrying with exponential backoff toward an inevitable
+crash under `restart: always`. Root cause, found by reading rather than
+guessing: `docker-compose.prod.yml`'s `OLLAMA_URL` fallback default was
+`http://local_brain:11434` -- the `container_name` of `docker-compose.infra.
+yml`'s `ollama` service, which is `profiles: ["docker-ollama"]` and
+therefore **not started by a default `up`**. "Ollama host-native" is the
+documented deployment model, so the default needed to be
+`http://host.docker.internal:11434`, which `brain_agent` already had
+`extra_hosts: host.docker.internal:host-gateway` for -- the mechanism
+existed, the default value pointing at it did not, and two of the three
+other services that also reach Ollama (`subconscious_agent`,
+`surfacing_agent`) were missing `extra_hosts` entirely. Fixed all four
+`OLLAMA_URL` fallbacks (`brain_agent`, `subconscious_agent`,
+`surfacing_agent`, `vision_agent` -- the last one had no fallback at all),
+added the missing `extra_hosts` to the two agents that lacked it, and
+re-pointed `.env.example`'s own `OLLAMA_URL` line at documentation instead
+of a hardcoded value (an explicit `.env` entry always wins over a compose
+`${VAR:-default}`, so leaving the old value in place would have kept
+overriding the now-correct compose default for anyone who just copies the
+file). **Re-ran the exact same live test against the fix**: `brain_agent`
+reached "🧠 brain_agent Online | CVS-3.5 Cognitive Mesh Active.", pulled the
+one missing model it needed, container reported healthy, zero restarts.
+Both the broken and fixed states were directly observed, not one inferred
+from the other.
+
+M1-A4 (no LiveKit signaling service) confirmed by grep alone -- zero
+references to `uvicorn`/`main:app`/`main.py` in either compose file, no
+live test needed to establish that one. Added a `signaling` service
+(`backend/main.py`, already-working code, just never had a compose entry)
+on the `slim` target with a real `/health`-based healthcheck. Bringing it
+up for the first time surfaced two more genuine, previously-latent bugs in
+the same pass -- exactly what deploying something for the first time is
+supposed to surface: `scripts/` is `.dockerignore`d wholesale
+(`scripts/bootstrap/provision_models.py`, imported at `main.py` module
+scope for its Provisioning Guard, needed the same kind of exception
+`sovits_bootstrap.sh` already has), and `provision_models.py`'s own
+`requests` import was never a declared dependency anywhere in this repo,
+only ever working by riding along as some other package's transitive pull
+-- added to `requirements-base.txt`. A third, smaller bug found the same
+way: the healthcheck's own `wget` (copied from `vision_agent`'s, which
+runs on `full`) doesn't exist on `slim`; switched to `curl`, which does.
+Verified end-to-end, twice: once confirming the missing pieces by their
+exact failure output, once confirming `/health` returns `{"status":
+"healthy","nats":true}` with zero restarts after each fix. Also added the
+same host-mounted `models/sensevoice` volume `stt_agent` already uses --
+without it, `main.py`'s own Provisioning Guard would download into this
+container's ephemeral layer instead of the shared host path `stt_agent`
+reads read-only, provisioning nothing anyone else could use; confirmed live
+that the existing host-provisioned model was picked up instantly
+(SHA256-verified, no re-download) once mounted. **Discovered but
+deliberately not fixed**, noted in both the compose file and the README:
+`main.py`'s `/token` response always includes `Config.LIVEKIT_URL`
+(`ws://local_sfu:7880`, correct for a server-side process, unresolvable
+from a browser), and the frontend only falls back to its own
+`NEXT_PUBLIC_LIVEKIT_URL` when that field is absent -- never, currently.
+One Config field serving two audiences that need different addresses once
+containerized is a real, separate, scoped decision, not a same-item fix.
+All Docker state was restored to exactly what it was before this
+investigation (the user's real `postgres_db`/`brain_graph` credentials, no
+leftover test containers) before moving on. `local_voice` (GPT-SoVITS) was
+already crash-looping before any of this started and is unrelated to
+either finding -- left alone, out of scope, and it happened to recover
+under its own restart policy partway through unrelated testing.
+
+**P3-4: shutdown consistency, closing the exact asymmetry the item names.**
+`BrainAgent.stop()` did nothing but `super().stop()` despite owning the
+most resources of any agent in the mesh (LLM client, graph driver, two DB
+pools, the whole cognitive core) -- now cancels an in-flight generation
+task first (so nothing still holding `memory_store`/`graph_db` races their
+teardown), then closes all four, then closes `cognitive_core` (new
+`CognitiveService.close()`, since that class holds its own
+`SubjectMetrics` instance BaseAgent's own shutdown can't reach).
+`BaseAgent.stop()` itself gained a `self._metrics.shutdown()` call --
+deferred explicitly from Part 2 (P3-2/telemetry), the background
+aggregation thread every single agent has had since then was never once
+stopped anywhere. `SurfacingAgent` gets the same treatment for its own
+separately-named `_surfacing_metrics` (deliberately not `_metrics`,
+Part 2's own collision fix) plus its `memory` (MemoryStore, holding its own
+HTTP client) which was never closed either. `SubconsciousAgent` gains a
+`graph_db.close()` -- unlike `db_store`/`memory_store`, it had no ownership
+flag and was simply never closed at all. `VisionAgent` gains a new
+`ScreenLink.close()` (mss never had one; `CameraLink` already did) plus
+closing `vlm_client` when VLM is enabled. `TransportAgent`/`SystemAgent`
+were already reasonably complete for what they actually own and needed no
+changes.
+
+**P3-12: seven documentation corrections, each checked against the actual
+code rather than assumed.** Qdrant was entirely absent from the
+architecture overview and its own mermaid diagram despite CLAUDE.md
+documenting it as a real fusion source in `search_memories` -- added to
+both. Vision Agent's table row claimed "commented out in
+docker-compose.prod.yml"; reading the file showed a live, complete
+`profiles: [vision]` service block, not a comment -- profile-gated is a
+different and more accurate story than commented-out (and required no
+Docker to check, a plain read settled it). Transport Agent's row said
+"Node / LiveKit"; `transport_agent.py` is unambiguously Python
+(`class TransportAgent(BaseAgent)`, the `livekit` Python SDK). Three
+contract names were simply wrong -- `ControlEvent`, `MemoryEvent`, and
+`PulseEvent` do not exist anywhere in `contracts.py`; the real classes are
+`AudioStop`, `MemorySurfaced`, and (for `system.tick`) no dedicated model
+at all, just an untyped dict, which the fix now says plainly instead of
+naming a class that was never real. The `chat.output` example JSON had a
+`timing`/`utterance_id` shape that has never matched `ChatOutput`'s actual
+fields (`content`, `done`, `turn_id`, `affect`, `timestamp`,
+`full_response`, `generation_error`, `proactive`, `metadata`,
+`latency_metadata`) -- replaced with a real one, and added the two
+contract rows (`audio.playback.progress`, `ambient.noise.telemetry`) the
+table never had at all. "Nine core subjects" became "21 declared subjects,"
+sourced from `check_subject_wiring.py`'s own live count rather than
+guessed, with a pointer to the script so the number can be re-verified
+rather than trusted. "Ollama host-native" was never stated anywhere in the
+README at all -- added as an explicit `[!IMPORTANT]` callout in Quick
+Start's Step 1, right where the infra bring-up command conspicuously omits
+`ollama` without ever explaining why; this is the same fact P3-3's bug was
+rooted in, so the doc fix and the code fix now reinforce each other instead
+of the doc staying silent about exactly the thing that broke. Directory
+tree's `app/` parenthetical listed "stt" as a live subdirectory; dropped
+now that P4-5 (below) actually removed it. Two smaller, adjacent
+corrections found while already in this section: STT Agent's "30 unit
+tests" was stale (47, current), and Pulse Agent's "Python / Cron" claimed a
+scheduling library (`APScheduler`) that P4-4 confirms was never imported
+anywhere -- reworded to what it actually is, a plain `asyncio.sleep` loop.
+
+**P4-4/P4-5: six dead dependencies and two empty packages, each confirmed
+by grep across the whole backend tree before removal, not assumed dead.**
+`google-genai`, `APScheduler`, `faster-whisper`, `sherpa-onnx` (the Python
+package -- unrelated to the Rust crate `stt-agent` gets through Cargo),
+`webrtcvad-wheels` were the five named in the roadmap; grepping every
+remaining `requirements-base.txt` entry for the sixth turned up `soxr`,
+which the README's own "Audio Optimization" bullet still credited with
+"sub-300ms vocal response loops" despite zero imports in `app/` -- the real
+resampling work this same branch's Part 6 (P3-10) did lives in Rust
+(`rubato`), not this Python dependency, which only a standalone
+verification script (`scripts/testing/verify_phase25.py`, testing nothing
+but its own import) still touched. That script is now deleted along with
+it -- nothing else referenced it outside the untracked `audit/` directory.
+`app/stt/`/`app/voice/` (each a single `__init__.py` stating "migrated to
+Rust, see `_archive/`") had zero importers anywhere in `backend/`, removed
+entirely. `requirements-ai.txt`'s trailing comment about `torch` riding
+along on `faster-whisper` is also gone -- confirmed via
+`pip install --dry-run` that removing `faster-whisper` removed `torch`
+from the resolved set too, and the three remaining AI deps (`mss`,
+`opencv-python`, `pillow`, `pyautogui`) need no torch of their own.
+
+**P4-6: three different version numbers, unified to 7.0.0.** README's
+header (`v6.5.0`), `frontend/package.json`/`package-lock.json` (`3.2.3`,
+both the root entry and its own self-reference under `packages: {"":...}`
+-- `node_modules/csstype` also happened to be pinned at `3.2.3`
+coincidentally and was correctly left alone), and the Rust workspace
+(`2.0.0`, propagating to all four crates via `.workspace = true`, confirmed
+by `cargo check --workspace` reporting `v7.0.0` for each afterward).
+
+**P4-10, bounded.** The vaguest of this cluster's items ("robustness
+asymmetries, computed-but-unconsumed signals, stale docs, and the test
+that pins dead code"), and treated that way rather than forced into a false
+completeness. The concrete parts already landed as P3-3/P3-4/P3-12 above
+count toward it (a crash-looping default deployment and six close()-less
+agents are exactly "robustness asymmetries"; the never-reachable signaling
+endpoint is exactly a "computed-but-unconsumed" capability). Searched
+specifically for "the test that pins dead code" -- grepped every
+`pytest.mark.skip`/`xfail` in the suite (found none besides this branch's
+own new, live-infra-conditional skip) and every test referencing
+"dead code"/"deprecated"/"archive"/"vestigial" -- and did not find an
+unambiguous match. `test_doc_drift.py` is close in spirit (enforces that
+CLAUDE.md never names a path that does not exist, already correctly
+excludes `_archive/` from resolving) but is a general staleness guard, not
+specifically about pinning something dead; it already passes cleanly
+against every change this whole branch made. Flagging this sub-item as not
+conclusively identified rather than guessing and calling it done.
+
+**Files:** `docker-compose.prod.yml`, `.env.example`, `backend/.dockerignore`,
+`backend/requirements-base.txt`, `backend/requirements-ai.txt`,
+`backend/app/agents/base.py`, `backend/app/agents/brain_agent.py`,
+`backend/app/agents/subconscious_agent.py`,
+`backend/app/agents/surfacing_agent.py`, `backend/app/cognitive/core.py`,
+`backend/app/vision/agent.py`, `backend/app/vision/links.py`,
+`backend/Cargo.toml`/`Cargo.lock`, `frontend/package.json`/
+`package-lock.json`, `README.md`, plus deletions
+(`backend/app/stt/__init__.py`, `backend/app/voice/__init__.py`,
+`backend/scripts/testing/verify_phase25.py`) and one new test file,
+`backend/tests/test_agent_shutdown_consistency.py` (10 tests covering every
+`stop()` change above).
+
+**Verified.** Full suite **1147/1147**, `ruff check .` clean,
+`scripts/check_subject_wiring.py` clean, `cargo check --workspace` clean
+(all four crates now report `v7.0.0`). `docker compose ... config --quiet`
+clean on the modified compose files. P3-3's fix was verified against real,
+live Docker infrastructure -- installed `nats-server` in Part 7, now also
+exercised a real `brain_agent` container, a real `signaling` container,
+real Ollama connectivity, and real SenseVoice SHA256 provisioning, in both
+the broken and fixed states, restoring the user's actual environment to
+its original condition afterward. New tests were **not mutation-tested**,
+per the standing instruction: written and verified green-only.
+
+**NOT done.** The `main.py` LiveKit-URL browser-unreachability issue found
+while verifying P3-3/M1-A4 (see above) is real and undeployed-until-now,
+same as M1-A4 itself was -- but is a distinct, scoped fix, not folded into
+this pass. P4-10's "test that pins dead code" sub-item was not identified.
+`local_voice` (GPT-SoVITS)'s pre-existing crash-loop, observed both before
+and briefly during this investigation, is unrelated to anything in this
+cluster and was not investigated. This is the **final part of the 8-cluster
+roadmap-completion branch** -- next step is opening the PR bundling all
+eight parts' commits.
