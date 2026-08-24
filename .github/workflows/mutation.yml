@@ -1,0 +1,70 @@
+name: Targeted Mutation Tests
+
+on:
+  pull_request:
+    paths:
+      - "backend/app/state/lexicon_store.py"
+      - "backend/app/vision/**"
+      - "backend/tests/test_mental_lexicon.py"
+      - "backend/tests/test_vision.py"
+      - "backend/tests/test_performance.py"
+      - "backend/pyproject.toml"
+      - "backend/requirements-dev.txt"
+      - ".github/workflows/mutation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-mutation:
+    name: Targeted mutation report
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DEBUG: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Install backend test dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Run mutation-target tests
+        run: |
+          cd backend
+          pytest -q \
+            tests/test_mental_lexicon.py \
+            tests/test_vision.py::TestVisualAppraisalService::test_habituation_bypass_marks_the_frame_not_novel \
+            tests/test_vision.py::TestVisualAppraisalService::test_novel_frame_after_a_habituated_one_resets_the_flag \
+            tests/test_vision.py::TestVisualAppraisalService::test_breaker_opens_after_consecutive_failures_and_stops_calling_vlm \
+            tests/test_vision.py::TestVisualAppraisalService::test_visual_vector_returns_none_when_undecodable \
+            tests/test_vision.py::TestVisualAppraisalService::test_undecodable_frames_disable_habituation_and_log_once \
+            tests/test_vision.py::TestVisionAgent::test_face_cascade_is_built_once_not_per_call \
+            tests/test_vision.py::TestVisionAgent::test_distance_uses_calibrated_focal_length_formula \
+            tests/test_vision.py::TestVisionAgent::test_run_appraisal_offloads_distance_calc_off_the_event_loop \
+            --benchmark-disable
+      - name: Run targeted mutation suite
+        run: |
+          cd backend
+          set +e
+          mutmut run --max-children 2
+          mutation_status=$?
+          set -e
+          mutation_results="$(mutmut results)"
+          printf '%s\n' "$mutation_results"
+          if [ "$mutation_status" -ne 0 ] && [ -z "$mutation_results" ]; then
+            exit "$mutation_status"
+          fi
+          if [ "$mutation_status" -ne 0 ]; then
+            echo "::warning::Mutation survivors remain; review the report above."
+          fi
+      - name: Verify vision benchmark contract
+        run: |
+          cd backend
+          pytest -q tests/test_performance.py::test_vision_frame_encode_benchmark --benchmark-disable

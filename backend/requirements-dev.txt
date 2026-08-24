@@ -3,6 +3,7 @@ pytest
 pytest-asyncio
 pytest-cov
 pytest-benchmark
+mutmut==3.7.0
 ruff==0.16.1
 pre-commit
 codespell

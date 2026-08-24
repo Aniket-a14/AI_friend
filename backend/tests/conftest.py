@@ -506,4 +506,11 @@ def pytest_sessionfinish(session, exitstatus):
     """Force exit to prevent background thread pool/connection pool hangs."""
     import os
 
+    # mutmut runs pytest in-process to collect test-to-function coverage and
+    # then forks isolated mutant workers. Calling os._exit here would terminate
+    # the collector before it can persist those associations. MUTANT_UNDER_TEST
+    # is set for every mutmut phase, including its clean baseline run.
+    if "MUTANT_UNDER_TEST" in os.environ:
+        return
+
     os._exit(exitstatus)
