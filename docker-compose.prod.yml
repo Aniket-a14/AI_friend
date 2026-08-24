@@ -1,5 +1,25 @@
 
 services:
+  # Provision streams with the only identity that has JetStream
+  # administration rights. Runtime agents wait for this one-shot service and
+  # receive their own scoped credentials below.
+  nats_provisioner:
+    build:
+      context: ./backend
+      target: slim
+    container_name: nats_provisioner
+    command: [ "python", "scripts/bootstrap/setup_nats_streams.py" ]
+    environment:
+      - NATS_URL=nats://nats_mesh:4222
+      - NATS_USER=${NATS_PROVISIONER_USER:-nats_provisioner}
+      - NATS_PASSWORD=${NATS_PROVISIONER_PASSWORD:-}
+    networks:
+      - ai_mesh_network
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: "no"
+
   # ---------------------------------------------------------------------------
   # INFRASTRUCTURE (From docker-compose.infra.yml - redeclared for linking)
   # ---------------------------------------------------------------------------
@@ -33,6 +53,8 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - NATS_URL=nats://nats_mesh:4222
+      - NATS_USER=${NATS_SIGNALING_USER:-signaling}
+      - NATS_PASSWORD=${NATS_SIGNALING_PASSWORD:-}
       - LIVEKIT_URL=${LIVEKIT_URL:-ws://local_sfu:7880}
       - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-ws://127.0.0.1:7880}
       - BACKEND_BIND_HOST=0.0.0.0
@@ -54,6 +76,8 @@ services:
     depends_on:
       nats:
         condition: service_healthy
+      nats_provisioner:
+        condition: service_completed_successfully
       livekit:
         condition: service_healthy
     restart: always
@@ -81,6 +105,8 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - NATS_URL=nats://nats_mesh:4222
+      - NATS_USER=${NATS_BRAIN_USER:-brain_agent}
+      - NATS_PASSWORD=${NATS_BRAIN_PASSWORD:-}
       # P3-3 (M1-A3): this used to default to http://local_brain:11434 --
       # the container_name of docker-compose.infra.yml's `ollama` service,
       # which is profiles: ["docker-ollama"] and therefore NOT started by
@@ -128,6 +154,8 @@ services:
     depends_on:
       nats:
         condition: service_healthy
+      nats_provisioner:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       neo4j:
@@ -162,12 +190,16 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - NATS_URL=nats://nats_mesh:4222
+      - NATS_USER=${NATS_SYSTEM_USER:-system_agent}
+      - NATS_PASSWORD=${NATS_SYSTEM_PASSWORD:-}
       - SYSTEM_TICK_INTERVAL=${SYSTEM_TICK_INTERVAL:-60}
     networks:
       - ai_mesh_network
     depends_on:
       nats:
         condition: service_healthy
+      nats_provisioner:
+        condition: service_completed_successfully
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
@@ -185,6 +217,8 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - NATS_URL=nats://nats_mesh:4222
+      - NATS_USER=${NATS_SUBCONSCIOUS_USER:-subconscious_agent}
+      - NATS_PASSWORD=${NATS_SUBCONSCIOUS_PASSWORD:-}
       # P3-3 (M1-A3): see brain_agent's own OLLAMA_URL comment above -- same
       # bug, same fix.
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
@@ -216,6 +250,8 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      nats_provisioner:
+        condition: service_completed_successfully
       neo4j:
         condition: service_healthy
       system_agent:
@@ -237,6 +273,8 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - NATS_URL=nats://nats_mesh:4222
+      - NATS_USER=${NATS_SURFACING_USER:-surfacing_agent}
+      - NATS_PASSWORD=${NATS_SURFACING_PASSWORD:-}
       # P3-3 (M1-A3): see brain_agent's own OLLAMA_URL comment above -- same
       # bug, same fix.
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
@@ -254,6 +292,8 @@ services:
     depends_on:
       nats:
         condition: service_healthy
+      nats_provisioner:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       neo4j:
@@ -282,6 +322,8 @@ services:
       - ./models:/app/models
     environment:
       - NATS_URL=nats://nats_mesh:4222
+      - NATS_USER=${NATS_VOICE_USER:-voice_agent}
+      - NATS_PASSWORD=${NATS_VOICE_PASSWORD:-}
       - SOVITS_URL=http://local_voice:9871
       - TTS_LANGUAGE=${TTS_LANGUAGE:-en}
       - SAMPLE_RATE=${SAMPLE_RATE:-32000}
@@ -294,6 +336,8 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      nats_provisioner:
+        condition: service_completed_successfully
       gpt-sovits:
         condition: service_healthy
     restart: always
@@ -314,6 +358,8 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - NATS_URL=nats://nats_mesh:4222
+      - NATS_USER=${NATS_TRANSPORT_USER:-transport_agent}
+      - NATS_PASSWORD=${NATS_TRANSPORT_PASSWORD:-}
       - LIVEKIT_URL=ws://local_sfu:7880
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
@@ -327,6 +373,8 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      nats_provisioner:
+        condition: service_completed_successfully
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "nc -z nats_mesh 4222 || exit 1"]
@@ -363,6 +411,8 @@ services:
       - ./backend/models/sensevoice:/app/models/sensevoice:ro
     environment:
       - NATS_URL=nats://nats_mesh:4222
+      - NATS_USER=${NATS_STT_USER:-stt_agent}
+      - NATS_PASSWORD=${NATS_STT_PASSWORD:-}
       - STT_BACKEND=${STT_BACKEND:-whisper}
       - STT_MODEL_DIR=${STT_MODEL_DIR:-/app/models/whisper}
       - STT_SENSEVOICE=${STT_SENSEVOICE:-on}
@@ -384,6 +434,8 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      nats_provisioner:
+        condition: service_completed_successfully
     restart: always
     # Was: [ -n "${RUST_STT_MOCK_TRANSCRIPT}" ] && nc -z nats_mesh 4222 || exit 1
     # That was broken twice over: Compose interpolates ${...} at parse time from the
@@ -436,6 +488,8 @@ services:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - AGENT_NAME=vision_agent
       - NATS_URL=nats://nats_mesh:4222
+      - NATS_USER=${NATS_VISION_USER:-vision_agent}
+      - NATS_PASSWORD=${NATS_VISION_PASSWORD:-}
       # P3-3 (M1-A3): this had no fallback at all (an unset OLLAMA_URL
       # resolved to an empty string) -- see brain_agent's own OLLAMA_URL
       # comment above for the same host.docker.internal reasoning.
@@ -452,6 +506,8 @@ services:
     depends_on:
       nats:
         condition: service_started
+      nats_provisioner:
+        condition: service_completed_successfully
     networks:
       - ai_mesh_network
     restart: always

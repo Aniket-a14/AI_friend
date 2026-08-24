@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config import Config
 from app.state.memory_store import MemoryStore
 
 
@@ -47,16 +48,28 @@ def test_context_aware_pronoun_mapping_user_speaking(mock_pool):
     conn.fetch.return_value = rows
 
     mock_graph = MagicMock()
+    seed_params = {}
 
     # Mock Neo4j graph nodes and relations
     async def mock_execute_query(query, *args, **kwargs):
         if "MATCH (seed:Entity)" in query:
-            return [
-                {"name": "Aniket", "description": "The central cognitive system."},
+            params = args[0] if args else kwargs.get("parameters", {})
+            seed_params.update(params)
+            identity_names = {
+                str(name).lower() for name in params.get("identity_names", [])
+            }
+            identities = [
+                {
+                    "name": Config.AI_NAME,
+                    "description": "The central cognitive system.",
+                },
                 {"name": "Raj", "description": "User / Companion"},
             ]
+            return [
+                row for row in identities if row["name"].lower() in identity_names
+            ]
         elif "MATCH (s:Entity)-[r]-(t:Entity)" in query:
-            return [{"source": "Aniket", "target": "Raj"}]
+            return [{"source": Config.AI_NAME, "target": "Raj"}]
         return []
 
     mock_graph.execute_query = mock_execute_query
@@ -77,7 +90,7 @@ def test_context_aware_pronoun_mapping_user_speaking(mock_pool):
         )
         assert len(results) > 0
 
-        # Also verify second-person maps to agent: "Where were you?" -> "you" maps to "Aniket"
+        # Also verify second-person maps to agent: "Where were you?" -> "you" maps to the configured identity.
         results_you = asyncio.run(
             store.search_memories(
                 query_text="Where were you?",
@@ -88,6 +101,11 @@ def test_context_aware_pronoun_mapping_user_speaking(mock_pool):
             )
         )
         assert len(results_you) > 0
+
+    assert seed_params["has_pronoun"] is True
+    assert {"raj", Config.AI_NAME.lower()} <= {
+        str(name).lower() for name in seed_params["identity_names"]
+    }
 
 
 def test_context_aware_pronoun_mapping_self_reflection(mock_pool):
@@ -103,9 +121,19 @@ def test_context_aware_pronoun_mapping_self_reflection(mock_pool):
 
     async def mock_execute_query(query, *args, **kwargs):
         if "MATCH (seed:Entity)" in query:
-            return [
-                {"name": "Aniket", "description": "The central cognitive system."},
+            params = args[0] if args else kwargs.get("parameters", {})
+            identity_names = {
+                str(name).lower() for name in params.get("identity_names", [])
+            }
+            identities = [
+                {
+                    "name": Config.AI_NAME,
+                    "description": "The central cognitive system.",
+                },
                 {"name": "Raj", "description": "User / Companion"},
+            ]
+            return [
+                row for row in identities if row["name"].lower() in identity_names
             ]
         elif "MATCH (s:Entity)-[r]-(t:Entity)" in query:
             return []

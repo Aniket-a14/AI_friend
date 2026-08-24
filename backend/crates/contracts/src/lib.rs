@@ -160,7 +160,7 @@ pub struct ChatOutput {
     // P4-2: previously absent from this struct entirely -- present in the
     // Python model (`extra: "allow"`, no `deny_unknown_fields` on this side
     // either) but silently dropped on deserialization here, so brain_agent's
-    // `char_offset`/`word_index` (used to build `audio.playback.progress`)
+    // `character_offset`/`word_index` (used to build `audio.playback.progress`)
     // never reached voice-agent at all. `JsonMap` rather than a typed struct
     // because this field's meaning is caller-defined per message, the same
     // reasoning `AudioPerception::metadata` (below) already uses it for.

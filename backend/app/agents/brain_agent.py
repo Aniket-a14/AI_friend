@@ -815,7 +815,7 @@ class BrainAgent(BaseAgent):
         # fallback) -- absent metadata is honest; a fabricated offset is not.
         if character_offset is not None and word_index is not None:
             metadata = dict(incoming_metadata) if incoming_metadata else {}
-            metadata["char_offset"] = character_offset
+            metadata["character_offset"] = character_offset
             metadata["word_index"] = word_index
             payload.metadata = metadata
         else:

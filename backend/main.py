@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import secrets
 from contextlib import asynccontextmanager
 
@@ -50,7 +51,12 @@ class AIBackend:
         # 2. Network Mesh Discovery
         try:
             # Check NATS connection
-            self.nc = await nats.connect(Config.NATS_URL)
+            connect_kwargs = {}
+            nats_user = os.getenv("NATS_USER")
+            nats_password = os.getenv("NATS_PASSWORD")
+            if nats_user and nats_password:
+                connect_kwargs.update(user=nats_user, password=nats_password)
+            self.nc = await nats.connect(Config.NATS_URL, **connect_kwargs)
             logger.info(f"Connected to NATS at {Config.NATS_URL}")
             self.is_ready = True
         except Exception as e:

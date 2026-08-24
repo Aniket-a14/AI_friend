@@ -1537,7 +1537,7 @@ fn build_latency_metadata(event: &ChatOutput) -> serde_json::Value {
         // a time, never the accumulating full response). transport_agent
         // relays these onward as `audio.playback.progress` once the PCM
         // carrying them has actually reached the LiveKit audio source.
-        if let Some(offset) = event.metadata.get("char_offset") {
+        if let Some(offset) = event.metadata.get("character_offset") {
             obj.insert("character_offset".to_string(), offset.clone());
         }
         if let Some(word_index) = event.metadata.get("word_index") {
@@ -1728,7 +1728,7 @@ mod tests {
             "../../contracts/fixtures/chat_output_chunk.json"
         ))
         .unwrap();
-        event.metadata.insert("char_offset".to_string(), json!(42));
+        event.metadata.insert("character_offset".to_string(), json!(42));
         event.metadata.insert("word_index".to_string(), json!(7));
 
         let meta = build_latency_metadata(&event);
@@ -2559,6 +2559,16 @@ mod tests {
         let child = std::process::Command::new("nats-server")
             .args(["-p", &port.to_string(), "-c", conf, "-sd"])
             .arg(&store_dir)
+            .env("NATS_PROVISIONER_PASSWORD", "changeme_nats_provisioner")
+            .env("NATS_SIGNALING_PASSWORD", "changeme_signaling")
+            .env("NATS_BRAIN_PASSWORD", "changeme_brain_agent")
+            .env("NATS_SUBCONSCIOUS_PASSWORD", "changeme_subconscious_agent")
+            .env("NATS_SURFACING_PASSWORD", "changeme_surfacing_agent")
+            .env("NATS_SYSTEM_PASSWORD", "changeme_system_agent")
+            .env("NATS_TRANSPORT_PASSWORD", "changeme_transport_agent")
+            .env("NATS_VISION_PASSWORD", "changeme_vision_agent")
+            .env("NATS_STT_PASSWORD", "changeme_stt_agent")
+            .env("NATS_VOICE_PASSWORD", "changeme_voice_agent")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()

@@ -92,7 +92,7 @@ async def test_publish_speech_chunk_attaches_offsets_without_dropping_incoming_m
     agent.publish.assert_awaited_once()
     _, payload = agent.publish.await_args.args
     assert payload["metadata"]["session_id"] == "abc"
-    assert payload["metadata"]["char_offset"] == 11
+    assert payload["metadata"]["character_offset"] == 11
     assert payload["metadata"]["word_index"] == 2
 
 
@@ -126,7 +126,7 @@ async def test_publish_speech_chunk_with_offsets_and_no_incoming_metadata(
     )
 
     _, payload = agent.publish.await_args.args
-    assert payload["metadata"] == {"char_offset": 2, "word_index": 1}
+    assert payload["metadata"] == {"character_offset": 2, "word_index": 1}
 
 
 @pytest.mark.asyncio
@@ -192,8 +192,8 @@ async def test_stream_to_speech_stamps_increasing_offsets_matching_full_response
     for call in agent.publish.await_args_list:
         _, payload = call.args
         meta = payload.get("metadata") or {}
-        if "char_offset" in meta:
-            published_offsets.append((meta["char_offset"], meta["word_index"]))
+        if "character_offset" in meta:
+            published_offsets.append((meta["character_offset"], meta["word_index"]))
 
     assert published_offsets, "at least one chunk must carry playback-progress metadata"
     # Offsets must be non-decreasing and every one must be a real boundary
@@ -225,7 +225,7 @@ async def test_stream_to_speech_empty_generation_fallback_is_tracked_against_its
     chat_output_calls = _chat_output_calls(agent.publish)
     _, payload = chat_output_calls[0].args
     meta = payload["metadata"]
-    assert meta["char_offset"] == len(result)
+    assert meta["character_offset"] == len(result)
     assert meta["word_index"] == len(result.split())
 
 
@@ -249,7 +249,7 @@ async def test_stream_to_speech_exception_fallback_omits_offsets(
     chat_output_calls = _chat_output_calls(agent.publish)
     _, payload = chat_output_calls[0].args
     meta = payload.get("metadata")
-    assert meta is None or "char_offset" not in (meta or {})
+    assert meta is None or "character_offset" not in (meta or {})
 
 
 # --------------------------------------------------------------------------

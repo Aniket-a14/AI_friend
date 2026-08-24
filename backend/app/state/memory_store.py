@@ -1063,7 +1063,7 @@ class MemoryStore:
         self._last_query_vector = query_vector
 
     async def _gather_candidate_sources(
-        self, mrl_query_vector, candidate_limit, query_text
+        self, mrl_query_vector, candidate_limit, query_text, user_id
     ):
         """Fetch vector candidates and the query-scoped graph context.
 
@@ -1093,25 +1093,42 @@ class MemoryStore:
             if not self.graph_db:
                 return await _dummy_graph()
 
+            query_words = re.findall(r"\b\w+\b", query_text.lower())
             query_terms = sorted(
                 {
                     token
-                    for token in re.findall(r"\b\w{3,}\b", query_text.lower())
+                    for token in query_words
+                    if len(token) >= 3
                     if token not in SEARCH_STOP_WORDS
                 }
             )
+            has_pronoun = bool(
+                set(query_words) & (FIRST_PERSON_PRONOUNS | SECOND_PERSON_PRONOUNS)
+            )
+            identity_names = [
+                identity
+                for identity in (getattr(Config, "AI_NAME", None), user_id)
+                if isinstance(identity, str) and identity.strip()
+            ]
             entity_records = await self.graph_db.execute_query(
                 "MATCH (seed:Entity) "
                 "WHERE seed.name IS NOT NULL AND (any(term IN $query_terms "
                 "WHERE toLower(seed.name) CONTAINS term "
                 "OR term CONTAINS toLower(seed.name)) "
-                "OR toLower($query_text) CONTAINS toLower(seed.name)) "
+                "OR toLower($query_text) CONTAINS toLower(seed.name) "
+                "OR ($has_pronoun AND any(identity IN $identity_names "
+                "WHERE toLower(seed.name) = toLower(identity)))) "
                 "OPTIONAL MATCH (seed)-[]-(neighbor:Entity) "
                 "WITH collect(seed) + collect(neighbor) AS nodes "
                 "UNWIND [node IN nodes WHERE node IS NOT NULL AND node.name IS NOT NULL] AS e "
                 "WITH DISTINCT e "
                 "RETURN e.name AS name, e.description AS description",
-                {"query_terms": query_terms, "query_text": query_text},
+                {
+                    "query_terms": query_terms,
+                    "query_text": query_text,
+                    "has_pronoun": has_pronoun,
+                    "identity_names": identity_names,
+                },
                 use_cache=True,
             )
             entity_names = [
@@ -2644,7 +2661,7 @@ class MemoryStore:
                 entity_records,
                 relation_records,
             ) = await self._gather_candidate_sources(
-                mrl_query_vector, candidate_limit, query_text
+                mrl_query_vector, candidate_limit, query_text, user_id
             )
 
             # 1. Qdrant Selective Vector Path

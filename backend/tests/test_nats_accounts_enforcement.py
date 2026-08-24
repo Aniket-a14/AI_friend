@@ -14,6 +14,7 @@ live-infra test in this suite uses (see e.g. stt-agent's
 
 import asyncio
 import importlib
+import os
 import shutil
 import socket
 import subprocess
@@ -75,6 +76,20 @@ def nats_accounts_server(tmp_path):
     assert ACCOUNTS_CONF.exists(), f"expected {ACCOUNTS_CONF} to exist"
     port = _free_port()
     store_dir = tmp_path / "jetstream"
+    account_passwords = {
+        "NATS_PROVISIONER_PASSWORD": "changeme_nats_provisioner",
+        "NATS_SIGNALING_PASSWORD": "changeme_signaling",
+        "NATS_BRAIN_PASSWORD": "changeme_brain_agent",
+        "NATS_SUBCONSCIOUS_PASSWORD": "changeme_subconscious_agent",
+        "NATS_SURFACING_PASSWORD": "changeme_surfacing_agent",
+        "NATS_SYSTEM_PASSWORD": "changeme_system_agent",
+        "NATS_TRANSPORT_PASSWORD": "changeme_transport_agent",
+        "NATS_VISION_PASSWORD": "changeme_vision_agent",
+        "NATS_STT_PASSWORD": "changeme_stt_agent",
+        "NATS_VOICE_PASSWORD": "changeme_voice_agent",
+    }
+    server_env = os.environ.copy()
+    server_env.update(account_passwords)
     proc = subprocess.Popen(
         [
             "nats-server",
@@ -84,6 +99,7 @@ def nats_accounts_server(tmp_path):
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        env=server_env,
     )
     try:
         deadline = time.time() + 10

@@ -226,6 +226,10 @@ class VisualAppraisalService:
                 self._breaker_record_success()
                 self._last_visual_vector = current_vector
                 self._last_appraisal_time = time.time()
+                # The VLM observed no description. If a previous cached
+                # description exists, returning it must not make stale
+                # content look like a novel frame downstream.
+                self.last_frame_was_novel = False
                 logger.debug(
                     "[VisualAppraisal] VLM confirmed a quiet scene, using cache."
                 )

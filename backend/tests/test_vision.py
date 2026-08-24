@@ -101,6 +101,21 @@ class TestVisualAppraisalService:
         assert mock_appraisal_service.last_frame_was_novel is False
 
     @pytest.mark.asyncio
+    async def test_empty_vlm_result_marks_cached_description_non_novel(
+        self, mock_appraisal_service, mock_ollama_client
+    ):
+        """An empty observation must not republish the previous cache as new."""
+        await mock_appraisal_service.appraise("first_frame")
+
+        mock_ollama_client.describe_image = AsyncMock(return_value="")
+        mock_appraisal_service._last_appraisal_time = time.time() - 2.0
+
+        desc = await mock_appraisal_service.appraise("quiet_frame")
+
+        assert desc == "A developer coding on a laptop."
+        assert mock_appraisal_service.last_frame_was_novel is False
+
+    @pytest.mark.asyncio
     async def test_vlm_pipeline_failure_does_not_advance_habituation_baseline(
         self, mock_appraisal_service, mock_ollama_client
     ):

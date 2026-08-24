@@ -16,6 +16,7 @@ import pytest
 
 from app import nats_streams
 from app.agents.base import BaseAgent
+from main import AIBackend
 
 
 class _StubConn:
@@ -111,3 +112,23 @@ async def test_stream_provisioner_uses_credentials_when_configured(monkeypatch):
     _, kwargs = mock_connect.await_args
     assert kwargs["user"] == "nats_provisioner"
     assert kwargs["password"] == "changeme_nats_provisioner"
+
+
+@pytest.mark.asyncio
+async def test_signaling_uses_credentials_when_configured(monkeypatch):
+    monkeypatch.setenv("NATS_USER", "signaling")
+    monkeypatch.setenv("NATS_PASSWORD", "changeme_signaling")
+
+    connection = MagicMock()
+    connection.close = AsyncMock()
+    mock_connect = AsyncMock(return_value=connection)
+    with (
+        patch("main.ensure_models_provisioned"),
+        patch("main.nats.connect", mock_connect),
+    ):
+        backend = AIBackend()
+        await backend.initialize()
+
+    _, kwargs = mock_connect.await_args
+    assert kwargs["user"] == "signaling"
+    assert kwargs["password"] == "changeme_signaling"

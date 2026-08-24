@@ -228,15 +228,13 @@ async def test_high_valence_screen_frame_is_stored_via_screen_trace():
 
 
 @pytest.mark.asyncio
-async def test_missing_is_novel_field_defaults_to_stored():
-    """A producer that predates this field (or a schema-validated message
-    with the field simply omitted) must not silently suppress storage --
-    matches the contract's own `is_novel: bool = True` default."""
+async def test_missing_is_novel_field_is_never_stored():
+    """Malformed or legacy events fail closed at the privacy boundary."""
     agent = _agent(arousal=0.9)
     await agent._on_vision_description(
         {"description": "A birthday cake.", "source": "camera"}
     )
-    agent.memory_store.add_memory.assert_awaited_once()
+    agent.memory_store.add_memory.assert_not_awaited()
 
 
 # --------------------------------------------------------------------------

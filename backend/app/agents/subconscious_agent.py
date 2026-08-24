@@ -470,7 +470,7 @@ class SubconsciousAgent(BaseAgent):
         -- see that method's docstring.
         """
         description = data.get("description", "")
-        if not description or not data.get("is_novel", True):
+        if not description or data.get("is_novel") is not True:
             return
 
         valence = self.state_service.current_state.valence
