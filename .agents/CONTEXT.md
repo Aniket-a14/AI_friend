@@ -10465,3 +10465,77 @@ code change -- nothing to commit to `main` beyond this ledger entry, since
 
 **NOT done, this group.** Items 3 (eval recall gate), 4a (pause_bias), and
 4c (tempo_wpm) remain -- Docker is now up and will stay up for these.
+
+---
+
+## 2026-08-25 -- Roadmap leftovers, out-of-band fix -- a prior session's
+## chmod "fix" was backwards; local_voice's permission-denied crash-loop
+## traced to it and corrected
+
+**Not part of the roadmap-leftovers plan.** Found while investigating live
+Docker infrastructure for Items 3/4a; the user asked to check `local_voice`
+directly after noticing it in `docker ps`, so this is reported and fixed
+in place rather than deferred.
+
+**Symptom.** `local_voice` (GPT-SoVITS) was crash-looping:
+`exec /workspace/sovits_bootstrap.sh: permission denied`, repeated.
+
+**Root cause: an earlier session's own fix was wrong.** An earlier
+(pre-compaction) session found `backend/scripts/bootstrap/sovits_bootstrap.sh`
+and `sovits_healthcheck.sh` showing as modified with a 0-line diff, read it
+as unintended Docker-session mode drift, and `chmod 644`'d both files back
+to match git's tracked mode -- reasoning "this was not an intentional
+change." **It was load-bearing, not drift.**
+`docker-compose.infra.yml:178-179` bind-mounts both scripts directly over
+the container's `/workspace/sovits_bootstrap.sh` and
+`/workspace/sovits_healthcheck.sh` paths -- the Dockerfile's own
+`RUN chmod +x /workspace/sovits_bootstrap.sh` (`Dockerfile.sovits`) only
+applies to the image's baked-in copy, which the bind mount replaces
+entirely at container start. The *host* file's permission bits are what
+the container actually runs with. Restoring 644 on the host silently broke
+every future container start, and `restart: always` turned that into a
+permanent crash-loop that had been running, unnoticed, since whenever that
+mode "fix" landed.
+
+**Fixed.** `chmod +x` on both files, confirmed via `git diff` that the
+resulting change is a pure `100644 -> 100755` mode flip with zero content
+diff (matching the original 0-line-diff signature exactly, in reverse).
+Restarted `local_voice`: the permission-denied loop is gone entirely --
+the bootstrap script now runs, detects no GPU, falls back to CPU/FP32,
+loads the base pretrained Text2Semantic and VITS weights successfully
+("All keys matched successfully"), and starts Uvicorn on 9871.
+
+**A second, separate, pre-existing issue surfaced once the first was
+fixed, not caused by it.** The healthcheck's real-synthesis probe
+(`sovits_healthcheck.sh`) and the bootstrap script's own warmup step both
+POST against a fixed reference clip, `output/sample_en_gold.wav` (mounted
+from the host's `backend/voice_samples/`), which returns 400 Bad Request
+on every call because **the file does not exist** --
+`backend/voice_samples/` is empty on this host. Grepped the whole repo:
+nothing provisions this file. It is referenced only by these two scripts
+and by `_archive/python_agents/voice/agent.py` (dead code, per
+`CLAUDE.md`). `.env.example`'s `REF_AUDIO_PATH`/`REF_TEXT` comments
+describe this exact clip and transcript as "the always-present neutral
+clip GPT-SoVITS conditions delivery on," implying it is expected to exist,
+but no bootstrap script, provisioning script, or documentation actually
+places it there. **Not fixed** -- it needs a real audio file, which
+cannot be fabricated as a legitimate reference clip, and is a distinct gap
+from the permission bug. Recorded here rather than silently left for the
+next person to rediscover as "GPT-SoVITS returns 400 for no reason."
+
+**The container was stopped by the user during this investigation** (CPU-mode
+GPT-SoVITS inference is memory-heavy) -- left stopped, not restarted, and
+this entry's account of the healthcheck failure is from the logs captured
+before that stop, not from a currently-running container. This also means
+**Item 4a (pause_bias PCM verification, needs real TTS synthesis) cannot
+run on this machine right now** -- flagged separately to the user rather
+than silently skipped or forced.
+
+**Files.** `backend/scripts/bootstrap/sovits_bootstrap.sh`,
+`backend/scripts/bootstrap/sovits_healthcheck.sh` -- mode only, zero
+content change.
+
+**Verified.** `git diff` on both files shows exactly `100644 -> 100755`,
+no other changes. Container logs confirmed the permission-denied loop is
+gone and the bootstrap/warmup sequence completes; the healthcheck's 400s
+are a distinct, pre-existing, unresolved gap.
