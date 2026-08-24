@@ -5,8 +5,17 @@ Helps organize multiple voice files for GPT-SoVITS cloning.
 
 import os
 
-# Move to the project root for relative paths to work correctly
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# `backend/voice_samples/` -- three levels up from this file, not two.
+#
+# This walked up only two levels and landed on `backend/scripts/`, so it listed
+# a directory nothing else in the system uses while its own "no samples found"
+# message named `backend/voice_samples/`. That is the directory that matters:
+# `docker-compose.infra.yml` bind-mounts it to `/workspace/GPT-SoVITS/output`,
+# which is what `REF_AUDIO_PATH=output/...` in `.env` resolves against. A clip
+# anywhere else is invisible to the synthesiser.
+BASE_DIR = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 SAMPLES_DIR = os.path.join(BASE_DIR, "voice_samples")
 
 

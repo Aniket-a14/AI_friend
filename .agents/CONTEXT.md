@@ -10701,3 +10701,92 @@ by running the exact CI command:
 
 **NOT done.** Waiting on PR #203's CI to confirm the fix (all five jobs
 re-run green) before considering the branch done.
+
+---
+
+## 2026-08-24 -- Consolidated the audit into two standing documents, and fixed
+## a voice-sample path bug found while writing them
+
+**Why.** The `audit/` directory is thirteen files and ~7,100 lines, plus a
+1,784-line brief at the repo root. It closed as a *process* at nine of nine
+milestones, and most of what it describes is now implemented -- so as a
+**work queue** it had become actively misleading, while remaining valuable
+as an **evidentiary record**. Those are two different jobs and it was doing
+neither cleanly.
+
+**Two new tracked documents, both under `docs/`:**
+
+- **`docs/FUTURE_WORK.md`** -- everything still open, each item carrying
+  What / Why it matters / How / Alternatives rejected / Status. The
+  "alternatives rejected" field is the one that earns its place: it is what
+  stops an item being relitigated every six months. Status vocabulary is
+  five values (OPEN, BLOCKED, TRIGGERED, DECLINED, UNANSWERED), and
+  **TRIGGERED is the one worth noting** -- items that require nothing today
+  and become mandatory the day a named condition holds (TLS when the mesh
+  crosses a machine boundary; proxy-aware `is_loopback_client` if a
+  reverse proxy is ever introduced). Those are the ones a roadmap normally
+  loses.
+- **`docs/BRINGING_IT_TO_LIFE.md`** -- how to actually run the brain, voice
+  and eyes on this laptop, author a personality, and clone a voice. Written
+  against the real resource reality of a 16 GB unified-memory machine
+  rather than against the README's happy path, and explicit that
+  `README.md` overstates completeness (which `CLAUDE.md` already says).
+
+Both are linked from `docs/README.md`'s "Start Here".
+
+**`audit/` stays untracked and was NOT deleted.** Added `audit/INDEX.md`
+(also untracked) marking the directory superseded as a work queue,
+preserved as evidence, with a per-file status table and an explicit list of
+known-stale claims. Deleting ~9,000 lines of untracked analysis is
+unrecoverable -- there is no `git checkout` to undo it -- so consolidation
+here means "index and mark", not "remove". Two stale claims were corrected
+in place, visibly rather than silently:
+
+- `QUESTIONS.md` §2 still advertised three BLOCKING questions that §6 of
+  the same file records as answered on 2026-08-22. Marked stale, kept for
+  its "what the answer changes" analysis.
+- `SECURITY.md` still said rotation was "the one security step that remains
+  genuinely open". Superseded by Item 2's REPLACE finding; struck through
+  and corrected.
+
+**A real bug, found by writing the instructions down.** The voice-cloning
+path in the new operations doc is the system's single highest-return
+unstarted action, so it was walked rather than assumed -- and the two helper
+scripts on it pointed at directories the synthesiser cannot see:
+
+| Script | Wrote/read | Should be |
+| :--- | :--- | :--- |
+| `scripts/audio/record_voice.py` | `backend/scripts/audio/voice_samples/` | `backend/voice_samples/` |
+| `scripts/audio/process_voice_samples.py` | `backend/scripts/voice_samples/` | `backend/voice_samples/` |
+
+`docker-compose.infra.yml:175` bind-mounts **`backend/voice_samples/`** to
+`/workspace/GPT-SoVITS/output`, which is what `REF_AUDIO_PATH=output/...`
+resolves against. Three different paths, none of the wrong two existing on
+disk. `process_voice_samples.py` printed *"No voice samples found in
+`backend/voice_samples/`"* while listing somewhere else entirely -- **the
+message and the code disagreed and both halves ran without complaint**,
+which is this repository's own defining failure pattern in miniature.
+Anyone following the scripts to record a reference clip would have produced
+a file the container never sees, with nothing to indicate why. Both now
+resolve three levels up instead of one or two; verified by asserting the
+resolved path equals the mount source.
+
+**Files.** `docs/FUTURE_WORK.md` (new), `docs/BRINGING_IT_TO_LIFE.md`
+(new), `docs/README.md`, `backend/scripts/audio/record_voice.py`,
+`backend/scripts/audio/process_voice_samples.py`. Untracked and
+intentionally uncommitted: `audit/INDEX.md`, `audit/QUESTIONS.md`,
+`audit/SECURITY.md`.
+
+**Verified.** `ruff check` clean on both scripts; `process_voice_samples.py`
+run and its output now names the directory it actually reads; resolved
+paths asserted equal to the compose mount source; every internal
+cross-document link and anchor checked to resolve (one broken anchor found
+and fixed that way, which is also what the `linkChecker` CI job would have
+caught).
+
+**NOT done.** The `audit/` files themselves are not deleted -- that is the
+user's call, and they are unrecoverable once gone. `FUTURE_WORK.md`'s two
+blocked items (4a `pause_bias`, 4c `tempo_wpm`) are unchanged and still
+need real audio; the missing `sample_en_gold.wav` reference clip is still
+missing, and the script fix above only means that recording one now lands
+where the synthesiser can see it.
