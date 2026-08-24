@@ -139,18 +139,6 @@ ACTR_EMO_DISTANCE_PENALTY = 0.5  # score penalty per unit emotional distance
 L1_CACHE_AFFECT_BUCKET = 0.05
 L1_CACHE_TIME_BUCKET_S = 5.0
 
-# P2-3 stretch: `MATCH (e:Entity) RETURN ...` (entity pre-linking in
-# add_memory, PPR graph-boost candidate gathering in search_memories) had no
-# LIMIT -- an unbounded full-graph scan on every write and every search,
-# growing without end as the graph does. Paired with GraphDB.decay_relationships
-# now also pruning entities orphaned by its own edge-prune, so a capped fetch
-# stays meaningful over time instead of the cap alone masking unbounded growth.
-# An order-of-magnitude safety bound, not a measured ceiling (see CLAUDE.md's
-# integrity rule on unmeasured constants) -- small/mid deployments never reach
-# it, so this is dormant now and only starts truncating results once the graph
-# is genuinely large.
-GRAPH_ENTITY_FETCH_LIMIT = 2000
-
 # Generic English stop words plus a few domain-generic conversational terms,
 # stripped from a query before it is used for lexical cue matching. Hoisted to
 # module scope: this is a constant, and rebuilding the literal on every
@@ -864,9 +852,11 @@ class MemoryStore:
             if self.graph_db:
                 try:
                     entity_records = await self.graph_db.execute_query(
-                        "MATCH (e:Entity) RETURN e.name AS name "
-                        "LIMIT $limit",
-                        {"limit": GRAPH_ENTITY_FETCH_LIMIT},
+                        "MATCH (e:Entity) "
+                        "WHERE e.name IS NOT NULL "
+                        "AND toLower($content) CONTAINS toLower(e.name) "
+                        "RETURN e.name AS name",
+                        {"content": content},
                         use_cache=True,
                     )
                     entity_names = [r["name"] for r in entity_records]
@@ -1072,8 +1062,17 @@ class MemoryStore:
                 logger.debug("Topic-shift calculation failed: %s", ts_err)
         self._last_query_vector = query_vector
 
-    async def _gather_candidate_sources(self, mrl_query_vector, candidate_limit):
-        """Fetch vector candidates and the Neo4j entity/relation graph concurrently."""
+    async def _gather_candidate_sources(
+        self, mrl_query_vector, candidate_limit, query_text
+    ):
+        """Fetch vector candidates and the query-scoped graph context.
+
+        The graph query starts from entity names mentioned by the current
+        query, then expands one hop to include the nodes needed for PPR. It
+        never truncates an unordered corpus-wide result set, so a relevant
+        entity cannot disappear merely because the graph grew past a fixed
+        application constant.
+        """
 
         async def safe_qdrant_search():
             try:
@@ -1087,28 +1086,55 @@ class MemoryStore:
                 logger.error(f"Qdrant retrieval failed: {qe}")
             return []
 
-        async def _dummy_list():
-            return []
+        async def _dummy_graph():
+            return [], []
 
-        candidates, entity_records, relation_records = await asyncio.gather(
-            safe_qdrant_search(),
-            self.graph_db.execute_query(
-                "MATCH (e:Entity) RETURN e.name AS name, e.description AS description "
-                "LIMIT $limit",
-                {"limit": GRAPH_ENTITY_FETCH_LIMIT},
+        async def fetch_graph_context():
+            if not self.graph_db:
+                return await _dummy_graph()
+
+            query_terms = sorted(
+                {
+                    token
+                    for token in re.findall(r"\b\w{3,}\b", query_text.lower())
+                    if token not in SEARCH_STOP_WORDS
+                }
+            )
+            entity_records = await self.graph_db.execute_query(
+                "MATCH (seed:Entity) "
+                "WHERE seed.name IS NOT NULL AND (any(term IN $query_terms "
+                "WHERE toLower(seed.name) CONTAINS term "
+                "OR term CONTAINS toLower(seed.name)) "
+                "OR toLower($query_text) CONTAINS toLower(seed.name)) "
+                "OPTIONAL MATCH (seed)-[]-(neighbor:Entity) "
+                "WITH collect(seed) + collect(neighbor) AS nodes "
+                "UNWIND [node IN nodes WHERE node IS NOT NULL AND node.name IS NOT NULL] AS e "
+                "WITH DISTINCT e "
+                "RETURN e.name AS name, e.description AS description",
+                {"query_terms": query_terms, "query_text": query_text},
                 use_cache=True,
             )
-            if self.graph_db
-            else _dummy_list(),
-            self.graph_db.execute_query(
-                "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target "
-                "LIMIT $limit",
-                {"limit": GRAPH_ENTITY_FETCH_LIMIT},
+            entity_names = [
+                row.get("name")
+                for row in entity_records
+                if isinstance(row, dict) and row.get("name")
+            ]
+            if not entity_names:
+                return entity_records, []
+
+            relation_records = await self.graph_db.execute_query(
+                "MATCH (s:Entity)-[r]-(t:Entity) "
+                "WHERE s.name IN $entity_names OR t.name IN $entity_names "
+                "RETURN s.name AS source, t.name AS target",
+                {"entity_names": entity_names},
                 use_cache=True,
             )
-            if self.graph_db
-            else _dummy_list(),
+            return entity_records, relation_records
+
+        candidates, graph_context = await asyncio.gather(
+            safe_qdrant_search(), fetch_graph_context()
         )
+        entity_records, relation_records = graph_context
 
         # Defensive type checks
         if not isinstance(entity_records, list):
@@ -2617,7 +2643,9 @@ class MemoryStore:
                 candidates,
                 entity_records,
                 relation_records,
-            ) = await self._gather_candidate_sources(mrl_query_vector, candidate_limit)
+            ) = await self._gather_candidate_sources(
+                mrl_query_vector, candidate_limit, query_text
+            )
 
             # 1. Qdrant Selective Vector Path
             raw_candidates = []

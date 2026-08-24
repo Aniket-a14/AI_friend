@@ -110,21 +110,19 @@ def _url(port: int, user: str, password: str) -> str:
 
 
 async def _bootstrap_stream(nats_module, port: int) -> None:
-    """Any one grant's `$JS.API.>` publish permission is enough to create
-    the stream every business-subject publish below needs a responder for
-    -- JetStream `publish()` is a request-reply that times out with no
-    stream covering the subject, which is a different failure mode than a
-    permissions violation and would make these tests fail for the wrong
-    reason if skipped."""
-    nc = await nats_module.connect(_url(port, "brain_agent", "changeme_brain_agent"))
+    """Create the streams through the dedicated provisioning identity."""
+    nc = await nats_module.connect(
+        _url(port, "nats_provisioner", "changeme_nats_provisioner")
+    )
     js = nc.jetstream()
     await js.add_stream(
-        name="TEST_MESH",
+        name="AI_MESSAGES",
         subjects=[
-            "chat.output", "chat.input", "audio.stream", "vision.description",
-            "vision.frames", "audio.stop", "state.broadcast", "cache.sync",
+            "chat.output", "chat.input", "vision.description", "vision.frames",
+            "state.broadcast", "cache.sync",
         ],
     )
+    await js.add_stream(name="AI_AUDIO", subjects=["audio.>"])
     await nc.close()
 
 
@@ -137,7 +135,7 @@ async def test_agent_can_publish_its_own_declared_subject(real_nats, nats_accoun
     try:
         js = nc.jetstream()
         ack = await js.publish("vision.description", b"ok")
-        assert ack.stream == "TEST_MESH"
+        assert ack.stream == "AI_MESSAGES"
     finally:
         await nc.close()
 
@@ -217,29 +215,66 @@ async def test_wrong_password_is_rejected(real_nats, nats_accounts_server):
 
 
 @pytest.mark.asyncio
-async def test_every_agents_baseline_grants_can_administer_jetstream(real_nats, nats_accounts_server):
-    """Every agent's `_bootstrap_mesh` (app/agents/base.py) calls
-    `jsm.add_stream`/`reconcile_existing_stream` on every startup -- if any
-    agent's `$JS.API.>` grant were missing or misspelled, that agent would
-    fail to self-heal a fresh mesh, silently (see `_bootstrap_mesh`'s own
-    broad except clauses)."""
+async def test_provisioner_can_administer_jetstream(real_nats, nats_accounts_server):
+    """Only the dedicated identity can create a stream."""
     port = nats_accounts_server
-    creds = [
-        ("brain_agent", "changeme_brain_agent"),
-        ("subconscious_agent", "changeme_subconscious_agent"),
-        ("surfacing_agent", "changeme_surfacing_agent"),
-        ("system_agent", "changeme_system_agent"),
-        ("transport_agent", "changeme_transport_agent"),
-        ("vision_agent", "changeme_vision_agent"),
-        ("stt_agent", "changeme_stt_agent"),
-        ("voice_agent", "changeme_voice_agent"),
-    ]
-    for user, password in creds:
-        nc = await real_nats.connect(_url(port, user, password))
-        try:
-            js = nc.jetstream()
-            await js.add_stream(
-                name=f"SELFTEST_{user.upper()}", subjects=[f"selftest.{user}"]
+    nc = await real_nats.connect(
+        _url(port, "nats_provisioner", "changeme_nats_provisioner")
+    )
+    try:
+        await nc.jetstream().add_stream(
+            name="PROVISIONED_TEST", subjects=["provisioned.test"]
+        )
+    finally:
+        await nc.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_agent_cannot_administer_jetstream(real_nats, nats_accounts_server):
+    """Runtime credentials cannot create streams."""
+    port = nats_accounts_server
+    nc = await real_nats.connect(
+        _url(port, "vision_agent", "changeme_vision_agent")
+    )
+    try:
+        with pytest.raises((real_nats.errors.Error, TimeoutError)):
+            await asyncio.wait_for(
+                nc.jetstream().add_stream(
+                    name="FORBIDDEN_TEST", subjects=["forbidden.test"]
+                ),
+                timeout=3.0,
             )
-        finally:
-            await nc.close()
+    finally:
+        await nc.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_agent_cannot_retrieve_an_unauthorized_stream_consumer(
+    real_nats, nats_accounts_server
+):
+    """A message-only runtime identity cannot inspect audio consumers."""
+    port = nats_accounts_server
+    await _bootstrap_stream(real_nats, port)
+    provisioner = await real_nats.connect(
+        _url(port, "nats_provisioner", "changeme_nats_provisioner")
+    )
+    try:
+        await provisioner.jetstream().add_consumer(
+            "AI_AUDIO",
+            durable_name="audio_consumer",
+            filter_subject="audio.>",
+        )
+    finally:
+        await provisioner.close()
+
+    nc = await real_nats.connect(
+        _url(port, "vision_agent", "changeme_vision_agent")
+    )
+    try:
+        with pytest.raises((real_nats.errors.Error, TimeoutError)):
+            await asyncio.wait_for(
+                nc.jetstream()._jsm.consumer_info("AI_AUDIO", "audio_consumer"),
+                timeout=3.0,
+            )
+    finally:
+        await nc.close()

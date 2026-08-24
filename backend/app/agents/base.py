@@ -161,7 +161,16 @@ class BaseAgent:
                 connect_kwargs["password"] = self.nats_password
             self.nc = await nats.connect(self.nats_url, **connect_kwargs)
             self.js = self.nc.jetstream()
-            await self._bootstrap_mesh()
+            if self.nats_user and self.nats_password:
+                # Authenticated runtime identities intentionally do not have
+                # stream-administration rights. The dedicated provisioning
+                # identity must prepare the streams before agents start.
+                logger.info(
+                    "Agent '%s' using runtime NATS credentials; skipping stream administration.",
+                    self.name,
+                )
+            else:
+                await self._bootstrap_mesh()
             logger.info(f"Agent '{self.name}' connected to mesh at {self.nats_url}")
 
             # Auto-subscribe active agents to cache synchronization broadcasts.

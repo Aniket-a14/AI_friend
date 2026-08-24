@@ -50,7 +50,7 @@ def test_context_aware_pronoun_mapping_user_speaking(mock_pool):
 
     # Mock Neo4j graph nodes and relations
     async def mock_execute_query(query, *args, **kwargs):
-        if "MATCH (e:Entity)" in query:
+        if "MATCH (seed:Entity)" in query:
             return [
                 {"name": "Aniket", "description": "The central cognitive system."},
                 {"name": "Raj", "description": "User / Companion"},
@@ -102,7 +102,7 @@ def test_context_aware_pronoun_mapping_self_reflection(mock_pool):
     mock_graph = MagicMock()
 
     async def mock_execute_query(query, *args, **kwargs):
-        if "MATCH (e:Entity)" in query:
+        if "MATCH (seed:Entity)" in query:
             return [
                 {"name": "Aniket", "description": "The central cognitive system."},
                 {"name": "Raj", "description": "User / Companion"},
@@ -130,13 +130,8 @@ def test_context_aware_pronoun_mapping_self_reflection(mock_pool):
         assert len(results) > 0
 
 
-def test_entity_and_relation_fetches_are_bounded(mock_pool):
-    """P2-3 stretch: `MATCH (e:Entity)` / `MATCH (s:Entity)-[r]-(t:Entity)`
-    used to have no LIMIT -- an unbounded full-graph scan on every write
-    (entity pre-linking) and every search (PPR graph-boost gathering),
-    growing without end as the graph does."""
-    from app.state.memory_store import GRAPH_ENTITY_FETCH_LIMIT
-
+def test_entity_and_relation_fetches_are_query_scoped(mock_pool):
+    """Graph retrieval expands only from entities relevant to the query."""
     pool, conn = mock_pool
     conn.fetch.return_value = []
 
@@ -145,6 +140,8 @@ def test_entity_and_relation_fetches_are_bounded(mock_pool):
     async def mock_execute_query(query, *args, **kwargs):
         params = args[0] if args else kwargs.get("parameters")
         queries_run.append((query, params))
+        if query.startswith("MATCH (seed:Entity)"):
+            return [{"name": "anything", "description": "query entity"}]
         return []
 
     mock_graph = MagicMock()
@@ -157,7 +154,7 @@ def test_entity_and_relation_fetches_are_bounded(mock_pool):
         asyncio.run(store.search_memories(query_text="anything", threshold=-10.0))
 
     entity_queries = [
-        (q, p) for q, p in queries_run if q.startswith("MATCH (e:Entity)")
+        (q, p) for q, p in queries_run if q.startswith("MATCH (seed:Entity)")
     ]
     relation_queries = [
         (q, p)
@@ -166,6 +163,10 @@ def test_entity_and_relation_fetches_are_bounded(mock_pool):
     ]
     assert entity_queries, "entity fetch query never ran"
     assert relation_queries, "relation fetch query never ran"
-    for query, params in entity_queries + relation_queries:
-        assert "LIMIT $limit" in query
-        assert params["limit"] == GRAPH_ENTITY_FETCH_LIMIT
+    entity_query, entity_params = entity_queries[0]
+    relation_query, relation_params = relation_queries[0]
+    assert "LIMIT" not in entity_query.upper()
+    assert "LIMIT" not in relation_query.upper()
+    assert entity_params["query_text"] == "anything"
+    assert "query_terms" in entity_params
+    assert "entity_names" in relation_params

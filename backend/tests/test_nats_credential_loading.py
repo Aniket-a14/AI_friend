@@ -10,10 +10,11 @@ nats-server; this is the narrower, infra-free unit check on the client-side
 wiring alone.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app import nats_streams
 from app.agents.base import BaseAgent
 
 
@@ -36,6 +37,7 @@ async def test_connect_omits_credentials_when_env_vars_are_unset(monkeypatch):
     _, kwargs = mock_connect.await_args
     assert "user" not in kwargs
     assert "password" not in kwargs
+    agent._bootstrap_mesh.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -52,6 +54,7 @@ async def test_connect_adds_credentials_when_both_env_vars_are_set(monkeypatch):
     _, kwargs = mock_connect.await_args
     assert kwargs["user"] == "vision_agent"
     assert kwargs["password"] == "changeme_vision_agent"
+    agent._bootstrap_mesh.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -72,6 +75,7 @@ async def test_connect_omits_credentials_when_only_one_env_var_is_set(monkeypatc
     _, kwargs = mock_connect.await_args
     assert "user" not in kwargs
     assert "password" not in kwargs
+    agent._bootstrap_mesh.assert_awaited_once()
 
 
 def test_constructor_reads_credentials_from_environment(monkeypatch):
@@ -88,3 +92,22 @@ def test_constructor_credentials_default_to_none(monkeypatch):
     agent = BaseAgent(name="brain_agent")
     assert agent.nats_user is None
     assert agent.nats_password is None
+
+
+@pytest.mark.asyncio
+async def test_stream_provisioner_uses_credentials_when_configured(monkeypatch):
+    monkeypatch.setenv("NATS_USER", "nats_provisioner")
+    monkeypatch.setenv("NATS_PASSWORD", "changeme_nats_provisioner")
+
+    jsm = AsyncMock()
+    connection = MagicMock()
+    connection.jsm.return_value = jsm
+    connection.close = AsyncMock()
+    mock_connect = AsyncMock(return_value=connection)
+
+    with patch.object(nats_streams.nats, "connect", mock_connect):
+        await nats_streams.setup_streams(retries=1, delay_seconds=0.1)
+
+    _, kwargs = mock_connect.await_args
+    assert kwargs["user"] == "nats_provisioner"
+    assert kwargs["password"] == "changeme_nats_provisioner"

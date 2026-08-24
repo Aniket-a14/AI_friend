@@ -255,12 +255,11 @@ def build_stream_config(stream_name: str, subjects: list[str]):
 
     P1-2: there are TWO stream-creation paths in this codebase, and only one
     is obvious. `setup_streams()` below is the bootstrap script's path;
-    `BaseAgent._bootstrap_mesh()` (agents/base.py) is the other, and it runs
-    on EVERY agent start. Whichever reaches a fresh mesh first decides the
-    policy -- and in practice that is the agent, not the script. If only one
-    path carried the retention config, the streams would be created
-    unbounded and the fix would look applied while doing nothing. Both call
-    this.
+    `BaseAgent._bootstrap_mesh()` (agents/base.py) is the other default path,
+    and it runs on every anonymous agent start. Authenticated runtime agents
+    intentionally skip that administrative path; the dedicated provisioner
+    must call this setup function first. Whichever enabled path reaches a
+    fresh mesh first decides the policy -- both carry the same config.
 
     A stream whose name has no policy entry gets subjects only, exactly as
     before -- so an unknown stream degrades to today's behaviour instead of
@@ -352,7 +351,13 @@ async def setup_streams(
     )
     logger.info("Connecting to NATS at %s", nats_url)
 
-    nc = await nats.connect(nats_url)
+    connect_kwargs = {}
+    nats_user = os.getenv("NATS_USER")
+    nats_password = os.getenv("NATS_PASSWORD")
+    if nats_user and nats_password:
+        connect_kwargs.update(user=nats_user, password=nats_password)
+
+    nc = await nats.connect(nats_url, **connect_kwargs)
     try:
         jsm = nc.jsm()
         await _wait_for_jetstream_ready(
