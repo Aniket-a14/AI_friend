@@ -10630,3 +10630,35 @@ discussion with the user before attempting -- 4a because it needs a
 container the user just deliberately stopped, and 4c because its
 verification step needs a real recording session, which the plan itself
 flagged as needing "you or a scripted substitute."
+
+---
+
+## 2026-08-24 -- Roadmap leftovers: branch closed with 4a/4c deliberately
+## left open, per the user's explicit choice
+
+**Items 0, 1, 2, 3, 4b, 4d, 5a-5d are done** (Groups 1-5 above, plus the
+out-of-band sovits permission fix). **4a (`pause_bias`) and 4c
+(`tempo_wpm`) are not**, and this is a decision, not an oversight.
+
+Both need real audio only the user can supply: 4a's verification requires
+synthesizing through the real TTS path with `local_voice` (GPT-SoVITS)
+running, and that container is currently stopped -- the user exited it
+themselves mid-session for memory reasons, and a separate pre-existing gap
+(missing `output/sample_en_gold.wav` reference clip, recorded in the
+out-of-band entry above) would block its healthcheck regardless. 4c-ii's
+verification requires three recorded passes of a scripted paragraph at
+different speaking rates via `scripts/audio/record_voice.py`, compared
+against hand-counted ground truth -- a live recording session.
+
+Asked the user directly how to proceed (restart `local_voice` and record
+now; record only 4c's audio without touching `local_voice`; skip both and
+close the branch; or pause entirely). **Chose to skip both and close the
+branch.** Per the plan's own risk section, a verification step that cannot
+run is not the same as one that failed -- 4a and 4c stay **DEFER, blocked
+on real audio**, not KEEP or DROP, so a future session with `local_voice`
+available and a recording session possible can pick them up without
+re-deriving why they were left out. `audit/ROADMAP.md`'s P4-10 row already
+carries this same status.
+
+**NOT done, overall.** 4a (`pause_bias` wiring) and 4c (`tempo_wpm` fix,
+verify, wire) remain, blocked as described above.
