@@ -10398,3 +10398,70 @@ unchanged, this item touches no NATS subjects.
 could not be run for lack of data. Items 2 (P0-1), 3 (eval recall gate),
 4a (pause_bias), and 4c (tempo_wpm) remain -- all four need Docker and/or
 live TTS/audio, starting next.
+
+---
+
+## 2026-08-25 -- Roadmap leftovers, Group 4 -- P0-1's deferred runtime test:
+## REPLACE confirmed, no rotation needed (Item 2)
+
+Plan: `.claude/plans/async-stirring-clarke.md`. Docker was started
+specifically for this and the remaining infrastructure-dependent items
+(2, 3, 4a, 4c), per the user's explicit choice to bring Docker up and
+continue through all of them.
+
+**The open question.** P0-1 (Stage 0, 2026-08-22) removed the tracked
+`keys:` block from `livekit.yaml` unconditionally -- correct under either
+reading -- but deferred rotation of the committed `devkey`/
+`secretsecretsecret` pair pending a runtime test: does livekit-server
+*merge* a config-file `keys:` block with the `LIVEKIT_KEYS` env var, or
+does the env var fully *replace* it? Checked against LiveKit's public docs
+at Stage 0 and found undocumented there. If MERGE, the committed pair was
+reachable on any deployment where `LIVEKIT_KEYS` was also set (the
+documented case) and needed rotation; if REPLACE, the block was dead code
+from the day it was committed.
+
+**The test.** A real `livekit-server:v1.8.4`, standalone (`docker run`,
+not `docker-compose.infra.yml` -- the user's real infrastructure was never
+touched: no shared network, no compose project, distinct container names,
+confirmed zero leftover containers afterward). Two key pairs generated
+locally, both meeting LiveKit's own 32-character minimum (a first attempt
+with 28/31-char secrets failed validation and had to be redone). Three
+scenarios:
+1. `LIVEKIT_KEYS` set to a real value, config-file `keys:` block also
+   present -- only the env-var key was accepted (`ListRooms` succeeded);
+   the config-file key was rejected outright.
+2. `LIVEKIT_KEYS` unset entirely -- the config-file key was accepted (no
+   env var present to override it).
+3. `LIVEKIT_KEYS` set to an empty string -- the server refused to start at
+   all (`"one of key-file or keys must be provided"`), exiting immediately
+   rather than falling back to the config file. This closes a scenario the
+   plan hadn't named: an empty-but-present env var does not silently
+   expose the config-file key either.
+
+**Result: REPLACE, not MERGE.** `docker-compose.infra.yml` always passes
+`LIVEKIT_KEYS=${LIVEKIT_KEYS}` to the container, and `.env.example`'s own
+default (`LIVEKIT_KEYS="your_api_key: your_api_secret"`) is never empty --
+so there is no deployment path through the documented compose file,
+**including a completely unedited `cp .env.example .env`**, where the
+committed `devkey`/`secretsecretsecret` pair was ever reachable. **No
+rotation performed or needed** -- the roadmap's own preferred outcome for
+exactly this reason, and the outcome the maintainer's original M7 instinct
+favored, though M7 had no evidence for it at the time (the answer turned
+on LiveKit's override semantics, not on operator intent, which is why the
+audit correctly treated it as genuinely unknown rather than assumable).
+
+**Audit docs updated** (untracked, on disk only): `ROADMAP.md`'s P0-1
+entry rewritten with the full test account; `QUESTIONS.md`'s Q-M4-2 moved
+from BLOCKING (§2, now three questions instead of four) to closed (§1),
+mirroring how Q-M3-2 was closed in Group 1; `ISSUES.md`'s "Implementation
+Stage 0 -- the audit's sixth self-correction" section -- the direct
+predecessor to this test -- got a `RESOLVED` addendum rather than being
+rewritten, so the original uncertainty and its resolution both stay
+visible.
+
+**No application source changed.** This item is a verification, not a
+code change -- nothing to commit to `main` beyond this ledger entry, since
+`audit/` stays untracked per repo convention.
+
+**NOT done, this group.** Items 3 (eval recall gate), 4a (pause_bias), and
+4c (tempo_wpm) remain -- Docker is now up and will stay up for these.
