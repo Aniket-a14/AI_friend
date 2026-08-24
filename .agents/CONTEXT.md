@@ -10318,3 +10318,83 @@ unchanged (this item touches no NATS subjects).
 gate -- now unblocked, since it needed Item 1 to land first so the
 baseline and candidate measure the same embedding path), and 4a/4b/4c (the
 three P4-10 signals) remain.
+
+---
+
+## 2026-08-25 -- Roadmap leftovers, Group 3 -- P4-10's turn_taking_probability,
+## verified then wired (Item 4b)
+
+Plan: `.claude/plans/async-stirring-clarke.md`. First of the three P4-10
+"verify the benefit, then wire" signals -- pure computation, no live
+infrastructure needed, so it went first while Docker was still down.
+
+**Verified before wiring, per the plan's own gate.** M3-D2
+(`audit/ISSUES.md`): `calculate_pacing_parameters` returns
+`turn_taking_probability` and no caller reads it. The plan flagged this
+signal as the one genuinely at risk of being a no-op gate and required a
+state-space sweep before committing to a threshold. Wrote
+`tools/measure/m4b_turn_taking_gate.py`, registered in
+`tools/measure/__main__.py`'s dispatcher as measurement id `4b` (explicitly
+noted in its docstring as NOT one of the Stage-3 roadmap measurements --
+it's this plan's own verification gate, same schema, different purpose).
+Evaluates `0.5 + 0.3*D - 0.1*F + 0.2*V` over a 41^3 grid spanning
+`PersonaProfile`'s own bounds (`V` in [-0.6, 0.6], `D` in [0.15, 0.85]) and
+the live state's own fatigue clamp (`F` in [0.0, 1.0]) -- the reachable
+box, not the formula's unclamped range. **Result: the default 0.5
+threshold blocks 16.9% of the reachable grid** (min 0.325, max 0.875,
+median 0.6), inside the plan's [15%, 50%] "meaningful minority" pass band
+-- a real discriminator, not decoration, so the default did not need
+re-siting to the measured median. Output:
+`tools/measure/out/m4b_turn_taking_gate.json`, tracked in git alongside
+`m11`-`m16`'s outputs (confirmed those are tracked, not gitignored, before
+adding a seventh).
+
+**The plan's second, qualitative check -- confirming the gate would not
+have blocked past good proactive utterances against the ledger's history
+-- could not be run.** No dataset of past proactive-speech instances with
+their recorded (V, D, F) state exists in this repository to check against.
+Recorded as a gap rather than skipped silently.
+
+**Wired into `StateService.check_proactive_eligibility`**
+(`app/state/agent_state.py`), after the existing `min_energy` gate, as a
+new terminal check before the eligible-log line. Deliberately **not**
+wired into the pacing sleep (`brain_agent.py`'s
+`calculate_pacing_parameters` call) -- both `silence_duration_ms` and
+`turn_taking_probability` are driven by the same `D` and `F` terms, so
+scaling the sleep by the probability would apply dominance and fatigue
+twice, which the plan named explicitly as the trap to avoid. "Turn
+taking" -- deciding to take the conversational floor -- is what proactive
+speech literally is, so `check_proactive_eligibility` is where it
+belongs, and no other gate in that chain reads dominance or valence, so
+nothing double-counts. New `Config.PROACTIVE_MIN_TURN_PROBABILITY`
+(default 0.5, the formula's own neutral midpoint at D=0,F=0,V=0, which the
+sweep confirmed is also inside the pass band).
+
+**Tests.** New file `test_proactive_turn_taking_gate.py`, 8 tests: a
+depleted/low-dominance/negative-valence state (0.325) is blocked; a
+confident/rested/positive-valence state (0.875) is eligible; the exact
+0.5 boundary is inclusive (pins the `<` vs `<=` choice deliberately, since
+`check_proactive_eligibility`'s condition is `turn_probability <
+min_turn_probability`); raising/lowering the configured threshold flips a
+state's eligibility both directions; every existing gate in the chain
+(idle threshold, min energy) still blocks regardless of a favorable
+turn-taking state. **Mutation-verified the gate condition by hand**:
+replaced `if turn_probability < min_turn_probability:` with `if False:`,
+confirmed two tests failed, restored and reran green -- same standard
+applied to Items 1 and 4d, an exception to this branch's otherwise
+green-only norm because it is the actual behavior-change line.
+
+**Files.** `app/config.py`, `app/state/agent_state.py`,
+`tools/measure/__main__.py`, `tools/measure/m4b_turn_taking_gate.py`
+(new), `tools/measure/out/m4b_turn_taking_gate.json` (new, tracked),
+`tests/test_proactive_turn_taking_gate.py` (new).
+
+**Verified.** Full suite **1176/1176** (1168 baseline + 8 new), 0
+failures, 0 skips. `ruff check .` clean (one F401 unused-import finding on
+the new test file, fixed). `scripts/check_subject_wiring.py` clean --
+unchanged, this item touches no NATS subjects.
+
+**NOT done, this group.** The qualitative past-utterance check noted above
+could not be run for lack of data. Items 2 (P0-1), 3 (eval recall gate),
+4a (pause_bias), and 4c (tempo_wpm) remain -- all four need Docker and/or
+live TTS/audio, starting next.

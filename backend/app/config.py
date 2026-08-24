@@ -158,6 +158,13 @@ class AppSettings(BaseSettings):
     PROACTIVE_IDLE_THRESHOLD_SECONDS: float = 7200.0
     PROACTIVE_COOLDOWN_SECONDS: float = 3600.0
     PROACTIVE_MIN_ENERGY: float = 0.2
+    # Roadmap leftovers Item 4b (M3-D2): 0.5 matches turn_taking_probability's
+    # own formula midpoint (0.5 + 0.3*D - 0.1*F + 0.2*V at D=0,F=0,V=0), and
+    # a state-space sweep (tools/measure/m4b_turn_taking_gate.py) confirmed
+    # it blocks 16.9% of the reachable (V,D,F) grid -- inside the [15%,50%]
+    # band that makes this a real discriminator rather than decoration, so
+    # the default did not need re-siting to the sweep's measured median.
+    PROACTIVE_MIN_TURN_PROBABILITY: float = 0.5
     PROACTIVE_DEBUG_THRESHOLD_OVERRIDE: str | None = None
 
     PSYCH_ALPHA: float = 0.3

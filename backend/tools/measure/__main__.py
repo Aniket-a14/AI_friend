@@ -1,10 +1,14 @@
-"""CLI for Stage 3 measurements (audit/ROADMAP.md §7).
+"""CLI for Stage 3 measurements (audit/ROADMAP.md §7) and the roadmap-leftovers
+plan's own pre-wiring verification measurements (Item 4).
 
     python -m tools.measure run <name>|all [--out DIR] [--allow-mock]
 
-<name> is one of: 1.1 1.2 1.3 1.5 1.6 (1.4 has no Python entry point here --
+<name> is one of: 1.1 1.2 1.3 1.5 1.6 4b (1.4 has no Python entry point here --
 it needs the containerized stt-agent; see tools/measure/m14_stt_cost.py's
-module docstring and the Stage 3 ledger entry for how it was run).
+module docstring and the Stage 3 ledger entry for how it was run). "4b" is not
+a Stage-3 roadmap measurement -- it verifies roadmap-leftovers Item 4b's
+turn_taking_probability gate discriminates over the reachable state space
+before wiring it, per that plan's "verify the benefit, then wire" discipline.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ import sys
 from pathlib import Path
 
 from . import (
+    m4b_turn_taking_gate,
     m11_bargein,
     m12_consolidation,
     m13_audio_growth,
@@ -28,6 +33,7 @@ _MEASUREMENTS = {
     "1.3": (m13_audio_growth, "m13_audio_growth.json"),
     "1.5": (m15_prompt_prefix, "m15_prompt_prefix.json"),
     "1.6": (m16_retrieval, "m16_retrieval.json"),
+    "4b": (m4b_turn_taking_gate, "m4b_turn_taking_gate.json"),
 }
 
 

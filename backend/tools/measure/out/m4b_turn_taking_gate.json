@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-24T11:57:01.306869+00:00",
+  "measurement_id": "4b",
+  "title": "Does turn_taking_probability discriminate over the reachable state space? (roadmap-leftovers Item 4b, pre-wiring verification)",
+  "provenance": "live",
+  "runs": [
+    {
+      "figures": {
+        "blocked_fraction_at_default_threshold": {
+          "label": "MEASURED",
+          "value": 0.1693,
+          "unit": "fraction of reachable (V,D,F) grid points",
+          "derivation": "11665 of 68921 grid points scored turn_taking_probability < 0.5 (the formula's own nominal midpoint at D=0,F=0,V=0)",
+          "reason": ""
+        },
+        "gate_pass_criterion_met": {
+          "label": "MEASURED",
+          "value": "yes",
+          "unit": "",
+          "derivation": "pass band is [0.15, 0.5] (a 'meaningful minority' of reachable states, per the plan's own criterion); outside that band the gate is decoration -- always-open changes nothing, always-closed silently disables proactive speech entirely",
+          "reason": ""
+        },
+        "min_probability": {
+          "label": "MEASURED",
+          "value": 0.325,
+          "unit": "",
+          "derivation": "",
+          "reason": ""
+        },
+        "max_probability": {
+          "label": "MEASURED",
+          "value": 0.875,
+          "unit": "",
+          "derivation": "",
+          "reason": ""
+        },
+        "median_probability": {
+          "label": "MEASURED",
+          "value": 0.6,
+          "unit": "",
+          "derivation": "the re-siting candidate if the default 0.5 threshold fails the pass band -- the plan says to use the measured median of the reachable distribution rather than ship 0.5 as a guess",
+          "reason": ""
+        }
+      },
+      "raw": {
+        "total_states": 68921,
+        "blocked_states": 11665,
+        "blocked_fraction": 0.16925175200591983,
+        "min_probability": 0.32500000000000007,
+        "max_probability": 0.875,
+        "median_probability": 0.6
+      }
+    }
+  ],
+  "notes": [
+    "Grid: 41^3 = 68921 points over V in (-0.6, 0.6), D in (0.15, 0.85), F in (0.0, 1.0) -- the bounds PersonaProfile's schema and AgentState's own clamp actually permit, not the formula's unclamped range.",
+    "This measures whether the GATE discriminates, not whether proactive speech itself is good -- that is a separate, qualitative check against the ledger's proactive-speech history, done by hand rather than computed here.",
+    "arousal is held at 0.5 (neutral) throughout: it appears in calculate_pacing_parameters' silence_duration_ms computation but not in the turn_taking_probability formula itself, so it does not affect this sweep's result."
+  ]
+}
