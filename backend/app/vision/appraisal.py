@@ -145,6 +145,7 @@ class VisualAppraisalService:
         - The VLM call fails
         """
         if not self.should_appraise():
+            self.last_frame_was_novel = False
             return self._last_description
 
         # Reset before evaluating this frame; the habituation-bypass branch
@@ -191,6 +192,7 @@ class VisualAppraisalService:
                 return self._last_description
 
         if not self._breaker_allow_request():
+            self.last_frame_was_novel = False
             logger.debug(
                 "[VisualAppraisal] Circuit breaker open (%d consecutive failures); "
                 "skipping VLM call, using cache.",
@@ -233,12 +235,14 @@ class VisualAppraisalService:
                 # next tick retries the VLM rather than treating this frame
                 # as an observed (quiet) baseline -- until the breaker opens.
                 self._breaker_record_failure()
+                self.last_frame_was_novel = False
                 logger.warning(
                     "[VisualAppraisal] VLM pipeline failure, using cache."
                 )
 
         except Exception as e:
             self._breaker_record_failure()
+            self.last_frame_was_novel = False
             logger.error(
                 "[VisualAppraisal] VLM appraisal failed: %s. Using cached description.",
                 e,

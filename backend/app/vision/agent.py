@@ -315,6 +315,7 @@ class VisionAgent(BaseAgent):
             logger.error(f"[VisionAgent] VLM appraisal publish error: {e}")
 
     async def stop(self):
+        await self._prepare_stop()
         self.running = False
         self.camera.close()
         # P3-4: self.screen (ScreenLink) held an mss display connection with

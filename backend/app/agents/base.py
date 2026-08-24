@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -203,7 +204,11 @@ class BaseAgent:
 
     async def _bootstrap_mesh(self):
         """Ensure core streams exist on the mesh (CVS-3.5 Hardened)."""
-        from ..nats_streams import CORE_STREAMS, build_stream_config
+        from ..nats_streams import (
+            CORE_STREAMS,
+            StreamReconciliationError,
+            build_stream_config,
+        )
 
         core_streams = {name: list(subjects) for name, subjects in CORE_STREAMS.items()}
 
@@ -243,7 +248,14 @@ class BaseAgent:
                             f"✅ Stream '{stream_name}' synchronized successfully."
                         )
                 except Exception as update_err:
-                    logger.debug("Stream update note: %s", update_err)
+                    logger.error(
+                        "Stream reconciliation failed for %s: %s",
+                        stream_name,
+                        update_err,
+                    )
+                    raise
+            except StreamReconciliationError:
+                raise
             except Exception as e:
                 logger.debug("Stream bootstrap note: %s", e)
 
@@ -310,7 +322,12 @@ class BaseAgent:
                     "X-Latency-Meta": orjson.dumps(meta).decode(),
                     "X-Payload-Format": "binary/raw-pcm",
                 }
-                await self.js.publish(subject, data, headers=headers, timeout=10)
+                try:
+                    await self.js.publish(subject, data, headers=headers, timeout=10)
+                except Exception as js_err:
+                    if not allow_core_fallback:
+                        raise JetStreamPublishFailed(str(js_err)) from js_err
+                    raise
             else:
                 # Standard JSON Transport
                 if isinstance(data, dict):
@@ -563,17 +580,15 @@ class BaseAgent:
                 except Exception:
                     num_delivered = None
                 if num_delivered is not None and num_delivered >= max_deliver:
-                    try:
-                        preview = msg.data.decode(errors="replace")[:500]
-                    except Exception:
-                        preview = "<undecodable>"
+                    payload_digest = hashlib.sha256(msg.data).hexdigest()
                     logger.error(
                         "[DeadLetter] Dropping poison message on %s after %s "
-                        "deliveries: %s | payload=%s",
+                        "deliveries: %s | payload_bytes=%s | payload_sha256=%s",
                         subject,
                         num_delivered,
                         e,
-                        preview,
+                        len(msg.data),
+                        payload_digest,
                     )
                     if hasattr(msg, "term"):
                         await msg.term()
@@ -662,8 +677,18 @@ class BaseAgent:
         )
         logger.debug("Agent '%s' state set to: %s", self.name, state)
 
+    async def _prepare_stop(self) -> None:
+        """Cancel retained tasks before subclasses close their resources."""
+        tasks = [task for task in self._background_tasks if not task.done()]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._background_tasks.clear()
+
     async def stop(self):
-        """Shutdown the agent."""
+        """Shutdown the agent after unwinding retained background work."""
+        await self._prepare_stop()
         # P3-4: deferred from Cluster 2 (P3-2/telemetry) -- self._metrics'
         # background aggregation thread was never stopped anywhere, on any
         # agent, since every agent inherits this method. Harmless in a

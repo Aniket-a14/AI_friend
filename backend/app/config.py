@@ -66,6 +66,9 @@ class AppSettings(BaseSettings):
 
     # LiveKit Configuration
     LIVEKIT_URL: str = "ws://127.0.0.1:7880"
+    # Browser-facing URL. In Compose this differs from LIVEKIT_URL, which is
+    # resolvable only by services on the internal Docker network.
+    LIVEKIT_PUBLIC_URL: str = "ws://127.0.0.1:7880"
     LIVEKIT_API_KEY: str | None = None
     LIVEKIT_API_SECRET: str | None = None
 
@@ -438,6 +441,31 @@ class AppSettings(BaseSettings):
             return "wss://" + v[len("https://") :]
         if v.startswith("http://"):
             return "ws://" + v[len("http://") :]
+        return v
+
+    @field_validator("LIVEKIT_PUBLIC_URL")
+    @classmethod
+    def normalize_livekit_public_scheme(cls, v: str) -> str:
+        if v.startswith("https://"):
+            return "wss://" + v[len("https://") :]
+        if v.startswith("http://"):
+            return "ws://" + v[len("http://") :]
+        return v
+
+    @field_validator("VISUAL_SCREEN_TRACE_TTL_H")
+    @classmethod
+    def validate_visual_trace_ttl(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("VISUAL_SCREEN_TRACE_TTL_H must be positive")
+        return v
+
+    @field_validator(
+        "VISUAL_MEMORY_AROUSAL_THRESHOLD", "VISUAL_MEMORY_VALENCE_THRESHOLD"
+    )
+    @classmethod
+    def validate_visual_memory_threshold(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("visual-memory thresholds must be between 0 and 1")
         return v
 
     # F4: these were previously computed in ConfigMeta.__getattr__, which

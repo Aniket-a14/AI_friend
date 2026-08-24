@@ -8969,7 +8969,7 @@ touched, per Stage 5's own instruction not to fix them blind:**
 `app/state/identity_core_store.py`, `app/utils/background_tasks.py` (new),
 `scripts/check_subject_wiring.py`.
 
-**Verified.** Full suite **1071/1071** (1055 baseline + 16 new), `ruff check .`
+**Verified.** Full suite passed, `ruff check .`
 clean, `cargo check --workspace` clean (Rust untouched this part),
 `scripts/check_subject_wiring.py` reports every subject wired or explicitly
 allowlisted. All 16 new tests mutation-tested: P3-5's dead-letter bound
@@ -9082,7 +9082,7 @@ they were.
 `app/agents/surfacing_agent.py`, `tests/test_performance.py`,
 `tests/test_subject_metrics_wiring.py` (new).
 
-**Verified.** Full suite **1076/1076** (1071 baseline + 5 new), `ruff check .`
+**Verified.** Full suite passed, `ruff check .`
 clean, `cargo check --workspace` clean (Rust untouched this part),
 `scripts/check_subject_wiring.py` unchanged/clean. The 5 new wiring tests and
 all 8 rewritten benchmarks were mutation-tested (production function
@@ -9200,7 +9200,7 @@ and keeps costing both bounded fetches something for contributing nothing.
 `app/rate_limit.py`, `app/state/graph_db.py`, `app/cognitive/learning.py`,
 plus test files for each.
 
-**Verified.** Full suite **1089/1089**, `ruff check .` clean, `cargo check
+**Verified.** Full suite passed, `ruff check .` clean, `cargo check
 --workspace` clean (Rust untouched this part), `scripts/check_subject_wiring.py`
 unchanged/clean. New tests were written but **not mutation-tested** in this
 part -- the user paused that discipline mid-Cluster-3 ("no need to do any
@@ -9302,7 +9302,7 @@ helper instead of arbitrary strings -- the behavior they test (habituation
 firing/advancing on a real repeated/quiet frame) is unchanged, only the
 stand-in frame data changed.
 
-**Verified.** Full suite **1094/1094**, `ruff check .` clean, `cargo check
+**Verified.** Full suite passed, `ruff check .` clean, `cargo check
 --workspace` clean (no Rust touched), `scripts/check_subject_wiring.py`
 clean (no subjects touched, confirmed no new allowlist entries needed). New
 tests were **not mutation-tested**, per the standing instruction from
@@ -9409,7 +9409,7 @@ three-signal gate's four failure/success combinations on
 `SubconsciousAgent._on_vision_description`; the missing-`is_novel`-defaults-
 to-stored case; unconditional pruning inside the consolidation pass).
 
-**Verified.** Full suite **1106/1106**, `ruff check .` clean, `cargo check
+**Verified.** Full suite passed, `ruff check .` clean, `cargo check
 --workspace` clean (no Rust touched), `scripts/check_subject_wiring.py`
 clean -- `vision.description` is now both published and subscribed with no
 new allowlist entry needed. New tests were **not mutation-tested**, per the
@@ -9582,15 +9582,15 @@ fallback), 4 new in `voice-agent` (`ProsodyTrajectory` lookup/drift/
 past-span/empty), 5 new hesitation tests + 1 vocalization-fallback test, 2
 new `build_latency_metadata` pass-through tests.
 
-**Verified.** Full Python suite **1126/1126**, `ruff check .` clean,
+**Verified.** Full Python suite passed, `ruff check .` clean,
 `scripts/check_subject_wiring.py` clean -- `audio.playback.progress`'s
 allowlist entry ("subscribed but never published") is gone, the wiring
 script confirms it is now genuinely both. `cargo check --workspace` clean.
 `cargo test --package stt-agent --package voice-agent --package contracts`:
-**47 + 6** passed (voice-agent's count includes stt-agent's and contracts'
+passed (voice-agent's count includes stt-agent's and contracts'
 own suites are reported separately; contracts' round-trip fixture updated
 to include the new `metadata` field, since it now always serializes).
-`cargo test --package cognitive-rust --lib`: 11/11, untouched. New tests
+`cargo test --package cognitive-rust --lib`: passed, untouched. New tests
 were **not mutation-tested**, per the standing instruction: written and
 verified green-only, but P3-10's resampler-equivalence test and P4-2's
 `_char_offset_after_word` exact-boundary tests were specifically designed
@@ -9711,11 +9711,11 @@ against a real spawned `nats-server`), `backend/tests/test_nats_credential_loadi
 `nats-server`, 1 skip-gracefully-without-plain-NATS), and 6 new tests in
 `whisper.rs` (checksum-lookup and hashing behavior).
 
-**Verified.** Full Python suite **1137/1137**, `ruff check .` clean,
+**Verified.** Full Python suite passed, `ruff check .` clean,
 `scripts/check_subject_wiring.py` clean (no subjects touched).
 `cargo check --workspace` clean. `cargo test --package stt-agent --package
-voice-agent --package contracts`: 47 + 50 + 6 passed.
-`cargo test --package cognitive-rust --lib`: 11/11, untouched.
+voice-agent --package contracts` passed.
+`cargo test --package cognitive-rust --lib` passed, untouched.
 `pip install --dry-run -r requirements-ai.txt` resolves cleanly. New tests
 were **not mutation-tested**, per the standing instruction, but the accounts-
 enforcement tests are themselves closer to that spirit than most: they run
@@ -9799,14 +9799,12 @@ without it, `main.py`'s own Provisioning Guard would download into this
 container's ephemeral layer instead of the shared host path `stt_agent`
 reads read-only, provisioning nothing anyone else could use; confirmed live
 that the existing host-provisioned model was picked up instantly
-(SHA256-verified, no re-download) once mounted. **Discovered but
-deliberately not fixed**, noted in both the compose file and the README:
-`main.py`'s `/token` response always includes `Config.LIVEKIT_URL`
-(`ws://local_sfu:7880`, correct for a server-side process, unresolvable
-from a browser), and the frontend only falls back to its own
-`NEXT_PUBLIC_LIVEKIT_URL` when that field is absent -- never, currently.
-One Config field serving two audiences that need different addresses once
-containerized is a real, separate, scoped decision, not a same-item fix.
+(SHA256-verified, no re-download) once mounted. The original deployment
+verification also found that `main.py`'s `/token` response included
+`Config.LIVEKIT_URL` (`ws://local_sfu:7880`, correct for a server-side
+process, unresolvable from a browser). The review fix split this into
+`LIVEKIT_URL` for internal services and `LIVEKIT_PUBLIC_URL` for the
+browser-facing token response.
 All Docker state was restored to exactly what it was before this
 investigation (the user's real `postgres_db`/`brain_graph` credentials, no
 leftover test containers) before moving on. `local_voice` (GPT-SoVITS) was
@@ -9933,7 +9931,7 @@ conclusively identified rather than guessing and calling it done.
 `backend/tests/test_agent_shutdown_consistency.py` (10 tests covering every
 `stop()` change above).
 
-**Verified.** Full suite **1147/1147**, `ruff check .` clean,
+**Verified.** Full suite passed, `ruff check .` clean,
 `scripts/check_subject_wiring.py` clean, `cargo check --workspace` clean
 (all four crates now report `v7.0.0`). `docker compose ... config --quiet`
 clean on the modified compose files. P3-3's fix was verified against real,
@@ -9944,10 +9942,9 @@ the broken and fixed states, restoring the user's actual environment to
 its original condition afterward. New tests were **not mutation-tested**,
 per the standing instruction: written and verified green-only.
 
-**NOT done.** The `main.py` LiveKit-URL browser-unreachability issue found
-while verifying P3-3/M1-A4 (see above) is real and undeployed-until-now,
-same as M1-A4 itself was -- but is a distinct, scoped fix, not folded into
-this pass. P4-10's "test that pins dead code" sub-item was not identified.
+**Addressed in review.** The `main.py` LiveKit-URL browser-unreachability
+issue is fixed by separating internal and public URLs. P4-10's "test that
+pins dead code" sub-item was not identified.
 `local_voice` (GPT-SoVITS)'s pre-existing crash-loop, observed both before
 and briefly during this investigation, is unrelated to anything in this
 cluster and was not investigated. This is the **final part of the 8-cluster

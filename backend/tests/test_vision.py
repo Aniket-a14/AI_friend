@@ -98,6 +98,7 @@ class TestVisualAppraisalService:
         # Call service; it should gracefully catch exception and return last cached value
         desc = await mock_appraisal_service.appraise("new_frame_b64")
         assert desc == "A developer coding on a laptop."
+        assert mock_appraisal_service.last_frame_was_novel is False
 
     @pytest.mark.asyncio
     async def test_vlm_pipeline_failure_does_not_advance_habituation_baseline(
@@ -222,6 +223,7 @@ class TestVisualAppraisalService:
 
         mock_ollama_client.describe_image.assert_not_awaited()
         assert desc == ""
+        assert mock_appraisal_service.last_frame_was_novel is False
 
     @pytest.mark.asyncio
     async def test_breaker_half_open_trial_after_cooldown_recovers_on_success(

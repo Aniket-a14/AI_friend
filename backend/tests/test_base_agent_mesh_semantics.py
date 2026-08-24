@@ -153,6 +153,17 @@ async def test_publish_propagates_jetstream_failure_when_fallback_disallowed():
 
 
 @pytest.mark.asyncio
+async def test_binary_publish_propagates_jetstream_failure_when_fallback_disallowed():
+    """The strict durable-delivery contract also applies to raw audio."""
+    agent = _make_agent()
+
+    with pytest.raises(JetStreamPublishFailed):
+        await agent.publish(
+            "audio.stream", b"pcm", allow_core_fallback=False
+        )
+
+
+@pytest.mark.asyncio
 async def test_publish_default_still_falls_back_to_core_nats():
     """Regression guard: the default (allow_core_fallback=True, unset) must
     keep today's best-effort downgrade behavior -- publish() should not

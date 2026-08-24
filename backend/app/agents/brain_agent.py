@@ -100,6 +100,7 @@ class BrainAgent(BaseAgent):
         self._generation_lock = asyncio.Lock()
         self.last_audio_progress = None
         self.last_assistant_response = None
+        self._active_response_turn_id: str | None = None
         # P2-14/M1-A14: `last_audio_progress` and `last_assistant_response`
         # are written from three independent NATS subscription tasks --
         # chat.input's turn flow, audio.playback.progress's tracker, and
@@ -422,6 +423,9 @@ class BrainAgent(BaseAgent):
         if not user_text:
             return
 
+        async with self._turn_state_lock:
+            self._active_response_turn_id = turn_id
+
         # Pacing Conversational Turn: calculate silence duration and pause
         state_snap = self.cognitive_core.state.get_context_snapshot()
         pacing = self.conversational_runtime.calculate_pacing_parameters(state_snap)
@@ -539,6 +543,14 @@ class BrainAgent(BaseAgent):
         try:
             progress = AudioPlaybackProgress.model_validate(data)
             async with self._turn_state_lock:
+                active_turn_id = getattr(self, "_active_response_turn_id", None)
+                if active_turn_id and progress.utterance_id != active_turn_id:
+                    logger.debug(
+                        "Ignoring playback progress for stale turn %s; active turn is %s.",
+                        progress.utterance_id,
+                        active_turn_id,
+                    )
+                    return
                 self.last_audio_progress = progress
             logger.debug(
                 f"🔊 Audio Playback Progress | Word Index: {progress.word_index} | Offset: {progress.character_offset} | Completed: {progress.completed}"
@@ -567,6 +579,19 @@ class BrainAgent(BaseAgent):
             # happen on confirmed (non-speculative) interrupts -- a
             # speculative duck has not stopped anything yet.
             if not stop_msg.speculative:
+                async with self._turn_state_lock:
+                    active_turn_id = getattr(self, "_active_response_turn_id", None)
+                if (
+                    stop_msg.turn_id
+                    and active_turn_id
+                    and stop_msg.turn_id != active_turn_id
+                ):
+                    logger.debug(
+                        "Ignoring audio stop for stale turn %s; active turn is %s.",
+                        stop_msg.turn_id,
+                        active_turn_id,
+                    )
+                    return
                 await self._cancel_active_generation(
                     stop_msg.reason or "confirmed audio.stop"
                 )
@@ -806,6 +831,7 @@ class BrainAgent(BaseAgent):
         close second: an in-flight generation still holding `memory_store`/
         `graph_db` must stop before those are torn out from under it.
         """
+        await self._prepare_stop()
         async with self._generation_lock:
             task = self._active_generation_task
             if task and not task.done():

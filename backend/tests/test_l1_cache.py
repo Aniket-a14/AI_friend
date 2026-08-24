@@ -143,6 +143,26 @@ class TestSearchFailureVisibility:
         assert s.last_search_error_at is not None
 
     @pytest.mark.asyncio
+    async def test_empty_embedding_is_recorded_as_a_failure(self, store):
+        s, _conn = store
+        s.get_embedding = AsyncMock(return_value=None)
+
+        assert await s.search_memories("hello") == []
+        assert s.last_search_error == "embedding service returned no vector"
+        assert s.last_search_error_at is not None
+
+    @pytest.mark.asyncio
+    async def test_close_cancels_retained_refresh_tasks(self, store):
+        s, _conn = store
+        task = asyncio.create_task(asyncio.sleep(60))
+        s._background_tasks.add(task)
+
+        await s.close()
+
+        assert task.cancelled()
+        assert not s._background_tasks
+
+    @pytest.mark.asyncio
     async def test_a_later_successful_search_clears_the_stale_failure(self, store):
         s, conn = store
         s.get_embedding = AsyncMock(

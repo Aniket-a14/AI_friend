@@ -656,6 +656,7 @@ class SubconsciousAgent(BaseAgent):
             logger.error(f"[Subconscious] Error in dream sequence: {e}")
 
     async def stop(self):
+        await self._prepare_stop()
         if self._monologue_task:
             self._monologue_task.cancel()
             try:
@@ -677,6 +678,14 @@ class SubconsciousAgent(BaseAgent):
                 await task
             except asyncio.CancelledError:
                 pass
+
+        if self._consolidation_task and not self._consolidation_task.done():
+            self._consolidation_task.cancel()
+            try:
+                await self._consolidation_task
+            except asyncio.CancelledError:
+                pass
+        self._consolidation_task = None
 
         await self.llm.close()
         if self.db_store and self._owns_db_store:

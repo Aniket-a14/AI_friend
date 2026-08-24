@@ -628,8 +628,15 @@ class SurfacingAgent(BaseAgent):
         )
 
     async def stop(self):
+        await self._prepare_stop()
         if self._sweep_task and not self._sweep_task.done():
             self._sweep_task.cancel()
+            try:
+                await self._sweep_task
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._sweep_task = None
 
         if self.graph:
             try:

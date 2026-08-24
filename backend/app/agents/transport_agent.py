@@ -479,6 +479,7 @@ class TransportAgent(BaseAgent):
         )
 
     async def stop(self):
+        await self._prepare_stop()
         if self.audio_worker_task:
             self.audio_worker_task.cancel()
             try:

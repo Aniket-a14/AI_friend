@@ -2588,6 +2588,8 @@ class MemoryStore:
 
             query_vector = await self.get_embedding(query_text)
             if not query_vector:
+                self.last_search_error = "embedding service returned no vector"
+                self.last_search_error_at = time.time()
                 return []
 
             mrl_dim, candidate_limit = self._compute_mrl_gating(
@@ -3308,5 +3310,11 @@ class MemoryStore:
             logger.error(f"Failed to prune expired visual screen traces: {e}")
 
     async def close(self):
-        """Close the persistent HTTP client."""
+        """Cancel refresh work before closing the resources it uses."""
+        tasks = [task for task in self._background_tasks if not task.done()]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._background_tasks.clear()
         await self._http_client.aclose()

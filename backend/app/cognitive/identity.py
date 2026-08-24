@@ -501,13 +501,11 @@ class IdentityManager:
         try:
             self.identity_core.update_identity(
                 {
-                    "name": self.personality.get("name", "AI Friend"),
+                    "name": self.persona.name,
                     "values": self.immutable_core["values"],
                     "base_tone": self.immutable_core["base_tone"],
                     "boundaries": self.immutable_core["boundaries"],
-                    "avoid_rules": self.personality.get(
-                        "conversation_rules", {}
-                    ).get("avoid", []),
+                    "avoid_rules": list(self.persona.avoid),
                     "relationship": self.history.get("relationship", "Friend"),
                 }
             )

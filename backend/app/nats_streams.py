@@ -10,6 +10,10 @@ from nats.js.errors import BadRequestError, ServiceUnavailableError
 logger = logging.getLogger("nats_streams")
 
 
+class StreamReconciliationError(RuntimeError):
+    """Raised when concurrent stream writers prevent convergence."""
+
+
 # P1-2: the retention policy each stream is created with. Kept SEPARATE
 # from CORE_STREAMS deliberately -- scripts/check_subject_wiring.py parses
 # CORE_STREAMS as an annotated dict-of-lists to cross-reference every
@@ -198,7 +202,8 @@ async def reconcile_existing_stream(
     between concurrent callers, so only `subjects` needs the retry.
 
     Returns True if the stream ended up changed by this call (even if a
-    retry was needed), False if it was already synchronized.
+    retry was needed), False if it was already synchronized. Raises
+    StreamReconciliationError if the retry budget is exhausted.
     """
     desired_subjects = set(subjects)
     last_seen_subjects: set[str] = set()
@@ -240,7 +245,9 @@ async def reconcile_existing_stream(
         max_retries,
         last_seen_subjects,
     )
-    return False
+    raise StreamReconciliationError(
+        f"Stream {stream_name} could not be reconciled after {max_retries} attempts"
+    )
 
 
 def build_stream_config(stream_name: str, subjects: list[str]):

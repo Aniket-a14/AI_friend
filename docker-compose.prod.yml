@@ -21,17 +21,8 @@ services:
   # bring up every agent cleanly and a user still could not start a
   # conversation -- there was nothing to hand out a LiveKit token at all.
   #
-  # DISCOVERED BUT NOT FIXED HERE, scope-adjacent to M1-A4 rather than it:
-  # main.py returns `Config.LIVEKIT_URL` to the browser as the WebSocket URL
-  # to connect to (main.py's `/token` handler). That value is
-  # `ws://local_sfu:7880` by default -- correct for a server-side process
-  # inside this compose network, unresolvable from a browser on the host.
-  # `useWebRTCVoice.js` only falls back to its own `NEXT_PUBLIC_LIVEKIT_URL`
-  # when the token response omits a URL, which main.py's response never
-  # does. One Config field is serving two audiences (server-internal and
-  # browser-facing) that need different addresses once containerized. Real,
-  # but a separate, scoped decision -- not something to fix as a rushed
-  # addition to an already-large item.
+  # Keep the server-internal LiveKit URL separate from the URL returned to a
+  # browser. `local_sfu` is resolvable only on this Compose network.
   signaling:
     build:
       context: ./backend
@@ -43,6 +34,7 @@ services:
       - ENVIRONMENT=${ENVIRONMENT:-production}  # #162: refuses to boot with placeholder secrets
       - NATS_URL=nats://nats_mesh:4222
       - LIVEKIT_URL=${LIVEKIT_URL:-ws://local_sfu:7880}
+      - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-ws://127.0.0.1:7880}
       - BACKEND_BIND_HOST=0.0.0.0
     # main.py's own Provisioning Guard (ensure_models_provisioned) is the
     # mechanism that populates this host path in the first place -- without

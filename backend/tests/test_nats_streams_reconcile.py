@@ -12,7 +12,7 @@ only the subjects half is exercised.
 
 import pytest
 
-from app.nats_streams import reconcile_existing_stream
+from app.nats_streams import StreamReconciliationError, reconcile_existing_stream
 
 _UNPOLICED_STREAM = "TEST_UNPOLICED_STREAM_NOT_IN_POLICIES"
 
@@ -92,15 +92,12 @@ async def test_recovers_from_a_single_lost_race():
 
 
 @pytest.mark.asyncio
-async def test_gives_up_and_reports_false_after_max_retries_exhausted():
+async def test_raises_after_max_retries_exhausted():
     """If every single attempt keeps losing the race (a pathological but
     possible case), the function must not loop forever or claim success --
-    it returns False once max_retries is exhausted."""
+    it raises once max_retries is exhausted."""
     jsm = FakeJSM(initial_subjects={"z"}, race_after_write={"z"}, race_forever=True)
 
-    changed = await reconcile_existing_stream(
-        jsm, _UNPOLICED_STREAM, ["a"], max_retries=3
-    )
-
-    assert changed is False
+    with pytest.raises(StreamReconciliationError):
+        await reconcile_existing_stream(jsm, _UNPOLICED_STREAM, ["a"], max_retries=3)
     assert jsm.update_calls == 3, "must attempt exactly max_retries times, not loop"

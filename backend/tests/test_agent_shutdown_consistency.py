@@ -36,6 +36,18 @@ async def test_base_agent_stop_shuts_down_its_own_metrics_thread():
 
 
 @pytest.mark.asyncio
+async def test_base_agent_stop_cancels_retained_background_tasks():
+    agent = _stopped_base_agent()
+    task = asyncio.create_task(asyncio.sleep(60))
+    agent._background_tasks.add(task)
+
+    await agent.stop()
+
+    assert task.cancelled()
+    assert not agent._background_tasks
+
+
+@pytest.mark.asyncio
 async def test_brain_agent_stop_closes_every_owned_resource(
     mock_llm_service, mock_graph_db, mock_memory_store
 ):

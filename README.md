@@ -658,7 +658,7 @@ Select your launching profile based on your operating system and hardware resour
 
 #### **A. Standard Production Launch (Linux / Windows Host)**
 
-This command boots up the default 13-container real-time voice, STT, and voice cloning mesh (5 infra services + 8 agents; `ollama` and `vision_agent` are each their own opt-in `profiles:` entry, not part of this count -- see the callout above and the Vision Agent row in the [Detailed Agent Registry](#detailed-agent-registry)):
+This command boots up the default 13-container real-time voice, STT, and voice cloning mesh (5 infra services + 8 agents; `ollama` and `vision_agent` are each their own opt-in `profiles:` entry, not part of this count -- see the callout above and the Vision Agent row in the [Detailed Agent Registry](#-detailed-agent-registry)):
 
 ```bash
 docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build

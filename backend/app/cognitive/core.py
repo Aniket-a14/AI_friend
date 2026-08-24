@@ -301,6 +301,8 @@ class CognitiveService:
                 deliver_policy="new",
             )
 
+        await self.identity.identity_core.flush_pending_cache_sync()
+
         logger.info("[CognitiveService] Hardened Identity Mesh Fully Initialized.")
 
     async def _on_system_tick(self, data: dict[str, Any]):

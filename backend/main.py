@@ -250,7 +250,7 @@ async def get_token(participant: str = "user"):
     """LiveKit Token Endpoint"""
     try:
         token = await backend.get_livekit_token(participant)
-        return {"token": token, "url": Config.LIVEKIT_URL}
+        return {"token": token, "url": Config.LIVEKIT_PUBLIC_URL}
     except Exception as e:
         logger.error(f"Token generation failed: {e}")
         raise HTTPException(status_code=500, detail="Token generation failed")
@@ -267,7 +267,11 @@ async def start_session(participant: str = "user"):
     """Alias for token generation to support legacy frontend calls."""
     try:
         token = await backend.get_livekit_token(participant)
-        return {"token": token, "url": Config.LIVEKIT_URL, "status": "session_started"}
+        return {
+            "token": token,
+            "url": Config.LIVEKIT_PUBLIC_URL,
+            "status": "session_started",
+        }
     except Exception as e:
         logger.error(f"Session start failed: {e}")
         raise HTTPException(status_code=500, detail="Session start failed")

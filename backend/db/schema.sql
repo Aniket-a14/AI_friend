@@ -78,7 +78,7 @@ create table if not exists visual_screen_traces (
   description text not null,
   valence double precision not null default 0.0,
   arousal double precision not null default 0.5,
-  created_at timestamptz default now()
+  created_at timestamptz not null default now()
 );
 
 create index if not exists visual_screen_traces_created_at_idx

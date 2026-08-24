@@ -129,6 +129,25 @@ async def test_publish_speech_chunk_with_offsets_and_no_incoming_metadata(
     assert payload["metadata"] == {"char_offset": 2, "word_index": 1}
 
 
+@pytest.mark.asyncio
+async def test_stale_playback_progress_cannot_overwrite_active_turn(
+    mock_llm_service, mock_graph_db, mock_memory_store
+):
+    agent = _agent(mock_llm_service, mock_graph_db, mock_memory_store)
+    agent._active_response_turn_id = "turn-new"
+
+    await agent._on_audio_playback_progress(
+        {
+            "utterance_id": "turn-old",
+            "character_offset": 99,
+            "word_index": 20,
+            "completed": False,
+        }
+    )
+
+    assert agent.last_audio_progress is None
+
+
 # --------------------------------------------------------------------------
 # BrainAgent._stream_to_speech -- offsets advance correctly across chunks
 # --------------------------------------------------------------------------

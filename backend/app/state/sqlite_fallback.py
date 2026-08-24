@@ -173,7 +173,7 @@ class SQLiteConnection:
                 description TEXT NOT NULL,
                 valence REAL DEFAULT 0.0,
                 arousal REAL DEFAULT 0.5,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         """)
         cursor.execute(
