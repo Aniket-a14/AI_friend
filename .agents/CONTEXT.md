@@ -10988,3 +10988,137 @@ remain unshipped (see 1.5). README's Quick Start section still describes the
 old four-manual-step sequence; `start.sh` supersedes it for anyone who
 notices it exists, but the docs themselves are Phase 8.1's job, not this
 one's.
+
+## 2026-08-27/28 -- Community roadmap Phase 2: create your friend
+
+The core product surface: describe a friend in prose, record their voice,
+talk to them. Landed as 2.1-2.4 on the same branch as Phase 1
+(`phase-1/fresh-clone-boots-and-speaks`), one commit for the whole phase, per
+the roadmap's own standing rule.
+
+**2.1 -- The persona compiler.** New module, `app/persona/compiler.py`.
+Deliberately does NOT ask the LLM to invent temperament numbers directly --
+two runs on the same description could then land on different
+`baseline_valence`s for no visible reason, and there would be nothing for
+2.2's preview to actually explain. Instead the LLM scores nine named,
+human-legible dimensions (warmth, volatility, openness_to_trust, ...), each
+with a quoted/paraphrased piece of evidence from the description, and a fixed
+set of linear formulas *in this file* -- not re-prompted, not re-derived --
+turns those into the 13 bounded `PersonaProfile` numbers. Every one becomes
+exactly one `Inference(field, value, reason)`; nothing numeric is ever
+applied silently. `_extract_json_object` pulls the first balanced JSON object
+out of a response by brace-depth with string-awareness (a real model wraps
+JSON in prose and code fences more often than not), and every narrative list
+field is truncated to its `PersonaProfile` cap in code rather than trusting
+the model's own counting.
+
+Found live, not by review: `OllamaClient.generate()`'s own default
+(`num_predict=64`, sized for a short chat reply) truncated this schema's JSON
+mid-object every time against a real model (`qwen2.5:3b`) -- `generate()`
+never raises on this, so the failure surfaced only as "JSON object was never
+closed" three calls deep. Fixed by passing `options_override={"num_predict":
+1024, "num_ctx": 4096}` explicitly.
+
+**Friction check, run live, not mocked.**
+`scripts/testing/verify_persona_compiler_friction.py` (a `evals/__main__.py`
+-style script: refuses to run against `MOCK_LLM_TEXT` without `--allow-mock`)
+compiles three deliberately edgy descriptions against a real model and checks
+that blunt/moody/argumentative language survives into `base_tone`/
+`identity_summary`/`traits` rather than being smoothed into agreeable
+defaults, and that `baseline_valence` isn't pulled positive regardless of a
+cold description. All three passed against `qwen2.5:3b`. Also caught, live: a
+description opening "He is blunt..." got the name "He" verbatim from the
+model despite the prompt saying a pronoun is not a name -- fixed with a
+code-level backstop (`_PRONOUNS_NOT_NAMES`) rather than trusting the
+instruction alone, since a smaller model is exactly where a prompt
+instruction gets ignored.
+
+**2.2 -- Preview before commit.** `app/persona/wizard.py`
+(`serialize_persona_toml`, `render_preview`) plus the interactive entry point
+`scripts/create_friend.py`. Every string value round-trips through a real
+`tomllib` parse in its own test, not just this module's own inverse function
+-- a serializer that mis-escapes a quote or newline would otherwise produce a
+file that silently parses to something other than what was previewed.
+`create_friend.py` shows tiers + every numeric inference + a biography
+summary, offers a dry-run conversation against the compiled persona (no
+mesh, no memory -- raw LLM in-character, just enough to hear roughly what's
+about to be committed to), and only writes through Phase 0.5's
+`validate_persona_file.validate()` against a temp copy on confirmation.
+
+**Found live, and it mattered:** a first smoke run wrote to
+`config/persona.local.toml` and pointed `.env`'s `PERSONA_PROFILE_PATH` at
+it -- clobbering the user's own already-authored `personal/persona.toml`
+pointer in the process. `personal/` turned out to be an existing, already-
+gitignored convention (predating this session) for exactly this kind of
+local, real persona data. Fixed before anything shipped: the wizard now
+targets `personal/persona.toml`/`personal/biography.md`, and refuses to
+touch an existing `personal/persona.toml` at all without an explicit
+`--force` -- checked *before* the description prompt, so a person is never
+asked to describe a friend only to be told at the end that saving is
+refused. `.env` was restored from a backup taken before the mistake; no
+tracked file or the user's real persona was affected.
+
+**2.3 -- Voice enrollment.** `scripts/audio/record_voice.py` rewritten:
+consent notice first, `--duration` (default 8s, was 120s -- sized for a
+reference clip, not fine-tuning material), `validate_clip()` (duration,
+peak amplitude, clipping ratio, windowed-RMS silence ratio -- deliberately
+NOT claiming a single-speaker check, since that needs real diarization this
+script doesn't have, and a check that always passes is worse than no check),
+auto-transcription via the offline `stt-agent --transcribe-file` mode built
+alongside this phase (subprocess, not the mesh), and `REF_AUDIO_PATH`/
+`REF_TEXT` written into `.env` via `python-dotenv`'s `set_key`. Optionally
+continues to the four emotional variants. `process_voice_samples.py` deleted
+-- confirmed zero references anywhere, fully superseded by this flow.
+
+Found live: `sounddevice`/`soundfile` were never in any requirements file --
+this script could not have actually run via the documented setup. Added to
+`requirements-base.txt` and installed; `transcribe()` verified end to end
+against the real `stt-agent` binary and the bundled `default_voice.wav`,
+returning the exact known transcript.
+
+**Rust: `stt-agent --transcribe-file <path>`.** One-shot offline
+transcription, added specifically to unblock 2.3 without requiring the NATS
+mesh just to record a voice sample -- decided via `AskUserQuestion` rather
+than guessed (the alternatives were a live-mesh round trip or a manual-
+transcript fallback; the user chose extending the Rust binary, keeping STT
+Rust-only and torch-free per the existing architecture). New `hound`
+dependency (WAV reading); `decode_wav_mono_16k` downmixes and resamples
+through the crate's existing tested `ResamplerCache`, not a reimplementation.
+9 new unit tests, each mutation-verified by hand (break the downmix average,
+the resample call, the flag parser; confirm the specific test fails; restore).
+
+**2.4 -- `scripts/talk.py`.** Publishes real `ChatInput` on `chat.input` and
+renders the real `ChatOutput` stream -- the actual cognitive pipeline, unlike
+2.2's dry-run chat which only ever talks to the raw LLM. Fixes
+`simulate_chat.py`'s two known bugs (reads `content`, the real `ChatOutput`
+field, not `chunk`; uses the `Topics` enum, not hardcoded subject strings).
+`scripts/check_subject_wiring.py` confirms `chat.input`/`chat.output` stay
+fully wired with this new publisher/subscriber pair added.
+
+**Verified.** Full suite: 1254 tests (+51), 0 failures, 0 errors (JUnit
+XML). `ruff check .` clean. `cargo check --workspace` clean.
+`cargo test --package stt-agent --package voice-agent --package contracts`:
+114/114. `scripts/check_subject_wiring.py`: OK, no new allowlist entries
+needed. Every new test mutation-verified by hand. Live-model verification
+(not `MOCK_LLM_TEXT`) against `qwen2.5:3b`/`llama3.2:3b` for: the friction
+check (3/3), a full compile-preview-write wizard run, and the offline
+transcriber against a real clip.
+
+**NOT done.** `talk.py` was import-checked but never run against a live
+mesh in this session -- Docker was not running in this environment, so NATS
++ `brain_agent` were never available to actually exchange a `chat.input`/
+`chat.output` pair end to end; this is the same class of gap Phase 1 logged
+for the full docker-compose stack. Whether `personal/persona.toml` is
+reachable by an agent running *inside* a container (none of the compose
+files currently mount `config/` or `personal/` into the Python agent images)
+was not investigated -- the wizard's own contract is local execution
+writing a path into `.env`; whether that path is visible to a containerized
+consumer is a Compose-volume question Phase 2 did not scope in, not
+something silently assumed to work. `validate_clip`'s single-speaker check
+is explicitly not implemented (see 2.3). The dry-run chat in
+`create_friend.py` and the friction-check script both build their own
+inline system prompt rather than reusing `IdentityManager.get_persona_prompt`
+-- deliberate, since that method needs a hydrated `IdentityManager`/DB an
+uncommitted, unsaved persona doesn't have yet, but it does mean the preview
+conversation's *exact* phrasing can differ slightly from what the seeded
+agent will actually produce.
