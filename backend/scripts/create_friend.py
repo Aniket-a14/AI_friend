@@ -39,7 +39,7 @@ sys.path.append(
 from dotenv import set_key
 
 from app.config import Config
-from app.llm.ollama_client import OllamaClient
+from app.llm import LLMClient, build_llm_client
 from app.persona.compiler import (
     CompiledPersona,
     PersonaCompilationError,
@@ -74,7 +74,7 @@ def _read_description() -> str:
     return "\n".join(lines)
 
 
-async def _dry_run_chat(profile: PersonaProfile, client: OllamaClient) -> None:
+async def _dry_run_chat(profile: PersonaProfile, client: LLMClient) -> None:
     """A few lines of conversation in the compiled persona's voice, before
     anything is written. Not a real cognitive turn -- no memory, no affect,
     no mesh -- just enough for a person to hear roughly what they're about to
@@ -151,7 +151,7 @@ async def main(force: bool) -> int:
         print("No description given; nothing to do.")
         return 1
 
-    client = OllamaClient(base_url=Config.OLLAMA_URL, model=Config.LLM_CHAT_MODEL)
+    client = build_llm_client(base_url=Config.OLLAMA_URL, model=Config.LLM_CHAT_MODEL)
     compiled: CompiledPersona | None = None
     try:
         while True:

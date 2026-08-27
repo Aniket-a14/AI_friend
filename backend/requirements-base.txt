@@ -30,3 +30,7 @@ python-json-logger>=4.1.0,<5.0.0
 orjson>=3.10.0,<4.0.0
 qdrant-client==1.9.0
 redis>=5.0.0,<6.0.0
+# Phase 4.2: optional cloud LLM fallback (app/llm/anthropic_client.py). Only
+# hit when a deployment explicitly sets LLM_PROVIDER=anthropic; every default
+# construction site still goes to Ollama.
+anthropic>=1.0.0,<2.0.0

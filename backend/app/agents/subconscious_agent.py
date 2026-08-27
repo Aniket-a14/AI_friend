@@ -8,7 +8,7 @@ from app.agents.base import BaseAgent, install_shutdown_signal_handlers
 from app.cognitive.subconscious import SubconsciousEngine
 from app.config import Config
 from app.contracts import ChatInput, ChatInputMetadata, Topics
-from app.llm.ollama_client import OllamaClient
+from app.llm import build_llm_client
 from app.measure_trace import trace as _measure_trace
 from app.state import proactive_queue
 from app.state.agent_state import StateService
@@ -32,7 +32,7 @@ class SubconsciousAgent(BaseAgent):
         reflection_service=None,
     ):
         super().__init__(name="subconscious_agent")
-        self._llm = OllamaClient(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
+        self._llm = build_llm_client(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
         self.graph_db = graph_db or GraphDB()
         self.state_service = state_service or StateService(graph_store=self.graph_db)
         self.engine = SubconsciousEngine(llm_client=self._llm)

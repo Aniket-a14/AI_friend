@@ -11294,3 +11294,137 @@ correct and tested on its own terms regardless of (ii)/(iii)'s outcome --
 the doc calls it out as "do this regardless" -- but nothing yet consumes
 `tempo_wpm` besides the one debug log line; it does not yet drive
 entrainment.
+
+## 2026-08-28 -- Community roadmap Phase 4: portable and reachable (4.1, 4.2)
+
+### 4.1 -- Export and import a friend
+
+New `backend/scripts/export_friend.py` / `import_friend.py`. State spans four
+stores that have to move together (roadmap Phase 4.1's own table): 9 Postgres
+tables (`db/schema.sql` is the schema of record; Prisma covers only 3),
+the `:Agent`/`:Entity` Neo4j subgraph, `.identity_state/`'s three files
+(`personality.json`, `history.json`, `identity_core.db`), and `state_cache.db`
+(the durable affect/trust state, easy to miss under the blanket `*.db`
+gitignore). Qdrant and Redis are deliberately not captured -- both are
+derivable from the above, per the roadmap's own reasoning.
+
+Export: Postgres rows to JSONL (one file per table, `SELECT *`, no hardcoded
+column list so it stays in sync with schema changes on its own), Neo4j nodes/
+relationships to JSONL via a plain Cypher dump, and the two SQLite files via
+the SQLite Online Backup API (`sqlite3.Connection.backup()`) rather than a
+raw file copy -- both files can be open under a live agent process, and a
+plain `shutil.copy2` of a live SQLite file can capture a torn write. Everything
+lands in one `manifest.json` + a `tar.gz`.
+
+Import is destructive on the Postgres side by design (TRUNCATE + CASCADE, then
+reload in FK-safe order -- `sessions` before `messages`), matching the
+roadmap's own verification shape ("export, wipe, import, assert identical").
+Neo4j import is idempotent MERGE instead, keyed on `(label, name)` rather than
+Neo4j's internal element ID (which isn't stable across a database) -- there is
+no "assert identical" requirement for the graph, and a destructive wipe there
+risks losing relationships an older/partial export simply never described.
+Column values that need an explicit cast (uuid, jsonb/json, timestamptz,
+vector/halfvec) get one at the bound-parameter position (`$1::uuid`, mirroring
+the `$1::vector(768)` pattern `memory_store.py` already uses) rather than
+relying on Postgres's implicit unknown-type cast, which is exactly the kind of
+ambiguity a backup/restore path shouldn't lean on. Column names from the
+archive's own JSONL are validated against a strict identifier regex before
+being interpolated into the INSERT statement -- they're the one part of an
+archive found on disk that reaches raw SQL text.
+
+Local files (`.identity_state/`, `state_cache.db`) refuse to overwrite an
+existing destination without `--force`, mirroring the Phase 2 wizard's
+persona-overwrite guard and the same near-miss it was built to prevent: these
+may be the files a person has kept an evolving friend growing in since the
+export was taken.
+
+**Verified** with hermetic unit tests (`tests/test_export_import_friend.py`,
+33 tests): `_json_default` and `_pg_cast_for` exhaustively; the SQLite
+snapshot/restore round-trip against real temporary files; the identity/state
+`--force` guard (mutation-verified: removing the guard was caught); the
+column-name injection check (mutation-verified: a crafted malicious column
+name is rejected before any `execute()` call, and removing the check was
+caught); `import_friend`'s `--force` requirement and manifest schema-version
+check, both proven to fail *before* touching Postgres (mutation-verified via
+an `asyncpg.connect` spy that raises `AssertionError` if reached). Postgres
+and Neo4j themselves are faked at the connection/session boundary (a small
+`_FakeConn`/`_FakeGraphDB`, the latter reusing the *real*
+`GraphDB._safe_relation` validator rather than reimplementing it) --
+consistent with this suite's hermetic design; there is no live round-trip
+against real Postgres/Neo4j in CI.
+
+**NOT done.** No live round-trip against real infrastructure (export, wipe,
+import, assert the friend remembers) -- the roadmap's own stated test for
+this phase -- has been run; that needs real Postgres/Neo4j/SQLite state from
+an actual running agent, which this session did not have reachable
+end-to-end. Qdrant/Redis derivation (rebuilding Qdrant vectors from the
+imported `memories` UUIDs, letting Redis re-mirror from SQLite) is asserted
+by design, not exercised.
+
+### 4.2 -- Optional cloud LLM fallback
+
+New `app/llm/__init__.py` (`LLMClient` Protocol + `build_llm_client()`) and
+`app/llm/anthropic_client.py` (`AnthropicClient`), keyed on a new
+`Config.LLM_PROVIDER` (`"ollama"` default, `"anthropic"` opt-in) and
+`Config.ANTHROPIC_API_KEY`. `AnthropicClient` is built on the real `anthropic`
+SDK (`requirements-base.txt`, `anthropic>=1.0.0,<2.0.0`), not raw HTTP --
+unlike `OllamaClient`, which hand-rolls HTTP because Ollama has no SDK,
+Anthropic does. It translates the endocrine->sampling mapping
+(`action.py::_compute_endocrine_options`'s cortisol/dopamine/fatigue ->
+temperature/top_p/num_predict) into Anthropic's shape (`num_predict` ->
+`max_tokens`; `num_ctx`/`num_thread` have no equivalent and are dropped
+rather than mistranslated), mirrors `OllamaClient`'s `MOCK_LLM_TEXT` guard so
+the hermetic suite (and a dev running with the mock flag) never makes a real,
+billed call regardless of provider, and mirrors `describe_image`'s H8
+contract (`None` = the call failed, `""` = the model saw nothing worth
+describing).
+
+Routed through five real construction sites: `brain_agent.py`,
+`subconscious_agent.py`, `vision/agent.py`, `app/persona/compiler.py`'s
+default client, and `scripts/create_friend.py`'s wizard -- the last two go
+beyond the roadmap's literal list, but persona creation is exactly as much a
+"does this work on cloud-only hardware" path as chat is, and
+`compiler.py`'s previous bare `OllamaClient()` default silently ignored
+`Config.OLLAMA_URL` entirely (dead in practice since every real call site
+already passes `llm=` explicitly, but a fixed correctness gap along the way).
+
+`backend/evals/`, `backend/tools/measure/`, and `scripts/testing/` were
+deliberately left constructing `OllamaClient` directly, not routed through
+the factory -- the eval harness's reproducibility story
+(`runner.reset_model_state`) unloads and reloads a real local Ollama model
+between runs, which has no cloud equivalent, and CLAUDE.md documents it as
+probing "the LLM boundary" with a real `OllamaClient` on purpose.
+
+**Verified** with hermetic unit tests (`tests/test_llm_factory.py`, 9 tests;
+`tests/test_anthropic_client.py`, 22 tests): provider selection (default,
+case/whitespace-insensitive, unknown provider raises), the
+`ANTHROPIC_API_KEY`-missing guard (mutation-verified: removing it was
+caught, before any network call), the full sampling-option translation table,
+the `MOCK_LLM_TEXT` guard on all three network-touching methods
+(mutation-verified on `generate()`'s guard specifically), `generate`/
+`generate_stream`/`describe_image` success and `anthropic.APIError` paths
+against a mocked SDK client, and the `describe_image` None-vs-`""` contract
+(mutation-verified: collapsing it back to always-`""` was caught).
+`tests/test_persona_compiler.py` / `test_persona_wizard.py` (37 tests)
+re-run unmodified and still pass -- every real call site already injects its
+own client.
+
+**NOT done.** No live call against the real Anthropic API -- everything above
+is verified against a mocked SDK client, never a real key. Streaming
+robustness under a genuinely slow/chunked connection is unexercised (the fake
+stream in tests yields synchronously). No UI/doc surface yet explains the
+cloud-fallback tradeoff to an end user beyond the `.env.example` comment and
+the `Config.LLM_PROVIDER` field comment -- that's Phase 8 ("the README is the
+product") territory, not this phase's.
+
+### Not started
+
+4.3 (reduce per-turn LLM calls) is correctly untouched -- it is a
+**TRIGGERED** item ("becomes worth doing when moving past the 3B ceiling"),
+not due yet.
+
+**Full verification:** 1345 tests (up from 1281; +64 new, all mutation-tested
+per the standing convention), 0 failures, 0 errors. `ruff check .` clean.
+`scripts/check_subject_wiring.py`: OK, no new subjects (Phase 4 touched no
+contracts). No Rust changed, so `cargo check`/`cargo test` were not re-run for
+this phase specifically.

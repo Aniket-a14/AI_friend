@@ -111,6 +111,14 @@ class AppSettings(BaseSettings):
     AI_NAME: str = "AI Friend"
     OLLAMA_URL: str = "http://127.0.0.1:11434"
 
+    # Roadmap Phase 4.2: bring-your-own cloud API key for hardware that can't
+    # host a local model. "ollama" (the default) is every construction site's
+    # existing behaviour, unchanged. Sends conversation to a third party --
+    # the opposite of this project's default local-first posture -- so it is
+    # never the default and the user must set it explicitly.
+    LLM_PROVIDER: str = "ollama"
+    ANTHROPIC_API_KEY: str | None = None
+
     LLM_FAST_MODEL: str = "llama3.2:3b"
     LLM_CHAT_MODEL: str | None = None
     LLM_REFLECTION_MODEL: str | None = None

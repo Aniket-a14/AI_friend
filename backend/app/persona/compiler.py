@@ -44,7 +44,8 @@ import logging
 import re
 from typing import Any
 
-from ..llm.ollama_client import OllamaClient
+from ..config import Config
+from ..llm import LLMClient, build_llm_client
 from .profile import PersonaProfile
 
 logger = logging.getLogger(__name__)
@@ -346,7 +347,7 @@ def _biography_markdown(entries: Any) -> str:
 async def compile_persona(
     description: str,
     *,
-    llm: OllamaClient | None = None,
+    llm: LLMClient | None = None,
 ) -> CompiledPersona:
     """Compile a freeform description into a `CompiledPersona`.
 
@@ -360,7 +361,9 @@ async def compile_persona(
     if not description or not description.strip():
         raise PersonaCompilationError("description is empty")
 
-    client = llm or OllamaClient()
+    client = llm or build_llm_client(
+        base_url=Config.OLLAMA_URL, model=Config.LLM_CHAT_MODEL
+    )
     response = await client.generate(
         prompt=description.strip(),
         system=_EXTRACTION_SYSTEM_PROMPT,

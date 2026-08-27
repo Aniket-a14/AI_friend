@@ -18,7 +18,7 @@ from ..contracts import (
     Topics,
     UserVoiceProperties,
 )
-from ..llm.ollama_client import OllamaClient
+from ..llm import build_llm_client
 from ..logging_config import setup_logging
 from ..runtime_bootstrap import bootstrap_runtime
 from ..state import ConversationHistoryStore, GraphDB, MemoryStore
@@ -65,7 +65,7 @@ class BrainAgent(BaseAgent):
         conversation_store: ConversationHistoryStore = None,
     ):
         super().__init__(name="brain_agent")
-        self.ollama = OllamaClient(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
+        self.ollama = build_llm_client(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
         self.graph_db = graph_db
         self.memory_store = memory_store
         self.conversation_store = conversation_store
@@ -851,7 +851,7 @@ class BrainAgent(BaseAgent):
         self.cognitive_core.close()
 
         for resource, label in (
-            (self.ollama, "OllamaClient"),
+            (self.ollama, "LLMClient"),
             (self.graph_db, "GraphDB"),
             (self.memory_store, "MemoryStore"),
             (self.conversation_store, "ConversationHistoryStore"),
