@@ -202,3 +202,53 @@ jobs:
         name: backend-benchmarks
         path: backend/.benchmarks.json
         retention-days: 14
+
+  code-quality:
+    # Roadmap Phase 0.7: report-only. mypy/radon/bandit findings are recorded
+    # as artifacts here and fixed in Phase 7, as a dedicated PR, once every
+    # functional phase is done -- see backend/tools/quality/baseline/ and the
+    # standing rule in the roadmap plan. continue-on-error keeps this from
+    # blocking merges before that point.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: pip
+        cache-dependency-path: backend/requirements-dev.txt
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+    - name: mypy (report only)
+      run: |
+        cd backend
+        mypy app | tee /tmp/mypy_report.txt
+    - name: radon cyclomatic complexity (report only)
+      run: |
+        cd backend
+        radon cc app -s | tee /tmp/radon_cc_report.txt
+        radon cc app -s -a
+    - name: radon maintainability index (report only)
+      run: |
+        cd backend
+        radon mi app | tee /tmp/radon_mi_report.txt
+    - name: bandit (report only)
+      run: |
+        cd backend
+        bandit -r app -f txt | tee /tmp/bandit_report.txt
+    - name: Upload code-quality reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: code-quality-reports
+        path: |
+          /tmp/mypy_report.txt
+          /tmp/radon_cc_report.txt
+          /tmp/radon_mi_report.txt
+          /tmp/bandit_report.txt
+        retention-days: 14

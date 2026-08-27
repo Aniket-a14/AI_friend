@@ -40,7 +40,7 @@ os.environ.setdefault("PERSONA_PROFILE_PATH", os.path.join(
 # A temp directory per session, so a test that saves is writing somewhere it is
 # allowed to. Tests that care about the files pass an explicit `base_path`.
 os.environ.setdefault(
-    "IDENTITY_BASE_PATH", tempfile.mkdtemp(prefix="pankudi-identity-")
+    "IDENTITY_BASE_PATH", tempfile.mkdtemp(prefix="test-identity-")
 )
 
 # Disable first-boot seeding for the same reason `PERSONA_PROFILE_PATH` above

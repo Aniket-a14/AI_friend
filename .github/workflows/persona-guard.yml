@@ -138,6 +138,11 @@ jobs:
           print(f'✅ All {len(seeds)} identity seed files are valid JSON')
           "
 
+      - name: Validate config/persona.toml
+        run: |
+          cd backend
+          python -m scripts.validate_persona_file
+
       - name: Upload Persona Results
         if: always()
         uses: actions/upload-artifact@v4

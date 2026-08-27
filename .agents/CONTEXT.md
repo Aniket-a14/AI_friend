@@ -1325,7 +1325,7 @@ Verification:
 
 ## 2026-05-22 Systems Architecture & Mathematical Alignment Audit
 
-Conducted a deep architectural and mathematical audit of the `Pankudi_ai` codebase against legacy blueprints (`psychological_layer.md`), system documentation (`ARCHITECTURE.md`), and active roadmaps (`cvs3_architecture_roadmap.md`).
+Conducted a deep architectural and mathematical audit of this codebase against legacy blueprints (`psychological_layer.md`), system documentation (`ARCHITECTURE.md`), and active roadmaps (`cvs3_architecture_roadmap.md`).
 
 Identified 5 mathematical, structural, and functional gaps/divergences:
 1. **Reappraisal Engine Weights Disconnect** (Structural Gap in `reappraisal.py` & `agent_state.py`): The `ReappraisalEngine` adjusts mood-pull weights dynamically based on conversational outcomes, but `StateService` hardcodes these coefficients (`0.6` and `0.4`), completely bypassing the Gross/Bosse emotion regulation loop.
@@ -4424,7 +4424,7 @@ matters for the same reason: volatile affect is *supposed* to change responses,
 so an eval that let it float would measure the agent's mood, not the model.
 
 **Probes are persona-derived, not a fixed list.** A hardcoded "is your name
-Pankudi?" probe would be fitted to one deployment the same way the old synonym
+Alex?" probe would be fitted to one deployment the same way the old synonym
 map was fitted to one corpus (B1). `persona_probes()` reads whatever
 `IdentityManager` actually loaded, so pointing the harness at a different
 persona makes it ask about *that* persona. Verified by mutation: hardcoding the
@@ -8402,7 +8402,7 @@ JSON. Fixed both: `+100` to `num_predict` when `classify_intent` is set, and
 an explicit instruction addition ("do not stop after the JSON, do not prefix
 the reply with a name or label") after a first live sample showed the model,
 even once given more budget, alternately stopping cold right after the
-closing brace with no reply at all, or prefixing its reply with "Pankudi: "
+closing brace with no reply at all, or prefixing its reply with "Alex: "
 like a chat-transcript line -- neither of which the original instruction
 text had anticipated or forbidden.
 
@@ -8514,9 +8514,9 @@ overnight would have been a real cost for no gain.
 whole part.** `qwen2.5:3b`, shipped packs, both paths. Same headline (6/9), and
 **zero of the nine responses shared** between them. The action path fired five
 metacognitive violations and one safe-fallback -- `persona.name-recall`, for
-instance, produced "My name is Pankudi. How can I assist you today?", tripped
-the forbidden-AI-phrase check, self-corrected, and answered "Pankudi."; the LLM
-path returned "Pankudi." with none of that machinery having run. The system
+instance, produced "My name is Alex. How can I assist you today?", tripped
+the forbidden-AI-phrase check, self-corrected, and answered "Alex."; the LLM
+path returned "Alex." with none of that machinery having run. The system
 prompt digests differ, as they must, because `_execute_respond_chat` appends
 `_CHAT_GUIDELINE` -- and the digest is read back from the client that saw the
 call rather than recomposed in the harness, so it cannot drift out of step with
@@ -10790,3 +10790,92 @@ blocked items (4a `pause_bias`, 4c `tempo_wpm`) are unchanged and still
 need real audio; the missing `sample_en_gold.wav` reference clip is still
 missing, and the script fix above only means that recording one now lands
 where the synthesiser can see it.
+
+---
+
+## 2026-08-27 -- Community roadmap Phase 0: ground truth
+
+New standing roadmap (`~/.claude/plans/async-stirring-clarke.md`, Phases 0-8)
+decided in conversation: one authored friend per person, full emotional
+friction, local-first, community release. Phase 0 fixes what was actively
+wrong before building on it.
+
+**The safety floor was empty at runtime.** `cognitive/core.py`'s appraisal-engine
+init read `self.identity.personality.get("boundaries", [])` -- a key that
+never exists on the raw personality.json-shaped dict. The actually-consumed
+call site, `cognitive/pipeline.py`'s per-turn `appraisal.appraise(...)`, had
+the identical bug: `identity_boundaries=self.identity.personality.get(...)`
+feeds `_check_norm_alignment_fallback` on both the Rust and Python paths, so
+`norm_alignment` has been scored against an empty boundary list for the
+pipeline's entire existence. Both now read
+`self.identity.immutable_core["boundaries"]` -- the same source
+`validate_response` already used correctly. Mutation-verified: reverting
+`pipeline.py`'s fix fails the new
+`test_pipeline_sources_appraisal_boundaries_from_immutable_core`.
+
+**Three stale copies of `IMMUTABLE_CORE`.** `IdentityCoreStore._seed_default_identity`
+hardcoded `["Honesty", "Privacy", "Curiosity"]` against the real
+`IMMUTABLE_CORE`'s `["Honesty", "Privacy"]`; `frontend/prisma/seed.js` carried
+the same stale third value. The store now imports `IMMUTABLE_CORE` directly
+instead of duplicating it; `seed.js`'s literal was corrected with a comment
+pointing at the source of truth. Mutation-verified via
+`test_seed_default_identity_matches_immutable_core`.
+
+**`prisma db seed` overwrote an evolved persona.** `seed.js` unconditionally
+called `agentConfig.update()` on an existing row; the Python seeder
+(`conversation_store.py`) only inserts if missing. `seed.js` is now
+insert-only to match, with a comment explaining why an existing row must not
+be touched.
+
+**Personal identity was tracked in a public repo.** `config/persona.toml` had
+`name = "Pankudi"` and a Hinglish `speaking_style`; `config/biography.md`
+carried the same persona's actual biography. Both replaced with a neutral
+generic example (name "Alex", "Casual and direct" style); the real content
+preserved at `personal/persona.toml`/`personal/biography.md` (gitignored),
+with local `.env` pointed at them via `PERSONA_PROFILE_PATH`/`BIOGRAPHY_PATH`
+so nothing was lost. The shipped seed `backend/app/personality.json` also
+defaulted every fresh install to `"Hinglish"` -- changed to a neutral
+default, since a community product's generic default should not carry one
+author's personal choice. Swept the rest of the tracked tree for the same
+name: renamed to "Alex" in test fixtures
+(`test_persona_profile.py`, `test_persona_unification.py`), a comment in
+`evals/probes.py`, a tmpdir prefix in `conftest.py`, four ledger entries in
+this file recording real historical model output, and a Windows path in
+`scripts/research/paper_results_guide.md`. Deleted
+`backend/tools/measure/out/m15_prompt_prefix.json` outright rather than
+hand-editing a "MEASURED" artifact's captured prompt text -- it contained the
+real persona's full rendered system prompt, and its actual finding (2 LLM
+calls fired, 0 shared prefix, 621 vs 2642 chars) is already recorded in this
+ledger's 1.5 entry independent of the raw JSON.
+
+**Persona Guard validated the wrong files.** The CI job triggers on
+`config/persona.toml` but only ever `json.load`d the two JSON seeds --
+nothing asserted the TOML users actually hand-edit even parses. Added
+`backend/scripts/validate_persona_file.py`, which runs a file through the
+same `read_persona_file` -> `strip_immutable` -> `split_by_tier` ->
+`PersonaProfile` construction path a real boot uses, but fails loudly instead
+of degrading to defaults. Catches malformed TOML, unknown/misspelled keys,
+attempts to author the immutable core, and out-of-bounds values (verified
+against all four in `test_validate_persona_file.py`). Wired into
+`persona-guard.yml` as a new step; this is also the validator Phase 2's
+onboarding wizard will reuse.
+
+**Initialized (not fixed) code-quality tooling.** Added `mypy`, `radon`,
+`bandit` alongside the existing `ruff`/`pytest-cov`, with config sections in
+`backend/pyproject.toml`. New `code-quality` job in `ci.yml`,
+`continue-on-error: true` so it reports without blocking. Baseline captured
+under `backend/tools/quality/baseline/`: 88 mypy errors, 32 bandit findings
+(23 medium, 9 low), full radon cc/mi reports. None of this is fixed here --
+that is Phase 7, its own PR, after every functional phase lands.
+
+**Fixed doc drift.** `.gitignore`'s comment named `IDENTITY_STATE_DIR`; the
+real config key is `IDENTITY_BASE_PATH`.
+
+**Verified.** Full suite: 1185 tests, 0 failures, 0 errors (JUnit XML, not the
+terminal summary). `ruff check .` clean. `check_subject_wiring.py`: every
+subject wired or allowlisted. `cargo check --workspace` clean.
+
+**NOT done.** mypy/radon/bandit findings recorded, not fixed (Phase 7). P0-1's
+LiveKit key question, the eval gate, and everything past Phase 0 in the
+roadmap are unstarted. `personal/persona.toml`/`biography.md` are local-only
+and were not (and should not be) committed.

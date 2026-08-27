@@ -283,5 +283,5 @@ def test_clamping_pulls_a_too_large_value_down(monkeypatch, caplog):
 
 
 def test_persona_name_follows_ai_name_by_default(monkeypatch):
-    monkeypatch.setattr(Config, "AI_NAME", "Pankudi", raising=False)
-    assert PersonaProfile.from_config().name == "Pankudi"
+    monkeypatch.setattr(Config, "AI_NAME", "Alex", raising=False)
+    assert PersonaProfile.from_config().name == "Alex"

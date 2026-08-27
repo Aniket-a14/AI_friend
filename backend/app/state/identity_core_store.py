@@ -6,6 +6,8 @@ import sqlite3
 import threading
 from typing import Any
 
+from ..persona.profile import IMMUTABLE_CORE
+
 logger = logging.getLogger("identity_core_store")
 
 
@@ -80,14 +82,12 @@ class IdentityCoreStore:
             self._seed_default_identity()
 
     def _seed_default_identity(self):
+        # values/boundaries sourced from IMMUTABLE_CORE, not hardcoded, so this can't drift from the real safety core.
         default_data = {
             "name": "AI Friend",
-            "values_list": ["Honesty", "Privacy", "Curiosity"],
+            "values_list": list(IMMUTABLE_CORE["values"]),
             "base_tone": "Warm, intellectual, and slightly protective",
-            "boundaries": [
-                "Will never share user data",
-                "Will not adopt toxic behavior",
-            ],
+            "boundaries": list(IMMUTABLE_CORE["boundaries"]),
             "speaking_style_pace": "natural",
             "speaking_style_verbosity": "balanced",
             "avoid_rules": [],

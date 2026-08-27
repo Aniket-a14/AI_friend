@@ -3,11 +3,12 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 
 const prisma = new PrismaClient()
+// Keep in sync with IMMUTABLE_CORE in backend/app/persona/profile.py.
 const DEFAULT_PERSONALITY = JSON.stringify({
     name: 'AI Friend',
     core_personality: {
         immutable: {
-            values: ['Honesty', 'Privacy', 'Curiosity'],
+            values: ['Honesty', 'Privacy'],
             base_tone: 'Warm, intellectual, and slightly protective',
             boundaries: ['Will never share user data', 'Will not adopt toxic behavior']
         },
@@ -54,15 +55,11 @@ async function main() {
     try {
         const existing = await prisma.agentConfig.findUnique({ where: { id: 1 } })
 
+        // Insert-only, matching ConversationHistoryStore._ensure_config_exists on the
+        // Python side: an existing row means a persona -- possibly evolved through
+        // reflection -- already lives there, and this seed script must not overwrite it.
         if (existing) {
-            console.log('Record exists, updating...')
-            await prisma.agentConfig.update({
-                where: { id: 1 },
-                data: {
-                    personality: personalityStr,
-                    backgroundHistory: historyStr,
-                }
-            })
+            console.log('Record exists, leaving it untouched.')
         } else {
             console.log('Record does not exist, creating...')
             await prisma.agentConfig.create({

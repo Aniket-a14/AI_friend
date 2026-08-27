@@ -5,6 +5,12 @@ pytest-cov
 pytest-benchmark
 mutmut==3.7.0
 ruff==0.16.1
+# Report-only tooling (roadmap Phase 0.7): findings are recorded, not fixed,
+# until the dedicated Phase 7 cleanup PR -- see [tool.mypy]/[tool.bandit] in
+# pyproject.toml and backend/tools/quality/baseline/.
+mypy==2.3.1
+radon==6.0.1
+bandit==1.9.4
 pre-commit
 codespell
 reportlab>=4.2.0

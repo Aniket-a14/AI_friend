@@ -146,6 +146,60 @@ async def test_pipeline_carries_visual_context_into_the_plan_payload(
 
 
 @pytest.mark.asyncio
+async def test_pipeline_sources_appraisal_boundaries_from_immutable_core(
+    pipeline, mock_components
+):
+    """`identity.personality` (the raw personality.json dict) has no top-level
+    "boundaries" key, so appraisal used to always score norm_alignment against
+    an empty list regardless of what the persona actually forbids. If this
+    regresses to reading `identity.personality.get("boundaries", ...)` again,
+    a real boundary like "no hate" silently stops affecting appraisal."""
+    mock_components["state"].last_speculative_intent = None
+    mock_components["perception"].perceive.return_value = MagicMock(
+        event_type="USER_MESSAGE",
+        raw_content="hello",
+        intent="CHAT",
+        event_id="evt-3",
+        metadata={},
+    )
+    mock_components["appraisal"].appraise.return_value = AppraisalVector(
+        relevance=1.0,
+        novelty=0.5,
+        goal_congruence=0.2,
+        agency=0.8,
+        norm_alignment=1.0,
+        relationship_impact=0.1,
+    )
+    mock_components["state"].get_context_snapshot.return_value = {"mood": 0.0}
+    mock_components["state"].get_behavioral_directive.return_value = "be friendly"
+    mock_components["decision"].decide.return_value = ActionPlan(
+        action_type="RESPOND_CHAT", goal="GREET", payload={"message": "hi"}
+    )
+    mock_components["identity"].validate_response.return_value = (True, "")
+    mock_components["identity"].get_persona_prompt.return_value = "System prompt"
+    mock_components["identity"].personality = {}
+    mock_components["identity"].immutable_core = {
+        "values": ["Honesty", "Privacy"],
+        "boundaries": ["Will never share user data", "Will not adopt toxic behavior"],
+    }
+
+    async def mock_execute(plan):
+        yield {"type": "content", "data": "Hi there!"}
+        yield {"type": "done", "data": ""}
+
+    mock_components["action"].execute.side_effect = mock_execute
+
+    async for _ in pipeline.execute({"type": "USER_MESSAGE", "content": "hello"}):
+        pass
+
+    _, kwargs = mock_components["appraisal"].appraise.call_args
+    assert kwargs["identity_boundaries"] == [
+        "Will never share user data",
+        "Will not adopt toxic behavior",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_pipeline_interruption_confirmed(pipeline, mock_components):
     # Setup Interruption
     mock_components["state"].last_speculative_intent = {

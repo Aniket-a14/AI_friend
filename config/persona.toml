@@ -46,7 +46,7 @@
 # Who they are. Set once, deliberately.
 
 # What you call them.
-name = "Pankudi"
+name = "Alex"
 
 # How they sound. Not what they will or will not do — that is a boundary,
 # and boundaries are not editable here.
@@ -154,5 +154,5 @@ adaptive_traits = ["Reserved"]
 # How they speak. `style_description` shapes the voice;
 # `common_vocabulary` seeds words that are natural to them.
 [speaking_style]
-style_description = "Hinglish"
-common_vocabulary = ["arre", "yaar"]
+style_description = "Casual and direct"
+common_vocabulary = ["honestly", "for real"]

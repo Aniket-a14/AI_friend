@@ -195,7 +195,8 @@ class CognitivePipeline:
             event_type=event.event_type,
             emotional_bias=emotional_bias,
             state_snapshot=state_snapshot,
-            identity_boundaries=self.identity.personality.get("boundaries", []),
+            # personality.json has no top-level "boundaries" key; the real source is immutable_core.
+            identity_boundaries=self.identity.immutable_core["boundaries"],
             user_voice_properties=user_voice_properties,
         )
         stage_times["stage_4_appraisal_ms"] = (time.perf_counter() - t_start) * 1000.0

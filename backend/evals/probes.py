@@ -1,7 +1,7 @@
 """Probe sources: generated from the loaded persona, or authored JSON packs.
 
 The persona-derived probes are the B1 lesson applied in reverse. A fixed probe
-file asking "is your name Pankudi?" would be fitted to one deployment the same
+file asking "is your name Alex?" would be fitted to one deployment the same
 way the old synonym map was fitted to one corpus. Generating the identity
 probes from whatever `IdentityManager` actually loaded makes them
 corpus-agnostic by construction: point the harness at a different persona and

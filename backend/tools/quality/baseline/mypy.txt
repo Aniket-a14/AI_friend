@@ -1,0 +1,139 @@
+app/metrics.py:38: error: Need type annotation for "_buffer" (hint: "_buffer: list[<type>] = ...")  [var-annotated]
+app/metrics.py:93: error: Dict entry 3 has incompatible type "str": "deque[Never]"; expected "str": "float"  [dict-item]
+app/metrics.py:94: error: Dict entry 4 has incompatible type "str": "None"; expected "str": "float"  [dict-item]
+app/metrics.py:95: error: Dict entry 5 has incompatible type "str": "deque[Never]"; expected "str": "float"  [dict-item]
+app/cognitive/somatic.py:75: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/cognitive/somatic.py:76: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/cognitive/somatic.py:77: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/cognitive/pipeline.py:333: error: Incompatible types in assignment (expression has type "Any | None", target has type "float")  [assignment]
+app/cognitive/pipeline.py:334: error: Incompatible types in assignment (expression has type "Any | None", target has type "float")  [assignment]
+app/cognitive/pipeline.py:344: error: Incompatible types in assignment (expression has type "str | None", variable has type "str")  [assignment]
+app/cognitive/pipeline.py:368: error: Incompatible types in assignment (expression has type "str | None", variable has type "str")  [assignment]
+app/cognitive/pipeline.py:401: error: Unsupported target for indexed assignment ("str")  [index]
+app/cognitive/pipeline.py:402: error: Incompatible types in "yield" (actual type "str", expected type "dict[str, Any]")  [misc]
+app/vision/links.py:15: error: Incompatible types in assignment (expression has type "None", variable has type Module)  [assignment]
+app/config.py:497: error: Decorators on top of @property are not supported  [prop-decorator]
+app/config.py:502: error: Decorators on top of @property are not supported  [prop-decorator]
+app/config.py:519: error: Argument 1 to "fromkeys" of "dict" has incompatible type "list[str | None]"; expected "Iterable[str]"  [arg-type]
+app/nats_streams.py:282: error: Argument "max_age" to "StreamConfig" has incompatible type "object"; expected "float | None"  [arg-type]
+app/nats_streams.py:283: error: Argument "max_bytes" to "StreamConfig" has incompatible type "object"; expected "int | None"  [arg-type]
+app/nats_streams.py:295: error: Incompatible types in assignment (expression has type "None", variable has type "Exception")  [assignment]
+app/nats_streams.py:354: error: Need type annotation for "connect_kwargs" (hint: "connect_kwargs: dict[<type>, <type>] = ...")  [var-annotated]
+app/nats_streams.py:360: error: Argument 1 to "connect" has incompatible type "str | None"; expected "str | list[str]"  [arg-type]
+app/state/graph_db.py:55: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/state/conversation_store.py:37: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/state/conversation_store.py:38: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/state/conversation_store.py:39: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/state/conversation_store.py:45: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/persona/profile.py:219: error: Value of type "dict[str, JsonValue] | Callable[[JsonDict], None]" is not indexable  [index]
+app/cognitive/decision.py:171: error: Incompatible return value type (got "object", expected "ActionPlan")  [return-value]
+app/cognitive/decision.py:273: error: Argument "key" to "max" has incompatible type overloaded function; expected "Callable[[str], SupportsDunderLT[Any] | SupportsDunderGT[Any]]"  [arg-type]
+app/cognitive/decision.py:282: error: Argument "key" to "max" has incompatible type overloaded function; expected "Callable[[str], SupportsDunderLT[Any] | SupportsDunderGT[Any]]"  [arg-type]
+app/state/identity_core_store.py:20: error: Need type annotation for "_instances" (hint: "_instances: list[<type>] = ...")  [var-annotated]
+app/state/identity_core_store.py:40: error: Incompatible types in assignment (expression has type "None", variable has type "Connection")  [assignment]
+app/vision/appraisal.py:128: error: "ImagingCore" has no attribute "__iter__" (not iterable)  [attr-defined]
+app/vision/appraisal.py:213: error: Incompatible types in assignment (expression has type "list[float] | None", variable has type "None")  [assignment]
+app/vision/appraisal.py:227: error: Incompatible types in assignment (expression has type "list[float] | None", variable has type "None")  [assignment]
+app/agents/base.py:335: error: "None" has no attribute "publish"  [attr-defined]
+app/agents/base.py:348: error: "None" has no attribute "publish"  [attr-defined]
+app/agents/base.py:356: error: "None" has no attribute "publish"  [attr-defined]
+app/agents/base.py:446: error: "None" has no attribute "find_stream_name_by_subject"  [attr-defined]
+app/agents/base.py:447: error: "None" has no attribute "_jsm"  [attr-defined]
+app/agents/base.py:474: error: "None" has no attribute "_jsm"  [attr-defined]
+app/agents/base.py:660: error: "None" has no attribute "subscribe"  [attr-defined]
+app/cognitive/identity.py:102: error: Incompatible default for parameter "persona" (default has type "None", parameter has type "PersonaProfile")  [assignment]
+app/cognitive/identity.py:102: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+app/cognitive/identity.py:102: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+app/llm/ollama_client.py:203: error: Argument "system" to "_build_payload_attempts" of "OllamaClient" has incompatible type "str | None"; expected "str"  [arg-type]
+app/llm/ollama_client.py:321: error: Argument "system" to "_build_payload_attempts" of "OllamaClient" has incompatible type "str | None"; expected "str"  [arg-type]
+app/cognitive/learning.py:47: error: Need type annotation for "f"  [var-annotated]
+app/cognitive/learning.py:281: error: Assignment to variable "e" outside except: block  [misc]
+app/cognitive/learning.py:282: error: Trying to read deleted variable "e"  [misc]
+app/state/working_memory_store.py:189: error: Item "Awaitable[list[Any]]" of "Awaitable[list[Any]] | list[Any]" has no attribute "__iter__" (not iterable)  [union-attr]
+app/state/working_memory_store.py:189: note: Maybe you forgot to use "await"?
+app/state/working_memory_store.py:284: error: Argument 1 to "loads" has incompatible type "Awaitable[str | None] | str"; expected "str | bytes | bytearray"  [arg-type]
+app/state/agent_state.py:359: error: Incompatible default for parameter "persona" (default has type "None", parameter has type "PersonaProfile")  [assignment]
+app/state/agent_state.py:359: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+app/state/agent_state.py:359: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+app/state/agent_state.py:379: error: Argument 11 to "AgentState" has incompatible type "**dict[str, float]"; expected "int"  [arg-type]
+app/state/agent_state.py:379: error: Argument 11 to "AgentState" has incompatible type "**dict[str, float]"; expected "list[str]"  [arg-type]
+app/state/agent_state.py:379: error: Argument 11 to "AgentState" has incompatible type "**dict[str, float]"; expected "datetime"  [arg-type]
+app/state/agent_state.py:379: error: Argument 11 to "AgentState" has incompatible type "**dict[str, float]"; expected "UserMentalModel"  [arg-type]
+app/state/agent_state.py:406: error: Incompatible types in assignment (expression has type "None", variable has type "Redis")  [assignment]
+app/state/agent_state.py:493: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:493: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:494: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:494: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:495: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:495: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:497: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:497: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:500: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:500: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:503: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:503: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:505: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:505: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:506: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:506: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:508: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:508: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:511: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:511: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:514: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:514: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:517: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:517: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:520: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:520: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:523: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:523: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:526: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:526: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:529: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:529: note: Maybe you forgot to use "await"?
+app/state/agent_state.py:532: error: Item "Awaitable[dict[Any, Any]]" of "Awaitable[dict[Any, Any]] | dict[Any, Any]" has no attribute "get"  [union-attr]
+app/state/agent_state.py:532: note: Maybe you forgot to use "await"?
+app/vision/agent.py:21: error: Incompatible types in assignment (expression has type "None", variable has type Module)  [assignment]
+app/agents/transport_agent.py:47: error: Need type annotation for "audio_queue"  [var-annotated]
+app/agents/transport_agent.py:86: error: Need type annotation for "inbound_audio_queue"  [var-annotated]
+app/agents/transport_agent.py:183: error: Argument 1 to "_process_remote_audio" of "TransportAgent" has incompatible type "Track"; expected "RemoteAudioTrack"  [arg-type]
+app/agents/transport_agent.py:469: error: Incompatible types in assignment (expression has type "LocalTrackPublication", variable has type "None")  [assignment]
+app/state/semantic_recall_store.py:34: error: Argument "timeout" to "QdrantClient" has incompatible type "float"; expected "int | None"  [arg-type]
+app/state/semantic_recall_store.py:121: error: Argument "must" to "Filter" has incompatible type "list[FieldCondition]"; expected "list[FieldCondition | IsEmptyCondition | IsNullCondition | HasIdCondition | NestedCondition | Filter] | None"  [arg-type]
+app/state/semantic_recall_store.py:121: note: "list" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app/state/semantic_recall_store.py:121: note: Consider using "Sequence" instead, which is covariant
+app/state/memory_store.py:291: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/state/memory_store.py:322: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/state/memory_store.py:323: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/state/memory_store.py:1971: error: Need type annotation for "direct_boosted_indices" (hint: "direct_boosted_indices: set[<type>] = ...")  [var-annotated]
+app/state/lexicon_store.py:54: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/state/lexicon_store.py:291: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/agents/subconscious_agent.py:28: error: Incompatible default for parameter "graph_db" (default has type "None", parameter has type "GraphDB")  [assignment]
+app/agents/subconscious_agent.py:28: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+app/agents/subconscious_agent.py:28: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+app/agents/subconscious_agent.py:29: error: Incompatible default for parameter "state_service" (default has type "None", parameter has type "StateService")  [assignment]
+app/agents/subconscious_agent.py:29: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+app/agents/subconscious_agent.py:29: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+app/agents/subconscious_agent.py:326: error: Incompatible types in assignment (expression has type "Task[None]", variable has type "None")  [assignment]
+app/agents/subconscious_agent.py:326: note: Maybe you forgot to use "await"?
+app/cognitive/core.py:109: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/agents/surfacing_agent.py:58: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app/agents/surfacing_agent.py:332: error: Argument 1 to "_temporal_label" of "SurfacingAgent" has incompatible type "Any | None"; expected "str"  [arg-type]
+app/agents/brain_agent.py:63: error: Incompatible default for parameter "graph_db" (default has type "None", parameter has type "GraphDB")  [assignment]
+app/agents/brain_agent.py:63: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+app/agents/brain_agent.py:63: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+app/agents/brain_agent.py:64: error: Incompatible default for parameter "memory_store" (default has type "None", parameter has type "MemoryStore")  [assignment]
+app/agents/brain_agent.py:64: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+app/agents/brain_agent.py:64: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+app/agents/brain_agent.py:65: error: Incompatible default for parameter "conversation_store" (default has type "None", parameter has type "ConversationHistoryStore")  [assignment]
+app/agents/brain_agent.py:65: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+app/agents/brain_agent.py:65: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+app/agents/brain_agent.py:214: error: Incompatible types in assignment (expression has type "Any | float | None", variable has type "float")  [assignment]
+app/agents/brain_agent.py:364: error: Incompatible types in assignment (expression has type "Task[Any]", variable has type "None")  [assignment]
+app/agents/brain_agent.py:517: error: Incompatible types in assignment (expression has type "str", variable has type "None")  [assignment]
+app/agents/brain_agent.py:534: error: Incompatible types in assignment (expression has type "str", variable has type "None")  [assignment]
+app/agents/brain_agent.py:554: error: Incompatible types in assignment (expression has type "AudioPlaybackProgress", variable has type "None")  [assignment]
+app/agents/brain_agent.py:606: error: Incompatible types in assignment (expression has type "UserVoiceProperties", variable has type "None")  [assignment]
+app/agents/brain_agent.py:623: error: Need type annotation for "current_chunk_words" (hint: "current_chunk_words: list[<type>] = ...")  [var-annotated]
+Found 88 errors in 22 files (checked 60 source files)
