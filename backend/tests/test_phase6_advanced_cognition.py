@@ -126,7 +126,12 @@ async def test_metacognitive_self_correction():
     llm = MagicMock()
 
     async def mock_stream_violating(*args, **kwargs):
-        yield "I hate this."
+        # Genuine contempt aimed at the user, not just the word "hate" --
+        # Phase 3.2's friction audit found (and fixed) this check rejecting
+        # ordinary non-hostile phrases like "I hate this", which is no longer
+        # a violation and would no longer exercise the self-correction path
+        # this test is actually about.
+        yield "You're so pathetic."
 
     async def mock_stream_corrected(*args, **kwargs):
         yield "Let's be positive."

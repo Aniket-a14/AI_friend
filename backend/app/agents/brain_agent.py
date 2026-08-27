@@ -604,8 +604,13 @@ class BrainAgent(BaseAgent):
         try:
             props = UserVoiceProperties.model_validate(data)
             self.last_user_voice_properties = props
+            # tempo_wpm is None until the first utterance completes (see
+            # contracts.py's own comment) -- formatting it unconditionally
+            # would raise on every chunk before that and get silently
+            # swallowed below as a "parsing" error, which it is not.
+            tempo = f"{props.tempo_wpm:.1f}WPM" if props.tempo_wpm is not None else "—"
             logger.debug(
-                f"🎙️ Ingested User Voice | Pitch: {props.pitch_f0:.1f}Hz | Energy: {props.energy_rms:.3f} | Tempo: {props.tempo_wpm:.1f}WPM"
+                f"🎙️ Ingested User Voice | Pitch: {props.pitch_f0:.1f}Hz | Energy: {props.energy_rms:.3f} | Tempo: {tempo}"
             )
         except Exception as e:
             logger.error(f"Error parsing user voice properties: {e}")

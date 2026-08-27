@@ -11122,3 +11122,175 @@ inline system prompt rather than reusing `IdentityManager.get_persona_prompt`
 uncommitted, unsaved persona doesn't have yet, but it does mean the preview
 conversation's *exact* phrasing can differ slightly from what the seeded
 agent will actually produce.
+
+## 2026-08-28 -- Community roadmap Phase 3 (3.1, 3.2): alive between sessions
+
+Landed as further commits on the same branch as Phases 1-2, per the
+roadmap's standing rule. 3.3 (pause_bias) and 3.4 (tempo_wpm) are Rust audio
+DSP work with PCM-measurement acceptance criteria of their own and are
+tracked separately -- not in this entry.
+
+**3.1 -- Proactive outreach actually reaches someone.**
+
+*Persisted `last_proactive_attempt`.* Was `StateService._last_proactive_attempt`,
+a plain instance attribute in neither the Redis hash nor `state_cache.db` --
+every restart silently reset the cooldown to expired, and the two OS
+processes that each own a `StateService` (`subconscious_agent`, `brain_agent`)
+could never agree on it. Moved onto `AgentState.last_proactive_attempt`,
+persisted through the exact same three-tier path `last_user_interaction`
+already used (Redis hash, `state_cache.db`, `state.broadcast`/
+`apply_external_state`), including a `state_cache.db` migration
+(`ALTER TABLE ... ADD COLUMN`, tolerant of "duplicate column name" for a
+fresh DB that already has it) since existing deployments' databases predate
+this column. `check_proactive_eligibility`/`mark_proactive_attempt` now read
+and write the persisted field instead of the old process-local one.
+
+*Fixed the double `mark_proactive_attempt()`.* `core.py`'s call (after the
+full proactive response finished streaming) was removed --
+`check_proactive_eligibility` is only ever called from `subconscious_agent`,
+which already marks the attempt the moment it's made (right after
+publishing the `chat.input` that triggers the whole turn), in the same
+process, same object. A second mark for one logical attempt is exactly the
+"wrong the moment the cooldown becomes a counter" case the roadmap named,
+and now that the field is persisted and broadcast, a stale second write
+could otherwise race the first across processes.
+
+*Queued undelivered outreach, replayed on reconnect.* `transport_agent` was
+"topology-blind" (confirmed by grep: the word "proactive" never appeared in
+that file) -- it captured whatever PCM arrived on `audio.stream` into
+LiveKit regardless of whether anyone was in the room. Rather than teach
+`transport_agent` to inspect and drop *audio* frames (which would need it to
+correlate `chat.output`'s `proactive`/`turn_id` against `audio.stream`
+frames, and a store-and-forward mechanism for raw PCM), the fix routes
+around `voice-agent`'s Rust TTS pipeline entirely and queues at the *thought*
+level, replaying through the same already-correct `chat.input` path a live
+proactive thought already uses:
+
+- New `Topics.SESSION_PRESENCE` (wire value `state.presence`, not
+  `session.presence` -- fits the existing `AI_MESSAGES` stream's `state.>`
+  pattern for free, no `check_subject_wiring.py` allowlist entry needed).
+  `transport_agent` publishes it on the LiveKit room's `participant_connected`/
+  `participant_disconnected` events, edge-triggered on the 0<->1+ participant
+  transition only (verified: LiveKit has already mutated
+  `room.remote_participants` by the time these callbacks fire, so the edge
+  check is `== 1` / `== 0`, not `== 0` / would-never-fire `> 0`).
+- New `app/state/proactive_queue.py`: a small durable SQLite queue (shares
+  `StateService`'s own `db_path`, a different table) --
+  `enqueue`/`pop_all`, capped at 5 pending thoughts (oldest dropped first;
+  replaying a dozen stale thoughts on reconnect would read as confused, not
+  attentive).
+- `subconscious_agent` tracks `_someone_connected` (pessimistic default
+  `False` until the first real signal, since a fresh process should not
+  assume presence before it knows). On a tick with a generated thought: if
+  connected, publish live as before; if not, enqueue instead -- and mark the
+  attempt either way, or every tick while still disconnected would generate
+  and queue another duplicate. On the presence 0->1 edge specifically (not
+  every `connected=True`, which a redelivered NATS message could repeat),
+  drains and replays the queue through the same `_deliver_thought` helper
+  the live path uses.
+
+*Known gap, recorded rather than silently assumed away:* if
+`subconscious_agent` restarts while someone is *already* connected, no new
+presence edge will fire (transport_agent only signals on an actual
+join/leave transition), so thoughts queued before the restart sit
+undelivered until the next genuine reconnect. Fixing this needs either a
+periodic presence re-announce or a request/reply "is anyone here" query --
+scoped out rather than half-built into this pass.
+
+**3.2 -- Confirmed (and found one thing suppressing) friction.**
+
+Read the full prompt scaffolding per the roadmap's own list:
+`IdentityManager.get_persona_prompt`, `action.py`'s `_CHAT_GUIDELINE`,
+`appraisal.py`'s semantic-drift prompt, `decision.py`'s intent/goal
+classification, `learning.py`'s reflection prompts. None push toward
+agreeableness -- `get_persona_prompt` carries no house-style language,
+`_CHAT_GUIDELINE` is grounding/anti-hallucination instructions only, the
+appraisal prompt scores the *user's* statement (feeding the agent's own
+affect), and `goal` (COMFORT/INFORM/ENGAGE/TEASE/PROTECT) is injected as raw
+context ("Goal: COMFORT"), never expanded into a tone directive anywhere.
+
+**Found the real thing:** `action.py`'s `_validate_partial_response` carried
+its own, independent toxicity check -- `re.search(r"\b(toxic|hate)\b", ...)`
+-- that had NOT been narrowed when `identity.py`'s equivalent
+(`validate_response`) was already fixed (ground-truth pass, Phase 0) to use
+`_HOSTILE_TO_USER`, a pattern scoped to contempt aimed at the user. Worse
+than `identity.py`'s old bug: this one runs on *every streamed chunk* during
+the live primary generation pass (`_emit_validated`), so a false positive
+didn't just cost a silent backend retry -- it audibly interrupted the user
+mid-sentence with "Wait, let me rephrase that..." and forced a regeneration
+explicitly told "do not repeat the forbidden phrases," actively pushing the
+model away from language a blunt, authored persona might legitimately use
+("I hate small talk", "I hate that this happened to you"). Fixed by
+importing and reusing `identity.py`'s own `_HOSTILE_TO_USER`/`_match_views`
+rather than a third redefinition, so the two checks cannot drift apart
+again. An existing test (`test_metacognitive_self_correction`) had been
+using "I hate this." as its trigger fixture for the (unrelated) self-
+correction *mechanism* -- updated to genuine contempt ("You're so
+pathetic.") now that the false positive it relied on is fixed.
+
+**Verified.** Full suite: 1281 tests (+27), 0 failures, 0 errors (JUnit
+XML). `ruff check .` clean. `cargo check --workspace` clean (no Rust
+touched this pass). `check_subject_wiring.py`: OK, `state.presence` fully
+wired, no new allowlist entries. Every new/changed check mutation-verified
+by hand, including two cases where a first draft of the test passed for the
+wrong reason and had to be rewritten before it caught anything (a
+restart-persistence test where a no-op `mark_proactive_attempt` mutation
+left both sides at the same default `0.0`; a repeated-presence-signal test
+where the queue was already empty by the second call regardless of whether
+the edge check was even present) -- both are now genuine regression tests,
+not just green ones.
+
+**NOT done.** 3.3 (`pause_bias`) is unstarted -- its own verification
+requires real synthesis through `local_voice`/GPT-SoVITS at a high- and
+low-arousal state and measuring the rendered PCM, which needs the voice
+stack actually running (`docs/FUTURE_WORK.md` §1.1 marks it **BLOCKED** for
+exactly this reason). The subconscious-restart-while-connected gap above.
+`talk.py` (Phase 2.4) and the new presence/queue mechanism were verified
+with hermetic, mutation-tested unit tests, but not against a fully running
+mesh -- a `docker compose`/`start.sh light` attempt this session did not
+reach a usable state (OrbStack's daemon became unreachable partway through)
+and is not claimed as evidence either way.
+
+## 2026-08-28 -- Community roadmap Phase 3.4(i): fix the tempo_wpm measurement
+
+`estimate_tempo_wpm` (`stt-agent/src/main.rs`) computed zero-crossing rate --
+spectral brightness, not speaking rate -- structurally confined to
+`[120, 180]` wpm, on a per-inbound-chunk basis (~50/sec) where no transcript
+exists yet. Replaced with `measured_tempo_wpm(text, pcm_16k_len)`: words
+÷ duration, computed at `run_final_job`'s completed-transcript point (the
+first place in the pipeline a transcript and its duration exist together),
+carried forward via a new `SttState.last_completed_tempo_wpm: Option<f64>`
+so the per-chunk `UserVoiceProperties` publish reports the last *completed*
+utterance's real rate instead of re-deriving a fake one from a fragment.
+`estimate_tempo_wpm` deleted.
+
+Contract field changed to `Option<f64>` in **both**
+`crates/contracts/src/lib.rs` and `backend/app/contracts.py` together --
+the doc's own instruction, and the class of bug (`char_offset`) this repo
+has hit before from a one-sided contract change. `brain_agent.py`'s debug
+log line, the only Python reader, now handles `None` (before the first
+completed utterance) instead of a raw `.1f` format that would have raised
+and been silently swallowed as a "parsing error."
+
+**Verified.** 5 new Rust unit tests for `measured_tempo_wpm`: matches a
+hand-computed words-over-duration value, `None` for empty text or zero
+duration, orders more-words-same-duration as a higher rate, and -- the
+concrete failure this replaces -- produces a rate outside the old
+`[120, 180]` band. Mutation-verified (a hardcoded-150.0 mutation was caught
+by 2 of the 5; an arithmetic mutation `× 60` instead of `÷ 60` was caught
+independently by the hand-computed-value test alone). `cargo test` across
+contracts/stt-agent/voice-agent: 119/119. Full Python suite: 1281 tests, 0
+failures. `ruff check .` clean. `check_subject_wiring.py`: OK.
+
+**NOT done.** 3.4(ii) (verify the corrected number against hand-counted
+ground truth from three recorded passes -- slow/natural/fast -- of the same
+paragraph) and 3.4(iii) (partial entrainment, gated on (ii) passing) are
+both explicitly **not attempted**: (ii) requires a real recording session
+with a human reading a scripted paragraph three times, which is not
+something this session can produce on its own, and the roadmap is explicit
+that (iii) must not proceed on an unverified number ("acting on a wrong
+signal is worse than acting on none"). The measurement fix in this entry is
+correct and tested on its own terms regardless of (ii)/(iii)'s outcome --
+the doc calls it out as "do this regardless" -- but nothing yet consumes
+`tempo_wpm` besides the one debug log line; it does not yet drive
+entrainment.

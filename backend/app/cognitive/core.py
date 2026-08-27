@@ -520,7 +520,17 @@ class CognitiveService:
                 full_response += chunk["data"]
             yield chunk
 
-        self.state.mark_proactive_attempt()
+        # Phase 3.1: NOT marked here. `check_proactive_eligibility` is only
+        # ever called from `subconscious_agent`, which already marks the
+        # attempt (`subconscious_agent.py`, right after publishing the
+        # `chat.input` that triggers this whole method, in the same process
+        # as the eligibility check it gates) the moment the attempt is made,
+        # not after the full response has finished streaming. A second mark
+        # here used to write to a *different* process's separate
+        # `StateService` (see `apply_external_state`'s docstring) that no
+        # code path ever read `last_proactive_attempt` from directly -- now
+        # that the field is persisted and broadcast, marking it twice for one
+        # logical attempt would just be two racing writes of the same fact.
 
         if full_response:
             episode = {

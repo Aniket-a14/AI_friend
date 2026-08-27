@@ -7,7 +7,7 @@ from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
 
 from ..config import Config
-from ..contracts import AudioPlaybackProgress, Topics
+from ..contracts import AudioPlaybackProgress, SessionPresence, Topics
 from ..measure_trace import trace as _measure_trace
 from .base import BaseAgent, install_shutdown_signal_handlers
 
@@ -169,6 +169,41 @@ class TransportAgent(BaseAgent):
         # 4. Listen for Remote Tracks (Inbound - User Speech)
         self.room.on("track_subscribed", self._on_track_subscribed)
         logger.info("Listening for remote tracks (Inbound Bridge enabled).")
+
+        # 5. Phase 3.1: this process is the only one with direct visibility
+        # into who is actually in the room -- subconscious_agent (a separate
+        # process) needs that to know whether a proactive thought has anyone
+        # to reach. Edge-triggered (0<->1+ participants), not a signal on
+        # every join/leave of an Nth participant, since only "is anyone here
+        # at all" matters for that decision.
+        self.room.on("participant_connected", self._on_participant_connected)
+        self.room.on("participant_disconnected", self._on_participant_disconnected)
+
+    def _on_participant_connected(self, participant: rtc.RemoteParticipant) -> None:
+        # LiveKit has already added `participant` to `remote_participants` by
+        # the time this callback fires, so "was the room empty before this
+        # one joined" is exactly count == 1, not 0 -- checking against 0 here
+        # would always be false and this edge would never fire.
+        if len(self.room.remote_participants) == 1:
+            self._publish_presence(connected=True)
+
+    def _on_participant_disconnected(self, participant: rtc.RemoteParticipant) -> None:
+        # Mirror of the above: LiveKit has already removed the leaving
+        # participant, so "is the room now empty" is exactly count == 0.
+        if len(self.room.remote_participants) == 0:
+            self._publish_presence(connected=False)
+
+    def _publish_presence(self, *, connected: bool) -> None:
+        presence = SessionPresence(
+            connected=connected,
+            participant_count=len(self.room.remote_participants),
+        )
+        self.spawn(self.publish(Topics.SESSION_PRESENCE, presence.model_dump()))
+        logger.info(
+            "[Transport] Room presence changed: connected=%s participants=%d",
+            connected,
+            presence.participant_count,
+        )
 
     def _on_track_subscribed(
         self,

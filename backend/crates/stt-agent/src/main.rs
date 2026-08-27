@@ -283,6 +283,15 @@ struct SttState {
     /// `utterance_id` has already fired one, so a new one only fires when a
     /// new utterance starts.
     speculative_fired_for: Option<String>,
+    /// docs/FUTURE_WORK.md §1.2: the previous `estimate_tempo_wpm` ran per
+    /// inbound chunk in the VAD loop, where no transcript exists yet, so it
+    /// measured zero-crossing rate (spectral brightness) and called it
+    /// speaking rate. Real WPM needs words and duration, both of which only
+    /// exist together at `run_final_job`'s completed-transcript point --
+    /// this carries that measurement forward so the per-chunk
+    /// `UserVoiceProperties` publish can report it. `None` until the first
+    /// utterance completes.
+    last_completed_tempo_wpm: Option<f64>,
 }
 
 #[tokio::main]
@@ -320,6 +329,7 @@ async fn main() -> Result<()> {
         last_partial_at: 0.0,
         last_noise_publish: 0.0,
         speculative_fired_for: None,
+        last_completed_tempo_wpm: None,
     }));
 
     // Latest-wins slot for partials: if the fast model is still busy, a newer
@@ -365,7 +375,7 @@ async fn main() -> Result<()> {
                 fast,
                 state.clone(),
             );
-            spawn_final_worker(jetstream.clone(), final_rx, accurate);
+            spawn_final_worker(jetstream.clone(), final_rx, accurate, state.clone());
             info!(
                 hears_emotion,
                 "stt-agent online with real recognition (dual-path)"
@@ -443,10 +453,12 @@ impl FastPath {
 async fn run_final_job(
     jetstream: &async_nats::jetstream::Context,
     model: &Arc<WhisperModel>,
+    state: &Arc<Mutex<SttState>>,
     job: Job,
 ) {
     let model = model.clone();
     let pcm = job.pcm_16k;
+    let pcm_len = pcm.len();
     let started = now_seconds();
 
     let result = tokio::task::spawn_blocking(move || model.transcribe(&pcm)).await;
@@ -469,6 +481,15 @@ async fn run_final_job(
 
     let elapsed_ms = (now_seconds() - started) * 1000.0;
     info!(text = %text, took_ms = elapsed_ms, "final transcript");
+
+    // docs/FUTURE_WORK.md §1.2: real speaking rate, computed here because
+    // this is the first point in the pipeline where a transcript and its
+    // duration both exist -- see measured_tempo_wpm and SttState's own
+    // comment on last_completed_tempo_wpm.
+    if let Some(rate) = measured_tempo_wpm(&text, pcm_len) {
+        state.lock().await.last_completed_tempo_wpm = Some(rate);
+    }
+
     if let Err(err) = publish_final(jetstream, &text, &job.utterance_id, job.latency, "whisper").await
     {
         error!("stt-agent failed to publish transcript: {err:#}");
@@ -577,10 +598,11 @@ fn spawn_final_worker(
     jetstream: async_nats::jetstream::Context,
     mut rx: mpsc::Receiver<Job>,
     model: Arc<WhisperModel>,
+    state: Arc<Mutex<SttState>>,
 ) {
     tokio::spawn(async move {
         while let Some(job) = rx.recv().await {
-            run_final_job(&jetstream, &model, job).await;
+            run_final_job(&jetstream, &model, &state, job).await;
         }
     });
 }
@@ -835,7 +857,11 @@ async fn handle_audio_inbound(
     let voice_properties = UserVoiceProperties {
         pitch_f0: estimate_f0(&chunk, source_rate),
         energy_rms: chunk_rms,
-        tempo_wpm: estimate_tempo_wpm(&chunk),
+        // The last *completed* utterance's measured rate (see
+        // measured_tempo_wpm), not derived from this chunk -- no per-chunk
+        // signal can measure a rate that only exists over a whole utterance.
+        // None until the first utterance finishes.
+        tempo_wpm: guard.last_completed_tempo_wpm,
         timestamp: now,
     };
     // `.publish().await` hands the message to the connection; the returned
@@ -1006,18 +1032,19 @@ fn estimate_f0(samples: &[f32], sample_rate: u32) -> f64 {
     }
 }
 
-fn estimate_tempo_wpm(samples: &[f32]) -> f64 {
-    if samples.is_empty() {
-        return 120.0;
+/// Real speaking rate: words in the completed transcript divided by the
+/// utterance's duration. Replaces `estimate_tempo_wpm`, which computed
+/// zero-crossing rate (spectral brightness, not tempo) and was structurally
+/// confined to [120, 180] wpm regardless of how fast anyone actually spoke
+/// (docs/FUTURE_WORK.md §1.2). `pcm_16k_len` is always at 16kHz -- the name
+/// every buffer of this shape already carries throughout this crate.
+fn measured_tempo_wpm(text: &str, pcm_16k_len: usize) -> Option<f64> {
+    let word_count = text.split_whitespace().count();
+    let duration_minutes = pcm_16k_len as f64 / 16_000.0 / 60.0;
+    if word_count == 0 || duration_minutes <= 0.0 {
+        return None;
     }
-    let mut zero_crossings = 0usize;
-    for i in 1..samples.len() {
-        if (samples[i - 1] >= 0.0) != (samples[i] >= 0.0) {
-            zero_crossings += 1;
-        }
-    }
-    let zcr = zero_crossings as f64 / samples.len() as f64;
-    120.0 + (zcr * 200.0).min(60.0)
+    Some(word_count as f64 / duration_minutes)
 }
 
 fn metadata_from_headers(message: &Message) -> Option<LatencyMetadata> {
@@ -1287,6 +1314,7 @@ mod tests {
             last_partial_at: 0.0,
             last_noise_publish: 0.0,
             speculative_fired_for: None,
+            last_completed_tempo_wpm: None,
         }))
     }
 
@@ -1467,5 +1495,53 @@ mod tests {
     fn decode_wav_mono_16k_rejects_a_missing_file() {
         let missing = std::env::temp_dir().join("stt_agent_test_does_not_exist.wav");
         assert!(decode_wav_mono_16k(&missing).is_err());
+    }
+
+    #[test]
+    fn measured_tempo_wpm_matches_hand_computed_words_over_duration() {
+        // 10 words over 4 seconds (16000 * 4 samples at 16kHz) = 150 wpm.
+        let text = "one two three four five six seven eight nine ten";
+        let samples = (16_000 * 4) as usize;
+        let wpm = measured_tempo_wpm(text, samples).expect("non-empty text and duration");
+        assert!((wpm - 150.0).abs() < 0.01, "expected 150.0, got {wpm}");
+    }
+
+    #[test]
+    fn measured_tempo_wpm_is_none_for_empty_text() {
+        // run_final_job already returns before this on an empty transcript,
+        // but the function itself must not divide zero words into a duration
+        // and call the result a rate.
+        assert!(measured_tempo_wpm("", 16_000 * 4).is_none());
+        assert!(measured_tempo_wpm("   ", 16_000 * 4).is_none());
+    }
+
+    #[test]
+    fn measured_tempo_wpm_is_none_for_zero_duration() {
+        assert!(measured_tempo_wpm("hello there", 0).is_none());
+    }
+
+    #[test]
+    fn measured_tempo_wpm_orders_slower_and_faster_speech_correctly() {
+        // The exact failure mode this replaces: the old zero-crossing-rate
+        // proxy could not even guarantee more words in the same time reads
+        // as a higher rate -- it measured spectral brightness, not tempo.
+        let duration = (16_000 * 4) as usize;
+        let slow = measured_tempo_wpm("one two three four", duration).unwrap();
+        let fast = measured_tempo_wpm(
+            "one two three four five six seven eight nine ten eleven twelve",
+            duration,
+        )
+        .unwrap();
+        assert!(fast > slow, "more words in the same duration must be a higher rate");
+    }
+
+    #[test]
+    fn measured_tempo_wpm_is_not_confined_to_the_old_120_to_180_band() {
+        // The old proxy was structurally incapable of reporting outside
+        // [120, 180] wpm no matter how fast or slow anyone actually spoke.
+        // A real, very slow rate must be able to read below 120.
+        let one_word_over_ten_seconds = (16_000 * 10) as usize;
+        let wpm = measured_tempo_wpm("hello", one_word_over_ten_seconds).unwrap();
+        assert!(wpm < 120.0, "expected well under 120wpm for one word in 10s, got {wpm}");
     }
 }
