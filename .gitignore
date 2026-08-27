@@ -91,7 +91,7 @@ backend/evals/out/
 /audit/
 
 # Live agent identity state (cognitive/identity.py's default when
-# IDENTITY_STATE_DIR is unset) -- a SQLite db plus the persona's own working
+# IDENTITY_BASE_PATH is unset) -- a SQLite db plus the persona's own working
 # copy of personality.json/history.json, written by any local run. Runtime
 # output, not source; the seeded defaults it starts from live tracked at
 # backend/app/personality.json / history.json.

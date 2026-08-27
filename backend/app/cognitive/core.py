@@ -276,7 +276,8 @@ class CognitiveService:
         await self.self_knowledge.refresh_known_terms()
 
         # Initialize appraisal engine with identity boundaries
-        boundaries = self.identity.personality.get("boundaries", [])
+        # personality.json has no top-level "boundaries" key; the real source is immutable_core.
+        boundaries = self.identity.immutable_core["boundaries"]
         self.appraisal = AppraisalEngine(identity_core_values=boundaries)
 
         # Subscribe to Mesh Channels

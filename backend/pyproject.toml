@@ -84,3 +84,25 @@ use_setproctitle = false
 # Benchmark assertions are tested, but benchmark timing itself is not part of
 # mutation correctness and only adds noise and runtime.
 pytest_add_cli_args = ["--benchmark-disable"]
+
+# Roadmap Phase 0.7: report-only initialization. mypy/radon/bandit run in CI
+# and their output is saved under backend/tools/quality/baseline/ -- nothing
+# they find gets fixed here. The fix pass is Phase 7, as its own PR, once
+# every functional phase of the roadmap is done.
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+# Genuinely dynamic patterns in this codebase (the Config metaclass,
+# dict[str, Any] speaking-style fields) will need targeted, reasoned
+# suppressions rather than blanket ones -- decided in Phase 7, not here.
+follow_imports = "silent"
+
+[tool.radon]
+exclude = "tests/*,_archive/*,mutants/*"
+cc_min = "A"
+
+[tool.bandit]
+exclude_dirs = ["tests", "_archive", "mutants"]

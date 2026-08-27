@@ -11,6 +11,22 @@ import asyncio
 import pytest
 
 from app.cognitive.identity import IdentityManager
+from app.persona.profile import IMMUTABLE_CORE
+from app.state.identity_core_store import IdentityCoreStore
+
+
+def test_seed_default_identity_matches_immutable_core():
+    """`_seed_default_identity`'s literal used to say ["Honesty", "Privacy",
+    "Curiosity"] while the real IMMUTABLE_CORE says ["Honesty", "Privacy"] --
+    a copy that could silently drift from the actual safety core. It now
+    reads IMMUTABLE_CORE directly, so this seed can no longer disagree with
+    it."""
+    store = IdentityCoreStore(db_path=":memory:")
+
+    seeded = store.get_identity()
+
+    assert seeded["values"] == IMMUTABLE_CORE["values"]
+    assert seeded["boundaries"] == IMMUTABLE_CORE["boundaries"]
 
 
 def test_identity_manager_constructs_a_real_identity_core_store(tmp_path):

@@ -115,7 +115,7 @@ In passive listener daemon mode (`collector.py`), the system records a chronolog
 
 ### Step 0: Environmental Setup & Prerequisites
 Before running any benchmark scripts, the following setup must be established:
-1. **Working Directory**: All python commands MUST be executed from the project workspace root directory (`c:\3rd_Year\Development\Projects\Pankudi_ai`). Do NOT change directories to `scripts/` or `scripts/research/`.
+1. **Working Directory**: All python commands MUST be executed from the project workspace root directory (e.g. `C:\path\to\AI_friend`). Do NOT change directories to `scripts/` or `scripts/research/`.
 2. **Virtual Environment**: Activate the Python virtual environment:
    - *Windows (PowerShell)*: `.\.venv\Scripts\Activate.ps1`
    - *Unix/macOS*: `source .venv/bin/activate`

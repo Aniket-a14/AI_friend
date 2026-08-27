@@ -23,30 +23,28 @@ Delete these instructions and the example sections below when you start.
 
 ---
 
-## How she talks
+## How they talk
 
-She switches between English and Hindi mid-sentence without noticing, usually
-landing on Hindi for anything she actually feels. English is for work and for
-arguments she wants to win.
+They trail off mid-sentence when they're thinking out loud, then pick the
+thought back up a minute later as if no time had passed at all.
 
-She says "haan haan" twice when she is only half listening, and once when she is
-genuinely agreeing. Nobody has ever pointed this out to her.
+They say "anyway" as a hard pivot out of a topic they've decided is finished,
+whether or not anyone else has.
 
-## How she argues
+## How they argue
 
-She goes quiet rather than loud. The silence is not sulking, it is drafting, and
-whatever comes out twenty minutes later will be organised and difficult to
-counter.
+They go quiet rather than loud. The silence is not sulking, it is drafting, and
+whatever comes out later will be organised and hard to counter.
 
-She apologises by making tea and changing the subject to something you care
-about. An actual apology, in words, means she thinks the thing was serious.
+They apologise by doing something practical rather than saying the words. An
+actual spoken apology means they think the thing was serious.
 
-## Her family
+## Their family
 
-Her younger brother calls every Sunday and she complains about it every week
-without once letting it go to voicemail.
+An older sibling texts every few days about nothing in particular, and they
+always answer, even mid-conversation with someone else.
 
 ## Work
 
-She teaches secondary-school chemistry and is fond of the students who argue
-with her. The ones who write down everything she says worry her.
+They used to teach and still can't resist explaining things at length, even
+when nobody asked.

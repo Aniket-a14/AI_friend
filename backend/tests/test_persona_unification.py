@@ -34,7 +34,7 @@ def _identity(tmp_path, personality: dict) -> IdentityManager:
 
 
 NESTED = {
-    "name": "Pankudi",
+    "name": "Alex",
     "core_personality": {
         "traits": ["Warm", "Curious"],
         "immutable": {"base_tone": "Dry and precise"},
@@ -57,7 +57,7 @@ def test_the_existing_personality_layout_still_loads(tmp_path):
     be a migration disguised as a refactor.
     """
     manager = _identity(tmp_path, NESTED)
-    assert manager.persona.name == "Pankudi"
+    assert manager.persona.name == "Alex"
     assert manager.persona.base_tone == "Dry and precise"
     assert manager.persona.traits == ["Warm", "Curious"]
     assert manager.persona.adaptive_traits == ["Reserved"]
@@ -94,7 +94,7 @@ def test_speaking_style_may_hold_a_list(tmp_path):
     manager = _identity(tmp_path, NESTED)
     assert manager.persona.speaking_style["common_vocabulary"] == ["arre"]
     # The whole persona survived, not just this field.
-    assert manager.persona.name == "Pankudi"
+    assert manager.persona.name == "Alex"
     assert "arre" in manager.get_persona_prompt("")
 
 
@@ -258,7 +258,7 @@ async def test_hydrating_from_the_durable_store_reaches_the_prompt(tmp_path):
     error: hydration logged success.
     """
     manager = _identity(tmp_path, NESTED)
-    assert "Pankudi" in manager.get_persona_prompt("")
+    assert "Alex" in manager.get_persona_prompt("")
 
     await manager.hydrate_from_config_store(
         _Store(
@@ -280,7 +280,7 @@ async def test_hydrating_from_the_durable_store_reaches_the_prompt(tmp_path):
     assert "FromTheStore" in prompt
     assert "Brisk" in prompt
     assert manager.persona.avoid == ["never say this"]
-    assert "Pankudi" not in prompt
+    assert "Alex" not in prompt
 
 
 @pytest.mark.asyncio
@@ -340,17 +340,17 @@ def test_the_prompt_follows_the_profile_when_the_two_disagree(tmp_path):
     dict is its serialization.
     """
     manager = _identity(tmp_path, NESTED)
-    assert "Pankudi" in manager.get_persona_prompt("")
+    assert "Alex" in manager.get_persona_prompt("")
 
     manager.persona.name = "Renamed"
     manager.persona.learn_traits(["Distinctive"])
     # Deliberately not synced: the dict still says the old thing.
-    assert manager.personality["name"] == "Pankudi"
+    assert manager.personality["name"] == "Alex"
 
     prompt = manager.get_persona_prompt("")
     assert "Renamed" in prompt
     assert "Distinctive" in prompt
-    assert "Pankudi" not in prompt
+    assert "Alex" not in prompt
 
 
 def test_the_avoid_list_is_enforced_from_the_profile(tmp_path):
