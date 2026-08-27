@@ -10879,3 +10879,112 @@ subject wired or allowlisted. `cargo check --workspace` clean.
 LiveKit key question, the eval gate, and everything past Phase 0 in the
 roadmap are unstarted. `personal/persona.toml`/`biography.md` are local-only
 and were not (and should not be) committed.
+
+## 2026-08-27 -- Community roadmap Phase 1: a fresh clone boots and speaks
+
+Unblocked the exact failure the roadmap named: `REF_AUDIO_PATH` defaults to
+`output/sample_en_gold.wav`, `backend/voice_samples/` ships empty, and
+`.gitignore`'s `**/voice_samples/` + `*.wav` meant it could never arrive via
+git -- so `local_voice`'s healthcheck 400'd forever, `voice_agent` (gated on
+`service_healthy`) never started, and the only visible symptom was silence.
+
+**1.1 -- Shipped a bundled default voice.** `backend/assets/voice/
+default_voice.wav`: synthesized locally with macOS `say` (`Alex` voice, 150
+wpm), not a third-party recording -- see `LICENSE.md` for provenance and the
+exact regeneration command. A CC0/LibriVox clip was the original plan, but
+verifying real third-party licensing metadata programmatically in this
+environment wasn't reliable, and a locally-synthesized placeholder sidesteps
+the question entirely. Added a targeted `!backend/assets/voice/*.wav`
+gitignore negation (a negation inside an excluded parent directory silently
+does nothing, so this had to live outside `voice_samples/`).
+`ensure_default_voice_sample.py` copies it to
+`backend/voice_samples/sample_en_gold.wav` on first run and never overwrites
+an existing file -- a user's own recording must survive every restart.
+
+**1.2 -- The healthcheck degrades instead of hanging.**
+`sovits_healthcheck.sh` and `sovits_bootstrap.sh`'s warmup step both
+hardcoded the clip path and transcript; now both read `REF_AUDIO_PATH`/
+`REF_TEXT` (now also passed into the `gpt-sovits` container in
+`docker-compose.infra.yml`, which previously had neither var at all) and,
+when the resolved clip is genuinely absent, fall back to a liveness-only
+`/docs` probe instead of attempting a synthesis call that can never succeed.
+
+**1.3 -- Named the failure at voice-agent startup.** voice-agent never
+stated the reference clip -- SoVITS resolves it in its own container -- so a
+missing clip produced no symptom in voice-agent's own logs at all.
+`warn_if_reference_clip_missing` logs the missing path and the env var that
+set it. This is a best-effort diagnostic against voice-agent's own
+filesystem view, which 1.5 makes actually meaningful (see below).
+
+**1.4 -- Wired the emotional-variant env vars through compose.**
+`voice_agent` had no `env_file: .env` and its `environment:` block listed
+only the neutral `REF_AUDIO_PATH`/`REF_TEXT` pair -- so the eight
+`REF_*_{CALM,WARM,CONCERNED,EXCITED}` vars `docs/BRINGING_IT_TO_LIFE.md`
+instructs users to set, plus `TTS_CIRCUIT_BREAKER_*`/
+`TTS_READINESS_PROBE_INTERVAL_SECS`, were silently ignored under Compose.
+Added `env_file: .env` plus explicit entries with `.env.example`'s
+documented defaults, and a wiring test (`test_voice_agent_compose_wiring.py`)
+that cross-references every env var the Rust source actually reads against
+what compose actually declares -- confirmed it fails against the pre-fix
+compose file by temporarily reverting it and re-running.
+
+**1.5 -- Unified two unrelated "output" mounts, found a missing WORKDIR.**
+`voice_agent` mounted the `voice_samples_data` *named* volume at
+`/app/output`; `gpt-sovits` mounts the *host bind* `./backend/voice_samples`
+at its own `output/`. Two different directories sharing a name -- landing
+vocalization fallback assets anywhere could never make them visible to
+voice-agent's own `load_vocalization_pcm`. Investigating further: the
+runtime stage of `Dockerfile.rust` had no `WORKDIR` at all (a fresh `FROM`
+does not inherit the builder stage's), so voice-agent ran with cwd `/`, and
+`load_vocalization_pcm`'s relative `output/{name}.wav` lookup resolved to
+`/output/...`, never `/app/output/...` -- so even a correctly mounted volume
+would never have been found. Fixed both: `voice_agent` now mounts the same
+host bind as `gpt-sovits`, the now-unused `voice_samples_data` volume is
+removed, and `WORKDIR /app` is set explicitly. Shipped
+`voice_engine_unavailable.wav` (same placeholder voice as `default_voice.wav`,
+so the existing same-voice degradation logic has something to load).
+`breath_fast.wav`/`sigh_soft.wav` are genuine non-verbal sound effects `say`
+cannot produce and are deliberately not shipped -- `load_vocalization_pcm`
+already degrades to logged silence for them (a prior fix, P4-9, not new
+here); Phase 2.3's voice-enrollment flow is the natural place to provision
+real ones from a user's own cloned voice.
+
+**1.6 -- One command to start.** `start.sh` (plus `Makefile` targets)
+replaces README's four-step manual sequence: creates `ai_mesh_network` if
+missing, checks Docker and Ollama are actually reachable, pulls any missing
+required Ollama model (with a `model:latest`-tag equivalence check mirroring
+`_model_exists` in `runtime_bootstrap.py`, found while manually verifying
+this exact step -- without it, every run would needlessly re-pull
+`nomic-embed-text`), provisions the bundled default voice, brings up infra,
+waits for Postgres health, pushes the Prisma schema (exporting `DIRECT_URL`
+itself, since `dotenv` does not expand `${POSTGRES_PASSWORD}`-style
+references and `frontend/` has no `.env` of its own -- matching what
+README's manual instructions already worked around the same way), then
+brings up the right compose layering for `light`/`heavy`/`full` (+
+`--vision`). Refuses to start with a specific message at each unmet
+prerequisite rather than half-booting.
+
+**Verified.** Full suite: 1203 tests (+18), 0 failures, 0 errors (JUnit XML).
+`ruff check .` clean. `cargo check --workspace` and `cargo test --package
+voice-agent` (52/52) clean. Every new test mutation-verified by hand (revert
+the fix or the guard clause, confirm the test fails, restore) -- including
+one real catch: the first cut of `test_ensure_all_default_voice_assets_...`
+derived its expected filenames from the same `DEFAULT_ASSETS` list the code
+under test reads, so shrinking that list couldn't fail it; rewritten to
+assert hardcoded names instead. The `start.sh` test sandbox fakes every
+external command (`docker`/`curl`/`ollama`/`npx`) by default specifically so
+that verifying a guard clause -- including by disabling it, as mutation
+testing does -- can never fall through to the real Docker daemon or a real
+`ollama pull` on whatever machine runs the tests; an earlier, less careful
+manual mutation check (only faking `curl`) actually triggered one real (if
+idempotent) `ollama pull nomic-embed-text` before this was caught and fixed.
+
+**NOT done.** The full live stack (`docker compose ... up`, 13 containers,
+GPU-dependent voice cloning) was not actually run end to end in this
+session -- Phase 1's own exit criteria calls for that on a clean checkout,
+which is a real, resource-heavy verification step for a human to run, not
+something to claim from static analysis. `breath_fast.wav`/`sigh_soft.wav`
+remain unshipped (see 1.5). README's Quick Start section still describes the
+old four-manual-step sequence; `start.sh` supersedes it for anyone who
+notices it exists, but the docs themselves are Phase 8.1's job, not this
+one's.

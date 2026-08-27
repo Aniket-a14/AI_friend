@@ -318,8 +318,20 @@ services:
     container_name: voice_agent
     command: [ "voice-agent" ]
     volumes:
-      - voice_samples_data:/app/output
+      # Phase 1.5: was the unrelated `voice_samples_data` named volume --
+      # gpt-sovits reads its reference clips from the host bind
+      # ./backend/voice_samples via a *different* mount, so voice-agent's own
+      # load_vocalization_pcm fallback (voice_engine_unavailable.wav etc.)
+      # could never see files landed there. Same host directory now, so both
+      # containers see the same files.
+      - ./backend/voice_samples:/app/output
       - ./models:/app/models
+    # Was missing entirely (Phase 1.4): the eight REF_*_{CALM,WARM,CONCERNED,
+    # EXCITED} vars docs/BRINGING_IT_TO_LIFE.md instructs users to set, plus
+    # TTS_CIRCUIT_BREAKER_*/TTS_READINESS_PROBE_INTERVAL_SECS, were silently
+    # ignored under Compose because nothing listed them below and nothing
+    # loaded .env into the container at all.
+    env_file: .env
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - NATS_USER=${NATS_VOICE_USER:-voice_agent}
@@ -329,6 +341,17 @@ services:
       - SAMPLE_RATE=${SAMPLE_RATE:-32000}
       - REF_AUDIO_PATH=${REF_AUDIO_PATH:-output/sample_en_gold.wav}
       - REF_TEXT=${REF_TEXT:-At the end of the exam, the program shows the performance summary.}
+      - REF_AUDIO_PATH_CALM=${REF_AUDIO_PATH_CALM:-}
+      - REF_TEXT_CALM=${REF_TEXT_CALM:-}
+      - REF_AUDIO_PATH_WARM=${REF_AUDIO_PATH_WARM:-}
+      - REF_TEXT_WARM=${REF_TEXT_WARM:-}
+      - REF_AUDIO_PATH_CONCERNED=${REF_AUDIO_PATH_CONCERNED:-}
+      - REF_TEXT_CONCERNED=${REF_TEXT_CONCERNED:-}
+      - REF_AUDIO_PATH_EXCITED=${REF_AUDIO_PATH_EXCITED:-}
+      - REF_TEXT_EXCITED=${REF_TEXT_EXCITED:-}
+      - TTS_CIRCUIT_BREAKER_FAILURE_THRESHOLD=${TTS_CIRCUIT_BREAKER_FAILURE_THRESHOLD:-3}
+      - TTS_CIRCUIT_BREAKER_COOLDOWN_MS=${TTS_CIRCUIT_BREAKER_COOLDOWN_MS:-15000}
+      - TTS_READINESS_PROBE_INTERVAL_SECS=${TTS_READINESS_PROBE_INTERVAL_SECS:-45}
     networks:
       - ai_mesh_network
     depends_on:
@@ -524,6 +547,5 @@ networks:
     external: true
 
 volumes:
-  voice_samples_data:
   stt_models_data:
   identity_data:

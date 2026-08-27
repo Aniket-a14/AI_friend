@@ -13,6 +13,7 @@ radon==6.0.1
 bandit==1.9.4
 pre-commit
 codespell
+PyYAML
 reportlab>=4.2.0
 matplotlib>=3.8.0
 pandas>=2.2.0
