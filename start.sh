@@ -85,7 +85,9 @@ model_present() {
 }
 
 AVAILABLE_MODELS="$(ollama list 2>/dev/null | awk 'NR>1{print $1}')"
-IFS=',' read -ra REQUIRED_MODELS <<< "${OLLAMA_REQUIRED_MODELS:-llama3.2:3b,nomic-embed-text}"
+ACTIVE_CHAT_MODEL="${LLM_CHAT_MODEL:-llama3.2:3b}"
+DEFAULT_REQUIRED="${ACTIVE_CHAT_MODEL},nomic-embed-text"
+IFS=',' read -ra REQUIRED_MODELS <<< "${OLLAMA_REQUIRED_MODELS:-$DEFAULT_REQUIRED}"
 for model in "${REQUIRED_MODELS[@]}"; do
     if ! model_present "$model"; then
         echo "==> Pulling Ollama model: $model (this can take a while the first time)"

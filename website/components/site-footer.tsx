@@ -9,6 +9,7 @@ export function SiteFooter() {
         <div className="space-y-3">
           <span className="font-mono text-[10px] tracking-widest uppercase text-black/40 block">Product</span>
           <ul className="space-y-2 text-xs">
+            <li><Link href="/download" className="text-black/60 hover:text-black transition-colors font-medium">Download & Install</Link></li>
             <li><Link href="/playground" className="text-black/60 hover:text-black transition-colors">Interactive Playground</Link></li>
             <li><Link href="/#how" className="text-black/60 hover:text-black transition-colors">How It's Different</Link></li>
             <li><Link href="/#mesh" className="text-black/60 hover:text-black transition-colors">Architecture Mesh</Link></li>
