@@ -251,6 +251,61 @@ class OllamaClient:
 
         yield "I'm having trouble thinking right now..."
 
+    def _mock_generate_response(self, prompt: str) -> str:
+        """Deterministic MOCK_LLM_TEXT reply, keyed on prompt content shape."""
+        lower_prompt = prompt.lower()
+
+        # Corpus-agnostic deterministic mock: reflect back the memory content
+        # retrieval actually surfaced, rather than hardcoding eval entities.
+        snippet = self._extract_first_memory_snippet(prompt)
+        if snippet and "shared history / recent context" in lower_prompt:
+            return f"I remember that — {snippet}"
+
+        if "subject_type" in lower_prompt or "output json list only" in lower_prompt:
+            return json.dumps(
+                [
+                    {
+                        "subject": "User",
+                        "subject_type": "person",
+                        "relation": "likes",
+                        "object": "reading sci-fi",
+                        "object_type": "activity",
+                        "category": "social",
+                        "confidence": 0.9,
+                        "reason": "User mentioned reading sci-fi and we had a warm discussion about it.",
+                    }
+                ]
+            )
+        elif "new_traits" in lower_prompt or "relationship" in lower_prompt:
+            return json.dumps(
+                {"new_traits": [], "relationship": "friend", "confidence": 0.9}
+            )
+        elif (
+            "goal_congruence" in lower_prompt
+            or "appraisal dimensions" in lower_prompt
+        ):
+            return json.dumps(
+                {"goal_congruence": 0.0, "norm_alignment": 1.0, "expectedness": 0.5}
+            )
+        elif "inferred_valence" in lower_prompt or "implied_goals" in lower_prompt:
+            return json.dumps(
+                {
+                    "intent": "CHAT",
+                    "goal": "socialize",
+                    "inferred_valence": 0.5,
+                    "inferred_arousal": 0.3,
+                    "implied_goals": ["chat_socially"],
+                }
+            )
+        elif "consolidate" in lower_prompt or "episodic memory summary" in lower_prompt:
+            return "We discussed our shared interests, including sci-fi books and coding algorithms, and enjoyed a friendly conversation."
+        elif "dream" in lower_prompt:
+            return "Processing memories of my friend, feeling a deep sense of connection through shared projects and programming ideas."
+        elif "thought" in lower_prompt or "inner monologue" in lower_prompt:
+            return "I appreciate my friend. I wonder what they are coding today."
+        else:
+            return "I am glad we are chatting, my friend. What should we work on next?"
+
     async def generate(
         self,
         prompt: str,
@@ -259,66 +314,7 @@ class OllamaClient:
         options_override: dict[str, Any] | None = None,
     ) -> str:
         if getattr(Config, "MOCK_LLM_TEXT", False):
-            lower_prompt = prompt.lower()
-
-            # Corpus-agnostic deterministic mock: reflect back the memory content
-            # retrieval actually surfaced, rather than hardcoding eval entities.
-            snippet = self._extract_first_memory_snippet(prompt)
-            if snippet and "shared history / recent context" in lower_prompt:
-                return f"I remember that — {snippet}"
-
-            if (
-                "subject_type" in lower_prompt
-                or "output json list only" in lower_prompt
-            ):
-                return json.dumps(
-                    [
-                        {
-                            "subject": "User",
-                            "subject_type": "person",
-                            "relation": "likes",
-                            "object": "reading sci-fi",
-                            "object_type": "activity",
-                            "category": "social",
-                            "confidence": 0.9,
-                            "reason": "User mentioned reading sci-fi and we had a warm discussion about it.",
-                        }
-                    ]
-                )
-            elif "new_traits" in lower_prompt or "relationship" in lower_prompt:
-                return json.dumps(
-                    {"new_traits": [], "relationship": "friend", "confidence": 0.9}
-                )
-            elif (
-                "goal_congruence" in lower_prompt
-                or "appraisal dimensions" in lower_prompt
-            ):
-                return json.dumps(
-                    {"goal_congruence": 0.0, "norm_alignment": 1.0, "expectedness": 0.5}
-                )
-            elif "inferred_valence" in lower_prompt or "implied_goals" in lower_prompt:
-                return json.dumps(
-                    {
-                        "intent": "CHAT",
-                        "goal": "socialize",
-                        "inferred_valence": 0.5,
-                        "inferred_arousal": 0.3,
-                        "implied_goals": ["chat_socially"],
-                    }
-                )
-            elif (
-                "consolidate" in lower_prompt
-                or "episodic memory summary" in lower_prompt
-            ):
-                return "We discussed our shared interests, including sci-fi books and coding algorithms, and enjoyed a friendly conversation."
-            elif "dream" in lower_prompt:
-                return "Processing memories of my friend, feeling a deep sense of connection through shared projects and programming ideas."
-            elif "thought" in lower_prompt or "inner monologue" in lower_prompt:
-                return "I appreciate my friend. I wonder what they are coding today."
-            else:
-                return (
-                    "I am glad we are chatting, my friend. What should we work on next?"
-                )
+            return self._mock_generate_response(prompt)
 
         self._trace_prompt(prompt, system, model or self.model)
         payload_attempts = self._build_payload_attempts(

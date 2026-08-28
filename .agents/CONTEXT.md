@@ -12743,3 +12743,202 @@ lint/build, Rust `cargo check --workspace`, and Rust contracts/STT/voice tests
   must be checked after these changes are pushed.
 - Roadmap Phase 3--8 measurement/eval gates and browser visual QA remain
   outside this repair pass; no placeholder benchmark was promoted to a result.
+
+## 2026-08-28 — Community roadmap Phase 7: code quality hardening (7.1, 7.2,
+## partial 7.4, 7.5) -- the report-only tools from Phase 0.7 fixed and the CI
+## gates flipped to blocking
+
+Landed on its own branch/PR (`phase-7/code-quality-hardening`), off `main`
+after PR #205 merged -- the community roadmap's "one branch total" rule
+applied only to Phases 1-8's original scope, and that PR already shipped, so
+Phase 7 is a fresh cycle per this repo's normal branch-per-change convention.
+
+**7.2 (type errors) -- complete: 75 -> 0 mypy errors, 12 -> 0 files.**
+`agent_state.py`'s 24 errors -- the ones Phase 7.3's entry deliberately
+deferred as highest-risk, given `CLAUDE.md`'s own warning about the state
+lock and concurrent System-2 writes -- turned out to be entirely
+type-annotation fixes with zero logic changes: `persona: PersonaProfile |
+None`, named (not `**`-unpacked) `dopamine_halflife_s`/`cortisol_halflife_s`
+kwargs to `AgentState()` (a generic `dict[str, float]` spread makes mypy
+check every field for float-compatibility, not just the two real ones), an
+explicit `redis.Redis | None` annotation, and a `cast()` around
+`asyncio.to_thread(self.redis_client.hgetall, ...)` (same redis-py
+sync/async stub-sharing issue `working_memory_store.py` already worked around
+in Phase 7.3). Nothing in the state-mutation path itself changed.
+
+Also added `plugins = ["pydantic.mypy"]` to `[tool.mypy]` -- a real fix, not
+a suppression, for `config.py`'s two `@computed_field @property` errors
+(though the plugin turned out not to fully suppress the `prop-decorator`
+diagnostic on this mypy/pydantic version pairing either; those two still
+carry a `# type: ignore[prop-decorator]`, correctly placed on the decorator
+line, not the `def` line -- bandit-style trial and error found that mypy
+attributes the error to the decorator, not the signature). One incidental
+real fix along the way: `learning.py`'s two `except Exception as e:` blocks
+both later reused the name `f` as an unrelated loop variable in the same
+function scope -- Python's automatic `del e` on except-block exit plus
+mypy's redefinition tracking flagged this correctly; renamed the loop
+variable rather than suppressing.
+
+**7.1 (cyclomatic complexity) -- the named worst-offender tier eliminated:
+1 F + 3 E + 8 D (12 findings) -> 0. Baseline's 46 C findings not pursued (now
+54, net after extraction created some new low-C helpers) -- 7.1's own text
+says "let the tool name the actual worst offenders," and the worst tier is
+now clean.** All done by pure extraction -- pulling a self-contained block
+into a named helper with the same logic, never rewriting behavior -- per the
+roadmap's explicit instruction and this session's own added constraint (the
+user asked for "fix first, test later": all extractions landed before a
+single test run, verified only at the end).
+
+- `cognitive/pipeline.py::execute` (F, 42 -> C, 20), the worst single
+  function in the codebase and the file `CLAUDE.md` names as the master
+  cognitive loop. The hard part: it's an async generator (`yield`-bearing),
+  so a naive extraction into a plain helper can't hand back a computed value
+  the way a normal function return would. Followed the pattern already
+  established in this same file for exactly this problem
+  (`_stream_action_pass`'s own docstring: "this is an async generator, so it
+  cannot both yield chunks and hand back the assembled response") --
+  extracted stages 2, 5, 6, and 9 as their own async-generator methods that
+  `yield` their events and write results into a caller-supplied mutable
+  dict, with `execute` doing `async for chunk in self._stage(...): yield
+  chunk` then reading the dict. Stages 7 and 10 (no `yield`, pure
+  computation) became plain method calls. One near-miss caught before it
+  shipped: the stage-9 extraction's first draft reset `done_chunk` to `None`
+  at the top of the validation stage, silently discarding stage 8's chunk
+  whenever validation passed without a retry -- caught by re-reading the
+  original control flow line-by-line before running tests, not by the tests
+  themselves, since no existing test exercises `execute` as a whole
+  generator closely enough to have caught a `None` where a real chunk
+  belonged.
+- `state/memory_store.py`, six of eight D/E findings in one file:
+  `apply_actr_decay` (E 39 -> gone; split into `_compute_actr_decay`, a pure
+  per-row decision function, plus three dual-backend I/O helpers -- the
+  compute half is what carried almost all the complexity), `search_memories`
+  (E 32 -> C 16, four extraction passes: cache-key builder, entity-context
+  resolution, candidate-fetch dual-backend dispatch, and finally the L1
+  cache-hit-or-miss check itself), `_resolve_identity_nodes` (D 26 -> gone;
+  split agent-name vs. user-name discovery, previously one function doing
+  both), `add_memory` (D 25 -> gone; entity pre-linking and the Qdrant
+  upsert payload each became their own method), `_score_qdrant_candidates`
+  (D 25 -> gone; the per-candidate scoring loop body became
+  `_score_one_qdrant_candidate`, then a second pass replaced four
+  near-identical "DB overrides Qdrant payload" ternaries with one
+  `_db_or_meta()` helper), `_promote_archived_rows` (D 24 -> gone; same
+  per-row-loop-body pattern as the Qdrant scorer).
+- `cognitive/learning.py::_consolidate` (E 36 -> gone): the function's own
+  comments already named four parts ("PART 1: Fact Resolution", "PART 2:
+  Persona Evolution", "PART 3: Episodic Memory Consolidation", "PART 4:
+  Hebbian Graph Decay") -- each became its own method, plus the saliency
+  ranking and summary-text building that preceded them.
+- `llm/ollama_client.py::generate` (D 25 -> gone): the ~60-line
+  `MOCK_LLM_TEXT` if/elif chain was unrelated to the real generation path
+  below it: extracted whole as `_mock_generate_response`.
+- `agents/brain_agent.py`, two D findings: `_process_chat_input_flow` (D 24
+  -> C 13) and `_stream_to_speech` (D 24 -> C 12, the second needing a
+  closure rather than a method since its state -- `current_chunk_words`,
+  `segment_started_at`, `full_response` -- is mutated across the whole
+  `async for output in generator:` loop; used a nested `async def` with
+  `nonlocal`, same technique the function's own pre-existing
+  `_publish_tracked` closure already used one scope up).
+- `cognitive/appraisal.py::appraise_semantic_drift` (D 22 -> gone): split
+  the JSON-parse-with-three-fallback-strategies chain from the
+  PAD-drift-computation math that follows it -- unrelated concerns that
+  happened to share one function.
+
+**Verified per extraction, not just at the end:** `ast.parse()` after every
+edit (catches a syntax slip immediately, before it could compound across
+dozens of sequential edits to the same files) and a fresh `radon cc
+<file>.py` after every function to confirm the specific score actually
+dropped, rather than trusting the edit "looked" like it reduced branching.
+Full verification bar only at the very end, per the user's "fix first, test
+later" instruction: 1408 tests (+7 from Phase 7.4's addition below), 0
+failures, 0 errors (`--junit-xml`, parsed); `ruff check .` clean; fresh
+`mypy app` 0 errors; fresh `bandit -r app` 0 findings; fresh `radon cc app
+--min D` empty; `cargo check --workspace` clean; `check_subject_wiring.py`
+OK.
+
+**Two real regressions caught by that final full run, both from the same
+root cause and both fixed rather than routed around.** `test_f1_
+decomposed_stages.py`'s `_GatingSpy` is a deliberately minimal, hand-written
+`self`-double for `search_memories` (its own docstring explains why: a
+`MagicMock(spec=MemoryStore)` answers every attribute including the one
+under test, which is how an earlier version of this same test came to pass
+while asserting on an empty list). Every new `self.<staticmethod>(...)` call
+`search_memories` reaches before the point that test stops at needs to exist
+on the spy too, or attribute lookup fails -- happened twice, once for
+`_build_search_cache_key` and again (after that same file's later `search_
+memories` extraction pass) for `_l1_cache_hit`/`_refresh_stop_words_if_
+stale`. Fixed by delegating the spy's attributes to the real static/instance
+methods (`_build_search_cache_key = staticmethod(MemoryStore._build_search_
+cache_key)`, etc.) rather than reimplementing them a third time or loosening
+the test's own stated design -- consistent with the docstring's philosophy
+("the few attributes search_memories touches before it picks a tier"), now
+grown by two entries because the real function grew two new pre-gating call
+sites. Also a real, if minor, bandit regression: the `_parse_qdrant_created_
+at` extraction introduced a bare `except: pass` (B110) that the pre-
+extraction inline code didn't trip on, since bandit's check is structural,
+not semantic -- fixed with the same targeted `# nosec B110` + reason pattern
+Phase 7.3 established for the same true-false-positive shape elsewhere in
+this file.
+
+**7.4 (coverage gaps), partial and scoped, not exhaustive.** No coverage
+baseline was ever actually saved under `backend/tools/quality/baseline/`
+despite Phase 0.7's own stated plan to add one (`pytest-cov` is installed,
+but nothing ran it and committed the output) -- so this pass is a fresh
+read of current coverage, not a diff against a Phase 0.7 snapshot; that gap
+in the roadmap's own execution is recorded here rather than silently
+worked around by fabricating a baseline. Surveyed per-file coverage across
+`app/`, sorted by percentage, and picked the clearest Phase-1-6-scoped gap
+rather than chasing every low number repo-wide (7.1's own instruction:
+"not a repo-wide push"): `runtime_bootstrap.py` at 27% -- Phase 1.6's
+one-command-start bootstrap module. The sentinel-file SQLite-fallback logic
+(`_enter_sqlite_fallback`/`_clear_sqlite_fallback`) already had a full test
+file; the gap was `_normalized_required_models`/`_model_exists`, two pure
+functions with real edge-case logic (CSV dedup/whitespace-stripping, and a
+bidirectional `"model"` <-> `"model:latest"` tag-compatibility check so the
+bootstrap doesn't re-pull an Ollama model already present under a different
+spelling of the same tag) that had zero tests. Added 7, mutation-verified by
+hand: removing the dedup guard broke 2 of 2 dedup-specific tests; removing
+the `:latest`-compatibility branch broke exactly the 2 tests that exercise
+it and left the other 3 (exact match, genuinely-absent, different-tag)
+passing, confirming those three don't accidentally depend on the removed
+code. `state/proactive_queue.py` (Phase 3, 84.4%, 5 missing lines) was
+surveyed but not touched -- a small exception-path tail, lower priority
+than `runtime_bootstrap.py`'s real gap. The rest of Phase 1-6's modules
+were not audited line-by-line; this is one representative fix, not
+coverage-complete.
+
+**7.5 (flip the gates), scoped to what 7.1-7.3 actually cleaned.** `ci.yml`'s
+`code-quality` job: removed job-level `continue-on-error: true`, so mypy and
+bandit (both already exit non-zero on any finding) now block for real. radon
+`cc` has no native pass/fail exit code, so added an explicit gate: `radon cc
+app --min D -s`, written to a file, and the step fails if that file is
+non-empty -- verified locally (empty output on a clean D/E/F tier, confirmed
+non-empty and failing against a deliberately reintroduced D-rank function
+before being reverted). Deliberately does NOT gate on radon's C tier (54
+remaining) or the maintainability-index job -- neither has had a real fix
+pass, so blocking on either now would gate against noise nobody has earned
+the right to call a regression yet. All three real steps
+(`mypy app`, `radon cc app --min D -s` + emptiness check, `bandit -r app -f
+txt`) run-tested locally against the exact commands in the workflow file,
+not just inferred from the diff, before considering the flip verified.
+
+**NOT done:**
+- 7.1's remaining 54 C-rank findings (up from the Phase 0.7 baseline's 46 --
+  extraction moved complexity into new, smaller, lower-rank helper functions
+  rather than eliminating it, so some net-new C entries are expected and
+  correct, not a regression). No attempt was made to reduce these; the
+  roadmap's own text scopes 7.1 to "the actual worst offenders."
+- 7.4 covered one file deeply, not every Phase 1-6 module shallowly. No
+  Phase 0.7 coverage baseline exists to diff against -- creating one (a real
+  `pytest --cov` run committed to `backend/tools/quality/baseline/`,
+  matching the mypy/radon/bandit baseline files already there) is unstarted
+  and would make a future coverage pass diff-able the way this one could
+  not.
+- radon's maintainability-index job stays report-only, as does the C-rank
+  complexity tier -- both explicitly deferred above, not overlooked.
+- No mutation-testing tool run against the newly-extracted functions
+  themselves (only the two new `runtime_bootstrap.py` tests got hand-rolled
+  mutation verification) -- the extractions are behavior-preserving by
+  construction (moved code, not rewritten logic) and covered by whatever
+  test already exercised the original function, but no one specifically
+  broke each new helper and confirmed a test catches it.

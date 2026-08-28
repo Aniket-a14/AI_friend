@@ -502,12 +502,12 @@ class AppSettings(BaseSettings):
     # derived config, and easy to miss when adding a third computed value.
     # Real computed_field properties are visible on AppSettings itself, so
     # ConfigMeta's job shrinks to "look up the instance," nothing more.
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def ALLOWED_ORIGINS(self) -> list[str]:
         return self.ALLOWED_ORIGINS_STR.split(",")
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def OLLAMA_REQUIRED_MODELS(self) -> list[str]:
         if self.OLLAMA_REQUIRED_MODELS_STR.strip():
@@ -516,10 +516,12 @@ class AppSettings(BaseSettings):
                 for model in self.OLLAMA_REQUIRED_MODELS_STR.split(",")
                 if model.strip()
             ]
+        # set_defaults() (a model_validator) already backfills these from
+        # LLM_FAST_MODEL, but that invariant isn't visible to mypy here.
         models = [
-            self.LLM_CHAT_MODEL,
+            self.LLM_CHAT_MODEL or self.LLM_FAST_MODEL,
             self.LLM_FAST_MODEL,
-            self.LLM_REFLECTION_MODEL,
+            self.LLM_REFLECTION_MODEL or self.LLM_FAST_MODEL,
             "nomic-embed-text",
         ]
         if self.VLM_ENABLED:

@@ -164,7 +164,7 @@ class DecisionService:
             )
 
         # 3. Tick BT
-        blackboard = {"event": event, "state": state_snapshot, "plan": None}
+        blackboard: dict[str, Any] = {"event": event, "state": state_snapshot, "plan": None}
         status = await self.root.tick(blackboard)
 
         if status == NodeStatus.SUCCESS and blackboard["plan"]:
@@ -222,7 +222,7 @@ class DecisionService:
                 reward - prev_u
             )
 
-        scores = {}
+        scores: dict[str, float] = {}
 
         # ENGAGE: Best for neutral/positive states, high energy, novel topics
         scores["ENGAGE"] = (
@@ -270,7 +270,7 @@ class DecisionService:
         )
 
         # §3.2: Intent Persistence with Context Gating
-        new_goal = max(scores, key=scores.get)
+        new_goal = max(scores, key=lambda g: scores[g])
         context_shift = N  # Novelty serves as a proxy for context shift
 
         if self._previous_goal is not None and context_shift < self.shift_threshold:
@@ -279,7 +279,7 @@ class DecisionService:
             for g in GOALS:
                 prev_score = self._goal_scores.get(g, 0.0)
                 scores[g] = (1 - rho) * prev_score + rho * scores[g]
-            new_goal = max(scores, key=scores.get)
+            new_goal = max(scores, key=lambda g: scores[g])
             logger.debug(
                 "[Decision] Persistence applied (shift=%.2f < θ=%.2f): %s → %s",
                 context_shift,
