@@ -3,10 +3,11 @@
 import { useState } from "react"
 
 const NAV_LINKS = [
-  { label: "How it's different", href: "#how" },
-  { label: "The mesh",           href: "#mesh" },
-  { label: "Get started",        href: "#setup" },
-  { label: "Privacy",            href: "#privacy" },
+  { label: "How it's different", href: "/#how" },
+  { label: "The mesh",           href: "/#mesh" },
+  { label: "Get started",        href: "/#setup" },
+  { label: "Docs",               href: "/docs" },
+  { label: "About",              href: "/about" },
 ]
 
 const NAV_STYLE = {
@@ -30,7 +31,7 @@ export function MobileNav() {
           className="flex items-center justify-between px-5 py-3 rounded-2xl border border-black/[0.06]"
           style={NAV_STYLE}
         >
-          <span className="font-pixel text-xs tracking-[0.25em] text-black/70">AI FRIEND</span>
+          <a href="/" className="font-pixel text-xs tracking-[0.25em] text-black/70">AI FRIEND</a>
 
           {/* Desktop links */}
           <div className="hidden md:flex items-center gap-7" style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}>
@@ -47,7 +48,7 @@ export function MobileNav() {
 
           <div className="flex items-center gap-2">
             <a
-              href="#setup"
+              href="/#setup"
               className="text-[11px] px-4 py-2 rounded-xl border border-black/10 text-black/60 hover:text-black hover:border-black/20 hover:bg-black/[0.03] transition-all duration-200 tracking-wide hidden md:block"
               style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
             >
@@ -108,7 +109,7 @@ export function MobileNav() {
             ))}
             <div className="mt-1 px-2 pb-1">
               <a
-                href="#setup"
+                href="/#setup"
                 onClick={close}
                 className="block w-full text-center text-[11px] px-4 py-2.5 rounded-xl border border-black/10 text-black/60 hover:text-black hover:border-black/20 hover:bg-black/[0.03] transition-all duration-200 tracking-wide"
                 style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}

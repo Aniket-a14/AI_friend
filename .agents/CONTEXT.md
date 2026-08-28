@@ -12599,3 +12599,114 @@ commit.
 `CITATION.cff` beyond a plain YAML parse; GOVERNANCE.md/SUPPORT.md's
 internal links were checked by hand against the current tree, not with a
 link-checker tool.
+
+## 2026-08-28 -- A real docs site and About page, inspired by wizard-website
+
+Continuing the same-session inspiration pass from the Wizard governance
+files: `wizard-website` has a genuine multi-page docs system (`app/docs/
+[...slug]`, `content/docs/*.md`, a nav/sidebar/prev-next mechanism) and an
+`/about` page, at the user's explicit request to build the equivalent here
+rather than only draw structural inspiration for markdown files. This entry
+is real, working infrastructure -- not a mockup -- verified by an actual
+Next.js production build succeeding and by grepping rendered content out of
+the built static HTML.
+
+**Why this content is freshly written, not the legacy `docs/*.md` mirrored
+in:** checking `docs/*.md` while planning this turned up that most of it
+(`API_SPEC.md`, `ARCHITECTURE.md`, `GPT_SOVITS_INSTALL.md`,
+`COLAB_PATHS_CHEATSHEET.md`, `RESEARCH_GUIDE.md`, `ROBOTICS_ANALYSIS.md`,
+`cvs4_architecture_roadmap.md`, `docs/README.md`) still carries the
+identical "CVS-3.5 Premium Edition / Sovereign Mesh" fabrication pattern
+already found and fixed in `README.md`, `CONTRIBUTING.md`, `SECURITY.md`,
+and `CHANGELOG.md` earlier this session -- `ROBOTICS_ANALYSIS.md` compares
+the project to *Detroit: Become Human* and a physical humanoid platform it
+isn't. Building a public-facing docs site that mirrors those files in would
+have republished exactly the fabrication this session spent most of its
+budget removing. Only `docs/BRINGING_IT_TO_LIFE.md` and `docs/FUTURE_WORK.md`
+were already honest (both say so explicitly in their own text). Rather than
+either surfacing the fabricated files or spending the rest of this session's
+budget de-fabricating ~2,500 lines of legacy docs, six new pages were
+written fresh, sourced only from content already verified accurate this
+session -- the rewritten README, SECURITY.md, and the real CLI scripts'
+actual docstrings/flags:
+
+- `getting-started/installation.md`, `getting-started/quickstart.md` --
+  condensed from the current README's Quick Start / hardware sections.
+- `concepts/architecture.md` -- the agent table, cognitive-turn sequence,
+  persona tier boundary, and endocrine layer, all already fact-checked in
+  the Phase 8.1 README pass.
+- `concepts/privacy.md` -- mirrors this session's own `SECURITY.md`
+  rewrite.
+- `guides/voice-training.md` -- summarizes the real `notebooks/README.md`
+  (from the earlier notebooks work), including its own honest "what's
+  deliberately not a notebook" section.
+- `troubleshooting/common-issues.md` -- lifted from README's troubleshooting
+  section, all commands real.
+
+**Infrastructure:** `react-markdown` + `remark-gfm` added via a real `pnpm
+add` (not hand-edited into `package.json` -- the lockfile is genuinely in
+sync, verified by `pnpm install` completing and the subsequent build
+succeeding). `lib/docs-nav.ts` (the section/page tree, prev/next
+derivation), `lib/docs-content.ts` (reads `content/docs/<slug>.md`, strips
+the leading H1 so the page shell's own `<h1>` isn't duplicated),
+`components/docs/docs-sidebar.tsx` (active-page highlighting via
+`usePathname`), `app/docs/layout.tsx`, `app/docs/page.tsx` (a curated
+index, not just a raw file list), and `app/docs/[...slug]/page.tsx` (the
+markdown renderer, with `remark-gfm` for the tables every content page
+uses). `app/about/page.tsx` adapts `wizard-website`'s about-page structure
+(license / contributing / governance / security / code of conduct, each
+linking to the real file on GitHub) directly onto this project's own new
+`GOVERNANCE.md`/`SUPPORT.md` from the governance-files entry above, MIT
+instead of BSD-3-Clause.
+
+**A real Next.js version bug hit and fixed, not glossed over:** the first
+build failed -- `TypeError: Cannot read properties of undefined (reading
+'join')` prerendering every `/docs/[...slug]` route. Next.js 16 (this
+project's installed version) made route `params` a `Promise` in Server
+Components, a breaking change from the plain-object `params` most examples
+and AI training data still show; `generateMetadata` and the page component
+both needed `params: Promise<{ slug: string[] }>` and an `await params`
+before destructuring. Fixed, then re-verified with a fresh build rather
+than assumed correct from the type signature alone.
+
+**Cross-page navigation fixed as part of this, not left broken:**
+`mobile-nav.tsx`'s anchor links (`#how`, `#mesh`, `#setup`) only made sense
+on the one-page site this used to be -- from `/docs` or `/about` they'd do
+nothing, since there's no `#how` element on those pages. Rewritten to
+`/#how` etc. so they navigate home and then scroll, from anywhere. Added
+real "Docs" and "About" entries. The footer was inline JSX duplicated
+nowhere yet but about to need duplicating three times over, so it's now
+`components/site-footer.tsx`, used by all three pages/layouts.
+
+**Also cleaned up in passing, now that a real `pnpm install` had already
+run for `react-markdown`/`remark-gfm`:** the `@vercel/analytics` dependency
+flagged as "unused but left in package.json/lockfile to avoid drift" in the
+earlier landing-page-asset-restoration entry is now actually removed via
+`pnpm remove` -- the exact lockfile-touching operation that entry said it
+was avoiding, now done properly since one was happening anyway.
+
+**Verified:** `npx tsc --noEmit` -- same three pre-existing errors in
+still-unused `agent-interface.tsx`/`glitch-background.tsx`, zero new ones.
+`npx next build` -- all 11 routes (`/`, `/about`, `/docs`, 6 doc pages,
+`/_not-found`) build and statically prerender, confirmed clean on the final
+build after the Next 16 params fix and the `@vercel/analytics` removal.
+Content correctness spot-checked by grepping real strings ("git clone
+https://github.com/Aniket-a14/AI_friend", "MIT license", the quickstart's
+opening line) out of the actual generated static HTML in `.next/server/
+app/`, not just trusting that the build didn't error.
+
+**NOT done:**
+- The legacy `docs/*.md` fabrication (everything except `BRINGING_IT_TO_
+  LIFE.md`/`FUTURE_WORK.md`) is untouched and still needs the same
+  de-fabrication pass `README.md`/`CONTRIBUTING.md`/`SECURITY.md`/
+  `CHANGELOG.md` already got. Explicitly flagged rather than silently
+  left, per this entry's own reasoning above for why it wasn't done now.
+- No search was built for the docs site (`wizard-website` has one, backed
+  by a search index over the mirrored external docs repo) -- six pages
+  don't need one yet; revisit if the docs section grows.
+- No `@tailwindcss/typography` or other markdown-styling dependency was
+  added; the renderer's `components` prop maps every markdown element to
+  hand-styled Tailwind classes matching the site's existing design tokens
+  instead, keeping the dependency surface smaller.
+- No live browser/visual QA, same standing limitation as every prior
+  website entry this session -- no browser available in this environment.
