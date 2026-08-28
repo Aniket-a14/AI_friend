@@ -12,7 +12,12 @@ import logging
 import pytest
 
 from app import config as config_module
-from app.runtime_bootstrap import _clear_sqlite_fallback, _enter_sqlite_fallback
+from app.runtime_bootstrap import (
+    _clear_sqlite_fallback,
+    _enter_sqlite_fallback,
+    _model_exists,
+    _normalized_required_models,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -105,3 +110,44 @@ def test_clearing_an_absent_sentinel_is_not_an_error(tmp_path, monkeypatch):
     )
 
     _clear_sqlite_fallback()
+
+
+def test_normalized_required_models_dedupes_preserving_first_occurrence():
+    """OLLAMA_REQUIRED_MODELS_STR is user-edited CSV in .env - a repeated
+    entry must not turn into two pull requests for the same model."""
+    result = _normalized_required_models(["llama3.2:3b", "nomic-embed-text", "llama3.2:3b"])
+    assert result == ["llama3.2:3b", "nomic-embed-text"]
+
+
+def test_normalized_required_models_strips_whitespace_and_drops_blanks():
+    """A trailing comma in the .env value (`"a,b,"`) must not turn into a
+    third, empty model name that then 404s against Ollama's pull API."""
+    result = _normalized_required_models(["  llama3.2:3b  ", "", "   "])
+    assert result == ["llama3.2:3b"]
+
+
+def test_model_exists_exact_match():
+    assert _model_exists("llama3.2:3b", ["llama3.2:3b", "nomic-embed-text"]) is True
+
+
+def test_model_exists_returns_false_when_truly_absent():
+    assert _model_exists("llama3.2:3b", ["nomic-embed-text"]) is False
+
+
+def test_model_exists_treats_bare_name_as_already_satisfied_by_latest_tag():
+    """Config lists a bare model name ("llama3.2"); Ollama's own /api/tags
+    reports it tagged `:latest`. Without this the bootstrap would re-pull a
+    model that is already present under its default tag on every boot."""
+    assert _model_exists("llama3.2", ["llama3.2:latest"]) is True
+
+
+def test_model_exists_treats_explicit_latest_as_satisfied_by_bare_name():
+    """The inverse direction: config explicitly asks for `:latest`, Ollama
+    reports the bare (untagged) name."""
+    assert _model_exists("llama3.2:latest", ["llama3.2"]) is True
+
+
+def test_model_exists_does_not_treat_different_tags_as_equivalent():
+    """The `:latest` compatibility rule must not blur into "any tag counts"
+    - a model pinned to a different tag is genuinely missing."""
+    assert _model_exists("llama3.2:3b", ["llama3.2:7b"]) is False

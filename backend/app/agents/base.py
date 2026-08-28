@@ -93,8 +93,10 @@ class BaseAgent:
         # operator actually turns this on.
         self.nats_user = os.getenv("NATS_USER")
         self.nats_password = os.getenv("NATS_PASSWORD")
-        self.nc = None
-        self.js = None
+        # Any, not a nats-py type: self.js._jsm is accessed directly below,
+        # which isn't in JetStreamContext's public stub either.
+        self.nc: Any = None
+        self.js: Any = None
         tracked_subjects_raw = os.getenv(
             "MESH_OBSERVED_SUBJECTS",
             "system.tick,memory.surfaced,audio.stop,audio.resume,chat.output",

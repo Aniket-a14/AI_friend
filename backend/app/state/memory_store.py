@@ -877,6 +877,98 @@ class MemoryStore:
                 return [self._mock_embedding_vector() for _ in chunk]
             return [None] * len(chunk)
 
+    async def _prelink_memory_entities(self, content: str) -> list[str]:
+        """Entities from the graph whose name literally appears in `content`,
+        for the memory's `metadata["entities"]` and Qdrant payload."""
+        present_entities: list[str] = []
+        if not self.graph_db:
+            return present_entities
+        try:
+            entity_records = await self.graph_db.execute_query(
+                "MATCH (e:Entity) "
+                "WHERE e.name IS NOT NULL "
+                "AND toLower($content) CONTAINS toLower(e.name) "
+                "RETURN e.name AS name",
+                {"content": content},
+                use_cache=True,
+            )
+            entity_names = [r["name"] for r in entity_records]
+            content_lower = content.lower()
+            for name in entity_names:
+                name_lower = name.lower()
+                pattern = rf"\b{re.escape(name_lower)}\b"
+                if re.search(pattern, content_lower):
+                    present_entities.append(name)
+        except Exception as ge:
+            logger.debug(
+                f"Failed to fetch entities for pre-linking in add_memory: {ge}"
+            )
+        return present_entities
+
+    async def _upsert_qdrant_memory(
+        self,
+        *,
+        memory_id: str,
+        vector,
+        content: str,
+        wing,
+        room,
+        importance,
+        emotion,
+        valence,
+        certainty,
+        source,
+        lifespan_stage,
+        crisis,
+        virtue,
+        relations,
+        relation_circles,
+        modality,
+        present_entities: list[str],
+        metadata: dict,
+        current_time,
+    ) -> None:
+        if not self.qdrant_store.client:
+            return
+        qdrant_ts = (
+            str(current_time.timestamp())
+            if current_time is not None
+            else str(time.time())
+        )
+        metadata_qdrant = {
+            "wing": wing,
+            "room": room or "",
+            "importance_score": importance,
+            "emotional_weight": emotion,
+            "valence": valence,
+            "certainty": certainty,
+            "source": source,
+            "recall_count": 1,
+            "last_recalled_at": qdrant_ts,
+            "created_at": qdrant_ts,
+            "lifespan_stage": lifespan_stage or "",
+            "crisis": crisis or "",
+            "virtue": virtue or "",
+            "relations": relations or "",
+            "relation_circles": relation_circles or "",
+            "modality": modality or "",
+            "entities": present_entities,
+        }
+        if metadata:
+            metadata_qdrant["custom_metadata"] = orjson.dumps(metadata).decode()
+
+        # P3-13a: the three other add_vector_memory call sites in this file
+        # all wrap the Qdrant client's synchronous network I/O in
+        # asyncio.to_thread; this one didn't, blocking the event loop for
+        # the duration of every memory write.
+        await asyncio.to_thread(
+            self.qdrant_store.add_vector_memory,
+            memory_id=memory_id,
+            vector=vector,
+            content=content,
+            metadata=metadata_qdrant,
+        )
+
     async def add_memory(
         self,
         content,
@@ -935,28 +1027,7 @@ class MemoryStore:
                     return True
 
             # Pre-link entities from graph to metadata
-            present_entities = []
-            if self.graph_db:
-                try:
-                    entity_records = await self.graph_db.execute_query(
-                        "MATCH (e:Entity) "
-                        "WHERE e.name IS NOT NULL "
-                        "AND toLower($content) CONTAINS toLower(e.name) "
-                        "RETURN e.name AS name",
-                        {"content": content},
-                        use_cache=True,
-                    )
-                    entity_names = [r["name"] for r in entity_records]
-                    content_lower = content.lower()
-                    for name in entity_names:
-                        name_lower = name.lower()
-                        pattern = rf"\b{re.escape(name_lower)}\b"
-                        if re.search(pattern, content_lower):
-                            present_entities.append(name)
-                except Exception as ge:
-                    logger.debug(
-                        f"Failed to fetch entities for pre-linking in add_memory: {ge}"
-                    )
+            present_entities = await self._prelink_memory_entities(content)
 
             if metadata is None:
                 metadata = {}
@@ -991,45 +1062,27 @@ class MemoryStore:
                     current_time=current_time,
                 )
             # Upsert into Qdrant if online using the same memory_id
-            if self.qdrant_store.client:
-                qdrant_ts = (
-                    str(current_time.timestamp())
-                    if current_time is not None
-                    else str(time.time())
-                )
-                metadata_qdrant = {
-                    "wing": wing,
-                    "room": room or "",
-                    "importance_score": importance,
-                    "emotional_weight": emotion,
-                    "valence": valence,
-                    "certainty": certainty,
-                    "source": source,
-                    "recall_count": 1,
-                    "last_recalled_at": qdrant_ts,
-                    "created_at": qdrant_ts,
-                    "lifespan_stage": lifespan_stage or "",
-                    "crisis": crisis or "",
-                    "virtue": virtue or "",
-                    "relations": relations or "",
-                    "relation_circles": relation_circles or "",
-                    "modality": modality or "",
-                    "entities": present_entities,
-                }
-                if metadata:
-                    metadata_qdrant["custom_metadata"] = orjson.dumps(metadata).decode()
-
-                # P3-13a: the three other add_vector_memory call sites in this
-                # file all wrap the Qdrant client's synchronous network I/O in
-                # asyncio.to_thread; this one didn't, blocking the event loop
-                # for the duration of every memory write.
-                await asyncio.to_thread(
-                    self.qdrant_store.add_vector_memory,
-                    memory_id=memory_id,
-                    vector=vector,
-                    content=content,
-                    metadata=metadata_qdrant,
-                )
+            await self._upsert_qdrant_memory(
+                memory_id=memory_id,
+                vector=vector,
+                content=content,
+                wing=wing,
+                room=room,
+                importance=importance,
+                emotion=emotion,
+                valence=valence,
+                certainty=certainty,
+                source=source,
+                lifespan_stage=lifespan_stage,
+                crisis=crisis,
+                virtue=virtue,
+                relations=relations,
+                relation_circles=relation_circles,
+                modality=modality,
+                present_entities=present_entities,
+                metadata=metadata,
+                current_time=current_time,
+            )
 
             logger.info(
                 f"🧠 Memory Stored [{wing}:{room or 'global'}]: {content[:50]}..."
@@ -1247,6 +1300,122 @@ class MemoryStore:
             relation_records = []
         return candidates, entity_records, relation_records
 
+    @staticmethod
+    def _db_or_meta(db_meta, meta: dict, key: str, default):
+        """The SQL row wins over the Qdrant payload where present -- Qdrant
+        payloads can lag it (recall_count/last_recalled_at move on every
+        recall)."""
+        if db_meta and db_meta.get(key) is not None:
+            return db_meta.get(key)
+        return meta.get(key, default)
+
+    @staticmethod
+    def _parse_qdrant_created_at(created_val, current_time):
+        try:
+            if created_val:
+                return datetime.fromtimestamp(float(created_val), UTC)
+        except Exception:  # nosec B110 - falls through to the current_time/now() fallback below regardless of cause
+            pass
+        return current_time if current_time is not None else datetime.now(UTC)
+
+    def _score_one_qdrant_candidate(
+        self,
+        cand,
+        db_metadata: dict,
+        *,
+        wing,
+        room,
+        excluded,
+        threshold,
+        current_valence,
+        current_arousal,
+        current_cortisol,
+        current_time,
+        now_ts,
+    ) -> dict | None:
+        """ACT-R activation + neuromodulatory gating for one Qdrant hit.
+        Returns None for anything filtered out (wrong wing/room, excluded
+        content, or below the loose pre-threshold)."""
+        meta = cand["metadata"]
+        c_wing = meta.get("wing")
+        c_room = meta.get("room")
+        if wing is not None and c_wing != wing:
+            return None
+        if room is not None and c_room != room:
+            return None
+
+        c_content = cand["content"]
+        if c_content in excluded:
+            return None
+
+        memory_id = cand["id"]
+        db_meta = db_metadata.get(str(memory_id))
+
+        memory_valence = self._db_or_meta(db_meta, meta, "valence", 0.0)
+        emotion_weight_row = self._db_or_meta(db_meta, meta, "emotional_weight", 0.0)
+        importance_score = self._db_or_meta(db_meta, meta, "importance_score", 0.5)
+        recall_count = max(1, self._db_or_meta(db_meta, meta, "recall_count", 1))
+
+        last_recall_time = self._coerce_last_recall_ts(db_meta, meta, now_ts)
+        hours_since = max(0.001, (now_ts - last_recall_time) / 3600.0)
+
+        # 2D/3D Emotional Distance matching the research simulator
+        dist_emo = math.sqrt(
+            (memory_valence - current_valence) ** 2
+            + (emotion_weight_row - current_arousal) ** 2
+        )
+
+        base_activation = self._base_activation(
+            recall_count, hours_since, importance_score, dist_emo
+        )
+
+        similarity = cand["score"]
+        effective_similarity = self._effective_similarity(
+            similarity,
+            memory_valence,
+            emotion_weight_row,
+            current_arousal,
+            current_cortisol,
+        )
+
+        spread_activation = self.spread_weight * effective_similarity
+        score = (
+            base_activation + spread_activation - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+        )
+
+        if score <= (threshold - 2.5) and importance_score < 0.7:
+            return None
+
+        created = self._parse_qdrant_created_at(meta.get("created_at"), current_time)
+
+        custom_metadata = {}
+        if "custom_metadata" in meta:
+            try:
+                custom_metadata = orjson.loads(meta["custom_metadata"])
+            except Exception:
+                pass  # nosec B110 - malformed/non-JSON custom_metadata degrades to {} regardless of cause
+
+        return {
+            "id": memory_id,
+            "content": c_content,
+            "raw_content": c_content,
+            "wing": c_wing or "personal",
+            "room": c_room,
+            "score": score,
+            "valence": memory_valence,
+            "created_at": created,
+            "recall_count": recall_count,
+            "metadata": custom_metadata,
+            "lifespan_stage": meta.get("lifespan_stage"),
+            "crisis": meta.get("crisis"),
+            "virtue": meta.get("virtue"),
+            "relations": meta.get("relations"),
+            "relation_circles": meta.get("relation_circles"),
+            "modality": meta.get("modality"),
+            "similarity": similarity,
+            "last_recalled_at": datetime.fromtimestamp(last_recall_time, UTC),
+        }
+
     async def _score_qdrant_candidates(
         self,
         candidates,
@@ -1267,124 +1436,21 @@ class MemoryStore:
             db_metadata = await self._fetch_candidate_db_metadata(candidates)
 
             for cand in candidates:
-                meta = cand["metadata"]
-                c_wing = meta.get("wing")
-                c_room = meta.get("room")
-                if wing is not None and c_wing != wing:
-                    continue
-                if room is not None and c_room != room:
-                    continue
-
-                c_content = cand["content"]
-                if c_content in excluded:
-                    continue
-
-                memory_id = cand["id"]
-                db_meta = db_metadata.get(str(memory_id))
-
-                memory_valence = (
-                    db_meta.get("valence")
-                    if (db_meta and db_meta.get("valence") is not None)
-                    else meta.get("valence", 0.0)
+                scored = self._score_one_qdrant_candidate(
+                    cand,
+                    db_metadata,
+                    wing=wing,
+                    room=room,
+                    excluded=excluded,
+                    threshold=threshold,
+                    current_valence=current_valence,
+                    current_arousal=current_arousal,
+                    current_cortisol=current_cortisol,
+                    current_time=current_time,
+                    now_ts=now_ts,
                 )
-                emotion_weight_row = (
-                    db_meta.get("emotional_weight")
-                    if (db_meta and db_meta.get("emotional_weight") is not None)
-                    else meta.get("emotional_weight", 0.0)
-                )
-                importance_score = (
-                    db_meta.get("importance_score")
-                    if (db_meta and db_meta.get("importance_score") is not None)
-                    else meta.get("importance_score", 0.5)
-                )
-                recall_count = max(
-                    1,
-                    db_meta.get("recall_count")
-                    if (db_meta and db_meta.get("recall_count") is not None)
-                    else meta.get("recall_count", 1),
-                )
-
-                last_recall_time = self._coerce_last_recall_ts(db_meta, meta, now_ts)
-                hours_since = max(0.001, (now_ts - last_recall_time) / 3600.0)
-
-                # 2D/3D Emotional Distance matching the research simulator
-                dist_emo = math.sqrt(
-                    (memory_valence - current_valence) ** 2
-                    + (emotion_weight_row - current_arousal) ** 2
-                )
-
-                base_activation = self._base_activation(
-                    recall_count, hours_since, importance_score, dist_emo
-                )
-
-                similarity = cand["score"]
-                effective_similarity = self._effective_similarity(
-                    similarity,
-                    memory_valence,
-                    emotion_weight_row,
-                    current_arousal,
-                    current_cortisol,
-                )
-
-                spread_activation = self.spread_weight * effective_similarity
-                score = (
-                    base_activation
-                    + spread_activation
-                    - ACTR_EMO_DISTANCE_PENALTY * dist_emo
-                )
-
-                if score <= (threshold - 2.5) and importance_score < 0.7:
-                    continue
-
-                created_val = meta.get("created_at")
-                try:
-                    created = (
-                        datetime.fromtimestamp(float(created_val), UTC)
-                        if created_val
-                        else (
-                            current_time
-                            if current_time is not None
-                            else datetime.now(UTC)
-                        )
-                    )
-                except Exception:
-                    created = (
-                        current_time
-                        if current_time is not None
-                        else datetime.now(UTC)
-                    )
-
-                custom_metadata = {}
-                if "custom_metadata" in meta:
-                    try:
-                        custom_metadata = orjson.loads(meta["custom_metadata"])
-                    except Exception:
-                        pass  # nosec B110 - malformed/non-JSON custom_metadata degrades to {} regardless of cause
-
-                raw_candidates.append(
-                    {
-                        "id": memory_id,
-                        "content": c_content,
-                        "raw_content": c_content,
-                        "wing": c_wing or "personal",
-                        "room": c_room,
-                        "score": score,
-                        "valence": memory_valence,
-                        "created_at": created,
-                        "recall_count": recall_count,
-                        "metadata": custom_metadata,
-                        "lifespan_stage": meta.get("lifespan_stage"),
-                        "crisis": meta.get("crisis"),
-                        "virtue": meta.get("virtue"),
-                        "relations": meta.get("relations"),
-                        "relation_circles": meta.get("relation_circles"),
-                        "modality": meta.get("modality"),
-                        "similarity": similarity,
-                        "last_recalled_at": datetime.fromtimestamp(
-                            last_recall_time, UTC
-                        ),
-                    }
-                )
+                if scored is not None:
+                    raw_candidates.append(scored)
         except Exception as qe:
             logger.error(f"Qdrant retrieval failed, falling back to database: {qe}")
         return raw_candidates
@@ -1857,48 +1923,36 @@ class MemoryStore:
         return entity_names, adj, cand_entities
 
     @staticmethod
-    def _resolve_identity_nodes(entity_records, entity_names, adj, user_id):
-        """Discover which graph nodes represent the agent and the user.
-
-        Falls back through description text, configured AI_NAME, and finally
-        the most-connected non-agent entity, so pronoun resolution still works
-        on a graph that was never explicitly annotated.
-        """
-        agent_node_name = None
-        user_node_name = None
-
-        # 1. Discover Agent Node Name dynamically
+    def _resolve_agent_node_name(entity_records, entity_names) -> str:
         for r in entity_records:
             desc = r.get("description") or ""
             if "central cognitive system" in desc.lower():
-                agent_node_name = r["name"]
-                break
-        if not agent_node_name:
-            ai_name = getattr(Config, "AI_NAME", "AI Friend")
-            for name in entity_names:
-                if name.lower() == ai_name.lower():
-                    agent_node_name = name
-                    break
-        if not agent_node_name:
-            agent_node_name = getattr(Config, "AI_NAME", "AI Friend")
+                return r["name"]
+        ai_name = getattr(Config, "AI_NAME", "AI Friend")
+        for name in entity_names:
+            if name.lower() == ai_name.lower():
+                return name
+        return ai_name
 
-        # 2. Discover User Node Name dynamically
+    @staticmethod
+    def _resolve_user_node_name(
+        entity_records, entity_names, adj, user_id, agent_node_name: str
+    ) -> str:
         if user_id:
             for name in entity_names:
                 if name.lower() == user_id.lower():
-                    user_node_name = name
-                    break
-        if not user_node_name:
-            for r in entity_records:
-                desc = r.get("description") or ""
-                if (
-                    "user" in desc.lower()
-                    or "companion" in desc.lower()
-                    or "friend" in desc.lower()
-                ) and r["name"] != agent_node_name:
-                    user_node_name = r["name"]
-                    break
-        if not user_node_name and entity_names:
+                    return name
+
+        for r in entity_records:
+            desc = r.get("description") or ""
+            if (
+                "user" in desc.lower()
+                or "companion" in desc.lower()
+                or "friend" in desc.lower()
+            ) and r["name"] != agent_node_name:
+                return r["name"]
+
+        if entity_names:
             ai_names = {"ai friend", "my friend", agent_node_name.lower()}
             if getattr(Config, "AI_NAME", None):
                 ai_names.add(Config.AI_NAME.lower())
@@ -1909,9 +1963,25 @@ class MemoryStore:
                 candidates_names.sort(
                     key=lambda name: len(adj.get(name, set())), reverse=True
                 )
-                user_node_name = candidates_names[0]
-        if not user_node_name:
-            user_node_name = user_id or "user"
+                return candidates_names[0]
+
+        return user_id or "user"
+
+    @classmethod
+    def _resolve_identity_nodes(cls, entity_records, entity_names, adj, user_id):
+        """Discover which graph nodes represent the agent and the user.
+
+        Falls back through description text, configured AI_NAME, and finally
+        the most-connected non-agent entity, so pronoun resolution still works
+        on a graph that was never explicitly annotated.
+        """
+        # 1. Discover Agent Node Name dynamically
+        agent_node_name = cls._resolve_agent_node_name(entity_records, entity_names)
+
+        # 2. Discover User Node Name dynamically
+        user_node_name = cls._resolve_user_node_name(
+            entity_records, entity_names, adj, user_id, agent_node_name
+        )
 
         return agent_node_name, user_node_name
 
@@ -2456,6 +2526,111 @@ class MemoryStore:
             "custom_metadata": orjson.dumps(raw_meta or {}).decode(),
         }
 
+    async def _promote_one_archived_row(
+        self,
+        row,
+        emb,
+        similarity,
+        matched_cues,
+        *,
+        threshold,
+        current_valence,
+        current_arousal,
+        current_cortisol,
+        current_time,
+    ) -> dict | None:
+        """Score, gate, and (if it qualifies) persist one archived row's
+        promotion to the active tier. Returns the active-shaped result dict,
+        or None if it doesn't qualify or the write failed."""
+        content = row["content"]
+        if not emb:
+            return None
+
+        (
+            score,
+            spread_activation,
+            dist_emo,
+            recall_count,
+            now,
+        ) = self._archive_row_activation(
+            row,
+            similarity,
+            current_valence=current_valence,
+            current_arousal=current_arousal,
+            current_cortisol=current_cortisol,
+            current_time=current_time,
+        )
+
+        # Only promote if it passes the threshold or is a milestone memory
+        if not (
+            score > (threshold - 2.5) or (row.get("importance_score") or 0.5) >= 0.7
+        ):
+            return None
+
+        mem_id = str(row.get("id") or uuid.uuid4())
+        raw_meta = row.get("metadata")
+        if isinstance(raw_meta, str):
+            try:
+                raw_meta = json.loads(raw_meta)
+            except Exception:
+                raw_meta = {}
+        elif not isinstance(raw_meta, dict):
+            raw_meta = {}
+
+        payload_meta = self._build_promotion_payload(row, raw_meta)
+
+        try:
+            await self._write_promoted_memory(
+                mem_id,
+                content,
+                row,
+                emb,
+                recall_count,
+                now,
+                payload_meta,
+                sql_meta=raw_meta,
+            )
+        except Exception as prom_err:
+            # The move did not persist, so this memory is still archived.
+            # Returning it anyway surfaced a result the next turn could not
+            # find again, and cached it as though it were active.
+            logger.error(f"Failed to promote memory {mem_id}: {prom_err}")
+            return None
+
+        created = self._as_aware_utc(row.get("created_at"))
+
+        # Rescore as an active memory: recall_count was incremented on
+        # promotion and last_recalled_at is now, so recency is ~0.
+        base_activation_active = self._base_activation(
+            recall_count + 1, 0.001, row.get("importance_score") or 0.5, dist_emo
+        )
+        score_active = (
+            base_activation_active
+            + spread_activation
+            - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+        )
+        # Apply direct cue boost since it was promoted for keyword matches
+        match_count = sum(1 for mc in matched_cues if mc in content.lower())
+        score_active += DIRECT_CUE_BOOST * match_count
+
+        return {
+            "content": content,
+            "raw_content": row.get("raw_content") or content,
+            "wing": row.get("wing", "personal"),
+            "room": row.get("room"),
+            "score": score_active,
+            "valence": row.get("valence") or 0.0,
+            "created_at": created.isoformat() if created else None,
+            "recall_count": recall_count + 1,
+            "metadata": raw_meta or {},
+            "lifespan_stage": row.get("lifespan_stage"),
+            "crisis": row.get("crisis"),
+            "virtue": row.get("virtue"),
+            "relations": row.get("relations"),
+            "relation_circles": row.get("relation_circles"),
+            "modality": row.get("modality"),
+        }
+
     async def _promote_archived_rows(
         self,
         scored_archive_rows,
@@ -2486,102 +2661,22 @@ class MemoryStore:
                 parsed_embeddings[idx] = vec
 
         promoted_results = []
-        for row_index, (_ranking_score, score, similarity, row) in enumerate(
+        for row_index, (_ranking_score, _score, similarity, row) in enumerate(
             scored_archive_rows
         ):
-            content = row["content"]
-
-            emb = parsed_embeddings[row_index]
-            if not emb:
-                continue
-
-            (
-                _score,
-                spread_activation,
-                dist_emo,
-                recall_count,
-                now,
-            ) = self._archive_row_activation(
+            promoted = await self._promote_one_archived_row(
                 row,
+                parsed_embeddings[row_index],
                 similarity,
+                matched_cues,
+                threshold=threshold,
                 current_valence=current_valence,
                 current_arousal=current_arousal,
                 current_cortisol=current_cortisol,
                 current_time=current_time,
             )
-
-            # Only promote if it passes the threshold or is a milestone memory
-            if not (
-                score > (threshold - 2.5)
-                or (row.get("importance_score") or 0.5) >= 0.7
-            ):
-                continue
-
-            mem_id = str(row.get("id") or uuid.uuid4())
-            raw_meta = row.get("metadata")
-            if isinstance(raw_meta, str):
-                try:
-                    raw_meta = json.loads(raw_meta)
-                except Exception:
-                    raw_meta = {}
-            elif not isinstance(raw_meta, dict):
-                raw_meta = {}
-
-            payload_meta = self._build_promotion_payload(row, raw_meta)
-
-            try:
-                await self._write_promoted_memory(
-                    mem_id,
-                    content,
-                    row,
-                    emb,
-                    recall_count,
-                    now,
-                    payload_meta,
-                    sql_meta=raw_meta,
-                )
-            except Exception as prom_err:
-                # The move did not persist, so this memory is still archived.
-                # Returning it anyway surfaced a result the next turn could not
-                # find again, and cached it as though it were active.
-                logger.error(f"Failed to promote memory {mem_id}: {prom_err}")
-                continue
-
-            created = self._as_aware_utc(row.get("created_at"))
-
-            # Rescore as an active memory: recall_count was incremented on
-            # promotion and last_recalled_at is now, so recency is ~0.
-            base_activation_active = self._base_activation(
-                recall_count + 1, 0.001, row.get("importance_score") or 0.5, dist_emo
-            )
-            score_active = (
-                base_activation_active
-                + spread_activation
-                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
-            )
-            # Apply direct cue boost since it was promoted for keyword matches
-            match_count = sum(1 for mc in matched_cues if mc in content.lower())
-            score_active += DIRECT_CUE_BOOST * match_count
-
-            promoted_results.append(
-                {
-                    "content": content,
-                    "raw_content": row.get("raw_content") or content,
-                    "wing": row.get("wing", "personal"),
-                    "room": row.get("room"),
-                    "score": score_active,
-                    "valence": row.get("valence") or 0.0,
-                    "created_at": created.isoformat() if created else None,
-                    "recall_count": recall_count + 1,
-                    "metadata": raw_meta or {},
-                    "lifespan_stage": row.get("lifespan_stage"),
-                    "crisis": row.get("crisis"),
-                    "virtue": row.get("virtue"),
-                    "relations": row.get("relations"),
-                    "relation_circles": row.get("relation_circles"),
-                    "modality": row.get("modality"),
-                }
-            )
+            if promoted is not None:
+                promoted_results.append(promoted)
         return promoted_results
 
     async def _recall_from_archive(
@@ -2645,6 +2740,226 @@ class MemoryStore:
             current_time=current_time,
         )
 
+    @staticmethod
+    def _build_search_cache_key(
+        query_text,
+        wing,
+        room,
+        threshold,
+        limit,
+        current_valence: float,
+        current_arousal: float,
+        current_cortisol: float,
+        exclude_contents,
+        user_id,
+        is_self_reflection: bool,
+        current_time,
+    ) -> tuple:
+        """L1 cache key. Affect/time are quantized (see L1_CACHE_AFFECT_BUCKET
+        / L1_CACHE_TIME_BUCKET_S) -- "close enough to be the same context,"
+        not the precise floats scoring uses."""
+        return (
+            query_text,
+            wing,
+            room,
+            threshold,
+            limit,
+            _quantize(current_valence, L1_CACHE_AFFECT_BUCKET),
+            _quantize(current_arousal, L1_CACHE_AFFECT_BUCKET),
+            _quantize(current_cortisol, L1_CACHE_AFFECT_BUCKET),
+            tuple(sorted(exclude_contents or [])),
+            user_id,
+            # Pronoun cues resolve in opposite directions depending on this
+            # flag ("I"/"my" bind to the agent when self-reflecting, to the
+            # user otherwise), so the two modes must not share a cache entry.
+            is_self_reflection,
+            (
+                int(current_time.timestamp() // L1_CACHE_TIME_BUCKET_S)
+                if current_time is not None
+                else None
+            ),
+        )
+
+    def _resolve_search_entity_context(
+        self, entity_records, relation_records, raw_candidates, user_id
+    ):
+        """Build the entity graph and identify the agent/user nodes in it,
+        tolerating a malformed graph (search still works without cues)."""
+        entity_names: list = []
+        adj: dict = {}
+        cand_entities: dict = {}
+        agent_node_name = None
+        user_node_name = None
+        try:
+            entity_names, adj, cand_entities = self._build_entity_graph(
+                entity_records, relation_records, raw_candidates
+            )
+            agent_node_name, user_node_name = self._resolve_identity_nodes(
+                entity_records, entity_names, adj, user_id
+            )
+        except Exception as e:
+            logger.debug("Failed to process entities: %s", e)
+        return entity_names, adj, cand_entities, agent_node_name, user_node_name
+
+    def _finalize_search_results(
+        self,
+        results: list,
+        *,
+        query_text: str,
+        limit,
+        refresh_on_recall: bool,
+        current_valence: float,
+        current_time,
+        cache_key: tuple,
+        now_ts: float,
+    ) -> list:
+        """Sort/limit, spawn the background recall-strengthening refresh, and
+        populate the L1 cache -- the shared tail of every non-early-return
+        path through `search_memories`."""
+        if results:
+            # Sort and limit results to maintain full compatibility with offline tests
+            results.sort(key=lambda x: x["score"], reverse=True)
+            if limit:
+                results = results[:limit]
+
+            logger.info(
+                f"\U0001f9e0 ACT-R Recall: {len(results)} memories for: '{query_text[:30]}...'"
+            )
+
+        if results and refresh_on_recall:
+
+            def _done_callback(t):
+                try:
+                    t.result()
+                except Exception as e:
+                    logger.error(f"Background Memory Refresh Failed: {e}")
+
+            # P4-8: spawn_background keeps a strong reference so this task
+            # cannot be GC'd mid-refresh; _done_callback is chained after it
+            # purely for the existing error-logging behavior.
+            task = spawn_background(
+                self._background_tasks,
+                self._refresh_memories(
+                    results,
+                    current_valence=current_valence,
+                    current_time=current_time,
+                ),
+            )
+            task.add_done_callback(_done_callback)
+
+        # Cache results in L1 memory cache before returning
+        self._l1_cache_put(cache_key, (now_ts, results))
+        return results
+
+    async def _fetch_raw_candidates(
+        self,
+        *,
+        candidates,
+        query_vector,
+        mrl_query_vector,
+        vector_str: str,
+        wing,
+        room,
+        excluded,
+        threshold,
+        candidate_limit: int,
+        current_valence: float,
+        current_arousal: float,
+        current_cortisol: float,
+        current_time,
+        now_ts: float,
+        is_sqlite: bool,
+    ) -> tuple[list, float]:
+        """Qdrant selective-vector path, falling back to a direct SQL scan
+        (dialect-branched) when Qdrant is offline or returned nothing."""
+        # 1. Qdrant Selective Vector Path
+        raw_candidates = []
+        if self.qdrant_store.client and candidates:
+            raw_candidates = await self._score_qdrant_candidates(
+                candidates,
+                wing=wing,
+                room=room,
+                excluded=excluded,
+                threshold=threshold,
+                current_valence=current_valence,
+                current_arousal=current_arousal,
+                current_cortisol=current_cortisol,
+                current_time=current_time,
+                now_ts=now_ts,
+            )
+
+        # 2. Database Fallback (Qdrant offline or returned no candidates)
+        if not raw_candidates:
+            async with self.pool.acquire() as conn:
+                if is_sqlite:
+                    # The SQLite path recomputes "now"; keep its value, it is
+                    # what stamps the L1 cache entry below.
+                    raw_candidates, now_ts = await self._fetch_sqlite_candidates(
+                        conn,
+                        query_vector=query_vector,
+                        wing=wing,
+                        room=room,
+                        excluded=excluded,
+                        threshold=threshold,
+                        current_valence=current_valence,
+                        current_arousal=current_arousal,
+                        current_cortisol=current_cortisol,
+                        current_time=current_time,
+                        candidate_limit=candidate_limit,
+                    )
+                else:
+                    raw_candidates = await self._fetch_postgres_candidates(
+                        conn,
+                        vector_str=vector_str,
+                        wing=wing,
+                        room=room,
+                        excluded=excluded,
+                        threshold=threshold,
+                        candidate_limit=candidate_limit,
+                        current_valence=current_valence,
+                        current_arousal=current_arousal,
+                        current_cortisol=current_cortisol,
+                        current_time=current_time,
+                    )
+        return raw_candidates, now_ts
+
+    async def _l1_cache_hit(
+        self,
+        cache_key: tuple,
+        now_ts: float,
+        *,
+        refresh_on_recall: bool,
+        current_valence: float,
+        current_time,
+    ) -> list | None:
+        """A fresh L1 hit, refreshed if requested; None on a miss/stale entry."""
+        if cache_key not in self._l1_cache:
+            return None
+        ts, cached_results = self._l1_cache[cache_key]
+        if now_ts - ts >= self._l1_cache_ttl:
+            return None
+        self._l1_cache.move_to_end(cache_key)
+        if cached_results and refresh_on_recall:
+            await self._refresh_memories(
+                cached_results,
+                current_valence=current_valence,
+                current_time=current_time,
+            )
+        return cached_results
+
+    async def _refresh_stop_words_if_stale(self, now_ts: float) -> None:
+        """Periodically refresh database-derived stop words (TTL = 5 minutes)."""
+        if (
+            hasattr(self, "_last_stop_words_update")
+            and now_ts - self._last_stop_words_update <= 300.0
+        ):
+            return
+        await self._update_dynamic_stop_words()
+        # Reload the learned-vocabulary association cache on the same
+        # cadence (first call also creates tables + plants the seed).
+        await self.lexicon.refresh()
+        self._last_stop_words_update = now_ts
+
     async def search_memories(
         self,
         query_text,
@@ -2690,51 +3005,33 @@ class MemoryStore:
         # L1_CACHE_AFFECT_BUCKET / L1_CACHE_TIME_BUCKET_S above) -- this key is
         # "close enough to be the same context," not the precise floats scoring
         # uses below.
-        cache_key = (
+        cache_key = self._build_search_cache_key(
             query_text,
             wing,
             room,
             threshold,
             limit,
-            _quantize(current_valence, L1_CACHE_AFFECT_BUCKET),
-            _quantize(current_arousal, L1_CACHE_AFFECT_BUCKET),
-            _quantize(current_cortisol, L1_CACHE_AFFECT_BUCKET),
-            tuple(sorted(exclude_contents or [])),
+            current_valence,
+            current_arousal,
+            current_cortisol,
+            exclude_contents,
             user_id,
-            # Pronoun cues resolve in opposite directions depending on this flag
-            # ("I"/"my" bind to the agent when self-reflecting, to the user
-            # otherwise), so the two modes must not share a cache entry.
             is_self_reflection,
-            (
-                int(current_time.timestamp() // L1_CACHE_TIME_BUCKET_S)
-                if current_time is not None
-                else None
-            ),
+            current_time,
         )
         now_ts = current_time.timestamp() if current_time is not None else time.time()
-        if cache_key in self._l1_cache:
-            ts, cached_results = self._l1_cache[cache_key]
-            if now_ts - ts < self._l1_cache_ttl:
-                self._l1_cache.move_to_end(cache_key)
-                if cached_results and refresh_on_recall:
-                    await self._refresh_memories(
-                        cached_results,
-                        current_valence=current_valence,
-                        current_time=current_time,
-                    )
-                return cached_results
+        cache_hit = await self._l1_cache_hit(
+            cache_key,
+            now_ts,
+            refresh_on_recall=refresh_on_recall,
+            current_valence=current_valence,
+            current_time=current_time,
+        )
+        if cache_hit is not None:
+            return cache_hit
 
         try:
-            # Periodically refresh database-derived stop words (TTL = 5 minutes)
-            if (
-                not hasattr(self, "_last_stop_words_update")
-                or now_ts - self._last_stop_words_update > 300.0
-            ):
-                await self._update_dynamic_stop_words()
-                # Reload the learned-vocabulary association cache on the same
-                # cadence (first call also creates tables + plants the seed).
-                await self.lexicon.refresh()
-                self._last_stop_words_update = now_ts
+            await self._refresh_stop_words_if_stale(now_ts)
 
             query_vector = await self.get_embedding(query_text)
             if not query_vector:
@@ -2771,55 +3068,23 @@ class MemoryStore:
                 mrl_query_vector, candidate_limit, query_text, user_id
             )
 
-            # 1. Qdrant Selective Vector Path
-            raw_candidates = []
-            if self.qdrant_store.client and candidates:
-                raw_candidates = await self._score_qdrant_candidates(
-                    candidates,
-                    wing=wing,
-                    room=room,
-                    excluded=excluded,
-                    threshold=threshold,
-                    current_valence=current_valence,
-                    current_arousal=current_arousal,
-                    current_cortisol=current_cortisol,
-                    current_time=current_time,
-                    now_ts=now_ts,
-                )
-
-            # 2. Database Fallback (Qdrant offline or returned no candidates)
-            if not raw_candidates:
-                async with self.pool.acquire() as conn:
-                    if is_sqlite:
-                        # The SQLite path recomputes "now"; keep its value, it is
-                        # what stamps the L1 cache entry below.
-                        raw_candidates, now_ts = await self._fetch_sqlite_candidates(
-                            conn,
-                            query_vector=query_vector,
-                            wing=wing,
-                            room=room,
-                            excluded=excluded,
-                            threshold=threshold,
-                            current_valence=current_valence,
-                            current_arousal=current_arousal,
-                            current_cortisol=current_cortisol,
-                            current_time=current_time,
-                            candidate_limit=candidate_limit,
-                        )
-                    else:
-                        raw_candidates = await self._fetch_postgres_candidates(
-                            conn,
-                            vector_str=vector_str,
-                            wing=wing,
-                            room=room,
-                            excluded=excluded,
-                            threshold=threshold,
-                            candidate_limit=candidate_limit,
-                            current_valence=current_valence,
-                            current_arousal=current_arousal,
-                            current_cortisol=current_cortisol,
-                            current_time=current_time,
-                        )
+            raw_candidates, now_ts = await self._fetch_raw_candidates(
+                candidates=candidates,
+                query_vector=query_vector,
+                mrl_query_vector=mrl_query_vector,
+                vector_str=vector_str,
+                wing=wing,
+                room=room,
+                excluded=excluded,
+                threshold=threshold,
+                candidate_limit=candidate_limit,
+                current_valence=current_valence,
+                current_arousal=current_arousal,
+                current_cortisol=current_cortisol,
+                current_time=current_time,
+                now_ts=now_ts,
+                is_sqlite=is_sqlite,
+            )
 
             # 3. Post-process in Python: direct cue boost + spreading activation
             query_words = re.findall(r"\b\w{3,}\b", query_text.lower())
@@ -2827,20 +3092,15 @@ class MemoryStore:
             matched_cues = [w for w in query_words if w not in dynamic_stop_words]
             self.goal_buffer.update_buffer(query_text, dynamic_stop_words)
 
-            entity_names = []
-            adj = {}
-            cand_entities = {}
-            agent_node_name = None
-            user_node_name = None
-            try:
-                entity_names, adj, cand_entities = self._build_entity_graph(
-                    entity_records, relation_records, raw_candidates
-                )
-                agent_node_name, user_node_name = self._resolve_identity_nodes(
-                    entity_records, entity_names, adj, user_id
-                )
-            except Exception as e:
-                logger.debug("Failed to process entities: %s", e)
+            (
+                entity_names,
+                adj,
+                cand_entities,
+                agent_node_name,
+                user_node_name,
+            ) = self._resolve_search_entity_context(
+                entity_records, relation_records, raw_candidates, user_id
+            )
 
             resolved_cues = self._resolve_pronoun_cues(
                 query_text,
@@ -2893,40 +3153,16 @@ class MemoryStore:
                 if promoted_results:
                     results.extend(promoted_results)
 
-            if results:
-                # Sort and limit results to maintain full compatibility with offline tests
-                results.sort(key=lambda x: x["score"], reverse=True)
-                if limit:
-                    results = results[:limit]
-
-                logger.info(
-                    f"\U0001f9e0 ACT-R Recall: {len(results)} memories for: '{query_text[:30]}...'"
-                )
-
-            if results and refresh_on_recall:
-
-                def _done_callback(t):
-                    try:
-                        t.result()
-                    except Exception as e:
-                        logger.error(f"Background Memory Refresh Failed: {e}")
-
-                # P4-8: spawn_background keeps a strong reference so this
-                # task cannot be GC'd mid-refresh; _done_callback is chained
-                # after it purely for the existing error-logging behavior.
-                task = spawn_background(
-                    self._background_tasks,
-                    self._refresh_memories(
-                        results,
-                        current_valence=current_valence,
-                        current_time=current_time,
-                    ),
-                )
-                task.add_done_callback(_done_callback)
-
-            # Cache results in L1 memory cache before returning
-            self._l1_cache_put(cache_key, (now_ts, results))
-            return results
+            return self._finalize_search_results(
+                results,
+                query_text=query_text,
+                limit=limit,
+                refresh_on_recall=refresh_on_recall,
+                current_valence=current_valence,
+                current_time=current_time,
+                cache_key=cache_key,
+                now_ts=now_ts,
+            )
 
         except Exception as e:
             import traceback
@@ -3126,10 +3362,240 @@ class MemoryStore:
         except Exception as e:
             logger.error(f"Failed to mark episodes consolidated: {e}")
 
-    async def apply_actr_decay(self, memory_contents: list[str], current_time=None):
-        """Decays the importance score of consolidated raw episodic memories using ACT-R feedback."""
+    @staticmethod
+    def _parse_actr_created_at(created_at, current_time):
+        """Best-effort parse of a stored `created_at` into a datetime,
+        falling back to `current_time`/now for anything unparseable."""
+        if not created_at:
+            return current_time if current_time is not None else datetime.now()
+
+        if not isinstance(created_at, str):
+            return created_at
+
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S.%f",
+        ):
+            try:
+                return datetime.strptime(created_at.split("+")[0], fmt)
+            except ValueError:
+                continue
+        return current_time if current_time is not None else datetime.now()
+
+    @staticmethod
+    def _extract_actr_decay_rate(metadata, default_rate: float) -> float:
+        """Per-memory decay_rate override from metadata, if present."""
         import json
 
+        meta = {}
+        if isinstance(metadata, str):
+            try:
+                meta = json.loads(metadata)
+            except Exception:  # nosec B110 - malformed metadata falls back to {} / default_rate below
+                pass
+        elif isinstance(metadata, dict):
+            meta = metadata
+
+        return float(meta.get("decay_rate", default_rate)) if meta else default_rate
+
+    def _compute_actr_decay(
+        self, rows: list, current_time=None
+    ) -> tuple[list, list]:
+        """Pure ACT-R activation decision per row: which memory ids should be
+        pruned to the archive (`to_delete`) and which get a softened
+        importance score in place (`to_update`). No I/O -- isolated so the
+        date-parsing/activation math can be reasoned about (and radon-scored)
+        apart from the dual-backend persistence that follows it."""
+        to_delete = []
+        to_update = []
+
+        for row in rows:
+            mem_id = row.get("id")
+            recall_count = row.get("recall_count")
+            metadata = row.get("metadata")
+            importance_score = row.get("importance_score") or 0.5
+
+            # Fallbacks
+            n_recalls = max(1, recall_count if recall_count is not None else 1)
+
+            dt = self._parse_actr_created_at(row.get("created_at"), current_time)
+
+            # Calculate hours since creation. Coerce both operands to
+            # aware-UTC so a naive stored created_at and an aware
+            # current_time (or vice versa) never raise on subtraction.
+            now = (
+                self._as_aware_utc(current_time)
+                if current_time is not None
+                else datetime.now(UTC)
+            )
+            delta = now - (self._as_aware_utc(dt) or now)
+            hours_since = max(0.0, delta.total_seconds() / 3600.0)
+
+            decay_rate = self._extract_actr_decay_rate(metadata, self.decay_rate)
+
+            # Shield recent memories created in the last 24 hours from pruning (deletion)
+            is_shielded = hours_since < 24.0
+
+            # Milestones (importance >= 0.7) are protected from active importance decay,
+            # but they are allowed to decay and be pruned to the archive when inactive.
+            activation = math.log(n_recalls) - decay_rate * math.log(hours_since + 1.0)
+
+            # Dual-threshold active pruning:
+            # Distractors (< 0.5) pruned below -3.5, Anecdotes/Milestones (>= 0.5) pruned below -4.5
+            threshold = -3.5 if importance_score < 0.5 else -4.5
+            if activation < threshold and not is_shielded:
+                to_delete.append(mem_id)
+            elif importance_score < 0.7:
+                # Decay importance score slightly for non-milestones
+                new_importance = max(0.01, importance_score * 0.8)
+                to_update.append((new_importance, mem_id))
+
+        return to_delete, to_update
+
+    async def _archive_and_delete_decayed_memories(self, conn, to_delete: list) -> None:
+        """Copy pruned rows to `archived_memories`, delete them from the
+        active table (and Qdrant), for whichever backend `conn` is."""
+        if self.is_sqlite:
+            placeholders = ",".join("?" for _ in to_delete)
+            # Copy to archived_memories
+            await conn.execute(
+                """
+                INSERT INTO archived_memories (
+                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                    metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                )
+                SELECT
+                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                    metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                FROM memories
+                WHERE id IN ("""
+                f"{placeholders}"  # nosec B608 - placeholders is only comma-separated "?" marks, ids bound via *to_delete
+                """)
+                ON CONFLICT(id) DO UPDATE SET
+                    recall_count = excluded.recall_count,
+                    last_recalled_at = excluded.last_recalled_at,
+                    importance_score = excluded.importance_score
+                """,
+                *to_delete,
+            )
+            # Delete from memories
+            await conn.execute(
+                f"DELETE FROM memories WHERE id IN ({placeholders})",  # nosec B608 - placeholders is only comma-separated "?" marks, ids bound via *to_delete
+                *to_delete,
+            )
+        else:
+            # Copy to archived_memories
+            await conn.execute(
+                """
+                INSERT INTO archived_memories (
+                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                    metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                )
+                SELECT
+                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                    metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding::halfvec
+                FROM memories
+                WHERE id = ANY($1)
+                ON CONFLICT(id) DO UPDATE SET
+                    recall_count = EXCLUDED.recall_count,
+                    last_recalled_at = EXCLUDED.last_recalled_at,
+                    importance_score = EXCLUDED.importance_score
+                """,
+                to_delete,
+            )
+            # Delete from memories
+            await conn.execute("DELETE FROM memories WHERE id = ANY($1)", to_delete)
+
+        # Delete from Qdrant if active
+        if self.qdrant_store and self.qdrant_store.client:
+            try:
+                from qdrant_client.http import models
+
+                await asyncio.to_thread(
+                    self.qdrant_store.client.delete,
+                    collection_name=self.qdrant_store.collection_name,
+                    points_selector=models.PointIdsList(
+                        points=[str(pid) for pid in to_delete]
+                    ),
+                )
+            except Exception as qe:
+                logger.error(f"Failed to delete points from Qdrant: {qe}")
+
+        logger.info(
+            f"🗑️ Pruned {len(to_delete)} memories with base activation below {self.pruning_threshold} to subconscious archive."
+        )
+
+    async def _apply_importance_updates(self, conn, to_update: list) -> None:
+        if self.is_sqlite:
+            for importance, mem_id in to_update:
+                await conn.execute(
+                    "UPDATE memories SET importance_score = ? WHERE id = ?",
+                    importance,
+                    mem_id,
+                )
+        else:
+            # Batch update for PostgreSQL
+            await conn.executemany(
+                "UPDATE memories SET importance_score = $1 WHERE id = $2",
+                to_update,
+            )
+
+    async def _cleanup_expired_archived_memories(self, conn, current_time=None) -> None:
+        """Permanent cleanup on archived_memories based on biological timelines."""
+        now_cleanup = current_time if current_time is not None else datetime.now(UTC)
+        cutoff_distractors = now_cleanup - timedelta(days=30)
+        cutoff_anecdotes = now_cleanup - timedelta(days=180)
+        cutoff_milestones = now_cleanup - timedelta(days=720)
+
+        try:
+            # COALESCE(last_recalled_at, created_at): a memory that was
+            # archived but never recalled has NULL last_recalled_at, and
+            # `NULL < cutoff` is NULL (never true) -- such rows would be
+            # immortal in the archive. Age them out by creation time
+            # instead, matching how the activation SQL already coalesces
+            # this column (db/schema.sql).
+            if self.is_sqlite:
+                # Normalise both operands through datetime(): the SQLite
+                # fallback stores timestamps as text, so a raw string
+                # comparison of differing ISO formats/precision/offsets
+                # is unreliable. datetime() canonicalises to UTC.
+                await conn.execute(
+                    """
+                    DELETE FROM archived_memories
+                    WHERE (importance_score < 0.5 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?))
+                       OR (importance_score >= 0.5 AND importance_score < 0.7 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?))
+                       OR (importance_score >= 0.7 AND importance_score < 0.9 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?));
+                    """,
+                    cutoff_distractors.isoformat(),
+                    cutoff_anecdotes.isoformat(),
+                    cutoff_milestones.isoformat(),
+                )
+            else:
+                await conn.execute(
+                    """
+                    DELETE FROM archived_memories
+                    WHERE (importance_score < 0.5 AND COALESCE(last_recalled_at, created_at) < $1)
+                       OR (importance_score >= 0.5 AND importance_score < 0.7 AND COALESCE(last_recalled_at, created_at) < $2)
+                       OR (importance_score >= 0.7 AND importance_score < 0.9 AND COALESCE(last_recalled_at, created_at) < $3);
+                    """,
+                    cutoff_distractors,
+                    cutoff_anecdotes,
+                    cutoff_milestones,
+                )
+            logger.info(
+                "🗑️ Completed permanent cleanup on subconscious archived memories."
+            )
+        except Exception as clean_err:
+            logger.error(f"Failed subconscious archive cleanup: {clean_err}")
+
+    async def apply_actr_decay(self, memory_contents: list[str], current_time=None):
+        """Decays the importance score of consolidated raw episodic memories using ACT-R feedback."""
         try:
             if not memory_contents:
                 return
@@ -3149,235 +3615,18 @@ class MemoryStore:
                 if not rows:
                     return
 
-                to_delete = []
-                to_update = []
+                # 2. Decide which rows get pruned vs. softened
+                to_delete, to_update = self._compute_actr_decay(rows, current_time)
 
-                for row in rows:
-                    mem_id = row.get("id")
-                    recall_count = row.get("recall_count")
-                    created_at = row.get("created_at")
-                    metadata = row.get("metadata")
-                    importance_score = row.get("importance_score") or 0.5
-
-                    # Fallbacks
-                    n_recalls = max(1, recall_count if recall_count is not None else 1)
-
-                    # Parse created_at safely
-                    if not created_at:
-                        created_at = (
-                            current_time if current_time is not None else datetime.now()
-                        )
-
-                    if isinstance(created_at, str):
-                        for fmt in (
-                            "%Y-%m-%d %H:%M:%S",
-                            "%Y-%m-%dT%H:%M:%S",
-                            "%Y-%m-%d %H:%M:%S.%f",
-                            "%Y-%m-%dT%H:%M:%S.%f",
-                        ):
-                            try:
-                                dt = datetime.strptime(created_at.split("+")[0], fmt)
-                                break
-                            except ValueError:
-                                continue
-                        else:
-                            dt = (
-                                current_time
-                                if current_time is not None
-                                else datetime.now()
-                            )
-                    else:
-                        dt = created_at
-
-                    # Calculate hours since creation. Coerce both operands to
-                    # aware-UTC so a naive stored created_at and an aware
-                    # current_time (or vice versa) never raise on subtraction.
-                    now = (
-                        self._as_aware_utc(current_time)
-                        if current_time is not None
-                        else datetime.now(UTC)
-                    )
-                    delta = now - (self._as_aware_utc(dt) or now)
-                    hours_since = max(0.0, delta.total_seconds() / 3600.0)
-
-                    # Extract decay_rate from metadata if possible
-                    meta = {}
-                    if isinstance(metadata, str):
-                        try:
-                            meta = json.loads(metadata)
-                        except Exception:  # nosec B110 - malformed metadata falls back to {} / self.decay_rate below
-                            pass
-                    elif isinstance(metadata, dict):
-                        meta = metadata
-
-                    decay_rate = (
-                        float(meta.get("decay_rate", self.decay_rate))
-                        if meta
-                        else self.decay_rate
-                    )
-
-                    # Shield recent memories created in the last 24 hours from pruning (deletion)
-                    is_shielded = hours_since < 24.0
-
-                    # Milestones (importance >= 0.7) are protected from active importance decay,
-                    # but they are allowed to decay and be pruned to the archive when inactive.
-                    activation = math.log(n_recalls) - decay_rate * math.log(
-                        hours_since + 1.0
-                    )
-
-                    # Dual-threshold active pruning:
-                    # Distractors (< 0.5) pruned below -3.5, Anecdotes/Milestones (>= 0.5) pruned below -4.5
-                    threshold = -3.5 if importance_score < 0.5 else -4.5
-                    if activation < threshold and not is_shielded:
-                        to_delete.append(mem_id)
-                    elif importance_score < 0.7:
-                        # Decay importance score slightly for non-milestones
-                        new_importance = max(0.01, importance_score * 0.8)
-                        to_update.append((new_importance, mem_id))
-
-                # 2. Execute Archiving, Deletions and Updates
+                # 3. Execute Archiving, Deletions and Updates
                 if to_delete:
-                    if self.is_sqlite:
-                        placeholders = ",".join("?" for _ in to_delete)
-                        # Copy to archived_memories
-                        await conn.execute(
-                            """
-                            INSERT INTO archived_memories (
-                                id, content, raw_content, wing, room, importance_score, emotional_weight,
-                                valence, certainty, source, recall_count, last_recalled_at, created_at,
-                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
-                            )
-                            SELECT
-                                id, content, raw_content, wing, room, importance_score, emotional_weight,
-                                valence, certainty, source, recall_count, last_recalled_at, created_at,
-                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
-                            FROM memories
-                            WHERE id IN ("""
-                            f"{placeholders}"  # nosec B608 - placeholders is only comma-separated "?" marks, ids bound via *to_delete
-                            """)
-                            ON CONFLICT(id) DO UPDATE SET
-                                recall_count = excluded.recall_count,
-                                last_recalled_at = excluded.last_recalled_at,
-                                importance_score = excluded.importance_score
-                            """,
-                            *to_delete,
-                        )
-                        # Delete from memories
-                        await conn.execute(
-                            f"DELETE FROM memories WHERE id IN ({placeholders})",  # nosec B608 - placeholders is only comma-separated "?" marks, ids bound via *to_delete
-                            *to_delete,
-                        )
-                    else:
-                        # Copy to archived_memories
-                        await conn.execute(
-                            """
-                            INSERT INTO archived_memories (
-                                id, content, raw_content, wing, room, importance_score, emotional_weight,
-                                valence, certainty, source, recall_count, last_recalled_at, created_at,
-                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
-                            )
-                            SELECT
-                                id, content, raw_content, wing, room, importance_score, emotional_weight,
-                                valence, certainty, source, recall_count, last_recalled_at, created_at,
-                                metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding::halfvec
-                            FROM memories
-                            WHERE id = ANY($1)
-                            ON CONFLICT(id) DO UPDATE SET
-                                recall_count = EXCLUDED.recall_count,
-                                last_recalled_at = EXCLUDED.last_recalled_at,
-                                importance_score = EXCLUDED.importance_score
-                            """,
-                            to_delete,
-                        )
-                        # Delete from memories
-                        await conn.execute(
-                            "DELETE FROM memories WHERE id = ANY($1)", to_delete
-                        )
-
-                    # Delete from Qdrant if active
-                    if self.qdrant_store and self.qdrant_store.client:
-                        try:
-                            from qdrant_client.http import models
-
-                            await asyncio.to_thread(
-                                self.qdrant_store.client.delete,
-                                collection_name=self.qdrant_store.collection_name,
-                                points_selector=models.PointIdsList(
-                                    points=[str(pid) for pid in to_delete]
-                                ),
-                            )
-                        except Exception as qe:
-                            logger.error(f"Failed to delete points from Qdrant: {qe}")
-
-                    logger.info(
-                        f"🗑️ Pruned {len(to_delete)} memories with base activation below {self.pruning_threshold} to subconscious archive."
-                    )
+                    await self._archive_and_delete_decayed_memories(conn, to_delete)
 
                 if to_update:
-                    if self.is_sqlite:
-                        for importance, mem_id in to_update:
-                            await conn.execute(
-                                "UPDATE memories SET importance_score = ? WHERE id = ?",
-                                importance,
-                                mem_id,
-                            )
-                    else:
-                        # Batch update for PostgreSQL
-                        await conn.executemany(
-                            "UPDATE memories SET importance_score = $1 WHERE id = $2",
-                            to_update,
-                        )
+                    await self._apply_importance_updates(conn, to_update)
 
-                # 3. Permanent Cleanup on archived_memories based on biological timelines
-                now_cleanup = (
-                    current_time
-                    if current_time is not None
-                    else datetime.now(UTC)
-                )
-                cutoff_distractors = now_cleanup - timedelta(days=30)
-                cutoff_anecdotes = now_cleanup - timedelta(days=180)
-                cutoff_milestones = now_cleanup - timedelta(days=720)
-
-                try:
-                    # COALESCE(last_recalled_at, created_at): a memory that was
-                    # archived but never recalled has NULL last_recalled_at, and
-                    # `NULL < cutoff` is NULL (never true) -- such rows would be
-                    # immortal in the archive. Age them out by creation time
-                    # instead, matching how the activation SQL already coalesces
-                    # this column (db/schema.sql).
-                    if self.is_sqlite:
-                        # Normalise both operands through datetime(): the SQLite
-                        # fallback stores timestamps as text, so a raw string
-                        # comparison of differing ISO formats/precision/offsets
-                        # is unreliable. datetime() canonicalises to UTC.
-                        await conn.execute(
-                            """
-                            DELETE FROM archived_memories
-                            WHERE (importance_score < 0.5 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?))
-                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?))
-                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND datetime(COALESCE(last_recalled_at, created_at)) < datetime(?));
-                            """,
-                            cutoff_distractors.isoformat(),
-                            cutoff_anecdotes.isoformat(),
-                            cutoff_milestones.isoformat(),
-                        )
-                    else:
-                        await conn.execute(
-                            """
-                            DELETE FROM archived_memories
-                            WHERE (importance_score < 0.5 AND COALESCE(last_recalled_at, created_at) < $1)
-                               OR (importance_score >= 0.5 AND importance_score < 0.7 AND COALESCE(last_recalled_at, created_at) < $2)
-                               OR (importance_score >= 0.7 AND importance_score < 0.9 AND COALESCE(last_recalled_at, created_at) < $3);
-                            """,
-                            cutoff_distractors,
-                            cutoff_anecdotes,
-                            cutoff_milestones,
-                        )
-                    logger.info(
-                        "🗑️ Completed permanent cleanup on subconscious archived memories."
-                    )
-                except Exception as clean_err:
-                    logger.error(f"Failed subconscious archive cleanup: {clean_err}")
+                # 4. Permanent Cleanup on archived_memories based on biological timelines
+                await self._cleanup_expired_archived_memories(conn, current_time)
 
             # Pruning and importance decay change what search over the active
             # `memories` table should return, so drop the L1 cache when either

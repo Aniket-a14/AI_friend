@@ -38,7 +38,7 @@ class VisualAppraisalService:
 
         self._last_description: str = ""
         self._last_appraisal_time: float = 0.0
-        self._last_visual_vector = None
+        self._last_visual_vector: list[float] | None = None
         self._habituation_disabled_logged = False
 
         # P3-1: reuses the same delta this class already computes for
@@ -125,7 +125,7 @@ class VisualAppraisalService:
             from PIL import Image
 
             img = Image.open(io.BytesIO(jpeg_bytes)).convert("L").resize((16, 16))
-            return [px / 255.0 for px in img.getdata()]
+            return [px / 255.0 for px in img.getdata()]  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug(
                 "[VisualAppraisal] PIL downsampling failed too, no continuity-"

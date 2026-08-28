@@ -2,6 +2,7 @@ import asyncio
 import base64
 import logging
 import time
+from typing import Any
 
 from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
@@ -44,14 +45,16 @@ class TransportAgent(BaseAgent):
         self.audio_track = rtc.LocalAudioTrack.create_audio_track(
             "ai-voice", self.audio_source
         )
-        self.audio_queue = asyncio.Queue(
+        self.audio_queue: asyncio.Queue[
+            tuple[bytes, int, int, str | None, int | None, int | None]
+        ] = asyncio.Queue(
             maxsize=max(32, int(getattr(Config, "TRANSPORT_AUDIO_QUEUE_SIZE", 256)))
         )
         self.audio_worker_task = None
         self.dropped_audio_frames = 0
         # Set for real once `start()` publishes the initial track; needed to
         # unpublish it by sid when P1-3's flush rotates to a fresh one.
-        self.audio_publication = None
+        self.audio_publication: rtc.LocalTrackPublication | None = None
         # P1-3: which turn's PCM is currently flowing through audio.stream,
         # read off the X-Latency-Meta header voice-agent now stamps with
         # `event.turn_id` (see `build_latency_metadata` in voice-agent). Mirrors
@@ -83,7 +86,7 @@ class TransportAgent(BaseAgent):
         # over. Decoupling capture from publish with a bounded queue and a
         # dedicated worker means a slow NATS publish drops frames instead of
         # stalling audio capture.
-        self.inbound_audio_queue = asyncio.Queue(
+        self.inbound_audio_queue: asyncio.Queue[tuple[bytes, dict[str, Any]]] = asyncio.Queue(
             maxsize=max(32, int(getattr(Config, "TRANSPORT_AUDIO_QUEUE_SIZE", 256)))
         )
         self.inbound_audio_worker_task = None
@@ -224,7 +227,7 @@ class TransportAgent(BaseAgent):
         publication: rtc.TrackPublication,
         participant: rtc.RemoteParticipant,
     ):
-        if track.kind == rtc.TrackKind.KIND_AUDIO:
+        if track.kind == rtc.TrackKind.KIND_AUDIO and isinstance(track, rtc.RemoteAudioTrack):
             logger.info(
                 f"Subscribed to remote audio track: {track.sid} from {participant.identity}"
             )
@@ -467,7 +470,9 @@ class TransportAgent(BaseAgent):
             return
         payload = viseme.model_dump_json().encode("utf-8")
         try:
-            self.room.local_participant.publish_data(
+            # publish_data is a coroutine in this livekit-rtc version; an
+            # unawaited call here silently never sends anything.
+            await self.room.local_participant.publish_data(
                 payload, reliable=False, topic="visemes"
             )
         except Exception as exc:

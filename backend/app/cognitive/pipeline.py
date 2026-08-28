@@ -72,6 +72,282 @@ class CognitivePipeline:
         self.reappraisal = reappraisal
         self._system2_task = None
 
+    async def _resolve_turn_conflict(
+        self,
+        raw_event: dict[str, Any],
+        raw_event_type,
+        event_metadata: dict[str, Any],
+        stage_times: dict[str, Any],
+        result: dict[str, Any],
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stage 2: turn-taking conflict resolution against a pending
+        speculative intent. Yields the resume/stop mesh_signal, if any.
+
+        `result["stop"]` is set True when a confirmed interruption means the
+        whole pipeline must stop here -- an async generator can't both yield
+        chunks and return a value (see `_stream_action_pass`), so the
+        stop signal goes through this mutable dict instead.
+        """
+        import time
+
+        result["stop"] = False
+        t_start = time.perf_counter()
+        if raw_event_type == "USER_MESSAGE" and not raw_event.get("is_partial"):
+            final_text = raw_event.get("content", "")
+            speculative_intent = self.state.last_speculative_intent
+
+            if speculative_intent:
+                confirmed = self.decision.is_speculative_stop_confirmed(
+                    final_text,
+                    speculative_intent.get("keywords"),
+                )
+                self.state.last_speculative_intent = None
+
+                if not confirmed:
+                    logger.info(
+                        "[Pipeline] Interruption REJECTED. Resuming playback..."
+                    )
+                    stage_times["stage_2_conflict_resolution_ms"] = (
+                        time.perf_counter() - t_start
+                    ) * 1000.0
+                    yield {
+                        "type": "mesh_signal",
+                        "subject": "audio.resume",
+                        "data": {
+                            "reason": "conflict_rejected",
+                            "perception_text": speculative_intent.get("text", ""),
+                            "utterance_id": speculative_intent.get("utterance_id"),
+                        },
+                    }
+                    return
+                else:
+                    logger.info("[Pipeline] Interruption CONFIRMED. Stopping playback.")
+                    stage_times["stage_2_conflict_resolution_ms"] = (
+                        time.perf_counter() - t_start
+                    ) * 1000.0
+                    yield {
+                        "type": "mesh_signal",
+                        "subject": "audio.stop",
+                        "data": {
+                            "interrupt": True,
+                            "speculative": False,
+                            "reason": "confirmed_command",
+                            "command_text": final_text,
+                            "keywords": speculative_intent.get("keywords", []),
+                            "utterance_id": speculative_intent.get("utterance_id"),
+                            "turn_id": event_metadata.get("turn_id"),
+                        },
+                    }
+                    result["stop"] = True
+                    return
+        stage_times["stage_2_conflict_resolution_ms"] = (
+            time.perf_counter() - t_start
+        ) * 1000.0
+
+    async def _update_state_from_appraisal(
+        self,
+        event,
+        event_metadata: dict[str, Any],
+        raw_event: dict[str, Any],
+        appraisal_vector,
+        state_snapshot,
+        stage_times: dict[str, Any],
+        result: dict[str, Any],
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stage 5: reappraisal outcome eval, ToM update, apply appraisal to
+        state, kick off System 2. Yields the state.update mesh_signal for a
+        USER_MESSAGE turn. `result["state_snapshot"]` carries the (possibly
+        refreshed) snapshot back out -- an async generator can't both yield
+        chunks and return a value (see `_stream_action_pass`)."""
+        import time
+
+        t_start = time.perf_counter()
+        if event.event_type == "USER_MESSAGE":
+            # Reappraisal outcome evaluation
+            if self.reappraisal:
+                acoustic_delta = self._resolve_acoustic_delta(event_metadata, raw_event)
+                actual_text_valence = self._resolve_actual_text_valence(
+                    appraisal_vector, event
+                )
+
+                prediction_error = await self.reappraisal.evaluate_outcome(
+                    actual_text_valence=actual_text_valence,
+                    acoustic_delta=acoustic_delta,
+                    behavioral_signal=0.5,
+                )
+                await self._apply_reward_prediction_error(prediction_error)
+
+            # Pre-Decision Vocabulary Update (zero LLM overhead concepts indexing)
+            await self.state.update_theory_of_mind(event.raw_content)
+
+            weights = self.reappraisal.get_weights() if self.reappraisal else None
+            await self.state.update_from_appraisal(appraisal_vector, weights=weights)
+
+            # Trigger System 2 deep appraisal in background (non-blocking).
+            # A2: cancel any still-running prior appraisal so overlapping
+            # tasks cannot clobber each other's writes to short-term affect.
+            if self.llm:
+                if self._system2_task and not self._system2_task.done():
+                    self._system2_task.cancel()
+                self._system2_task = asyncio.create_task(
+                    self._async_system2_appraisal(event.raw_content)
+                )
+
+            state_snapshot = self.state.get_context_snapshot()
+            stage_times["stage_5_state_update_ms"] = (
+                time.perf_counter() - t_start
+            ) * 1000.0
+            yield {
+                "type": "mesh_signal",
+                "subject": "state.update",
+                "data": StateUpdate.from_snapshot(state_snapshot).model_dump(),
+            }
+        else:
+            stage_times["stage_5_state_update_ms"] = (
+                time.perf_counter() - t_start
+            ) * 1000.0
+        result["state_snapshot"] = state_snapshot
+
+    @staticmethod
+    def _resolve_acoustic_delta(event_metadata: dict[str, Any], raw_event: dict[str, Any]) -> float:
+        if isinstance(event_metadata, dict) and "acoustic_metadata" in event_metadata:
+            return event_metadata["acoustic_metadata"].get("emotion_bias", 0.0)
+        if "acoustic_metadata" in raw_event:
+            return raw_event["acoustic_metadata"].get("emotion_bias", 0.0)
+        return 0.0
+
+    @staticmethod
+    def _resolve_actual_text_valence(appraisal_vector, event) -> float:
+        actual_text_valence = appraisal_vector.goal_congruence
+        tom = event.metadata.get("tom_inferences", {}) if event.metadata else {}
+        if isinstance(tom, dict) and "inferred_valence" in tom:
+            return tom["inferred_valence"]
+        return actual_text_valence
+
+    async def _apply_post_decision_tom(
+        self, event, state_snapshot, result: dict[str, Any]
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stage 6's ToM tail: a USER_MESSAGE turn with fresh tom_inferences
+        re-applies them to state and yields the refreshed state.update.
+        `result["state_snapshot"]` carries the (possibly refreshed) snapshot
+        back out, same reasoning as `_update_state_from_appraisal`."""
+        if event.event_type == "USER_MESSAGE":
+            tom_inferences = event.metadata.get("tom_inferences")
+            if tom_inferences:
+                await self.state.update_theory_of_mind(
+                    event.raw_content, tom_inferences
+                )
+                state_snapshot = self.state.get_context_snapshot()
+                yield {
+                    "type": "mesh_signal",
+                    "subject": "state.update",
+                    "data": StateUpdate.from_snapshot(state_snapshot).model_dump(),
+                }
+        result["state_snapshot"] = state_snapshot
+
+    async def _validate_and_self_correct(
+        self,
+        plan,
+        is_spec: bool,
+        full_response: str,
+        done_chunk: dict[str, Any] | None,
+        result: dict[str, Any],
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stage 9: identity-boundary validation, with one self-correction
+        retry pass on failure. `result["full_response"]`/`result["done_chunk"]`
+        carry the (possibly corrected) output back out; `done_chunk` passes
+        stage 8's value through unchanged when validation doesn't retry."""
+        if full_response:
+            is_valid, reason = await self.identity.validate_response(
+                full_response, plan.goal
+            )
+            if not is_valid:
+                logger.warning(
+                    f"[Identity] Validation failed: {reason}. SELF-CORRECTION."
+                )
+                plan.payload["identity_prompt"] += (
+                    f"\n\nCRITICAL FIX: Your previous response was rejected for: {reason}. Correct this immediately."
+                )
+                retry_result: dict[str, Any] = {"response": "", "done": None}
+                async for chunk in self._stream_action_pass(
+                    plan, is_spec, retry_result
+                ):
+                    yield chunk
+                full_response = retry_result["response"]
+                done_chunk = retry_result["done"]
+        result["full_response"] = full_response
+        result["done_chunk"] = done_chunk
+
+    def _prepare_action_payload(self, plan, state_snapshot, event, state_directive) -> None:
+        """Stage 7: populate `plan.payload` with everything action.py's
+        endocrine-to-sampling mapping and prompt assembly need. Pure -- no
+        yields, so it's a plain call from `execute` rather than a
+        sub-generator."""
+        plan.payload["identity_prompt"] = self.identity.get_persona_prompt(
+            state_directive
+        )
+        plan.payload["cortisol"] = state_snapshot.get("cortisol", 0.5)
+        plan.payload["dopamine"] = state_snapshot.get("dopamine", 0.0)
+        plan.payload["fatigue"] = state_snapshot.get("fatigue", 0.0)
+        plan.payload["user_mental_model"] = state_snapshot.get("user_mental_model")
+        plan.payload["valence"] = state_snapshot.get("mood", 0.0)
+        plan.payload["arousal"] = state_snapshot.get("energy", 0.5)
+        plan.payload["dominance"] = state_snapshot.get("dominance", 0.5)
+        plan.payload["speculative"] = (
+            event.metadata.get("speculative", False) if event.metadata else False
+        )
+        plan.payload["visual_context"] = (
+            event.metadata.get("visuals") if event.metadata else None
+        )
+
+    @staticmethod
+    def _compute_pre_llm_telemetry(stage_times: dict[str, Any], event) -> None:
+        """Fold stages 1-7's timings into a pre-LLM total, plus the
+        intent/ToM fields the telemetry payload reports."""
+        pre_llm_total = sum(
+            [
+                stage_times["stage_1_extraction_ms"],
+                stage_times["stage_2_conflict_resolution_ms"],
+                stage_times["stage_3_perception_ms"],
+                stage_times["stage_4_appraisal_ms"],
+                stage_times["stage_5_state_update_ms"],
+                stage_times["stage_6_decision_ms"],
+                stage_times["stage_7_action_prep_ms"],
+            ]
+        )
+        stage_times["pre_llm_total_ms"] = pre_llm_total
+        stage_times["heuristic_intent"] = (
+            event.metadata.get("heuristic_intent") or event.intent
+        )
+        stage_times["llm_intent"] = event.intent
+        tom_inferences = event.metadata.get("tom_inferences") or {}
+        stage_times["inferred_valence"] = tom_inferences.get("inferred_valence")
+        stage_times["inferred_arousal"] = tom_inferences.get("inferred_arousal")
+
+    @staticmethod
+    def _build_consolidation_episode(
+        event, raw_event, state_directive, appraisal_vector, state, state_snapshot, full_response
+    ) -> dict[str, Any]:
+        """Stage 10: shape one turn into the schema `learning._consolidate`
+        expects."""
+        return {
+            "id": event.event_id,
+            "event": event.raw_content,
+            "speaker": raw_event.get("user_id") or "User",
+            "context": state_directive,
+            "emotion_vector": {
+                "V": state.current_state.valence,
+                "Ar": state.current_state.arousal,
+                "D": state.current_state.dominance,
+            },
+            "appraisal": appraisal_vector.to_dict(),
+            "relationship_delta": appraisal_vector.relationship_impact,
+            "intent": event.intent,
+            "content": event.raw_content,
+            "state": state_snapshot,
+            "response": full_response,
+        }
+
     async def execute(
         self, raw_event: dict[str, Any], surfaced_memories: list[dict[str, Any]] | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -81,7 +357,7 @@ class CognitivePipeline:
         """
         import time
 
-        stage_times = {}
+        stage_times: dict[str, Any] = {}
 
         # 1. Extraction & Metadata
         t_start = time.perf_counter()
@@ -120,61 +396,14 @@ class CognitivePipeline:
                 }
 
         # 2. Conflict Resolution (Turn-Taking Stability)
-        t_start = time.perf_counter()
-        conflict_resolved = False
-        if raw_event_type == "USER_MESSAGE" and not raw_event.get("is_partial"):
-            final_text = raw_event.get("content", "")
-            speculative_intent = self.state.last_speculative_intent
-
-            if speculative_intent:
-                confirmed = self.decision.is_speculative_stop_confirmed(
-                    final_text,
-                    speculative_intent.get("keywords"),
-                )
-                self.state.last_speculative_intent = None
-
-                if not confirmed:
-                    logger.info(
-                        "[Pipeline] Interruption REJECTED. Resuming playback..."
-                    )
-                    stage_times["stage_2_conflict_resolution_ms"] = (
-                        time.perf_counter() - t_start
-                    ) * 1000.0
-                    yield {
-                        "type": "mesh_signal",
-                        "subject": "audio.resume",
-                        "data": {
-                            "reason": "conflict_rejected",
-                            "perception_text": speculative_intent.get("text", ""),
-                            "utterance_id": speculative_intent.get("utterance_id"),
-                        },
-                    }
-                    conflict_resolved = True
-                else:
-                    logger.info("[Pipeline] Interruption CONFIRMED. Stopping playback.")
-                    stage_times["stage_2_conflict_resolution_ms"] = (
-                        time.perf_counter() - t_start
-                    ) * 1000.0
-                    yield {
-                        "type": "mesh_signal",
-                        "subject": "audio.stop",
-                        "data": {
-                            "interrupt": True,
-                            "speculative": False,
-                            "reason": "confirmed_command",
-                            "command_text": final_text,
-                            "keywords": speculative_intent.get("keywords", []),
-                            "utterance_id": speculative_intent.get("utterance_id"),
-                            "turn_id": event_metadata.get("turn_id"),
-                        },
-                    }
-                    conflict_resolved = True
-                    yield {"type": "pipeline_telemetry", "data": stage_times}
-                    return
-        if not conflict_resolved:
-            stage_times["stage_2_conflict_resolution_ms"] = (
-                time.perf_counter() - t_start
-            ) * 1000.0
+        conflict_result: dict[str, Any] = {}
+        async for chunk in self._resolve_turn_conflict(
+            raw_event, raw_event_type, event_metadata, stage_times, conflict_result
+        ):
+            yield chunk
+        if conflict_result["stop"]:
+            yield {"type": "pipeline_telemetry", "data": stage_times}
+            return
 
         # 3. Sequential Perception
         t_start = time.perf_counter()
@@ -203,64 +432,18 @@ class CognitivePipeline:
         yield {"type": "appraisal", "data": appraisal_vector}
 
         # 5. State Update via Appraisal (§2.3 — ALMA mood-pull)
-        t_start = time.perf_counter()
-        if event.event_type == "USER_MESSAGE":
-            # Reappraisal outcome evaluation
-            if self.reappraisal:
-                acoustic_delta = 0.0
-                if (
-                    isinstance(event_metadata, dict)
-                    and "acoustic_metadata" in event_metadata
-                ):
-                    acoustic_delta = event_metadata["acoustic_metadata"].get(
-                        "emotion_bias", 0.0
-                    )
-                elif "acoustic_metadata" in raw_event:
-                    acoustic_delta = raw_event["acoustic_metadata"].get(
-                        "emotion_bias", 0.0
-                    )
-
-                actual_text_valence = appraisal_vector.goal_congruence
-                tom = event.metadata.get("tom_inferences", {}) if event.metadata else {}
-                if isinstance(tom, dict) and "inferred_valence" in tom:
-                    actual_text_valence = tom["inferred_valence"]
-
-                prediction_error = await self.reappraisal.evaluate_outcome(
-                    actual_text_valence=actual_text_valence,
-                    acoustic_delta=acoustic_delta,
-                    behavioral_signal=0.5,
-                )
-                await self._apply_reward_prediction_error(prediction_error)
-
-            # Pre-Decision Vocabulary Update (zero LLM overhead concepts indexing)
-            await self.state.update_theory_of_mind(event.raw_content)
-
-            weights = self.reappraisal.get_weights() if self.reappraisal else None
-            await self.state.update_from_appraisal(appraisal_vector, weights=weights)
-
-            # Trigger System 2 deep appraisal in background (non-blocking).
-            # A2: cancel any still-running prior appraisal so overlapping tasks
-            # cannot clobber each other's writes to short-term affect.
-            if self.llm:
-                if self._system2_task and not self._system2_task.done():
-                    self._system2_task.cancel()
-                self._system2_task = asyncio.create_task(
-                    self._async_system2_appraisal(event.raw_content)
-                )
-
-            state_snapshot = self.state.get_context_snapshot()
-            stage_times["stage_5_state_update_ms"] = (
-                time.perf_counter() - t_start
-            ) * 1000.0
-            yield {
-                "type": "mesh_signal",
-                "subject": "state.update",
-                "data": StateUpdate.from_snapshot(state_snapshot).model_dump(),
-            }
-        else:
-            stage_times["stage_5_state_update_ms"] = (
-                time.perf_counter() - t_start
-            ) * 1000.0
+        state_update_result: dict[str, Any] = {}
+        async for chunk in self._update_state_from_appraisal(
+            event,
+            event_metadata,
+            raw_event,
+            appraisal_vector,
+            state_snapshot,
+            stage_times,
+            state_update_result,
+        ):
+            yield chunk
+        state_snapshot = state_update_result["state_snapshot"]
 
         # 6. Decision (BT + MAUT)
         t_start = time.perf_counter()
@@ -278,67 +461,27 @@ class CognitivePipeline:
             )
 
         # Post-Decision ToM Application: ingest LLM-inferred parameters to state
-        if event.event_type == "USER_MESSAGE":
-            tom_inferences = event.metadata.get("tom_inferences")
-            if tom_inferences:
-                await self.state.update_theory_of_mind(
-                    event.raw_content, tom_inferences
-                )
-                state_snapshot = self.state.get_context_snapshot()
-                yield {
-                    "type": "mesh_signal",
-                    "subject": "state.update",
-                    "data": StateUpdate.from_snapshot(state_snapshot).model_dump(),
-                }
+        tom_result: dict[str, Any] = {}
+        async for chunk in self._apply_post_decision_tom(
+            event, state_snapshot, tom_result
+        ):
+            yield chunk
+        state_snapshot = tom_result["state_snapshot"]
         stage_times["stage_6_decision_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # 7. Action Preparation
         t_start = time.perf_counter()
-        plan.payload["identity_prompt"] = self.identity.get_persona_prompt(
-            state_directive
-        )
-        plan.payload["cortisol"] = state_snapshot.get("cortisol", 0.5)
-        plan.payload["dopamine"] = state_snapshot.get("dopamine", 0.0)
-        plan.payload["fatigue"] = state_snapshot.get("fatigue", 0.0)
-        plan.payload["user_mental_model"] = state_snapshot.get("user_mental_model")
-        plan.payload["valence"] = state_snapshot.get("mood", 0.0)
-        plan.payload["arousal"] = state_snapshot.get("energy", 0.5)
-        plan.payload["dominance"] = state_snapshot.get("dominance", 0.5)
-        plan.payload["speculative"] = (
-            event.metadata.get("speculative", False) if event.metadata else False
-        )
-        plan.payload["visual_context"] = (
-            event.metadata.get("visuals") if event.metadata else None
-        )
+        self._prepare_action_payload(plan, state_snapshot, event, state_directive)
         stage_times["stage_7_action_prep_ms"] = (time.perf_counter() - t_start) * 1000.0
 
-        # Calculate Pre-LLM total time
-        pre_llm_total = sum(
-            [
-                stage_times["stage_1_extraction_ms"],
-                stage_times["stage_2_conflict_resolution_ms"],
-                stage_times["stage_3_perception_ms"],
-                stage_times["stage_4_appraisal_ms"],
-                stage_times["stage_5_state_update_ms"],
-                stage_times["stage_6_decision_ms"],
-                stage_times["stage_7_action_prep_ms"],
-            ]
-        )
-        stage_times["pre_llm_total_ms"] = pre_llm_total
-        stage_times["heuristic_intent"] = (
-            event.metadata.get("heuristic_intent") or event.intent
-        )
-        stage_times["llm_intent"] = event.intent
-        tom_inferences = event.metadata.get("tom_inferences") or {}
-        stage_times["inferred_valence"] = tom_inferences.get("inferred_valence")
-        stage_times["inferred_arousal"] = tom_inferences.get("inferred_arousal")
+        self._compute_pre_llm_telemetry(stage_times, event)
 
         # 8. Action Execution
         t_start = time.perf_counter()
-        full_response = ""
-        done_chunk = None
+        full_response: str = ""
+        done_chunk: dict[str, Any] | None = None
         is_spec = plan.payload.get("speculative", False)
-        pass_result = {"response": "", "done": None}
+        pass_result: dict[str, Any] = {"response": "", "done": None}
         async for chunk in self._stream_action_pass(plan, is_spec, pass_result):
             yield chunk
         full_response = pass_result["response"]
@@ -349,46 +492,27 @@ class CognitivePipeline:
 
         # 9. Validation & Self-Correction
         t_start = time.perf_counter()
-        if full_response:
-            is_valid, reason = await self.identity.validate_response(
-                full_response, plan.goal
-            )
-            if not is_valid:
-                logger.warning(
-                    f"[Identity] Validation failed: {reason}. SELF-CORRECTION."
-                )
-                plan.payload["identity_prompt"] += (
-                    f"\n\nCRITICAL FIX: Your previous response was rejected for: {reason}. Correct this immediately."
-                )
-                retry_result = {"response": "", "done": None}
-                async for chunk in self._stream_action_pass(
-                    plan, is_spec, retry_result
-                ):
-                    yield chunk
-                full_response = retry_result["response"]
-                done_chunk = retry_result["done"]
+        validation_result: dict[str, Any] = {}
+        async for chunk in self._validate_and_self_correct(
+            plan, is_spec, full_response, done_chunk, validation_result
+        ):
+            yield chunk
+        full_response = validation_result["full_response"]
+        done_chunk = validation_result["done_chunk"]
         stage_times["stage_9_validation_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # 10. Learning + Episodic Memory (§6.1)
         t_start = time.perf_counter()
         if event.intent in ["CHAT", "REMEMBER"] and full_response:
-            episode = {
-                "id": event.event_id,
-                "event": event.raw_content,
-                "speaker": raw_event.get("user_id") or "User",
-                "context": state_directive,
-                "emotion_vector": {
-                    "V": self.state.current_state.valence,
-                    "Ar": self.state.current_state.arousal,
-                    "D": self.state.current_state.dominance,
-                },
-                "appraisal": appraisal_vector.to_dict(),
-                "relationship_delta": appraisal_vector.relationship_impact,
-                "intent": event.intent,
-                "content": event.raw_content,
-                "state": state_snapshot,
-                "response": full_response,
-            }
+            episode = self._build_consolidation_episode(
+                event,
+                raw_event,
+                state_directive,
+                appraisal_vector,
+                self.state,
+                state_snapshot,
+                full_response,
+            )
             yield {"type": "reflection_needed", "data": [episode]}
         stage_times["stage_10_learning_ms"] = (time.perf_counter() - t_start) * 1000.0
 

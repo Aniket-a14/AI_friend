@@ -32,10 +32,10 @@ class SubjectMetrics:
         self._tracked_subjects = tracked_subjects
         self._log_every = max(1, log_every)
         self._tag = tag
-        self._metrics: dict[str, dict[str, float]] = {}
+        self._metrics: dict[str, dict[str, Any]] = {}
 
         # High-performance list-based atomic double buffer
-        self._buffer = []
+        self._buffer: list[tuple[str, str, float | None, dict[str, Any] | None, float]] = []
         self._lock = threading.Lock()
 
         # Thread-safe queue interface for compatibility with legacy tests

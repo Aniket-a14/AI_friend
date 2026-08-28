@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from collections.abc import Sequence
+from typing import cast
 
 import nats
 from nats.errors import NoRespondersError
@@ -279,8 +280,8 @@ def build_stream_config(stream_name: str, subjects: list[str]):
         subjects=list(subjects),
         retention=RetentionPolicy.LIMITS,
         storage=storage,
-        max_age=policy["max_age"],
-        max_bytes=policy["max_bytes"],
+        max_age=cast(float, policy["max_age"]),
+        max_bytes=cast(int, policy["max_bytes"]),
         # Drop the oldest messages at the limit rather than refusing new
         # ones: for both tiers, rejecting a publish would stall a live
         # conversation or the audio path, which is worse than losing the
@@ -292,7 +293,7 @@ def build_stream_config(stream_name: str, subjects: list[str]):
 async def _ensure_stream(
     jsm, stream_name: str, subjects: list[str], retries: int, delay_seconds: float
 ) -> None:
-    last_error: Exception = None
+    last_error: Exception | None = None
 
     for attempt in range(1, retries + 1):
         try:
@@ -351,13 +352,13 @@ async def setup_streams(
     )
     logger.info("Connecting to NATS at %s", nats_url)
 
-    connect_kwargs = {}
+    connect_kwargs: dict[str, str] = {}
     nats_user = os.getenv("NATS_USER")
     nats_password = os.getenv("NATS_PASSWORD")
     if nats_user and nats_password:
         connect_kwargs.update(user=nats_user, password=nats_password)
 
-    nc = await nats.connect(nats_url, **connect_kwargs)
+    nc = await nats.connect(cast(str, nats_url), **connect_kwargs)
     try:
         jsm = nc.jsm()
         await _wait_for_jetstream_ready(

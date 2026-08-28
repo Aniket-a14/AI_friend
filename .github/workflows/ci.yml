@@ -204,13 +204,18 @@ jobs:
         retention-days: 14
 
   code-quality:
-    # Roadmap Phase 0.7: report-only. mypy/radon/bandit findings are recorded
-    # as artifacts here and fixed in Phase 7, as a dedicated PR, once every
-    # functional phase is done -- see backend/tools/quality/baseline/ and the
-    # standing rule in the roadmap plan. continue-on-error keeps this from
-    # blocking merges before that point.
+    # Roadmap Phase 7.5: blocking. mypy and bandit ran clean (0 findings)
+    # against the Phase 0.7 baseline (93 mypy errors, 33 bandit findings)
+    # after Phase 7.2/7.3's fix passes, so both now gate for real. radon's
+    # cyclomatic-complexity D/E/F tier (the "worst offenders" the roadmap
+    # named as 7.1's target) also ran clean after that phase's extraction
+    # pass, from a baseline of 1 F + 3 E + 8 D -- that tier gates too. The
+    # 54 remaining C-rank findings do not: 7.1 fixed what radon named as
+    # worst, not a repo-wide push to zero, so C stays report-only until a
+    # dedicated pass earns it a real baseline to gate against. Maintainability
+    # index remains report-only for the same reason -- no fix pass has run
+    # against it yet.
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
@@ -224,20 +229,26 @@ jobs:
         cd backend
         python -m pip install --upgrade pip
         pip install -r requirements-dev.txt
-    - name: mypy (report only)
+    - name: mypy
       run: |
         cd backend
         mypy app | tee /tmp/mypy_report.txt
-    - name: radon cyclomatic complexity (report only)
+    - name: radon cyclomatic complexity (D/E/F blocking, C report-only)
       run: |
         cd backend
         radon cc app -s | tee /tmp/radon_cc_report.txt
         radon cc app -s -a
+        echo "--- D/E/F tier (blocking) ---"
+        radon cc app --min D -s | tee /tmp/radon_cc_def.txt
+        if [ -s /tmp/radon_cc_def.txt ]; then
+          echo "New D/E/F-rank complexity found -- Phase 7.1 brought this to zero; extract before adding more."
+          exit 1
+        fi
     - name: radon maintainability index (report only)
       run: |
         cd backend
         radon mi app | tee /tmp/radon_mi_report.txt
-    - name: bandit (report only)
+    - name: bandit
       run: |
         cd backend
         bandit -r app -f txt | tee /tmp/bandit_report.txt
@@ -249,6 +260,7 @@ jobs:
         path: |
           /tmp/mypy_report.txt
           /tmp/radon_cc_report.txt
+          /tmp/radon_cc_def.txt
           /tmp/radon_mi_report.txt
           /tmp/bandit_report.txt
         retention-days: 14

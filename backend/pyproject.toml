@@ -93,6 +93,7 @@ pytest_add_cli_args = ["--benchmark-disable"]
 [tool.mypy]
 python_version = "3.12"
 files = ["app"]
+plugins = ["pydantic.mypy"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 # Genuinely dynamic patterns in this codebase (the Config metaclass,

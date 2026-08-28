@@ -60,9 +60,9 @@ class BrainAgent(BaseAgent):
     def __init__(
         self,
         ollama_url: str = Config.OLLAMA_URL,
-        graph_db: GraphDB = None,
-        memory_store: MemoryStore = None,
-        conversation_store: ConversationHistoryStore = None,
+        graph_db: GraphDB | None = None,
+        memory_store: MemoryStore | None = None,
+        conversation_store: ConversationHistoryStore | None = None,
     ):
         super().__init__(name="brain_agent")
         self.ollama = build_llm_client(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
@@ -89,17 +89,17 @@ class BrainAgent(BaseAgent):
         self.last_interaction_time = datetime.now()
         self.last_visual_context = "No visual data available."
         self.last_user_distance = 1.0
-        self.last_user_voice_properties = None
+        self.last_user_voice_properties: UserVoiceProperties | None = None
 
         # CVS-3.5 Segmentation Config
         self.coordinator = SpeechCoordinator(
             segmenter=HybridSegmenter(target_size=7), formation_buffer_ms=0.030
         )
         self.conversational_runtime = ConversationalRuntime(publish_cb=self.publish)
-        self._active_generation_task = None
+        self._active_generation_task: asyncio.Task[Any] | None = None
         self._generation_lock = asyncio.Lock()
-        self.last_audio_progress = None
-        self.last_assistant_response = None
+        self.last_audio_progress: AudioPlaybackProgress | None = None
+        self.last_assistant_response: str | None = None
         self._active_response_turn_id: str | None = None
         # P2-14/M1-A14: `last_audio_progress` and `last_assistant_response`
         # are written from three independent NATS subscription tasks --
@@ -210,9 +210,8 @@ class BrainAgent(BaseAgent):
             logger.debug("[Brain] Visual context updated: %s", description[:60])
         else:
             self.last_visual_context = f"I am seeing the user's {source}."
-        self.last_user_distance = (
-            data.get("user_distance") if data.get("user_distance") is not None else 1.0
-        )
+        distance = data.get("user_distance")
+        self.last_user_distance = float(distance) if distance is not None else 1.0
 
         await self._appraise_somatic(description)
 
@@ -406,35 +405,28 @@ class BrainAgent(BaseAgent):
                 if self._active_generation_task == task:
                     self._active_generation_task = None
 
-    async def _process_chat_input_flow(
-        self, chat_input: ChatInput, is_subconscious: bool, message: dict[str, Any]
-    ):
-        flow_start_time = time.time()
-        user_text = chat_input.text
-        turn_id = chat_input.turn_id or chat_input.utterance_id or str(uuid.uuid4())
+    @staticmethod
+    def _resolve_chat_input_metadata(
+        chat_input: ChatInput, message: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Normalize the loosely-typed metadata/latency_metadata the message
+        may or may not carry into plain dicts, falling back to the
+        ChatInput's own metadata."""
         metadata = message.get("metadata")
         if not isinstance(metadata, dict):
             metadata = chat_input.metadata.model_dump() if chat_input.metadata else {}
         latency_metadata = message.get("latency_metadata")
         if not isinstance(latency_metadata, dict):
             latency_metadata = {}
-        utterance_id = chat_input.utterance_id
+        return metadata, latency_metadata
 
-        if not user_text:
-            return
-
-        async with self._turn_state_lock:
-            self._active_response_turn_id = turn_id
-
-        # Pacing Conversational Turn: calculate silence duration and pause
-        state_snap = self.cognitive_core.state.get_context_snapshot()
+    async def _apply_conversational_pacing(
+        self, metadata: dict[str, Any], state_snap: dict[str, Any]
+    ) -> None:
+        """Sleep for the calculated pre-response silence, skipped entirely
+        for a latency benchmark pulse."""
         pacing = self.conversational_runtime.calculate_pacing_parameters(state_snap)
-
-        is_benchmark = (
-            metadata.get("benchmark_id") == "bench_pulse"
-            if isinstance(metadata, dict)
-            else False
-        )
+        is_benchmark = metadata.get("benchmark_id") == "bench_pulse"
         if is_benchmark:
             silence_s = 0.0
             logger.info(
@@ -447,6 +439,43 @@ class BrainAgent(BaseAgent):
             )
         await asyncio.sleep(silence_s)
 
+    @staticmethod
+    def _resolve_chat_user_id(
+        message: dict[str, Any], chat_input: ChatInput, metadata: dict[str, Any]
+    ) -> str:
+        return (
+            message.get("user_id")
+            or metadata.get("user_id")
+            or getattr(chat_input, "user_id", None)
+            or (
+                chat_input.metadata.model_dump().get("user_id")
+                if chat_input.metadata
+                else None
+            )
+            or "User"
+        )
+
+    async def _process_chat_input_flow(
+        self, chat_input: ChatInput, is_subconscious: bool, message: dict[str, Any]
+    ):
+        flow_start_time = time.time()
+        user_text = chat_input.text
+        turn_id = chat_input.turn_id or chat_input.utterance_id or str(uuid.uuid4())
+        metadata, latency_metadata = self._resolve_chat_input_metadata(
+            chat_input, message
+        )
+        utterance_id = chat_input.utterance_id
+
+        if not user_text:
+            return
+
+        async with self._turn_state_lock:
+            self._active_response_turn_id = turn_id
+
+        # Pacing Conversational Turn: calculate silence duration and pause
+        state_snap = self.cognitive_core.state.get_context_snapshot()
+        await self._apply_conversational_pacing(metadata, state_snap)
+
         # Only update human interaction tracking if it's an actual user message
         if not is_subconscious:
             self.cognitive_core.state.record_user_interaction()
@@ -457,17 +486,7 @@ class BrainAgent(BaseAgent):
             user_voice_properties = self.last_user_voice_properties.model_dump()
             self.last_user_voice_properties = None
 
-        user_id = (
-            message.get("user_id")
-            or (metadata.get("user_id") if isinstance(metadata, dict) else None)
-            or getattr(chat_input, "user_id", None)
-            or (
-                chat_input.metadata.model_dump().get("user_id")
-                if chat_input.metadata
-                else None
-            )
-            or "User"
-        )
+        user_id = self._resolve_chat_user_id(message, chat_input, metadata)
 
         raw_event = {
             "id": str(uuid.uuid4()),
@@ -615,6 +634,75 @@ class BrainAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Error parsing user voice properties: {e}")
 
+    async def _publish_final_chunk_payload(
+        self,
+        *,
+        full_response: str,
+        turn_id: str,
+        generation_errors: list[str],
+        is_proactive: bool,
+        incoming_metadata: dict[str, Any] | None,
+        incoming_latency_metadata: dict[str, Any] | None,
+    ) -> None:
+        """Publish the turn's terminal chat.output chunk, if there's
+        anything worth sending (a proactive turn with nothing generated
+        stays silent rather than publishing an empty message)."""
+        if not (full_response.strip() or not is_proactive):
+            return
+        state_snap = self.cognitive_core.state.get_context_snapshot()
+        output_msg = self.coordinator.create_chunk_payload(
+            state_snap=state_snap,
+            turn_id=turn_id,
+            done=True,
+            full_response=full_response,
+            generation_error=generation_errors[-1] if generation_errors else None,
+            proactive=is_proactive,
+            user_distance=self.last_user_distance,
+        )
+        output_msg.metadata = incoming_metadata
+        output_msg.latency_metadata = incoming_latency_metadata
+        await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
+
+    async def _publish_stream_error_fallback(
+        self,
+        error: Exception,
+        *,
+        turn_id: str,
+        incoming_metadata: dict[str, Any] | None,
+        incoming_latency_metadata: dict[str, Any] | None,
+    ) -> None:
+        """Recovery path for `_stream_to_speech`'s outer exception handler,
+        for a non-proactive turn only (the caller checks `is_proactive`).
+
+        P4-2: deliberately untracked (no character_offset/word_index) --
+        unlike the empty-generation fallback, the caller's `full_response`
+        is NOT reassigned to `fallback_text` here, and it will set
+        `last_assistant_response` to whatever partial `full_response`
+        `_stream_to_speech` returns, not to `fallback_text`. Stamping this
+        chunk's audio against `fallback_text` would produce an offset that
+        indexes into a string `last_assistant_response` never actually holds
+        -- a pre-existing gap (that mismatch exists whether or not this
+        chunk carries progress metadata), not one to paper over with a
+        fabricated-looking offset.
+        """
+        fallback_text = "I'm having trouble thinking right now..."
+        await self._publish_speech_chunk(
+            fallback_text.split(),
+            turn_id,
+            incoming_metadata=incoming_metadata,
+            incoming_latency_metadata=incoming_latency_metadata,
+        )
+        output_msg = self.coordinator.create_chunk_payload(
+            done=True,
+            full_response=fallback_text,
+            turn_id=turn_id,
+            generation_error=str(error),
+            user_distance=self.last_user_distance,
+        )
+        output_msg.metadata = incoming_metadata
+        output_msg.latency_metadata = incoming_latency_metadata
+        await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
+
     async def _stream_to_speech(
         self,
         generator,
@@ -625,7 +713,7 @@ class BrainAgent(BaseAgent):
     ) -> str:
         """Helper method to process text generation streams and segment them into speech chunks."""
         full_response = ""
-        current_chunk_words = []
+        current_chunk_words: list[str] = []
         segment_started_at = None
         generation_errors: list[str] = []
         fallback_text = "I'm having trouble thinking right now..."
@@ -653,48 +741,50 @@ class BrainAgent(BaseAgent):
             )
             published_word_count = new_word_count
 
+        async def _handle_content_output(chunk_text: str) -> None:
+            nonlocal full_response, current_chunk_words, segment_started_at
+            await self.set_state("speaking")
+            full_response += chunk_text
+            if not is_proactive:
+                # P2-14/M1-A14: this fires once per streamed chunk, so
+                # contention is rare, but an uncontended asyncio.Lock
+                # acquire/release is cheap and correctness here matters
+                # more than the microscopic saving from skipping it.
+                async with self._turn_state_lock:
+                    self.last_assistant_response = full_response
+
+            now_monotonic = time.perf_counter()
+            if (
+                current_chunk_words
+                and segment_started_at is not None
+                and (now_monotonic - segment_started_at)
+                >= self.coordinator.formation_buffer_ms
+                and len(current_chunk_words) >= 3
+            ):
+                await _publish_tracked(current_chunk_words, full_response)
+                current_chunk_words = []
+                segment_started_at = None
+
+            words = chunk_text.split()
+            for word in words:
+                if not current_chunk_words:
+                    segment_started_at = time.perf_counter()
+                current_chunk_words.append(word)
+
+                score = self.coordinator.segmenter.score_split_point(
+                    word, len(current_chunk_words)
+                )
+                if score > 0.7 or len(current_chunk_words) > 12:
+                    await _publish_tracked(current_chunk_words, full_response)
+                    current_chunk_words = []
+                    segment_started_at = None
+
         await self.set_state("thinking")
 
         try:
             async for output in generator:
                 if output["type"] == "content":
-                    await self.set_state("speaking")
-                    chunk_text = output["data"]
-                    full_response += chunk_text
-                    if not is_proactive:
-                        # P2-14/M1-A14: this fires once per streamed chunk,
-                        # so contention is rare, but an uncontended
-                        # asyncio.Lock acquire/release is cheap and
-                        # correctness here matters more than the microscopic
-                        # saving from skipping it.
-                        async with self._turn_state_lock:
-                            self.last_assistant_response = full_response
-
-                    now_monotonic = time.perf_counter()
-                    if (
-                        current_chunk_words
-                        and segment_started_at is not None
-                        and (now_monotonic - segment_started_at)
-                        >= self.coordinator.formation_buffer_ms
-                        and len(current_chunk_words) >= 3
-                    ):
-                        await _publish_tracked(current_chunk_words, full_response)
-                        current_chunk_words = []
-                        segment_started_at = None
-
-                    words = chunk_text.split()
-                    for word in words:
-                        if not current_chunk_words:
-                            segment_started_at = time.perf_counter()
-                        current_chunk_words.append(word)
-
-                        score = self.coordinator.segmenter.score_split_point(
-                            word, len(current_chunk_words)
-                        )
-                        if score > 0.7 or len(current_chunk_words) > 12:
-                            await _publish_tracked(current_chunk_words, full_response)
-                            current_chunk_words = []
-                            segment_started_at = None
+                    await _handle_content_output(output["data"])
 
                 elif output["type"] == "error":
                     error_msg = str(
@@ -726,54 +816,24 @@ class BrainAgent(BaseAgent):
                         full_response = fallback_text
                         await _publish_tracked(fallback_text.split(), full_response)
 
-                    if full_response.strip() or not is_proactive:
-                        state_snap = self.cognitive_core.state.get_context_snapshot()
-                        output_msg = self.coordinator.create_chunk_payload(
-                            state_snap=state_snap,
-                            turn_id=turn_id,
-                            done=True,
-                            full_response=full_response,
-                            generation_error=generation_errors[-1]
-                            if generation_errors
-                            else None,
-                            proactive=is_proactive,
-                            user_distance=self.last_user_distance,
-                        )
-                        output_msg.metadata = incoming_metadata
-                        output_msg.latency_metadata = incoming_latency_metadata
-                        await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
+                    await self._publish_final_chunk_payload(
+                        full_response=full_response,
+                        turn_id=turn_id,
+                        generation_errors=generation_errors,
+                        is_proactive=is_proactive,
+                        incoming_metadata=incoming_metadata,
+                        incoming_latency_metadata=incoming_latency_metadata,
+                    )
 
         except Exception as e:
             logger.error("Cognitive Loop error on turn_id=%s: %s", turn_id, e)
             if not is_proactive:
-                error_msg = str(e)
-                # P4-2: deliberately untracked (no character_offset/word_index)
-                # -- unlike the empty-generation fallback above, `full_response`
-                # is NOT reassigned to `fallback_text` here, and the caller
-                # will set `last_assistant_response` to whatever partial
-                # `full_response` this method returns below, not to
-                # `fallback_text`. Stamping this chunk's audio against
-                # `fallback_text` would produce an offset that indexes into a
-                # string `last_assistant_response` never actually holds -- a
-                # pre-existing gap (that mismatch exists whether or not this
-                # chunk carries progress metadata), not one to paper over with
-                # a fabricated-looking offset.
-                await self._publish_speech_chunk(
-                    fallback_text.split(),
-                    turn_id,
+                await self._publish_stream_error_fallback(
+                    e,
+                    turn_id=turn_id,
                     incoming_metadata=incoming_metadata,
                     incoming_latency_metadata=incoming_latency_metadata,
                 )
-                output_msg = self.coordinator.create_chunk_payload(
-                    done=True,
-                    full_response=fallback_text,
-                    turn_id=turn_id,
-                    generation_error=error_msg,
-                    user_distance=self.last_user_distance,
-                )
-                output_msg.metadata = incoming_metadata
-                output_msg.latency_metadata = incoming_latency_metadata
-                await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
 
         await self.set_state("idle")
         return full_response

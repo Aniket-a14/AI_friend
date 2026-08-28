@@ -19,7 +19,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import redis
 
@@ -363,7 +363,7 @@ class StateService:
         redis_host="127.0.0.1",
         redis_port=6379,
         publish_cb=None,
-        persona: "PersonaProfile" = None,
+        persona: "PersonaProfile | None" = None,
     ):
         self.graph = graph_store
         self.db_path = db_path
@@ -383,7 +383,11 @@ class StateService:
             trust_competence=self.persona.initial_trust,
             trust_integrity=self.persona.initial_trust,
             attachment=self.persona.initial_attachment,
-            **self.persona.hormone_halflives(),
+            # Named rather than **-unpacked: a generic dict[str, float] spread
+            # makes mypy check every AgentState field for float-compatibility,
+            # not just these two.
+            dopamine_halflife_s=self.persona.hormone_halflives()["dopamine_halflife_s"],
+            cortisol_halflife_s=self.persona.hormone_halflives()["cortisol_halflife_s"],
         )
         self.last_speculative_intent = None  # Transient sensory state
         # A2: serializes short-term affect mutation so the fire-and-forget
@@ -400,6 +404,7 @@ class StateService:
         self._background_tasks: set[asyncio.Task] = set()
 
         # Connect to Redis
+        self.redis_client: redis.Redis | None
         try:
             self.redis_client = redis.Redis(
                 host=redis_host,
@@ -506,8 +511,14 @@ class StateService:
             try:
                 # Off the loop: synchronous client, and a dead Redis costs a
                 # full connect timeout here rather than returning quickly.
-                data = await asyncio.to_thread(
-                    self.redis_client.hgetall, f"state:{agent_name}"
+                # redis-py's sync Redis shares stubs with the async client, so
+                # hgetall is typed Awaitable[dict] | dict even on this
+                # always-sync client -- cast to the runtime-true shape.
+                data = cast(
+                    "dict[str, str]",
+                    await asyncio.to_thread(
+                        self.redis_client.hgetall, f"state:{agent_name}"
+                    ),
                 )
                 if data:
                     self.current_state.mood = float(data.get("mood", 0.0))

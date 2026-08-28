@@ -99,6 +99,18 @@ class _GatingSpy:
     async def get_embedding(self, text):
         return [0.1] * 768
 
+    # F1 stage decomposition (this file's own subject): search_memories now
+    # reaches these three real methods before it ever reaches gating --
+    # delegate to the real implementations rather than reimplement them,
+    # since none of the three has any bearing on what this test asserts.
+    # Safe against this spy's minimal state: an empty `_l1_cache` is a clean
+    # miss, and `_last_stop_words_update = inf` makes the staleness check
+    # skip its own DB/lexicon calls, exactly as the pre-decomposition inline
+    # code did.
+    _build_search_cache_key = staticmethod(MemoryStore._build_search_cache_key)
+    _l1_cache_hit = MemoryStore._l1_cache_hit
+    _refresh_stop_words_if_stale = MemoryStore._refresh_stop_words_if_stale
+
     def _compute_mrl_gating(self, arousal, cortisol, limit, full_pool):
         self.seen.append(full_pool)
         raise _StopAfterGating

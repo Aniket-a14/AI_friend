@@ -19,7 +19,10 @@ from typing import Any, Protocol, runtime_checkable
 
 @runtime_checkable
 class LLMClient(Protocol):
-    async def generate_stream(
+    # Not `async def`: the real implementations are async-generator functions
+    # (they `yield`), so calling them returns the generator directly rather
+    # than a coroutine that resolves to one.
+    def generate_stream(
         self,
         prompt: str,
         system: str | None = None,

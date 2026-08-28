@@ -44,7 +44,7 @@ class ReflectionService:
 
         if self.is_reflecting or not recent_episodes:
             # CVS-3.5: Always return awaitable to support deterministic testing
-            f = asyncio.Future()
+            f: asyncio.Future = asyncio.Future()
             f.set_result(None)
             return f
 
@@ -70,6 +70,288 @@ class ReflectionService:
         )
         return asyncio.create_task(self._consolidate(recent_episodes))
 
+    @staticmethod
+    def _rank_episodes_by_saliency(
+        episodes: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """ESI = 0.6*arousal + 0.4*cortisol, sorted descending, then filtered
+        to the salient tail (threshold, or top half if nothing clears it)."""
+        for e in episodes:
+            emotion_vec = e.get("emotion_vector", {})
+            arousal = emotion_vec.get("Ar", emotion_vec.get("arousal", 0.5))
+            # Cortisol may be stored in emotion_vector or metadata
+            cortisol = emotion_vec.get(
+                "cortisol", e.get("metadata", {}).get("cortisol", 0.5)
+            )
+            e["saliency_index"] = 0.6 * arousal + 0.4 * cortisol
+
+        episodes = sorted(episodes, key=lambda x: x["saliency_index"], reverse=True)
+
+        threshold = 0.4
+        filtered = [e for e in episodes if e["saliency_index"] >= threshold]
+        if not filtered:
+            filtered = episodes[: max(1, len(episodes) // 2)]
+        return filtered
+
+    @staticmethod
+    def _build_episode_summary(episodes: list[dict[str, Any]]) -> str:
+        """Render episodes into the shared narrative text every consolidation
+        prompt below is built from."""
+        summary_parts = []
+        for e in episodes:
+            emotion_vec = e.get("emotion_vector", {})
+            V = emotion_vec.get("V", 0.0)
+            Ar = emotion_vec.get("Ar", 0.5)
+            D = emotion_vec.get("D", 0.5)
+            ctx = e.get("context", "")
+            ri = e.get("relationship_delta", 0.0)
+            speaker_name = e.get("speaker") or "User"
+            summary_parts.append(
+                f"Context: {ctx}\n"
+                f"{speaker_name}: {e.get('content', e.get('event', ''))}\n"
+                f"AI: {e.get('response', '')}\n"
+                f"[Emotion V={V:.2f} Ar={Ar:.2f} D={D:.2f} | RelDelta={ri:.2f}]"
+            )
+        return "\n---\n".join(summary_parts)
+
+    async def _consolidate_facts(self, summary_text: str) -> None:
+        """PART 1: extract entities/relationships/ToM observations and write
+        confidently-resolved ones into Neo4j."""
+        fact_prompt = f"""
+        Extract new entities, relationships, and "Theory of Mind" observations from these interactions.
+        Interactions:
+        {summary_text}
+
+        Focus on:
+        1. People, Preferences, and Facts about the User.
+        2. THEORY OF MIND: Observations about the User's mental/physical state (e.g., "User seems stressed", "User is tired from work").
+
+        REQUIREMENT: Provide a confidence score (0.0 - 1.0), the appropriate category (one of: social, vocational, somatic, spiritual, crisis, milestone), and a brief reasoning for each fact.
+        Output JSON List ONLY: [{{"subject", "subject_type", "relation", "object", "object_type", "category", "confidence", "reason"}}]
+        """
+
+        try:
+            _t0 = time.monotonic()
+            fact_res = await self.llm.generate(
+                fact_prompt,
+                model=Config.LLM_REFLECTION_MODEL,
+                options_override={"num_predict": 256},
+            )
+            _measure_trace(
+                "reflection", "llm_call_facts", duration_s=time.monotonic() - _t0
+            )
+            facts = self._extract_json(fact_res)
+
+            # CVS-3.5: Defensive parsing for LLM output variability
+            if isinstance(facts, dict):
+                facts = [facts]
+            elif not isinstance(facts, list):
+                facts = []
+
+            for f in facts:
+                await self._resolve_one_fact(f)
+        except Exception as e:
+            logger.error(f"Fact consolidation failure: {e}")
+
+    async def _resolve_one_fact(self, f: Any) -> None:
+        """Gate and write a single extracted fact. Split out of
+        `_consolidate_facts` purely to keep that loop body flat."""
+        if not isinstance(f, dict):
+            return
+
+        # 1. CONFIDENCE GATING: Only store facts with > 0.8 certainty
+        confidence = f.get("confidence", 0.0)
+        if confidence < 0.8:
+            logger.debug(
+                f"Fact REJECTED (Low Confidence: {confidence}): {f.get('subject')} - {f.get('relation')}"
+            )
+            return
+
+        # 2. FACT RESOLUTION: Check for existing duplication in GraphDB
+        subject = f.get("subject")
+        object_val = f.get("object")
+        relation = f.get("relation")
+        subject_type = f.get("subject_type", "Entity")
+        object_type = f.get("object_type", "Entity")
+        category = f.get("category", "social").lower()
+
+        if not subject or not object_val or not relation:
+            return
+
+        # Neo4j must NOT have distractors
+        if category == "distractor":
+            logger.debug("Fact REJECTED (Distractors are excluded from Neo4j)")
+            return
+
+        if category not in [
+            "social",
+            "vocational",
+            "somatic",
+            "spiritual",
+            "crisis",
+            "milestone",
+        ]:
+            category = "social"
+
+        try:
+            # P3-11: canonicalization (LIKES/ENJOYS/LOVES -> one type) now
+            # lives in GraphDB.consolidate_relationship itself, applied to
+            # every write regardless of caller -- this is just the
+            # pre-flight safety check so an unsafe relation string is
+            # skipped-and-logged here rather than raising from deep inside
+            # the DB call below.
+            rel_type = GraphDB._safe_relation(relation)
+            GraphDB._safe_label(subject_type)
+            GraphDB._safe_label(object_type)
+            GraphDB._safe_label(category.capitalize())
+        except ValueError:
+            logger.warning("Skipping unsafe graph fact from reflection: %r", f)
+            return
+
+        # P2-13: this used to MATCH for an existing relationship first and
+        # `continue` on a hit, logging "Fact RESOLVED" and never writing
+        # anything -- so a restated fact never reinforced, while
+        # decay_relationships still pushed every edge toward the prune
+        # threshold regardless of repetition. create_triplet ->
+        # consolidate_relationship already does the right thing on a repeat
+        # (`ON MATCH SET r.weight = coalesce(r.weight, 1) + 1`); the guard
+        # above was preventing that path from ever being reached.
+        await self.graph.create_triplet(
+            subject,
+            rel_type,
+            object_val,
+            properties={
+                "confidence": confidence,
+                "extracted_at": str(time.time()),
+                "category": category,
+            },
+            subject_label=subject_type,
+            target_label=object_type,
+        )
+
+    async def _consolidate_persona(self, summary_text: str) -> None:
+        """PART 2: decide whether the persona itself should evolve."""
+        identity_prompt = f"""
+        Determine if {self.identity.personality.get("name")}'s personality or relationship should evolve.
+        Interactions:
+        {summary_text}
+        Current Role: {self.identity.history.get("relationship")}
+
+        Output JSON ONLY: {{"new_traits": ["..."], "relationship": "...", "confidence": 0.0}}
+        """
+        try:
+            _t0 = time.monotonic()
+            ident_res = await self.llm.generate(
+                identity_prompt,
+                model=Config.LLM_REFLECTION_MODEL,
+                options_override={"num_predict": 256},
+            )
+            _measure_trace(
+                "reflection", "llm_call_identity", duration_s=time.monotonic() - _t0
+            )
+            suggestions = self._extract_json(ident_res)
+
+            # CVS-3.5: Defensive parsing for identity suggestions (Ensures
+            # .get() availability). The list branch used to stop at "is this
+            # a list", not "is the element inside a dict" -- `_extract_json`
+            # returning e.g. ["some string"] unwrapped to a bare str that
+            # .get() below then crashed on. The sibling fact-parsing block
+            # above already re-validates each unwrapped element; this one
+            # didn't. Found via a real concurrent-load run (roadmap Phase
+            # 6.2) where contention made the reflection LLM call more likely
+            # to return a malformed shape.
+            if isinstance(suggestions, list) and len(suggestions) > 0:
+                suggestions = suggestions[0]
+            if not isinstance(suggestions, dict):
+                suggestions = {}
+
+            if suggestions and suggestions.get("confidence", 0.0) >= 0.8:
+                await self.identity.evolve_persona(suggestions)
+            else:
+                logger.debug(
+                    "Persona evolution REJECTED: Low confidence or no growth detected."
+                )
+        except Exception as e:
+            logger.error(f"Identity evolution failure: {e}")
+
+    async def _consolidate_episodic_memory(
+        self, episodes: list[dict[str, Any]], summary_text: str
+    ) -> None:
+        """PART 3: fold the episode batch into one long-term vector memory."""
+        try:
+            # Calculate composite affective vectors
+            total_valence = 0.0
+            total_arousal = 0.0
+            total_dominance = 0.0
+            count = len(episodes)
+            for episode in episodes:
+                emotion_vec = episode.get("emotion_vector", {})
+                total_valence += emotion_vec.get("V", 0.0)
+                total_arousal += emotion_vec.get("Ar", 0.5)
+                total_dominance += emotion_vec.get("D", 0.5)
+
+            avg_valence = total_valence / count if count > 0 else 0.0
+            avg_arousal = total_arousal / count if count > 0 else 0.5
+            avg_dominance = total_dominance / count if count > 0 else 0.5
+
+            consolidation_prompt = f"""
+            Consolidate the following recent interaction episodes into a single, cohesive episodic memory summary.
+            This summary should capture the essence of what was discussed, the emotional tone of both the user and the AI, and any key takeaways or relationship progression.
+            Interactions:
+            {summary_text}
+
+            Format: A brief, single-paragraph narrative from the AI's perspective (e.g. "We discussed...").
+            """
+
+            _t0 = time.monotonic()
+            consolidation_res = await self.llm.generate(
+                consolidation_prompt,
+                model=Config.LLM_REFLECTION_MODEL,
+                options_override={"num_predict": 256},
+            )
+            _measure_trace(
+                "reflection",
+                "llm_call_consolidation",
+                duration_s=time.monotonic() - _t0,
+            )
+            consolidated_summary = consolidation_res.strip()
+            if "<think>" in consolidated_summary:
+                consolidated_summary = consolidated_summary.split("</think>")[
+                    -1
+                ].strip()
+
+            if consolidated_summary and self.vector:
+                await self.vector.add_memory(
+                    content=consolidated_summary,
+                    raw_content=summary_text,
+                    wing="personal",
+                    importance=0.6,
+                    emotion=avg_arousal,
+                    valence=avg_valence,
+                    source="subconscious_consolidation",
+                    metadata={
+                        "composite_valence": avg_valence,
+                        "composite_arousal": avg_arousal,
+                        "composite_dominance": avg_dominance,
+                        "episode_count": len(episodes),
+                    },
+                )
+                logger.info(
+                    "[Reflection] Long-term episodic memory successfully consolidated and stored."
+                )
+        except Exception as e:
+            logger.error(f"Episodic memory consolidation failure: {e}")
+
+    async def _decay_relationship_graph(self) -> None:
+        """PART 4: Hebbian decay -- unrelated facts fade unless reinforced."""
+        if self.graph:
+            try:
+                await self.graph.decay_relationships(
+                    decay_factor=0.95, prune_threshold=0.25
+                )
+            except Exception as e:
+                logger.error(f"[Reflection] Graph decay failed: {e}")
+
     async def _consolidate(self, episodes: list[dict[str, Any]]):
         """
         Background Solid State Consolidation (§7):
@@ -81,278 +363,13 @@ class ReflectionService:
         """
         self.is_reflecting = True
         try:
-            # Calculate Episodic Saliency Index (ESI = 0.6 * arousal + 0.4 * cortisol)
-            for e in episodes:
-                emotion_vec = e.get("emotion_vector", {})
-                arousal = emotion_vec.get("Ar", emotion_vec.get("arousal", 0.5))
-                # Cortisol may be stored in emotion_vector or metadata
-                cortisol = emotion_vec.get(
-                    "cortisol", e.get("metadata", {}).get("cortisol", 0.5)
-                )
-                saliency = 0.6 * arousal + 0.4 * cortisol
-                e["saliency_index"] = saliency
+            episodes = self._rank_episodes_by_saliency(episodes)
+            summary_text = self._build_episode_summary(episodes)
 
-            # Sort episodes by saliency in descending order
-            episodes = sorted(episodes, key=lambda x: x["saliency_index"], reverse=True)
-
-            # Filter unconsolidated episodes to prioritize high-saliency events (threshold >= 0.4 or top 50%)
-            threshold = 0.4
-            filtered = [e for e in episodes if e["saliency_index"] >= threshold]
-            if not filtered:
-                filtered = episodes[: max(1, len(episodes) // 2)]
-            episodes = filtered
-
-            # Build enriched summary from episodic schema
-            summary_parts = []
-            for e in episodes:
-                emotion_vec = e.get("emotion_vector", {})
-                V = emotion_vec.get("V", 0.0)
-                Ar = emotion_vec.get("Ar", 0.5)
-                D = emotion_vec.get("D", 0.5)
-                ctx = e.get("context", "")
-                ri = e.get("relationship_delta", 0.0)
-                speaker_name = e.get("speaker") or "User"
-                summary_parts.append(
-                    f"Context: {ctx}\n"
-                    f"{speaker_name}: {e.get('content', e.get('event', ''))}\n"
-                    f"AI: {e.get('response', '')}\n"
-                    f"[Emotion V={V:.2f} Ar={Ar:.2f} D={D:.2f} | RelDelta={ri:.2f}]"
-                )
-            summary_text = "\n---\n".join(summary_parts)
-
-            # --- PART 1: Fact Resolution (Neo4j) ---
-            fact_prompt = f"""
-            Extract new entities, relationships, and "Theory of Mind" observations from these interactions.
-            Interactions:
-            {summary_text}
-
-            Focus on:
-            1. People, Preferences, and Facts about the User.
-            2. THEORY OF MIND: Observations about the User's mental/physical state (e.g., "User seems stressed", "User is tired from work").
-
-            REQUIREMENT: Provide a confidence score (0.0 - 1.0), the appropriate category (one of: social, vocational, somatic, spiritual, crisis, milestone), and a brief reasoning for each fact.
-            Output JSON List ONLY: [{{"subject", "subject_type", "relation", "object", "object_type", "category", "confidence", "reason"}}]
-            """
-
-            try:
-                _t0 = time.monotonic()
-                fact_res = await self.llm.generate(
-                    fact_prompt,
-                    model=Config.LLM_REFLECTION_MODEL,
-                    options_override={"num_predict": 256},
-                )
-                _measure_trace(
-                    "reflection", "llm_call_facts", duration_s=time.monotonic() - _t0
-                )
-                facts = self._extract_json(fact_res)
-
-                # CVS-3.5: Defensive parsing for LLM output variability
-                if isinstance(facts, dict):
-                    facts = [facts]
-                elif not isinstance(facts, list):
-                    facts = []
-
-                for f in facts:
-                    if not isinstance(f, dict):
-                        continue
-
-                    # 1. CONFIDENCE GATING: Only store facts with > 0.8 certainty
-                    confidence = f.get("confidence", 0.0)
-                    if confidence < 0.8:
-                        logger.debug(
-                            f"Fact REJECTED (Low Confidence: {confidence}): {f.get('subject')} - {f.get('relation')}"
-                        )
-                        continue
-
-                    # 2. FACT RESOLUTION: Check for existing duplication in GraphDB
-                    subject = f.get("subject")
-                    object_val = f.get("object")
-                    relation = f.get("relation")
-                    subject_type = f.get("subject_type", "Entity")
-                    object_type = f.get("object_type", "Entity")
-                    category = f.get("category", "social").lower()
-
-                    if not subject or not object_val or not relation:
-                        continue
-
-                    # Neo4j must NOT have distractors
-                    if category == "distractor":
-                        logger.debug(
-                            "Fact REJECTED (Distractors are excluded from Neo4j)"
-                        )
-                        continue
-
-                    if category not in [
-                        "social",
-                        "vocational",
-                        "somatic",
-                        "spiritual",
-                        "crisis",
-                        "milestone",
-                    ]:
-                        category = "social"
-
-                    try:
-                        # P3-11: canonicalization (LIKES/ENJOYS/LOVES -> one
-                        # type) now lives in GraphDB.consolidate_relationship
-                        # itself, applied to every write regardless of
-                        # caller -- this is just the pre-flight safety check
-                        # so an unsafe relation string is skipped-and-logged
-                        # here rather than raising from deep inside the DB
-                        # call below.
-                        rel_type = GraphDB._safe_relation(relation)
-                        GraphDB._safe_label(subject_type)
-                        GraphDB._safe_label(object_type)
-                        GraphDB._safe_label(category.capitalize())
-                    except ValueError:
-                        logger.warning(
-                            "Skipping unsafe graph fact from reflection: %r", f
-                        )
-                        continue
-
-                    # P2-13: this used to MATCH for an existing relationship
-                    # first and `continue` on a hit, logging "Fact RESOLVED"
-                    # and never writing anything -- so a restated fact never
-                    # reinforced, while decay_relationships still pushed
-                    # every edge toward the prune threshold regardless of
-                    # repetition. create_triplet -> consolidate_relationship
-                    # already does the right thing on a repeat (`ON MATCH SET
-                    # r.weight = coalesce(r.weight, 1) + 1`); the guard above
-                    # was preventing that path from ever being reached.
-                    await self.graph.create_triplet(
-                        subject,
-                        rel_type,
-                        object_val,
-                        properties={
-                            "confidence": confidence,
-                            "extracted_at": str(time.time()),
-                            "category": category,
-                        },
-                        subject_label=subject_type,
-                        target_label=object_type,
-                    )
-            except Exception as e:
-                logger.error(f"Fact consolidation failure: {e}")
-
-            # --- PART 2: Persona Evolution ---
-            # Identical pattern for Persona stability
-            identity_prompt = f"""
-            Determine if {self.identity.personality.get("name")}'s personality or relationship should evolve.
-            Interactions:
-            {summary_text}
-            Current Role: {self.identity.history.get("relationship")}
-
-            Output JSON ONLY: {{"new_traits": ["..."], "relationship": "...", "confidence": 0.0}}
-            """
-            try:
-                _t0 = time.monotonic()
-                ident_res = await self.llm.generate(
-                    identity_prompt,
-                    model=Config.LLM_REFLECTION_MODEL,
-                    options_override={"num_predict": 256},
-                )
-                _measure_trace(
-                    "reflection", "llm_call_identity", duration_s=time.monotonic() - _t0
-                )
-                suggestions = self._extract_json(ident_res)
-
-                # CVS-3.5: Defensive parsing for identity suggestions (Ensures
-                # .get() availability). The list branch used to stop at
-                # "is this a list", not "is the element inside a dict" --
-                # `_extract_json` returning e.g. ["some string"] unwrapped to
-                # a bare str that .get() below then crashed on. The sibling
-                # fact-parsing block above (line ~156) already re-validates
-                # each unwrapped element; this one didn't. Found via a real
-                # concurrent-load run (roadmap Phase 6.2) where contention
-                # made the reflection LLM call more likely to return a
-                # malformed shape.
-                if isinstance(suggestions, list) and len(suggestions) > 0:
-                    suggestions = suggestions[0]
-                if not isinstance(suggestions, dict):
-                    suggestions = {}
-
-                if suggestions and suggestions.get("confidence", 0.0) >= 0.8:
-                    await self.identity.evolve_persona(suggestions)
-                else:
-                    logger.debug(
-                        "Persona evolution REJECTED: Low confidence or no growth detected."
-                    )
-            except Exception as e:
-                logger.error(f"Identity evolution failure: {e}")
-
-            # --- PART 3: Long-Term Episodic Memory Consolidation ---
-            try:
-                # Calculate composite affective vectors
-                total_valence = 0.0
-                total_arousal = 0.0
-                total_dominance = 0.0
-                count = len(episodes)
-                for e in episodes:
-                    emotion_vec = e.get("emotion_vector", {})
-                    total_valence += emotion_vec.get("V", 0.0)
-                    total_arousal += emotion_vec.get("Ar", 0.5)
-                    total_dominance += emotion_vec.get("D", 0.5)
-
-                avg_valence = total_valence / count if count > 0 else 0.0
-                avg_arousal = total_arousal / count if count > 0 else 0.5
-                avg_dominance = total_dominance / count if count > 0 else 0.5
-
-                consolidation_prompt = f"""
-                Consolidate the following recent interaction episodes into a single, cohesive episodic memory summary.
-                This summary should capture the essence of what was discussed, the emotional tone of both the user and the AI, and any key takeaways or relationship progression.
-                Interactions:
-                {summary_text}
-
-                Format: A brief, single-paragraph narrative from the AI's perspective (e.g. "We discussed...").
-                """
-
-                _t0 = time.monotonic()
-                consolidation_res = await self.llm.generate(
-                    consolidation_prompt,
-                    model=Config.LLM_REFLECTION_MODEL,
-                    options_override={"num_predict": 256},
-                )
-                _measure_trace(
-                    "reflection",
-                    "llm_call_consolidation",
-                    duration_s=time.monotonic() - _t0,
-                )
-                consolidated_summary = consolidation_res.strip()
-                if "<think>" in consolidated_summary:
-                    consolidated_summary = consolidated_summary.split("</think>")[
-                        -1
-                    ].strip()
-
-                if consolidated_summary and self.vector:
-                    await self.vector.add_memory(
-                        content=consolidated_summary,
-                        raw_content=summary_text,
-                        wing="personal",
-                        importance=0.6,
-                        emotion=avg_arousal,
-                        valence=avg_valence,
-                        source="subconscious_consolidation",
-                        metadata={
-                            "composite_valence": avg_valence,
-                            "composite_arousal": avg_arousal,
-                            "composite_dominance": avg_dominance,
-                            "episode_count": len(episodes),
-                        },
-                    )
-                    logger.info(
-                        "[Reflection] Long-term episodic memory successfully consolidated and stored."
-                    )
-            except Exception as e:
-                logger.error(f"Episodic memory consolidation failure: {e}")
-
-            # --- PART 4: Hebbian Graph Decay ---
-            if self.graph:
-                try:
-                    await self.graph.decay_relationships(
-                        decay_factor=0.95, prune_threshold=0.25
-                    )
-                except Exception as e:
-                    logger.error(f"[Reflection] Graph decay failed: {e}")
+            await self._consolidate_facts(summary_text)
+            await self._consolidate_persona(summary_text)
+            await self._consolidate_episodic_memory(episodes, summary_text)
+            await self._decay_relationship_graph()
 
             logger.info("[Reflection] Semantic Mesh Consolidation Complete.")
 
