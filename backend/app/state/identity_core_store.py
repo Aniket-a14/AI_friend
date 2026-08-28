@@ -17,7 +17,7 @@ class IdentityCoreStore:
     Guarantees sub-millisecond local cached lookups for real-time speech paths.
     """
 
-    _instances = []
+    _instances: list["IdentityCoreStore"] = []
 
     def __init__(self, db_path: str = "identity_core.db", publish_cb=None):
         self.db_path = db_path
@@ -33,6 +33,7 @@ class IdentityCoreStore:
         self._cache_sync_pending = False
         IdentityCoreStore._instances.append(self)
 
+        self._conn: sqlite3.Connection | None
         if db_path == ":memory:":
             self._conn = sqlite3.connect(":memory:")
             self._conn.row_factory = sqlite3.Row

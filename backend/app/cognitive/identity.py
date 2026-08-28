@@ -99,7 +99,7 @@ class IdentityManager:
     def __init__(
         self,
         base_path: str | None = None,
-        persona: "PersonaProfile" = None,
+        persona: "PersonaProfile | None" = None,
         persona_file=AUTO_DISCOVER,
         publish_cb=None,
     ):

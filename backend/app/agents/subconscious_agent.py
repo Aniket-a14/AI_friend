@@ -26,8 +26,8 @@ class SubconsciousAgent(BaseAgent):
     def __init__(
         self,
         ollama_url: str = Config.OLLAMA_URL,
-        graph_db: GraphDB = None,
-        state_service: StateService = None,
+        graph_db: "GraphDB | None" = None,
+        state_service: "StateService | None" = None,
         memory_store=None,
         reflection_service=None,
     ):
@@ -46,7 +46,7 @@ class SubconsciousAgent(BaseAgent):
         # only weakly referenced by the event loop and eligible for GC
         # mid-flight (closes M1-A13 here); also lets a test or caller await
         # completion explicitly instead of racing the background task.
-        self._consolidation_task = None
+        self._consolidation_task: asyncio.Task | None = None
         self._current_monologue_task = None
         self._current_dream_task = None
         self._last_monologue_time = 0.0

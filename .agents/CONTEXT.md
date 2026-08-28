@@ -12162,27 +12162,45 @@ reached a test run.
 - 7.5, flipping the CI gates from report-only to blocking -- explicitly
   blocked on 7.1/7.2/7.4 being clean first, per the roadmap's own ordering.
 
-Also left mid-flight and explicitly deferred to a separate PR, on the user's
-instruction: a first slice of 7.2 (mypy). Six single-error files were fixed
-and verified clean before the pivot (`vision/links.py`, `vision/agent.py`,
-`persona/profile.py`, `cognitive/identity.py`, `state/memory_store.py`,
-`agents/surfacing_agent.py` -- implicit-Optional defaults, an
-`isinstance`-narrowed `json_schema_extra` read, a missing `set[int]`
-annotation, a widened `_temporal_label` signature), then five more two/three-
-error files were fixed but **not re-verified with a fresh `mypy` run** before
-the pivot (`state/identity_core_store.py`, `llm/ollama_client.py`,
-`state/working_memory_store.py`, `state/semantic_recall_store.py`,
-`agents/subconscious_agent.py` -- including a real behavior fix, not just a
-type annotation: `OllamaClient.__init__`'s `model` parameter accepted `None`
-explicitly but the plain-keyword default never applied to an explicit `None`
-argument, so `build_llm_client(model=None)` -- the real path whenever
-`Config.LLM_CHAT_MODEL` is unset -- silently produced a client with
-`self.model = None` rather than falling back to `_DEFAULT_MODEL`, contradicting
-what `app/llm/__init__.py`'s own docstring and a test's own comment both
-already claimed happened). These edits are uncommitted in the working tree,
-not lost, but intentionally not part of this entry or this PR -- resume by
-re-running `mypy app`, confirming the count where this session left off, and
-continuing module by module from there.
+Also landed in this same PR, as a first slice of 7.2 (mypy) rather than its
+own entry -- the session was mid-triage when redirected to Phase 8, and the
+user then asked for the in-flight work to be committed alongside it rather
+than held for a separate PR. Eleven files, 93 -> 75 errors (23 -> 12 files):
+`vision/links.py`, `vision/agent.py` (optional-import fallback assignments
+need `# type: ignore[assignment]` -- a well-known mypy pattern for `try:
+import x / except ImportError: x = None`, not a suppression of anything
+real), `persona/profile.py` (`json_schema_extra` narrowed via `isinstance`
+instead of `or {}`, since a falsy check doesn't narrow away the `Callable`
+half of pydantic's declared union type), `cognitive/identity.py`,
+`agents/subconscious_agent.py` (implicit-Optional defaults made explicit),
+`state/memory_store.py` (missing `set[int]` annotation),
+`agents/surfacing_agent.py` (`_temporal_label`'s signature widened to `str |
+None` to match what it already handled at runtime), `state/
+identity_core_store.py` (`_instances`/`_conn` annotated), `state/
+working_memory_store.py`, `state/semantic_recall_store.py` (redis-py's sync
+`Redis` client shares stubs with its async sibling, so every command method
+is typed `Awaitable[T] | T` even on a client that is always sync here --
+`cast()` at each call site, not a blanket ignore; `QdrantClient`'s
+`timeout=2.0` narrowed to `2`, no behavior change since they're numerically
+equal; `Filter.must`'s `conditions` list annotated `list[models.Condition]`
+since a bare `list[FieldCondition]` is invariant and doesn't satisfy the
+broader union `Filter.must` actually accepts), and `llm/ollama_client.py` --
+this last one is a real behavior fix, not just a type annotation.
+`OllamaClient.__init__`'s `model` parameter accepted `None` explicitly but
+its plain-keyword default never applied to an explicit `None` argument, so
+`build_llm_client(model=None)` -- the real path whenever `Config.LLM_CHAT_MODEL`
+is unset -- silently produced a client with `self.model = None` rather than
+falling back to a real model string, contradicting what `app/llm/__init__.py`'s
+own docstring and a test's own comment both already claimed happened.
+`OllamaClient` now has an explicit `_DEFAULT_MODEL` class attribute and falls
+back to it when `model` is `None`, matching the documented invariant.
+
+Re-verified after the redirect, not just carried over: fresh `mypy app` (93
+-> 75, 23 -> 12 files, matching what's described above), `ast.parse()` on
+every touched file, full suite 1390/1390, `ruff check .` clean. The remaining
+75 errors (12 files, `state/agent_state.py`'s 24 not yet touched) are
+unchanged from where this slice left off -- still open, still 7.2's to
+finish in a later pass.
 
 ## 2026-08-28 -- Community roadmap Phase 8.1: the README is the product
 

@@ -369,7 +369,7 @@ class SurfacingAgent(BaseAgent):
         }
 
     @staticmethod
-    def _temporal_label(created_at_iso: str, now: float) -> str:
+    def _temporal_label(created_at_iso: str | None, now: float) -> str:
         """Converts an ISO timestamp into a human-readable relative label."""
         if not created_at_iso:
             return ""

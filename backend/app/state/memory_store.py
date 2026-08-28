@@ -1967,7 +1967,7 @@ class MemoryStore:
         Returns the indices that were boosted; PPR treats these as seeds when
         the query itself names no known entity.
         """
-        direct_boosted_indices = set()
+        direct_boosted_indices: set[int] = set()
         if not matched_cues:
             return direct_boosted_indices
         for idx, cand in enumerate(raw_candidates):

@@ -12,7 +12,7 @@ except ImportError:
 try:
     import numpy as np
 except ImportError:
-    np = None
+    np = None  # type: ignore[assignment]  # optional dependency; guarded at every call site
 
 try:
     import cv2
