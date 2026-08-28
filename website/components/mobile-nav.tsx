@@ -36,8 +36,9 @@ export function MobileNav() {
           className="flex items-center justify-between px-6 py-3 rounded-2xl border border-black/[0.08]"
           style={NAV_STYLE}
         >
-          <Link href="/" className="font-mono text-xs font-semibold tracking-[0.25em] text-[#111] hover:opacity-75 transition-opacity">
-            AI FRIEND
+          <Link href="/" className="flex items-center gap-2.5 font-mono text-xs font-semibold tracking-[0.25em] text-[#111] hover:opacity-75 transition-opacity">
+            <img src="/icon.svg" alt="AI Friend Logo" className="w-5 h-5 rounded-md" />
+            <span>AI FRIEND</span>
           </Link>
 
           {/* Desktop links */}
