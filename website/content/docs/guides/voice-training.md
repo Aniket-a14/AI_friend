@@ -1,32 +1,41 @@
-# Voice training & other GPU work
+# Voice Training on GPU
 
-Recording an 8-second clip (see [Quickstart](/docs/getting-started/quickstart))
-gets your friend talking in a rough approximation of your voice
-immediately. Fine-tuning GPT-SoVITS on a larger set of your own recordings
-gets a real clone, and that's genuinely GPU-heavy work a laptop either
-can't do at all, or can only do slowly and hot — so it lives in a Colab
-notebook instead.
+To achieve high-quality, expressive voice cloning with custom prosody and emotion, you can fine-tune GPT-SoVITS on your own voice samples.
 
-## The three notebooks
+---
 
-| Notebook | What it does | Needs a GPU? |
-| :--- | :--- | :--- |
-| `ai_friend_voice_training.ipynb` | Fine-tunes a GPT-SoVITS voice clone from your own recordings | Yes, hard requirement |
-| `ai_friend_eval_harness.ipynb` | Runs the behavioral eval gate against real Ollama models | Helps a lot, not required |
-| `ai_friend_llm_benchmark.ipynb` | Measures raw generation throughput/latency/VRAM across model sizes | Yes, that's the point |
+## Reference Dataset Preparation
 
-All three are self-contained — open the Colab badge, run top to bottom,
-download the result, close the tab. None of them need Docker, Postgres,
-Neo4j, or NATS running anywhere. Full walkthrough and runtime estimates:
-[`notebooks/README.md`](https://github.com/Aniket-a14/AI_friend/blob/main/notebooks/README.md)
-on GitHub.
+1. Record **1 to 3 minutes** of clean, dry voice audio using an external microphone.
+2. Segment the recording into **5 to 10 second WAV clips**.
+3. Generate exact transcripts for each clip.
 
-## What's deliberately not a notebook
+---
 
-`backend/tools/measure/` (the live-infrastructure latency/pressure harness)
-and `scripts/research/` (a simulated cognitive benchmarking suite) both
-need the full Postgres/Neo4j/Qdrant/NATS mesh actually running, which
-Colab's own container can't reliably nest. A notebook claiming to run
-either would either silently measure something smaller than advertised, or
-just fail — worse than not having one. If you need those numbers, run them
-locally.
+## 1-Click Google Colab Training
+
+Rather than running heavy PyTorch CUDA training on your local laptop, use the bundled Google Colab notebook:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/01_voice_clone_sovits_training.ipynb)
+
+### Colab Training Steps:
+1. Open [`notebooks/01_voice_clone_sovits_training.ipynb`](https://github.com/Aniket-a14/AI_friend/blob/main/notebooks/01_voice_clone_sovits_training.ipynb) in Colab.
+2. Select **Runtime $\rightarrow$ Change runtime type $\rightarrow$ T4 GPU**.
+3. Upload your audio clips and run the automated pipeline (Hubert feature extraction, Semantic token extraction, and SoVITS fine-tuning).
+4. Download the generated weights (`my_voice.pth` and `my_voice.ckpt`).
+
+---
+
+## Installing Trained Weights Locally
+
+Place your trained weights in `backend/voice_samples/` and update your `.env`:
+
+```ini
+REF_AUDIO_PATH=backend/voice_samples/my_voice_ref.wav
+REF_TEXT="Hello, this is my trained custom voice speaking."
+```
+
+Restart the `voice_agent` container:
+```bash
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml restart voice_agent
+```

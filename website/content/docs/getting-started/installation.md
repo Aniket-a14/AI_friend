@@ -1,57 +1,103 @@
-# Installation
+# Installation & Prerequisites
 
-You need [Docker](https://docs.docker.com/get-docker/) and
-[Ollama](https://ollama.com) (`ollama serve` running, host-native — not
-containerized by default) on a machine with at least ~16GB RAM. A GPU is
-optional: a 3B-class Ollama model runs on CPU, and real-time voice cloning
-(GPT-SoVITS) is meaningfully faster with one but not required to boot.
+AI Friend runs as a self-hosted, local-first multi-agent mesh. It is designed to run entirely on your own workstation or home server with zero mandatory cloud dependencies.
+
+---
+
+## System Requirements
+
+| Specification | Minimum Tier (CPU Baseline) | Recommended Tier (Apple Silicon / GPU) |
+| :--- | :--- | :--- |
+| **Operating System** | macOS 13+ (Apple Silicon), Linux (Ubuntu 22.04+), Windows (WSL2) | macOS 14+ (M1/M2/M3), Linux with NVIDIA GPU (CUDA 12+) |
+| **RAM / Unified Memory** | 16 GB Unified Memory / Host RAM | 16 GB - 32 GB Unified Memory or 12GB+ Dedicated VRAM |
+| **Processor** | 8-core modern x86_64 CPU (AVX2 / AVX-512) | Apple Silicon M-Series or 8-core CPU + NVIDIA RTX 3060/4060+ |
+| **Storage** | 25 GB free disk space (models + databases) | 50 GB fast NVMe SSD storage |
+| **Network** | Loopback only (zero external internet required after setup) | Loopback only |
+
+---
+
+## Prerequisites
+
+Before starting the stack, ensure the following prerequisites are installed:
+
+1. **Docker & Docker Compose**:
+   - [Install Docker Desktop for macOS / Windows](https://www.docker.com/products/docker-desktop/) or `docker-ce` + `docker-compose-plugin` on Linux.
+   - Ensure Docker is allocated at least **8GB RAM** (12GB recommended on macOS Docker settings).
+
+2. **Ollama (Host-Native LLM Engine)**:
+   - [Download & Install Ollama](https://ollama.com).
+   - Start Ollama host-natively:
+     ```bash
+     ollama serve
+     ```
+   - Pull the default conversational model:
+     ```bash
+     ollama pull llama3.2:3b
+     ```
+
+3. **Python 3.11+ & Rust (Optional for source development)**:
+   - Python virtual environment for running CLI scripts and tests.
+   - Rust toolchain (`rustup`) if modifying the `stt-agent` or `voice-agent` native binaries.
+
+---
+
+## One-Command Quick Boot
+
+Clone the repository and launch the stack using the bundled orchestration launcher:
 
 ```bash
+# 1. Clone the repository
 git clone https://github.com/Aniket-a14/AI_friend.git
 cd AI_friend
-cp .env.example .env   # fill in the secrets it asks for
-./start.sh              # or: make start
+
+# 2. Configure environment defaults
+cp .env.example .env
+
+# 3. Launch the full mesh
+./start.sh
 ```
 
-`start.sh` does the whole boot sequence itself and refuses to half-start: it
-creates the shared Docker network, confirms Ollama is reachable and pulls
-the required models, ships a bundled default voice so the agent can speak
-before you've recorded your own, brings up Postgres/Neo4j/Redis/NATS/
-LiveKit, waits for Postgres to actually be healthy before pushing the
-database schema, then starts the right container set for your chosen mode.
+---
 
-## Launch modes
+## Launch Modes
+
+The `./start.sh` launcher supports tailored operational profiles depending on your hardware:
 
 ```bash
-./start.sh light             # cognitive-only: no real-time voice/STT
-./start.sh heavy             # cognitive + local Whisper STT, no voice cloning
-./start.sh full               # the default: everything, including voice cloning
-./start.sh full --vision      # + the vision agent (Linux host only)
+./start.sh              # Default: launches full multimodal mesh (Voice, Brain, STT, LiveKit)
+./start.sh light        # Cognitive-only: runs Brain + Memory without real-time STT/TTS
+./start.sh heavy        # Cognitive + local Whisper STT, with pre-synthesized voice
+./start.sh full         # Full stack with live GPT-SoVITS voice cloning
+./start.sh full --vision # Full stack + Moondream visual appraisal (Linux host only)
 ```
 
-`light` and `heavy` exist for machines that can't comfortably run real-time
-voice cloning alongside everything else — the cognitive core and memory
-work the same either way, you just lose live speech in and out.
+### Profile Comparison
 
-## Hardware
+* **`light` Mode**: Ideal for lower-spec laptops or remote headless servers. Memory footprint is $< 4 \text{ GB}$.
+* **`heavy` Mode**: Perfect for text-first interactions with natural speech transcription.
+* **`full` Mode**: The complete embodied companion experience with real-time cloned voice synthesis.
+* **`full --vision` Mode**: Adds continuous Moondream VLM screen and camera appraisal.
 
-There is no packaged install yet — you run this from source via Docker
-Compose. Development has run on a 16GB unified-memory MacBook with a
-~3B-parameter Ollama model on CPU. A GPU (local or rented) speeds up
-real-time voice cloning and STT, and is effectively required for GPT-SoVITS
-*fine-tuning* on your own voice recordings — see the
-[voice training guide](/docs/guides/voice-training) for that path rather
-than doing it on a laptop.
+---
 
-An optional cloud LLM fallback exists for hardware that can't run a local
-model comfortably (`LLM_PROVIDER=anthropic` in `.env`, opt-in, sends
-conversation to a third party by design — see `.env.example`).
+## Preflight Verification
 
-## Health check
+Once launched, verify that all containerized agents are healthy:
 
 ```bash
 docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml ps
 ```
 
-Next: [Quickstart](/docs/getting-started/quickstart) to actually create
-your friend.
+Expected healthy services:
+* `nats`: Signal bus message broker (Port 4222)
+* `postgres`: Core identity & episodic vector memory (Port 5432)
+* `neo4j`: Relational knowledge graph (Port 7687 / 7474)
+* `redis`: Ephemeral state cache & turn locks (Port 6379)
+* `qdrant`: Semantic vector index (Port 6333)
+* `local_voice`: GPT-SoVITS voice synthesis server (Port 9880)
+* `local_sfu`: LiveKit WebRTC media server (Port 7880)
+* `brain_agent`, `voice_agent`, `stt_agent`, `transport_agent`, `subconscious_agent`: Core workers
+
+---
+
+Next: [Quickstart Guide](/docs/getting-started/quickstart) to author your friend's persona.

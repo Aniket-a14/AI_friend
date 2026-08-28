@@ -1,75 +1,71 @@
-# Architecture
+# Mesh Architecture
 
-Agents are separate processes coordinated over **NATS JetStream**, not
-function calls — a decoupled signal-bus mesh, not a monolith with internal
-method calls. The full diagram lives in
-[README.md](https://github.com/Aniket-a14/AI_friend/blob/main/README.md#architecture)
-on GitHub; this page is the prose version.
+AI Friend is built as a **decoupled, multi-agent cognitive signal mesh**. Agents run as independent OS processes communicating asynchronously over **NATS JetStream** message subjects, never calling internal class methods across agent boundaries.
 
-## The agents
+---
 
-| Agent | Technology | Role |
+## The 9 Autonomous Mesh Agents
+
+| Agent Name | Runtime Engine | Primary Responsibilities |
 | :--- | :--- | :--- |
-| Signaling | Python / FastAPI | LiveKit token issuance; the frontend's REST entry point. Not a NATS agent. |
-| Brain Agent | Python / Ollama | Cognitive core — appraisal, decision, action, state. |
-| Voice Agent | Rust / GPT-SoVITS | Renders affect-aware 32kHz audio through one cloned-voice engine, no fallback to a different voice. |
-| STT Agent | Rust / whisper.cpp + sherpa-onnx | Dual-path: whisper.cpp for the final transcript, SenseVoice for a fast speculative path with speech-emotion classification. |
-| Transport Agent | Python / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. |
-| Surfacing Agent | Python / pgvector | ACT-R-style episodic memory retrieval and proactive recall. |
-| Subconscious Agent | Python / Neo4j | Background reflection, internal monologue, proactive outreach. |
-| Vision Agent | Ollama / moondream | Host-native visual appraisal. Opt-in, and must run natively on Windows/macOS. |
-| Pulse Agent | Python / asyncio | Mesh heartbeat. |
+| **Signaling Agent** | Python / FastAPI | Issues WebRTC tokens, exposes REST routes (`/api/`), and initializes session state. |
+| **Brain Agent** | Python / Ollama / PyTorch | Core cognition: appraisal, PAD affect calculation, deliberation, and streaming LLM generation. |
+| **Voice Agent** | Rust / GPT-SoVITS | 32kHz physical voice synthesis, emotional prosody trajectory, and dynamic pause bias. |
+| **STT Agent** | Rust / whisper.cpp + SenseVoice | Dual-path speech processing: 150ms speculative intent/emotion + high-precision transcript. |
+| **Transport Agent** | Python / LiveKit | WebRTC media bridge: chunks inbound PCM, ingests outbound audio, dispatches viseme packets. |
+| **Surfacing Agent** | Python / pgvector | ACT-R episodic memory retrieval and proactive recollection queueing. |
+| **Subconscious Agent** | Python / Neo4j | Background reflection, sleep-time consolidation, and unprompted proactive outreach. |
+| **Vision Agent** | Python / Moondream VLM | Screen and webcam visual appraisal with habituation filter dampening. |
+| **Pulse Agent** | Python / asyncio | Mesh health, telemetry collection, and distributed heartbeat (`system.tick`). |
 
-## The cognitive turn
+---
 
-1. **Perception** — Transport Agent publishes raw PCM to `audio.inbound`.
-2. **Speculation** — STT Agent's fast path identifies high-confidence intent and any classified emotion.
-3. **Reflex** — Voice Agent immediately soft-attenuates on a speculative interruption signal.
-4. **Appraisal** — Brain Agent computes emotional valence and updates PAD + endocrine state.
-5. **Deliberation** — Decision Service scores candidate intents.
-6. **Synthesis** — Voice Agent renders the response using the current affect vector.
-7. **Closure** — Voice Agent reports playback telemetry back to the Brain for the next turn's pacing.
+## The 7-Stage Cognitive Turn
 
-## Signal bus contracts
+Every conversational exchange traverses seven distinct, observable stages across the mesh:
 
-Every subject has a Pydantic schema in `backend/app/contracts.py` — never a
-raw dictionary crossing an agent boundary. `chat.output`, for example,
-carries `content`, `affect` (an 8-field vector: valence, arousal,
-dominance, trust, attachment, emotion, fatigue, user_distance), and a
-`turn_id` used to correlate the whole exchange.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Transport as Transport Agent
+    participant STT as STT Agent (Rust)
+    participant Brain as Brain Agent (Python)
+    participant Voice as Voice Agent (Rust)
 
-## Persona: three enforced tiers
+    User->>Transport: Speaks audio stream
+    Transport->>STT: audio.inbound (raw 16kHz PCM)
+    STT->>Voice: audio.stop (instant speculative barge-in)
+    Voice-->>Transport: Immediate audio ducking (<150ms)
+    STT->>Brain: audio.perception (final transcript + emotion)
+    Brain->>Brain: Appraisal & Endocrine update
+    Brain->>Brain: Deliberation & Intent scoring (MAUT)
+    Brain->>Voice: chat.output (streaming LLM tokens + affect)
+    Voice->>Transport: audio.stream (32kHz PCM + visemes)
+    Transport->>User: Synthesized audio + pulsing aura
+```
 
-Every persona field is sorted into a tier declared in the schema, so the
-boundary is checked in code rather than assumed:
+1. **Perception**: Raw 16kHz PCM audio is ingested via WebRTC and published to `audio.inbound`.
+2. **Speculation**: `SenseVoice` classifies speech intent and detects emotion in $<150\text{ms}$.
+3. **Reflex**: If speech is detected while the agent is speaking, Voice Agent soft-attenuates playback instantly via `audio.stop`.
+4. **Appraisal**: Brain Agent updates Russell's PAD (Pleasure, Arousal, Dominance) state and checks the 3-tier boundary floor.
+5. **Deliberation**: Decision Service evaluates candidate conversational behaviors using multi-attribute utility theory (MAUT).
+6. **Synthesis**: LLM streams tokens into Voice Agent, which synthesizes audio chunks matching the current emotional affect.
+7. **Closure**: Voice Agent reports actual playback progress (`audio.playback.progress`) back to Brain Agent for conversational tempo entrainment.
 
-- **Immutable** — a small hard-coded safety floor no authored persona can
-  touch.
-- **Constitutional** — temperament fixed at creation: half-lives, drift
-  rates, baselines.
-- **Adaptive** — seeded by you, then owned and slowly evolved by the agent
-  itself, capped at 5 traits.
+---
 
-A persona file naming an immutable field is rejected outright, not silently
-accepted.
+## Signal Bus Contracts
 
-## Endocrine layer
+Every message crossing the NATS bus is validated against strict Pydantic schemas in `backend/app/contracts.py`. Raw unvalidated dictionaries are structurally forbidden.
 
-`cortisol` and `dopamine` are each *tonic + phasic* — a slow baseline
-that's a pure function of current affect, plus a decaying burst on top
-(half-life 90s for reward, 600s for stress) fired by real events. Because
-the burst channels are independent of the anti-correlated tonic terms, the
-agent can be stressed and rewarded at the same time. These hormones
-modulate LLM sampling directly: cortisol narrows temperature, dopamine
-widens `top_p`, fatigue shortens the response length.
-
-## Memory
-
-Retrieval expands query cues through a **learned mental lexicon** — built
-from the agent's own conversations, not a hardcoded thesaurus. Episodic
-memories decay on an ACT-R-style curve
-(`activation = ln(recall_count) - d·ln(hours_since_created + 1)`); memories
-below the retention threshold move to an archive tier rather than being
-deleted outright, and can be promoted back.
-
-Next: [Privacy & data](/docs/concepts/privacy).
+Example contract for `chat.output`:
+```python
+class ChatOutput(BaseModel):
+    model_config = {"extra": "allow"}
+    content: str
+    turn_id: str             # UUID tracking the entire turn lifecycle
+    done: bool = False       # Explicit stream termination flag
+    proactive: bool = False  # Set when initiated spontaneously by subconscious
+    affect: ChatOutputAffect | None = None
+```

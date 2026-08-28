@@ -317,8 +317,14 @@ function HeatCell({ level, animDelay }: { level: number; animDelay: number }) {
   )
 }
 
+interface ReviewItem {
+  type: string
+  text: string
+  author?: string
+}
+
 // Animated typing cursor in review
-function ReviewLine({ item, delay }: { item: typeof REVIEW_LINES[0]; delay: number }) {
+function ReviewLine({ item, delay }: { item: ReviewItem; delay: number }) {
   const [visible, setVisible] = useState(false)
   useEffect(() => { const t = setTimeout(() => setVisible(true), delay); return () => clearTimeout(t) }, [delay])
 
@@ -331,11 +337,11 @@ function ReviewLine({ item, delay }: { item: typeof REVIEW_LINES[0]; delay: numb
       </div>
     )
   }
-  const iconCfg = {
+  const iconCfg = ({
     approve: { icon: <CheckCircle2 style={{ width: 9, height: 9, color: "#28a745", flexShrink: 0 }} />, color: "#28a745" },
     change:  { icon: <AlertCircle  style={{ width: 9, height: 9, color: "#b07d30", flexShrink: 0 }} />, color: "#b07d30" },
     comment: { icon: <MessageSquare style={{ width: 9, height: 9, color: "rgba(0,0,0,0.35)", flexShrink: 0 }} />, color: "rgba(0,0,0,0.5)" },
-  }[item.type] ?? { icon: null, color: "rgba(0,0,0,0.5)" }
+  } as Record<string, { icon: React.ReactNode; color: string }>)[item.type] ?? { icon: null, color: "rgba(0,0,0,0.5)" }
 
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "flex-start", padding: "4px 0", animation: "logIn 0.2s ease forwards", opacity: 0 }}>

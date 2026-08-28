@@ -1,20 +1,24 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 
 const NAV_LINKS = [
-  { label: "How it's different", href: "/#how" },
-  { label: "The mesh",           href: "/#mesh" },
-  { label: "Get started",        href: "/#setup" },
-  { label: "Docs",               href: "/docs" },
-  { label: "About",              href: "/about" },
+  { label: "Playground",  href: "/playground" },
+  { label: "Docs",        href: "/docs" },
+  { label: "Benchmarks",  href: "/benchmarks" },
+  { label: "Changelog",   href: "/changelog" },
+  { label: "Comparison",  href: "/comparison" },
+  { label: "Research",    href: "/research" },
+  { label: "Showcase",    href: "/showcase" },
+  { label: "About",       href: "/about" },
 ]
 
 const NAV_STYLE = {
   backdropFilter: "blur(16px)",
   WebkitBackdropFilter: "blur(16px)",
-  background: "rgba(245,244,240,0.30)",
-  boxShadow: "0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.06)",
+  background: "rgba(245,244,240,0.65)",
+  boxShadow: "0 8px 32px rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04)",
 } as const
 
 export function MobileNav() {
@@ -24,52 +28,54 @@ export function MobileNav() {
 
   return (
     <div className="fixed top-4 inset-x-0 z-50 flex justify-center px-4 pointer-events-none">
-      <div className="pointer-events-auto w-full max-w-3xl">
+      <div className="pointer-events-auto w-full max-w-5xl">
 
         {/* Main bar */}
         <nav
-          className="flex items-center justify-between px-5 py-3 rounded-2xl border border-black/[0.06]"
+          className="flex items-center justify-between px-6 py-3 rounded-2xl border border-black/[0.08]"
           style={NAV_STYLE}
         >
-          <a href="/" className="font-pixel text-xs tracking-[0.25em] text-black/70">AI FRIEND</a>
+          <Link href="/" className="font-mono text-xs font-semibold tracking-[0.25em] text-[#111] hover:opacity-75 transition-opacity">
+            AI FRIEND
+          </Link>
 
           {/* Desktop links */}
-          <div className="hidden md:flex items-center gap-7" style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}>
+          <div className="hidden lg:flex items-center gap-6" style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}>
             {NAV_LINKS.map(l => (
-              <a
+              <Link
                 key={l.label}
                 href={l.href}
-                className="text-[11px] text-black/60 hover:text-black transition-colors duration-200 tracking-wide"
+                className="text-[11px] text-black/60 hover:text-black transition-colors duration-200 tracking-wide font-medium"
               >
                 {l.label}
-              </a>
+              </Link>
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <a
+          <div className="flex items-center gap-3">
+            <Link
               href="/#setup"
-              className="text-[11px] px-4 py-2 rounded-xl border border-black/10 text-black/60 hover:text-black hover:border-black/20 hover:bg-black/[0.03] transition-all duration-200 tracking-wide hidden md:block"
+              className="text-[11px] px-4 py-2 rounded-xl bg-[#111] text-white hover:bg-[#333] transition-all duration-200 tracking-wider font-medium hidden sm:block"
               style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
             >
               GET STARTED
-            </a>
+            </Link>
 
             {/* Burger — mobile only */}
             <button
               onClick={() => setOpen(v => !v)}
-              className="md:hidden flex flex-col justify-center items-center w-8 h-8 gap-[5px] rounded-lg hover:bg-black/[0.04] transition-colors"
+              className="lg:hidden flex flex-col justify-center items-center w-8 h-8 gap-[5px] rounded-lg hover:bg-black/[0.04] transition-colors"
               aria-label={open ? "Close menu" : "Open menu"}
             >
               <span
-                className="block h-px bg-black/60 transition-all duration-300 origin-center"
+                className="block h-px bg-black/70 transition-all duration-300 origin-center"
                 style={{
                   width: "18px",
                   transform: open ? "translateY(6px) rotate(45deg)" : "none",
                 }}
               />
               <span
-                className="block h-px bg-black/60 transition-all duration-300"
+                className="block h-px bg-black/70 transition-all duration-300"
                 style={{
                   width: "18px",
                   opacity: open ? 0 : 1,
@@ -77,7 +83,7 @@ export function MobileNav() {
                 }}
               />
               <span
-                className="block h-px bg-black/60 transition-all duration-300 origin-center"
+                className="block h-px bg-black/70 transition-all duration-300 origin-center"
                 style={{
                   width: "18px",
                   transform: open ? "translateY(-6px) rotate(-45deg)" : "none",
@@ -89,33 +95,33 @@ export function MobileNav() {
 
         {/* Mobile dropdown */}
         <div
-          className="md:hidden mt-2 overflow-hidden transition-all duration-300 ease-in-out"
-          style={{ maxHeight: open ? "320px" : "0px", opacity: open ? 1 : 0 }}
+          className="lg:hidden mt-2 overflow-hidden transition-all duration-300 ease-in-out"
+          style={{ maxHeight: open ? "420px" : "0px", opacity: open ? 1 : 0 }}
         >
           <div
-            className="rounded-2xl border border-black/[0.06] px-2 py-2 flex flex-col"
+            className="rounded-2xl border border-black/[0.08] px-3 py-3 flex flex-col gap-1"
             style={NAV_STYLE}
           >
             {NAV_LINKS.map(l => (
-              <a
+              <Link
                 key={l.label}
                 href={l.href}
                 onClick={close}
-                className="px-4 py-3 text-sm text-black/60 hover:text-black hover:bg-black/[0.03] rounded-xl transition-colors tracking-wide"
+                className="px-4 py-2.5 text-xs text-black/70 hover:text-black hover:bg-black/[0.04] rounded-xl transition-colors tracking-wide font-medium"
                 style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
               >
                 {l.label}
-              </a>
+              </Link>
             ))}
-            <div className="mt-1 px-2 pb-1">
-              <a
+            <div className="mt-2 pt-2 border-t border-black/[0.06]">
+              <Link
                 href="/#setup"
                 onClick={close}
-                className="block w-full text-center text-[11px] px-4 py-2.5 rounded-xl border border-black/10 text-black/60 hover:text-black hover:border-black/20 hover:bg-black/[0.03] transition-all duration-200 tracking-wide"
+                className="block w-full text-center text-xs px-4 py-2.5 rounded-xl bg-[#111] text-white hover:bg-[#333] transition-all duration-200 tracking-wider font-medium"
                 style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
               >
                 GET STARTED
-              </a>
+              </Link>
             </div>
           </div>
         </div>
