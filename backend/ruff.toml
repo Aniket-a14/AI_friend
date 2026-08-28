@@ -36,3 +36,11 @@ ignore = [
     "B023",   # loop variable captured by a closure -- a real late-binding
               # bug detector, not a style rule; needs a human read
 ]
+
+[lint.flake8-bugbear]
+# B008 already recognizes fastapi.Query/Depends/Path as safe-to-call-in-a-
+# default (they're markers FastAPI itself introspects, not real mutable
+# state) -- File/Form are the same idiom for multipart form fields
+# (app/api/voice.py, app/api/friend_data.py) and just aren't in ruff's
+# built-in list yet.
+extend-immutable-calls = ["fastapi.File", "fastapi.Form"]

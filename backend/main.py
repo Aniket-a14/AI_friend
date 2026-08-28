@@ -10,6 +10,10 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from livekit import api
 
+from app.api.friend_data import router as friend_data_router
+from app.api.memory import router as memory_router
+from app.api.persona import router as persona_router
+from app.api.voice import router as voice_router
 from app.config import Config
 from app.logging_config import setup_logging
 from app.network import is_lan_client_allowed, is_loopback_client
@@ -210,6 +214,13 @@ app.add_middleware(
     allow_headers=["*"],
     **_cors_policy,
 )
+
+# Phase 5.1: the onboarding/admin HTTP surface (persona compile/commit, voice
+# enrollment, memory browse, export/import). Session-authed like /token, and
+# for a stronger reason -- these read and write the friend's actual identity
+# and memory, not just mint a room-join token.
+for _router in (persona_router, memory_router, voice_router, friend_data_router):
+    app.include_router(_router, dependencies=[Depends(require_session_auth)])
 
 
 # #155: HSTS tells a browser to upgrade this origin to HTTPS on every future

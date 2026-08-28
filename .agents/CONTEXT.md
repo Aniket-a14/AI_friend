@@ -11428,3 +11428,128 @@ per the standing convention), 0 failures, 0 errors. `ruff check .` clean.
 `scripts/check_subject_wiring.py`: OK, no new subjects (Phase 4 touched no
 contracts). No Rust changed, so `cargo check`/`cargo test` were not re-run for
 this phase specifically.
+
+## 2026-08-28 -- Community roadmap Phase 5: the web UI (5.0, 5.1, first slice of 5.2)
+
+### 5.0 -- Design basis
+
+`website/` landed at the repo root: a full but generic multi-agent-SaaS
+marketing template (Next.js + TypeScript + shadcn/radix, "AGENTIC" branding,
+pricing tiers, a visual-agent-builder pitch) with no onboarding/chat/voice
+functionality of its own. Per the roadmap, it is the design-system donor for
+two *separate* things -- the Phase 8.3 public landing page (not built yet)
+and a restyled `frontend/` (this entry's 5.2 slice) -- not something to
+merge into the app directly. The extracted, reused tokens: warm off-white
+background (`#F5F4F0`), near-black text (`#111`), IBM Plex Sans for
+headings, Courier Prime for tracking-widest pixel-style labels, bordered
+`rounded-2xl` white cards, and restrained black-opacity borders/hovers
+rather than the aura-glow/glassmorphism look `frontend/`'s existing
+(untouched) voice-orb page already has.
+
+### 5.1 -- Backend HTTP surface
+
+New `backend/app/api/` package -- `persona.py`, `voice.py`, `memory.py`,
+`friend_data.py` -- exposing the same operations the Phase 2 CLI wizard and
+Phase 4.1 export/import scripts already perform, so both front ends
+(the CLI and the web flow this entry adds) share one implementation. Nothing
+re-implements wizard/script logic; every route calls straight into
+`compile_persona`, `serialize_persona_toml`, `scripts.validate_persona_file.
+validate`, `record_voice.py`'s `validate_clip`/`transcribe`, and
+`export_friend`/`import_friend`.
+
+Design choices worth recording:
+- **Stateless commit.** `/persona/compile` returns the full compiled
+  persona; `/persona/commit` takes that exact payload back rather than a
+  description to recompile from -- an LLM is not perfectly reproducible, so
+  recompiling on commit could save something nobody actually previewed.
+- **`/persona/compile` now also returns `immutable_core`**, read fresh off
+  `IMMUTABLE_CORE` on every response, so a client showing an "IMMUTABLE" tier
+  next to CONSTITUTIONAL/ADAPTIVE never needs -- and can never drift from --
+  its own copy, exactly the failure mode ground-truth finding 0.2 fixed once
+  already for the three tracked-file copies.
+- **`/voice/commit` gained a `force` field** the first draft of this entry's
+  work didn't have -- `record_voice.py`'s CLI allows "[u]se it anyway" on a
+  clip that fails validation; the HTTP mirror originally always hard-rejected
+  it, a real behavioral gap from the thing it's supposed to mirror, caught
+  and fixed before commit.
+- **`/memory/recent` is deliberately not routed through `MemoryStore`** --
+  that constructor also wires Qdrant/Neo4j a read-only browse has no need of,
+  and it's already the largest, riskiest file in the repo. It opens its own
+  short-lived `asyncpg` connection per request instead, the same pattern
+  `export_friend.py` already uses, so `main.py` doesn't need new pool
+  lifecycle management for one endpoint. `sort_by` is allowlisted before
+  being string-interpolated into `ORDER BY` -- there's no bind-parameter form
+  for a column name.
+- **`/friend/export` and `/friend/import` block for the duration** -- no
+  background-job infra exists in this backend, and for a local single-user
+  admin operation that's an acceptable, explicitly-noted tradeoff (see the
+  module docstring), not an oversight.
+- New runtime dependency: `python-multipart` (FastAPI raises at *route
+  registration time*, not just request time, without it once `File`/`Form`
+  params exist). `ruff.toml` gained `[lint.flake8-bugbear]
+  extend-immutable-calls = ["fastapi.File", "fastapi.Form"]` -- B008 already
+  allowlists `fastapi.Query`/`Depends`/`Path` as the same "marker object,
+  not real mutable state" idiom; File/Form just weren't in ruff's built-in
+  list yet.
+
+**Verified** with hermetic unit tests (`test_api_persona.py` 8,
+`test_api_voice.py` 9, `test_api_memory.py` 5, `test_api_friend_data.py` 5 --
+27 total). Mutation-verified: the persona `/commit` overwrite guard, the
+voice `/commit` validate-before-save guard, the memory `sort_by` allowlist,
+and the friend `/import` force-requirement all confirmed to actually fail
+when removed. The LLM/STT/DB/Neo4j boundaries are mocked throughout, per this
+suite's hermetic design -- there is no live call against a real Postgres,
+Neo4j, or LLM in this test run.
+
+### 5.2, first slice -- the onboarding wizard
+
+New `frontend/app/onboarding/` (+ `frontend/components/onboarding/`,
+`frontend/hooks/useVoiceRecorder.js`, `frontend/lib/api.js`): describe -->
+preview (with inline dry-run chat) --> record voice --> done, restyled to
+5.0's design tokens via a route-scoped nested layout (font loading does not
+touch the site-wide `body` the existing voice-orb page relies on). Chat/
+transcript, settings, and the memory browser are explicitly **not** part of
+this slice -- the user picked onboarding first when asked to scope 5.2's
+otherwise-large surface.
+
+`useVoiceRecorder` encodes to WAV client-side via the Web Audio API
+(`AudioContext` + `ScriptProcessorNode`, not `AudioWorklet` -- deprecated but
+universally supported and needs no separate worklet module for a handful of
+short onboarding recordings) rather than using `MediaRecorder`, deliberately:
+`MediaRecorder`'s output is compressed and browser-dependent (webm/opus in
+Chrome, mp4/aac in Safari, not WAV in either), and 5.1's voice endpoints only
+decode WAV, matching what `record_voice.py` already produces. Encoding to
+WAV in the browser means every browser reaches the same server code path
+with no server-side transcode step to add and keep correct.
+
+**Verified live**, not just built: `frontend/` and `backend/` both started
+locally (`MOCK_LLM_TEXT=true`, dummy infra env), driven with a headless
+Chromium via Playwright (temporary `--no-save` dev dependency, removed after
+-- not added to `package.json`). Confirmed: the describe step's background
+color (`rgb(245, 244, 240)` exactly) and heading font (`"IBM Plex Sans"`)
+render as designed; a real POST to `/api/persona/compile` reaches the
+backend and a compiler failure (expected under `MOCK_LLM_TEXT`, which
+returns prose, not JSON) surfaces correctly in the UI's error banner --
+this exercised real CORS and auth wiring, not a mock, and caught a real
+CORS misconfiguration in the test setup itself (`ALLOWED_ORIGINS` needed a
+bare comma-separated value, not a JSON array -- `Config.ALLOWED_ORIGINS` is
+a computed property splitting `ALLOWED_ORIGINS_STR` on commas, not a
+JSON-parsed field) before it was caught. With `/api/persona/compile` and
+`/api/persona/dry-run-chat` mocked at the browser network layer, the full
+preview screen (all three tiers, inferences with reasoning, biography),
+the dry-run chat exchange, and the voice consent/recording-ready screens
+all confirmed rendering correctly with the intended design tokens and zero
+console errors.
+
+**NOT done.** Actual microphone recording end-to-end (headless Chromium has
+no real mic; `useVoiceRecorder`'s WAV encoding is verified by code review
+and the structural E2E check above, not a live recording pass) and the full
+commit step (persona commit + voice commit + the done screen) are unverified
+against a live, non-mocked backend -- both need a real Ollama and, for voice,
+a real microphone. `frontend/` has no test framework configured (no jest/
+vitest in `package.json`) and this entry did not add one; verification here
+is the live Playwright pass described above, not a committed test suite.
+Chat + transcript, settings, and the memory browser (the rest of 5.2), 5.3
+(visemes -- wire them to a real consumer or remove the dead
+`check_subject_wiring.py` allowlist entry), and 5.4 (ship the frontend in
+compose) are all unstarted.

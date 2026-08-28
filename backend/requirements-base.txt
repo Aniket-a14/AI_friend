@@ -34,3 +34,7 @@ redis>=5.0.0,<6.0.0
 # hit when a deployment explicitly sets LLM_PROVIDER=anthropic; every default
 # construction site still goes to Ollama.
 anthropic>=1.0.0,<2.0.0
+# Phase 5.1: FastAPI's own multipart parser for the File()/Form() uploads in
+# app/api/voice.py and app/api/friend_data.py -- FastAPI raises at route
+# registration time (not just at request time) without this installed.
+python-multipart>=0.0.20,<1.0.0
