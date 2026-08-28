@@ -11802,3 +11802,234 @@ every new/changed file (one real lint finding fixed along the way too --
 click handlers that trigger a refetch, which is the rule's own recommended
 shape: effects synchronize with external state, user interactions set state
 directly).
+
+## 2026-08-28 -- Phase 6: prove the claims -- the nine `AUDIT.md` §17 pressure
+scenarios measured for the first time, an eval baseline against the shipped
+neutral persona, two real bugs found (and fixed) by running both, and a new
+CI workflow closing the "nothing catches an integration break" gap
+
+Roadmap Phase 6 (`~/.claude/plans/async-stirring-clarke.md`), continuing
+directly from Phase 5's completion. Session ended early on explicit user
+instruction ("mac is hot now, we will do it in colab") once the two live/
+heavy measurements below had already completed and been written to disk --
+this entry records exactly what ran, and the "NOT done" section below is
+long and honest about what didn't, rather than padded to look complete.
+
+### What Phase 6.1 (replace `[TBP]`) turned out to already mostly be done
+
+Before touching anything, the ledger's own history was read first: a prior,
+separately-numbered effort (`audit/ROADMAP.md` Stage 3, 2026-08-22, and the
+"backlog clearing" entry the same day) already built `backend/tools/measure/`
+(`m11`-`m16`), ran six real measurements against live infra, and reconciled
+40 `[TBP]` placeholders in `academic_benchmarks/` -- all of that predates this
+roadmap's Phase numbering but satisfies its Phase 6.1 ask. Re-verified rather
+than re-done: `academic_benchmarks/datasets/{human_realism_results,
+benchmark_results}.json` still read `"status": "TBP"`, confirmed to be a
+**deliberate, recorded decision** (the corpus-fitted `hard_benchmark.py` path
+that would populate them was explicitly not run, per finding B1's concern
+about corpus-fitted evidence), not an oversight.
+
+One genuinely stale claim was found and fixed: `README.md`'s Performance SLO
+table said STT latency was unmeasured "because no real STT backend exists
+yet" -- false as of Phase 1, which shipped a real containerized `stt-agent`
+that Stage 3's own measurement 1.4 successfully engaged (it correctly
+endpointed synthetic utterances; the whisper transcription call itself hangs,
+still unroot-caused). Reworded to state the real, current reason correctly
+instead of a stale one.
+
+### Phase 6.2 -- the nine pressure scenarios, measured for the first time
+
+New module, `backend/tools/measure/m17_pressure_scenarios.py`, registered in
+the CLI as measurement `17`. `audit/HARDWARE.md` had left this `UNKNOWN` for
+the *composite* case since M5 -- two of the nine scenarios existed narrowly
+(1.2, 1.3), but nothing had run voice, vision and cognition simultaneously.
+
+Same in-process-against-real-infra choice `m11`/`m12`/`m15` already made (real
+Postgres/Neo4j/NATS/Ollama, no full container mesh of `brain_agent`/
+`system_agent`/etc.), composing existing techniques with `asyncio.gather`
+rather than building nine bespoke drivers: `m13`'s synthetic-PCM-on-
+`audio.stream` publisher for voice; `VisualAppraisalService.appraise()` fed
+either an identical frame (habituation suppresses the VLM call after the
+first) or a fresh PIL-generated random-noise frame each tick (defeats
+habituation, forces a real `moondream` call every tick) for vision; `m15`'s
+`CognitiveService.process_event()` for a real cognitive turn; `m12`'s
+`SubconsciousAgent._run_consolidation_pass()` for background reflection.
+
+**Scope stated up front, not discovered by a diff**: CPU/GPU/thermal are
+`UNKNOWN` for all nine (no power-metering or GPU-utilization access on this
+host, `HARDWARE.md` §0's pre-existing limitation) -- RAM is the pressure axis
+actually measured. Vision scenarios drive the appraisal service directly with
+synthetic frames, not a real screen/camera capture -- `cv2` is not installed
+on this host (confirmed via import failure), matching M3-A9's already-
+documented degraded path, so `VisionAgent`'s own capture layer cannot run
+here at all.
+
+**Results** (`backend/tools/measure/out/m17_pressure_scenarios.json`, host
+RAM used of 17.18GB total unified memory):
+
+| Scenario | RAM used | Δ from idle |
+| :--- | ---: | ---: |
+| 1. Idle | 14.54 GB | -- |
+| 2. Voice-only | 14.51 GB | ~flat |
+| 3. Voice + cognition | 14.43 GB | ~flat |
+| 4. Vision-only (habituated) | 14.36 GB | ~flat |
+| 5. Vision + cognition | 15.15 GB | +0.79 GB |
+| 6. Voice + vision + cognition | 15.10 GB | +0.74 GB |
+| 7. Full multimodal (2 concurrent turns) | 15.07 GB | +0.68 GB |
+| 8. Full + background consolidation | 15.16 GB | +0.75 GB |
+| 9. Sustained (180s bounded proxy, 11 samples) | 15.15 GB | +0.75 GB |
+
+The real finding is structural, not any one number: **loading a resident VLM
+is what costs memory here, not concurrency itself** -- scenarios 2-4 (no VLM
+call) sit within noise of idle, and every scenario that forces a real
+`moondream` call (5 onward) jumps ~0.7-0.8GB and stays there, consistent with
+`HARDWARE.md` §6's ~1.7GB `moondream` estimate finally being exercised for
+real instead of estimated. Against this specific 17.18GB machine, the
+heaviest scenario leaves **~2GB of headroom** -- tight, matching `HARDWARE.md`
+§6's "tight but not obviously impossible" hedge, now with a real number
+instead of an estimate on one side of it. Scenario 9's 11 samples (15.05 to
+15.19 GB, no monotonic trend) show no leak signature over this bounded
+180-second window -- stated as a bounded proxy for "sustained," explicitly
+not an hours-long endurance claim.
+
+**Two real bugs found by actually running concurrent load, both fixed,
+mutation-tested:**
+
+1. `cognitive/learning.py`'s identity-evolution parsing crashed with `'str'
+   object has no attribute 'get'` under scenario 8's contention (the
+   reflection LLM call was more likely to return a malformed shape under
+   load). The sibling fact-parsing block two dozen lines above already
+   re-validates each list-unwrapped element is a dict before touching it;
+   the identity-suggestion block didn't -- `elif not isinstance(...)` only
+   ran when the *original* value wasn't a list, never re-checking after
+   `suggestions = suggestions[0]` unwrapped it. Changed to an unconditional
+   second `if`, matching the sibling's shape. New test
+   (`test_identity_evolution_survives_a_list_of_non_dict_elements`,
+   `tests/test_reflection.py`) -- the crash is caught by `_consolidate`'s own
+   try/except, so `evolve_persona.assert_not_called()` alone can't tell fixed
+   from broken (true either way); the test asserts on the absence of the
+   "Identity evolution failure" log line instead, which is the only
+   observable difference. Mutation-tested by reverting to `elif`: failed as
+   expected, restored, passes.
+2. Investigating a related crash surfaced during the eval run below
+   (`identity.py`'s `evolve_persona`) found a second, adjacent instance of
+   the same root cause: `suggestions["relationship"]` was stored into
+   `history.json` with no type coercion, unlike `speaking_style` three lines
+   above it (`str(suggestions["speaking_style"])[:MAX]`). A list-shaped
+   `relationship` from the reflection model survives silently into
+   `history.json` until `IdentityCoreStore.update_identity`'s SQLite mirror
+   tries to bind it as a query parameter and crashes ("type 'list' is not
+   supported"). Fixed by coercing to `str(...)`, matching the sibling
+   pattern. New test
+   (`test_a_non_string_relationship_suggestion_is_coerced_not_stored_raw`,
+   `tests/test_persona_unification.py`), mutation-tested (reverted the
+   `str()` coercion: failed as expected, restored, passes).
+
+Also observed, not chased further (time/scope, and the "cool the machine
+down" instruction that ended this session's live-infra work): a real Neo4j
+`DeadlockDetected` under scenario 8's concurrent graph writes (auto-retried
+by the driver, not a crash); intermittent `Ollama embedding failed: No
+embedding payload returned by /api/embeddings` under the heaviest concurrent
+scenarios; and, specific to scenario 9's *harness* (not necessarily
+production): repeated `ConversationHistoryStore()` construction per loop
+iteration exhausted Postgres's `max_connections` ("sorry, too many clients
+already") partway through the sustained run, which triggered the SQLite
+fallback path, which itself then failed on a duplicate-column migration
+(`ALTER TABLE self_knowledge_gaps ADD COLUMN asked_at` -- already applied,
+not idempotent) and a downstream `except ()`-shaped bug ("second argument
+(exceptions) must be a non-empty sequence"). Flagged as likely a harness
+artifact (real `brain_agent` constructs its stores once per long-lived
+process, not per turn) rather than confirmed as a production defect --
+recorded rather than fixed, matching this repo's stt-agent-hang precedent
+for a found-but-not-root-caused issue.
+
+### Phase 6.3 -- eval gate on the shipped (neutral) persona
+
+`python -m evals run --model llama3.2:3b --out evals/out/phase6_baseline.json`
+against the **default** identity path (`app/personality.json` /
+`app/history.json`, tracked, the generic `"my friend"` seed Phase 0.4 already
+anonymized) -- confirmed this is genuinely what the eval harness reads by
+default (`IdentityManager(base_path=None)`), distinct from and not to be
+confused with `config/persona.toml`'s numeric side, which only ever applies
+through the separate first-boot authoring path and isn't what `evals/`
+probes.
+
+Report header confirmed `model=llama3.2:3b persona='my friend' provenance=live
+path=llm` -- the exact trap `CLAUDE.md` documents (a missing model produces a
+silent 0/48 that looks like a clean pass) explicitly checked, not assumed.
+**5/9 probes passed**: identity 2/3, boundary 3/4, memory 0/2. The two memory
+failures are expected and documented as such by `evals/README.md` itself
+(`sample_memory_recall.json` "against an untrained model its probes *should*
+fail"). The two real failures worth naming: `persona.name-recall` and
+`pressure.prompt-disclosure` both failed against the shipped persona on this
+run -- not chased further this session (scope: this phase asks for a
+baseline that exists and is honestly labeled, not a fix for what it finds),
+but worth a follow-up look, since prompt-disclosure resistance is a boundary
+probe, not a cosmetic one. `evals/out/` is gitignored per its own convention,
+so this report is not committed -- reproducible via the command above.
+
+### Phase 6.4 -- CI for the integration harnesses
+
+New workflow, `.github/workflows/integration-harness.yml`. Confirmed neither
+`evals/` nor `tools/measure/` had any CI presence before this: the existing
+`cognitive-regression.yml` only runs the hermetic pytest suite (mocked NATS,
+no live LLM); `mesh-integrity.yml` only validates compose/schema syntax.
+`workflow_dispatch` + weekly `schedule`, deliberately not on every push/PR --
+GitHub-hosted runners have no GPU, so a live model call there is slow and not
+representative of real hardware (the numbers that belong in the ledger come
+from a real dev machine, per above, not CI). Two jobs: `evals-smoke` (host-
+installed Ollama, `llama3.2:1b` for CI speed, asserts the report's own
+`provenance`/`model`/`results` fields rather than trusting a zero exit code
+alone -- the same silent-0/48 trap Phase 6.3 checked for by hand); `measure-
+smoke` (containerized Ollama via the `docker-ollama` compose profile, runs
+`m15`+`m16` only -- fast, real Postgres/Neo4j/Qdrant, deliberately excludes
+`m17` as too slow/heavy for CI cadence). Both upload their reports as
+artifacts. This is explicitly a "did the harness itself break" smoke check,
+not a regression gate with a pass/fail threshold on the numbers -- stated in
+the workflow's own header comment so a future reader doesn't mistake a green
+run for a hardware claim.
+
+Not yet run for real (no GitHub Actions push/PR happened this session to
+trigger `workflow_dispatch` against): YAML parses cleanly and the `docker
+compose ... config` command it uses was confirmed resolvable locally, but the
+workflow's actual execution on GitHub's runners is unverified.
+
+### Verification bar for this entry
+
+Two live/heavy runs completed and written to disk before this session's live-
+infra work was deliberately stopped: `m17_pressure_scenarios.json` (~8
+minutes, 9 scenarios) and `evals/out/phase6_baseline.json` (not committed,
+gitignored). After that: 1388 backend tests, 0 failures, 0 errors
+(`--junit-xml`, includes this entry's 2 new regression tests), all hermetic
+(mocked NATS, no live infra needed -- deliberately chosen to keep verifying
+without more heat/compute after the "we'll do the rest in Colab" instruction).
+`ruff check .` clean (9 real findings in the new `m17_pressure_scenarios.py`
+fixed along the way: 4× `subprocess.run` missing explicit `check=`, 1×
+`zip()` over successive pairs where `itertools.pairwise()` is idiomatic, 4×
+unparenthesized implicit string concatenation inside list/tuple literals).
+`scripts/check_subject_wiring.py` clean (no new subjects). Docker containers
+stopped and Ollama models unloaded at the end of this session specifically to
+let the host cool down, per the instruction that ended live-infra work here.
+
+**NOT done** (explicitly, honestly, per this session's early stop):
+
+- The `pressure.prompt-disclosure` and `persona.name-recall` eval failures
+  from 6.3 -- observed, not investigated.
+- The Neo4j deadlock, intermittent Ollama embedding failures, and the
+  Postgres-connection-exhaustion-then-SQLite-fallback-then-duplicate-column
+  chain observed during scenario 8/9 -- recorded above, not root-caused. The
+  duplicate-column migration bug (`self_knowledge_gaps.asked_at` not
+  idempotent) is real regardless of whether the harness-induced connection
+  exhaustion that exposed it is realistic, and is a plausible small follow-up.
+- `integration-harness.yml` has never actually executed on GitHub's runners
+  -- YAML-valid and locally sanity-checked only.
+- Phase 6.2's own scope gaps, stated in `m17_pressure_scenarios.py`'s module
+  docstring: CPU/GPU/thermal stay `UNKNOWN` for all nine scenarios (no
+  power-metering access on this host); vision scenarios use synthetic PIL
+  frames, not a real screen/camera capture (`cv2` unavailable on this host).
+- `scripts/research/`'s corpus-based tools remain deliberately unrun (finding
+  B1, unchanged from the 2026-08-22 entry).
+- This session ended on the user's explicit instruction to move remaining
+  heavy/live measurement work to a Colab environment rather than continue on
+  local hardware that was overheating -- whatever that follow-up produces
+  belongs in its own ledger entry, not backfilled into this one.

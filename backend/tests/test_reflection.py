@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
@@ -63,6 +64,43 @@ async def test_identity_evolution_trigger(reflection_service, mock_llm_service):
     args = reflection_service.identity.evolve_persona.call_args[0][0]
     assert "Logical" in args["new_traits"]
     assert args["relationship"] == "Technical Partner"
+
+
+@pytest.mark.asyncio
+async def test_identity_evolution_survives_a_list_of_non_dict_elements(
+    reflection_service, mock_llm_service, caplog
+):
+    """A list-shaped identity suggestion whose first element isn't itself a
+    dict (e.g. the LLM returns `["Logical"]` instead of `[{"new_traits": ...}]`)
+    used to crash `_consolidate` with `'str' object has no attribute 'get'`,
+    found via a real concurrent-load run (roadmap Phase 6.2) where contention
+    made the reflection call more likely to return this malformed shape. The
+    sibling fact-parsing block already re-validates each unwrapped list
+    element; this asserts the identity-suggestion block does the same instead
+    of crashing the whole consolidation pass."""
+    mock_llm_service.generate.side_effect = [
+        "[]",  # Facts (empty)
+        '["Logical"]',  # Malformed: a list of strings, not of dicts
+    ]
+
+    reflection_service.identity = MagicMock()
+    reflection_service.identity.personality = {"name": "my friend"}
+    reflection_service.identity.history = {"relationship": "Friend"}
+    reflection_service.identity.evolve_persona = AsyncMock()
+
+    with caplog.at_level(logging.ERROR, logger="reflection"):
+        await reflection_service._consolidate(
+            [{"content": "Let's build a reactor", "response": "Logic first."}]
+        )
+
+    reflection_service.identity.evolve_persona.assert_not_called()
+    # The crash this regression guards against is caught by _consolidate's
+    # own try/except, so evolve_persona not being called is true either way
+    # (bug or fix) -- the log line is the only observable difference between
+    # "cleanly skipped a malformed suggestion" and "crashed and swallowed it".
+    assert not any(
+        "Identity evolution failure" in record.message for record in caplog.records
+    ), "malformed identity suggestion crashed _consolidate instead of being skipped cleanly"
 
 
 @pytest.mark.asyncio

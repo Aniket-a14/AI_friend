@@ -180,6 +180,24 @@ async def test_an_evolved_speaking_style_reaches_the_prompt(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_a_non_string_relationship_suggestion_is_coerced_not_stored_raw(
+    tmp_path,
+):
+    """`speaking_style` above is coerced via `str(...)`; `relationship` used
+    to skip that and store whatever shape the reflection model returned
+    straight into history.json. A list there (the reflection model returning
+    `["Technical Partner"]` instead of a string) survived silently until
+    `IdentityCoreStore.update_identity`'s SQLite mirror tried to bind it as a
+    query parameter and crashed with "type 'list' is not supported" -- found
+    via a real eval run (roadmap Phase 6.3). Assert the stored value is
+    always a plain string, the same guarantee speaking_style already has."""
+    manager = _identity(tmp_path, NESTED)
+    await manager.evolve_persona({"relationship": ["Technical Partner"]})
+    assert isinstance(manager.history["relationship"], str)
+    assert manager.history["relationship"] == "['Technical Partner']"
+
+
+@pytest.mark.asyncio
 async def test_evolution_is_written_back_to_disk(tmp_path):
     """The profile is the source of truth; the file is a projection of it.
 

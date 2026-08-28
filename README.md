@@ -544,7 +544,7 @@ AI_friend/
 | :--- | :--- | :--- | :---: | :---: | :---: |
 | **Mesh Telemetry** | Speed | orjson / NATS Binary | <0.5 µs | *(not yet measured)* | **Pending** |
 | **Data Throughput**| Scale | PyO3 FFI Audio | 80,000 OPS | *(not yet measured)* | **Pending** |
-| **STT Perception** | Latency | Fast Whisper CPU Fan-out | <50ms | *(not yet measured — no real STT backend exists yet; see §STT status)* | **Pending** |
+| **STT Perception** | Latency | Fast Whisper CPU Fan-out | <50ms | *(not yet measured — a real containerized `stt-agent` was engaged and correctly endpointed synthetic utterances, but the whisper transcription call itself hangs indefinitely with no error; see `backend/tools/measure/out/m14_stt_cost.json` and the ledger's stt-agent-hang entries)* | **Pending** |
 | **Cognitive Turn** | Turnaround | BDI Mesh + State Hydration | <120ms | **5.44 ms** | ✅ **Met** |
 | **First Audio** | Response | Streaming PCM Chunking | <180ms | *(not yet measured)* | **Pending** |
 | **Total Perceived** | **End-to-End**| **CVS-3.5 Premium Mesh** | **<250ms** | *(not yet measured — no live stopwatch E2E trial exists)* | **Pending** |
