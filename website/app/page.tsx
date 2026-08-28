@@ -372,7 +372,7 @@ export default function LandingPage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-3 items-center justify-center pt-4">
             <code className="text-xs sm:text-sm bg-white border border-black/10 rounded-xl px-5 py-3 text-black/70 font-mono shadow-xs">
-              git clone {REPO_URL}.git
+              curl -fsSL {REPO_URL.replace("github.com", "raw.githubusercontent.com")}/main/scripts/install.sh | bash
             </code>
             <Link
               href="/docs/getting-started/installation"
