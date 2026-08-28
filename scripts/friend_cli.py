@@ -275,6 +275,27 @@ def cmd_update(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_vision(args: argparse.Namespace) -> int:
+    action = args.vision_action or "status"
+    if action == "on":
+        set_env_key("ENABLE_VISION", "true")
+        set_env_key("VLM_MODEL", "moondream")
+        print("✓ Enabled Visual Appraisal (Moondream VLM). Restarting mesh with vision profile...")
+        return cmd_start(argparse.Namespace(mode="full", vision=True, model=None))
+    elif action == "off":
+        set_env_key("ENABLE_VISION", "false")
+        print("✓ Disabled Visual Appraisal. Vision agent will not start.")
+        return 0
+    else:
+        env_file = REPO_ROOT / ".env"
+        enabled = False
+        if env_file.exists():
+            enabled = "ENABLE_VISION=true" in env_file.read_text(encoding="utf-8")
+        print(f"==> Visual Appraisal Status: {'\033[1;32mEnabled (Moondream VLM)\033[0m' if enabled else '\033[1;30mDisabled\033[0m'}")
+        print("  • Toggle with: `friend vision on` or `friend vision off`")
+        return 0
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     from scripts.bootstrap.env_wizard import run_init_wizard
     return run_init_wizard()
@@ -290,6 +311,11 @@ def main() -> int:
     # init
     p_init = subparsers.add_parser("init", help="Run interactive environment & model setup wizard")
     p_init.set_defaults(func=cmd_init)
+
+    # vision
+    p_vision = subparsers.add_parser("vision", help="Inspect or toggle camera/screen visual appraisal")
+    p_vision.add_argument("vision_action", nargs="?", choices=["on", "off", "status"], default="status", help="Vision action")
+    p_vision.set_defaults(func=cmd_vision)
 
     # start
     p_start = subparsers.add_parser("start", help="Start the 9-agent cognitive mesh")

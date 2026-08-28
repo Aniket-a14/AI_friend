@@ -126,12 +126,27 @@ def run_init_wizard(target_env_path: Path | None = None) -> int:
     session_secret = generate_secure_password(32)
 
     # Step 5: Audio & Hardware Operational Profile
-    print("\n\033[1;34m[5/5] Operational Launch Mode\033[0m")
+    print("\n\033[1;34m[5/6] Operational Launch Mode\033[0m")
     launch_mode = prompt_user(
         "Choose default launch profile",
         default="full",
         choices=["full", "light", "heavy"],
     )
+
+    # Step 6: Vision & Visual Appraisal
+    print("\n\033[1;34m[6/6] Visual Appraisal & Vision Awareness\033[0m")
+    print("Enables camera and screen understanding with Moondream VLM & biological habituation.")
+    enable_vision = prompt_user(
+        "Enable Visual Appraisal?",
+        default="no",
+        choices=["yes", "no", "y", "n"],
+    )
+    is_vision_enabled = enable_vision.lower() in ("yes", "y")
+    vlm_model = "moondream" if is_vision_enabled else ""
+
+    required_models = f"{chat_model},nomic-embed-text"
+    if is_vision_enabled:
+        required_models += ",moondream"
 
     # Construct the validated .env file content
     env_content = f"""# ==============================================================================
@@ -162,7 +177,11 @@ SESSION_SECRET={session_secret}
 # --- LLM Brain Configuration ---
 LLM_PROVIDER={llm_provider}
 LLM_CHAT_MODEL={chat_model}
-OLLAMA_REQUIRED_MODELS={chat_model},nomic-embed-text
+OLLAMA_REQUIRED_MODELS={required_models}
+
+# --- Visual Appraisal & VLM ---
+ENABLE_VISION={"true" if is_vision_enabled else "false"}
+VLM_MODEL={vlm_model}
 """
 
     if anthropic_key:
