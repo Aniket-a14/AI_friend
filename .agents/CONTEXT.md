@@ -12033,3 +12033,132 @@ let the host cool down, per the instruction that ended live-infra work here.
   heavy/live measurement work to a Colab environment rather than continue on
   local hardware that was overheating -- whatever that follow-up produces
   belongs in its own ledger entry, not backfilled into this one.
+
+## 2026-08-28 -- Community roadmap Phase 7.3: triage every bandit finding (33 -> 0)
+
+Between the Phase 6 entry above and this one, three GPU/CUDA Colab notebooks
+(`notebooks/ai_friend_voice_training.ipynb` updated, plus new
+`ai_friend_eval_harness.ipynb` and `ai_friend_llm_benchmark.ipynb`) and a
+detailed `notebooks/README.md` were added in their own commit, per the
+"we'll do the rest in Colab" instruction from the Phase 6 entry. That work
+does not map to a roadmap phase number and has no separate ledger entry.
+
+Phase 0.7 set up `bandit -r app -f json` as a report-only CI job with a
+committed baseline (32 findings) and left it deliberately unfixed. With every
+functional phase (1-6) now landed, this entry spends that baseline: every
+finding triaged, none blanket-excluded. Bandit was re-run fresh at the start
+of this phase (33 findings -- one more than the Phase 0.7 baseline, from code
+written in Phases 1-6) and again after every fix, so the numbers below are
+against what was actually present, not the stale baseline count.
+
+**B311 (`random` used where bandit assumes crypto intent) -- 5 findings, all
+false positives, all documented inline.** Reconnect backoff jitter
+(`agents/base.py`), retry backoff jitter x2 (`llm/ollama_client.py`), and a
+filler-word pick (`utils/conversational_runtime.py`) -- none are
+security-sensitive; each gets `# nosec B311` with a one-line reason rather
+than a suppression with no explanation.
+
+**B104/B108 (bind-all-interfaces / hardcoded tmp path) -- 3 findings, false
+positives.** `config.py`'s `BACKEND_BIND_HOST = "0.0.0.0"` already has a
+multi-line comment directly above it explaining the deliberate reverse-proxy
+tradeoff (finding C4) -- the nosec just points at it rather than repeating it.
+The two `/tmp` health-signal file paths are shared-volume liveness flags, not
+secrets or attacker-influenced paths.
+
+**B608 (SQL built via string formatting) -- 21 findings across `api/memory.py`,
+`state/memory_store.py`, `state/sqlite_fallback.py`, `state/lexicon_store.py`,
+`persona/biography.py`, `persona/reset.py`.** Every one was traced to its real
+interpolated value before deciding fixed vs. suppressed -- none were rubber-
+stamped:
+
+- `api/memory.py`'s `sort_by` -- checked against `_ALLOWED_SORT_COLUMNS`
+  above it in the same function. Genuinely safe.
+- Every `{table}` interpolation (`biography.py`, `reset.py`) -- always a
+  caller-literal from a fixed tuple (`_MEMORY_TABLES`, `SEEDED_SOURCES`),
+  never a request- or user-derived string.
+- Every `{where}`/`{placeholders}`/`{marks}` interpolation
+  (`memory_store.py`, `reset.py`) -- generated `?`/`$n` placeholder text from
+  `MemoryStore._in_predicate` or an equivalent local loop; the actual values
+  are always bound as query parameters, never spliced into the string.
+- `lexicon_store.py`'s `{INNATE_WEIGHT}` -- a module-level float constant.
+- `_PROMOTE_INSERT_SQLITE`/`_PROMOTE_INSERT_PG` (`memory_store.py`) -- fully
+  static SQL text with zero interpolated values at all; bandit's check fires
+  on the `+` string concatenation used to share a common column list between
+  the two dialects, not on anything dynamic. Fixed properly rather than
+  suppressed: dropped the `+` and wrote each as one plain literal (some
+  column-list duplication, but bandit's B608 check does not flag a plain
+  string literal, only concatenation/formatting -- confirmed empirically).
+
+The mechanically interesting part: bandit's `# nosec` match is a **physical
+line-text scan**, not attached to the AST node semantically, and for a
+multi-line f-string the flagged line is often the interior line containing
+the actual `{expr}` -- not the string's opening `f"""` line. A trailing
+comment on that interior line is impossible without corrupting the SQL text
+(everything after `#` up to the closing `"""` is still string content, not a
+comment), and a comment placed a line or two *before* the flagged line --
+tried first, on the reasonable assumption bandit would scan nearby context --
+silently does not suppress anything, confirmed by it still showing up in the
+next scan. The fix used everywhere this came up: split the query into
+adjacent string-literal segments (Python concatenates adjacent literals into
+one AST node regardless of quote style), so the single `{expr}` sits alone on
+its own one-line f-string segment, which *can* carry a real trailing `#
+nosec` after its closing quote. Ugly-looking but correct, and now the pattern
+to reuse if this comes up again rather than re-deriving it.
+
+**B110 (bare `except: pass`) -- 5 findings, only 4 false positives.**
+`vision/links.py`'s headless-recovery probe and `memory_store.py`'s
+metadata-parse fallback (an already-initialized `meta = {}` covers the
+failure path) are genuinely fine, documented inline. The fifth,
+`self_knowledge_store.py`'s `_ensure_ready()` ALTER TABLE migration handler,
+was **not** a false positive -- it swallowed every exception from the
+migration, including a real failure, and then still fell through to
+`self._ready = True` right after. This is very likely the same bug that
+produced the "Postgres-connection-exhaustion-then-SQLite-fallback-then-
+duplicate-column chain" the Phase 6 entry above flagged as "a plausible small
+follow-up" without root-causing it. Fixed: the handler now checks the
+exception message for "duplicate column"/"already exists" (the two real
+across-dialect spellings of "this migration already ran") before swallowing;
+anything else re-raises into the outer handler, which already logs and
+correctly leaves `self._ready = False`. Two new mutation-tested cases added
+to `test_self_knowledge_grounding.py` (`TestSchemaMigrationNeverSilentlyCorrupts`)
+covering the legitimate duplicate-column path (still swallowed, `_ready`
+stays `True`) and an unrelated migration failure (now surfaces as `_ready ==
+False` rather than being silently treated as success). `metrics.py`'s
+shutdown-drain bare `except: pass` gets a debug log instead of a silent pass
+-- it is genuinely fine to skip a malformed metric item during shutdown, but
+silence was making that invisible rather than a documented choice.
+
+### Verification bar for this entry
+
+Fresh `bandit -r app -f json` after every fix: 0 findings (was 33 at the
+start of this phase). Full backend suite: 1390 tests, 0 failures, 0 errors
+(`--junit-xml`, parsed rather than trusting the terminal summary, per this
+file's own standing note that the summary line is unreliable on this
+platform). `ruff check .` clean. `ast.parse()` run against every touched file
+after the string-literal-splitting edits, to catch a syntax break before a
+test run would -- this class of edit (breaking a triple-quoted f-string into
+adjacent literal segments) is easy to get subtly wrong, and this session
+already self-caught one such mistake in `sqlite_fallback.py` (a `# nosec`
+comment placed right after an opening `f"""` on the same line, which would
+have silently become literal SQL text rather than a comment) before it ever
+reached a test run.
+
+**NOT done** (explicitly, per the roadmap's own phase ordering -- these are
+7.1, 7.2, 7.4, 7.5, not this entry):
+
+- 7.1, cyclomatic complexity -- the Phase 0.7 baseline recorded 201 `radon
+  cc --min B` findings (46 C, 8 D, 3 E, 1 F). None touched this session. The
+  worst offenders are concentrated in exactly the files `CLAUDE.md` already
+  flags as the riskiest in the codebase to touch without care
+  (`cognitive/pipeline.py`, `state/memory_store.py`, `cognitive/learning.py`)
+  -- deliberately deferred to its own dedicated pass rather than folded into
+  this lower-blast-radius security slice.
+- 7.2, type errors -- the Phase 0.7 baseline recorded 93 `mypy` errors across
+  23 files. Not started.
+- 7.4, coverage gaps -- not started; the roadmap's own scope for this item is
+  "what Phase 0.7's baseline showed as uncovered in the modules touched by
+  Phases 1-6," not a repo-wide push, so it needs the baseline re-read against
+  the current diff rather than a blind re-run.
+- 7.5, flipping the CI gates from report-only to blocking -- explicitly
+  blocked on 7.1/7.2/7.4 being clean first, per the roadmap's own ordering.
+- Phase 8 (community release) has not been started.
