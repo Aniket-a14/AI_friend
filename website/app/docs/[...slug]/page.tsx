@@ -6,6 +6,8 @@ import remarkGfm from "remark-gfm"
 import { findDocPage, getAdjacentPages } from "@/lib/docs-nav"
 import { getAllDocSlugs, getDocSource } from "@/lib/docs-content"
 import { ComingSoonOverlay } from "@/components/coming-soon-overlay"
+import { MermaidDiagram } from "@/components/docs/mermaid-diagram"
+import { CodeBlock } from "@/components/docs/code-block"
 
 export function generateStaticParams() {
   return getAllDocSlugs().map((slug) => ({ slug: slug.split("/") }))
@@ -42,10 +44,27 @@ export default async function DocPage({ params }: { params: Promise<{ slug: stri
           li: (props) => <li className="leading-relaxed" {...props} />,
           a: (props) => <a className="text-black underline underline-offset-2 decoration-black/30 hover:decoration-black" {...props} />,
           strong: (props) => <strong className="font-medium text-black/80" {...props} />,
-          code: (props) => <code className="rounded bg-black/[0.05] px-1.5 py-0.5 text-[13px] font-mono text-black/70" {...props} />,
-          pre: (props) => (
-            <pre className="mb-4 overflow-x-auto rounded-xl border border-black/[0.07] bg-black/[0.03] p-4 text-[13px] leading-relaxed [&_code]:bg-transparent [&_code]:p-0" {...props} />
-          ),
+          code: (props: any) => {
+            const codeClassName: string = props.className || ""
+            const match = /language-(\w+)/.exec(codeClassName)
+
+            // Inline code (no language className): `like this`
+            if (!match) {
+              return <code className="rounded bg-black/[0.05] px-1.5 py-0.5 text-[13px] font-mono text-black/70" {...props} />
+            }
+
+            const language = match[1]
+            const code = String(props.children).replace(/\n$/, "")
+
+            if (language === "mermaid") {
+              return <MermaidDiagram chart={code} />
+            }
+            return <CodeBlock language={language} code={code} />
+          },
+          // Fenced blocks are now fully rendered by the `code` override above
+          // (CodeBlock / MermaidDiagram each produce their own complete block),
+          // so `pre` just unwraps rather than adding a second <pre>.
+          pre: (props: any) => <>{props.children}</>,
           table: (props) => (
             <div className="mb-4 overflow-x-auto rounded-xl border border-black/[0.07]">
               <table className="w-full border-collapse text-sm" {...props} />
