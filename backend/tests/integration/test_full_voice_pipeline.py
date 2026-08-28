@@ -396,6 +396,7 @@ class TestVisionContextFusion:
         ).model_dump())
 
         # Step 3: brain responds (incorporating vision context).
+        response_ts = time.time()
         await harness.inject("chat.output", ChatOutput(
             content="It looks like you're holding a book!",
             turn_id=str(uuid.uuid4()),
