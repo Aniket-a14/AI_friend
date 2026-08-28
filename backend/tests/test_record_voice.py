@@ -13,6 +13,7 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
 from scripts.audio.record_voice import (
     SAMPLE_RATE,
@@ -22,7 +23,12 @@ from scripts.audio.record_voice import (
 )
 
 
-def _tone(duration_s: float, amplitude: float = 0.3, freq: float = 200.0, samplerate: int = SAMPLE_RATE) -> np.ndarray:
+def _tone(
+    duration_s: float,
+    amplitude: float = 0.3,
+    freq: float = 200.0,
+    samplerate: int = SAMPLE_RATE,
+) -> np.ndarray:
     t = np.linspace(0, duration_s, int(duration_s * samplerate), endpoint=False)
     return (amplitude * np.sin(2 * np.pi * freq * t)).astype(np.float32)
 
@@ -38,7 +44,9 @@ def test_a_reasonable_clip_passes_with_no_problems():
 
 
 def test_empty_recording_is_rejected():
-    assert validate_clip(np.array([], dtype=np.float32), SAMPLE_RATE) == ["recording is empty"]
+    assert validate_clip(np.array([], dtype=np.float32), SAMPLE_RATE) == [
+        "recording is empty"
+    ]
 
 
 def test_too_short_clip_is_flagged():
@@ -79,6 +87,14 @@ def test_mostly_silent_clip_with_a_brief_word_is_flagged():
 # ---------------------------------------------------------------------------
 # _find_stt_agent_binary / transcribe
 # ---------------------------------------------------------------------------
+
+
+def test_record_audio_reports_missing_portaudio(monkeypatch):
+    from scripts.audio import record_voice
+
+    monkeypatch.setattr(record_voice, "sd", None)
+    with pytest.raises(RuntimeError, match="system PortAudio library"):
+        record_voice.record_audio(1.0)
 
 
 def test_find_stt_agent_binary_prefers_release_over_debug(tmp_path, monkeypatch):
@@ -155,5 +171,8 @@ def test_transcribe_returns_none_on_timeout(tmp_path, monkeypatch):
     (tmp_path / "target" / "release").mkdir(parents=True)
     (tmp_path / "target" / "release" / "stt-agent").touch()
 
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="stt-agent", timeout=300)):
+    with patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="stt-agent", timeout=300),
+    ):
         assert transcribe(tmp_path / "clip.wav") is None

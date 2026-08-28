@@ -25,8 +25,18 @@ import time
 from pathlib import Path
 
 import numpy as np
-import sounddevice as sd
 import soundfile as sf
+
+try:
+    import sounddevice as sd
+except (ImportError, OSError) as exc:
+    # The enrollment CLI needs a microphone, but the API and its tests only
+    # need the validator/transcriber. Importing this module must therefore be
+    # safe on headless hosts where PortAudio is not installed.
+    sd = None
+    _SOUNDDEVICE_IMPORT_ERROR = exc
+else:
+    _SOUNDDEVICE_IMPORT_ERROR = None
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -60,6 +70,11 @@ consent, not just yours.
 def record_audio(duration: float, samplerate: int = SAMPLE_RATE) -> np.ndarray:
     """Record `duration` seconds from the default microphone. Returns mono
     float32 samples in [-1, 1]."""
+    if sd is None:
+        raise RuntimeError(
+            "Microphone recording requires sounddevice and a system PortAudio library"
+        ) from _SOUNDDEVICE_IMPORT_ERROR
+
     print(f"Recording for {duration:.0f}s -- speak naturally after the countdown.")
     for n in (3, 2, 1):
         print(f"{n}...")
@@ -101,7 +116,9 @@ def validate_clip(
     if duration_s < min_duration_s:
         problems.append(f"only {duration_s:.1f}s long (minimum {min_duration_s:.0f}s)")
     if duration_s > max_duration_s:
-        problems.append(f"{duration_s:.1f}s long (maximum {max_duration_s:.0f}s for a reference clip)")
+        problems.append(
+            f"{duration_s:.1f}s long (maximum {max_duration_s:.0f}s for a reference clip)"
+        )
 
     peak = float(np.max(np.abs(audio))) if audio.size else 0.0
     if peak < min_peak_amplitude:
@@ -111,7 +128,9 @@ def validate_clip(
 
     clipping_ratio = float(np.mean(np.abs(audio) >= 0.99))
     if clipping_ratio > max_clipping_ratio:
-        problems.append(f"{clipping_ratio * 100:.2f}% of samples are clipped (too loud)")
+        problems.append(
+            f"{clipping_ratio * 100:.2f}% of samples are clipped (too loud)"
+        )
 
     window = max(1, int(0.02 * samplerate))  # 20ms windows
     trimmed = audio[: len(audio) - (len(audio) % window)] if window else audio
@@ -164,7 +183,11 @@ def transcribe(wav_path: Path) -> str | None:
     try:
         result = subprocess.run(
             [str(binary), "--transcribe-file", str(wav_path)],
-            capture_output=True, text=True, env=env, timeout=300, check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=300,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         print("Transcription timed out.")
@@ -190,7 +213,11 @@ def _record_and_validate(duration: float, prompt: str | None = None) -> np.ndarr
             print("This clip may not be great for voice cloning:")
             for p in problems:
                 print(f"  - {p}")
-            choice = input("[r]e-record, [u]se it anyway, [s]kip this clip: ").strip().lower()
+            choice = (
+                input("[r]e-record, [u]se it anyway, [s]kip this clip: ")
+                .strip()
+                .lower()
+            )
             if choice == "r":
                 continue
             if choice == "s":
@@ -212,9 +239,12 @@ def _get_transcript(wav_path: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--duration", type=float, default=8.0, help="Seconds to record (default 8).")
     parser.add_argument(
-        "--skip-emotional", action="store_true",
+        "--duration", type=float, default=8.0, help="Seconds to record (default 8)."
+    )
+    parser.add_argument(
+        "--skip-emotional",
+        action="store_true",
         help="Skip the four emotional variant clips.",
     )
     args = parser.parse_args()
@@ -227,7 +257,8 @@ def main() -> int:
     VOICE_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
     reference_audio = _record_and_validate(
-        args.duration, "Recording your reference clip -- speak naturally, as if talking to a friend."
+        args.duration,
+        "Recording your reference clip -- speak naturally, as if talking to a friend.",
     )
     if reference_audio.size == 0:
         print("No usable reference clip recorded; nothing was saved.")
