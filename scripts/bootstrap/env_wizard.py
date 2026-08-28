@@ -66,7 +66,7 @@ def run_init_wizard(target_env_path: Path | None = None) -> int:
     print("your chosen LLM model (local or cloud), and friend preferences.\n")
 
     # Step 1: Environment Mode
-    print("\033[1;34m[1/5] Environment Mode\033[0m")
+    print("\033[1;34m[1/6] Environment Mode\033[0m")
     env_mode = prompt_user(
         "Choose runtime environment mode",
         default="development",
@@ -74,12 +74,12 @@ def run_init_wizard(target_env_path: Path | None = None) -> int:
     )
 
     # Step 2: Companion & User Identity
-    print("\n\033[1;34m[2/5] Companion & User Identity\033[0m")
+    print("\n\033[1;34m[2/6] Companion & User Identity\033[0m")
     friend_name = prompt_user("What should your friend call you?", default="Friend")
     companion_name = prompt_user("What is your friend's name?", default="Maya")
 
     # Step 3: LLM Model Selection (Local or Cloud)
-    print("\n\033[1;34m[3/5] LLM Brain & Model Selection\033[0m")
+    print("\n\033[1;34m[3/6] LLM Brain & Model Selection\033[0m")
     print("AI Friend is model-agnostic. You can run any local Ollama model or Cloud API.")
     provider_type = prompt_user(
         "Select LLM inference engine",
@@ -116,7 +116,7 @@ def run_init_wizard(target_env_path: Path | None = None) -> int:
             openrouter_key = prompt_secret("Enter OPENROUTER_API_KEY")
 
     # Step 4: Security Credentials & Database Passwords
-    print("\n\033[1;34m[4/5] Security & Database Credentials\033[0m")
+    print("\n\033[1;34m[4/6] Security & Database Credentials\033[0m")
     print("Auto-generating secure random credentials for local Docker databases...")
     
     postgres_pass = generate_secure_password(24)
@@ -142,7 +142,6 @@ def run_init_wizard(target_env_path: Path | None = None) -> int:
         choices=["yes", "no", "y", "n"],
     )
     is_vision_enabled = enable_vision.lower() in ("yes", "y")
-    vlm_model = "moondream" if is_vision_enabled else ""
 
     required_models = f"{chat_model},nomic-embed-text"
     if is_vision_enabled:
@@ -181,8 +180,9 @@ OLLAMA_REQUIRED_MODELS={required_models}
 
 # --- Visual Appraisal & VLM ---
 ENABLE_VISION={"true" if is_vision_enabled else "false"}
-VLM_MODEL={vlm_model}
 """
+    if is_vision_enabled:
+        env_content += "VLM_MODEL=moondream\n"
 
     if anthropic_key:
         env_content += f"ANTHROPIC_API_KEY={anthropic_key}\n"

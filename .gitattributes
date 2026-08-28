@@ -47,6 +47,13 @@
 *.ttf           binary
 *.otf           binary
 
+# Release archives (dist/ai-friend-runtime.tar.gz / .zip). gzip/zip output is
+# high-entropy enough that git's text=auto heuristic has always left these
+# alone in practice, but an explicit rule is the same guarantee every other
+# binary type here gets, not a heuristic.
+*.tar.gz        binary
+*.zip           binary
+
 # Voice/model artefacts. None are tracked today, but this is a speech project
 # with SoVITS checkpoints and reference audio one careless `git add` away, and
 # the failure mode is a corrupted model that still loads.

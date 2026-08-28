@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """AI Friend Runtime Release Packager.
 
-Packages the lightweight standalone runtime bundle for end users (< 2 MB),
+Packages the lightweight standalone runtime bundle for end users (< 5 MB),
 excluding website, academic benchmarks, evals, node_modules, git history, and audit docs.
+Exclusions beyond the RUNTIME_FILES/RUNTIME_DIRS whitelist below are also
+checked against `.distignore` at the repo root -- see that file for why.
 
 Outputs:
     dist/ai-friend-runtime.tar.gz
     dist/ai-friend-runtime.zip
 """
 
+import fnmatch
 import os
 import shutil
 import sys
@@ -38,7 +41,6 @@ RUNTIME_FILES = [
 RUNTIME_DIRS = [
     "bin",
     "config",
-    "personal",
     "scripts",
     "backend/app",
     "backend/scripts",
@@ -72,6 +74,22 @@ EXCLUDE_PATTERNS = [
 ]
 
 
+def _load_distignore() -> list[str]:
+    distignore_path = REPO_ROOT / ".distignore"
+    if not distignore_path.exists():
+        return []
+    patterns = []
+    for line in distignore_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        patterns.append(line.rstrip("/"))
+    return patterns
+
+
+DISTIGNORE_PATTERNS = _load_distignore()
+
+
 def should_exclude(path: Path) -> bool:
     for part in path.parts:
         if part in ("__pycache__", "node_modules", ".next", "target", ".git", ".venv"):
@@ -79,6 +97,13 @@ def should_exclude(path: Path) -> bool:
     name = path.name
     if name.endswith((".pyc", ".pyo", ".tar.gz", ".zip", ".DS_Store")):
         return True
+    try:
+        rel_parts = path.relative_to(REPO_ROOT).parts
+    except ValueError:
+        rel_parts = path.parts
+    for pattern in DISTIGNORE_PATTERNS:
+        if pattern in rel_parts or fnmatch.fnmatch(name, pattern):
+            return True
     return False
 
 

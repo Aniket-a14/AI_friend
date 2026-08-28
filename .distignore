@@ -1,0 +1,29 @@
+# Patterns scripts/package_release.py excludes from the runtime release
+# bundle (dist/ai-friend-runtime.tar.gz / .zip), on top of its RUNTIME_FILES /
+# RUNTIME_DIRS whitelist. gitignore-style: one pattern per line, "#" comments.
+#
+# This exists as defense-in-depth, not the primary control -- the packager
+# only ever copies what RUNTIME_DIRS names, so nothing here should normally
+# matter. It matters the moment RUNTIME_DIRS is edited without this file in
+# mind: personal/ was whitelisted in RUNTIME_DIRS for one release and shipped
+# the author's real persona (name, biography) into a committed, public
+# tarball. This list is the backstop for the next time that whitelist changes.
+
+personal/
+audit/
+AUDIT.md
+academic_benchmarks/
+website/
+node_modules/
+.next/
+target/
+.git/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+*.pyo
+*.tar.gz
+*.zip
+.DS_Store

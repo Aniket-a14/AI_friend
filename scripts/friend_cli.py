@@ -291,7 +291,8 @@ def cmd_vision(args: argparse.Namespace) -> int:
         enabled = False
         if env_file.exists():
             enabled = "ENABLE_VISION=true" in env_file.read_text(encoding="utf-8")
-        print(f"==> Visual Appraisal Status: {'\033[1;32mEnabled (Moondream VLM)\033[0m' if enabled else '\033[1;30mDisabled\033[0m'}")
+        status_label = "\033[1;32mEnabled (Moondream VLM)\033[0m" if enabled else "\033[1;30mDisabled\033[0m"
+        print(f"==> Visual Appraisal Status: {status_label}")
         print("  • Toggle with: `friend vision on` or `friend vision off`")
         return 0
 
