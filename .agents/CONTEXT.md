@@ -11553,3 +11553,252 @@ Chat + transcript, settings, and the memory browser (the rest of 5.2), 5.3
 (visemes -- wire them to a real consumer or remove the dead
 `check_subject_wiring.py` allowlist entry), and 5.4 (ship the frontend in
 compose) are all unstarted.
+
+## 2026-08-28 -- Community roadmap Phase 5 continued: the rest of 5.2, plus
+## 5.3 and 5.4
+
+Lands as a second commit for Phase 5 (the first, `51cee8d`, already merged
+5.0/5.1/5.2's onboarding slice) rather than an amend -- this session's
+standing git protocol is to never amend a commit that has already landed
+without an explicit request, which the roadmap's "one commit per phase"
+convention doesn't override.
+
+### 5.2, rest of it -- chat/transcript, settings, memory browser
+
+**The chat transport is the real work here.** There was no HTTP/WS surface
+onto `chat.input`/`chat.output` at all -- `scripts/talk.py`'s CLI REPL was
+the only existing consumer. New `backend/app/api/chat.py`: one WebSocket
+(`/api/chat/ws`), one process-wide `ChatBridge` (a `BaseAgent` subclass)
+instead of a bridge per connection.
+
+That "one, not one-per-connection" choice is load-bearing, not a style
+preference: `BaseAgent.subscribe` always creates a **durable** JetStream
+consumer -- there is no ephemeral mode, `durable` falls back to
+`f"{self.name}_{subject}"` when not given one explicitly. A fresh
+`BaseAgent(name=uuid4())` per WebSocket connection, the first design tried,
+would leak one durable consumer per browser tab opened *or reconnected*,
+forever, since nothing ever deletes them. `ChatBridge` instead holds a single
+subscription for the process's lifetime (started/stopped from `main.py`'s
+`lifespan`) and fans each `chat.output` message out to every currently
+connected socket via a per-connection `asyncio.Queue`, added/removed on
+connect/disconnect. Turn correlation is client-side: the frontend hook merges
+streamed chunks by `turn_id` and treats `done: bool` (not any content
+heuristic) as end-of-turn, mirroring `talk.py`'s own reading of the contract.
+
+**A real bug, found by trying to connect a browser, not by unit tests:**
+`frontend/next.config.mjs`'s CSP `connect-src` allowed `http://localhost:8000`
+but not `ws://localhost:8000` -- a browser CSP entry for one scheme does not
+cover the other, so the chat socket was silently blocked with no network
+request ever leaving the page, just a console CSP violation. Fixed by adding
+a `BACKEND_WS_URL` (the same host, `http` swapped for `ws`) to `connect-src`.
+Caught during the live Playwright pass below, not by `npm run lint`/`build`,
+which have no way to see a runtime CSP rejection.
+
+**A second real bug, this one in existing code the new WebSocket exposed:**
+`main.py`'s app-wide `require_lan_client`/`require_session_auth` were typed
+`request: Request`. Confirmed empirically (a throwaway FastAPI+TestClient
+script, not assumed) that an app-level dependency typed `Request` raises a
+plain `TypeError` on *every* WebSocket connection attempt -- not a 403, a
+crash before the handler runs -- because FastAPI resolves a `Request`-typed
+parameter only against an HTTP scope. There was no WebSocket route before
+this entry, so the bug was real but unreachable; retyping both to
+`conn: HTTPConnection` (the common Starlette base of `Request` and
+`WebSocket`, confirmed by the same throwaway script to resolve correctly to
+the right concrete type on each transport, and an `HTTPException` raised
+inside it to cleanly deny the handshake rather than crash) fixes it for both
+existing HTTP routes (verified unchanged: `tests/test_regressions.py`'s
+`_fake_request` calls are positional, so the parameter rename is invisible to
+them) and the new `/api/chat/ws`, which now reuses the exact same
+`require_session_auth` dependency as every other Phase 5.1 router rather than
+inventing a second auth mechanism for sockets.
+
+**`GET /api/persona/live`** exists because of a constraint this entry's first
+read of `app/persona/authoring.py` surfaced and the settings page had to be
+scoped around: `personal/persona.toml` is consulted **once**, on first boot,
+then permanently inert (`authoring.py`'s own module docstring: "read once,
+then never again"). Trust, attachment, adaptive traits, and speaking style
+all live in the durable store after that and evolve through conversation, not
+through a file edit. A settings page that read `persona.toml` back would show
+what was *written* at creation, not who the friend has *become* -- and a page
+that let a user "edit" those fields would silently do nothing, which is worse
+than not offering it. So `/persona/live` mirrors `scripts/show_persona.py
+--json` exactly (same `IdentityManager` + `ConversationHistoryStore`
+hydration, same read) rather than re-deriving a new read path, and the
+settings page it feeds is **read-only** for persona data by design, not an
+oversight -- it says so on the page. The one thing settings *does* let a user
+change is voice (`VoiceStep` reused as-is from onboarding, calling the same
+`/api/voice/commit` with `force`), because that setting genuinely is a
+file/config concern, not durable-store state.
+
+**`GET /api/memory/recent`** (already built in 5.1) got its first UI:
+`frontend/app/(app)/memories/` -- sortable (created_at/importance/
+last_recalled), offset-paginated cards. No new backend work.
+
+**Shared-component refactor**, done before writing the three new pages so
+they wouldn't import from `components/onboarding/ui.jsx` (which would have
+been a confusing coupling for routes that aren't onboarding): `Tag`, `Card`,
+`Heading`, `PrimaryButton`, `SecondaryButton`, `ErrorBanner` moved to
+`components/ui.jsx`; `StepIndicator` (wizard-only) stayed put.
+`app/onboarding/layout.js`'s `next/font/google` calls moved to a new
+`app/fonts.js` so a new `app/(app)/layout.js` (chat/settings/memories'
+shared shell + `AppNav`) could reuse the same fonts without a second
+`next/font` call site -- Next.js's documented pattern for sharing fonts
+across layouts, not a new mechanism.
+
+**The dark voice-orb page (`app/page.js`) is still deliberately untouched**
+apart from four `glass-pill` nav links added bottom-right (Chat/Memories/
+Settings) so the two halves of the app are reachable from each other --
+restyling it to 5.0's design tokens (which the roadmap's own 5.0 section
+lists `voice/transcript` under, not just onboarding) is real, separate work
+this entry does not attempt.
+
+**Verified**: `test_api_chat.py` (8), `test_api_persona_live.py` (3) -- 11
+new hermetic tests, mutation-verified (the blank-message-is-not-published
+guard, the multi-listener fan-out -- a mutation limiting it to one listener
+makes the two-connections test hang/timeout rather than fail cleanly, a real
+but accepted rough edge for a CI job with its own overall timeout -- the
+`store.pool is None` 503 guard specifically, shown to need a fixture where
+`get_agent_config` exists but `pool` doesn't, since a fixture missing both
+made a *different* downstream guard also produce 503 and hid the mutation,
+and the immutable-core-cannot-be-smuggled-through-hydration guard). Also
+verified **live**, against real local infra brought up for this purpose
+(`docker compose -f docker-compose.infra.yml up -d nats postgres` --
+`nats`/`postgres` were the two named, but `local_sfu`/`brain_cache`/
+`brain_graph` came up alongside them; all five stopped again afterward,
+restoring the pre-session state) with `db/schema.sql` applied and
+`MOCK_LLM_TEXT=true`: a browser sending a chat message published a real
+`ChatInput` onto the real mesh; a `ChatOutput` published directly onto NATS
+(standing in for `brain_agent`, not run this pass) rendered live in the
+transcript through the real WebSocket, `ChatBridge`, and CSP fix; `/settings`
+rendered a real hydrated persona from Postgres (`agent_configs`, a friend
+created in an earlier session) with the correct "seeded: never" fallback
+text; `/memories` rendered both its empty state and a populated one (a
+throwaway row inserted, screenshotted, then deleted).
+
+**NOT done.** No persistence of chat history across a page reload (in-memory
+per session only -- `chat.output` history exists in Postgres/Neo4j via the
+normal memory pipeline, but this UI doesn't query it as a transcript). A
+second open tab sees the first tab's `chat.output` replies (the fan-out is
+correct and, for a single-user product, arguably a feature) but not the first
+tab's own `chat.input` text, since only output is broadcast -- acceptable for
+the "one friend per person" product shape, not fixed further. The settings
+page has no way to change CONSTITUTIONAL fields at all (by design -- see
+above) and doesn't surface `scripts/reset_persona.py` as a web action. No
+frontend test framework exists still; verification is the live pass above,
+same as the onboarding slice.
+
+### 5.3 -- visemes: wired, not removed
+
+`audio.playback.visemes` (`{target_level, viseme_id, timestamp}`, published
+at four sites in voice-agent's Rust playback loop) had a `check_subject_
+wiring.py` allowlist entry since the wiring audit claiming it was "consumed
+by the frontend voice UI" -- true in intent, false in fact: no such consumer
+existed anywhere. Chose to wire it over removing it because the actual gap
+was small once traced: `transport_agent` already holds the one open LiveKit
+room connection in this architecture (it bridges NATS audio onto a WebRTC
+audio track already), so it needed one more NATS subscription
+(`_on_viseme`), forwarding each frame onto the room's data channel via
+`local_participant.publish_data(payload, reliable=False, topic="visemes")`
+-- unreliable delivery deliberately, matching WebRTC media's own UDP
+reasoning: this is a live, latest-value-wins animation signal at chunk rate,
+and a dropped frame a moment before the next one lands is invisible.
+
+`check_subject_wiring.py`'s allowlist entry for `audio.playback.visemes` is
+now **removed** (not just left stale) -- the scan finds the real consumer on
+its own and re-confirmed with a clean run
+(`OK: every observed subject is fully wired or explicitly allowlisted`).
+
+Frontend half: `useWebRTCVoice.js` gained a `RoomEvent.DataReceived` handler
+filtering on `topic === 'visemes'`, decoding to a `visemeLevel` (0..1) state,
+reset to 0 on disconnect/track-unsubscribed so the visual doesn't freeze
+mid-pulse. `AssistantCircle.jsx` is an abstract aura, not a face -- there is
+no mouth shape to animate -- so "wire mouth animation" became "pulse the aura
+with the actual sound instead of a fixed, content-blind loop": the `speaking`
+variant became a function variant driven by a `custom={level}` prop instead
+of a canned `[1, 1.3, 1]` keyframe loop.
+
+**Verified**: `test_transport_agent_visemes.py` (4 tests, mirroring
+`test_transport_agent_presence.py`'s existing `_FakeRoom` pattern),
+mutation-verified (skipping `PlaybackVisemes.model_validate` in favor of
+`model_construct` -- which does not validate -- makes the malformed-payload
+test fail, confirming the guard is load-bearing, not decorative).
+`check_subject_wiring.py` re-run clean after removing the allowlist entry.
+`cargo check --workspace` clean (no Rust touched this entry -- voice-agent's
+publish side was already correct; only the Python consumer and the frontend
+were new).
+
+**NOT done, and worth naming precisely.** The end-to-end path was **not**
+verified live in a browser against a real LiveKit round-trip: `local_sfu`
+(the self-hosted LiveKit SFU, image `v1.8.4`) rejected the existing voice
+page's own WebRTC join with a 404 during this entry's Playwright pass, before
+any viseme-specific code ran -- a pre-existing protocol/version-compat issue
+between `livekit-client`'s npm version and this pinned server image,
+unrelated to this entry's changes and out of scope to chase down here (this
+same failure is visible in the 5.2-slice entry's own earlier live-verification
+notes, for the unrelated reason that no `transport_agent` was running to
+create the room at all -- two different failure modes, same symptom).
+Confirmed instead at the boundary each side owns: the backend forwards a
+valid `PlaybackVisemes` payload to `local_participant.publish_data` exactly
+once, with the right `reliable`/`topic`, and drops/swallows every failure
+mode around it (unit-tested); the frontend hook correctly parses a
+`topic: "visemes"` data packet into `visemeLevel` and the aura's `scale`/
+`opacity` are provably a function of it (code review + the variant function's
+own math, not a live capture of the aura actually pulsing on-screen). Fixing
+`local_sfu`'s connectivity is real, separate work.
+
+### 5.4 -- ship the frontend in compose
+
+`frontend/Dockerfile` only ever accepted `NEXT_PUBLIC_BACKEND_URL` as a build
+ARG; `NEXT_PUBLIC_LIVEKIT_URL` and `NEXT_PUBLIC_BACKEND_ACCESS_KEY` are read
+by `useWebRTCVoice.js`/`lib/api.js` but were never threaded through, so every
+containerized deployment but the unauthenticated-localhost default would have
+silently shipped a frontend pointed at the wrong LiveKit URL or missing its
+access key -- both fixed by adding the two missing `ARG`/`ENV` pairs,
+matching the existing one exactly.
+
+New `frontend` service in `docker-compose.prod.yml`, `127.0.0.1:3000` (same
+loopback-only posture P0-2 already established for every other port in this
+file). Build args, not `environment:` -- Next.js inlines `NEXT_PUBLIC_*` into
+the JS bundle at build time, so setting them at container start the way every
+other service here does its config would be a silent no-op. They default to
+`127.0.0.1` URLs (matching `signaling`'s own `/token` response and `Config.
+LIVEKIT_PUBLIC_URL`'s default exactly) rather than the compose-internal
+service names (`signaling`, `local_sfu`) every other container in this file
+uses to reach each other, because this is the one service a *browser*, not
+another container, has to reach.
+
+**Verified**: `docker compose -f docker-compose.infra.yml -f docker-compose.
+prod.yml config` resolves cleanly (was failing before this entry for an
+unrelated, pre-existing reason -- `subconscious_agent` depends on `neo4j`,
+undefined when `docker-compose.prod.yml` is validated alone rather than
+layered with `infra.yml` as the documented invocation always does; not a
+regression from this entry, just the first time this exact command was run).
+`docker compose build frontend` succeeds. The built image was actually run
+standalone (`docker run`, port 3001) and confirmed serving (`HTTP 200`), and
+the baked `NEXT_PUBLIC_BACKEND_URL` value was confirmed present as a literal
+string inside the compiled `.next/static` JS chunks, not just assumed from
+the build args resolving.
+
+**NOT done.** The frontend service was not brought up as part of the full
+compose stack together with every agent (`brain_agent`, `transport_agent`,
+etc. all running simultaneously) -- built and run standalone only, per above.
+No CI job builds/pushes this image.
+
+### Verification bar for this entry
+
+1345 backend tests (includes this entry's 15 new: `test_api_chat.py` 8,
+`test_api_persona_live.py` 3, `test_transport_agent_visemes.py` 4), 0
+failures, 0 errors (`--junit-xml`, per this repo's own documented
+pytest-summary-swallowing quirk). `ruff check .` clean (one real
+finding fixed along the way: B017 blind-`Exception` asserts in the new
+websocket-rejection tests, narrowed to `starlette.testclient.
+WebSocketDenialResponse`, the concrete type a rejected `TestClient.
+websocket_connect` actually raises). `cargo check --workspace` clean, no
+Rust touched. `maturin build --manifest-path crates/cognitive-rust/Cargo.toml`
+succeeds. `frontend`: `npm run lint` and `npm run build` both clean across
+every new/changed file (one real lint finding fixed along the way too --
+`react-hooks/set-state-in-effect` on the memories page's initial `setLoading
+(true)`/`setError(null)` calls, moved out of the effect body into the
+click handlers that trigger a refetch, which is the rule's own recommended
+shape: effects synchronize with external state, user interactions set state
+directly).

@@ -11,6 +11,12 @@ export function useWebRTCVoice() {
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [interactionState, setInteractionState] = useState('idle'); // idle | listening | speaking
+    // Phase 5.3: transport_agent bridges voice-agent's viseme stream onto
+    // this room's data channel (topic "visemes") -- 0..1, how loud the
+    // current audio chunk is. Not a mouth shape (AssistantCircle is an
+    // abstract aura, not a face); the visual equivalent is pulsing the aura
+    // with the sound rather than on a fixed animation loop.
+    const [visemeLevel, setVisemeLevel] = useState(0);
 
     const roomRef = useRef(null);
     const audioTrackRef = useRef(null);
@@ -74,6 +80,18 @@ export function useWebRTCVoice() {
                             console.log('Disconnected from LiveKit Room');
                             setIsConnected(false);
                             setInteractionState('idle');
+                            setVisemeLevel(0);
+                        }
+                    })
+                    .on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
+                        if (!mounted || topic !== 'visemes') return;
+                        try {
+                            const viseme = JSON.parse(new TextDecoder().decode(payload));
+                            if (typeof viseme.target_level === 'number') {
+                                setVisemeLevel(viseme.target_level);
+                            }
+                        } catch {
+                            // Best-effort animation signal -- drop a malformed frame.
                         }
                     })
                     .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
@@ -94,6 +112,7 @@ export function useWebRTCVoice() {
                             remoteAudioElements.delete(element);
                             element.remove();
                         });
+                        setVisemeLevel(0);
                     });
 
                 await room.connect(url || LIVEKIT_URL, token);
@@ -166,6 +185,7 @@ export function useWebRTCVoice() {
         isConnected,
         isConnecting,
         state: interactionState,
+        visemeLevel,
         startRecording,
         stopRecording
     };

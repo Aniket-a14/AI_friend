@@ -1,6 +1,6 @@
 'use client';
 
-import { Heading, Card, PrimaryButton } from './ui';
+import { Heading, Card, PrimaryButton } from '@/components/ui';
 
 export default function DoneStep({ name, voiceSaved }) {
     return (

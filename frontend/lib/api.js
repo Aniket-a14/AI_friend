@@ -16,6 +16,15 @@ export function backendUrl(path) {
     return url.toString();
 }
 
+export function backendWsUrl(path) {
+    const url = new URL(path, BACKEND_URL);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (BACKEND_ACCESS_KEY) {
+        url.searchParams.set('key', BACKEND_ACCESS_KEY);
+    }
+    return url.toString();
+}
+
 class ApiError extends Error {
     constructor(status, detail) {
         super(typeof detail === 'string' ? detail : JSON.stringify(detail));

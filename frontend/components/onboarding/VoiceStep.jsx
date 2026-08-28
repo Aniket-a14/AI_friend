@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Heading, Card, PrimaryButton, SecondaryButton, ErrorBanner } from './ui';
+import { Heading, Card, PrimaryButton, SecondaryButton, ErrorBanner } from '@/components/ui';
 import { useVoiceRecorder } from '@/hooks/useVoiceRecorder';
 import { apiPostForm } from '@/lib/api';
 

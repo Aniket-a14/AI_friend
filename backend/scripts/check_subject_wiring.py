@@ -58,13 +58,19 @@ ALLOWLIST: dict[str, str] = {
     # invisible to this static scan regardless of whether it exists -- and
     # it does (BaseAgent.connect(), deliver_policy="new" per P3-8).
     "cache.sync": "subscriber lives in agents/base.py, excluded from this scan as generic transport code (TRANSPORT_IMPL_FILES) -- not missing, just invisible to it",
-    # M2-A2 / M2-A4: AGENT_VOICE_MODULATION and AUDIO_PLAYBACK_VISEMES are
-    # published to NATS but consumed by the frontend voice UI directly
-    # (LiveKit data track / browser client), not by another backend agent --
-    # this scan only sees backend Python/Rust, so a real consumer existing
-    # outside the repo's static reach is expected here, not a defect.
+    # M2-A2: AGENT_VOICE_MODULATION is published to NATS but consumed by the
+    # frontend voice UI directly (LiveKit data track / browser client), not
+    # by another backend agent -- this scan only sees backend Python/Rust, so
+    # a real consumer existing outside the repo's static reach is expected
+    # here, not a defect.
+    #
+    # AUDIO_PLAYBACK_VISEMES used to carry the identical justification
+    # (M2-A4), on the same reasoning -- but roadmap Phase 5.3 gave it a real
+    # backend consumer (`transport_agent.py`'s `_on_viseme`, which bridges it
+    # onto the room's LiveKit data channel for the frontend), so it is
+    # deliberately no longer in this allowlist: this scan can and should see
+    # that subscribe site on its own now.
     "agent.voice.modulation": "consumed by the frontend voice UI, not a backend agent",
-    "audio.playback.visemes": "consumed by the frontend voice UI, not a backend agent",
     # M3-A1 / P4-2: Q-M3-1 resolved -- the intended publisher was always the
     # browser-side PCM player (docs/API_SPEC.md), never built. Subscriber
     # exists (brain_agent.py) and is a real, tracked gap, not new.

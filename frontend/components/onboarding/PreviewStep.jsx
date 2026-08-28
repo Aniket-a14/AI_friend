@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Heading, Tag, Card, PrimaryButton, SecondaryButton, ErrorBanner } from './ui';
+import { Heading, Tag, Card, PrimaryButton, SecondaryButton, ErrorBanner } from '@/components/ui';
 import { apiPostJson } from '@/lib/api';
 
 function List({ items, empty = '—' }) {

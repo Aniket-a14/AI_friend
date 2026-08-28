@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Heading, PrimaryButton, ErrorBanner } from './ui';
+import { Heading, PrimaryButton, ErrorBanner } from '@/components/ui';
 
 export default function DescribeStep({ initialValue, busy, error, onSubmit }) {
     const [description, setDescription] = useState(initialValue || '');

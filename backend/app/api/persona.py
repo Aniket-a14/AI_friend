@@ -66,6 +66,46 @@ def _compiled_persona_payload(compiled) -> dict:
     }
 
 
+@router.get("/live")
+async def live_persona_endpoint():
+    """Who the friend currently is -- read-only, sourced from the durable
+    store, not `personal/persona.toml`.
+
+    `authoring.py`'s module docstring is the reason this can't just re-read
+    the seed file: it is consulted on first boot only, then inert forever --
+    "read once, then never again." Trust, attachment, adaptive traits and
+    speaking style all live in the durable store after that and evolve
+    through conversation, not through editing a file. Reading the file back
+    would show what was *written*, not who the friend has *become*. Mirrors
+    `scripts/show_persona.py --json` exactly -- same store, same hydration --
+    rather than re-deriving the read.
+    """
+    from ..cognitive.identity import IdentityManager
+    from ..state.conversation_store import ConversationHistoryStore
+
+    store = ConversationHistoryStore()
+    try:
+        await store.initialize()
+        if store.pool is None:
+            raise HTTPException(status_code=503, detail="No database reachable")
+
+        identity = IdentityManager()
+        await identity.hydrate_from_config_store(store)
+        if identity.config_store is None:
+            raise HTTPException(
+                status_code=503, detail="Could not read the stored persona"
+            )
+
+        return {
+            "persona": identity.persona.model_dump(),
+            "immutable_core": identity.immutable_core,
+            "relationship": identity.history.get("relationship", "Friend"),
+            "seeded_from_file": identity.history.get(IdentityManager.SEED_MARKER),
+        }
+    finally:
+        await store.close()
+
+
 @router.post("/compile")
 async def compile_persona_endpoint(body: CompileRequest):
     """Prose -> a previewable, validated `PersonaProfile`. Nothing is written."""

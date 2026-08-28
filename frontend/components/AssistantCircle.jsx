@@ -3,7 +3,14 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export default function AssistantCircle({ state = 'idle' }) {
+export default function AssistantCircle({ state = 'idle', visemeLevel = 0 }) {
+    // visemeLevel (0..1, Phase 5.3): how loud the current audio chunk is,
+    // bridged live from voice-agent's viseme stream over LiveKit's data
+    // channel. AssistantCircle is an abstract aura, not a face -- there is
+    // no mouth shape to animate -- so the equivalent is pulsing the aura
+    // with the actual sound rather than on a fixed, content-blind loop.
+    const level = Math.min(1, Math.max(0, visemeLevel || 0));
+
     // Variants for the core atmosphere
     const auraVariants = {
         idle: {
@@ -21,11 +28,14 @@ export default function AssistantCircle({ state = 'idle' }) {
             opacity: 0.3,
             transition: { duration: 2, repeat: Infinity, repeatType: "reverse" }
         },
-        speaking: {
-            scale: [1, 1.3, 1],
-            opacity: 1,
-            transition: { duration: 0.6, repeat: Infinity }
-        }
+        // A function variant (not a fixed keyframe list) so `custom` --
+        // the live visemeLevel below -- drives the target on every render
+        // instead of looping blind to whether anything is actually loud.
+        speaking: (lvl) => ({
+            scale: 1 + (lvl ?? 0) * 0.5,
+            opacity: 0.7 + (lvl ?? 0) * 0.3,
+            transition: { duration: 0.12, ease: 'easeOut' }
+        })
     };
 
     return (
@@ -57,6 +67,7 @@ export default function AssistantCircle({ state = 'idle' }) {
             <motion.div
                 variants={auraVariants}
                 animate={state}
+                custom={level}
                 style={{ filter: 'url(#spectral-blur)' }}
                 className={`relative w-72 h-72 rounded-full transition-colors duration-1000 ${state === 'speaking' ? 'bg-pink-500/20' :
                         state === 'listening' ? 'bg-cyan-500/20' :
@@ -66,7 +77,8 @@ export default function AssistantCircle({ state = 'idle' }) {
                 {/* Central Singularity */}
                 <div className="absolute inset-0 flex items-center justify-center">
                     <motion.div
-                        animate={state === 'speaking' ? { scale: [1, 1.4, 1] } : { scale: 1 }}
+                        animate={state === 'speaking' ? { scale: 1 + level * 0.7 } : { scale: 1 }}
+                        transition={{ duration: 0.12, ease: 'easeOut' }}
                         className={`w-36 h-36 rounded-full blur-2xl ${state === 'speaking' ? 'bg-pink-400/40' :
                                 state === 'listening' ? 'bg-cyan-400/40' :
                                     'bg-white/10'

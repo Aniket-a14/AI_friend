@@ -7,7 +7,7 @@ from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
 
 from ..config import Config
-from ..contracts import AudioPlaybackProgress, SessionPresence, Topics
+from ..contracts import AudioPlaybackProgress, PlaybackVisemes, SessionPresence, Topics
 from ..measure_trace import trace as _measure_trace
 from .base import BaseAgent, install_shutdown_signal_handlers
 
@@ -165,6 +165,19 @@ class TransportAgent(BaseAgent):
             deliver_policy="new",
         )
         logger.info("Subscribed to NATS audio.stop. Barge-in flush active.")
+
+        # Phase 5.3: bridge voice-agent's viseme stream onto the room's data
+        # channel. `check_subject_wiring.py`'s whitelist has documented
+        # `audio.playback.visemes` as "consumed by the frontend voice UI"
+        # since the wiring audit, but nothing ever actually delivered it
+        # there -- this is that delivery, not new data.
+        await self.subscribe(
+            Topics.AUDIO_PLAYBACK_VISEMES,
+            callback=self._on_viseme,
+            durable=f"{self.name}_playback_visemes_live",
+            deliver_policy="new",
+        )
+        logger.info("Subscribed to NATS audio.playback.visemes. Viseme bridge active.")
 
         # 4. Listen for Remote Tracks (Inbound - User Speech)
         self.room.on("track_subscribed", self._on_track_subscribed)
@@ -430,6 +443,35 @@ class TransportAgent(BaseAgent):
             completed=False,
         )
         self.spawn(self.publish(Topics.AUDIO_PLAYBACK_PROGRESS, progress.model_dump()))
+
+    async def _on_viseme(self, data: dict) -> None:
+        """Forward one viseme frame onto the room's data channel.
+
+        `reliable=False`: this is a live, latest-value-wins animation signal
+        published at the audio chunk rate (voice-agent's
+        `generate_and_publish_visemes`, four call sites in its playback
+        loop), the same reasoning WebRTC media itself is UDP-based for -- a
+        dropped frame a moment before the next one lands is invisible, and
+        waiting on reliable delivery would only add latency an animation
+        curve does not need. Not spawned like `_publish_presence`/progress:
+        `publish_data` is a local, non-blocking call over an already-open
+        data channel, not a NATS round trip, so there is nothing here worth
+        moving off this callback.
+        """
+        try:
+            viseme = PlaybackVisemes.model_validate(data)
+        except Exception:
+            logger.warning("Dropping malformed viseme payload: %r", data)
+            return
+        if not self.room.local_participant:
+            return
+        payload = viseme.model_dump_json().encode("utf-8")
+        try:
+            self.room.local_participant.publish_data(
+                payload, reliable=False, topic="visemes"
+            )
+        except Exception as exc:
+            logger.debug("Could not publish viseme to the room (no listener?): %s", exc)
 
     async def _on_audio_stop(self, data: dict) -> None:
         """P1-3 (audit/ROADMAP.md): flush audio already in flight on a

@@ -541,6 +541,45 @@ services:
       retries: 3
       start_period: 60s
 
+  # N. WEB FRONTEND (Next.js app -- roadmap Phase 5.4)
+  #
+  # frontend/Dockerfile has existed since well before this compose file did,
+  # and `output: 'standalone'` confirms it was built to be containerized --
+  # but no compose file defined a `frontend` service at all: `docker compose
+  # up` could bring up the entire agent mesh and there was still nothing
+  # serving the browser client that talks to it. `local_sfu`/`signaling` are
+  # only resolvable on this compose network; a browser on the host reaches
+  # them at their published loopback ports instead, which is why the
+  # NEXT_PUBLIC_* build args below default to 127.0.0.1 URLs -- the same
+  # ones signaling's own /token response already hands the browser -- not
+  # the internal service names every other container in this file uses.
+  #
+  # Build args, not `environment:`: Next.js inlines NEXT_PUBLIC_* into the JS
+  # bundle at build time, so setting them at container start (as every other
+  # service here does) would be a silent no-op.
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://127.0.0.1:8000}
+        NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:-ws://127.0.0.1:7880}
+        NEXT_PUBLIC_BACKEND_ACCESS_KEY: ${NEXT_PUBLIC_BACKEND_ACCESS_KEY:-}
+    container_name: frontend
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - ai_mesh_network
+    depends_on:
+      signaling:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://127.0.0.1:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
 # Use the existing network created by infra
 networks:
   ai_mesh_network:
