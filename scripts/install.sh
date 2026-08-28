@@ -194,21 +194,24 @@ else
 fi
 
 # ── Environment & Model Setup ────────────────────────────────────────────────
-log_info "Configuring environment & model (${MODEL_CHOICE})..."
-
 if [[ ! -f .env ]]; then
-  if [[ -f .env.example ]]; then
+  if [[ -t 0 ]] && [[ -f scripts/bootstrap/env_wizard.py ]]; then
+    log_info "Launching interactive environment setup wizard..."
+    "$PYTHON_CMD" scripts/bootstrap/env_wizard.py || cp .env.example .env
+  elif [[ -f .env.example ]]; then
     cp .env.example .env
   else
     touch .env
   fi
 fi
 
-# Set active chat model in .env
-if grep -q "^LLM_CHAT_MODEL=" .env 2>/dev/null; then
-  sed -i.bak "s/^LLM_CHAT_MODEL=.*/LLM_CHAT_MODEL=${MODEL_CHOICE}/" .env && rm -f .env.bak
-else
-  echo "LLM_CHAT_MODEL=${MODEL_CHOICE}" >> .env
+# Set active chat model in .env if explicitly passed
+if [[ -n "$MODEL_CHOICE" ]] && [[ "$MODEL_CHOICE" != "llama3.2:3b" ]]; then
+  if grep -q "^LLM_CHAT_MODEL=" .env 2>/dev/null; then
+    sed -i.bak "s/^LLM_CHAT_MODEL=.*/LLM_CHAT_MODEL=${MODEL_CHOICE}/" .env && rm -f .env.bak
+  else
+    echo "LLM_CHAT_MODEL=${MODEL_CHOICE}" >> .env
+  fi
 fi
 
 # Setup Python Virtual Environment

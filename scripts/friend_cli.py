@@ -275,12 +275,21 @@ def cmd_update(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_init(args: argparse.Namespace) -> int:
+    from scripts.bootstrap.env_wizard import run_init_wizard
+    return run_init_wizard()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="friend",
         description="AI Friend — Model-Agnostic Management & Interaction CLI Tool",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # init
+    p_init = subparsers.add_parser("init", help="Run interactive environment & model setup wizard")
+    p_init.set_defaults(func=cmd_init)
 
     # start
     p_start = subparsers.add_parser("start", help="Start the 9-agent cognitive mesh")

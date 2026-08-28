@@ -149,8 +149,8 @@ export default function DownloadPage() {
             </div>
 
             <div className="p-4 rounded-xl bg-[#fafaf8] border border-black/[0.05] space-y-1.5">
-              <code className="font-mono text-xs text-black font-semibold">friend model set &lt;name&gt;</code>
-              <p className="text-xs text-black/55 leading-relaxed">Switches your active model (e.g. Qwen 2.5 7B, DeepSeek-R1).</p>
+              <code className="font-mono text-xs text-black font-semibold">friend init</code>
+              <p className="text-xs text-black/55 leading-relaxed">Interactive wizard to configure credentials, companion name, and model.</p>
             </div>
 
             <div className="p-4 rounded-xl bg-[#fafaf8] border border-black/[0.05] space-y-1.5">

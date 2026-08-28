@@ -31,33 +31,22 @@ curl -fsSL https://raw.githubusercontent.com/Aniket-a14/AI_friend/main/scripts/i
 
 ---
 
-## 2. Choosing Any Model (Model-Agnostic Engine)
+## 2. Interactive Environment Setup (`friend init`)
 
-AI Friend works with any local model supported by Ollama or any cloud model API. You can select your model during installation or change it at any time with the `friend model` command:
+During initial installation (or at any time later), run `friend init` to configure your environment:
 
 ```bash
-# List popular models and installed local models
-friend model list
-
-# Set any model as the active conversational brain
-friend model set qwen2.5:7b
-friend model set deepseek-r1:7b
-friend model set llama3.2:1b
-friend model set mistral:7b
-
-# Automatically download the weights via Ollama
-friend model pull deepseek-r1:7b
+friend init
 ```
 
-### Tested Model Matrix
-
-| Model Name | Parameters | Target Hardware | Primary Strengths |
-| :--- | :--- | :--- | :--- |
-| **`llama3.2:3b`** | 3 Billion | 16GB Apple Silicon / 6GB GPU | **Default Recommended**: Rapid conversational latency, warm empathy, low memory footprint (~2.0 GB VRAM). |
-| **`qwen2.5:7b`** | 7 Billion | 16GB–32GB Mac / 8GB+ GPU | High reasoning depth, rich vocabulary, and superior multilingual conversational fluency (~4.7 GB VRAM). |
-| **`deepseek-r1:7b`** | 7 Billion | 16GB–32GB Mac / 8GB+ GPU | Deep chain-of-thought reasoning, philosophical reflection, and rigorous logic (~4.7 GB VRAM). |
-| **`llama3.2:1b`** | 1 Billion | 8GB RAM Laptops / Low-power devices | Ultra-lightweight: runs smoothly on older hardware or CPU-only baselines (~1.1 GB VRAM). |
-| **`claude-3-5-sonnet`** | Cloud API | Any device (Set `LLM_PROVIDER=anthropic`) | State-of-the-art literary nuance and zero local GPU/RAM requirement. |
+The interactive wizard asks you for:
+1. **Runtime Environment**: `development` or `production`.
+2. **Companion & User Identity**: What your friend should call you, and your friend's name.
+3. **Model Selection (Local or Cloud)**:
+   - **Local Engine**: Enter ANY local Ollama model tag or fine-tuned GGUF weights.
+   - **Cloud Provider**: Enter your preferred provider (Anthropic, OpenAI, OpenRouter) and API key.
+4. **Security Passwords**: Automatically generates cryptographically secure random credentials for local Docker databases (Postgres, Neo4j, LiveKit, Session JWTs).
+5. **Launch Profile**: Choose `full` (voice + brain), `light` (cognitive-only), or `heavy` (local Whisper STT).
 
 ---
 
