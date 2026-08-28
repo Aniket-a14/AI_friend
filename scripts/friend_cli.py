@@ -174,11 +174,26 @@ def cmd_model(args: argparse.Namespace) -> int:
 
     if args.model_action == "set":
         if not args.name:
-            print("Error: Specify model name (e.g. friend model set qwen2.5:7b)")
+            print("Error: Specify model name (e.g. friend model set qwen2.5:14b or friend model set claude-3-5-sonnet)")
             return 1
-        set_env_key("LLM_CHAT_MODEL", args.name)
-        print(f"✓ Configured default active model to: \033[1m{args.name}\033[0m")
-        print("  (If this is an Ollama model, run `friend model pull {args.name}` to ensure it is downloaded)")
+        
+        name = args.name.strip()
+        # Auto-configure provider
+        if any(c in name.lower() for c in ("claude", "anthropic")):
+            set_env_key("LLM_PROVIDER", "anthropic")
+            set_env_key("LLM_CHAT_MODEL", name)
+            print(f"✓ Configured Cloud Provider: \033[1mAnthropic\033[0m with model \033[1m{name}\033[0m")
+            print("  (Make sure ANTHROPIC_API_KEY is set in your .env file)")
+        elif any(c in name.lower() for c in ("gpt-", "openai", "o1-", "o3-")):
+            set_env_key("LLM_PROVIDER", "openai")
+            set_env_key("LLM_CHAT_MODEL", name)
+            print(f"✓ Configured Cloud Provider: \033[1mOpenAI\033[0m with model \033[1m{name}\033[0m")
+            print("  (Make sure OPENAI_API_KEY is set in your .env file)")
+        else:
+            set_env_key("LLM_PROVIDER", "ollama")
+            set_env_key("LLM_CHAT_MODEL", name)
+            print(f"✓ Configured Local Engine: \033[1mOllama\033[0m with model \033[1m{name}\033[0m")
+            print(f"  (Run `friend model pull {name}` to pull weights locally if not already installed)")
         return 0
 
     if args.model_action == "pull":

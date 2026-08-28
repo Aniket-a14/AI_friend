@@ -4,7 +4,8 @@ import React, { useState, useEffect } from "react"
 
 export function OSInstallTabs() {
   const [selectedOS, setSelectedOS] = useState<"mac" | "linux" | "windows" | "docker">("mac")
-  const [selectedModel, setSelectedModel] = useState<string>("llama3.2:3b")
+  const [customModel, setCustomModel] = useState<string>("llama3.2:3b")
+  const [isCloud, setIsCloud] = useState<boolean>(false)
   const [copied, setCopied] = useState(false)
 
   // Client-side automatic OS detection
@@ -20,19 +21,16 @@ export function OSInstallTabs() {
     }
   }, [])
 
-  const installCommands = {
-    mac: `curl -fsSL https://raw.githubusercontent.com/Aniket-a14/AI_friend/main/scripts/install.sh | bash`,
-    linux: `curl -fsSL https://raw.githubusercontent.com/Aniket-a14/AI_friend/main/scripts/install.sh | bash`,
-    windows: `irm https://raw.githubusercontent.com/Aniket-a14/AI_friend/main/scripts/install.ps1 | iex`,
-    docker: `git clone https://github.com/Aniket-a14/AI_friend.git && cd AI_friend && ./start.sh`,
-  }
+  // Dynamic model parameter flag if custom model specified
+  const modelFlag = customModel.trim() && customModel.trim() !== "llama3.2:3b"
+    ? ` --model ${customModel.trim()}`
+    : ""
 
-  const modelFlags = {
-    "llama3.2:3b": "",
-    "qwen2.5:7b": " --model qwen2.5:7b",
-    "deepseek-r1:7b": " --model deepseek-r1:7b",
-    "llama3.2:1b": " --model llama3.2:1b",
-    "claude-3-5-sonnet": " --model claude-3-5-sonnet",
+  const installCommands = {
+    mac: `curl -fsSL https://raw.githubusercontent.com/Aniket-a14/AI_friend/main/scripts/install.sh | bash -s --${modelFlag}`,
+    linux: `curl -fsSL https://raw.githubusercontent.com/Aniket-a14/AI_friend/main/scripts/install.sh | bash -s --${modelFlag}`,
+    windows: `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Aniket-a14/AI_friend/main/scripts/install.ps1)))${modelFlag}`,
+    docker: `git clone https://github.com/Aniket-a14/AI_friend.git && cd AI_friend && ./start.sh`,
   }
 
   const activeCommand = installCommands[selectedOS]
@@ -74,43 +72,59 @@ export function OSInstallTabs() {
         </span>
       </div>
 
-      {/* Model Choice Pill Selector */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <label className="text-[11px] font-mono uppercase tracking-wider text-black/40">
-            Choose Your Brain Model (Model-Agnostic)
-          </label>
-          <span className="text-[10px] text-black/40 font-mono">Switch anytime with: friend model set &lt;name&gt;</span>
-        </div>
+      {/* Freeform Model Selection: Any Local or Cloud Model */}
+      <div className="space-y-3 bg-[#fafaf8] p-5 rounded-2xl border border-black/[0.06]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <label className="text-xs font-semibold text-black/90 block">
+              Enter Any Model Name (Local or Cloud)
+            </label>
+            <p className="text-[11px] text-black/50 mt-0.5">
+              100% Model-Agnostic: Type any Ollama tag, fine-tuned GGUF weights, or cloud model API.
+            </p>
+          </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {[
-            { id: "llama3.2:3b", name: "Llama 3.2 3B", badge: "Default", vram: "2.0 GB" },
-            { id: "qwen2.5:7b", name: "Qwen 2.5 7B", badge: "Reasoning", vram: "4.7 GB" },
-            { id: "deepseek-r1:7b", name: "DeepSeek-R1 7B", badge: "CoT Think", vram: "4.7 GB" },
-            { id: "llama3.2:1b", name: "Llama 3.2 1B", badge: "Lightweight", vram: "1.1 GB" },
-            { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet", badge: "Cloud API", vram: "0 GB (API)" },
-          ].map((m) => (
+          <div className="flex items-center gap-2">
             <button
-              key={m.id}
-              onClick={() => setSelectedModel(m.id)}
-              className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
-                selectedModel === m.id
-                  ? "border-[#111] bg-[#fafaf8] shadow-xs"
-                  : "border-black/[0.06] bg-white hover:bg-[#fafaf8]"
+              onClick={() => setIsCloud(false)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-mono transition-colors ${
+                !isCloud ? "bg-[#111] text-white" : "bg-black/[0.05] text-black/60 hover:bg-black/[0.08]"
               }`}
             >
-              <div>
-                <span className="text-xs font-semibold text-black/90 block">{m.name}</span>
-                <span className="text-[10px] text-black/40 font-mono mt-0.5 block">{m.vram}</span>
-              </div>
-              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded self-start mt-2 ${
-                selectedModel === m.id ? "bg-[#111] text-white" : "bg-black/[0.04] text-black/60"
-              }`}>
-                {m.badge}
-              </span>
+              Local Engine (Ollama)
             </button>
-          ))}
+            <button
+              onClick={() => setIsCloud(true)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-mono transition-colors ${
+                isCloud ? "bg-[#111] text-white" : "bg-black/[0.05] text-black/60 hover:bg-black/[0.08]"
+              }`}
+            >
+              Cloud Provider (API)
+            </button>
+          </div>
+        </div>
+
+        <div className="relative">
+          <input
+            type="text"
+            value={customModel}
+            onChange={(e) => setCustomModel(e.target.value)}
+            placeholder={isCloud ? "e.g. claude-3-5-sonnet, gpt-4o, openrouter/meta-llama/llama-3.3-70b" : "e.g. llama3.2:3b, qwen2.5:14b, deepseek-r1:32b, mistral:7b"}
+            className="w-full px-4 py-3 rounded-xl border border-black/[0.1] bg-white text-xs sm:text-sm font-mono text-black placeholder:text-black/30 focus:outline-none focus:ring-1 focus:ring-black/25 shadow-2xs"
+          />
+          {customModel && (
+            <button
+              onClick={() => setCustomModel("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-black/40 hover:text-black"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-black/45">
+          <span>Active Model: <strong className="text-black/80 font-mono">{customModel.trim() || "(default: llama3.2:3b)"}</strong></span>
+          <span>Switch anytime later with: <code className="bg-black/[0.04] px-1 py-0.5 rounded text-black/70">friend model set &lt;name&gt;</code></span>
         </div>
       </div>
 
@@ -137,30 +151,26 @@ export function OSInstallTabs() {
       {/* OS Specific Guidance & Post-Install */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
         <div className="p-3.5 rounded-xl bg-[#fafaf8] border border-black/[0.05] space-y-1">
-          <span className="font-mono text-[10px] uppercase text-black/40 block font-semibold">1. Prerequisites</span>
+          <span className="font-mono text-[10px] uppercase text-black/40 block font-semibold">1. Complete Freedom</span>
           <p className="text-xs text-black/60 leading-relaxed">
-            {selectedOS === "mac" && "Requires macOS 13+, Docker Desktop, and Python 3.11+."}
-            {selectedOS === "windows" && "Requires Windows 10/11, Docker Desktop (WSL2), and PowerShell."}
-            {selectedOS === "linux" && "Requires Linux x86_64 or aarch64, Docker Engine, and Python 3.11+."}
-            {selectedOS === "docker" && "Runs all 9 agents inside Docker without local build toolchains."}
+            Runs any model from Ollama, vLLM, HuggingFace, Anthropic, or OpenAI. No vendor lock-in.
           </p>
         </div>
 
         <div className="p-3.5 rounded-xl bg-[#fafaf8] border border-black/[0.05] space-y-1">
-          <span className="font-mono text-[10px] uppercase text-black/40 block font-semibold">2. Global Command</span>
+          <span className="font-mono text-[10px] uppercase text-black/40 block font-semibold">2. Lightweight Runtime</span>
           <p className="text-xs text-black/60 leading-relaxed">
-            Installs global <code className="font-mono text-[11px] bg-black/[0.04] px-1 rounded">friend</code> command to launch, chat, and configure at any time.
+            Installer downloads only the 4.3 MB runtime package without cloning the full repository.
           </p>
         </div>
 
         <div className="p-3.5 rounded-xl bg-[#fafaf8] border border-black/[0.05] space-y-1">
-          <span className="font-mono text-[10px] uppercase text-black/40 block font-semibold">3. Model Freedom</span>
+          <span className="font-mono text-[10px] uppercase text-black/40 block font-semibold">3. Global Tooling</span>
           <p className="text-xs text-black/60 leading-relaxed">
-            Selected: <strong className="text-black/80">{selectedModel}</strong>. Switch models anytime via <code className="font-mono text-[10px] bg-black/[0.04] px-1 rounded">friend model set</code>.
+            Manage models, voices, and chat through the global <code className="font-mono text-[11px] bg-black/[0.04] px-1 rounded">friend</code> command.
           </p>
         </div>
       </div>
     </div>
   )
 }
-
