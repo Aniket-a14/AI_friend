@@ -21,7 +21,6 @@ from typing import Any
 
 import orjson
 
-
 # ── Event ledger entry ───────────────────────────────────────────────
 
 
@@ -141,7 +140,7 @@ class NatsMeshHarness:
             self._topic_events[subject].clear()
             try:
                 await asyncio.wait_for(self._topic_events[subject].wait(), timeout=remaining)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
         return self.events_on(subject)
 

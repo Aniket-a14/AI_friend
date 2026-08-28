@@ -19,8 +19,6 @@ import asyncio
 import json
 import time
 import uuid
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -34,17 +32,15 @@ from app.contracts import (
     MemorySurfaced,
     SessionPresence,
     SurfacedMemory,
-    Topics,
     VisionDescription,
 )
-
-from .harness.mock_cognitive_engines import MockDeterministicLLM, MockDeterministicTTS
-from .harness.mock_livekit import MockAudioFrame, MockAudioSource, MockAudioStream
-from .harness.nats_mesh_fixture import NatsMeshHarness
 
 # Reuse conftest.py's MockNATSConnection (already in sys.modules from conftest).
 from tests.conftest import MockNATSConnection
 
+from .harness.mock_cognitive_engines import MockDeterministicLLM, MockDeterministicTTS
+from .harness.mock_livekit import MockAudioFrame, MockAudioSource, MockAudioStream
+from .harness.nats_mesh_fixture import NatsMeshHarness
 
 # =====================================================================
 # 📦 FIXTURES
@@ -400,7 +396,6 @@ class TestVisionContextFusion:
         ).model_dump())
 
         # Step 3: brain responds (incorporating vision context).
-        response_ts = time.time()
         await harness.inject("chat.output", ChatOutput(
             content="It looks like you're holding a book!",
             turn_id=str(uuid.uuid4()),

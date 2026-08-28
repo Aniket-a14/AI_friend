@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
-
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any
 
 # ── Synthetic audio frame ────────────────────────────────────────────
 
@@ -28,7 +28,7 @@ class MockAudioFrame:
     num_channels: int = 1
 
     @classmethod
-    def silence(cls, duration_ms: int = 20, sample_rate: int = 16_000) -> "MockAudioFrame":
+    def silence(cls, duration_ms: int = 20, sample_rate: int = 16_000) -> MockAudioFrame:
         """Generate a frame of silence (all-zero PCM)."""
         num_samples = int(sample_rate * duration_ms / 1000)
         return cls(
@@ -44,7 +44,7 @@ class MockAudioFrame:
         duration_ms: int = 20,
         amplitude: float = 0.5,
         sample_rate: int = 16_000,
-    ) -> "MockAudioFrame":
+    ) -> MockAudioFrame:
         """Generate a frame containing a pure sine-wave tone.
 
         Useful for verifying the PCM path end-to-end without needing a
@@ -129,7 +129,7 @@ class MockAudioSource:
             self._capture_event.clear()
             try:
                 await asyncio.wait_for(self._capture_event.wait(), timeout=remaining)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
         return list(self.captured_frames)
 
@@ -150,7 +150,7 @@ class MockLocalAudioTrack:
         self._source = source
 
     @classmethod
-    def create_audio_track(cls, name: str, source: MockAudioSource) -> "MockLocalAudioTrack":
+    def create_audio_track(cls, name: str, source: MockAudioSource) -> MockLocalAudioTrack:
         return cls(name=name, source=source)
 
 
@@ -189,7 +189,6 @@ class MockLocalParticipant:
 
     async def publish_data(self, data: bytes, *, reliable: bool = True, topic: str = "") -> None:
         """Captures data-channel sends (e.g. visemes)."""
-        pass
 
 
 class MockRoom:

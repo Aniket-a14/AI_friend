@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import struct
 import time
-from typing import Any, AsyncIterator
-
+from collections.abc import AsyncIterator
+from typing import Any
 
 # ── Mock LLM ─────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ class _TokenIterator:
         self._words = text.split()
         self._index = 0
 
-    def __aiter__(self) -> "_TokenIterator":
+    def __aiter__(self) -> _TokenIterator:
         return self
 
     async def __anext__(self) -> str:
