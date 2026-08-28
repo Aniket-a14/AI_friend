@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..config import Config
 from ..llm import build_llm_client
@@ -37,18 +37,18 @@ ENV_PATH = REPO_ROOT / ".env"
 
 
 class CompileRequest(BaseModel):
-    description: str
+    description: str = Field(max_length=20_000)
 
 
 class CommitRequest(BaseModel):
     profile: PersonaProfile
-    biography_markdown: str
+    biography_markdown: str = Field(max_length=100_000)
     force: bool = False
 
 
 class DryRunChatRequest(BaseModel):
     profile: PersonaProfile
-    message: str
+    message: str = Field(max_length=20_000)
 
 
 def _compiled_persona_payload(compiled) -> dict:

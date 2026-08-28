@@ -25,6 +25,27 @@ SOVITS_ROOT="${SOVITS_ROOT:-/workspace/GPT-SoVITS}"
 
 OUT="/tmp/sovits_healthcheck_response.raw"
 
+json_payload() {
+    # REF_TEXT is user-controlled after browser voice enrollment. Let a JSON
+    # encoder handle quotes, backslashes, and newlines safely.
+    python3 - "$REF_AUDIO_PATH" "$REF_TEXT" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "text": "Status check.",
+    "text_lang": "en",
+    "ref_audio_path": sys.argv[1],
+    "prompt_text": sys.argv[2],
+    "prompt_lang": "en",
+    "text_split_method": "cut5",
+    "batch_size": 1,
+    "media_type": "raw",
+    "streaming_mode": 0,
+}))
+PY
+}
+
 # ref_audio_path is resolved by GPT-SoVITS relative to its own working
 # directory, which is where `output/` is bind-mounted from
 # backend/voice_samples/.
@@ -36,17 +57,7 @@ fi
 
 curl -fsS -m 8 -X POST "http://127.0.0.1:9871/tts" \
      -H "Content-Type: application/json" \
-     -d "{
-            \"text\": \"Status check.\",
-            \"text_lang\": \"en\",
-            \"ref_audio_path\": \"${REF_AUDIO_PATH}\",
-            \"prompt_text\": \"${REF_TEXT}\",
-            \"prompt_lang\": \"en\",
-            \"text_split_method\": \"cut5\",
-            \"batch_size\": 1,
-            \"media_type\": \"raw\",
-            \"streaming_mode\": 0
-          }" \
+     -d "$(json_payload)" \
      -o "$OUT"
 
 # A 200 with an empty body is still curl-successful -- GPT-SoVITS has open

@@ -128,12 +128,16 @@ async def _import_postgres(dsn: str, staging: Path) -> dict[str, int]:
     conn = await asyncpg.connect(dsn)
     counts: dict[str, int] = {}
     try:
-        await _wipe_postgres(conn)
-        pg_dir = staging / "postgres"
-        for table in POSTGRES_IMPORT_ORDER:
-            counts[table] = await _import_postgres_table(
-                conn, table, pg_dir / f"{table}.jsonl"
-            )
+        # Keep the destructive wipe and every insert in one transaction. A
+        # malformed row must roll back instead of leaving a partially empty
+        # friend behind.
+        async with conn.transaction():
+            await _wipe_postgres(conn)
+            pg_dir = staging / "postgres"
+            for table in POSTGRES_IMPORT_ORDER:
+                counts[table] = await _import_postgres_table(
+                    conn, table, pg_dir / f"{table}.jsonl"
+                )
     finally:
         await conn.close()
     return counts

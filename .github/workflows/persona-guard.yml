@@ -39,6 +39,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          set -o pipefail
           cd backend
           pip install --upgrade pip
           pip install -r requirements-base.txt
@@ -75,6 +76,7 @@ jobs:
           NEO4J_PASSWORD: dummy_password
         run: |
           cd backend
+          set -o pipefail
           # Run only tests tagged with identity/persona/state keywords
           pytest -v --tb=short -k "identity or persona or state or emotion or markup" 2>&1 | tee persona_results.txt
 

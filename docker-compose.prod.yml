@@ -48,6 +48,10 @@ services:
       context: ./backend
       target: slim
     container_name: signaling
+    # Bind-mounted onboarding files must be writable by the host user that
+    # launched the stack. start.sh exports these IDs; the fallback preserves
+    # the image's historical UID for direct compose use.
+    user: "${AI_FRIEND_UID:-1001}:${AI_FRIEND_GID:-1001}"
     command: [ "python", "main.py" ]
     env_file: .env
     environment:
@@ -69,6 +73,13 @@ services:
     # was missing on the first version of this service.
     volumes:
       - ./backend/models/sensevoice:/app/models/sensevoice
+      # The web enrollment endpoints write these host-backed files. Without
+      # these mounts a successful upload/persona commit only changed the
+      # signaling container's ephemeral filesystem and was invisible to the
+      # voice/brain agents (and lost on recreation).
+      - ./.env:/app/.env
+      - ./backend/voice_samples:/app/voice_samples
+      - ./personal:/app/personal
     ports:
       - "127.0.0.1:8000:8000"
     networks:
@@ -141,12 +152,18 @@ services:
       - LOG_LEVEL=INFO
       - QDRANT_HOST=brain_vectors
       - MOCK_LLM_TEXT=${MOCK_LLM_TEXT:-false}
+      # Web onboarding writes the authored files under the shared personal
+      # mount. Explicit paths avoid the container's config/ discovery path
+      # silently selecting the generic example persona.
+      - PERSONA_PROFILE_PATH=${PERSONA_PROFILE_PATH:-/app/personal/persona.toml}
+      - BIOGRAPHY_PATH=${BIOGRAPHY_PATH:-/app/personal/biography.md}
       # #113 / H2: runtime persona evolution (IdentityManager.save()'s fallback
       # when agent_configs is unreachable) needs to land on a volume, not the
       # image's writable layer, or a redeploy silently resets it.
       - IDENTITY_BASE_PATH=/app/data
     volumes:
       - identity_data:/app/data
+      - ./personal:/app/personal:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

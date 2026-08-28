@@ -87,6 +87,28 @@ def test_validate_rejects_a_non_audio_upload(client):
     assert r.status_code == 400
 
 
+def test_validate_rejects_an_unsupported_sample_rate(client):
+    wav = _tone_wav_bytes(8.0, samplerate=16_000)
+    r = client.post(
+        "/api/voice/validate",
+        files={"file": ("clip.wav", wav, "audio/wav")},
+        headers=AUTH_HEADERS,
+    )
+    assert r.status_code == 422
+
+
+def test_validate_rejects_an_oversized_upload_before_decoding(client, monkeypatch):
+    import app.api.voice as voice_module
+
+    monkeypatch.setattr(voice_module, "MAX_VOICE_UPLOAD_BYTES", 4)
+    r = client.post(
+        "/api/voice/validate",
+        files={"file": ("clip.wav", b"12345", "audio/wav")},
+        headers=AUTH_HEADERS,
+    )
+    assert r.status_code == 413
+
+
 # ---------------------------------------------------------------------------
 # /api/voice/commit
 # ---------------------------------------------------------------------------
@@ -112,6 +134,17 @@ def test_commit_rejects_an_empty_transcript(client):
         headers=AUTH_HEADERS,
     )
     assert r.status_code == 400
+
+
+def test_commit_rejects_an_unbounded_transcript(client):
+    wav = _tone_wav_bytes(8.0)
+    r = client.post(
+        "/api/voice/commit",
+        files={"file": ("clip.wav", wav, "audio/wav")},
+        data={"transcript": "x" * 10_001},
+        headers=AUTH_HEADERS,
+    )
+    assert r.status_code == 422
 
 
 def test_commit_refuses_to_save_a_clip_that_fails_validation(client, tmp_path, monkeypatch):

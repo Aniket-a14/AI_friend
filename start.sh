@@ -40,6 +40,12 @@ set -a
 # shellcheck disable=SC1091
 source .env
 set +a
+# The signaling service writes the gitignored persona and voice enrollment
+# files through bind mounts. Match its runtime UID/GID to the user who owns
+# this checkout so a normal non-root Docker launch can persist those files.
+export AI_FRIEND_UID="${AI_FRIEND_UID:-$(id -u)}"
+export AI_FRIEND_GID="${AI_FRIEND_GID:-$(id -g)}"
+mkdir -p personal backend/voice_samples
 
 # 2. Docker itself must be reachable.
 if ! docker info > /dev/null 2>&1; then
@@ -97,7 +103,13 @@ fi
 
 # 6. Bring up infra first so the schema push below has a database to push
 # against -- doing this out of order is what "half-boots" a fresh clone.
-docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d postgres neo4j redis nats livekit
+# LiveKit is only needed by the full voice mesh; starting it unconditionally
+# made light/heavy modes launch an unused service before their profile applied.
+INFRA_SERVICES=(postgres neo4j redis nats)
+if [ "$MODE" = "full" ]; then
+    INFRA_SERVICES+=(livekit)
+fi
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d "${INFRA_SERVICES[@]}"
 
 echo "==> Waiting for Postgres to become healthy..."
 POSTGRES_READY=false

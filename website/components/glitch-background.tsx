@@ -50,7 +50,7 @@ const fragmentShader = `
     // Sample both textures
     vec4 bgCol = texture2D(uBgTexture, uv);
     vec4 frCol = texture2D(uFrTexture, uv);
-    
+
     // Layer: bg-nature as base, fr-nature overlay on top
     vec4 baseColor = mix(bgCol, frCol, 0.7);
 

@@ -103,3 +103,19 @@ def test_import_returns_500_when_import_friend_raises(client):
         )
 
     assert r.status_code == 500
+
+
+def test_import_rejects_an_oversized_archive_before_calling_import(client, monkeypatch):
+    import app.api.friend_data as friend_data_module
+
+    monkeypatch.setattr(friend_data_module, "MAX_IMPORT_ARCHIVE_BYTES", 4)
+    with patch("app.api.friend_data.import_friend", AsyncMock()) as mock_import:
+        r = client.post(
+            "/api/friend/import",
+            files={"file": ("f.tar.gz", b"12345", "application/gzip")},
+            data={"force": "true"},
+            headers=AUTH_HEADERS,
+        )
+
+    assert r.status_code == 413
+    mock_import.assert_not_called()

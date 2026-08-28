@@ -19,7 +19,9 @@ Two things this suite exists to pin down:
 import pytest
 from fastapi.testclient import TestClient
 from starlette.testclient import WebSocketDenialResponse
+from starlette.websockets import WebSocketDisconnect
 
+import app.api.chat as chat_module
 from app.api.chat import bridge as chat_bridge
 from app.contracts import ChatOutput
 from main import app
@@ -42,12 +44,14 @@ def _reset_bridge():
     every browser tab) -- reset its per-test state so a queue attached or a
     connection opened in one test can't leak into the next."""
     chat_bridge._listeners.clear()
-    chat_bridge._started = False
+    # The route tests simulate a successfully started bridge; readiness has a
+    # separate regression test below and real startup is covered by lifespan.
+    chat_bridge._started = True
     chat_bridge.nc = None
     chat_bridge.js = None
     yield
     chat_bridge._listeners.clear()
-    chat_bridge._started = False
+    chat_bridge._started = True
     chat_bridge.nc = None
     chat_bridge.js = None
 
@@ -149,3 +153,28 @@ def test_closing_a_connection_detaches_its_listener_queue(client):
     with client.websocket_connect(f"{WS_PATH}{AUTH_QS}"):
         assert len(chat_bridge._listeners) == 1
     assert len(chat_bridge._listeners) == 0
+
+
+def test_chat_rejects_connections_when_the_mesh_is_not_ready(client):
+    chat_bridge._started = False
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(f"{WS_PATH}{AUTH_QS}"):
+            pass
+    assert exc_info.value.code == 1013
+
+
+def test_chat_listener_queue_is_bounded_and_keeps_newest_output():
+    queue = chat_bridge.attach()
+    try:
+        for index in range(chat_module.CHAT_LISTENER_QUEUE_SIZE + 1):
+            import asyncio
+
+            asyncio.run(
+                chat_bridge._on_chat_output(
+                    ChatOutput(content=str(index), turn_id=str(index)).model_dump()
+                )
+            )
+        assert queue.qsize() == chat_module.CHAT_LISTENER_QUEUE_SIZE
+        assert queue.get_nowait().turn_id == "1"
+    finally:
+        chat_bridge.detach(queue)

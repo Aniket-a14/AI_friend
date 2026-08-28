@@ -12710,3 +12710,36 @@ app/`, not just trusting that the build didn't error.
   instead, keeping the dependency surface smaller.
 - No live browser/visual QA, same standing limitation as every prior
   website entry this session -- no browser available in this environment.
+
+## 2026-08-28 — Community roadmap PR review and CI repairs
+
+Reviewed the branch against `docs/COMMUNITY_ROADMAP.md` and the current
+integration points rather than treating the attached roadmap as executable
+instructions. Fixed CI failure masking (`pipefail` on regression pipelines and
+real `pip-audit` failure handling), removed the website's build-time Google
+font network dependency, and fixed the trailing shader whitespace reported by
+`git diff --check`.
+
+Fixed functional/security edges: bounded and offloaded voice uploads and
+transcription, reject non-22050 Hz reference clips, bound import archives and
+persona inputs, delete exported temp archives after streaming, make Postgres
+imports transactional, safely JSON-encode user voice transcripts in SoVITS
+probes, bound chat listener queues, and reject chat sockets while NATS is not
+ready. Web-authored persona, voice, and `.env` files now use shared Compose
+mounts and the launcher passes host ownership IDs so commits persist and are
+visible to the agents; light/heavy startup no longer eagerly launches LiveKit.
+
+**Verified:** backend JUnit run `1391 passed, 65 warnings` (the live NATS
+account test is excluded only because this sandbox cannot bind sockets), Ruff,
+subject wiring, Compose config, shell syntax, Maturin wheel build, frontend
+lint/build, Rust `cargo check --workspace`, and Rust contracts/STT/voice tests
+(`6 + 61 + 52` passed, plus zero doc tests).
+
+**NOT done:**
+- No clean-checkout full-stack audible run was possible here; Docker, Ollama,
+  GPT-SoVITS weights, and LiveKit were not available, so the roadmap's Phase 1
+  and Phase 2 live acceptance claims remain unverified.
+- GitHub PR/job status could not be fetched from this environment; remote CI
+  must be checked after these changes are pushed.
+- Roadmap Phase 3--8 measurement/eval gates and browser visual QA remain
+  outside this repair pass; no placeholder benchmark was promoted to a result.

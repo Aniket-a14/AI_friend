@@ -318,6 +318,21 @@ class _FakeConn:
         self.column_info = column_info or {}
         self.executed = []
         self.closed = False
+        self.transaction_entered = False
+
+    class _Transaction:
+        def __init__(self, conn):
+            self.conn = conn
+
+        async def __aenter__(self):
+            self.conn.transaction_entered = True
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    def transaction(self):
+        return self._Transaction(self)
 
     async def fetch(self, query, *args):
         if "information_schema.columns" in query:
@@ -395,6 +410,19 @@ async def test_import_postgres_table_applies_the_right_cast_per_column(tmp_path)
         "2026-08-28T12:00:00+00:00",
         0.5,
     )
+
+
+@pytest.mark.asyncio
+async def test_import_postgres_wraps_wipe_and_rows_in_a_transaction(tmp_path, monkeypatch):
+    conn = _FakeConn()
+
+    async def _fake_connect(dsn):
+        return conn
+
+    monkeypatch.setattr(imf.asyncpg, "connect", _fake_connect, raising=False)
+    await imf._import_postgres("postgresql://unused", tmp_path)
+
+    assert conn.transaction_entered is True
 
 
 @pytest.mark.asyncio

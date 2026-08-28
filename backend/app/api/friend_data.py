@@ -13,17 +13,20 @@ admin operation; would need revisiting before this became a hosted feature
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from scripts.export_friend import export_friend
 from scripts.import_friend import import_friend
 
 router = APIRouter(prefix="/api/friend", tags=["friend-data"])
+MAX_IMPORT_ARCHIVE_BYTES = 100 * 1024 * 1024
 
 
 @router.post("/export")
-async def export_friend_endpoint(skip_neo4j: bool = False):
+async def export_friend_endpoint(
+    background_tasks: BackgroundTasks, skip_neo4j: bool = False
+):
     with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as handle:
         out_path = Path(handle.name)
 
@@ -33,10 +36,9 @@ async def export_friend_endpoint(skip_neo4j: bool = False):
         out_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=f"Export failed: {exc}") from exc
 
-    # FileResponse streams and does not delete afterward; the OS temp
-    # directory's own cleanup is relied on here rather than an in-request
-    # unlink, since deleting before the streamed response finishes sending
-    # would truncate the download.
+    # Delete only after Starlette has finished streaming. Relying on generic
+    # /tmp cleanup leaks one archive per export on long-lived hosts.
+    background_tasks.add_task(out_path.unlink, missing_ok=True)
     return FileResponse(
         out_path,
         media_type="application/gzip",
@@ -60,8 +62,17 @@ async def import_friend_endpoint(
         )
 
     with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as handle:
-        handle.write(await file.read())
         archive_path = Path(handle.name)
+        total = 0
+        while chunk := await file.read(1024 * 1024):
+            total += len(chunk)
+            if total > MAX_IMPORT_ARCHIVE_BYTES:
+                archive_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail="Import archive exceeds the 100 MiB limit",
+                )
+            handle.write(chunk)
 
     try:
         await import_friend(archive_path, force=force, skip_neo4j=skip_neo4j)

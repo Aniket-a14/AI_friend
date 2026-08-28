@@ -34,6 +34,7 @@ from ..contracts import ChatInput, ChatOutput, Topics
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+CHAT_LISTENER_QUEUE_SIZE = 128
 
 
 class ChatBridge(BaseAgent):
@@ -56,10 +57,18 @@ class ChatBridge(BaseAgent):
     async def _on_chat_output(self, data: dict) -> None:
         output = ChatOutput.model_validate(data)
         for queue in list(self._listeners):
+            if queue.full():
+                # A browser tab that stops reading must not grow this
+                # process's heap forever. Keep the newest output, which is
+                # more useful for a reconnecting transcript than stale chunks.
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
             queue.put_nowait(output)
 
     def attach(self) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=CHAT_LISTENER_QUEUE_SIZE)
         self._listeners.add(queue)
         return queue
 
@@ -83,6 +92,9 @@ bridge = ChatBridge()
 
 @router.websocket("/ws")
 async def chat_websocket(websocket: WebSocket) -> None:
+    if not bridge._started:
+        await websocket.close(code=1013, reason="Chat mesh is not ready")
+        return
     await websocket.accept()
     queue = bridge.attach()
     forward_task = asyncio.create_task(_forward(websocket, queue))

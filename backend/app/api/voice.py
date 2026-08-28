@@ -10,6 +10,7 @@ decode/resample step this endpoint does not yet have -- left for when the
 Phase 5.2 web flow that would actually drive it exists.
 """
 
+import asyncio
 import tempfile
 from pathlib import Path
 
@@ -20,12 +21,18 @@ from pydantic import BaseModel
 
 from scripts.audio.record_voice import (
     EMOTIONAL_VARIANTS,
+    SAMPLE_RATE,
     VOICE_SAMPLES_DIR,
     transcribe,
     validate_clip,
 )
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
+
+# A reference clip is short, so accepting arbitrarily large multipart bodies
+# only creates an easy memory-exhaustion path for a LAN client. The limit is
+# deliberately generous for WAV while bounding the request before decoding it.
+MAX_VOICE_UPLOAD_BYTES = 10 * 1024 * 1024
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ENV_PATH = REPO_ROOT / ".env"
@@ -39,15 +46,33 @@ class ValidateResponse(BaseModel):
 
 
 async def _read_wav(upload: UploadFile) -> tuple:
-    raw = await upload.read()
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
-        handle.write(raw)
         temp_path = Path(handle.name)
+        total = 0
+        while chunk := await upload.read(1024 * 1024):
+            total += len(chunk)
+            if total > MAX_VOICE_UPLOAD_BYTES:
+                temp_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Uploaded clip exceeds the {MAX_VOICE_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
+                )
+            handle.write(chunk)
     try:
-        audio, samplerate = sf.read(str(temp_path), dtype="float32", always_2d=False)
+        audio, samplerate = await asyncio.to_thread(
+            sf.read, str(temp_path), dtype="float32", always_2d=False
+        )
+        if samplerate != SAMPLE_RATE:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Reference clips must use a {SAMPLE_RATE} Hz sample rate",
+            )
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
         return audio, samplerate, temp_path
+    except HTTPException:
+        temp_path.unlink(missing_ok=True)
+        raise
     except Exception as exc:
         temp_path.unlink(missing_ok=True)
         raise HTTPException(
@@ -61,8 +86,8 @@ async def validate_voice_endpoint(file: UploadFile = File(...)):
     recording, plus a best-effort transcription -- nothing is saved yet."""
     audio, samplerate, temp_path = await _read_wav(file)
     try:
-        problems = validate_clip(audio, samplerate)
-        transcript = transcribe(temp_path) if not problems else None
+        problems = await asyncio.to_thread(validate_clip, audio, samplerate)
+        transcript = await asyncio.to_thread(transcribe, temp_path) if not problems else None
         duration_s = len(audio) / samplerate if samplerate else 0.0
         return ValidateResponse(
             problems=problems,
@@ -77,7 +102,7 @@ async def validate_voice_endpoint(file: UploadFile = File(...)):
 @router.post("/commit")
 async def commit_voice_endpoint(
     file: UploadFile = File(...),
-    transcript: str = Form(...),
+    transcript: str = Form(..., max_length=10_000),
     variant: str | None = Form(default=None),
     force: bool = Form(default=False),
 ):
@@ -99,7 +124,7 @@ async def commit_voice_endpoint(
 
     audio, samplerate, temp_path = await _read_wav(file)
     try:
-        problems = validate_clip(audio, samplerate)
+        problems = await asyncio.to_thread(validate_clip, audio, samplerate)
         if problems and not force:
             raise HTTPException(
                 status_code=422,
@@ -109,12 +134,14 @@ async def commit_voice_endpoint(
         VOICE_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
         filename = "sample_en_gold.wav" if variant is None else f"{variant.lower()}.wav"
         dest_path = VOICE_SAMPLES_DIR / filename
-        sf.write(dest_path, audio, samplerate)
+        await asyncio.to_thread(sf.write, dest_path, audio, samplerate)
 
         env_audio_key = "REF_AUDIO_PATH" if variant is None else f"REF_AUDIO_PATH_{variant}"
         env_text_key = "REF_TEXT" if variant is None else f"REF_TEXT_{variant}"
-        set_key(str(ENV_PATH), env_audio_key, f"output/{dest_path.name}")
-        set_key(str(ENV_PATH), env_text_key, transcript.strip())
+        await asyncio.to_thread(
+            set_key, str(ENV_PATH), env_audio_key, f"output/{dest_path.name}"
+        )
+        await asyncio.to_thread(set_key, str(ENV_PATH), env_text_key, transcript.strip())
 
         return {
             "status": "saved",

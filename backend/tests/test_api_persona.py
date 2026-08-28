@@ -62,6 +62,15 @@ def test_compile_rejects_empty_description(client):
     assert r.status_code == 400
 
 
+def test_compile_rejects_an_unbounded_description(client):
+    r = client.post(
+        "/api/persona/compile",
+        json={"description": "x" * 20_001},
+        headers=AUTH_HEADERS,
+    )
+    assert r.status_code == 422
+
+
 def test_compile_returns_the_full_compiled_payload(client):
     fake_client = AsyncMock()
     fake_client.close = AsyncMock()

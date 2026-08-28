@@ -5,6 +5,7 @@ the voice agent could never start at all (roadmap Phase 1's "the blocker,
 precisely"). These tests run the real script against a fake curl so the
 degrade-instead-of-hang behavior is verified without a live GPT-SoVITS."""
 
+import json
 import os
 import stat
 import subprocess
@@ -25,6 +26,9 @@ prev=""
 for arg in "$@"; do
     if [ "$prev" = "-o" ]; then
         out="$arg"
+    fi
+    if [ "$prev" = "-d" ]; then
+        printf '%s' "$arg" > "$FAKE_CURL_PAYLOAD"
     fi
     case "$arg" in
         http*) url="$arg" ;;
@@ -62,6 +66,7 @@ def _run(fake_curl_bin, sovits_root, tts_body="audio-bytes", extra_env=None):
     env["PATH"] = f"{fake_curl_bin}:{env['PATH']}"
     env["SOVITS_ROOT"] = str(sovits_root)
     env["FAKE_CURL_LOG"] = str(sovits_root / "curl.log")
+    env["FAKE_CURL_PAYLOAD"] = str(sovits_root / "payload.json")
     env["FAKE_CURL_TTS_BODY"] = tts_body
     if extra_env:
         env.update(extra_env)
@@ -119,3 +124,18 @@ def test_respects_a_custom_ref_audio_path(tmp_path, fake_curl_bin):
     assert result.returncode == 0
     log = (tmp_path / "curl.log").read_text()
     assert "/tts" in log
+
+
+def test_json_encodes_user_supplied_reference_text(tmp_path, fake_curl_bin):
+    (tmp_path / "output").mkdir()
+    (tmp_path / "output" / "sample_en_gold.wav").write_bytes(b"clip")
+
+    result = _run(
+        fake_curl_bin,
+        sovits_root=tmp_path,
+        extra_env={"REF_TEXT": 'Say "hi"\\then\ncontinue'},
+    )
+
+    assert result.returncode == 0
+    payload = json.loads((tmp_path / "payload.json").read_text())
+    assert payload["prompt_text"] == 'Say "hi"\\then\ncontinue'
