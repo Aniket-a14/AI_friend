@@ -12161,4 +12161,103 @@ reached a test run.
   the current diff rather than a blind re-run.
 - 7.5, flipping the CI gates from report-only to blocking -- explicitly
   blocked on 7.1/7.2/7.4 being clean first, per the roadmap's own ordering.
-- Phase 8 (community release) has not been started.
+
+Also left mid-flight and explicitly deferred to a separate PR, on the user's
+instruction: a first slice of 7.2 (mypy). Six single-error files were fixed
+and verified clean before the pivot (`vision/links.py`, `vision/agent.py`,
+`persona/profile.py`, `cognitive/identity.py`, `state/memory_store.py`,
+`agents/surfacing_agent.py` -- implicit-Optional defaults, an
+`isinstance`-narrowed `json_schema_extra` read, a missing `set[int]`
+annotation, a widened `_temporal_label` signature), then five more two/three-
+error files were fixed but **not re-verified with a fresh `mypy` run** before
+the pivot (`state/identity_core_store.py`, `llm/ollama_client.py`,
+`state/working_memory_store.py`, `state/semantic_recall_store.py`,
+`agents/subconscious_agent.py` -- including a real behavior fix, not just a
+type annotation: `OllamaClient.__init__`'s `model` parameter accepted `None`
+explicitly but the plain-keyword default never applied to an explicit `None`
+argument, so `build_llm_client(model=None)` -- the real path whenever
+`Config.LLM_CHAT_MODEL` is unset -- silently produced a client with
+`self.model = None` rather than falling back to `_DEFAULT_MODEL`, contradicting
+what `app/llm/__init__.py`'s own docstring and a test's own comment both
+already claimed happened). These edits are uncommitted in the working tree,
+not lost, but intentionally not part of this entry or this PR -- resume by
+re-running `mypy app`, confirming the count where this session left off, and
+continuing module by module from there.
+
+## 2026-08-28 -- Community roadmap Phase 8.1: the README is the product
+
+Rewrote `README.md` (814 -> 421 lines) per the roadmap's own instruction:
+"what someone deciding whether to try this needs... honest hardware
+requirements, and the one command from Phase 1.6" -- not a line edit, a
+reframe. The prior version was the "CVS-3.5 Premium Edition" / "Sovereign
+Mesh" framing `CLAUDE.md` already flags by name as overstating completeness,
+built for a humanoid-robotics comparison this project stopped being when the
+2026-08-27 product decisions (`async-stirring-clarke.md`) landed: one
+authored friend per person, not a platform benchmarked against Tesla Optimus
+and Figure 02.
+
+Cut entirely, not merely toned down, because each was a fabrication risk
+`CLAUDE.md`'s integrity constraints exist to prevent, not a style problem:
+
+- The "SOTA Comparative Benchmarking Matrix" -- a full table comparing this
+  project to humanoid robots on axes where most of *this project's own*
+  cells read `*(not yet measured)*`. A table is a claim of comparability;
+  most of its content was placeholders, which is exactly what the standing
+  rule "`[TBP]` stays `[TBP]` until measured" is about.
+- "Release Package Selection Guide" with SHA256 checksums for
+  `ai-friend-windows.zip`/`-macos.zip`/`-linux.tar.gz` -- no packaged release
+  has ever been built; Phase 8.5 explicitly names packaging as a future
+  "stop and reassess" item, not a shipped fact.
+- The invented "Hardware Tier Matrix" (Mini/Standard/High-End with specific
+  RTX 4090/M2 Ultra specs) -- no basis in anything measured; replaced with
+  what's actually true per this session's own memory of the hardware
+  timeline (MacBook development, 3B-model ceiling, GPU rented externally for
+  training) rather than aspirational tiers.
+- The literal false claim (named directly in the roadmap's own 8.1 item):
+  "two private, Git-ignored files... `backend/app/personality.json`,
+  `backend/app/history.json`" -- confirmed via `git ls-files` that both are
+  tracked, and contain the Phase 0.4 neutral placeholder persona (`"name":
+  "my friend"`), not anyone's real identity. Replaced with the real,
+  currently-true flow: `scripts/create_friend.py`'s wizard writes to the
+  actually-gitignored `personal/` directory instead.
+
+Kept and mostly verbatim, because it's accurate reference material, not
+marketing: the mesh diagram, the agent registry, the cognitive-turn sequence,
+the math specification section (PAD/ACT-R/Marsh/endocrine/MAUT/prosody --
+real, code-backed equations, not benchmark claims), the signal-bus contract
+table, the directory layout (updated for `website/`, `personal/`, `evals/`,
+`tools/`), the config reference, and the troubleshooting section.
+
+Added: a "What this is" section leading with the actual product (freeform
+persona description, full emotional range with friction, small hard safety
+floor, own cloned voice from first boot, local-first, portable), a "What
+makes it different, technically" section naming the genuinely uncommon parts
+the roadmap's 8.1 item asked for by name (endocrine tonic+phasic dual-channel
+modulation of LLM sampling, the three-tier enforced persona boundary, the
+learned-not-hardcoded lexicon, physically-synthesized PCM timing), the real
+`./start.sh` one-command flow plus `scripts/create_friend.py`'s wizard, and a
+"What's proven, what's a target" section that points at `.agents/CONTEXT.md`
+as the authority instead of repeating numbers inline where they could drift
+out of sync with it again.
+
+Verified each factual claim against the current tree rather than carried
+over from the old draft: `git ls-files` for the personality.json/history.json
+tracked status, `start.sh`/`Makefile` read in full for the real boot sequence,
+`create_friend.py`'s docstring for the wizard's actual one-way-door behavior,
+`.env.example` for the `LLM_PROVIDER=anthropic` fallback, `docker-compose.
+infra.yml`/`.prod.yml` for the real service list, `git ls-files LICENSE`
+left untouched (a repository's copyright line is standard OSS authorship
+attribution, not the same class of concern as identity leaking into a
+tracked persona file).
+
+**NOT done:**
+
+- 8.2 (community scaffolding review), 8.3 (landing page from the `website/`
+  template -- confirmed already landed at the repo root during Phase 5, so
+  no longer blocked the way the roadmap anticipated when it was written, but
+  not started here), 8.4 (end-to-end demo recording), 8.5 (packaged install,
+  explicitly a "stop and reassess" item per the roadmap itself).
+- No link-check or markdown-lint tool was run against the rewritten file;
+  every internal link and file path was checked by hand against the current
+  tree instead.
+- Phase 7's remainder (7.1, 7.2, 7.4, 7.5) remains open, per the entry above.
