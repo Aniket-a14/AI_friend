@@ -416,6 +416,12 @@ and [`SECURITY.md`](SECURITY.md). `CLAUDE.md` is the guide for working in this
 codebase specifically — conventions, verification bar, and the CI gotchas that
 aren't obvious from the workflow files alone.
 
+Questions, bug reports, and feature ideas go through [`SUPPORT.md`](SUPPORT.md).
+[`GOVERNANCE.md`](GOVERNANCE.md) and [`MAINTAINERS.md`](MAINTAINERS.md) cover
+who decides what, honestly scoped to a single-maintainer project today. If
+you use this in research or a project of your own,
+[`CITATION.cff`](CITATION.cff) has the citation metadata.
+
 ## License
 
 Distributed under the MIT License. See [`LICENSE`](LICENSE).

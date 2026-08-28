@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use AI Friend in your research or projects, please cite it as below."
+title: "AI Friend: A Local-First, Self-Hosted AI Companion"
+abstract: "A local-first AI friend you describe in your own words, with a persona compiled from freeform prose behind an enforced tier boundary, an endocrine layer (tonic and phasic cortisol/dopamine) that measurably modulates LLM sampling, a learned mental lexicon built from its own conversations rather than a hardcoded thesaurus, and a cloned voice rendered with physically synthesized timing. Runs entirely on the user's own hardware."
+authors:
+  - family-names: "Saha"
+    given-names: "Aniket"
+    alias: "Aniket-a14"
+url: "https://github.com/Aniket-a14/AI_friend"
+repository-code: "https://github.com/Aniket-a14/AI_friend"
+license: MIT
+keywords:
+  - ai-companion
+  - cognitive-architecture
+  - affective-computing
+  - local-first
+  - self-hosted
+  - privacy
+  - voice-cloning
+  - conversational-ai
+  - python
+  - rust

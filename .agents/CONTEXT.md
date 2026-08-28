@@ -12529,3 +12529,73 @@ risk the template shipped with originally (this entry doesn't make that
 risk worse, but doesn't remove it either); if that storage ever expires,
 these six references break. No live browser/visual QA was possible in this
 environment, same limitation as the first 8.3 entry.
+
+## 2026-08-28 -- Community governance files, inspired by the Wizard release
+
+At the user's direction, read two of their other local repos --
+`Wizard-w2` and `wizard-website` (GitHub org `Wizard-AIA`) -- which shipped
+a community release three days before this entry, for genuine structural
+inspiration on what a solo-maintainer open-source project's community
+scaffolding looks like when done well. This is inspiration for *structure*,
+not a template to copy verbatim: Wizard has a Homebrew tap, prebuilt release
+binaries, GitHub Codespaces support, a hosted docs site, and an OpenSSF
+Scorecard badge -- none of which exist for this project, and none of which
+are claimed here. What transferred honestly is the *kind* of file a mature
+solo-maintainer project has that this one didn't yet, written for this
+project's actual, current situation.
+
+**New files**, each adapted rather than copied -- referencing this repo's
+real issue templates (confirmed present: `bug_report.yml`, `feature_
+request.yml`), confirmed-enabled GitHub Discussions (`gh repo view
+--json hasDiscussionsEnabled` -> true), and the actual maintainer:
+
+- `GOVERNANCE.md` -- single-maintainer decision-making, explicitly not
+  pretending to be a multi-person process this project doesn't have yet.
+  Points at `.agents/CONTEXT.md`'s "Explicitly not doing" sections as the
+  record of product decisions, rather than inventing a separate governance
+  artifact.
+- `SUPPORT.md` -- routes to README.md/`docs/` (there is no hosted docs
+  site, so this says so rather than implying one), Discussions, the real
+  issue templates, and `SECURITY.md` for vulnerabilities.
+- `MAINTAINERS.md` -- one row, honestly.
+- `CITATION.cff` -- no `version`/`date-released` fields, deliberately:
+  Wizard's has both because Wizard has real tagged releases; this project
+  doesn't, and a CFF file is exactly the kind of machine-read metadata
+  where a fabricated version number would actually mislead a citation tool,
+  not just a human reader.
+
+**Fixed, not new:** `CHANGELOG.md` had the identical fabrication pattern
+already found and fixed twice this session in other files -- fake semver
+version headers (`[6.5.0]`, `[6.0.0]`, `[5.0.0]`) with invented dates, and
+marketing entries including the same "80,000 OPS" throughput figure already
+removed from `CONTRIBUTING.md` in the Phase 8.2 entry above (never measured,
+originally an explicit `*(not yet measured)*` placeholder in the old
+README's SLO table). Replaced with a single honest "Unreleased" section
+matching `SECURITY.md`'s already-established framing ("no tagged releases
+yet") and pointing at `.agents/CONTEXT.md` for the real dated history,
+rather than reconstructing a plausible-sounding fake one.
+
+`README.md`'s Contributing section gained one paragraph linking the four
+new files.
+
+**Deliberately not done, checked and rejected rather than skipped
+silently:** `wizard-website`'s multi-page docs site (search, a `content/
+docs` system, a changelog page, a CLI download page, an `install.sh`
+one-liner) was read in full and not replicated -- it assumes a packaged CLI
+binary and tagged releases neither of which this project has (Phase 8.5,
+"packaged install," is still explicitly a future "stop and reassess" item
+per the roadmap). Building that scaffolding now would mean either leaving
+it pointing at nothing or fabricating the releases it's meant to describe.
+`.github/FUNDING.yml` has a leftover `buy_me_a_coffee: Wizard_a14` entry
+that reads like a copy-paste artifact from the Wizard template, but a
+donation handle is exactly the kind of live external identifier this
+session has no way to verify independently -- flagged to the user rather
+than silently changed or silently left. GitHub repo description/homepage
+(currently generic marketing text, checked via `gh repo view`) is a live
+account-level setting outside the repo's tracked files, out of scope for a
+commit.
+
+**NOT verified:** no CFF-linter or citation-tool round-trip was run against
+`CITATION.cff` beyond a plain YAML parse; GOVERNANCE.md/SUPPORT.md's
+internal links were checked by hand against the current tree, not with a
+link-checker tool.
