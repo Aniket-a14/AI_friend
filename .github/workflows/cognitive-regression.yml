@@ -22,6 +22,10 @@ jobs:
     name: Backend Regression Suite
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Some runners expose a DEBUG environment variable with a non-boolean
+    # value. AppSettings is intentionally strict, so keep CI deterministic.
+    env:
+      DEBUG: "false"
 
     steps:
       - uses: actions/checkout@v4
