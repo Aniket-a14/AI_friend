@@ -37,8 +37,8 @@ export function MobileNav() {
           style={NAV_STYLE}
         >
           <Link href="/" className="flex items-center gap-2.5 font-mono text-xs font-semibold tracking-[0.25em] text-[#111] hover:opacity-75 transition-opacity">
-            <img src="/icon.svg" alt="AI Friend Logo" className="w-5 h-5 rounded-md" />
-            <span>AI FRIEND</span>
+            <img src="/icon.svg" alt="PALabs Logo" className="w-5 h-5 rounded-md" />
+            <span>PALABS</span>
           </Link>
 
           {/* Desktop links */}

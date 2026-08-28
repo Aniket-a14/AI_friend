@@ -31,17 +31,17 @@ export default function ResearchPage() {
             <span className="font-mono text-[10px] uppercase tracking-wider text-black/40">Memory Dynamics</span>
             <span className="text-xs text-black/40 font-mono">John R. Anderson et al.</span>
           </div>
-          <h2 className="text-2xl font-light text-[#111]">ACT-R Power-Law Memory Retention</h2>
+          <h2 className="text-2xl font-light text-[#111]">ACT-R-Inspired Memory Retention</h2>
           <p className="text-sm text-black/60 leading-relaxed">
-            Human memory retention does not decay linearly, nor does it remain indefinitely static. In AI Friend, base-level activation A_i of each episodic memory is computed continuously according to the power-law of forgetting:
+            Human memory retention does not decay linearly, nor does it remain indefinitely static. AI Friend's production implementation (<code className="text-xs">cognitive-rust</code>) is a single-term approximation of Anderson's ACT-R base-level activation, keyed on recall count and time since <em>last</em> recall rather than a sum over every past recollection:
           </p>
 
           <div className="bg-[#fafaf8] p-4 rounded-xl border border-black/[0.06] font-mono text-xs text-black/80 my-4 overflow-x-auto text-center">
-            A_i = ln( Σ (t - t_k)^(-d) ) + Σ W_j · S_ji
+            A_i = ln(recall_count) − d · ln(hours_since_last + 1) + 1.5 · importance + 0.15 · (1 − dist_emo)
           </div>
 
           <p className="text-xs text-black/55 leading-relaxed">
-            Where (t - t_k) represents the time elapsed since the k-th recollection, d ≈ 0.5 is the decay exponent, and S_ji represents associative cues extracted through the <strong>Learned Mental Lexicon</strong>. Memories that drop below an activation threshold move to a cold tier rather than being permanently deleted.
+            Where <code>hours_since_last</code> is time elapsed since the memory's last recollection, d ≈ 0.5 is the decay rate, <code>importance</code> is a stored per-memory weight, and <code>dist_emo</code> is emotional distance between the memory's affect and the agent's current affect. Memories that drop below an activation threshold move to a cold tier rather than being permanently deleted.
           </p>
         </section>
 

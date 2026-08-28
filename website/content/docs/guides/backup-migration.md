@@ -41,7 +41,7 @@ To migrate your friend to a new workstation or restore after hardware failure:
 
 ```bash
 cd backend
-../.venv/bin/python -m scripts.import_friend --archive ~/backups/my_friend_2026.tar.gz --force
+../.venv/bin/python -m scripts.import_friend ~/backups/my_friend_2026.tar.gz --force
 ```
 
 The `--force` flag is mandatory to prevent accidental overwrites of existing live agent configs. Once complete, restart the stack to resume conversations exactly where you left off.

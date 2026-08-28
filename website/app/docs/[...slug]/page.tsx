@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const slug = slugParts.join("/")
   const page = findDocPage(slug)
   return {
-    title: page ? `${page.title} — AI Friend Docs` : "AI Friend Docs",
+    title: page ? `${page.title} — PALabs Docs` : "PALabs Docs",
   }
 }
 

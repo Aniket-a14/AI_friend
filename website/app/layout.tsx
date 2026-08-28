@@ -4,20 +4,20 @@ import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'AI Friend — A friend of your own making',
+  title: 'PALabs — A friend of your own making',
   description: 'An AI friend you describe in your own words, that speaks in a voice you gave it, runs entirely on your own machine, and remembers who you are. Local-first, open source, MIT licensed.',
   keywords: ['AI companion', 'local AI', 'self-hosted AI', 'voice cloning', 'open source'],
-  authors: [{ name: 'AI Friend contributors' }],
+  authors: [{ name: 'PALabs contributors' }],
   openGraph: {
-    title: 'AI Friend — A friend of your own making',
+    title: 'PALabs — A friend of your own making',
     description: 'Describe them in your own words. They speak in a voice you gave them, remember who you are, and run entirely on your own hardware.',
     type: 'website',
     url: 'https://github.com/Aniket-a14/AI_friend',
-    siteName: 'AI Friend',
+    siteName: 'PALabs',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'AI Friend — A friend of your own making',
+    title: 'PALabs — A friend of your own making',
     description: 'Describe them in your own words. They speak in a voice you gave them, remember who you are, and run entirely on your own hardware.',
   },
   icons: {

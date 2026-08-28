@@ -154,9 +154,9 @@ export function CognitiveTurnFlow() {
         </div>
 
         <div className="md:col-span-4 flex flex-col justify-center items-center bg-white rounded-lg border border-black/[0.06] p-4 text-center">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-black/35 mb-1">Observed Latency</span>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-black/35 mb-1">Target Latency</span>
           <span className="text-2xl font-light text-black/90 font-mono">{stage.latency}</span>
-          <span className="text-[10px] text-black/40 mt-1">Measured on physical hardware</span>
+          <span className="text-[10px] text-black/40 mt-1">Design budget, not a live measurement</span>
         </div>
       </div>
     </div>

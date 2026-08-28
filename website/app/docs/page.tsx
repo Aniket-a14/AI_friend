@@ -3,7 +3,7 @@ import Link from "next/link"
 import { DOCS_NAV } from "@/lib/docs-nav"
 
 export const metadata: Metadata = {
-  title: "Docs — AI Friend",
+  title: "Docs — PALabs",
   description: "Installation, quickstart, architecture, privacy, and troubleshooting for AI Friend.",
 }
 
@@ -22,7 +22,7 @@ export default function DocsHomePage() {
         Documentation
       </div>
       <h1 className="mb-4 text-4xl md:text-5xl font-light tracking-tight leading-[1.1]" style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}>
-        AI Friend Docs
+        PALabs Docs
       </h1>
       <p className="mb-12 max-w-xl text-base text-black/50 leading-relaxed">
         Everything here lives in this repo and is checked against the actual

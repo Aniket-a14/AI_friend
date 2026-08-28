@@ -198,12 +198,12 @@ and value unvarnished honesty. Maya teases me when I get into perfectionist para
     implementationDetails: [
       "Captures clean 16kHz audio via Web Audio API or terminal record_voice.py.",
       "Quantized GPT-SoVITS model extracts acoustic timbre without robotic artifacts.",
-      "Dual-path Whisper + SenseVoice enables sub-150ms instant speech barge-in.",
+      "Dual-path Whisper + SenseVoice enables a fast speculative barge-in reflex, targeting sub-150ms interruption.",
     ],
     codeSnippet: `# Record 8-second reference audio
 python backend/scripts/audio/record_voice.py --duration 8
 # Sets REF_AUDIO_PATH and REF_TEXT in .env for studio-quality 32kHz speech`,
-    targetFiles: [".env", "backend/voice_samples/", "rust/voice-agent/"],
+    targetFiles: [".env", "backend/voice_samples/", "backend/crates/voice-agent/"],
   },
   {
     id: "biological-mood-bonding",
@@ -215,10 +215,10 @@ python backend/scripts/audio/record_voice.py --duration 8
       "Dopamine (90s half-life) increases Top-P for creative humor and expansive banter.",
       "Conversational fatigue naturally bounds max response tokens after long late-night sessions.",
     ],
-    codeSnippet: `# app/cognitive/action.py
-# Temperature dynamically shaped by friend's stress & enthusiasm
-temp = clamp(0.75 - cortisol * 0.45 + dopamine * 0.15, 0.20, 1.0)
-top_p = clamp(0.70 + dopamine * 0.28 - cortisol * 0.10, 0.50, 0.98)`,
+    codeSnippet: `# app/cognitive/action.py :: _compute_endocrine_options
+# Temperature narrows with stress; top_p widens with reward -- no cross-coupling
+temperature = clamp(0.9 - cortisol * 0.6, 0.0, 1.0)
+top_p = clamp(0.70 + dopamine * 0.25, 0.0, 1.0)`,
     targetFiles: ["backend/app/cognitive/action.py", "backend/app/cognitive/appraisal.py"],
   },
   {
@@ -236,6 +236,6 @@ if presence.is_reconnected and proactive_queue.has_pending():
     thought = proactive_queue.pop_most_relevant()
     # "Hey, I was just thinking about that book you mentioned yesterday..."
     await nats.publish("chat.output", thought)`,
-    targetFiles: ["backend/app/agents/subconscious.py", "backend/app/cognitive/proactive_queue.py"],
+    targetFiles: ["backend/app/agents/subconscious_agent.py", "backend/app/state/proactive_queue.py"],
   },
 ]

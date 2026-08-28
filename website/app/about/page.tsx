@@ -5,7 +5,7 @@ import { SiteFooter } from "@/components/site-footer"
 import { REPO_URL } from "@/lib/site"
 
 export const metadata: Metadata = {
-  title: "About — AI Friend",
+  title: "About — PALabs",
   description: "About AI Friend: an open-source, local-first AI companion, its license, governance, and how to contribute.",
 }
 

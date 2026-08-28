@@ -6,13 +6,13 @@ You can connect free or rented cloud GPUs (Google Colab, Lambda Labs, RunPod) to
 
 ## Bundled Colab Notebooks
 
-AI Friend ships three production-ready Colab notebooks in `notebooks/`:
+AI Friend ships three production-ready Colab notebooks in `notebooks/`, each self-contained — no Docker, Postgres, Neo4j, or NATS required:
 
 | Notebook | Purpose | GPU Tier |
 | :--- | :--- | :--- |
-| **`01_voice_clone_sovits_training.ipynb`** | GPT-SoVITS voice fine-tuning & weight quantization. | Free T4 GPU |
-| **`02_llm_benchmark_and_eval_harness.ipynb`** | Probe evaluation, Recall@K scoring, and latency profiling. | T4 / A100 |
-| **`03_end_to_end_mesh_gpu_runner.ipynb`** | Full 9-agent headless mesh deployment with WebSocket bridge. | A100 / High-RAM |
+| **`ai_friend_voice_training.ipynb`** | Fine-tunes a GPT-SoVITS voice clone from your own recordings. | T4 (hard requirement), 30-90+ min |
+| **`ai_friend_eval_harness.ipynb`** | Runs the behavioral eval gate (`backend/evals/`) against real Ollama models. | Helps, not required, 5-20 min/model |
+| **`ai_friend_llm_benchmark.ipynb`** | Measures raw Ollama generation throughput/latency/VRAM across model sizes. | T4 (that's the point), 5-15 min |
 
 ---
 

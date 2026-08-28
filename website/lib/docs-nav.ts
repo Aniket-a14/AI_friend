@@ -47,10 +47,10 @@ export const DOCS_NAV: DocSection[] = [
     title: "Developer & Operations Guides",
     pages: [
       { title: "Voice Training on GPU", slug: "guides/voice-training", description: "GPT-SoVITS fine-tuning on Google Colab or local NVIDIA hardware." },
-      { title: "Colab GPU Acceleration", slug: "guides/colab-gpu-acceleration", description: "Remote training, SSH tunnels, and VS Code Remote integration.", comingSoon: true },
+      { title: "Colab GPU Acceleration", slug: "guides/colab-gpu-acceleration", description: "Remote training, SSH tunnels, and VS Code Remote integration." },
       { title: "Disaster Recovery & Backup", slug: "guides/backup-migration", description: "Atomic 4-store friend archive export, import, and cross-machine migration." },
-      { title: "Cloud LLM Fallback", slug: "guides/cloud-llm-fallback", description: "Anthropic Claude API integration with endocrine parameter translation.", comingSoon: true },
-      { title: "Custom Agents & Plugins", slug: "guides/custom-agents-plugins", description: "Extending the NATS mesh with custom Python or Rust worker agents.", comingSoon: true },
+      { title: "Cloud LLM Fallback", slug: "guides/cloud-llm-fallback", description: "Anthropic Claude API integration with endocrine parameter translation." },
+      { title: "Custom Agents & Plugins", slug: "guides/custom-agents-plugins", description: "Extending the NATS mesh with custom Python or Rust worker agents." },
     ],
   },
   {

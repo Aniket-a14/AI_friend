@@ -47,7 +47,7 @@ export const COMPARISON_DATA: ComparisonRow[] = [
   },
   {
     dimension: "Voice Cloning & Speech Stack",
-    aiFriend: "Self-Hosted GPT-SoVITS (32kHz) + Dual-Path whisper.cpp & SenseVoice (150ms barge-in).",
+    aiFriend: "Self-Hosted GPT-SoVITS (32kHz) + Dual-Path whisper.cpp & SenseVoice (speculative barge-in reflex).",
     characterAi: "Proprietary cloud TTS with variable latency.",
     openAiRealtime: "Native audio multimodal token generation (fixed preset voices).",
     humeEvi: "Octave expressive cloud TTS with prosody synthesis.",

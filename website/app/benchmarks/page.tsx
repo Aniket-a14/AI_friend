@@ -179,6 +179,9 @@ export default function BenchmarksPage() {
           <div className="border-b border-black/[0.08] pb-4">
             <span className="text-[10px] font-mono uppercase tracking-widest text-black/40">Compatibility & Profiles</span>
             <h2 className="text-2xl font-light text-[#111] mt-1">Platform Performance Matrix</h2>
+            <p className="text-xs text-black/50 mt-1">
+              Engineering targets the architecture is designed for, not live measurements — see Section 2 above for what's actually been measured.
+            </p>
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-black/[0.08] bg-white shadow-xs">
@@ -214,6 +217,9 @@ export default function BenchmarksPage() {
           <div className="border-b border-black/[0.08] pb-4">
             <span className="text-[10px] font-mono uppercase tracking-widest text-black/40">Step-by-Step Breakdown</span>
             <h2 className="text-2xl font-light text-[#111] mt-1">Conversational Loop Latency Waterfall</h2>
+            <p className="text-xs text-black/50 mt-1">
+              A per-stage budget, not a measured trace — the direct attempt to measure this loop (m14_stt_cost.json) came back UNKNOWN because stt-agent wasn't running for that run.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

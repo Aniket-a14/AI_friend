@@ -57,7 +57,7 @@ export function SiteFooter() {
         <div className="space-y-3">
           <span className="font-mono text-[10px] tracking-widest uppercase text-black/40 block">Community</span>
           <ul className="space-y-2 text-xs">
-            <li><Link href="/about" className="text-black/60 hover:text-black transition-colors">About AI Friend</Link></li>
+            <li><Link href="/about" className="text-black/60 hover:text-black transition-colors">About PALabs</Link></li>
             <li><a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="text-black/60 hover:text-black transition-colors">GitHub Repository ↗</a></li>
             <li><a href={`${REPO_URL}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer" className="text-black/60 hover:text-black transition-colors">MIT License ↗</a></li>
             <li><a href={`${REPO_URL}/blob/main/SECURITY.md`} target="_blank" rel="noopener noreferrer" className="text-black/60 hover:text-black transition-colors">Security Policy ↗</a></li>
@@ -68,8 +68,8 @@ export function SiteFooter() {
 
       <div className="max-w-6xl mx-auto pt-8 border-t border-black/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
-          <img src="/icon.svg" alt="AI Friend Logo" className="w-5 h-5 rounded-md" />
-          <span className="font-mono text-xs font-semibold tracking-[0.25em] text-[#111]">AI FRIEND</span>
+          <img src="/icon.svg" alt="PALabs Logo" className="w-5 h-5 rounded-md" />
+          <span className="font-mono text-xs font-semibold tracking-[0.25em] text-[#111]">PALABS</span>
           <span className="text-xs text-black/35 font-light hidden sm:inline">· An open-source, local-first Cognitive Voice System.</span>
         </div>
         <span className="text-xs text-black/40">MIT Licensed. 100% Data Sovereignty.</span>

@@ -55,7 +55,7 @@ export const PRESSURE_SCENARIOS: ScenarioBenchmark[] = [
     description: "Active voice streaming paired with continuous multi-stage cognitive processing in brain_agent.",
     ramUsedGB: 14.43,
     deltaFromIdleGB: -0.11,
-    activeComponents: ["stt-agent", "brain_agent", "Ollama LLM (Llama 3.2 3B)", "voice-agent"],
+    activeComponents: ["stt-agent", "brain_agent", "Ollama LLM (qwen2.5:3b)", "voice-agent"],
     concurrencyLevel: 1,
     notes: "Ollama model weights stay in resident page cache; zero leak observed during cognitive turn generation.",
     measuredProvenance: "backend/tools/measure/out/m17_pressure_scenarios.json §3",
@@ -77,7 +77,7 @@ export const PRESSURE_SCENARIOS: ScenarioBenchmark[] = [
     description: "Novel visual stimulus defeating habituation filter, forcing real Moondream VLM inference alongside Brain turn.",
     ramUsedGB: 15.15,
     deltaFromIdleGB: 0.61,
-    activeComponents: ["Moondream VLM (Ollama)", "brain_agent", "Ollama LLM (Llama 3.2 3B)"],
+    activeComponents: ["Moondream VLM (Ollama)", "brain_agent", "Ollama LLM (qwen2.5:3b)"],
     concurrencyLevel: 2,
     notes: "Primary memory step cost is the residency of the 1.7GB Moondream model weights (+0.77 GB delta).",
     measuredProvenance: "backend/tools/measure/out/m17_pressure_scenarios.json §5",
@@ -178,16 +178,20 @@ export const REAL_MICRO_BENCHMARKS: MicroBenchmark[] = [
     conditions: "50 sequential 32kHz PCM audio frames published over NATS",
     provenance: "live",
   },
-  {
-    measurementId: "M1.1-BargeIn",
-    title: "Speculative Speech Interruption Reflex",
-    measuredValue: "< 150 ms",
-    benchmarkUnit: "milliseconds",
-    conditions: "SenseVoice acoustic onset triggers instant Voice Agent audio ducking",
-    provenance: "live",
-  },
 ]
 
+// Worst-case barge-in latency was deliberately left unmeasured, not just
+// unmeasured-yet: m11_bargein.json's own title records that the buffer this
+// harness can instrument (TransportAgent's audio_queue) is not the site of
+// real-time playback pacing -- that pacing lives inside LiveKit's native
+// client past the FFI boundary and isn't introspectable from a Python-only
+// harness. No number is reported here rather than presenting a guess as live.
+
+// Engineering targets, not measurements: the one harness aimed directly at
+// this loop (m14_stt_cost.json) came back with every figure UNKNOWN because
+// stt-agent wasn't running for that attempt. These numbers are what the
+// architecture is designed for, stated as targets per CLAUDE.md's own rule
+// against presenting unmeasured figures as results.
 export const HARDWARE_MATRIX = [
   {
     platform: "Apple Silicon M1 / M2 / M3 (16GB Unified)",
@@ -196,7 +200,7 @@ export const HARDWARE_MATRIX = [
     voiceEngine: "GPT-SoVITS (CPU / Metal)",
     ttftMs: "320 - 450 ms",
     totalTurnaroundMs: "680 - 950 ms",
-    status: "Measured & Verified (Development Target)",
+    status: "Development Target (Unmeasured)",
   },
   {
     platform: "NVIDIA RTX 3060 / 4060 (12GB VRAM + 16GB Host)",

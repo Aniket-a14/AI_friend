@@ -7,10 +7,14 @@ export function EndocrineSimulator() {
   const [dopamine, setDopamine] = useState(0.5) // Reward / Enthusiasm [0..1]
   const [fatigue, setFatigue] = useState(0.2)   // Exhaustion [0..1]
 
-  // Dynamic calculations matching backend/app/cognitive/action.py
-  const calculatedTemperature = Math.max(0.2, Math.min(1.0, (0.75 - cortisol * 0.45 + dopamine * 0.15))).toFixed(2)
-  const calculatedTopP = Math.max(0.5, Math.min(0.98, (0.7 + dopamine * 0.28 - cortisol * 0.1))).toFixed(2)
-  const calculatedMaxTokens = Math.round(500 - fatigue * 350)
+  // Exact formulas from backend/app/cognitive/action.py::_compute_endocrine_options:
+  // temperature is cortisol-only, top_p is dopamine-only (no cross-coupling in the
+  // real mapping), num_predict is fatigue-only, bounded [100, 250].
+  const calculatedTemperature = Math.max(0.0, Math.min(1.0, (0.9 - cortisol * 0.6))).toFixed(2)
+  const calculatedTopP = Math.max(0.0, Math.min(1.0, (0.70 + dopamine * 0.25))).toFixed(2)
+  const calculatedMaxTokens = Math.round(Math.max(100, Math.min(250, 250 - fatigue * 150)))
+  // Illustrative only -- action.py has no speaking-rate mapping; real tempo
+  // entrainment lives separately in the Rust voice agent's pause_bias/tempo_wpm.
   const speakingRateWpm = Math.round(140 + dopamine * 40 - fatigue * 30 + cortisol * 15)
 
   return (

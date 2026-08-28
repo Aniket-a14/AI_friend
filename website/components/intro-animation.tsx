@@ -2,12 +2,17 @@
 
 import { useEffect, useState } from "react"
 
-const LETTERS = ["F", "R", "I", "E", "N", "D"]
+const LETTERS = ["P", "A", "L", "A", "B", "S"]
+const CAPTION = "Bring your friend to life!"
 
 const LETTER_IN_STAGGER  = 90    // ms between each letter appearing
 const LETTER_IN_DUR      = 700   // duration of each letter appear transition
-const HOLD_DURATION      = 300   // hold fully visible before exit
+const HOLD_DURATION      = 1000  // hold fully visible (letters + caption) before exit
 const LETTERS_IN_TOTAL   = LETTER_IN_STAGGER * (LETTERS.length - 1) + LETTER_IN_DUR + HOLD_DURATION
+
+// Caption starts fading in once the last letter has landed
+const CAPTION_DELAY      = LETTER_IN_STAGGER * (LETTERS.length - 1) + LETTER_IN_DUR
+const CAPTION_IN_DUR     = 500
 
 const LETTER_OUT_STAGGER = 55    // ms between each letter disappearing
 const LETTER_OUT_DUR     = 450   // duration of each letter fade out
@@ -41,6 +46,10 @@ export function IntroAnimation({ onDone }: { onDone: () => void }) {
 
   if (phase === "done") return null
 
+  const isIdle = phase === "idle"
+  const isIn   = phase === "in"
+  const isOut  = phase === "out"
+
   return (
     <div className="fixed inset-0 z-[100] pointer-events-none" aria-hidden="true">
 
@@ -54,17 +63,12 @@ export function IntroAnimation({ onDone }: { onDone: () => void }) {
         }}
       />
 
-      {/* FRIEND letters */}
-      <div className="absolute inset-0 flex items-center justify-center">
+      {/* PALABS letters + caption */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div className="flex" style={{ gap: "0.06em" }}>
           {LETTERS.map((letter, i) => {
             const inDelay  = i * LETTER_IN_STAGGER
             const outDelay = i * LETTER_OUT_STAGGER
-
-            // idle → invisible starting position
-            const isIdle = phase === "idle"
-            const isIn   = phase === "in"
-            const isOut  = phase === "out"
 
             const opacity    = isIdle ? 0 : isIn ? 1 : 0
             const blur       = isIdle ? 36 : isIn ? 0 : 24
@@ -99,6 +103,23 @@ export function IntroAnimation({ onDone }: { onDone: () => void }) {
             )
           })}
         </div>
+
+        <p
+          className="font-sans text-sm sm:text-base text-black/45 tracking-wide mt-4 sm:mt-6 select-none"
+          style={{
+            opacity: isIn ? 1 : 0,
+            filter: `blur(${isIn ? 0 : 12}px)`,
+            transform: `translateY(${isIn ? 0 : 12}px)`,
+            transition: isOut
+              ? `opacity ${LETTER_OUT_DUR}ms cubic-bezier(0.4,0,1,1), filter ${LETTER_OUT_DUR}ms cubic-bezier(0.4,0,1,1), transform ${LETTER_OUT_DUR}ms cubic-bezier(0.4,0,1,1)`
+              : isIn
+              ? `opacity ${CAPTION_IN_DUR}ms cubic-bezier(0.16,1,0.3,1) ${CAPTION_DELAY}ms, filter ${CAPTION_IN_DUR}ms cubic-bezier(0.16,1,0.3,1) ${CAPTION_DELAY}ms, transform ${CAPTION_IN_DUR}ms cubic-bezier(0.16,1,0.3,1) ${CAPTION_DELAY}ms`
+              : "none",
+            willChange: "opacity, filter, transform",
+          }}
+        >
+          {CAPTION}
+        </p>
       </div>
 
     </div>

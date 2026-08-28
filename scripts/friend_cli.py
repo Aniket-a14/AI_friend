@@ -27,6 +27,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+__version__ = "7.0.0"
+
 
 def get_repo_root() -> Path:
     current = Path(__file__).resolve().parent.parent
@@ -307,6 +309,7 @@ def main() -> int:
         prog="friend",
         description="AI Friend — Model-Agnostic Management & Interaction CLI Tool",
     )
+    parser.add_argument("--version", action="version", version=f"friend {__version__}")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # init
