@@ -8,24 +8,28 @@ const AGENTS = [
     title: "The cognitive core",
     desc: "Runs the full turn: appraises what happened, updates PAD affect and the endocrine layer, decides how to respond, and streams the reply through your local Ollama model.",
     stats: [{ v: "Python", l: "runtime" }, { v: "Ollama", l: "LLM backend" }],
+    img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/researcher-CvhqOuV6irGwBOnJoTGFlXdbyYBRjb.png",
   },
   {
     label: "VOICE AGENT",
     title: "Speech, physically synthesized",
     desc: "Renders every reply through one self-hosted, cloned voice — no fallback to a different voice. Pauses, ducking, and prosody are real PCM sample manipulation, not text markers.",
     stats: [{ v: "Rust", l: "runtime" }, { v: "GPT-SoVITS", l: "synthesis" }],
+    img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/coder-9bItvCegU6TXUqbX3tUXGBAtvkBkXp.png",
   },
   {
     label: "STT AGENT",
     title: "Dual-path listening",
     desc: "A fast speculative path classifies intent and emotion mid-sentence for natural barge-in; a slower accurate path produces the final transcript once you're done talking.",
     stats: [{ v: "whisper.cpp", l: "accurate path" }, { v: "SenseVoice", l: "fast path" }],
+    img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/analyst-Ysxnqg7Fpy2cfA56PiIttv1KximMhT.png",
   },
   {
     label: "SUBCONSCIOUS AGENT",
     title: "Reflection, between turns",
     desc: "Consolidates memory, decays what's no longer relevant, and can reach out to you unprompted — a friend that thinks about you when you're not talking to it.",
     stats: [{ v: "Neo4j", l: "knowledge graph" }, { v: "ACT-R", l: "memory decay" }],
+    img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/executor-o1q6509qMLXMtpBIGo49vcgOu34sI1.png",
   },
 ]
 
@@ -94,9 +98,41 @@ export function StackingAgentCards() {
             >
               <div className="group relative bg-[#faf9f7] rounded-2xl border border-black/[0.07] overflow-hidden cursor-pointer">
 
+                {/* ── MOBILE: image top, fades out at bottom ── */}
+                {agent.img && (
+                  <div className="relative w-full h-52 pointer-events-none md:hidden">
+                    <img
+                      src={agent.img}
+                      alt={agent.label}
+                      className="absolute inset-0 w-full h-full object-cover object-center"
+                      style={{
+                        maskImage: "linear-gradient(to bottom, black 0%, black 35%, transparent 85%)",
+                        WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 35%, transparent 85%)",
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* ── DESKTOP: image right, fades out at left (absolute) ── */}
+                {agent.img && (
+                  <div className="hidden md:block absolute inset-y-0 right-0 w-1/2 pointer-events-none">
+                    <img
+                      src={agent.img}
+                      alt={agent.label}
+                      className="w-full h-full object-cover object-center"
+                    />
+                    <div
+                      className="absolute inset-0"
+                      style={{
+                        background: "linear-gradient(to right, #faf9f7 0%, transparent 55%)",
+                      }}
+                    />
+                  </div>
+                )}
+
                 {/* Text content */}
                 <div className="relative z-10 p-8">
-                  <div className="md:max-w-xl">
+                  <div className="md:max-w-[60%]">
                     <div className="flex items-start justify-between mb-6">
                       <Tag>{agent.label}</Tag>
                     </div>

@@ -57,8 +57,15 @@ function Tag({ children }: { children: React.ReactNode }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   const [heroReady, setHeroReady] = useState(false)
+  const [videoReady, setVideoReady] = useState(false)
   const handleIntroDone = useCallback(() => {
     setHeroReady(true)
+  }, [])
+
+  // Start video zoom slightly before hero content reveals, for seamless overlap
+  useEffect(() => {
+    const t = setTimeout(() => setVideoReady(true), HERO_REVEAL_MS)
+    return () => clearTimeout(t)
   }, [])
 
   const handleMouse = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -78,18 +85,31 @@ export default function LandingPage() {
       <MobileNav />
 
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section className="relative min-h-screen flex flex-col justify-end overflow-hidden">
-        {/* Soft radial gradient backdrop — no stock footage standing in for a demo that doesn't exist yet */}
-        <div
-          className="absolute inset-0 z-0"
+      <section className="relative h-screen overflow-hidden">
+
+        {/* Video background — abstract glass/prism render, zooms in once intro is done */}
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover z-0"
+          src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/agentic-hero-9yW3wnTNMfn2U6lsVhTTZSJFEvAoSj.mp4"
           style={{
-            background: "radial-gradient(120% 90% at 50% 100%, #ffffff 0%, #F5F4F0 55%, #F5F4F0 100%)",
+            transform: videoReady ? "scale(1.05)" : "scale(0.85)",
+            transition: "transform 2s cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         />
 
-        <div className="h-20 relative z-10" />
+        {/* Progressive blur + light gradient rising from bottom */}
+        <div className="absolute inset-x-0 bottom-0 z-10 pointer-events-none" style={{ height: "65%", background: "linear-gradient(to top, #F5F4F0 0%, #F5F4F0 18%, rgba(245,244,240,0.85) 35%, rgba(245,244,240,0.5) 55%, rgba(245,244,240,0.15) 75%, transparent 100%)" }} />
+        <div className="absolute inset-x-0 bottom-0 z-10 pointer-events-none" style={{ height: "20%", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", maskImage: "linear-gradient(to top, black 0%, transparent 100%)", WebkitMaskImage: "linear-gradient(to top, black 0%, transparent 100%)" }} />
+        <div className="absolute inset-x-0 bottom-0 z-10 pointer-events-none" style={{ height: "38%", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", maskImage: "linear-gradient(to top, black 0%, transparent 100%)", WebkitMaskImage: "linear-gradient(to top, black 0%, transparent 100%)" }} />
+        <div className="absolute inset-x-0 bottom-0 z-10 pointer-events-none" style={{ height: "55%", backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)", maskImage: "linear-gradient(to top, black 0%, transparent 100%)", WebkitMaskImage: "linear-gradient(to top, black 0%, transparent 100%)" }} />
 
-        <div className="relative z-30 flex flex-col px-6 md:px-12 pb-16 max-w-3xl">
+        <div className="h-20" />
+
+        <div className="absolute inset-x-0 bottom-0 z-30 flex flex-col px-6 md:px-12 pb-16 max-w-3xl">
           <h1
             className="text-6xl sm:text-7xl md:text-8xl font-light text-[#111] leading-[1.0] tracking-tight mb-10"
             style={{
@@ -229,6 +249,49 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── FOUR STEPS ────────────────────────────────────────────────────── */}
+      <section className="py-32 px-6 md:px-12 lg:px-20 border-t border-black/[0.06] overflow-hidden">
+        <div className="max-w-6xl mx-auto">
+          <div className="mb-16">
+            <PixelIcon type="workflow" size={40} />
+            <div className="mt-4"><Tag>FROM CLONE TO CONVERSATION</Tag></div>
+            <RevealText className="mt-5 text-4xl md:text-5xl font-light tracking-tight leading-[1.05]">
+              {"Your friend,\nin four steps."}
+            </RevealText>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3" onMouseMove={handleMouse}>
+            {[
+              { n: "01", title: "Describe",  desc: "Freeform prose, not a template picker. Say who they are and how they talk.", delay: 0,   img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/define-5aafAmGBrxZpOqJ3XLHY3n3qzC2I5K.png" },
+              { n: "02", title: "Preview", desc: "See exactly what the wizard inferred, with its reasoning, before anything is written.", delay: 80,  img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/compose-5RT5VR4f1Y3GoFmovqTKLTG4UXp3g2.png" },
+              { n: "03", title: "Record",    desc: "8 seconds of your voice, transcribed and validated automatically.", delay: 140, img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/test-zm8guZwxJHtwWsJ7XO4B0CF7GzlNK8.png" },
+              { n: "04", title: "Talk",  desc: "The real cognitive pipeline — memory, affect, everything, in their voice.", delay: 200, img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/deploy-an8fgHSLzniojkcmRyGGIFQUJF9T5J.png" },
+            ].map((step) => (
+              <BentoCard key={step.n} className="relative overflow-hidden flex flex-col min-h-[320px]" delay={step.delay}>
+                <div className="absolute inset-x-0 top-0 h-56 pointer-events-none">
+                  <img
+                    src={step.img}
+                    alt={step.title}
+                    className="w-full h-full object-cover object-top"
+                    style={{
+                      maskImage: "linear-gradient(to bottom, black 0%, black 30%, transparent 80%)",
+                      WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 30%, transparent 80%)",
+                    }}
+                  />
+                </div>
+                <div className="relative z-10 p-7">
+                  <span className="font-pixel text-[11px] text-black/20 tracking-widest block">{step.n}</span>
+                </div>
+                <div className="relative z-10 px-7 pb-7 mt-auto pt-16">
+                  <h3 className="text-2xl font-light mb-3">{step.title}</h3>
+                  <p className="text-sm text-black/45 leading-relaxed">{step.desc}</p>
+                </div>
+              </BentoCard>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── GET STARTED (devex code panel) ──────────────────────────────────── */}
       <DevExSection />
 
@@ -241,6 +304,53 @@ export default function LandingPage() {
             <RevealText className="mt-5 text-4xl md:text-5xl font-light tracking-tight leading-[1.05]">
               {"Ordinary infrastructure,\nall self-hosted."}
             </RevealText>
+          </div>
+
+          {/* Full-width image block with glass cards */}
+          <div className="rounded-2xl overflow-hidden border border-black/[0.07] flex flex-col md:block md:relative mb-3" onMouseMove={handleMouse}>
+            <div className="relative w-full h-[280px] md:h-[420px] shrink-0">
+              <img
+                src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Org%20Arc%20-%20Upscaled-Sk90jShfu7nltLnhoQbaMJC1YaQKuU.png"
+                alt="Agents connected over a signal bus, each running independently"
+                className="absolute inset-0 w-full h-full object-cover object-center"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3 p-4 md:absolute md:bottom-4 md:right-4 md:p-0 md:w-72">
+              <div
+                className="rounded-xl border border-white/50 p-6"
+                style={{
+                  backdropFilter: "blur(24px)",
+                  WebkitBackdropFilter: "blur(24px)",
+                  background: "rgba(255,255,255,0.60)",
+                }}
+              >
+                <Tag>CONTRACT</Tag>
+                <h3 className="mt-3 text-lg font-light mb-2">Every subject is typed</h3>
+                <p className="text-xs text-black/45 leading-relaxed mb-4">Pydantic models in contracts.py, never a raw dict crossing an agent boundary.</p>
+                <div className="bg-black/[0.05] rounded-lg border border-black/[0.07] p-3 font-mono text-[11px] text-black/50 leading-relaxed">
+                  <span className="text-black/25">// chat.output</span><br />
+                  {"{ "}<span className="text-amber-700/70">content</span>: <span className="text-green-700/70">str</span>,<br />
+                  {"  "}<span className="text-amber-700/70">affect</span>: <span className="text-blue-600/70">ChatOutputAffect</span>,<br />
+                  {"  "}<span className="text-amber-700/70">turn_id</span>: <span className="text-green-700/70">str</span> {"}"}
+                </div>
+              </div>
+
+              <div
+                className="rounded-xl border border-white/50 p-6"
+                style={{
+                  backdropFilter: "blur(24px)",
+                  WebkitBackdropFilter: "blur(24px)",
+                  background: "rgba(255,255,255,0.60)",
+                }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500/80" />
+                  <span className="text-xs text-black/40 tracking-widest">YOUR MACHINE ONLY</span>
+                </div>
+                <p className="text-sm text-black/45">No hosted API, no account. Everything above runs as containers on your own hardware.</p>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3" onMouseMove={handleMouse}>

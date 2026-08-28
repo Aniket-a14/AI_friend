@@ -12458,3 +12458,74 @@ here rather than glossed over.
 - 8.4 (end-to-end demo recording) and 8.5 (packaged install) remain open,
   per the 8.1 entry. Phase 7's remainder (7.1, 7.2 continuation, 7.4, 7.5)
   also remains open.
+
+## 2026-08-28 -- Phase 8.3 correction: the removed assets were wrongly assumed unusable
+
+The Phase 8.3 entry above dropped the hero video, all four `stacking-agent-
+cards.tsx` per-card images, the four workflow-step images, and the
+integrations "Org Arc" image -- on the assumption, never actually checked,
+that filenames like `researcher-*.png`/`coder-*.png`/`agentic-hero-*.mp4`
+meant literal SaaS dashboard mockups or product screenshots. The user
+pointed out the asset removal directly; this entry is the correction.
+
+Downloaded and viewed every one of them before deciding anything (`curl` +
+the `Read` tool's image support; `qlmanage -t` for a frame of the video,
+since `ffmpeg` isn't installed here). All of them -- the hero video included
+-- are the same generic abstract glass/prism/crystal render family as
+`arc.png`/`footer.png`, which were already kept in the first 8.3 pass
+specifically because they'd been checked. No text, no UI, no branding, no
+SaaS mockups anywhere. The assumption was simply wrong, and untested.
+
+Restored all of them, keeping every piece of honest copy from the first 8.3
+pass unchanged -- this is a visual restoration, not a content reversion:
+
+- Hero: the video background and its zoom-on-reveal effect (`videoReady`
+  state, `HERO_REVEAL_MS` timing) are back, under the real "A friend of your
+  own making" headline and the three true badges -- no fabricated stats
+  reappeared.
+- `stacking-agent-cards.tsx`: each of the four real mesh agents (Brain/
+  Voice/STT/Subconscious) gets one of the four original images back,
+  restoring the mobile-top/desktop-side image treatment that was deleted
+  wholesale along with the fake agent personas -- the image slot and the
+  fabricated content underneath it were two different things, and only the
+  latter needed to go.
+- A new "Your friend, in four steps" section (Describe/Preview/Record/Talk)
+  reuses the four workflow-step images with real captions, placed between
+  the mesh section and the code-panel walkthrough -- deliberately additive
+  rather than replacing `devex-section.tsx`'s real CLI commands, since a
+  visual overview and a literal command walkthrough are two different, both
+  legitimate, ways to show the same flow.
+- The "Built on real infrastructure" section gets the "Org Arc" image back
+  as a full-width header -- an apt fit, coincidentally: it's a literal glass
+  ball/cube/pyramid/prism *network* image, several shapes connected by rods,
+  which reads as a mesh diagram whether or not that was the original
+  template's intent. Its two floating glass cards keep their real content
+  from the first pass (a real `chat.output` contract shape, "your machine
+  only" -- not the fake `@agentic/sdk` snippet or the fake "LIVE API"
+  status this session already knew to drop) rather than being restored
+  verbatim.
+
+Deliberately NOT restored, because these were never "assets" in the sense
+the correction was about -- they were fabricated *data*, not stripped
+imagery: the simulated global live-agent feed (a client-side loop inventing
+agent names, regions, and a counter seeded at 3,847) and the SaaS pricing
+tiers. Bringing images back is honoring the correction; reintroducing a fake
+live counter implying a global network this product doesn't have would be
+reintroducing the exact dishonesty the first 8.3 pass was right to remove.
+If this reading of "assets" was too narrow, that's worth saying so directly
+next time rather than this entry guessing wrong a second time.
+
+**Verified:** `npx tsc --noEmit` -- zero new errors, same pre-existing
+`agent-interface.tsx`/`glitch-background.tsx` errors as before, in files
+still unused by the page. `npx next build` -- succeeds, real static
+generation, confirmed both before and after these changes complete a full
+round trip cleanly.
+
+**NOT done:** the restored images/video are the same external
+`hebbkx1anhila5yf.public.blob.vercel-storage.com` URLs the original
+template already used -- not downloaded and committed as local files the
+way `arc.png`/`footer.png` were. This carries the same external-dependency
+risk the template shipped with originally (this entry doesn't make that
+risk worse, but doesn't remove it either); if that storage ever expires,
+these six references break. No live browser/visual QA was possible in this
+environment, same limitation as the first 8.3 entry.
