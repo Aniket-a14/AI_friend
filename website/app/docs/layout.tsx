@@ -1,7 +1,6 @@
 import type { ReactNode } from "react"
 import { MobileNav } from "@/components/mobile-nav"
 import { DocsSidebar } from "@/components/docs/docs-sidebar"
-import { SiteFooter } from "@/components/site-footer"
 
 export default function DocsLayout({ children }: { children: ReactNode }) {
   return (
@@ -14,7 +13,6 @@ export default function DocsLayout({ children }: { children: ReactNode }) {
         </aside>
         <div className="min-w-0 flex-1 pb-24 lg:h-[calc(100vh-7rem)] lg:overflow-y-auto lg:pr-2">{children}</div>
       </div>
-      <SiteFooter />
     </div>
   )
 }
