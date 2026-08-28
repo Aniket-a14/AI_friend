@@ -12279,3 +12279,68 @@ tracked persona file).
   every internal link and file path was checked by hand against the current
   tree instead.
 - Phase 7's remainder (7.1, 7.2, 7.4, 7.5) remains open, per the entry above.
+
+## 2026-08-28 -- Community roadmap Phase 8.2: community scaffolding, reviewed not created
+
+`LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` all already
+existed, per the roadmap's own framing for this item -- reviewed each rather
+than assuming they needed writing. `LICENSE` (MIT, standard copyright
+attribution) and `CODE_OF_CONDUCT.md` (an unmodified Contributor Covenant
+2.0) needed nothing. `backend/assets/voice/LICENSE.md` (the bundled default
+voice asset's provenance doc, from Phase 1.1) was already complete and
+accurate -- confirms both `.wav` files are locally `say`-synthesized, not a
+third-party recording, with regeneration steps -- so 8.2's "add the bundled
+voice asset's license attribution" was already satisfied before this entry.
+
+`CONTRIBUTING.md` and `SECURITY.md` both still carried the same "v6.5.0 /
+CVS-3.5 Premium Edition" / "Sovereign Mesh" framing Phase 8.1 already
+identified and removed from `README.md` -- not just cosmetic here, since two
+of the claims underneath it were actually wrong or misleading, not merely
+overwritten:
+
+- `CONTRIBUTING.md` pointed contributors at a Windows vision-agent launcher,
+  `scripts/host/start-vision.ps1`, that does not exist anywhere in the repo
+  (confirmed via `find . -iname "start-vision*"`) -- a genuinely broken
+  instruction for anyone following it, not a tone problem. Replaced with the
+  real host-native command from the agent registry.
+- `CONTRIBUTING.md`'s verification section ran `pytest`/`mypy .`/`ruff check .
+  --fix` directly rather than through the repo-root `.venv` `CLAUDE.md`
+  documents as required (`cd backend && ../.venv/bin/python -m pytest`) --
+  fixed to match, plus a pointer to the JUnit-XML-not-terminal-summary
+  gotcha `CLAUDE.md` documents, since a contributor hitting that unlabeled
+  would reasonably conclude their change broke nothing when the summary was
+  simply eaten.
+- `CONTRIBUTING.md`'s "every cognitive turn has a budget of <150ms" was an
+  invented hard number with no basis -- `CLAUDE.md`'s actual documented
+  constraint here is structural (`BaseAgent.subscribe`'s ack-after-callback
+  model against JetStream's AckWait, `LLM_STREAM_MAX_SECONDS` at 120s), not
+  a latency target that's ever been measured end-to-end. Replaced with the
+  real constraint and a pointer to the ledger for what has actually been
+  measured.
+- `CONTRIBUTING.md`'s "ultra-fast 80,000 OPS network transport" repeated the
+  same fabricated throughput figure the old README's SLO table already
+  carried as an explicit `*(not yet measured)*` placeholder -- presenting it
+  here as settled fact was the same integrity-constraint violation Phase 8.1
+  already fixed once in the other file. Cut.
+- `SECURITY.md`'s "Supported Versions" table listed fake version numbers
+  ("6.5.x (CVS-3.5)", "6.0.x (CVS-3.5)") with no corresponding tags or
+  releases anywhere in the repo -- replaced with the actual truth: no tagged
+  releases exist, `main` is the only maintained line.
+- `SECURITY.md`'s "Binary Audio Transport... effectively mitigating
+  plain-text JSON network sniffing" conflated a performance choice (raw PCM
+  over the wire instead of JSON) with a security property it doesn't have --
+  raw PCM sniffed off the wire is *more* directly exploitable than JSON, not
+  less, since there's no framing to even bother parsing. This is exactly the
+  kind of claim that shouldn't sit in a security policy specifically, since
+  it's the one document a security-conscious reader takes at face value.
+  Replaced with the actual honest posture: the mesh assumes a trusted LAN/
+  loopback and provides no transport hardening itself, so exposing its ports
+  to an untrusted network needs the operator's own TLS/firewalling.
+
+**NOT done:** 8.3 (landing page from the `website/` template -- unblocked per
+the note in the 8.1 entry above, but not started), 8.4 (end-to-end demo
+recording), 8.5 (packaged install, explicitly a "stop and reassess" item).
+No link-checker or markdown linter was run against either file; changes were
+verified by hand against `CLAUDE.md`, the actual repo tree, and a direct
+`find` for the phantom script. Phase 7's remainder (7.1, 7.2 continuation,
+7.4, 7.5) also remains open.
