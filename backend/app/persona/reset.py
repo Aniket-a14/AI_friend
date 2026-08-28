@@ -49,12 +49,14 @@ _MEMORY_TABLES = ("memories", "archived_memories")
 
 async def _seeded_ids(conn: Any, table: str, is_sqlite: bool) -> list[str]:
     """Ids of file-seeded rows in one memory table."""
+    # `table` is always caller-passed from the fixed _MEMORY_TABLES tuple;
+    # SEEDED_SOURCES values are bound via *args below, never interpolated.
     if is_sqlite:
         placeholders = ",".join("?" for _ in SEEDED_SOURCES)
-        query = f"SELECT id FROM {table} WHERE source IN ({placeholders})"
+        query = f"SELECT id FROM {table} WHERE source IN ({placeholders})"  # nosec B608
     else:
         placeholders = ",".join(f"${i + 1}" for i in range(len(SEEDED_SOURCES)))
-        query = f"SELECT id FROM {table} WHERE source IN ({placeholders})"
+        query = f"SELECT id FROM {table} WHERE source IN ({placeholders})"  # nosec B608
 
     rows = await conn.fetch(query, *SEEDED_SOURCES)
     return [str(dict(row)["id"]) for row in rows or ()]
@@ -118,7 +120,7 @@ async def clear_seeded_memories(memory_store: Any) -> int:
             else:
                 marks = ",".join(f"${i + 1}" for i in range(len(ids)))
 
-            await conn.execute(f"DELETE FROM {table} WHERE id IN ({marks})", *ids)
+            await conn.execute(f"DELETE FROM {table} WHERE id IN ({marks})", *ids)  # nosec B608 - table is from the fixed _MEMORY_TABLES tuple, ids are bound as params
             await _drop_from_qdrant(memory_store, ids)
             removed += len(ids)
             logger.info("[Reset] Removed %d seeded memory/memories from %s.", len(ids), table)

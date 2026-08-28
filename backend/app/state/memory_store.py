@@ -220,32 +220,31 @@ _SURFACE_ACTR_SQL_ERIKSONIAN = (
 _SURFACE_ACTR_SQL_LEGACY = _SURFACE_ACTR_SELECT_HEAD + _SURFACE_ACTR_FROM_JOIN
 
 # Archive -> active promotion. Same columns in both dialects; only the
-# placeholder style and the EXCLUDED casing differ.
-_PROMOTE_INSERT_COLUMNS = """INSERT INTO memories (
+# placeholder style and the EXCLUDED casing differ. Each is written as one
+# plain literal (not built via `+` concatenation) since both are fully static
+# SQL text with no interpolated values at all, and bandit's B608 check fires
+# on string concatenation/formatting, not on a plain literal.
+_PROMOTE_INSERT_SQLITE = """INSERT INTO memories (
         id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
         valence, certainty, source, recall_count, last_recalled_at, created_at,
         metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
-    ) VALUES """
-
-_PROMOTE_INSERT_SQLITE = (
-    _PROMOTE_INSERT_COLUMNS
-    + """(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
         recall_count = excluded.recall_count,
         last_recalled_at = excluded.last_recalled_at,
         importance_score = excluded.importance_score
 """
-)
 
-_PROMOTE_INSERT_PG = (
-    _PROMOTE_INSERT_COLUMNS
-    + """($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+_PROMOTE_INSERT_PG = """INSERT INTO memories (
+        id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
+        valence, certainty, source, recall_count, last_recalled_at, created_at,
+        metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     ON CONFLICT(id) DO UPDATE SET
         recall_count = EXCLUDED.recall_count,
         last_recalled_at = EXCLUDED.last_recalled_at,
         importance_score = EXCLUDED.importance_score
 """
-)
 
 
 class GoalBuffer:
@@ -732,7 +731,7 @@ class MemoryStore:
                 placeholders.append("CURRENT_TIMESTAMP")
 
             sql = (
-                f"INSERT INTO memories ({', '.join(cols)}) "
+                f"INSERT INTO memories ({', '.join(cols)}) "  # nosec B608 - cols comes from _MEMORY_BASE_COLUMNS/_MEMORY_ERIKSONIAN_COLUMNS class constants
                 f"VALUES ({', '.join(placeholders)})"
             )
             await conn.execute(sql, *params)
@@ -1360,7 +1359,7 @@ class MemoryStore:
                     try:
                         custom_metadata = orjson.loads(meta["custom_metadata"])
                     except Exception:
-                        pass
+                        pass  # nosec B110 - malformed/non-JSON custom_metadata degrades to {} regardless of cause
 
                 raw_candidates.append(
                     {
@@ -1404,7 +1403,7 @@ class MemoryStore:
                     where, args = self._in_predicate("id", cand_ids)
                     rows = await conn.fetch(
                         "SELECT id, importance_score, emotional_weight, valence, "
-                        f"recall_count, last_recalled_at FROM memories WHERE {where}",
+                        f"recall_count, last_recalled_at FROM memories WHERE {where}",  # nosec B608 - where is a generated ?/$n predicate from _in_predicate; args are bound
                         *args,
                     )
                     for r in rows:
@@ -2181,12 +2180,16 @@ class MemoryStore:
                     where_clause = " OR ".join(
                         "lower(content) LIKE ?" for _ in expanded_cues_list
                     )
-                    query = f"""
+                    query = (
+                        """
                         SELECT * FROM archived_memories
-                        WHERE wing = ? AND ({where_clause})
+                        WHERE wing = ? AND ("""
+                        f"{where_clause}"  # nosec B608 - where_clause is always the literal "lower(content) LIKE ?" repeated per cue count; cue values are bound via *patterns
+                        """)
                         ORDER BY importance_score DESC, last_recalled_at DESC
                         LIMIT ?
-                    """
+                        """
+                    )
                     return await conn.fetch(query, wing, *patterns, archive_limit)
                 # Postgres pgvector: hybrid semantic + lexical synonym search
                 # using the HNSW index over halfvec.
@@ -2968,9 +2971,11 @@ class MemoryStore:
                             time_placeholder = "CURRENT_TIMESTAMP"
 
                         await conn.execute(
-                            f"""
+                            """
                             UPDATE memories
-                            SET last_recalled_at = {time_placeholder},
+                            SET last_recalled_at = """
+                            f"{time_placeholder}"  # nosec B608 - time_placeholder is one of the fixed literals set above, never user input
+                            """,
                                  recall_count = recall_count + 1,
                                  emotional_weight = CASE
                                      WHEN valence < -0.4 AND ? >= 0.0 THEN emotional_weight * 0.95
@@ -2980,7 +2985,9 @@ class MemoryStore:
                                      WHEN valence < -0.4 AND ? >= 0.0 THEN importance_score * 0.98
                                      ELSE importance_score
                                  END
-                            WHERE content IN ({placeholders})
+                            WHERE content IN ("""
+                            f"{placeholders}"  # nosec B608 - placeholders is the ?-count marker string generated above, never user input
+                            """)
                             """,
                             *params,
                         )
@@ -2990,22 +2997,26 @@ class MemoryStore:
                         )
                         if current_time is not None:
                             await conn.execute(
-                                f"""
+                                """
                                 UPDATE memories
                                 SET last_recalled_at = ?,
                                      recall_count = recall_count + 1
-                                WHERE content IN ({placeholders})
+                                WHERE content IN ("""
+                                f"{placeholders}"  # nosec B608 - placeholders is the ?-count marker string generated above, never user input
+                                """)
                                 """,
                                 current_time,
                                 *contents,
                             )
                         else:
                             await conn.execute(
-                                f"""
+                                """
                                 UPDATE memories
                                 SET last_recalled_at = CURRENT_TIMESTAMP,
                                      recall_count = recall_count + 1
-                                WHERE content IN ({placeholders})
+                                WHERE content IN ("""
+                                f"{placeholders}"  # nosec B608 - placeholders is the ?-count marker string generated above, never user input
+                                """)
                                 """,
                                 *contents,
                             )
@@ -3109,7 +3120,7 @@ class MemoryStore:
                 # difference rather than noise the helper should absorb.
                 truth = "1" if self.is_sqlite else "TRUE"
                 await conn.execute(
-                    f"UPDATE messages SET consolidated = {truth} WHERE {where}",
+                    f"UPDATE messages SET consolidated = {truth} WHERE {where}",  # nosec B608 - truth is a fixed literal, where comes from _in_predicate
                     *args,
                 )
         except Exception as e:
@@ -3131,7 +3142,7 @@ class MemoryStore:
                 where, args = self._in_predicate("content", unique_contents)
                 rows = await conn.fetch(
                     "SELECT id, content, recall_count, created_at, metadata, "
-                    f"importance_score FROM memories WHERE {where}",
+                    f"importance_score FROM memories WHERE {where}",  # nosec B608 - where comes from _in_predicate, values bound via *args
                     *args,
                 )
 
@@ -3194,7 +3205,7 @@ class MemoryStore:
                     if isinstance(metadata, str):
                         try:
                             meta = json.loads(metadata)
-                        except Exception:
+                        except Exception:  # nosec B110 - malformed metadata falls back to {} / self.decay_rate below
                             pass
                     elif isinstance(metadata, dict):
                         meta = metadata
@@ -3230,7 +3241,7 @@ class MemoryStore:
                         placeholders = ",".join("?" for _ in to_delete)
                         # Copy to archived_memories
                         await conn.execute(
-                            f"""
+                            """
                             INSERT INTO archived_memories (
                                 id, content, raw_content, wing, room, importance_score, emotional_weight,
                                 valence, certainty, source, recall_count, last_recalled_at, created_at,
@@ -3241,7 +3252,9 @@ class MemoryStore:
                                 valence, certainty, source, recall_count, last_recalled_at, created_at,
                                 metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
                             FROM memories
-                            WHERE id IN ({placeholders})
+                            WHERE id IN ("""
+                            f"{placeholders}"  # nosec B608 - placeholders is only comma-separated "?" marks, ids bound via *to_delete
+                            """)
                             ON CONFLICT(id) DO UPDATE SET
                                 recall_count = excluded.recall_count,
                                 last_recalled_at = excluded.last_recalled_at,
@@ -3251,7 +3264,7 @@ class MemoryStore:
                         )
                         # Delete from memories
                         await conn.execute(
-                            f"DELETE FROM memories WHERE id IN ({placeholders})",
+                            f"DELETE FROM memories WHERE id IN ({placeholders})",  # nosec B608 - placeholders is only comma-separated "?" marks, ids bound via *to_delete
                             *to_delete,
                         )
                     else:

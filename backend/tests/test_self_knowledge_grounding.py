@@ -296,6 +296,54 @@ class TestGapRecording:
         await service._record_self_gaps("My brother Rahul called.", [], "")
 
 
+class TestSchemaMigrationNeverSilentlyCorrupts:
+    @pytest.mark.asyncio
+    async def test_reready_on_an_already_migrated_table_does_not_raise(self, gap_store):
+        """The real duplicate-column path a second store instance hits.
+
+        A second `SelfKnowledgeStore` sharing the first one's already-migrated
+        pool must still reach `_ready = True` via the genuine "column already
+        exists" error SQLite itself raises on the repeat ALTER -- not a mock
+        of that error -- since that's the exact case the try/except exists
+        to swallow.
+        """
+        await gap_store._ensure_ready()  # first store: real CREATE + ALTER
+        second_store = SelfKnowledgeStore(gap_store.pool)
+        await second_store._ensure_ready()  # second: real "duplicate column"
+        assert second_store._ready is True
+
+    @pytest.mark.asyncio
+    async def test_an_unrelated_migration_failure_leaves_ready_false(self, gap_store):
+        """A real failure must not be treated as "already migrated".
+
+        `_ensure_ready`'s outer handler is documented to never raise past this
+        method -- that part is unchanged. What used to be wrong is narrower:
+        `except Exception: pass` around the ALTER specifically meant *any*
+        failure there -- a locked table, a permissions error, a typo in a
+        future edit to this method -- was treated identically to "already
+        migrated", and execution fell through to `self._ready = True` right
+        after. That leaves the table missing `asked_at` while the store
+        believes it's ready, so the failure resurfaces later as a confusing
+        error wherever something reads or writes that column, instead of
+        here, where it actually happened. Post-fix, a real failure re-raises
+        past the `self._ready = True` line into the outer handler, so ready
+        correctly stays False and the next call retries.
+        """
+        real_execute = gap_store.pool.connection.execute
+
+        async def _fail_only_the_alter(query, *args):
+            if "ALTER TABLE" in query:
+                raise RuntimeError("disk I/O error")
+            return await real_execute(query, *args)
+
+        gap_store.pool.connection.execute = _fail_only_the_alter
+        try:
+            await gap_store._ensure_ready()
+        finally:
+            gap_store.pool.connection.execute = real_execute
+        assert gap_store._ready is False
+
+
 class TestUnansweredQuestionsBecomeGaps:
     """The signal that actually reveals a hole in a biography.
 

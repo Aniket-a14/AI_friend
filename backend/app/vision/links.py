@@ -85,7 +85,7 @@ class ScreenLink:
             self.headless = False
             logger.info("[Vision] Screen capture recovered; a display is available.")
         except Exception:
-            pass  # still headless; capture_frame() below returns None as before
+            pass  # nosec B110 - still headless; capture_frame() below returns None as before
 
     def capture_frame(self) -> bytes | None:
         """Captures and returns a compressed JPEG frame of the screen."""

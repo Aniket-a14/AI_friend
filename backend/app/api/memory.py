@@ -43,11 +43,13 @@ async def list_recent_memories(
 
     try:
         rows = await conn.fetch(
-            f"""
+            """
             SELECT id, content, importance_score, emotional_weight, valence,
                    recall_count, last_recalled_at, created_at, wing, modality
             FROM memories
-            ORDER BY {sort_by} DESC NULLS LAST
+            ORDER BY """
+            f"{sort_by}"  # nosec B608 - sort_by is checked against _ALLOWED_SORT_COLUMNS above
+            """ DESC NULLS LAST
             LIMIT $1 OFFSET $2
             """,
             limit,

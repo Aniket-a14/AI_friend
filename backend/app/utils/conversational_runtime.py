@@ -51,7 +51,7 @@ class ConversationalRuntime:
             await asyncio.sleep(sleep_dur)
             if not first_token_received and not is_proactive and self.publish_cb:
                 filler_sent = True
-                filler = random.choice(FILLERS)
+                filler = random.choice(FILLERS)  # nosec B311 - picking a filler word, not cryptographic
                 logger.info(
                     f"⏱️ [ConversationalRuntime] TTFT exceeded 400ms. Dispatching filler: '{filler}'"
                 )

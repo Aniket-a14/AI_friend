@@ -241,7 +241,7 @@ class OllamaClient:
                     continue
 
             if attempt < self.max_retries - 1:
-                delay = self.base_delay * (2**attempt) + random.uniform(0, 0.5)
+                delay = self.base_delay * (2**attempt) + random.uniform(0, 0.5)  # nosec B311 - retry backoff jitter, not cryptographic
                 await asyncio.sleep(delay)
 
         yield "I'm having trouble thinking right now..."
@@ -345,7 +345,7 @@ class OllamaClient:
                     continue
 
             if attempt < self.max_retries - 1:
-                delay = self.base_delay * (2**attempt) + random.uniform(0, 0.5)
+                delay = self.base_delay * (2**attempt) + random.uniform(0, 0.5)  # nosec B311 - retry backoff jitter, not cryptographic
                 await asyncio.sleep(delay)
 
         return "Error generating response."
