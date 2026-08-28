@@ -11,6 +11,7 @@ Phase 5.2 web flow that would actually drive it exists.
 """
 
 import asyncio
+import os
 import tempfile
 from pathlib import Path
 
@@ -34,8 +35,14 @@ router = APIRouter(prefix="/api/voice", tags=["voice"])
 # deliberately generous for WAV while bounding the request before decoding it.
 MAX_VOICE_UPLOAD_BYTES = 10 * 1024 * 1024
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-ENV_PATH = REPO_ROOT / ".env"
+_DISCOVERED_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(
+    os.environ.get(
+        "AI_FRIEND_APP_ROOT",
+        "/app" if _DISCOVERED_ROOT == Path("/") else str(_DISCOVERED_ROOT),
+    )
+)
+ENV_PATH = Path(os.environ.get("AI_FRIEND_ENV_PATH", str(REPO_ROOT / ".env")))
 
 
 class ValidateResponse(BaseModel):
@@ -76,7 +83,8 @@ async def _read_wav(upload: UploadFile) -> tuple:
     except Exception as exc:
         temp_path.unlink(missing_ok=True)
         raise HTTPException(
-            status_code=400, detail=f"Could not read the uploaded clip as WAV audio: {exc}"
+            status_code=400,
+            detail=f"Could not read the uploaded clip as WAV audio: {exc}",
         ) from exc
 
 
@@ -87,7 +95,9 @@ async def validate_voice_endpoint(file: UploadFile = File(...)):
     audio, samplerate, temp_path = await _read_wav(file)
     try:
         problems = await asyncio.to_thread(validate_clip, audio, samplerate)
-        transcript = await asyncio.to_thread(transcribe, temp_path) if not problems else None
+        transcript = (
+            await asyncio.to_thread(transcribe, temp_path) if not problems else None
+        )
         duration_s = len(audio) / samplerate if samplerate else 0.0
         return ValidateResponse(
             problems=problems,
@@ -128,7 +138,10 @@ async def commit_voice_endpoint(
         if problems and not force:
             raise HTTPException(
                 status_code=422,
-                detail={"message": "Clip failed validation; nothing was saved.", "problems": problems},
+                detail={
+                    "message": "Clip failed validation; nothing was saved.",
+                    "problems": problems,
+                },
             )
 
         VOICE_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
@@ -136,12 +149,16 @@ async def commit_voice_endpoint(
         dest_path = VOICE_SAMPLES_DIR / filename
         await asyncio.to_thread(sf.write, dest_path, audio, samplerate)
 
-        env_audio_key = "REF_AUDIO_PATH" if variant is None else f"REF_AUDIO_PATH_{variant}"
+        env_audio_key = (
+            "REF_AUDIO_PATH" if variant is None else f"REF_AUDIO_PATH_{variant}"
+        )
         env_text_key = "REF_TEXT" if variant is None else f"REF_TEXT_{variant}"
         await asyncio.to_thread(
             set_key, str(ENV_PATH), env_audio_key, f"output/{dest_path.name}"
         )
-        await asyncio.to_thread(set_key, str(ENV_PATH), env_text_key, transcript.strip())
+        await asyncio.to_thread(
+            set_key, str(ENV_PATH), env_text_key, transcript.strip()
+        )
 
         return {
             "status": "saved",

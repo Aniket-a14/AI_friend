@@ -45,7 +45,9 @@ def _compiled() -> CompiledPersona:
     return CompiledPersona(
         profile=PersonaProfile(name="Test Friend", traits=["blunt"]),
         biography_markdown="# Test Friend\n\nA test.",
-        inferences=[Inference(field="baseline_valence", value=0.1, reason="warmth=0.2")],
+        inferences=[
+            Inference(field="baseline_valence", value=0.1, reason="warmth=0.2")
+        ],
         dimensions={"warmth": 0.2},
     )
 
@@ -87,7 +89,9 @@ def test_compile_returns_the_full_compiled_payload(client):
     body = r.json()
     assert body["profile"]["name"] == "Test Friend"
     assert body["biography_markdown"] == "# Test Friend\n\nA test."
-    assert body["inferences"] == [dataclasses.asdict(Inference("baseline_valence", 0.1, "warmth=0.2"))]
+    assert body["inferences"] == [
+        dataclasses.asdict(Inference("baseline_valence", 0.1, "warmth=0.2"))
+    ]
     assert body["dimensions"] == {"warmth": 0.2}
     # Read fresh off IMMUTABLE_CORE on every response, never hardcoded in a
     # client -- the exact drift ground-truth finding 0.2 fixed once already.
@@ -147,11 +151,13 @@ def _commit_body(**overrides):
     return body
 
 
-def test_commit_refuses_an_existing_persona_file_without_force(client, tmp_path, monkeypatch):
+def test_commit_refuses_an_existing_persona_file_without_force(
+    client, tmp_path, monkeypatch
+):
     import app.api.persona as persona_module
 
     persona_path = tmp_path / "persona.toml"
-    persona_path.write_text("name = \"Already here\"\n")
+    persona_path.write_text('name = "Already here"\n')
     monkeypatch.setattr(persona_module, "PERSONA_PATH", persona_path)
     monkeypatch.setattr(persona_module, "BIOGRAPHY_PATH", tmp_path / "biography.md")
     monkeypatch.setattr(persona_module, "ENV_PATH", tmp_path / ".env")
@@ -160,7 +166,7 @@ def test_commit_refuses_an_existing_persona_file_without_force(client, tmp_path,
     r = client.post("/api/persona/commit", json=_commit_body(), headers=AUTH_HEADERS)
 
     assert r.status_code == 409
-    assert persona_path.read_text() == "name = \"Already here\"\n"
+    assert persona_path.read_text() == 'name = "Already here"\n'
 
 
 def test_commit_writes_persona_and_biography_when_absent(client, tmp_path, monkeypatch):
@@ -188,11 +194,20 @@ def test_commit_writes_persona_and_biography_when_absent(client, tmp_path, monke
     assert "PERSONA_PROFILE_PATH" in env_path.read_text()
 
 
+def test_onboarding_uses_the_configured_shared_root(monkeypatch, tmp_path):
+    import app.api.persona as persona_module
+
+    shared_root = tmp_path / "shared"
+    monkeypatch.setenv("AI_FRIEND_APP_ROOT", str(shared_root))
+
+    assert persona_module._app_root() == shared_root
+
+
 def test_commit_overwrites_when_forced(client, tmp_path, monkeypatch):
     import app.api.persona as persona_module
 
     persona_path = tmp_path / "persona.toml"
-    persona_path.write_text("name = \"Old Friend\"\n")
+    persona_path.write_text('name = "Old Friend"\n')
     biography_path = tmp_path / "biography.md"
     env_path = tmp_path / ".env"
     env_path.write_text("")

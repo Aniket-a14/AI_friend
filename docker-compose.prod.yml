@@ -62,6 +62,10 @@ services:
       - LIVEKIT_URL=${LIVEKIT_URL:-ws://local_sfu:7880}
       - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-ws://127.0.0.1:7880}
       - BACKEND_BIND_HOST=0.0.0.0
+      # Keep onboarding writes on the shared host-backed paths rather than the
+      # image's `/` fallback. The persona/voice routers consume these values.
+      - AI_FRIEND_APP_ROOT=/app
+      - AI_FRIEND_ENV_PATH=/app/.env
     # main.py's own Provisioning Guard (ensure_models_provisioned) is the
     # mechanism that populates this host path in the first place -- without
     # this mount its download lands inside this container's own ephemeral

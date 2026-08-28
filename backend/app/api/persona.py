@@ -15,6 +15,7 @@ approved is what gets saved.
 """
 
 import dataclasses
+import os
 import tempfile
 from pathlib import Path
 
@@ -30,10 +31,37 @@ from ..persona.wizard import serialize_persona_toml
 
 router = APIRouter(prefix="/api/persona", tags=["persona"])
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-PERSONA_PATH = REPO_ROOT / "personal" / "persona.toml"
-BIOGRAPHY_PATH = REPO_ROOT / "personal" / "biography.md"
-ENV_PATH = REPO_ROOT / ".env"
+
+def _app_root() -> Path:
+    """Return the writable shared root in Compose or the repository locally."""
+    configured = os.environ.get("AI_FRIEND_APP_ROOT")
+    if configured:
+        return Path(configured)
+
+    discovered = Path(__file__).resolve().parents[3]
+    # `/app/app/api/persona.py` has `/` as parents[3] in the image. Keep the
+    # fallback useful for direct local execution without relying on cwd.
+    return Path("/app") if discovered == Path("/") else discovered
+
+
+REPO_ROOT = _app_root()
+
+
+def _configured_path(setting: str, fallback: Path) -> Path:
+    value = getattr(Config, setting, None)
+    if not value:
+        return fallback
+    path = Path(value)
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+PERSONA_PATH = _configured_path(
+    "PERSONA_PROFILE_PATH", REPO_ROOT / "personal" / "persona.toml"
+)
+BIOGRAPHY_PATH = _configured_path(
+    "BIOGRAPHY_PATH", REPO_ROOT / "personal" / "biography.md"
+)
+ENV_PATH = Path(os.environ.get("AI_FRIEND_ENV_PATH", str(REPO_ROOT / ".env")))
 
 
 class CompileRequest(BaseModel):
@@ -193,9 +221,7 @@ async def commit_persona_endpoint(body: CommitRequest):
     set_key(
         str(ENV_PATH), "PERSONA_PROFILE_PATH", str(PERSONA_PATH.relative_to(REPO_ROOT))
     )
-    set_key(
-        str(ENV_PATH), "BIOGRAPHY_PATH", str(BIOGRAPHY_PATH.relative_to(REPO_ROOT))
-    )
+    set_key(str(ENV_PATH), "BIOGRAPHY_PATH", str(BIOGRAPHY_PATH.relative_to(REPO_ROOT)))
 
     return {
         "status": "saved",
