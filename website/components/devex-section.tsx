@@ -5,77 +5,68 @@ import { useState, useEffect } from "react"
 const STEPS = [
   {
     num: "01",
-    title: "Install SDK",
-    desc: "One command to get started",
+    title: "Clone & start",
+    desc: "One command, refuses to half-boot",
     file: "terminal",
     lang: "bash",
     code: [
-      { type: "comment", text: "# Install the Agentic SDK" },
-      { type: "command", text: "npm install @agentic/sdk" },
+      { type: "comment", text: "# Clone and configure" },
+      { type: "command", text: "git clone https://github.com/Aniket-a14/AI_friend.git" },
+      { type: "command", text: "cd AI_friend && cp .env.example .env" },
       { type: "gap" },
-      { type: "comment", text: "# Initialize your project" },
-      { type: "command", text: "npx agentic init" },
+      { type: "comment", text: "# Network, Ollama, default voice, schema, mesh — all of it" },
+      { type: "command", text: "./start.sh" },
       { type: "gap" },
-      { type: "output", text: "✓ Project initialized" },
-      { type: "output", text: "✓ Config file created" },
-      { type: "output", text: "✓ Ready to build" },
+      { type: "output", text: "==> Starting the mesh..." },
+      { type: "success", text: "==> Done." },
     ],
   },
   {
     num: "02",
-    title: "Define Agent",
-    desc: "TypeScript-first agent class",
-    file: "agents/researcher.ts",
-    lang: "typescript",
+    title: "Describe your friend",
+    desc: "Freeform prose, not a template",
+    file: "terminal",
+    lang: "bash",
     code: [
-      { type: "comment", text: "// agents/researcher.ts" },
-      { type: "keyword", text: "import", after: " { Agent, Tool } ", keyword2: "from", string: " '@agentic/sdk'" },
+      { type: "comment", text: "# The Phase 2 CLI wizard" },
+      { type: "command", text: "cd backend" },
+      { type: "command", text: "../.venv/bin/python -m scripts.create_friend" },
       { type: "gap" },
-      { type: "keyword", text: "const", after: " webSearch ", keyword2: "=", keyword3: " new ", fn: "Tool", args: "('web-search', async (q) => { ... })" },
+      { type: "output", text: "> She's blunt, hates small talk, gets genuinely" },
+      { type: "output", text: "  annoyed when I dodge a question." },
       { type: "gap" },
-      { type: "keyword", text: "export const", after: " researcher ", keyword2: "=", keyword3: " new ", fn: "Agent", args: "({" },
-      { type: "prop", key: "  name", val: "'researcher'" },
-      { type: "prop", key: "  model", val: "'claude-opus'" },
-      { type: "prop", key: "  tools", val: "[webSearch]" },
-      { type: "prop", key: "  memory", val: "true" },
-      { type: "plain", text: "});" },
+      { type: "success", text: "✓ compiled — preview before you commit to anything" },
     ],
   },
   {
     num: "03",
-    title: "Add Memory",
-    desc: "Persistent conversation context",
-    file: "agents/memory.ts",
-    lang: "typescript",
+    title: "Give them a voice",
+    desc: "8 seconds, transcribed automatically",
+    file: "terminal",
+    lang: "bash",
     code: [
-      { type: "comment", text: "// Add long-term memory to any agent" },
-      { type: "keyword", text: "import", after: " { VectorMemory } ", keyword2: "from", string: " '@agentic/memory'" },
+      { type: "comment", text: "# Or skip this — a bundled default voice speaks first" },
+      { type: "command", text: "../.venv/bin/python backend/scripts/audio/record_voice.py --duration 8" },
       { type: "gap" },
-      { type: "keyword", text: "const", after: " memory ", keyword2: "=", keyword3: " new ", fn: "VectorMemory", args: "({" },
-      { type: "prop", key: "  provider", val: "'pgvector'" },
-      { type: "prop", key: "  namespace", val: "'researcher'" },
-      { type: "plain", text: "})" },
-      { type: "gap" },
-      { type: "comment", text: "// Attach to agent" },
-      { type: "plain", text: "researcher.use(memory)" },
+      { type: "output", text: "  Recording... done." },
+      { type: "output", text: "  Transcribing with whisper.cpp..." },
+      { type: "output", text: "  Validating clip: duration, loudness, clipping..." },
+      { type: "success", text: "✓ saved as REF_AUDIO_PATH / REF_TEXT" },
     ],
   },
   {
     num: "04",
-    title: "Deploy",
-    desc: "One command to production",
+    title: "Talk",
+    desc: "Text first, voice once you're ready",
     file: "terminal",
     lang: "bash",
     code: [
-      { type: "comment", text: "# Deploy to Agentic Cloud" },
-      { type: "command", text: "agentic deploy --prod" },
+      { type: "comment", text: "# The real cognitive pipeline — memory, affect, everything" },
+      { type: "command", text: "../.venv/bin/python -m scripts.talk" },
       { type: "gap" },
-      { type: "output", text: "  Building agent..." },
-      { type: "output", text: "  Running tests..." },
-      { type: "output", text: "  Deploying to edge..." },
+      { type: "output", text: "> hey, long day" },
       { type: "gap" },
-      { type: "success", text: "✓ researcher deployed" },
-      { type: "url", text: "  → https://agents.agentic.dev/researcher" },
+      { type: "plain", text: "friend: yeah? what happened" },
     ],
   },
 ]
@@ -93,25 +84,6 @@ function CodeLine({ line }: { line: (typeof STEPS)[0]["code"][0] }) {
     </div>
   )
   if (line.type === "plain") return <div className="text-[#111]">{line.text}</div>
-  if (line.type === "prop") return (
-    <div>
-      <span className="text-[#2563eb]">{line.key}</span>
-      <span className="text-[#111]">: </span>
-      <span className="text-[#16a34a]">{line.val}</span>
-      <span className="text-[#111]">,</span>
-    </div>
-  )
-  if (line.type === "keyword") return (
-    <div>
-      <span className="text-[#7c3aed]">{line.text}</span>
-      <span className="text-[#111]">{line.after}</span>
-      <span className="text-[#7c3aed]">{line.keyword2}</span>
-      {line.keyword3 && <span className="text-[#7c3aed]">{line.keyword3}</span>}
-      {line.fn && <span className="text-[#b45309]">{line.fn}</span>}
-      {line.args && <span className="text-[#111]">{line.args}</span>}
-      {line.string && <span className="text-[#16a34a]">{line.string}</span>}
-    </div>
-  )
   return null
 }
 
@@ -143,14 +115,14 @@ export function DevExSection() {
   const step = STEPS[active]
 
   return (
-    <section id="devex" className="py-32 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
+    <section id="setup" className="py-32 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
       <div className="max-w-6xl mx-auto">
         <div className="mb-16">
           <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/[0.05] border border-black/[0.06] text-[10px] tracking-widest text-black/40 uppercase">
-            Developer Experience
+            Get started
           </div>
           <h2 className="mt-5 text-4xl md:text-5xl font-light tracking-tight leading-[1.05]">
-            Built for developers.<br />Loved by teams.
+            Four commands.<br />That's the whole flow.
           </h2>
         </div>
 

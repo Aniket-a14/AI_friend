@@ -12344,3 +12344,117 @@ No link-checker or markdown linter was run against either file; changes were
 verified by hand against `CLAUDE.md`, the actual repo tree, and a direct
 `find` for the phantom script. Phase 7's remainder (7.1, 7.2 continuation,
 7.4, 7.5) also remains open.
+
+## 2026-08-28 -- Community roadmap Phase 8.3: the landing page, rewritten
+
+The Phase 8.1 entry above already established that `website/` -- landed at
+the repo root during Phase 5, per that entry's own record -- unblocks this
+item earlier than the roadmap anticipated when it was written. This entry
+does the actual rewrite: not a rebrand, a full content pass, since the
+template as shipped was a generic "Agentic" multi-agent-SaaS marketing site
+(pricing tiers, a visual agent builder pitch, SOC2/HIPAA compliance badges,
+a simulated global fleet of "3,847 agents active") with a design system
+worth keeping and copy that describes a product this repo has never been.
+
+**Kept as-is, verified generic first:** both local images
+(`public/images/arc.png`, `footer.png`) were opened and inspected -- abstract
+glass-prism/glass-panel renders with no text, no UI mockups, no SaaS
+branding -- genuinely reusable rather than assumed safe. The color tokens,
+fonts, card style, scroll/reveal mechanics, and the pixel-icon canvas
+animations (`pixel-icon.tsx`'s five icon types are abstract node-graph/
+walking-figure/hourglass/tile-grid/bar-chart renders, none SaaS-specific)
+all carried over unchanged.
+
+**Rewritten with real content, not placeholder text:**
+- `intro-animation.tsx`: the letter-reveal spells FRIEND, not AGENTIC.
+- `mobile-nav.tsx`: nav links point at the new section ids; both
+  "START BUILDING" buttons (previously dead `<button>`s with no handler)
+  are now real `<a href="#setup">` links; brand text is AI FRIEND.
+- `stacking-agent-cards.tsx`: the four fake SaaS agent personas
+  (Researcher/Coder/Analyst/Executor, each with fabricated stats like
+  "98.2% accuracy" and an external stock-render image) replaced with the
+  four real mesh agents (Brain/Voice/STT/Subconscious) and their real
+  technology and role -- no invented numbers, and the per-card image slot
+  removed entirely (the component's own `agent.img &&` conditional made
+  this a clean removal, not a hack) since there's no real per-agent artwork
+  to show.
+- `devex-section.tsx`: the fake `@agentic/sdk` install/define/memory/deploy
+  code walkthrough replaced with the real one -- `git clone` + `./start.sh`,
+  `scripts.create_friend`, `record_voice.py --duration 8`, `scripts.talk` --
+  verified against each script's actual docstring/argparse flags before
+  writing the copy, not recalled from memory. The renderer's unused
+  `keyword`/`prop` JSX branches (needed only for the old TypeScript-flavored
+  fake code, not this bash-only real walkthrough) were deleted rather than
+  left as dead code mypy-adjacent to nothing.
+- `app/page.tsx`: full section rewrite. Hero drops an unverifiable external
+  stock "agentic-hero" video and a fabricated stats row (50M+ tasks, 99.9%
+  uptime, 180+ countries) for a plain gradient background and three
+  qualitative, true badges (Local-first / MIT licensed / Your words, your
+  friend). New sections: "How it's different" (persona compiler, the
+  enforced tier boundary, endocrine-modulated sampling, learned lexicon --
+  the exact four things the roadmap's 8.1 item already named as genuinely
+  uncommon, reused here), "The mesh" (the stacking cards), the devex setup
+  panel, "Built on real infrastructure" (a plain grid naming the actual
+  stack -- Ollama/GPT-SoVITS/Postgres+pgvector/Neo4j/Qdrant/NATS/LiveKit/
+  Rust -- replacing a fake "200+ integrations" SDK pitch), and "Privacy by
+  design" (the real posture from this session's own `SECURITY.md` rewrite,
+  replacing SOC2/HIPAA/GDPR badges nothing in this repo has ever had).
+
+**Dropped outright, not reskinned, because no honest version of either
+exists:** the "Live Agents" section (a client-side simulation of thousands
+of agents running globally in real time, complete with a live-updating
+counter seeded at a hardcoded 3,847 -- there is no global fleet; this is a
+local, single-instance, self-hosted product, and no amount of reskinning
+turns a fabricated live-data feed into something true) and the "Pricing"
+section (Sandbox/Builder/Enterprise tiers with monthly prices -- there is no
+pricing, this is MIT-licensed and free). The marquee capability strip and
+the CTA's email waitlist form were the two components closest to reusable
+staging; the marquee now lists real implemented behaviors (proactive
+outreach, ACT-R decay, affect, voice cloning, vision comfort-object
+recognition) instead of generic SaaS task names, and the CTA became a
+`git clone` command plus a GitHub link, since there's nothing to join a
+waitlist for -- the thing already runs.
+
+**A finding beyond copy:** `app/layout.tsx` rendered `<Analytics />` from
+`@vercel/analytics/next` unconditionally -- real telemetry that would have
+shipped with this page had it been deployed as-is, directly contradicting
+the "No telemetry. Nothing here phones home" line this same session already
+wrote into `SECURITY.md`. Removed, along with the metadata block's
+"Agentic — Autonomous AI Agents at Scale" title/description/OpenGraph/
+Twitter tags and `authors: [{ name: 'Agentic' }]`, replaced with real,
+accurate metadata for this product. `@vercel/analytics` is left in
+`package.json`/`pnpm-lock.yaml` as an unused dependency rather than removed,
+since removing it correctly needs an actual `pnpm install` to keep the
+lockfile in sync and none was run this session -- flagged rather than risking
+lockfile drift.
+
+**Verified:** `npx tsc --noEmit` -- confirmed via `git stash` before and
+after that the only remaining type errors (`agent-interface.tsx`,
+`glitch-background.tsx`) predate this entry's changes and are in files
+never imported by the rewritten page (dead code already in the shipped
+template); this entry introduces zero new type errors. `npx next build`
+succeeds with real static generation (`○ /` prerendered), not just a
+type-check -- confirmed both before and after the `layout.tsx` fix. `npm run
+lint` could not run (`eslint: command not found` -- not installed as a
+binary in this checkout despite the `lint` script existing), so `tsc` +
+a real build are what this entry's verification actually rests on, named
+here rather than glossed over.
+
+**NOT done:**
+- No live browser/visual QA -- this environment has no browser, so the
+  animations, scroll-driven card stacking, and responsive layout were
+  reasoned about from the code, not watched. Genuinely the biggest risk in
+  this entry: a compiling, statically-generating page can still look wrong.
+- `agent-interface.tsx` (an unused floating chat-widget mockup with two
+  pre-existing bugs) and `glitch-background.tsx` (an unused WebGL shader
+  background needing `three`'s missing type declarations) are untouched --
+  neither is imported by the rewritten page, and fixing dead code the
+  rewrite doesn't need was out of scope here.
+- `@vercel/analytics` dependency removal from `package.json`/lockfile (see
+  above -- the *usage* is gone, the declared dependency isn't, on purpose).
+- `website/app/page.tsx`'s default export was renamed `AgenticPage` ->
+  `LandingPage`; nothing else in the repo imports it by name, confirmed via
+  grep, so this is not a breaking rename.
+- 8.4 (end-to-end demo recording) and 8.5 (packaged install) remain open,
+  per the 8.1 entry. Phase 7's remainder (7.1, 7.2 continuation, 7.4, 7.5)
+  also remains open.

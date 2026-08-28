@@ -4,32 +4,28 @@ import { useEffect, useRef, useState } from "react"
 
 const AGENTS = [
   {
-    label: "RESEARCHER",
-    title: "Web & data research",
-    desc: "Autonomously browses the web, extracts structured data, synthesizes reports from multiple sources with citations.",
-    stats: [{ v: "2.4M", l: "tasks run" }, { v: "98.2%", l: "accuracy" }],
-    img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/researcher-CvhqOuV6irGwBOnJoTGFlXdbyYBRjb.png",
+    label: "BRAIN AGENT",
+    title: "The cognitive core",
+    desc: "Runs the full turn: appraises what happened, updates PAD affect and the endocrine layer, decides how to respond, and streams the reply through your local Ollama model.",
+    stats: [{ v: "Python", l: "runtime" }, { v: "Ollama", l: "LLM backend" }],
   },
   {
-    label: "CODER",
-    title: "Code generation & review",
-    desc: "Writes, refactors, and reviews code across 40+ languages. Runs tests, fixes bugs, opens pull requests automatically.",
-    stats: [{ v: "1.1M", l: "PRs merged" }, { v: "3.2s", l: "avg response" }],
-    img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/coder-9bItvCegU6TXUqbX3tUXGBAtvkBkXp.png",
+    label: "VOICE AGENT",
+    title: "Speech, physically synthesized",
+    desc: "Renders every reply through one self-hosted, cloned voice — no fallback to a different voice. Pauses, ducking, and prosody are real PCM sample manipulation, not text markers.",
+    stats: [{ v: "Rust", l: "runtime" }, { v: "GPT-SoVITS", l: "synthesis" }],
   },
   {
-    label: "ANALYST",
-    title: "Data analysis & insights",
-    desc: "Connects to your databases, runs queries, visualizes trends, and surfaces anomalies before they become problems.",
-    stats: [{ v: "880K", l: "reports" }, { v: "12x", l: "faster" }],
-    img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/analyst-Ysxnqg7Fpy2cfA56PiIttv1KximMhT.png",
+    label: "STT AGENT",
+    title: "Dual-path listening",
+    desc: "A fast speculative path classifies intent and emotion mid-sentence for natural barge-in; a slower accurate path produces the final transcript once you're done talking.",
+    stats: [{ v: "whisper.cpp", l: "accurate path" }, { v: "SenseVoice", l: "fast path" }],
   },
   {
-    label: "EXECUTOR",
-    title: "Workflow automation",
-    desc: "Takes actions across APIs: sends messages, creates calendar events, triggers webhooks, and manages third-party apps.",
-    stats: [{ v: "5.6M", l: "executions" }, { v: "99.9%", l: "uptime" }],
-    img: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/executor-o1q6509qMLXMtpBIGo49vcgOu34sI1.png",
+    label: "SUBCONSCIOUS AGENT",
+    title: "Reflection, between turns",
+    desc: "Consolidates memory, decays what's no longer relevant, and can reach out to you unprompted — a friend that thinks about you when you're not talking to it.",
+    stats: [{ v: "Neo4j", l: "knowledge graph" }, { v: "ACT-R", l: "memory decay" }],
   },
 ]
 
@@ -98,45 +94,9 @@ export function StackingAgentCards() {
             >
               <div className="group relative bg-[#faf9f7] rounded-2xl border border-black/[0.07] overflow-hidden cursor-pointer">
 
-                {/* ── MOBILE: image top, fades out at bottom ── */}
-                {agent.img && (
-                  <div className="relative w-full h-52 pointer-events-none md:hidden">
-                    <img
-                      src={agent.img}
-                      alt={agent.label}
-                      className="absolute inset-0 w-full h-full object-cover object-center"
-                      style={{
-                        maskImage: "linear-gradient(to bottom, black 0%, black 35%, transparent 85%)",
-                        WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 35%, transparent 85%)",
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* ── DESKTOP: image right, fades out at left (absolute) ── */}
-                {agent.img && (
-                  <div className="hidden md:block absolute inset-y-0 right-0 w-1/2 pointer-events-none">
-                    <img
-                      src={agent.img}
-                      alt={agent.label}
-                      className="w-full h-full object-cover object-center"
-                    />
-                    <div
-                      className="absolute inset-0"
-                      style={{
-                        background: "linear-gradient(to right, #faf9f7 0%, transparent 55%)",
-                      }}
-                    />
-                  </div>
-                )}
-
                 {/* Text content */}
-                <div
-                  className="relative z-10 p-8"
-                  style={{ maxWidth: agent.img ? undefined : "100%" }}
-                  // On desktop limit to left 60% so text doesn't overlap image
-                >
-                  <div className="md:max-w-[60%]">
+                <div className="relative z-10 p-8">
+                  <div className="md:max-w-xl">
                     <div className="flex items-start justify-between mb-6">
                       <Tag>{agent.label}</Tag>
                     </div>
