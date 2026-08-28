@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, useRef } from 'react';
+import Link from 'next/link';
 import AssistantCircle from '../components/AssistantCircle';
 import { useWebRTCVoice } from '../hooks/useWebRTCVoice';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 export default function Home() {
-    const { isConnected, isConnecting, state, startRecording } = useWebRTCVoice();
+    const { isConnected, isConnecting, state, visemeLevel, startRecording } = useWebRTCVoice();
     const [visionSource, setVisionSource] = useState('screen'); // screen | camera
     const [visionError, setVisionError] = useState(null);
     const videoRef = useRef(null);
@@ -155,7 +156,7 @@ export default function Home() {
 
             {/* Main Interaction Circle */}
             <div className="relative flex items-center justify-center w-full h-full z-10">
-                <AssistantCircle state={state} />
+                <AssistantCircle state={state} visemeLevel={visemeLevel} />
             </div>
 
             {/* Subtitles / Feedback */}
@@ -174,6 +175,13 @@ export default function Home() {
             {/* System Info */}
             <div className="absolute bottom-8 text-white/5 text-[7px] uppercase tracking-[0.6em] font-light">
                 Sovereign Intelligence Mesh :: v3.0.42
+            </div>
+
+            {/* App Navigation -- typing over voice, settings, memory browser */}
+            <div className="absolute bottom-6 right-6 flex gap-2 z-50 text-[10px] tracking-[0.15em] uppercase">
+                <Link href="/chat" className="glass-pill">Chat</Link>
+                <Link href="/memories" className="glass-pill">Memories</Link>
+                <Link href="/settings" className="glass-pill">Settings</Link>
             </div>
         </main>
     );

@@ -256,10 +256,19 @@ class ReflectionService:
                 )
                 suggestions = self._extract_json(ident_res)
 
-                # CVS-3.5: Defensive parsing for identity suggestions (Ensures .get() availability)
+                # CVS-3.5: Defensive parsing for identity suggestions (Ensures
+                # .get() availability). The list branch used to stop at
+                # "is this a list", not "is the element inside a dict" --
+                # `_extract_json` returning e.g. ["some string"] unwrapped to
+                # a bare str that .get() below then crashed on. The sibling
+                # fact-parsing block above (line ~156) already re-validates
+                # each unwrapped element; this one didn't. Found via a real
+                # concurrent-load run (roadmap Phase 6.2) where contention
+                # made the reflection LLM call more likely to return a
+                # malformed shape.
                 if isinstance(suggestions, list) and len(suggestions) > 0:
                     suggestions = suggestions[0]
-                elif not isinstance(suggestions, dict):
+                if not isinstance(suggestions, dict):
                     suggestions = {}
 
                 if suggestions and suggestions.get("confidence", 0.0) >= 0.8:

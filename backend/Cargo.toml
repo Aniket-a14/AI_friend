@@ -19,6 +19,9 @@ bytes = "1.10"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 contracts = { path = "crates/contracts" }
 futures-util = "0.3"
+# WAV file reading for stt-agent's offline (--transcribe-file) mode -- Phase
+# 2.3 voice enrollment needs a transcript without the full mesh running.
+hound = "3.5"
 pyo3 = { version = "0.28.3", features = ["extension-module", "abi3-py39"] }
 regex = "1.12"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }

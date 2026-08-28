@@ -510,7 +510,14 @@ def pytest_sessionfinish(session, exitstatus):
     # then forks isolated mutant workers. Calling os._exit here would terminate
     # the collector before it can persist those associations. MUTANT_UNDER_TEST
     # is set for every mutmut phase, including its clean baseline run.
-    if "MUTANT_UNDER_TEST" in os.environ:
+    # CI also needs pytest's normal shutdown path: os._exit can run before the
+    # terminal reporter flushes a collection traceback, turning a useful test
+    # failure into a bare "collecting ..." line in the Actions log. CI jobs
+    # have a hard timeout, so retaining diagnostics is more valuable than the
+    # local-only escape hatch for leaked resources.
+    if "MUTANT_UNDER_TEST" in os.environ or os.environ.get("CI", "").lower() in {
+        "1", "true", "yes"
+    }:
         return
 
     os._exit(exitstatus)

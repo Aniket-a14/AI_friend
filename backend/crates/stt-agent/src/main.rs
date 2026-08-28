@@ -25,14 +25,14 @@ use contracts::{
 };
 use futures_util::StreamExt;
 use serde_json::json;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use audio::{Endpointer, VadEvent};
+use audio::{Endpointer, ResamplerCache, VadEvent};
 use sensevoice::SenseVoiceModel;
 use whisper::WhisperModel;
 
@@ -139,6 +139,90 @@ fn parse_env<T: std::str::FromStr>(name: &str, fallback: T) -> T {
         .unwrap_or(fallback)
 }
 
+/// Looks for `--transcribe-file <path>` among the process args. Deliberately
+/// not `clap` (or any arg-parsing crate) for one optional flag on a binary
+/// whose normal invocation takes no arguments at all.
+fn offline_transcribe_file_arg() -> Option<PathBuf> {
+    parse_transcribe_file_arg(std::env::args())
+}
+
+/// The parsing logic behind `offline_transcribe_file_arg`, split out so tests
+/// can drive it with a fixed argument list instead of the real process's
+/// `std::env::args()`, which under `cargo test` carries the test harness's own
+/// arguments, not anything a test controls.
+fn parse_transcribe_file_arg(args: impl Iterator<Item = String>) -> Option<PathBuf> {
+    let mut args = args;
+    while let Some(arg) = args.next() {
+        if arg == "--transcribe-file" {
+            return args.next().map(PathBuf::from);
+        }
+    }
+    None
+}
+
+/// Reads a WAV file, downmixes to mono f32, and resamples to Whisper's
+/// required 16 kHz -- mirrors the live mesh path (`audio::decode_mono_f32` +
+/// `ResamplerCache`) but starting from a WAV file's own header-declared
+/// format instead of a fixed-format inbound PCM stream.
+fn decode_wav_mono_16k(path: &Path) -> Result<Vec<f32>> {
+    let mut reader =
+        hound::WavReader::open(path).with_context(|| format!("open WAV file {}", path.display()))?;
+    let spec = reader.spec();
+
+    let raw: Vec<f32> = match (spec.sample_format, spec.bits_per_sample) {
+        (hound::SampleFormat::Float, 32) => reader
+            .samples::<f32>()
+            .collect::<std::result::Result<Vec<f32>, _>>()
+            .context("decode f32 WAV samples")?,
+        (hound::SampleFormat::Int, bits) if bits >= 1 && bits <= 32 => {
+            // i32 is the only integer sample type hound offers that can hold
+            // every bit depth (8/16/24/32) without overflow; scale by the
+            // depth actually declared in the header, not a fixed 16-bit
+            // assumption.
+            let scale = 1.0 / (1i64 << (bits - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .map(|s| s.map(|v| v as f32 * scale))
+                .collect::<std::result::Result<Vec<f32>, _>>()
+                .context("decode integer WAV samples")?
+        }
+        (format, bits) => {
+            anyhow::bail!("unsupported WAV format {format:?} at {bits} bits per sample")
+        }
+    };
+
+    let mono = downmix_mono(&raw, spec.channels as usize);
+    let duration_secs = (mono.len() as f64 / spec.sample_rate as f64).max(1.0);
+    ResamplerCache::new(duration_secs).resample_to_16k(&mono, spec.sample_rate)
+}
+
+fn downmix_mono(samples: &[f32], channels: usize) -> Vec<f32> {
+    let channels = channels.max(1);
+    if channels == 1 {
+        return samples.to_vec();
+    }
+    samples
+        .chunks_exact(channels)
+        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+        .collect()
+}
+
+async fn run_offline_transcription(path: &Path, config: &SttConfig) -> Result<()> {
+    let pcm_16k = decode_wav_mono_16k(path)?;
+
+    let model_path = whisper::ensure_model(&config.model_dir, &config.accurate_model).await?;
+    let language = config.language.clone();
+    let transcript = tokio::task::spawn_blocking(move || -> Result<String> {
+        let model = WhisperModel::load(&model_path, "accurate", &language)?;
+        model.transcribe(&pcm_16k)
+    })
+    .await
+    .context("offline transcription task panicked")??;
+
+    println!("{transcript}");
+    Ok(())
+}
+
 /// A unit of work for an inference worker.
 struct Job {
     pcm_16k: Vec<f32>,
@@ -199,6 +283,15 @@ struct SttState {
     /// `utterance_id` has already fired one, so a new one only fires when a
     /// new utterance starts.
     speculative_fired_for: Option<String>,
+    /// docs/FUTURE_WORK.md §1.2: the previous `estimate_tempo_wpm` ran per
+    /// inbound chunk in the VAD loop, where no transcript exists yet, so it
+    /// measured zero-crossing rate (spectral brightness) and called it
+    /// speaking rate. Real WPM needs words and duration, both of which only
+    /// exist together at `run_final_job`'s completed-transcript point --
+    /// this carries that measurement forward so the per-chunk
+    /// `UserVoiceProperties` publish can report it. `None` until the first
+    /// utterance completes.
+    last_completed_tempo_wpm: Option<f64>,
 }
 
 #[tokio::main]
@@ -208,6 +301,14 @@ async fn main() -> Result<()> {
         .init();
 
     let config = SttConfig::from_env();
+
+    // Phase 2.3 (voice enrollment): a one-shot local transcription that never
+    // touches NATS, so recording a reference clip doesn't require the full
+    // mesh to already be running. Exits here in either case -- everything
+    // below this is the ordinary mesh-agent path.
+    if let Some(path) = offline_transcribe_file_arg() {
+        return run_offline_transcription(&path, &config).await;
+    }
 
     let client = connect_nats(
         &config.nats_url,
@@ -228,6 +329,7 @@ async fn main() -> Result<()> {
         last_partial_at: 0.0,
         last_noise_publish: 0.0,
         speculative_fired_for: None,
+        last_completed_tempo_wpm: None,
     }));
 
     // Latest-wins slot for partials: if the fast model is still busy, a newer
@@ -273,7 +375,7 @@ async fn main() -> Result<()> {
                 fast,
                 state.clone(),
             );
-            spawn_final_worker(jetstream.clone(), final_rx, accurate);
+            spawn_final_worker(jetstream.clone(), final_rx, accurate, state.clone());
             info!(
                 hears_emotion,
                 "stt-agent online with real recognition (dual-path)"
@@ -351,10 +453,12 @@ impl FastPath {
 async fn run_final_job(
     jetstream: &async_nats::jetstream::Context,
     model: &Arc<WhisperModel>,
+    state: &Arc<Mutex<SttState>>,
     job: Job,
 ) {
     let model = model.clone();
     let pcm = job.pcm_16k;
+    let pcm_len = pcm.len();
     let started = now_seconds();
 
     let result = tokio::task::spawn_blocking(move || model.transcribe(&pcm)).await;
@@ -377,6 +481,15 @@ async fn run_final_job(
 
     let elapsed_ms = (now_seconds() - started) * 1000.0;
     info!(text = %text, took_ms = elapsed_ms, "final transcript");
+
+    // docs/FUTURE_WORK.md §1.2: real speaking rate, computed here because
+    // this is the first point in the pipeline where a transcript and its
+    // duration both exist -- see measured_tempo_wpm and SttState's own
+    // comment on last_completed_tempo_wpm.
+    if let Some(rate) = measured_tempo_wpm(&text, pcm_len) {
+        state.lock().await.last_completed_tempo_wpm = Some(rate);
+    }
+
     if let Err(err) = publish_final(jetstream, &text, &job.utterance_id, job.latency, "whisper").await
     {
         error!("stt-agent failed to publish transcript: {err:#}");
@@ -485,10 +598,11 @@ fn spawn_final_worker(
     jetstream: async_nats::jetstream::Context,
     mut rx: mpsc::Receiver<Job>,
     model: Arc<WhisperModel>,
+    state: Arc<Mutex<SttState>>,
 ) {
     tokio::spawn(async move {
         while let Some(job) = rx.recv().await {
-            run_final_job(&jetstream, &model, job).await;
+            run_final_job(&jetstream, &model, &state, job).await;
         }
     });
 }
@@ -743,7 +857,11 @@ async fn handle_audio_inbound(
     let voice_properties = UserVoiceProperties {
         pitch_f0: estimate_f0(&chunk, source_rate),
         energy_rms: chunk_rms,
-        tempo_wpm: estimate_tempo_wpm(&chunk),
+        // The last *completed* utterance's measured rate (see
+        // measured_tempo_wpm), not derived from this chunk -- no per-chunk
+        // signal can measure a rate that only exists over a whole utterance.
+        // None until the first utterance finishes.
+        tempo_wpm: guard.last_completed_tempo_wpm,
         timestamp: now,
     };
     // `.publish().await` hands the message to the connection; the returned
@@ -914,18 +1032,19 @@ fn estimate_f0(samples: &[f32], sample_rate: u32) -> f64 {
     }
 }
 
-fn estimate_tempo_wpm(samples: &[f32]) -> f64 {
-    if samples.is_empty() {
-        return 120.0;
+/// Real speaking rate: words in the completed transcript divided by the
+/// utterance's duration. Replaces `estimate_tempo_wpm`, which computed
+/// zero-crossing rate (spectral brightness, not tempo) and was structurally
+/// confined to [120, 180] wpm regardless of how fast anyone actually spoke
+/// (docs/FUTURE_WORK.md §1.2). `pcm_16k_len` is always at 16kHz -- the name
+/// every buffer of this shape already carries throughout this crate.
+fn measured_tempo_wpm(text: &str, pcm_16k_len: usize) -> Option<f64> {
+    let word_count = text.split_whitespace().count();
+    let duration_minutes = pcm_16k_len as f64 / 16_000.0 / 60.0;
+    if word_count == 0 || duration_minutes <= 0.0 {
+        return None;
     }
-    let mut zero_crossings = 0usize;
-    for i in 1..samples.len() {
-        if (samples[i - 1] >= 0.0) != (samples[i] >= 0.0) {
-            zero_crossings += 1;
-        }
-    }
-    let zcr = zero_crossings as f64 / samples.len() as f64;
-    120.0 + (zcr * 200.0).min(60.0)
+    Some(word_count as f64 / duration_minutes)
 }
 
 fn metadata_from_headers(message: &Message) -> Option<LatencyMetadata> {
@@ -1195,6 +1314,7 @@ mod tests {
             last_partial_at: 0.0,
             last_noise_publish: 0.0,
             speculative_fired_for: None,
+            last_completed_tempo_wpm: None,
         }))
     }
 
@@ -1237,5 +1357,191 @@ mod tests {
         // Guards the E1 regression: the deployed agent must not silently ship mocks.
         std::env::remove_var("STT_BACKEND");
         assert_eq!(SttConfig::from_env().backend, Backend::Whisper);
+    }
+
+    fn args(values: &[&str]) -> impl Iterator<Item = String> {
+        values.iter().map(|s| s.to_string()).collect::<Vec<_>>().into_iter()
+    }
+
+    #[test]
+    fn transcribe_file_flag_captures_the_following_path() {
+        let parsed = parse_transcribe_file_arg(args(&[
+            "stt-agent",
+            "--transcribe-file",
+            "clip.wav",
+        ]));
+        assert_eq!(parsed, Some(PathBuf::from("clip.wav")));
+    }
+
+    #[test]
+    fn absent_transcribe_file_flag_yields_none() {
+        // The ordinary mesh-agent invocation: no arguments at all. A mutation
+        // that defaulted this to `Some(...)` would send every real deployment
+        // down the offline one-shot path instead of starting the NATS agent.
+        assert_eq!(parse_transcribe_file_arg(args(&["stt-agent"])), None);
+        assert_eq!(parse_transcribe_file_arg(args(&[])), None);
+    }
+
+    #[test]
+    fn transcribe_file_flag_with_no_following_value_yields_none() {
+        let parsed = parse_transcribe_file_arg(args(&["stt-agent", "--transcribe-file"]));
+        assert_eq!(parsed, None);
+    }
+
+    #[test]
+    fn downmix_mono_passes_mono_through_unchanged() {
+        let samples = vec![0.1f32, -0.2, 0.3];
+        assert_eq!(downmix_mono(&samples, 1), samples);
+    }
+
+    #[test]
+    fn downmix_mono_averages_interleaved_stereo_frames() {
+        // Frame 1: (1.0, -1.0) -> 0.0. Frame 2: (0.5, 0.5) -> 0.5. A mutation
+        // that summed instead of averaging, or read channels in the wrong
+        // stride, would miss both values.
+        let interleaved = vec![1.0f32, -1.0, 0.5, 0.5];
+        assert_eq!(downmix_mono(&interleaved, 2), vec![0.0, 0.5]);
+    }
+
+    #[test]
+    fn downmix_mono_treats_zero_channels_as_mono() {
+        // A malformed WAV header declaring 0 channels must not divide-by-zero
+        // or silently drop every sample via `chunks_exact(0)`.
+        let samples = vec![0.4f32, 0.6];
+        assert_eq!(downmix_mono(&samples, 0), samples);
+    }
+
+    fn write_temp_wav(name: &str, spec: hound::WavSpec, samples: &[f32]) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "stt_agent_test_{name}_{:?}.wav",
+            std::thread::current().id()
+        ));
+        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
+        match spec.sample_format {
+            hound::SampleFormat::Float => {
+                for &s in samples {
+                    writer.write_sample(s).unwrap();
+                }
+            }
+            hound::SampleFormat::Int => {
+                for &s in samples {
+                    writer.write_sample((s * i16::MAX as f32) as i16).unwrap();
+                }
+            }
+        }
+        writer.finalize().unwrap();
+        path
+    }
+
+    #[test]
+    fn decode_wav_mono_16k_resamples_a_low_rate_clip_up_to_16k() {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 8_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        // 8000 samples at 8kHz = 1 second, so 16kHz output should be ~16000 samples.
+        let samples: Vec<f32> = (0..8_000)
+            .map(|i| (2.0 * std::f64::consts::PI * 200.0 * (i as f64 / 8_000.0)).sin() as f32)
+            .collect();
+        let path = write_temp_wav("resample_up", spec, &samples);
+
+        let result = decode_wav_mono_16k(&path);
+        std::fs::remove_file(&path).ok();
+
+        let pcm = result.expect("a well-formed mono 16-bit WAV must decode");
+        // Allow slack for resampler edge effects; the point under test is that
+        // it resampled toward 16kHz rather than passing the 8kHz length through
+        // unchanged (a mutation that skipped resampling would leave this at 8000).
+        assert!(
+            (pcm.len() as i64 - 16_000).abs() < 200,
+            "expected ~16000 samples at 16kHz, got {}",
+            pcm.len()
+        );
+    }
+
+    #[test]
+    fn decode_wav_mono_16k_downmixes_stereo_before_resampling() {
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 16_000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        // Left channel silent, right channel full-scale -- downmixed average
+        // must land at half amplitude, not the silent left channel alone (which
+        // a channel-count bug reading only every other sample could produce).
+        let mut interleaved = Vec::new();
+        for _ in 0..1_000 {
+            interleaved.push(0.0f32);
+            interleaved.push(1.0f32);
+        }
+        let path = write_temp_wav("stereo_downmix", spec, &interleaved);
+
+        let result = decode_wav_mono_16k(&path);
+        std::fs::remove_file(&path).ok();
+
+        let pcm = result.expect("a well-formed stereo float WAV must decode");
+        assert_eq!(pcm.len(), 1_000);
+        assert!(
+            pcm.iter().all(|&s| (s - 0.5).abs() < 0.01),
+            "expected every downmixed sample near 0.5, got {:?}",
+            &pcm[..5.min(pcm.len())]
+        );
+    }
+
+    #[test]
+    fn decode_wav_mono_16k_rejects_a_missing_file() {
+        let missing = std::env::temp_dir().join("stt_agent_test_does_not_exist.wav");
+        assert!(decode_wav_mono_16k(&missing).is_err());
+    }
+
+    #[test]
+    fn measured_tempo_wpm_matches_hand_computed_words_over_duration() {
+        // 10 words over 4 seconds (16000 * 4 samples at 16kHz) = 150 wpm.
+        let text = "one two three four five six seven eight nine ten";
+        let samples = (16_000 * 4) as usize;
+        let wpm = measured_tempo_wpm(text, samples).expect("non-empty text and duration");
+        assert!((wpm - 150.0).abs() < 0.01, "expected 150.0, got {wpm}");
+    }
+
+    #[test]
+    fn measured_tempo_wpm_is_none_for_empty_text() {
+        // run_final_job already returns before this on an empty transcript,
+        // but the function itself must not divide zero words into a duration
+        // and call the result a rate.
+        assert!(measured_tempo_wpm("", 16_000 * 4).is_none());
+        assert!(measured_tempo_wpm("   ", 16_000 * 4).is_none());
+    }
+
+    #[test]
+    fn measured_tempo_wpm_is_none_for_zero_duration() {
+        assert!(measured_tempo_wpm("hello there", 0).is_none());
+    }
+
+    #[test]
+    fn measured_tempo_wpm_orders_slower_and_faster_speech_correctly() {
+        // The exact failure mode this replaces: the old zero-crossing-rate
+        // proxy could not even guarantee more words in the same time reads
+        // as a higher rate -- it measured spectral brightness, not tempo.
+        let duration = (16_000 * 4) as usize;
+        let slow = measured_tempo_wpm("one two three four", duration).unwrap();
+        let fast = measured_tempo_wpm(
+            "one two three four five six seven eight nine ten eleven twelve",
+            duration,
+        )
+        .unwrap();
+        assert!(fast > slow, "more words in the same duration must be a higher rate");
+    }
+
+    #[test]
+    fn measured_tempo_wpm_is_not_confined_to_the_old_120_to_180_band() {
+        // The old proxy was structurally incapable of reporting outside
+        // [120, 180] wpm no matter how fast or slow anyone actually spoke.
+        // A real, very slow rate must be able to read below 120.
+        let one_word_over_ten_seconds = (16_000 * 10) as usize;
+        let wpm = measured_tempo_wpm("hello", one_word_over_ten_seconds).unwrap();
+        assert!(wpm < 120.0, "expected well under 120wpm for one word in 10s, got {wpm}");
     }
 }

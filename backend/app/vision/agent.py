@@ -6,7 +6,7 @@ import time
 from ..agents.base import BaseAgent, install_shutdown_signal_handlers
 from ..config import Config
 from ..contracts import Topics, VisionDescription
-from ..llm.ollama_client import OllamaClient
+from ..llm import build_llm_client
 from .appraisal import VisualAppraisalService
 from .links import CameraLink, ScreenLink
 
@@ -18,7 +18,7 @@ except ImportError:
 try:
     import numpy as np
 except ImportError:
-    np = None
+    np = None  # type: ignore[assignment]  # optional dependency; guarded at every call site
 
 # Distance estimation parameters
 ASSUMED_FACE_WIDTH_M = 0.15
@@ -53,7 +53,7 @@ class VisionAgent(BaseAgent):
         self.appraisal = None
 
         if self.vlm_enabled:
-            self.vlm_client = OllamaClient(
+            self.vlm_client = build_llm_client(
                 base_url=Config.OLLAMA_URL, model=Config.VLM_MODEL
             )
             self.appraisal = VisualAppraisalService(

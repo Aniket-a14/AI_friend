@@ -23,6 +23,10 @@ jobs:
     name: Identity Continuity Check
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    # Some runners expose a DEBUG environment variable with a non-boolean
+    # value. AppSettings is intentionally strict, so keep CI deterministic.
+    env:
+      DEBUG: "false"
 
     steps:
       - uses: actions/checkout@v4
@@ -39,10 +43,11 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          set -o pipefail
           cd backend
           pip install --upgrade pip
           pip install -r requirements-base.txt
-          pip install pytest pytest-asyncio
+          pip install pytest pytest-asyncio PyYAML Pillow
       - name: Build cognitive-rust extension
         run: |
           cd backend
@@ -75,6 +80,7 @@ jobs:
           NEO4J_PASSWORD: dummy_password
         run: |
           cd backend
+          set -o pipefail
           # Run only tests tagged with identity/persona/state keywords
           pytest -v --tb=short -k "identity or persona or state or emotion or markup" 2>&1 | tee persona_results.txt
 

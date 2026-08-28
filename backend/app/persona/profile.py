@@ -215,7 +215,9 @@ class PersonaProfile(BaseModel):
     def tier_of(cls, field_name: str) -> Tier:
         """Which tier a field belongs to. Raises KeyError for unknown fields."""
         field = cls.model_fields[field_name]
-        extra = field.json_schema_extra or {}
+        extra = field.json_schema_extra
+        if not isinstance(extra, dict):
+            extra = {}
         return Tier(extra["tier"])
 
     @classmethod

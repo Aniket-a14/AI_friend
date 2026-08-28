@@ -48,7 +48,7 @@ jobs:
           # Pattern 1: Hardcoded passwords in Python/JS (not in .env.example or tests)
           if grep -rn --include="*.py" --include="*.js" --include="*.ts" --include="*.tsx" \
              -E "(password|secret|api_key)\s*=\s*['\"][^'\"]{8,}['\"]" \
-             --exclude-dir=node_modules --exclude-dir=.next --exclude-dir=__pycache__ \
+             --exclude-dir=node_modules --exclude-dir=.next --exclude-dir=__pycache__ --exclude-dir=tests \
              backend/ frontend/app/ frontend/components/ 2>/dev/null; then
             echo "⚠️ Potential hardcoded secrets found in source code"
             errors=$((errors + 1))
@@ -107,14 +107,20 @@ jobs:
         run: |
           pip install pip-audit
           cd backend
-          pip-audit -r requirements-base.txt --desc 2>&1 | tee audit_results.txt || true
+          set +e
+          pip-audit -r requirements-base.txt --desc 2>&1 | tee audit_results.txt
+          audit_status=${PIPESTATUS[0]}
+          set -e
 
           # Count high/critical vulnerabilities
-          critical=$(grep -ci "critical\|high" audit_results.txt || echo "0")
+          critical=$(grep -Eic "critical|high" audit_results.txt || true)
           if [ "$critical" -gt 0 ]; then
             echo "⚠️ Found $critical high/critical vulnerabilities"
             echo "Review audit_results.txt for details"
             exit 1
+          elif [ "$audit_status" -ne 0 ]; then
+            echo "❌ pip-audit failed (exit $audit_status) without producing a high/critical finding"
+            exit "$audit_status"
           else
             echo "✅ No critical vulnerabilities found"
           fi

@@ -77,21 +77,41 @@ else
 fi
 
 # 4. Identity Warmup (Populate BERT/HuBERT Latent Caches)
-# We perform a dummy synthesis with the neutral anchor to 'prime' the GPU
-if [ -n "${CUSTOM_GPT_PATH:-}" ] && [ -f "${CUSTOM_GPT_PATH:-}" ] && [ -n "${CUSTOM_SOVITS_PATH:-}" ] && [ -f "${CUSTOM_SOVITS_PATH:-}" ]; then
-    echo "🔥 Performing Identity Warmup (BERT/HuBERT Cache)..."
-    curl_retry -X POST "http://127.0.0.1:9871/tts" \
-         -H "Content-Type: application/json" \
-         -d '{
-                "text": "Warmup segment.",
-                "text_lang": "en",
-                "ref_audio_path": "output/sample_en_gold.wav",
-                "prompt_text": "At the end of the exam, the program shows the performance summary.",
-                "prompt_lang": "en",
-                "streaming_mode": 0
-              }' > /dev/null
+# We perform a dummy synthesis with the neutral anchor to 'prime' the GPU.
+# Reads REF_AUDIO_PATH/REF_TEXT (same vars voice_agent and the healthcheck
+# read) instead of hardcoding, and skips rather than hangs if that clip is
+# genuinely absent -- a warmup call against a missing reference clip cannot
+# succeed, and this must not block server startup on it.
+REF_AUDIO_PATH="${REF_AUDIO_PATH:-output/sample_en_gold.wav}"
+REF_TEXT="${REF_TEXT:-At the end of the exam, the program shows the performance summary.}"
 
-    echo "✅ Identity 'ai_friend_voice' is Warm. System is Ready."
+json_payload() {
+    python3 - "$REF_AUDIO_PATH" "$REF_TEXT" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "text": "Warmup segment.",
+    "text_lang": "en",
+    "ref_audio_path": sys.argv[1],
+    "prompt_text": sys.argv[2],
+    "prompt_lang": "en",
+    "streaming_mode": 0,
+}))
+PY
+}
+
+if [ -n "${CUSTOM_GPT_PATH:-}" ] && [ -f "${CUSTOM_GPT_PATH:-}" ] && [ -n "${CUSTOM_SOVITS_PATH:-}" ] && [ -f "${CUSTOM_SOVITS_PATH:-}" ]; then
+    if [ ! -f "/workspace/GPT-SoVITS/${REF_AUDIO_PATH}" ]; then
+        echo "⚠️ Reference clip ${REF_AUDIO_PATH} not found. Skipping Warmup."
+    else
+        echo "🔥 Performing Identity Warmup (BERT/HuBERT Cache)..."
+        curl_retry -X POST "http://127.0.0.1:9871/tts" \
+             -H "Content-Type: application/json" \
+             -d "$(json_payload)" > /dev/null
+
+        echo "✅ Identity 'ai_friend_voice' is Warm. System is Ready."
+    fi
 else
     echo "⚠️ Custom weights not found on disk. Skipping Warmup."
 fi

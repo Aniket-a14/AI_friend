@@ -8,6 +8,7 @@ from typing import Any
 from ..config import Config
 from ..persona.biography import BIOGRAPHY_SOURCE
 from .decision import ActionPlan
+from .identity import _HOSTILE_TO_USER, _match_views
 
 logger = logging.getLogger(__name__)
 
@@ -476,7 +477,19 @@ class ActionService:
             if phrase in text.lower():
                 return False, f"Forbidden AI persona phrase: '{phrase}'"
 
-        if re.search(r"\b(toxic|hate)\b", text.lower()):
+        # Phase 3.2 friction audit: this used to be `\b(toxic|hate)\b`, a bare
+        # substring match that fires on ordinary, non-hostile uses of "hate"
+        # ("I hate mushrooms too", "I hate that this happened to you") -- and
+        # unlike `IdentityManager.validate_response`'s equivalent check (fixed
+        # for the same reason, see identity.py's own comment on this), this one
+        # runs on every streamed chunk during the LIVE primary generation pass,
+        # so a false positive here aborted the response mid-sentence with an
+        # audible "Wait, let me rephrase that..." and a "CRITICAL FIX ... do
+        # not repeat the forbidden phrases" retry prompt pushing the model away
+        # from the exact word a blunt persona might legitimately use. Two
+        # independent implementations of "is this hostile" had drifted apart;
+        # now both use the same narrow, contempt-at-the-user definition.
+        if any(_HOSTILE_TO_USER.search(view) for view in _match_views(text.lower())):
             return False, "Safety/Toxicity boundary violation"
 
         return True, ""

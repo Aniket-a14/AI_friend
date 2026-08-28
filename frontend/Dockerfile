@@ -15,9 +15,18 @@ COPY . .
 # Disable telemetry during build
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Take Build Argument for Backend URL
+# NEXT_PUBLIC_* vars are inlined into the JS bundle at build time, not read
+# at container start -- LIVEKIT_URL and BACKEND_ACCESS_KEY need the same
+# treatment NEXT_PUBLIC_BACKEND_URL already got, or every deployment but the
+# unauthenticated localhost default silently ships a frontend pointed at the
+# wrong LiveKit URL / missing the access key `useWebRTCVoice.js` and
+# `lib/api.js` both need against a non-loopback backend (roadmap Phase 5.4).
 ARG NEXT_PUBLIC_BACKEND_URL
+ARG NEXT_PUBLIC_LIVEKIT_URL
+ARG NEXT_PUBLIC_BACKEND_ACCESS_KEY
 ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
+ENV NEXT_PUBLIC_LIVEKIT_URL=$NEXT_PUBLIC_LIVEKIT_URL
+ENV NEXT_PUBLIC_BACKEND_ACCESS_KEY=$NEXT_PUBLIC_BACKEND_ACCESS_KEY
 
 RUN npm run build
 

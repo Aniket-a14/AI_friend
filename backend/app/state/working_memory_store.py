@@ -4,7 +4,7 @@ import logging
 import os
 import sqlite3
 import threading
-from typing import Any
+from typing import Any, cast
 
 import redis
 
@@ -184,7 +184,12 @@ class WorkingMemoryStore:
         limit = limit or self.max_turns
         if self.redis_client:
             try:
-                raw_turns = self.redis_client.lrange("working:turns", -limit, -1)
+                # redis-py's sync Redis shares stubs with the async client, so
+                # every command is typed Awaitable[T] | T even here; this
+                # client is always constructed as sync (never redis.asyncio).
+                raw_turns = cast(
+                    list, self.redis_client.lrange("working:turns", -limit, -1)
+                )
                 turns = []
                 for rt in raw_turns:
                     t = json.loads(rt)
@@ -279,7 +284,10 @@ class WorkingMemoryStore:
         """Get a synced working memory variable."""
         if self.redis_client:
             try:
-                val_str = self.redis_client.hget("working:state", key)
+                # See the lrange comment above re: redis-py's shared sync/async stubs.
+                val_str = cast(
+                    "str | None", self.redis_client.hget("working:state", key)
+                )
                 if val_str is not None:
                     return json.loads(val_str)
                 return default

@@ -26,7 +26,7 @@ def _eligible_service(**overrides):
     service.current_state.last_user_interaction = (
         time.time() - Config.PROACTIVE_IDLE_THRESHOLD_SECONDS - 1.0
     )
-    service._last_proactive_attempt = 0.0
+    service.current_state.last_proactive_attempt = 0.0
     service.current_state.energy = 1.0
     service.current_state.dominance = overrides.get("dominance", 0.5)
     service.current_state.fatigue = overrides.get("fatigue", 0.0)

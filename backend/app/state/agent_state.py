@@ -71,6 +71,13 @@ class AgentState:
     active_goals: list[str] = field(default_factory=list)
     last_update: datetime = field(default_factory=datetime.now)
     last_user_interaction: float = field(default_factory=time.time)
+    # Phase 3.1: was a plain `StateService._last_proactive_attempt` instance
+    # attribute, persisted nowhere -- every restart reset the proactive
+    # cooldown to expired, and the two OS processes that each own a
+    # `StateService` (see `apply_external_state`'s docstring) never agreed on
+    # it. 0.0 (not "now") on purpose: a fresh agent has never attempted a
+    # proactive outreach, so the cooldown must read as already satisfied.
+    last_proactive_attempt: float = 0.0
     fatigue: float = 0.0  # Metabolic fatigue cycle F(t)
     user_mental_model: "UserMentalModel" = field(
         default_factory=_default_user_mental_model
@@ -430,7 +437,6 @@ class StateService:
             Config, "STATE_SENSORY_PERSIST_INTERVAL", 2.0
         )
         self._last_sensory_persist = 0.0
-        self._last_proactive_attempt = 0.0
 
     def _initialize_sqlite(self):
         if self.db_path != ":memory:":
@@ -460,9 +466,23 @@ class StateService:
                     baseline_valence REAL DEFAULT 0.0,
                     baseline_arousal REAL DEFAULT 0.5,
                     baseline_dominance REAL DEFAULT 0.5,
+                    last_proactive_attempt REAL DEFAULT 0.0,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            # `CREATE TABLE IF NOT EXISTS` does not add a column to a table
+            # that already exists from before this field did. Migrated
+            # separately, tolerating the column already being there (a fresh
+            # DB just created it above) rather than checking pragma_table_info
+            # first -- SQLite's own error is the simplest source of truth.
+            try:
+                conn.execute(
+                    "ALTER TABLE agent_state ADD COLUMN last_proactive_attempt "
+                    "REAL DEFAULT 0.0"
+                )
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc):
+                    raise
         conn.close()
 
     async def hydrate_state(self, agent_name: str = "my friend"):
@@ -506,6 +526,9 @@ class StateService:
                     self.current_state.fatigue = float(data.get("fatigue", 0.0))
                     self.current_state.last_user_interaction = float(
                         data.get("last_user_interaction", time.time())
+                    )
+                    self.current_state.last_proactive_attempt = float(
+                        data.get("last_proactive_attempt", 0.0)
                     )
                     self.current_state.interaction_count = int(
                         data.get("interaction_count", 0)
@@ -557,6 +580,9 @@ class StateService:
                     self.current_state.last_user_interaction = row[
                         "last_user_interaction"
                     ]
+                    self.current_state.last_proactive_attempt = row[
+                        "last_proactive_attempt"
+                    ] or 0.0
                     self.current_state.interaction_count = row["interaction_count"]
                     self.current_state.user_mental_model.inferred_valence = row[
                         "inferred_valence"
@@ -608,6 +634,9 @@ class StateService:
                         )
                         self.current_state.last_user_interaction = float(
                             agent_node.get("last_user_interaction", time.time())
+                        )
+                        self.current_state.last_proactive_attempt = float(
+                            agent_node.get("last_proactive_attempt", 0.0)
                         )
                         self.current_state.interaction_count = int(
                             agent_node.get("interaction_count", 0)
@@ -707,6 +736,12 @@ class StateService:
                     "last_user_interaction", self.current_state.last_user_interaction
                 )
             )
+            self.current_state.last_proactive_attempt = float(
+                data.get(
+                    "last_proactive_attempt",
+                    self.current_state.last_proactive_attempt,
+                )
+            )
             self.current_state.interaction_count = int(
                 data.get("interaction_count", self.current_state.interaction_count)
             )
@@ -770,6 +805,7 @@ class StateService:
             "attachment": self.current_state.attachment,
             "fatigue": self.current_state.fatigue,
             "last_user_interaction": self.current_state.last_user_interaction,
+            "last_proactive_attempt": self.current_state.last_proactive_attempt,
             "interaction_count": self.current_state.interaction_count,
             "inferred_valence": self.current_state.user_mental_model.inferred_valence,
             "inferred_arousal": self.current_state.user_mental_model.inferred_arousal,
@@ -800,6 +836,7 @@ class StateService:
                         "attachment": str(snapshot["attachment"]),
                         "fatigue": str(snapshot["fatigue"]),
                         "last_user_interaction": str(snapshot["last_user_interaction"]),
+                        "last_proactive_attempt": str(snapshot["last_proactive_attempt"]),
                         "interaction_count": str(snapshot["interaction_count"]),
                         "inferred_valence": str(snapshot["inferred_valence"]),
                         "inferred_arousal": str(snapshot["inferred_arousal"]),
@@ -838,6 +875,7 @@ class StateService:
                 snapshot["baseline_valence"],
                 snapshot["baseline_arousal"],
                 snapshot["baseline_dominance"],
+                snapshot["last_proactive_attempt"],
             )
             try:
                 await asyncio.to_thread(self._write_state_row, sqlite_params)
@@ -889,9 +927,10 @@ class StateService:
                         agent_name, mood, energy, dominance, trust_benevolence, trust_competence,
                         trust_integrity, trust, attachment, fatigue, last_user_interaction,
                         interaction_count, inferred_valence, inferred_arousal, implied_goals,
-                        known_concepts, baseline_valence, baseline_arousal, baseline_dominance, updated_at
+                        known_concepts, baseline_valence, baseline_arousal, baseline_dominance,
+                        last_proactive_attempt, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(agent_name) DO UPDATE SET
                         mood = excluded.mood,
                         energy = excluded.energy,
@@ -911,6 +950,7 @@ class StateService:
                         baseline_valence = excluded.baseline_valence,
                         baseline_arousal = excluded.baseline_arousal,
                         baseline_dominance = excluded.baseline_dominance,
+                        last_proactive_attempt = excluded.last_proactive_attempt,
                         updated_at = CURRENT_TIMESTAMP
                 """,
                     params,
@@ -1339,7 +1379,7 @@ class StateService:
             return False
 
         cooldown = getattr(Config, "PROACTIVE_COOLDOWN_SECONDS", 3600)
-        if (now - self._last_proactive_attempt) < cooldown:
+        if (now - self.current_state.last_proactive_attempt) < cooldown:
             return False
 
         min_energy = getattr(Config, "PROACTIVE_MIN_ENERGY", 0.2)
@@ -1393,8 +1433,15 @@ class StateService:
         return True
 
     def mark_proactive_attempt(self):
-        """Record that a proactive generation was initiated."""
-        self._last_proactive_attempt = time.time()
+        """Record that a proactive generation was initiated.
+
+        Now on `current_state` (see the field's own comment on why), so it
+        persists across a restart and reaches the sibling process's
+        `StateService` via the same `state.broadcast` every other affect
+        field already rides -- previously a plain instance attribute that
+        neither survived a restart nor ever crossed the process boundary.
+        """
+        self.current_state.last_proactive_attempt = time.time()
 
     def _enforce_bounds(self):
         self.current_state.mood = max(-1.0, min(1.0, self.current_state.mood))

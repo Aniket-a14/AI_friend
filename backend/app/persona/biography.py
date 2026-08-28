@@ -268,13 +268,13 @@ async def prune_biography(
                         # by the query rather than indexed into. json1 ships
                         # with the stdlib build.
                         rows = await conn.fetch(
-                            f"SELECT id FROM {table} WHERE "
+                            f"SELECT id FROM {table} WHERE "  # nosec B608 - table is from the fixed tuple above
                             "json_extract(metadata, '$.biography_fingerprint') = ?",
                             mark,
                         )
                     else:
                         rows = await conn.fetch(
-                            f"SELECT id FROM {table} WHERE "
+                            f"SELECT id FROM {table} WHERE "  # nosec B608 - table is from the fixed tuple above
                             "metadata->>'biography_fingerprint' = $1",
                             mark,
                         )
@@ -293,7 +293,7 @@ async def prune_biography(
                     continue
 
                 marks = ",".join("?" if is_sqlite else f"${i + 1}" for i in range(len(ids)))
-                await conn.execute(f"DELETE FROM {table} WHERE id IN ({marks})", *ids)
+                await conn.execute(f"DELETE FROM {table} WHERE id IN ({marks})", *ids)  # nosec B608 - table is from the fixed tuple above; ids are bound via *ids
                 await _drop_vectors(memory_store, ids)
 
     # Every *scanned* fingerprint leaves the ledger, including ones that matched

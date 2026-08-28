@@ -7,7 +7,7 @@ from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
 
 from ..config import Config
-from ..contracts import AudioPlaybackProgress, Topics
+from ..contracts import AudioPlaybackProgress, PlaybackVisemes, SessionPresence, Topics
 from ..measure_trace import trace as _measure_trace
 from .base import BaseAgent, install_shutdown_signal_handlers
 
@@ -166,9 +166,57 @@ class TransportAgent(BaseAgent):
         )
         logger.info("Subscribed to NATS audio.stop. Barge-in flush active.")
 
+        # Phase 5.3: bridge voice-agent's viseme stream onto the room's data
+        # channel. `check_subject_wiring.py`'s whitelist has documented
+        # `audio.playback.visemes` as "consumed by the frontend voice UI"
+        # since the wiring audit, but nothing ever actually delivered it
+        # there -- this is that delivery, not new data.
+        await self.subscribe(
+            Topics.AUDIO_PLAYBACK_VISEMES,
+            callback=self._on_viseme,
+            durable=f"{self.name}_playback_visemes_live",
+            deliver_policy="new",
+        )
+        logger.info("Subscribed to NATS audio.playback.visemes. Viseme bridge active.")
+
         # 4. Listen for Remote Tracks (Inbound - User Speech)
         self.room.on("track_subscribed", self._on_track_subscribed)
         logger.info("Listening for remote tracks (Inbound Bridge enabled).")
+
+        # 5. Phase 3.1: this process is the only one with direct visibility
+        # into who is actually in the room -- subconscious_agent (a separate
+        # process) needs that to know whether a proactive thought has anyone
+        # to reach. Edge-triggered (0<->1+ participants), not a signal on
+        # every join/leave of an Nth participant, since only "is anyone here
+        # at all" matters for that decision.
+        self.room.on("participant_connected", self._on_participant_connected)
+        self.room.on("participant_disconnected", self._on_participant_disconnected)
+
+    def _on_participant_connected(self, participant: rtc.RemoteParticipant) -> None:
+        # LiveKit has already added `participant` to `remote_participants` by
+        # the time this callback fires, so "was the room empty before this
+        # one joined" is exactly count == 1, not 0 -- checking against 0 here
+        # would always be false and this edge would never fire.
+        if len(self.room.remote_participants) == 1:
+            self._publish_presence(connected=True)
+
+    def _on_participant_disconnected(self, participant: rtc.RemoteParticipant) -> None:
+        # Mirror of the above: LiveKit has already removed the leaving
+        # participant, so "is the room now empty" is exactly count == 0.
+        if len(self.room.remote_participants) == 0:
+            self._publish_presence(connected=False)
+
+    def _publish_presence(self, *, connected: bool) -> None:
+        presence = SessionPresence(
+            connected=connected,
+            participant_count=len(self.room.remote_participants),
+        )
+        self.spawn(self.publish(Topics.SESSION_PRESENCE, presence.model_dump()))
+        logger.info(
+            "[Transport] Room presence changed: connected=%s participants=%d",
+            connected,
+            presence.participant_count,
+        )
 
     def _on_track_subscribed(
         self,
@@ -395,6 +443,35 @@ class TransportAgent(BaseAgent):
             completed=False,
         )
         self.spawn(self.publish(Topics.AUDIO_PLAYBACK_PROGRESS, progress.model_dump()))
+
+    async def _on_viseme(self, data: dict) -> None:
+        """Forward one viseme frame onto the room's data channel.
+
+        `reliable=False`: this is a live, latest-value-wins animation signal
+        published at the audio chunk rate (voice-agent's
+        `generate_and_publish_visemes`, four call sites in its playback
+        loop), the same reasoning WebRTC media itself is UDP-based for -- a
+        dropped frame a moment before the next one lands is invisible, and
+        waiting on reliable delivery would only add latency an animation
+        curve does not need. Not spawned like `_publish_presence`/progress:
+        `publish_data` is a local, non-blocking call over an already-open
+        data channel, not a NATS round trip, so there is nothing here worth
+        moving off this callback.
+        """
+        try:
+            viseme = PlaybackVisemes.model_validate(data)
+        except Exception:
+            logger.warning("Dropping malformed viseme payload: %r", data)
+            return
+        if not self.room.local_participant:
+            return
+        payload = viseme.model_dump_json().encode("utf-8")
+        try:
+            self.room.local_participant.publish_data(
+                payload, reliable=False, topic="visemes"
+            )
+        except Exception as exc:
+            logger.debug("Could not publish viseme to the room (no listener?): %s", exc)
 
     async def _on_audio_stop(self, data: dict) -> None:
         """P1-3 (audit/ROADMAP.md): flush audio already in flight on a

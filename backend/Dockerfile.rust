@@ -43,6 +43,12 @@ RUN mkdir -p /staging/stt-libs \
 
 FROM debian:trixie-slim AS runtime
 
+# Phase 1.5: unset in this stage (a fresh FROM does not inherit the builder
+# stage's WORKDIR), so voice-agent ran with cwd `/` -- its own relative
+# lookups (`output/{name}.wav` in load_vocalization_pcm) resolved to
+# `/output/...`, never `/app/output/...` where the compose volume is mounted.
+WORKDIR /app
+
 RUN apt-get -o Acquire::Check-Valid-Until=false update \
     && apt-get install -y --no-install-recommends ca-certificates netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*

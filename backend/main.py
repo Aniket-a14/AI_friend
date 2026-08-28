@@ -9,7 +9,14 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from livekit import api
+from starlette.requests import HTTPConnection
 
+from app.api.chat import bridge as chat_bridge
+from app.api.chat import router as chat_router
+from app.api.friend_data import router as friend_data_router
+from app.api.memory import router as memory_router
+from app.api.persona import router as persona_router
+from app.api.voice import router as voice_router
 from app.config import Config
 from app.logging_config import setup_logging
 from app.network import is_lan_client_allowed, is_loopback_client
@@ -97,18 +104,27 @@ class AIBackend:
 backend = AIBackend()
 
 
-async def require_lan_client(request: Request):
+async def require_lan_client(conn: HTTPConnection):
+    """Typed on `HTTPConnection`, the common base of `Request` and
+    `WebSocket`, not `Request` -- this is an app-wide dependency (applied to
+    every route, `app = FastAPI(dependencies=[Depends(require_lan_client)])`
+    below), and FastAPI resolves a `Request`-typed parameter against an HTTP
+    scope only. A WebSocket route reaching this with the narrower type raises
+    a plain `TypeError` on every connection attempt, not a 403 -- silently
+    exempting sockets from the LAN policy rather than enforcing it. `Request`
+    and `WebSocket` both carry `.client`, so the narrower type bought nothing.
+    """
     if not Config.LAN_ONLY:
         return
 
     # In a local-only system, x-forwarded-for should not be trusted as it can be spoofed.
     # We strictly check the direct client host connection.
-    host = request.client.host if request.client else None
+    host = conn.client.host if conn.client else None
     if not is_lan_client_allowed(host):
         raise HTTPException(status_code=403, detail="LAN clients only")
 
 
-async def require_session_auth(request: Request):
+async def require_session_auth(conn: HTTPConnection):
     """Gate LiveKit token issuance behind a shared secret (C1).
 
     require_lan_client only restricts *where* a caller can connect from - with
@@ -118,8 +134,12 @@ async def require_session_auth(request: Request):
     trusted without a key so same-machine dev/deployments need no extra config;
     every other caller (another LAN device, or anyone reaching a LAN_ONLY=false
     deployment) must present BACKEND_ACCESS_KEY.
+
+    Typed on `HTTPConnection` (see `require_lan_client`) so this same
+    dependency also gates `/api/chat/ws` -- the chat transcript is as
+    sensitive as a room-join token, not less.
     """
-    host = request.client.host if request.client else None
+    host = conn.client.host if conn.client else None
     if is_loopback_client(host):
         return
 
@@ -130,7 +150,7 @@ async def require_session_auth(request: Request):
             detail="BACKEND_ACCESS_KEY must be set to serve non-loopback clients",
         )
 
-    provided = request.headers.get("x-backend-key") or request.query_params.get("key")
+    provided = conn.headers.get("x-backend-key") or conn.query_params.get("key")
     if not provided or not secrets.compare_digest(provided, expected):
         raise HTTPException(status_code=401, detail="Invalid or missing session key")
 
@@ -158,8 +178,19 @@ async def require_token_rate_limit(request: Request):
 async def lifespan(app: FastAPI):
     # Startup
     await backend.initialize()
+    try:
+        await chat_bridge.start()
+    except Exception:
+        # Same tolerance as backend.initialize(): a NATS hiccup at boot
+        # degrades live chat, it does not stop the process from serving
+        # every other route.
+        logger.exception(
+            "chat bridge: failed to attach to the mesh; /api/chat/ws will "
+            "be unavailable until NATS is reachable"
+        )
     yield
     # Shutdown
+    await chat_bridge.stop()
     await backend.cleanup()
 
 
@@ -210,6 +241,19 @@ app.add_middleware(
     allow_headers=["*"],
     **_cors_policy,
 )
+
+# Phase 5.1: the onboarding/admin HTTP surface (persona compile/commit, voice
+# enrollment, memory browse, export/import). Session-authed like /token, and
+# for a stronger reason -- these read and write the friend's actual identity
+# and memory, not just mint a room-join token.
+for _router in (
+    persona_router,
+    memory_router,
+    voice_router,
+    friend_data_router,
+    chat_router,
+):
+    app.include_router(_router, dependencies=[Depends(require_session_auth)])
 
 
 # #155: HSTS tells a browser to upgrade this origin to HTTPS on every future

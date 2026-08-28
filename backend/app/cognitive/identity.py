@@ -99,7 +99,7 @@ class IdentityManager:
     def __init__(
         self,
         base_path: str | None = None,
-        persona: "PersonaProfile" = None,
+        persona: "PersonaProfile | None" = None,
         persona_file=AUTO_DISCOVER,
         publish_cb=None,
     ):
@@ -689,7 +689,14 @@ class IdentityManager:
 
         # 2. Update Relationship Context
         if "relationship" in suggestions:
-            self.history["relationship"] = suggestions["relationship"]
+            # Coerced to str, matching speaking_style's pattern above -- an
+            # unvalidated value here (e.g. the reflection model returning
+            # ["Technical Partner"] instead of a string) used to persist as a
+            # list straight into history.json, then crash IdentityCoreStore's
+            # SQLite mirror later with "type 'list' is not supported" the next
+            # time _refresh_immutable_core ran (sqlite3 can't bind a list
+            # parameter). Found via a real eval run (roadmap Phase 6.3).
+            self.history["relationship"] = str(suggestions["relationship"])
 
         # 3. Add to memories
         if "new_memory" in suggestions:

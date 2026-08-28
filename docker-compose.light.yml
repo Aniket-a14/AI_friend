@@ -4,6 +4,11 @@ services:
   signaling:
     profiles: ["heavy"]
 
+  # The web UI calls signaling for LiveKit tokens, so it must be disabled
+  # together with that service in the cognitive-only light profile.
+  frontend:
+    profiles: ["heavy"]
+
   livekit:
     profiles: ["heavy"]
 

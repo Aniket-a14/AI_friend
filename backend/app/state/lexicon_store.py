@@ -157,7 +157,7 @@ class MentalLexicon:
                         if a == b:
                             continue
                         await conn.execute(
-                            "INSERT INTO lexical_associations (term_a, term_b, weight) "
+                            "INSERT INTO lexical_associations (term_a, term_b, weight) "  # nosec B608 - INNATE_WEIGHT is a module-level float constant, not user input
                             f"VALUES ($1, $2, {INNATE_WEIGHT}) "
                             "ON CONFLICT (term_a, term_b) DO NOTHING",
                             a,

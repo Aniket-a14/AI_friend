@@ -413,6 +413,30 @@ fn optional_ref_clip(bucket_env_suffix: &str) -> Option<RefClip> {
     Some(RefClip { audio_path, text })
 }
 
+/// Startup diagnostic only: GPT-SoVITS resolves `ref_audio_path` itself, in
+/// its own container's filesystem (see the `RefClip` doc comment above), so
+/// this process never actually needs the file to do its job. Before this
+/// check existed, a missing clip produced no symptom anywhere in this
+/// process's own logs -- just a healthcheck failing elsewhere in the
+/// dependency chain with nothing pointing back at the cause. Names the
+/// missing path and the env var that set it, so that investigation is one
+/// log line instead of tracing the whole compose dependency graph.
+fn reference_clip_missing(path: &str) -> bool {
+    std::fs::metadata(path).is_err()
+}
+
+fn warn_if_reference_clip_missing(env_var: &str, clip: &RefClip) {
+    if reference_clip_missing(&clip.audio_path) {
+        warn!(
+            env_var,
+            path = %clip.audio_path,
+            "reference clip not visible from voice-agent's own filesystem -- \
+             GPT-SoVITS may still resolve it in its own container, but if \
+             synthesis fails, start here"
+        );
+    }
+}
+
 /// Maps the affect already computed for this turn onto a delivery register.
 ///
 /// Valence and arousal are the two axes GPT-SoVITS reference clips actually
@@ -539,6 +563,7 @@ async fn main() -> Result<()> {
         .init();
 
     let config = VoiceConfig::from_env();
+    warn_if_reference_clip_missing("REF_AUDIO_PATH", &config.emotion_refs.neutral);
     let client = connect_nats(
         &config.nats_url,
         std::env::var("NATS_USER").ok(),
@@ -2052,6 +2077,28 @@ mod tests {
         );
         std::env::remove_var("REF_AUDIO_PATH_TESTBUCKETC");
         std::env::remove_var("REF_TEXT_TESTBUCKETC");
+    }
+
+    // ---------------------------------------------------- reference_clip_missing
+    //
+    // Before this check existed, a missing reference clip produced no
+    // symptom anywhere in voice-agent's own logs -- just a healthcheck
+    // failing elsewhere with nothing pointing back at the cause.
+
+    #[test]
+    fn reports_missing_for_a_path_that_does_not_exist() {
+        assert!(reference_clip_missing("/definitely/does/not/exist/clip.wav"));
+    }
+
+    #[test]
+    fn reports_present_for_a_path_that_exists() {
+        let path = std::env::temp_dir()
+            .join(format!("voice_agent_test_clip_{}.wav", std::process::id()));
+        std::fs::write(&path, b"fake-clip-bytes").unwrap();
+
+        assert!(!reference_clip_missing(path.to_str().unwrap()));
+
+        std::fs::remove_file(&path).unwrap();
     }
 
     // ---------------------------------------------------------- CircuitBreaker

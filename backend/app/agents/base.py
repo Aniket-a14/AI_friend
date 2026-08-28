@@ -70,7 +70,7 @@ def _reconnect_delay_with_backoff(servers, _server_info):
     delay = min(
         _RECONNECT_MAX_DELAY_SECONDS,
         _RECONNECT_BASE_DELAY_SECONDS * (2**attempt),
-    ) + random.uniform(0, 1)
+    ) + random.uniform(0, 1)  # nosec B311 - reconnect backoff jitter, not cryptographic
     return None, delay
 
 

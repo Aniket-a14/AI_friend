@@ -1,4 +1,6 @@
 import asyncio
+import sqlite3
+import time
 from datetime import datetime, timedelta
 
 import pytest
@@ -231,6 +233,7 @@ async def test_apply_external_state_updates_fields_from_broadcast(state_service)
         "baseline_valence": 0.1,
         "baseline_arousal": 0.5,
         "baseline_dominance": 0.5,
+        "last_proactive_attempt": 999.0,
     }
 
     await state_service.apply_external_state(broadcast)
@@ -247,6 +250,7 @@ async def test_apply_external_state_updates_fields_from_broadcast(state_service)
         "finish the report"
     ]
     assert state_service.current_state.baseline_valence == 0.1
+    assert state_service.current_state.last_proactive_attempt == 999.0
 
 
 @pytest.mark.asyncio
@@ -367,3 +371,132 @@ async def test_the_tick_can_still_persist_while_holding_the_state_lock(
     )
 
     assert state_service._state_lock.locked() is False
+
+
+# --------------------------------------------------------------------------
+# last_proactive_attempt persistence (Phase 3.1)
+#
+# Was a plain `StateService._last_proactive_attempt` instance attribute:
+# never written to Redis or state_cache.db, so a restart silently reset the
+# proactive cooldown to expired, and the two OS processes that each own a
+# StateService (subconscious_agent, brain_agent) could never agree on it.
+# --------------------------------------------------------------------------
+
+
+def test_mark_proactive_attempt_writes_the_persisted_field(tmp_path):
+    service = StateService(graph_store=None, db_path=str(tmp_path / "state.db"))
+    assert service.current_state.last_proactive_attempt == 0.0
+
+    service.mark_proactive_attempt()
+
+    assert service.current_state.last_proactive_attempt > 0.0
+    # No leftover instance attribute from the old implementation shadowing
+    # the field a mutation could silently keep writing to instead.
+    assert not hasattr(service, "_last_proactive_attempt")
+
+
+@pytest.mark.asyncio
+async def test_last_proactive_attempt_survives_a_restart_via_sqlite(tmp_path):
+    """The whole point of the fix: a fresh StateService pointed at the same
+    db_path must see the mark a *previous* instance made -- simulating what
+    actually happens across a process restart."""
+    db_path = str(tmp_path / "state.db")
+
+    # Set directly rather than via mark_proactive_attempt(): this test's job
+    # is to isolate the SQLite round-trip, not depend on a second method also
+    # being correct (a no-op mark_proactive_attempt would otherwise leave
+    # this at its 0.0 default on both sides and pass for the wrong reason).
+    first = StateService(graph_store=None, db_path=db_path)
+    first.redis_client = None
+    distinctive_timestamp = 1_700_000_123.456
+    first.current_state.last_proactive_attempt = distinctive_timestamp
+    await first.persist_state(agent_name="my friend")
+
+    second = StateService(graph_store=None, db_path=db_path)
+    second.redis_client = None
+    await second.hydrate_state(agent_name="my friend")
+
+    assert second.current_state.last_proactive_attempt == distinctive_timestamp
+
+
+@pytest.mark.asyncio
+async def test_sqlite_migration_adds_the_column_to_a_pre_existing_database(
+    tmp_path,
+):
+    """A database written before this field existed has no
+    `last_proactive_attempt` column at all -- `CREATE TABLE IF NOT EXISTS`
+    alone does not add a column to a table that already exists. Constructing
+    a StateService against such a file must migrate it in place rather than
+    raising `sqlite3.OperationalError: no such column`."""
+    db_path = str(tmp_path / "legacy_state.db")
+    conn = sqlite3.connect(db_path)
+    with conn:
+        conn.execute("""
+            CREATE TABLE agent_state (
+                agent_name TEXT PRIMARY KEY,
+                mood REAL,
+                energy REAL,
+                dominance REAL,
+                trust_benevolence REAL,
+                trust_competence REAL,
+                trust_integrity REAL,
+                trust REAL,
+                attachment REAL,
+                fatigue REAL,
+                last_user_interaction REAL,
+                interaction_count INTEGER,
+                inferred_valence REAL,
+                inferred_arousal REAL,
+                implied_goals TEXT,
+                known_concepts TEXT,
+                baseline_valence REAL DEFAULT 0.0,
+                baseline_arousal REAL DEFAULT 0.5,
+                baseline_dominance REAL DEFAULT 0.5,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute(
+            "INSERT INTO agent_state ("
+            "agent_name, mood, energy, dominance, trust_benevolence, "
+            "trust_competence, trust_integrity, trust, attachment, fatigue"
+            ") VALUES ('my friend', 0.3, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.1, 0.0)"
+        )
+    conn.close()
+
+    # Must not raise while opening/migrating the legacy file.
+    service = StateService(graph_store=None, db_path=db_path)
+    service.redis_client = None
+
+    await service.hydrate_state(agent_name="my friend")
+    assert service.current_state.mood == 0.3
+    assert service.current_state.last_proactive_attempt == 0.0
+
+    # And the migrated table must be genuinely writable, not just readable.
+    service.mark_proactive_attempt()
+    await service.persist_state(agent_name="my friend")
+
+    reread = StateService(graph_store=None, db_path=db_path)
+    reread.redis_client = None
+    await reread.hydrate_state(agent_name="my friend")
+    assert reread.current_state.last_proactive_attempt > 0.0
+
+
+@pytest.mark.asyncio
+async def test_check_proactive_eligibility_reads_the_persisted_field(tmp_path):
+    """`check_proactive_eligibility`'s cooldown gate must key off the same
+    field `mark_proactive_attempt` writes -- if the two ever pointed at
+    different storage again, a mark would stop actually gating anything."""
+    from app.config import Config
+
+    service = StateService(graph_store=None, db_path=str(tmp_path / "state.db"))
+    service.redis_client = None
+    service.current_state.last_user_interaction = (
+        time.time() - Config.PROACTIVE_IDLE_THRESHOLD_SECONDS - 1.0
+    )
+    service.current_state.energy = 1.0
+
+    assert service.check_proactive_eligibility() is True
+
+    service.mark_proactive_attempt()
+
+    assert service.check_proactive_eligibility() is False

@@ -22,6 +22,10 @@ jobs:
     name: Backend Regression Suite
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Some runners expose a DEBUG environment variable with a non-boolean
+    # value. AppSettings is intentionally strict, so keep CI deterministic.
+    env:
+      DEBUG: "false"
 
     steps:
       - uses: actions/checkout@v4
@@ -51,10 +55,11 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          set -o pipefail
           cd backend
           pip install --upgrade pip
           pip install -r requirements-base.txt
-          pip install pytest pytest-asyncio
+          pip install pytest pytest-asyncio PyYAML Pillow
       - name: Build cognitive-rust extension
         run: |
           cd backend
@@ -80,6 +85,7 @@ jobs:
           LIVEKIT_API_SECRET: dummy_secret
         run: |
           cd backend
+          set -o pipefail
           pytest -v --tb=short -x 2>&1 | tee test_results.txt
           echo "test_count=$(grep -c 'PASSED\|FAILED' test_results.txt || echo 0)" >> $GITHUB_OUTPUT
 

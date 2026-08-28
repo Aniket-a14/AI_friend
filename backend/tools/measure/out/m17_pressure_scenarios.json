@@ -1,0 +1,621 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-28T05:30:17.292837+00:00",
+  "measurement_id": "17",
+  "title": "Nine simultaneous-load pressure scenarios (AUDIT.md §17)",
+  "provenance": "live",
+  "runs": [
+    {
+      "figures": {
+        "cpu_gpu_thermal": {
+          "label": "UNKNOWN",
+          "value": null,
+          "unit": "",
+          "derivation": "",
+          "reason": "No power-metering or GPU-utilization access on this host (audit/HARDWARE.md §0's existing limitation); RAM is the pressure axis measured here."
+        },
+        "1_idle_ram": {
+          "label": "MEASURED",
+          "value": 14.535,
+          "unit": "GB used (of 16 GB unified)",
+          "derivation": "5s idle window, infra up, no synthetic load driven.: before=14.49GB, after=14.54GB, delta=+0.05GB. Docker containers contributed 0.74GB across 6 containers; Ollama held 3 model(s) resident (qwen2.5:3b, moondream:latest, nomic-embed-text:latest).",
+          "reason": ""
+        },
+        "2_voice_only_ram": {
+          "label": "MEASURED",
+          "value": 14.506,
+          "unit": "GB used (of 16 GB unified)",
+          "derivation": "30s of synthetic 32kHz/16-bit PCM on audio.stream, no STT/cognition triggered.: before=14.46GB, after=14.51GB, delta=+0.04GB. Docker containers contributed 0.73GB across 6 containers; Ollama held 3 model(s) resident (qwen2.5:3b, moondream:latest, nomic-embed-text:latest).",
+          "reason": ""
+        },
+        "3_voice_cognition_ram": {
+          "label": "MEASURED",
+          "value": 14.431,
+          "unit": "GB used (of 16 GB unified)",
+          "derivation": "30s of voice PCM concurrent with one real cognitive turn.: before=14.49GB, after=14.43GB, delta=-0.06GB. Docker containers contributed 0.74GB across 6 containers; Ollama held 3 model(s) resident (qwen2.5:3b, moondream:latest, nomic-embed-text:latest).",
+          "reason": ""
+        },
+        "4_vision_only_ram": {
+          "label": "MEASURED",
+          "value": 14.361,
+          "unit": "GB used (of 16 GB unified)",
+          "derivation": "30s of repeated-identical-frame appraisal calls (habituation should suppress all but the first VLM call).: before=14.41GB, after=14.36GB, delta=-0.05GB. Docker containers contributed 0.73GB across 6 containers; Ollama held 3 model(s) resident (qwen2.5:3b, moondream:latest, nomic-embed-text:latest).",
+          "reason": ""
+        },
+        "5_vision_cognition_ram": {
+          "label": "MEASURED",
+          "value": 15.148,
+          "unit": "GB used (of 16 GB unified)",
+          "derivation": "30s of varying-frame appraisal (real VLM call every tick) concurrent with one real cognitive turn.: before=14.37GB, after=15.15GB, delta=+0.77GB. Docker containers contributed 0.81GB across 6 containers; Ollama held 3 model(s) resident (qwen2.5:3b, moondream:latest, nomic-embed-text:latest).",
+          "reason": ""
+        },
+        "6_voice_vision_cognition_ram": {
+          "label": "MEASURED",
+          "value": 15.1,
+          "unit": "GB used (of 16 GB unified)",
+          "derivation": "30s of voice PCM + varying-frame VLM appraisal, concurrent with one real cognitive turn.: before=15.12GB, after=15.10GB, delta=-0.03GB. Docker containers contributed 0.78GB across 6 containers; Ollama held 3 model(s) resident (qwen2.5:3b, moondream:latest, nomic-embed-text:latest).",
+          "reason": ""
+        },
+        "7_full_multimodal_ram": {
+          "label": "MEASURED",
+          "value": 15.073,
+          "unit": "GB used (of 16 GB unified)",
+          "derivation": "30s of voice + vision-VLM + two concurrent cognitive turns (interactive multimodal use, not background).: before=15.10GB, after=15.07GB, delta=-0.03GB. Docker containers contributed 0.86GB across 6 containers; Ollama held 3 model(s) resident (qwen2.5:3b, moondream:latest, nomic-embed-text:latest).",
+          "reason": ""
+        },
+        "8_full_background_ram": {
+          "label": "MEASURED",
+          "value": 15.155,
+          "unit": "GB used (of 16 GB unified)",
+          "derivation": "30s of scenario 6's load plus a concurrent background consolidation pass -- the ack-deadline contention shape HARDWARE.md §3.3 estimated, now with voice+vision in the mix too, not VLM alone.: before=15.04GB, after=15.15GB, delta=+0.12GB. Docker containers contributed 0.86GB across 6 containers; Ollama held 3 model(s) resident (qwen2.5:3b, moondream:latest, nomic-embed-text:latest).",
+          "reason": ""
+        },
+        "9_sustained_ram": {
+          "label": "MEASURED",
+          "value": 15.151,
+          "unit": "GB used (of 16 GB unified)",
+          "derivation": "180s bounded proxy (NOT an hours-long endurance run) of repeated scenario-8-shaped cycles, 11 samples: no sustained monotonic growth observed. RAM used_gb across samples: [15.05, 15.12, 15.1, 15.11, 15.16, 15.1, 15.1, 15.09, 15.15, 15.03, 15.15].: before=15.05GB, after=15.15GB, delta=+0.10GB. Docker containers contributed 0.95GB across 6 containers; Ollama held 3 model(s) resident (qwen2.5:3b, moondream:latest, nomic-embed-text:latest).",
+          "reason": ""
+        }
+      },
+      "raw": {
+        "1_idle": {
+          "before": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.693,
+              "used_gb": 14.487
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 752.4,
+              "containers": {
+                "local_sfu": 38.3,
+                "brain_cache": 10.1,
+                "postgres_db": 34.0,
+                "nats_mesh": 17.2,
+                "brain_graph": 590.8,
+                "brain_vectors": 62.0
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8691.13260725
+          },
+          "after": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.644,
+              "used_gb": 14.535
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 752.9,
+              "containers": {
+                "local_sfu": 38.5,
+                "brain_cache": 10.2,
+                "postgres_db": 34.4,
+                "nats_mesh": 17.4,
+                "brain_graph": 590.5,
+                "brain_vectors": 61.8
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8698.244171208
+          },
+          "description": "5s idle window, infra up, no synthetic load driven."
+        },
+        "2_voice_only": {
+          "before": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.716,
+              "used_gb": 14.464
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 752.9,
+              "containers": {
+                "local_sfu": 38.5,
+                "brain_cache": 10.2,
+                "postgres_db": 34.4,
+                "nats_mesh": 17.4,
+                "brain_graph": 590.5,
+                "brain_vectors": 61.8
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8700.256848208
+          },
+          "after": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.674,
+              "used_gb": 14.506
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 751.0,
+              "containers": {
+                "local_sfu": 54.9,
+                "brain_cache": 10.9,
+                "postgres_db": 22.8,
+                "nats_mesh": 19.1,
+                "brain_graph": 575.1,
+                "brain_vectors": 68.2
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8735.219796041
+          },
+          "description": "30s of synthetic 32kHz/16-bit PCM on audio.stream, no STT/cognition triggered."
+        },
+        "3_voice_cognition": {
+          "before": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.689,
+              "used_gb": 14.491
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 751.2,
+              "containers": {
+                "local_sfu": 54.9,
+                "brain_cache": 10.9,
+                "postgres_db": 22.8,
+                "nats_mesh": 19.3,
+                "brain_graph": 575.1,
+                "brain_vectors": 68.2
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8737.244061125
+          },
+          "after": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.749,
+              "used_gb": 14.431
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 759.2,
+              "containers": {
+                "local_sfu": 37.4,
+                "brain_cache": 9.1,
+                "postgres_db": 46.8,
+                "nats_mesh": 25.5,
+                "brain_graph": 579.6,
+                "brain_vectors": 60.8
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8772.458667375
+          },
+          "description": "30s of voice PCM concurrent with one real cognitive turn."
+        },
+        "4_vision_only": {
+          "before": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.766,
+              "used_gb": 14.413
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 759.3,
+              "containers": {
+                "local_sfu": 37.4,
+                "brain_cache": 9.1,
+                "postgres_db": 46.8,
+                "nats_mesh": 25.5,
+                "brain_graph": 579.6,
+                "brain_vectors": 60.9
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8774.463615916
+          },
+          "after": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.819,
+              "used_gb": 14.361
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 752.4,
+              "containers": {
+                "local_sfu": 51.6,
+                "brain_cache": 7.1,
+                "postgres_db": 38.1,
+                "nats_mesh": 19.6,
+                "brain_graph": 582.8,
+                "brain_vectors": 53.2
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8806.731126583
+          },
+          "description": "30s of repeated-identical-frame appraisal calls (habituation should suppress all but the first VLM call)."
+        },
+        "5_vision_cognition": {
+          "before": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.806,
+              "used_gb": 14.374
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 754.0,
+              "containers": {
+                "local_sfu": 53.9,
+                "brain_cache": 7.1,
+                "postgres_db": 38.1,
+                "nats_mesh": 19.0,
+                "brain_graph": 582.6,
+                "brain_vectors": 53.2
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8808.720296541
+          },
+          "after": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.032,
+              "used_gb": 15.148
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 824.9,
+              "containers": {
+                "local_sfu": 54.8,
+                "brain_cache": 10.7,
+                "postgres_db": 56.7,
+                "nats_mesh": 21.1,
+                "brain_graph": 595.9,
+                "brain_vectors": 85.6
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8841.758996583
+          },
+          "description": "30s of varying-frame appraisal (real VLM call every tick) concurrent with one real cognitive turn."
+        },
+        "6_voice_vision_cognition": {
+          "before": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.055,
+              "used_gb": 15.125
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 824.9,
+              "containers": {
+                "local_sfu": 54.8,
+                "brain_cache": 10.8,
+                "postgres_db": 56.7,
+                "nats_mesh": 21.1,
+                "brain_graph": 595.9,
+                "brain_vectors": 85.6
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8843.778424625
+          },
+          "after": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.08,
+              "used_gb": 15.1
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 798.3,
+              "containers": {
+                "local_sfu": 33.1,
+                "brain_cache": 9.5,
+                "postgres_db": 78.5,
+                "nats_mesh": 28.9,
+                "brain_graph": 587.6,
+                "brain_vectors": 60.6
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8878.837232125
+          },
+          "description": "30s of voice PCM + varying-frame VLM appraisal, concurrent with one real cognitive turn."
+        },
+        "7_full_multimodal": {
+          "before": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.078,
+              "used_gb": 15.102
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 798.3,
+              "containers": {
+                "local_sfu": 33.1,
+                "brain_cache": 9.5,
+                "postgres_db": 78.5,
+                "nats_mesh": 28.9,
+                "brain_graph": 587.6,
+                "brain_vectors": 60.6
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8880.839270416
+          },
+          "after": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.107,
+              "used_gb": 15.073
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 881.3,
+              "containers": {
+                "local_sfu": 57.7,
+                "brain_cache": 9.7,
+                "postgres_db": 99.9,
+                "nats_mesh": 29.4,
+                "brain_graph": 599.6,
+                "brain_vectors": 85.0
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8915.993269958
+          },
+          "description": "30s of voice + vision-VLM + two concurrent cognitive turns (interactive multimodal use, not background)."
+        },
+        "8_full_background": {
+          "before": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.144,
+              "used_gb": 15.035
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 881.2,
+              "containers": {
+                "local_sfu": 57.4,
+                "brain_cache": 9.7,
+                "postgres_db": 99.9,
+                "nats_mesh": 29.5,
+                "brain_graph": 599.6,
+                "brain_vectors": 85.0
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8917.998745375
+          },
+          "after": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.024,
+              "used_gb": 15.155
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 883.1,
+              "containers": {
+                "local_sfu": 33.8,
+                "brain_cache": 9.4,
+                "postgres_db": 141.8,
+                "nats_mesh": 36.4,
+                "brain_graph": 600.0,
+                "brain_vectors": 61.7
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8953.212948166
+          },
+          "description": "30s of scenario 6's load plus a concurrent background consolidation pass -- the ack-deadline contention shape HARDWARE.md §3.3 estimated, now with voice+vision in the mix too, not VLM alone."
+        },
+        "9_sustained": {
+          "before": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.126,
+              "used_gb": 15.053
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 882.9,
+              "containers": {
+                "local_sfu": 33.8,
+                "brain_cache": 9.3,
+                "postgres_db": 141.8,
+                "nats_mesh": 36.4,
+                "brain_graph": 600.0,
+                "brain_vectors": 61.6
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 8955.245710416
+          },
+          "after": {
+            "host_ram": {
+              "total_gb": 17.18,
+              "available_gb": 2.029,
+              "used_gb": 15.151
+            },
+            "docker": {
+              "container_count": 6,
+              "total_mib": 971.4,
+              "containers": {
+                "local_sfu": 38.4,
+                "brain_cache": 11.3,
+                "postgres_db": 175.8,
+                "nats_mesh": 41.1,
+                "brain_graph": 643.1,
+                "brain_vectors": 61.7
+              }
+            },
+            "ollama": {
+              "resident_models": [
+                "qwen2.5:3b",
+                "moondream:latest",
+                "nomic-embed-text:latest"
+              ],
+              "resident_count": 3
+            },
+            "t": 9151.105165916
+          },
+          "description": "180s bounded proxy (NOT an hours-long endurance run) of repeated scenario-8-shaped cycles, 11 samples: no sustained monotonic growth observed. RAM used_gb across samples: [15.05, 15.12, 15.1, 15.11, 15.16, 15.1, 15.1, 15.09, 15.15, 15.03, 15.15]."
+        }
+      }
+    }
+  ],
+  "notes": [
+    "Each 'under load' scenario runs for 30s wall-clock except scenario 9 (180s, a bounded proxy for 'sustained', not an endurance run).",
+    "Vision scenarios drive VisualAppraisalService.appraise() directly with PIL-generated synthetic frames, not a real screen/camera capture -- cv2 is not installed on this host, matching M3-A9's documented degraded path, so VisionAgent's own capture layer cannot run here.",
+    "In-process, real Postgres/Neo4j/NATS/Ollama -- not a full container mesh (no brain_agent/system_agent/etc. processes). Same choice this harness's other measurements already made."
+  ]
+}

@@ -18,7 +18,7 @@ from ..contracts import (
     Topics,
     UserVoiceProperties,
 )
-from ..llm.ollama_client import OllamaClient
+from ..llm import build_llm_client
 from ..logging_config import setup_logging
 from ..runtime_bootstrap import bootstrap_runtime
 from ..state import ConversationHistoryStore, GraphDB, MemoryStore
@@ -65,7 +65,7 @@ class BrainAgent(BaseAgent):
         conversation_store: ConversationHistoryStore = None,
     ):
         super().__init__(name="brain_agent")
-        self.ollama = OllamaClient(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
+        self.ollama = build_llm_client(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
         self.graph_db = graph_db
         self.memory_store = memory_store
         self.conversation_store = conversation_store
@@ -604,8 +604,13 @@ class BrainAgent(BaseAgent):
         try:
             props = UserVoiceProperties.model_validate(data)
             self.last_user_voice_properties = props
+            # tempo_wpm is None until the first utterance completes (see
+            # contracts.py's own comment) -- formatting it unconditionally
+            # would raise on every chunk before that and get silently
+            # swallowed below as a "parsing" error, which it is not.
+            tempo = f"{props.tempo_wpm:.1f}WPM" if props.tempo_wpm is not None else "—"
             logger.debug(
-                f"🎙️ Ingested User Voice | Pitch: {props.pitch_f0:.1f}Hz | Energy: {props.energy_rms:.3f} | Tempo: {props.tempo_wpm:.1f}WPM"
+                f"🎙️ Ingested User Voice | Pitch: {props.pitch_f0:.1f}Hz | Energy: {props.energy_rms:.3f} | Tempo: {tempo}"
             )
         except Exception as e:
             logger.error(f"Error parsing user voice properties: {e}")
@@ -846,7 +851,7 @@ class BrainAgent(BaseAgent):
         self.cognitive_core.close()
 
         for resource, label in (
-            (self.ollama, "OllamaClient"),
+            (self.ollama, "LLMClient"),
             (self.graph_db, "GraphDB"),
             (self.memory_store, "MemoryStore"),
             (self.conversation_store, "ConversationHistoryStore"),

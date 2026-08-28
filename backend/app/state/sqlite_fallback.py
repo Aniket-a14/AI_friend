@@ -297,11 +297,15 @@ class SQLiteConnection:
                     select_parts.append(f"{default} AS {col}")
 
             select_clause = ", ".join(select_parts)
-            cursor.execute(f"""
+            cursor.execute(
+                """
                 INSERT INTO memories_new
-                SELECT {select_clause}
+                SELECT """
+                f"{select_clause}"  # nosec B608 - select_clause is built from the hardcoded column_defaults dict above
+                """
                 FROM memories
-            """)
+            """
+            )
             # Drop old table and rename new one
             cursor.execute("DROP TABLE memories")
             cursor.execute("ALTER TABLE memories_new RENAME TO memories")

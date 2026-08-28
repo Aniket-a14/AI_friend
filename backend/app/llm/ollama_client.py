@@ -29,11 +29,16 @@ class OllamaClient:
     Uses httpx for unified async stack and connection pooling.
     """
 
+    _DEFAULT_MODEL = "llama3.2:1b"
+
     def __init__(
-        self, base_url: str = "http://127.0.0.1:11434", model: str = "llama3.2:1b"
+        self, base_url: str = "http://127.0.0.1:11434", model: str | None = None
     ):
         self.base_url = base_url.rstrip("/")
-        self.model = model
+        # An explicit `model=None` (e.g. Config.LLM_CHAT_MODEL unset, routed
+        # through build_llm_client) must still land on a real model string --
+        # passing None explicitly bypasses a plain keyword default entirely.
+        self.model = model or self._DEFAULT_MODEL
         self.max_retries = 3
         self.base_delay = 1.0
         self.timeout = httpx.Timeout(10.0, read=180.0, connect=5.0)
@@ -80,7 +85,7 @@ class OllamaClient:
     def _build_payload_attempts(
         self,
         prompt: str,
-        system: str,
+        system: str | None,
         model: str,
         stream: bool,
         num_predict: int,
@@ -241,7 +246,7 @@ class OllamaClient:
                     continue
 
             if attempt < self.max_retries - 1:
-                delay = self.base_delay * (2**attempt) + random.uniform(0, 0.5)
+                delay = self.base_delay * (2**attempt) + random.uniform(0, 0.5)  # nosec B311 - retry backoff jitter, not cryptographic
                 await asyncio.sleep(delay)
 
         yield "I'm having trouble thinking right now..."
@@ -345,7 +350,7 @@ class OllamaClient:
                     continue
 
             if attempt < self.max_retries - 1:
-                delay = self.base_delay * (2**attempt) + random.uniform(0, 0.5)
+                delay = self.base_delay * (2**attempt) + random.uniform(0, 0.5)  # nosec B311 - retry backoff jitter, not cryptographic
                 await asyncio.sleep(delay)
 
         return "Error generating response."

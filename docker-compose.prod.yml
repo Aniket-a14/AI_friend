@@ -48,6 +48,10 @@ services:
       context: ./backend
       target: slim
     container_name: signaling
+    # Bind-mounted onboarding files must be writable by the host user that
+    # launched the stack. start.sh exports these IDs; the fallback preserves
+    # the image's historical UID for direct compose use.
+    user: "${AI_FRIEND_UID:-1001}:${AI_FRIEND_GID:-1001}"
     command: [ "python", "main.py" ]
     env_file: .env
     environment:
@@ -58,6 +62,10 @@ services:
       - LIVEKIT_URL=${LIVEKIT_URL:-ws://local_sfu:7880}
       - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-ws://127.0.0.1:7880}
       - BACKEND_BIND_HOST=0.0.0.0
+      # Keep onboarding writes on the shared host-backed paths rather than the
+      # image's `/` fallback. The persona/voice routers consume these values.
+      - AI_FRIEND_APP_ROOT=/app
+      - AI_FRIEND_ENV_PATH=/app/.env
     # main.py's own Provisioning Guard (ensure_models_provisioned) is the
     # mechanism that populates this host path in the first place -- without
     # this mount its download lands inside this container's own ephemeral
@@ -69,6 +77,13 @@ services:
     # was missing on the first version of this service.
     volumes:
       - ./backend/models/sensevoice:/app/models/sensevoice
+      # The web enrollment endpoints write these host-backed files. Without
+      # these mounts a successful upload/persona commit only changed the
+      # signaling container's ephemeral filesystem and was invisible to the
+      # voice/brain agents (and lost on recreation).
+      - ./.env:/app/.env
+      - ./backend/voice_samples:/app/voice_samples
+      - ./personal:/app/personal
     ports:
       - "127.0.0.1:8000:8000"
     networks:
@@ -141,12 +156,18 @@ services:
       - LOG_LEVEL=INFO
       - QDRANT_HOST=brain_vectors
       - MOCK_LLM_TEXT=${MOCK_LLM_TEXT:-false}
+      # Web onboarding writes the authored files under the shared personal
+      # mount. Explicit paths avoid the container's config/ discovery path
+      # silently selecting the generic example persona.
+      - PERSONA_PROFILE_PATH=${PERSONA_PROFILE_PATH:-/app/personal/persona.toml}
+      - BIOGRAPHY_PATH=${BIOGRAPHY_PATH:-/app/personal/biography.md}
       # #113 / H2: runtime persona evolution (IdentityManager.save()'s fallback
       # when agent_configs is unreachable) needs to land on a volume, not the
       # image's writable layer, or a redeploy silently resets it.
       - IDENTITY_BASE_PATH=/app/data
     volumes:
       - identity_data:/app/data
+      - ./personal:/app/personal:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -318,8 +339,20 @@ services:
     container_name: voice_agent
     command: [ "voice-agent" ]
     volumes:
-      - voice_samples_data:/app/output
+      # Phase 1.5: was the unrelated `voice_samples_data` named volume --
+      # gpt-sovits reads its reference clips from the host bind
+      # ./backend/voice_samples via a *different* mount, so voice-agent's own
+      # load_vocalization_pcm fallback (voice_engine_unavailable.wav etc.)
+      # could never see files landed there. Same host directory now, so both
+      # containers see the same files.
+      - ./backend/voice_samples:/app/output
       - ./models:/app/models
+    # Was missing entirely (Phase 1.4): the eight REF_*_{CALM,WARM,CONCERNED,
+    # EXCITED} vars docs/BRINGING_IT_TO_LIFE.md instructs users to set, plus
+    # TTS_CIRCUIT_BREAKER_*/TTS_READINESS_PROBE_INTERVAL_SECS, were silently
+    # ignored under Compose because nothing listed them below and nothing
+    # loaded .env into the container at all.
+    env_file: .env
     environment:
       - NATS_URL=nats://nats_mesh:4222
       - NATS_USER=${NATS_VOICE_USER:-voice_agent}
@@ -329,6 +362,17 @@ services:
       - SAMPLE_RATE=${SAMPLE_RATE:-32000}
       - REF_AUDIO_PATH=${REF_AUDIO_PATH:-output/sample_en_gold.wav}
       - REF_TEXT=${REF_TEXT:-At the end of the exam, the program shows the performance summary.}
+      - REF_AUDIO_PATH_CALM=${REF_AUDIO_PATH_CALM:-}
+      - REF_TEXT_CALM=${REF_TEXT_CALM:-}
+      - REF_AUDIO_PATH_WARM=${REF_AUDIO_PATH_WARM:-}
+      - REF_TEXT_WARM=${REF_TEXT_WARM:-}
+      - REF_AUDIO_PATH_CONCERNED=${REF_AUDIO_PATH_CONCERNED:-}
+      - REF_TEXT_CONCERNED=${REF_TEXT_CONCERNED:-}
+      - REF_AUDIO_PATH_EXCITED=${REF_AUDIO_PATH_EXCITED:-}
+      - REF_TEXT_EXCITED=${REF_TEXT_EXCITED:-}
+      - TTS_CIRCUIT_BREAKER_FAILURE_THRESHOLD=${TTS_CIRCUIT_BREAKER_FAILURE_THRESHOLD:-3}
+      - TTS_CIRCUIT_BREAKER_COOLDOWN_MS=${TTS_CIRCUIT_BREAKER_COOLDOWN_MS:-15000}
+      - TTS_READINESS_PROBE_INTERVAL_SECS=${TTS_READINESS_PROBE_INTERVAL_SECS:-45}
     networks:
       - ai_mesh_network
     depends_on:
@@ -518,12 +562,50 @@ services:
       retries: 3
       start_period: 60s
 
+  # N. WEB FRONTEND (Next.js app -- roadmap Phase 5.4)
+  #
+  # frontend/Dockerfile has existed since well before this compose file did,
+  # and `output: 'standalone'` confirms it was built to be containerized --
+  # but no compose file defined a `frontend` service at all: `docker compose
+  # up` could bring up the entire agent mesh and there was still nothing
+  # serving the browser client that talks to it. `local_sfu`/`signaling` are
+  # only resolvable on this compose network; a browser on the host reaches
+  # them at their published loopback ports instead, which is why the
+  # NEXT_PUBLIC_* build args below default to 127.0.0.1 URLs -- the same
+  # ones signaling's own /token response already hands the browser -- not
+  # the internal service names every other container in this file uses.
+  #
+  # Build args, not `environment:`: Next.js inlines NEXT_PUBLIC_* into the JS
+  # bundle at build time, so setting them at container start (as every other
+  # service here does) would be a silent no-op.
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://127.0.0.1:8000}
+        NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:-ws://127.0.0.1:7880}
+        NEXT_PUBLIC_BACKEND_ACCESS_KEY: ${NEXT_PUBLIC_BACKEND_ACCESS_KEY:-}
+    container_name: frontend
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - ai_mesh_network
+    depends_on:
+      signaling:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://127.0.0.1:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
 # Use the existing network created by infra
 networks:
   ai_mesh_network:
     external: true
 
 volumes:
-  voice_samples_data:
   stt_models_data:
   identity_data:

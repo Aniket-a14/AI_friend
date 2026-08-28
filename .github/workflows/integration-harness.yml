@@ -1,0 +1,183 @@
+name: 🔬 Integration Harness Smoke
+
+# backend/evals/ and backend/tools/measure/ are the two harnesses that probe
+# the LLM boundary and the mesh under real infra -- CLAUDE.md documents both
+# in detail, but neither had a CI gate before this workflow (roadmap Phase
+# 6.4): the hermetic pytest suite mocks NATS and forces MOCK_LLM_TEXT-free
+# real-model calls out of scope by design, so an integration break in either
+# harness previously surfaced only when a human happened to run it by hand.
+#
+# This is deliberately NOT a regression gate with a pass/fail threshold, and
+# deliberately NOT on every push/PR: GitHub-hosted runners have no GPU, so a
+# live model call here is slow and not representative of real hardware --
+# the numbers that belong in the ledger and README come from a real dev
+# machine (see backend/tools/measure/out/*.json and their ledger entries),
+# not from this workflow. What this workflow answers is narrower and still
+# worth having: did the harness itself break -- an exception, an import
+# error, a schema drift, a wiring bug the pytest suite's mocks can't see.
+#
+# Per CLAUDE.md's own documented trap: a run with no model reachable can
+# produce a silent 0/48 that *looks* like a clean report rather than a
+# failure, so this workflow explicitly asserts the report's own
+# `provenance`/`model` header rather than trusting a zero exit code alone.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, not per-push -- see the header note on cost/representativeness.
+    - cron: '17 6 * * 1'
+
+jobs:
+  evals-smoke:
+    name: evals/ against the shipped (neutral) persona
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama and pull a CI-sized model
+        run: |
+          ollama serve &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:11434/api/tags > /dev/null && break
+            sleep 2
+          done
+          # llama3.2:1b, not the LLM_FAST_MODEL default (3b) -- this job only
+          # needs *a* real model reachable to exercise the harness end to
+          # end, and a smaller tag keeps a CPU-only runner inside the
+          # timeout. The numbers this run produces are not a hardware or
+          # persona benchmark; see the header note.
+          ollama pull llama3.2:1b
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-base.txt
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements-base.txt
+
+      - name: Run evals against the shipped identity seed
+        run: |
+          cd backend
+          mkdir -p evals/out
+          python -m evals run --model llama3.2:1b --num-gpu 0 --out evals/out/ci_smoke.json
+
+      - name: Assert the report actually ran live against the named model
+        run: |
+          cd backend
+          python -c "
+          import json, sys
+          report = json.load(open('evals/out/ci_smoke.json'))
+          provenance = report.get('provenance')
+          model = report.get('model')
+          print(f'provenance={provenance} model={model}')
+          if provenance != 'live':
+              sys.exit(f'expected provenance=live, got {provenance!r}')
+          if not model:
+              sys.exit('report has no model recorded -- see CLAUDE.md on the silent 0/48 trap')
+          probes = report.get('probes', report.get('results', []))
+          if isinstance(probes, list) and len(probes) == 0:
+              sys.exit('report recorded zero probes -- this is the silent-0/48 failure shape, not a pass')
+          "
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evals-ci-smoke-report
+          path: backend/evals/out/ci_smoke.json
+          retention-days: 30
+
+  measure-smoke:
+    name: tools/measure/ (m15, m16) against real Postgres/Neo4j/Qdrant/Ollama
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate CI .env
+        # Matches mesh-integrity.yml's convention -- same dummy-credential
+        # shape, same variable names -- rather than trusting .env.example's
+        # values line up with what this job actually connects to.
+        run: |
+          cat > .env << 'EOF'
+          LIVEKIT_API_KEY=ci_dummy
+          LIVEKIT_API_SECRET=ci_dummy
+          LIVEKIT_KEYS="ci_dummy: ci_dummy"
+          POSTGRES_PASSWORD=ci_dummy
+          DATABASE_URL=postgresql://ai_friend:ci_dummy@localhost:5433/ai_friend_db
+          NEO4J_URI=bolt://localhost:7687
+          NEO4J_USER=neo4j
+          NEO4J_PASSWORD=ci_dummy
+          NEO4J_AUTH=neo4j/ci_dummy
+          NEO4J_PLUGINS=["apoc"]
+          NATS_URL=nats://localhost:4222
+          OLLAMA_URL=http://localhost:11434
+          QDRANT_HOST=localhost
+          QDRANT_PORT=6333
+          EOF
+
+      - name: Bring up infra (docker-ollama profile)
+        run: |
+          docker network create ai_mesh_network || true
+          docker compose -f docker-compose.infra.yml --profile docker-ollama \
+            up -d nats postgres redis qdrant neo4j ollama \
+            --wait --wait-timeout 240
+
+      - name: Pull models into the containerized Ollama
+        run: |
+          docker exec local_brain ollama pull llama3.2:1b
+          docker exec local_brain ollama pull nomic-embed-text
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-base.txt
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements-base.txt
+
+      - name: Run m15 (prompt-prefix) and m16 (retrieval)
+        env:
+          OLLAMA_URL: http://127.0.0.1:11434
+          NATS_URL: nats://127.0.0.1:4222
+          LLM_FAST_MODEL: llama3.2:1b
+          LLM_CHAT_MODEL: llama3.2:1b
+        run: |
+          cd backend
+          python -m tools.measure run 1.5
+          python -m tools.measure run 1.6
+
+      - name: Sanity-check both reports parsed and have a live provenance
+        run: |
+          cd backend
+          python -c "
+          import json, sys
+          for path in ('tools/measure/out/m15_prompt_prefix.json', 'tools/measure/out/m16_retrieval.json'):
+              report = json.load(open(path))
+              if report.get('provenance') != 'live':
+                  sys.exit(f'{path}: expected provenance=live, got {report.get(\"provenance\")!r}')
+              print(f'{path}: OK, provenance=live')
+          "
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: measure-ci-smoke-reports
+          path: |
+            backend/tools/measure/out/m15_prompt_prefix.json
+            backend/tools/measure/out/m16_retrieval.json
+          retention-days: 30

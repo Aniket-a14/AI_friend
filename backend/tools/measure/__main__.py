@@ -25,6 +25,7 @@ from . import (
     m13_audio_growth,
     m15_prompt_prefix,
     m16_retrieval,
+    m17_pressure_scenarios,
 )
 
 _MEASUREMENTS = {
@@ -34,6 +35,7 @@ _MEASUREMENTS = {
     "1.5": (m15_prompt_prefix, "m15_prompt_prefix.json"),
     "1.6": (m16_retrieval, "m16_retrieval.json"),
     "4b": (m4b_turn_taking_gate, "m4b_turn_taking_gate.json"),
+    "17": (m17_pressure_scenarios, "m17_pressure_scenarios.json"),
 }
 
 

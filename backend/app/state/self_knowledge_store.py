@@ -103,8 +103,21 @@ class SelfKnowledgeStore:
                             "ALTER TABLE self_knowledge_gaps "
                             "ADD COLUMN asked_at timestamp"
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        # Only the expected "column already exists" outcome is
+                        # swallowed here -- asyncpg's DuplicateColumnError says
+                        # "already exists", sqlite3's OperationalError says
+                        # "duplicate column name". A bare `except: pass` used
+                        # to swallow anything, including a real migration
+                        # failure, and still set self._ready = True right
+                        # after -- so a later read/write against a table
+                        # actually missing asked_at would fail somewhere far
+                        # from this line, for a reason nothing here recorded.
+                        # Anything else re-raises into the outer handler,
+                        # which already logs and leaves self._ready False.
+                        msg = str(e).lower()
+                        if "duplicate column" not in msg and "already exists" not in msg:
+                            raise
                 self._ready = True
             except Exception as e:
                 logger.debug("SelfKnowledgeStore not ready (%s); gaps not recorded", e)

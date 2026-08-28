@@ -31,7 +31,7 @@ class SemanticRecallStore:
         self.client: QdrantClient | None = None
 
         try:
-            self.client = QdrantClient(host=q_host, port=q_port, timeout=2.0)
+            self.client = QdrantClient(host=q_host, port=q_port, timeout=2)
             self._ensure_collection_exists()
             logger.info(f"Connected to Qdrant Semantic Store on {q_host}:{q_port}")
         except Exception as e:
@@ -112,7 +112,7 @@ class SemanticRecallStore:
         # Build Qdrant Match filters if requested
         qdrant_filter = None
         if filter_dict:
-            conditions = []
+            conditions: list[models.Condition] = []
             for key, val in filter_dict.items():
                 conditions.append(
                     models.FieldCondition(key=key, match=models.MatchValue(value=val))

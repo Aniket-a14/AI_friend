@@ -167,6 +167,11 @@ services:
       - PYTHONPATH=/workspace/GPT-SoVITS
       - CUSTOM_GPT_PATH=${CUSTOM_GPT_PATH:-GPT_weights/ai_friend_voice.ckpt}
       - CUSTOM_SOVITS_PATH=${CUSTOM_SOVITS_PATH:-SoVITS_weights/ai_friend_voice.pth}
+      # Same vars voice_agent reads (docker-compose.prod.yml) -- read by
+      # sovits_healthcheck.sh/sovits_bootstrap.sh so a custom reference clip
+      # stays consistent across both containers instead of drifting.
+      - REF_AUDIO_PATH=${REF_AUDIO_PATH:-output/sample_en_gold.wav}
+      - REF_TEXT=${REF_TEXT:-At the end of the exam, the program shows the performance summary.}
     ports:
       - "127.0.0.1:9880:9880" # WebUI
       - "127.0.0.1:9871:9871" # API

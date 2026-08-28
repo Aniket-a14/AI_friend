@@ -1,68 +1,141 @@
-# 🎙️ AI Friend: Cognitive Voice System (v6.5.0 / CVS-3.5 Premium Edition)
+# AI Friend
 
-**A high-fidelity, state-driven cognitive identity emulator built on a hardened Sovereign Mesh for ultra-low latency conversational realism.**
+**An AI friend you describe in your own words, that speaks in a voice you gave it, runs entirely on your own machine, and remembers who you are.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/license/MIT)
-[![Latency: Perceived <250ms](https://img.shields.io/badge/Latency-Perceived%20%3C250ms-green.svg)](#performance-perceived-slos)
-[![Architecture: CVS-3.5 Premium](https://img.shields.io/badge/Architecture-CVS--3.5--Premium-orange.svg)](#️-technical-architecture-the-sovereign-mesh)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](<https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb>)
 [![Continuous Integration](https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/ci.yml>)
-[![🛡️ Mesh Integrity](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml>)
-[![🧠 Cognitive Regression](https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml>)
-[![🎭 Persona Guard](https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml>)
-[![🔒 Security Audit](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml>)
-[![📦 Docker Build](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml>)
-[![🩺 Docker Health](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml>)
-[![🔗 Link Validator](https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/links.yml>)
-[![🚀 Release Status](https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml/badge.svg?branch=main)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/release.yml>)
-[![Platforms: Windows | macOS | Linux](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux-blueviolet.svg)](#-release-package-selection-guide)
-[![Arch: Multi-Platform](https://img.shields.io/badge/Architectures-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#-release-package-selection-guide)
-[![Release Assets: 3 Packages](https://img.shields.io/badge/Release%20Assets-3%20Packages-success.svg)](#-release-package-selection-guide)
-
-**CALIBRATION: EXPERT** — *This documentation assumes proficiency in asynchronous event-driven architectures, NATS JetStream protocols, and computational cognitive modeling (BDI, PAD, ACT-R, MAUT).*
+[![Mesh Integrity](https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/mesh-integrity.yml>)
+[![Cognitive Regression](https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/cognitive-regression.yml>)
+[![Persona Guard](https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/persona-guard.yml>)
+[![Security Audit](https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/security-audit.yml>)
+[![Docker Build](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml>)
+[![Docker Health](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml>)
 
 ---
 
-## 🌟 The Philosophy of Perceptual Mastery
+## What this is
 
-AI Friend is not a reactive "turn-based" chatbot. It is a **Sovereign Mesh** of specialized agents synchronized through a hardened signal bus. In the **CVS-3.5 (Premium Edition)** release, the architecture shifted from legacy Python audio loops to a **High-Performance Rust Signal Mesh**, targeting sub-50ms deterministic execution and true temporal identity continuity — see [Performance Perceived SLOs](#performance-perceived-slos) below for what's actually been measured so far.
+Most "AI companion" products are a character picker in front of a shared cloud
+model. This is the opposite bet: **one friend, described by you, that lives
+entirely on your own hardware.**
 
-### 🧠 Reactive vs. Sovereign Intelligence
+- **You write who they are, in prose.** No template picker, no slider grid.
+  "She's blunt, hates small talk, gets genuinely annoyed when I dodge a
+  question, grew up somewhere cold" is a complete persona description. A CLI
+  wizard compiles it, shows you what it inferred (including *why*), and lets
+  you talk to a dry run before anything is permanent.
+- **Full emotional range, including friction with you.** No softening when
+  you're distressed, no infinite patience by design. A small, non-negotiable
+  safety floor sits underneath — an authored friend can be blunt, but not
+  cruel — everything else is yours to write.
+- **Its own voice, from the first boot.** Clone a voice from an 8-second clip
+  you record (with consent guidance, not a hard gate), or start talking
+  immediately with a bundled default while you decide.
+- **Local-first.** Ollama, Postgres, Neo4j, Qdrant, NATS — all self-hosted, all
+  on your machine. No account, no conversation leaves your hardware unless you
+  explicitly opt into a cloud LLM fallback for weaker hardware.
+- **Portable.** Export your friend's identity and memory, wipe the machine,
+  import it back. It's their memory, not the deployment's.
 
-| Feature | Reactive Chatbot (Legacy) | Sovereign Mesh (CVS-3.5) |
-| :--- | :--- | :--- |
-| **Execution** | Python Interpreter | PyO3 FFI / Native Rust Crates |
-| **Cognitive Loop** | Synchronous Request-Response | Asynchronous Event-Driven |
-| **State** | Session-based / Stateless | Persistent / Self-Maturing |
-| **Emotion** | Prompt-driven labels | Deterministic mathematical drift (PAD) |
-| **Timing** | Playback delay | Physically injected PCM silent buffers |
-| **Memory** | Passive search (RAG) | Proactive activation (ACT-R) |
-| **Topology** | Centralized API | Decentralized Local Mesh |
+This is a solo open-source project, built and documented in the open as it's
+built. `CLAUDE.md` and `.agents/CONTEXT.md` are the engineering ledger — what
+was actually built, what was measured, and what was deliberately left undone.
+Where this file and the ledger disagree, **the ledger is right**.
 
-### Why Perceptual Mastery?
+## What makes it different, technically
 
-The success of a cognitive voice system is measured by **conversational realism**, not just linguistic correctness. A technically accurate answer that arrives with unnatural timing or forgets recent emotional context is a behavioral failure. AI Friend solves this through **speculative perception** and **deterministic affect**:
+A few things here aren't the obvious way to build this, and are worth knowing
+about before you read the rest:
 
-* **Identity Continuity**: Personality, values, and relationship state survive long sessions and hardware restarts.
-* **Organic Timing**: Pauses and hesitations are physically injected as silent PCM buffers, not just text tags.
-* **Privacy Sovereignty**: 100% local execution ensures your identity genome never leaves your hardware.
+- **An endocrine layer, not just a mood score.** `cortisol` and `dopamine` are
+  each *tonic + phasic* — a slow baseline that's a pure function of current
+  affect, plus a decaying burst on top (half-life 90s for reward, 600s for
+  stress) fired by real events and decayed by elapsed time, not by a tick.
+  Because the two burst channels are independent of the anti-correlated tonic
+  terms, the agent can be stressed and rewarded *at the same time* — annoyed
+  at you and glad you're there. These hormones aren't decorative: cortisol
+  narrows LLM sampling temperature, dopamine widens `top_p`, fatigue shortens
+  the response length. Mood measurably changes how the model generates, not
+  just what persona text gets prepended.
+- **A persona with an enforced boundary, not a convention.** Every persona
+  field is sorted into one of three tiers, declared in the schema so the
+  boundary is checked in code rather than assumed: **IMMUTABLE** (a small
+  hard-coded safety floor no authored persona can touch), **CONSTITUTIONAL**
+  (temperament, fixed at creation — half-lives, drift rates, baselines),
+  **ADAPTIVE** (seeded by you, then owned and slowly evolved by the agent
+  itself, capped at 5 traits). A persona file naming an immutable field is
+  rejected outright rather than silently accepted.
+- **A learned mental lexicon, not a hardcoded thesaurus.** Memory retrieval
+  expands query cues through associations the agent has actually built from
+  its own conversations (`lexicon_store.py`) — the generic English seed exists
+  only to bootstrap a brand-new agent's database and is never touched again
+  once real conversation exists.
+- **Timing is physically synthesized, not scripted.** Pauses, barge-in
+  ducking, and prosody shifts are rendered as real PCM sample manipulation in
+  a Rust voice pipeline (overlap-add crossfades, a comb-filter reverb blend by
+  user distance) — not text markers a model was asked to insert.
 
----
+None of this is marketed as state-of-the-art against commercial systems — see
+`.agents/CONTEXT.md` for what's actually been measured, what's estimated, and
+what's still an open target.
 
-## 🏗️ Technical Architecture: The Sovereign Mesh
+## Quick start
 
-### 1. System Topology Map
+You need [Docker](https://docs.docker.com/get-docker/) and
+[Ollama](https://ollama.com) (`ollama serve` running, host-native — not
+containerized by default) on a machine with at least ~16GB RAM. A GPU is
+optional: a 3B-class Ollama model runs on CPU, and real-time voice cloning
+(GPT-SoVITS) is meaningfully faster with one but not required to boot.
 
-The platform utilizes **NATS JetStream** as its central nervous system, routing typed Pydantic messages between autonomous agents.
+```bash
+git clone https://github.com/Aniket-a14/AI_friend.git
+cd AI_friend
+cp .env.example .env   # fill in the secrets it asks for
+./start.sh              # or: make start
+```
 
-> [!NOTE]
-> **Architecture Description**:
-> The system follows a decoupled "Signal Bus" pattern. The **NATS JetStream** serves as the message backbone, enforcing strict communication contracts across 21 declared subjects (`backend/scripts/check_subject_wiring.py` audits every publish/subscribe call site against this count on every run).
->
-> * **Sensory Agents**: The **STT Agent** and **Vision Agent** publish perceptual signals to the bus.
-> * **Cognitive Agents**: The **Brain Agent** (Decision Core), **Subconscious Agent** (Idle reflection), and **Surfacing Agent** (Memory) process these signals asynchronously.
-> * **Infrastructure**: **Neo4j** stores the high-dimensional knowledge graph, **PostgreSQL** with `pgvector` manages episodic memories and relational identity state, and **Qdrant** serves the vector-similarity half of memory retrieval (fused with Neo4j graph-boost and Postgres/SQLite candidates in `search_memories`).
-> * **Signal Rendering**: The **Voice Agent** consumes decision events to produce high-fidelity 32kHz PCM audio.
+`start.sh` (roadmap Phase 1.6) does the whole boot sequence itself and refuses
+to half-start: creates the shared Docker network, confirms Ollama is reachable
+and pulls the required models, ships a bundled default voice so the agent can
+speak before you've recorded your own, brings up Postgres/Neo4j/Redis/NATS/
+LiveKit, waits for Postgres to actually be healthy before pushing the Prisma
+schema, then starts the right container set for your chosen mode:
+
+```bash
+./start.sh light             # cognitive-only: no real-time voice/STT
+./start.sh heavy             # cognitive + local Whisper STT, no voice cloning
+./start.sh full               # the default: everything, including voice cloning
+./start.sh full --vision      # + the vision agent (Linux host only, see below)
+```
+
+### Create your friend
+
+Once the mesh is up:
+
+```bash
+cd backend
+../.venv/bin/python -m scripts.create_friend      # macOS/Linux
+../.venv/Scripts/python.exe -m scripts.create_friend  # Windows
+```
+
+Describe your friend in your own words. The wizard compiles that description
+into a persona, shows you exactly what it inferred — every numeric
+temperament choice with its reasoning — and lets you try a dry-run
+conversation before anything is committed. Persona seeding is a one-way door
+(it applies once, on first boot, and never again), so everything before you
+confirm is free to redo; nothing after is. Your persona lives in the fully
+gitignored `personal/` directory, never in a tracked file.
+
+No mic handy, or want to iterate on the persona in text first? `scripts/talk.py`
+is a REPL against the same cognitive pipeline the voice path uses, with no
+LiveKit/STT/TTS required.
+
+## Architecture
+
+Agents are separate processes coordinated over **NATS JetStream**, not
+function calls — a decoupled signal-bus mesh, not a monolith with internal
+method calls.
 
 ```mermaid
 graph TD
@@ -76,15 +149,15 @@ graph TD
     Signaling <--> LK["LiveKit SFU"]
     LK <--> Transport
 
-    subgraph "Sovereign Mesh — Typed Contract Layer"
+    subgraph "Typed Contract Mesh"
         Transport <--> |"audio.inbound / audio.stream"| Bus{"NATS JetStream"}
         Bus <--> |"chat.input / audio.perception"| STT["STT Agent: Dual-Path"]
-        Bus <--> |"chat.input / chat.output"| Brain["Brain Agent: BDI Cognition"]
+        Bus <--> |"chat.input / chat.output"| Brain["Brain Agent: Cognitive Core"]
         Bus <--> |"chat.output / audio.stop/resume"| Voice["Voice Agent: Rust PyO3 Audio"]
         Bus <--> |"vision.control / vision.description"| Vision["Vision Agent: Host-Native VLM"]
         Bus <--> |"system.tick"| Pulse["System Agent: Heartbeat"]
         Bus <--> |"memory.surfaced / state.update"| Recall["Surfacing Agent: Memory"]
-        Bus <--> |"chat.input (subconscious)"| Subconscious["Subconscious Agent: Autonomy"]
+        Bus <--> |"chat.input (subconscious)"| Subconscious["Subconscious Agent: Reflection"]
     end
 
     subgraph "Cognitive Core"
@@ -92,7 +165,7 @@ graph TD
         Appraisal["AppraisalEngine — OCC/Lazarus"]
         Decision["DecisionService — MAUT + BT"]
         Action["ActionService — LLM Stream"]
-        State["StateService — PAD + ALMA"]
+        State["StateService — PAD + endocrine"]
         Learning["ReflectionService"]
         Identity["IdentityManager"]
     end
@@ -120,350 +193,78 @@ graph TD
     end
 ```
 
-### 2. Perceptual Interruption Protocol
+Full deep-dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-CVS-3.5 utilizes a **Dual-STT fan-out** with a 3-stage interruption arbitration protocol.
+### Agents
 
-> [!WARNING]
-> **Implemented and build-verified; not yet heard.** The `stt-agent` crate embeds
-> real speech recognition (whisper.cpp via `whisper-rs` for the accurate path,
-> SenseVoice via `sherpa-onnx` for the fast path), with 16 kHz sinc resampling and
-> VAD endpointing, defaulting to `STT_BACKEND=whisper`. Two caveats:
->
-> 1. **SenseVoice requires host-side provisioning.** Run
->    `python backend/scripts/bootstrap/provision_models.py` once; docker-compose
->    bind-mounts the result. Without it the fast path falls back to a small Whisper
->    model: barge-in keeps working, but the emotion / paralinguistic fields stay
->    empty — the agent hears words, not tone — and the logs say so loudly.
-> 2. **No live transcription has been observed.** Both backends compile, link and
->    pass the crate's unit tests (including cross-language wire-shape tests), but
->    no audio has been transcribed end-to-end and no acoustic emotion has been
->    classified on a live utterance. Treat accuracy and latency as **unmeasured**.
->    Building requires `libclang` (`cmake` + `clang`); `Dockerfile.rust` installs both.
-
-<!-- -->
-
-> [!WARNING]
-> **The Vision Agent must run on the host on Windows and macOS.** It is excluded
-> from the default compose stack and gated behind the `vision` profile. Capture is
-> host-bound, verified empirically rather than assumed: inside a Linux container
-> there is no `/dev/video*`, `--device=/dev/video0` is rejected by the daemon,
-> `/tmp/.X11-unix` is absent with `DISPLAY` unset, and `mss` fails outright with
-> `Library libxcb.so not found`. On a Windows/macOS host the container runs in a
-> Linux VM with no route to the host's display or webcam, so no configuration
-> resolves this.
->
-> ```bash
-> pip install -r backend/requirements-ai.txt   # mss + opencv-python
-> NATS_URL=nats://127.0.0.1:4222 python -m app.vision.agent
-> ```
->
-> On a **Linux** host the containerised path does work — uncomment the `devices`
-> and/or X11 entries in the `vision_agent` service and run
-> `docker compose --profile vision up vision_agent`.
->
-> The agent probes capture at startup and logs prominently when it is blind, and
-> its healthcheck reads a sentinel touched on each successful capture rather than
-> `pgrep python`, which passes just as happily when every frame returns `None`.
->
-> **Somatic response is learned, and starts empty.** Recognising a comfort object
-> lifts valence/arousal (and so dopamine) only for objects the agent has actually
-> learned about — facts `learning.py` tagged `somatic` in Neo4j. A fresh agent, or
-> one running without Neo4j, recognises nothing and no spike fires. That cold start
-> is deliberate: no comfort vocabulary is hardcoded.
-
-<!-- -->
-
-> [!IMPORTANT]
-> **Protocol Description**:
-> Audio arriving via WebRTC is fanned out to two paths: **SenseVoice**
-> (`STT_SENSEVOICE_DIR`; classifies speech emotion and audio events alongside the
-> words) for speculative temporal intent, and **Whisper** (`STT_ACCURATE_MODEL`,
-> default `base.en`) for semantic accuracy. When no SenseVoice model is provisioned
-> the fast path degrades to a small Whisper model (`STT_FAST_MODEL`, default
-> `tiny.en`) and no emotion is inferred.
->
-> * **Stage 1 (Reflexive Soft-Attenuation)**: The fast path transcribes a speculative partial and publishes a speculative `audio.stop` if it detects an interruption marker. The Voice Agent immediately executes a **System 1 soft-attenuation**, ducking the volume by 70% within 10ms to allow duplex listening. Partials are only emitted once the endpointer confirms speech, so a cough cannot trigger this. Detection latency is **unmeasured** — see the warning above.
-> * **Stage 2 (Symbolic Interruption Validation)**: The Brain Agent evaluates the speculative perception text. If confirmed, it commits a hard `audio.stop` (aborting playback and LLM generation). If rejected as noise or a non-interruption, it publishes `audio.resume`, causing the Voice Agent to smoothly ramp output volume back to 100%.
-> * **Stage 3 (Resolution)**: Once Whisper produces the final transcript, the Brain Agent performs a deep cognitive turn to update state and generate the response.
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant H as Host (Windows)
-    participant T as TransportAgent (Docker)
-    participant WF as "SenseVoice (Fast Path)"
-    participant W as "Whisper base.en (Accurate Path)"
-    participant VA as "Vision Agent (VLM)"
-    participant B as Brain Agent (Decision)
-    participant V as Voice Agent (CVS)
-
-    Note over U, H: Multimodal Input (Sight & Sound)
-    par Visual Appraisal (Host-Resident)
-        H->>VA: Screen/Cam Buffer (Host-Native)
-        VA->>VA: VLM Inference (moondream)
-        VA->>B: vision.description (nc.publish)
-    and Audio Perception (Mesh)
-        U->>T: WebRTC Audio
-        T->>T: PCM → audio.inbound
-        par Dual-STT Fan-Out
-            T->>WF: 400ms chunks (Speculative)
-            T->>W: Full utterance (Semantic)
-        end
-    end
-
-    Note over WF, B: Stage 1 — Speculative Perception
-    WF->>B: AudioPerception (intent + emotion + audio events)
-    WF-->>V: audio.stop (speculative=true)
-    V->>V: Immediate OLA Pause
-
-    Note over W, B: Stage 2 — Semantic Resolution
-    W->>B: ChatInput (Typed Contract)
-    B->>B: Multimodal Context Merge (Audio + Vision)
-
-    Note over B, V: Stage 3 — Cognitive Action
-    B-->>V: audio.stop (confirmed) / audio.resume
-    B->>V: ChatOutput (Segments + Affect Vector)
-
-    Note over V, U: Stage 4 — Signal Rendering
-    V->>V: prosody mapping → OLA playback (Rust)
-    V->>T: 32kHz PCM → audio.stream
-    T->>U: WebRTC Audio
-    V-->>B: voice.segmentation_feedback (Telemetry)
-    Note over B,V: Closed-Loop Pulse Adjustment
-```
-
----
-
-## 🧠 Detailed Agent Registry
-
-The Sovereign Mesh consists of specialized agents, each serving a distinct role in the cognitive lifecycle.
-
-| Agent | Technology | Primary Responsibility | NATS Subjects |
+| Agent | Technology | Role | NATS Subjects |
 | :--- | :--- | :--- | :--- |
-| **Signaling** | Python / FastAPI | LiveKit token issuance for the frontend (`main.py`, `uvicorn`). Not a NATS agent -- the frontend's REST entry point into the mesh; every WebRTC session starts by calling its `/token` route. Had no compose service at all until this pass (confirmed: zero references to `main.py`/`uvicorn` in either compose file); adding one surfaced two more real gaps closed in the same pass -- `scripts/` is `.dockerignore`d wholesale and `provision_models.py` (imported at module scope) needs an explicit exception like `sovits_bootstrap.sh` already has, and `requests` (which that same module uses) was never a declared dependency anywhere, only ever riding along as some other package's transitive pull. | *(none — REST only)* |
-| **Brain Agent** | Python / Ollama | Cognitive core; manages BDI loops and decision state. | `chat.*`, `state.*`, `knowledge.*` |
-| **Voice Agent** | Rust / GPT-SoVITS | CVS-3.5 synthesis runtime; renders affect-aware 32kHz audio through a single cloned-voice engine, no fallback to a different voice. | `chat.output`, `audio.stream`, `audio.stop` |
-| **STT Agent** ⚠️ | Rust / whisper.cpp + sherpa-onnx | Real speech recognition, dual-path: whisper.cpp (`whisper-rs`) produces the final transcript; SenseVoice (`sherpa-onnx`) serves the fast path with speech-emotion + audio-event classification (falls back to a small Whisper model — words, no tone — when unprovisioned). Scripted transcript is opt-in behind `STT_BACKEND=mock`. Build-verified (both backends compile and link; 47 unit tests pass), but **no live transcription or emotion classification has been observed** — accuracy and latency are unmeasured. | `audio.inbound`, `chat.input`, `audio.perception` |
-| **Transport Agent**| Python / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
-| **Surfacing Agent**| Python / pgvector | ACT-R episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
-| **Subconscious** | Python / Neo4j | Background reflection, internal monologue generation (Tier-5). | `chat.input`, `system.tick`, `knowledge.*` |
-| **Vision Agent** ⚠️ | Ollama / moondream | Host-native visual appraisal and spatial reasoning (Tier-4). **Opt-in — a real, working `docker-compose.prod.yml` service gated behind `profiles: [vision]` (start with `docker compose --profile vision up vision_agent`), not deployed by the plain default `up`.** | `vision.frames`, `vision.control`, `vision.description` |
-| **Pulse Agent** | Python / asyncio | Mesh heartbeat emitter (`SYSTEM_TICK_INTERVAL`, default 60s via a plain `asyncio.sleep` loop, not a cron library -- `APScheduler` was a declared-but-unimported dependency, removed). | `system.tick` |
+| **Signaling** | Python / FastAPI | LiveKit token issuance; the frontend's REST entry point (`main.py`). Not a NATS agent. | *(none — REST only)* |
+| **Brain Agent** | Python / Ollama | Cognitive core; appraisal, decision, action, state. | `chat.*`, `state.*`, `knowledge.*` |
+| **Voice Agent** | Rust / GPT-SoVITS | Renders affect-aware 32kHz audio through one cloned-voice engine, no fallback to a different voice. | `chat.output`, `audio.stream`, `audio.stop` |
+| **STT Agent** | Rust / whisper.cpp + sherpa-onnx | Dual-path: whisper.cpp for the final transcript, SenseVoice for a fast speculative path with speech-emotion classification (falls back to a small Whisper model — words, no tone — when SenseVoice isn't provisioned). | `audio.inbound`, `chat.input`, `audio.perception` |
+| **Transport Agent** | Python / LiveKit | WebRTC gateway; raw PCM chunking and stream bridging. | `audio.inbound`, `audio.stream` |
+| **Surfacing Agent** | Python / pgvector | ACT-R-style episodic memory retrieval and proactive recall. | `memory.surfaced`, `chat.input` |
+| **Subconscious** | Python / Neo4j | Background reflection, internal monologue, proactive outreach. | `chat.input`, `system.tick`, `knowledge.*` |
+| **Vision Agent** ⚠️ | Ollama / moondream | Host-native visual appraisal. **Opt-in** (`profiles: [vision]`); must run natively on Windows/macOS since Docker Desktop's Linux VM has no route to the host display/camera — works containerized on Linux only. | `vision.frames`, `vision.control`, `vision.description` |
+| **Pulse Agent** | Python / asyncio | Mesh heartbeat (`SYSTEM_TICK_INTERVAL`, default 60s). | `system.tick` |
 
----
+### The cognitive turn
 
-## 🔄 The Cognitive Lifecycle
+1. **Perception** — Transport Agent publishes raw PCM to `audio.inbound`.
+2. **Speculation** — STT Agent's fast path identifies high-confidence intent and any classified emotion.
+3. **Reflex** — Voice Agent immediately soft-attenuates on a speculative interruption signal.
+4. **Appraisal** — Brain Agent computes emotional valence (OCC/Lazarus-inspired) and updates PAD + endocrine state.
+5. **Deliberation** — Decision Service scores candidate intents (Multi-Attribute Utility Theory).
+6. **Synthesis** — Voice Agent renders the response using the current affect vector, with timing markers parsed inline.
+7. **Closure** — Voice Agent reports playback telemetry back to the Brain for the next turn's pacing.
 
-Every interaction follows a strictly governed loop through the mesh:
+### Core cognitive models
 
-1. **Perception**: Transport Agent publishes raw PCM to `audio.inbound`.
-2. **Speculation**: STT Agent (SenseVoice fast path, or Whisper fallback) identifies high-confidence intent and publishes `audio.perception` with any classified emotion/audio events.
-3. **Reflex**: Voice Agent receives `audio.perception` and triggers an immediate speculative pause.
-4. **Appraisal**: Brain Agent receives final transcript, computes emotional valence via **OCC/Lazarus**, and updates **PAD** state.
-5. **Deliberation**: Decision Service selects the optimal intent using **MAUT** scoring.
-6. **Synthesis**: Voice Agent renders segments using the current **Affect Vector**, injecting timing markers.
-7. **Closure**: Voice Agent publishes `voice.segmentation_feedback` to the Brain for pulse adjustment.
+- **Affect (PAD).** A 3D coordinate (Pleasure, Arousal, Dominance). Events pull
+  the state toward target coordinates; idle periods drift it back toward
+  baseline on a logarithmic decay.
+- **Memory gating.** Semantic search score incorporates emotional bias:
+  `S = cos_sim · (1 + 0.1·valence·emotional_weight − 0.2·arousal·cortisol)` —
+  positive memories are reinforced, high-stress memories are suppressed during
+  hyper-arousal to avoid trauma-loop retrieval.
+- **ACT-R-style decay.** `A = ln(recall_count) − d·ln(hours_since_created + 1)`;
+  memories below the retention threshold are pruned from the active set (moved
+  to an archive tier, not deleted, and can be promoted back).
+- **Trust (Marsh model).** Trust is three sub-dimensions — Benevolence,
+  Competence, Integrity — each updated independently by appraisal, rather than
+  one scalar.
+- **Endocrine → sampling.** `temperature = 0.9 − 0.6·cortisol`,
+  `top_p = 0.70 + 0.25·dopamine`, `num_predict` shortened by fatigue (bounded
+  15–40 tokens for filler-scale generations).
+- **Decision utility (MAUT).** Candidate intents are scored as a weighted sum
+  of goal alignment, emotional fit, identity fit, and context relevance.
+- **Prosody.** Speaking rate, pitch, volume, and pause bias are continuous
+  functions of PAD state, fatigue, and estimated user distance, computed in
+  Rust and cross-faded sample-accurately (10ms overlap-add window) across
+  prosody-shift boundaries so there's no audible click.
 
----
+## Voice
 
-## 🧠 Core Cognitive Models (Mathematical Specification)
+- **Single-engine synthesis.** All speech renders through one self-hosted
+  GPT-SoVITS endpoint carrying the cloned voice's identity in its trained
+  weights — there is deliberately no fallback to a *different, uncloned*
+  voice; a confirmed synthesis failure plays a same-voice fallback
+  vocalization rather than switching identities.
+- **Emotion-selected reference clips.** Delivery register (calm/warm/
+  concerned/excited/neutral) is chosen per turn from the agent's own affect
+  state and passed as SoVITS's reference clip — steering delivery, not
+  identity, which stays baked into the loaded model weights.
+- **Speculative fillers.** If decision latency exceeds 250ms, an early filler
+  (hmm, um) keeps the conversation alive while the real audio renders.
+- **Voice training.** GPT-SoVITS fine-tuning on your own recordings is heavy
+  GPU work — see [`notebooks/`](notebooks/) for Colab notebooks covering
+  voice training, the behavioral eval harness, and raw LLM throughput
+  benchmarking, with a detailed README for each.
 
-### 1. Affective Dynamics (PAD + ALMA)
+## Signal bus contracts
 
-The agent's emotional state is a 3D coordinate in **PAD Space** (Pleasure, Arousal, Dominance).
-
-* **Mood Pull**: Emotional events "pull" the current state toward target coordinates.
-* **Logarithmic Decay**: During idle periods, the state drifts back to a neutral baseline following the ALMA formula: $I(t) = I_0 \cdot e^{-\lambda t}$.
-
-### 2. Neuromodulatory Memory Gating (CVS-3.5)
-
-Semantic memory search incorporating dynamic physiological bias gates memory retrieval based on emotional relevance:
-
-```math
-S_i = \text{CosineSimilarity} \cdot (1 + 0.1 \cdot \text{valence} \cdot \text{emotional-weight} - 0.2 \cdot \text{arousal} \cdot \text{cortisol})
-```
-
-* **Positive reinforcement**: $\text{valence} \cdot \text{emotional-weight}$ increases matching scores for positive memories.
-* **Stress inhibition**: arousal $\cdot$ cortisol suppresses high-stress memories during hyper-arousal, avoiding repetitive trauma loops.
-
-```math
-A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
-```
-
-### 3. Dimensional Trust Matrix (Marsh Model - CVS-3.5)
-
-The agent's trust model deconstructs the legacy trust scalar into three distinct sub-dimensions:
-
-1. **Benevolence** ($T_b$): Direct relationship warmth, modulated by Relationship Impact ($RI$).
-2. **Competence** ($T_c$): Pragmatic task capability, modulated by Goal Congruence ($G$) and Relevance ($R$).
-3. **Integrity** ($T_i$): Moral/ethical alignments, modulated by Norm Alignment ($NA$).
-
-The overall trust score returned for backward compatibility is:
-
-```math
-\text{trust} = \frac{T_b + T_c + T_i}{3.0}
-```
-
-Appraisal-driven trust evolution updates individual sub-dimensions:
-
-* $T_b \leftarrow \text{clamp}(T_b + \delta \cdot RI)$
-* $T_c \leftarrow \text{clamp}(T_c + \delta \cdot (0.6 \cdot G + 0.4 \cdot R))$
-* $T_i \leftarrow \text{clamp}(T_i + \delta \cdot NA)$
-
-### 4. Memory Activation & ACT-R Pruning (CVS-3.5)
-
-The subconscious memory agent runs background reflection sweeps after 5 minutes of user silence to apply ACT-R base activation decay:
-
-```math
-A_i = \ln(\text{recall-count}) - d \cdot \ln(\text{hours-since-created} + 1)
-```
-
-* **ACT-R Pruning**: Memories where base activation falls below the retention threshold ($A_i < -2.0$) are permanently pruned from local SQLite/PostgreSQL stores.
-* **Decay**: Surviving memories have their importance scores scaled by `0.8` on each consolidation tick.
-
-### 5. Endocrine LLM Parameter Modulation (CVS-3.5)
-
-Action execution dynamically modulates Ollama inference parameters independently:
-
-* **Cortisol (Stress)**: Controls `temperature` ($0.9 - 0.6 \cdot \text{cortisol}$).
-* **Dopamine (Reward)**: Controls exploration `top_p` ($0.70 + 0.25 \cdot \text{dopamine}$).
-* **Fatigue**: Truncates response length `num_predict` ($40 - 25 \cdot \text{fatigue}$ tokens, strictly bounded in $[15, 40]$).
-
-### 6. Decision Utility (MAUT)
-
-The Decision Service uses Multi-Attribute Utility Theory to score intent candidates:
-
-```math
-U(\text{Intent}) = w_{\text{goal}} \cdot G + w_{\text{emotion}} \cdot E + w_{\text{identity}} \cdot I + w_{\text{context}} \cdot C
-```
-
-### 7. Dynamic Continuous Prosody Mapping & OLA Crossfade (CVS-3.5 / Phase 4)
-
-Vocal parameters (speaking rate, pitch, volume, and pause bias) are continuously modulated in Rust based on emotional PAD state, fatigue $F$, user distance $d$, and signal continuity window:
-
-* **Fatigue Slowdown**: $\text{fatigue-slow} = 0.25 \cdot F$
-* **Fatigue Pitch Drop**: $\text{fatigue-pitch-drop} = 0.1 \cdot F$
-* **Distance Modifiers**:
-  * If $d < 0.6\text{m}$ (close range): $\text{dist-vol-mod} = -0.15, \quad \text{dist-pitch-mod} = -0.05$
-  * If $d > 1.5\text{m}$ (far range): $\text{dist-vol-mod} = 0.2, \quad \text{dist-pitch-mod} = 0.1$
-  * Otherwise: $\text{dist-vol-mod} = 0.0, \quad \text{dist-pitch-mod} = 0.0$
-
-#### Prosody Equations
-
-```math
-\text{SpeedFactor} = \text{clamp}(1.0 + \tanh(0.20 \cdot \text{arousal} - 0.10 \cdot \text{valence} - \text{fatigue-slow}), 0.6, 1.8)
-```
-
-```math
-\text{Pitch} = \text{clamp}(1.0 + \tanh(0.05 \cdot \text{valence} + 0.15 \cdot \text{arousal} - 0.10 \cdot \text{dominance} - \text{fatigue-pitch-drop} + \text{dist-pitch-mod}), 0.5, 2.0)
-```
-
-```math
-\text{Volume} = \text{clamp}(0.40 + 0.60 \cdot \text{dominance} + \text{dist-vol-mod}, 0.1, 1.0)
-```
-
-```math
-\text{PauseBias} = \text{clamp}(1.0 - \text{arousal}, 0.0, 1.0)
-```
-
-#### Overlap-Add (OLA) Sample-Accurate Linear Crossfade
-During prosody-shift boundaries, a linear crossfade is applied over a **10ms window** ($\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ samples, i.e., 320 samples at 32kHz), blending the previous prosody segment into the new one to eliminate switching clicks:
-
-```math
-y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad t = \frac{i}{\text{fade-len}}, \quad 0 \le i < \text{fade-len}
-```
-
-#### Spatial Reverb DSP Blend
-Acoustic environmental reflection utilizes a comb filter with a 50ms delay and 0.5 feedback gain, dynamically blended via $\text{wet-gain}$ linear interpolation based on user distance:
-
-```math
-\text{wet-gain} = \text{clamp}\left(\frac{d - 2.5}{3.5 - 2.5}, 0.0, 1.0\right)
-```
-
-```math
-y[n] = (1 - \text{wet-gain}) \cdot x[n] + \text{wet-gain} \cdot d_{\text{buffer}}[n \pmod M]
-```
-
-### 8. SOTA Comparative Benchmarking Matrix & Academic Mappings
-
-CVS-3.5 is benchmarked against 7 other state-of-the-art and legacy humanoid, expressive, or cognitive systems across 8 core dimensions:
-
-| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [1] | SOTA Humanoid: Tesla Optimus Gen 2 [2] | Compact Humanoid: Unitree G1 [3] | SOTA Expressive: Ameca Gen 3 [4] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [6] | SOTA Embodied: ACT-R/E [7] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)*⁶ |
-| **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)*⁶ |
-| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | *(not yet measured)*³ | *(mode retired)*⁶ |
-| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | *(not yet measured)*³ | *(mode retired)*⁶ |
-| **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **87.5%**⁴ | *(mode retired)*⁶ |
-| **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **0.032 (valence) / 0.041 (arousal)**⁴ | *(mode retired)*⁶ |
-| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **Dynamic** (PAD + cortisol/dopamine coupling) | *(mode retired)*⁶ |
-| **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **1,266 MB**⁵ (8-agent mesh + DB stack) | *(mode retired)*⁶ |
-| **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁵ | *(mode retired)*⁶ |
-| **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)*⁶ |
-
-> [!NOTE]
-> **Provenance of "Ours: CVS-3.5 (Physical)" values.** All figures are read from `scripts/results/*.json` and independently re-derived from the underlying raw per-sample arrays (1000 intent samples, 88 recall probes) rather than trusted at face value — see `scripts/results/benchmark_results_summary.md` for the full verification notes and caveats. **Not every figure below is a raw stopwatch measurement**: figures marked ¹² are *composed estimates* (sums of independently measured sub-components, not live end-to-end trials) and figures marked ⁴ are *independently recomputed aggregates* rather than newly measured — see the numbered notes for the exact provenance class of each metric.
-> 1. **Composed estimate**, not a live end-to-end stopwatch trial: 100ms audio-buffer assumption + 3.85ms measured NATS RTT + 0.04ms measured DSP extraction + 0.02ms measured soft-ducking transition.
-> 2. **Composed estimate** summing seven independently measured component latencies (audio ingest/DSP, working-memory read/write, ACT-R vector search, prosody generation, ducking, NATS RTT); excludes LLM token generation, so it is not a full turn latency.
-> 3. No true first-token or complexity-scaling telemetry currently exists — a prior figure attributed to LLM inference here was mislabeled (it was actually memory-retrieval latency) and has been retracted; a benchmark fallback that silently fabricated latency-scaling numbers has been fixed to fail loudly instead. See the results summary for detail.
-> 4. Independently recomputed from the raw ground-truth/prediction arrays (N=1000 for ToM MAE, N=88 recall probes for Recall@5); matches the reported aggregate exactly.
-> 5. Full 8-agent cognitive mesh + Postgres/Neo4j/Qdrant/NATS/Redis stack, measured via `human_realism_eval.py`.
-> 6. Non-physical "accelerated" simulation mode is intentionally disabled in `hard_benchmark.py` ("Accelerated simulation mode is disabled as requested by the user. Only rigorous Physical live benchmarking ... is supported") — this column cannot be populated under the current benchmarking harness.
-
-#### 📚 Reference Mapping
-
-> [!NOTE]
-> **Provenance.** [1]–[4] are **vendor product materials, not peer-reviewed
-> publications** — they were previously formatted as formal papers (e.g. a
-> "Technical Report"), overstating their standing, and are now listed as what they
-> are. [5]–[7] are **real, verified publications**; their titles were previously
-> paraphrased into non-existent variants and have been corrected against the
-> published record (links below). The *comparative performance figures* attributed
-> to these sources in the table above remain **unverified** and should be checked
-> against each paper before being relied upon.
-
-**Vendor / product materials (non-peer-reviewed):**
-
-* **[1] Figure AI** — Figure 02 humanoid platform, product materials ([figure.ai](https://figure.ai/)).
-* **[2] Tesla** — Optimus (Gen 2) humanoid, product materials ([tesla.com/optimus](https://tesla.com/optimus)).
-* **[3] Unitree Robotics** — Unitree G1 humanoid, product materials ([unitree.com/g1](https://unitree.com/g1)).
-* **[4] Engineered Arts** — Ameca / Tritium orchestration layer, product materials ([engineeredarts.co.uk/ameca](https://engineeredarts.co.uk/ameca)).
-
-**Peer-reviewed publications:**
-
-* **[5] Inoue, K., Jiang, B., Ekstedt, E., Kawahara, T., & Skantze, G. (2024)**, *"Multilingual Turn-taking Prediction Using Voice Activity Projection"*, in *Proceedings of LREC-COLING 2024*, pp. 11873–11883, Torino, Italy. ([arXiv:2403.06487](https://arxiv.org/abs/2403.06487))
-* **[6] Gutiérrez, B. J., Shu, Y., Gu, Y., Yasunaga, M., & Su, Y. (2024)**, *"HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models"*, in *Advances in Neural Information Processing Systems (NeurIPS 2024)*. ([arXiv:2405.14831](https://arxiv.org/abs/2405.14831) · [proceedings](https://papers.nips.cc/paper_files/paper/2024/hash/6ddc001d07ca4f319af96a3024f6dbd1-Abstract-Conference.html))
-* **[7] Wu, S., Oltramari, A., Francis, J., Giles, C. L., & Ritter, F. E. (2024)**, *"Cognitive LLMs: Toward Human-Like Artificial Intelligence by Integrating Cognitive Architectures and Large Language Models for Manufacturing Decision-making"*, *Neurosymbolic Artificial Intelligence* (IOS Press). ([arXiv:2408.09176](https://arxiv.org/abs/2408.09176))
-
----
-
-## 📡 Signal Bus Communication Contracts
-
-Communication is strictly governed by a **Typed Contract Mesh** (Pydantic). Every subject has a specific schema defined in `backend/app/contracts.py`.
-
-### Example: `chat.output` Schema
-
-Fields as actually defined on `ChatOutput`/`ChatOutputAffect` in `backend/app/contracts.py` -- no `timing` block or `utterance_id` field exists on this contract (that shape belonged to an earlier draft; `turn_id` is the real correlation field, and pacing markers like `<pause=Nms>` travel inline in `content` instead, parsed by the voice agent's own `split_temporal_parts`):
-
-```json
-{
-  "content": "Hey, I remember that!",
-  "done": false,
-  "turn_id": "uuid-v4",
-  "affect": {
-    "valence": 0.8,
-    "arousal": 0.6,
-    "dominance": 0.5,
-    "trust": 0.5,
-    "attachment": 0.1,
-    "emotion": "happy",
-    "fatigue": 0.0,
-    "user_distance": 1.0
-  },
-  "timestamp": 1713330000.0
-}
-```
+Every subject has a Pydantic schema in `backend/app/contracts.py`.
 
 | Subject | Payload Model | Purpose |
 | :--- | :--- | :--- |
@@ -471,344 +272,156 @@ Fields as actually defined on `ChatOutput`/`ChatOutputAffect` in `backend/app/co
 | `chat.output` | `ChatOutput` | Cognitive responses with affect metadata. |
 | `audio.perception` | `AudioPerception` | Real-time emotional bias and speculative intent. |
 | `audio.stop` | `AudioStop` | Speculative or final interruption commands. |
-| `state.update` | `StateUpdate` | Broadcast of PAD/Relational coordinate shifts. |
+| `state.update` | `StateUpdate` | Broadcast of PAD/relational coordinate shifts. |
 | `memory.surfaced` | `MemorySurfaced` | Proactive episodic or semantic recall triggers. |
-| `system.tick` | *(untyped dict)* | The mesh-wide heartbeat (`SYSTEM_TICK_INTERVAL`, default 60s) -- carries no dedicated Pydantic model. |
-| `user.voice.properties` | `UserVoiceProperties` | Real-time user pitch, energy, and speech rate telemetry. |
-| `agent.voice.modulation` | `AgentVoiceModulation` | Continuous frame-wise time-series trajectory of `ProsodyFrame`s (ordered ascending by `time_offset_ms` [integer, ms >= 0] at exactly 50ms intervals, containing `rate` [float], `pitch` [float], and `volume` [float]) representing fine-grained vocal dynamics driven by the emotional appraisal loop. |
-| `audio.playback.visemes` | `PlaybackVisemes` | Sample-accurate mouth shape triggers for synchronized rendering. |
-| `audio.playback.progress` | `AudioPlaybackProgress` | Character/word offset into the response actually reached the speaker, used to truncate an interrupted reply at a real boundary instead of guessing. |
-| `ambient.noise.telemetry` | `AmbientNoiseTelemetry` | Endpointer noise-floor readings for barge-in/VAD tuning. |
+| `system.tick` | *(untyped dict)* | Mesh-wide heartbeat, no dedicated model. |
+| `user.voice.properties` | `UserVoiceProperties` | Real-time user pitch, energy, and speech-rate telemetry. |
+| `agent.voice.modulation` | `AgentVoiceModulation` | Frame-wise prosody trajectory (50ms intervals). |
+| `audio.playback.visemes` | `PlaybackVisemes` | Sample-accurate mouth-shape triggers. |
+| `audio.playback.progress` | `AudioPlaybackProgress` | Real word/character offset reached, for truncating an interrupted reply at an actual boundary. |
+| `ambient.noise.telemetry` | `AmbientNoiseTelemetry` | Endpointer noise-floor readings for barge-in tuning. |
 
----
-
-## 🛡️ Infrastructure & Hardening
-
-### 1. Solid State Signal Hardening
-
-In version **CVS-3.5**, the mesh implements "Solid State" principles to ensure portability and security:
-
-* **Zero-Drift Persistence**: On-demand relational seeding via Prisma 7.7.0 ensures the "Identity Genome" is identical across container restarts.
-* **Health Surveillance**: Automated probes (`nc -z nats_mesh 4222`) trigger self-healing for disconnected agents.
-* **State Read-Safety**: Live emotional state is never hydrated from stale Neo4j TTL cache. After state persistence, graph cache is invalidated to prevent "memory rewinding."
-
-### 2. Voice Subsystem Runtime
-
-The **Voice Agent** handles the high-fidelity rendering of cognitive intent:
-
-* **Single-Engine Synthesis (GPT-SoVITS)**: All speech renders through one self-hosted GPT-SoVITS endpoint carrying the cloned voice's identity in its trained weights. A local ONNX fallback engine existed through 2026-07 and was removed: it fell back to a *different, uncloned* voice on outage, which is strictly worse than silence under a no-fallback requirement — see the ledger.
-* **Emotion-Selected Reference Clips**: Delivery register (calm/warm/concerned/excited/neutral) is chosen per turn from the agent's own affect state and sent as GPT-SoVITS's per-request reference clip — steering *how* a line is delivered, not re-cloning identity, which stays permanently baked into the server's loaded weights.
-* **Same-Engine Resilience**: A circuit breaker plus bounded retry wrap the SoVITS call; a background readiness probe proves the engine can render real audio (not just answer HTTP) independently of live traffic. A confirmed failure plays a same-voice fallback vocalization instead of dropping the turn — never a different voice, never silence.
-* **Quality-Prioritized Look-Ahead**: Segments speech into 7-word chunks to preserve prosodic context and emotional inflection quality.
-* **Speculative Pause Fillers**: Injects early speculative fillers (hmm, um, accha) if decision generation latency exceeds 250ms, keeping the conversation alive while high-fidelity audio chunks are prepared in the background.
-* **OLA Signal Continuity**: Uses Overlap-Add (OLA) algorithms to ensure zero-click transitions between streaming PCM chunks.
-
----
-
-## 📂 Clean Directory Tree (Scalable Layout)
+## Directory layout
 
 ```text
 AI_friend/
-├── backend/                         # Unified backend workspace (Python + Rust)
-│   ├── app/                         # Python runtime (agents, cognition, state, vision)
-│   ├── crates/                      # Rust runtime crates
-│   │   ├── contracts/               # Shared signal contracts
-│   │   ├── cognitive-rust/          # Rust cognitive engine components
-│   │   ├── stt-agent/               # Rust STT agent
-│   │   └── voice-agent/             # Rust voice agent
-│   ├── tests/                       # Python tests and benchmarks
-│   ├── scripts/                     # Bootstrap, diagnostics, db/audio/testing utilities
-│   ├── tools/                       # Tool registry and support modules
-│   └── db/                          # Backend-local database artifacts
-├── frontend/                        # Next.js WebRTC/UI application
-│   ├── app/                         # App Router pages
-│   ├── components/                  # Shared UI components
-│   ├── hooks/                       # Reusable client hooks
-│   └── prisma/                      # Frontend-side Prisma schema/client config
-├── docs/                            # Architecture and operational documentation
-├── scripts/                         # Root-level host/integration/research utilities
-├── _archive/                        # Legacy/archived implementations (read-only reference)
-├── .agents/                         # Local skill and agent metadata
-├── notebooks/                       # Experimental notebooks
-├── docker-compose.infra.yml         # Shared infra services
-├── docker-compose.prod.yml          # Production composition
-├── docker-compose.light.yml         # Platform-agnostic Light profile (Windows/Linux/macOS)
-└── docker-compose.heavy.yml         # Platform-agnostic Heavy profile (Windows/Linux/macOS)
+├── backend/                # Python + Rust workspace
+│   ├── app/                 # agents, cognition, state, persona, vision
+│   ├── crates/               # contracts, cognitive-rust, stt-agent, voice-agent
+│   ├── tests/                 # pytest suite
+│   ├── evals/                  # behavioral eval harness (LLM boundary probes)
+│   ├── scripts/                 # create_friend, talk, export/import, bootstrap
+│   ├── tools/                    # measure/ (live-infra harness), quality/ (lint baselines)
+│   └── db/                        # schema.sql (source of truth), migrations
+├── frontend/                # Next.js web app (chat, onboarding, memory browser)
+├── website/                  # Design-system donor + future public landing page
+├── docs/                       # Architecture deep-dive, operational guides
+├── notebooks/                    # Colab: voice training, eval harness, LLM benchmarking
+├── config/                         # Neutral example persona.toml / biography.md
+├── personal/                        # Your real persona (gitignored, never tracked)
+├── .agents/CONTEXT.md                # The engineering ledger — ground truth
+├── start.sh                           # One-command start (Phase 1.6)
+├── docker-compose.infra.yml            # Postgres, Neo4j, Redis, NATS, LiveKit, Qdrant, Ollama (opt-in)
+├── docker-compose.prod.yml              # Agent mesh + frontend
+├── docker-compose.light.yml              # Cognitive-only overlay
+└── docker-compose.heavy.yml               # Cognitive + local STT overlay, no voice cloning
 ```
 
----
-
-## ⚡ Performance Perceived SLOs
-
-| Pipeline Stage | Metric | Strategy | Target (p99 / Budget) | Actual (Empirical Mean / Min) | Status |
-| :--- | :--- | :--- | :---: | :---: | :---: |
-| **Mesh Telemetry** | Speed | orjson / NATS Binary | <0.5 µs | *(not yet measured)* | **Pending** |
-| **Data Throughput**| Scale | PyO3 FFI Audio | 80,000 OPS | *(not yet measured)* | **Pending** |
-| **STT Perception** | Latency | Fast Whisper CPU Fan-out | <50ms | *(not yet measured — no real STT backend exists yet; see §STT status)* | **Pending** |
-| **Cognitive Turn** | Turnaround | BDI Mesh + State Hydration | <120ms | **5.44 ms** | ✅ **Met** |
-| **First Audio** | Response | Streaming PCM Chunking | <180ms | *(not yet measured)* | **Pending** |
-| **Total Perceived** | **End-to-End**| **CVS-3.5 Premium Mesh** | **<250ms** | *(not yet measured — no live stopwatch E2E trial exists)* | **Pending** |
-
-*"Cognitive Turn" sums seven independently measured component latencies (audio ingest/DSP, working-memory read/write, ACT-R vector search, prosody generation, ducking, NATS RTT) from `scripts/results/human_realism_results.json`; it excludes LLM token generation. All other "Actual" values remain unmeasured until a live end-to-end harness exists — see `scripts/results/benchmark_results_summary.md` for what is and isn't verified today.*
-
----
-
-## 🛠️ Hardware Tier Matrix
-
-| Tier | Purpose | CPU | GPU | RAM |
-| :--- | :--- | :--- | :--- | :--- |
-| **Mini** | Evaluation | 4-Core | None (CPU Whisper) | 8GB |
-| **Standard** | Real-time | 8-Core | RTX 3060 (12GB) | 16GB |
-| **High-End** | Research | 16-Core | RTX 4090 / M2 Ultra | 64GB |
-
----
-
-## 📦 Release Package Selection Guide
-
-Every release of **AI Friend** provides high-quality, pre-packaged standalone archives for major operating systems (Windows, macOS, and Linux) so you can get started instantly without administrative installation headaches.
-
-### 📦 Available Release Packages
-
-| Platform | Format | Filename | Description |
-| :--- | :--- | :--- | :--- |
-| 🪟 **Windows** | Portable ZIP | `ai-friend-windows.zip` | Extract and run on any modern 64-bit Windows PC. |
-| 🍏 **macOS** | Portable ZIP | `ai-friend-macos.zip` | Highly optimized standalone archive for Intel and Apple Silicon Macs. |
-| 🐧 **Linux** | Standard Tarball | `ai-friend-linux.tar.gz` | Gzipped archive containing all source files and backend components. |
-
-### 🔑 Checksums & Verification Manifest
-
-Each package is built automatically in a secure containerized environment and includes:
-
-* **`.sha256` File**: Contains the SHA256 checksum for cryptographic verification (e.g. `ai-friend-windows.zip.sha256`).
-* **`ai-friend-release-manifest.json`**: A structured JSON manifest mapping the filenames, precise byte sizes, and SHA256 hashes of all release packages for automated deployment tools.
-
----
-
-## ⚙️ Quick Start
-
-Follow this standardized, cross-platform sequence to initialize the Sovereign Mesh:
-
-### **Step 1: Bootstrap Shared Network & Infrastructure**
-
-1. Recreate the external shared network required by the mesh:
-
-   ```bash
-   docker network create ai_mesh_network
-   ```
-
-2. Launch the infrastructure containers (PostgreSQL, Neo4j, Redis, NATS, and LiveKit):
-
-   ```bash
-   docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d postgres neo4j redis nats livekit
-   ```
-
-> [!IMPORTANT]
-> **Ollama is host-native by default, not containerized.** Notice `ollama` is
-> not in the command above -- that is deliberate, not an omission. Install
-> and run Ollama directly on your machine (`ollama serve`); the agent
-> containers reach it at `http://host.docker.internal:11434`. A containerized
-> Ollama exists (`docker-compose.infra.yml`'s `ollama` service) but is
-> opt-in behind the `docker-ollama` profile
-> (`docker compose --profile docker-ollama up -d ollama`) -- it is not part
-> of the default `up`. Confirmed live: pointing `OLLAMA_URL` at the
-> containerized service's hostname when that profile was never started left
-> `brain_agent` unable to resolve it at all, exhausting every bootstrap
-> retry and crash-looping under `restart: always`.
-
-### **Step 2: Hydrate the Database Schema**
-
-To prevent database port contentions and host network routing bugs, the containerized PostgreSQL database is mapped to the isolated external port **`5433`** on your host.
-
-#### **On macOS / Linux (Bash/Zsh)**
-
-```bash
-# 1. Set the direct database connection path using your custom password
-export DIRECT_URL="postgresql://ai_friend:YOUR_DB_PASSWORD@127.0.0.1:5433/ai_friend_db"
-
-# 2. Navigate to the frontend, generate the Prisma Client, and sync the schema
-cd frontend
-npx prisma generate
-npx prisma db push
-cd ..
-```
-
-#### **On Windows (PowerShell)**
-
-```powershell
-# 1. Set the direct database connection path using your custom password
-$env:DIRECT_URL="postgresql://ai_friend:YOUR_DB_PASSWORD@127.0.0.1:5433/ai_friend_db"
-
-# 2. Navigate to the frontend, generate the Prisma Client, and sync the schema
-cd frontend
-npx prisma generate
-npx prisma db push
-cd ..
-```
-
-### **Step 3: Private Seeding & Agent Launch**
-
-The Sovereign Mesh is designed with **Privacy by Default**. The baseline agent identity genome and conversation history are kept secure and local using two private, Git-ignored files in the backend:
-
-* `backend/app/personality.json`
-* `backend/app/history.json`
-
-You do not need to run manual SQL inserts or standalone scripts. On startup, the backend cognitive agents **automatically hydrate and seed the relational PostgreSQL database** using your private local configurations!
-
-Select your launching profile based on your operating system and hardware resources:
-
-#### **A. Standard Production Launch (Linux / Windows Host)**
-
-This command boots up the default 13-container real-time voice, STT, and voice cloning mesh (5 infra services + 8 agents; `ollama` and `vision_agent` are each their own opt-in `profiles:` entry, not part of this count -- see the callout above and the Vision Agent row in the [Detailed Agent Registry](#-detailed-agent-registry)):
-
-```bash
-docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml up -d --build
-```
-
-#### **B. Platform-Agnostic Light & Heavy Launch (Windows / Linux / macOS)**
-
-For Apple Silicon MacBooks (M1/M2/M3/M4) or Windows/Linux systems that want to bypass heavy real-time CUDA-based voice cloning (saving RAM/CPU/GPU overhead), you can choose between **Light** (Cognitive-Only) and **Heavy** (Local Cognitive + STT) modes:
-
-* **⚡ Universal Light Mode** (Cognitive-Only):
-  Focuses strictly on cognitive processing, memory graphs, and text agents. Excludes heavy real-time WebRTC media streams, Whisper STT, and voice synthesis:
-
-  ```bash
-  docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.light.yml up -d --build
-  ```
-
-* **⚡ Universal Heavy Mode** (Cognitive + Whisper STT):
-  Enables the advanced cognitive mesh and local real-time audio Whisper STT, optimized for CPU/host-Ollama performance:
-
-  ```bash
-  docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml -f docker-compose.heavy.yml up -d --build
-  ```
-
-##### **Solving macOS compilation bottlenecks via layered builds**
-
-If Apple Silicon arm64 PyTorch or C++ dependencies cause compilation timeouts during standard compose builds, compile the secure, cached build layers sequentially using the dedicated Mac Dockerfiles:
-
-```bash
-# 1. Compile and cache base arm64 dependencies
-docker build -t ai-friend/base:v1 -f backend/Dockerfile.base ./backend
-
-# 2. Compile and cache advanced AI, Torch, and STT libraries on top of the base image
-docker build -t ai-friend/full:v1 --build-arg BASE_IMAGE=ai-friend/base:v1 -f backend/Dockerfile.full ./backend
-```
-
-### **Step 4: Health Audit**
-
-Confirm all active containers are running and communicating:
-
-```bash
-docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml ps
-```
-
----
-
-## 🛠️ Operating System & WSL2 Troubleshooting Guide
-
-Review these common OS-specific configurations if you run into boot bottlenecks:
-
-### **1. Port Conflicts (e.g. Port 5432/5433 already in use)**
-
-If you have a native database installation running on your host machine (outside of Docker), it will block container port bindings.
-
-* **On macOS/Linux**: Stop the native Postgres service via systemctl or brew:
-
-  ```bash
-  brew services stop postgresql
-  # OR
-  sudo systemctl stop postgresql
-  ```
-
-* **On Windows**: Forcefully stop all native Postgres database services and active background processes:
-
-  ```powershell
-  Stop-Service -Name "postgresql*" -Force -ErrorAction SilentlyContinue
-  Get-Process -Name "postgres" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  ```
-
-* Restart the container to capture the port bind:
-
-  ```bash
-  docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml restart postgres
-  ```
-
-### **2. Dynamic WSL2 Disk Bloat (Windows Host)**
-
-WSL2 virtual disk files (`ext4.vhdx`) grow dynamically but **never shrink automatically** even after you prune Docker caches and volumes.
-
-* **Empty the Recycle Bin**: Deleted WSL virtual folder contents are temporarily held in the host Recycle Bin, retaining their size on disk.
-* **WSL shutdown**: Clear WSL memory locks to force Windows to reclaim released space:
-
-  ```powershell
-  wsl --shutdown
-  ```
-
----
-
-## 🛠️ Environmental Configuration Reference
-
-Grouped by domain. Refer to `backend/app/config.py` for all 50+ tunable parameters.
-
-### 🛡️ Infrastructure
+## Hardware
+
+There is no packaged install yet (that's a stated future goal, not a current
+claim) — you run it from source via Docker Compose.
+
+- **Minimum**: a machine that can run Docker Compose and a ~3B-parameter
+  Ollama model on CPU — this project's own development has run on a 16GB
+  unified-memory MacBook. Voice cloning (GPT-SoVITS) and Whisper STT are
+  noticeably slower without a GPU but not blocked by its absence — `light`
+  mode skips them entirely.
+- **A GPU** (local or rented) speeds up real-time voice cloning and STT, and
+  is effectively required for GPT-SoVITS *fine-tuning* on your own voice
+  recordings — see the Colab notebooks for that path rather than doing it on
+  a laptop.
+- **A larger local model** than the current 3B-class default is a real
+  quality lever this project hasn't been able to test against yet; the
+  ceiling is a hardware constraint of current development, not a design
+  limit — an optional cloud LLM fallback exists for exactly this gap
+  (`LLM_PROVIDER=anthropic`, opt-in, sends conversation to a third party by
+  design — see `.env.example`).
+
+## What's proven, what's a target
+
+This project tries hard not to overstate itself. `.agents/CONTEXT.md` is the
+full, dated record of what was built, what was actually measured against real
+infrastructure, and what's still an open target — read it before trusting a
+specific number anywhere else in this repo, including in `docs/`. A few
+standing rules that keep it honest:
+
+- Placeholder/unmeasured figures are marked `[TBP]` or "not yet measured,"
+  never presented as a result.
+- The behavioral eval harness (`backend/evals/`) scores deterministically —
+  never an LLM judge — and every report is checked for `provenance=live`
+  before being trusted, because a silently-mocked run produces a passing
+  score that means nothing.
+- `backend/tools/measure/` is the live-infrastructure measurement harness
+  behind any latency/memory/throughput number in the ledger. Its own `evals`/
+  `measure` smoke checks run in CI (`integration-harness.yml`) so the
+  harnesses themselves don't quietly rot even between measurement runs.
+
+## Configuration reference
+
+Grouped by domain — see `backend/app/config.py` for the full set.
+
+### Infrastructure
 
 | Parameter | Default | Purpose |
 | :--- | :--- | :--- |
-| `NATS_URL` | `nats://127.0.0.1:4222` | Central signal bus endpoint. |
+| `NATS_URL` | `nats://127.0.0.1:4222` | Signal bus endpoint. |
 | `NEO4J_URI` | `bolt://127.0.0.1:7687` | Knowledge graph endpoint. |
 | `DATABASE_URL` | `postgresql://...` | Identity and memory state store. |
 
-### 🧠 Cognition & Affect
+### Cognition & affect
 
 | Parameter | Default | Purpose |
 | :--- | :--- | :--- |
-| `SYSTEM_TICK_INTERVAL` | `60s` | Frequency of mesh-wide identity maturation. |
-| `PSYCH_ALPHA` | `0.3` | **Valence Drift**: Rate of mood change toward target. |
-| `ACTR_DECAY_RATE` | `0.5` | **Forgetting Rate** ($d$) for episodic memory. |
-| `INTENT_THRESHOLD` | `0.75` | Required confidence for speculative interruption. |
+| `SYSTEM_TICK_INTERVAL` | `60s` | Mesh heartbeat frequency. |
+| `PSYCH_ALPHA` | `0.3` | Valence drift rate toward target. |
+| `ACTR_DECAY_RATE` | `0.5` | Forgetting rate for episodic memory. |
+| `INTENT_THRESHOLD` | `0.75` | Confidence required for speculative interruption. |
 
----
+## Troubleshooting
 
-## 🛠️ Troubleshooting & Debugging
+**Port conflicts (5432/5433 already in use).** A native Postgres install on
+your host will block the container's port binding:
 
-### Symptom: Mesh Communication Silence
+```bash
+brew services stop postgresql        # macOS
+sudo systemctl stop postgresql       # Linux
+```
 
-* **Check**: Verify NATS stream state.
+**Mesh communication silence.**
 
-* **Action**: `docker exec -it nats_mesh nats stream info AI_MESSAGES`
+```bash
+docker exec -it nats_mesh nats stream info AI_MESSAGES
+```
 
-### Symptom: Stale Emotional State
+**Stale emotional state.** Verify Neo4j TTL cache invalidation:
 
-* **Check**: Verify Neo4j TTL cache invalidation.
+```bash
+cd backend && ../.venv/bin/python -m pytest tests/test_regressions.py::test_state_hydration_avoids_stale_cache
+```
 
-* **Action**: Run `pytest backend/tests/test_regressions.py::test_state_hydration_avoids_stale_cache`.
+**WSL2 disk bloat (Windows).** The virtual disk (`ext4.vhdx`) never shrinks
+automatically — empty the Recycle Bin (WSL deletions land there first) and
+run `wsl --shutdown` to let Windows reclaim the space.
 
----
+## Research instrumentation
 
-## 🧪 Research Instrumentation
+For controlled experiments, `scripts/research/` has real-time signal mesh
+latency profiling (`monitor.py`), a high-frequency PAD trajectory logger
+(`collector.py`), standardized pulse injection to eliminate human timing noise
+(`injector.py`), and publication-style plotting (`visualizer.py`).
 
-For controlled experiments, use the dedicated research toolkit located in `scripts/research/`.
+## Glossary
 
-* **`monitor.py`**: Real-time signal mesh latency profiling.
-* **`collector.py`**: High-frequency PAD state trajectory logger.
-* **`injector.py`**: Automated standardized pulse injection to eliminate human timing noise.
-* **`visualizer.py`**: Generates publication-ready Matplotlib plots of emotional evolution.
+- **BDI** — Belief-Desire-Intention cognitive framework.
+- **PAD** — Pleasure, Arousal, Dominance emotional model.
+- **MAUT** — Multi-Attribute Utility Theory.
+- **OLA** — Overlap-Add signal processing.
+- **ACT-R** — Adaptive Control of Thought—Rational.
 
----
+## Contributing
 
-## 📚 Glossary
+See [`CONTRIBUTING.md`](CONTRIBUTING.md), [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md),
+and [`SECURITY.md`](SECURITY.md). `CLAUDE.md` is the guide for working in this
+codebase specifically — conventions, verification bar, and the CI gotchas that
+aren't obvious from the workflow files alone.
 
-* **BDI**: Belief-Desire-Intention cognitive framework.
-* **CVS**: Cognitive Voice System.
-* **MAUT**: Multi-Attribute Utility Theory.
-* **PAD**: Pleasure, Arousal, Dominance emotional model.
-* **OLA**: Overlap-Add signal processing.
-* **ACT-R**: Adaptive Control of Thought—Rational.
+Questions, bug reports, and feature ideas go through [`SUPPORT.md`](SUPPORT.md).
+[`GOVERNANCE.md`](GOVERNANCE.md) and [`MAINTAINERS.md`](MAINTAINERS.md) cover
+who decides what, honestly scoped to a single-maintainer project today. If
+you use this in research or a project of your own,
+[`CITATION.cff`](CITATION.cff) has the citation metadata.
 
----
+## License
 
-## 📜 License
-
-Distributed under the **MIT License**. See `LICENSE` for details.
-
-**Designed for Perception. Built for Identity.**
+Distributed under the MIT License. See [`LICENSE`](LICENSE).

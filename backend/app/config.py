@@ -38,7 +38,7 @@ class AppSettings(BaseSettings):
     # This exists for the bare `python main.py` / no-Docker path, where an
     # operator who wants to restrict exposure (e.g. behind their own reverse
     # proxy) now has a lever instead of needing a code change.
-    BACKEND_BIND_HOST: str = "0.0.0.0"
+    BACKEND_BIND_HOST: str = "0.0.0.0"  # nosec B104 - see the C4 comment above
     # H3: caps how many session tokens one client IP can mint per window.
     # BACKEND_ACCESS_KEY already gates *who* can call /token; this bounds how
     # often, since a valid key doesn't imply unlimited LiveKit room creation.
@@ -110,6 +110,14 @@ class AppSettings(BaseSettings):
 
     AI_NAME: str = "AI Friend"
     OLLAMA_URL: str = "http://127.0.0.1:11434"
+
+    # Roadmap Phase 4.2: bring-your-own cloud API key for hardware that can't
+    # host a local model. "ollama" (the default) is every construction site's
+    # existing behaviour, unchanged. Sends conversation to a third party --
+    # the opposite of this project's default local-first posture -- so it is
+    # never the default and the user must set it explicitly.
+    LLM_PROVIDER: str = "ollama"
+    ANTHROPIC_API_KEY: str | None = None
 
     LLM_FAST_MODEL: str = "llama3.2:3b"
     LLM_CHAT_MODEL: str | None = None
@@ -210,7 +218,7 @@ class AppSettings(BaseSettings):
     # be -- the ERROR log and the production fail-closed are, and both work
     # regardless of topology. Point this at a shared volume to get the
     # /health flag in a multi-container deployment.
-    SQLITE_FALLBACK_HEALTH_FILE: str = "/tmp/sqlite_fallback_active"
+    SQLITE_FALLBACK_HEALTH_FILE: str = "/tmp/sqlite_fallback_active"  # nosec B108 - shared-volume health signal, not a secret path
 
     SOVITS_URL: str = "http://127.0.0.1:9871"
     STT_LANGUAGE: str = "en"
@@ -232,7 +240,7 @@ class AppSettings(BaseSettings):
     )
     # Touched on every successful frame capture so a container healthcheck can
     # probe the real path rather than mere process liveness (see finding E1).
-    VISION_HEALTH_FILE: str = "/tmp/vision_agent_healthy"
+    VISION_HEALTH_FILE: str = "/tmp/vision_agent_healthy"  # nosec B108 - same as SQLITE_FALLBACK_HEALTH_FILE above
 
     # P1-7: measured (this repo's audit/) that two resident 3B models roughly
     # halve each other's decode rate on one GPU/one Ollama endpoint -- the

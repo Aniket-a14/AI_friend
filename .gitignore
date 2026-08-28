@@ -59,6 +59,8 @@ secrets/
 *.ogg
 *.flac
 *.webm
+# Bundled default reference clip (Phase 1.1) -- not personal data, ships in the repo.
+!backend/assets/voice/*.wav
 
 # Models (Large Files & Personal Data)
 models/

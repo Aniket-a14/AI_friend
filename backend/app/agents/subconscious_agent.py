@@ -8,8 +8,9 @@ from app.agents.base import BaseAgent, install_shutdown_signal_handlers
 from app.cognitive.subconscious import SubconsciousEngine
 from app.config import Config
 from app.contracts import ChatInput, ChatInputMetadata, Topics
-from app.llm.ollama_client import OllamaClient
+from app.llm import build_llm_client
 from app.measure_trace import trace as _measure_trace
+from app.state import proactive_queue
 from app.state.agent_state import StateService
 from app.state.graph_db import GraphDB
 
@@ -25,13 +26,13 @@ class SubconsciousAgent(BaseAgent):
     def __init__(
         self,
         ollama_url: str = Config.OLLAMA_URL,
-        graph_db: GraphDB = None,
-        state_service: StateService = None,
+        graph_db: "GraphDB | None" = None,
+        state_service: "StateService | None" = None,
         memory_store=None,
         reflection_service=None,
     ):
         super().__init__(name="subconscious_agent")
-        self._llm = OllamaClient(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
+        self._llm = build_llm_client(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
         self.graph_db = graph_db or GraphDB()
         self.state_service = state_service or StateService(graph_store=self.graph_db)
         self.engine = SubconsciousEngine(llm_client=self._llm)
@@ -45,12 +46,16 @@ class SubconsciousAgent(BaseAgent):
         # only weakly referenced by the event loop and eligible for GC
         # mid-flight (closes M1-A13 here); also lets a test or caller await
         # completion explicitly instead of racing the background task.
-        self._consolidation_task = None
+        self._consolidation_task: asyncio.Task | None = None
         self._current_monologue_task = None
         self._current_dream_task = None
         self._last_monologue_time = 0.0
         self._monologue_task = None
         self._last_benchmark_time = 0.0
+        # Phase 3.1: pessimistic until transport_agent's first session.presence
+        # signal arrives -- a freshly started process should not assume a
+        # proactive thought has anyone to reach before it actually knows.
+        self._someone_connected = False
 
     @property
     def llm(self):
@@ -117,6 +122,16 @@ class SubconsciousAgent(BaseAgent):
             durable=f"{self.name}_state_broadcast",
             deliver_policy="new",
         )
+        # Phase 3.1: liveness signal like state.broadcast above, not a work
+        # item -- a freshly (re)started process replaying every past
+        # presence transition would derive the wrong "is anyone here right
+        # now" answer from history that says nothing about the present.
+        await self.subscribe(
+            Topics.SESSION_PRESENCE,
+            self._on_session_presence,
+            durable=f"{self.name}_session_presence",
+            deliver_policy="new",
+        )
         await self.subscribe(
             Topics.AUDIO_PERCEPTION,
             self._on_audio_perception,
@@ -137,6 +152,36 @@ class SubconsciousAgent(BaseAgent):
         )
         self._monologue_task = asyncio.create_task(self._continuous_monologue_loop())
         logger.info(f"🧠 {self.name} Online | Subconscious Mesh Interface Active.")
+
+    async def _deliver_thought(self, thought: str) -> None:
+        """Publish one proactive thought as a real `chat.input` turn -- the
+        same path a live thought or a replayed, queued one both go through,
+        so there is exactly one implementation of "how a thought becomes an
+        utterance" to keep correct."""
+        msg = ChatInput(
+            text=thought,
+            utterance_id=str(uuid.uuid4()),
+            metadata=ChatInputMetadata(source="subconscious", confidence=1.0),
+        )
+        await self.publish(Topics.CHAT_INPUT, msg.model_dump())
+
+    async def _on_session_presence(self, data: dict[str, Any]) -> None:
+        """Phase 3.1: transport_agent is the only component that knows
+        whether anyone is actually connected. On the 0 -> 1 edge, replay
+        whatever proactive thoughts queued up while nobody was listening --
+        "a friend who thought of you at 2pm can say so at 6pm"."""
+        connected = bool(data.get("connected", False))
+        was_connected = self._someone_connected
+        self._someone_connected = connected
+
+        if connected and not was_connected:
+            pending = proactive_queue.pop_all(self.state_service.db_path)
+            for thought in pending:
+                logger.info(
+                    "[Subconscious] Delivering queued thought on reconnect: '%s'",
+                    thought,
+                )
+                await self._deliver_thought(thought)
 
     async def _on_state_broadcast(self, data: dict[str, Any]):
         """Syncs state changes from NATS state.broadcast into Neo4j, and
@@ -291,15 +336,27 @@ class SubconsciousAgent(BaseAgent):
         thought = await self.engine.evaluate_and_think(state_snap, eligible)
 
         if thought:
-            logger.info(f"[Subconscious] Thought generated: '{thought}'")
+            # Phase 3.1: a proactive thought generated while nobody is
+            # connected has nowhere to go -- publishing it anyway triggers a
+            # full cognitive turn, TTS and audio synthesis transport_agent
+            # can only discard, and the thought itself is then just gone.
+            # Queuing instead costs nothing until reconnect, at which point
+            # _on_session_presence replays it through this exact same path.
+            if self._someone_connected:
+                logger.info(f"[Subconscious] Thought generated: '{thought}'")
+                await self._deliver_thought(thought)
+            else:
+                logger.info(
+                    "[Subconscious] Thought generated while nobody is "
+                    "connected; queuing for reconnect: '%s'",
+                    thought,
+                )
+                proactive_queue.enqueue(self.state_service.db_path, thought)
 
-            msg = ChatInput(
-                text=thought,
-                utterance_id=str(uuid.uuid4()),
-                metadata=ChatInputMetadata(source="subconscious", confidence=1.0),
-            )
-
-            await self.publish(Topics.CHAT_INPUT, msg.model_dump())
+            # Marked either way: a queued thought still consumed this tick's
+            # eligibility window, and not marking it would let every tick
+            # while still disconnected generate (and queue) another thought,
+            # stacking up duplicates until someone reconnects.
             self.state_service.mark_proactive_attempt()
 
         # Subconscious Memory Consolidation (ACT-R & Fact Triplet Crystallization)

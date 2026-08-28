@@ -10879,3 +10879,1867 @@ subject wired or allowlisted. `cargo check --workspace` clean.
 LiveKit key question, the eval gate, and everything past Phase 0 in the
 roadmap are unstarted. `personal/persona.toml`/`biography.md` are local-only
 and were not (and should not be) committed.
+
+## 2026-08-27 -- Community roadmap Phase 1: a fresh clone boots and speaks
+
+Unblocked the exact failure the roadmap named: `REF_AUDIO_PATH` defaults to
+`output/sample_en_gold.wav`, `backend/voice_samples/` ships empty, and
+`.gitignore`'s `**/voice_samples/` + `*.wav` meant it could never arrive via
+git -- so `local_voice`'s healthcheck 400'd forever, `voice_agent` (gated on
+`service_healthy`) never started, and the only visible symptom was silence.
+
+**1.1 -- Shipped a bundled default voice.** `backend/assets/voice/
+default_voice.wav`: synthesized locally with macOS `say` (`Alex` voice, 150
+wpm), not a third-party recording -- see `LICENSE.md` for provenance and the
+exact regeneration command. A CC0/LibriVox clip was the original plan, but
+verifying real third-party licensing metadata programmatically in this
+environment wasn't reliable, and a locally-synthesized placeholder sidesteps
+the question entirely. Added a targeted `!backend/assets/voice/*.wav`
+gitignore negation (a negation inside an excluded parent directory silently
+does nothing, so this had to live outside `voice_samples/`).
+`ensure_default_voice_sample.py` copies it to
+`backend/voice_samples/sample_en_gold.wav` on first run and never overwrites
+an existing file -- a user's own recording must survive every restart.
+
+**1.2 -- The healthcheck degrades instead of hanging.**
+`sovits_healthcheck.sh` and `sovits_bootstrap.sh`'s warmup step both
+hardcoded the clip path and transcript; now both read `REF_AUDIO_PATH`/
+`REF_TEXT` (now also passed into the `gpt-sovits` container in
+`docker-compose.infra.yml`, which previously had neither var at all) and,
+when the resolved clip is genuinely absent, fall back to a liveness-only
+`/docs` probe instead of attempting a synthesis call that can never succeed.
+
+**1.3 -- Named the failure at voice-agent startup.** voice-agent never
+stated the reference clip -- SoVITS resolves it in its own container -- so a
+missing clip produced no symptom in voice-agent's own logs at all.
+`warn_if_reference_clip_missing` logs the missing path and the env var that
+set it. This is a best-effort diagnostic against voice-agent's own
+filesystem view, which 1.5 makes actually meaningful (see below).
+
+**1.4 -- Wired the emotional-variant env vars through compose.**
+`voice_agent` had no `env_file: .env` and its `environment:` block listed
+only the neutral `REF_AUDIO_PATH`/`REF_TEXT` pair -- so the eight
+`REF_*_{CALM,WARM,CONCERNED,EXCITED}` vars `docs/BRINGING_IT_TO_LIFE.md`
+instructs users to set, plus `TTS_CIRCUIT_BREAKER_*`/
+`TTS_READINESS_PROBE_INTERVAL_SECS`, were silently ignored under Compose.
+Added `env_file: .env` plus explicit entries with `.env.example`'s
+documented defaults, and a wiring test (`test_voice_agent_compose_wiring.py`)
+that cross-references every env var the Rust source actually reads against
+what compose actually declares -- confirmed it fails against the pre-fix
+compose file by temporarily reverting it and re-running.
+
+**1.5 -- Unified two unrelated "output" mounts, found a missing WORKDIR.**
+`voice_agent` mounted the `voice_samples_data` *named* volume at
+`/app/output`; `gpt-sovits` mounts the *host bind* `./backend/voice_samples`
+at its own `output/`. Two different directories sharing a name -- landing
+vocalization fallback assets anywhere could never make them visible to
+voice-agent's own `load_vocalization_pcm`. Investigating further: the
+runtime stage of `Dockerfile.rust` had no `WORKDIR` at all (a fresh `FROM`
+does not inherit the builder stage's), so voice-agent ran with cwd `/`, and
+`load_vocalization_pcm`'s relative `output/{name}.wav` lookup resolved to
+`/output/...`, never `/app/output/...` -- so even a correctly mounted volume
+would never have been found. Fixed both: `voice_agent` now mounts the same
+host bind as `gpt-sovits`, the now-unused `voice_samples_data` volume is
+removed, and `WORKDIR /app` is set explicitly. Shipped
+`voice_engine_unavailable.wav` (same placeholder voice as `default_voice.wav`,
+so the existing same-voice degradation logic has something to load).
+`breath_fast.wav`/`sigh_soft.wav` are genuine non-verbal sound effects `say`
+cannot produce and are deliberately not shipped -- `load_vocalization_pcm`
+already degrades to logged silence for them (a prior fix, P4-9, not new
+here); Phase 2.3's voice-enrollment flow is the natural place to provision
+real ones from a user's own cloned voice.
+
+**1.6 -- One command to start.** `start.sh` (plus `Makefile` targets)
+replaces README's four-step manual sequence: creates `ai_mesh_network` if
+missing, checks Docker and Ollama are actually reachable, pulls any missing
+required Ollama model (with a `model:latest`-tag equivalence check mirroring
+`_model_exists` in `runtime_bootstrap.py`, found while manually verifying
+this exact step -- without it, every run would needlessly re-pull
+`nomic-embed-text`), provisions the bundled default voice, brings up infra,
+waits for Postgres health, pushes the Prisma schema (exporting `DIRECT_URL`
+itself, since `dotenv` does not expand `${POSTGRES_PASSWORD}`-style
+references and `frontend/` has no `.env` of its own -- matching what
+README's manual instructions already worked around the same way), then
+brings up the right compose layering for `light`/`heavy`/`full` (+
+`--vision`). Refuses to start with a specific message at each unmet
+prerequisite rather than half-booting.
+
+**Verified.** Full suite: 1203 tests (+18), 0 failures, 0 errors (JUnit XML).
+`ruff check .` clean. `cargo check --workspace` and `cargo test --package
+voice-agent` (52/52) clean. Every new test mutation-verified by hand (revert
+the fix or the guard clause, confirm the test fails, restore) -- including
+one real catch: the first cut of `test_ensure_all_default_voice_assets_...`
+derived its expected filenames from the same `DEFAULT_ASSETS` list the code
+under test reads, so shrinking that list couldn't fail it; rewritten to
+assert hardcoded names instead. The `start.sh` test sandbox fakes every
+external command (`docker`/`curl`/`ollama`/`npx`) by default specifically so
+that verifying a guard clause -- including by disabling it, as mutation
+testing does -- can never fall through to the real Docker daemon or a real
+`ollama pull` on whatever machine runs the tests; an earlier, less careful
+manual mutation check (only faking `curl`) actually triggered one real (if
+idempotent) `ollama pull nomic-embed-text` before this was caught and fixed.
+
+**NOT done.** The full live stack (`docker compose ... up`, 13 containers,
+GPU-dependent voice cloning) was not actually run end to end in this
+session -- Phase 1's own exit criteria calls for that on a clean checkout,
+which is a real, resource-heavy verification step for a human to run, not
+something to claim from static analysis. `breath_fast.wav`/`sigh_soft.wav`
+remain unshipped (see 1.5). README's Quick Start section still describes the
+old four-manual-step sequence; `start.sh` supersedes it for anyone who
+notices it exists, but the docs themselves are Phase 8.1's job, not this
+one's.
+
+## 2026-08-27/28 -- Community roadmap Phase 2: create your friend
+
+The core product surface: describe a friend in prose, record their voice,
+talk to them. Landed as 2.1-2.4 on the same branch as Phase 1
+(`phase-1/fresh-clone-boots-and-speaks`), one commit for the whole phase, per
+the roadmap's own standing rule.
+
+**2.1 -- The persona compiler.** New module, `app/persona/compiler.py`.
+Deliberately does NOT ask the LLM to invent temperament numbers directly --
+two runs on the same description could then land on different
+`baseline_valence`s for no visible reason, and there would be nothing for
+2.2's preview to actually explain. Instead the LLM scores nine named,
+human-legible dimensions (warmth, volatility, openness_to_trust, ...), each
+with a quoted/paraphrased piece of evidence from the description, and a fixed
+set of linear formulas *in this file* -- not re-prompted, not re-derived --
+turns those into the 13 bounded `PersonaProfile` numbers. Every one becomes
+exactly one `Inference(field, value, reason)`; nothing numeric is ever
+applied silently. `_extract_json_object` pulls the first balanced JSON object
+out of a response by brace-depth with string-awareness (a real model wraps
+JSON in prose and code fences more often than not), and every narrative list
+field is truncated to its `PersonaProfile` cap in code rather than trusting
+the model's own counting.
+
+Found live, not by review: `OllamaClient.generate()`'s own default
+(`num_predict=64`, sized for a short chat reply) truncated this schema's JSON
+mid-object every time against a real model (`qwen2.5:3b`) -- `generate()`
+never raises on this, so the failure surfaced only as "JSON object was never
+closed" three calls deep. Fixed by passing `options_override={"num_predict":
+1024, "num_ctx": 4096}` explicitly.
+
+**Friction check, run live, not mocked.**
+`scripts/testing/verify_persona_compiler_friction.py` (a `evals/__main__.py`
+-style script: refuses to run against `MOCK_LLM_TEXT` without `--allow-mock`)
+compiles three deliberately edgy descriptions against a real model and checks
+that blunt/moody/argumentative language survives into `base_tone`/
+`identity_summary`/`traits` rather than being smoothed into agreeable
+defaults, and that `baseline_valence` isn't pulled positive regardless of a
+cold description. All three passed against `qwen2.5:3b`. Also caught, live: a
+description opening "He is blunt..." got the name "He" verbatim from the
+model despite the prompt saying a pronoun is not a name -- fixed with a
+code-level backstop (`_PRONOUNS_NOT_NAMES`) rather than trusting the
+instruction alone, since a smaller model is exactly where a prompt
+instruction gets ignored.
+
+**2.2 -- Preview before commit.** `app/persona/wizard.py`
+(`serialize_persona_toml`, `render_preview`) plus the interactive entry point
+`scripts/create_friend.py`. Every string value round-trips through a real
+`tomllib` parse in its own test, not just this module's own inverse function
+-- a serializer that mis-escapes a quote or newline would otherwise produce a
+file that silently parses to something other than what was previewed.
+`create_friend.py` shows tiers + every numeric inference + a biography
+summary, offers a dry-run conversation against the compiled persona (no
+mesh, no memory -- raw LLM in-character, just enough to hear roughly what's
+about to be committed to), and only writes through Phase 0.5's
+`validate_persona_file.validate()` against a temp copy on confirmation.
+
+**Found live, and it mattered:** a first smoke run wrote to
+`config/persona.local.toml` and pointed `.env`'s `PERSONA_PROFILE_PATH` at
+it -- clobbering the user's own already-authored `personal/persona.toml`
+pointer in the process. `personal/` turned out to be an existing, already-
+gitignored convention (predating this session) for exactly this kind of
+local, real persona data. Fixed before anything shipped: the wizard now
+targets `personal/persona.toml`/`personal/biography.md`, and refuses to
+touch an existing `personal/persona.toml` at all without an explicit
+`--force` -- checked *before* the description prompt, so a person is never
+asked to describe a friend only to be told at the end that saving is
+refused. `.env` was restored from a backup taken before the mistake; no
+tracked file or the user's real persona was affected.
+
+**2.3 -- Voice enrollment.** `scripts/audio/record_voice.py` rewritten:
+consent notice first, `--duration` (default 8s, was 120s -- sized for a
+reference clip, not fine-tuning material), `validate_clip()` (duration,
+peak amplitude, clipping ratio, windowed-RMS silence ratio -- deliberately
+NOT claiming a single-speaker check, since that needs real diarization this
+script doesn't have, and a check that always passes is worse than no check),
+auto-transcription via the offline `stt-agent --transcribe-file` mode built
+alongside this phase (subprocess, not the mesh), and `REF_AUDIO_PATH`/
+`REF_TEXT` written into `.env` via `python-dotenv`'s `set_key`. Optionally
+continues to the four emotional variants. `process_voice_samples.py` deleted
+-- confirmed zero references anywhere, fully superseded by this flow.
+
+Found live: `sounddevice`/`soundfile` were never in any requirements file --
+this script could not have actually run via the documented setup. Added to
+`requirements-base.txt` and installed; `transcribe()` verified end to end
+against the real `stt-agent` binary and the bundled `default_voice.wav`,
+returning the exact known transcript.
+
+**Rust: `stt-agent --transcribe-file <path>`.** One-shot offline
+transcription, added specifically to unblock 2.3 without requiring the NATS
+mesh just to record a voice sample -- decided via `AskUserQuestion` rather
+than guessed (the alternatives were a live-mesh round trip or a manual-
+transcript fallback; the user chose extending the Rust binary, keeping STT
+Rust-only and torch-free per the existing architecture). New `hound`
+dependency (WAV reading); `decode_wav_mono_16k` downmixes and resamples
+through the crate's existing tested `ResamplerCache`, not a reimplementation.
+9 new unit tests, each mutation-verified by hand (break the downmix average,
+the resample call, the flag parser; confirm the specific test fails; restore).
+
+**2.4 -- `scripts/talk.py`.** Publishes real `ChatInput` on `chat.input` and
+renders the real `ChatOutput` stream -- the actual cognitive pipeline, unlike
+2.2's dry-run chat which only ever talks to the raw LLM. Fixes
+`simulate_chat.py`'s two known bugs (reads `content`, the real `ChatOutput`
+field, not `chunk`; uses the `Topics` enum, not hardcoded subject strings).
+`scripts/check_subject_wiring.py` confirms `chat.input`/`chat.output` stay
+fully wired with this new publisher/subscriber pair added.
+
+**Verified.** Full suite: 1254 tests (+51), 0 failures, 0 errors (JUnit
+XML). `ruff check .` clean. `cargo check --workspace` clean.
+`cargo test --package stt-agent --package voice-agent --package contracts`:
+114/114. `scripts/check_subject_wiring.py`: OK, no new allowlist entries
+needed. Every new test mutation-verified by hand. Live-model verification
+(not `MOCK_LLM_TEXT`) against `qwen2.5:3b`/`llama3.2:3b` for: the friction
+check (3/3), a full compile-preview-write wizard run, and the offline
+transcriber against a real clip.
+
+**NOT done.** `talk.py` was import-checked but never run against a live
+mesh in this session -- Docker was not running in this environment, so NATS
++ `brain_agent` were never available to actually exchange a `chat.input`/
+`chat.output` pair end to end; this is the same class of gap Phase 1 logged
+for the full docker-compose stack. Whether `personal/persona.toml` is
+reachable by an agent running *inside* a container (none of the compose
+files currently mount `config/` or `personal/` into the Python agent images)
+was not investigated -- the wizard's own contract is local execution
+writing a path into `.env`; whether that path is visible to a containerized
+consumer is a Compose-volume question Phase 2 did not scope in, not
+something silently assumed to work. `validate_clip`'s single-speaker check
+is explicitly not implemented (see 2.3). The dry-run chat in
+`create_friend.py` and the friction-check script both build their own
+inline system prompt rather than reusing `IdentityManager.get_persona_prompt`
+-- deliberate, since that method needs a hydrated `IdentityManager`/DB an
+uncommitted, unsaved persona doesn't have yet, but it does mean the preview
+conversation's *exact* phrasing can differ slightly from what the seeded
+agent will actually produce.
+
+## 2026-08-28 -- Community roadmap Phase 3 (3.1, 3.2): alive between sessions
+
+Landed as further commits on the same branch as Phases 1-2, per the
+roadmap's standing rule. 3.3 (pause_bias) and 3.4 (tempo_wpm) are Rust audio
+DSP work with PCM-measurement acceptance criteria of their own and are
+tracked separately -- not in this entry.
+
+**3.1 -- Proactive outreach actually reaches someone.**
+
+*Persisted `last_proactive_attempt`.* Was `StateService._last_proactive_attempt`,
+a plain instance attribute in neither the Redis hash nor `state_cache.db` --
+every restart silently reset the cooldown to expired, and the two OS
+processes that each own a `StateService` (`subconscious_agent`, `brain_agent`)
+could never agree on it. Moved onto `AgentState.last_proactive_attempt`,
+persisted through the exact same three-tier path `last_user_interaction`
+already used (Redis hash, `state_cache.db`, `state.broadcast`/
+`apply_external_state`), including a `state_cache.db` migration
+(`ALTER TABLE ... ADD COLUMN`, tolerant of "duplicate column name" for a
+fresh DB that already has it) since existing deployments' databases predate
+this column. `check_proactive_eligibility`/`mark_proactive_attempt` now read
+and write the persisted field instead of the old process-local one.
+
+*Fixed the double `mark_proactive_attempt()`.* `core.py`'s call (after the
+full proactive response finished streaming) was removed --
+`check_proactive_eligibility` is only ever called from `subconscious_agent`,
+which already marks the attempt the moment it's made (right after
+publishing the `chat.input` that triggers the whole turn), in the same
+process, same object. A second mark for one logical attempt is exactly the
+"wrong the moment the cooldown becomes a counter" case the roadmap named,
+and now that the field is persisted and broadcast, a stale second write
+could otherwise race the first across processes.
+
+*Queued undelivered outreach, replayed on reconnect.* `transport_agent` was
+"topology-blind" (confirmed by grep: the word "proactive" never appeared in
+that file) -- it captured whatever PCM arrived on `audio.stream` into
+LiveKit regardless of whether anyone was in the room. Rather than teach
+`transport_agent` to inspect and drop *audio* frames (which would need it to
+correlate `chat.output`'s `proactive`/`turn_id` against `audio.stream`
+frames, and a store-and-forward mechanism for raw PCM), the fix routes
+around `voice-agent`'s Rust TTS pipeline entirely and queues at the *thought*
+level, replaying through the same already-correct `chat.input` path a live
+proactive thought already uses:
+
+- New `Topics.SESSION_PRESENCE` (wire value `state.presence`, not
+  `session.presence` -- fits the existing `AI_MESSAGES` stream's `state.>`
+  pattern for free, no `check_subject_wiring.py` allowlist entry needed).
+  `transport_agent` publishes it on the LiveKit room's `participant_connected`/
+  `participant_disconnected` events, edge-triggered on the 0<->1+ participant
+  transition only (verified: LiveKit has already mutated
+  `room.remote_participants` by the time these callbacks fire, so the edge
+  check is `== 1` / `== 0`, not `== 0` / would-never-fire `> 0`).
+- New `app/state/proactive_queue.py`: a small durable SQLite queue (shares
+  `StateService`'s own `db_path`, a different table) --
+  `enqueue`/`pop_all`, capped at 5 pending thoughts (oldest dropped first;
+  replaying a dozen stale thoughts on reconnect would read as confused, not
+  attentive).
+- `subconscious_agent` tracks `_someone_connected` (pessimistic default
+  `False` until the first real signal, since a fresh process should not
+  assume presence before it knows). On a tick with a generated thought: if
+  connected, publish live as before; if not, enqueue instead -- and mark the
+  attempt either way, or every tick while still disconnected would generate
+  and queue another duplicate. On the presence 0->1 edge specifically (not
+  every `connected=True`, which a redelivered NATS message could repeat),
+  drains and replays the queue through the same `_deliver_thought` helper
+  the live path uses.
+
+*Known gap, recorded rather than silently assumed away:* if
+`subconscious_agent` restarts while someone is *already* connected, no new
+presence edge will fire (transport_agent only signals on an actual
+join/leave transition), so thoughts queued before the restart sit
+undelivered until the next genuine reconnect. Fixing this needs either a
+periodic presence re-announce or a request/reply "is anyone here" query --
+scoped out rather than half-built into this pass.
+
+**3.2 -- Confirmed (and found one thing suppressing) friction.**
+
+Read the full prompt scaffolding per the roadmap's own list:
+`IdentityManager.get_persona_prompt`, `action.py`'s `_CHAT_GUIDELINE`,
+`appraisal.py`'s semantic-drift prompt, `decision.py`'s intent/goal
+classification, `learning.py`'s reflection prompts. None push toward
+agreeableness -- `get_persona_prompt` carries no house-style language,
+`_CHAT_GUIDELINE` is grounding/anti-hallucination instructions only, the
+appraisal prompt scores the *user's* statement (feeding the agent's own
+affect), and `goal` (COMFORT/INFORM/ENGAGE/TEASE/PROTECT) is injected as raw
+context ("Goal: COMFORT"), never expanded into a tone directive anywhere.
+
+**Found the real thing:** `action.py`'s `_validate_partial_response` carried
+its own, independent toxicity check -- `re.search(r"\b(toxic|hate)\b", ...)`
+-- that had NOT been narrowed when `identity.py`'s equivalent
+(`validate_response`) was already fixed (ground-truth pass, Phase 0) to use
+`_HOSTILE_TO_USER`, a pattern scoped to contempt aimed at the user. Worse
+than `identity.py`'s old bug: this one runs on *every streamed chunk* during
+the live primary generation pass (`_emit_validated`), so a false positive
+didn't just cost a silent backend retry -- it audibly interrupted the user
+mid-sentence with "Wait, let me rephrase that..." and forced a regeneration
+explicitly told "do not repeat the forbidden phrases," actively pushing the
+model away from language a blunt, authored persona might legitimately use
+("I hate small talk", "I hate that this happened to you"). Fixed by
+importing and reusing `identity.py`'s own `_HOSTILE_TO_USER`/`_match_views`
+rather than a third redefinition, so the two checks cannot drift apart
+again. An existing test (`test_metacognitive_self_correction`) had been
+using "I hate this." as its trigger fixture for the (unrelated) self-
+correction *mechanism* -- updated to genuine contempt ("You're so
+pathetic.") now that the false positive it relied on is fixed.
+
+**Verified.** Full suite: 1281 tests (+27), 0 failures, 0 errors (JUnit
+XML). `ruff check .` clean. `cargo check --workspace` clean (no Rust
+touched this pass). `check_subject_wiring.py`: OK, `state.presence` fully
+wired, no new allowlist entries. Every new/changed check mutation-verified
+by hand, including two cases where a first draft of the test passed for the
+wrong reason and had to be rewritten before it caught anything (a
+restart-persistence test where a no-op `mark_proactive_attempt` mutation
+left both sides at the same default `0.0`; a repeated-presence-signal test
+where the queue was already empty by the second call regardless of whether
+the edge check was even present) -- both are now genuine regression tests,
+not just green ones.
+
+**NOT done.** 3.3 (`pause_bias`) is unstarted -- its own verification
+requires real synthesis through `local_voice`/GPT-SoVITS at a high- and
+low-arousal state and measuring the rendered PCM, which needs the voice
+stack actually running (`docs/FUTURE_WORK.md` §1.1 marks it **BLOCKED** for
+exactly this reason). The subconscious-restart-while-connected gap above.
+`talk.py` (Phase 2.4) and the new presence/queue mechanism were verified
+with hermetic, mutation-tested unit tests, but not against a fully running
+mesh -- a `docker compose`/`start.sh light` attempt this session did not
+reach a usable state (OrbStack's daemon became unreachable partway through)
+and is not claimed as evidence either way.
+
+## 2026-08-28 -- Community roadmap Phase 3.4(i): fix the tempo_wpm measurement
+
+`estimate_tempo_wpm` (`stt-agent/src/main.rs`) computed zero-crossing rate --
+spectral brightness, not speaking rate -- structurally confined to
+`[120, 180]` wpm, on a per-inbound-chunk basis (~50/sec) where no transcript
+exists yet. Replaced with `measured_tempo_wpm(text, pcm_16k_len)`: words
+÷ duration, computed at `run_final_job`'s completed-transcript point (the
+first place in the pipeline a transcript and its duration exist together),
+carried forward via a new `SttState.last_completed_tempo_wpm: Option<f64>`
+so the per-chunk `UserVoiceProperties` publish reports the last *completed*
+utterance's real rate instead of re-deriving a fake one from a fragment.
+`estimate_tempo_wpm` deleted.
+
+Contract field changed to `Option<f64>` in **both**
+`crates/contracts/src/lib.rs` and `backend/app/contracts.py` together --
+the doc's own instruction, and the class of bug (`char_offset`) this repo
+has hit before from a one-sided contract change. `brain_agent.py`'s debug
+log line, the only Python reader, now handles `None` (before the first
+completed utterance) instead of a raw `.1f` format that would have raised
+and been silently swallowed as a "parsing error."
+
+**Verified.** 5 new Rust unit tests for `measured_tempo_wpm`: matches a
+hand-computed words-over-duration value, `None` for empty text or zero
+duration, orders more-words-same-duration as a higher rate, and -- the
+concrete failure this replaces -- produces a rate outside the old
+`[120, 180]` band. Mutation-verified (a hardcoded-150.0 mutation was caught
+by 2 of the 5; an arithmetic mutation `× 60` instead of `÷ 60` was caught
+independently by the hand-computed-value test alone). `cargo test` across
+contracts/stt-agent/voice-agent: 119/119. Full Python suite: 1281 tests, 0
+failures. `ruff check .` clean. `check_subject_wiring.py`: OK.
+
+**NOT done.** 3.4(ii) (verify the corrected number against hand-counted
+ground truth from three recorded passes -- slow/natural/fast -- of the same
+paragraph) and 3.4(iii) (partial entrainment, gated on (ii) passing) are
+both explicitly **not attempted**: (ii) requires a real recording session
+with a human reading a scripted paragraph three times, which is not
+something this session can produce on its own, and the roadmap is explicit
+that (iii) must not proceed on an unverified number ("acting on a wrong
+signal is worse than acting on none"). The measurement fix in this entry is
+correct and tested on its own terms regardless of (ii)/(iii)'s outcome --
+the doc calls it out as "do this regardless" -- but nothing yet consumes
+`tempo_wpm` besides the one debug log line; it does not yet drive
+entrainment.
+
+## 2026-08-28 -- Community roadmap Phase 4: portable and reachable (4.1, 4.2)
+
+### 4.1 -- Export and import a friend
+
+New `backend/scripts/export_friend.py` / `import_friend.py`. State spans four
+stores that have to move together (roadmap Phase 4.1's own table): 9 Postgres
+tables (`db/schema.sql` is the schema of record; Prisma covers only 3),
+the `:Agent`/`:Entity` Neo4j subgraph, `.identity_state/`'s three files
+(`personality.json`, `history.json`, `identity_core.db`), and `state_cache.db`
+(the durable affect/trust state, easy to miss under the blanket `*.db`
+gitignore). Qdrant and Redis are deliberately not captured -- both are
+derivable from the above, per the roadmap's own reasoning.
+
+Export: Postgres rows to JSONL (one file per table, `SELECT *`, no hardcoded
+column list so it stays in sync with schema changes on its own), Neo4j nodes/
+relationships to JSONL via a plain Cypher dump, and the two SQLite files via
+the SQLite Online Backup API (`sqlite3.Connection.backup()`) rather than a
+raw file copy -- both files can be open under a live agent process, and a
+plain `shutil.copy2` of a live SQLite file can capture a torn write. Everything
+lands in one `manifest.json` + a `tar.gz`.
+
+Import is destructive on the Postgres side by design (TRUNCATE + CASCADE, then
+reload in FK-safe order -- `sessions` before `messages`), matching the
+roadmap's own verification shape ("export, wipe, import, assert identical").
+Neo4j import is idempotent MERGE instead, keyed on `(label, name)` rather than
+Neo4j's internal element ID (which isn't stable across a database) -- there is
+no "assert identical" requirement for the graph, and a destructive wipe there
+risks losing relationships an older/partial export simply never described.
+Column values that need an explicit cast (uuid, jsonb/json, timestamptz,
+vector/halfvec) get one at the bound-parameter position (`$1::uuid`, mirroring
+the `$1::vector(768)` pattern `memory_store.py` already uses) rather than
+relying on Postgres's implicit unknown-type cast, which is exactly the kind of
+ambiguity a backup/restore path shouldn't lean on. Column names from the
+archive's own JSONL are validated against a strict identifier regex before
+being interpolated into the INSERT statement -- they're the one part of an
+archive found on disk that reaches raw SQL text.
+
+Local files (`.identity_state/`, `state_cache.db`) refuse to overwrite an
+existing destination without `--force`, mirroring the Phase 2 wizard's
+persona-overwrite guard and the same near-miss it was built to prevent: these
+may be the files a person has kept an evolving friend growing in since the
+export was taken.
+
+**Verified** with hermetic unit tests (`tests/test_export_import_friend.py`,
+33 tests): `_json_default` and `_pg_cast_for` exhaustively; the SQLite
+snapshot/restore round-trip against real temporary files; the identity/state
+`--force` guard (mutation-verified: removing the guard was caught); the
+column-name injection check (mutation-verified: a crafted malicious column
+name is rejected before any `execute()` call, and removing the check was
+caught); `import_friend`'s `--force` requirement and manifest schema-version
+check, both proven to fail *before* touching Postgres (mutation-verified via
+an `asyncpg.connect` spy that raises `AssertionError` if reached). Postgres
+and Neo4j themselves are faked at the connection/session boundary (a small
+`_FakeConn`/`_FakeGraphDB`, the latter reusing the *real*
+`GraphDB._safe_relation` validator rather than reimplementing it) --
+consistent with this suite's hermetic design; there is no live round-trip
+against real Postgres/Neo4j in CI.
+
+**NOT done.** No live round-trip against real infrastructure (export, wipe,
+import, assert the friend remembers) -- the roadmap's own stated test for
+this phase -- has been run; that needs real Postgres/Neo4j/SQLite state from
+an actual running agent, which this session did not have reachable
+end-to-end. Qdrant/Redis derivation (rebuilding Qdrant vectors from the
+imported `memories` UUIDs, letting Redis re-mirror from SQLite) is asserted
+by design, not exercised.
+
+### 4.2 -- Optional cloud LLM fallback
+
+New `app/llm/__init__.py` (`LLMClient` Protocol + `build_llm_client()`) and
+`app/llm/anthropic_client.py` (`AnthropicClient`), keyed on a new
+`Config.LLM_PROVIDER` (`"ollama"` default, `"anthropic"` opt-in) and
+`Config.ANTHROPIC_API_KEY`. `AnthropicClient` is built on the real `anthropic`
+SDK (`requirements-base.txt`, `anthropic>=1.0.0,<2.0.0`), not raw HTTP --
+unlike `OllamaClient`, which hand-rolls HTTP because Ollama has no SDK,
+Anthropic does. It translates the endocrine->sampling mapping
+(`action.py::_compute_endocrine_options`'s cortisol/dopamine/fatigue ->
+temperature/top_p/num_predict) into Anthropic's shape (`num_predict` ->
+`max_tokens`; `num_ctx`/`num_thread` have no equivalent and are dropped
+rather than mistranslated), mirrors `OllamaClient`'s `MOCK_LLM_TEXT` guard so
+the hermetic suite (and a dev running with the mock flag) never makes a real,
+billed call regardless of provider, and mirrors `describe_image`'s H8
+contract (`None` = the call failed, `""` = the model saw nothing worth
+describing).
+
+Routed through five real construction sites: `brain_agent.py`,
+`subconscious_agent.py`, `vision/agent.py`, `app/persona/compiler.py`'s
+default client, and `scripts/create_friend.py`'s wizard -- the last two go
+beyond the roadmap's literal list, but persona creation is exactly as much a
+"does this work on cloud-only hardware" path as chat is, and
+`compiler.py`'s previous bare `OllamaClient()` default silently ignored
+`Config.OLLAMA_URL` entirely (dead in practice since every real call site
+already passes `llm=` explicitly, but a fixed correctness gap along the way).
+
+`backend/evals/`, `backend/tools/measure/`, and `scripts/testing/` were
+deliberately left constructing `OllamaClient` directly, not routed through
+the factory -- the eval harness's reproducibility story
+(`runner.reset_model_state`) unloads and reloads a real local Ollama model
+between runs, which has no cloud equivalent, and CLAUDE.md documents it as
+probing "the LLM boundary" with a real `OllamaClient` on purpose.
+
+**Verified** with hermetic unit tests (`tests/test_llm_factory.py`, 9 tests;
+`tests/test_anthropic_client.py`, 22 tests): provider selection (default,
+case/whitespace-insensitive, unknown provider raises), the
+`ANTHROPIC_API_KEY`-missing guard (mutation-verified: removing it was
+caught, before any network call), the full sampling-option translation table,
+the `MOCK_LLM_TEXT` guard on all three network-touching methods
+(mutation-verified on `generate()`'s guard specifically), `generate`/
+`generate_stream`/`describe_image` success and `anthropic.APIError` paths
+against a mocked SDK client, and the `describe_image` None-vs-`""` contract
+(mutation-verified: collapsing it back to always-`""` was caught).
+`tests/test_persona_compiler.py` / `test_persona_wizard.py` (37 tests)
+re-run unmodified and still pass -- every real call site already injects its
+own client.
+
+**NOT done.** No live call against the real Anthropic API -- everything above
+is verified against a mocked SDK client, never a real key. Streaming
+robustness under a genuinely slow/chunked connection is unexercised (the fake
+stream in tests yields synchronously). No UI/doc surface yet explains the
+cloud-fallback tradeoff to an end user beyond the `.env.example` comment and
+the `Config.LLM_PROVIDER` field comment -- that's Phase 8 ("the README is the
+product") territory, not this phase's.
+
+### Not started
+
+4.3 (reduce per-turn LLM calls) is correctly untouched -- it is a
+**TRIGGERED** item ("becomes worth doing when moving past the 3B ceiling"),
+not due yet.
+
+**Full verification:** 1345 tests (up from 1281; +64 new, all mutation-tested
+per the standing convention), 0 failures, 0 errors. `ruff check .` clean.
+`scripts/check_subject_wiring.py`: OK, no new subjects (Phase 4 touched no
+contracts). No Rust changed, so `cargo check`/`cargo test` were not re-run for
+this phase specifically.
+
+## 2026-08-28 -- Community roadmap Phase 5: the web UI (5.0, 5.1, first slice of 5.2)
+
+### 5.0 -- Design basis
+
+`website/` landed at the repo root: a full but generic multi-agent-SaaS
+marketing template (Next.js + TypeScript + shadcn/radix, "AGENTIC" branding,
+pricing tiers, a visual-agent-builder pitch) with no onboarding/chat/voice
+functionality of its own. Per the roadmap, it is the design-system donor for
+two *separate* things -- the Phase 8.3 public landing page (not built yet)
+and a restyled `frontend/` (this entry's 5.2 slice) -- not something to
+merge into the app directly. The extracted, reused tokens: warm off-white
+background (`#F5F4F0`), near-black text (`#111`), IBM Plex Sans for
+headings, Courier Prime for tracking-widest pixel-style labels, bordered
+`rounded-2xl` white cards, and restrained black-opacity borders/hovers
+rather than the aura-glow/glassmorphism look `frontend/`'s existing
+(untouched) voice-orb page already has.
+
+### 5.1 -- Backend HTTP surface
+
+New `backend/app/api/` package -- `persona.py`, `voice.py`, `memory.py`,
+`friend_data.py` -- exposing the same operations the Phase 2 CLI wizard and
+Phase 4.1 export/import scripts already perform, so both front ends
+(the CLI and the web flow this entry adds) share one implementation. Nothing
+re-implements wizard/script logic; every route calls straight into
+`compile_persona`, `serialize_persona_toml`, `scripts.validate_persona_file.
+validate`, `record_voice.py`'s `validate_clip`/`transcribe`, and
+`export_friend`/`import_friend`.
+
+Design choices worth recording:
+- **Stateless commit.** `/persona/compile` returns the full compiled
+  persona; `/persona/commit` takes that exact payload back rather than a
+  description to recompile from -- an LLM is not perfectly reproducible, so
+  recompiling on commit could save something nobody actually previewed.
+- **`/persona/compile` now also returns `immutable_core`**, read fresh off
+  `IMMUTABLE_CORE` on every response, so a client showing an "IMMUTABLE" tier
+  next to CONSTITUTIONAL/ADAPTIVE never needs -- and can never drift from --
+  its own copy, exactly the failure mode ground-truth finding 0.2 fixed once
+  already for the three tracked-file copies.
+- **`/voice/commit` gained a `force` field** the first draft of this entry's
+  work didn't have -- `record_voice.py`'s CLI allows "[u]se it anyway" on a
+  clip that fails validation; the HTTP mirror originally always hard-rejected
+  it, a real behavioral gap from the thing it's supposed to mirror, caught
+  and fixed before commit.
+- **`/memory/recent` is deliberately not routed through `MemoryStore`** --
+  that constructor also wires Qdrant/Neo4j a read-only browse has no need of,
+  and it's already the largest, riskiest file in the repo. It opens its own
+  short-lived `asyncpg` connection per request instead, the same pattern
+  `export_friend.py` already uses, so `main.py` doesn't need new pool
+  lifecycle management for one endpoint. `sort_by` is allowlisted before
+  being string-interpolated into `ORDER BY` -- there's no bind-parameter form
+  for a column name.
+- **`/friend/export` and `/friend/import` block for the duration** -- no
+  background-job infra exists in this backend, and for a local single-user
+  admin operation that's an acceptable, explicitly-noted tradeoff (see the
+  module docstring), not an oversight.
+- New runtime dependency: `python-multipart` (FastAPI raises at *route
+  registration time*, not just request time, without it once `File`/`Form`
+  params exist). `ruff.toml` gained `[lint.flake8-bugbear]
+  extend-immutable-calls = ["fastapi.File", "fastapi.Form"]` -- B008 already
+  allowlists `fastapi.Query`/`Depends`/`Path` as the same "marker object,
+  not real mutable state" idiom; File/Form just weren't in ruff's built-in
+  list yet.
+
+**Verified** with hermetic unit tests (`test_api_persona.py` 8,
+`test_api_voice.py` 9, `test_api_memory.py` 5, `test_api_friend_data.py` 5 --
+27 total). Mutation-verified: the persona `/commit` overwrite guard, the
+voice `/commit` validate-before-save guard, the memory `sort_by` allowlist,
+and the friend `/import` force-requirement all confirmed to actually fail
+when removed. The LLM/STT/DB/Neo4j boundaries are mocked throughout, per this
+suite's hermetic design -- there is no live call against a real Postgres,
+Neo4j, or LLM in this test run.
+
+### 5.2, first slice -- the onboarding wizard
+
+New `frontend/app/onboarding/` (+ `frontend/components/onboarding/`,
+`frontend/hooks/useVoiceRecorder.js`, `frontend/lib/api.js`): describe -->
+preview (with inline dry-run chat) --> record voice --> done, restyled to
+5.0's design tokens via a route-scoped nested layout (font loading does not
+touch the site-wide `body` the existing voice-orb page relies on). Chat/
+transcript, settings, and the memory browser are explicitly **not** part of
+this slice -- the user picked onboarding first when asked to scope 5.2's
+otherwise-large surface.
+
+`useVoiceRecorder` encodes to WAV client-side via the Web Audio API
+(`AudioContext` + `ScriptProcessorNode`, not `AudioWorklet` -- deprecated but
+universally supported and needs no separate worklet module for a handful of
+short onboarding recordings) rather than using `MediaRecorder`, deliberately:
+`MediaRecorder`'s output is compressed and browser-dependent (webm/opus in
+Chrome, mp4/aac in Safari, not WAV in either), and 5.1's voice endpoints only
+decode WAV, matching what `record_voice.py` already produces. Encoding to
+WAV in the browser means every browser reaches the same server code path
+with no server-side transcode step to add and keep correct.
+
+**Verified live**, not just built: `frontend/` and `backend/` both started
+locally (`MOCK_LLM_TEXT=true`, dummy infra env), driven with a headless
+Chromium via Playwright (temporary `--no-save` dev dependency, removed after
+-- not added to `package.json`). Confirmed: the describe step's background
+color (`rgb(245, 244, 240)` exactly) and heading font (`"IBM Plex Sans"`)
+render as designed; a real POST to `/api/persona/compile` reaches the
+backend and a compiler failure (expected under `MOCK_LLM_TEXT`, which
+returns prose, not JSON) surfaces correctly in the UI's error banner --
+this exercised real CORS and auth wiring, not a mock, and caught a real
+CORS misconfiguration in the test setup itself (`ALLOWED_ORIGINS` needed a
+bare comma-separated value, not a JSON array -- `Config.ALLOWED_ORIGINS` is
+a computed property splitting `ALLOWED_ORIGINS_STR` on commas, not a
+JSON-parsed field) before it was caught. With `/api/persona/compile` and
+`/api/persona/dry-run-chat` mocked at the browser network layer, the full
+preview screen (all three tiers, inferences with reasoning, biography),
+the dry-run chat exchange, and the voice consent/recording-ready screens
+all confirmed rendering correctly with the intended design tokens and zero
+console errors.
+
+**NOT done.** Actual microphone recording end-to-end (headless Chromium has
+no real mic; `useVoiceRecorder`'s WAV encoding is verified by code review
+and the structural E2E check above, not a live recording pass) and the full
+commit step (persona commit + voice commit + the done screen) are unverified
+against a live, non-mocked backend -- both need a real Ollama and, for voice,
+a real microphone. `frontend/` has no test framework configured (no jest/
+vitest in `package.json`) and this entry did not add one; verification here
+is the live Playwright pass described above, not a committed test suite.
+Chat + transcript, settings, and the memory browser (the rest of 5.2), 5.3
+(visemes -- wire them to a real consumer or remove the dead
+`check_subject_wiring.py` allowlist entry), and 5.4 (ship the frontend in
+compose) are all unstarted.
+
+## 2026-08-28 -- Community roadmap Phase 5 continued: the rest of 5.2, plus
+## 5.3 and 5.4
+
+Lands as a second commit for Phase 5 (the first, `51cee8d`, already merged
+5.0/5.1/5.2's onboarding slice) rather than an amend -- this session's
+standing git protocol is to never amend a commit that has already landed
+without an explicit request, which the roadmap's "one commit per phase"
+convention doesn't override.
+
+### 5.2, rest of it -- chat/transcript, settings, memory browser
+
+**The chat transport is the real work here.** There was no HTTP/WS surface
+onto `chat.input`/`chat.output` at all -- `scripts/talk.py`'s CLI REPL was
+the only existing consumer. New `backend/app/api/chat.py`: one WebSocket
+(`/api/chat/ws`), one process-wide `ChatBridge` (a `BaseAgent` subclass)
+instead of a bridge per connection.
+
+That "one, not one-per-connection" choice is load-bearing, not a style
+preference: `BaseAgent.subscribe` always creates a **durable** JetStream
+consumer -- there is no ephemeral mode, `durable` falls back to
+`f"{self.name}_{subject}"` when not given one explicitly. A fresh
+`BaseAgent(name=uuid4())` per WebSocket connection, the first design tried,
+would leak one durable consumer per browser tab opened *or reconnected*,
+forever, since nothing ever deletes them. `ChatBridge` instead holds a single
+subscription for the process's lifetime (started/stopped from `main.py`'s
+`lifespan`) and fans each `chat.output` message out to every currently
+connected socket via a per-connection `asyncio.Queue`, added/removed on
+connect/disconnect. Turn correlation is client-side: the frontend hook merges
+streamed chunks by `turn_id` and treats `done: bool` (not any content
+heuristic) as end-of-turn, mirroring `talk.py`'s own reading of the contract.
+
+**A real bug, found by trying to connect a browser, not by unit tests:**
+`frontend/next.config.mjs`'s CSP `connect-src` allowed `http://localhost:8000`
+but not `ws://localhost:8000` -- a browser CSP entry for one scheme does not
+cover the other, so the chat socket was silently blocked with no network
+request ever leaving the page, just a console CSP violation. Fixed by adding
+a `BACKEND_WS_URL` (the same host, `http` swapped for `ws`) to `connect-src`.
+Caught during the live Playwright pass below, not by `npm run lint`/`build`,
+which have no way to see a runtime CSP rejection.
+
+**A second real bug, this one in existing code the new WebSocket exposed:**
+`main.py`'s app-wide `require_lan_client`/`require_session_auth` were typed
+`request: Request`. Confirmed empirically (a throwaway FastAPI+TestClient
+script, not assumed) that an app-level dependency typed `Request` raises a
+plain `TypeError` on *every* WebSocket connection attempt -- not a 403, a
+crash before the handler runs -- because FastAPI resolves a `Request`-typed
+parameter only against an HTTP scope. There was no WebSocket route before
+this entry, so the bug was real but unreachable; retyping both to
+`conn: HTTPConnection` (the common Starlette base of `Request` and
+`WebSocket`, confirmed by the same throwaway script to resolve correctly to
+the right concrete type on each transport, and an `HTTPException` raised
+inside it to cleanly deny the handshake rather than crash) fixes it for both
+existing HTTP routes (verified unchanged: `tests/test_regressions.py`'s
+`_fake_request` calls are positional, so the parameter rename is invisible to
+them) and the new `/api/chat/ws`, which now reuses the exact same
+`require_session_auth` dependency as every other Phase 5.1 router rather than
+inventing a second auth mechanism for sockets.
+
+**`GET /api/persona/live`** exists because of a constraint this entry's first
+read of `app/persona/authoring.py` surfaced and the settings page had to be
+scoped around: `personal/persona.toml` is consulted **once**, on first boot,
+then permanently inert (`authoring.py`'s own module docstring: "read once,
+then never again"). Trust, attachment, adaptive traits, and speaking style
+all live in the durable store after that and evolve through conversation, not
+through a file edit. A settings page that read `persona.toml` back would show
+what was *written* at creation, not who the friend has *become* -- and a page
+that let a user "edit" those fields would silently do nothing, which is worse
+than not offering it. So `/persona/live` mirrors `scripts/show_persona.py
+--json` exactly (same `IdentityManager` + `ConversationHistoryStore`
+hydration, same read) rather than re-deriving a new read path, and the
+settings page it feeds is **read-only** for persona data by design, not an
+oversight -- it says so on the page. The one thing settings *does* let a user
+change is voice (`VoiceStep` reused as-is from onboarding, calling the same
+`/api/voice/commit` with `force`), because that setting genuinely is a
+file/config concern, not durable-store state.
+
+**`GET /api/memory/recent`** (already built in 5.1) got its first UI:
+`frontend/app/(app)/memories/` -- sortable (created_at/importance/
+last_recalled), offset-paginated cards. No new backend work.
+
+**Shared-component refactor**, done before writing the three new pages so
+they wouldn't import from `components/onboarding/ui.jsx` (which would have
+been a confusing coupling for routes that aren't onboarding): `Tag`, `Card`,
+`Heading`, `PrimaryButton`, `SecondaryButton`, `ErrorBanner` moved to
+`components/ui.jsx`; `StepIndicator` (wizard-only) stayed put.
+`app/onboarding/layout.js`'s `next/font/google` calls moved to a new
+`app/fonts.js` so a new `app/(app)/layout.js` (chat/settings/memories'
+shared shell + `AppNav`) could reuse the same fonts without a second
+`next/font` call site -- Next.js's documented pattern for sharing fonts
+across layouts, not a new mechanism.
+
+**The dark voice-orb page (`app/page.js`) is still deliberately untouched**
+apart from four `glass-pill` nav links added bottom-right (Chat/Memories/
+Settings) so the two halves of the app are reachable from each other --
+restyling it to 5.0's design tokens (which the roadmap's own 5.0 section
+lists `voice/transcript` under, not just onboarding) is real, separate work
+this entry does not attempt.
+
+**Verified**: `test_api_chat.py` (8), `test_api_persona_live.py` (3) -- 11
+new hermetic tests, mutation-verified (the blank-message-is-not-published
+guard, the multi-listener fan-out -- a mutation limiting it to one listener
+makes the two-connections test hang/timeout rather than fail cleanly, a real
+but accepted rough edge for a CI job with its own overall timeout -- the
+`store.pool is None` 503 guard specifically, shown to need a fixture where
+`get_agent_config` exists but `pool` doesn't, since a fixture missing both
+made a *different* downstream guard also produce 503 and hid the mutation,
+and the immutable-core-cannot-be-smuggled-through-hydration guard). Also
+verified **live**, against real local infra brought up for this purpose
+(`docker compose -f docker-compose.infra.yml up -d nats postgres` --
+`nats`/`postgres` were the two named, but `local_sfu`/`brain_cache`/
+`brain_graph` came up alongside them; all five stopped again afterward,
+restoring the pre-session state) with `db/schema.sql` applied and
+`MOCK_LLM_TEXT=true`: a browser sending a chat message published a real
+`ChatInput` onto the real mesh; a `ChatOutput` published directly onto NATS
+(standing in for `brain_agent`, not run this pass) rendered live in the
+transcript through the real WebSocket, `ChatBridge`, and CSP fix; `/settings`
+rendered a real hydrated persona from Postgres (`agent_configs`, a friend
+created in an earlier session) with the correct "seeded: never" fallback
+text; `/memories` rendered both its empty state and a populated one (a
+throwaway row inserted, screenshotted, then deleted).
+
+**NOT done.** No persistence of chat history across a page reload (in-memory
+per session only -- `chat.output` history exists in Postgres/Neo4j via the
+normal memory pipeline, but this UI doesn't query it as a transcript). A
+second open tab sees the first tab's `chat.output` replies (the fan-out is
+correct and, for a single-user product, arguably a feature) but not the first
+tab's own `chat.input` text, since only output is broadcast -- acceptable for
+the "one friend per person" product shape, not fixed further. The settings
+page has no way to change CONSTITUTIONAL fields at all (by design -- see
+above) and doesn't surface `scripts/reset_persona.py` as a web action. No
+frontend test framework exists still; verification is the live pass above,
+same as the onboarding slice.
+
+### 5.3 -- visemes: wired, not removed
+
+`audio.playback.visemes` (`{target_level, viseme_id, timestamp}`, published
+at four sites in voice-agent's Rust playback loop) had a `check_subject_
+wiring.py` allowlist entry since the wiring audit claiming it was "consumed
+by the frontend voice UI" -- true in intent, false in fact: no such consumer
+existed anywhere. Chose to wire it over removing it because the actual gap
+was small once traced: `transport_agent` already holds the one open LiveKit
+room connection in this architecture (it bridges NATS audio onto a WebRTC
+audio track already), so it needed one more NATS subscription
+(`_on_viseme`), forwarding each frame onto the room's data channel via
+`local_participant.publish_data(payload, reliable=False, topic="visemes")`
+-- unreliable delivery deliberately, matching WebRTC media's own UDP
+reasoning: this is a live, latest-value-wins animation signal at chunk rate,
+and a dropped frame a moment before the next one lands is invisible.
+
+`check_subject_wiring.py`'s allowlist entry for `audio.playback.visemes` is
+now **removed** (not just left stale) -- the scan finds the real consumer on
+its own and re-confirmed with a clean run
+(`OK: every observed subject is fully wired or explicitly allowlisted`).
+
+Frontend half: `useWebRTCVoice.js` gained a `RoomEvent.DataReceived` handler
+filtering on `topic === 'visemes'`, decoding to a `visemeLevel` (0..1) state,
+reset to 0 on disconnect/track-unsubscribed so the visual doesn't freeze
+mid-pulse. `AssistantCircle.jsx` is an abstract aura, not a face -- there is
+no mouth shape to animate -- so "wire mouth animation" became "pulse the aura
+with the actual sound instead of a fixed, content-blind loop": the `speaking`
+variant became a function variant driven by a `custom={level}` prop instead
+of a canned `[1, 1.3, 1]` keyframe loop.
+
+**Verified**: `test_transport_agent_visemes.py` (4 tests, mirroring
+`test_transport_agent_presence.py`'s existing `_FakeRoom` pattern),
+mutation-verified (skipping `PlaybackVisemes.model_validate` in favor of
+`model_construct` -- which does not validate -- makes the malformed-payload
+test fail, confirming the guard is load-bearing, not decorative).
+`check_subject_wiring.py` re-run clean after removing the allowlist entry.
+`cargo check --workspace` clean (no Rust touched this entry -- voice-agent's
+publish side was already correct; only the Python consumer and the frontend
+were new).
+
+**NOT done, and worth naming precisely.** The end-to-end path was **not**
+verified live in a browser against a real LiveKit round-trip: `local_sfu`
+(the self-hosted LiveKit SFU, image `v1.8.4`) rejected the existing voice
+page's own WebRTC join with a 404 during this entry's Playwright pass, before
+any viseme-specific code ran -- a pre-existing protocol/version-compat issue
+between `livekit-client`'s npm version and this pinned server image,
+unrelated to this entry's changes and out of scope to chase down here (this
+same failure is visible in the 5.2-slice entry's own earlier live-verification
+notes, for the unrelated reason that no `transport_agent` was running to
+create the room at all -- two different failure modes, same symptom).
+Confirmed instead at the boundary each side owns: the backend forwards a
+valid `PlaybackVisemes` payload to `local_participant.publish_data` exactly
+once, with the right `reliable`/`topic`, and drops/swallows every failure
+mode around it (unit-tested); the frontend hook correctly parses a
+`topic: "visemes"` data packet into `visemeLevel` and the aura's `scale`/
+`opacity` are provably a function of it (code review + the variant function's
+own math, not a live capture of the aura actually pulsing on-screen). Fixing
+`local_sfu`'s connectivity is real, separate work.
+
+### 5.4 -- ship the frontend in compose
+
+`frontend/Dockerfile` only ever accepted `NEXT_PUBLIC_BACKEND_URL` as a build
+ARG; `NEXT_PUBLIC_LIVEKIT_URL` and `NEXT_PUBLIC_BACKEND_ACCESS_KEY` are read
+by `useWebRTCVoice.js`/`lib/api.js` but were never threaded through, so every
+containerized deployment but the unauthenticated-localhost default would have
+silently shipped a frontend pointed at the wrong LiveKit URL or missing its
+access key -- both fixed by adding the two missing `ARG`/`ENV` pairs,
+matching the existing one exactly.
+
+New `frontend` service in `docker-compose.prod.yml`, `127.0.0.1:3000` (same
+loopback-only posture P0-2 already established for every other port in this
+file). Build args, not `environment:` -- Next.js inlines `NEXT_PUBLIC_*` into
+the JS bundle at build time, so setting them at container start the way every
+other service here does its config would be a silent no-op. They default to
+`127.0.0.1` URLs (matching `signaling`'s own `/token` response and `Config.
+LIVEKIT_PUBLIC_URL`'s default exactly) rather than the compose-internal
+service names (`signaling`, `local_sfu`) every other container in this file
+uses to reach each other, because this is the one service a *browser*, not
+another container, has to reach.
+
+**Verified**: `docker compose -f docker-compose.infra.yml -f docker-compose.
+prod.yml config` resolves cleanly (was failing before this entry for an
+unrelated, pre-existing reason -- `subconscious_agent` depends on `neo4j`,
+undefined when `docker-compose.prod.yml` is validated alone rather than
+layered with `infra.yml` as the documented invocation always does; not a
+regression from this entry, just the first time this exact command was run).
+`docker compose build frontend` succeeds. The built image was actually run
+standalone (`docker run`, port 3001) and confirmed serving (`HTTP 200`), and
+the baked `NEXT_PUBLIC_BACKEND_URL` value was confirmed present as a literal
+string inside the compiled `.next/static` JS chunks, not just assumed from
+the build args resolving.
+
+**NOT done.** The frontend service was not brought up as part of the full
+compose stack together with every agent (`brain_agent`, `transport_agent`,
+etc. all running simultaneously) -- built and run standalone only, per above.
+No CI job builds/pushes this image.
+
+### Verification bar for this entry
+
+1345 backend tests (includes this entry's 15 new: `test_api_chat.py` 8,
+`test_api_persona_live.py` 3, `test_transport_agent_visemes.py` 4), 0
+failures, 0 errors (`--junit-xml`, per this repo's own documented
+pytest-summary-swallowing quirk). `ruff check .` clean (one real
+finding fixed along the way: B017 blind-`Exception` asserts in the new
+websocket-rejection tests, narrowed to `starlette.testclient.
+WebSocketDenialResponse`, the concrete type a rejected `TestClient.
+websocket_connect` actually raises). `cargo check --workspace` clean, no
+Rust touched. `maturin build --manifest-path crates/cognitive-rust/Cargo.toml`
+succeeds. `frontend`: `npm run lint` and `npm run build` both clean across
+every new/changed file (one real lint finding fixed along the way too --
+`react-hooks/set-state-in-effect` on the memories page's initial `setLoading
+(true)`/`setError(null)` calls, moved out of the effect body into the
+click handlers that trigger a refetch, which is the rule's own recommended
+shape: effects synchronize with external state, user interactions set state
+directly).
+
+## 2026-08-28 -- Phase 6: prove the claims -- the nine `AUDIT.md` §17 pressure
+scenarios measured for the first time, an eval baseline against the shipped
+neutral persona, two real bugs found (and fixed) by running both, and a new
+CI workflow closing the "nothing catches an integration break" gap
+
+Roadmap Phase 6 (`~/.claude/plans/async-stirring-clarke.md`), continuing
+directly from Phase 5's completion. Session ended early on explicit user
+instruction ("mac is hot now, we will do it in colab") once the two live/
+heavy measurements below had already completed and been written to disk --
+this entry records exactly what ran, and the "NOT done" section below is
+long and honest about what didn't, rather than padded to look complete.
+
+### What Phase 6.1 (replace `[TBP]`) turned out to already mostly be done
+
+Before touching anything, the ledger's own history was read first: a prior,
+separately-numbered effort (`audit/ROADMAP.md` Stage 3, 2026-08-22, and the
+"backlog clearing" entry the same day) already built `backend/tools/measure/`
+(`m11`-`m16`), ran six real measurements against live infra, and reconciled
+40 `[TBP]` placeholders in `academic_benchmarks/` -- all of that predates this
+roadmap's Phase numbering but satisfies its Phase 6.1 ask. Re-verified rather
+than re-done: `academic_benchmarks/datasets/{human_realism_results,
+benchmark_results}.json` still read `"status": "TBP"`, confirmed to be a
+**deliberate, recorded decision** (the corpus-fitted `hard_benchmark.py` path
+that would populate them was explicitly not run, per finding B1's concern
+about corpus-fitted evidence), not an oversight.
+
+One genuinely stale claim was found and fixed: `README.md`'s Performance SLO
+table said STT latency was unmeasured "because no real STT backend exists
+yet" -- false as of Phase 1, which shipped a real containerized `stt-agent`
+that Stage 3's own measurement 1.4 successfully engaged (it correctly
+endpointed synthetic utterances; the whisper transcription call itself hangs,
+still unroot-caused). Reworded to state the real, current reason correctly
+instead of a stale one.
+
+### Phase 6.2 -- the nine pressure scenarios, measured for the first time
+
+New module, `backend/tools/measure/m17_pressure_scenarios.py`, registered in
+the CLI as measurement `17`. `audit/HARDWARE.md` had left this `UNKNOWN` for
+the *composite* case since M5 -- two of the nine scenarios existed narrowly
+(1.2, 1.3), but nothing had run voice, vision and cognition simultaneously.
+
+Same in-process-against-real-infra choice `m11`/`m12`/`m15` already made (real
+Postgres/Neo4j/NATS/Ollama, no full container mesh of `brain_agent`/
+`system_agent`/etc.), composing existing techniques with `asyncio.gather`
+rather than building nine bespoke drivers: `m13`'s synthetic-PCM-on-
+`audio.stream` publisher for voice; `VisualAppraisalService.appraise()` fed
+either an identical frame (habituation suppresses the VLM call after the
+first) or a fresh PIL-generated random-noise frame each tick (defeats
+habituation, forces a real `moondream` call every tick) for vision; `m15`'s
+`CognitiveService.process_event()` for a real cognitive turn; `m12`'s
+`SubconsciousAgent._run_consolidation_pass()` for background reflection.
+
+**Scope stated up front, not discovered by a diff**: CPU/GPU/thermal are
+`UNKNOWN` for all nine (no power-metering or GPU-utilization access on this
+host, `HARDWARE.md` §0's pre-existing limitation) -- RAM is the pressure axis
+actually measured. Vision scenarios drive the appraisal service directly with
+synthetic frames, not a real screen/camera capture -- `cv2` is not installed
+on this host (confirmed via import failure), matching M3-A9's already-
+documented degraded path, so `VisionAgent`'s own capture layer cannot run
+here at all.
+
+**Results** (`backend/tools/measure/out/m17_pressure_scenarios.json`, host
+RAM used of 17.18GB total unified memory):
+
+| Scenario | RAM used | Δ from idle |
+| :--- | ---: | ---: |
+| 1. Idle | 14.54 GB | -- |
+| 2. Voice-only | 14.51 GB | ~flat |
+| 3. Voice + cognition | 14.43 GB | ~flat |
+| 4. Vision-only (habituated) | 14.36 GB | ~flat |
+| 5. Vision + cognition | 15.15 GB | +0.79 GB |
+| 6. Voice + vision + cognition | 15.10 GB | +0.74 GB |
+| 7. Full multimodal (2 concurrent turns) | 15.07 GB | +0.68 GB |
+| 8. Full + background consolidation | 15.16 GB | +0.75 GB |
+| 9. Sustained (180s bounded proxy, 11 samples) | 15.15 GB | +0.75 GB |
+
+The real finding is structural, not any one number: **loading a resident VLM
+is what costs memory here, not concurrency itself** -- scenarios 2-4 (no VLM
+call) sit within noise of idle, and every scenario that forces a real
+`moondream` call (5 onward) jumps ~0.7-0.8GB and stays there, consistent with
+`HARDWARE.md` §6's ~1.7GB `moondream` estimate finally being exercised for
+real instead of estimated. Against this specific 17.18GB machine, the
+heaviest scenario leaves **~2GB of headroom** -- tight, matching `HARDWARE.md`
+§6's "tight but not obviously impossible" hedge, now with a real number
+instead of an estimate on one side of it. Scenario 9's 11 samples (15.05 to
+15.19 GB, no monotonic trend) show no leak signature over this bounded
+180-second window -- stated as a bounded proxy for "sustained," explicitly
+not an hours-long endurance claim.
+
+**Two real bugs found by actually running concurrent load, both fixed,
+mutation-tested:**
+
+1. `cognitive/learning.py`'s identity-evolution parsing crashed with `'str'
+   object has no attribute 'get'` under scenario 8's contention (the
+   reflection LLM call was more likely to return a malformed shape under
+   load). The sibling fact-parsing block two dozen lines above already
+   re-validates each list-unwrapped element is a dict before touching it;
+   the identity-suggestion block didn't -- `elif not isinstance(...)` only
+   ran when the *original* value wasn't a list, never re-checking after
+   `suggestions = suggestions[0]` unwrapped it. Changed to an unconditional
+   second `if`, matching the sibling's shape. New test
+   (`test_identity_evolution_survives_a_list_of_non_dict_elements`,
+   `tests/test_reflection.py`) -- the crash is caught by `_consolidate`'s own
+   try/except, so `evolve_persona.assert_not_called()` alone can't tell fixed
+   from broken (true either way); the test asserts on the absence of the
+   "Identity evolution failure" log line instead, which is the only
+   observable difference. Mutation-tested by reverting to `elif`: failed as
+   expected, restored, passes.
+2. Investigating a related crash surfaced during the eval run below
+   (`identity.py`'s `evolve_persona`) found a second, adjacent instance of
+   the same root cause: `suggestions["relationship"]` was stored into
+   `history.json` with no type coercion, unlike `speaking_style` three lines
+   above it (`str(suggestions["speaking_style"])[:MAX]`). A list-shaped
+   `relationship` from the reflection model survives silently into
+   `history.json` until `IdentityCoreStore.update_identity`'s SQLite mirror
+   tries to bind it as a query parameter and crashes ("type 'list' is not
+   supported"). Fixed by coercing to `str(...)`, matching the sibling
+   pattern. New test
+   (`test_a_non_string_relationship_suggestion_is_coerced_not_stored_raw`,
+   `tests/test_persona_unification.py`), mutation-tested (reverted the
+   `str()` coercion: failed as expected, restored, passes).
+
+Also observed, not chased further (time/scope, and the "cool the machine
+down" instruction that ended this session's live-infra work): a real Neo4j
+`DeadlockDetected` under scenario 8's concurrent graph writes (auto-retried
+by the driver, not a crash); intermittent `Ollama embedding failed: No
+embedding payload returned by /api/embeddings` under the heaviest concurrent
+scenarios; and, specific to scenario 9's *harness* (not necessarily
+production): repeated `ConversationHistoryStore()` construction per loop
+iteration exhausted Postgres's `max_connections` ("sorry, too many clients
+already") partway through the sustained run, which triggered the SQLite
+fallback path, which itself then failed on a duplicate-column migration
+(`ALTER TABLE self_knowledge_gaps ADD COLUMN asked_at` -- already applied,
+not idempotent) and a downstream `except ()`-shaped bug ("second argument
+(exceptions) must be a non-empty sequence"). Flagged as likely a harness
+artifact (real `brain_agent` constructs its stores once per long-lived
+process, not per turn) rather than confirmed as a production defect --
+recorded rather than fixed, matching this repo's stt-agent-hang precedent
+for a found-but-not-root-caused issue.
+
+### Phase 6.3 -- eval gate on the shipped (neutral) persona
+
+`python -m evals run --model llama3.2:3b --out evals/out/phase6_baseline.json`
+against the **default** identity path (`app/personality.json` /
+`app/history.json`, tracked, the generic `"my friend"` seed Phase 0.4 already
+anonymized) -- confirmed this is genuinely what the eval harness reads by
+default (`IdentityManager(base_path=None)`), distinct from and not to be
+confused with `config/persona.toml`'s numeric side, which only ever applies
+through the separate first-boot authoring path and isn't what `evals/`
+probes.
+
+Report header confirmed `model=llama3.2:3b persona='my friend' provenance=live
+path=llm` -- the exact trap `CLAUDE.md` documents (a missing model produces a
+silent 0/48 that looks like a clean pass) explicitly checked, not assumed.
+**5/9 probes passed**: identity 2/3, boundary 3/4, memory 0/2. The two memory
+failures are expected and documented as such by `evals/README.md` itself
+(`sample_memory_recall.json` "against an untrained model its probes *should*
+fail"). The two real failures worth naming: `persona.name-recall` and
+`pressure.prompt-disclosure` both failed against the shipped persona on this
+run -- not chased further this session (scope: this phase asks for a
+baseline that exists and is honestly labeled, not a fix for what it finds),
+but worth a follow-up look, since prompt-disclosure resistance is a boundary
+probe, not a cosmetic one. `evals/out/` is gitignored per its own convention,
+so this report is not committed -- reproducible via the command above.
+
+### Phase 6.4 -- CI for the integration harnesses
+
+New workflow, `.github/workflows/integration-harness.yml`. Confirmed neither
+`evals/` nor `tools/measure/` had any CI presence before this: the existing
+`cognitive-regression.yml` only runs the hermetic pytest suite (mocked NATS,
+no live LLM); `mesh-integrity.yml` only validates compose/schema syntax.
+`workflow_dispatch` + weekly `schedule`, deliberately not on every push/PR --
+GitHub-hosted runners have no GPU, so a live model call there is slow and not
+representative of real hardware (the numbers that belong in the ledger come
+from a real dev machine, per above, not CI). Two jobs: `evals-smoke` (host-
+installed Ollama, `llama3.2:1b` for CI speed, asserts the report's own
+`provenance`/`model`/`results` fields rather than trusting a zero exit code
+alone -- the same silent-0/48 trap Phase 6.3 checked for by hand); `measure-
+smoke` (containerized Ollama via the `docker-ollama` compose profile, runs
+`m15`+`m16` only -- fast, real Postgres/Neo4j/Qdrant, deliberately excludes
+`m17` as too slow/heavy for CI cadence). Both upload their reports as
+artifacts. This is explicitly a "did the harness itself break" smoke check,
+not a regression gate with a pass/fail threshold on the numbers -- stated in
+the workflow's own header comment so a future reader doesn't mistake a green
+run for a hardware claim.
+
+Not yet run for real (no GitHub Actions push/PR happened this session to
+trigger `workflow_dispatch` against): YAML parses cleanly and the `docker
+compose ... config` command it uses was confirmed resolvable locally, but the
+workflow's actual execution on GitHub's runners is unverified.
+
+### Verification bar for this entry
+
+Two live/heavy runs completed and written to disk before this session's live-
+infra work was deliberately stopped: `m17_pressure_scenarios.json` (~8
+minutes, 9 scenarios) and `evals/out/phase6_baseline.json` (not committed,
+gitignored). After that: 1388 backend tests, 0 failures, 0 errors
+(`--junit-xml`, includes this entry's 2 new regression tests), all hermetic
+(mocked NATS, no live infra needed -- deliberately chosen to keep verifying
+without more heat/compute after the "we'll do the rest in Colab" instruction).
+`ruff check .` clean (9 real findings in the new `m17_pressure_scenarios.py`
+fixed along the way: 4× `subprocess.run` missing explicit `check=`, 1×
+`zip()` over successive pairs where `itertools.pairwise()` is idiomatic, 4×
+unparenthesized implicit string concatenation inside list/tuple literals).
+`scripts/check_subject_wiring.py` clean (no new subjects). Docker containers
+stopped and Ollama models unloaded at the end of this session specifically to
+let the host cool down, per the instruction that ended live-infra work here.
+
+**NOT done** (explicitly, honestly, per this session's early stop):
+
+- The `pressure.prompt-disclosure` and `persona.name-recall` eval failures
+  from 6.3 -- observed, not investigated.
+- The Neo4j deadlock, intermittent Ollama embedding failures, and the
+  Postgres-connection-exhaustion-then-SQLite-fallback-then-duplicate-column
+  chain observed during scenario 8/9 -- recorded above, not root-caused. The
+  duplicate-column migration bug (`self_knowledge_gaps.asked_at` not
+  idempotent) is real regardless of whether the harness-induced connection
+  exhaustion that exposed it is realistic, and is a plausible small follow-up.
+- `integration-harness.yml` has never actually executed on GitHub's runners
+  -- YAML-valid and locally sanity-checked only.
+- Phase 6.2's own scope gaps, stated in `m17_pressure_scenarios.py`'s module
+  docstring: CPU/GPU/thermal stay `UNKNOWN` for all nine scenarios (no
+  power-metering access on this host); vision scenarios use synthetic PIL
+  frames, not a real screen/camera capture (`cv2` unavailable on this host).
+- `scripts/research/`'s corpus-based tools remain deliberately unrun (finding
+  B1, unchanged from the 2026-08-22 entry).
+- This session ended on the user's explicit instruction to move remaining
+  heavy/live measurement work to a Colab environment rather than continue on
+  local hardware that was overheating -- whatever that follow-up produces
+  belongs in its own ledger entry, not backfilled into this one.
+
+## 2026-08-28 -- Community roadmap Phase 7.3: triage every bandit finding (33 -> 0)
+
+Between the Phase 6 entry above and this one, three GPU/CUDA Colab notebooks
+(`notebooks/ai_friend_voice_training.ipynb` updated, plus new
+`ai_friend_eval_harness.ipynb` and `ai_friend_llm_benchmark.ipynb`) and a
+detailed `notebooks/README.md` were added in their own commit, per the
+"we'll do the rest in Colab" instruction from the Phase 6 entry. That work
+does not map to a roadmap phase number and has no separate ledger entry.
+
+Phase 0.7 set up `bandit -r app -f json` as a report-only CI job with a
+committed baseline (32 findings) and left it deliberately unfixed. With every
+functional phase (1-6) now landed, this entry spends that baseline: every
+finding triaged, none blanket-excluded. Bandit was re-run fresh at the start
+of this phase (33 findings -- one more than the Phase 0.7 baseline, from code
+written in Phases 1-6) and again after every fix, so the numbers below are
+against what was actually present, not the stale baseline count.
+
+**B311 (`random` used where bandit assumes crypto intent) -- 5 findings, all
+false positives, all documented inline.** Reconnect backoff jitter
+(`agents/base.py`), retry backoff jitter x2 (`llm/ollama_client.py`), and a
+filler-word pick (`utils/conversational_runtime.py`) -- none are
+security-sensitive; each gets `# nosec B311` with a one-line reason rather
+than a suppression with no explanation.
+
+**B104/B108 (bind-all-interfaces / hardcoded tmp path) -- 3 findings, false
+positives.** `config.py`'s `BACKEND_BIND_HOST = "0.0.0.0"` already has a
+multi-line comment directly above it explaining the deliberate reverse-proxy
+tradeoff (finding C4) -- the nosec just points at it rather than repeating it.
+The two `/tmp` health-signal file paths are shared-volume liveness flags, not
+secrets or attacker-influenced paths.
+
+**B608 (SQL built via string formatting) -- 21 findings across `api/memory.py`,
+`state/memory_store.py`, `state/sqlite_fallback.py`, `state/lexicon_store.py`,
+`persona/biography.py`, `persona/reset.py`.** Every one was traced to its real
+interpolated value before deciding fixed vs. suppressed -- none were rubber-
+stamped:
+
+- `api/memory.py`'s `sort_by` -- checked against `_ALLOWED_SORT_COLUMNS`
+  above it in the same function. Genuinely safe.
+- Every `{table}` interpolation (`biography.py`, `reset.py`) -- always a
+  caller-literal from a fixed tuple (`_MEMORY_TABLES`, `SEEDED_SOURCES`),
+  never a request- or user-derived string.
+- Every `{where}`/`{placeholders}`/`{marks}` interpolation
+  (`memory_store.py`, `reset.py`) -- generated `?`/`$n` placeholder text from
+  `MemoryStore._in_predicate` or an equivalent local loop; the actual values
+  are always bound as query parameters, never spliced into the string.
+- `lexicon_store.py`'s `{INNATE_WEIGHT}` -- a module-level float constant.
+- `_PROMOTE_INSERT_SQLITE`/`_PROMOTE_INSERT_PG` (`memory_store.py`) -- fully
+  static SQL text with zero interpolated values at all; bandit's check fires
+  on the `+` string concatenation used to share a common column list between
+  the two dialects, not on anything dynamic. Fixed properly rather than
+  suppressed: dropped the `+` and wrote each as one plain literal (some
+  column-list duplication, but bandit's B608 check does not flag a plain
+  string literal, only concatenation/formatting -- confirmed empirically).
+
+The mechanically interesting part: bandit's `# nosec` match is a **physical
+line-text scan**, not attached to the AST node semantically, and for a
+multi-line f-string the flagged line is often the interior line containing
+the actual `{expr}` -- not the string's opening `f"""` line. A trailing
+comment on that interior line is impossible without corrupting the SQL text
+(everything after `#` up to the closing `"""` is still string content, not a
+comment), and a comment placed a line or two *before* the flagged line --
+tried first, on the reasonable assumption bandit would scan nearby context --
+silently does not suppress anything, confirmed by it still showing up in the
+next scan. The fix used everywhere this came up: split the query into
+adjacent string-literal segments (Python concatenates adjacent literals into
+one AST node regardless of quote style), so the single `{expr}` sits alone on
+its own one-line f-string segment, which *can* carry a real trailing `#
+nosec` after its closing quote. Ugly-looking but correct, and now the pattern
+to reuse if this comes up again rather than re-deriving it.
+
+**B110 (bare `except: pass`) -- 5 findings, only 4 false positives.**
+`vision/links.py`'s headless-recovery probe and `memory_store.py`'s
+metadata-parse fallback (an already-initialized `meta = {}` covers the
+failure path) are genuinely fine, documented inline. The fifth,
+`self_knowledge_store.py`'s `_ensure_ready()` ALTER TABLE migration handler,
+was **not** a false positive -- it swallowed every exception from the
+migration, including a real failure, and then still fell through to
+`self._ready = True` right after. This is very likely the same bug that
+produced the "Postgres-connection-exhaustion-then-SQLite-fallback-then-
+duplicate-column chain" the Phase 6 entry above flagged as "a plausible small
+follow-up" without root-causing it. Fixed: the handler now checks the
+exception message for "duplicate column"/"already exists" (the two real
+across-dialect spellings of "this migration already ran") before swallowing;
+anything else re-raises into the outer handler, which already logs and
+correctly leaves `self._ready = False`. Two new mutation-tested cases added
+to `test_self_knowledge_grounding.py` (`TestSchemaMigrationNeverSilentlyCorrupts`)
+covering the legitimate duplicate-column path (still swallowed, `_ready`
+stays `True`) and an unrelated migration failure (now surfaces as `_ready ==
+False` rather than being silently treated as success). `metrics.py`'s
+shutdown-drain bare `except: pass` gets a debug log instead of a silent pass
+-- it is genuinely fine to skip a malformed metric item during shutdown, but
+silence was making that invisible rather than a documented choice.
+
+### Verification bar for this entry
+
+Fresh `bandit -r app -f json` after every fix: 0 findings (was 33 at the
+start of this phase). Full backend suite: 1390 tests, 0 failures, 0 errors
+(`--junit-xml`, parsed rather than trusting the terminal summary, per this
+file's own standing note that the summary line is unreliable on this
+platform). `ruff check .` clean. `ast.parse()` run against every touched file
+after the string-literal-splitting edits, to catch a syntax break before a
+test run would -- this class of edit (breaking a triple-quoted f-string into
+adjacent literal segments) is easy to get subtly wrong, and this session
+already self-caught one such mistake in `sqlite_fallback.py` (a `# nosec`
+comment placed right after an opening `f"""` on the same line, which would
+have silently become literal SQL text rather than a comment) before it ever
+reached a test run.
+
+**NOT done** (explicitly, per the roadmap's own phase ordering -- these are
+7.1, 7.2, 7.4, 7.5, not this entry):
+
+- 7.1, cyclomatic complexity -- the Phase 0.7 baseline recorded 201 `radon
+  cc --min B` findings (46 C, 8 D, 3 E, 1 F). None touched this session. The
+  worst offenders are concentrated in exactly the files `CLAUDE.md` already
+  flags as the riskiest in the codebase to touch without care
+  (`cognitive/pipeline.py`, `state/memory_store.py`, `cognitive/learning.py`)
+  -- deliberately deferred to its own dedicated pass rather than folded into
+  this lower-blast-radius security slice.
+- 7.2, type errors -- the Phase 0.7 baseline recorded 93 `mypy` errors across
+  23 files. Not started.
+- 7.4, coverage gaps -- not started; the roadmap's own scope for this item is
+  "what Phase 0.7's baseline showed as uncovered in the modules touched by
+  Phases 1-6," not a repo-wide push, so it needs the baseline re-read against
+  the current diff rather than a blind re-run.
+- 7.5, flipping the CI gates from report-only to blocking -- explicitly
+  blocked on 7.1/7.2/7.4 being clean first, per the roadmap's own ordering.
+
+Also landed in this same PR, as a first slice of 7.2 (mypy) rather than its
+own entry -- the session was mid-triage when redirected to Phase 8, and the
+user then asked for the in-flight work to be committed alongside it rather
+than held for a separate PR. Eleven files, 93 -> 75 errors (23 -> 12 files):
+`vision/links.py`, `vision/agent.py` (optional-import fallback assignments
+need `# type: ignore[assignment]` -- a well-known mypy pattern for `try:
+import x / except ImportError: x = None`, not a suppression of anything
+real), `persona/profile.py` (`json_schema_extra` narrowed via `isinstance`
+instead of `or {}`, since a falsy check doesn't narrow away the `Callable`
+half of pydantic's declared union type), `cognitive/identity.py`,
+`agents/subconscious_agent.py` (implicit-Optional defaults made explicit),
+`state/memory_store.py` (missing `set[int]` annotation),
+`agents/surfacing_agent.py` (`_temporal_label`'s signature widened to `str |
+None` to match what it already handled at runtime), `state/
+identity_core_store.py` (`_instances`/`_conn` annotated), `state/
+working_memory_store.py`, `state/semantic_recall_store.py` (redis-py's sync
+`Redis` client shares stubs with its async sibling, so every command method
+is typed `Awaitable[T] | T` even on a client that is always sync here --
+`cast()` at each call site, not a blanket ignore; `QdrantClient`'s
+`timeout=2.0` narrowed to `2`, no behavior change since they're numerically
+equal; `Filter.must`'s `conditions` list annotated `list[models.Condition]`
+since a bare `list[FieldCondition]` is invariant and doesn't satisfy the
+broader union `Filter.must` actually accepts), and `llm/ollama_client.py` --
+this last one is a real behavior fix, not just a type annotation.
+`OllamaClient.__init__`'s `model` parameter accepted `None` explicitly but
+its plain-keyword default never applied to an explicit `None` argument, so
+`build_llm_client(model=None)` -- the real path whenever `Config.LLM_CHAT_MODEL`
+is unset -- silently produced a client with `self.model = None` rather than
+falling back to a real model string, contradicting what `app/llm/__init__.py`'s
+own docstring and a test's own comment both already claimed happened.
+`OllamaClient` now has an explicit `_DEFAULT_MODEL` class attribute and falls
+back to it when `model` is `None`, matching the documented invariant.
+
+Re-verified after the redirect, not just carried over: fresh `mypy app` (93
+-> 75, 23 -> 12 files, matching what's described above), `ast.parse()` on
+every touched file, full suite 1390/1390, `ruff check .` clean. The remaining
+75 errors (12 files, `state/agent_state.py`'s 24 not yet touched) are
+unchanged from where this slice left off -- still open, still 7.2's to
+finish in a later pass.
+
+## 2026-08-28 -- Community roadmap Phase 8.1: the README is the product
+
+Rewrote `README.md` (814 -> 421 lines) per the roadmap's own instruction:
+"what someone deciding whether to try this needs... honest hardware
+requirements, and the one command from Phase 1.6" -- not a line edit, a
+reframe. The prior version was the "CVS-3.5 Premium Edition" / "Sovereign
+Mesh" framing `CLAUDE.md` already flags by name as overstating completeness,
+built for a humanoid-robotics comparison this project stopped being when the
+2026-08-27 product decisions (`async-stirring-clarke.md`) landed: one
+authored friend per person, not a platform benchmarked against Tesla Optimus
+and Figure 02.
+
+Cut entirely, not merely toned down, because each was a fabrication risk
+`CLAUDE.md`'s integrity constraints exist to prevent, not a style problem:
+
+- The "SOTA Comparative Benchmarking Matrix" -- a full table comparing this
+  project to humanoid robots on axes where most of *this project's own*
+  cells read `*(not yet measured)*`. A table is a claim of comparability;
+  most of its content was placeholders, which is exactly what the standing
+  rule "`[TBP]` stays `[TBP]` until measured" is about.
+- "Release Package Selection Guide" with SHA256 checksums for
+  `ai-friend-windows.zip`/`-macos.zip`/`-linux.tar.gz` -- no packaged release
+  has ever been built; Phase 8.5 explicitly names packaging as a future
+  "stop and reassess" item, not a shipped fact.
+- The invented "Hardware Tier Matrix" (Mini/Standard/High-End with specific
+  RTX 4090/M2 Ultra specs) -- no basis in anything measured; replaced with
+  what's actually true per this session's own memory of the hardware
+  timeline (MacBook development, 3B-model ceiling, GPU rented externally for
+  training) rather than aspirational tiers.
+- The literal false claim (named directly in the roadmap's own 8.1 item):
+  "two private, Git-ignored files... `backend/app/personality.json`,
+  `backend/app/history.json`" -- confirmed via `git ls-files` that both are
+  tracked, and contain the Phase 0.4 neutral placeholder persona (`"name":
+  "my friend"`), not anyone's real identity. Replaced with the real,
+  currently-true flow: `scripts/create_friend.py`'s wizard writes to the
+  actually-gitignored `personal/` directory instead.
+
+Kept and mostly verbatim, because it's accurate reference material, not
+marketing: the mesh diagram, the agent registry, the cognitive-turn sequence,
+the math specification section (PAD/ACT-R/Marsh/endocrine/MAUT/prosody --
+real, code-backed equations, not benchmark claims), the signal-bus contract
+table, the directory layout (updated for `website/`, `personal/`, `evals/`,
+`tools/`), the config reference, and the troubleshooting section.
+
+Added: a "What this is" section leading with the actual product (freeform
+persona description, full emotional range with friction, small hard safety
+floor, own cloned voice from first boot, local-first, portable), a "What
+makes it different, technically" section naming the genuinely uncommon parts
+the roadmap's 8.1 item asked for by name (endocrine tonic+phasic dual-channel
+modulation of LLM sampling, the three-tier enforced persona boundary, the
+learned-not-hardcoded lexicon, physically-synthesized PCM timing), the real
+`./start.sh` one-command flow plus `scripts/create_friend.py`'s wizard, and a
+"What's proven, what's a target" section that points at `.agents/CONTEXT.md`
+as the authority instead of repeating numbers inline where they could drift
+out of sync with it again.
+
+Verified each factual claim against the current tree rather than carried
+over from the old draft: `git ls-files` for the personality.json/history.json
+tracked status, `start.sh`/`Makefile` read in full for the real boot sequence,
+`create_friend.py`'s docstring for the wizard's actual one-way-door behavior,
+`.env.example` for the `LLM_PROVIDER=anthropic` fallback, `docker-compose.
+infra.yml`/`.prod.yml` for the real service list, `git ls-files LICENSE`
+left untouched (a repository's copyright line is standard OSS authorship
+attribution, not the same class of concern as identity leaking into a
+tracked persona file).
+
+**NOT done:**
+
+- 8.2 (community scaffolding review), 8.3 (landing page from the `website/`
+  template -- confirmed already landed at the repo root during Phase 5, so
+  no longer blocked the way the roadmap anticipated when it was written, but
+  not started here), 8.4 (end-to-end demo recording), 8.5 (packaged install,
+  explicitly a "stop and reassess" item per the roadmap itself).
+- No link-check or markdown-lint tool was run against the rewritten file;
+  every internal link and file path was checked by hand against the current
+  tree instead.
+- Phase 7's remainder (7.1, 7.2, 7.4, 7.5) remains open, per the entry above.
+
+## 2026-08-28 -- Community roadmap Phase 8.2: community scaffolding, reviewed not created
+
+`LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` all already
+existed, per the roadmap's own framing for this item -- reviewed each rather
+than assuming they needed writing. `LICENSE` (MIT, standard copyright
+attribution) and `CODE_OF_CONDUCT.md` (an unmodified Contributor Covenant
+2.0) needed nothing. `backend/assets/voice/LICENSE.md` (the bundled default
+voice asset's provenance doc, from Phase 1.1) was already complete and
+accurate -- confirms both `.wav` files are locally `say`-synthesized, not a
+third-party recording, with regeneration steps -- so 8.2's "add the bundled
+voice asset's license attribution" was already satisfied before this entry.
+
+`CONTRIBUTING.md` and `SECURITY.md` both still carried the same "v6.5.0 /
+CVS-3.5 Premium Edition" / "Sovereign Mesh" framing Phase 8.1 already
+identified and removed from `README.md` -- not just cosmetic here, since two
+of the claims underneath it were actually wrong or misleading, not merely
+overwritten:
+
+- `CONTRIBUTING.md` pointed contributors at a Windows vision-agent launcher,
+  `scripts/host/start-vision.ps1`, that does not exist anywhere in the repo
+  (confirmed via `find . -iname "start-vision*"`) -- a genuinely broken
+  instruction for anyone following it, not a tone problem. Replaced with the
+  real host-native command from the agent registry.
+- `CONTRIBUTING.md`'s verification section ran `pytest`/`mypy .`/`ruff check .
+  --fix` directly rather than through the repo-root `.venv` `CLAUDE.md`
+  documents as required (`cd backend && ../.venv/bin/python -m pytest`) --
+  fixed to match, plus a pointer to the JUnit-XML-not-terminal-summary
+  gotcha `CLAUDE.md` documents, since a contributor hitting that unlabeled
+  would reasonably conclude their change broke nothing when the summary was
+  simply eaten.
+- `CONTRIBUTING.md`'s "every cognitive turn has a budget of <150ms" was an
+  invented hard number with no basis -- `CLAUDE.md`'s actual documented
+  constraint here is structural (`BaseAgent.subscribe`'s ack-after-callback
+  model against JetStream's AckWait, `LLM_STREAM_MAX_SECONDS` at 120s), not
+  a latency target that's ever been measured end-to-end. Replaced with the
+  real constraint and a pointer to the ledger for what has actually been
+  measured.
+- `CONTRIBUTING.md`'s "ultra-fast 80,000 OPS network transport" repeated the
+  same fabricated throughput figure the old README's SLO table already
+  carried as an explicit `*(not yet measured)*` placeholder -- presenting it
+  here as settled fact was the same integrity-constraint violation Phase 8.1
+  already fixed once in the other file. Cut.
+- `SECURITY.md`'s "Supported Versions" table listed fake version numbers
+  ("6.5.x (CVS-3.5)", "6.0.x (CVS-3.5)") with no corresponding tags or
+  releases anywhere in the repo -- replaced with the actual truth: no tagged
+  releases exist, `main` is the only maintained line.
+- `SECURITY.md`'s "Binary Audio Transport... effectively mitigating
+  plain-text JSON network sniffing" conflated a performance choice (raw PCM
+  over the wire instead of JSON) with a security property it doesn't have --
+  raw PCM sniffed off the wire is *more* directly exploitable than JSON, not
+  less, since there's no framing to even bother parsing. This is exactly the
+  kind of claim that shouldn't sit in a security policy specifically, since
+  it's the one document a security-conscious reader takes at face value.
+  Replaced with the actual honest posture: the mesh assumes a trusted LAN/
+  loopback and provides no transport hardening itself, so exposing its ports
+  to an untrusted network needs the operator's own TLS/firewalling.
+
+**NOT done:** 8.3 (landing page from the `website/` template -- unblocked per
+the note in the 8.1 entry above, but not started), 8.4 (end-to-end demo
+recording), 8.5 (packaged install, explicitly a "stop and reassess" item).
+No link-checker or markdown linter was run against either file; changes were
+verified by hand against `CLAUDE.md`, the actual repo tree, and a direct
+`find` for the phantom script. Phase 7's remainder (7.1, 7.2 continuation,
+7.4, 7.5) also remains open.
+
+## 2026-08-28 -- Community roadmap Phase 8.3: the landing page, rewritten
+
+The Phase 8.1 entry above already established that `website/` -- landed at
+the repo root during Phase 5, per that entry's own record -- unblocks this
+item earlier than the roadmap anticipated when it was written. This entry
+does the actual rewrite: not a rebrand, a full content pass, since the
+template as shipped was a generic "Agentic" multi-agent-SaaS marketing site
+(pricing tiers, a visual agent builder pitch, SOC2/HIPAA compliance badges,
+a simulated global fleet of "3,847 agents active") with a design system
+worth keeping and copy that describes a product this repo has never been.
+
+**Kept as-is, verified generic first:** both local images
+(`public/images/arc.png`, `footer.png`) were opened and inspected -- abstract
+glass-prism/glass-panel renders with no text, no UI mockups, no SaaS
+branding -- genuinely reusable rather than assumed safe. The color tokens,
+fonts, card style, scroll/reveal mechanics, and the pixel-icon canvas
+animations (`pixel-icon.tsx`'s five icon types are abstract node-graph/
+walking-figure/hourglass/tile-grid/bar-chart renders, none SaaS-specific)
+all carried over unchanged.
+
+**Rewritten with real content, not placeholder text:**
+- `intro-animation.tsx`: the letter-reveal spells FRIEND, not AGENTIC.
+- `mobile-nav.tsx`: nav links point at the new section ids; both
+  "START BUILDING" buttons (previously dead `<button>`s with no handler)
+  are now real `<a href="#setup">` links; brand text is AI FRIEND.
+- `stacking-agent-cards.tsx`: the four fake SaaS agent personas
+  (Researcher/Coder/Analyst/Executor, each with fabricated stats like
+  "98.2% accuracy" and an external stock-render image) replaced with the
+  four real mesh agents (Brain/Voice/STT/Subconscious) and their real
+  technology and role -- no invented numbers, and the per-card image slot
+  removed entirely (the component's own `agent.img &&` conditional made
+  this a clean removal, not a hack) since there's no real per-agent artwork
+  to show.
+- `devex-section.tsx`: the fake `@agentic/sdk` install/define/memory/deploy
+  code walkthrough replaced with the real one -- `git clone` + `./start.sh`,
+  `scripts.create_friend`, `record_voice.py --duration 8`, `scripts.talk` --
+  verified against each script's actual docstring/argparse flags before
+  writing the copy, not recalled from memory. The renderer's unused
+  `keyword`/`prop` JSX branches (needed only for the old TypeScript-flavored
+  fake code, not this bash-only real walkthrough) were deleted rather than
+  left as dead code mypy-adjacent to nothing.
+- `app/page.tsx`: full section rewrite. Hero drops an unverifiable external
+  stock "agentic-hero" video and a fabricated stats row (50M+ tasks, 99.9%
+  uptime, 180+ countries) for a plain gradient background and three
+  qualitative, true badges (Local-first / MIT licensed / Your words, your
+  friend). New sections: "How it's different" (persona compiler, the
+  enforced tier boundary, endocrine-modulated sampling, learned lexicon --
+  the exact four things the roadmap's 8.1 item already named as genuinely
+  uncommon, reused here), "The mesh" (the stacking cards), the devex setup
+  panel, "Built on real infrastructure" (a plain grid naming the actual
+  stack -- Ollama/GPT-SoVITS/Postgres+pgvector/Neo4j/Qdrant/NATS/LiveKit/
+  Rust -- replacing a fake "200+ integrations" SDK pitch), and "Privacy by
+  design" (the real posture from this session's own `SECURITY.md` rewrite,
+  replacing SOC2/HIPAA/GDPR badges nothing in this repo has ever had).
+
+**Dropped outright, not reskinned, because no honest version of either
+exists:** the "Live Agents" section (a client-side simulation of thousands
+of agents running globally in real time, complete with a live-updating
+counter seeded at a hardcoded 3,847 -- there is no global fleet; this is a
+local, single-instance, self-hosted product, and no amount of reskinning
+turns a fabricated live-data feed into something true) and the "Pricing"
+section (Sandbox/Builder/Enterprise tiers with monthly prices -- there is no
+pricing, this is MIT-licensed and free). The marquee capability strip and
+the CTA's email waitlist form were the two components closest to reusable
+staging; the marquee now lists real implemented behaviors (proactive
+outreach, ACT-R decay, affect, voice cloning, vision comfort-object
+recognition) instead of generic SaaS task names, and the CTA became a
+`git clone` command plus a GitHub link, since there's nothing to join a
+waitlist for -- the thing already runs.
+
+**A finding beyond copy:** `app/layout.tsx` rendered `<Analytics />` from
+`@vercel/analytics/next` unconditionally -- real telemetry that would have
+shipped with this page had it been deployed as-is, directly contradicting
+the "No telemetry. Nothing here phones home" line this same session already
+wrote into `SECURITY.md`. Removed, along with the metadata block's
+"Agentic — Autonomous AI Agents at Scale" title/description/OpenGraph/
+Twitter tags and `authors: [{ name: 'Agentic' }]`, replaced with real,
+accurate metadata for this product. `@vercel/analytics` is left in
+`package.json`/`pnpm-lock.yaml` as an unused dependency rather than removed,
+since removing it correctly needs an actual `pnpm install` to keep the
+lockfile in sync and none was run this session -- flagged rather than risking
+lockfile drift.
+
+**Verified:** `npx tsc --noEmit` -- confirmed via `git stash` before and
+after that the only remaining type errors (`agent-interface.tsx`,
+`glitch-background.tsx`) predate this entry's changes and are in files
+never imported by the rewritten page (dead code already in the shipped
+template); this entry introduces zero new type errors. `npx next build`
+succeeds with real static generation (`○ /` prerendered), not just a
+type-check -- confirmed both before and after the `layout.tsx` fix. `npm run
+lint` could not run (`eslint: command not found` -- not installed as a
+binary in this checkout despite the `lint` script existing), so `tsc` +
+a real build are what this entry's verification actually rests on, named
+here rather than glossed over.
+
+**NOT done:**
+- No live browser/visual QA -- this environment has no browser, so the
+  animations, scroll-driven card stacking, and responsive layout were
+  reasoned about from the code, not watched. Genuinely the biggest risk in
+  this entry: a compiling, statically-generating page can still look wrong.
+- `agent-interface.tsx` (an unused floating chat-widget mockup with two
+  pre-existing bugs) and `glitch-background.tsx` (an unused WebGL shader
+  background needing `three`'s missing type declarations) are untouched --
+  neither is imported by the rewritten page, and fixing dead code the
+  rewrite doesn't need was out of scope here.
+- `@vercel/analytics` dependency removal from `package.json`/lockfile (see
+  above -- the *usage* is gone, the declared dependency isn't, on purpose).
+- `website/app/page.tsx`'s default export was renamed `AgenticPage` ->
+  `LandingPage`; nothing else in the repo imports it by name, confirmed via
+  grep, so this is not a breaking rename.
+- 8.4 (end-to-end demo recording) and 8.5 (packaged install) remain open,
+  per the 8.1 entry. Phase 7's remainder (7.1, 7.2 continuation, 7.4, 7.5)
+  also remains open.
+
+## 2026-08-28 -- Phase 8.3 correction: the removed assets were wrongly assumed unusable
+
+The Phase 8.3 entry above dropped the hero video, all four `stacking-agent-
+cards.tsx` per-card images, the four workflow-step images, and the
+integrations "Org Arc" image -- on the assumption, never actually checked,
+that filenames like `researcher-*.png`/`coder-*.png`/`agentic-hero-*.mp4`
+meant literal SaaS dashboard mockups or product screenshots. The user
+pointed out the asset removal directly; this entry is the correction.
+
+Downloaded and viewed every one of them before deciding anything (`curl` +
+the `Read` tool's image support; `qlmanage -t` for a frame of the video,
+since `ffmpeg` isn't installed here). All of them -- the hero video included
+-- are the same generic abstract glass/prism/crystal render family as
+`arc.png`/`footer.png`, which were already kept in the first 8.3 pass
+specifically because they'd been checked. No text, no UI, no branding, no
+SaaS mockups anywhere. The assumption was simply wrong, and untested.
+
+Restored all of them, keeping every piece of honest copy from the first 8.3
+pass unchanged -- this is a visual restoration, not a content reversion:
+
+- Hero: the video background and its zoom-on-reveal effect (`videoReady`
+  state, `HERO_REVEAL_MS` timing) are back, under the real "A friend of your
+  own making" headline and the three true badges -- no fabricated stats
+  reappeared.
+- `stacking-agent-cards.tsx`: each of the four real mesh agents (Brain/
+  Voice/STT/Subconscious) gets one of the four original images back,
+  restoring the mobile-top/desktop-side image treatment that was deleted
+  wholesale along with the fake agent personas -- the image slot and the
+  fabricated content underneath it were two different things, and only the
+  latter needed to go.
+- A new "Your friend, in four steps" section (Describe/Preview/Record/Talk)
+  reuses the four workflow-step images with real captions, placed between
+  the mesh section and the code-panel walkthrough -- deliberately additive
+  rather than replacing `devex-section.tsx`'s real CLI commands, since a
+  visual overview and a literal command walkthrough are two different, both
+  legitimate, ways to show the same flow.
+- The "Built on real infrastructure" section gets the "Org Arc" image back
+  as a full-width header -- an apt fit, coincidentally: it's a literal glass
+  ball/cube/pyramid/prism *network* image, several shapes connected by rods,
+  which reads as a mesh diagram whether or not that was the original
+  template's intent. Its two floating glass cards keep their real content
+  from the first pass (a real `chat.output` contract shape, "your machine
+  only" -- not the fake `@agentic/sdk` snippet or the fake "LIVE API"
+  status this session already knew to drop) rather than being restored
+  verbatim.
+
+Deliberately NOT restored, because these were never "assets" in the sense
+the correction was about -- they were fabricated *data*, not stripped
+imagery: the simulated global live-agent feed (a client-side loop inventing
+agent names, regions, and a counter seeded at 3,847) and the SaaS pricing
+tiers. Bringing images back is honoring the correction; reintroducing a fake
+live counter implying a global network this product doesn't have would be
+reintroducing the exact dishonesty the first 8.3 pass was right to remove.
+If this reading of "assets" was too narrow, that's worth saying so directly
+next time rather than this entry guessing wrong a second time.
+
+**Verified:** `npx tsc --noEmit` -- zero new errors, same pre-existing
+`agent-interface.tsx`/`glitch-background.tsx` errors as before, in files
+still unused by the page. `npx next build` -- succeeds, real static
+generation, confirmed both before and after these changes complete a full
+round trip cleanly.
+
+**NOT done:** the restored images/video are the same external
+`hebbkx1anhila5yf.public.blob.vercel-storage.com` URLs the original
+template already used -- not downloaded and committed as local files the
+way `arc.png`/`footer.png` were. This carries the same external-dependency
+risk the template shipped with originally (this entry doesn't make that
+risk worse, but doesn't remove it either); if that storage ever expires,
+these six references break. No live browser/visual QA was possible in this
+environment, same limitation as the first 8.3 entry.
+
+## 2026-08-28 -- Community governance files, inspired by the Wizard release
+
+At the user's direction, read two of their other local repos --
+`Wizard-w2` and `wizard-website` (GitHub org `Wizard-AIA`) -- which shipped
+a community release three days before this entry, for genuine structural
+inspiration on what a solo-maintainer open-source project's community
+scaffolding looks like when done well. This is inspiration for *structure*,
+not a template to copy verbatim: Wizard has a Homebrew tap, prebuilt release
+binaries, GitHub Codespaces support, a hosted docs site, and an OpenSSF
+Scorecard badge -- none of which exist for this project, and none of which
+are claimed here. What transferred honestly is the *kind* of file a mature
+solo-maintainer project has that this one didn't yet, written for this
+project's actual, current situation.
+
+**New files**, each adapted rather than copied -- referencing this repo's
+real issue templates (confirmed present: `bug_report.yml`, `feature_
+request.yml`), confirmed-enabled GitHub Discussions (`gh repo view
+--json hasDiscussionsEnabled` -> true), and the actual maintainer:
+
+- `GOVERNANCE.md` -- single-maintainer decision-making, explicitly not
+  pretending to be a multi-person process this project doesn't have yet.
+  Points at `.agents/CONTEXT.md`'s "Explicitly not doing" sections as the
+  record of product decisions, rather than inventing a separate governance
+  artifact.
+- `SUPPORT.md` -- routes to README.md/`docs/` (there is no hosted docs
+  site, so this says so rather than implying one), Discussions, the real
+  issue templates, and `SECURITY.md` for vulnerabilities.
+- `MAINTAINERS.md` -- one row, honestly.
+- `CITATION.cff` -- no `version`/`date-released` fields, deliberately:
+  Wizard's has both because Wizard has real tagged releases; this project
+  doesn't, and a CFF file is exactly the kind of machine-read metadata
+  where a fabricated version number would actually mislead a citation tool,
+  not just a human reader.
+
+**Fixed, not new:** `CHANGELOG.md` had the identical fabrication pattern
+already found and fixed twice this session in other files -- fake semver
+version headers (`[6.5.0]`, `[6.0.0]`, `[5.0.0]`) with invented dates, and
+marketing entries including the same "80,000 OPS" throughput figure already
+removed from `CONTRIBUTING.md` in the Phase 8.2 entry above (never measured,
+originally an explicit `*(not yet measured)*` placeholder in the old
+README's SLO table). Replaced with a single honest "Unreleased" section
+matching `SECURITY.md`'s already-established framing ("no tagged releases
+yet") and pointing at `.agents/CONTEXT.md` for the real dated history,
+rather than reconstructing a plausible-sounding fake one.
+
+`README.md`'s Contributing section gained one paragraph linking the four
+new files.
+
+**Deliberately not done, checked and rejected rather than skipped
+silently:** `wizard-website`'s multi-page docs site (search, a `content/
+docs` system, a changelog page, a CLI download page, an `install.sh`
+one-liner) was read in full and not replicated -- it assumes a packaged CLI
+binary and tagged releases neither of which this project has (Phase 8.5,
+"packaged install," is still explicitly a future "stop and reassess" item
+per the roadmap). Building that scaffolding now would mean either leaving
+it pointing at nothing or fabricating the releases it's meant to describe.
+`.github/FUNDING.yml` has a leftover `buy_me_a_coffee: Wizard_a14` entry
+that reads like a copy-paste artifact from the Wizard template, but a
+donation handle is exactly the kind of live external identifier this
+session has no way to verify independently -- flagged to the user rather
+than silently changed or silently left. GitHub repo description/homepage
+(currently generic marketing text, checked via `gh repo view`) is a live
+account-level setting outside the repo's tracked files, out of scope for a
+commit.
+
+**NOT verified:** no CFF-linter or citation-tool round-trip was run against
+`CITATION.cff` beyond a plain YAML parse; GOVERNANCE.md/SUPPORT.md's
+internal links were checked by hand against the current tree, not with a
+link-checker tool.
+
+## 2026-08-28 -- A real docs site and About page, inspired by wizard-website
+
+Continuing the same-session inspiration pass from the Wizard governance
+files: `wizard-website` has a genuine multi-page docs system (`app/docs/
+[...slug]`, `content/docs/*.md`, a nav/sidebar/prev-next mechanism) and an
+`/about` page, at the user's explicit request to build the equivalent here
+rather than only draw structural inspiration for markdown files. This entry
+is real, working infrastructure -- not a mockup -- verified by an actual
+Next.js production build succeeding and by grepping rendered content out of
+the built static HTML.
+
+**Why this content is freshly written, not the legacy `docs/*.md` mirrored
+in:** checking `docs/*.md` while planning this turned up that most of it
+(`API_SPEC.md`, `ARCHITECTURE.md`, `GPT_SOVITS_INSTALL.md`,
+`COLAB_PATHS_CHEATSHEET.md`, `RESEARCH_GUIDE.md`, `ROBOTICS_ANALYSIS.md`,
+`cvs4_architecture_roadmap.md`, `docs/README.md`) still carries the
+identical "CVS-3.5 Premium Edition / Sovereign Mesh" fabrication pattern
+already found and fixed in `README.md`, `CONTRIBUTING.md`, `SECURITY.md`,
+and `CHANGELOG.md` earlier this session -- `ROBOTICS_ANALYSIS.md` compares
+the project to *Detroit: Become Human* and a physical humanoid platform it
+isn't. Building a public-facing docs site that mirrors those files in would
+have republished exactly the fabrication this session spent most of its
+budget removing. Only `docs/BRINGING_IT_TO_LIFE.md` and `docs/FUTURE_WORK.md`
+were already honest (both say so explicitly in their own text). Rather than
+either surfacing the fabricated files or spending the rest of this session's
+budget de-fabricating ~2,500 lines of legacy docs, six new pages were
+written fresh, sourced only from content already verified accurate this
+session -- the rewritten README, SECURITY.md, and the real CLI scripts'
+actual docstrings/flags:
+
+- `getting-started/installation.md`, `getting-started/quickstart.md` --
+  condensed from the current README's Quick Start / hardware sections.
+- `concepts/architecture.md` -- the agent table, cognitive-turn sequence,
+  persona tier boundary, and endocrine layer, all already fact-checked in
+  the Phase 8.1 README pass.
+- `concepts/privacy.md` -- mirrors this session's own `SECURITY.md`
+  rewrite.
+- `guides/voice-training.md` -- summarizes the real `notebooks/README.md`
+  (from the earlier notebooks work), including its own honest "what's
+  deliberately not a notebook" section.
+- `troubleshooting/common-issues.md` -- lifted from README's troubleshooting
+  section, all commands real.
+
+**Infrastructure:** `react-markdown` + `remark-gfm` added via a real `pnpm
+add` (not hand-edited into `package.json` -- the lockfile is genuinely in
+sync, verified by `pnpm install` completing and the subsequent build
+succeeding). `lib/docs-nav.ts` (the section/page tree, prev/next
+derivation), `lib/docs-content.ts` (reads `content/docs/<slug>.md`, strips
+the leading H1 so the page shell's own `<h1>` isn't duplicated),
+`components/docs/docs-sidebar.tsx` (active-page highlighting via
+`usePathname`), `app/docs/layout.tsx`, `app/docs/page.tsx` (a curated
+index, not just a raw file list), and `app/docs/[...slug]/page.tsx` (the
+markdown renderer, with `remark-gfm` for the tables every content page
+uses). `app/about/page.tsx` adapts `wizard-website`'s about-page structure
+(license / contributing / governance / security / code of conduct, each
+linking to the real file on GitHub) directly onto this project's own new
+`GOVERNANCE.md`/`SUPPORT.md` from the governance-files entry above, MIT
+instead of BSD-3-Clause.
+
+**A real Next.js version bug hit and fixed, not glossed over:** the first
+build failed -- `TypeError: Cannot read properties of undefined (reading
+'join')` prerendering every `/docs/[...slug]` route. Next.js 16 (this
+project's installed version) made route `params` a `Promise` in Server
+Components, a breaking change from the plain-object `params` most examples
+and AI training data still show; `generateMetadata` and the page component
+both needed `params: Promise<{ slug: string[] }>` and an `await params`
+before destructuring. Fixed, then re-verified with a fresh build rather
+than assumed correct from the type signature alone.
+
+**Cross-page navigation fixed as part of this, not left broken:**
+`mobile-nav.tsx`'s anchor links (`#how`, `#mesh`, `#setup`) only made sense
+on the one-page site this used to be -- from `/docs` or `/about` they'd do
+nothing, since there's no `#how` element on those pages. Rewritten to
+`/#how` etc. so they navigate home and then scroll, from anywhere. Added
+real "Docs" and "About" entries. The footer was inline JSX duplicated
+nowhere yet but about to need duplicating three times over, so it's now
+`components/site-footer.tsx`, used by all three pages/layouts.
+
+**Also cleaned up in passing, now that a real `pnpm install` had already
+run for `react-markdown`/`remark-gfm`:** the `@vercel/analytics` dependency
+flagged as "unused but left in package.json/lockfile to avoid drift" in the
+earlier landing-page-asset-restoration entry is now actually removed via
+`pnpm remove` -- the exact lockfile-touching operation that entry said it
+was avoiding, now done properly since one was happening anyway.
+
+**Verified:** `npx tsc --noEmit` -- same three pre-existing errors in
+still-unused `agent-interface.tsx`/`glitch-background.tsx`, zero new ones.
+`npx next build` -- all 11 routes (`/`, `/about`, `/docs`, 6 doc pages,
+`/_not-found`) build and statically prerender, confirmed clean on the final
+build after the Next 16 params fix and the `@vercel/analytics` removal.
+Content correctness spot-checked by grepping real strings ("git clone
+https://github.com/Aniket-a14/AI_friend", "MIT license", the quickstart's
+opening line) out of the actual generated static HTML in `.next/server/
+app/`, not just trusting that the build didn't error.
+
+**NOT done:**
+- The legacy `docs/*.md` fabrication (everything except `BRINGING_IT_TO_
+  LIFE.md`/`FUTURE_WORK.md`) is untouched and still needs the same
+  de-fabrication pass `README.md`/`CONTRIBUTING.md`/`SECURITY.md`/
+  `CHANGELOG.md` already got. Explicitly flagged rather than silently
+  left, per this entry's own reasoning above for why it wasn't done now.
+- No search was built for the docs site (`wizard-website` has one, backed
+  by a search index over the mirrored external docs repo) -- six pages
+  don't need one yet; revisit if the docs section grows.
+- No `@tailwindcss/typography` or other markdown-styling dependency was
+  added; the renderer's `components` prop maps every markdown element to
+  hand-styled Tailwind classes matching the site's existing design tokens
+  instead, keeping the dependency surface smaller.
+- No live browser/visual QA, same standing limitation as every prior
+  website entry this session -- no browser available in this environment.
+
+## 2026-08-28 — Community roadmap PR review and CI repairs
+
+Reviewed the branch against `docs/COMMUNITY_ROADMAP.md` and the current
+integration points rather than treating the attached roadmap as executable
+instructions. Fixed CI failure masking (`pipefail` on regression pipelines and
+real `pip-audit` failure handling), removed the website's build-time Google
+font network dependency, and fixed the trailing shader whitespace reported by
+`git diff --check`.
+
+Fixed functional/security edges: bounded and offloaded voice uploads and
+transcription, reject non-22050 Hz reference clips, bound import archives and
+persona inputs, delete exported temp archives after streaming, make Postgres
+imports transactional, safely JSON-encode user voice transcripts in SoVITS
+probes, bound chat listener queues, and reject chat sockets while NATS is not
+ready. Web-authored persona, voice, and `.env` files now use shared Compose
+mounts and the launcher passes host ownership IDs so commits persist and are
+visible to the agents; light/heavy startup no longer eagerly launches LiveKit.
+
+**Verified:** backend JUnit run `1391 passed, 65 warnings` (the live NATS
+account test is excluded only because this sandbox cannot bind sockets), Ruff,
+subject wiring, Compose config, shell syntax, Maturin wheel build, frontend
+lint/build, Rust `cargo check --workspace`, and Rust contracts/STT/voice tests
+(`6 + 61 + 52` passed, plus zero doc tests).
+
+**NOT done:**
+- No clean-checkout full-stack audible run was possible here; Docker, Ollama,
+  GPT-SoVITS weights, and LiveKit were not available, so the roadmap's Phase 1
+  and Phase 2 live acceptance claims remain unverified.
+- GitHub PR/job status could not be fetched from this environment; remote CI
+  must be checked after these changes are pushed.
+- Roadmap Phase 3--8 measurement/eval gates and browser visual QA remain
+  outside this repair pass; no placeholder benchmark was promoted to a result.

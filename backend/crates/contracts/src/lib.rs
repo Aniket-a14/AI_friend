@@ -272,7 +272,14 @@ fn default_conflict_rejected() -> String {
 pub struct UserVoiceProperties {
     pub pitch_f0: f64,
     pub energy_rms: f64,
-    pub tempo_wpm: f64,
+    // docs/FUTURE_WORK.md §1.2: `None` until the first utterance completes
+    // and a real words-over-duration rate exists to publish -- a fabricated
+    // default here would be indistinguishable from a real measurement to
+    // every consumer. Changed on both sides of the wire together (this file
+    // and backend/app/contracts.py); a one-sided change here is exactly the
+    // silent-drop failure mode the char_offset bug already taught this repo.
+    #[serde(default)]
+    pub tempo_wpm: Option<f64>,
     pub timestamp: f64,
 }
 

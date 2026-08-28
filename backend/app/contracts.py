@@ -45,6 +45,13 @@ class Topics(str, Enum):
     AUDIO_PLAYBACK_VISEMES = "audio.playback.visemes"
     AUDIO_PLAYBACK_PROGRESS = "audio.playback.progress"
     AMBIENT_NOISE_TELEMETRY = "ambient.noise.telemetry"
+    # "state.presence", not "session.presence": AI_MESSAGES' JetStream
+    # subject pattern is state.>, and a subject outside every declared
+    # pattern needs a check_subject_wiring.py allowlist entry to justify why
+    # (see ambient.noise.telemetry's) -- fitting the existing wildcard needs
+    # no such justification, and "who is connected" is state as much as
+    # state.broadcast's affect snapshot is.
+    SESSION_PRESENCE = "state.presence"
 
 
 # ─── chat.input ──────────────────────────────────────────────
@@ -269,7 +276,11 @@ class UserVoiceProperties(BaseModel):
 
     pitch_f0: float
     energy_rms: float
-    tempo_wpm: float
+    # docs/FUTURE_WORK.md §1.2: None until the first utterance completes and
+    # a real words-over-duration rate exists -- see the Rust struct's own
+    # comment (crates/contracts/src/lib.rs) for why this changed on both
+    # sides of the wire together rather than just here.
+    tempo_wpm: float | None = None
     timestamp: float = Field(default_factory=time.time)
 
 
@@ -344,4 +355,20 @@ class AmbientNoiseTelemetry(BaseModel):
 
     rms_energy: float
     noise_floor_db: float
+    timestamp: float = Field(default_factory=time.time)
+
+
+# ─── session.presence ───────────────────────────────────────
+class SessionPresence(BaseModel):
+    """Published by `transport_agent` on every LiveKit room join/leave edge
+    (Phase 3.1) -- the only component with direct visibility into who is
+    actually connected. `subconscious_agent` runs as a separate process and
+    has no other way to know: without this, a proactive thought generated
+    while nobody was listening had nowhere to go but a synthesized-and-
+    discarded utterance (see `app/state/proactive_queue.py`)."""
+
+    model_config = {"extra": "allow"}
+
+    connected: bool
+    participant_count: int = 0
     timestamp: float = Field(default_factory=time.time)

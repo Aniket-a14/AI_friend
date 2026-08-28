@@ -58,6 +58,9 @@ class TestSubconsciousAgent:
         )
         agent.llm = mock_llm_service
         agent.publish = AsyncMock()
+        # Phase 3.1: a thought only publishes live when someone is actually
+        # connected -- see TestProactiveQueueing below for the alternative.
+        agent._someone_connected = True
 
         await agent._on_system_tick({"timestamp": 1234567890})
 
@@ -79,6 +82,113 @@ class TestSubconsciousAgent:
 
         # Verify attempt was marked
         mock_state_service.mark_proactive_attempt.assert_called_once()
+
+
+class TestProactiveQueueing:
+    """Phase 3.1: a thought generated while nobody is connected must queue
+    instead of publishing into a room with no one to hear it, and must
+    replay on the next 0 -> 1 reconnect."""
+
+    @pytest.mark.asyncio
+    async def test_a_thought_queues_instead_of_publishing_when_disconnected(
+        self, mock_state_service, mock_llm_service, tmp_path
+    ):
+        from app.agents.subconscious_agent import SubconsciousAgent
+        from app.state import proactive_queue
+
+        mock_state_service.db_path = str(tmp_path / "state.db")
+        agent = SubconsciousAgent(
+            state_service=mock_state_service, graph_db=MagicMock()
+        )
+        agent.llm = mock_llm_service
+        agent.publish = AsyncMock()
+        assert agent._someone_connected is False  # the default
+
+        await agent._on_system_tick({"timestamp": 1234567890})
+
+        agent.publish.assert_not_awaited()
+        assert proactive_queue.pop_all(mock_state_service.db_path) == [
+            "I should ask them about their day."
+        ]
+        # The cooldown must still be consumed, or every tick while still
+        # disconnected would generate (and queue) another duplicate thought.
+        mock_state_service.mark_proactive_attempt.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reconnecting_replays_a_queued_thought(
+        self, mock_state_service, tmp_path
+    ):
+        from app.agents.subconscious_agent import SubconsciousAgent
+        from app.state import proactive_queue
+
+        mock_state_service.db_path = str(tmp_path / "state.db")
+        proactive_queue.enqueue(mock_state_service.db_path, "queued while away")
+        agent = SubconsciousAgent(
+            state_service=mock_state_service, graph_db=MagicMock()
+        )
+        agent.publish = AsyncMock()
+
+        await agent._on_session_presence({"connected": True})
+
+        agent.publish.assert_awaited_once()
+        topic, payload = agent.publish.await_args.args
+        assert topic == Topics.CHAT_INPUT
+        assert ChatInput.model_validate(payload).text == "queued while away"
+        # Delivered once -- the queue must actually be drained, not just read.
+        assert proactive_queue.pop_all(mock_state_service.db_path) == []
+
+    @pytest.mark.asyncio
+    async def test_presence_with_an_empty_queue_publishes_nothing(
+        self, mock_state_service, tmp_path
+    ):
+        from app.agents.subconscious_agent import SubconsciousAgent
+
+        mock_state_service.db_path = str(tmp_path / "state.db")
+        agent = SubconsciousAgent(
+            state_service=mock_state_service, graph_db=MagicMock()
+        )
+        agent.publish = AsyncMock()
+
+        await agent._on_session_presence({"connected": True})
+
+        agent.publish.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_repeated_connected_signal_does_not_replay_again(
+        self, mock_state_service, tmp_path
+    ):
+        """Only the 0 -> 1 edge should replay. A redundant connected=True
+        (e.g. a redelivered NATS message for an event already processed)
+        must not drain and deliver whatever happens to be in the queue at
+        that moment -- from this service's perspective it is already known
+        to be connected, so only a genuine reconnect should trigger delivery.
+
+        Queues a second thought directly (bypassing the tick handler, which
+        would not queue at all once already connected) between the two
+        signals specifically so this test cannot pass merely because the
+        queue was already empty on the second call."""
+        from app.agents.subconscious_agent import SubconsciousAgent
+        from app.state import proactive_queue
+
+        mock_state_service.db_path = str(tmp_path / "state.db")
+        proactive_queue.enqueue(mock_state_service.db_path, "delivered on the edge")
+        agent = SubconsciousAgent(
+            state_service=mock_state_service, graph_db=MagicMock()
+        )
+        agent.publish = AsyncMock()
+
+        await agent._on_session_presence({"connected": True})
+        agent.publish.reset_mock()
+
+        proactive_queue.enqueue(mock_state_service.db_path, "must not be delivered")
+        await agent._on_session_presence({"connected": True})
+
+        agent.publish.assert_not_awaited()
+        # And the item must still be sitting there, untouched by the
+        # redundant signal -- not silently dropped either.
+        assert proactive_queue.pop_all(mock_state_service.db_path) == [
+            "must not be delivered"
+        ]
 
 
 class TestBrainAgentSubconsciousRouting:

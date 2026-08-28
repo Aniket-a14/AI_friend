@@ -1,12 +1,20 @@
-# 🤝 Contributing to AI Friend (v6.5.0 / CVS-3.5 Premium Edition)
+# 🤝 Contributing to AI Friend
 
-Thank you for contributing to the **Sovereign Mesh**. This project is a high-fidelity, state-driven cognitive identity emulator designed for 100% local, ultra-low latency execution. We value precision, architectural integrity, and behavioral realism.
+Thank you for contributing. This project is a local-first, state-driven AI
+friend platform built on a mesh of specialized agents. We value precision,
+architectural integrity, and honesty about what actually works — see
+`CLAUDE.md` and `.agents/CONTEXT.md` (the engineering ledger) before making
+architecture or behavior changes; where any doc disagrees with the ledger,
+the ledger is right.
 
 ---
 
-## 🏗️ 1. Understanding the Sovereign Mesh
+## 🏗️ 1. Understanding the mesh
 
-Before writing a single line of code, you must understand that AI Friend is a **decentralized system of autonomous agents** synchronized via a central nervous system (**NATS JetStream**).
+Before writing a single line of code, you must understand that AI Friend is a
+**decentralized system of autonomous agents** synchronized via a central
+nervous system (**NATS JetStream**), not a monolith with internal function
+calls.
 
 ### The Cognitive Hierarchy
 - **Tier 1 (Infrastructure)**: NATS, Neo4j, PostgreSQL, Redis. The "Bones".
@@ -24,7 +32,7 @@ We follow a strict **Planning-First** philosophy. Non-trivial changes (anything 
 ### Step 1: Research & Planning
 1.  **Identify the Boundary**: Determine which agents or services are affected.
 2.  **Define the Contract**: If agents need to talk, define the Pydantic model in `backend/app/contracts.py`.
-3.  **Latency Budget**: Every cognitive turn has a budget of **<150ms**. If your change adds latency, you must justify it.
+3.  **Latency awareness**: A cognitive turn can legitimately run long (`LLM_STREAM_MAX_SECONDS`, 120s) — `BaseAgent.subscribe` only acks after the callback returns, so a long-running consumer needs to be reasoned about against JetStream's AckWait, not against a fixed latency budget. See `CLAUDE.md`'s "Ack model matters here" note before touching long-running consumers. No end-to-end latency number is currently measured against real infrastructure — see `.agents/CONTEXT.md` for what's actually been proven.
 
 ### Step 2: Implementation Sequence
 1.  **Contract Update**: Modify `contracts.py` and run `backend/scripts/bootstrap/setup_nats_streams.py`.
@@ -67,49 +75,59 @@ npx prisma db push
 ```
 
 ### B. Multimodal Development (Vision)
-Because Windows screen capture cannot run inside Docker, use the **Host Bridge**:
-1.  Ensure **Ollama** is running on your host with `moondream`.
-2.  Run the launcher:
-    ```powershell
-    ./scripts/host/start-vision.ps1
-    ```
+The Vision Agent must run on the host on Windows and macOS — Docker Desktop's
+Linux VM has no route to the host display or webcam (see the Vision Agent row
+in `README.md`'s agent table for why). Run it natively instead:
+```bash
+pip install -r backend/requirements-ai.txt   # mss + opencv-python
+NATS_URL=nats://127.0.0.1:4222 python -m app.vision.agent
+```
+On Linux, the containerized path works: uncomment the `devices`/X11 entries
+for `vision_agent` in `docker-compose.prod.yml` and run
+`docker compose --profile vision up vision_agent`.
 
 ---
 
 ## 🧪 5. Verification: How to Check?
 
+The virtualenv lives at the **repo root** (`.venv`), but pytest must run from
+`backend/` — see `CLAUDE.md`'s Commands section for the full explanation and
+the Windows-path equivalents.
+
 ### 1. Linting & Type Safety (Mandatory)
-We use **Ruff** for high-speed linting. Your code **must** be clean before pushing.
 ```bash
 cd backend
-ruff check . --fix
-mypy .
+../.venv/bin/python -m ruff check .
+../.venv/bin/python -m mypy app
 ```
+`mypy`/`radon`/`bandit` currently run in CI as report-only jobs against a
+committed baseline (`backend/tools/quality/baseline/`) — see `CLAUDE.md` and
+the roadmap's Phase 7 for the ongoing triage; don't fix an unrelated finding
+opportunistically while touching a file for something else, note it instead.
 
-### 2. Cognitive Regression Tests
-Check that your change didn't break the AI's "Mind" or performance budget:
+### 2. Regression Tests
 ```bash
-# Run all cognitive tests
-pytest backend/tests/test_decision.py backend/tests/test_subconscious.py -v
-
-# Run state persistence tests
-pytest backend/tests/test_regressions.py -k "state"
-
-# Run the 16-metric isolated performance suite (Mandatory for latency-sensitive PRs)
-pytest backend/tests/test_performance.py
+cd backend
+../.venv/bin/python -m pytest -q --junit-xml=<scratch>/res.xml   # full suite
+../.venv/bin/python -m pytest -k "decision or subconscious"       # targeted
 ```
+Pytest's terminal summary is unreliable in this repo — parse the JUnit XML
+for the real pass/fail count rather than trusting the dots; see `CLAUDE.md`
+for why and how to recover a swallowed traceback.
 
 ### 3. Mesh Health Probe
-Verify all 22 containers are actually talking to each other:
+Verify containers for your chosen mode are actually healthy:
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Health}}"
+docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml ps
 ```
 
 ---
 
 ## 📜 6. Mesh Communication Contracts (NATS)
 
-All inter-agent talk is strictly typed. **Never** send raw dictionaries. We utilize strict Pydantic models for validation and `orjson` binary serialization for ultra-fast 80,000 OPS network transport.
+All inter-agent talk is strictly typed. **Never** send raw dictionaries. Every
+subject has a Pydantic model in `backend/app/contracts.py`, validated at the
+publish and subscribe boundary rather than trusted implicitly.
 
 **To add a new subject:**
 1.  Define the `Topic` in `app/contracts.py`.
@@ -131,11 +149,9 @@ await self.publish("my.raw.subject", {"raw": "data"})
 
 ## 🚀 7. Pull Request Rules
 
-1.  **Conventional Commits**: `feat:`, `fix:`, `refactor:`, `mesh:`, `docs:`.
-2.  **Context Ledger**: If you change agent behavior, you **MUST** update `.agents/CONTEXT.md` with a summary of the change.
+1.  **Conventional Commits**: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
+2.  **Context Ledger**: If you change agent behavior, you **MUST** update `.agents/CONTEXT.md` with a summary of the change — what changed, why, how it was verified, and an explicit "NOT done" section. Existing entries show the expected style.
 3.  **No Dead Code**: Remove unused variables and commented-out blocks (unless documenting a design decision).
+4.  **Mutation-test new tests**: deliberately break the code a new test covers and confirm the test actually fails — a test that passes either way is asserting nothing.
 
----
-
-**Designed for Perception. Built for Identity.**
-*The Sovereign Mesh is a living organism. Treat its architecture with respect.* 🦾✨
+Thank you for contributing.

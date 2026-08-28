@@ -262,8 +262,8 @@ class SubjectMetrics:
                                 metric["latency_samples"] += 1
                             except (TypeError, ValueError):
                                 pass
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Skipping malformed metric item during shutdown drain: %s", e)
 
     @staticmethod
     def compute_latency(start_time) -> float | None:
