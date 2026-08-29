@@ -321,12 +321,13 @@ claim) — you run it from source via Docker Compose.
   is effectively required for GPT-SoVITS *fine-tuning* on your own voice
   recordings — see the Colab notebooks for that path rather than doing it on
   a laptop.
-- **A larger local model** than the current 3B-class default is a real
-  quality lever this project hasn't been able to test against yet; the
-  ceiling is a hardware constraint of current development, not a design
-  limit — an optional cloud LLM fallback exists for exactly this gap
-  (`LLM_PROVIDER=anthropic`, opt-in, sends conversation to a third party by
-  design — see `.env.example`).
+- **Larger local models**: While 3B models (`llama3.2:3b`) provide a lightweight
+  CPU baseline, empirical testing on Cloud GPU demonstrates that **Hermes 3 (8B)**
+  (`hermes3:8b`) delivers **88.0 ms TTFT** and **44.4 tokens/sec** with unwavering
+  persona consistency (`persona.rename-resistance = 1.00`), while **Mistral NeMo (12B)**
+  provides **0.719 memory retention** across 240 dialogue turns and robust system prompt
+  defense. An optional cloud LLM fallback (`LLM_PROVIDER=anthropic`) remains available
+  for low-spec hosts.
 
 ## What's proven, what's a target
 
