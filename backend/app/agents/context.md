@@ -297,7 +297,7 @@ To establish rigorous scientific boundaries, CVS-3.5 is actively compared agains
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)*⁶ |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)*⁶ |
-| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **88.0 ms**³ (Hermes 3) | *(mode retired)*⁶ |
+| **Speech-to-Speech TTFT** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **61.9 ms**³ (Hermes 3) | *(mode retired)*⁶ |
 | **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | $O(\log N)$ (ACT-R + Qdrant) | *(mode retired)*⁶ |
 | **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **87.5%**⁴ | *(mode retired)*⁶ |
 | **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **0.032 (valence) / 0.041 (arousal)**⁴ | *(mode retired)*⁶ |
@@ -306,7 +306,7 @@ To establish rigorous scientific boundaries, CVS-3.5 is actively compared agains
 | **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁵ | *(mode retired)*⁶ |
 | **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)*⁶ |
 
-> Provenance/caveats for the "Physical" column (¹composed estimate, not a live stopwatch trial; ²composed from 7 measured components, excludes LLM generation; ³measured empirical streaming TTFT on CUDA GPU for Hermes 3 8B; ⁴independently recomputed from raw per-sample arrays and matches exactly; ⁵full 8-agent mesh + DB stack; ⁶accelerated mode is intentionally disabled in `hard_benchmark.py`) mirror `README.md` §8 and `scripts/results/benchmark_results_summary.md` — keep these three in sync.
+> Provenance/caveats for the "Physical" column (¹composed estimate, not a live stopwatch trial; ²composed from 7 measured components, excludes LLM generation; ³measured empirical streaming TTFT on Tesla T4 GPU for Hermes 3 8B; ⁴independently recomputed from raw per-sample arrays and matches exactly; ⁵full 8-agent mesh + DB stack; ⁶accelerated mode is intentionally disabled in `hard_benchmark.py`) mirror `README.md` §8 and `scripts/results/benchmark_results_summary.md` — keep these three in sync.
 
 ### 📚 Reference Mapping
 

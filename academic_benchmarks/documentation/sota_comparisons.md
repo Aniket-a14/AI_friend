@@ -18,7 +18,7 @@ The comparative matrix below evaluates **CVS-3.5** against 6 state-of-the-art an
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)* |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)* |
-| **Local Compute Latency** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **88.0 ms**³ (Hermes 3) | *(mode retired)* |
+| **Local Compute Latency** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **61.9 ms**³ (Hermes 3) | *(mode retired)* |
 | **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | $O(\log N)$ (ACT-R + Qdrant) | *(mode retired)* |
 | **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **87.5%**⁴ | *(mode retired)* |
 | **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **0.032 (valence) / 0.041 (arousal)**⁴ | *(mode retired)* |
@@ -27,7 +27,7 @@ The comparative matrix below evaluates **CVS-3.5** against 6 state-of-the-art an
 | **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁶ | *(mode retired)* |
 | **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | **Hierarchical Cognitive Simulation** |
 
-¹Composed estimate (100ms audio-buffer assumption + measured NATS RTT + DSP + ducking), not a live stopwatch trial. ²Sum of 7 measured component latencies, excludes LLM generation. ³Measured empirical streaming TTFT on CUDA GPU (Hermes 3 8B, scripts/results/hermes3_benchmark_results.json). ⁴Independently recomputed from raw per-sample arrays; matches exactly. ⁵Genuinely measured tag-precision rates (`human_realism_results.json`, module4). ⁶Full 8-agent mesh + Postgres/Neo4j/Qdrant/NATS/Redis stack.
+¹Composed estimate (100ms audio-buffer assumption + measured NATS RTT + DSP + ducking), not a live stopwatch trial. ²Sum of 7 measured component latencies, excludes LLM generation. ³Measured empirical streaming TTFT on Tesla T4 GPU (Hermes 3 8B, scripts/results/hermes3_benchmark_results.json). ⁴Independently recomputed from raw per-sample arrays; matches exactly. ⁵Genuinely measured tag-precision rates (`human_realism_results.json`, module4). ⁶Full 8-agent mesh + Postgres/Neo4j/Qdrant/NATS/Redis stack.
 
 ---
 

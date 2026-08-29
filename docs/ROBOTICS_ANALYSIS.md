@@ -22,11 +22,11 @@ Here is the lifecycle of a single conversational turn:
 
 1.  **Fast Perception & Semantic Interruption Conflict Resolution:** CVS-3.5's sub-cognitive VAD and semantic segmenter resolve conversational turn-taking boundaries. Empirical latency: **~104 ms** (composed estimate: 100ms audio-buffer assumption + 3.85ms measured NATS RTT + 0.04ms measured DSP + 0.02ms measured ducking — not a live end-to-end stopwatch trial; see `scripts/results/benchmark_results_summary.md`).
 2.  **Sub-LLM Pathway Overhead:** The entire perception-appraisal-decision chain (including subconscious threat scanning, memory index lookup, and endocrine hormone appraisal calculation). Empirical latency: **5.44 ms** (sum of 7 independently measured component latencies from `scripts/results/human_realism_results.json`; excludes LLM token generation).
-3.  **Local LLM TTFT:** The BrainAgent prompts Ollama using the active companion core (`hermes3:8b`). Empirical Mean TTFT: **88.0 ms** (measured on CUDA GPU across 5 spoken companion scenarios, range: 60.6ms – 121.7ms; `scripts/results/hermes3_benchmark_results.json`).
-4.  **End-to-End Thought Latency:** The complete cognitive loop completes generating full responses. Empirical Mean: **5,211.8 ms** (measured on CUDA GPU; `scripts/results/extended_benchmarks.json`).
+3.  **Local LLM TTFT:** The BrainAgent prompts Ollama using the active companion core (`hermes3:8b`). Empirical Mean TTFT: **61.9 ms** (measured on Tesla T4 GPU across 5 spoken companion scenarios, range: 58.3ms – 68.8ms; `scripts/results/hermes3_benchmark_results.json`).
+4.  **End-to-End Thought Latency:** The complete cognitive loop completes generating full responses. Empirical Mean: **2,624.8 ms** (measured on Tesla T4 GPU; `scripts/results/extended_benchmarks.json`).
 5.  **Audio Render (<1ms):** The Rust-native VoiceAgent immediately queues the PCM buffer for overlap-add (OLA) crossfade playback.
 
-**Total Empirical Turnaround:** ~180–250 ms to first spoken audio token, with 44.4 tok/s sustained streaming throughput.
+**Total Empirical Turnaround:** ~160–220 ms to first spoken audio token, with 46.6 tok/s sustained streaming throughput.
 
 > [!TIP]
 > **Human-Level Overlap:** Because the STT agent separates *speculative intent* from *deep transcription*, if you interrupt the AI while it is speaking, the VoiceAgent applies a `SPECULATIVE_PAUSE` in roughly **~200ms**. This makes the AI feel incredibly human, as it stops talking almost the instant you interject, rather than talking over you while it waits for Whisper to finish transcribing.

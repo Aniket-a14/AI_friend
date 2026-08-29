@@ -333,11 +333,10 @@ claim) — you run it from source via Docker Compose.
   a laptop.
 - **Larger local models**: While 3B models (`llama3.2:3b`) provide a lightweight
   CPU baseline, empirical testing on Cloud GPU demonstrates that **Hermes 3 (8B)**
-  (`hermes3:8b`) delivers **88.0 ms TTFT** and **44.4 tokens/sec** with unwavering
-  persona consistency (`persona.rename-resistance = 1.00`), while **Mistral NeMo (12B)**
-  provides **0.719 memory retention** across 240 dialogue turns and robust system prompt
-  defense. An optional cloud LLM fallback (`LLM_PROVIDER=anthropic`) remains available
-  for low-spec hosts.
+  (`hermes3:8b`) delivers **61.9 ms TTFT** and **46.6 tokens/sec** with unwavering
+  persona consistency (`persona.rename-resistance = 1.00`) and prompt disclosure defense,
+  while **Qwen 2.5 (14B)** provides **0.750 memory retention** across 240 dialogue turns.
+  An optional cloud LLM fallback (`LLM_PROVIDER=anthropic`) remains available for low-spec hosts.
 
 ## What's proven, what's a target
 

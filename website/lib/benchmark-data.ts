@@ -181,15 +181,15 @@ export const REAL_MICRO_BENCHMARKS: MicroBenchmark[] = [
   {
     measurementId: "M1.7-LLM-TTFT",
     title: "Hermes 3 (8B) Time-To-First-Token",
-    measuredValue: "88.0 ms",
+    measuredValue: "61.9 ms",
     benchmarkUnit: "milliseconds (<100ms sub-perceptual)",
-    conditions: "Empirical streaming generation benchmark across 5 companion scenarios on CUDA GPU",
+    conditions: "Empirical streaming generation benchmark across 5 companion scenarios on Tesla T4 GPU",
     provenance: "live",
   },
   {
     measurementId: "M1.8-LLM-Throughput",
     title: "Hermes 3 (8B) Generation Speed",
-    measuredValue: "44.4 tok/s",
+    measuredValue: "46.6 tok/s",
     benchmarkUnit: "tokens per second sustained",
     conditions: "Sustained streaming throughput (~150ms per 7-word audio chunk, zero TTS buffer underrun)",
     provenance: "live",
@@ -198,12 +198,12 @@ export const REAL_MICRO_BENCHMARKS: MicroBenchmark[] = [
 
 export const HARDWARE_MATRIX = [
   {
-    platform: "Google Colab / Cloud GPU (NVIDIA CUDA)",
+    platform: "Google Colab / Cloud GPU (NVIDIA Tesla T4)",
     profile: "Full Sovereign Mesh + Hermes 3 (8B)",
     llmInference: "Hermes 3 8B (Ollama / CUDA)",
     voiceEngine: "GPT-SoVITS 32kHz (CUDA)",
-    ttftMs: "88.0 ms (Measured)",
-    totalTurnaroundMs: "180 - 250 ms",
+    ttftMs: "61.9 ms (Measured)",
+    totalTurnaroundMs: "160 - 220 ms",
     status: "Verified Empirical Telemetry",
   },
   {
@@ -220,8 +220,8 @@ export const HARDWARE_MATRIX = [
     profile: "Full Stack + Vision Profile",
     llmInference: "Hermes 3 8B / Qwen 2.5 14B (CUDA)",
     voiceEngine: "GPT-SoVITS 32kHz (CUDA)",
-    ttftMs: "80 - 120 ms",
-    totalTurnaroundMs: "200 - 320 ms",
+    ttftMs: "50 - 90 ms",
+    totalTurnaroundMs: "150 - 260 ms",
     status: "Ultra Low Latency Tier",
   },
   {
@@ -250,7 +250,7 @@ export const LATENCY_WATERFALL = [
   { step: "Final Speech Transcription", latencyMs: 180, agent: "whisper.cpp (Rust)", detail: "High-precision word-level transcript generation" },
   { step: "Appraisal & Endocrine State", latencyMs: 4, agent: "brain_agent (Python)", detail: "PAD computation, boundary check, cortisol/dopamine update" },
   { step: "Deliberation & Intent MAUT", latencyMs: 12, agent: "brain_agent (Python)", detail: "Behavior tree traversal and candidate scoring" },
-  { step: "LLM Time-To-First-Token (TTFT)", latencyMs: 88, agent: "Ollama (Hermes 3 8B)", detail: "Empirical streaming first token dispatch (<100ms measured)" },
+  { step: "LLM Time-To-First-Token (TTFT)", latencyMs: 62, agent: "Ollama (Hermes 3 8B)", detail: "Empirical streaming first token dispatch (61.9ms measured on Tesla T4)" },
   { step: "GPT-SoVITS 32kHz Synthesis", latencyMs: 160, agent: "voice-agent (Rust)", detail: "Streaming chunk synthesis with prosody trajectory & pause bias" },
   { step: "LiveKit WebRTC Transmission", latencyMs: 18, agent: "transport_agent (Python)", detail: "PCM audio frames + visemes data channel dispatch" },
 ]

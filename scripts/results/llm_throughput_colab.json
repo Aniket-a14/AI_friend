@@ -1,0 +1,182 @@
+{
+  "measurement_id": "colab_llm_throughput",
+  "title": "Raw Ollama generation throughput across candidate model sizes (Colab)",
+  "provenance": "live",
+  "gpu": "Tesla T4",
+  "prompts": [
+    "I had a really exhausting and overwhelming day today. Can we just talk for a bit?",
+    "Remember how you told me last week that you like blues guitar? What was that chord progression you mentioned?",
+    "What is the weather like in your mind right now? Give me a warm, poetic 2-sentence answer.",
+    "If we could take a walk anywhere right now, where would we go and what would we talk about?",
+    "Analyze emotional state: I cannot take this anymore, everything is piling up. Output valid JSON: valence, arousal, dominance, inferred_need."
+  ],
+  "num_predict": 192,
+  "measured_at": "2026-08-29T06:13:54.500956+00:00",
+  "results": {
+    "hermes3:8b": {
+      "runs": [
+        {
+          "prompt": "I had a really exhausting and overwhelming day today. Can we just talk for a bit?",
+          "ttft_s": 0.059238513000082094,
+          "total_s": 1.9578095940000821,
+          "eval_count": 89,
+          "tokens_per_sec": 46.85073566183244
+        },
+        {
+          "prompt": "Remember how you told me last week that you like blues guitar? What was that chord progression you mentioned?",
+          "ttft_s": 0.06090780099998483,
+          "total_s": 4.185394871999961,
+          "eval_count": 192,
+          "tokens_per_sec": 46.55488968104927
+        },
+        {
+          "prompt": "What is the weather like in your mind right now? Give me a warm, poetic 2-sentence answer.",
+          "ttft_s": 0.06218391699997028,
+          "total_s": 1.4058903489999466,
+          "eval_count": 63,
+          "tokens_per_sec": 46.918881721967644
+        },
+        {
+          "prompt": "If we could take a walk anywhere right now, where would we go and what would we talk about?",
+          "ttft_s": 0.05830690299990238,
+          "total_s": 4.2154122289999805,
+          "eval_count": 192,
+          "tokens_per_sec": 46.19856770003077
+        },
+        {
+          "prompt": "Analyze emotional state: I cannot take this anymore, everything is piling up. Output valid JSON: valence, arousal, dominance, inferred_need.",
+          "ttft_s": 0.06875999700002922,
+          "total_s": 1.3396787220000306,
+          "eval_count": 59,
+          "tokens_per_sec": 46.474367810750074
+        }
+      ],
+      "vram_used_mb": 4905.0,
+      "vram_delta_mb": 0.0
+    },
+    "qwen2.5:14b": {
+      "runs": [
+        {
+          "prompt": "I had a really exhausting and overwhelming day today. Can we just talk for a bit?",
+          "ttft_s": 0.10527656999988722,
+          "total_s": 2.977426515999923,
+          "eval_count": 54,
+          "tokens_per_sec": 18.80881018601565
+        },
+        {
+          "prompt": "Remember how you told me last week that you like blues guitar? What was that chord progression you mentioned?",
+          "ttft_s": 0.11597639899991918,
+          "total_s": 8.051141684999948,
+          "eval_count": 143,
+          "tokens_per_sec": 18.02387722588582
+        },
+        {
+          "prompt": "What is the weather like in your mind right now? Give me a warm, poetic 2-sentence answer.",
+          "ttft_s": 0.1481611740000517,
+          "total_s": 2.373178871999926,
+          "eval_count": 40,
+          "tokens_per_sec": 18.00066602464291
+        },
+        {
+          "prompt": "If we could take a walk anywhere right now, where would we go and what would we talk about?",
+          "ttft_s": 0.12096449800014852,
+          "total_s": 9.69547966800019,
+          "eval_count": 161,
+          "tokens_per_sec": 16.81513947427101
+        },
+        {
+          "prompt": "Analyze emotional state: I cannot take this anymore, everything is piling up. Output valid JSON: valence, arousal, dominance, inferred_need.",
+          "ttft_s": 0.1436614770000233,
+          "total_s": 2.909240101000023,
+          "eval_count": 47,
+          "tokens_per_sec": 17.004224645344333
+        }
+      ],
+      "vram_used_mb": 9159.0,
+      "vram_delta_mb": 0.0
+    },
+    "mistral-nemo:12b": {
+      "runs": [
+        {
+          "prompt": "I had a really exhausting and overwhelming day today. Can we just talk for a bit?",
+          "ttft_s": 0.1349996479998481,
+          "total_s": 1.3146046039998964,
+          "eval_count": 32,
+          "tokens_per_sec": 27.14357935595072
+        },
+        {
+          "prompt": "Remember how you told me last week that you like blues guitar? What was that chord progression you mentioned?",
+          "ttft_s": 0.08297196900002746,
+          "total_s": 6.701896500999965,
+          "eval_count": 169,
+          "tokens_per_sec": 25.545174070711155
+        },
+        {
+          "prompt": "What is the weather like in your mind right now? Give me a warm, poetic 2-sentence answer.",
+          "ttft_s": 0.11114325500011546,
+          "total_s": 2.468641981000019,
+          "eval_count": 61,
+          "tokens_per_sec": 25.908969472862903
+        },
+        {
+          "prompt": "If we could take a walk anywhere right now, where would we go and what would we talk about?",
+          "ttft_s": 0.08953158799999983,
+          "total_s": 7.8091193950001525,
+          "eval_count": 192,
+          "tokens_per_sec": 24.889436456490934
+        },
+        {
+          "prompt": "Analyze emotional state: I cannot take this anymore, everything is piling up. Output valid JSON: valence, arousal, dominance, inferred_need.",
+          "ttft_s": 0.12290065100000902,
+          "total_s": 8.069320009999956,
+          "eval_count": 192,
+          "tokens_per_sec": 24.169299903499034
+        }
+      ],
+      "vram_used_mb": 7261.0,
+      "vram_delta_mb": 0.0
+    },
+    "llama3.2:3b": {
+      "runs": [
+        {
+          "prompt": "I had a really exhausting and overwhelming day today. Can we just talk for a bit?",
+          "ttft_s": 0.04361109399997076,
+          "total_s": 1.163232669999843,
+          "eval_count": 75,
+          "tokens_per_sec": 67.01448674498128
+        },
+        {
+          "prompt": "Remember how you told me last week that you like blues guitar? What was that chord progression you mentioned?",
+          "ttft_s": 0.04448817299999064,
+          "total_s": 2.9526576570001453,
+          "eval_count": 192,
+          "tokens_per_sec": 66.04908479016859
+        },
+        {
+          "prompt": "What is the weather like in your mind right now? Give me a warm, poetic 2-sentence answer.",
+          "ttft_s": 0.05336173599994254,
+          "total_s": 0.9371202849999918,
+          "eval_count": 59,
+          "tokens_per_sec": 66.82129945908724
+        },
+        {
+          "prompt": "If we could take a walk anywhere right now, where would we go and what would we talk about?",
+          "ttft_s": 0.044040121000080035,
+          "total_s": 3.05540229799999,
+          "eval_count": 192,
+          "tokens_per_sec": 63.812476402678
+        },
+        {
+          "prompt": "Analyze emotional state: I cannot take this anymore, everything is piling up. Output valid JSON: valence, arousal, dominance, inferred_need.",
+          "ttft_s": 0.06427486300003693,
+          "total_s": 3.1157385410001552,
+          "eval_count": 192,
+          "tokens_per_sec": 62.94535064986157
+        }
+      ],
+      "vram_used_mb": 9821.0,
+      "vram_delta_mb": 0.0
+    }
+  },
+  "note": "Standalone raw-generation measurement, not one of backend/tools/measure/'s registered m11-m17 reports -- see this notebook's first cell for why."
+}

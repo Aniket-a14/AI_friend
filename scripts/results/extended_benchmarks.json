@@ -579,8 +579,8 @@
   },
   "live_telemetry": {
     "model": "hermes3:8b",
-    "e2e_mean": 5211.8,
-    "ttft_mean": 88.0,
-    "tps_mean": 44.4
+    "e2e_mean": 2624.84,
+    "ttft_mean": 61.88,
+    "tps_mean": 46.60
   }
 }

@@ -1,57 +1,58 @@
 {
   "model": "hermes3:8b",
-  "timestamp": 1756437373.0,
-  "environment": "Google Colab Cloud GPU",
+  "timestamp": 1756448034.0,
+  "environment": "Google Colab Cloud GPU (Tesla T4)",
   "summary": {
-    "mean_ttft_ms": 88.0,
-    "mean_tokens_per_sec": 44.4,
-    "mean_total_latency_ms": 5211.8
+    "mean_ttft_ms": 61.88,
+    "mean_tokens_per_sec": 46.60,
+    "mean_total_latency_ms": 2624.84,
+    "vram_used_mb": 4905.0
   },
   "trials": [
     {
       "prompt_idx": 1,
       "category": "Emotional Empathy",
-      "ttft_ms": 75.0,
-      "tokens_per_sec": 45.2,
-      "total_latency_ms": 4788.7,
-      "token_count": 213,
-      "sample_output": "Of course, I'm here to listen and chat with you. It's understandable to feel unappreciated..."
+      "ttft_ms": 59.24,
+      "tokens_per_sec": 46.85,
+      "total_latency_ms": 1957.81,
+      "token_count": 89,
+      "sample_output": "I'm really sorry you had such an exhausting and overwhelming day. Of course we can talk..."
     },
     {
       "prompt_idx": 2,
       "category": "Theory of Mind & Memory Grounding",
-      "ttft_ms": 70.2,
-      "tokens_per_sec": 44.5,
-      "total_latency_ms": 9599.1,
-      "token_count": 424,
-      "sample_output": "It sounds like you might be referring to a common chord progression called the \"12-bar blues\"..."
+      "ttft_ms": 60.91,
+      "tokens_per_sec": 46.55,
+      "total_latency_ms": 4185.39,
+      "token_count": 192,
+      "sample_output": "Ah, yes! I remember mentioning the classic 12-bar blues progression. It usually goes I - IV - I - V - IV - I..."
     },
     {
       "prompt_idx": 3,
       "category": "Conversational Pacing (Voice Friendly)",
-      "ttft_ms": 121.7,
-      "tokens_per_sec": 44.7,
-      "total_latency_ms": 1062.3,
-      "token_count": 42,
-      "sample_output": "A gentle breeze of inspiration stirs, carrying whispers of wisdom and tranquility. In this moment..."
+      "ttft_ms": 62.18,
+      "tokens_per_sec": 46.92,
+      "total_latency_ms": 1405.89,
+      "token_count": 63,
+      "sample_output": "A gentle warmth like afternoon sunlight through open curtains, calm and quietly listening."
     },
     {
       "prompt_idx": 4,
       "category": "Multi-turn Presence & Roleplay",
-      "ttft_ms": 60.6,
-      "tokens_per_sec": 43.6,
-      "total_latency_ms": 8835.1,
-      "token_count": 383,
-      "sample_output": "Let's imagine we're taking a leisurely walk through a beautiful, sunlit forest. The gentle rustling..."
+      "ttft_ms": 58.31,
+      "tokens_per_sec": 46.20,
+      "total_latency_ms": 4215.41,
+      "token_count": 192,
+      "sample_output": "I'd love to take a quiet walk through a misty pine forest trail, just listening to the breeze and catching up..."
     },
     {
       "prompt_idx": 5,
       "category": "Structured System 2 Appraisal (JSON Output)",
-      "ttft_ms": 112.5,
-      "tokens_per_sec": 43.9,
-      "total_latency_ms": 1773.9,
-      "token_count": 73,
-      "sample_output": "{\n  \"valence\": -0.7,\n  \"arousal\": 0.8,\n  \"dominance\": 0.4,\n  \"inferred_need\": \"support and listening\",\n  \"suggested_action\": \"validate feelings and offer calm presence\"\n}"
+      "ttft_ms": 68.76,
+      "tokens_per_sec": 46.47,
+      "total_latency_ms": 1339.68,
+      "token_count": 59,
+      "sample_output": "{\n  \"valence\": -0.85,\n  \"arousal\": 0.75,\n  \"dominance\": 0.25,\n  \"inferred_need\": \"emotional validation and calm listening\"\n}"
     }
   ]
 }
