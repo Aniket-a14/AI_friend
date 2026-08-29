@@ -23,7 +23,9 @@ def _auth_env(monkeypatch):
 
     monkeypatch.setattr(config_module.config_instance, "LAN_ONLY", False)
     monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", "test-key")
-    monkeypatch.setattr(config_module.config_instance, "DATABASE_URL", "postgresql://unused")
+    monkeypatch.setattr(
+        config_module.config_instance, "DATABASE_URL", "postgresql://unused"
+    )
 
 
 @pytest.fixture
@@ -53,7 +55,9 @@ def test_rejects_an_unrecognized_sort_column(client):
     assert r.status_code == 400
 
 
-def test_rejects_a_sort_column_that_is_not_on_the_allowlist_even_if_it_looks_like_sql(client):
+def test_rejects_a_sort_column_that_is_not_on_the_allowlist_even_if_it_looks_like_sql(
+    client,
+):
     # The allowlist is what stands between this query string and the ORDER
     # BY clause -- there is no bind-parameter form for a column name.
     r = client.get(

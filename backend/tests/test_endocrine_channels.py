@@ -230,10 +230,16 @@ async def test_the_self_correction_event_is_consumed_not_forwarded():
     pipeline, service = _pipeline()
 
     # The real routing method, not a copy of it in the test.
-    assert await pipeline._consume_internal_chunk(
-        {"type": "self_correction", "data": "boundary violation"}
-    ) is True
-    assert await pipeline._consume_internal_chunk({"type": "content", "data": "hi"}) is False
+    assert (
+        await pipeline._consume_internal_chunk(
+            {"type": "self_correction", "data": "boundary violation"}
+        )
+        is True
+    )
+    assert (
+        await pipeline._consume_internal_chunk({"type": "content", "data": "hi"})
+        is False
+    )
     assert await pipeline._consume_internal_chunk({"type": "done"}) is False
 
     assert service.current_state.cortisol_phasic_peak == pytest.approx(
@@ -327,7 +333,9 @@ async def test_the_self_correction_signal_is_consumed_on_the_retry_pass_too():
         ]
     )
 
-    results = [c async for c in pipeline.execute({"type": "USER_MESSAGE", "content": "hi"})]
+    results = [
+        c async for c in pipeline.execute({"type": "USER_MESSAGE", "content": "hi"})
+    ]
 
     assert calls["n"] == 2, "the retry branch was never reached"
     assert not any(c["type"] == "self_correction" for c in results), (
@@ -363,7 +371,9 @@ async def test_reappraisal_reports_the_error_with_the_reward_sign_convention():
     engine._last_evaluation_time = 0.0
 
     # Actual outcome far above the expectation → positive prediction error.
-    error = await engine.evaluate_outcome(actual_text_valence=0.9, behavioral_signal=0.9)
+    error = await engine.evaluate_outcome(
+        actual_text_valence=0.9, behavioral_signal=0.9
+    )
     assert error is not None
     assert error > 0
 

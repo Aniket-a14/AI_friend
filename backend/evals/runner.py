@@ -107,9 +107,7 @@ async def reset_model_state(
                     response.status_code,
                 )
         except Exception as exc:
-            logger.warning(
-                "[eval] could not unload %s before the run: %s", target, exc
-            )
+            logger.warning("[eval] could not unload %s before the run: %s", target, exc)
 
     try:
         await client.generate(

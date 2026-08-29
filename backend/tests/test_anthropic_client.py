@@ -147,9 +147,7 @@ async def test_generate_passes_num_predict_as_max_tokens(monkeypatch, client):
 
 
 @pytest.mark.asyncio
-async def test_generate_defaults_max_tokens_when_no_override_given(
-    monkeypatch, client
-):
+async def test_generate_defaults_max_tokens_when_no_override_given(monkeypatch, client):
     monkeypatch.setattr(config_module.config_instance, "MOCK_LLM_TEXT", False)
     client._client.messages.create = AsyncMock(
         return_value=SimpleNamespace(content=[_text_block("ok")])

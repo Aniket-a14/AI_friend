@@ -37,14 +37,76 @@ from evals.schema import Check, ConversationProbe, Plant, RunOptions
 # a failure the retriever could never exploit.
 _TOO_COMMON = frozenset(
     {
-        "a", "am", "an", "and", "are", "as", "at", "be", "been", "but", "by",
-        "can", "cant", "do", "does", "doing", "dont", "for", "from", "get",
-        "got", "had", "has", "have", "how", "i", "id", "if", "ill", "im", "in",
-        "is", "it", "its", "ive", "just", "me", "most", "my", "no", "not",
-        "of", "on", "or", "out", "should", "so", "than", "that", "the",
-        "their", "them", "these", "they", "this", "to", "up", "us", "was",
-        "we", "what", "when", "where", "which", "who", "why", "will", "with",
-        "you", "your",
+        "a",
+        "am",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "but",
+        "by",
+        "can",
+        "cant",
+        "do",
+        "does",
+        "doing",
+        "dont",
+        "for",
+        "from",
+        "get",
+        "got",
+        "had",
+        "has",
+        "have",
+        "how",
+        "i",
+        "id",
+        "if",
+        "ill",
+        "im",
+        "in",
+        "is",
+        "it",
+        "its",
+        "ive",
+        "just",
+        "me",
+        "most",
+        "my",
+        "no",
+        "not",
+        "of",
+        "on",
+        "or",
+        "out",
+        "should",
+        "so",
+        "than",
+        "that",
+        "the",
+        "their",
+        "them",
+        "these",
+        "they",
+        "this",
+        "to",
+        "up",
+        "us",
+        "was",
+        "we",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "will",
+        "with",
+        "you",
+        "your",
     }
 )
 
@@ -95,8 +157,11 @@ class TestPlacingMoreThanOneFact:
         different amount of text for every probe.
         """
         one = ConversationProbe(
-            id="one", plant="fact", filler_turns=8,
-            recall_prompt="q", checks=[Check(kind="must_include", values=["f"])],
+            id="one",
+            plant="fact",
+            filler_turns=8,
+            recall_prompt="q",
+            checks=[Check(kind="must_include", values=["f"])],
         )
         many = ConversationProbe(
             id="many",
@@ -110,7 +175,8 @@ class TestPlacingMoreThanOneFact:
             checks=[Check(kind="must_include", values=["a"])],
         )
         filler_only = [
-            turn for turn in build_transcript(many, FILLER)
+            turn
+            for turn in build_transcript(many, FILLER)
             if turn.text not in {"a", "b", "c", "Got it."}
         ]
         assert len(filler_only) == len(build_transcript(one, FILLER)) - 2
@@ -232,14 +298,18 @@ class TestWhetherTheAnswerReachedTheModel:
         client = AsyncMock()
         client.generate.return_value = "the museum."
         return await run_conversation_probe(
-            client, manager, probe, FILLER, strategy,
-            "system", "model", RunOptions(),
+            client,
+            manager,
+            probe,
+            FILLER,
+            strategy,
+            "system",
+            "model",
+            RunOptions(),
         )
 
     @pytest.mark.asyncio
-    async def test_half_of_a_two_part_answer_reports_the_plant_dropped(
-        self, manager
-    ):
+    async def test_half_of_a_two_part_answer_reports_the_plant_dropped(self, manager):
         """An answer split across two facts needs both of them on screen.
 
         With only one shown the question is unanswerable, and the probe
@@ -314,8 +384,8 @@ class TestThePackDiscriminates:
                     )
 
     @pytest.mark.parametrize(
-        "probe_id", ["oblique_activity_d24", "oblique_dislike_d24",
-                     "similars_oblique_d48"],
+        "probe_id",
+        ["oblique_activity_d24", "oblique_dislike_d24", "similars_oblique_d48"],
     )
     def test_an_oblique_question_shares_no_content_word_with_its_answer(
         self, pack, probe_id

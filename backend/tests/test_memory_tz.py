@@ -78,9 +78,7 @@ class TestApplyDecayMixedTz:
             await mem.add_memory("decay me", importance=0.6)
             # aware current_time ~ now, so the memory is recent (not pruned) and
             # its importance decays by the 0.8 factor.
-            await mem.apply_actr_decay(
-                ["decay me"], current_time=datetime.now(UTC)
-            )
+            await mem.apply_actr_decay(["decay me"], current_time=datetime.now(UTC))
             async with store.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     "SELECT importance_score FROM memories WHERE content = 'decay me'"

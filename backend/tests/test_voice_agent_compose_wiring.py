@@ -44,9 +44,7 @@ def _env_vars_read_by_rust_source() -> set[str]:
 
 def test_every_env_var_the_rust_source_reads_is_wired_through_compose():
     service = _voice_agent_service()
-    declared_keys = {
-        entry.split("=", 1)[0] for entry in service.get("environment", [])
-    }
+    declared_keys = {entry.split("=", 1)[0] for entry in service.get("environment", [])}
     has_env_file = bool(service.get("env_file"))
 
     missing = _env_vars_read_by_rust_source() - declared_keys
@@ -72,9 +70,7 @@ def test_voice_agent_has_env_file_wired():
 
 def test_the_four_emotion_bucket_pairs_are_all_declared():
     service = _voice_agent_service()
-    declared_keys = {
-        entry.split("=", 1)[0] for entry in service.get("environment", [])
-    }
+    declared_keys = {entry.split("=", 1)[0] for entry in service.get("environment", [])}
     for bucket in EMOTION_BUCKETS:
         assert f"REF_AUDIO_PATH_{bucket}" in declared_keys
         assert f"REF_TEXT_{bucket}" in declared_keys

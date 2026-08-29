@@ -161,7 +161,10 @@ class TestPgPlaceholderGeneration:
         )
         # include_eriksonian=True succeeds on AsyncMock (no exception), so the
         # first (and only) call is the full insert.
-        sql, params = conn.execute.await_args_list[0].args[0], conn.execute.await_args_list[0].args[1:]
+        sql, params = (
+            conn.execute.await_args_list[0].args[0],
+            conn.execute.await_args_list[0].args[1:],
+        )
         return sql, params
 
     @pytest.mark.asyncio

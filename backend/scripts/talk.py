@@ -27,9 +27,7 @@ import os
 import sys
 import uuid
 
-sys.path.append(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.agents.base import BaseAgent
 from app.contracts import ChatInput, ChatOutput, Topics
@@ -51,13 +49,17 @@ class TalkClient(BaseAgent):
 
 async def _say(client: TalkClient, text: str) -> None:
     turn_id = str(uuid.uuid4())
-    await client.publish(Topics.CHAT_INPUT, ChatInput(text=text, turn_id=turn_id).model_dump())
+    await client.publish(
+        Topics.CHAT_INPUT, ChatInput(text=text, turn_id=turn_id).model_dump()
+    )
 
     print("friend> ", end="", flush=True)
     said_anything = False
     while True:
         try:
-            output = await asyncio.wait_for(client.incoming.get(), timeout=RESPONSE_TIMEOUT_S)
+            output = await asyncio.wait_for(
+                client.incoming.get(), timeout=RESPONSE_TIMEOUT_S
+            )
         except TimeoutError:
             if not said_anything:
                 print("[no response -- is brain_agent running?]")
@@ -83,7 +85,9 @@ async def _say(client: TalkClient, text: str) -> None:
 async def main() -> int:
     client = TalkClient()
     await client.connect()
-    await client.subscribe(Topics.CHAT_OUTPUT, client._on_chat_output, deliver_policy="new")
+    await client.subscribe(
+        Topics.CHAT_OUTPUT, client._on_chat_output, deliver_policy="new"
+    )
 
     print("Talking to your friend. Blank line or Ctrl+C to quit.\n")
     try:

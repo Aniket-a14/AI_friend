@@ -66,14 +66,11 @@ class Retriever(Protocol):
 
     name: str
 
-    async def index(self, turns: list) -> None:
-        ...
+    async def index(self, turns: list) -> None: ...
 
-    async def search(self, query: str, limit: int) -> list:
-        ...
+    async def search(self, query: str, limit: int) -> list: ...
 
-    async def close(self) -> None:
-        ...
+    async def close(self) -> None: ...
 
 
 class LexicalRetriever:
@@ -111,9 +108,7 @@ class LexicalRetriever:
             for term in set(doc):
                 self._df[term] += 1
         self._avg_len = (
-            sum(len(doc) for doc in self._docs) / len(self._docs)
-            if self._docs
-            else 0.0
+            sum(len(doc) for doc in self._docs) / len(self._docs) if self._docs else 0.0
         )
 
     def _score(self, doc: list[str], query_terms: list[str]) -> float:
@@ -129,12 +124,8 @@ class LexicalRetriever:
             # +0.5 smoothing on both sides keeps the idf of a term appearing in
             # every turn at zero rather than negative -- filler words are then
             # merely useless, not actively repellent.
-            idf = math.log(
-                1 + (total - self._df[term] + 0.5) / (self._df[term] + 0.5)
-            )
-            denom = freq + self.k1 * (
-                1 - self.b + self.b * len(doc) / self._avg_len
-            )
+            idf = math.log(1 + (total - self._df[term] + 0.5) / (self._df[term] + 0.5))
+            denom = freq + self.k1 * (1 - self.b + self.b * len(doc) / self._avg_len)
             score += idf * (freq * (self.k1 + 1)) / denom
         return score
 
@@ -147,9 +138,7 @@ class LexicalRetriever:
         # Ties break on transcript order, so the ranking is total and a rerun
         # cannot reorder equally-scored turns.
         scored.sort(key=lambda pair: (-pair[0], pair[1]))
-        return [
-            self._turns[index] for score, index in scored[:limit] if score > 0
-        ]
+        return [self._turns[index] for score, index in scored[:limit] if score > 0]
 
     async def close(self) -> None:
         return None
@@ -326,9 +315,7 @@ class MemoryStoreRetriever:
                     "SELECT id FROM memories WHERE wing = $1", self.wing
                 )
                 ids = [str(row["id"]) for row in rows]
-                await conn.execute(
-                    "DELETE FROM memories WHERE wing = $1", self.wing
-                )
+                await conn.execute("DELETE FROM memories WHERE wing = $1", self.wing)
         except Exception as exc:
             logger.error(
                 "[eval] could not clean wing %r from the relational tier: %s "
@@ -366,9 +353,7 @@ class MemoryStoreRetriever:
                     exc,
                 )
 
-        logger.info(
-            "[eval] cleaned %d eval memories from wing %r", len(ids), self.wing
-        )
+        logger.info("[eval] cleaned %d eval memories from wing %r", len(ids), self.wing)
 
 
 __all__ = [

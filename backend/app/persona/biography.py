@@ -235,9 +235,7 @@ def stale_fingerprints(
     return [mark for mark in (already_seeded or ()) if mark not in current]
 
 
-async def prune_biography(
-    stale: Sequence[str], memory_store: Any
-) -> list[str]:
+async def prune_biography(stale: Sequence[str], memory_store: Any) -> list[str]:
     """Delete memories for passages no longer in the biography.
 
     Returns the fingerprints actually removed, for the caller to drop from the
@@ -292,7 +290,9 @@ async def prune_biography(
                 if not ids:
                     continue
 
-                marks = ",".join("?" if is_sqlite else f"${i + 1}" for i in range(len(ids)))
+                marks = ",".join(
+                    "?" if is_sqlite else f"${i + 1}" for i in range(len(ids))
+                )
                 await conn.execute(f"DELETE FROM {table} WHERE id IN ({marks})", *ids)  # nosec B608 - table is from the fixed tuple above; ids are bound via *ids
                 await _drop_vectors(memory_store, ids)
 

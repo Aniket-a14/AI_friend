@@ -66,7 +66,12 @@ async def _run_one_turn(text: str) -> list[dict]:
 
     await llm.close()
     return [
-        {"model": f["model"], "digest": f["digest"], "length": f["length"], "text": f["text"]}
+        {
+            "model": f["model"],
+            "digest": f["digest"],
+            "length": f["length"],
+            "text": f["text"],
+        }
         for (component, event, ts, f) in events
         if component == "ollama_client" and event == "prompt"
     ]

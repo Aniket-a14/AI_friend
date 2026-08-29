@@ -265,9 +265,7 @@ class AppraisalEngine:
                     r"\[([^\]]+)\]", response
                 )
                 for block in blocks:
-                    floats = [
-                        float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", block)
-                    ]
+                    floats = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", block)]
                     if len(floats) == 3:
                         data = {
                             "goal_congruence": floats[0],

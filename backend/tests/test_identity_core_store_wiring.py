@@ -96,7 +96,9 @@ def test_broken_identity_core_storage_degrades_instead_of_crashing_init(monkeypa
     Tier-1 cache's own storage cannot be opened (e.g. base_path exists only
     in a test's mocked open() and was never created as a real directory on
     disk, which SQLite still needs)."""
-    manager = IdentityManager(base_path="/definitely/not/a/real/directory", persona_file=None)
+    manager = IdentityManager(
+        base_path="/definitely/not/a/real/directory", persona_file=None
+    )
 
     # Must not have raised, and must still have a usable in-memory fallback.
     assert manager.identity_core is not None

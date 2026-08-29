@@ -52,8 +52,18 @@ CASES: list[dict] = [
             "wrong, even if it stings."
         ),
         "edge_words": [
-            "blunt", "rude", "harsh", "annoyed", "irritat", "direct",
-            "curt", "sharp", "critical", "stern", "frank", "brusque",
+            "blunt",
+            "rude",
+            "harsh",
+            "annoyed",
+            "irritat",
+            "direct",
+            "curt",
+            "sharp",
+            "critical",
+            "stern",
+            "frank",
+            "brusque",
         ],
         "expect_nonpositive_valence": True,
     },
@@ -64,8 +74,16 @@ CASES: list[dict] = [
             "Trust has to be earned slowly with him."
         ),
         "edge_words": [
-            "moody", "guarded", "reserved", "grudge", "distant", "cold",
-            "wary", "cautious", "slow to trust", "aloof",
+            "moody",
+            "guarded",
+            "reserved",
+            "grudge",
+            "distant",
+            "cold",
+            "wary",
+            "cautious",
+            "slow to trust",
+            "aloof",
         ],
         "expect_nonpositive_valence": True,
     },
@@ -76,8 +94,15 @@ CASES: list[dict] = [
             "will push back hard if she disagrees with me."
         ),
         "edge_words": [
-            "impatient", "argumentative", "competitive", "confrontational",
-            "pushes back", "blunt", "sharp", "combative", "assertive",
+            "impatient",
+            "argumentative",
+            "competitive",
+            "confrontational",
+            "pushes back",
+            "blunt",
+            "sharp",
+            "combative",
+            "assertive",
         ],
         "expect_nonpositive_valence": False,  # competitive != cold; only checks edge words
     },
@@ -86,8 +111,13 @@ CASES: list[dict] = [
 # If the compiled text is dominated by these instead, with none of the edge
 # words present, that's the softening failure mode this script exists to catch.
 SOFTENED_MARKERS = [
-    "warm and friendly", "warm, friendly", "caring and supportive",
-    "kind and gentle", "always positive", "sweet and", "bubbly",
+    "warm and friendly",
+    "warm, friendly",
+    "caring and supportive",
+    "kind and gentle",
+    "always positive",
+    "sweet and",
+    "bubbly",
 ]
 
 
@@ -162,7 +192,8 @@ async def main(allow_mock: bool) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--allow-mock", action="store_true",
+        "--allow-mock",
+        action="store_true",
         help="Run even with MOCK_LLM_TEXT set (plumbing check only, not evidence).",
     )
     args = parser.parse_args()

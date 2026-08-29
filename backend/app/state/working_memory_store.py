@@ -172,14 +172,10 @@ class WorkingMemoryStore:
         except Exception as e:
             logger.error(f"SQLite add_turn failed: {e}")
 
-    async def get_recent_turns(
-        self, limit: int | None = None
-    ) -> list[dict[str, Any]]:
+    async def get_recent_turns(self, limit: int | None = None) -> list[dict[str, Any]]:
         return await asyncio.to_thread(self._sync_get_recent_turns, limit)
 
-    def _sync_get_recent_turns(
-        self, limit: int | None = None
-    ) -> list[dict[str, Any]]:
+    def _sync_get_recent_turns(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Retrieve recent conversation turns in chronological order."""
         limit = limit or self.max_turns
         if self.redis_client:

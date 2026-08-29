@@ -103,7 +103,9 @@ def test_serialized_toml_never_contains_the_word_boundaries_as_a_key():
 def test_preview_shows_every_inference_with_its_reason():
     inferences = [
         Inference(field="baseline_valence", value=-0.2, reason="warmth=-0.30 -> cold"),
-        Inference(field="mood_decay_rate", value=0.3, reason="resilience=0.70 -> bounces back"),
+        Inference(
+            field="mood_decay_rate", value=0.3, reason="resilience=0.70 -> bounces back"
+        ),
     ]
     text = render_preview(_compiled(inferences=inferences))
     assert "warmth=-0.30 -> cold" in text

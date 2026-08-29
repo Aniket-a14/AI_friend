@@ -126,7 +126,9 @@ class NatsMeshHarness:
 
     # ── Waiting ──────────────────────────────────────────────────
 
-    async def wait_for(self, subject: str, *, timeout: float = 3.0, count: int = 1) -> list[MeshEvent]:
+    async def wait_for(
+        self, subject: str, *, timeout: float = 3.0, count: int = 1
+    ) -> list[MeshEvent]:
         """Block until at least *count* events have been recorded on *subject*,
         or *timeout* seconds elapse (whichever comes first)."""
         if subject not in self._topic_events:
@@ -139,7 +141,9 @@ class NatsMeshHarness:
                 break
             self._topic_events[subject].clear()
             try:
-                await asyncio.wait_for(self._topic_events[subject].wait(), timeout=remaining)
+                await asyncio.wait_for(
+                    self._topic_events[subject].wait(), timeout=remaining
+                )
             except TimeoutError:
                 break
         return self.events_on(subject)
@@ -151,7 +155,9 @@ class NatsMeshHarness:
         payload = orjson.dumps(data)
         await self.js.publish(subject, payload)
 
-    async def inject_binary(self, subject: str, data: bytes, headers: dict[str, str] | None = None) -> None:
+    async def inject_binary(
+        self, subject: str, data: bytes, headers: dict[str, str] | None = None
+    ) -> None:
         """Publish a binary (PCM) payload onto the mock mesh."""
         self.nc._trigger(subject, data, headers)
         await self.nc.drain()

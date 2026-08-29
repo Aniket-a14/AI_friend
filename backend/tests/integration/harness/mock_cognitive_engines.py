@@ -39,7 +39,9 @@ class MockDeterministicLLM:
         self.generate_call_count = 0
         self.stream_call_count = 0
 
-    async def generate(self, prompt: str, system: str | None = None, **kwargs: Any) -> str:
+    async def generate(
+        self, prompt: str, system: str | None = None, **kwargs: Any
+    ) -> str:
         """Non-streaming generation — used for intent classification."""
         self.generate_call_count += 1
         return self.intent_json
@@ -139,4 +141,3 @@ class MockDeterministicTTS:
             }
             for i in range(len(words))
         ]
-

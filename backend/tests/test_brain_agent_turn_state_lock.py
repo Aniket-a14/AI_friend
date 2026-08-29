@@ -98,8 +98,7 @@ async def test_turn_state_lock_blocks_a_concurrent_reset_during_truncation(
 
     assert reset_finished.is_set()
     assert agent.last_assistant_response is None, (
-        "the reset must finally apply once truncation's critical section "
-        "is done"
+        "the reset must finally apply once truncation's critical section is done"
     )
 
     new_brief = await store.get_last_interaction_brief()

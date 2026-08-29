@@ -123,7 +123,8 @@ async def test_both_creation_paths_declare_the_same_config():
     await agent._bootstrap_mesh()
 
     from_agent = {
-        c.kwargs["config"].name: c.kwargs["config"] for c in jsm.add_stream.await_args_list
+        c.kwargs["config"].name: c.kwargs["config"]
+        for c in jsm.add_stream.await_args_list
     }
     assert set(from_agent) == set(CORE_STREAMS)
 

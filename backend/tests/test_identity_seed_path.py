@@ -27,7 +27,9 @@ def test_default_write_path_is_outside_the_package_directory(monkeypatch):
     directory -- so save() dirtied a tracked file. Regressing to that default
     is exactly what #113 fixes."""
     monkeypatch.setattr(config_module.config_instance, "IDENTITY_BASE_PATH", None)
-    monkeypatch.setattr(config_module.config_instance, "IDENTITY_SEED_ON_FIRST_BOOT", False)
+    monkeypatch.setattr(
+        config_module.config_instance, "IDENTITY_SEED_ON_FIRST_BOOT", False
+    )
 
     agent = IdentityManager(persona_file=None)
 
@@ -55,19 +57,29 @@ def test_fresh_write_location_is_seeded_from_shipped_defaults(monkeypatch, tmp_p
     seed_personality_path.write_text(json.dumps(seed_personality), encoding="utf-8")
     seed_history_path.write_text(json.dumps(seed_history), encoding="utf-8")
 
-    monkeypatch.setattr(config_module.config_instance, "IDENTITY_BASE_PATH", str(write_dir))
     monkeypatch.setattr(
-        config_module.config_instance, "PERSONALITY_SEED_PATH", str(seed_personality_path)
+        config_module.config_instance, "IDENTITY_BASE_PATH", str(write_dir)
+    )
+    monkeypatch.setattr(
+        config_module.config_instance,
+        "PERSONALITY_SEED_PATH",
+        str(seed_personality_path),
     )
     monkeypatch.setattr(
         config_module.config_instance, "HISTORY_SEED_PATH", str(seed_history_path)
     )
-    monkeypatch.setattr(config_module.config_instance, "IDENTITY_SEED_ON_FIRST_BOOT", True)
+    monkeypatch.setattr(
+        config_module.config_instance, "IDENTITY_SEED_ON_FIRST_BOOT", True
+    )
 
     IdentityManager(persona_file=None)
 
-    written_personality = json.loads((write_dir / "personality.json").read_text(encoding="utf-8"))
-    written_history = json.loads((write_dir / "history.json").read_text(encoding="utf-8"))
+    written_personality = json.loads(
+        (write_dir / "personality.json").read_text(encoding="utf-8")
+    )
+    written_history = json.loads(
+        (write_dir / "history.json").read_text(encoding="utf-8")
+    )
     assert written_personality == seed_personality
     assert written_history["relationship"] == "Old Friend"
     assert "a shared memory" in written_history["memories"]
@@ -83,9 +95,13 @@ def test_seed_copy_never_overwrites_an_existing_write_target(monkeypatch, tmp_pa
     write_dir.mkdir()
 
     seed_personality_path = seed_dir / "personality.json"
-    seed_personality_path.write_text(json.dumps({"name": "Seeded Friend"}), encoding="utf-8")
+    seed_personality_path.write_text(
+        json.dumps({"name": "Seeded Friend"}), encoding="utf-8"
+    )
     seed_history_path = seed_dir / "history.json"
-    seed_history_path.write_text(json.dumps({"relationship": "Old Friend"}), encoding="utf-8")
+    seed_history_path.write_text(
+        json.dumps({"relationship": "Old Friend"}), encoding="utf-8"
+    )
 
     # The write target already exists with the agent's own lived-in state.
     (write_dir / "personality.json").write_text(
@@ -95,14 +111,20 @@ def test_seed_copy_never_overwrites_an_existing_write_target(monkeypatch, tmp_pa
         json.dumps({"relationship": "Best Friend", "memories": []}), encoding="utf-8"
     )
 
-    monkeypatch.setattr(config_module.config_instance, "IDENTITY_BASE_PATH", str(write_dir))
     monkeypatch.setattr(
-        config_module.config_instance, "PERSONALITY_SEED_PATH", str(seed_personality_path)
+        config_module.config_instance, "IDENTITY_BASE_PATH", str(write_dir)
+    )
+    monkeypatch.setattr(
+        config_module.config_instance,
+        "PERSONALITY_SEED_PATH",
+        str(seed_personality_path),
     )
     monkeypatch.setattr(
         config_module.config_instance, "HISTORY_SEED_PATH", str(seed_history_path)
     )
-    monkeypatch.setattr(config_module.config_instance, "IDENTITY_SEED_ON_FIRST_BOOT", True)
+    monkeypatch.setattr(
+        config_module.config_instance, "IDENTITY_SEED_ON_FIRST_BOOT", True
+    )
 
     agent = IdentityManager(persona_file=None)
 
@@ -110,7 +132,9 @@ def test_seed_copy_never_overwrites_an_existing_write_target(monkeypatch, tmp_pa
     assert agent.history["relationship"] == "Best Friend"
 
 
-def test_disabling_seed_on_first_boot_leaves_a_fresh_location_empty(monkeypatch, tmp_path):
+def test_disabling_seed_on_first_boot_leaves_a_fresh_location_empty(
+    monkeypatch, tmp_path
+):
     """Pins the exact opt-out conftest.py relies on for the whole suite's
     isolation: with the flag off, a fresh write directory must stay genuinely
     empty even though a shipped seed exists right next to it."""
@@ -119,18 +143,28 @@ def test_disabling_seed_on_first_boot_leaves_a_fresh_location_empty(monkeypatch,
     write_dir = tmp_path / "write"
 
     seed_personality_path = seed_dir / "personality.json"
-    seed_personality_path.write_text(json.dumps({"name": "Seeded Friend"}), encoding="utf-8")
+    seed_personality_path.write_text(
+        json.dumps({"name": "Seeded Friend"}), encoding="utf-8"
+    )
     seed_history_path = seed_dir / "history.json"
-    seed_history_path.write_text(json.dumps({"relationship": "Old Friend"}), encoding="utf-8")
+    seed_history_path.write_text(
+        json.dumps({"relationship": "Old Friend"}), encoding="utf-8"
+    )
 
-    monkeypatch.setattr(config_module.config_instance, "IDENTITY_BASE_PATH", str(write_dir))
     monkeypatch.setattr(
-        config_module.config_instance, "PERSONALITY_SEED_PATH", str(seed_personality_path)
+        config_module.config_instance, "IDENTITY_BASE_PATH", str(write_dir)
+    )
+    monkeypatch.setattr(
+        config_module.config_instance,
+        "PERSONALITY_SEED_PATH",
+        str(seed_personality_path),
     )
     monkeypatch.setattr(
         config_module.config_instance, "HISTORY_SEED_PATH", str(seed_history_path)
     )
-    monkeypatch.setattr(config_module.config_instance, "IDENTITY_SEED_ON_FIRST_BOOT", False)
+    monkeypatch.setattr(
+        config_module.config_instance, "IDENTITY_SEED_ON_FIRST_BOOT", False
+    )
 
     IdentityManager(persona_file=None)
 

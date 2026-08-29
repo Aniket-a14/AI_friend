@@ -61,9 +61,7 @@ def real_nats():
     try:
         yield importlib.import_module("nats")
     finally:
-        for name in [
-            n for n in sys.modules if n == "nats" or n.startswith("nats.")
-        ]:
+        for name in [n for n in sys.modules if n == "nats" or n.startswith("nats.")]:
             del sys.modules[name]
         sys.modules.update(fake_entries)
 
@@ -93,9 +91,12 @@ def nats_accounts_server(tmp_path):
     proc = subprocess.Popen(
         [
             "nats-server",
-            "-p", str(port),
-            "-c", str(ACCOUNTS_CONF),
-            "-sd", str(store_dir),
+            "-p",
+            str(port),
+            "-c",
+            str(ACCOUNTS_CONF),
+            "-sd",
+            str(store_dir),
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -134,8 +135,12 @@ async def _bootstrap_stream(nats_module, port: int) -> None:
     await js.add_stream(
         name="AI_MESSAGES",
         subjects=[
-            "chat.output", "chat.input", "vision.description", "vision.frames",
-            "state.broadcast", "cache.sync",
+            "chat.output",
+            "chat.input",
+            "vision.description",
+            "vision.frames",
+            "state.broadcast",
+            "cache.sync",
         ],
     )
     await js.add_stream(name="AI_AUDIO", subjects=["audio.>"])
@@ -143,7 +148,9 @@ async def _bootstrap_stream(nats_module, port: int) -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_can_publish_its_own_declared_subject(real_nats, nats_accounts_server):
+async def test_agent_can_publish_its_own_declared_subject(
+    real_nats, nats_accounts_server
+):
     port = nats_accounts_server
     await _bootstrap_stream(real_nats, port)
 
@@ -157,7 +164,9 @@ async def test_agent_can_publish_its_own_declared_subject(real_nats, nats_accoun
 
 
 @pytest.mark.asyncio
-async def test_agent_cannot_publish_a_subject_outside_its_grant(real_nats, nats_accounts_server):
+async def test_agent_cannot_publish_a_subject_outside_its_grant(
+    real_nats, nats_accounts_server
+):
     """The security property this whole file exists for: vision_agent must
     not be able to forge a chat.output message claiming to be the brain."""
     port = nats_accounts_server
@@ -173,7 +182,9 @@ async def test_agent_cannot_publish_a_subject_outside_its_grant(real_nats, nats_
 
 
 @pytest.mark.asyncio
-async def test_agent_cannot_subscribe_a_subject_outside_its_grant(real_nats, nats_accounts_server):
+async def test_agent_cannot_subscribe_a_subject_outside_its_grant(
+    real_nats, nats_accounts_server
+):
     """transport_agent has no business need to see vision.description --
     confirm the denial actually fires (via error_cb; see the accounts file's
     own "KNOWN LIMITATION" note on why this doesn't raise synchronously)."""
@@ -192,14 +203,18 @@ async def test_agent_cannot_subscribe_a_subject_outside_its_grant(real_nats, nat
     try:
         await nc.subscribe("vision.description")
         await asyncio.sleep(0.3)
-        assert violations, "expected a permissions violation for an out-of-grant subscribe"
+        assert violations, (
+            "expected a permissions violation for an out-of-grant subscribe"
+        )
         assert "vision.description" in violations[0]
     finally:
         await nc.close()
 
 
 @pytest.mark.asyncio
-async def test_agent_can_subscribe_its_own_declared_subject(real_nats, nats_accounts_server):
+async def test_agent_can_subscribe_its_own_declared_subject(
+    real_nats, nats_accounts_server
+):
     port = nats_accounts_server
     await _bootstrap_stream(real_nats, port)
 
@@ -246,12 +261,12 @@ async def test_provisioner_can_administer_jetstream(real_nats, nats_accounts_ser
 
 
 @pytest.mark.asyncio
-async def test_runtime_agent_cannot_administer_jetstream(real_nats, nats_accounts_server):
+async def test_runtime_agent_cannot_administer_jetstream(
+    real_nats, nats_accounts_server
+):
     """Runtime credentials cannot create streams."""
     port = nats_accounts_server
-    nc = await real_nats.connect(
-        _url(port, "vision_agent", "changeme_vision_agent")
-    )
+    nc = await real_nats.connect(_url(port, "vision_agent", "changeme_vision_agent"))
     try:
         with pytest.raises((real_nats.errors.Error, TimeoutError)):
             await asyncio.wait_for(
@@ -283,9 +298,7 @@ async def test_runtime_agent_cannot_retrieve_an_unauthorized_stream_consumer(
     finally:
         await provisioner.close()
 
-    nc = await real_nats.connect(
-        _url(port, "vision_agent", "changeme_vision_agent")
-    )
+    nc = await real_nats.connect(_url(port, "vision_agent", "changeme_vision_agent"))
     try:
         with pytest.raises((real_nats.errors.Error, TimeoutError)):
             await asyncio.wait_for(

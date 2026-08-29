@@ -281,8 +281,7 @@ class OllamaClient:
                 {"new_traits": [], "relationship": "friend", "confidence": 0.9}
             )
         elif (
-            "goal_congruence" in lower_prompt
-            or "appraisal dimensions" in lower_prompt
+            "goal_congruence" in lower_prompt or "appraisal dimensions" in lower_prompt
         ):
             return json.dumps(
                 {"goal_congruence": 0.0, "norm_alignment": 1.0, "expectedness": 0.5}

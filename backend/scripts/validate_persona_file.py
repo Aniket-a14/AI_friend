@@ -80,9 +80,7 @@ def validate(path: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "path", nargs="?", default="../config/persona.toml", type=Path
-    )
+    parser.add_argument("path", nargs="?", default="../config/persona.toml", type=Path)
     args = parser.parse_args()
 
     problems = validate(args.path)

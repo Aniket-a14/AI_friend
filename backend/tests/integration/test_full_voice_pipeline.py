@@ -107,9 +107,7 @@ class TestFullTurnHappyPath:
                 data = json.loads(data)
             received_outputs.append(data)
 
-        await harness.nc.jetstream().subscribe(
-            "chat.output", cb=_collect_output
-        )
+        await harness.nc.jetstream().subscribe("chat.output", cb=_collect_output)
 
         # Simulate: brain agent would process this and publish chat.output.
         # In a real E2E, BrainAgent.start() wires chat.input → _on_chat_input.
@@ -188,10 +186,13 @@ class TestFullTurnHappyPath:
 
         # Simulate the subconscious agent's expected behavior.
         thought = "The user seems curious and engaged today."
-        await harness.inject("state.subconscious", {
-            "thought": thought,
-            "timestamp": time.time(),
-        })
+        await harness.inject(
+            "state.subconscious",
+            {
+                "thought": thought,
+                "timestamp": time.time(),
+            },
+        )
 
         events = harness.events_on("state.subconscious")
         assert len(events) == 1
@@ -231,7 +232,10 @@ class TestFullTurnHappyPath:
 
         events = harness.events_on("memory.surfaced")
         assert len(events) == 1
-        assert events[0].data["memories"][0]["content"] == "We talked about cooking pasta yesterday."
+        assert (
+            events[0].data["memories"][0]["content"]
+            == "We talked about cooking pasta yesterday."
+        )
         assert events[0].data["provenance"] == "pgvector_actr"
 
 
@@ -321,26 +325,44 @@ class TestBargeInInterruption:
         new_turn = str(uuid.uuid4())
 
         # Old turn's output chunks.
-        await harness.inject("chat.output", ChatOutput(
-            content="I was saying", turn_id=old_turn,
-            affect=ChatOutputAffect(),
-        ).model_dump())
+        await harness.inject(
+            "chat.output",
+            ChatOutput(
+                content="I was saying",
+                turn_id=old_turn,
+                affect=ChatOutputAffect(),
+            ).model_dump(),
+        )
 
         # Barge-in: audio.stop for old turn, then new input.
-        await harness.inject("audio.stop", AudioStop(
-            interrupt=True, speculative=False,
-            reason="confirmed_user_speech", turn_id=old_turn,
-        ).model_dump())
+        await harness.inject(
+            "audio.stop",
+            AudioStop(
+                interrupt=True,
+                speculative=False,
+                reason="confirmed_user_speech",
+                turn_id=old_turn,
+            ).model_dump(),
+        )
 
-        await harness.inject("chat.input", ChatInput(
-            text="Actually, wait!", turn_id=new_turn,
-        ).model_dump())
+        await harness.inject(
+            "chat.input",
+            ChatInput(
+                text="Actually, wait!",
+                turn_id=new_turn,
+            ).model_dump(),
+        )
 
         # New turn's response.
-        await harness.inject("chat.output", ChatOutput(
-            content="Sure, what is it?", turn_id=new_turn, done=True,
-            affect=ChatOutputAffect(valence=0.2),
-        ).model_dump())
+        await harness.inject(
+            "chat.output",
+            ChatOutput(
+                content="Sure, what is it?",
+                turn_id=new_turn,
+                done=True,
+                affect=ChatOutputAffect(valence=0.2),
+            ).model_dump(),
+        )
 
         outputs = harness.events_on("chat.output")
         assert len(outputs) == 2
@@ -383,24 +405,33 @@ class TestVisionContextFusion:
 
         # Step 1: vision description arrives.
         vision_ts = time.time()
-        await harness.inject("vision.description", VisionDescription(
-            description="User holding a book",
-            source="camera",
-            timestamp=vision_ts,
-        ).model_dump())
+        await harness.inject(
+            "vision.description",
+            VisionDescription(
+                description="User holding a book",
+                source="camera",
+                timestamp=vision_ts,
+            ).model_dump(),
+        )
 
         # Step 2: user asks about what they're holding.
-        await harness.inject("chat.input", ChatInput(
-            text="What am I holding?",
-            turn_id=str(uuid.uuid4()),
-        ).model_dump())
+        await harness.inject(
+            "chat.input",
+            ChatInput(
+                text="What am I holding?",
+                turn_id=str(uuid.uuid4()),
+            ).model_dump(),
+        )
 
         # Step 3: brain responds (incorporating vision context).
-        await harness.inject("chat.output", ChatOutput(
-            content="It looks like you're holding a book!",
-            turn_id=str(uuid.uuid4()),
-            done=True,
-        ).model_dump())
+        await harness.inject(
+            "chat.output",
+            ChatOutput(
+                content="It looks like you're holding a book!",
+                turn_id=str(uuid.uuid4()),
+                done=True,
+            ).model_dump(),
+        )
 
         vision_events = harness.events_on("vision.description")
         output_events = harness.events_on("chat.output")
@@ -415,11 +446,14 @@ class TestVisionContextFusion:
         """A repeated visual scene with is_novel=False should be distinguishable
         for downstream salience gating."""
 
-        await harness.inject("vision.description", VisionDescription(
-            description="Same empty desk",
-            source="screen",
-            is_novel=False,
-        ).model_dump())
+        await harness.inject(
+            "vision.description",
+            VisionDescription(
+                description="Same empty desk",
+                source="screen",
+                is_novel=False,
+            ).model_dump(),
+        )
 
         events = harness.events_on("vision.description")
         assert events[0].data["is_novel"] is False
@@ -459,14 +493,22 @@ class TestGracefulDegradation:
         """state.presence should correctly signal connect/disconnect edges."""
 
         # Connect.
-        await harness.inject("state.presence", SessionPresence(
-            connected=True, participant_count=1,
-        ).model_dump())
+        await harness.inject(
+            "state.presence",
+            SessionPresence(
+                connected=True,
+                participant_count=1,
+            ).model_dump(),
+        )
 
         # Disconnect.
-        await harness.inject("state.presence", SessionPresence(
-            connected=False, participant_count=0,
-        ).model_dump())
+        await harness.inject(
+            "state.presence",
+            SessionPresence(
+                connected=False,
+                participant_count=0,
+            ).model_dump(),
+        )
 
         events = harness.events_on("state.presence")
         assert len(events) == 2
@@ -524,7 +566,9 @@ class TestGracefulDegradation:
         """MockAudioFrame.tone() produces valid 16-bit PCM data."""
 
         frame = MockAudioFrame.tone(
-            frequency_hz=440.0, duration_ms=20, sample_rate=16_000,
+            frequency_hz=440.0,
+            duration_ms=20,
+            sample_rate=16_000,
         )
         assert frame.sample_rate == 16_000
         assert frame.num_channels == 1
@@ -582,4 +626,3 @@ class TestGracefulDegradation:
 
         assert len(events) >= 1
         assert events[0].data["content"] == "delayed"
-

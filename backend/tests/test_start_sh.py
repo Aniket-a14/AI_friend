@@ -136,7 +136,8 @@ def test_does_not_repull_a_model_only_differing_by_a_latest_tag(sandbox):
     result = _run(
         sandbox,
         overrides={
-            "ollama": f'PULL_MARKER_DIR="{marker_dir}"\n' + _FAKE_OLLAMA_WITH_TAGGED_MODELS
+            "ollama": f'PULL_MARKER_DIR="{marker_dir}"\n'
+            + _FAKE_OLLAMA_WITH_TAGGED_MODELS
         },
     )
 
@@ -158,7 +159,8 @@ def test_pulls_a_model_that_is_genuinely_absent(sandbox):
     _run(
         sandbox,
         overrides={
-            "ollama": f'PULL_MARKER_DIR="{marker_dir}"\n' + _FAKE_OLLAMA_WITH_TAGGED_MODELS
+            "ollama": f'PULL_MARKER_DIR="{marker_dir}"\n'
+            + _FAKE_OLLAMA_WITH_TAGGED_MODELS
         },
     )
 

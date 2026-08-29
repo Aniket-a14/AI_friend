@@ -65,6 +65,7 @@ def _assert_matches(entity_names, adj, seeds, iterations=3):
         adjacency_idx.append([node_to_idx[nb] for nb in neighbors if nb in node_to_idx])
 
     import cognitive_rust
+
     rust = list(
         cognitive_rust.personalized_pagerank(
             adjacency_idx, degrees, seed_list, PPR_DAMPING, iterations

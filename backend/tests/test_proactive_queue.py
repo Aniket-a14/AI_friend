@@ -14,9 +14,7 @@ def test_pop_all_returns_nothing_from_an_empty_queue(tmp_path):
 def test_enqueue_then_pop_all_round_trips_a_single_thought(tmp_path):
     db_path = str(tmp_path / "state.db")
     proactive_queue.enqueue(db_path, "I wonder how their project is going.")
-    assert proactive_queue.pop_all(db_path) == [
-        "I wonder how their project is going."
-    ]
+    assert proactive_queue.pop_all(db_path) == ["I wonder how their project is going."]
 
 
 def test_pop_all_returns_thoughts_oldest_first(tmp_path):

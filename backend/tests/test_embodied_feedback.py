@@ -153,8 +153,8 @@ async def test_cancel_active_generation_waits_for_task_to_fully_unwind(
             # Simulates a still-unwinding _stream_to_speech/_process_chat_input_flow
             # writing turn state after being cancelled.
             agent.last_assistant_response = (
-                (agent.last_assistant_response or "") + "-cleanup-write"
-            )
+                agent.last_assistant_response or ""
+            ) + "-cleanup-write"
             cleanup_done.set()
 
     task = asyncio.create_task(slow_old_turn())

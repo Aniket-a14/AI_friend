@@ -251,9 +251,7 @@ async def test_consolidation_pass_prunes_visual_screen_traces_unconditionally(
     with chat consolidation and must not be gated behind it."""
     mock_memory_store = MagicMock()
     mock_memory_store.get_recent_unconsolidated_episodes = AsyncMock(return_value=[])
-    mock_memory_store.prune_expired_visual_screen_traces = AsyncMock(
-        return_value=None
-    )
+    mock_memory_store.prune_expired_visual_screen_traces = AsyncMock(return_value=None)
 
     agent = SubconsciousAgent(
         memory_store=mock_memory_store,

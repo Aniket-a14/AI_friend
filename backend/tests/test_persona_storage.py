@@ -79,11 +79,16 @@ async def test_a_lived_in_store_stops_a_fresh_clone_from_re_seeding(tmp_path):
     The friend would be reset to their original description on every deploy,
     with no error and nothing in the logs to suggest it had happened.
     """
-    agent = IdentityManager(base_path=str(tmp_path), persona_file=_persona_file(tmp_path))
+    agent = IdentityManager(
+        base_path=str(tmp_path), persona_file=_persona_file(tmp_path)
+    )
     assert agent.first_boot is True, "on-disk files are seed-shaped"
 
     store = FakeConfigStore(
-        personality={"name": "Lived", "core_personality": {"adaptive_traits": ["Grown"]}},
+        personality={
+            "name": "Lived",
+            "core_personality": {"adaptive_traits": ["Grown"]},
+        },
         history={"memories": ["we met in October"], "relationship": "Old Friend"},
     )
     await agent.hydrate_from_config_store(store)
@@ -101,7 +106,9 @@ async def test_a_genuinely_new_store_still_seeds_from_the_file(tmp_path):
     An empty durable store is a new friend, and the authored file is the only
     description of them that exists.
     """
-    agent = IdentityManager(base_path=str(tmp_path), persona_file=_persona_file(tmp_path))
+    agent = IdentityManager(
+        base_path=str(tmp_path), persona_file=_persona_file(tmp_path)
+    )
     await agent.hydrate_from_config_store(
         FakeConfigStore(personality={"name": "seed"}, history={"memories": []})
     )
@@ -119,7 +126,9 @@ async def test_the_seed_marker_survives_into_the_persisted_history(tmp_path):
     no marker, so the next boot would look new again and re-seed — the marker
     would exist in memory and never once be durable.
     """
-    agent = IdentityManager(base_path=str(tmp_path), persona_file=_persona_file(tmp_path))
+    agent = IdentityManager(
+        base_path=str(tmp_path), persona_file=_persona_file(tmp_path)
+    )
     store = FakeConfigStore(personality={"name": "seed"}, history={"memories": []})
     await agent.hydrate_from_config_store(store)
     await agent.persist_to_config_store()

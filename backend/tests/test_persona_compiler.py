@@ -172,7 +172,9 @@ def test_as_str_list_drops_non_string_and_blank_entries():
 
 
 def test_biography_markdown_renders_headings_as_h2():
-    md = _biography_markdown([{"heading": "Her sister", "text": "Close, three years apart."}])
+    md = _biography_markdown(
+        [{"heading": "Her sister", "text": "Close, three years apart."}]
+    )
     assert md.startswith("## Her sister")
     assert "Close, three years apart." in md
 
@@ -194,12 +196,15 @@ def _canned_response(**overrides) -> str:
         "identity_summary": "Mira does not sugarcoat anything and will tell you "
         "when you're wrong. She grew up somewhere cold and it shows.",
         "traits": ["blunt", "loyal", "sarcastic"],
-        "speech_patterns": ["\"sure, whatever you say\""],
+        "speech_patterns": ['"sure, whatever you say"'],
         "avoid": ["baby talk"],
         "relationship": "old friend",
         "speaking_style": "Dry and matter-of-fact, even when she's being kind.",
         "biography": [
-            {"heading": "Where she grew up", "text": "A small town up north, cold winters."}
+            {
+                "heading": "Where she grew up",
+                "text": "A small town up north, cold winters.",
+            }
         ],
         "dimensions": {
             "warmth": -0.2,

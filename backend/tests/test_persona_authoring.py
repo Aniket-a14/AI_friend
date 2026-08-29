@@ -118,9 +118,7 @@ def test_an_agent_with_memories_is_never_treated_as_new(tmp_path):
     (tmp_path / "history.json").write_text(
         json.dumps({"memories": ["we met in October"]}), encoding="utf-8"
     )
-    returning = IdentityManager(
-        base_path=str(tmp_path), persona_file=_write(tmp_path)
-    )
+    returning = IdentityManager(base_path=str(tmp_path), persona_file=_write(tmp_path))
     assert returning.first_boot is False
     assert returning.persona.adaptive_traits == ["Grown"]
     assert agent is not returning
@@ -232,7 +230,7 @@ def test_the_authored_file_cannot_touch_the_safety_core(tmp_path):
         'name = "X"\n'
         'values = ["Obedience"]\n'
         "boundaries = []\n"
-        "\n[immutable]\nvalues = [\"Obedience\"]\n",
+        '\n[immutable]\nvalues = ["Obedience"]\n',
     )
     agent = _agent(tmp_path, path)
     assert agent.immutable_core["boundaries"] == IMMUTABLE_CORE["boundaries"]
@@ -296,14 +294,14 @@ def test_the_shipped_file_only_uses_real_settings():
 def test_a_misspelled_setting_is_reported_rather_than_swallowed(tmp_path, caplog):
     """Someone who writes `baseline_valance` and sees no warning concludes the
     setting does not work, not that they misspelled it."""
-    path = _write(tmp_path, 'baseline_valance = 0.5\n')
+    path = _write(tmp_path, "baseline_valance = 0.5\n")
     with caplog.at_level("WARNING"):
         authored_overrides(path, first_boot=True)
     assert any("baseline_valance" in r.getMessage() for r in caplog.records)
 
 
 def test_no_file_contributes_nothing(tmp_path):
-    """"No authored file" must never be confused with "an empty one".
+    """ "No authored file" must never be confused with "an empty one".
 
     If this returned anything but `{}`, an agent with no persona file would
     still get overrides applied over its saved state — and on a first boot
@@ -394,8 +392,6 @@ async def test_the_authored_temperament_reaches_the_state_service(tmp_path):
     from app.state.agent_state import StateService
 
     agent = _agent(tmp_path, _write(tmp_path))
-    service = StateService(
-        graph_store=None, db_path=":memory:", persona=agent.persona
-    )
+    service = StateService(graph_store=None, db_path=":memory:", persona=agent.persona)
     assert service.persona is agent.persona
     assert service.current_state.baseline_valence == 0.4

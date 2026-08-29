@@ -379,7 +379,9 @@ class AppSettings(BaseSettings):
             if value < 1:
                 raise ValueError(f"{name} must be >= 1 (got {value!r})")
         if not (0 < self.QDRANT_PORT <= 65535):
-            raise ValueError(f"QDRANT_PORT must be a valid port (got {self.QDRANT_PORT!r})")
+            raise ValueError(
+                f"QDRANT_PORT must be a valid port (got {self.QDRANT_PORT!r})"
+            )
         return self
 
     # #162: the literal placeholder strings this repo's own `.env.example`
@@ -431,9 +433,10 @@ class AppSettings(BaseSettings):
             value = getattr(self, name, None)
             if not value:
                 continue
-            if any(
-                marker in value for marker in self._PLACEHOLDER_SECRET_MARKERS
-            ) or value.strip() in self._PLACEHOLDER_SECRET_EXACT:
+            if (
+                any(marker in value for marker in self._PLACEHOLDER_SECRET_MARKERS)
+                or value.strip() in self._PLACEHOLDER_SECRET_EXACT
+            ):
                 raise ValueError(
                     f"{name} still contains a placeholder value from .env.example "
                     "-- refusing to start with ENVIRONMENT=production. Set a real "

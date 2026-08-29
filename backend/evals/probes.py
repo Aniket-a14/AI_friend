@@ -113,9 +113,7 @@ def shipped_packs() -> list[Path]:
     return sorted(PACK_DIR.glob("*.json"))
 
 
-def collect_probes(
-    manager: IdentityManager, pack_paths: Iterable[Path]
-) -> list[Probe]:
+def collect_probes(manager: IdentityManager, pack_paths: Iterable[Path]) -> list[Probe]:
     """All probes for a run, with duplicate ids rejected loudly.
 
     Two probes sharing an id would make the later comparison silently diff
@@ -130,8 +128,7 @@ def collect_probes(
     for probe in probes:
         if probe.id in seen:
             raise ValueError(
-                f"duplicate probe id {probe.id!r} "
-                f"({seen[probe.id]} and {probe.source})"
+                f"duplicate probe id {probe.id!r} ({seen[probe.id]} and {probe.source})"
             )
         seen[probe.id] = probe.source
     return probes

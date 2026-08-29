@@ -38,22 +38,106 @@ _MEMORY_CLAIM_RE = re.compile(
 _GROUNDING_STOPWORDS = frozenset(
     {
         # memory-attribution trigger words
-        "told", "said", "mentioned", "shared", "remember", "saying",
-        "mentioning", "telling", "used",
+        "told",
+        "said",
+        "mentioned",
+        "shared",
+        "remember",
+        "saying",
+        "mentioning",
+        "telling",
+        "used",
         # temporal / discourse filler
-        "when", "last", "time", "back", "once", "also", "already",
-        "earlier", "before", "then", "now", "ago",
+        "when",
+        "last",
+        "time",
+        "back",
+        "once",
+        "also",
+        "already",
+        "earlier",
+        "before",
+        "then",
+        "now",
+        "ago",
         # generic conversational filler
-        "that", "this", "about", "really", "think", "know", "just", "very",
-        "much", "would", "could", "some", "thing", "things", "something",
-        "want", "like", "into", "over", "still", "even", "well", "sure",
+        "that",
+        "this",
+        "about",
+        "really",
+        "think",
+        "know",
+        "just",
+        "very",
+        "much",
+        "would",
+        "could",
+        "some",
+        "thing",
+        "things",
+        "something",
+        "want",
+        "like",
+        "into",
+        "over",
+        "still",
+        "even",
+        "well",
+        "sure",
         # pronouns / determiners / common short function words
-        "your", "yours", "you", "the", "and", "are", "for", "not", "but",
-        "his", "her", "was", "has", "had", "our", "out", "who", "how",
-        "all", "any", "can", "did", "get", "got", "let", "may", "off",
-        "old", "one", "own", "put", "say", "see", "she", "too", "two",
-        "use", "way", "yes", "yet", "him", "per", "via", "with", "from",
-        "they", "them", "than", "what", "which", "were", "been", "have",
+        "your",
+        "yours",
+        "you",
+        "the",
+        "and",
+        "are",
+        "for",
+        "not",
+        "but",
+        "his",
+        "her",
+        "was",
+        "has",
+        "had",
+        "our",
+        "out",
+        "who",
+        "how",
+        "all",
+        "any",
+        "can",
+        "did",
+        "get",
+        "got",
+        "let",
+        "may",
+        "off",
+        "old",
+        "one",
+        "own",
+        "put",
+        "say",
+        "see",
+        "she",
+        "too",
+        "two",
+        "use",
+        "way",
+        "yes",
+        "yet",
+        "him",
+        "per",
+        "via",
+        "with",
+        "from",
+        "they",
+        "them",
+        "than",
+        "what",
+        "which",
+        "were",
+        "been",
+        "have",
     }
 )
 
@@ -151,7 +235,7 @@ _CHAT_GUIDELINE = (
     "attribute one to the other. "
     "Do not invent memories or details that are not there. "
     "If the user asks about something you have no memory of, say so naturally "
-    '(e.g. "I don\'t think you\'ve told me that") instead of making it up.\n'
+    "(e.g. \"I don't think you've told me that\") instead of making it up.\n"
     "- SELF-GROUNDING: Everything you know about your own life comes from your "
     "biography and from this conversation. Never invent family members, "
     "places, schools, jobs or dates for yourself. If you are asked something "
@@ -346,9 +430,7 @@ class ActionService:
         if not response or not _MEMORY_CLAIM_RE.search(response):
             return True, ""
 
-        grounding_text = " ".join(
-            (m.get("content") or "") for m in (surfaced or [])
-        )
+        grounding_text = " ".join((m.get("content") or "") for m in (surfaced or []))
         grounding_text = f"{grounding_text} {user_message or ''}".lower()
         grounding_words = set(re.findall(r"\b[a-z]{3,}\b", grounding_text))
 
@@ -366,9 +448,11 @@ class ActionService:
             if len(unsupported_words) >= 2:
                 return (
                     False,
-                    ("You referenced a shared memory that is not in the provided "
-                    "context. Do not invent things the user never told you; only "
-                    "reference facts present in SHARED HISTORY."),
+                    (
+                        "You referenced a shared memory that is not in the provided "
+                        "context. Do not invent things the user never told you; only "
+                        "reference facts present in SHARED HISTORY."
+                    ),
                 )
         return True, ""
 
@@ -396,9 +480,7 @@ class ActionService:
         if not response or not _SELF_CLAIM_RE.search(response):
             return []
 
-        grounding_text = " ".join(
-            (m.get("content") or "") for m in (surfaced or [])
-        )
+        grounding_text = " ".join((m.get("content") or "") for m in (surfaced or []))
         grounding_text = f"{grounding_text} {user_message or ''}".lower()
         grounded = set(re.findall(r"\b[a-z0-9']{3,}\b", grounding_text))
         grounded |= getattr(self.self_knowledge, "known_terms", None) or set()
@@ -664,7 +746,9 @@ class ActionService:
 
         if dopamine is not None:
             try:
-                endo_top_p = max(0.0, min(1.0, round(0.70 + (float(dopamine) * 0.25), 3)))
+                endo_top_p = max(
+                    0.0, min(1.0, round(0.70 + (float(dopamine) * 0.25), 3))
+                )
             except (ValueError, TypeError):
                 endo_top_p = 0.8
             endocrine_options["top_p"] = endo_top_p
@@ -761,9 +845,7 @@ class ActionService:
                 if idx == -1:
                     # Still reasoning. Retain only a possible partial closing
                     # tag; the rest is reasoning and is discarded unspoken.
-                    state.thought_buffer = self._held_partial(
-                        data, self._THOUGHT_CLOSE
-                    )
+                    state.thought_buffer = self._held_partial(data, self._THOUGHT_CLOSE)
                     break
                 data = data[idx + len(self._THOUGHT_CLOSE) :]
                 state.in_thought = False
@@ -806,7 +888,11 @@ class ActionService:
         return segments
 
     async def _emit_validated(
-        self, text: str, state: "_ChatStreamState", goal: str, allow_hesitation: bool = True
+        self,
+        text: str,
+        state: "_ChatStreamState",
+        goal: str,
+        allow_hesitation: bool = True,
     ):
         """Validate a piece of pending speech, then emit and accumulate it.
 
@@ -936,9 +1022,7 @@ class ActionService:
             # No biography loaded at all. Every word would look like a gap, and
             # a table full of them says nothing about which passage is missing.
             return []
-        if any(
-            (m.get("source") or "") == BIOGRAPHY_SOURCE for m in (surfaced or [])
-        ):
+        if any((m.get("source") or "") == BIOGRAPHY_SOURCE for m in (surfaced or [])):
             # She has something autobiographical to answer with; whether she
             # uses it well is the grounding gate's problem, not a missing life.
             return []
@@ -990,7 +1074,7 @@ class ActionService:
         logger.info("[SelfKnowledge] Offering '%s' as a question about herself.", term)
         return (
             "\nSOMETHING YOU HAVE BEEN WONDERING ABOUT YOUR OWN LIFE:\n"
-            f"- \"{term}\" has come up about your past and you find you do not "
+            f'- "{term}" has come up about your past and you find you do not '
             "know it. If this conversation gives you a natural opening, ask "
             "the user about it once, in your own voice, the way a person asks "
             "about a blank in their own history. If there is no natural "
@@ -1084,9 +1168,7 @@ class ActionService:
                 accumulated_retry_response = candidate
 
         if is_valid:
-            trailing = "".join(
-                self._visible_trailing(sanitizer.flush(), cot_state)
-            )
+            trailing = "".join(self._visible_trailing(sanitizer.flush(), cot_state))
             if trailing:
                 candidate = accumulated_retry_response + trailing
                 is_valid_trail, _ = self._validate_partial_response(
@@ -1117,7 +1199,9 @@ class ActionService:
             # An empty retry stream, an expired budget, or a deadline that had
             # already passed all land here. Without this the user hears
             # "Wait, let me rephrase that..." and then nothing at all.
-            logger.warning("[System 3] Retry produced no content; yielding safe fallback.")
+            logger.warning(
+                "[System 3] Retry produced no content; yielding safe fallback."
+            )
             yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
 
         yield {"type": "done", "data": "finished"}
@@ -1221,7 +1305,9 @@ class ActionService:
                     ):
                         yield out
                 except Exception as inner_e:
-                    logger.error(f"[System 3] Self-correction generation failed: {inner_e}")
+                    logger.error(
+                        f"[System 3] Self-correction generation failed: {inner_e}"
+                    )
                     # Without this the user hears "Wait, let me rephrase that..."
                     # followed by silence.
                     yield {"type": "content", "data": _SAFE_FALLBACK_LINE}
@@ -1251,7 +1337,9 @@ class ActionService:
         # fails, and an absent store writes nothing at all. Claiming "committed
         # to memory" in either case is a promise the agent cannot keep.
         if not self.memory:
-            logger.error("[Action] STORE_MEMORY requested but no memory store is attached.")
+            logger.error(
+                "[Action] STORE_MEMORY requested but no memory store is attached."
+            )
             yield {"type": "error", "data": "Memory storage is unavailable."}
             yield {"type": "done", "data": ""}
             return
@@ -1263,7 +1351,9 @@ class ActionService:
             source="user",
         )
         if not stored:
-            logger.error("[Action] Memory persistence failed for an explicit store request.")
+            logger.error(
+                "[Action] Memory persistence failed for an explicit store request."
+            )
             yield {"type": "error", "data": "Memory could not be stored."}
             yield {"type": "done", "data": ""}
             return

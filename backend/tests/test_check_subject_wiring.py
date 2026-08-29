@@ -41,9 +41,7 @@ def fixture_repo(tmp_path, monkeypatch):
         '    WELL_WIRED = "test.well_wired"\n'
     )
     (app_root / "nats_streams.py").write_text(
-        "CORE_STREAMS: dict = {\n"
-        '    "TEST_STREAM": ["test.>"],\n'
-        "}\n"
+        'CORE_STREAMS: dict = {\n    "TEST_STREAM": ["test.>"],\n}\n'
     )
     (crates_root / "contracts").mkdir()
     (crates_root / "contracts" / "src").mkdir(parents=True)
@@ -105,7 +103,9 @@ def test_allowlisted_issue_does_not_fail_the_build(fixture_repo, monkeypatch, ca
     not fail the build - that is the whole point of the allowlist letting
     this check land enforcing rather than warn-only."""
     monkeypatch.setattr(
-        wiring, "ALLOWLIST", {"test.one_ended": "deliberately allowlisted for this test"}
+        wiring,
+        "ALLOWLIST",
+        {"test.one_ended": "deliberately allowlisted for this test"},
     )
 
     exit_code = wiring.main()

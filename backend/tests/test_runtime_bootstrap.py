@@ -35,7 +35,8 @@ def test_fallback_logs_at_error_not_warning(monkeypatch, caplog):
         _enter_sqlite_fallback(reason="PostgreSQL connection failed: timeout")
 
     assert any(
-        record.levelno == logging.ERROR and "PostgreSQL connection failed" in record.message
+        record.levelno == logging.ERROR
+        and "PostgreSQL connection failed" in record.message
         for record in caplog.records
     )
 
@@ -115,7 +116,9 @@ def test_clearing_an_absent_sentinel_is_not_an_error(tmp_path, monkeypatch):
 def test_normalized_required_models_dedupes_preserving_first_occurrence():
     """OLLAMA_REQUIRED_MODELS_STR is user-edited CSV in .env - a repeated
     entry must not turn into two pull requests for the same model."""
-    result = _normalized_required_models(["llama3.2:3b", "nomic-embed-text", "llama3.2:3b"])
+    result = _normalized_required_models(
+        ["llama3.2:3b", "nomic-embed-text", "llama3.2:3b"]
+    )
     assert result == ["llama3.2:3b", "nomic-embed-text"]
 
 

@@ -126,9 +126,7 @@ async def _run(as_json: bool) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--json", action="store_true", help="machine-readable output"
-    )
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args()
     return asyncio.run(_run(args.json))
 

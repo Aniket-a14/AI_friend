@@ -71,9 +71,7 @@ def _resolves(token: str) -> bool:
 
     if any((root / stem).exists() for root in CANDIDATE_ROOTS):
         return True
-    return any(
-        any(root.rglob(stem)) for root in BASENAME_SEARCH_ROOTS if root.exists()
-    )
+    return any(any(root.rglob(stem)) for root in BASENAME_SEARCH_ROOTS if root.exists())
 
 
 def test_claude_md_exists():
@@ -89,8 +87,11 @@ def test_every_path_named_in_claude_md_exists():
     Reports every broken reference at once: fixing stale docs one failure per
     run is how they stay stale.
     """
-    tokens = [token for token in _backticked(CLAUDE_MD.read_text(encoding="utf-8"))
-              if _is_pathish(token)]
+    tokens = [
+        token
+        for token in _backticked(CLAUDE_MD.read_text(encoding="utf-8"))
+        if _is_pathish(token)
+    ]
 
     # If the extractor stops matching anything, this test would pass while
     # checking nothing -- the always-green failure mode this repo has now hit
@@ -101,9 +102,8 @@ def test_every_path_named_in_claude_md_exists():
     )
 
     missing = [token for token in tokens if not _resolves(token)]
-    assert not missing, (
-        "CLAUDE.md names paths that do not exist: "
-        + ", ".join(repr(token) for token in missing)
+    assert not missing, "CLAUDE.md names paths that do not exist: " + ", ".join(
+        repr(token) for token in missing
     )
 
 
@@ -111,11 +111,11 @@ def test_every_path_named_in_claude_md_exists():
     "token,expected",
     [
         ("backend/app/contracts.py", True),
-        ("cognitive/**", True),          # glob -> directory stem
-        ("app/", True),                  # trailing slash
-        ("brain_agent.py", True),        # bare filename, found by search
-        ("voice/agent.py", False),       # archived; must NOT resolve
-        ("prosody.py", False),           # archived twin; must NOT resolve
+        ("cognitive/**", True),  # glob -> directory stem
+        ("app/", True),  # trailing slash
+        ("brain_agent.py", True),  # bare filename, found by search
+        ("voice/agent.py", False),  # archived; must NOT resolve
+        ("prosody.py", False),  # archived twin; must NOT resolve
         ("state/no_such_module.py", False),
     ],
 )

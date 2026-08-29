@@ -192,7 +192,9 @@ def test_export_identity_and_state_reports_present_files(tmp_path, monkeypatch):
     _make_sqlite_db(tmp_path / "state_cache.db", "state-value")
     monkeypatch.chdir(tmp_path)
 
-    monkeypatch.setattr(config_module.config_instance, "IDENTITY_BASE_PATH", str(identity_dir))
+    monkeypatch.setattr(
+        config_module.config_instance, "IDENTITY_BASE_PATH", str(identity_dir)
+    )
 
     out_dir = tmp_path / "export_out"
     out_dir.mkdir()
@@ -204,7 +206,9 @@ def test_export_identity_and_state_reports_present_files(tmp_path, monkeypatch):
         "identity_core.db": True,
         "state_cache.db": True,
     }
-    assert (out_dir / "identity_state" / "personality.json").read_text() == '{"name": "Test"}'
+    assert (
+        out_dir / "identity_state" / "personality.json"
+    ).read_text() == '{"name": "Test"}'
     assert (out_dir / "state_cache.db").exists()
 
 
@@ -413,7 +417,9 @@ async def test_import_postgres_table_applies_the_right_cast_per_column(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_import_postgres_wraps_wipe_and_rows_in_a_transaction(tmp_path, monkeypatch):
+async def test_import_postgres_wraps_wipe_and_rows_in_a_transaction(
+    tmp_path, monkeypatch
+):
     conn = _FakeConn()
 
     async def _fake_connect(dsn):
@@ -440,7 +446,9 @@ async def test_import_postgres_table_rejects_an_unsafe_column_name(tmp_path):
 @pytest.mark.asyncio
 async def test_import_postgres_table_skips_missing_export_file(tmp_path):
     conn = _FakeConn()
-    count = await imf._import_postgres_table(conn, "memories", tmp_path / "absent.jsonl")
+    count = await imf._import_postgres_table(
+        conn, "memories", tmp_path / "absent.jsonl"
+    )
     assert count == 0
     assert conn.executed == []
 
@@ -474,9 +482,7 @@ async def test_import_friend_rejects_a_schema_version_mismatch_before_wiping(
 ):
     archive_dir = tmp_path / "friend_export"
     archive_dir.mkdir()
-    (archive_dir / "manifest.json").write_text(
-        json.dumps({"schema_version": 999})
-    )
+    (archive_dir / "manifest.json").write_text(json.dumps({"schema_version": 999}))
     archive_path = tmp_path / "bad.tar.gz"
     with tarfile.open(archive_path, "w:gz") as tar:
         tar.add(archive_dir, arcname="friend_export")
@@ -485,7 +491,9 @@ async def test_import_friend_rejects_a_schema_version_mismatch_before_wiping(
         raise AssertionError("must not touch Postgres on a schema_version mismatch")
 
     monkeypatch.setattr(imf.asyncpg, "connect", _must_not_connect, raising=False)
-    monkeypatch.setattr(config_module.config_instance, "DATABASE_URL", "postgresql://unused")
+    monkeypatch.setattr(
+        config_module.config_instance, "DATABASE_URL", "postgresql://unused"
+    )
 
     with pytest.raises(ValueError):
         await imf.import_friend(archive_path, force=True)
@@ -605,8 +613,10 @@ async def test_import_neo4j_merges_valid_nodes_and_relationships(tmp_path, monke
     graph_dir = staging / "neo4j"
     graph_dir.mkdir(parents=True)
     (graph_dir / "nodes.jsonl").write_text(
-        json.dumps({"labels": ["Agent"], "props": {"name": "Friend"}}) + "\n"
-        + json.dumps({"labels": ["Entity"], "props": {"name": "reading"}}) + "\n"
+        json.dumps({"labels": ["Agent"], "props": {"name": "Friend"}})
+        + "\n"
+        + json.dumps({"labels": ["Entity"], "props": {"name": "reading"}})
+        + "\n"
     )
     (graph_dir / "relationships.jsonl").write_text(
         json.dumps(
@@ -640,7 +650,9 @@ async def test_import_neo4j_merges_valid_nodes_and_relationships(tmp_path, monke
 
 
 @pytest.mark.asyncio
-async def test_import_neo4j_skips_a_node_with_no_recognized_label(tmp_path, monkeypatch):
+async def test_import_neo4j_skips_a_node_with_no_recognized_label(
+    tmp_path, monkeypatch
+):
     staging = tmp_path / "staging"
     graph_dir = staging / "neo4j"
     graph_dir.mkdir(parents=True)
@@ -658,7 +670,9 @@ async def test_import_neo4j_skips_a_node_with_no_recognized_label(tmp_path, monk
 
 
 @pytest.mark.asyncio
-async def test_import_neo4j_skips_a_relationship_with_an_unsafe_type(tmp_path, monkeypatch):
+async def test_import_neo4j_skips_a_relationship_with_an_unsafe_type(
+    tmp_path, monkeypatch
+):
     staging = tmp_path / "staging"
     graph_dir = staging / "neo4j"
     graph_dir.mkdir(parents=True)

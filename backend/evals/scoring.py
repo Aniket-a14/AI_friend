@@ -55,9 +55,7 @@ def evaluate_check(check: Check, views: tuple[str, ...]) -> CheckResult:
 
     if check.kind == "must_include":
         missing = [
-            needle
-            for needle in needles
-            if not any(needle in view for view in views)
+            needle for needle in needles if not any(needle in view for view in views)
         ]
         return CheckResult(
             kind=check.kind,
@@ -74,11 +72,7 @@ def evaluate_check(check: Check, views: tuple[str, ...]) -> CheckResult:
         )
 
     if check.kind == "must_not_include":
-        found = [
-            needle
-            for needle in needles
-            if any(needle in view for view in views)
-        ]
+        found = [needle for needle in needles if any(needle in view for view in views)]
         return CheckResult(
             kind=check.kind,
             passed=not found,

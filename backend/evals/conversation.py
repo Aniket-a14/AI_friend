@@ -70,8 +70,7 @@ class ContextStrategy(Protocol):
 
     name: str
 
-    async def select(self, transcript: list[Turn], query: str) -> list[Turn]:
-        ...
+    async def select(self, transcript: list[Turn], query: str) -> list[Turn]: ...
 
 
 class FullHistory:
@@ -105,7 +104,7 @@ class RecentWindow:
         self.name = f"recent_window_{turns}"
 
     async def select(self, transcript: list[Turn], query: str) -> list[Turn]:
-        return list(transcript[-self.turns:])
+        return list(transcript[-self.turns :])
 
 
 def _matching_indices(transcript: list[Turn], hits: list[Turn]) -> list[int]:
@@ -262,9 +261,7 @@ def _answers_visible(probe: ConversationProbe, visible: list[Turn]) -> bool:
     always did: whatever the model said next, it was not recall.
     """
     seen = {turn.text for turn in visible}
-    return all(
-        plant.text in seen for plant in probe.resolved_plants if plant.answers
-    )
+    return all(plant.text in seen for plant in probe.resolved_plants if plant.answers)
 
 
 def render_context(turns: list[Turn]) -> str:
@@ -297,9 +294,7 @@ def context_fits(prompt: str, system: str, options: RunOptions) -> bool:
     arrival and loses the plant partway through generation -- the one case the
     check exists to catch, reported as ``fits yes``.
     """
-    budget = (
-        estimate_tokens(prompt) + estimate_tokens(system) + options.num_predict
-    )
+    budget = estimate_tokens(prompt) + estimate_tokens(system) + options.num_predict
     return budget <= options.num_ctx
 
 
@@ -382,8 +377,14 @@ async def run_conversation_eval(
     for probe in probes:
         for strategy in strategies:
             result = await run_conversation_probe(
-                client, manager, probe, filler, strategy,
-                system, model, options,
+                client,
+                manager,
+                probe,
+                filler,
+                strategy,
+                system,
+                model,
+                options,
             )
             logger.info(
                 "[eval] %-40s %s (%d turns, %d chars, plant %s%s)",
@@ -407,7 +408,9 @@ async def run_conversation_eval(
     )
 
 
-def load_conversation_pack(path: Path) -> tuple[list[ConversationProbe], list[tuple[str, str]]]:
+def load_conversation_pack(
+    path: Path,
+) -> tuple[list[ConversationProbe], list[tuple[str, str]]]:
     """Read probes and filler from one JSON pack.
 
     Filler lives in the pack rather than in this module on purpose: what a
@@ -443,7 +446,9 @@ def shipped_conversation_pack() -> Path:
     conversation pack sitting there fails the *other* suite at load time. The
     glob is non-recursive, which makes a subdirectory the whole fix.
     """
-    return Path(__file__).parent / "probes" / "conversation" / "conversation_recall.json"
+    return (
+        Path(__file__).parent / "probes" / "conversation" / "conversation_recall.json"
+    )
 
 
 def shipped_discriminating_pack() -> Path:
@@ -455,7 +460,9 @@ def shipped_discriminating_pack() -> Path:
     question about the architecture, and it requires ``--retrieval`` to mean
     anything at all.
     """
-    return Path(__file__).parent / "probes" / "conversation" / "discriminating_recall.json"
+    return (
+        Path(__file__).parent / "probes" / "conversation" / "discriminating_recall.json"
+    )
 
 
 __all__ = [

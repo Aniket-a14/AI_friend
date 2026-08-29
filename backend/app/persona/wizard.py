@@ -36,12 +36,27 @@ logger = logging.getLogger(__name__)
 # handled separately (it renders as a `[speaking_style]` table, not a
 # top-level key).
 _TOML_FIELD_ORDER = [
-    "name", "base_tone", "identity_summary", "speech_patterns", "traits", "avoid",
-    "baseline_valence", "baseline_arousal", "baseline_dominance",
-    "valence_drift_rate", "arousal_response_rate", "dominance_stability",
-    "trust_change_rate", "attachment_growth_rate", "mood_decay_rate",
-    "dopamine_halflife_s", "cortisol_halflife_s",
-    "relationship", "initial_trust", "initial_attachment", "adaptive_traits",
+    "name",
+    "base_tone",
+    "identity_summary",
+    "speech_patterns",
+    "traits",
+    "avoid",
+    "baseline_valence",
+    "baseline_arousal",
+    "baseline_dominance",
+    "valence_drift_rate",
+    "arousal_response_rate",
+    "dominance_stability",
+    "trust_change_rate",
+    "attachment_growth_rate",
+    "mood_decay_rate",
+    "dopamine_halflife_s",
+    "cortisol_halflife_s",
+    "relationship",
+    "initial_trust",
+    "initial_attachment",
+    "adaptive_traits",
 ]
 
 

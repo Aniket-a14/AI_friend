@@ -70,7 +70,9 @@ def fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def pending_entries(memories: Sequence[Any], already_seeded: Iterable[str]) -> list[str]:
+def pending_entries(
+    memories: Sequence[Any], already_seeded: Iterable[str]
+) -> list[str]:
     """The memory texts not yet written to the store, de-duplicated."""
     seen: set[str] = set(already_seeded or ())
     pending: list[str] = []

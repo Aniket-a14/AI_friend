@@ -35,12 +35,63 @@ logger = logging.getLogger("mental_lexicon")
 # Generic English function words dropped before learning/expansion. These are
 # universal stop words, not corpus- or domain-specific terms.
 _STOP_WORDS = {
-    "the", "and", "but", "for", "nor", "yet", "with", "this", "that", "these",
-    "those", "you", "your", "yours", "was", "were", "are", "has", "have", "had",
-    "not", "which", "who", "what", "when", "where", "why", "how", "all", "any",
-    "can", "will", "would", "could", "should", "then", "than", "there", "their",
-    "them", "they", "from", "into", "onto", "our", "ours", "his", "her", "hers",
-    "its", "about", "just", "also", "very", "some", "such", "here",
+    "the",
+    "and",
+    "but",
+    "for",
+    "nor",
+    "yet",
+    "with",
+    "this",
+    "that",
+    "these",
+    "those",
+    "you",
+    "your",
+    "yours",
+    "was",
+    "were",
+    "are",
+    "has",
+    "have",
+    "had",
+    "not",
+    "which",
+    "who",
+    "what",
+    "when",
+    "where",
+    "why",
+    "how",
+    "all",
+    "any",
+    "can",
+    "will",
+    "would",
+    "could",
+    "should",
+    "then",
+    "than",
+    "there",
+    "their",
+    "them",
+    "they",
+    "from",
+    "into",
+    "onto",
+    "our",
+    "ours",
+    "his",
+    "her",
+    "hers",
+    "its",
+    "about",
+    "just",
+    "also",
+    "very",
+    "some",
+    "such",
+    "here",
 }
 
 
@@ -55,10 +106,10 @@ class MentalLexicon:
         self._ready = False
         self._init_lock = asyncio.Lock()
 
-        self._expand_limit = 6          # associates returned per cue
-        self._min_weight = 1.0          # a single co-occurrence already qualifies
-        self._max_words_per_text = 12   # cap pair fan-out per learned memory
-        self._cache_row_limit = 8000    # bound the in-memory association cache
+        self._expand_limit = 6  # associates returned per cue
+        self._min_weight = 1.0  # a single co-occurrence already qualifies
+        self._max_words_per_text = 12  # cap pair fan-out per learned memory
+        self._cache_row_limit = 8000  # bound the in-memory association cache
 
         # P2-5: Hebbian decay + prune for lexical_associations, applied once
         # per refresh() cycle (the same 5-minute cadence the cache already
@@ -104,17 +155,21 @@ class MentalLexicon:
         sqlite_fallback.py (SQLite); these IF-NOT-EXISTS statements only matter
         when the lexicon runs against a bare pool (e.g. a focused unit test)."""
         statements = (
-            ("CREATE TABLE IF NOT EXISTS vocabulary ("
-            "term text PRIMARY KEY, surface_forms text DEFAULT '[]', "
-            "embedding text, times_seen integer DEFAULT 1, "
-            "source text DEFAULT 'acquired', "
-            "first_seen timestamp DEFAULT current_timestamp, "
-            "last_seen timestamp DEFAULT current_timestamp)"),
-            ("CREATE TABLE IF NOT EXISTS lexical_associations ("
-            "term_a text NOT NULL, term_b text NOT NULL, "
-            "weight real DEFAULT 1.0, "
-            "last_reinforced timestamp DEFAULT current_timestamp, "
-            "PRIMARY KEY (term_a, term_b))"),
+            (
+                "CREATE TABLE IF NOT EXISTS vocabulary ("
+                "term text PRIMARY KEY, surface_forms text DEFAULT '[]', "
+                "embedding text, times_seen integer DEFAULT 1, "
+                "source text DEFAULT 'acquired', "
+                "first_seen timestamp DEFAULT current_timestamp, "
+                "last_seen timestamp DEFAULT current_timestamp)"
+            ),
+            (
+                "CREATE TABLE IF NOT EXISTS lexical_associations ("
+                "term_a text NOT NULL, term_b text NOT NULL, "
+                "weight real DEFAULT 1.0, "
+                "last_reinforced timestamp DEFAULT current_timestamp, "
+                "PRIMARY KEY (term_a, term_b))"
+            ),
             "CREATE INDEX IF NOT EXISTS lexical_assoc_a_idx ON lexical_associations(term_a)",
             "CREATE INDEX IF NOT EXISTS lexical_assoc_b_idx ON lexical_associations(term_b)",
         )

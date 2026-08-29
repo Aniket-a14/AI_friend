@@ -24,9 +24,12 @@ os.environ.setdefault("LIVEKIT_API_SECRET", "dummy_secret")
 #
 # Tests that exercise authoring pass an explicit path, so this disables ambient
 # discovery without disabling the feature.
-os.environ.setdefault("PERSONA_PROFILE_PATH", os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "_no_persona_file_here.toml"
-))
+os.environ.setdefault(
+    "PERSONA_PROFILE_PATH",
+    os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "_no_persona_file_here.toml"
+    ),
+)
 
 # Keep identity writes out of the source tree.
 #
@@ -39,9 +42,7 @@ os.environ.setdefault("PERSONA_PROFILE_PATH", os.path.join(
 #
 # A temp directory per session, so a test that saves is writing somewhere it is
 # allowed to. Tests that care about the files pass an explicit `base_path`.
-os.environ.setdefault(
-    "IDENTITY_BASE_PATH", tempfile.mkdtemp(prefix="test-identity-")
-)
+os.environ.setdefault("IDENTITY_BASE_PATH", tempfile.mkdtemp(prefix="test-identity-"))
 
 # Disable first-boot seeding for the same reason `PERSONA_PROFILE_PATH` above
 # points at nothing: a fresh write directory would otherwise get seeded from
@@ -149,10 +150,16 @@ class MockNATSConnection:
         msg = MockMessage(subject, data, headers)
         for sub_subj, callbacks in self.subscribers.items():
             matched = False
-            if sub_subj == subject or sub_subj.endswith(".>") and subject.startswith(sub_subj[:-1]) or (
-                sub_subj.endswith(".*")
-                and subject.split(".")[:-1] == sub_subj.split(".")[:-1]
-            ) or sub_subj == ">":
+            if (
+                sub_subj == subject
+                or sub_subj.endswith(".>")
+                and subject.startswith(sub_subj[:-1])
+                or (
+                    sub_subj.endswith(".*")
+                    and subject.split(".")[:-1] == sub_subj.split(".")[:-1]
+                )
+                or sub_subj == ">"
+            ):
                 matched = True
 
             if matched:
@@ -516,7 +523,9 @@ def pytest_sessionfinish(session, exitstatus):
     # have a hard timeout, so retaining diagnostics is more valuable than the
     # local-only escape hatch for leaked resources.
     if "MUTANT_UNDER_TEST" in os.environ or os.environ.get("CI", "").lower() in {
-        "1", "true", "yes"
+        "1",
+        "true",
+        "yes",
     }:
         return
 

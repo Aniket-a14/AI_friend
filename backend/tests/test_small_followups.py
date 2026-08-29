@@ -45,7 +45,9 @@ def test_an_authored_relationship_actually_takes_effect(tmp_path):
     `relationship = "New Acquaintance"` got "Friend" and no warning that their
     setting had been discarded.
     """
-    agent = IdentityManager(base_path=str(tmp_path), persona_file=_persona_file(tmp_path))
+    agent = IdentityManager(
+        base_path=str(tmp_path), persona_file=_persona_file(tmp_path)
+    )
 
     assert agent.first_boot is True
     assert agent.history["relationship"] == "New Acquaintance"
@@ -85,7 +87,9 @@ def test_a_lived_relationship_is_not_reset_by_the_file(tmp_path):
         json.dumps({"memories": ["we met in October"], "relationship": "Close Friend"}),
         encoding="utf-8",
     )
-    agent = IdentityManager(base_path=str(tmp_path), persona_file=_persona_file(tmp_path))
+    agent = IdentityManager(
+        base_path=str(tmp_path), persona_file=_persona_file(tmp_path)
+    )
 
     assert agent.first_boot is False
     assert agent.history["relationship"] == "Close Friend"
@@ -247,7 +251,9 @@ def test_a_rejected_persona_file_does_not_count_as_seeded(tmp_path):
     bad = tmp_path / "persona.toml"
     # Out of bounds by design: mood decay of zero is a permanent mood lock, and
     # the schema rejects it rather than clamping.
-    bad.write_text('relationship = "New Acquaintance"\nmood_decay_rate = 0.0\n', encoding="utf-8")
+    bad.write_text(
+        'relationship = "New Acquaintance"\nmood_decay_rate = 0.0\n', encoding="utf-8"
+    )
 
     agent = IdentityManager(base_path=str(tmp_path), persona_file=bad)
 
@@ -283,7 +289,9 @@ async def test_an_unreadable_biography_never_prunes_everything(tmp_path):
     store.qdrant_store = None
 
     service = CognitiveService(
-        llm_service=None, memory_store=store, graph_db=None,
+        llm_service=None,
+        memory_store=store,
+        graph_db=None,
         base_path=str(tmp_path),
     )
     service.identity.history[CognitiveService.SEEDED_KEY] = ["some-old-fingerprint"]

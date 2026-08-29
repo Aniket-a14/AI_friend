@@ -50,6 +50,7 @@ def install_shutdown_signal_handlers(shutdown_event: asyncio.Event) -> None:
             # default proactor loop); fall back to the plain signal module.
             signal.signal(sig, lambda *_args: shutdown_event.set())
 
+
 # M6: base/cap for exponential backoff with jitter on NATS reconnect. A static
 # `reconnect_time_wait` means every agent process in the mesh (brain, system,
 # subconscious, surfacing, transport) retries at the same fixed interval, so a
@@ -189,7 +190,8 @@ class BaseAgent:
             if self.name != "test_publisher" and not self.name.startswith("test_"):
                 try:
                     await self.subscribe(
-                        "cache.sync", self._on_cache_sync_received,
+                        "cache.sync",
+                        self._on_cache_sync_received,
                         deliver_policy="new",
                     )
                 except Exception as se:
@@ -238,9 +240,7 @@ class BaseAgent:
                 # runs on every agent start and usually reaches a fresh mesh
                 # first, so if it declared streams with name+subjects only
                 # the retention policy would never be applied in practice.
-                await jsm.add_stream(
-                    config=build_stream_config(stream_name, subjects)
-                )
+                await jsm.add_stream(config=build_stream_config(stream_name, subjects))
                 logger.info(f"Created NATS Stream: {stream_name} {subjects}")
             except nats.js.errors.BadRequestError:
                 # Stream likely already exists, verify subjects.
@@ -374,9 +374,7 @@ class BaseAgent:
         except Exception as e:
             logger.error(f"Failed to publish to {subject}: {e}")
 
-    def _extract_latency_ms(
-        self, metadata: dict[str, Any] | None
-    ) -> float | None:
+    def _extract_latency_ms(self, metadata: dict[str, Any] | None) -> float | None:
         if not metadata:
             return None
         start_time = metadata.get("start_time")
@@ -454,9 +452,9 @@ class BaseAgent:
             return
 
         current = info.config
-        drifted = (
-            ack_wait is not None and current.ack_wait != ack_wait
-        ) or (max_deliver is not None and current.max_deliver != max_deliver)
+        drifted = (ack_wait is not None and current.ack_wait != ack_wait) or (
+            max_deliver is not None and current.max_deliver != max_deliver
+        )
         if not drifted:
             return
 
@@ -579,7 +577,9 @@ class BaseAgent:
                 # to every subject, not only two prefixes.
                 is_conversational = subject.startswith(("chat.", "state."))
                 max_deliver_env = (
-                    "MESH_MAX_DELIVER" if is_conversational else "MESH_MEDIA_MAX_DELIVER"
+                    "MESH_MAX_DELIVER"
+                    if is_conversational
+                    else "MESH_MEDIA_MAX_DELIVER"
                 )
                 max_deliver_default = "5" if is_conversational else "2"
                 max_deliver = max(

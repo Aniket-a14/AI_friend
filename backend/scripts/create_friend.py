@@ -32,9 +32,7 @@ from pathlib import Path
 
 # Add project root (backend/) to path -- matches every other entry point under
 # backend/scripts/.
-sys.path.append(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import set_key
 
@@ -122,11 +120,13 @@ def _write(compiled: CompiledPersona) -> list[str]:
         temp_path.unlink(missing_ok=True)
 
     set_key(
-        str(ENV_PATH), "PERSONA_PROFILE_PATH",
+        str(ENV_PATH),
+        "PERSONA_PROFILE_PATH",
         str(PERSONA_PATH.relative_to(REPO_ROOT)),
     )
     set_key(
-        str(ENV_PATH), "BIOGRAPHY_PATH",
+        str(ENV_PATH),
+        "BIOGRAPHY_PATH",
         str(BIOGRAPHY_PATH.relative_to(REPO_ROOT)),
     )
     return []
@@ -210,7 +210,8 @@ async def main(force: bool) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--force", action="store_true",
+        "--force",
+        action="store_true",
         help="Overwrite an existing personal/persona.toml (cannot be undone).",
     )
     args = parser.parse_args()

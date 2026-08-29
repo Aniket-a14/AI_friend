@@ -38,7 +38,12 @@ async def test_user_message_is_chat_even_without_an_llm_service():
     service = PerceptionService(llm_service=None)
 
     event = await service.perceive(
-        {"id": "evt-2", "type": "USER_MESSAGE", "content": "hello there", "metadata": {}}
+        {
+            "id": "evt-2",
+            "type": "USER_MESSAGE",
+            "content": "hello there",
+            "metadata": {},
+        }
     )
 
     assert event.intent == "CHAT"
@@ -51,6 +56,8 @@ async def test_system_tick_is_reflect():
     that is actually load-bearing."""
     service = PerceptionService(llm_service=None)
 
-    event = await service.perceive({"id": "evt-3", "type": "SYSTEM_TICK", "content": "", "metadata": {}})
+    event = await service.perceive(
+        {"id": "evt-3", "type": "SYSTEM_TICK", "content": "", "metadata": {}}
+    )
 
     assert event.intent == "REFLECT"

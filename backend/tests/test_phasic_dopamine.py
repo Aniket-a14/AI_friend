@@ -107,9 +107,7 @@ def test_a_non_positive_release_cannot_eat_an_outstanding_burst(amount):
     assert state.dopamine_phasic_peak == pytest.approx(peak)
 
 
-@pytest.mark.parametrize(
-    "amount", [float("nan"), float("inf"), float("-inf")]
-)
+@pytest.mark.parametrize("amount", [float("nan"), float("inf"), float("-inf")])
 def test_a_non_finite_release_is_ignored(amount):
     """NaN survives float() and then defeats every comparison: `nan <= 0.0` is
     False so it passes the guard, and `min(1.0, nan)` returns 1.0 -- so before

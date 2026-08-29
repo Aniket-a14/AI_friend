@@ -31,7 +31,9 @@ def _import_main(monkeypatch, sentinel_path):
 def test_health_reports_degraded_when_sentinel_present(tmp_path, monkeypatch):
     sentinel = tmp_path / "sqlite_fallback_active"
     sentinel.write_text(
-        json.dumps({"reason": "PostgreSQL connection failed: timeout", "timestamp": 0.0})
+        json.dumps(
+            {"reason": "PostgreSQL connection failed: timeout", "timestamp": 0.0}
+        )
     )
 
     main = _import_main(monkeypatch, sentinel)

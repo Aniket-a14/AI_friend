@@ -65,9 +65,7 @@ def test_context_aware_pronoun_mapping_user_speaking(mock_pool):
                 },
                 {"name": "Raj", "description": "User / Companion"},
             ]
-            return [
-                row for row in identities if row["name"].lower() in identity_names
-            ]
+            return [row for row in identities if row["name"].lower() in identity_names]
         elif "MATCH (s:Entity)-[r]-(t:Entity)" in query:
             return [{"source": Config.AI_NAME, "target": "Raj"}]
         return []
@@ -132,9 +130,7 @@ def test_context_aware_pronoun_mapping_self_reflection(mock_pool):
                 },
                 {"name": "Raj", "description": "User / Companion"},
             ]
-            return [
-                row for row in identities if row["name"].lower() in identity_names
-            ]
+            return [row for row in identities if row["name"].lower() in identity_names]
         elif "MATCH (s:Entity)-[r]-(t:Entity)" in query:
             return []
         return []

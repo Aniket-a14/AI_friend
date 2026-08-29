@@ -34,7 +34,11 @@ def _service(llm=None, memory=None):
 
 
 def _plan(action_type="RESPOND_CHAT", **payload):
-    base = {"message": "hi", "identity_prompt": "You are Aniket.", "emotion_state": "neutral"}
+    base = {
+        "message": "hi",
+        "identity_prompt": "You are Aniket.",
+        "emotion_state": "neutral",
+    }
     base.update(payload)
     return ActionPlan(action_type=action_type, payload=base, goal="ENGAGE")
 
@@ -46,7 +50,9 @@ class _ScriptedLLM:
         self.scripts = list(scripts)
         self.calls = 0
 
-    def generate_stream(self, prompt=None, system=None, model=None, options_override=None):
+    def generate_stream(
+        self, prompt=None, system=None, model=None, options_override=None
+    ):
         script = self.scripts[min(self.calls, len(self.scripts) - 1)]
         self.calls += 1
 
@@ -229,7 +235,9 @@ def test_store_memory_reports_failure_when_persistence_fails():
     memory = MagicMock()
     memory.add_memory = AsyncMock(return_value=False)
     svc = _service(memory=memory)
-    out = asyncio.run(_drain(svc.execute(_plan("STORE_MEMORY", content="remember this"))))
+    out = asyncio.run(
+        _drain(svc.execute(_plan("STORE_MEMORY", content="remember this")))
+    )
 
     assert any(c["type"] == "error" for c in out)
     assert not any("committed that to memory" in str(c["data"]) for c in out)
@@ -238,7 +246,9 @@ def test_store_memory_reports_failure_when_persistence_fails():
 
 def test_store_memory_reports_failure_when_no_store_attached():
     svc = _service(memory=None)
-    out = asyncio.run(_drain(svc.execute(_plan("STORE_MEMORY", content="remember this"))))
+    out = asyncio.run(
+        _drain(svc.execute(_plan("STORE_MEMORY", content="remember this")))
+    )
 
     assert any(c["type"] == "error" for c in out)
     assert not any("committed that to memory" in str(c["data"]) for c in out)
@@ -248,7 +258,9 @@ def test_store_memory_confirms_on_success():
     memory = MagicMock()
     memory.add_memory = AsyncMock(return_value=True)
     svc = _service(memory=memory)
-    out = asyncio.run(_drain(svc.execute(_plan("STORE_MEMORY", content="remember this"))))
+    out = asyncio.run(
+        _drain(svc.execute(_plan("STORE_MEMORY", content="remember this")))
+    )
 
     assert any("committed that to memory" in str(c["data"]) for c in out)
     assert not any(c["type"] == "error" for c in out)
@@ -299,7 +311,7 @@ def test_missing_column_error_detection():
         sqlite3.OperationalError("table memories has no column named virtue")
     )
 
-    pg_err = Exception("column \"virtue\" does not exist")
+    pg_err = Exception('column "virtue" does not exist')
     pg_err.sqlstate = "42703"
     assert MemoryStore._is_missing_column_error(pg_err)
 
@@ -526,10 +538,6 @@ def test_search_cache_key_separates_self_reflection_modes():
     # call even for an unchanged value, so identity comparison here would
     # flag the untouched valence/arousal/cortisol positions as "differing"
     # for a reason that has nothing to do with self-reflection mode.
-    differing = [
-        i
-        for i, (a, b) in enumerate(zip(probed[0], probed[1]))
-        if a != b
-    ]
+    differing = [i for i, (a, b) in enumerate(zip(probed[0], probed[1])) if a != b]
     assert len(differing) == 1
     assert (probed[0][differing[0]], probed[1][differing[0]]) == (False, True)

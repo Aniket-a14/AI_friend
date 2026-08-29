@@ -56,7 +56,10 @@ async def test_capture_does_not_await_publish_directly():
     agent.publish = AsyncMock(side_effect=Exception("should never be called here"))
 
     events = [_fake_frame_event() for _ in range(3)]
-    with patch("app.agents.transport_agent.rtc.AudioStream", return_value=_FakeAudioStream(events)):
+    with patch(
+        "app.agents.transport_agent.rtc.AudioStream",
+        return_value=_FakeAudioStream(events),
+    ):
         await agent._process_remote_audio(track=SimpleNamespace(sid="track-1"))
 
     agent.publish.assert_not_awaited()
@@ -73,7 +76,10 @@ async def test_queue_overflow_drops_the_oldest_frame_not_the_newest():
         _fake_frame_event(data=b"second"),
         _fake_frame_event(data=b"third"),
     ]
-    with patch("app.agents.transport_agent.rtc.AudioStream", return_value=_FakeAudioStream(events)):
+    with patch(
+        "app.agents.transport_agent.rtc.AudioStream",
+        return_value=_FakeAudioStream(events),
+    ):
         await agent._process_remote_audio(track=SimpleNamespace(sid="track-1"))
 
     assert agent.inbound_audio_queue.qsize() == 2

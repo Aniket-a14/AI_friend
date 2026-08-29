@@ -257,7 +257,9 @@ class BrainAgent(BaseAgent):
             except asyncio.CancelledError:
                 pass
             except Exception:
-                logger.exception("Previous generation task raised while being cancelled")
+                logger.exception(
+                    "Previous generation task raised while being cancelled"
+                )
             finally:
                 if self._active_generation_task is task:
                     self._active_generation_task = None
@@ -356,7 +358,9 @@ class BrainAgent(BaseAgent):
                 except asyncio.CancelledError:
                     pass
                 except Exception:
-                    logger.exception("Previous generation task raised while being cancelled")
+                    logger.exception(
+                        "Previous generation task raised while being cancelled"
+                    )
 
             # Create and assign new task while still holding the lock
             new_task = asyncio.create_task(coro)
@@ -393,7 +397,7 @@ class BrainAgent(BaseAgent):
         # chat inputs from both creating tasks and losing ownership.
         task = await self._replace_active_generation(
             self._process_chat_input_flow(msg, is_subconscious, message),
-            "new incoming speech turn"
+            "new incoming speech turn",
         )
         try:
             await task
@@ -553,9 +557,7 @@ class BrainAgent(BaseAgent):
                 self.last_assistant_response = full_response
 
         if self.conversation_store and full_response:
-            self.spawn(
-                self.conversation_store.log_message("assistant", full_response)
-            )
+            self.spawn(self.conversation_store.log_message("assistant", full_response))
 
     async def _on_audio_playback_progress(self, data: dict[str, Any]):
         """Tracks the current word/character progress of the audio playback."""
@@ -906,7 +908,9 @@ class BrainAgent(BaseAgent):
                 except asyncio.CancelledError:
                     pass
                 except Exception:
-                    logger.exception("Active generation task raised while being cancelled")
+                    logger.exception(
+                        "Active generation task raised while being cancelled"
+                    )
 
         self.cognitive_core.close()
 

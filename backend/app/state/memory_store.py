@@ -33,6 +33,7 @@ from ..utils.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 
+
 @functools.lru_cache(maxsize=4096)
 def _cached_ln(x: float) -> float:
     """Natural log, memoized on the value rounded to 3 decimal places.
@@ -146,38 +147,200 @@ L1_CACHE_TIME_BUCKET_S = 5.0
 # literal contained duplicates, which a set collapses either way).
 SEARCH_STOP_WORDS = frozenset(
     {
-        "the", "and", "but", "yet", "for", "nor", "with", "this", "that",
-        "these", "those", "you", "your", "yours", "him", "her", "them", "his",
-        "hers", "their", "theirs", "was", "were", "been", "have", "has", "had",
-        "did", "does", "what", "where", "when", "who", "why", "how", "can",
-        "could", "would", "should", "shall", "will", "about", "above", "after",
-        "again", "against", "all", "am", "an", "any", "are", "arent", "as",
-        "at", "be", "because", "before", "being", "below", "between", "both",
-        "by", "cant", "cannot", "didnt", "dont", "down", "during", "each",
-        "few", "from", "further", "hadnt", "hasnt", "havent", "having", "he",
-        "hed", "hell", "hes", "here", "heres", "herself", "himself", "i", "id",
-        "ill", "im", "ive", "if", "in", "into", "isnt", "it", "its", "itself",
-        "lets", "me", "more", "most", "mustnt", "my", "myself", "no", "not",
-        "of", "off", "on", "once", "only", "or", "other", "ought", "our",
-        "ours", "ourselves", "out", "over", "own", "same", "shant", "she",
-        "shed", "shell", "shes", "shouldnt", "so", "some", "such", "than",
-        "thats", "themselves", "then", "there", "theres", "they", "theyd",
-        "theyll", "theyre", "theyve", "through", "to", "too", "under",
-        "until", "up", "very", "wasnt", "we", "wed", "well", "weve", "werent",
-        "whats", "whens", "wheres", "which", "while", "whos", "whom", "whys",
-        "wont", "wouldnt", "youd", "youll", "youre", "youve", "yourself",
-        "yourselves", "describe", "compare", "influence", "influenced",
-        "friend", "companion", "robot", "human", "development", "developer",
-        "developers", "project", "workspace", "shared", "recall", "recalled",
-        "experience", "experiences", "related",
+        "the",
+        "and",
+        "but",
+        "yet",
+        "for",
+        "nor",
+        "with",
+        "this",
+        "that",
+        "these",
+        "those",
+        "you",
+        "your",
+        "yours",
+        "him",
+        "her",
+        "them",
+        "his",
+        "hers",
+        "their",
+        "theirs",
+        "was",
+        "were",
+        "been",
+        "have",
+        "has",
+        "had",
+        "did",
+        "does",
+        "what",
+        "where",
+        "when",
+        "who",
+        "why",
+        "how",
+        "can",
+        "could",
+        "would",
+        "should",
+        "shall",
+        "will",
+        "about",
+        "above",
+        "after",
+        "again",
+        "against",
+        "all",
+        "am",
+        "an",
+        "any",
+        "are",
+        "arent",
+        "as",
+        "at",
+        "be",
+        "because",
+        "before",
+        "being",
+        "below",
+        "between",
+        "both",
+        "by",
+        "cant",
+        "cannot",
+        "didnt",
+        "dont",
+        "down",
+        "during",
+        "each",
+        "few",
+        "from",
+        "further",
+        "hadnt",
+        "hasnt",
+        "havent",
+        "having",
+        "he",
+        "hed",
+        "hell",
+        "hes",
+        "here",
+        "heres",
+        "herself",
+        "himself",
+        "i",
+        "id",
+        "ill",
+        "im",
+        "ive",
+        "if",
+        "in",
+        "into",
+        "isnt",
+        "it",
+        "its",
+        "itself",
+        "lets",
+        "me",
+        "more",
+        "most",
+        "mustnt",
+        "my",
+        "myself",
+        "no",
+        "not",
+        "of",
+        "off",
+        "on",
+        "once",
+        "only",
+        "or",
+        "other",
+        "ought",
+        "our",
+        "ours",
+        "ourselves",
+        "out",
+        "over",
+        "own",
+        "same",
+        "shant",
+        "she",
+        "shed",
+        "shell",
+        "shes",
+        "shouldnt",
+        "so",
+        "some",
+        "such",
+        "than",
+        "thats",
+        "themselves",
+        "then",
+        "there",
+        "theres",
+        "they",
+        "theyd",
+        "theyll",
+        "theyre",
+        "theyve",
+        "through",
+        "to",
+        "too",
+        "under",
+        "until",
+        "up",
+        "very",
+        "wasnt",
+        "we",
+        "wed",
+        "well",
+        "weve",
+        "werent",
+        "whats",
+        "whens",
+        "wheres",
+        "which",
+        "while",
+        "whos",
+        "whom",
+        "whys",
+        "wont",
+        "wouldnt",
+        "youd",
+        "youll",
+        "youre",
+        "youve",
+        "yourself",
+        "yourselves",
+        "describe",
+        "compare",
+        "influence",
+        "influenced",
+        "friend",
+        "companion",
+        "robot",
+        "human",
+        "development",
+        "developer",
+        "developers",
+        "project",
+        "workspace",
+        "shared",
+        "recall",
+        "recalled",
+        "experience",
+        "experiences",
+        "related",
     }
 )
 
 # Pronoun sets used for speaker/listener cue resolution.
 FIRST_PERSON_PRONOUNS = frozenset({"i", "me", "my", "myself", "we", "our", "us"})
-SECOND_PERSON_PRONOUNS = frozenset(
-    {"you", "your", "yours", "yourself", "yourselves"}
-)
+SECOND_PERSON_PRONOUNS = frozenset({"you", "your", "yours", "yourself", "yourselves"})
 
 # Postgres retrieval fast path. Two variants of the same query: the current
 # schema also carries the Eriksonian lifespan columns on `memories`, while a
@@ -429,7 +592,9 @@ class MemoryStore:
             try:
                 dt = datetime.fromisoformat(raw)
             except ValueError:
-                logger.debug("Unparseable stored timestamp %r; treating as missing.", dt)
+                logger.debug(
+                    "Unparseable stored timestamp %r; treating as missing.", dt
+                )
                 return None
         if dt.tzinfo is None:
             return dt.replace(tzinfo=UTC)
@@ -550,7 +715,12 @@ class MemoryStore:
         )
 
     def _effective_similarity(
-        self, similarity, memory_valence, emotion_weight, current_arousal, current_cortisol
+        self,
+        similarity,
+        memory_valence,
+        emotion_weight,
+        current_arousal,
+        current_cortisol,
     ):
         """Neuromodulatory gain on cosine similarity: boosted by congruent
         valence×arousal, suppressed under stress (arousal×cortisol).
@@ -594,7 +764,9 @@ class MemoryStore:
         for name in entity_names:
             neighbors = adj.get(name, ())
             degrees.append(len(neighbors))
-            adjacency_idx.append([node_to_idx[nb] for nb in neighbors if nb in node_to_idx])
+            adjacency_idx.append(
+                [node_to_idx[nb] for nb in neighbors if nb in node_to_idx]
+            )
 
         try:
             import cognitive_rust
@@ -700,7 +872,14 @@ class MemoryStore:
             source,
             metadata_json,
         ]
-        erik_vals = [lifespan_stage, crisis, virtue, relations, relation_circles, modality]
+        erik_vals = [
+            lifespan_stage,
+            crisis,
+            virtue,
+            relations,
+            relation_circles,
+            modality,
+        ]
 
         async def _insert(include_eriksonian: bool):
             cols = list(self._MEMORY_BASE_COLUMNS)
@@ -868,8 +1047,7 @@ class MemoryStore:
                 return [await self.get_embedding(text) for text in chunk]
 
             return [
-                (vec if isinstance(vec, list) and vec else None)
-                for vec in embeddings
+                (vec if isinstance(vec, list) and vec else None) for vec in embeddings
             ]
         except Exception as e:
             logger.error(f"Ollama batch embedding failed: {e}")
@@ -1033,7 +1211,11 @@ class MemoryStore:
                 metadata = {}
             metadata["entities"] = present_entities
 
-            vector = embedding if embedding is not None else await self.get_embedding(content)
+            vector = (
+                embedding
+                if embedding is not None
+                else await self.get_embedding(content)
+            )
             if not vector:
                 return False
 
@@ -1734,7 +1916,10 @@ class MemoryStore:
                 - ACTR_EMO_DISTANCE_PENALTY * dist_emo
             )
 
-            if score <= (threshold - 2.5) and (row.get("importance_score") or 0.5) < 0.7:
+            if (
+                score <= (threshold - 2.5)
+                and (row.get("importance_score") or 0.5) < 0.7
+            ):
                 continue
 
             created = row.get("created_at")
@@ -2452,9 +2637,7 @@ class MemoryStore:
         async def _move(conn):
             if self.is_sqlite:
                 await conn.execute(_PROMOTE_INSERT_SQLITE, *insert_values)
-                await conn.execute(
-                    "DELETE FROM archived_memories WHERE id = ?", mem_id
-                )
+                await conn.execute("DELETE FROM archived_memories WHERE id = ?", mem_id)
             else:
                 await conn.execute(_PROMOTE_INSERT_PG, *insert_values)
                 await conn.execute(
@@ -3176,7 +3359,6 @@ class MemoryStore:
             self.last_search_error_at = time.time()
             return []
 
-
     async def _refresh_memories(
         self, memories: list[dict], current_valence: float = 0.0, current_time=None
     ):
@@ -3400,9 +3582,7 @@ class MemoryStore:
 
         return float(meta.get("decay_rate", default_rate)) if meta else default_rate
 
-    def _compute_actr_decay(
-        self, rows: list, current_time=None
-    ) -> tuple[list, list]:
+    def _compute_actr_decay(self, rows: list, current_time=None) -> tuple[list, list]:
         """Pure ACT-R activation decision per row: which memory ids should be
         pruned to the archive (`to_delete`) and which get a softened
         importance score in place (`to_update`). No I/O -- isolated so the

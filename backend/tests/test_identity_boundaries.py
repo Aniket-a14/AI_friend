@@ -245,9 +245,7 @@ async def test_contempt_aimed_at_the_user_is_rejected(tmp_path):
         "5 < 10, and I hate you.",
     ],
 )
-async def test_control_markup_cannot_smuggle_contempt_past_the_boundary(
-    tmp_path, text
-):
+async def test_control_markup_cannot_smuggle_contempt_past_the_boundary(tmp_path, text):
     """The persona prompt *tells* the model to emit `<pause=ms>` and `<hesitate>`.
 
     `ControlMarkupSanitizer` preserves those tags on purpose — they are voice
@@ -411,8 +409,9 @@ def test_saving_does_not_write_safety_text_back_into_the_editable_file(tmp_path)
     assert immutable["base_tone"] == "Warm"
 
     # And a reload still has the real thing.
-    assert IdentityManager(
-        base_path=str(tmp_path), persona_file=None
-    ).immutable_core["boundaries"] == (
-        IMMUTABLE_CORE["boundaries"]
+    assert (
+        IdentityManager(base_path=str(tmp_path), persona_file=None).immutable_core[
+            "boundaries"
+        ]
+        == (IMMUTABLE_CORE["boundaries"])
     )

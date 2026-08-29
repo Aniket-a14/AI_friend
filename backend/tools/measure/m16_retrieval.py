@@ -46,8 +46,12 @@ _SEED_MEMORIES = [
     "We joked about how neither of us can keep houseplants alive.",
 ]
 
-_GRAPH_ENTITY_QUERY = "MATCH (e:Entity) RETURN e.name AS name, e.description AS description"
-_GRAPH_RELATION_QUERY = "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target"
+_GRAPH_ENTITY_QUERY = (
+    "MATCH (e:Entity) RETURN e.name AS name, e.description AS description"
+)
+_GRAPH_RELATION_QUERY = (
+    "MATCH (s:Entity)-[r]-(t:Entity) RETURN s.name AS source, t.name AS target"
+)
 
 
 async def _seed(store: MemoryStore, n: int = 10) -> None:
@@ -100,9 +104,7 @@ async def _seed_graph(graph_db: GraphDB, n_entities: int, avg_degree: int = 2) -
     batch_size = 50
     for start in range(0, len(edges), batch_size):
         batch = edges[start : start + batch_size]
-        await asyncio.gather(
-            *[graph_db.create_triplet(s, r, t) for s, r, t in batch]
-        )
+        await asyncio.gather(*[graph_db.create_triplet(s, r, t) for s, r, t in batch])
     return len(edges)
 
 
@@ -145,10 +147,7 @@ async def _measure_sqlite_concurrency(graph_db: GraphDB, n: int = 5) -> dict:
 
     t0 = time.monotonic()
     await asyncio.gather(
-        *[
-            store.search_memories(f"query {i}", limit=5)
-            for i in range(n)
-        ]
+        *[store.search_memories(f"query {i}", limit=5) for i in range(n)]
     )
     concurrent_total_s = time.monotonic() - t0
 
@@ -158,7 +157,9 @@ async def _measure_sqlite_concurrency(graph_db: GraphDB, n: int = 5) -> dict:
     # overlap gained from asyncio.gather. overlap_ratio near 1.0 means no
     # concurrency was actually achieved; near 1/N would mean full overlap.
     overlap_ratio = (
-        concurrent_total_s / serial_estimate_s if serial_estimate_s > 0 else float("nan")
+        concurrent_total_s / serial_estimate_s
+        if serial_estimate_s > 0
+        else float("nan")
     )
 
     return {
@@ -169,7 +170,9 @@ async def _measure_sqlite_concurrency(graph_db: GraphDB, n: int = 5) -> dict:
     }
 
 
-async def run(allow_mock: bool = False, graph_entities: int = 1000) -> MeasurementReport:
+async def run(
+    allow_mock: bool = False, graph_entities: int = 1000
+) -> MeasurementReport:
     # This measurement times DB/graph calls, not the LLM boundary, but the
     # provenance check stays for consistency: a MOCK_LLM_TEXT deployment
     # usually also means synthetic seed data isn't meaningfully "real" either.

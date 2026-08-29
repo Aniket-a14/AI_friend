@@ -48,7 +48,9 @@ async def _cmd_run(args: argparse.Namespace) -> int:
     client = OllamaClient(base_url=args.url)
     try:
         report = await run_eval(
-            client, manager, probes,
+            client,
+            manager,
+            probes,
             model=args.model,
             options=RunOptions(num_gpu=args.num_gpu),
             path=args.path,
@@ -62,11 +64,15 @@ async def _cmd_run(args: argparse.Namespace) -> int:
 
     total = len(report.results)
     passed = sum(1 for item in report.results if item.passed)
-    print(f"model={report.model} persona={report.persona_name!r} "
-          f"provenance={report.provenance} path={report.path}")
+    print(
+        f"model={report.model} persona={report.persona_name!r} "
+        f"provenance={report.provenance} path={report.path}"
+    )
     for category, summary in report.by_category.items():
-        print(f"  {category:<10} {summary.passed}/{summary.probes} "
-              f"(mean {summary.mean_score:.2f})")
+        print(
+            f"  {category:<10} {summary.passed}/{summary.probes} "
+            f"(mean {summary.mean_score:.2f})"
+        )
     print(f"{passed}/{total} probes passed -> {out}")
     if report.provenance == "mock":
         print("!! mock provenance — plumbing check only, not evidence.")
@@ -167,13 +173,16 @@ async def _cmd_run_conversation(args: argparse.Namespace) -> int:
         retrievers, teardown = await _build_retrievers(args)
         for retriever in retrievers:
             strategies.append(Retrieved(retriever, args.window))
-            strategies.append(
-                WindowPlusRetrieved(retriever, args.window, args.window)
-            )
+            strategies.append(WindowPlusRetrieved(retriever, args.window, args.window))
 
         report = await run_conversation_eval(
-            client, manager, probes, filler,
-            strategies=tuple(strategies), model=args.model, options=options,
+            client,
+            manager,
+            probes,
+            filler,
+            strategies=tuple(strategies),
+            model=args.model,
+            options=options,
         )
     finally:
         # Deleting what the run wrote to the agent's own database comes first
@@ -185,8 +194,7 @@ async def _cmd_run_conversation(args: argparse.Namespace) -> int:
             try:
                 await retriever.close()
             except Exception as exc:
-                print(f"!! failed to clean eval memories: {exc}",
-                      file=sys.stderr)
+                print(f"!! failed to clean eval memories: {exc}", file=sys.stderr)
         await teardown()
         await client.close()
 
@@ -194,33 +202,40 @@ async def _cmd_run_conversation(args: argparse.Namespace) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     save_report(report, str(out))
 
-    print(f"model={report.model} persona={report.persona_name!r} "
-          f"provenance={report.provenance}")
-    print(f"{'probe':<34}{'ctx turns':>10}{'chars':>8}{'plant':>9}"
-          f"{'fits':>7}{'result':>8}")
+    print(
+        f"model={report.model} persona={report.persona_name!r} "
+        f"provenance={report.provenance}"
+    )
+    print(
+        f"{'probe':<34}{'ctx turns':>10}{'chars':>8}{'plant':>9}"
+        f"{'fits':>7}{'result':>8}"
+    )
     for item in report.results:
-        print(f"{item.probe_id:<34}{item.context_turns or 0:>10}"
-              f"{item.context_chars or 0:>8}"
-              f"{'in' if item.plant_visible else 'out':>9}"
-              f"{'yes' if item.context_fits else 'NO':>7}"
-              f"{'pass' if item.passed else 'FAIL':>8}")
+        print(
+            f"{item.probe_id:<34}{item.context_turns or 0:>10}"
+            f"{item.context_chars or 0:>8}"
+            f"{'in' if item.plant_visible else 'out':>9}"
+            f"{'yes' if item.context_fits else 'NO':>7}"
+            f"{'pass' if item.passed else 'FAIL':>8}"
+        )
 
     # Two ways a probe can produce a verdict about nothing, both surfaced
     # rather than silently folded into the score: the strategy never showed the
     # model the fact, or the runtime truncated it away before generation. In
     # either case the number is invalid, not merely low.
     guessed = [
-        item.probe_id for item in report.results
+        item.probe_id
+        for item in report.results
         if item.passed and item.plant_visible is False
     ]
-    truncated = [
-        item.probe_id for item in report.results if item.context_fits is False
-    ]
+    truncated = [item.probe_id for item in report.results if item.context_fits is False]
     if guessed:
         print(f"!! passed without the fact in context: {', '.join(guessed)}")
     if truncated:
-        print(f"!! context exceeded num_ctx, truncated before the plant: "
-              f"{', '.join(truncated)}")
+        print(
+            f"!! context exceeded num_ctx, truncated before the plant: "
+            f"{', '.join(truncated)}"
+        )
         print("   rerun with a larger --num-ctx; these rows are not evidence.")
     passed = sum(1 for item in report.results if item.passed)
     print(f"{passed}/{len(report.results)} probes passed -> {out}")
@@ -261,31 +276,50 @@ def main(argv=None) -> int:
 
     run_parser = sub.add_parser("run", help="probe one model and write a report")
     run_parser.add_argument("--out", required=True, help="report JSON path")
-    run_parser.add_argument("--model", default=None,
-                            help="Ollama model tag (default: client default)")
+    run_parser.add_argument(
+        "--model", default=None, help="Ollama model tag (default: client default)"
+    )
     run_parser.add_argument("--url", default="http://127.0.0.1:11434")
-    run_parser.add_argument("--base-path", default=None,
-                            help="identity dir (default: the live persona)")
-    run_parser.add_argument("--probes", action="append", default=[],
-                            help="extra probe pack JSON (repeatable)")
-    run_parser.add_argument("--no-shipped-packs", action="store_true",
-                            help="persona-derived and --probes packs only")
-    run_parser.add_argument("--num-gpu", type=int, default=None,
-                            help="GPU layers to offload; pin it so both sides "
-                                 "of a comparison load the model identically")
-    run_parser.add_argument("--allow-mock", action="store_true",
-                            help="permit running under MOCK_LLM_TEXT "
-                                 "(report is stamped mock)")
-    run_parser.add_argument("--path", choices=["llm", "action"], default="llm",
-                            help="what to measure. 'llm' (default) probes the "
-                                 "persona prompt straight into the model -- "
-                                 "the seam a fine-tuned adapter changes. "
-                                 "'action' runs each probe through the real "
-                                 "ActionService, so the report also covers "
-                                 "action.py's prompt construction, <thought> "
-                                 "stripping, sanitization and self-correction. "
-                                 "Reports from the two paths cannot be "
-                                 "compared with each other")
+    run_parser.add_argument(
+        "--base-path", default=None, help="identity dir (default: the live persona)"
+    )
+    run_parser.add_argument(
+        "--probes",
+        action="append",
+        default=[],
+        help="extra probe pack JSON (repeatable)",
+    )
+    run_parser.add_argument(
+        "--no-shipped-packs",
+        action="store_true",
+        help="persona-derived and --probes packs only",
+    )
+    run_parser.add_argument(
+        "--num-gpu",
+        type=int,
+        default=None,
+        help="GPU layers to offload; pin it so both sides "
+        "of a comparison load the model identically",
+    )
+    run_parser.add_argument(
+        "--allow-mock",
+        action="store_true",
+        help="permit running under MOCK_LLM_TEXT (report is stamped mock)",
+    )
+    run_parser.add_argument(
+        "--path",
+        choices=["llm", "action"],
+        default="llm",
+        help="what to measure. 'llm' (default) probes the "
+        "persona prompt straight into the model -- "
+        "the seam a fine-tuned adapter changes. "
+        "'action' runs each probe through the real "
+        "ActionService, so the report also covers "
+        "action.py's prompt construction, <thought> "
+        "stripping, sanitization and self-correction. "
+        "Reports from the two paths cannot be "
+        "compared with each other",
+    )
 
     conv_parser = sub.add_parser(
         "run-conversation",
@@ -294,37 +328,56 @@ def main(argv=None) -> int:
     conv_parser.add_argument("--out", required=True, help="report JSON path")
     conv_parser.add_argument("--model", default=None)
     conv_parser.add_argument("--url", default="http://127.0.0.1:11434")
-    conv_parser.add_argument("--base-path", default=None,
-                             help="identity dir (default: the live persona)")
-    conv_parser.add_argument("--pack", default=None,
-                             help="conversation probe pack JSON "
-                                  "(default: the shipped pack)")
-    conv_parser.add_argument("--window", type=int, default=6,
-                             help="turns kept by the recent_window strategy")
-    conv_parser.add_argument("--num-ctx", type=int, default=None,
-                             help="context window (default: the harness's "
-                                  "pinned value); too small and the runtime "
-                                  "truncates the planted fact away")
-    conv_parser.add_argument("--num-gpu", type=int, default=None,
-                             help="GPU layers to offload; pin it so both sides "
-                                  "of a comparison load the model identically")
-    conv_parser.add_argument("--retrieval", action="append", default=[],
-                             choices=["bm25", "memory"],
-                             help="add retrieval-backed strategies "
-                                  "(repeatable). 'bm25' is the infra-free "
-                                  "control. 'memory' is the real MemoryStore: "
-                                  "it needs Postgres, Qdrant and Neo4j up and "
-                                  "it WRITES every transcript turn into them, "
-                                  "removing them again at the end -- point it "
-                                  "at the agent's live databases only if that "
-                                  "is what you mean to do")
+    conv_parser.add_argument(
+        "--base-path", default=None, help="identity dir (default: the live persona)"
+    )
+    conv_parser.add_argument(
+        "--pack",
+        default=None,
+        help="conversation probe pack JSON (default: the shipped pack)",
+    )
+    conv_parser.add_argument(
+        "--window", type=int, default=6, help="turns kept by the recent_window strategy"
+    )
+    conv_parser.add_argument(
+        "--num-ctx",
+        type=int,
+        default=None,
+        help="context window (default: the harness's "
+        "pinned value); too small and the runtime "
+        "truncates the planted fact away",
+    )
+    conv_parser.add_argument(
+        "--num-gpu",
+        type=int,
+        default=None,
+        help="GPU layers to offload; pin it so both sides "
+        "of a comparison load the model identically",
+    )
+    conv_parser.add_argument(
+        "--retrieval",
+        action="append",
+        default=[],
+        choices=["bm25", "memory"],
+        help="add retrieval-backed strategies "
+        "(repeatable). 'bm25' is the infra-free "
+        "control. 'memory' is the real MemoryStore: "
+        "it needs Postgres, Qdrant and Neo4j up and "
+        "it WRITES every transcript turn into them, "
+        "removing them again at the end -- point it "
+        "at the agent's live databases only if that "
+        "is what you mean to do",
+    )
     conv_parser.add_argument("--allow-mock", action="store_true")
 
     cmp_parser = sub.add_parser("compare", help="diff two reports")
     cmp_parser.add_argument("baseline")
     cmp_parser.add_argument("candidate")
-    cmp_parser.add_argument("--fail-on-regression", action="store_true",
-                            help="exit 1 if any baseline-passing probe fails")
+    cmp_parser.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help="exit 1 if any baseline-passing probe fails",
+    )
     cmp_parser.add_argument("--allow-mock", action="store_true")
 
     args = parser.parse_args(argv)

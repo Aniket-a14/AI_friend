@@ -71,9 +71,10 @@ def test_screen_link_retries_display_discovery_after_going_headless():
         mock_mss.mss.side_effect = None
         mock_mss.mss.return_value = recovered_sct
 
-        with patch.object(links_module, "np") as mock_np, patch.object(
-            links_module, "cv2"
-        ) as mock_cv2:
+        with (
+            patch.object(links_module, "np") as mock_np,
+            patch.object(links_module, "cv2") as mock_cv2,
+        ):
             mock_np.array.return_value = mock_np.array.return_value
             mock_cv2.cvtColor.return_value = mock_cv2.cvtColor.return_value
             mock_cv2.imencode.return_value = (True, MagicMock(tobytes=lambda: b"jpg"))

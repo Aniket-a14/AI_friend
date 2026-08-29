@@ -63,7 +63,10 @@ def test_no_learned_comforts_means_no_spike_ever():
 
 def test_comforts_are_read_from_the_graph_not_a_constant():
     appraiser, _ = _appraiser(
-        [{"name": "Cardamom Tea", "confidence": 0.9}, {"name": "Rasgulla", "confidence": 0.8}]
+        [
+            {"name": "Cardamom Tea", "confidence": 0.9},
+            {"name": "Rasgulla", "confidence": 0.8},
+        ]
     )
     assert appraiser.known_terms == ["cardamom tea", "rasgulla"]
 

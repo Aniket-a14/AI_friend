@@ -121,8 +121,11 @@ async def test_publish_speech_chunk_with_offsets_and_no_incoming_metadata(
     agent.publish = AsyncMock()
 
     await agent._publish_speech_chunk(
-        ["hi"], turn_id="turn-1", incoming_metadata=None,
-        character_offset=2, word_index=1,
+        ["hi"],
+        turn_id="turn-1",
+        incoming_metadata=None,
+        character_offset=2,
+        word_index=1,
     )
 
     _, payload = agent.publish.await_args.args
@@ -164,7 +167,9 @@ def _chat_output_calls(publish_mock):
     `state.update` messages interleaved with the real chat.output chunks --
     filter down to just the latter."""
     return [
-        call for call in publish_mock.await_args_list if call.args[0] == Topics.CHAT_OUTPUT
+        call
+        for call in publish_mock.await_args_list
+        if call.args[0] == Topics.CHAT_OUTPUT
     ]
 
 

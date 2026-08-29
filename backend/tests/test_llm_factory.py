@@ -64,7 +64,9 @@ def test_anthropic_provider_without_api_key_raises_before_any_network_call(
 
 def test_anthropic_provider_with_api_key_builds_an_anthropic_client(monkeypatch):
     monkeypatch.setattr(config_module.config_instance, "LLM_PROVIDER", "anthropic")
-    monkeypatch.setattr(config_module.config_instance, "ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(
+        config_module.config_instance, "ANTHROPIC_API_KEY", "sk-ant-test"
+    )
     client = build_llm_client(base_url="unused", model="claude-sonnet-5")
     assert isinstance(client, AnthropicClient)
     assert client.model == "claude-sonnet-5"
@@ -72,7 +74,9 @@ def test_anthropic_provider_with_api_key_builds_an_anthropic_client(monkeypatch)
 
 def test_anthropic_client_satisfies_the_llmclient_protocol(monkeypatch):
     monkeypatch.setattr(config_module.config_instance, "LLM_PROVIDER", "anthropic")
-    monkeypatch.setattr(config_module.config_instance, "ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(
+        config_module.config_instance, "ANTHROPIC_API_KEY", "sk-ant-test"
+    )
     client = build_llm_client(base_url="unused")
     assert isinstance(client, LLMClient)
 
@@ -84,6 +88,8 @@ def test_anthropic_provider_without_explicit_model_uses_the_clients_own_default(
     # its own default when Config.LLM_CHAT_MODEL is unset -- the factory must
     # not force a model onto a provider that wasn't asked for one.
     monkeypatch.setattr(config_module.config_instance, "LLM_PROVIDER", "anthropic")
-    monkeypatch.setattr(config_module.config_instance, "ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(
+        config_module.config_instance, "ANTHROPIC_API_KEY", "sk-ant-test"
+    )
     client = build_llm_client(base_url="unused", model=None)
     assert client.model == _DEFAULT_MODEL

@@ -99,7 +99,9 @@ async def test_evaluate_outcome_persists_the_updated_weights(store):
 
     persisted = await store.load("my friend", "reappraisal_weights")
     assert persisted is not None
-    assert persisted["w1_g_to_v"] == pytest.approx(engine.appraisal_weights["w1_g_to_v"])
+    assert persisted["w1_g_to_v"] == pytest.approx(
+        engine.appraisal_weights["w1_g_to_v"]
+    )
     assert persisted != {
         "w1_g_to_v": 0.6,
         "w2_ri_to_v": 0.4,

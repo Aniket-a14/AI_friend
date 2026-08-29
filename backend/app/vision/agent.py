@@ -165,9 +165,7 @@ class VisionAgent(BaseAgent):
         vlm_status = f"VLM={Config.VLM_MODEL}" if self.vlm_enabled else "VLM=disabled"
         self.can_capture = self.preflight()
         sight = "seeing" if self.can_capture else "BLIND (no capture device)"
-        logger.info(
-            f"📸 {self.name} started. {vlm_status} | {self.fps} FPS | {sight}"
-        )
+        logger.info(f"📸 {self.name} started. {vlm_status} | {self.fps} FPS | {sight}")
 
         self.spawn(self._capture_loop())
 

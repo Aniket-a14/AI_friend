@@ -75,9 +75,7 @@ class Check(BaseModel):
     def validate_check_values(self) -> "Check":
         """Ensure values are provided for non-boundary checks and regex patterns compile."""
         if self.kind != "boundary" and not self.values:
-            raise ValueError(
-                f"Check kind '{self.kind}' requires non-empty values list"
-            )
+            raise ValueError(f"Check kind '{self.kind}' requires non-empty values list")
 
         if self.kind in ("must_match", "must_not_match"):
             for pattern in self.values:
@@ -241,9 +239,7 @@ class CategorySummary(BaseModel):
 
 class EvalReport(BaseModel):
     schema_version: int = REPORT_SCHEMA_VERSION
-    created_at: str = Field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     model: str
     persona_name: str
     provenance: Literal["live", "mock"]

@@ -257,7 +257,10 @@ async def export_friend(out_path: Path, *, skip_neo4j: bool = False) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--out", required=True, type=Path, help="Output archive path (e.g. my_friend.tar.gz)"
+        "--out",
+        required=True,
+        type=Path,
+        help="Output archive path (e.g. my_friend.tar.gz)",
     )
     parser.add_argument(
         "--skip-neo4j",

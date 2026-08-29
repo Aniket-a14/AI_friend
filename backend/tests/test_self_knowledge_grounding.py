@@ -24,8 +24,19 @@ from app.state.self_knowledge_store import SelfKnowledgeStore
 # Stands in for a seeded biography. Deliberately small: the gate must work from
 # whatever the user actually wrote, not from a rich world model.
 BIOGRAPHY_TERMS = {
-    "daniel", "marcus", "elena", "coast", "riverside", "wren", "ada",
-    "brother", "married", "december", "2025", "joint", "family",
+    "daniel",
+    "marcus",
+    "elena",
+    "coast",
+    "riverside",
+    "wren",
+    "ada",
+    "brother",
+    "married",
+    "december",
+    "2025",
+    "joint",
+    "family",
 }
 
 
@@ -89,9 +100,7 @@ class TestFabricationIsCaught:
         imagine, and every biography is a different life. "my" generalises;
         a noun list is a guess about someone else's family.
         """
-        ok, _ = agent._check_self_grounding(
-            "My dog Jolly waits by the door.", [], ""
-        )
+        ok, _ = agent._check_self_grounding("My dog Jolly waits by the door.", [], "")
         assert ok is False
 
     def test_the_ungrounded_terms_are_returned_for_recording(self, agent):
@@ -142,7 +151,7 @@ class TestTruthIsNotBlocked:
 
 class TestOrdinarySpeechIsNotGated:
     def test_feelings_about_family_are_not_a_factual_claim(self, agent):
-        """"My family means everything to me" invents nothing.
+        """ "My family means everything to me" invents nothing.
 
         The user-directed gate fires on two unsupported words, which this
         sentence has. Reusing that rule here would make the agent unable to
@@ -198,7 +207,7 @@ class TestOrdinarySpeechIsNotGated:
         assert ok is True
 
     def test_a_contraction_of_i_is_not_a_name(self, agent):
-        """"I've" is capitalised, three letters long, and refers to nobody."""
+        """ "I've" is capitalised, three letters long, and refers to nobody."""
         ok, _ = agent._check_self_grounding(
             "My family, I've said, is everything.", [], ""
         )
@@ -392,7 +401,7 @@ class TestUnansweredQuestionsBecomeGaps:
         assert "school" in gaps
 
     def test_a_statement_is_not_a_question(self, agent):
-        """"Your voice is lovely" asks nothing, and is not a hole in her past."""
+        """ "Your voice is lovely" asks nothing, and is not a hole in her past."""
         assert agent._unanswered_self_question_gaps("your voice is lovely", []) == []
 
     def test_a_question_that_is_not_about_her_life_is_ignored(self, agent):

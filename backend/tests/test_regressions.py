@@ -279,9 +279,9 @@ def test_config_normalizes_livekit_url_scheme_to_websocket():
         "ws://already-correct:7880"
     )
 
-    assert AppSettings(LIVEKIT_PUBLIC_URL="https://public.example.com").LIVEKIT_PUBLIC_URL == (
-        "wss://public.example.com"
-    )
+    assert AppSettings(
+        LIVEKIT_PUBLIC_URL="https://public.example.com"
+    ).LIVEKIT_PUBLIC_URL == ("wss://public.example.com")
 
 
 def test_config_rejects_invalid_visual_memory_policy():
@@ -424,13 +424,13 @@ def test_require_session_auth_rejects_lan_client_with_wrong_key(monkeypatch):
     import main
     from app import config as config_module
 
-    monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", "correct-key")
+    monkeypatch.setattr(
+        config_module.config_instance, "BACKEND_ACCESS_KEY", "correct-key"
+    )
     try:
         _asyncio.run(
             main.require_session_auth(
-                _fake_request(
-                    "192.168.1.42", headers={"x-backend-key": "wrong-key"}
-                )
+                _fake_request("192.168.1.42", headers={"x-backend-key": "wrong-key"})
             )
         )
         assert False, "expected HTTPException"
@@ -444,12 +444,12 @@ def test_require_session_auth_accepts_lan_client_with_correct_key(monkeypatch):
     import main
     from app import config as config_module
 
-    monkeypatch.setattr(config_module.config_instance, "BACKEND_ACCESS_KEY", "correct-key")
+    monkeypatch.setattr(
+        config_module.config_instance, "BACKEND_ACCESS_KEY", "correct-key"
+    )
     _asyncio.run(
         main.require_session_auth(
-            _fake_request(
-                "192.168.1.42", headers={"x-backend-key": "correct-key"}
-            )
+            _fake_request("192.168.1.42", headers={"x-backend-key": "correct-key"})
         )
     )
     # Also accepted via the ?key= query param fallback.
@@ -473,7 +473,9 @@ def test_require_token_rate_limit_blocks_after_the_configured_max(monkeypatch):
     from app.rate_limit import FixedWindowRateLimiter
 
     monkeypatch.setattr(
-        main, "_token_rate_limiter", FixedWindowRateLimiter(max_requests=2, window_seconds=60.0)
+        main,
+        "_token_rate_limiter",
+        FixedWindowRateLimiter(max_requests=2, window_seconds=60.0),
     )
 
     request = _fake_request("192.168.1.42")
@@ -493,7 +495,9 @@ def test_require_token_rate_limit_tracks_clients_independently(monkeypatch):
     from app.rate_limit import FixedWindowRateLimiter
 
     monkeypatch.setattr(
-        main, "_token_rate_limiter", FixedWindowRateLimiter(max_requests=1, window_seconds=60.0)
+        main,
+        "_token_rate_limiter",
+        FixedWindowRateLimiter(max_requests=1, window_seconds=60.0),
     )
 
     _asyncio.run(main.require_token_rate_limit(_fake_request("192.168.1.42")))
@@ -737,20 +741,20 @@ def test_brain_agent_concurrent_chat_inputs_prevent_lost_task_ownership():
             "text": "first input",
             "turn_id": "turn-1",
             "utterance_id": "utt-1",
-            "metadata": {"source": "user"}
+            "metadata": {"source": "user"},
         }
         msg2 = {
             "text": "second input",
             "turn_id": "turn-2",
             "utterance_id": "utt-2",
-            "metadata": {"source": "user"}
+            "metadata": {"source": "user"},
         }
 
         # Start both concurrently
         results = await asyncio.gather(
             agent._on_chat_input(msg1),
             agent._on_chat_input(msg2),
-            return_exceptions=True
+            return_exceptions=True,
         )
 
         return results

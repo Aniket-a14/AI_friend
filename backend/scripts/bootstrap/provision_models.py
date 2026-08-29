@@ -69,9 +69,13 @@ def ensure_models_provisioned():
         if ok:
             logger.info("✅ SenseVoice model + tokens verified (SHA256 match).")
             return
-        logger.warning("🚨 SenseVoice artifacts failed verification (%s); re-provisioning.", detail)
+        logger.warning(
+            "🚨 SenseVoice artifacts failed verification (%s); re-provisioning.", detail
+        )
     else:
-        logger.info("SenseVoice model not provisioned; downloading %s...", config["name"])
+        logger.info(
+            "SenseVoice model not provisioned; downloading %s...", config["name"]
+        )
 
     _provision_model(config, target_dir)
 

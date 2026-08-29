@@ -147,7 +147,12 @@ def _sample_docker() -> dict:
         if not m:
             continue
         value, unit = float(m.group(1)), m.group(2)
-        mib = {"GiB": value * 1024, "MiB": value, "KiB": value / 1024, "B": value / (1024**2)}[unit]
+        mib = {
+            "GiB": value * 1024,
+            "MiB": value,
+            "KiB": value / 1024,
+            "B": value / (1024**2),
+        }[unit]
         containers[name] = round(mib, 1)
         total_mib += mib
     return {
@@ -185,7 +190,9 @@ def _sample() -> dict:
     }
 
 
-def _ram_figure(label: str, before: dict, after: dict, peak: dict | None = None) -> Figure:
+def _ram_figure(
+    label: str, before: dict, after: dict, peak: dict | None = None
+) -> Figure:
     delta = after["host_ram"]["used_gb"] - before["host_ram"]["used_gb"]
     peak_note = ""
     if peak is not None:
@@ -234,14 +241,18 @@ def _random_frame_b64() -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-_FIXED_FRAME_B64 = _random_frame_b64()  # same frame every call -> habituation should suppress VLM
+_FIXED_FRAME_B64 = (
+    _random_frame_b64()
+)  # same frame every call -> habituation should suppress VLM
 
 
 async def _vision_only_load(duration_s: float) -> VisualAppraisalService:
     """Repeats the *same* frame so the habituation delta stays ~0 after the
     first call -- vision's capture/vector cost without sustained VLM cost."""
     client = OllamaClient(base_url=Config.OLLAMA_URL, model=Config.VLM_MODEL)
-    svc = VisualAppraisalService(ollama_client=client, model=Config.VLM_MODEL, interval=0.0)
+    svc = VisualAppraisalService(
+        ollama_client=client, model=Config.VLM_MODEL, interval=0.0
+    )
     t0 = time.monotonic()
     while time.monotonic() - t0 < duration_s:
         await svc.appraise(_FIXED_FRAME_B64)
@@ -256,7 +267,9 @@ async def _vision_cognition_load(duration_s: float) -> VisualAppraisalService:
     HARDWARE.md §5 measured with two resident models, driven through the
     actual appraisal component rather than a bare describe_image loop."""
     client = OllamaClient(base_url=Config.OLLAMA_URL, model=Config.VLM_MODEL)
-    svc = VisualAppraisalService(ollama_client=client, model=Config.VLM_MODEL, interval=0.0)
+    svc = VisualAppraisalService(
+        ollama_client=client, model=Config.VLM_MODEL, interval=0.0
+    )
     t0 = time.monotonic()
     while time.monotonic() - t0 < duration_s:
         await svc.appraise(_random_frame_b64())
@@ -271,7 +284,9 @@ async def _cognition_turn() -> None:
     await graph_db.initialize()
     memory_store = MemoryStore(pool=conversation_store.pool, graph_db=graph_db)
     llm = OllamaClient(base_url=Config.OLLAMA_URL, model=Config.LLM_CHAT_MODEL)
-    svc = CognitiveService(llm_service=llm, memory_store=memory_store, graph_db=graph_db)
+    svc = CognitiveService(
+        llm_service=llm, memory_store=memory_store, graph_db=graph_db
+    )
     raw_event = {
         "text": "What have we talked about, and how are you feeling today?",
         "utterance_id": str(uuid.uuid4()),
@@ -292,7 +307,9 @@ async def _background_consolidation() -> None:
     for role, content in _SEED_TURNS:
         await conversation_store.log_message(role, content)
     memory_store = MemoryStore(pool=conversation_store.pool, graph_db=graph_db)
-    reflection = ReflectionService(llm_service=None, graph_store=graph_db, pg_vector=memory_store)
+    reflection = ReflectionService(
+        llm_service=None, graph_store=graph_db, pg_vector=memory_store
+    )
     agent = SubconsciousAgent(
         ollama_url=Config.OLLAMA_URL,
         graph_db=graph_db,
@@ -321,28 +338,44 @@ async def _scenario_2_voice_only() -> tuple[dict, dict, str]:
     before = _sample()
     await _voice_load(_LOAD_DURATION_S)
     after = _sample()
-    return before, after, f"{_LOAD_DURATION_S:.0f}s of synthetic 32kHz/16-bit PCM on audio.stream, no STT/cognition triggered."
+    return (
+        before,
+        after,
+        f"{_LOAD_DURATION_S:.0f}s of synthetic 32kHz/16-bit PCM on audio.stream, no STT/cognition triggered.",
+    )
 
 
 async def _scenario_3_voice_cognition() -> tuple[dict, dict, str]:
     before = _sample()
     await asyncio.gather(_voice_load(_LOAD_DURATION_S), _cognition_turn())
     after = _sample()
-    return before, after, f"{_LOAD_DURATION_S:.0f}s of voice PCM concurrent with one real cognitive turn."
+    return (
+        before,
+        after,
+        f"{_LOAD_DURATION_S:.0f}s of voice PCM concurrent with one real cognitive turn.",
+    )
 
 
 async def _scenario_4_vision_only() -> tuple[dict, dict, str]:
     before = _sample()
     await _vision_only_load(_LOAD_DURATION_S)
     after = _sample()
-    return before, after, f"{_LOAD_DURATION_S:.0f}s of repeated-identical-frame appraisal calls (habituation should suppress all but the first VLM call)."
+    return (
+        before,
+        after,
+        f"{_LOAD_DURATION_S:.0f}s of repeated-identical-frame appraisal calls (habituation should suppress all but the first VLM call).",
+    )
 
 
 async def _scenario_5_vision_cognition() -> tuple[dict, dict, str]:
     before = _sample()
     await asyncio.gather(_vision_cognition_load(_LOAD_DURATION_S), _cognition_turn())
     after = _sample()
-    return before, after, f"{_LOAD_DURATION_S:.0f}s of varying-frame appraisal (real VLM call every tick) concurrent with one real cognitive turn."
+    return (
+        before,
+        after,
+        f"{_LOAD_DURATION_S:.0f}s of varying-frame appraisal (real VLM call every tick) concurrent with one real cognitive turn.",
+    )
 
 
 async def _scenario_6_voice_vision_cognition() -> tuple[dict, dict, str]:
@@ -353,7 +386,11 @@ async def _scenario_6_voice_vision_cognition() -> tuple[dict, dict, str]:
         _cognition_turn(),
     )
     after = _sample()
-    return before, after, f"{_LOAD_DURATION_S:.0f}s of voice PCM + varying-frame VLM appraisal, concurrent with one real cognitive turn."
+    return (
+        before,
+        after,
+        f"{_LOAD_DURATION_S:.0f}s of voice PCM + varying-frame VLM appraisal, concurrent with one real cognitive turn.",
+    )
 
 
 async def _scenario_7_full_multimodal() -> tuple[dict, dict, str]:
@@ -365,7 +402,11 @@ async def _scenario_7_full_multimodal() -> tuple[dict, dict, str]:
         _cognition_turn(),  # a second concurrent turn -- interactive, not single-request
     )
     after = _sample()
-    return before, after, f"{_LOAD_DURATION_S:.0f}s of voice + vision-VLM + two concurrent cognitive turns (interactive multimodal use, not background)."
+    return (
+        before,
+        after,
+        f"{_LOAD_DURATION_S:.0f}s of voice + vision-VLM + two concurrent cognitive turns (interactive multimodal use, not background).",
+    )
 
 
 async def _scenario_8_full_background() -> tuple[dict, dict, str]:
@@ -377,7 +418,11 @@ async def _scenario_8_full_background() -> tuple[dict, dict, str]:
         _background_consolidation(),
     )
     after = _sample()
-    return before, after, f"{_LOAD_DURATION_S:.0f}s of scenario 6's load plus a concurrent background consolidation pass -- the ack-deadline contention shape HARDWARE.md §3.3 estimated, now with voice+vision in the mix too, not VLM alone."
+    return (
+        before,
+        after,
+        f"{_LOAD_DURATION_S:.0f}s of scenario 6's load plus a concurrent background consolidation pass -- the ack-deadline contention shape HARDWARE.md §3.3 estimated, now with voice+vision in the mix too, not VLM alone.",
+    )
 
 
 async def _scenario_9_sustained() -> tuple[dict, dict, str]:
@@ -428,7 +473,9 @@ _SCENARIOS = {
 }
 
 
-async def run(allow_mock: bool = False, only: list[str] | None = None) -> MeasurementReport:
+async def run(
+    allow_mock: bool = False, only: list[str] | None = None
+) -> MeasurementReport:
     provenance = check_live_llm(allow_mock)
     await ensure_bootstrapped()
 
@@ -488,7 +535,9 @@ def main() -> None:
         choices=list(_SCENARIOS),
         help="run a subset of scenarios (default: all nine)",
     )
-    parser.add_argument("--out", default="tools/measure/out/m17_pressure_scenarios.json")
+    parser.add_argument(
+        "--out", default="tools/measure/out/m17_pressure_scenarios.json"
+    )
     args = parser.parse_args()
 
     report = asyncio.run(run(allow_mock=args.allow_mock, only=args.only))

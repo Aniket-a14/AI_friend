@@ -48,9 +48,7 @@ class TestBatchPreservesOrderAndLength:
             return httpx.Response(
                 200,
                 json={
-                    "embeddings": [
-                        [float(i)] * 4 for i in range(len(payload["input"]))
-                    ]
+                    "embeddings": [[float(i)] * 4 for i in range(len(payload["input"]))]
                 },
             )
 
@@ -100,9 +98,7 @@ class TestPartialFailureDoesNotShiftTheList:
         # Force the per-item fallback path for a deterministic per-text result:
         # patch get_embedding directly to prove get_embeddings() calls it,
         # without depending on a second real HTTP round trip's exact shape.
-        store.get_embedding = AsyncMock(
-            side_effect=[[1.0] * 4, [2.0] * 4, [3.0] * 4]
-        )
+        store.get_embedding = AsyncMock(side_effect=[[1.0] * 4, [2.0] * 4, [3.0] * 4])
 
         result = await store.get_embeddings(["a", "b", "c"])
 
@@ -193,9 +189,7 @@ class TestBatchEndpoint404FallsBackToSequential:
             return httpx.Response(404)
 
         store = _store_with_transport(handler)
-        store.get_embedding = AsyncMock(
-            side_effect=[[5.0] * 4, [6.0] * 4]
-        )
+        store.get_embedding = AsyncMock(side_effect=[[5.0] * 4, [6.0] * 4])
 
         result = await store.get_embeddings(["p", "q"])
 

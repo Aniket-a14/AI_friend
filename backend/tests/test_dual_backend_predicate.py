@@ -119,7 +119,8 @@ def _pool_returning(conn, is_sqlite: bool):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "is_sqlite,expected_literal", [(True, "consolidated = 1"), (False, "consolidated = TRUE")]
+    "is_sqlite,expected_literal",
+    [(True, "consolidated = 1"), (False, "consolidated = TRUE")],
 )
 async def test_a_shared_boolean_literal_would_break_postgres(
     is_sqlite, expected_literal

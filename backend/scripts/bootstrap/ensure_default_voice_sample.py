@@ -23,7 +23,9 @@ DEFAULT_ASSETS = [
 ]
 
 
-def ensure_default_voice_sample(source: Path = DEFAULT_SOURCE, target: Path = TARGET) -> bool:
+def ensure_default_voice_sample(
+    source: Path = DEFAULT_SOURCE, target: Path = TARGET
+) -> bool:
     """Copies `source` to `target` unless `target` already exists.
 
     Never overwrites -- a user who already recorded their own clip at this

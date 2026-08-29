@@ -93,9 +93,7 @@ class AnthropicClient:
         options_override: dict[str, Any] | None = None,
     ) -> str:
         if getattr(Config, "MOCK_LLM_TEXT", False):
-            return (
-                "I am glad we are chatting, my friend. What should we work on next?"
-            )
+            return "I am glad we are chatting, my friend. What should we work on next?"
 
         options = _translate_options(options_override)
         max_tokens = options.pop("max_tokens", _DEFAULT_MAX_TOKENS)

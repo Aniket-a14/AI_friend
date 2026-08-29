@@ -240,9 +240,7 @@ class VisualAppraisalService:
                 # as an observed (quiet) baseline -- until the breaker opens.
                 self._breaker_record_failure()
                 self.last_frame_was_novel = False
-                logger.warning(
-                    "[VisualAppraisal] VLM pipeline failure, using cache."
-                )
+                logger.warning("[VisualAppraisal] VLM pipeline failure, using cache.")
 
         except Exception as e:
             self._breaker_record_failure()

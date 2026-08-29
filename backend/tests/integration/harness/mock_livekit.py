@@ -28,7 +28,9 @@ class MockAudioFrame:
     num_channels: int = 1
 
     @classmethod
-    def silence(cls, duration_ms: int = 20, sample_rate: int = 16_000) -> MockAudioFrame:
+    def silence(
+        cls, duration_ms: int = 20, sample_rate: int = 16_000
+    ) -> MockAudioFrame:
         """Generate a frame of silence (all-zero PCM)."""
         num_samples = int(sample_rate * duration_ms / 1000)
         return cls(
@@ -56,7 +58,9 @@ class MockAudioFrame:
         max_val = int(32767 * min(1.0, max(0.0, amplitude)))
         buf = bytearray(num_samples * 2)
         for i in range(num_samples):
-            sample = int(max_val * math.sin(2 * math.pi * frequency_hz * i / sample_rate))
+            sample = int(
+                max_val * math.sin(2 * math.pi * frequency_hz * i / sample_rate)
+            )
             struct.pack_into("<h", buf, i * 2, sample)
         return cls(data=buf, sample_rate=sample_rate, num_channels=1)
 
@@ -119,7 +123,9 @@ class MockAudioSource:
         self.captured_frames.append(frame)
         self._capture_event.set()
 
-    async def wait_for_frames(self, count: int = 1, timeout: float = 2.0) -> list[MockAudioFrame]:
+    async def wait_for_frames(
+        self, count: int = 1, timeout: float = 2.0
+    ) -> list[MockAudioFrame]:
         """Block until at least *count* frames have been captured."""
         deadline = asyncio.get_event_loop().time() + timeout
         while len(self.captured_frames) < count:
@@ -144,13 +150,17 @@ class MockAudioSource:
 class MockLocalAudioTrack:
     """Minimal stand-in for ``rtc.LocalAudioTrack``."""
 
-    def __init__(self, name: str = "ai-voice", source: MockAudioSource | None = None) -> None:
+    def __init__(
+        self, name: str = "ai-voice", source: MockAudioSource | None = None
+    ) -> None:
         self.name = name
         self.sid = f"TR_mock_{name}"
         self._source = source
 
     @classmethod
-    def create_audio_track(cls, name: str, source: MockAudioSource) -> MockLocalAudioTrack:
+    def create_audio_track(
+        cls, name: str, source: MockAudioSource
+    ) -> MockLocalAudioTrack:
         return cls(name=name, source=source)
 
 
@@ -187,7 +197,9 @@ class MockLocalParticipant:
     async def unpublish_track(self, sid: str) -> None:
         self._publications = [p for p in self._publications if p.sid != sid]
 
-    async def publish_data(self, data: bytes, *, reliable: bool = True, topic: str = "") -> None:
+    async def publish_data(
+        self, data: bytes, *, reliable: bool = True, topic: str = ""
+    ) -> None:
         """Captures data-channel sends (e.g. visemes)."""
 
 
@@ -213,4 +225,3 @@ class MockRoom:
         """Trigger registered callbacks (for test-side simulation)."""
         for cb in self._callbacks.get(event_name, []):
             cb(*args, **kwargs)
-

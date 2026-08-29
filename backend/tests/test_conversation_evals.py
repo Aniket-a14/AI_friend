@@ -129,8 +129,14 @@ class TestScoringAProbe:
         client = AsyncMock()
         client.generate.return_value = response
         return await run_conversation_probe(
-            client, manager, probe or make_probe(filler_turns=50), FILLER,
-            strategy, "system", "model", RunOptions(),
+            client,
+            manager,
+            probe or make_probe(filler_turns=50),
+            FILLER,
+            strategy,
+            "system",
+            "model",
+            RunOptions(),
         )
 
     @pytest.mark.asyncio
@@ -177,8 +183,14 @@ class TestScoringAProbe:
         client = AsyncMock()
         client.generate.return_value = "Wren."
         await run_conversation_probe(
-            client, manager, make_probe(filler_turns=4), FILLER,
-            FullHistory(), "system", "model", RunOptions(),
+            client,
+            manager,
+            make_probe(filler_turns=4),
+            FILLER,
+            FullHistory(),
+            "system",
+            "model",
+            RunOptions(),
         )
         prompt = client.generate.await_args.kwargs["prompt"]
         assert "Wren" in prompt
@@ -233,7 +245,10 @@ class TestTheRunStartsFromAKnownState:
         client.base_url = None
 
         report = await run_conversation_eval(
-            client, manager, [make_probe(filler_turns=4)], FILLER,
+            client,
+            manager,
+            [make_probe(filler_turns=4)],
+            FILLER,
             strategies=(FullHistory(),),
         )
 
@@ -314,9 +329,7 @@ class TestTheShippedPack:
             "already discussed that."
         )
         views = response_views(observed)
-        assert not all(
-            evaluate_check(check, views).passed for check in probe.checks
-        )
+        assert not all(evaluate_check(check, views).passed for check in probe.checks)
 
     def test_a_typographic_apostrophe_does_not_slip_past_the_guard(self):
         """Small models emit both apostrophe forms, and this one was observed
@@ -404,8 +417,10 @@ class TestTheContextWindowIsAccountedFor:
         assert estimate_tokens(transcript) < options.num_ctx
         assert context_fits(transcript, "", options) is False
         # Same prompt, same window, no reserve to make room for: it fits.
-        assert context_fits(transcript, "", options.model_copy(
-            update={"num_predict": 0})) is True
+        assert (
+            context_fits(transcript, "", options.model_copy(update={"num_predict": 0}))
+            is True
+        )
 
     def test_the_token_estimate_errs_toward_too_long(self):
         """A false all-clear is the expensive direction of this error.
@@ -424,8 +439,14 @@ class TestTheContextWindowIsAccountedFor:
         client.generate.return_value = "Wren."
 
         result = await run_conversation_probe(
-            client, manager, make_probe(filler_turns=400), FILLER,
-            FullHistory(), "system", "model", RunOptions(num_ctx=256),
+            client,
+            manager,
+            make_probe(filler_turns=400),
+            FILLER,
+            FullHistory(),
+            "system",
+            "model",
+            RunOptions(num_ctx=256),
         )
         assert result.context_fits is False
 
@@ -445,16 +466,23 @@ class TestAPackAuthorCanSupplyTheirOwn:
         code.
         """
         pack = tmp_path / "mine.json"
-        pack.write_text(json.dumps({
-            "filler": [["a", "b"]],
-            "probes": [{
-                "id": "p1",
-                "plant": "the code is 4417.",
-                "filler_turns": 1,
-                "recall_prompt": "what was the code?",
-                "checks": [{"kind": "must_include", "values": ["4417"]}],
-            }],
-        }), encoding="utf-8")
+        pack.write_text(
+            json.dumps(
+                {
+                    "filler": [["a", "b"]],
+                    "probes": [
+                        {
+                            "id": "p1",
+                            "plant": "the code is 4417.",
+                            "filler_turns": 1,
+                            "recall_prompt": "what was the code?",
+                            "checks": [{"kind": "must_include", "values": ["4417"]}],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
 
         probes, filler = load_conversation_pack(pack)
         assert probes[0].source == "mine.json"

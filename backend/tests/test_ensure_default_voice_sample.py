@@ -68,7 +68,9 @@ def test_ensure_all_default_voice_assets_copies_every_configured_asset(tmp_path)
 
     assert set(results) == {"sample_en_gold.wav", "voice_engine_unavailable.wav"}
     assert all(results.values())
-    assert (voice_samples_dir / "sample_en_gold.wav").read_bytes() == b"default_voice.wav"
+    assert (
+        voice_samples_dir / "sample_en_gold.wav"
+    ).read_bytes() == b"default_voice.wav"
     assert (
         voice_samples_dir / "voice_engine_unavailable.wav"
     ).read_bytes() == b"voice_engine_unavailable.wav"

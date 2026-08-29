@@ -19,9 +19,7 @@ def test_first_json_value_returns_the_first_block_that_actually_parses():
 
 def test_survives_stray_braces_inside_a_quoted_string_value():
     text = '{"note": "use braces like { and } in code"}'
-    assert extract_first_json_value(text) == {
-        "note": "use braces like { and } in code"
-    }
+    assert extract_first_json_value(text) == {"note": "use braces like { and } in code"}
 
 
 def test_survives_nested_objects():

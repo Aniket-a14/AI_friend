@@ -11,6 +11,7 @@ from .json_extract import extract_first_json_value
 
 logger = logging.getLogger("reflection")
 
+
 class ReflectionService:
     """
     AI Friend Solid State Learning Layer.

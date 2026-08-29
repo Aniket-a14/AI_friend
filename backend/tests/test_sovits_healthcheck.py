@@ -14,7 +14,10 @@ from pathlib import Path
 import pytest
 
 SCRIPT = (
-    Path(__file__).resolve().parents[1] / "scripts" / "bootstrap" / "sovits_healthcheck.sh"
+    Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "bootstrap"
+    / "sovits_healthcheck.sh"
 )
 
 FAKE_CURL = """#!/bin/bash
@@ -71,7 +74,12 @@ def _run(fake_curl_bin, sovits_root, tts_body="audio-bytes", extra_env=None):
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
-        ["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=10, check=False
+        ["bash", str(SCRIPT)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
     )
 
 
@@ -99,7 +107,9 @@ def test_attempts_real_synthesis_when_clip_is_present(tmp_path, fake_curl_bin):
     assert "/docs" not in log
 
 
-def test_fails_on_empty_synthesis_response_even_with_clip_present(tmp_path, fake_curl_bin):
+def test_fails_on_empty_synthesis_response_even_with_clip_present(
+    tmp_path, fake_curl_bin
+):
     """A 200 with an empty body is still curl-successful -- GPT-SoVITS has
     open reports of returning blank audio under load. The degrade path must
     not accidentally swallow this real failure mode."""

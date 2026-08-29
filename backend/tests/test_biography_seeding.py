@@ -282,9 +282,7 @@ def test_biography_path_setting_overrides_discovery(monkeypatch, tmp_path):
     """
     external = tmp_path / "elsewhere.md"
     external.write_text("# Her\n\nShe is real.\n", encoding="utf-8")
-    monkeypatch.setattr(
-        config_module.config_instance, "BIOGRAPHY_PATH", str(external)
-    )
+    monkeypatch.setattr(config_module.config_instance, "BIOGRAPHY_PATH", str(external))
     assert find_biography_file() == external
 
 

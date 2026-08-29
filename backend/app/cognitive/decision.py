@@ -164,7 +164,11 @@ class DecisionService:
             )
 
         # 3. Tick BT
-        blackboard: dict[str, Any] = {"event": event, "state": state_snapshot, "plan": None}
+        blackboard: dict[str, Any] = {
+            "event": event,
+            "state": state_snapshot,
+            "plan": None,
+        }
         status = await self.root.tick(blackboard)
 
         if status == NodeStatus.SUCCESS and blackboard["plan"]:

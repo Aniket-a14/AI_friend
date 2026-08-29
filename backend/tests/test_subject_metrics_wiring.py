@@ -49,9 +49,7 @@ def test_cognitive_service_subject_metric_reaches_the_shared_tracker():
     try:
         assert isinstance(service._metrics, SubjectMetrics)
 
-        service._record_subject_metric(
-            "memory.surfaced", {}, local_latency_ms=7.0
-        )
+        service._record_subject_metric("memory.surfaced", {}, local_latency_ms=7.0)
         service._metrics._queue.join()
 
         metric = service._metrics._metrics["cognitive:memory.surfaced"]
@@ -93,9 +91,7 @@ def test_surfacing_agent_metric_lands_in_its_own_tracker_not_base_agents():
         agent._surfacing_metrics.shutdown()
 
 
-@pytest.mark.parametrize(
-    "subject", ["not.a.tracked.subject", "vision.frame"]
-)
+@pytest.mark.parametrize("subject", ["not.a.tracked.subject", "vision.frame"])
 def test_untracked_subjects_are_silently_dropped_not_errored(subject):
     """The shared tracker must preserve the old dict-based behavior of a
     silent no-op for a subject outside the tracked set -- not raise, and not

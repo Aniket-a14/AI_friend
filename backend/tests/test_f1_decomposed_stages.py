@@ -123,10 +123,10 @@ class _StopAfterGating(Exception):
 @pytest.mark.parametrize(
     ("refresh", "explicit", "expected"),
     [
-        (True, None, True),      # unchanged default: a conversation turn
-        (False, None, False),    # unchanged default: a latency-sensitive caller
-        (False, True, True),     # what the eval retriever needs
-        (True, False, False),    # and the inverse, so the override is real
+        (True, None, True),  # unchanged default: a conversation turn
+        (False, None, False),  # unchanged default: a latency-sensitive caller
+        (False, True, True),  # what the eval retriever needs
+        (True, False, False),  # and the inverse, so the override is real
     ],
 )
 @pytest.mark.asyncio
@@ -143,14 +143,17 @@ async def test_the_pool_tier_can_be_asked_for_without_the_recall_refresh(
     spy = _GatingSpy()
     with contextlib.suppress(_StopAfterGating):
         await MemoryStore.search_memories(
-            spy, query_text="q", limit=5,
-            refresh_on_recall=refresh, full_candidate_pool=explicit,
+            spy,
+            query_text="q",
+            limit=5,
+            refresh_on_recall=refresh,
+            full_candidate_pool=explicit,
         )
     assert spy.seen == [expected]
 
 
 def test_pronoun_cues_flip_between_user_and_self_reflection():
-    """"I"/"you" swap referents depending on who is speaking."""
+    """ "I"/"you" swap referents depending on who is speaking."""
     kwargs = {"agent_node_name": "Aniket", "user_node_name": "Raj", "user_id": "Raj"}
 
     user_speaking = MemoryStore._resolve_pronoun_cues(
@@ -273,9 +276,7 @@ def test_build_entity_graph_prefers_metadata_entities_over_scanning():
     which the metadata here deliberately omits.
     """
     entity_records = [{"name": "Raj"}, {"name": "Kolkata"}]
-    candidates = [
-        {"content": "Raj visited Kolkata", "metadata": {"entities": ["Raj"]}}
-    ]
+    candidates = [{"content": "Raj visited Kolkata", "metadata": {"entities": ["Raj"]}}]
 
     _names, _adj, cand_entities = MemoryStore._build_entity_graph(
         entity_records, [], candidates
@@ -285,7 +286,7 @@ def test_build_entity_graph_prefers_metadata_entities_over_scanning():
 
 
 def test_compile_entity_pattern_does_not_match_a_name_inside_a_longer_one():
-    """"Sam" must not match inside "Samantha" -- \b boundaries, not just
+    """ "Sam" must not match inside "Samantha" -- \b boundaries, not just
     "the string appears somewhere", is what the compiled alternation has to
     preserve from the original per-name regex."""
     pattern = MemoryStore._compile_entity_pattern(["Sam", "Samantha"])
@@ -305,7 +306,9 @@ def test_compile_entity_pattern_requires_a_word_boundary():
 
     matches = [m.group(0) for m in pattern.finditer("i love martial arts, and art")]
 
-    assert matches == ["art"]  # the standalone word only, not "art" inside "martial"/"arts"
+    assert matches == [
+        "art"
+    ]  # the standalone word only, not "art" inside "martial"/"arts"
 
 
 def test_resolve_identity_nodes_prefers_described_agent():

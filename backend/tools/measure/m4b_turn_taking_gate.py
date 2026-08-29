@@ -57,7 +57,12 @@ def sweep(threshold: float) -> dict:
     for v in _linspace(*V_BOUNDS, GRID_STEPS):
         for d in _linspace(*D_BOUNDS, GRID_STEPS):
             for f in _linspace(*F_BOUNDS, GRID_STEPS):
-                state_snap = {"valence": v, "arousal": 0.5, "dominance": d, "fatigue": f}
+                state_snap = {
+                    "valence": v,
+                    "arousal": 0.5,
+                    "dominance": d,
+                    "fatigue": f,
+                }
                 pacing = runtime.calculate_pacing_parameters(state_snap)
                 p = pacing["turn_taking_probability"]
                 probs.append(p)
@@ -164,9 +169,7 @@ async def run(allow_mock: bool = False) -> MeasurementReport:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--allow-mock", action="store_true")
-    parser.add_argument(
-        "--out", default="tools/measure/out/m4b_turn_taking_gate.json"
-    )
+    parser.add_argument("--out", default="tools/measure/out/m4b_turn_taking_gate.json")
     args = parser.parse_args()
 
     import asyncio

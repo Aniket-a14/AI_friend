@@ -272,9 +272,7 @@ def build_stream_config(stream_name: str, subjects: list[str]):
     if policy is None:
         return StreamConfig(name=stream_name, subjects=list(subjects))
 
-    storage = (
-        StorageType.MEMORY if policy["storage"] == "memory" else StorageType.FILE
-    )
+    storage = StorageType.MEMORY if policy["storage"] == "memory" else StorageType.FILE
     return StreamConfig(
         name=stream_name,
         subjects=list(subjects),

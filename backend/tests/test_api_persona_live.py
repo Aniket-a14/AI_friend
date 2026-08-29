@@ -87,17 +87,21 @@ def test_returns_the_hydrated_persona_not_the_seed_file(client):
     store = _FakeConfigStore(
         personality={
             "name": "Hydrated Name",
-            "core_personality": {"traits": ["dry"], "immutable": {"base_tone": "Blunt"}},
+            "core_personality": {
+                "traits": ["dry"],
+                "immutable": {"base_tone": "Blunt"},
+            },
         },
-        history={"relationship": "Best friend", "persona_seeded_at": "2026-01-01T00:00:00"},
+        history={
+            "relationship": "Best friend",
+            "persona_seeded_at": "2026-01-01T00:00:00",
+        },
     )
 
     def _factory():
         return store
 
-    with patch(
-        "app.state.conversation_store.ConversationHistoryStore", _factory
-    ):
+    with patch("app.state.conversation_store.ConversationHistoryStore", _factory):
         r = client.get("/api/persona/live", headers=AUTH_HEADERS)
 
     assert r.status_code == 200

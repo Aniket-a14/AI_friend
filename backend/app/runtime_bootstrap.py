@@ -281,4 +281,7 @@ def _model_exists(required_model: str, available_models: list[str]) -> bool:
     # Compatibility: treat "model" and "model:latest" as equivalent.
     if ":" not in required_model and f"{required_model}:latest" in available_models:
         return True
-    return bool(required_model.endswith(":latest") and required_model.split(":", 1)[0] in available_models)
+    return bool(
+        required_model.endswith(":latest")
+        and required_model.split(":", 1)[0] in available_models
+    )

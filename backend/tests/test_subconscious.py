@@ -246,7 +246,9 @@ class TestSubconsciousAgentStateSharing:
         mock_graph_db.execute_query = AsyncMock(return_value=[{"name": "my friend"}])
         mock_graph_db.invalidate_cache = AsyncMock()
 
-        agent = SubconsciousAgent(state_service=mock_state_service, graph_db=mock_graph_db)
+        agent = SubconsciousAgent(
+            state_service=mock_state_service, graph_db=mock_graph_db
+        )
 
         broadcast = {"agent_name": "my friend", "mood": 0.42, "energy": 0.8}
         await agent._on_state_broadcast(broadcast)
@@ -263,7 +265,9 @@ class TestSubconsciousAgentStateSharing:
         mock_state_service = MagicMock()
         mock_state_service.apply_external_state = AsyncMock()
 
-        agent = SubconsciousAgent(state_service=mock_state_service, graph_db=MagicMock())
+        agent = SubconsciousAgent(
+            state_service=mock_state_service, graph_db=MagicMock()
+        )
 
         await agent._on_state_broadcast({"agent_name": None, "mood": 0.9})
 
@@ -281,7 +285,9 @@ class TestSubconsciousAgentStateSharing:
         mock_graph_db = MagicMock()
         mock_graph_db.initialize = AsyncMock()
 
-        agent = SubconsciousAgent(state_service=mock_state_service, graph_db=mock_graph_db)
+        agent = SubconsciousAgent(
+            state_service=mock_state_service, graph_db=mock_graph_db
+        )
         agent.connect = AsyncMock()
         agent.subscribe = AsyncMock()
         agent.memory_store = MagicMock()  # pre-set: skip the init-on-start block

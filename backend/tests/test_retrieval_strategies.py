@@ -265,7 +265,8 @@ class TestTheMemoryStoreRetrieverDoesNotPolluteTheAgent:
         await retriever.index([Turn("user", "probe two")])
 
         deletes = [
-            call.args[0] for call in conn.execute.await_args_list
+            call.args[0]
+            for call in conn.execute.await_args_list
             if "DELETE" in call.args[0]
         ]
         assert len(deletes) == 2, "each index must purge before it writes"
@@ -293,9 +294,7 @@ class TestTheMemoryStoreRetrieverDoesNotPolluteTheAgent:
         store.add_memory = AsyncMock(side_effect=[True, False, True])
         retriever = MemoryStoreRetriever(store)
 
-        await retriever.index(
-            [Turn("user", "a"), Turn("user", "b"), Turn("user", "c")]
-        )
+        await retriever.index([Turn("user", "a"), Turn("user", "b"), Turn("user", "c")])
 
         assert retriever.indexed == 2
         assert retriever.index_failures == 1

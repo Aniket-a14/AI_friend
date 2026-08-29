@@ -226,7 +226,9 @@ class AgentState:
         # signals, and a maximum stress response is the worst possible reading
         # of a malformed one.
         if not math.isfinite(amount):
-            logger.warning("[Endocrine] Ignoring non-finite %s release %r.", hormone, amount)
+            logger.warning(
+                "[Endocrine] Ignoring non-finite %s release %r.", hormone, amount
+            )
             return 0.0
         return max(0.0, amount)
 
@@ -587,9 +589,9 @@ class StateService:
                     self.current_state.last_user_interaction = row[
                         "last_user_interaction"
                     ]
-                    self.current_state.last_proactive_attempt = row[
-                        "last_proactive_attempt"
-                    ] or 0.0
+                    self.current_state.last_proactive_attempt = (
+                        row["last_proactive_attempt"] or 0.0
+                    )
                     self.current_state.interaction_count = row["interaction_count"]
                     self.current_state.user_mental_model.inferred_valence = row[
                         "inferred_valence"
@@ -802,23 +804,23 @@ class StateService:
             # after it, so a single call could write two different states to the
             # two backends.
             snapshot = {
-            "mood": self.current_state.mood,
-            "energy": self.current_state.energy,
-            "dominance": self.current_state.dominance,
-            "trust_benevolence": self.current_state.trust_benevolence,
-            "trust_competence": self.current_state.trust_competence,
-            "trust_integrity": self.current_state.trust_integrity,
-            "trust": self.current_state.trust,
-            "attachment": self.current_state.attachment,
-            "fatigue": self.current_state.fatigue,
-            "last_user_interaction": self.current_state.last_user_interaction,
-            "last_proactive_attempt": self.current_state.last_proactive_attempt,
-            "interaction_count": self.current_state.interaction_count,
-            "inferred_valence": self.current_state.user_mental_model.inferred_valence,
-            "inferred_arousal": self.current_state.user_mental_model.inferred_arousal,
-            "baseline_valence": self.current_state.baseline_valence,
-            "baseline_arousal": self.current_state.baseline_arousal,
-            "baseline_dominance": self.current_state.baseline_dominance,
+                "mood": self.current_state.mood,
+                "energy": self.current_state.energy,
+                "dominance": self.current_state.dominance,
+                "trust_benevolence": self.current_state.trust_benevolence,
+                "trust_competence": self.current_state.trust_competence,
+                "trust_integrity": self.current_state.trust_integrity,
+                "trust": self.current_state.trust,
+                "attachment": self.current_state.attachment,
+                "fatigue": self.current_state.fatigue,
+                "last_user_interaction": self.current_state.last_user_interaction,
+                "last_proactive_attempt": self.current_state.last_proactive_attempt,
+                "interaction_count": self.current_state.interaction_count,
+                "inferred_valence": self.current_state.user_mental_model.inferred_valence,
+                "inferred_arousal": self.current_state.user_mental_model.inferred_arousal,
+                "baseline_valence": self.current_state.baseline_valence,
+                "baseline_arousal": self.current_state.baseline_arousal,
+                "baseline_dominance": self.current_state.baseline_dominance,
             }
 
             # 1. Save to Redis
@@ -833,24 +835,28 @@ class StateService:
                         self.redis_client.hset,
                         f"state:{agent_name}",
                         mapping={
-                        "mood": str(snapshot["mood"]),
-                        "energy": str(snapshot["energy"]),
-                        "dominance": str(snapshot["dominance"]),
-                        "trust_benevolence": str(snapshot["trust_benevolence"]),
-                        "trust_competence": str(snapshot["trust_competence"]),
-                        "trust_integrity": str(snapshot["trust_integrity"]),
-                        "trust": str(snapshot["trust"]),
-                        "attachment": str(snapshot["attachment"]),
-                        "fatigue": str(snapshot["fatigue"]),
-                        "last_user_interaction": str(snapshot["last_user_interaction"]),
-                        "last_proactive_attempt": str(snapshot["last_proactive_attempt"]),
-                        "interaction_count": str(snapshot["interaction_count"]),
-                        "inferred_valence": str(snapshot["inferred_valence"]),
-                        "inferred_arousal": str(snapshot["inferred_arousal"]),
-                        "baseline_valence": str(snapshot["baseline_valence"]),
-                        "baseline_arousal": str(snapshot["baseline_arousal"]),
-                        "baseline_dominance": str(snapshot["baseline_dominance"]),
-                        "implied_goals": json.dumps(
+                            "mood": str(snapshot["mood"]),
+                            "energy": str(snapshot["energy"]),
+                            "dominance": str(snapshot["dominance"]),
+                            "trust_benevolence": str(snapshot["trust_benevolence"]),
+                            "trust_competence": str(snapshot["trust_competence"]),
+                            "trust_integrity": str(snapshot["trust_integrity"]),
+                            "trust": str(snapshot["trust"]),
+                            "attachment": str(snapshot["attachment"]),
+                            "fatigue": str(snapshot["fatigue"]),
+                            "last_user_interaction": str(
+                                snapshot["last_user_interaction"]
+                            ),
+                            "last_proactive_attempt": str(
+                                snapshot["last_proactive_attempt"]
+                            ),
+                            "interaction_count": str(snapshot["interaction_count"]),
+                            "inferred_valence": str(snapshot["inferred_valence"]),
+                            "inferred_arousal": str(snapshot["inferred_arousal"]),
+                            "baseline_valence": str(snapshot["baseline_valence"]),
+                            "baseline_arousal": str(snapshot["baseline_arousal"]),
+                            "baseline_dominance": str(snapshot["baseline_dominance"]),
+                            "implied_goals": json.dumps(
                                 self.current_state.user_mental_model.implied_goals
                             ),
                             "known_concepts": json.dumps(
@@ -864,19 +870,19 @@ class StateService:
             # 2. Save to SQLite cache
             sqlite_params = (
                 agent_name,
-            snapshot["mood"],
-            snapshot["energy"],
-            snapshot["dominance"],
-            snapshot["trust_benevolence"],
-            snapshot["trust_competence"],
-            snapshot["trust_integrity"],
-            snapshot["trust"],
-            snapshot["attachment"],
-            snapshot["fatigue"],
-            snapshot["last_user_interaction"],
-            snapshot["interaction_count"],
-            snapshot["inferred_valence"],
-            snapshot["inferred_arousal"],
+                snapshot["mood"],
+                snapshot["energy"],
+                snapshot["dominance"],
+                snapshot["trust_benevolence"],
+                snapshot["trust_competence"],
+                snapshot["trust_integrity"],
+                snapshot["trust"],
+                snapshot["attachment"],
+                snapshot["fatigue"],
+                snapshot["last_user_interaction"],
+                snapshot["interaction_count"],
+                snapshot["inferred_valence"],
+                snapshot["inferred_arousal"],
                 json.dumps(self.current_state.user_mental_model.implied_goals),
                 json.dumps(self.current_state.user_mental_model.known_concepts),
                 snapshot["baseline_valence"],
@@ -986,7 +992,9 @@ class StateService:
                 self.current_state.dominance = float(new_pad["dominance"])
             self._enforce_bounds()
 
-    async def update_from_appraisal(self, appraisal, weights: dict[str, float] | None = None):
+    async def update_from_appraisal(
+        self, appraisal, weights: dict[str, float] | None = None
+    ):
         """
         PAD + Relational update driven by appraisal vector (§2.3).
 
@@ -1116,9 +1124,9 @@ class StateService:
         # model that genuinely predicts emotion is a real neutral reading and is
         # still blended; only absence is skipped. bool is excluded because
         # isinstance(True, int) is True.
-        has_emotion_estimate = isinstance(emotion_bias, (int, float)) and not isinstance(
-            emotion_bias, bool
-        )
+        has_emotion_estimate = isinstance(
+            emotion_bias, (int, float)
+        ) and not isinstance(emotion_bias, bool)
 
         async with self._state_lock:
             if has_emotion_estimate:
@@ -1246,9 +1254,7 @@ class StateService:
         async with self._state_lock:
             level = self.current_state.release_cortisol(amount)
         if reason:
-            logger.info(
-                "[Endocrine] Cortisol released (%s) — now %.2f.", reason, level
-            )
+            logger.info("[Endocrine] Cortisol released (%s) — now %.2f.", reason, level)
         return level
 
     async def release_dopamine(self, amount: float, *, reason: str = "") -> float:
@@ -1262,9 +1268,7 @@ class StateService:
         async with self._state_lock:
             level = self.current_state.release_dopamine(amount)
         if reason:
-            logger.info(
-                "[Endocrine] Dopamine released (%s) — now %.2f.", reason, level
-            )
+            logger.info("[Endocrine] Dopamine released (%s) — now %.2f.", reason, level)
         return level
 
     async def handle_system_tick(self, tick_metadata: dict[str, Any]):
@@ -1344,9 +1348,7 @@ class StateService:
             tc_drift = (
                 self.trust_baseline - self.current_state.trust_competence
             ) * 0.01
-            ti_drift = (
-                self.trust_baseline - self.current_state.trust_integrity
-            ) * 0.01
+            ti_drift = (self.trust_baseline - self.current_state.trust_integrity) * 0.01
             self.current_state.trust_benevolence += tb_drift
             self.current_state.trust_competence += tc_drift
             self.current_state.trust_integrity += ti_drift
@@ -1418,9 +1420,7 @@ class StateService:
             - 0.1 * self.current_state.fatigue
             + 0.2 * self.current_state.valence
         )
-        min_turn_probability = getattr(
-            Config, "PROACTIVE_MIN_TURN_PROBABILITY", 0.5
-        )
+        min_turn_probability = getattr(Config, "PROACTIVE_MIN_TURN_PROBABILITY", 0.5)
         if turn_probability < min_turn_probability:
             logger.debug(
                 "[State] Proactive SKIPPED: turn_taking_probability %.2f < min %.2f",

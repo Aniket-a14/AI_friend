@@ -119,7 +119,9 @@ def test_too_many_stored_traits_are_trimmed_to_the_newest(tmp_path):
         tmp_path,
         {
             "name": "Longlived",
-            "core_personality": {"adaptive_traits": ["a", "b", "c", "d", "e", "f", "g"]},
+            "core_personality": {
+                "adaptive_traits": ["a", "b", "c", "d", "e", "f", "g"]
+            },
         },
     )
     assert manager.persona.adaptive_traits == ["c", "d", "e", "f", "g"]

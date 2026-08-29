@@ -87,9 +87,7 @@ async def run(allow_mock: bool = False) -> MeasurementReport:
     from app.llm.ollama_client import OllamaClient
 
     vlm_client = OllamaClient(base_url=Config.OLLAMA_URL, model=Config.VLM_MODEL)
-    tiny_png_b64 = (
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-    )
+    tiny_png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
 
     async def _vlm_load() -> None:
         for _ in range(3):

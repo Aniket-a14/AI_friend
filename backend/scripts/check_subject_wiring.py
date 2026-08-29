@@ -267,7 +267,9 @@ def scan_python(
         # (subject, data)`) takes a runtime variable, unresolvable by the
         # AST scan above, so this catches the subject at its true origin.
         text = path.read_text()
-        for match in re.finditer(r'"subject":\s*"([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)"', text):
+        for match in re.finditer(
+            r'"subject":\s*"([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)"', text
+        ):
             line = text[: match.start()].count("\n") + 1
             entry = usage.setdefault(match.group(1), SubjectUsage())
             entry.publish_sites.append(Site(_rel(path), line))

@@ -209,7 +209,9 @@ class CognitivePipeline:
         result["state_snapshot"] = state_snapshot
 
     @staticmethod
-    def _resolve_acoustic_delta(event_metadata: dict[str, Any], raw_event: dict[str, Any]) -> float:
+    def _resolve_acoustic_delta(
+        event_metadata: dict[str, Any], raw_event: dict[str, Any]
+    ) -> float:
         if isinstance(event_metadata, dict) and "acoustic_metadata" in event_metadata:
             return event_metadata["acoustic_metadata"].get("emotion_bias", 0.0)
         if "acoustic_metadata" in raw_event:
@@ -278,7 +280,9 @@ class CognitivePipeline:
         result["full_response"] = full_response
         result["done_chunk"] = done_chunk
 
-    def _prepare_action_payload(self, plan, state_snapshot, event, state_directive) -> None:
+    def _prepare_action_payload(
+        self, plan, state_snapshot, event, state_directive
+    ) -> None:
         """Stage 7: populate `plan.payload` with everything action.py's
         endocrine-to-sampling mapping and prompt assembly need. Pure -- no
         yields, so it's a plain call from `execute` rather than a
@@ -326,7 +330,13 @@ class CognitivePipeline:
 
     @staticmethod
     def _build_consolidation_episode(
-        event, raw_event, state_directive, appraisal_vector, state, state_snapshot, full_response
+        event,
+        raw_event,
+        state_directive,
+        appraisal_vector,
+        state,
+        state_snapshot,
+        full_response,
     ) -> dict[str, Any]:
         """Stage 10: shape one turn into the schema `learning._consolidate`
         expects."""
@@ -349,7 +359,9 @@ class CognitivePipeline:
         }
 
     async def execute(
-        self, raw_event: dict[str, Any], surfaced_memories: list[dict[str, Any]] | None = None
+        self,
+        raw_event: dict[str, Any],
+        surfaced_memories: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Executes the master cognitive loop.

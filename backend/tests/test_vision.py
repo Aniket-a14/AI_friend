@@ -542,9 +542,10 @@ class TestVisionAgent:
         from app.config import Config
         from app.vision.agent import ASSUMED_FACE_WIDTH_M
 
-        with patch("app.vision.agent.cv2") as mock_cv2, patch(
-            "app.vision.agent.np"
-        ) as mock_np:
+        with (
+            patch("app.vision.agent.cv2") as mock_cv2,
+            patch("app.vision.agent.np") as mock_np,
+        ):
             mock_cv2.data.haarcascades = "/fake/"
             cascade = MagicMock()
             face_width_px = 100

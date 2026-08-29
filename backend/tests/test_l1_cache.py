@@ -131,9 +131,7 @@ class TestSearchFailureVisibility:
     @pytest.mark.asyncio
     async def test_failure_is_recorded_alongside_the_empty_return(self, store):
         s, _conn = store
-        s.get_embedding = AsyncMock(
-            side_effect=RuntimeError("embedding service down")
-        )
+        s.get_embedding = AsyncMock(side_effect=RuntimeError("embedding service down"))
 
         assert s.last_search_error is None
         results = await s.search_memories("hello")
@@ -165,9 +163,7 @@ class TestSearchFailureVisibility:
     @pytest.mark.asyncio
     async def test_a_later_successful_search_clears_the_stale_failure(self, store):
         s, conn = store
-        s.get_embedding = AsyncMock(
-            side_effect=RuntimeError("embedding service down")
-        )
+        s.get_embedding = AsyncMock(side_effect=RuntimeError("embedding service down"))
         await s.search_memories("hello")
         assert s.last_search_error is not None
 
@@ -250,9 +246,7 @@ class TestAddMemoryQdrantUpsertOffTheLoop:
                 await asyncio.sleep(0.01)
                 ticks += 1
 
-        await asyncio.gather(
-            s.add_memory("a slow write", wing="personal"), heartbeat()
-        )
+        await asyncio.gather(s.add_memory("a slow write", wing="personal"), heartbeat())
 
         assert ticks_when_upsert_finished, "the qdrant upsert never ran"
         assert ticks_when_upsert_finished[0] > 0, (

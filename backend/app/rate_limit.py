@@ -20,9 +20,7 @@ class FixedWindowRateLimiter:
     def __init__(self, max_requests: int, window_seconds: float):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self._windows: dict[str, tuple[float, int]] = defaultdict(
-            lambda: (0.0, 0)
-        )
+        self._windows: dict[str, tuple[float, int]] = defaultdict(lambda: (0.0, 0))
         # P3-7: one entry per distinct client IP was kept forever -- a client
         # that calls once and never again still occupies a slot for the life
         # of the process. A lazy sweep every `_sweep_every` calls drops any

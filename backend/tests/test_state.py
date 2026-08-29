@@ -336,9 +336,7 @@ async def test_a_system_tick_does_not_let_an_affect_write_land_mid_decay(
         order.append("release-done")
 
     await asyncio.gather(
-        state_service.handle_system_tick(
-            {"timestamp": 123456789.0, "interval": 36000}
-        ),
+        state_service.handle_system_tick({"timestamp": 123456789.0, "interval": 36000}),
         competing_release(),
     )
 
@@ -364,9 +362,7 @@ async def test_the_tick_can_still_persist_while_holding_the_state_lock(
     defect, where a hung suite just looks like CI wedged.
     """
     await asyncio.wait_for(
-        state_service.handle_system_tick(
-            {"timestamp": 123456789.0, "interval": 3600}
-        ),
+        state_service.handle_system_tick({"timestamp": 123456789.0, "interval": 3600}),
         timeout=5.0,
     )
 

@@ -251,7 +251,7 @@ class PersonaProfile(BaseModel):
         for trait in new_traits or []:
             if trait and trait not in merged:
                 merged.append(trait)
-        self.adaptive_traits = merged[-self.adaptive_trait_limit():]
+        self.adaptive_traits = merged[-self.adaptive_trait_limit() :]
         return list(self.adaptive_traits)
 
     @property
@@ -352,9 +352,7 @@ class PersonaProfile(BaseModel):
 
         file = Path(path)
         if not file.exists():
-            logger.info(
-                "[Persona] No persona file at %s; using Config defaults.", path
-            )
+            logger.info("[Persona] No persona file at %s; using Config defaults.", path)
             return cls.from_config()
 
         try:

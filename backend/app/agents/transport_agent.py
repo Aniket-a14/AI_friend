@@ -86,8 +86,10 @@ class TransportAgent(BaseAgent):
         # over. Decoupling capture from publish with a bounded queue and a
         # dedicated worker means a slow NATS publish drops frames instead of
         # stalling audio capture.
-        self.inbound_audio_queue: asyncio.Queue[tuple[bytes, dict[str, Any]]] = asyncio.Queue(
-            maxsize=max(32, int(getattr(Config, "TRANSPORT_AUDIO_QUEUE_SIZE", 256)))
+        self.inbound_audio_queue: asyncio.Queue[tuple[bytes, dict[str, Any]]] = (
+            asyncio.Queue(
+                maxsize=max(32, int(getattr(Config, "TRANSPORT_AUDIO_QUEUE_SIZE", 256)))
+            )
         )
         self.inbound_audio_worker_task = None
         self.dropped_inbound_audio_frames = 0
@@ -227,7 +229,9 @@ class TransportAgent(BaseAgent):
         publication: rtc.TrackPublication,
         participant: rtc.RemoteParticipant,
     ):
-        if track.kind == rtc.TrackKind.KIND_AUDIO and isinstance(track, rtc.RemoteAudioTrack):
+        if track.kind == rtc.TrackKind.KIND_AUDIO and isinstance(
+            track, rtc.RemoteAudioTrack
+        ):
             logger.info(
                 f"Subscribed to remote audio track: {track.sid} from {participant.identity}"
             )

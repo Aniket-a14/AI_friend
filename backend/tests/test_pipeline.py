@@ -140,9 +140,7 @@ async def test_pipeline_carries_visual_context_into_the_plan_payload(
         pass
 
     assert seen_payloads, "action.execute was never called"
-    assert (
-        seen_payloads[0]["visual_context"] == "I am seeing the user's camera."
-    )
+    assert seen_payloads[0]["visual_context"] == "I am seeing the user's camera."
 
 
 @pytest.mark.asyncio

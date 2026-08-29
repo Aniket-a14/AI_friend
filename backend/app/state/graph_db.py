@@ -365,4 +365,3 @@ class GraphDB:
         logger.info(
             f"Graph Store: Decayed relationship weights (factor: {decay_factor}) and pruned edges below {prune_threshold}, plus any entities orphaned by that prune"
         )
-

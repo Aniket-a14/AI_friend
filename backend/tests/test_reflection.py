@@ -100,7 +100,9 @@ async def test_identity_evolution_survives_a_list_of_non_dict_elements(
     # "cleanly skipped a malformed suggestion" and "crashed and swallowed it".
     assert not any(
         "Identity evolution failure" in record.message for record in caplog.records
-    ), "malformed identity suggestion crashed _consolidate instead of being skipped cleanly"
+    ), (
+        "malformed identity suggestion crashed _consolidate instead of being skipped cleanly"
+    )
 
 
 @pytest.mark.asyncio

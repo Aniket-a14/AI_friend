@@ -91,7 +91,9 @@ async def _drop_from_qdrant(memory_store: Any, ids: Sequence[str]) -> None:
         # Logged rather than raised: the SQL delete is the authoritative one and
         # has already happened. Aborting here would leave the caller believing
         # nothing was reset when in fact most of it was.
-        logger.error("[Reset] Could not delete %d vector(s) from Qdrant: %s", len(ids), exc)
+        logger.error(
+            "[Reset] Could not delete %d vector(s) from Qdrant: %s", len(ids), exc
+        )
 
 
 async def clear_seeded_memories(memory_store: Any) -> int:
@@ -123,7 +125,9 @@ async def clear_seeded_memories(memory_store: Any) -> int:
             await conn.execute(f"DELETE FROM {table} WHERE id IN ({marks})", *ids)  # nosec B608 - table is from the fixed _MEMORY_TABLES tuple, ids are bound as params
             await _drop_from_qdrant(memory_store, ids)
             removed += len(ids)
-            logger.info("[Reset] Removed %d seeded memory/memories from %s.", len(ids), table)
+            logger.info(
+                "[Reset] Removed %d seeded memory/memories from %s.", len(ids), table
+            )
 
     return removed
 

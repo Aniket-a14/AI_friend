@@ -35,7 +35,9 @@ def client():
     return TestClient(app)
 
 
-def _tone_wav_bytes(duration_s: float, amplitude: float = 0.3, samplerate: int = SAMPLE_RATE) -> bytes:
+def _tone_wav_bytes(
+    duration_s: float, amplitude: float = 0.3, samplerate: int = SAMPLE_RATE
+) -> bytes:
     t = np.linspace(0, duration_s, int(duration_s * samplerate), endpoint=False)
     audio = (amplitude * np.sin(2 * np.pi * 200.0 * t)).astype(np.float32)
     buf = io.BytesIO()
@@ -147,7 +149,9 @@ def test_commit_rejects_an_unbounded_transcript(client):
     assert r.status_code == 422
 
 
-def test_commit_refuses_to_save_a_clip_that_fails_validation(client, tmp_path, monkeypatch):
+def test_commit_refuses_to_save_a_clip_that_fails_validation(
+    client, tmp_path, monkeypatch
+):
     import app.api.voice as voice_module
 
     monkeypatch.setattr(voice_module, "VOICE_SAMPLES_DIR", tmp_path / "voice_samples")
@@ -186,7 +190,9 @@ def test_commit_saves_a_flawed_clip_when_forced(client, tmp_path, monkeypatch):
     assert (voice_dir / "sample_en_gold.wav").exists()
 
 
-def test_commit_writes_the_reference_clip_and_updates_env(client, tmp_path, monkeypatch):
+def test_commit_writes_the_reference_clip_and_updates_env(
+    client, tmp_path, monkeypatch
+):
     import app.api.voice as voice_module
 
     voice_dir = tmp_path / "voice_samples"
@@ -212,7 +218,9 @@ def test_commit_writes_the_reference_clip_and_updates_env(client, tmp_path, monk
     assert "REF_TEXT" in env_text
 
 
-def test_commit_writes_an_emotional_variant_under_its_own_env_keys(client, tmp_path, monkeypatch):
+def test_commit_writes_an_emotional_variant_under_its_own_env_keys(
+    client, tmp_path, monkeypatch
+):
     import app.api.voice as voice_module
 
     voice_dir = tmp_path / "voice_samples"

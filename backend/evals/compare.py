@@ -11,7 +11,6 @@ that is tolerable would be a tuning knob nobody has measured yet. Pass/fail
 regressions are unarguable, which is what a gate needs to be.
 """
 
-
 from .schema import ComparisonReport, EvalReport, OptionDiff, ProbeDelta
 
 
@@ -79,9 +78,7 @@ def diff_options(baseline: EvalReport, candidate: EvalReport) -> list[OptionDiff
     return diffs
 
 
-def compare_reports(
-    baseline: EvalReport, candidate: EvalReport
-) -> ComparisonReport:
+def compare_reports(baseline: EvalReport, candidate: EvalReport) -> ComparisonReport:
     require_same_path(baseline, candidate)
 
     base_by_id = {result.probe_id: result for result in baseline.results}
@@ -150,10 +147,11 @@ def compare_reports(
 
 def render_comparison(comparison: ComparisonReport) -> str:
     lines = [
-        (f"baseline:  {comparison.baseline_model} "
-        f"[{comparison.baseline_provenance}]"),
-        (f"candidate: {comparison.candidate_model} "
-        f"[{comparison.candidate_provenance}]"),
+        (f"baseline:  {comparison.baseline_model} [{comparison.baseline_provenance}]"),
+        (
+            f"candidate: {comparison.candidate_model} "
+            f"[{comparison.candidate_provenance}]"
+        ),
         f"path:      {comparison.path}",
         "",
     ]

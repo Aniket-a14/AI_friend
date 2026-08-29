@@ -147,9 +147,7 @@ async def test_publish_propagates_jetstream_failure_when_fallback_disallowed():
     agent = _make_agent()
 
     with pytest.raises(JetStreamPublishFailed):
-        await agent.publish(
-            "chat.output", {"x": 1}, allow_core_fallback=False
-        )
+        await agent.publish("chat.output", {"x": 1}, allow_core_fallback=False)
 
 
 @pytest.mark.asyncio
@@ -158,9 +156,7 @@ async def test_binary_publish_propagates_jetstream_failure_when_fallback_disallo
     agent = _make_agent()
 
     with pytest.raises(JetStreamPublishFailed):
-        await agent.publish(
-            "audio.stream", b"pcm", allow_core_fallback=False
-        )
+        await agent.publish("audio.stream", b"pcm", allow_core_fallback=False)
 
 
 @pytest.mark.asyncio
@@ -239,8 +235,7 @@ async def test_spawn_retains_a_strong_reference_until_the_task_completes():
     await task
 
     assert task not in agent._background_tasks, (
-        "a finished spawned task must be released, or _background_tasks "
-        "leaks forever"
+        "a finished spawned task must be released, or _background_tasks leaks forever"
     )
 
 

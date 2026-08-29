@@ -56,8 +56,20 @@ logger = logging.getLogger(__name__)
 # Code-level rather than trusted to the prompt alone, since a smaller/weaker
 # model is exactly where a prompt instruction is most likely to be ignored.
 _PRONOUNS_NOT_NAMES = {
-    "he", "she", "they", "him", "her", "them", "his", "hers", "their",
-    "theirs", "i", "me", "you", "friend",
+    "he",
+    "she",
+    "they",
+    "him",
+    "her",
+    "them",
+    "his",
+    "hers",
+    "their",
+    "theirs",
+    "i",
+    "me",
+    "you",
+    "friend",
 }
 
 
@@ -98,11 +110,14 @@ class CompiledPersona:
 # construction. The comment on each line is what actually ships in the
 # `Inference.reason` shown to the user -- see `_infer_temperament`.
 
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-def _infer_temperament(dimensions: dict[str, float]) -> tuple[dict[str, float], list[Inference]]:
+def _infer_temperament(
+    dimensions: dict[str, float],
+) -> tuple[dict[str, float], list[Inference]]:
     """Turn dimension scores into bounded `PersonaProfile` numbers.
 
     Missing dimensions default to the schema's own defaults' midpoint (0.5, or
@@ -122,7 +137,9 @@ def _infer_temperament(dimensions: dict[str, float]) -> tuple[dict[str, float], 
     fields: dict[str, float] = {}
     inferences: list[Inference] = []
 
-    def set_field(name: str, value: float, dimension_name: str, score: float, note: str) -> None:
+    def set_field(
+        name: str, value: float, dimension_name: str, score: float, note: str
+    ) -> None:
         fields[name] = value
         inferences.append(
             Inference(
@@ -133,59 +150,98 @@ def _infer_temperament(dimensions: dict[str, float]) -> tuple[dict[str, float], 
         )
 
     set_field(
-        "baseline_valence", round(warmth * 0.6, 3), "warmth", warmth,
+        "baseline_valence",
+        round(warmth * 0.6, 3),
+        "warmth",
+        warmth,
         "how warm vs. cold the description reads, scaled into the "
         "±0.6 valence bound (a friend can never be pinned fully positive)",
     )
     set_field(
-        "baseline_arousal", round(0.15 + energy * 0.70, 3), "energy", energy,
+        "baseline_arousal",
+        round(0.15 + energy * 0.70, 3),
+        "energy",
+        energy,
         "calm/low-key (0) to excitable/high-energy (1), scaled into the 0.15-0.85 bound",
     )
     set_field(
-        "baseline_dominance", round(0.15 + assertiveness * 0.70, 3), "assertiveness", assertiveness,
+        "baseline_dominance",
+        round(0.15 + assertiveness * 0.70, 3),
+        "assertiveness",
+        assertiveness,
         "yielding (0) to take-charge (1), scaled into the 0.15-0.85 bound",
     )
     set_field(
-        "valence_drift_rate", round(0.1 + volatility * 0.6, 3), "volatility", volatility,
+        "valence_drift_rate",
+        round(0.1 + volatility * 0.6, 3),
+        "volatility",
+        volatility,
         "how much mood swings drives how fast valence itself moves",
     )
     set_field(
-        "arousal_response_rate", round(0.15 + volatility * 0.65, 3), "volatility", volatility,
+        "arousal_response_rate",
+        round(0.15 + volatility * 0.65, 3),
+        "volatility",
+        volatility,
         "a more reactive temperament also means arousal responds to events faster",
     )
     set_field(
-        "dominance_stability", round(0.05 + opinion_firmness * 0.7, 3), "opinion_firmness", opinion_firmness,
+        "dominance_stability",
+        round(0.05 + opinion_firmness * 0.7, 3),
+        "opinion_firmness",
+        opinion_firmness,
         "easily swayed (0) to stubborn/consistent (1)",
     )
     set_field(
-        "trust_change_rate", round(0.05 + openness_to_trust * 0.4, 3), "openness_to_trust", openness_to_trust,
+        "trust_change_rate",
+        round(0.05 + openness_to_trust * 0.4, 3),
+        "openness_to_trust",
+        openness_to_trust,
         "guarded (0) to quick-to-trust (1) shapes how fast trust itself can move",
     )
     set_field(
-        "attachment_growth_rate", round(0.02 + warmth_growth * 0.25, 3), "warmth_growth", warmth_growth,
+        "attachment_growth_rate",
+        round(0.02 + warmth_growth * 0.25, 3),
+        "warmth_growth",
+        warmth_growth,
         "standoffish long-term (0) to quickly-attached (1)",
     )
     set_field(
-        "mood_decay_rate", round(0.02 + resilience * 0.4, 3), "resilience", resilience,
+        "mood_decay_rate",
+        round(0.02 + resilience * 0.4, 3),
+        "resilience",
+        resilience,
         "dwells on things (0) to bounces back quickly (1) -- higher means faster "
         "return to baseline mood",
     )
     set_field(
-        "dopamine_halflife_s", round(30 + emotional_lingering * 300, 1), "emotional_lingering", emotional_lingering,
+        "dopamine_halflife_s",
+        round(30 + emotional_lingering * 300, 1),
+        "emotional_lingering",
+        emotional_lingering,
         "how long a good moment's glow lasts, in seconds",
     )
     set_field(
-        "cortisol_halflife_s", round(200 + emotional_lingering * 1000, 1), "emotional_lingering", emotional_lingering,
+        "cortisol_halflife_s",
+        round(200 + emotional_lingering * 1000, 1),
+        "emotional_lingering",
+        emotional_lingering,
         "how long a bad moment's sting lingers, in seconds -- longer than dopamine's "
         "by construction, the same asymmetry every deployment default carries",
     )
     set_field(
-        "initial_trust", round(0.2 + openness_to_trust * 0.6, 3), "openness_to_trust", openness_to_trust,
+        "initial_trust",
+        round(0.2 + openness_to_trust * 0.6, 3),
+        "openness_to_trust",
+        openness_to_trust,
         "where the relationship's trust starts (never at the extremes -- a brand "
         "new friend is neither a stranger nor already fully trusted)",
     )
     set_field(
-        "initial_attachment", round(0.05 + warmth_growth * 0.35, 3), "warmth_growth", warmth_growth,
+        "initial_attachment",
+        round(0.05 + warmth_growth * 0.35, 3),
+        "warmth_growth",
+        warmth_growth,
         "where attachment starts -- deliberately low; attachment is meant to be earned",
     )
 
@@ -310,7 +366,9 @@ def _as_float(value: Any, default: float) -> float:
     return default
 
 
-def _as_str_list(value: Any, *, max_items: int, max_len: int | None = None) -> list[str]:
+def _as_str_list(
+    value: Any, *, max_items: int, max_len: int | None = None
+) -> list[str]:
     if not isinstance(value, list):
         return []
     out: list[str] = []
@@ -380,8 +438,14 @@ async def compile_persona(
     dimensions_raw = data.get("dimensions")
     dimensions_raw = dimensions_raw if isinstance(dimensions_raw, dict) else {}
     dimension_names = [
-        "warmth", "energy", "assertiveness", "volatility", "resilience",
-        "opinion_firmness", "openness_to_trust", "warmth_growth",
+        "warmth",
+        "energy",
+        "assertiveness",
+        "volatility",
+        "resilience",
+        "opinion_firmness",
+        "openness_to_trust",
+        "warmth_growth",
         "emotional_lingering",
     ]
     defaults = {"warmth": 0.0}
@@ -398,13 +462,19 @@ async def compile_persona(
 
     narrative_fields: dict[str, Any] = {
         "name": (name_candidate or "Friend")[:64],
-        "base_tone": (str(data.get("base_tone") or "").strip() or "Warm and direct")[:200],
+        "base_tone": (str(data.get("base_tone") or "").strip() or "Warm and direct")[
+            :200
+        ],
         "identity_summary": str(data.get("identity_summary") or "").strip()[:1200],
         "traits": _as_str_list(data.get("traits"), max_items=8),
         "speech_patterns": _as_str_list(data.get("speech_patterns"), max_items=20),
         "avoid": _as_str_list(data.get("avoid"), max_items=64),
-        "relationship": (str(data.get("relationship") or "Friend").strip() or "Friend")[:64],
-        "speaking_style": {"style_description": speaking_style_text} if speaking_style_text else {},
+        "relationship": (str(data.get("relationship") or "Friend").strip() or "Friend")[
+            :64
+        ],
+        "speaking_style": {"style_description": speaking_style_text}
+        if speaking_style_text
+        else {},
     }
 
     merged = PersonaProfile.from_config().model_dump()

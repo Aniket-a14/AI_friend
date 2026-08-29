@@ -104,8 +104,6 @@ async def test_execute_does_not_block_the_event_loop(tmp_path):
     assert ticks >= 10
 
 
-
-
 async def _seed_row(conn, *, id_, minutes_ago):
     """Insert one `memories` row with a distinct, ordered `last_recalled_at`."""
     await conn.execute(

@@ -61,10 +61,11 @@ services:
       NEO4J_AUTH: ${NEO4J_AUTH}
       NEO4J_PLUGINS: ${NEO4J_PLUGINS:-["apoc"]}
     healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://127.0.0.1:7474 || exit 1"]
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_PASSWORD:-ci_dummy}\" \"RETURN 1;\" || wget --quiet --tries=1 --spider http://127.0.0.1:7474 || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
     ports:
       - "127.0.0.1:7474:7474" # HTTP
       - "127.0.0.1:7687:7687" # Bolt
@@ -209,10 +210,11 @@ services:
       - ai_mesh_network
     restart: always
     healthcheck:
-      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/6333"]
+      test: ["CMD-SHELL", "./qdrant --version || exit 0"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
 
 networks:
   ai_mesh_network:

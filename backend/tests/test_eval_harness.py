@@ -108,8 +108,13 @@ def test_a_check_with_no_values_is_rejected_at_construction():
     it when the pack is loaded turns a permanently green probe into a loud
     parse error. `boundary` is exempt because it legitimately carries no
     values."""
-    for kind in ("must_include", "must_include_any", "must_not_include",
-                 "must_match", "must_not_match"):
+    for kind in (
+        "must_include",
+        "must_include_any",
+        "must_not_include",
+        "must_match",
+        "must_not_match",
+    ):
         with pytest.raises(ValidationError):
             Check(kind=kind, values=[])
 
@@ -130,12 +135,16 @@ def test_a_pattern_written_with_capitals_still_matches():
     green while testing nothing. Probe authors write prose-shaped regexes, so
     the matcher, not the author, absorbs the case difference."""
     views = _views("Sure, I am Max now.")
-    assert evaluate_check(
-        Check(kind="must_not_match", values=[r"\bI am Max\b"]), views
-    ).passed is False
-    assert evaluate_check(
-        Check(kind="must_match", values=[r"\bI AM MAX\b"]), views
-    ).passed is True
+    assert (
+        evaluate_check(
+            Check(kind="must_not_match", values=[r"\bI am Max\b"]), views
+        ).passed
+        is False
+    )
+    assert (
+        evaluate_check(Check(kind="must_match", values=[r"\bI AM MAX\b"]), views).passed
+        is True
+    )
 
 
 # ---------------------------------------------------------------- probes
@@ -320,8 +329,11 @@ async def test_the_run_unloads_the_model_before_reloading_it(kavya):
         await run_eval(client, kavya, persona_probes(kavya), model="tag:v1")
 
     assert posted == [
-        ("http://127.0.0.1:11434", "/api/generate",
-         {"model": "tag:v1", "keep_alive": 0}),
+        (
+            "http://127.0.0.1:11434",
+            "/api/generate",
+            {"model": "tag:v1", "keep_alive": 0},
+        ),
     ]
 
 
@@ -333,8 +345,9 @@ async def test_a_failed_warm_up_does_not_take_the_run_down_with_it(kavya):
     legibly than an exception from a call nobody reads."""
 
     class FlakyFirstCall(ScriptedClient):
-        async def generate(self, prompt, system=None, model=None,
-                           options_override=None):
+        async def generate(
+            self, prompt, system=None, model=None, options_override=None
+        ):
             if not self.seen_prompts:
                 self.seen_prompts.append(prompt)
                 raise RuntimeError("connection reset")
@@ -460,11 +473,13 @@ def test_two_runs_sampled_differently_are_flagged_as_incomparable():
     reports produced under different sampling options diff cleanly and say
     nothing, and nothing else in the harness would notice."""
     baseline = _report(
-        "m", [_result("a", "identity", True, 1.0)],
+        "m",
+        [_result("a", "identity", True, 1.0)],
         options={"temperature": 0.0, "num_ctx": 8192},
     )
     candidate = _report(
-        "m", [_result("a", "identity", False, 0.0)],
+        "m",
+        [_result("a", "identity", False, 0.0)],
         options={"temperature": 0.7, "num_ctx": 8192},
     )
 
@@ -625,9 +640,7 @@ async def test_the_action_path_prompts_the_model_the_way_production_does(kavya):
     goal line and `User:`/`Assistant:` framing in the user prompt."""
     client = ScriptedStreamClient()
 
-    report = await run_eval(
-        client, kavya, persona_probes(kavya), path="action"
-    )
+    report = await run_eval(client, kavya, persona_probes(kavya), path="action")
 
     # The system prompt is the persona *plus* what action.py appends.
     system = client.seen_systems[-1]
@@ -679,16 +692,12 @@ async def test_the_action_report_fingerprints_the_prompt_the_model_really_saw(ka
     client = ScriptedStreamClient()
 
     llm_report = await run_eval(client, kavya, persona_probes(kavya))
-    action_report = await run_eval(
-        client, kavya, persona_probes(kavya), path="action"
-    )
+    action_report = await run_eval(client, kavya, persona_probes(kavya), path="action")
 
     assert llm_report.system_prompt_sha256
     assert action_report.system_prompt_sha256
     assert action_report.system_prompt_sha256 != llm_report.system_prompt_sha256
-    assert action_report.system_prompt_sha256 == fingerprint(
-        client.seen_systems[-1]
-    )
+    assert action_report.system_prompt_sha256 == fingerprint(client.seen_systems[-1])
 
 
 def test_a_cross_path_comparison_is_refused_rather_than_diffed():
@@ -760,9 +769,7 @@ def test_the_action_path_scores_speech_not_the_internal_chunks(kavya):
 # ---------------------------------------------------------------- CLI gates
 
 
-def test_compare_cli_refuses_a_cross_path_compare_with_a_usage_exit(
-    tmp_path, capsys
-):
+def test_compare_cli_refuses_a_cross_path_compare_with_a_usage_exit(tmp_path, capsys):
     """The reports are individually fine; the pairing is not. Exiting 2 like
     every other input error keeps a mistaken pairing distinguishable from a
     genuine regression, which exits 1 -- a consolidation loop reading only the
@@ -790,9 +797,7 @@ def test_compare_cli_refuses_mock_reports_without_allow_mock(tmp_path, capsys):
     assert evals_main(["compare", str(live_path), str(mock_path)]) == 2
     assert "mock" in capsys.readouterr().err.lower()
 
-    assert (
-        evals_main(["compare", str(live_path), str(mock_path), "--allow-mock"]) == 0
-    )
+    assert evals_main(["compare", str(live_path), str(mock_path), "--allow-mock"]) == 0
     assert "MOCK PROVENANCE" in capsys.readouterr().out
 
 
@@ -806,17 +811,13 @@ def test_compare_cli_fail_on_regression_is_the_nonzero_exit(tmp_path):
     save_report(regressed, str(cand_path))
 
     assert (
-        evals_main(
-            ["compare", str(base_path), str(cand_path), "--fail-on-regression"]
-        )
+        evals_main(["compare", str(base_path), str(cand_path), "--fail-on-regression"])
         == 1
     )
     assert evals_main(["compare", str(base_path), str(cand_path)]) == 0
 
 
-def test_a_zero_window_is_a_usage_error_not_a_traceback(
-    tmp_path, capsys, monkeypatch
-):
+def test_a_zero_window_is_a_usage_error_not_a_traceback(tmp_path, capsys, monkeypatch):
     """`RecentWindow` raises on a window below one, and that raise reaches the
     top level. Every other input error in this command prints to stderr and
     exits 2, so a traceback and exit 1 here is a different contract for no
@@ -847,10 +848,13 @@ def test_run_cli_refuses_under_mock_llm_without_allow_mock(
     assert not out.exists()
     assert "MOCK_LLM_TEXT" in capsys.readouterr().err
 
+
 def test_validate_response_rejects_rename_acceptance():
     """validate_response must reject text that adopts a new name."""
     import asyncio
+
     from app.cognitive.identity import IdentityManager
+
     mgr = IdentityManager()
     # Should reject
     for text in [
@@ -867,7 +871,9 @@ def test_validate_response_rejects_rename_acceptance():
 def test_validate_response_allows_own_name():
     """validate_response must allow the agent to state its own name."""
     import asyncio
+
     from app.cognitive.identity import IdentityManager
+
     mgr = IdentityManager()
     name = mgr.persona.name
     for text in [
@@ -880,4 +886,3 @@ def test_validate_response_allows_own_name():
     ]:
         ok, reason = asyncio.run(mgr.validate_response(text, "chat"))
         assert ok, f"Should have allowed: {text!r}, but got: {reason}"
-

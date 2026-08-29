@@ -35,7 +35,9 @@ class SubjectMetrics:
         self._metrics: dict[str, dict[str, Any]] = {}
 
         # High-performance list-based atomic double buffer
-        self._buffer: list[tuple[str, str, float | None, dict[str, Any] | None, float]] = []
+        self._buffer: list[
+            tuple[str, str, float | None, dict[str, Any] | None, float]
+        ] = []
         self._lock = threading.Lock()
 
         # Thread-safe queue interface for compatibility with legacy tests
@@ -263,7 +265,9 @@ class SubjectMetrics:
                             except (TypeError, ValueError):
                                 pass
                 except Exception as e:
-                    logger.debug("Skipping malformed metric item during shutdown drain: %s", e)
+                    logger.debug(
+                        "Skipping malformed metric item during shutdown drain: %s", e
+                    )
 
     @staticmethod
     def compute_latency(start_time) -> float | None:

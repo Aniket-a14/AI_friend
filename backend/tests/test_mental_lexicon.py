@@ -139,7 +139,9 @@ class TestPostgresDialect:
         calls = [c.args[0] for c in conn.executemany.await_args_list]
         vocab_upserts = [s for s in calls if "INSERT INTO vocabulary" in s]
         assoc_upserts = [s for s in calls if "INSERT INTO lexical_associations" in s]
-        assert vocab_upserts and all("$1" in s and "ON CONFLICT" in s for s in vocab_upserts)
+        assert vocab_upserts and all(
+            "$1" in s and "ON CONFLICT" in s for s in vocab_upserts
+        )
         assert assoc_upserts and all(
             "$1" in s and "$2" in s and "DO UPDATE" in s for s in assoc_upserts
         )
@@ -170,9 +172,7 @@ class TestAssociationLifecycle:
         )
 
     @pytest.mark.asyncio
-    async def test_decay_prunes_weights_that_fall_below_the_floor(
-        self, sqlite_lexicon
-    ):
+    async def test_decay_prunes_weights_that_fall_below_the_floor(self, sqlite_lexicon):
         await sqlite_lexicon._ensure_ready()
         async with sqlite_lexicon.pool.acquire() as conn:
             await conn.execute(

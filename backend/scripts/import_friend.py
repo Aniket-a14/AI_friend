@@ -158,7 +158,11 @@ async def _import_neo4j(staging: Path) -> dict[str, int]:
         await db.bootstrap_constraints()
 
         async def _merge_node(tx, label: str, props: dict):
-            await tx.run(f"MERGE (n:{label} {{name: $name}}) SET n += $props", name=props["name"], props=props)
+            await tx.run(
+                f"MERGE (n:{label} {{name: $name}}) SET n += $props",
+                name=props["name"],
+                props=props,
+            )
 
         async def _merge_rel(tx, a_label, a_name, b_label, b_name, rel_type, props):
             await tx.run(
@@ -273,9 +277,9 @@ def _import_identity_and_state(staging: Path, *, force: bool) -> dict[str, bool]
         written[name] = True
 
     identity_core_src = identity_in / "identity_core.db"
-    identity_core_dest = getattr(
-        Config, "IDENTITY_CORE_DB_PATH", None
-    ) or os.path.join(identity_base, "identity_core.db")
+    identity_core_dest = getattr(Config, "IDENTITY_CORE_DB_PATH", None) or os.path.join(
+        identity_base, "identity_core.db"
+    )
     if identity_core_src.exists():
         if os.path.exists(identity_core_dest) and not force:
             logger.warning(
@@ -362,7 +366,9 @@ async def import_friend(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("archive", type=Path, help="Path to the exported .tar.gz archive")
+    parser.add_argument(
+        "archive", type=Path, help="Path to the exported .tar.gz archive"
+    )
     parser.add_argument(
         "--force",
         action="store_true",
