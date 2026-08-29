@@ -270,7 +270,8 @@ create table if not exists self_knowledge_gaps (
   times_hit integer not null default 1,
   example_prompt text,
   first_seen timestamptz default now(),
-  last_seen timestamptz default now()
+  last_seen timestamptz default now(),
+  asked_at timestamptz
 );
 
 create index if not exists self_gap_hits_idx on self_knowledge_gaps(times_hit desc);

@@ -477,17 +477,13 @@ class StateService:
             """)
             # `CREATE TABLE IF NOT EXISTS` does not add a column to a table
             # that already exists from before this field did. Migrated
-            # separately, tolerating the column already being there (a fresh
-            # DB just created it above) rather than checking pragma_table_info
-            # first -- SQLite's own error is the simplest source of truth.
-            try:
+            # separately by checking pragma_table_info first.
+            cursor = conn.execute("PRAGMA table_info(agent_state)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            if "last_proactive_attempt" not in existing_cols:
                 conn.execute(
-                    "ALTER TABLE agent_state ADD COLUMN last_proactive_attempt "
-                    "REAL DEFAULT 0.0"
+                    "ALTER TABLE agent_state ADD COLUMN last_proactive_attempt REAL DEFAULT 0.0"
                 )
-            except sqlite3.OperationalError as exc:
-                if "duplicate column name" not in str(exc):
-                    raise
         conn.close()
 
     async def hydrate_state(self, agent_name: str = "my friend"):

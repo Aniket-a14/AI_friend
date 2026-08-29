@@ -356,6 +356,12 @@ class SQLiteConnection:
             translated,
             flags=re.IGNORECASE,
         )
+        translated = re.sub(
+            r"\bALTER TABLE self_knowledge_gaps ADD COLUMN IF NOT EXISTS asked_at.*",
+            "SELECT 1",
+            translated,
+            flags=re.IGNORECASE,
+        )
 
         # 5. Translate PostgreSQL ON CONFLICT DO UPDATE to SQLite INSERT OR REPLACE INTO or ON CONFLICT(id) DO UPDATE
         if "ON CONFLICT" in translated.upper() and "DO UPDATE" in translated.upper():

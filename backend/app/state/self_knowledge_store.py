@@ -96,28 +96,11 @@ class SelfKnowledgeStore:
                     )
                     # Tables created before the asking channel existed have no
                     # asked_at, and CREATE TABLE IF NOT EXISTS will not add it.
-                    # Postgres and SQLite disagree on the guard clause, so the
-                    # portable form is to try and let the duplicate fail.
-                    try:
-                        await conn.execute(
-                            "ALTER TABLE self_knowledge_gaps "
-                            "ADD COLUMN asked_at timestamp"
-                        )
-                    except Exception as e:
-                        # Only the expected "column already exists" outcome is
-                        # swallowed here -- asyncpg's DuplicateColumnError says
-                        # "already exists", sqlite3's OperationalError says
-                        # "duplicate column name". A bare `except: pass` used
-                        # to swallow anything, including a real migration
-                        # failure, and still set self._ready = True right
-                        # after -- so a later read/write against a table
-                        # actually missing asked_at would fail somewhere far
-                        # from this line, for a reason nothing here recorded.
-                        # Anything else re-raises into the outer handler,
-                        # which already logs and leaves self._ready False.
-                        msg = str(e).lower()
-                        if "duplicate column" not in msg and "already exists" not in msg:
-                            raise
+                    # Postgres 9.6+ supports IF NOT EXISTS for ADD COLUMN.
+                    await conn.execute(
+                        "ALTER TABLE self_knowledge_gaps "
+                        "ADD COLUMN IF NOT EXISTS asked_at timestamptz"
+                    )
                 self._ready = True
             except Exception as e:
                 logger.debug("SelfKnowledgeStore not ready (%s); gaps not recorded", e)

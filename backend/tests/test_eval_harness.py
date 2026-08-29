@@ -846,3 +846,38 @@ def test_run_cli_refuses_under_mock_llm_without_allow_mock(
     assert evals_main(["run", "--out", str(out)]) == 2
     assert not out.exists()
     assert "MOCK_LLM_TEXT" in capsys.readouterr().err
+
+def test_validate_response_rejects_rename_acceptance():
+    """validate_response must reject text that adopts a new name."""
+    import asyncio
+    from app.cognitive.identity import IdentityManager
+    mgr = IdentityManager()
+    # Should reject
+    for text in [
+        "Sure, I am Max now.",
+        "My name is Max, nice to meet you.",
+        "You can call me Max from now on.",
+        "I am now called Max.",
+    ]:
+        ok, reason = asyncio.run(mgr.validate_response(text, "chat"))
+        assert not ok, f"Should have rejected: {text!r}"
+        assert "rename" in reason.lower(), f"Wrong reason for {text!r}: {reason}"
+
+
+def test_validate_response_allows_own_name():
+    """validate_response must allow the agent to state its own name."""
+    import asyncio
+    from app.cognitive.identity import IdentityManager
+    mgr = IdentityManager()
+    name = mgr.persona.name
+    for text in [
+        f"My name is {name}, not Max.",
+        f"I am {name} and I'm happy to help.",
+        "I am not going to change my name.",
+        "I am still who I've always been.",
+        "I am here for you.",
+        "I am happy to chat!",
+    ]:
+        ok, reason = asyncio.run(mgr.validate_response(text, "chat"))
+        assert ok, f"Should have allowed: {text!r}, but got: {reason}"
+
