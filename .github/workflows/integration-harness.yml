@@ -127,7 +127,6 @@ jobs:
 
       - name: Bring up infra (docker-ollama profile)
         run: |
-          docker network create ai_mesh_network || true
           docker compose -f docker-compose.infra.yml --profile docker-ollama \
             up -d nats postgres redis qdrant neo4j ollama \
             --wait --wait-timeout 240
