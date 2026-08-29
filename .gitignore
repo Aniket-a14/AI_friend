@@ -73,7 +73,7 @@ models/
 # Scratch & temporary research lexicons
 scratch/
 scripts/research/NRC-VAD-Lexicon/
-scripts/research/flooded_seeding_corpus.json
+_archive/research/flooded_seeding_corpus.json
 
 # Benchmarking & Research Results
 # (scripts/results/ is intentionally NOT ignored: README.md, docs/, and
@@ -93,6 +93,11 @@ evals_out/
 # kept locally as the evidentiary record the findings cite back to.
 /AUDIT.md
 /audit/
+
+# Local working checklist of open items across the repo, compiled in
+# conversation with the user -- a personal work-tracking scratch file, not
+# a document meant to ship or be reviewed. Same reasoning as /AUDIT.md above.
+/WHATS_LEFT.md
 
 # Live agent identity state (cognitive/identity.py's default when
 # IDENTITY_BASE_PATH is unset) -- a SQLite db plus the persona's own working

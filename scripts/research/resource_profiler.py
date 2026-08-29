@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 
-# Sovereign Mesh: Resource Consumption Profiler
+# Resource Consumption Profiler
 # Measures CPU and Memory footprint of the agentic mesh during active inference.
 
 
@@ -26,7 +26,7 @@ def get_docker_stats():
 
 
 def run_profiler(duration_sec=60):
-    print("\n🔋 --- Sovereign Mesh Resource Profiler ---")
+    print("\n🔋 --- Resource Profiler ---")
     print(f"Sampling interval: 5s | Duration: {duration_sec}s")
 
     all_snapshots = []

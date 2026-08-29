@@ -3,7 +3,7 @@ import json
 import nats
 import os
 
-# Sovereign Mesh: Human-Fidelity & Affective Realism Test
+# Human-Fidelity & Affective Realism Test
 # Designed for research papers focusing on Humane AI and Synthetic Cognition.
 # Measures the "Psychological Response" of the AI to emotional stimuli.
 
@@ -32,7 +32,7 @@ SCENARIOS = [
 
 
 async def run_human_fidelity_test():
-    print("\n💓 --- Sovereign Mesh: Human Fidelity Test (Tier-5) ---")
+    print("\n💓 --- Human Fidelity Test ---")
     print(
         "Goal: Measure affective synchronization, Paralinguistic Alignment, and Memory Saliency."
     )

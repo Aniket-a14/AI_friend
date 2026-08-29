@@ -56,15 +56,15 @@ export const CHANGELOG_DATA: ChangelogItem[] = [
   {
     version: "v6.5.0",
     date: "May 2026",
-    title: "HippoRAG Retrieval & Sovereign Mesh v3.5",
-    summary: "A HippoRAG-style personalized PageRank retrieval engine over a co-occurrence graph, Qdrant and Neo4j interconnected for graph-based spreading activation, and the Sovereign Mesh v3.5 architecture upgrade.",
+    title: "HippoRAG Retrieval & Mesh Architecture v3.5",
+    summary: "A HippoRAG-style personalized PageRank retrieval engine over a co-occurrence graph, Qdrant and Neo4j interconnected for graph-based spreading activation, and the mesh architecture's v3.5 upgrade.",
     status: "Released",
     tags: ["Core", "Memory", "Benchmarks"],
     highlights: [
       "HippoRAG PPR engine with co-occurrence graph edges and conditional seeding, plus ACT-R degree-scaled spreading-activation boosts.",
       "Qdrant and Neo4j interconnected so spreading activation runs directly over the graph rather than vector similarity alone.",
       "Cognitive appraisal (heuristic appraisal, APRA v2, SQLite ACT-R activation loops) migrated to the Rust cognitive-rust extension.",
-      "Sovereign Mesh v3.5: layered memory, attentional interruption, and loopback security hardening.",
+      "Mesh architecture v3.5: layered memory, attentional interruption, and loopback security hardening.",
     ],
   },
   {

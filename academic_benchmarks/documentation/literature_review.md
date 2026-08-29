@@ -56,22 +56,32 @@ The comparative matrix below contrasts the cognitive humanoid brain of CVS-3.5 a
 
 ## 3. How to Populate the "Ours" Column
 
-To execute the physical benchmarking suite and dynamically populate the **Ours** column of the comparison matrix, follow the instructions in [walkthrough.md](./walkthrough.md):
+**This corpus-fitted suite was moved to `_archive/research/` during the
+2026-08-29 docs de-fabrication pass** — running it against a synthetic,
+procedurally-generated corpus and reporting the result as a benchmark
+comparison is exactly the pattern `CLAUDE.md`'s integrity constraints (finding
+B1) warn against, and it also compiled a fabricated academic-paper PDF. The
+commands below are kept for historical/reference purposes only; do not run
+them and present the output as a real result. Paths now live under
+`_archive/research/` (e.g. `_archive/research/hard_benchmark.py`), not
+`scripts/research/`. `reset_cognitive_db.py` is the one script here that
+stayed live at `scripts/research/reset_cognitive_db.py` — it's a generic DB
+reset utility, not part of the corpus-fitted cluster.
 
 ```bash
 # 1. Reset pgvector and Neo4j cognitive memory indexes
 python scripts/research/reset_cognitive_db.py
 
-# 2. Compile Aniket's 19-year life timeline (110,000 memories)
-python scripts/research/generate_seeding_corpus.py
+# 2. Compile a procedurally-generated life-timeline corpus (110,000 synthetic memories)
+python _archive/research/generate_seeding_corpus.py
 
-# 3. Run the rigorous physical live benchmarking suite seeding 100,000 distractors
-python scripts/research/hard_benchmark.py --mode physical --iterations 1000 --distractors 100000
+# 3. Run the archived benchmark suite against that synthetic corpus
+python _archive/research/hard_benchmark.py --mode physical --iterations 1000 --distractors 100000
 
 # 4. Or run subsequent conversational trials instantly (bypassing database seeding)
-python scripts/research/hard_benchmark.py --mode physical --iterations 1000 --skip-seed
+python _archive/research/hard_benchmark.py --mode physical --iterations 1000 --skip-seed
 ```
-Upon successful execution, the telemetry aggregates (Min, Mean, Median, Max, Jitter, p95, p99) are logged into `scripts/results/benchmark_results.json`, ready to be dropped into the LaTeX table drafts.
+For a real, non-corpus-fitted measurement instead, see `scripts/research/README.md` (`estimate_realtime_latency.py`, `human_realism_eval.py`) or `backend/tools/measure/`.
 
 ---
 

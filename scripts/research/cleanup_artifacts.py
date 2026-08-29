@@ -31,7 +31,6 @@ BENCHMARK_FILES_TO_REMOVE = [
     "benchmark_fidelity_audit.md.metadata.json",
     "walkthrough.md",
     "walkthrough.md.metadata.json",
-    "CVS-3.5_Mind_Benchmarking_Report.pdf",
 ]
 
 

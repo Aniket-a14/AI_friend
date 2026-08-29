@@ -199,7 +199,7 @@ export const REAL_MICRO_BENCHMARKS: MicroBenchmark[] = [
 export const HARDWARE_MATRIX = [
   {
     platform: "Google Colab / Cloud GPU (NVIDIA Tesla T4)",
-    profile: "Full Sovereign Mesh + Hermes 3 (8B)",
+    profile: "Full mesh + Hermes 3 (8B)",
     llmInference: "Hermes 3 8B (Ollama / CUDA)",
     voiceEngine: "GPT-SoVITS 32kHz (CUDA)",
     ttftMs: "61.9 ms (Measured)",

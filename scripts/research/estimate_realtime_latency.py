@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sovereign Mesh v3.5 Latency Profile Simulation Script.
+Mesh Latency Profile Simulation Script.
 Measures Tier 1 and Tier 2 database operations to verify sub-10ms latency SLOs.
 """
 
@@ -196,7 +196,7 @@ async def run_latency_profile():
     avg_dsp = np.mean(dsp_runs)
     p95_dsp = np.percentile(dsp_runs, 95)
 
-    # Viseme profiling removed to comply with CVS-3.5 core metrics (no physiological markers)
+    # Viseme profiling removed -- out of scope for physiological-marker metrics (no physiological markers)
 
     # Soft-attenuation volume ducking transition window simulation
     ducking_runs = []

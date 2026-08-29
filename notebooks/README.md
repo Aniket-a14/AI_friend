@@ -26,9 +26,10 @@ lists.
 
 This project has one other place that looks like it wants a Colab notebook
 and deliberately doesn't have one: `backend/tools/measure/` (the `m11`–`m17`
-pressure-scenario and latency harness) and `scripts/research/` (the academic
-benchmarking suite). Neither made the cut, and it's worth saying why rather
-than leaving it as an omission:
+pressure-scenario and latency harness) and the archived corpus-fitted
+benchmarking suite (`_archive/research/`, moved out of live `scripts/research/`
+during the 2026-08-29 docs de-fabrication pass). Neither made the cut, and
+it's worth saying why rather than leaving it as an omission:
 
 - **`backend/tools/measure/`** calls `ensure_bootstrapped()`, which runs the
   same schema/stream bootstrap a real deployment does — it needs Postgres,
@@ -40,15 +41,22 @@ than leaving it as an omission:
   outcome is worse than not having the notebook. If you need these numbers,
   run them locally per `CLAUDE.md`'s "Getting a reliable test count" section
   — that's still the source of truth for `m11`–`m17`.
-- **`scripts/research/`** (the `CVS-3.5 Cognitive & Physical Benchmarking
-  Suite`) is a *simulated* cognitive engine (`cognitive_engine.py` — random
+- **`_archive/research/`** (the old academic benchmarking suite) is built
+  around a *simulated* cognitive engine (`cognitive_engine.py` — random
   procedural chitchat templates and closed-form math, not a real LLM call)
   layered on the same full Docker mesh requirement as above. Porting it to
   Colab wouldn't make it a real measurement; it would make a simulation
   look more official by association. `CLAUDE.md`'s integrity constraints
   section is explicit that this repo's documented benchmark numbers are
   placeholders until measured against real infrastructure, and that
-  discipline applies here too — a Colab badge is not the fix for that.
+  discipline applies here too — a Colab badge is not the fix for that. This
+  is also why the suite was archived out of live `scripts/research/`
+  entirely, not just left uncovered by a notebook: it also compiled a
+  fabricated academic-paper PDF comparing itself against named real systems.
+  The real, live measurement tools (`monitor.py`, `collector.py`,
+  `injector.py`, `visualizer.py`, `human_realism_eval.py`,
+  `estimate_realtime_latency.py`) stayed in `scripts/research/` — see its
+  README.
 - **QLoRA / fine-tuned-adapter training (CVS-4)** is explicitly listed under
   the roadmap's "Explicitly not doing" section — `Fine-tuned models / QLoRA
   / CVS-4 consolidation. Roadmap-only, and the whole point of "generic

@@ -13174,3 +13174,135 @@ where they appear deliberately, as the named examples in its own
   were not re-audited for the same fabrication pattern -- out of scope for
   this pass, which was the nine files the earlier ledger entry named
   specifically.
+
+## 2026-08-29 -- scripts/research/ split: corpus-fitted fabrication suite
+## archived, real measurement tools kept live and de-branded; website's two
+## remaining mentions fixed
+
+Direct follow-up closing two items from the previous entry's NOT-done list.
+
+**Website (small): two files, four lines.** `website/lib/changelog-data.ts`
+(a historical `v6.5.0` changelog entry's title/summary/highlight) and
+`website/lib/benchmark-data.ts` (a live hardware-matrix profile label) both
+said "Sovereign Mesh" -- de-branded to "mesh architecture" / "the mesh"
+respectively, keeping the changelog entry's historical accuracy intact
+(the version and date are real, per `git tag`). Verified: `npx tsc --noEmit`
+clean, no new errors. `website/content/docs/*.md` (23 files) were re-checked
+and confirmed already clean -- an earlier grep result that looked like 23
+matching files was actually a `find` file listing misread as `grep` output;
+corrected before doing anything to those files.
+
+**`scripts/research/`: found to be a much deeper problem than branding,
+split rather than blanket-archived.** Investigating why the earlier
+`RESEARCH_GUIDE.md` fix (previous entry) had wrongly claimed 5 scripts
+didn't exist led to re-reading the whole directory (13 files, 5,406 lines).
+Two of those files (`extended_benchmarks_eval.py`, `cognitive_metrics_eval.py`)
+don't just carry branding -- they **generate a fabricated academic paper**:
+an abstract claiming validated humanoid-social-robotics performance against
+named real HRI/ROS2 systems, an NVIDIA Jetson AGX Orin deployment target, and
+specific "CVS-3.5 (Ours)" comparison numbers, compiled to a PDF via
+`reportlab`. `paper_results_guide.md` is that suite's methodology doc, citing
+target values as if achieved against SOTA baselines (Contriever/BGE-M3/
+HippoRAG/GPT-4o/Claude). `academic_benchmarks/documentation/experimental_
+methodology.md` already had this partly diagnosed and on record as finding
+B1 ("deliberately not run"), which is what made classification tractable
+here rather than a guess.
+
+Traced the actual dependency graph before moving anything, because a
+blanket move (the option initially chosen) would have broken real, already-
+cited evidence: `human_realism_eval.py` writes `human_realism_results.json`,
+which `docs/ARCHITECTURE.md`/`docs/ROBOTICS_ANALYSIS.md` cite for the real
+"5.44 ms sub-LLM pathway overhead" figure; `estimate_realtime_latency.py` is
+named directly in `academic_benchmarks/documentation/experimental_
+methodology.md` as the one script from this suite actually run for a real
+number. Archiving either would have orphaned a citation in already-fixed
+docs. Split instead, by tracing imports (`grep "^import\|^from"` across the
+whole directory) rather than assuming from filenames:
+
+- **Archived to `_archive/research/`** (git `mv`, history preserved):
+  `hard_benchmark.py`, `corpus_builder.py`, `generate_seeding_corpus.py`
+  (the synthetic-corpus generator chain), `cognitive_engine.py` (a
+  *simulated* cognitive engine -- confirmed only ever imported by
+  `hard_benchmark.py`), `cognitive_metrics_eval.py`,
+  `extended_benchmarks_eval.py`, `benchmark_visualizer.py` (confirmed reads
+  `benchmark_results.json`, the still-`"status": "TBP"` dataset, not
+  `human_realism_results.json`), `build_intent_cache.py` (confirmed: only
+  importer of `corpus_builder`, and itself unusable as shipped -- hardcoded
+  absolute paths to a different machine, `/Users/student/Desktop/...`,
+  nothing else imports it), and `paper_results_guide.md`.
+- **Kept live in `scripts/research/`, de-branded:** `monitor.py`,
+  `collector.py`, `injector.py`, `visualizer.py`, `estimate_realtime_
+  latency.py`, `human_realism_eval.py`, `resource_profiler.py`,
+  `human_fidelity_test.py`, `cleanup_artifacts.py` (one dead reference to
+  the now-archived PDF's filename removed), `reset_cognitive_db.py`,
+  `db_seeding.py`, `test_db_queries.py`, `metrics_eval.py` -- none of these
+  import anything now in `_archive/`, confirmed by re-grepping the live
+  directory's imports after the move, not assumed from the split plan.
+  `scripts/research/README.md` rewritten from scratch: a table of what each
+  real tool does and what it feeds, a real measurement-session walkthrough,
+  and a pointer to `backend/tools/measure/`/`backend/evals/` as the
+  provenance-tracked path for anything meant to back a documented claim.
+
+**Every cross-reference to the moved files updated, not left dangling** --
+the same discipline the `cvs4_architecture_roadmap.md` rename established:
+`academic_benchmarks/documentation/{experimental_methodology,
+literature_review,memory_seeding_literature_critique}.md` (paths repointed
+to `_archive/research/`, `literature_review.md`'s run commands additionally
+given an explicit "kept for reference, do not present the output as a real
+result" warning since they'd otherwise read as current instructions),
+`notebooks/README.md` (its own already-correct diagnosis of
+`cognitive_engine.py` as simulated, updated to the new path plus why the
+suite was archived, not just left uncovered by a notebook),
+`.gitignore` (`flooded_seeding_corpus.json`'s ignore rule repointed to
+`_archive/research/`, since that's where the script that produces it now
+lives; the NRC-VAD-Lexicon rule untouched -- `metrics_eval.py`, which uses
+it, stayed live). `README.md` (root) and `docs/RESEARCH_GUIDE.md` were
+checked and found to already name only the tools that stayed live --
+no change needed. `backend/app/state/working_memory_store.py` and its test
+were checked and found to cite `estimate_realtime_latency.py` specifically,
+which also stayed live -- no change needed there either.
+
+**A much larger, separate finding surfaced and deliberately not acted on
+this pass.** A final repo-wide grep for the branding markers (excluding
+`_archive/`, the ledger, `node_modules`, `.venv`) turned up 40+ live files
+still carrying "CVS-3.5"/"Sovereign Mesh"/"Tier-4"/"Tier-5" -- including
+**production backend source**, not just docs: `backend/main.py`'s FastAPI
+app is literally titled `"AI Friend Sovereign Mesh"` at `title=` and its
+`/status`-adjacent identity field says `"Sovereign Mesh Bridge"`; comments
+carrying the same pattern exist in `agents/base.py`, `cognitive/identity.py`,
+`state/agent_state.py`, and roughly two dozen other backend modules, plus
+`academic_benchmarks/documentation/`'s other five files (only three of
+eight were touched this pass, for the specific cross-reference reason
+above, not a full audit), `backend/README.md`, and
+`skills/sovereign-mesh-architect/SKILL.md`. This is a materially different
+scope than a docs pass -- it touches live application behavior (an HTTP
+response field, not just a comment) -- and was flagged rather than silently
+fixed or silently ignored; recorded in `WHATS_LEFT.md` for a scoping
+decision.
+
+**Verified.** `_archive/` is already excluded from `mypy`/`bandit` config
+(`backend/pyproject.toml`), so the move doesn't add new report-only
+findings. `ast.parse()` clean on every live `scripts/research/*.py` file
+after editing. `ruff check` on the touched files surfaces only pre-existing,
+unrelated import-order findings (these files sit outside `backend/`'s
+`ruff check .` gate scope entirely, confirmed, not a regression introduced
+here). `tests/test_working_memory_store.py` (the one backend test file
+citing this directory): 5 passed, 0 failures. `npx tsc --noEmit` clean on
+the website changes. No live `scripts/research/*.py` file imports anything
+now under `_archive/research/`, confirmed by grep after the move, not
+assumed from the plan.
+
+**NOT done:**
+- The 40+-file production-code branding finding above -- flagged, not
+  fixed, pending a scoping decision (it's a different kind of change than
+  a docs pass: `backend/main.py`'s app title is live-served, not prose).
+- `academic_benchmarks/documentation/`'s other five files (`academic_sota_
+  benchmarks.md`, `literature_references.md`, `algorithms_equations.md`,
+  `sota_comparisons.md`, `novelty_contributions.md`, `frameworks_
+  infrastructure.md`, `walkthrough.md`) were not touched beyond the three
+  needing a path fix -- not audited for their own fabrication content.
+- `backend/README.md` and `skills/sovereign-mesh-architect/SKILL.md` --
+  named in the grep above, neither opened.
+- No CI/workflow file references any of the moved scripts (checked), so
+  nothing there needed updating -- but no workflow was actually re-run to
+  confirm.

@@ -7,11 +7,11 @@ import os
 
 async def run_monitor():
     """
-    Mesh Latency Monitor (CVS-3.5 Multimodal).
+    Mesh Latency Monitor (Multimodal).
     Subscribes to input, output, and perceptual subjects to calculate precise
     cognitive turnaround and multimodal jitter.
     """
-    print("\n📡 Sovereign Mesh Research Monitor (Tier-4/5) online...")
+    print("\n📡 Mesh Research Monitor online...")
     nats_url = os.getenv("NATS_URL", "nats://127.0.0.1:4222")
     nc = await nats.connect(nats_url)
 

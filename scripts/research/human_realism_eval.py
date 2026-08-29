@@ -381,8 +381,8 @@ def module1_computational_footprint():
     }
     e2e_pathway_ms = sum(latencies.values())
 
-    print(f"  Total CVS-3.5 Memory Footprint: {total_ram:.2f} MB")
-    print(f"  Total CVS-3.5 Average CPU Load: {total_cpu:.2f}%")
+    print(f"  Total Memory Footprint: {total_ram:.2f} MB")
+    print(f"  Total Average CPU Load: {total_cpu:.2f}%")
     print(
         f"  End-to-End Cognitive Pathway Latency: {e2e_pathway_ms:.3f} ms (Budget: 15.0 ms)"
     )
@@ -433,10 +433,10 @@ def module2_perception_knowledge():
     ]
 
     print(
-        f"  CVS-3.5 Cached Traversal Depth 1-hop: {cvs_cached_latencies[0]:.3f} ms | 3-hop: {cvs_cached_latencies[2]:.3f} ms"
+        f"  Cached Traversal Depth 1-hop: {cvs_cached_latencies[0]:.3f} ms | 3-hop: {cvs_cached_latencies[2]:.3f} ms"
     )
     print(
-        f"  CVS-3.5 Physical Uncached Traversal 1-hop: {cvs_uncached_latencies[0]:.3f} ms | 3-hop: {cvs_uncached_latencies[2]:.3f} ms"
+        f"  Physical Uncached Traversal 1-hop: {cvs_uncached_latencies[0]:.3f} ms | 3-hop: {cvs_uncached_latencies[2]:.3f} ms"
     )
     print(
         f"  Standard DB Traversal Depth  1-hop: {standard_db_latencies[0]:.3f} ms | 3-hop: {standard_db_latencies[2]:.3f} ms"
@@ -716,7 +716,7 @@ def module4_physiological_entrainment(cognitive_data):
     }
 
     print(
-        f"  Paralinguistic Sentiment Mapping Precision (CVS-3.5): {paralinguistic_metrics['high_stress']['tag_precision'] * 100:.1f}%"
+        f"  Paralinguistic Sentiment Mapping Precision: {paralinguistic_metrics['high_stress']['tag_precision'] * 100:.1f}%"
     )
     print(
         f"  Industry Baseline Speech-Pipeline Tag Precision:      {paralinguistic_metrics['industry_baseline_standard_voice']['tag_precision'] * 100:.1f}%"
@@ -756,7 +756,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
         "Siri/Alexa\n(VAD) [2]",
         "Pepper/Furhat\n(Casc.) [1,7]",
         "SOTA VAP\n(Ekstedt) [4]",
-        "CVS-3.5\n(Ours)",
+        "This project",
     ]
     values_lat = [2100, 1000, 350, cvs_barge_in]
     colors_lat = ["#f8d7da", "#f8d7da", "#cce5ff", "#28a745"]
@@ -823,7 +823,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
         "Claude 3.5\n[13]",
         "GPT-4o\n[13]",
         "Standard LLM\n[9]",
-        "CVS-3.5\n(Ours)",
+        "This project",
     ]
     values_tom = [0.32, 0.28, 0.38, cvs_tom_mae]
     colors_tom = ["#f8d7da", "#f8d7da", "#f8d7da", "#28a745"]
@@ -862,7 +862,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
         linewidth=2.5,
         marker="o",
         markevery=max(1, len(iterations) // 8),
-        label="CVS-3.5 Speedup",
+        label="Speedup",
     )
     axes[2].set_ylabel("Speedup Ratio (x-times faster)", fontsize=10)
     axes[2].set_xlabel("Evaluation Pulses / Database Size", fontsize=10)
@@ -878,7 +878,7 @@ def generate_visualizations(comp_data, db_data, cog_data, phys_data):
 
 
 def main():
-    print("🚀 Starting AI Friend CVS-3.5 Human Realism & Paralinguistic Benchmarks...")
+    print("🚀 Starting AI Friend Human Realism & Paralinguistic Benchmarks...")
     create_directories()
 
     start_time = time.time()
@@ -895,7 +895,7 @@ def main():
 
     final_json = {
         "timestamp": datetime.now().isoformat(),
-        "platform": "AI Friend CVS-3.5 Sovereign Human-Realism Mesh",
+        "platform": "AI Friend Human-Realism Mesh",
         "benchmark_duration_seconds": round(elapsed, 4),
         "module1_computational_efficiency": m1_results,
         "module2_perception_knowledge_traversal": m2_results,

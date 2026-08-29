@@ -47,7 +47,7 @@ def generate_research_plots(csv_file=None):
 
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 14), sharex=True)
     fig.suptitle(
-        "Cognitive Affective Trajectory Benchmarking\n(Tier-5 Sovereign Mesh & Theory of Mind)",
+        "Cognitive Affective Trajectory Benchmarking\n(Theory of Mind)",
         fontsize=16,
         fontweight="bold",
         color="#2C3E50",
