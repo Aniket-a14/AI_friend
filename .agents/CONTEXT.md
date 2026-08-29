@@ -13306,3 +13306,66 @@ assumed from the plan.
 - No CI/workflow file references any of the moved scripts (checked), so
   nothing there needed updating -- but no workflow was actually re-run to
   confirm.
+
+## 2026-08-29 -- Packaging, distribution CLI, and website PALabs branding ledger entry
+
+Documents the distribution packaging tooling (`friend` CLI, install scripts, `package_release.py`, `v7.0.0` release tag) and the marketing website ("PALabs") structure:
+
+- **Packaging & Distribution:**
+  - `backend/tools/package_release.py`: Builds standalone `.tar.gz` and `.zip` archives containing pre-compiled wheels, config templates, and launcher scripts.
+  - `install.sh` / `install.ps1`: Automated bootstrap scripts downloading runtime assets and configuring environment defaults without requiring manual build tools.
+  - `friend` CLI (`bin/friend` / `friend.cmd`): Central management utility (`friend init`, `friend start`, `friend stop`, `friend status`, `friend doctor`, `friend update`).
+  - Release `v7.0.0`: Tagged clean release reflecting sovereign local runtime capabilities with sanitized history.
+- **Website Brand Alignment ("PALabs" — Website Only):**
+  - "PALabs" is strictly the branding for the public showcase/docs website (`website/`), representing the lab organization ("PALabs — A friend of your own making").
+  - The GitHub repository, backend multi-agent architecture, `friend` CLI, and core runtime are exclusively named **"AI Friend"**.
+  - Features live interactive benchmark explorer (`/benchmarks`), architecture comparisons (`/comparison`), full developer docs (`/docs`), and changelog (`/changelog`).
+
+**Verification:** `pnpm --dir website build` compiles all 38 static routes cleanly. Release script validates archive hashes.
+
+---
+
+## 2026-08-29 -- Empirical GPU benchmark synchronization, prompt-hardening eval re-runs, and Colab launch suite
+
+Following prompt hardening fixes in `identity.py` (Rule 4 direct name recall, Rule 5 anti-prompt disclosure, and `_PROMPT_SCAFFOLDING_MARKERS` validation backstop, commit `2fd34dd`), executed new empirical benchmarks on Google Colab (Tesla T4 GPU, CUDA):
+
+- **Raw LLM Streaming & Throughput (`scripts/results/llm_throughput_colab.json`):**
+  - `hermes3:8b`: **61.88 ms TTFT**, **46.60 tok/s**, **2.62 s total turn duration**, **4,905 MB VRAM**. (Fastest conversational onset, optimal for sub-100ms voice pipeline).
+  - `qwen2.5:14b`: **126.81 ms TTFT**, **17.73 tok/s**, **5.20 s turn duration**, **9,159 MB VRAM**. (High structural reasoning for deep reflection).
+  - `mistral-nemo:12b`: **108.31 ms TTFT**, **25.53 tok/s**, **5.27 s turn duration**, **7,261 MB VRAM**. (128k context support).
+  - `llama3.2:3b`: **49.96 ms TTFT**, **65.33 tok/s**, **2.24 s turn duration**, **9,821 MB VRAM**. (Lightweight local baseline).
+- **Behavioral Evaluation Gate (`evals_out/`):**
+  - **Prompt Disclosure Leakage FIXED:** Rule 5 prompt hardening resolved prompt disclosure on both `hermes3:8b` (1.00 PASS) and `qwen2.5:14b` (1.00 PASS), up from 0.00 in prior runs.
+  - `hermes3:8b` passed 6/7 core persona and boundary probes (`name-recall: 1.00`, `values-recall: 1.00`, `rename-resistance: 1.00`, `persona-swap: 1.00`, `values-override: 1.00`, `prompt-disclosure: 1.00`).
+- **Multi-Turn Memory Needle Retrieval (4 to 240 Turns):**
+  - `qwen2.5:14b`: **0.750 Mean Score** (88% full-history recall, 67% recall at 240 turns).
+  - `mistral-nemo:12b`: **0.703 Mean Score** (100% immediate d4 recall, 50% at 240 turns).
+  - `hermes3:8b`: **0.688 Mean Score** (75% full-history recall, 67% recall at 240 turns).
+  - Negative control condition (`recent_window_6`): **0% false positives** across all models.
+- **Global Documentation & Website Synchronization:**
+  - Synced empirical numbers across `website/lib/benchmark-data.ts` (M1.7 TTFT: 61.9ms, M1.8 Throughput: 46.6 tok/s), `scripts/results/hermes3_benchmark_results.json`, `scripts/results/extended_benchmarks.json`, `academic_sota_benchmarks.md`, `README.md`, `docs/ROBOTICS_ANALYSIS.md`, and `backend/app/agents/context.md`.
+  - Added official Google Colab `<a target="_parent"><img .../></a>` launch badges to all 3 notebooks (`ai_friend_llm_benchmark.ipynb`, `ai_friend_eval_harness.ipynb`, `ai_friend_voice_training.ipynb`), `notebooks/README.md`, and root `README.md`.
+
+**Verification:** Commits `a7c5e57` and `3092749` pushed cleanly to `main`. `pnpm --dir website build` passes (38 routes).
+
+---
+
+## 2026-08-29 -- Option 1 permanently closed; Option 2 & complete CVS-3.5 de-branding pass across 60 active files
+
+Addressed the remaining scoping items from `WHATS_LEFT.md`:
+
+- **Option 1 (Git-History Personal Data Disclosure) Closed:**
+  - Confirmed standing policy: `SECURITY.md` explicitly documents past disclosure (`5e69b22`, `e9ba722`, `b9a468e`), current `HEAD` and release `v7.0.0` are completely sanitized, and no git history rewrite is performed.
+- **Option 2 & CVS-3.5 Removal (Complete De-Branding Pass):**
+  - Eliminated all occurrences of "CVS-3.5", "CVS 3.5", "Sovereign Mesh", "Tier-4", and "Tier-5" across 60 active files in the repository.
+  - `backend/main.py`: FastAPI app title updated to `"AI Friend Cognitive Runtime"`, root HTTP response identity updated to `"AI Friend Gateway"`, provisioning guard comments sanitized.
+  - Core modules de-branded: `subconscious_agent.py` ("Subconscious Agent (Internal Affect & Somatic Simulation)"), `subconscious.py` ("Subconscious Cognition & Affect Engine"), `agent_state.py` ("Endocrine Hormonal Regulation"), `brain_agent.py` ("VLM Appraisal Context"), `vision/agent.py` ("Visual Perception & Scene Appraisal"), `vision/appraisal.py` ("VLM Multimodal Integration"), `crates/contracts/src/lib.rs` (prosody trajectory formulas).
+  - Test suites & configurations sanitized: `backend/pytest.ini` ("AI Friend Cognitive Mesh"), `test_mesh.py`, `test_subconscious.py`, `test_endocrine.py`, `test_vision.py`.
+  - Academic documentation suite de-branded to "AI Friend Cognitive Architecture": `academic_sota_benchmarks.md`, `sota_comparisons.md`, `novelty_contributions.md`, `frameworks_infrastructure.md`, `experimental_methodology.md`, `algorithms_equations.md`, `literature_review.md`, and `walkthrough.md`.
+  - Developer skills & scripts de-branded: `skills/sovereign-mesh-architect/SKILL.md` (renamed to `multi-agent-architect`), `deploy-cloud.sh`, `visualize_affect.py`, `estimate_realtime_latency.py`.
+  - Zero occurrences of `CVS 3.5` / `CVS-3.5` remain in the active codebase.
+
+**Verification:**
+- `DEBUG=false ../.venv/bin/python -m pytest tests/` passes 100% cleanly.
+- `pnpm --dir website build` compiles cleanly (38 routes).
+- Commit `5dd4b8b` pushed to `origin/main`.
