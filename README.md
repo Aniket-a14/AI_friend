@@ -12,6 +12,10 @@
 [![Docker Build](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-build.yml>)
 [![Docker Health](https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml/badge.svg)](<https://github.com/Aniket-a14/AI_friend/actions/workflows/docker-health.yml>)
 
+<p align="center">
+  <img src="assets/ai-friend.png" alt="AI Friend Interface Preview" width="100%" />
+</p>
+
 ---
 
 ## What this is
