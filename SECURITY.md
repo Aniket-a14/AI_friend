@@ -2,9 +2,10 @@
 
 ## Supported Versions
 
-There are no tagged releases yet — this project is developed on `main`.
-Security fixes land there and only there; there is no older version being
-separately maintained.
+Tagged releases exist (currently through `v7.0.0`), but security fixes land
+on `main` and only `main` — there is no separate backport policy, and older
+tagged releases are not patched independently. Run the latest tag or `main`
+to get a fix; an older release will not receive one in place.
 
 ## Privacy-first by design
 
@@ -20,6 +21,22 @@ separately maintained.
   an untrusted network without adding your own transport security (TLS,
   firewalling) in front of them; none of that is provided out of the box.
 - **No telemetry.** Nothing here phones home or collects conversation logs.
+
+## Known past disclosure
+
+`dist/ai-friend-runtime.tar.gz`/`.zip` (a packaged release bundle,
+tracked in git) briefly included the `personal/` directory —
+gitignored everywhere else in this repo specifically because it holds a
+real author's own persona and biography — across three commits
+(`5e69b22`, `e9ba722`, `b9a468e`, all 2026-08-28). Fixed forward in
+`450e467`: the packager no longer whitelists `personal/`, and a new
+`.distignore` guards against it recurring; the `v7.0.0` release (cut
+after the fix) does not carry it. The three leaking commits remain in
+`main`'s git history — a decision recorded here rather than silently
+left, not an oversight — so anyone with a full clone predating the
+fix, or who fetches full history rather than the current tree, can
+still reach the exposed data. Treat this the way any repo-history
+exposure should be treated: fixed going forward, not erased.
 
 ## Reporting a Vulnerability
 
