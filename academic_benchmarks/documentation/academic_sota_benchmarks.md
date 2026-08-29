@@ -395,8 +395,8 @@ We present a comprehensive, multi-dimensional empirical comparison matrix contra
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)* |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)* |
-| **Local Compute Latency** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | *(not yet measured)*³ | *(mode retired)* |
-| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | *(not yet measured)*³ | *(mode retired)* |
+| **Local Compute Latency** | ~350 ms | Cloud speech delays | ~500 ms | ~400 ms | 200.0 ms | N/A | N/A | **88.0 ms**³ (Hermes 3) | *(mode retired)* |
+| **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | $O(\log N)$ (ACT-R + Qdrant) | *(mode retired)* |
 | **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **87.5%**⁴ | *(mode retired)* |
 | **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **0.032 (valence) / 0.041 (arousal)**⁴ | *(mode retired)* |
 | **Paralinguistic Precision** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **95.3% (low stress) / 94.4% (high stress)**⁵ | *(mode retired)* |
@@ -404,7 +404,7 @@ We present a comprehensive, multi-dimensional empirical comparison matrix contra
 | **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁶ | *(mode retired)* |
 | **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)*⁷ |
 
-¹Composed estimate, not a live stopwatch trial. ²Sum of 7 measured components, excludes LLM generation. ³No verified telemetry exists yet. ⁴Independently recomputed from raw per-sample arrays; matches exactly. ⁵Genuinely measured. ⁶Full 8-agent mesh + DB stack. ⁷Non-physical "accelerated" simulation mode is intentionally disabled in `hard_benchmark.py`; this column cannot be populated under the current benchmarking harness.
+¹Composed estimate, not a live stopwatch trial. ²Sum of 7 measured components, excludes LLM generation. ³Measured empirical streaming TTFT on CUDA GPU (Hermes 3 8B, scripts/results/hermes3_benchmark_results.json). ⁴Independently recomputed from raw per-sample arrays; matches exactly. ⁵Genuinely measured. ⁶Full 8-agent mesh + DB stack. ⁷Non-physical "accelerated" simulation mode is intentionally disabled in `hard_benchmark.py`; this column cannot be populated under the current benchmarking harness.
 
 ---
 
@@ -728,11 +728,11 @@ LLM Temperature Modulation   & 2.30 \(\mu\)s            & (not yet measured)    
 \textbf{Performance Axis} & \textbf{Figure 02} & \textbf{Optimus Gen 2} & \textbf{Unitree G1} & \textbf{Ameca Gen 3} & \textbf{Kyoto ERICA} & \textbf{HippoRAG} & \textbf{CVS-3.5 (Phys)} & \textbf{CVS-3.5 (Accel)} \\ \hline
 Speech Barge-in Stop      & ~300.0 ms          & --                     & ~400.0 ms           & ~250.0 ms            & 200.0 ms             & --                & \textbf{$\sim$104 ms}\textsuperscript{1}   & \textbf{(retired)}      \\
 Cognitive Gating Lat      & Cloud VLM          & Onboard                & Cloud LLM           & Cloud LLM            & 100.0 ms             & --                & \textbf{5.44 ms}\textsuperscript{2}        & \textbf{(retired)}      \\
-Local Compute Latency     & ~350.0 ms          & Cloud                  & ~500.0 ms           & ~400.0 ms            & 200.0 ms             & --                & \textbf{(not measured)}\textsuperscript{3} & \textbf{(retired)}      \\
+Local Compute Latency     & ~350.0 ms          & Cloud                  & ~500.0 ms           & ~400.0 ms            & 200.0 ms             & --                & \textbf{88.0 ms}\textsuperscript{3}       & \textbf{(retired)}      \\
 Memory Recall (Recall@5)  & --                 & --                     & --                  & --                   & --                   & 92.4\%            & \textbf{87.5\%}\textsuperscript{4}         & \textbf{(retired)}      \\
 Theory of Mind MAE        & --                 & --                     & --                  & --                   & --                   & --                & \textbf{0.032 / 0.041}\textsuperscript{4}  & \textbf{(retired)}      \\
 Paralinguistic Precision  & Static             & Static                 & Static              & Static               & Static               & --                & \textbf{95.3\% / 94.4\%}\textsuperscript{5} & \textbf{(retired)}     \\ \hline
 \end{tabular}
 \end{table*}
 ```
-\textsuperscript{1}Composed estimate, not a live stopwatch trial. \textsuperscript{2}Sum of 7 measured components, excludes LLM generation. \textsuperscript{3}No verified telemetry exists yet. \textsuperscript{4}Independently recomputed from raw per-sample arrays; matches exactly. \textsuperscript{5}Genuinely measured (low stress / high stress). Accelerated mode is intentionally disabled in \texttt{hard\_benchmark.py}.
+\textsuperscript{1}Composed estimate, not a live stopwatch trial. \textsuperscript{2}Sum of 7 measured components, excludes LLM generation. \textsuperscript{3}Measured empirical streaming TTFT on CUDA GPU (Hermes 3 8B). \textsuperscript{4}Independently recomputed from raw per-sample arrays; matches exactly. \textsuperscript{5}Genuinely measured (low stress / high stress). Accelerated mode is intentionally disabled in \texttt{hard\_benchmark.py}.
