@@ -346,7 +346,7 @@ pub fn vad_to_prosody(affect: Option<&ChatOutputAffect>) -> Prosody {
         (0.0, 0.0) // baseline
     };
 
-    // Continuous formulas from CVS-3.5 Roadmap
+    // Continuous formulas for prosody trajectory calculation
     // Sr = 1.0 + tanh(0.20 * arousal - 0.10 * valence - fatigue_slow)
     let rate_input = (0.20 * affect.arousal) - (0.10 * affect.valence) - fatigue_slow;
     let rate = 1.0 + rate_input.tanh();

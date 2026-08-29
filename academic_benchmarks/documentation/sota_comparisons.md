@@ -1,20 +1,20 @@
 # 📊 SOTA Comparisons & Empirical Performance Matrix
 
-This document provides a highly rigorous, multi-dimensional empirical comparison matrix contrasting the **AI Friend CVS-3.5 Sovereign Mesh** against standard humanoid robot platforms and traditional academic architectures. It serves as a drop-in asset for the **Experimental Results and Evaluation** section of an academic manuscript.
+This document provides a highly rigorous, multi-dimensional empirical comparison matrix contrasting the **AI Friend Multi-Agent Architecture (AI Friend)** against standard humanoid robot platforms and traditional academic architectures. It serves as a drop-in asset for the **Experimental Results and Evaluation** section of an academic manuscript.
 
 > [!NOTE]
-> **Scope of Current Development**: The CVS-3.5 architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. Therefore, all mathematical formulations, evaluations, and comparisons focus exclusively on the cognitive, conversational, and edge computational metrics of the humanoid brain.
+> **Scope of Current Development**: The AI Friend architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. Therefore, all mathematical formulations, evaluations, and comparisons focus exclusively on the cognitive, conversational, and edge computational metrics of the humanoid brain.
 
 ---
 
 ## 1. Master SOTA Comparative Matrix
 
-The comparative matrix below evaluates **CVS-3.5** against 6 state-of-the-art and legacy conversational and mobile robotics platforms across 8 core metrics.
+The comparative matrix below evaluates **AI Friend** against 6 state-of-the-art and legacy conversational and mobile robotics platforms across 8 core metrics.
 
 > [!NOTE]
 > The "Ours" columns below were independently re-derived from the raw per-sample telemetry in `scripts/results/*.json` (not trusted at face value) — see `scripts/results/benchmark_results_summary.md` for the full verification notes, including two numbers that were previously mislabeled/fabricated and have since been corrected or retracted. **Not every figure is a raw stopwatch measurement**: some (marked ¹²) are *composed estimates* summing independently measured sub-components rather than live end-to-end trials, and some (marked ⁴) are aggregates *independently recomputed* from raw per-sample arrays rather than newly measured — see the per-metric footnotes below the matrix for the provenance class of each value. Accelerated (non-physical) benchmarking mode is intentionally disabled in `hard_benchmark.py`, so that column cannot be populated under the current harness.
 
-| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
+| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: AI Friend (Physical)** | **Ours: AI Friend (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)* |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)* |
@@ -33,15 +33,15 @@ The comparative matrix below evaluates **CVS-3.5** against 6 state-of-the-art an
 
 ## 2. Multi-Dimensional Performance Visualizations
 
-The radar and bar chart visualizations below demonstrate CVS-3.5's structural superiority over standard industrial HRI baselines.
+The radar and bar chart visualizations below demonstrate AI Friend's structural superiority over standard industrial HRI baselines.
 
 ### 2.1 Full-Spectrum Radar Comparison
-The radar chart contrasts overall architectural scores (latency, accuracy, memory recall, resource footprint, and interruption capabilities) showing that CVS-3.5 establishes a new pareto-frontier.
+The radar chart contrasts overall architectural scores (latency, accuracy, memory recall, resource footprint, and interruption capabilities) showing that AI Friend establishes a new pareto-frontier.
 
 ![8-Dimensional Sovereign Cognitive Mind Benchmarks](../../scripts/results/extended_benchmarks_radar.png)
 
 ### 2.2 Turn-Taking & Recall Baselines
-The bar charts evaluate CVS-3.5 against specific industry standards in speech response latency, emotion classification error, and context retrieval recall.
+The bar charts evaluate AI Friend against specific industry standards in speech response latency, emotion classification error, and context retrieval recall.
 
 ![Human-realism comparisons: turn-taking latency, ToM MAE, ACT-R retrieval speedup](../../scripts/results/human_realism_comparisons.png)
 
@@ -70,10 +70,10 @@ To prevent turn-taking bottlenecks, the sub-LLM pre-processing and emotional app
 
 ## 4. Neo4j Knowledge DB Traversal Speed
 
-CVS-3.5 bypasses standard exhaustive O(N) database traversals using unified graph constraints combined with an in-memory **Belief Cache**, achieving scale-invariant retrieval latencies across deep multi-hop semantic networks.
+AI Friend bypasses standard exhaustive O(N) database traversals using unified graph constraints combined with an in-memory **Belief Cache**, achieving scale-invariant retrieval latencies across deep multi-hop semantic networks.
 
 ### Table III: Multi-Hop Memory Retrieval Latency
-| Traversal Hop Depth | CVS-3.5 Cached (ms) | CVS-3.5 Uncached (ms) | Standard Database (ms) | Performance Speedup |
+| Traversal Hop Depth | AI Friend Cached (ms) | AI Friend Uncached (ms) | Standard Database (ms) | Performance Speedup |
 | :---: | :---: | :---: | :---: | :---: |
 | **1-Hop** | **0.164 ms**⁸ | **0.485 ms**⁹ | 8.50 ms | *(see note)* |
 | **2-Hop** | **0.181 ms**⁸ | **0.578 ms**⁹ | 24.20 ms | *(see note)* |
@@ -91,7 +91,7 @@ CVS-3.5 bypasses standard exhaustive O(N) database traversals using unified grap
 Dynamic vocal filler insertion rates (`Words/Turn`) and acoustic markup parsing accuracies are audited under low and high stress scenarios:
 
 ### Table IV: Vocal Prosody Accuracies
-| State Scenario | CVS-3.5 Tag Precision | Filler Rate (Words/Turn) | Associated Generated Tags |
+| State Scenario | AI Friend Tag Precision | Filler Rate (Words/Turn) | Associated Generated Tags |
 | :--- | :---: | :---: | :--- |
 | **Low Stress / Calm** | **95.3%** | 0.12 | `[laughs]`, `[nods]` |
 | **High Stress / Threat** | **94.4%** | 0.42 | `[sighs]`, `[clears throat]`, `[voice cracks]` |
@@ -102,15 +102,15 @@ Dynamic vocal filler insertion rates (`Words/Turn`) and acoustic markup parsing 
 ## 6. Detailed Academic Discussion of Metrics
 
 ### 6.1 Conversational Turn-Taking and Interruption (Barge-in)
-Prior cascaded turn-taking architectures suffer from turn gaps between $700\text{ ms}$ and $2500\text{ ms}$ due to silence-timeout voice activity detection (VAD). In contrast, CVS-3.5 implements a parallelized **System 1 VAD interrupt hook** operating directly on the DSP audio buffer. Under a composed latency estimate (100ms audio-buffer assumption + measured NATS RTT + DSP + ducking — not yet a live end-to-end stopwatch trial), CVS-3.5 stops vocal playback within **~104 ms** of user speech onset, which is below the human turn-taking transition threshold of $200.0\text{ ms}$ (*Stivers et al., 2009*).
+Prior cascaded turn-taking architectures suffer from turn gaps between $700\text{ ms}$ and $2500\text{ ms}$ due to silence-timeout voice activity detection (VAD). In contrast, AI Friend implements a parallelized **System 1 VAD interrupt hook** operating directly on the DSP audio buffer. Under a composed latency estimate (100ms audio-buffer assumption + measured NATS RTT + DSP + ducking — not yet a live end-to-end stopwatch trial), AI Friend stops vocal playback within **~104 ms** of user speech onset, which is below the human turn-taking transition threshold of $200.0\text{ ms}$ (*Stivers et al., 2009*).
 
 ### 6.2 Goal and Affect Classification Accuracy
 The classification accuracy of intent and goals under synthetic stress is plotted in the confusion matrices below:
 
-![Intent classification confusion matrices: industry baseline vs. AI Friend CVS-3.5 Sovereign Mesh](../../scripts/results/cognitive_confusion_matrix.png)
+![Intent classification confusion matrices: industry baseline vs. AI Friend Cognitive Architecture](../../scripts/results/cognitive_confusion_matrix.png)
 
-CVS-3.5 maintains **85.7%** classification accuracy (N=1000, independently recomputed from the raw ground-truth/prediction arrays) across dynamic intent mapping, vs. an 84.0% zero-shot LLM baseline on the same samples — a modest, not dramatic, margin; standard cascaded LLM configurations experience prompt drift and decline under rapid conversational state transitions, but this dataset does not directly measure that decline.
+AI Friend maintains **85.7%** classification accuracy (N=1000, independently recomputed from the raw ground-truth/prediction arrays) across dynamic intent mapping, vs. an 84.0% zero-shot LLM baseline on the same samples — a modest, not dramatic, margin; standard cascaded LLM configurations experience prompt drift and decline under rapid conversational state transitions, but this dataset does not directly measure that decline.
 
 ### 6.3 Memory Surfacing and Recall
 Standard RAG frameworks rely on static vector databases that are completely detached from conversational context, achieving low recall under dense loads. Under our neurobiologically inspired ACT-R graph architecture, episodic memories are dynamically weighted by **attentional weights, temporal power-law decay, and endocrine emotional congruence**.
-As a result, CVS-3.5 achieves an empirical **87.5% memory recall accuracy at Recall@5** (N=88 probes, independently recomputed and matching exactly) on dense graph search checks, resolving context omissions that lead to agentic confusion in legacy systems.
+As a result, AI Friend achieves an empirical **87.5% memory recall accuracy at Recall@5** (N=88 probes, independently recomputed and matching exactly) on dense graph search checks, resolving context omissions that lead to agentic confusion in legacy systems.

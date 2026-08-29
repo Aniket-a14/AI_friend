@@ -258,7 +258,7 @@ To support social scaling in shared environments (such as a multi-user household
 
 ## 🧠 6. Phase 6: Dual-Tier Edge Architecture & Live iMac M3 Benchmarking (N=100)
 
-To support natural social HRI (Human-Robot Interaction) under strict local compute constraints, CVS-3.5 establishes a **Dual-Tier Edge Model** that partition tasks based on cognitive latency budgets:
+To support natural social HRI (Human-Robot Interaction) under strict local compute constraints, AI Friend establishes a **Dual-Tier Edge Model** that partition tasks based on cognitive latency budgets:
 
 ### 6.1 Fast-Loop Turn-Taking Tier (`llama3.2:1b`)
 * **Role**: Real-time dialogue turn-taking, speculative micro-appraisals, and rapid barge-in interrupt arbitration.
@@ -291,9 +291,9 @@ Empirical performance profiling of the cognitive core running under GPU accelera
 
 ## 🏆 7. SOTA Comparative Benchmarking Matrix & Academic Mappings
 
-To establish rigorous scientific boundaries, CVS-3.5 is actively compared against the latest state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures:
+To establish rigorous scientific boundaries, AI Friend is actively compared against the latest state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures:
 
-| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [1] | SOTA Humanoid: Tesla Optimus Gen 2 [2] | Compact Humanoid: Unitree G1 [3] | SOTA Expressive: Ameca Gen 3 [4] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [6] | SOTA Embodied: ACT-R/E [7] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
+| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [1] | SOTA Humanoid: Tesla Optimus Gen 2 [2] | Compact Humanoid: Unitree G1 [3] | SOTA Expressive: Ameca Gen 3 [4] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [6] | SOTA Embodied: ACT-R/E [7] | **Ours: AI Friend (Physical)** | **Ours: AI Friend (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)*⁶ |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)*⁶ |
@@ -322,7 +322,7 @@ To establish rigorous scientific boundaries, CVS-3.5 is actively compared agains
 
 ## 🔊 8. Hybrid Brain Architecture (Native Speech features & Dynamic OLA Prosody)
 
-In CVS-3.5, the system incorporates three specialized messaging topics on the solid-state NATS bus to bridge System 1 raw voice sensors directly with System 2 symbolic reasoning:
+In AI Friend, the system incorporates three specialized messaging topics on the solid-state NATS bus to bridge System 1 raw voice sensors directly with System 2 symbolic reasoning:
 
 ### 8.1 user.voice.properties
 Emitted by the **STT Agent** (`backend/crates/stt-agent`) during raw PCM ingest:
@@ -361,7 +361,7 @@ The logged assistant message is truncated to at most $C$ characters while respec
 
 ## 🧠 10. Single-Engine Synthesis & Quality-Prioritized Look-Ahead
 
-CVS-3.5's voice agent renders every utterance through one self-hosted GPT-SoVITS
+AI Friend's voice agent renders every utterance through one self-hosted GPT-SoVITS
 endpoint — the cloned voice's identity lives permanently in its loaded weights
 (`CUSTOM_GPT_PATH`/`CUSTOM_SOVITS_PATH`), so there is nothing to select between
 at synthesis time.

@@ -197,7 +197,7 @@ class AgentState:
             except (ValueError, TypeError):
                 pass
 
-    # --- Endocrine Hormonal Properties (Tier-5 Physiological Control) ---
+    # --- Endocrine Hormonal Properties (Physiological Regulation) ---
     @staticmethod
     def _decayed(peak: float, released_at: float, half_life: float) -> float:
         """Exponential decay of a phasic burst from `peak` toward zero.
@@ -1548,7 +1548,7 @@ class StateService:
             "valence": self.current_state.mood,
             "arousal": self.current_state.arousal,
             "fatigue": self.current_state.fatigue,
-            # Endocrine hormones (Tier-5)
+            # Endocrine hormones (Somatic Regulation)
             "cortisol": self.current_state.cortisol,
             "dopamine": self.current_state.dopamine,
             # Theory of Mind snapshot — dict format

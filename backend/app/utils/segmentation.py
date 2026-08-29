@@ -5,7 +5,7 @@ logger = logging.getLogger(__name__)
 
 class HybridSegmenter:
     """
-    CVS-3.5 Semantic Chunking Logic.
+    AI Friend Semantic Chunking Logic.
     Uses punctuation cues and target chunk sizes to find natural speech boundaries.
     """
 

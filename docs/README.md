@@ -90,7 +90,7 @@ When updating docs:
 
 - Describe the real, current architecture accurately — no version branding,
   invented benchmark figures, or claims about capabilities that don't exist.
-  A prior pass through this folder found and fixed a "CVS-3.5 Premium
+  A prior pass through this folder found and fixed a "AI Friend Cognitive Architecture
   Edition" fabrication pattern (fake version numbers, an unmeasured "80,000
   OPS" throughput claim, comparisons to humanoid robots this project isn't) —
   don't reintroduce it.

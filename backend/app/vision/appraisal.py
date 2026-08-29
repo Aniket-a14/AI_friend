@@ -1,5 +1,5 @@
 """
-Visual Appraisal Service — Tier-4 VLM Integration.
+Visual Appraisal Service — VLM Multimodal Integration.
 
 Converts raw image frames into semantic descriptions via a Vision-Language Model.
 Rate-limited and cached to prevent excessive VLM calls on a laptop GPU.

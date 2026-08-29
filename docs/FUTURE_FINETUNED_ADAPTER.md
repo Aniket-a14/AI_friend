@@ -2,7 +2,7 @@
 
 > **Status: roadmap-only, unbuilt.** Nothing in this document is implemented.
 > The community roadmap's own "Explicitly not doing" list names this
-> explicitly: *"Fine-tuned models / QLoRA / CVS-4 consolidation. Roadmap-only,
+> explicitly: *"Fine-tuned models / QLoRA / Fine-Tuned Adapter consolidation. Roadmap-only,
 > and the whole point of 'generic models only' is that it works without
 > them."* This document was previously titled "AI Friend CVS v4.0" and
 > written as an approved specification ("Document Status: Approved for...

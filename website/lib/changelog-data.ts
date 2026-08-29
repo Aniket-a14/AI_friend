@@ -128,12 +128,12 @@ export const CHANGELOG_DATA: ChangelogItem[] = [
   {
     version: "v3.2.4",
     date: "April 2026",
-    title: "CVS-1.0: Solid State Mesh",
+    title: "AI Friend Core: Solid State Mesh",
     summary: "Zero-drift NATS micro-agent architecture: BaseAgent, BrainAgent, VoiceAgent, and Neo4j-backed cognitive memory, plus GPT-SoVITS voice cloning setup.",
     status: "Released",
     tags: ["Core", "Voice", "Memory", "Infrastructure"],
     highlights: [
-      "CVS-1.0 Solid State Mesh: zero-drift NATS-based micro-agent architecture with a shared BaseAgent.",
+      "AI Friend Core Solid State Mesh: zero-drift NATS-based micro-agent architecture with a shared BaseAgent.",
       "BrainAgent with semantic chunking; VoiceAgent with adaptive audio normalization and state-managed synthesis.",
       "Neo4j-backed cognitive memory and a SurfacingAgent for asynchronous long-term memory retrieval.",
       "GPT-SoVITS voice cloning setup, training documentation, and a voice-training notebook.",

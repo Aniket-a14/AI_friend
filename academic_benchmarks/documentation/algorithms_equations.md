@@ -1,6 +1,6 @@
 # 🧮 Mathematical Formulations & Algorithmic Specifications
 
-This document compiles the core mathematical formulations, system equations, and procedural algorithms driving the cognitive and sensory layers of **AI Friend CVS-3.5 (Cognitive Vocal System)**. It serves as a rigorous, publication-ready asset for the **Mathematical Methodology** and **Algorithmic Architecture** sections of academic publications.
+This document compiles the core mathematical formulations, system equations, and procedural algorithms driving the cognitive and sensory layers of **AI Friend (Cognitive Vocal System)**. It serves as a rigorous, publication-ready asset for the **Mathematical Methodology** and **Algorithmic Architecture** sections of academic publications.
 
 ---
 
@@ -69,7 +69,7 @@ RI = \begin{cases}
 
 ### 1.3 System 2 Deliberative Reappraisal & Semantic Mood Drift
 
-For deep semantic reasoning, CVS-3.5 runs an asynchronous deliberative reappraisal cycle. It queries the fast LLM to grade three dimensions on $[-1.0, 1.0]$: goal congruence ($gc$), norm alignment ($na$), and expectedness ($exp$). These values act as coordinates pulling the active 3D PAD emotional state via a drift coefficient $\eta = 0.2$:
+For deep semantic reasoning, AI Friend runs an asynchronous deliberative reappraisal cycle. It queries the fast LLM to grade three dimensions on $[-1.0, 1.0]$: goal congruence ($gc$), norm alignment ($na$), and expectedness ($exp$). These values act as coordinates pulling the active 3D PAD emotional state via a drift coefficient $\eta = 0.2$:
 
 ```math
 \vec{T}_{\text{PAD}} = \begin{bmatrix} gc \\ -exp \\ na \end{bmatrix}
@@ -85,7 +85,7 @@ The resulting coordinates are clamped to ensure psychological boundaries: Valenc
 
 ## 2. Continuous Internal State & Endocrine Dynamics
 
-CVS-3.5 maintains cognitive continuity through a multi-dimensional state vector updating on every appraisal trigger and evolving continuously during idle ticks.
+AI Friend maintains cognitive continuity through a multi-dimensional state vector updating on every appraisal trigger and evolving continuously during idle ticks.
 
 ### 2.1 PAD Affective Space Updates (Gebhard's ALMA Mood-Pull)
 
@@ -194,7 +194,7 @@ where $\Delta t$ is the silence duration in hours. Dominance remains stable as i
 
 ## 3. Behavior Tree Routing & Action Planning
 
-To structure execution flow and cognitive priorities, CVS-3.5 adopts a modular **Behavior Tree (BT)** framework. This separates high-level intention selection from low-level mechanical action execution.
+To structure execution flow and cognitive priorities, AI Friend adopts a modular **Behavior Tree (BT)** framework. This separates high-level intention selection from low-level mechanical action execution.
 
 ```
                   [RootSelector] (Selector)
@@ -318,7 +318,7 @@ A_i = \ln(n) - d \cdot \ln(t + 1.0) + 1.5 \cdot \text{Importance}_i + 0.15 \cdot
 
 ### 5.2 Attentional Spreading & Direct Cue Boost
 
-CVS-3.5 extends standard ACT-R with dynamic, real-time associative spreading activation:
+AI Friend extends standard ACT-R with dynamic, real-time associative spreading activation:
 
 *   **Direct Cue Boost:** If direct cues match key terms in the query text (e.g. *Kolkata*, *Bangalore*, *Priya*, *Rasgulla*, *Cognitive Architectures*, *Affective*), matching memories receive an instantaneous boost:
 
@@ -352,7 +352,7 @@ where $s = 0.05$ represents the stochastically scaled cognitive noise.
 
 ## 6. Acoustic Turn-Taking & Speculative Barge-in Gating
 
-CVS-3.5 manages low-latency, natural voice turn-taking through a dual-loop System 1 DSP hardware hook and System 2 semantic conflict resolver.
+AI Friend manages low-latency, natural voice turn-taking through a dual-loop System 1 DSP hardware hook and System 2 semantic conflict resolver.
 
 ### 6.1 System 1 DSP Audio Energy Detection
 
@@ -402,7 +402,7 @@ where $\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ represen
 
 ## 7. Voice Prosody & Acoustic Parameter Mapping (APRA v2)
 
-To express continuous cognitive and endocrine states paralinguistically, CVS-3.5 upgrades the voice modulation to a dynamic continuous frame-wise trajectory model (**APRA v2**). Instead of static sentence-level values, the internal Pleasure-Arousal-Dominance (PAD) affect values, fatigue metrics, and physical distance variables are mapped into continuous, time-varying functions representing acoustic prosody trajectory parameters (pacing speech rate, vocal pitch, and volume) across 50ms interval frames:
+To express continuous cognitive and endocrine states paralinguistically, AI Friend upgrades the voice modulation to a dynamic continuous frame-wise trajectory model (**APRA v2**). Instead of static sentence-level values, the internal Pleasure-Arousal-Dominance (PAD) affect values, fatigue metrics, and physical distance variables are mapped into continuous, time-varying functions representing acoustic prosody trajectory parameters (pacing speech rate, vocal pitch, and volume) across 50ms interval frames:
 
 ### 7.1 Speech Rate (Pacing) Trajectory Modulation
 
@@ -461,7 +461,7 @@ E(t) = \begin{cases}
 
 ## 8. Solid State Reflection & Memory Consolidation Pipeline
 
-To achieve continuous learning without real-time latency, CVS-3.5 offloads episodic and semantic synthesis to a decoupled background consolidation thread.
+To achieve continuous learning without real-time latency, AI Friend offloads episodic and semantic synthesis to a decoupled background consolidation thread.
 
 ```
        [Raw Dialog Events]

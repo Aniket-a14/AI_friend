@@ -11,7 +11,7 @@ Entry points:
     python -m evals compare evals/out/baseline.json evals/out/candidate.json
 
 See ``evals/README.md`` for what this measures, what it refuses to claim, and
-how the CVS-4 consolidation loop is expected to use it.
+how the Fine-Tuned Adapter consolidation loop is expected to use it.
 """
 
 from .compare import compare_reports, render_comparison

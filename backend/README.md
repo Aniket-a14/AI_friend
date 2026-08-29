@@ -1,8 +1,8 @@
-# AI Friend Backend: Sovereign Mesh Core 🧠🔊
+# AI Friend Backend: Multi-Agent Cognitive Core 🧠🔊
 
-The decentralized, high-performance core of the AI Friend platform. This service orchestrates a mesh of specialized micro-agents through a **NATS JetStream** event bus.
+The decentralized, high-performance core of the AI Friend platform. This service orchestrates a network of specialized micro-agents through a **NATS JetStream** event bus.
 
-## 🏗️ Architecture: Sovereign Mesh v3.5
+## 🏗️ Architecture: Multi-Agent Cognitive Mesh
 
 The backend has evolved from a monolith into a **distributed agent mesh**. Each capability is a dedicated agent running as an independent process or container.
 
@@ -92,4 +92,4 @@ pre-commit run --all-files
 - `tools/`: Dynamic tool registry for the Brain agent.
 
 ---
-**Standardized on Sovereign Mesh v3.5 Pattern.**
+**Standardized on Contract-First Multi-Agent Architecture.**

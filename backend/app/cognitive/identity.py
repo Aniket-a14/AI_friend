@@ -180,7 +180,7 @@ class IdentityManager:
         # Captured before the defaults below fill `history` in.
         self.first_boot = self._detect_first_boot()
 
-        # CVS-3.5: Ensure safe defaults for adaptive history
+        # AI Friend: Ensure safe defaults for adaptive history
         self.history.setdefault("relationship", "Friend")
         self.history.setdefault("memories", [])
 
@@ -234,7 +234,7 @@ class IdentityManager:
                 db_path=":memory:", publish_cb=publish_cb
             )
 
-        # CVS-3.5: Immutable Core Trait seeding
+        # AI Friend: Immutable Core Trait seeding
         self._refresh_immutable_core()
 
         # The adaptive-trait cap used to be re-implemented here as a `[-5:]`

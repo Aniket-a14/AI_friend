@@ -1,5 +1,5 @@
 """
-Comprehensive Unit & Integration Tests for CVS-1.0 stability, ACT-R consolidation,
+Comprehensive Unit & Integration Tests for AI Friend Core stability, ACT-R consolidation,
 neuromodulatory gating, dimensional trust, and dynamic LLM temperature features.
 """
 

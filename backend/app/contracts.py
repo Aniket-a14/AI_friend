@@ -1,5 +1,5 @@
 """
-NATS Mesh Message Contracts — CVS-3.5
+NATS Mesh Message Contracts — AI Friend
 
 Typed Pydantic models for every inter-agent message on the NATS bus.
 Using these at publish/subscribe boundaries catches key-rename and

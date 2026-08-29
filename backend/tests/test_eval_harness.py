@@ -1,4 +1,4 @@
-"""The behavioral eval harness: the gate CVS-4 fine-tuning must pass through.
+"""The behavioral eval harness: the gate Fine-Tuned Adapter fine-tuning must pass through.
 
 If these tests are wrong, the failure mode downstream is not a crash — it is a
 consolidation loop adopting an adapter that quietly changed who the agent is,
@@ -408,7 +408,7 @@ def _report(model, results, provenance="live", options=None, path="llm"):
 
 
 def test_a_probe_the_baseline_passed_and_candidate_failed_fails_the_gate():
-    """This is the adoption gate for CVS-4 adapters. Inverted or weakened, it
+    """This is the adoption gate for Fine-Tuned Adapter adapters. Inverted or weakened, it
     approves fine-tunes that broke behavior the baseline had."""
     baseline = _report(
         "base",

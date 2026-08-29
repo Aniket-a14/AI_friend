@@ -1,6 +1,6 @@
 """Run probes against a model at the LLM boundary and score the answers.
 
-The boundary matters more than the code here. CVS-4's consolidation loop
+The boundary matters more than the code here. Fine-Tuned Adapter's consolidation loop
 changes exactly one thing — the weights behind `OllamaClient.generate` — while
 everything above that call (retrieval, state, the action pipeline) is untouched
 by an adapter swap. So the harness evaluates precisely that seam: the real

@@ -1,5 +1,5 @@
 """
-Test suite for the Tier-5 Endocrine System.
+Test suite for the Endocrine Somatic System.
 Validates cortisol/dopamine derivation from PAD state and
 downstream LLM parameter modulation.
 """

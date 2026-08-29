@@ -108,7 +108,7 @@ into plots (headless matplotlib) for publication figures.
 `scripts/diagnostics/human_readable_benchmarks.py` also exists and can generate a readable summary of a benchmark run.
 
 **One thing worth knowing about all five research scripts above:** at time
-of writing they still carry the same "CVS-3.5 / Sovereign Mesh / Tier-4/5"
+of writing they still carry the same "AI Friend / Sovereign Mesh / Tier-4/5"
 branding this pass removed from the docs — e.g. `monitor.py`'s own print
 output says "Sovereign Mesh Research Monitor (Tier-4/5) online...". That
 cleanup wasn't done in this pass (scope was the nine `docs/*.md` files, not

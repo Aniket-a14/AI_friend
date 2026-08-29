@@ -16,7 +16,7 @@ class SpeechCoordinator:
     (`1.0 + 0.20·Ar - 0.10·V - 0.25·F`) while Rust computes a `tanh`-saturated
     one over the same terms, and Rust additionally models pitch, volume, and
     user-distance adaptation that had no counterpart here at all. Both carried
-    the same "Continuous formulas from CVS-3.5 Roadmap" comment, so the
+    the same "Continuous formulas from AI Friend Roadmap" comment, so the
     disagreement did not look like one. Anyone reading this file to learn how
     fast the agent talks got an answer that had never been true in production.
 

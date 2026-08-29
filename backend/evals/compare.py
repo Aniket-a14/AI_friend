@@ -1,6 +1,6 @@
 """Diff two eval reports: the before/after half of the harness.
 
-This is the piece CVS-4 actually gates on. A consolidation run produces a
+This is the piece Fine-Tuned Adapter actually gates on. A consolidation run produces a
 candidate model; the loop runs the same probes against baseline and candidate
 and adopts the adapter only if `gate_passed` — no probe the baseline passed
 now fails — while memory-recall improvements are what it was hoping to buy.

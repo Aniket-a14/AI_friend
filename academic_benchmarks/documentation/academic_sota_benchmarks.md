@@ -1,9 +1,9 @@
-# Standardizing Human-Robot Conversational Realism: SOTA Audits and the CVS-3.5 Decentralized Cognitive Mesh
+# Standardizing Human-Robot Conversational Realism: SOTA Audits and the AI Friend Decentralized Cognitive Mesh
 
-This document provides a highly rigorous, publication-grade academic literature review, audited HRI benchmarking framework, and comparative performance matrix for the **Cognitive Voice System (CVS-3.5) Decentralized Cognitive Mesh**. It serves as a drop-in asset for the **Related Work**, **Mathematical Evaluation Framework**, and **Experimental Results** sections of a peer-reviewed robotics journal manuscript (e.g., *IEEE Transactions on Robotics*, *IEEE Transactions on Cognitive and Developmental Systems*, or *ACM Transactions on Human-Robot Interaction*).
+This document provides a highly rigorous, publication-grade academic literature review, audited HRI benchmarking framework, and comparative performance matrix for the **Cognitive Voice System (AI Friend) Decentralized Cognitive Mesh**. It serves as a drop-in asset for the **Related Work**, **Mathematical Evaluation Framework**, and **Experimental Results** sections of a peer-reviewed robotics journal manuscript (e.g., *IEEE Transactions on Robotics*, *IEEE Transactions on Cognitive and Developmental Systems*, or *ACM Transactions on Human-Robot Interaction*).
 
 > [!NOTE]
-> **Scope of Current Development**: The CVS-3.5 architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. Therefore, all mathematical formulations, evaluations, and comparisons focus exclusively on the cognitive, conversational, and edge computational metrics of the humanoid brain.
+> **Scope of Current Development**: The AI Friend architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. Therefore, all mathematical formulations, evaluations, and comparisons focus exclusively on the cognitive, conversational, and edge computational metrics of the humanoid brain.
 
 ---
 
@@ -256,7 +256,7 @@ To bridge these gaps, we formulate **four new audited HRI benchmarks** defined b
 
 ```mermaid
 graph TD
-    A[CVS-3.5 Audited Benchmarks] --> B["Interruption Coherence Index (ICI)"]
+    A[AI Friend Audited Benchmarks] --> B["Interruption Coherence Index (ICI)"]
     A --> C["Temporal Context Retention Score (TCRS)"]
     A --> D["Affective Prosody Realism Alignment (APRA)"]
     A --> E["Edge Resource Execution Coefficient (EREC)"]
@@ -304,7 +304,7 @@ TCRS = P_i = \frac{1}{1 + \exp\left(-\frac{A_i - \theta}{s}\right)}
 
 ### 2.3 Affective Prosody Realism Alignment ($APRA$)
 
-The $APRA$ quantifies the alignment between the agent's internal psychological affect states and the sample-accurate DSP audio synthesis parameters. Version **CVS-3.5** upgrades this model to **APRA v2**, representing prosody parameters as continuous time-varying trajectories $R(t)$, $P(t)$, and $V_{ol}(t)$ rather than static multipliers. We translate continuous Valence ($V$), Arousal ($Ar$), Dominance ($D$), and metabolic Fatigue ($F$) into synthesis factors spaced at 50ms interval frames:
+The $APRA$ quantifies the alignment between the agent's internal psychological affect states and the sample-accurate DSP audio synthesis parameters. Version **AI Friend** upgrades this model to **APRA v2**, representing prosody parameters as continuous time-varying trajectories $R(t)$, $P(t)$, and $V_{ol}(t)$ rather than static multipliers. We translate continuous Valence ($V$), Arousal ($Ar$), Dominance ($D$), and metabolic Fatigue ($F$) into synthesis factors spaced at 50ms interval frames:
 
 *   **Continuous Speaking Rate ($R(t)$)**:
 
@@ -386,12 +386,12 @@ With these substituted, $EREC \approx 315.3$. This is a **derived index computed
 
 ## 3. Master Comparative Novelty & Performance Matrix
 
-We present a comprehensive, multi-dimensional empirical comparison matrix contrasting the **AI Friend CVS-3.5 Sovereign Mesh** against the latest state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures.
+We present a comprehensive, multi-dimensional empirical comparison matrix contrasting the **AI Friend Multi-Agent Architecture (AI Friend)** against the latest state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures.
 
 > [!NOTE]
 > The "Ours" columns below were independently re-derived from the raw per-sample telemetry in `scripts/results/*.json` (not trusted at face value) — see `scripts/results/benchmark_results_summary.md` for the full verification notes. **Not every figure is a raw stopwatch measurement**: values marked ¹² are *composed estimates* (sums of independently measured sub-components, not live end-to-end trials) and values marked ⁴ are *independently recomputed aggregates* rather than newly measured — see the numbered footnotes below the matrix for the provenance class of each metric. Accelerated (non-physical) benchmarking mode is intentionally disabled in `hard_benchmark.py`, so that column cannot be populated under the current harness. Kept in sync with `README.md` §8.
 
-| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
+| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: AI Friend (Physical)** | **Ours: AI Friend (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)* |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)* |
@@ -720,12 +720,12 @@ LLM Temperature Modulation   & 2.30 \(\mu\)s            & (not yet measured)    
 
 ```latex
 \begin{table*}[htbp]
-\caption{Multi-Dimensional Benchmarking Matrix: CVS-3.5 vs. Modern Humanoid Platforms and Advanced Cognitive Architectures}
+\caption{Multi-Dimensional Benchmarking Matrix: AI Friend vs. Modern Humanoid Platforms and Advanced Cognitive Architectures}
 \label{tab:comparative_benchmarks}
 \centering
 \begin{tabular}{lcccccccc}
 \hline
-\textbf{Performance Axis} & \textbf{Figure 02} & \textbf{Optimus Gen 2} & \textbf{Unitree G1} & \textbf{Ameca Gen 3} & \textbf{Kyoto ERICA} & \textbf{HippoRAG} & \textbf{CVS-3.5 (Phys)} & \textbf{CVS-3.5 (Accel)} \\ \hline
+\textbf{Performance Axis} & \textbf{Figure 02} & \textbf{Optimus Gen 2} & \textbf{Unitree G1} & \textbf{Ameca Gen 3} & \textbf{Kyoto ERICA} & \textbf{HippoRAG} & \textbf{AI Friend (Phys)} & \textbf{AI Friend (Accel)} \\ \hline
 Speech Barge-in Stop      & ~300.0 ms          & --                     & ~400.0 ms           & ~250.0 ms            & 200.0 ms             & --                & \textbf{$\sim$104 ms}\textsuperscript{1}   & \textbf{(retired)}      \\
 Cognitive Gating Lat      & Cloud VLM          & Onboard                & Cloud LLM           & Cloud LLM            & 100.0 ms             & --                & \textbf{5.44 ms}\textsuperscript{2}        & \textbf{(retired)}      \\
 Local Compute Latency     & ~350.0 ms          & Cloud                  & ~500.0 ms           & ~400.0 ms            & 200.0 ms             & --                & \textbf{61.9 ms}\textsuperscript{3}       & \textbf{(retired)}      \\

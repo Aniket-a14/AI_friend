@@ -1,5 +1,5 @@
 """
-Test suite for the Tier-5 Subconscious Engine.
+Test suite for the Subconscious Engine.
 Validates idle checking, internal thought generation, and routing to the BrainAgent.
 """
 

@@ -265,7 +265,7 @@ class SurfacingAgent(BaseAgent):
                 # Build a narrative episode from the enriched metadata
                 episode = self._build_episode_narrative(mem, now)
 
-                # Validate and publish via CVS-3.5 Contracts
+                # Validate and publish via AI Friend Contracts
                 surfaced_msg = MemorySurfaced(
                     memories=[
                         SurfacedMemory(

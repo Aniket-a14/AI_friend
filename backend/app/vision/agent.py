@@ -32,7 +32,7 @@ logger = logging.getLogger("vision_agent")
 
 class VisionAgent(BaseAgent):
     """
-    VisionAgent — Tier-4 Visual Intelligence.
+    VisionAgent — Visual Perception & Scene Appraisal.
     Captures visual context, runs VLM appraisal, and publishes
     both raw frames and semantic descriptions to the NATS mesh.
     """
@@ -47,7 +47,7 @@ class VisionAgent(BaseAgent):
         self.can_capture = False
         self.health_file = getattr(Config, "VISION_HEALTH_FILE", "")
 
-        # Tier-4: VLM Appraisal Pipeline
+        # VLM Appraisal Pipeline
         self.vlm_enabled = Config.VLM_ENABLED
         self.vlm_client = None
         self.appraisal = None
@@ -235,7 +235,7 @@ class VisionAgent(BaseAgent):
                         },
                     )
 
-                    # 4. Tier-4: VLM Appraisal (rate-limited internally)
+                    # 4. VLM Appraisal (rate-limited internally)
                     if self.vlm_enabled and self.appraisal:
                         await self._run_appraisal(frame_b64)
 

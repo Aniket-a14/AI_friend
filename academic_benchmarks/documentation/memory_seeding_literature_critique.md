@@ -1,6 +1,6 @@
 # 🔬 Literature Critique: Synthetic Lifespan Seeding & Cognitive Memory Benchmarks
 
-This document provides a highly rigorous, publication-grade academic critique evaluating the **CVS-3.5 Combinatorial Seeding Engine** against contemporary state-of-the-art literature in synthetic memory generation and long-horizon agent evaluation.
+This document provides a highly rigorous, publication-grade academic critique evaluating the **AI Friend Combinatorial Seeding Engine** against contemporary state-of-the-art literature in synthetic memory generation and long-horizon agent evaluation.
 
 Specifically, we compare our methodology to recent benchmarks:
 1. **EPBench (Episodic Memories Generation & Evaluation Benchmark)** (Huet et al., 2025) [35]
@@ -13,7 +13,7 @@ Specifically, we compare our methodology to recent benchmarks:
 
 Modern cognitive agent research has transitioned from session-locked execution to long-term autobiographical continuity. Testing this continuity requires massive memory spaces (100,000+ records) to stress-test retrieval precision and latency scaling ($O(\log M_{\text{active}})$).
 
-| Dimension | EPBench (Huet et al., 2025) [35] | KnowMeBench (Wu et al., 2026) [36] | Traditional Cognitive (ACT-R/E) [17] | **Ours: CVS-3.5 Redesigned Engine** |
+| Dimension | EPBench (Huet et al., 2025) [35] | KnowMeBench (Wu et al., 2026) [36] | Traditional Cognitive (ACT-R/E) [17] | **Ours: AI Friend Redesigned Engine** |
 | :--- | :--- | :--- | :--- | :--- |
 | **Generation Paradigm** | LLM-driven structured scenario-to-text generation. | Narrative compilation from daily person-centric logs. | Human participant logs or simple rule-based generation. | **Combinatorial Assembly Engine** (alternating templates). |
 | **Vocabulary Diversity** | High (LLM variations, semantic drift). | High (Natural conversation and journal entries). | Low/Moderate (Tightly constrained lexical dictionaries). | **High** (Zipfian Lexical Synonym Substitution, **>5,000+ unique words**). |
@@ -23,7 +23,7 @@ Modern cognitive agent research has transitioned from session-locked execution t
 
 ---
 
-## 2. Deep Critical Evaluation of CVS-3.5 Memory Seeding
+## 2. Deep Critical Evaluation of AI Friend Memory Seeding
 
 We critically evaluate our seeding architecture compared to biological cognitive memory and recent literature, highlighting the transition from the baseline gaps to our resolved implementation:
 

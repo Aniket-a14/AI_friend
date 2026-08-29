@@ -1,19 +1,19 @@
-# AI Friend CVS-3.5 Sovereign Mind Mesh — Academic Benchmarking Walkthrough
+# AI Friend Cognitive Architecture — Academic Benchmarking Walkthrough
 
 ## 📖 Introduction & System Overview
 
-This document serves as the comprehensive academic and technical walkthrough for the **AI Friend CVS-3.5 Sovereign Mind Mesh** (Rust Native & localized microservice architecture). The rigorous benchmarks documented here serve as the empirical validation for the double-column IEEE T-RO / IROS manuscript: *"Real-Time Adaptive Latency Hardening in Hybrid Social-Mesh Architectures for Humanoid Social Robots"*.
+This document serves as the comprehensive academic and technical walkthrough for the **AI Friend Cognitive Architecture** (Rust Native & localized microservice architecture). The rigorous benchmarks documented here serve as the empirical validation for the double-column IEEE T-RO / IROS manuscript: *"Real-Time Adaptive Latency Hardening in Hybrid Social-Mesh Architectures for Humanoid Social Robots"*.
 
 > [!NOTE]
-> **Scope of Current Development**: The CVS-3.5 architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. All mathematical formulations, evaluations, and comparisons focus exclusively on the cognitive, conversational, and edge computational metrics of the humanoid brain.
+> **Scope of Current Development**: The AI Friend architecture represents the **Humanoid Brain** (the cognitive and conversational core). Physical robotic mechanical integration (actuator kinematics, motor control, and body joints) is slated for a future phase. All mathematical formulations, evaluations, and comparisons focus exclusively on the cognitive, conversational, and edge computational metrics of the humanoid brain.
 
-CVS-3.5 introduces a state-of-the-art decentralized cognitive mesh operating on active endocrine simulation (endocrine state mapping), a custom ACT-R cognitive memory search layer, and localized Theory of Mind (ToM) user-affective estimation. This walkthrough details the empirical verification of these subsystems and documents the resolution of crucial stale-asset rendering bugs.
+AI Friend introduces a state-of-the-art decentralized cognitive mesh operating on active endocrine simulation (endocrine state mapping), a custom ACT-R cognitive memory search layer, and localized Theory of Mind (ToM) user-affective estimation. This walkthrough details the empirical verification of these subsystems and documents the resolution of crucial stale-asset rendering bugs.
 
 ---
 
 ## 🛠️ Defect Resolution: Stale Asset and Viewer Synchronization
 
-In previous benchmarking sessions, the user-facing visual plots and the compiled academic PDF report (`CVS-3.5_Mind_Benchmarking_Report.pdf`) displayed stale data or failed to reflect active script modifications in the conversational workspace.
+In previous benchmarking sessions, the user-facing visual plots and the compiled academic PDF report (`Mind_Benchmarking_Report.pdf`) displayed stale data or failed to reflect active script modifications in the conversational workspace.
 
 ### 1. Root Cause Diagnostics
 * **Blocked Terminal Execution (`plt.show()`)**: The visualizer scripts utilized `plt.show()` at the end of their execution. When run via terminal commands in the agent's sandbox, this triggered blocked GUI backend processes waiting for display rendering, causing background tasks to hang indefinitely and fail to complete.
@@ -34,7 +34,7 @@ The benchmarking framework was *designed* to separate validation into two distin
 
 ```mermaid
 graph TD
-    A[CVS-3.5 Verification Framework] --> B["1. Accelerated Simulation (disabled, never run)"]
+    A[AI Friend Verification Framework] --> B["1. Accelerated Simulation (disabled, never run)"]
     A --> C[2. Physical Real-Time Interaction]
 
     B --> B1["High-Throughput Trial (N=100,000 Iterations) — design target, not an executed run"]
@@ -64,11 +64,11 @@ graph TD
 
 ## 🏆 Master SOTA Comparative Novelty & Performance Matrix
 
-The complete, publication-grade comparison matrix (Table II in the formal report) compares **AI Friend CVS-3.5** against 7 state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures.
+The complete, publication-grade comparison matrix (Table II in the formal report) compares **AI Friend** against 7 state-of-the-art conversational humanoid robots, mechanical humanoids, and advanced software cognitive architectures.
 
 ### Table II: SOTA Comparative Matrix ($N = 1{,}000$ Physical Ticks)
 
-| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: CVS-3.5 (Physical)** | **Ours: CVS-3.5 (Accelerated)** |
+| Performance Axis | SOTA Humanoid: Figure 02 (In-House AI) [3,27] | SOTA Humanoid: Tesla Optimus Gen 2 [28] | Compact Humanoid: Unitree G1 [29] | SOTA Expressive: Ameca Gen 3 [12,30] | Kyoto Android: ERICA [5] | SOTA Graph Memory: AriGraph/HippoRAG [21] | SOTA Embodied: ACT-R/E [17] | **Ours: AI Friend (Physical)** | **Ours: AI Friend (Accelerated)** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Speech Barge-in Stop** | Cloud VLM Delay (~300ms) | N/A (Secondary audio) | Cloud VAD (~400ms) | Tritium Stream Buffer (~250ms) | 200.0 ms | N/A | N/A | **~104 ms**¹ | *(mode retired)* |
 | **Cognitive Gating Latency** | Cloud VLM reasoning | Onboard task planning | Cloud LLM reasoning | Cloud LLM reasoning | 100.0 ms | N/A | 50.0 ms | **5.44 ms**² | *(mode retired)* |
@@ -100,9 +100,9 @@ Incoming Turn -> [Audio Ingest: not yet measured] -> [Hybrid Segmenter: not yet 
 *Only ACT-R Memory Search has an isolated measured figure; the pathway as a whole (all measured components summed, excluding LLM generation) is 5.44 ms.*
 
 ### 2. Neo4j Knowledge DB Traversal Speed
-The custom cached graph traversal mechanisms in CVS-3.5 bypass typical O(N) database scans, exhibiting scale-invariant lookup latencies:
+The custom cached graph traversal mechanisms in AI Friend bypass typical O(N) database scans, exhibiting scale-invariant lookup latencies:
 
-| Traversal Hop Depth | CVS-3.5 Cached (ms) | CVS-3.5 Uncached (ms) | Standard Database (ms) | Performance Speedup |
+| Traversal Hop Depth | AI Friend Cached (ms) | AI Friend Uncached (ms) | Standard Database (ms) | Performance Speedup |
 | :---: | :---: | :---: | :---: | :---: |
 | **1-Hop** | **0.164 ms** | **0.485 ms** | 8.50 ms | *(see note)* |
 | **2-Hop** | **0.181 ms** | **0.578 ms** | 24.20 ms | *(see note)* |
@@ -115,12 +115,12 @@ The custom cached graph traversal mechanisms in CVS-3.5 bypass typical O(N) data
 
 ## 🧬 Paralinguistic & Affective Coupling Dynamics
 
-Under high-stress dialogue scenarios (e.g., threat detection), CVS-3.5's endocrine core dynamically couples the robot's simulated mood variables directly into expressive paralinguistic tag selection and Speech synthesis prosody rate, pitch, and volume envelopes.
+Under high-stress dialogue scenarios (e.g., threat detection), AI Friend's endocrine core dynamically couples the robot's simulated mood variables directly into expressive paralinguistic tag selection and Speech synthesis prosody rate, pitch, and volume envelopes.
 
 ### Paralinguistic Sentiment Insertion Accuracies
 Dynamic vocal filler insertion rate (`Words/Turn`) and tag mapping accuracies:
 
-| State Scenario | CVS-3.5 Tag Precision | Filler Rate (Words/Turn) | Associated Generated Tags |
+| State Scenario | AI Friend Tag Precision | Filler Rate (Words/Turn) | Associated Generated Tags |
 | :--- | :---: | :---: | :--- |
 | **Low Stress / Calm** | **95.3%** | 0.12 | `[laughs]`, `[nods]` |
 | **High Stress / Threat** | **94.4%** | 0.42 | `[sighs]`, `[clears throat]`, `[voice cracks]` |
@@ -163,7 +163,7 @@ The following carousels display the fully updated, dynamically synchronized visu
 
 All physical files generated, audited, and compiled during this verification round have been successfully mirrored in the active Brain folder:
 
-1. **Academic Publication PDF**: [CVS-3.5_Mind_Benchmarking_Report.pdf](../../scripts/results/CVS-3.5_Mind_Benchmarking_Report.pdf) (exactly 4 pages, double-column letter, includes running headers/footers, Table II SOTA Comparative Matrix, Table III Paralinguistics, and embedded visual charts). The prior link pointed at a stale, differently-versioned copy in `_archive/`; this points at the current verified report in `scripts/results/`.
+1. **Academic Publication PDF**: [Mind_Benchmarking_Report.pdf](../../scripts/results/Mind_Benchmarking_Report.pdf) (exactly 4 pages, double-column letter, includes running headers/footers, Table II SOTA Comparative Matrix, Table III Paralinguistics, and embedded visual charts). The prior link pointed at a stale, differently-versioned copy in `_archive/`; this points at the current verified report in `scripts/results/`.
 2. **Master SOTA Review**: [academic_sota_benchmarks.md](./academic_sota_benchmarks.md) (extensive review compiling 30 peer-reviewed paper references, LaTeX templates, and detailed BibTeX listings).
 3. **Core Telemetry JSON**: [benchmark_results.json](../../scripts/results/benchmark_results.json) (1,000-iteration physical run telemetry, N=88 recall probes).
 4. **Paralinguistic Telemetry JSON**: [human_realism_results.json](../../scripts/results/human_realism_results.json) (computational footprint, Neo4j traversals, and paralinguistic tag precision).

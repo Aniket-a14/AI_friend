@@ -34,7 +34,7 @@ def generate_vector(dim=768):
 
 async def run_latency_profile():
     print("======================================================================")
-    print("🧬  SOVEREIGN MESH V3.5 LATENCY PROFILE & SLO VERIFICATION RUNNER  🧬")
+    print("🧬  AI FRIEND AI Friend LATENCY PROFILE & SLO VERIFICATION RUNNER  🧬")
     print("======================================================================\n")
 
     # --- 1. IDENTITY CORE STORE BENCHMARK ---

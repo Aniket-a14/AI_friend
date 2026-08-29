@@ -45,12 +45,12 @@ class AIBackend:
 
     async def initialize(self):
         """Minimal initialization for signaling server with Provisioning Guard."""
-        logger.info("Initializing Sovereign Signaling Backend...")
+        logger.info("Initializing AI Friend Signaling Backend...")
 
-        # 1. CVS-3.5 Provisioning Guard (Solid State Mesh Requirement)
+        # 1. Provisioning Guard (Local Model Verification)
         try:
             ensure_models_provisioned()
-            logger.info("✅ Sensory Mesh models verified and locked.")
+            logger.info("✅ Core models verified and locked.")
         except Exception as e:
             logger.error(f"❌ Provisioning Guard Failure: {e}")
             # In a production identity system, we might halt boot here.
@@ -195,13 +195,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="AI Friend Sovereign Mesh",
-    description="Signaling and Control Hub for the Agentic Voice Mesh",
+    title="AI Friend Cognitive Runtime",
+    description="Signaling and Control Hub for AI Friend Multi-Agent Voice System",
     lifespan=lifespan,
     dependencies=[Depends(require_lan_client)],
 )
 
-# CORS Middleware (Sovereign Local Access)
+# CORS Middleware (Local Access)
 #
 # Credentials must never be combined with a wildcard origin. The CORS spec forbids
 # it, and Starlette reacts by reflecting back whichever Origin the caller sent —
@@ -278,7 +278,7 @@ if Config.ENVIRONMENT == "production":
 async def root():
     return {
         "status": "online",
-        "identity": "Sovereign Mesh Bridge",
+        "identity": "AI Friend Gateway",
         "ready": backend.is_ready,
     }
 

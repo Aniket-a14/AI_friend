@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 class SubconsciousEngine:
     """
-    Pure Logic Engine for Tier-5 Subconscious Thoughts.
+    Subconscious Cognition & Affect Engine.
     Decoupled from NATS and State Persistence.
     """
 

@@ -15,7 +15,7 @@ integrity constraints already flag that cluster's whole approach — running
 against a synthetic, procedurally-generated corpus and reporting the result
 as if measured against real data — as finding B1, and those tools were
 already documented as "deliberately not run." They also generated a
-fabricated academic-paper PDF (fake SOTA comparisons framed as "CVS-3.5
+fabricated academic-paper PDF (fake SOTA comparisons framed as "AI Friend
 (Ours)" beating named real systems) that had no place staying in live,
 user-facing tooling. See `_archive/research/` if you need the old code for
 reference.

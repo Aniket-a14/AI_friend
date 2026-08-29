@@ -507,7 +507,7 @@ class CognitiveService:
                 "surfaced_memories": self.surfaced_memories[-3:]
                 if self.surfaced_memories
                 else [],
-                # Tier-5 Endocrine: Inject hormonal state
+                # Endocrine Integration: Inject hormonal state
                 "cortisol": state_snapshot.get("cortisol", 0.5),
                 "dopamine": state_snapshot.get("dopamine", 0.0),
             },

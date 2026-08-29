@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class SubconsciousAgent(BaseAgent):
     """
-    Tier-5 Subconscious Agent.
+    Subconscious Agent (Internal Affect & Somatic Simulation).
     NATS wrapper for the SubconsciousEngine and solid-state memory consolidation.
     """
 

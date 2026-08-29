@@ -442,7 +442,7 @@ def pytest_configure(config):
 
 @pytest.fixture
 def mock_llm_service():
-    """Mock for OllamaClient (Hardened for CVS-1.0)"""
+    """Mock for OllamaClient (Hardened for AI Friend Core)"""
     client = MagicMock()
     # Support **kwargs in async mock
     client.generate = AsyncMock(
@@ -484,7 +484,7 @@ def mock_memory_store():
 
 @pytest.fixture(autouse=True)
 def enforce_test_config():
-    """CVS-1.0: Ensure deterministic configuration for cognitive tests."""
+    """AI Friend Core: Ensure deterministic configuration for cognitive tests."""
     from app.config import Config
 
     original_classifier = Config.LLM_INTENT_CLASSIFICATION_ENABLED

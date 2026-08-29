@@ -1,12 +1,12 @@
 # ⚙️ Frameworks, Infrastructure, and Edge Deployment
 
-This document describes the decentralized, containerized edge-native infrastructure and microservice mesh powering **AI Friend CVS-3.5**. It outlines the hardware specifications, active service footprints, and the real-time telemetry pipeline used for social robot orchestration.
+This document describes the decentralized, containerized edge-native infrastructure and microservice mesh powering **AI Friend**. It outlines the hardware specifications, active service footprints, and the real-time telemetry pipeline used for social robot orchestration.
 
 ---
 
-## 1. Sovereign Mesh Architecture & Microservice Deployment
+## 1. Multi-Agent Architecture & Microservice Deployment
 
-CVS-3.5 Premium Edition replaces traditional, heavyweight monolithic robotic architectures with a decentralized network of lightweight microservice containers. These containers communicate asynchronously via a **NATS Event Broker** JetStream pub-sub architecture hardened with high-availability parameters:
+The AI Friend cognitive architecture replaces traditional, heavyweight monolithic robotic architectures with a decentralized network of lightweight microservice containers. These containers communicate asynchronously via a **NATS Event Broker** JetStream pub-sub architecture hardened with high-availability parameters:
 *   `max_reconnect_attempts=-1`: Configured for infinite background reconnection retries to survive network blips.
 *   `reconnect_time_wait=2.0`: Employs a deterministic 2-second cooldown wait interval before executing successive reconnect sweeps.
 *   Registered asynchronous logging hooks (`disconnected_cb`, `reconnected_cb`, `error_cb`, and `closed_cb`) monitor stream health without blocking primary agent runtimes.
@@ -43,7 +43,7 @@ graph TD
 
 ## 2. Quantitative Edge Resource Footprint (iMac Host / AGX Orin Target)
 
-The table below catalogs the audited memory allocations, central processing unit (CPU) utilization percentages, and electrical power footprints of each component service in the CVS-3.5 mesh.
+The table below catalogs the audited memory allocations, central processing unit (CPU) utilization percentages, and electrical power footprints of each component service in the AI Friend mesh.
 
 **Four of the agent filenames below were wrong before this pass** (checked
 against `backend/app/agents/` during Stage 3, audit/ROADMAP.md §7): the real
@@ -96,7 +96,7 @@ NOT MEASURED rather than reporting an idle number under an "Active" label.
 
 ## 3. Physical Hardware Deployments
 
-The sovereign mesh has been fully verified and profiled across two primary low-power hardware configurations:
+The system architecture has been profiled across two primary low-power hardware configurations:
 
 ### 3.1 iMac / Desktop Development Host
 *   **Processor:** Apple M3 Chip (8 Cores: 4 performance, 4 efficiency).
@@ -116,7 +116,7 @@ The sovereign mesh has been fully verified and profiled across two primary low-p
 
 ## 4. Real-Time Telemetry & Asynchronous Background Consolidation
 
-To prevent live performance bottlenecks, CVS-3.5 divides its operations into a **Fast-Loop (System 1)** and a **Deep-Loop (System 2)**:
+To prevent live performance bottlenecks, AI Friend divides its operations into a **Fast-Loop (System 1)** and a **Deep-Loop (System 2)**:
 
 1.  **System 1 Fast-Loop (Turn-Taking / DSP):** Operates entirely inside the memory buffer and NATS network layers. It processes incoming audio, checks for voice interruptions, and halts TTS playback within **NOT MEASURED — no such halt exists yet**. `audit/ISSUES.md` finding M3-R1 (VERIFIED): `TransportAgent` has no subscriber for `audio.stop` at all, so nothing drains the audio already queued for playback when an interruption is requested; Stage 3 measurement 1.1 (`backend/tools/measure/m11_bargein.py`) measured the natural (unflushed) drain time instead — see the Stage 3 ledger entry in `.agents/CONTEXT.md` for the number and its caveats. The fix (P1-3) is gated on that measurement and not yet built.
 2.  **System 2 Deep-Loop (Cognitive Appraisal / Graph Traversal):** Initiates background NATS events to query Neo4j multi-hop memories and evaluate Hormonal/PAD transitions.
@@ -130,7 +130,7 @@ NOT MEASURED — no 90-second trial was run or plotted in this pass. The closest
 
 ## 5. Cross-Process Cache Synchronization (`cache.sync`)
 
-To ensure absolute dynamic state consistency across all concurrent dynamic agents, ASGI workers, and spawner runtimes, CVS-3.5 Premium integrates a high-performance cross-process cache synchronization mechanism:
+To ensure absolute dynamic state consistency across all concurrent dynamic agents, ASGI workers, and spawner runtimes, AI Friend Cognitive Architecture integrates a high-performance cross-process cache synchronization mechanism:
 
 1. **Static Store Mutation**: When identity or core variables are updated in SQLite via the `IdentityCoreStore` API, the database write triggers a cache synchronization event.
 2. **NATS Broadcast Invalidation**: A telemetry message containing the payload `{"store": "identity_core", "action": "invalidate"}` is published to the NATS JetStream `cache.sync` channel.

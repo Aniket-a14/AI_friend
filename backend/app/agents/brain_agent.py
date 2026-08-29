@@ -53,7 +53,7 @@ def _char_offset_after_word(text: str, word_count: int) -> int:
 
 class BrainAgent(BaseAgent):
     """
-    The Brain Agent (CVS-3.5 Edition).
+    The Brain Agent (AI Friend Edition).
     Orchestrator of Identity and Temporal Cognitive Flow.
     """
 
@@ -91,7 +91,7 @@ class BrainAgent(BaseAgent):
         self.last_user_distance = 1.0
         self.last_user_voice_properties: UserVoiceProperties | None = None
 
-        # CVS-3.5 Segmentation Config
+        # AI Friend Segmentation Config
         self.coordinator = SpeechCoordinator(
             segmenter=HybridSegmenter(target_size=7), formation_buffer_ms=0.030
         )
@@ -172,10 +172,10 @@ class BrainAgent(BaseAgent):
         )
         # Note: system.tick proactive engagement is now handled by SubconsciousAgent
 
-        logger.info(f"🧠 {self.name} Online | CVS-3.5 Cognitive Mesh Active.")
+        logger.info(f"🧠 {self.name} Online | AI Friend Cognitive Mesh Active.")
 
     async def _on_voice_feedback(self, data: dict[str, Any]):
-        """Adaptive Tuning Loop (CVS-3.5 alpha-damped loop)."""
+        """Adaptive Tuning Loop (AI Friend alpha-damped loop)."""
         target = data.get("target_chunk_size", 8)
         alpha = getattr(Config, "FEEDBACK_ALPHA", 0.7)
 
@@ -202,7 +202,7 @@ class BrainAgent(BaseAgent):
             self.last_visual_context = f"I am seeing the user's {source}."
 
     async def _on_vision_description(self, data: dict[str, Any]):
-        """Tier-4 VLM: Rich semantic visual context from the Visual Appraisal pipeline."""
+        """VLM: Rich semantic visual context from the Visual Appraisal pipeline."""
         description = data.get("description", "")
         source = data.get("source", "unknown")
         if description:
@@ -932,7 +932,7 @@ async def main():
         logger.info("[Brain] Running runtime bootstrap checks...")
         await bootstrap_runtime()
 
-    # 1. Initialize CVS-3.5 Foundation (Pool-based logic)
+    # 1. Initialize AI Friend Foundation (Pool-based logic)
     conversation_store = ConversationHistoryStore()
     await conversation_store.initialize()  # Creates the database pool
 

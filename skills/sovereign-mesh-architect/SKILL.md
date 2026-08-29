@@ -1,11 +1,11 @@
 ---
-name: sovereign-mesh-architect
-description: A high-fidelity development protocol and architectural framework for building and evolving the CVS-1.0 Sovereign Mesh. Enforces contract-first development, parallel codegen, local-first memory integrity, and physically-grounded embodied intelligence.
+name: multi-agent-architect
+description: A high-fidelity development protocol and architectural framework for building and evolving the AI Friend Multi-Agent System. Enforces contract-first development, parallel codegen, local-first memory integrity, and physically-grounded embodied intelligence.
 ---
 
-# Sovereign Mesh Architect
+# Multi-Agent Architect
 
-To maintain the absolute integrity of the Sovereign Mesh, all future development must adhere to a Contract-First, Test-Gated Protocol that treats the codebase as a collection of independent, deterministic modules. Every architectural change or feature implementation must begin at the interface level in `backend/app/contracts.py`, where Pydantic schemas serve as the non-negotiable "Source of Truth" for inter-agent communication. No module is permitted to cross the integration boundary until it passes an Evaluator Gate consisting of 100% successful regression tests, ensuring that new logic never corrupts the established p99 latency targets or identity continuity. By enforcing a strict Generator/Evaluator separation, we ensure that agents remain decoupled and localized, storing all data verbatim to avoid the "summarize-and-pray" anti-pattern. Finally, every development cycle must conclude with a mandatory update to the Agent Context Ledger, documenting any shifts in behavioral dynamics or mesh health to preserve a persistent, shared history of the system's evolution.
+To maintain the absolute integrity of the Multi-Agent System, all future development must adhere to a Contract-First, Test-Gated Protocol that treats the codebase as a collection of independent, deterministic modules. Every architectural change or feature implementation must begin at the interface level in `backend/app/contracts.py`, where Pydantic schemas serve as the non-negotiable "Source of Truth" for inter-agent communication. No module is permitted to cross the integration boundary until it passes an Evaluator Gate consisting of 100% successful regression tests, ensuring that new logic never corrupts the established p99 latency targets or identity continuity. By enforcing a strict Generator/Evaluator separation, we ensure that agents remain decoupled and localized, storing all data verbatim to avoid the "summarize-and-pray" anti-pattern. Finally, every development cycle must conclude with a mandatory update to the Agent Context Ledger, documenting any shifts in behavioral dynamics or mesh health to preserve a persistent, shared history of the system's evolution.
 
 ---
 

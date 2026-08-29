@@ -1,5 +1,5 @@
 """
-Sovereign Mesh v3.0 Test Suite
+Multi-Agent Cognitive Mesh Test Suite
 Tests for the decentralized micro-agent architecture.
 """
 

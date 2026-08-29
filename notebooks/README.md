@@ -57,9 +57,9 @@ it's worth saying why rather than leaving it as an omission:
   `injector.py`, `visualizer.py`, `human_realism_eval.py`,
   `estimate_realtime_latency.py`) stayed in `scripts/research/` — see its
   README.
-- **QLoRA / fine-tuned-adapter training (CVS-4)** is explicitly listed under
+- **QLoRA / fine-tuned-adapter training (Fine-Tuned Adapter)** is explicitly listed under
   the roadmap's "Explicitly not doing" section — `Fine-tuned models / QLoRA
-  / CVS-4 consolidation. Roadmap-only, and the whole point of "generic
+  / Fine-Tuned Adapter consolidation. Roadmap-only, and the whole point of "generic
   models only" is that it works without them.` No notebook for it here,
   on purpose, not because it was forgotten.
 

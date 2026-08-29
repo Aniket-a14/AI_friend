@@ -76,7 +76,7 @@ def _reconnect_delay_with_backoff(servers, _server_info):
 
 class BaseAgent:
     """
-    The blueprint for all CVS-3.5 Micro-Agents.
+    The blueprint for all AI Friend Micro-Agents.
     Communicates via NATS JetStream.
     """
 
@@ -214,7 +214,7 @@ class BaseAgent:
             logger.warning(f"Error handling cache sync: {e}")
 
     async def _bootstrap_mesh(self):
-        """Ensure core streams exist on the mesh (CVS-3.5 Hardened)."""
+        """Ensure core streams exist on the mesh (AI Friend Hardened)."""
         from ..nats_streams import (
             CORE_STREAMS,
             StreamReconciliationError,

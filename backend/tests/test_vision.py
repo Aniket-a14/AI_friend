@@ -1,5 +1,5 @@
 """
-Test suite for the Tier-4 Vision Intelligence Agent and Visual Appraisal Service.
+Test suite for the Vision Intelligence Agent and Visual Appraisal Service.
 Validates VLM appraisals, rate-limiting, source switching controls, and NATS emissions.
 """
 

@@ -1,6 +1,6 @@
 # 🔬 Experimental Methodology and Evaluation
 
-This document outlines the rigorous testing methodologies, pipeline routing chronologies, and verified run-time execution durations used to evaluate the **AI Friend CVS-3.5 Sovereign Mesh**. It provides publication-ready text for your manuscript's **Experimental Setup** and **Methodology** sections.
+This document outlines the rigorous testing methodologies, pipeline routing chronologies, and verified run-time execution durations used to evaluate the **AI Friend Cognitive Architecture**. It provides publication-ready text for your manuscript's **Experimental Setup** and **Methodology** sections.
 
 ---
 
@@ -10,7 +10,7 @@ To satisfy rigorous peer-review guidelines, our testing framework segregates sys
 
 ```mermaid
 graph TD
-    A[CVS-3.5 Verification Framework] --> B[1. Accelerated Simulation]
+    A[AI Friend Verification Framework] --> B[1. Accelerated Simulation]
     A --> C[2. Physical Real-Time Interaction]
 
     B --> B1["High-Throughput Trial (N=100,000 Iterations)"]

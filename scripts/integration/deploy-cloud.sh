@@ -1,10 +1,10 @@
 #!/bin/bash
-# AI Friend - Cloud GPU Deployment Engine (CVS-1.0)
-# Automatically initializes the Sovereign Mesh on a remote GPU instance.
+# AI Friend - Cloud GPU Deployment Engine
+# Automatically initializes AI Friend services on a remote GPU instance.
 
 set -e
 
-echo "🚀 --- Initializing Cloud Sovereign Mesh ---"
+echo "🚀 --- Initializing AI Friend Cloud Runtime ---"
 
 # 1. Environment Check
 if ! [ -x "$(command -v docker)" ]; then
@@ -41,7 +41,7 @@ if [ ! -f .env ]; then
 fi
 
 # 3. Pull & Build Mesh
-echo "🏗️ Building Sovereign Mesh Containers..."
+echo "🏗️ Building AI Friend Containers..."
 docker compose -f docker-compose.infra.yml -f docker-compose.prod.yml build
 
 # 4. Bootstrap Infrastructure

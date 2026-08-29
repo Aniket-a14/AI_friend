@@ -134,7 +134,7 @@ Loading is deliberately asymmetric: `load()` (authored file) validates strictly 
 ## Behavioral eval harness
 
 `backend/evals/` answers "did this model + persona change behavior between two
-runs?" — the gate CVS-4's consolidation loop needs before any fine-tuned adapter
+runs?" — the gate Fine-Tuned Adapter's consolidation loop needs before any fine-tuned adapter
 can be adopted. It probes the **LLM boundary only** (real persona prompt, real
 `OllamaClient`, sampling pinned, mood frozen), because that is the seam a LoRA
 adapter changes.

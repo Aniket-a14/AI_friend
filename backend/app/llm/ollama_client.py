@@ -24,7 +24,7 @@ _ROLE_PREFIX_RE = re.compile(r"(?im)^[ \t]*(system|assistant|user)\s*:\s*")
 
 class OllamaClient:
     """
-    Resilient Ollama Client for CVS-3.5.
+    Resilient Ollama Client for AI Friend.
     Implements Exponential Backoff with Jitter for high-load reliability.
     Uses httpx for unified async stack and connection pooling.
     """

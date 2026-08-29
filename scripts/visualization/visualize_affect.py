@@ -44,7 +44,7 @@ def plot_sample_pad_trajectory():
     )
 
     plt.title(
-        "Affective Trajectory: Tier-5 Sovereign Mesh", fontsize=14, fontweight="bold"
+        "Affective Trajectory: Somatic State Simulation", fontsize=14, fontweight="bold"
     )
     plt.xlabel("Time (Minutes)", fontsize=12)
     plt.ylabel("Coordinate Value (-1.0 to 1.0)", fontsize=12)

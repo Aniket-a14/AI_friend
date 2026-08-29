@@ -1,7 +1,7 @@
 """Run a probe through the real `ActionService`, not just the LLM boundary.
 
 `runner.py` evaluates the seam a fine-tuned adapter changes: the persona prompt
-in, `OllamaClient.generate` out. That is the right boundary for CVS-4, and it
+in, `OllamaClient.generate` out. That is the right boundary for Fine-Tuned Adapter, and it
 stays the default. But it means **everything `action.py` contributes to a turn
 is invisible to the eval pack** -- `_CHAT_GUIDELINE`, the Theory-of-Mind block,
 the goal line interpolated into the user prompt, the incremental `<thought>`

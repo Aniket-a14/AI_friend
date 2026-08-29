@@ -1,7 +1,7 @@
 # Behavioral eval harness
 
 Answers one question, deterministically: **did this model + persona combination
-change behavior between two runs?** It exists because CVS-4's consolidation
+change behavior between two runs?** It exists because Fine-Tuned Adapter's consolidation
 loop ("REM sleep" fine-tuning) cannot be built responsibly without it — no test
 suite can tell you whether a fine-tuned model is still your friend or got
 quietly lobotomized. This harness is the measured step that has to come before
@@ -201,7 +201,7 @@ python -m evals compare evals/out/baseline.json evals/out/candidate.json --fail-
 The gate is deliberately blunt: **a regression is a probe the baseline passed
 and the candidate failed.** Score-threshold subtlety is a tuning knob nobody
 has measured yet; pass/fail is unarguable, which is what a gate must be. The
-CVS-4 contract is: adopt the adapter only if the gate passes and memory recall
+Fine-Tuned Adapter contract is: adopt the adapter only if the gate passes and memory recall
 improved.
 
 ## What it refuses to claim

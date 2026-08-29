@@ -13,7 +13,7 @@ logger = logging.getLogger("reflection")
 
 class ReflectionService:
     """
-    CVS-3.5 Solid State Learning Layer.
+    AI Friend Solid State Learning Layer.
     Implements Fact Resolution, Confidence Gating, and Adaptive Persona Evolution.
     """
 
@@ -33,7 +33,7 @@ class ReflectionService:
         self.is_reflecting = False
         self.last_reflection_started_at = 0.0
 
-        # CVS-3.5: Explicit completion signaling for deterministic mesh verification
+        # AI Friend: Explicit completion signaling for deterministic mesh verification
         self.reflection_done = asyncio.Event()
         self.reflection_done.set()
 
@@ -43,7 +43,7 @@ class ReflectionService:
             return
 
         if self.is_reflecting or not recent_episodes:
-            # CVS-3.5: Always return awaitable to support deterministic testing
+            # AI Friend: Always return awaitable to support deterministic testing
             f: asyncio.Future = asyncio.Future()
             f.set_result(None)
             return f
@@ -62,7 +62,7 @@ class ReflectionService:
 
         self.last_reflection_started_at = now
 
-        # CVS-3.5: Signal started
+        # AI Friend: Signal started
         self.reflection_done.clear()
 
         logger.info(
@@ -142,7 +142,7 @@ class ReflectionService:
             )
             facts = self._extract_json(fact_res)
 
-            # CVS-3.5: Defensive parsing for LLM output variability
+            # AI Friend: Defensive parsing for LLM output variability
             if isinstance(facts, dict):
                 facts = [facts]
             elif not isinstance(facts, list):
@@ -251,7 +251,7 @@ class ReflectionService:
             )
             suggestions = self._extract_json(ident_res)
 
-            # CVS-3.5: Defensive parsing for identity suggestions (Ensures
+            # AI Friend: Defensive parsing for identity suggestions (Ensures
             # .get() availability). The list branch used to stop at "is this
             # a list", not "is the element inside a dict" -- `_extract_json`
             # returning e.g. ["some string"] unwrapped to a bare str that

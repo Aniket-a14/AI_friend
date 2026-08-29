@@ -11,7 +11,7 @@ def cognitive_service(mock_llm_service, mock_graph_db, mock_memory_store, tmp_pa
     with patch(
         "app.state.agent_state.StateService.persist_state", new_callable=AsyncMock
     ):
-        # CVS-1.0: Isolation Hardening - use temp directory for persona/history persistence
+        # AI Friend Core: Isolation Hardening - use temp directory for persona/history persistence
         base_path = str(tmp_path)
 
         def mock_load_json(path):
@@ -82,7 +82,7 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
         async for _ in cognitive_service.process_event(raw_event):
             pass
 
-        # CVS-1.0: ABSOLUTE DETERMINISM - ensure semantic consolidation is 100% complete
+        # AI Friend Core: ABSOLUTE DETERMINISM - ensure semantic consolidation is 100% complete
         await cognitive_service.learning.reflection_done.wait()
 
     # 3. Verify Evolutionary adaptive variables
