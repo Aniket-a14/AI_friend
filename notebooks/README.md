@@ -6,11 +6,11 @@ self-contained: open the Colab badge, run top to bottom, download the
 result, close the tab. None of them require you to have Docker, Postgres,
 Neo4j, or NATS running anywhere.
 
-| Notebook | What it does | Needs a GPU? | Typical runtime |
-| :--- | :--- | :--- | :--- |
-| [`ai_friend_voice_training.ipynb`](ai_friend_voice_training.ipynb) | Fine-tunes a GPT-SoVITS voice clone from your own recordings | Yes, hard requirement | 30–90+ min, depends on dataset size and epochs |
-| [`ai_friend_eval_harness.ipynb`](ai_friend_eval_harness.ipynb) | Runs the behavioral eval gate (`backend/evals/`) against real Ollama models | Helps a lot, not required | 5–20 min per model |
-| [`ai_friend_llm_benchmark.ipynb`](ai_friend_llm_benchmark.ipynb) | Measures raw generation throughput/latency/VRAM across model sizes | Yes, that's the point | 5–15 min for 3–4 models |
+| Notebook | Colab Launch | What it does | Needs a GPU? | Typical runtime |
+| :--- | :---: | :--- | :--- | :--- |
+| [`ai_friend_voice_training.ipynb`](ai_friend_voice_training.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb) | Fine-tunes a GPT-SoVITS voice clone from your own recordings | Yes, hard requirement | 30–90+ min, depends on dataset size and epochs |
+| [`ai_friend_eval_harness.ipynb`](ai_friend_eval_harness.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_eval_harness.ipynb) | Runs the behavioral eval gate (`backend/evals/`) against real Ollama models | Helps a lot, not required | 5–20 min per model |
+| [`ai_friend_llm_benchmark.ipynb`](ai_friend_llm_benchmark.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_llm_benchmark.ipynb) | Measures raw generation throughput/latency/VRAM across model sizes | Yes, that's the point | 5–15 min for 3–4 models |
 
 If you've never opened a Colab notebook before: click the "Open in Colab"
 badge at the top of any notebook's first cell, then `Runtime → Change

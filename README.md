@@ -260,7 +260,13 @@ Full deep-dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - **Voice training.** GPT-SoVITS fine-tuning on your own recordings is heavy
   GPU work — see [`notebooks/`](notebooks/) for Colab notebooks covering
   voice training, the behavioral eval harness, and raw LLM throughput
-  benchmarking, with a detailed README for each.
+  benchmarking:
+
+| Task | Notebook | 1-Click Launch | Purpose |
+| :--- | :--- | :---: | :--- |
+| **Voice Cloning** | `ai_friend_voice_training.ipynb` | <a href="https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_voice_training.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | Fine-tune custom GPT-SoVITS voice weights from audio |
+| **Behavioral Evals** | `ai_friend_eval_harness.ipynb` | <a href="https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_eval_harness.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | Test persona defense & 240-turn memory retention |
+| **LLM Benchmark** | `ai_friend_llm_benchmark.ipynb` | <a href="https://colab.research.google.com/github/Aniket-a14/AI_friend/blob/main/notebooks/ai_friend_llm_benchmark.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | Measure raw TTFT and tokens/sec on GPU |
 
 ## Signal bus contracts
 
