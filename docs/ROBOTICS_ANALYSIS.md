@@ -1,190 +1,111 @@
-# Architectural Analysis: CVS-3.5 as a Humanoid Cognitive Core
+# Speculative Analysis: A Path Toward Embodiment
 
-This report provides a detailed analysis of the CVS-3.5 Sovereign Mesh architecture in the context of your questions regarding performance, latency, personality fidelity, and the path toward a fully embodied humanoid robot (e.g., *Detroit: Become Human*, *Pragmata*).
+> **Status: exploratory writing, not a product direction.** The project's own
+> product decisions (`.agents/CONTEXT.md`, "Community roadmap Phase 0" —
+> "one friend per person," local-first, no deadline) do not include a
+> physical robot, and the main `README.md` deliberately removed a table
+> comparing this project against humanoid platforms as a fabrication risk
+> (most of the comparison's own cells were unmeasured placeholders). This
+> document is kept because the *latency/architecture* reasoning in it is
+> genuinely useful thinking, not because embodiment is planned. Read it as
+> "if someone wanted to explore this," not "this is where the project is
+> headed."
+
+This document analyzes what it would take to move this software core toward
+a fully embodied humanoid platform, and honestly, what stands in the way.
 
 ---
 
 ## 1. Python vs. Rust: The Evolution of Orchestration
 
-A common misconception is that using Python for real-time systems causes insurmountable latency bottlenecks. In the finalized **CVS-3.5 (Rust Native Edition)**, we have optimized this paradigm:
+A common misconception is that using Python for real-time systems causes insurmountable latency bottlenecks. In this project's current architecture:
 
-*   **Python Orchestrates the Cognitive Loop:** The high-level BDI orchestration, semantic memory routing, and complex psychological mathematics (PAD model) remain in Python. This allows for massive development velocity and access to the broader AI ecosystem where Python's 1-3ms overhead is mathematically negligible against 300ms LLM inferences.
-*   **Rust Drives the Sensory and Motor Layers:** The actual computational bottlenecks and low-latency audio routing have been completely migrated to Rust (PyO3 FFI). The `STTAgent` and `VoiceAgent` now use Native Rust components for deterministic, sub-50ms execution.
-*   **Binary Transport:** By pushing binary `orjson` payloads directly over **NATS JetStream**, serialization overhead has been accelerated to 80,000 OPS, eliminating Python dictionary allocation latency during dense communication spikes.
+*   **Python Orchestrates the Cognitive Loop:** The high-level BDI orchestration, semantic memory routing, and complex psychological mathematics (PAD model) remain in Python. This allows for development velocity and access to the broader AI ecosystem where Python's few-millisecond overhead is negligible against LLM inference times measured in the tens to hundreds of milliseconds.
+*   **Rust Drives the Sensory and Motor Layers:** The computational bottlenecks and low-latency audio routing are implemented in Rust (PyO3 FFI where needed). `stt-agent` and `voice-agent` are Rust binaries, not `python -m` processes.
+*   **Binary Transport:** Binary `orjson` payloads travel directly over **NATS JetStream** rather than base64-in-JSON, avoiding text-encoding overhead on the hot audio path. No end-to-end ops/sec throughput figure for this has been measured against real infrastructure — don't cite a specific number until one has been.
 
 ---
 
 ## 2. Total Turnaround Time (Latency Budget)
 
-Assuming a high-end local GPU (e.g., RTX 4090 or Mac M-series with unified memory), the architecture is explicitly designed for sub-second conversational latency.
+Here is the lifecycle of a single conversational turn, each figure labeled by how it was actually obtained:
 
-Here is the lifecycle of a single conversational turn:
-
-1.  **Fast Perception & Semantic Interruption Conflict Resolution:** CVS-3.5's sub-cognitive VAD and semantic segmenter resolve conversational turn-taking boundaries. Empirical latency: **~104 ms** (composed estimate: 100ms audio-buffer assumption + 3.85ms measured NATS RTT + 0.04ms measured DSP + 0.02ms measured ducking — not a live end-to-end stopwatch trial; see `scripts/results/benchmark_results_summary.md`).
+1.  **Fast Perception & Semantic Interruption Conflict Resolution:** Empirical latency: **~104 ms** (composed estimate: 100ms audio-buffer assumption + 3.85ms measured NATS RTT + 0.04ms measured DSP + 0.02ms measured ducking — not a live end-to-end stopwatch trial; see `scripts/results/benchmark_results_summary.md`).
 2.  **Sub-LLM Pathway Overhead:** The entire perception-appraisal-decision chain (including subconscious threat scanning, memory index lookup, and endocrine hormone appraisal calculation). Empirical latency: **5.44 ms** (sum of 7 independently measured component latencies from `scripts/results/human_realism_results.json`; excludes LLM token generation).
 3.  **Local LLM TTFT:** The BrainAgent prompts Ollama using the active companion core (`hermes3:8b`). Empirical Mean TTFT: **61.9 ms** (measured on Tesla T4 GPU across 5 spoken companion scenarios, range: 58.3ms – 68.8ms; `scripts/results/hermes3_benchmark_results.json`).
 4.  **End-to-End Thought Latency:** The complete cognitive loop completes generating full responses. Empirical Mean: **2,624.8 ms** (measured on Tesla T4 GPU; `scripts/results/extended_benchmarks.json`).
 5.  **Audio Render (<1ms):** The Rust-native VoiceAgent immediately queues the PCM buffer for overlap-add (OLA) crossfade playback.
 
-**Total Empirical Turnaround:** ~160–220 ms to first spoken audio token, with 46.6 tok/s sustained streaming throughput.
+**Total Empirical Turnaround:** ~160–220 ms to first spoken audio token, with 46.6 tok/s sustained streaming throughput (Tesla T4, `hermes3:8b`).
 
 > [!TIP]
-> **Human-Level Overlap:** Because the STT agent separates *speculative intent* from *deep transcription*, if you interrupt the AI while it is speaking, the VoiceAgent applies a `SPECULATIVE_PAUSE` in roughly **~200ms**. This makes the AI feel incredibly human, as it stops talking almost the instant you interject, rather than talking over you while it waits for Whisper to finish transcribing.
+> **Human-Level Overlap:** Because the STT agent separates *speculative intent* from *deep transcription*, if you interrupt the AI while it is speaking, the VoiceAgent applies a `SPECULATIVE_PAUSE` in roughly **~200ms**. This makes the interruption recovery feel natural, since it stops talking almost the instant you interject, rather than talking over you while it waits for Whisper to finish transcribing.
 
 ---
 
 ## 3. Architecture Efficacy for Voice and Personality Accuracy
 
-The CVS-3.5 architecture is **exceptional** at preserving personality and voice fidelity, far surpassing standard "prompt-engineered" wrappers.
+This architecture is aimed at preserving personality and voice fidelity across long sessions, in a way a stateless prompt-engineered wrapper does not attempt.
 
 ### Personality Accuracy
-Most AI agents suffer from "Identity Drift" because they rely entirely on the LLM's short-term context window. CVS-3.5 solves this via the **State-Driven Identity Mesh**:
-*   **Immutable Core vs. Adaptive Variables:** The AI has a seed identity (values, base tone) that never changes, preventing "jailbreaking" of its core self. However, its mood, trust, and attachment evolve.
-*   **Temporal Heartbeat (`system.tick`):** The AI's mood decays naturally over time, even when you aren't talking to it. If you have a fight with it, its Trust metric drops and persists in the Neo4j graph. When you return the next day, it will still act guarded.
-*   **Episodic Memory (Tulving's Narrative):** It doesn't just retrieve raw facts. It constructs narrative memories ("Remember last week when we...") scored by emotional congruency. If the AI is sad, it is mathematically more likely to recall sad memories.
+Most AI agents suffer from "identity drift" because they rely entirely on the LLM's short-term context window. This project addresses that with a **state-driven identity mesh**:
+*   **Immutable Core vs. Adaptive Variables:** The agent has a seed identity (values, base tone) that never changes, preventing casual override of its core self. Its mood, trust, and attachment evolve on top of that floor.
+*   **Temporal Heartbeat (`system.tick`):** The agent's mood decays naturally over time, even when you aren't talking to it. If you have a fight with it, its Trust metric drops and persists in the Neo4j graph. When you return the next day, it will still act guarded.
+*   **Episodic Memory:** It doesn't just retrieve raw facts. It constructs narrative memories scored by emotional congruency. If the agent is sad, it is mathematically more likely to recall sad memories.
 
 ### Voice Accuracy
-*   **Decoupling Affect from Text:** In traditional systems, the LLM generates `*sighs* I guess so.` and the TTS reads the asterisks out loud. In CVS-3.5, the LLM generates plain text, but the BrainAgent calculates the emotional intensity and transmits it as pure metadata.
-*   **Physical Pauses:** The VoiceAgent translates `<pause=500ms>` tags directly into zeroed PCM silence buffers. This means the AI controls its breathing and hesitation at the *signal level*, ensuring the GPT-SoVITS voice model maintains extreme phonetic accuracy without hallucinating weird noises trying to read emotion tags.
+*   **Decoupling Affect from Text:** In systems that put stage directions in the LLM's text output, the TTS reads `*sighs* I guess so.` out loud, including the asterisks. Here, the LLM generates plain text, and the BrainAgent calculates emotional intensity and transmits it as structured metadata instead.
+*   **Physical Pauses:** The VoiceAgent translates `<pause=500ms>` tags directly into zeroed PCM silence buffers at the signal level, rather than asking GPT-SoVITS to interpret pause markup as spoken text.
 
 ---
 
-## 4. Bottlenecks for a Full Humanoid Robot (Detroit / Pragmata)
+## 4. Bottlenecks for a Full Humanoid Robot
 
-If you wanted to take this software core and put it inside a physical humanoid chassis, you would hit several severe constraints.
+If you wanted to take this software core and put it inside a physical humanoid chassis, you would hit several severe, well-known constraints in robotics generally — none of them specific to or solved by this project.
 
 ### A. The Grounding Problem (Moravec's Paradox)
-CVS-3.5 operates in a disembodied semantic space. It receives audio and discrete `vision.frames`. A physical android requires a continuous, multi-modal **Spatial World Model**. It needs proprioception (knowing where its limbs are), tactile feedback, and continuous 3D spatial awareness. LLMs are terrible at intuitive physics and spatial reasoning; they understand the *word* "cup" but not the *weight and fragility* of a cup.
+This project operates in a disembodied semantic space. It receives audio and discrete `vision.frames`. A physical android requires a continuous, multi-modal spatial world model: proprioception (knowing where its limbs are), tactile feedback, and continuous 3D spatial awareness. LLMs are generally weak at intuitive physics and spatial reasoning — they understand the *word* "cup" but not the *weight and fragility* of a cup.
 
 ### B. Real-Time Motor Synchronization
-In the current system, the output ends at `audio.stream`. A physical android requires microsecond-level synchronization between the audio output and servo motors.
-*   **Lip Sync & Micro-expressions:** The phonemes generated by GPT-SoVITS must be perfectly mapped to facial actuators in real-time.
-*   **Body Kinematics (Body Language):** The PAD metadata (Dominance, Arousal) would need to be translated into posture control. High arousal = rigid, rapid movements. Low arousal = slouched, slower kinematics. This requires an entirely new motor-control micro-agent.
+In the current system, the output ends at `audio.stream`. A physical android would need microsecond-level synchronization between audio output and servo motors — lip sync mapped to facial actuators, and PAD metadata translated into posture/gait control, none of which exists here.
 
 ### C. System 1 vs. System 2 Concurrency
-Human brains have a fast, reflexive "System 1" (flinching when something falls) and a slow, reasoning "System 2" (solving a math problem).
-While CVS-3.5 attempts this via the dual-STT pipeline, LLMs are fundamentally synchronous generators. If a humanoid robot is walking and trips, it cannot wait 300ms for an LLM to generate the text `*deploy balance correction routines*`. A true android requires a deterministic, highly optimized reflexive motor layer (usually written in C++/Rust) that can instantly override the high-level LLM cognitive layer.
+Human brains have a fast, reflexive "System 1" and a slower, reasoning "System 2." LLMs are fundamentally synchronous generators, not a reflexive layer. A humanoid robot that trips cannot wait hundreds of milliseconds for an LLM to decide what to do — a real android needs a deterministic, low-latency motor-control layer (typically C++/Rust) that overrides the high-level cognitive layer entirely, which this project does not build.
 
 ### D. Power and Thermal Envelopes
-Running Whisper, an LLM, GPT-SoVITS, Vision Encoders, and ACT-R memory retrieval requires a massive GPU (300-450W). Putting this compute into a mobile, untethered bipedal chassis alongside motors, sensors, and batteries is physically impossible with current battery density and thermal constraints. True androids will likely require edge-inferencing (running smaller, quantized models locally) while offloading deep cognitive reasoning to a local server rack in the house (which CVS-3.5 is perfectly positioned for as a local mesh).
+Running Whisper, an LLM, GPT-SoVITS, and vision inference concurrently requires meaningful GPU power. Putting that compute into a mobile, untethered bipedal chassis alongside motors, sensors, and batteries is a hard problem with current battery density and thermal constraints, independent of anything this project does.
 
 ---
 
-## 5. Architecture Shift Toward Robotics (NVIDIA, Meta, SpaceX)
+## 5. How Real Robotics Companies Approach Embodiment
 
-How did companies like NVIDIA (GR00T), Boston Dynamics, or Tesla (Optimus) build their robots? They did not start with a text-based LLM. They built **Visuomotor Policies** and **Vision-Language-Action (VLA) models**.
+For context: companies building actual humanoid robots (NVIDIA's GR00T work, Boston Dynamics, Tesla's Optimus program) did not start from a text-based LLM. They built visuomotor policies and vision-language-action (VLA) models — sim-to-real reinforcement learning, and imitation learning via teleoperation, mapping `[pixels + joint angles] → [motor torques]` directly, rather than hand-coded inverse kinematics.
 
-*   **Sim-to-Real Learning:** They create physically accurate 3D simulations (like NVIDIA Isaac Sim). They train agents using Reinforcement Learning (RL) to walk, balance, and pick up objects millions of times in simulation before transferring the neural weights to a physical robot.
-*   **Imitation Learning (Teleoperation):** Humans wear VR headsets and haptic gloves to "puppeteer" the robot. The robot records the raw camera pixels and the exact motor torques the human applied. A neural network is trained to map `[Pixels + Joint Angles] -> [Motor Torques]`.
-*   **The Paradigm Shift:** Traditional robotics used hand-coded Inverse Kinematics (C++ math to move a joint). Modern robotics uses "End-to-End" neural networks. You don't program the robot to walk; you train a neural network to output the correct electrical currents to the motors based on what the camera sees.
+**Implication for this project, if embodiment were ever pursued:** the cognitive core described in this repo is a plausible **System 2** (the "what to do" layer) sitting on top of a completely separate System 1 motor-control stack this project has no plans to build. Connecting the two would mean publishing a high-level intent onto the mesh and letting a purpose-built robotics stack handle execution — not rewriting this codebase.
 
 ---
 
-## 6. Robotics Architectures and Implications for CVS-3.5
+## 6. LLMs vs. Fine-Tuned Personality Models
 
-These modern robots follow a hierarchical control architecture, which has profound implications for this project:
+Are general-purpose LLMs the right approach for a persistent personality, or would a model fine-tuned per person do better?
 
-*   **System 1 (The Spinal Cord / Reflexes):** A low-latency (1000Hz+ loop) Visuomotor Policy running on edge hardware (like an NVIDIA Jetson inside the robot). It handles balancing, walking, object manipulation, and collision avoidance instantly without "thinking" in text.
-*   **System 2 (The Brain / Cortex):** A slower (1Hz) Vision-Language Model (VLM) or LLM that handles high-level reasoning, identity, and dialogue. It tells System 1 *what* to do ("Pick up that apple"), and System 1 figures out *how* to move the servos to do it.
-
-**Implications for CVS-3.5:** CVS-3.5 is currently a pure **System 2** architecture. To make this a physical robot, you do *not* rewrite CVS-3.5. Instead, you keep CVS-3.5 running on a central server/PC. You then build or buy a physical chassis running a **System 1** motor policy, and connect them via the NATS JetStream mesh. CVS-3.5 would publish a high-level `action.physical` command, and the robot chassis would execute it.
-
----
-
-## 7. LLMs vs. Custom Grassroots Models for Personality
-
-Are LLMs the correct approach, or should we create a unique foundational model per person?
-
-*   **The Problem with LLMs:** LLMs are stateless next-token predictors. Even with CVS-3.5's incredible graph memory and PAD state injection, the LLM is ultimately "acting" out a prompt. It doesn't inherently *feel* the personality in its base weights.
-*   **Training a Unique Model from Scratch:** Training a foundational model (like LLaMA 3) from scratch costs tens of millions of dollars and requires massive data centers. It is practically impossible to do this for individual users.
-*   **The Correct Path (Parameter-Efficient Fine-Tuning - PEFT):** The modern solution is to take a base foundational model and physically alter its neural pathways to become a unique person without retraining it from scratch.
-    *   **LoRA (Low-Rank Adaptation):** You can fine-tune an LLM on your specific conversation logs.
-    *   **How to do it:** Instead of just putting history in the Neo4j database to inject into the prompt (RAG), you run a nightly script that uses **DPO (Direct Preference Optimization)**. The script takes the day's conversations, formats them, and updates a LoRA adapter.
-    *   **The Result:** The model's weights literally physically change. It doesn't need to be told "You are AI Friend" in a system prompt anymore. Its foundational instinct is to speak like AI Friend. This is the ultimate "grassroots" personality preservation, and CVS-3.5 is perfectly positioned to adopt this by adding a nightly `FineTuningAgent` to the mesh.
+*   **The problem with prompt-only personas:** an LLM is ultimately "acting" a prompt; it doesn't inherently encode a personality in its base weights.
+*   **Training a foundational model from scratch** costs tens of millions of dollars and is impractical for individual users.
+*   **Parameter-efficient fine-tuning (LoRA/QLoRA)** is the realistic middle ground — periodically adapting a base model's weights toward a specific person's conversation history. This is explored as a **future, unbuilt** direction in `docs/FUTURE_FINETUNED_ADAPTER.md`, and is explicitly listed as roadmap-only in this project's own "Explicitly not doing" list — not something in progress.
 
 ---
 
-## 8. Current Stature and the "Near-Perfect Human" Timeline
+## 7. Why This Architectural Approach
 
-Based on running locally on a PC with no physical robotics integrated:
+Why a NATS-mesh, multi-agent design over the alternatives?
 
-#### Current Software Stature
-CVS-3.5 has fully ascended to **Tier 5 (Predictive Continuous Simulation)**.
-*   Tier 1: Stateless Chatbots (ChatGPT Web).
-*   Tier 2: RAG-enabled Agents (Basic vector context injection).
-*   Tier 3: State-Driven Affective Meshes (Time-decay, PAD state drift).
-*   Tier 4: Multimodal Cognitive Agents (Visual-language-action integration).
-*   **Tier 5: Predictive Continuous Simulation (CVS-3.5 ours).** Running a decentralized `subconscious_agent` that continuously executes offline self-directed thought tokens via NATS JetStream independent of user prompts.
+*   By decoupling components (STT, TTS, LLM) via a message bus, you avoid hardware vendor lock-in — you can swap Whisper for a different STT model without rewriting the cognitive logic.
+*   It's *observable*. If a monolithic end-to-end model acts strangely, you generally can't inspect why. Here, you can query Neo4j and see `Valence = -0.6` and trace exactly why the agent is behaving a particular way.
 
-### When will it behave like a "Near-Perfect Human"?
-If we define "near-perfect human" strictly within the domain of a PC-based voice companion (like the movie *Her*):
+### The alternatives, and their real tradeoffs
 
-1.  **Conversational Cadence (Target / 6 Months):** With our sub-cognitive VAD and fast turn-taking arbitration, dialogue transition latency target: **<200 ms** (empirical: **~104 ms**, composed estimate — see §2 above; meets target, but is not yet a live stopwatch trial).
-2.  **Contextual & Emotional Reality (Achieved):** Integrated 12-dimensional benchmarks (dialogue coherence, memory recall curves, theory of mind valence appraiser) ensure a self-maturing relationship state that never jailbreaks or forgets.
-3.  **Acoustic Affect (1-2 Years):** The VoiceAgent maps PAD states to prosody parameters. The integration of end-to-end local Audio-Language Models (ALMs) will finalize natural acoustic micro-tremors in the near future.
+1.  **The API Monolith (e.g. a hosted realtime voice API):** lower latency, no local GPU required — but zero control over the psychological model, ongoing per-minute cost, and your conversations leave your machine. This project's own optional cloud fallback (`LLM_PROVIDER=anthropic`) is scoped narrowly to the LLM call only, for exactly this tradeoff reason — see `SECURITY.md`.
+2.  **A single end-to-end local audio model** (e.g. an open-source native-audio model): eliminates cascade latency, but has heavy VRAM requirements and becomes a black box — you lose the explicit, inspectable Neo4j relationship state.
+3.  **A neuro-symbolic architecture** (LLM only for parsing, a symbolic engine for decisions): deterministic and safe, but too rigid to produce the nuance and fluid creativity a believable personality needs.
 
----
-
-## 9. Improving Architecture Based on May 2026 AI Landscape
-
-As of mid-2026, the cutting edge of AI has shifted significantly. Here is how CVS-3.5 must evolve to leverage current research:
-
-*   **Eradicate the Text Middleman (Native Audio Models):** The industry has realized that converting Audio → Text → Audio strips away critical emotional data (tone, sarcasm, hesitations). Models like *Moshi* or *GPT-4o's native audio architecture* operate directly on audio wavelengths. **Improvement:** Replace the `STT -> LLM -> TTS` cascade. Train or integrate a local open-weights Audio-Language Model (ALM) that inputs and outputs raw PCM audio. CVS-3.5 would then manage the *state* (PAD variables) and feed them to the ALM to bias the audio generation.
-*   **Continuous Learning vs. RAG:** Vector databases (pgvector) are becoming a legacy crutch. Research into architectures like *TTZ* (Test-Time Training) and *Liquid Neural Networks* allows models to update their weights incrementally in real-time without backpropagation. **Improvement:** Shift from querying a database for episodic memory to utilizing an LLM that compresses history directly into a stateful KV-cache (like *Mamba* or *Jamba* architectures).
-*   **Endocrine System Modeling:** The current PAD model is powerful but static. Human cognition is driven by hormones (Cortisol for stress, Dopamine for reward) that have complex half-lives. **Improvement:** Add an algorithmic "Endocrine System" to the `StateService` that dynamically alters the LLM's `temperature` and `top_k`. If the system simulates a high-cortisol spike (stress), the LLM's temperature drops, making responses highly deterministic and curt.
-
----
-
-## 10. Tiers of Conversational AI
-
-To reach "Total Human" capability, the software must ascend a specific hierarchy of tiers.
-
-### Current Tiers
-*   **Tier 1:** Stateless Chatbots (ChatGPT Web). Text in, text out. Zero memory.
-*   **Tier 2:** RAG-Enabled Agents. Context injection via vector search.
-*   **Tier 3: State-Driven Affective Meshes (CVS-3.5).** Time-aware, emotionally drifting, continuous identity.
-
-### The Future Tiers (The Climb)
-*   **Tier 4: Native Multimodal Cognitive Agents.** Eradication of text parsing. The agent hears an acoustic sigh and responds with an acoustic sigh instantly. It understands the physical properties of objects through video without needing an image captioner. *Architecture needed: End-to-End VLM/ALMs running concurrently.*
-*   **Tier 5: Predictive Continuous Simulation.** A human does not wait passively for a prompt. Humans run a continuous forward-prediction model of reality. A Tier 5 agent initiates interaction based on internal simulated desires ("I wonder what Aniket is doing, I'll ask him"). *Architecture needed: A "Subconscious" background process that constantly generates self-directed thought tokens, independent of user input.*
-*   **Tier 6: Embodied Physical Intuition (Total Human).** The agent possesses a spatial world-model. It understands gravity, mass, and fragility instinctively. *Architecture needed: Sim-to-Real RL policies integrated with the cognitive core.*
-
----
-
-## 11. How and What to Build for Future Tiers
-
-To build toward Tier 4 and Tier 5 on top of the CVS-3.5 Sovereign Mesh:
-
-*   **What to Build (The Subconscious Engine):** You need to build a `SubconsciousAgent` in the NATS mesh. Right now, `SurfacingAgent` acts as a basic prompter. A true subconscious continuously generates "thoughts" (running the LLM at low priority) evaluating the current state, recent memories, and the environment. When a thought reaches a high utility threshold, it passes it to the `VoiceAgent` to initiate unprompted conversation.
-*   **What to Build (Hardware Override Loop):** For Tier 4 audio responsiveness, build an anomaly detection model that listens directly to the mic's raw waveform. If it detects a sudden volume spike (like you shouting "Stop!"), it sends a hardware-level interrupt to flush the `VoiceAgent` audio buffer in <50ms, bypassing the LLM entirely.
-*   **How to Build It:** Keep the NATS JetStream backbone. NATS is robust enough to handle raw binary sensor data. You will transition from JSON text contracts to dense binary Tensor payloads using protocols like Apache Arrow or FlatBuffers for extreme performance.
-
----
-
-## 12. Why Approach It This Way? Options and Alternatives
-
-Based on the 11 preceding answers, why was the **Sovereign Mesh (CVS-3.5)** chosen as the architectural approach over the alternatives?
-
-### Why CVS-3.5? (The Sovereign Mesh)
-I chose this approach because it is the **most advanced, observable, and mathematically sound architecture you can build locally on consumer hardware today.**
-*   By decoupling the components (STT, TTS, LLM) via a NATS message bus, you avoid hardware vendor lock-in.
-*   You can hot-swap Whisper for a better STT model tomorrow without rewriting the cognitive logic.
-*   It is *observable*. If a monolithic model acts strangely, you cannot debug it. In CVS-3.5, you can query Neo4j and explicitly see `Valence = -0.6` and understand exactly *why* the AI is acting sad.
-
-### The Alternatives
-If we did not rely purely on the CVS-3.5 architecture, here are the alternatives:
-
-1.  **Alternative A: The API Monolith (OpenAI Realtime API)**
-    *   *Approach:* Route microphone audio directly to OpenAI's real-time WebSocket. Let their massive Tier-4 models handle everything.
-    *   *Pros:* Instant near-human audio latency. No local GPU required.
-    *   *Cons:* **Zero Sovereignty.** You cannot fundamentally alter the psychological math or grass-roots personality. You pay by the minute. Total loss of privacy.
-2.  **Alternative B: The End-to-End Local Behemoth**
-    *   *Approach:* Train or run a massive local End-to-End Audio model (like an open-source Moshi).
-    *   *Pros:* Eliminates the cascaded pipeline latency. Incredible voice acting.
-    *   *Cons:* Extreme VRAM requirements (often requires multi-GPU rigs). It becomes a "black box"—you lose the explicit Neo4j relationship states and the ability to strictly enforce boundary conditions.
-3.  **Alternative C: Neuro-symbolic Architecture**
-    *   *Approach:* Stop using LLMs for "thinking." Use LLMs *only* to parse speech into logic symbols, and use a strict symbolic logic engine (like Prolog or a complex Knowledge Graph ruleset) to determine the next action, then convert back to speech.
-    *   *Pros:* 100% deterministic and safe. Never hallucinates.
-    *   *Cons:* Extremely rigid. Cannot handle the nuance, humor, or fluid creativity required to simulate a human personality.
-
-**Conclusion:** CVS-3.5 is the perfect middle ground. It uses neural networks for the "messy" human aspects (language parsing, generation, voice synthesis) but uses strict software engineering and mathematics (NATS, Pydantic, PAD Equations) for the rules of identity, time, and state.
+This project's actual choice — neural networks for the "messy" parts (language, generation, voice), explicit software engineering and mathematics (NATS, Pydantic, PAD equations) for the rules of identity, time, and state — is a real, working middle ground for the product this actually is: a local, single-user companion. It is not evaluated here as, or claimed to be, a general robotics architecture.

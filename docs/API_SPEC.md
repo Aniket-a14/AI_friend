@@ -1,27 +1,25 @@
-# 🔌 API & Messaging Specification (v6.0.0 / CVS-3.5 Premium Edition)
+# 🔌 API & Messaging Specification
 
-This document provides a technical exhaustive breakdown of the external and internal interfaces of the AI Friend **Cognitive Voice System**.
+This document provides a technical breakdown of the external and internal interfaces of the AI Friend backend.
 
 ---
 
 ## 🌎 External Interfaces (Signaling Server)
 
-The Signaling Server (FastAPI) acts as the gateway to the mesh.
+The Signaling Server (FastAPI, `backend/main.py`) acts as the gateway to the mesh.
 
 ### 1. REST Endpoints
 
 #### `GET /status`
 
-Health check and versioning info.
+Minimal readiness check.
 
 - **Response**:
 
   ```json
   {
-    "status": "healthy",
-    "version": "CVS-3.5",
-    "uptime": 1234.5,
-    "runtime": "Perceptual Mastery"
+    "status": "ok",
+    "ready": true
   }
   ```
 
@@ -55,29 +53,56 @@ Alias for token generation used by legacy or simplified clients.
 
 #### `GET /health`
 
-Minimal health endpoint for Docker and uptime monitors.
+Health endpoint for Docker and uptime monitors.
 
 - **Response**:
 
   ```json
   {
     "status": "healthy",
-    "nats": true
+    "nats": true,
+    "degraded": false,
+    "degraded_reason": null
   }
   ```
 
+  `degraded`/`degraded_reason` are only present when the backend has fallen back to the SQLite degraded path (see `backend/main.py::_read_sqlite_fallback_sentinel`).
+
 #### `POST /vision/toggle`
 
-Broadcasts a vision source switch to the mesh.
+Broadcasts a vision source switch to the mesh. Session-authed.
 
 - **Parameters**: `source` must be `screen` or `camera`.
 - **Mesh Side Effect**: publishes `vision.control`.
 
 ---
 
+## 🧵 Web/HTTP API (`backend/app/api/`, roadmap Phase 5.1/5.2)
+
+The onboarding wizard's browser flow and the chat/settings/memories web UI
+are driven by this router package — the same functions the CLI scripts
+(`create_friend.py`, `record_voice.py`, `export_friend.py`/`import_friend.py`,
+`talk.py`) call, so there is one implementation behind both front ends.
+Every route below requires `require_session_auth`.
+
+| Method + Path | Purpose |
+| :--- | :--- |
+| `GET /api/persona/live` | Read-only: who the friend currently is, hydrated from the durable store (not `personal/persona.toml`, which is consulted once on first boot only). |
+| `POST /api/persona/compile` | Freeform prose → a previewable, validated `PersonaProfile`. Writes nothing. |
+| `POST /api/persona/dry-run-chat` | One line of conversation in a compiled-but-unsaved persona's voice — no memory, no affect, no mesh. |
+| `POST /api/persona/commit` | Writes `personal/persona.toml`/`biography.md` and points `.env` at them. Refuses to overwrite an existing file without `force: true`. |
+| `POST /api/voice/validate` | Runs `record_voice.py`'s clip-quality checks plus a transcription on an uploaded WAV. Saves nothing. |
+| `POST /api/voice/commit` | Saves an already-validated clip and points `.env` at it. `variant` selects one of the four emotional references; `force` bypasses a failed validation the same way the CLI's "use it anyway" does. |
+| `GET /api/memory/recent` | Paginated, sortable browse of the `memories` table via a short-lived direct connection (deliberately not routed through `MemoryStore`). |
+| `POST /api/friend/export` | Streams a `friend_export.tar.gz` (four-store portable archive). Blocks for the duration — no background-job infrastructure exists. |
+| `POST /api/friend/import` | Destructive; requires `force: true`. TRUNCATEs the Postgres tables and can overwrite local identity/state files. |
+| `WS /api/chat/ws` | The web UI's only text path onto the cognitive pipeline. Publishes `chat.input`, streams `chat.output` back — the same contract `scripts/talk.py`'s REPL uses, fanned out to every connected browser tab via one shared mesh subscription (`ChatBridge`). |
+
+---
+
 ## 🌊 Internal Messaging (NATS JetStream)
 
-The "Sovereign Mesh" communicates via a decentralized event bus. In the CVS-3.5 Premium Edition, all payloads are strictly validated using Pydantic models and serialized to binary via `orjson` to achieve sub-millisecond, 80,000 OPS network throughput.
+The mesh communicates via a decentralized event bus. All payloads are strictly validated using Pydantic models and serialized to binary via `orjson` rather than plain JSON, avoiding Python dictionary allocation overhead on the hot audio path. (No end-to-end throughput number for this has been measured against real infrastructure — see `CLAUDE.md`'s integrity constraints; don't cite a specific ops/sec figure until one has.)
 
 ### Subject Dictionary
 
@@ -99,10 +124,12 @@ The "Sovereign Mesh" communicates via a decentralized event bus. In the CVS-3.5 
 | `agent.voice.modulation` | Brain Agent | Voice Agent | `{"frames": [{"time_offset_ms": int, "rate": float, "pitch": float, "volume": float}]}` |
 | `audio.playback.progress` | Client / Player | Brain Agent | `{"utterance_id": "string", "character_offset": int, "word_index": int, "completed": bool, "timestamp": float}` |
 | `ambient.noise.telemetry` | STT Agent | Voice Agent | `{"rms_energy": float, "noise_floor_db": float, "timestamp": float}` |
+| `audio.playback.visemes` | Voice Agent | Transport Agent → browser data channel | `{"target_level": float, "viseme_id": int, "timestamp": float}` |
+| `state.presence` | Transport Agent | Subconscious Agent | `{"connected": bool}` — edge-triggered on the 0↔1+ participant transition |
 
 ### Detailed Schemas
 
-#### `chat.output` (CVS-3.5 Cognitive Segment)
+#### `chat.output` (streaming segment)
 
 Sent by the BrainAgent during cognitive streaming. Mapped to the `ChatOutput` Pydantic contract.
 
@@ -224,7 +251,7 @@ NATS metadata:
 }
 ```
 
-#### `audio.stream` (CVS-3.5 Raw 32kHz PCM)
+#### `audio.stream` (Raw 32kHz PCM)
 
 Sent by the VoiceAgent directly from the Signal Runtime. In the optimized path this is raw binary PCM, not JSON.
 

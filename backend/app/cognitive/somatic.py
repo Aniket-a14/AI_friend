@@ -21,7 +21,7 @@ discussed anything somatic, it recognises nothing and no spike ever fires. That
 is a deliberate, honest cold start, matching the mental lexicon's design (B1:
 no benchmark-fitted constants baked into a retrieval path).
 
-**On the roadmap's dopamine equation.** `docs/cvs4_architecture_roadmap.md` §C
+**On the roadmap's dopamine equation.** `docs/FUTURE_FINETUNED_ADAPTER.md` §C
 specifies `D_t = min(1.0, D_{t-1} + 0.25)` alongside a valence spike. Both now
 happen literally: `apply_somatic_perception` lifts valence and arousal *and*
 fires a real phasic dopamine burst. Dopamine is no longer a purely derived

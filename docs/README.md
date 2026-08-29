@@ -1,13 +1,13 @@
 # 📚 AI Friend Documentation Map
 
-This folder is the technical documentation suite for **AI Friend CVS-3.5**, a
-local-first Cognitive Voice System designed to simulate a persistent, human-like
-conversation partner.
+This folder is the technical documentation suite for AI Friend, a
+local-first cognitive voice system designed to simulate a persistent,
+human-like conversation partner.
 
 The docs are intentionally broad and descriptive. New readers should understand
 not only what components exist, but why they exist and how they support the
 larger goal: identity continuity, emotional stability, natural voice timing,
-organic memory, and future robotics compatibility.
+organic memory, and honest handling of what isn't built yet.
 
 ---
 
@@ -21,17 +21,17 @@ organic memory, and future robotics compatibility.
   you want to *build on it*. Supersedes the `audit/` documents as a work queue.
 - [ARCHITECTURE.md](./ARCHITECTURE.md) gives the system-level map: NATS mesh,
   agents, cognition, state, memory, voice, and feedback loops.
-- [API_SPEC.md](./API_SPEC.md) defines the REST endpoints and NATS subjects used
-  by the runtime.
-- [ROBOTICS_ANALYSIS.md](./ROBOTICS_ANALYSIS.md) provides a deep-dive into the
-  architectural performance and the roadmap for humanoid embodiment.
+- [API_SPEC.md](./API_SPEC.md) defines the REST/WebSocket endpoints and NATS
+  subjects used by the runtime.
+- [ROBOTICS_ANALYSIS.md](./ROBOTICS_ANALYSIS.md) is speculative writing on
+  what embodiment would take — explicitly not a product direction; see the
+  status note at the top of that file.
 
 ---
 
 ## Voice and Training
 
-- [GPT_SOVITS_INSTALL.md](./GPT_SOVITS_INSTALL.md) covers local GPT-SoVITS setup
-  and CVS-3.5 hardening requirements.
+- [GPT_SOVITS_INSTALL.md](./GPT_SOVITS_INSTALL.md) covers local GPT-SoVITS setup.
 - [COLAB_PATHS_CHEATSHEET.md](./COLAB_PATHS_CHEATSHEET.md) helps map Colab
   training artifacts back into the local project.
 
@@ -39,14 +39,14 @@ organic memory, and future robotics compatibility.
 
 ## Operations and Research Archive
 
-- **[RESEARCH_GUIDE.md](./RESEARCH_GUIDE.md)**: Comprehensive guide for training, testing, observing, and visualizing the Tier-5 Sovereign Mesh for research purposes.
-- **[ARCHIVE_TOC.md](./ARCHIVE_TOC.md)**: Centralized index for archived CVS-3.5 technical documentation, historical research, and baseline optimizations.
+- **[RESEARCH_GUIDE.md](./RESEARCH_GUIDE.md)**: guide for testing, observing, and validating the architecture and mathematics for research purposes — points at the real `backend/evals/` and `backend/tools/measure/` harnesses rather than describing tooling that doesn't exist.
+- **[ARCHIVE_TOC.md](./ARCHIVE_TOC.md)**: centralized index for archived technical documentation, historical research, and baseline optimizations.
 
 ---
 
-## Roadmap & Future Architecture
+## Future / Unbuilt Architecture
 
-- **[cvs4_architecture_roadmap.md](./cvs4_architecture_roadmap.md)**: The foundational baseline and planned architecture for **CVS v4.0**, encompassing the E2E Parametric Cognitive Adapter, Single-Pass Appraisal streams, and the offline Subconscious REM Sleep Consolidation Loop.
+- **[FUTURE_FINETUNED_ADAPTER.md](./FUTURE_FINETUNED_ADAPTER.md)**: design notes for a possible future direction — fusing affective state into a fine-tuned model's weights instead of the current prompt-injection approach. Roadmap-only; nothing in it is built. (Previously named `cvs4_architecture_roadmap.md` and written as an approved specification — corrected.)
 
 ---
 
@@ -57,7 +57,8 @@ Agents should also read:
 - **[CONTEXT.md](../.agents/CONTEXT.md)**: That file is the durable handoff ledger for future coding agents. It records
 current project intent, recent changes, verification commands, and next
 recommended work. Update it whenever changes materially affect architecture,
-behavior, tests, or runtime expectations.
+behavior, tests, or runtime expectations. Where any doc in this repo
+disagrees with it, the ledger is right.
 
 ---
 
@@ -87,12 +88,21 @@ This planning phase does not include implementation code.
 
 When updating docs:
 
-- Preserve the CVS framing. This is not a generic assistant project.
+- Describe the real, current architecture accurately — no version branding,
+  invented benchmark figures, or claims about capabilities that don't exist.
+  A prior pass through this folder found and fixed a "CVS-3.5 Premium
+  Edition" fabrication pattern (fake version numbers, an unmeasured "80,000
+  OPS" throughput claim, comparisons to humanoid robots this project isn't) —
+  don't reintroduce it.
 - Prefer explanations that connect implementation details to realism,
   continuity, latency, and modularity.
 - Do not hide limitations. If something is theoretical, future-facing, or not
-  yet fully wired, say so clearly.
+  yet fully wired, say so clearly — and say so in the document itself, not
+  just in a separate ledger entry nobody reading the doc will see.
 - Keep docs useful for humans and future agents. Include file names, subject
   names, commands, and expected behavior where possible.
+- Before citing a specific number (latency, throughput, recall accuracy),
+  confirm it's actually measured and cite where — see `CLAUDE.md`'s
+  integrity constraints. State targets as targets until measured.
 - Avoid reducing broad context unless replacing it with a clearer and more
   accurate version.

@@ -1,6 +1,8 @@
-# 🎙️ Master Guide: AI Friend Voice Training on Colab (CVS-3.5 / V4)
+# 🎙️ Master Guide: Voice Training on Colab
 
-This guide takes you from a raw recording to a fully trained **CVS-3.5 compatible** voice model. Follow these steps exactly to avoid common "File Not Found" errors.
+This guide takes you from a raw recording to a fully trained voice model
+compatible with this project's voice-agent. Follow these steps exactly to
+avoid common "File Not Found" errors.
 
 ---
 
@@ -11,7 +13,7 @@ Before touching the WebUI, your audio files must be inside Google Colab.
 1. **Open the Files Sidebar**: Click the 📁 folder icon on the extreme left of your Colab screen.
 2. **Create Folder**: Right-click and select "New Folder". Name it `training_data`.
 3. **Upload**: Drag clean recordings (minimum 10-15 mins for a quick clone, 30-60+ mins for a stronger full voice model) into the `training_data` folder.
-    - *Must be 32kHz or higher for CVS-3.5 fidelity.*
+    - *Must be 32kHz or higher for good training fidelity.*
     - *Prefer mono audio, consistent loudness, minimal noise/reverb, and no clipped words.*
 
 ---
@@ -70,7 +72,7 @@ Go to the **"1B-Fine-tuning Training"** sub-tab.
 
 ---
 
-## 🚩 Phase 6: Exporting for CVS-3.5 (Naming Governance)
+## 🚩 Phase 6: Exporting for local use (Naming Convention)
 
 To make your voice active in the local app, you **must** rename the files exactly:
 
@@ -90,7 +92,7 @@ To make your voice active in the local app, you **must** rename the files exactl
 
 ---
 
-**CVS-3.5 Runtime loads weights from configured paths on startup (defaults point to `models/GPT_weights/ai_friend_voice.ckpt` and `models/SoVITS_weights/ai_friend_voice.pth`, unless overridden by env vars).**
+**The voice-agent loads weights from configured paths on startup (defaults point to `models/GPT_weights/ai_friend_voice.ckpt` and `models/SoVITS_weights/ai_friend_voice.pth`, unless overridden by env vars).**
 
 ---
 
@@ -106,9 +108,11 @@ Before replacing production voice weights, run this quick gate:
 
 ---
 
-## 💭 Tier-5: Subconscious & Endocrine Verification
+## 💭 Prosody and Filler Verification
 
-In Tier-5 Autonomy, your trained voice is modulated by simulated "Endocrine" states.
+The delivered voice is modulated per turn by the agent's real endocrine/affect
+state (see `docs/ARCHITECTURE.md`'s Signal Rendering section) — this is live
+in the shipped pipeline today, not a future feature.
 
 1. **Prosody Consistency**: Verify that your voice model handles high-energy/arousal (faster rate) and low-energy (slower rate) without sounding robotic.
 2. **Filler Hydration**: Ensure your `backend/voice_samples/` contains clean recordings of your trained voice for fillers like "hmm", "let me think", etc., to maintain identity continuity during subconscious reflections.

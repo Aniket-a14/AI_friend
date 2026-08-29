@@ -1,12 +1,12 @@
-# 🧪 Research Paper Methodology: Tier-5 Sovereign Mesh
+# 🧪 Research Methodology Guide
 
-> **Guide for testing, observing, and validating Architecture, Mathematics, and Mesh Dynamics.**
+> **Guide for testing, observing, and validating the architecture, mathematics, and mesh dynamics.**
 
-This document outlines the experimental framework for validating the Tier-5 Sovereign Mesh architecture, focusing on the mathematical models and signal dynamics that power the cognitive core, independent of vocal synthesis.
+This document outlines an experimental framework for validating this project's architecture, focusing on the mathematical models and signal dynamics that power the cognitive core, independent of vocal synthesis.
 
 ---
 
-## 1. Architectural Validation (The Sovereign Mesh)
+## 1. Architectural Validation (The Mesh)
 
 The primary research goal is validating the efficacy of a decentralized, event-driven cognitive architecture.
 
@@ -23,7 +23,7 @@ The primary research goal is validating the efficacy of a decentralized, event-d
 
 ## 2. Mathematical Validation (The Cognitive Core)
 
-Validating the deterministic nature of the psychological and memory models.
+Validating the deterministic nature of the psychological and memory models. These formulas are real and match `backend/app/state/agent_state.py` / `backend/app/config.py` at time of writing — verify against current code before citing in a paper, since defaults can drift.
 
 ### A. Affective Drift (PAD Model)
 Validate the **Pleasure, Arousal, Dominance** trajectories.
@@ -53,19 +53,23 @@ Measure the delta between `chat.input` and the final `chat.output` event.
 L_{cognitive} = T_{perception} + T_{memory\_surfacing} + T_{llm\_generation}
 ```
 
-- **Target**: sub-500ms for total cognitive turnaround on local hardware.
+Any target latency figure cited here should carry a provenance label (measured vs. estimated) matching the discipline `CLAUDE.md` and `.agents/CONTEXT.md` already apply to every other number in this repo — see `backend/tools/measure/out/` for what's actually been measured against real infrastructure so far.
 
 ### B. State Hydration Performance
-Measure the time taken to hydrate the agent's full state (Prisma + Neo4j) during a heartbeat. The O(1) L1 Cache provides sub-microsecond `surface_actr_memories` resolution.
+Measure the time taken to hydrate the agent's full state (Postgres + Neo4j) during a heartbeat.
 
 ### C. Telemetry Profiling
-Monitor signal bounds using the lock-free asynchronous telemetry worker. Previous synchronous logging induced 661 µs overhead; the current Tier-5 baseline is strictly `< 0.5 µs` per pulse.
+If profiling logging overhead specifically, compare a synchronous vs. asynchronous telemetry path and report the actual measured delta rather than assuming one.
 
 ---
 
-## 4. Viewing & Observability (The Invisible Mesh)
+## 4. Viewing & Observability
 
-To collect results for your paper, you must observe the signal flow.
+To collect results for your paper, you must observe the signal flow. There is
+**no dashboard UI** for this — an `/admin/mesh` React Flow visualization
+panel has been discussed but does not exist anywhere in the codebase (no
+`react-flow` dependency, no admin route in `frontend/` or `website/`); don't
+reference it as a current feature.
 
 ### A. Graph Knowledge (Neo4j Browser)
 Visualize the agent's beliefs and episodic memory connections.
@@ -81,20 +85,41 @@ nats sub ">"
 
 ## 5. Visualization for Publication
 
-### A. Mesh Architecture Visualization
-Use the **React Flow** dashboard (`/admin/mesh`) to visualize the decoupling of agents.
+### A. Mesh Latency Observation
+`scripts/research/monitor.py` and `scripts/research/injector.py` are real,
+existing scripts: the injector sends standardized inputs to the mesh over
+NATS to measure cognitive turnaround without human timing variability; the
+monitor subscribes to the input/output/perceptual subjects and computes
+turnaround/jitter from what it observes. Run them in separate terminals
+against a live mesh.
 
 ### B. Emotional Trajectory Plotting
-Generate PAD charts using `scripts/visualization/visualize_affect.py` to demonstrate deterministic emotional evolution over time.
+`scripts/research/collector.py` logs the agent's live PAD state to CSV by
+subscribing to NATS broadcasts. `scripts/visualization/visualize_affect.py`
+plots a PAD trajectory chart from that kind of data (its own current
+implementation renders a synthetic sample trajectory for illustration —
+check its source before assuming it plots your real collected CSV without
+modification).
 
 ### C. Memory Activation Heatmaps
-Plot the "Activation Score" of recalled memories over a 60-minute session to show contextual relevance dynamics.
+`scripts/research/visualizer.py` renders results out of `scripts/results/`
+into plots (headless matplotlib) for publication figures.
+
+`scripts/diagnostics/human_readable_benchmarks.py` also exists and can generate a readable summary of a benchmark run.
+
+**One thing worth knowing about all five research scripts above:** at time
+of writing they still carry the same "CVS-3.5 / Sovereign Mesh / Tier-4/5"
+branding this pass removed from the docs — e.g. `monitor.py`'s own print
+output says "Sovereign Mesh Research Monitor (Tier-4/5) online...". That
+cleanup wasn't done in this pass (scope was the nine `docs/*.md` files, not
+`scripts/`) — flagged here rather than silently left, since a paper's
+methodology section quoting this guide shouldn't be surprised by it.
 
 ---
 
 ## 6. System Parameter Map (Benchmarking Targets)
 
-To ensure reproducibility, your paper should cite the following system constants. All values are configurable in `backend/app/config.py` or `.env`.
+To ensure reproducibility, your paper should cite the following system constants. All values are configurable in `backend/app/config.py` or `.env`. Verified present at these defaults in `backend/app/config.py` as of this writing.
 
 ### A. Architectural & Sensory Parameters
 | Parameter | Default | Research Significance |
@@ -123,29 +148,32 @@ To ensure reproducibility, your paper should cite the following system constants
 | `MAUT_W_CONTEXT` | `0.20` | Decision weight: Local Contextual Relevance. |
 
 ### C. Physiological (Endocrine) Formulas
-These parameters modulate LLM generation parameters (Temperature, Top-P) in real-time to simulate biological constraints:
-- **Cortisol (Stress)**: `0.5 - (Valence / 2.0)` — Affects LLM Temperature (Rigidity).
-- **Dopamine (Reward)**: `max(0.0, Valence) * Arousal` — Affects LLM Top-P (Creativity).
+These parameters modulate LLM generation parameters (temperature, top_p) in real-time — this is a real, shipped mechanism (`action.py::_compute_endocrine_options`), not aspirational:
+- **Cortisol (Stress)**: tonic component `0.5 - (Valence / 2.0)`, plus a decaying phasic burst from `release_cortisol()` — affects LLM temperature (narrows it).
+- **Dopamine (Reward)**: tonic component `max(0.0, Valence) * Arousal`, plus a decaying phasic burst from `release_dopamine()` — affects LLM top_p (widens it).
+
+See `CLAUDE.md`'s "Endocrine layer" section for why the tonic/phasic split matters: the tonic terms are perfectly anti-correlated by construction, so only the phasic channels let the agent be stressed and rewarded at once.
 
 ---
 
 ## 7. Benchmarking Workflow (Step-by-Step)
 
-To produce valid research data, follow this standardized benchmarking pipeline.
+To produce valid research data, follow this standardized benchmarking pipeline — using the real, shipped tooling.
 
 ### Step 1: Baseline Establishment
 Run the system with the default parameters listed in Section 6.
-- **Automated Validation**: For isolated system-level verification, run the 16-metric automated suite via `pytest backend/tests/test_performance.py`.
+- **Automated Validation**: `cd backend && ../.venv/bin/python -m pytest tests/test_performance.py` runs the isolated system-level performance suite.
+- **Behavioral baseline**: `python -m evals run --model <tag> --out evals/out/baseline.json` — see `CLAUDE.md`'s "Behavioral eval harness" section. This probes the LLM boundary specifically, with deterministic scoring and provenance tracking built in.
 - **Log Source**: Ensure `DEBUG=True` in `.env` to capture high-fidelity signal timing.
 - **State Capture**: Initialize a clean Neo4j and PostgreSQL state.
 
 ### Step 2: Automated Input Injection
 Do not use manual chat input for benchmarks; it introduces human latency variability.
-- **Tool**: Create a "Researcher Agent" (using the NATS CLI or a Python script) that publishes standardized message bursts to `chat.input`.
+- **Tool**: `scripts/talk.py` publishes real `chat.input` over the mesh and can be scripted/piped for repeatable input, or use the NATS CLI directly:
 - **Command**: `nats pub chat.input '{"text": "Standardized Test Input", "metadata": {"start_time": %TIMESTAMP%}}'`
 
 ### Step 3: Real-Time Signal Monitoring
-Use the NATS CLI to capture the "Turnaround Mesh" timing.
+Use the NATS CLI to capture end-to-end timing.
 ```bash
 # Monitor perception, brain, and mesh update latency simultaneously
 nats sub "audio.perception" & nats sub "chat.output" & nats sub "state.update"
@@ -171,29 +199,31 @@ Apply the results to the formulas in Section 2.
 ## 8. Execution: How & When to Benchmark
 
 ### How to Run
-1.  **Preparation**: Ensure the backend is fully initialized (`NATS`, `Neo4j`, `BrainAgent` all online).
-2.  **Instrumentation**: Open two terminals and start the telemetry scripts:
+1.  **Preparation**: Ensure the backend is fully initialized (`NATS`, `Neo4j`, `BrainAgent` all online) — `./start.sh` handles this.
+2.  **Instrumentation**: Open two terminals and start the real, existing telemetry scripts:
     ```bash
-    python scripts/research/monitor.py   # Latency Profiling
-    python scripts/research/collector.py # State Trajectory Logging
+    python scripts/research/monitor.py   # Latency profiling
+    python scripts/research/collector.py # State trajectory logging (writes CSV)
     ```
 3.  **Simulation**: In a third terminal, trigger the benchmark:
     ```bash
-    python scripts/research/injector.py  # Standardized Pulse Injection
+    python scripts/research/injector.py  # Standardized input injection
     ```
 4.  **Finalization**: Once the session ends, stop the collector and generate plots:
     ```bash
     python scripts/research/visualizer.py
-    python scripts/diagnostics/human_readable_benchmarks.py  # Generate decade profiles
+    python scripts/diagnostics/human_readable_benchmarks.py  # readable summary
     ```
+5.  **Real measurement harness**: `cd backend && python -m tools.measure <n>` runs one of the registered `m11`-`m17` measurements against real infrastructure, writing a provenance-tagged report to `backend/tools/measure/out/` — a separate, more rigorous path than the scripts above, worth using when a number needs to carry provenance for a claim in this repo specifically.
+6.  **Behavioral harness**: `python -m evals run` / `run-conversation` (see Section 7, Step 1, and `backend/evals/README.md`) for anything about model/persona *behavior* rather than latency.
 
 ### When to Benchmark
-- **After Mesh Optimization**: Run the `monitor.py` after changing NATS streaming settings or agent hardware allocation to verify latency gains.
-- **After Formula Tuning**: Run `collector.py` + `visualizer.py` after modifying `PSYCH_ALPHA` or `ACTR_DECAY_RATE` in `.env` to visualize the new cognitive behavior curve.
-- **Database Scaling**: Run benchmarks as your Neo4j/Prisma data grows to measure "Hydration Latency" performance impact.
-- **Publication Prep**: Use the visualizer to generate final, high-resolution figures for your research paper figures.
+- **After Mesh Optimization**: Re-run `monitor.py`, or the relevant `tools.measure` scenario, after changing NATS streaming settings or agent hardware allocation to verify latency gains.
+- **After Formula Tuning**: Re-run `collector.py` + `visualizer.py`, or `evals`, after modifying `PSYCH_ALPHA` or `ACTR_DECAY_RATE` in `.env` to visualize or check for a behavioral change, not just a config diff.
+- **Database Scaling**: Run benchmarks as your Neo4j/Postgres data grows to measure hydration-latency impact.
+- **Publication Prep**: Every number that goes into a paper should carry the same provenance label (`measured` vs. `estimated` vs. `unmeasured`) this repo's own docs use — see `CLAUDE.md`'s integrity constraints.
 
 ---
 
 ## 🧭 Recommended Research Focus
-Focus on **"Mathematical Determinism in Agentic Cognition"**: How structured psychological math (PAD) and cognitive theory (ACT-R) can be implemented in a decoupled mesh to create a "Sovereign Intelligence" that is observable and reproducible.
+Focus on **"Mathematical determinism in agentic cognition"**: how structured psychological math (PAD) and cognitive theory (ACT-R) can be implemented in a decoupled mesh to create behavior that is observable and reproducible, not a black box.

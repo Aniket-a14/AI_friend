@@ -455,14 +455,17 @@ the pack is used to justify anything.
 
 Not roadmap items. The direction the above is in service of.
 
-## 6.1 — Consolidation and the fine-tuned adapter (CVS-4)
+## 6.1 — Consolidation and the fine-tuned adapter
 
-`docs/cvs4_architecture_roadmap.md` describes a consolidation loop in which the
-agent's own conversation history trains a LoRA/QLoRA adapter that is then adopted
-as its voice. **This has been discussed across sessions and never built.** Parts of
-the same document *are* implemented, which makes the document itself a trap — read
-it as a roadmap, not a description, and note that its §F.6 now contradicts the
-prosody code that actually shipped.
+`docs/FUTURE_FINETUNED_ADAPTER.md` (renamed from `cvs4_architecture_roadmap.md`
+during the 2026-08-29 docs de-fabrication pass) describes a consolidation loop
+in which the agent's own conversation history trains a LoRA/QLoRA adapter that
+is then adopted as its voice. **This has been discussed across sessions and
+never built** — the community roadmap's own "Explicitly not doing" list names
+it explicitly. Parts of the same document *are* implemented via a different,
+already-shipped mechanism (the endocrine → LLM-sampling-parameter path, not
+fine-tuning) — the target document now says so directly in its own header
+rather than requiring this note to carry the caveat.
 
 The gate it needs already exists: `backend/evals/` answers "did this model +
 persona change behaviour between two runs?" at the LLM boundary, with

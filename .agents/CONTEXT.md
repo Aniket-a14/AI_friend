@@ -13041,3 +13041,136 @@ verified per the paragraph above (1434 backend tests, `ruff check .` clean).
 - The website "PALabs" / repo-and-README "AI Friend" naming split was
   flagged, not resolved -- it reads as a deliberate, scoped decision per its
   own commit message, not a bug, so left as-is pending the user's call.
+
+## 2026-08-29 -- legacy docs/*.md fabrication pass: full rewrite of the nine
+## files flagged (but left undone) by the docs-site ledger entry
+
+Direct follow-up to the entry above's own NOT-done list. Full pass, at the
+user's explicit request, on every `docs/*.md` file still carrying the
+"CVS-3.5 Premium Edition / Sovereign Mesh" fabrication pattern the
+README/CONTRIBUTING/SECURITY/CHANGELOG rewrites already fixed elsewhere.
+
+**Verified against real code before deciding what to keep, not just
+reworded on sight -- including a real mistake made and then caught doing
+exactly that.** `API_SPEC.md`'s documented `/status` response
+(`{"status": "healthy", "version": "CVS-3.5", "runtime": "Perceptual
+Mastery"}`) does not match `backend/main.py`'s real handler
+(`{"status": "ok", "ready": bool}`) -- fixed. `RESEARCH_GUIDE.md` described a
+benchmarking workflow around five scripts
+(`scripts/research/{monitor,collector,injector,visualizer}.py`,
+`scripts/visualization/visualize_affect.py`) and an `/admin/mesh` React Flow
+dashboard. First pass checked for the five scripts from `backend/` (this
+repo's usual working directory for most commands) and, finding nothing at
+`backend/scripts/research/...`, wrote them up as fabricated -- wrong: all
+five exist for real, at the repo root's `scripts/research/` and
+`scripts/visualization/`, just not under `backend/`. Caught when the user
+pointed at the directory directly rather than trusting the first check.
+Corrected: the guide now points at the real scripts with correct paths and
+describes what they actually do (read from source, not assumed from
+filename) -- `monitor.py`/`injector.py` for latency, `collector.py`/
+`visualizer.py`/`visualize_affect.py` for PAD trajectory logging and
+plotting. One thing the correction surfaced and flagged rather than fixed:
+all five scripts still carry the same "CVS-3.5 / Sovereign Mesh / Tier-4/5"
+branding this pass removed from the docs (e.g. `monitor.py`'s own print
+output: "Sovereign Mesh Research Monitor (Tier-4/5) online...") --
+`scripts/` itself was out of scope for this docs-only pass. The `/admin/mesh`
+dashboard claim, by contrast, held up on the more careful re-check too: no
+`react-flow` dependency anywhere in the repo, no admin route in `frontend/`
+or `website/` -- genuinely doesn't exist, correctly flagged as not a current
+feature. Added, correctly, as a real supplement rather than a replacement:
+`backend/evals/` and `backend/tools/measure/` (both already documented in
+`CLAUDE.md`), plus `scripts/diagnostics/human_readable_benchmarks.py`,
+which also does exist. Also verified real and kept as-is: the
+`PSYCH_ALPHA`/`ACTR_DECAY_RATE`/`MAUT_W_*` config table (matches
+`backend/app/config.py` exactly), the Prisma version reference (`^7.7.0` in
+`frontend/package.json`), and the entire `backend/app/api/` HTTP surface
+list added to `API_SPEC.md` (read all five router files directly rather
+than guessing signatures).
+
+**`ROBOTICS_ANALYSIS.md`, the most fabrication-heavy file, rewritten rather
+than deleted.** Its premise -- analyzing this project's path to a physical
+humanoid robot -- directly contradicts the locked product decision
+(`.agents/CONTEXT.md`, "Community roadmap Phase 0": one friend per person,
+not a robotics platform) and the reason the README's own "SOTA Comparative
+Benchmarking Matrix" was cut entirely in an earlier entry. Added an explicit
+status note at the top ("exploratory writing, not a product direction") and
+kept the one genuinely real, accurately-cited section (§2's latency budget,
+now showing the current Tesla T4 numbers). Cut outright rather than
+reframed: the self-graded "Tier 5 (Predictive Continuous Simulation) --
+CVS-3.5 ours" tier system, the "near-perfect human" timeline, and a section
+literally titled "Improving Architecture Based on May 2026 AI Landscape" --
+none of these had a real claim under the branding worth preserving, unlike
+the rest of the file's genuinely useful robotics-constraints reasoning
+(Moravec's paradox, System 1/2 concurrency, power/thermal envelopes), which
+was kept, reframed as general robotics knowledge rather than a claim about
+what this project does.
+
+**`cvs4_architecture_roadmap.md` renamed to `FUTURE_FINETUNED_ADAPTER.md`,
+at the user's explicit instruction** ("cvs4 was the roadmap for future,
+keep it as future and different name"). The old document's own closing line
+-- "Document Status: Approved for CVS v4.0 Implementation... the definitive
+architectural blueprint" -- claimed authority over something that was never
+built; matches this repo's own `docs/FUTURE_WORK.md` finding on the same
+file: "discussed across sessions and never built... makes the document
+itself a trap." Added a status note stating plainly it is roadmap-only and
+unbuilt, and reconciled the one section that had gone stale in a dangerous
+direction rather than just an unbuilt one: §F (prosody-from-fine-tuned-
+weights) now explicitly says the *underlying idea* (state-driven prosody)
+already shipped, via a completely different mechanism
+(`action.py::_compute_endocrine_options` mapping endocrine state straight to
+LLM sampling parameters on a generic model, not a fine-tuned adapter) --
+without that note, a reader would reasonably conclude prosody modulation
+doesn't exist yet in this codebase, which is false. Four cross-references to
+the old filename updated to keep pointing at real content instead of a
+dangling path: `backend/app/cognitive/somatic.py`,
+`backend/app/state/agent_state.py` (two sites), `docs/FUTURE_WORK.md`.
+
+**The other five files** (`GPT_SOVITS_INSTALL.md`, `COLAB_PATHS_CHEATSHEET.md`,
+`ARCHITECTURE.md`, `ARCHIVE_TOC.md`, `docs/README.md`) needed de-branding and
+a small number of specific corrections rather than a structural rewrite:
+`ARCHITECTURE.md`'s "Resource Matrix" table relabeled "target, not yet
+individually measured" (the one real measurement that exists,
+`m17_pressure_scenarios.json`, measured aggregate RAM across composite
+scenarios, not this per-agent breakdown); the repeated "80,000 OPS"
+NATS-throughput claim (already established elsewhere as unmeasured) cut
+from every file it appeared in and replaced with an honest statement of
+*why* binary transport avoids overhead, without a specific number.
+`docs/README.md`'s own "Documentation Principles" section previously
+instructed future agents to "preserve the CVS framing" -- the opposite of
+correct after this pass and the README/SECURITY/CONTRIBUTING rewrites that
+preceded it -- replaced with the real principle (accuracy, provenance on
+every number, no reintroducing the pattern just fixed).
+
+**Verified.** All nine files' markdown links to other files in `docs/`
+resolve (checked programmatically, not by eye). `ast.parse()` and
+`ruff check` clean on the two Python files touched (docstring-only edits in
+`somatic.py`/`agent_state.py`, no logic changed -- no test implication
+beyond syntax/lint, both confirmed). No fabrication markers
+(`CVS-3.5`/`Sovereign Mesh`/`Premium Edition`/`Detroit: Become Human`/
+`80,000 OPS`/`RTX 4090`) remain anywhere in `docs/` except `docs/README.md`,
+where they appear deliberately, as the named examples in its own
+"don't reintroduce this" principle.
+
+**NOT done:**
+- No link-checker or markdown-lint tool was run against the wider repo --
+  only `docs/`-internal links were verified, and only by a purpose-written
+  script, not a standard tool.
+- `FUTURE_FINETUNED_ADAPTER.md`'s Dual-Threshold Forgetting Curve table was
+  flagged as unverified against the real, extracted `_compute_actr_decay`
+  (Phase 7.1 split this out after the original document was written) rather
+  than re-derived and confirmed -- the note says so; the actual current
+  values were not looked up. Similarly, `ROBOTICS_ANALYSIS.md`'s and
+  `FUTURE_FINETUNED_ADAPTER.md`'s cited config constants were spot-checked,
+  not every single number in every formula.
+- `scripts/research/`'s five scripts (surfaced during the correction above)
+  still carry the same branding pattern this pass removed from `docs/` --
+  a real, named follow-up, not silently deferred.
+- This entry itself is prose/doc-only; no code path changed beyond two
+  docstring cross-reference fixes, so there is nothing new for the
+  behavioral eval harness or the pytest suite to catch -- not run against
+  this change specifically beyond the syntax/lint check above.
+- The website/`about` page and the docs site's own `content/docs/*.md`
+  (separate from this `docs/` folder, built in an earlier Phase 5 entry)
+  were not re-audited for the same fabrication pattern -- out of scope for
+  this pass, which was the nine files the earlier ledger entry named
+  specifically.

@@ -334,7 +334,7 @@ class AgentState:
         """Fire a phasic burst, returning the new total dopamine level.
 
         Implements the roadmap's `D_t = min(1.0, D_{t-1} + amount)`
-        (`docs/cvs4_architecture_roadmap.md` §C) literally, which the previous
+        (`docs/FUTURE_FINETUNED_ADAPTER.md` §C) literally, which the previous
         derived-only property could not: with dopamine computed purely from
         valence and arousal there was no `D_{t-1}` to add to, and the only way
         to move it was to move mood itself.
@@ -1173,7 +1173,7 @@ class StateService:
         at* into valence and arousal. Together they are the two halves of the
         perception-to-affect path.
 
-        Roadmap §C (`docs/cvs4_architecture_roadmap.md`) specifies a dopamine
+        Roadmap §C (`docs/FUTURE_FINETUNED_ADAPTER.md`) specifies a dopamine
         spike alongside the valence one, and both now happen literally: the
         valence lift below, and a real phasic burst via `release_dopamine`.
         Before phasic dopamine existed, the burst could only be approximated by
