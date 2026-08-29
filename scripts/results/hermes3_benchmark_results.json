@@ -1,0 +1,57 @@
+{
+  "model": "hermes3:8b",
+  "timestamp": 1756437373.0,
+  "environment": "Google Colab Cloud GPU",
+  "summary": {
+    "mean_ttft_ms": 88.0,
+    "mean_tokens_per_sec": 44.4,
+    "mean_total_latency_ms": 5211.8
+  },
+  "trials": [
+    {
+      "prompt_idx": 1,
+      "category": "Emotional Empathy",
+      "ttft_ms": 75.0,
+      "tokens_per_sec": 45.2,
+      "total_latency_ms": 4788.7,
+      "token_count": 213,
+      "sample_output": "Of course, I'm here to listen and chat with you. It's understandable to feel unappreciated..."
+    },
+    {
+      "prompt_idx": 2,
+      "category": "Theory of Mind & Memory Grounding",
+      "ttft_ms": 70.2,
+      "tokens_per_sec": 44.5,
+      "total_latency_ms": 9599.1,
+      "token_count": 424,
+      "sample_output": "It sounds like you might be referring to a common chord progression called the \"12-bar blues\"..."
+    },
+    {
+      "prompt_idx": 3,
+      "category": "Conversational Pacing (Voice Friendly)",
+      "ttft_ms": 121.7,
+      "tokens_per_sec": 44.7,
+      "total_latency_ms": 1062.3,
+      "token_count": 42,
+      "sample_output": "A gentle breeze of inspiration stirs, carrying whispers of wisdom and tranquility. In this moment..."
+    },
+    {
+      "prompt_idx": 4,
+      "category": "Multi-turn Presence & Roleplay",
+      "ttft_ms": 60.6,
+      "tokens_per_sec": 43.6,
+      "total_latency_ms": 8835.1,
+      "token_count": 383,
+      "sample_output": "Let's imagine we're taking a leisurely walk through a beautiful, sunlit forest. The gentle rustling..."
+    },
+    {
+      "prompt_idx": 5,
+      "category": "Structured System 2 Appraisal (JSON Output)",
+      "ttft_ms": 112.5,
+      "tokens_per_sec": 43.9,
+      "total_latency_ms": 1773.9,
+      "token_count": 73,
+      "sample_output": "{\n  \"valence\": -0.7,\n  \"arousal\": 0.8,\n  \"dominance\": 0.4,\n  \"inferred_need\": \"support and listening\",\n  \"suggested_action\": \"validate feelings and offer calm presence\"\n}"
+    }
+  ]
+}
