@@ -171,8 +171,13 @@ async def _measure_sqlite_concurrency(graph_db: GraphDB, n: int = 5) -> dict:
 
 
 async def run(
-    allow_mock: bool = False, graph_entities: int = 1000
+    allow_mock: bool = False, graph_entities: int | None = None
 ) -> MeasurementReport:
+    import os
+
+    if graph_entities is None:
+        graph_entities = int(os.environ.get("MEASURE_GRAPH_ENTITIES", "1000"))
+
     # This measurement times DB/graph calls, not the LLM boundary, but the
     # provenance check stays for consistency: a MOCK_LLM_TEXT deployment
     # usually also means synthetic seed data isn't meaningfully "real" either.
