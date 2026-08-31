@@ -139,6 +139,38 @@ export const CONTAINER_FOOTPRINTS: ContainerFootprint[] = [
 
 export const REAL_MICRO_BENCHMARKS: MicroBenchmark[] = [
   {
+    measurementId: "M1.5-RTX2060S-TTFT",
+    title: "RTX 2060 Super (3B) Time-To-First-Token",
+    measuredValue: "39.95 ms",
+    benchmarkUnit: "milliseconds (<40ms sub-perceptual)",
+    conditions: "Empirical prompt evaluation benchmark on dedicated RTX 2060 Super (8GB VRAM, Turing Tensor Cores)",
+    provenance: "live",
+  },
+  {
+    measurementId: "M1.5-RTX2060S-Throughput",
+    title: "RTX 2060 Super (3B) Generation Speed",
+    measuredValue: "122.71 tok/s",
+    benchmarkUnit: "tokens per second sustained (8.15 ms/token)",
+    conditions: "Sustained streaming throughput (187ms full sentence generation, zero audio buffer underrun)",
+    provenance: "live",
+  },
+  {
+    measurementId: "M1.7-LLM-TTFT",
+    title: "Hermes 3 (8B) Time-To-First-Token",
+    measuredValue: "61.9 ms",
+    benchmarkUnit: "milliseconds (<100ms sub-perceptual)",
+    conditions: "Empirical streaming generation benchmark across 5 companion scenarios on Tesla T4 GPU",
+    provenance: "live",
+  },
+  {
+    measurementId: "M1.8-LLM-Throughput",
+    title: "Hermes 3 (8B) Generation Speed",
+    measuredValue: "46.6 tok/s",
+    benchmarkUnit: "tokens per second sustained",
+    conditions: "Sustained streaming throughput (~150ms per 7-word audio chunk, zero TTS buffer underrun)",
+    provenance: "live",
+  },
+  {
     measurementId: "M1.6-GraphWarm",
     title: "Neo4j Knowledge Graph Warm Fetch",
     measuredValue: "3.58 µs",
@@ -152,6 +184,14 @@ export const REAL_MICRO_BENCHMARKS: MicroBenchmark[] = [
     measuredValue: "56.2 ms",
     benchmarkUnit: "milliseconds",
     conditions: "Full Cypher graph traversal over 1,003 un-cached entity nodes",
+    provenance: "live",
+  },
+  {
+    measurementId: "M1.6-GraphSeeding",
+    title: "Neo4j Graph High-Volume Seeding",
+    measuredValue: "0.91 s",
+    benchmarkUnit: "seconds wall-clock",
+    conditions: "Concurrent ingestion of 1,000 entity nodes and 1,998 relationship edges into graph DB",
     provenance: "live",
   },
   {
@@ -178,25 +218,18 @@ export const REAL_MICRO_BENCHMARKS: MicroBenchmark[] = [
     conditions: "50 sequential 32kHz PCM audio frames published over NATS",
     provenance: "live",
   },
-  {
-    measurementId: "M1.7-LLM-TTFT",
-    title: "Hermes 3 (8B) Time-To-First-Token",
-    measuredValue: "61.9 ms",
-    benchmarkUnit: "milliseconds (<100ms sub-perceptual)",
-    conditions: "Empirical streaming generation benchmark across 5 companion scenarios on Tesla T4 GPU",
-    provenance: "live",
-  },
-  {
-    measurementId: "M1.8-LLM-Throughput",
-    title: "Hermes 3 (8B) Generation Speed",
-    measuredValue: "46.6 tok/s",
-    benchmarkUnit: "tokens per second sustained",
-    conditions: "Sustained streaming throughput (~150ms per 7-word audio chunk, zero TTS buffer underrun)",
-    provenance: "live",
-  },
 ]
 
 export const HARDWARE_MATRIX = [
+  {
+    platform: "Dedicated Home GPU (NVIDIA RTX 2060 Super 8GB)",
+    profile: "Headless 24/7 Full Mesh (Linux Kernel 7.0 / Ubuntu 24.04)",
+    llmInference: "Llama 3.2 3B (Ollama Bare-Metal / CUDA 13.2)",
+    voiceEngine: "GPT-SoVITS 32kHz (CUDA)",
+    ttftMs: "39.95 ms (Measured)",
+    totalTurnaroundMs: "120 - 180 ms",
+    status: "Verified On-Premises Hardware",
+  },
   {
     platform: "Google Colab / Cloud GPU (NVIDIA Tesla T4)",
     profile: "Full mesh + Hermes 3 (8B)",
@@ -204,7 +237,7 @@ export const HARDWARE_MATRIX = [
     voiceEngine: "GPT-SoVITS 32kHz (CUDA)",
     ttftMs: "61.9 ms (Measured)",
     totalTurnaroundMs: "160 - 220 ms",
-    status: "Verified Empirical Telemetry",
+    status: "Verified Cloud Telemetry",
   },
   {
     platform: "Apple Silicon M1 / M2 / M3 (16GB Unified)",

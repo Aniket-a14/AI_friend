@@ -5,7 +5,7 @@ describe('benchmark-data', () => {
   test('PRESSURE_SCENARIOS has 9 items', () => {
     expect(PRESSURE_SCENARIOS).toHaveLength(9)
   })
-  
+
   test('HARDWARE_MATRIX is non-empty with expected fields', () => {
     expect(HARDWARE_MATRIX.length).toBeGreaterThan(0)
     expect(HARDWARE_MATRIX[0]).toHaveProperty('platform')

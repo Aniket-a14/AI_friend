@@ -4,7 +4,7 @@ rem  AI Friend — Windows Double-Click Launcher
 rem ==============================================================================
 title AI Friend Launcher
 echo ==============================================================================
-echo                      AI FRIEND — WINDOWS LAUNCHER                             
+echo                      AI FRIEND — WINDOWS LAUNCHER
 echo ==============================================================================
 echo.
 

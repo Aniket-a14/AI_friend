@@ -13,7 +13,6 @@ Validates:
 from __future__ import annotations
 
 import json
-import os
 import platform
 import shutil
 import socket
@@ -53,7 +52,11 @@ def check_ram() -> dict[str, Any]:
         "warning": warning,
         "message": (
             f"{round(total_gb, 1)} GB unified/host RAM"
-            + (" (16 GB+ recommended for local Llama 3.2 3B + full mesh)" if warning else "")
+            + (
+                " (16 GB+ recommended for local Llama 3.2 3B + full mesh)"
+                if warning
+                else ""
+            )
         ),
     }
 
@@ -61,7 +64,7 @@ def check_ram() -> dict[str, Any]:
 def check_gpu() -> dict[str, str]:
     system = platform.system()
     machine = platform.machine().lower()
-    
+
     if system == "Darwin":
         if "arm" in machine or "aarch64" in machine:
             return {"type": "Apple Silicon (Metal / Neural Engine)", "supported": True}
@@ -70,7 +73,11 @@ def check_gpu() -> dict[str, str]:
     if shutil.which("nvidia-smi"):
         try:
             out = subprocess.check_output(
-                ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+                [
+                    "nvidia-smi",
+                    "--query-gpu=name,memory.total",
+                    "--format=csv,noheader",
+                ],
                 text=True,
             )
             gpu_name = out.strip().splitlines()[0]
@@ -84,23 +91,42 @@ def check_gpu() -> dict[str, str]:
 def check_docker() -> dict[str, Any]:
     docker_bin = shutil.which("docker")
     if not docker_bin:
-        return {"installed": False, "running": False, "message": "Docker not found in PATH"}
+        return {
+            "installed": False,
+            "running": False,
+            "message": "Docker not found in PATH",
+        }
 
     try:
-        subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        return {"installed": True, "running": True, "message": "Docker daemon is running"}
+        subprocess.run(
+            ["docker", "info"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+        return {
+            "installed": True,
+            "running": True,
+            "message": "Docker daemon is running",
+        }
     except Exception:
-        return {"installed": True, "running": False, "message": "Docker is installed but daemon is not running"}
+        return {
+            "installed": True,
+            "running": False,
+            "message": "Docker is installed but daemon is not running",
+        }
 
 
 def check_ollama(url: str = "http://127.0.0.1:11434") -> dict[str, Any]:
     ollama_bin = shutil.which("ollama")
     tags_url = f"{url.rstrip('/')}/api/tags"
-    
+
     running = False
     models: list[str] = []
     try:
-        req = urllib.request.Request(tags_url, headers={"User-Agent": "AIFriend/Installer"})
+        req = urllib.request.Request(
+            tags_url, headers={"User-Agent": "AIFriend/Installer"}
+        )
         with urllib.request.urlopen(req, timeout=3) as resp:
             if resp.status == 200:
                 running = True
@@ -168,18 +194,28 @@ def main() -> int:
     print("═════════════════════════════════════════════════════════════════")
     print("           AI FRIEND — PREREQUISITE & HARDWARE SCAN              ")
     print("═════════════════════════════════════════════════════════════════")
-    print(f"OS Platform:    {platform.system()} {platform.machine()} (Python {platform.python_version()})")
+    print(
+        f"OS Platform:    {platform.system()} {platform.machine()} (Python {platform.python_version()})"
+    )
     print(f"Memory:         {ram['message']}")
     print(f"Hardware Accel: {gpu['type']}")
-    print(f"Docker Daemon:  {'✓ Running' if docker['running'] else '✗ Not Running (' + docker['message'] + ')'}")
-    print(f"Ollama Server:  {'✓ Running' if ollama['running'] else '✗ Not Running (run `ollama serve`)'}")
-    
+    print(
+        f"Docker Daemon:  {'✓ Running' if docker['running'] else '✗ Not Running (' + docker['message'] + ')'}"
+    )
+    print(
+        f"Ollama Server:  {'✓ Running' if ollama['running'] else '✗ Not Running (run `ollama serve`)'}"
+    )
+
     if ollama["running"]:
-        print(f"  └ Models:     Llama 3.2: {'✓' if ollama['has_llama'] else '✗ (will pull)'} | Embeddings: {'✓' if ollama['has_embed'] else '✗ (will pull)'}")
+        print(
+            f"  └ Models:     Llama 3.2: {'✓' if ollama['has_llama'] else '✗ (will pull)'} | Embeddings: {'✓' if ollama['has_embed'] else '✗ (will pull)'}"
+        )
 
     busy_ports = [name for name, available in ports.items() if not available]
     if busy_ports:
-        print(f"Port Conflicts: ⚠ The following ports are in use: {', '.join(busy_ports)}")
+        print(
+            f"Port Conflicts: ⚠ The following ports are in use: {', '.join(busy_ports)}"
+        )
     else:
         print("Network Ports:  ✓ All standard ports available")
 

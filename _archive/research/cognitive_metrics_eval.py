@@ -539,9 +539,7 @@ def module4_conflict_resolver():
                     ducking_lat_measured = True
     except Exception as e:
         print(f"  ⚠️ Could not load latency_profile.json for DSP/ducking: {e}")
-    composed_barge_in_ms = (
-        audio_buffer_assumption_ms + nats_rtt + dsp_ext + ducking_lat
-    )
+    composed_barge_in_ms = audio_buffer_assumption_ms + nats_rtt + dsp_ext + ducking_lat
 
     def _component_label(value, measured, unit_fmt):
         tag = "measured" if measured else "default (artifact unavailable)"

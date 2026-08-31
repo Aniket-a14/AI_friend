@@ -45,4 +45,3 @@ cd backend
 ```
 
 The `--force` flag is mandatory to prevent accidental overwrites of existing live agent configs. Once complete, restart the stack to resume conversations exactly where you left off.
-

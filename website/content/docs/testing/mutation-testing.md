@@ -30,4 +30,3 @@ Inspect mutation survival reports:
 
 ## Golden Rule for Contributions
 Every new test contributed to the repository must be mutation-verified: manually break the code being covered, confirm the test fails with a clear message, restore the code, and confirm the test passes.
-

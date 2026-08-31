@@ -44,4 +44,3 @@ Host colab
 4. Enter your password.
 
 You now have a live terminal and full filesystem access inside the Colab GPU runtime.
-

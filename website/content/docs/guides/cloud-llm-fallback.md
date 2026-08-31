@@ -31,4 +31,3 @@ Unlike simple LLM wrappers, the `AnthropicClient` adapter (`backend/app/llm/anth
 
 > [!WARNING]
 > Setting `LLM_PROVIDER=anthropic` transmits conversation turns over HTTPS to Anthropic servers. This is an explicit opt-in choice for users who trade local containment for higher inference speed or model intelligence.
-

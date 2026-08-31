@@ -52,4 +52,3 @@ AI Friend is explicitly architected for **authentic peer dynamics**:
 1. **Right to Disagree**: If the user makes an illogical claim or acts unfairly, the agent will push back respectfully.
 2. **Bad Days & Low Energy**: If the agent's simulated fatigue is high or recent interactions have been stressful, its responses are naturally shorter and less enthusiastic.
 3. **Narrow Safety Backstop**: The safety filter (`_HOSTILE_TO_USER`) catches only genuine abuse or malice, allowing ordinary banter, sarcasm, and debate without false-positive censorship.
-

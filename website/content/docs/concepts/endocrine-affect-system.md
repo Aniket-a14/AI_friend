@@ -54,4 +54,3 @@ The agent does **not** artificially soften or placate when the user is rude or u
 1. Valence drops, and an immediate **phasic Cortisol burst** fires.
 2. The agent's temperature drops, and deliberation selects an assertive or disengaged conversational stance.
 3. The response reflects authentic human annoyance, maintaining identity integrity rather than sycophantic obedience.
-

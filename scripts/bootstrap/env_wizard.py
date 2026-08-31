@@ -9,8 +9,6 @@ Guides the user step-by-step through configuring all required .env fields:
 5. Voice & Hardware operational mode
 """
 
-import os
-import platform
 import secrets
 import string
 import sys
@@ -24,27 +22,37 @@ def generate_secure_password(length: int = 24) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-def prompt_user(question: str, default: str = "", choices: list[str] | None = None) -> str:
+def prompt_user(
+    question: str, default: str = "", choices: list[str] | None = None
+) -> str:
     choice_str = f" [{'/'.join(choices)}]" if choices else ""
     default_str = f" (default: {default})" if default else ""
-    prompt_text = f"\033[1;36m?\033[0m \033[1m{question}\033[0m{choice_str}{default_str}: "
-    
+    prompt_text = (
+        f"\033[1;36m?\033[0m \033[1m{question}\033[0m{choice_str}{default_str}: "
+    )
+
     try:
         val = input(prompt_text).strip()
     except (KeyboardInterrupt, EOFError):
         print("\n\nSetup aborted.")
         sys.exit(1)
-        
+
     if not val and default:
         return default
     if choices and val not in choices:
-        print(f"  \033[33mInvalid choice. Using default: {default or choices[0]}\033[0m")
+        print(
+            f"  \033[33mInvalid choice. Using default: {default or choices[0]}\033[0m"
+        )
         return default or choices[0]
     return val
 
 
 def prompt_secret(question: str, default: str = "") -> str:
-    default_str = " (press Enter to auto-generate secure key)" if not default else f" (press Enter to use: {default})"
+    default_str = (
+        " (press Enter to auto-generate secure key)"
+        if not default
+        else f" (press Enter to use: {default})"
+    )
     prompt_text = f"\033[1;36m?\033[0m \033[1m{question}\033[0m{default_str}: "
     try:
         val = input(prompt_text).strip()
@@ -58,11 +66,19 @@ def prompt_secret(question: str, default: str = "") -> str:
 
 def run_init_wizard(target_env_path: Path | None = None) -> int:
     env_file = target_env_path or (REPO_ROOT / ".env")
-    
-    print("\n\033[1;32m═════════════════════════════════════════════════════════════════\033[0m")
-    print("\033[1m            AI FRIEND — ENVIRONMENT SETUP WIZARD                 \033[0m")
-    print("\033[1;32m═════════════════════════════════════════════════════════════════\033[0m")
-    print("This wizard will configure your \033[1m.env\033[0m file with secure credentials,")
+
+    print(
+        "\n\033[1;32m═════════════════════════════════════════════════════════════════\033[0m"
+    )
+    print(
+        "\033[1m            AI FRIEND — ENVIRONMENT SETUP WIZARD                 \033[0m"
+    )
+    print(
+        "\033[1;32m═════════════════════════════════════════════════════════════════\033[0m"
+    )
+    print(
+        "This wizard will configure your \033[1m.env\033[0m file with secure credentials,"
+    )
     print("your chosen LLM model (local or cloud), and friend preferences.\n")
 
     # Step 1: Environment Mode
@@ -80,7 +96,9 @@ def run_init_wizard(target_env_path: Path | None = None) -> int:
 
     # Step 3: LLM Model Selection (Local or Cloud)
     print("\n\033[1;34m[3/6] LLM Brain & Model Selection\033[0m")
-    print("AI Friend is model-agnostic. You can run any local Ollama model or Cloud API.")
+    print(
+        "AI Friend is model-agnostic. You can run any local Ollama model or Cloud API."
+    )
     provider_type = prompt_user(
         "Select LLM inference engine",
         default="local",
@@ -96,7 +114,9 @@ def run_init_wizard(target_env_path: Path | None = None) -> int:
     if provider_type == "local":
         llm_provider = "ollama"
         print("\nLocal Ollama Engine:")
-        print("  • Type ANY model tag (e.g. llama3.2:3b, qwen2.5:7b, deepseek-r1:7b, llama3.2:1b, mistral:7b)")
+        print(
+            "  • Type ANY model tag (e.g. llama3.2:3b, qwen2.5:7b, deepseek-r1:7b, llama3.2:1b, mistral:7b)"
+        )
         chat_model = prompt_user("Enter local model name", default="llama3.2:3b")
     else:
         cloud_vendor = prompt_user(
@@ -106,19 +126,23 @@ def run_init_wizard(target_env_path: Path | None = None) -> int:
         )
         llm_provider = cloud_vendor
         if cloud_vendor == "anthropic":
-            chat_model = prompt_user("Enter Anthropic model", default="claude-3-5-sonnet-20241022")
+            chat_model = prompt_user(
+                "Enter Anthropic model", default="claude-3-5-sonnet-20241022"
+            )
             anthropic_key = prompt_secret("Enter ANTHROPIC_API_KEY")
         elif cloud_vendor == "openai":
             chat_model = prompt_user("Enter OpenAI model", default="gpt-4o")
             openai_key = prompt_secret("Enter OPENAI_API_KEY")
         elif cloud_vendor == "openrouter":
-            chat_model = prompt_user("Enter OpenRouter model", default="meta-llama/llama-3.3-70b-instruct")
+            chat_model = prompt_user(
+                "Enter OpenRouter model", default="meta-llama/llama-3.3-70b-instruct"
+            )
             openrouter_key = prompt_secret("Enter OPENROUTER_API_KEY")
 
     # Step 4: Security Credentials & Database Passwords
     print("\n\033[1;34m[4/6] Security & Database Credentials\033[0m")
     print("Auto-generating secure random credentials for local Docker databases...")
-    
+
     postgres_pass = generate_secure_password(24)
     neo4j_pass = generate_secure_password(24)
     livekit_key = "LK_" + generate_secure_password(16)
@@ -135,7 +159,9 @@ def run_init_wizard(target_env_path: Path | None = None) -> int:
 
     # Step 6: Vision & Visual Appraisal
     print("\n\033[1;34m[6/6] Visual Appraisal & Vision Awareness\033[0m")
-    print("Enables camera and screen understanding with Moondream VLM & biological habituation.")
+    print(
+        "Enables camera and screen understanding with Moondream VLM & biological habituation."
+    )
     enable_vision = prompt_user(
         "Enable Visual Appraisal?",
         default="no",
@@ -204,13 +230,23 @@ DEFAULT_LAUNCH_MODE={launch_mode}
 
     env_file.write_text(env_content, encoding="utf-8")
 
-    print("\n\033[1;32m═════════════════════════════════════════════════════════════════\033[0m")
+    print(
+        "\n\033[1;32m═════════════════════════════════════════════════════════════════\033[0m"
+    )
     print(f"\033[1;32m✓ Successfully configured environment file at: {env_file}\033[0m")
-    print("\033[1;32m═════════════════════════════════════════════════════════════════\033[0m")
+    print(
+        "\033[1;32m═════════════════════════════════════════════════════════════════\033[0m"
+    )
     print(f"• Environment Mode:   \033[1m{env_mode}\033[0m")
-    print(f"• LLM Provider:       \033[1m{llm_provider}\033[0m (\033[1m{chat_model}\033[0m)")
-    print(f"• Companion / User:   \033[1m{companion_name}\033[0m & \033[1m{friend_name}\033[0m")
-    print(f"• Database Security:  \033[1m✓ Cryptographically secure passwords generated\033[0m")
+    print(
+        f"• LLM Provider:       \033[1m{llm_provider}\033[0m (\033[1m{chat_model}\033[0m)"
+    )
+    print(
+        f"• Companion / User:   \033[1m{companion_name}\033[0m & \033[1m{friend_name}\033[0m"
+    )
+    print(
+        "• Database Security:  \033[1m✓ Cryptographically secure passwords generated\033[0m"
+    )
     print(f"• Default Mode:       \033[1m{launch_mode}\033[0m")
     print("─────────────────────────────────────────────────────────────────\n")
     return 0

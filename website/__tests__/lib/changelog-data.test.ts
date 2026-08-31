@@ -5,7 +5,7 @@ describe('changelog-data', () => {
   test('CHANGELOG_DATA is a non-empty array with expected structure', () => {
     expect(Array.isArray(CHANGELOG_DATA)).toBe(true)
     expect(CHANGELOG_DATA.length).toBeGreaterThan(0)
-    
+
     CHANGELOG_DATA.forEach(entry => {
       expect(entry).toHaveProperty('version')
       expect(typeof entry.version).toBe('string')

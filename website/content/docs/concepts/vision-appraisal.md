@@ -34,4 +34,3 @@ graph LR
 ## Multimodal Grounding
 
 Visual appraisals are wrapped in delimited metadata blocks in the cognitive context window, allowing the agent to naturally comment on what you are doing (e.g., *"That's a tricky Rust compiler error in line 42"*).
-

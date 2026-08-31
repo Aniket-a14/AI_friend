@@ -28,4 +28,3 @@ The custom linter `scripts/check_subject_wiring.py` inspects all Python and Rust
 cd backend
 ../.venv/bin/python scripts/check_subject_wiring.py
 ```
-

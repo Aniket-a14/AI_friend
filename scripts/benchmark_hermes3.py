@@ -51,7 +51,11 @@ PROMPTS = [
 def get_gpu_info():
     try:
         res = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,memory.free", "--format=csv,noheader"],
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total,memory.used,memory.free",
+                "--format=csv,noheader",
+            ],
             capture_output=True,
             text=True,
             check=True,
@@ -83,7 +87,9 @@ def run_benchmark():
         return
 
     print("\n🔥 Warming up KV-Cache...")
-    client.post("/api/generate", json={"model": MODEL_TAG, "prompt": "Hello", "stream": False})
+    client.post(
+        "/api/generate", json={"model": MODEL_TAG, "prompt": "Hello", "stream": False}
+    )
     print("✅ Model warm and ready.\n")
 
     results = []
@@ -96,13 +102,15 @@ def run_benchmark():
         prompt = item["prompt"]
 
         print(f"[{idx}/{len(PROMPTS)}] Testing: {category}")
-        print(f"  Prompt: \"{prompt[:60]}...\"")
+        print(f'  Prompt: "{prompt[:60]}..."')
 
         start_time = time.perf_counter()
         first_token_time = None
         tokens = []
 
-        with client.stream("POST", "/api/generate", json={"model": MODEL_TAG, "prompt": prompt}) as response:
+        with client.stream(
+            "POST", "/api/generate", json={"model": MODEL_TAG, "prompt": prompt}
+        ) as response:
             for line in response.iter_lines():
                 if not line:
                     continue
@@ -140,8 +148,10 @@ def run_benchmark():
         }
         results.append(result_entry)
 
-        print(f"  ⚡ TTFT: {ttft_ms:.1f} ms | Speed: {tokens_per_sec:.1f} tok/s | Total: {total_latency_ms:.1f} ms | Tokens: {token_count}")
-        print(f"  💬 Sample: \"{full_response[:90]}...\"\n")
+        print(
+            f"  ⚡ TTFT: {ttft_ms:.1f} ms | Speed: {tokens_per_sec:.1f} tok/s | Total: {total_latency_ms:.1f} ms | Tokens: {token_count}"
+        )
+        print(f'  💬 Sample: "{full_response[:90]}..."\n')
 
     # Summary calculations
     mean_ttft = sum(ttft_list) / len(ttft_list)
@@ -173,6 +183,7 @@ def run_benchmark():
     out_file = "scripts/results/hermes3_benchmark_results.json"
     try:
         import os
+
         os.makedirs("scripts/results", exist_ok=True)
         with open(out_file, "w") as f:
             json.dump(report, f, indent=2)
@@ -183,4 +194,3 @@ def run_benchmark():
 
 if __name__ == "__main__":
     run_benchmark()
-

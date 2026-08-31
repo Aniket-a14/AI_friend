@@ -179,7 +179,7 @@ else
   log_info "Downloading lightweight runtime bundle (~4.3 MB)..."
   TAR_URL="https://raw.githubusercontent.com/Aniket-a14/AI_friend/main/dist/ai-friend-runtime.tar.gz"
   FALLBACK_URL="https://github.com/Aniket-a14/AI_friend/archive/refs/heads/main.tar.gz"
-  
+
   TMP_ARCHIVE="/tmp/ai-friend-runtime.tar.gz"
   if curl -fsSL "$TAR_URL" -o "$TMP_ARCHIVE" 2>/dev/null; then
     tar -xzf "$TMP_ARCHIVE" -C "$TARGET_DIR" --strip-components=1 2>/dev/null || tar -xzf "$TMP_ARCHIVE" -C "$TARGET_DIR"

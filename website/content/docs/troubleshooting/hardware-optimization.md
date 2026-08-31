@@ -25,4 +25,3 @@ To minimize speech turn-around time:
 ## 3. GPU Acceleration with Colab
 
 If your workstation runs hot during long sessions, offload heavy voice fine-tuning or model benchmarking to a Google Colab GPU runtime using our [Colab GPU Acceleration Guide](/docs/guides/colab-gpu-acceleration).
-

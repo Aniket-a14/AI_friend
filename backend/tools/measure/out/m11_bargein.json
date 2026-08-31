@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "created_at": "2026-08-22T15:12:14.109909+00:00",
+  "created_at": "2026-08-31T06:30:33.554329+00:00",
   "measurement_id": "1.1",
   "title": "End-to-end barge-in latency (buffer 3 is not the pacing site; worst case still UNKNOWN)",
   "provenance": "live",
@@ -9,28 +9,28 @@
       "figures": {
         "backlog_frames_at_stop_instant": {
           "label": "MEASURED",
-          "value": 0,
+          "value": 22,
           "unit": "frames (buffer 3)",
           "derivation": "",
           "reason": ""
         },
         "backlog_ms_at_stop_instant": {
           "label": "MEASURED",
-          "value": 0,
+          "value": 440,
           "unit": "ms of audio queued in buffer 3 at the stop instant",
           "derivation": "",
           "reason": ""
         },
         "burst_publish_time_s": {
           "label": "MEASURED",
-          "value": 0.023543416000393336,
+          "value": 0.5319777899999281,
           "unit": "seconds",
-          "derivation": "wall-clock to publish 50 frames sequentially",
+          "derivation": "wall-clock to publish 100 frames sequentially",
           "reason": ""
         },
         "ai_audio_stream_bytes_at_stop": {
           "label": "MEASURED",
-          "value": 152347,
+          "value": 152452,
           "unit": "bytes (buffer 1)",
           "derivation": "",
           "reason": ""
@@ -44,9 +44,9 @@
         },
         "residual_drain_time_python_side_s": {
           "label": "MEASURED",
-          "value": 0.04040162499950384,
+          "value": 0.48594239800013384,
           "unit": "seconds",
-          "derivation": "0 frames queued in buffer 3 at the stop instant (with a real LiveKit consumer attached -- see notes for why this made no observable difference); wall-clock to the last buffer3_to_4 crossing was 0.040s. This is NOT the answer to M3-R1's question -- it times only TransportAgent's own queue-to-capture_frame() handoff, which this run's own evidence (module docstring) shows is not where real-time pacing happens.",
+          "derivation": "22 frames queued in buffer 3 at the stop instant (with a real LiveKit consumer attached -- see notes for why this made no observable difference); wall-clock to the last buffer3_to_4 crossing was 0.486s. This is NOT the answer to M3-R1's question -- it times only TransportAgent's own queue-to-capture_frame() handoff, which this run's own evidence (module docstring) shows is not where real-time pacing happens.",
           "reason": ""
         },
         "worst_case_no_flush_latency": {
@@ -65,23 +65,23 @@
         },
         "buffer4_livekit_frames_received": {
           "label": "MEASURED",
-          "value": 6,
+          "value": 102,
           "unit": "frames received by the real consumer (buffer 4 proxy)",
           "derivation": "counts AudioStream frame-events on the listener side; not the same as buffer 4's internal queue depth (LiveKit's SDK internals are not introspectable from here), but confirms frames actually reached a sink rather than being lost",
           "reason": ""
         }
       },
       "raw": {
-        "buffer3_to_4_event_count": 50,
-        "drained_events_before_stop": 50,
-        "consumer_frames_consumed": 6
+        "buffer3_to_4_event_count": 100,
+        "drained_events_before_stop": 77,
+        "consumer_frames_consumed": 102
       }
     }
   ],
   "notes": [
     "Synthetic PCM, not real speech synthesis -- no CUDA/GPT-SoVITS on this host. This measures the buffer-drain portion of the chain (JetStream -> NATS client -> audio_queue -> LiveKit capture_frame), not synthesis latency upstream of it.",
     "SECOND negative result, and a sharper one. The first version of this measurement published a track with no subscriber and found buffer 3 drained instantly; the working theory was that a real listener would supply missing playback-rate backpressure. This run attaches one (_RealConsumer, a real second LiveKit participant that subscribes to and drains the track) and gets the SAME near-zero backlog. Reading capture_frame()'s actual source (not just its docstring) explains why: it only awaits an FFI round-trip acknowledgment that the frame reached the native client's buffer, never the future its own pacing machinery (_q_size/_join_fut, resolved by a separate method, wait_for_playout()) would resolve. TransportAgent never calls wait_for_playout(). Buffer 3 was never going to show a backlog under the current implementation, with or without a listener -- the real, unbounded, real-time-paced buffer is entirely on the far side of the FFI boundary, invisible to this harness and to TransportAgent itself.",
-    "50 of 50 frames had already crossed buffer3_to_4 by the stop instant, leaving 0 in buffer 3 -- consistent with the above: capture_frame() completes as fast as the FFI round-trip allows, not at real playback speed.",
+    "77 of 100 frames had already crossed buffer3_to_4 by the stop instant, leaving 22 in buffer 3 -- consistent with the above: capture_frame() completes as fast as the FFI round-trip allows, not at real playback speed.",
     "buffer4_livekit_frames_received confirms frames DO reach a real subscriber (6 of 50 by the time this run's snapshot was taken) -- so the pipeline works end-to-end; it just cannot be timed from the Python side past the capture_frame() call.",
     "TransportAgent still has no audio.stop subscriber (P1-3 not yet built, correctly gated on this measurement per audit/ROADMAP.md §7's sequencing). P1-3's flush would need to reach past capture_frame() -- e.g. via wait_for_playout() or a native-side API -- to have any effect on the buffer that actually matters, which this measurement now shows is not buffer 3.",
     "buffer2 is still UNKNOWN for the reason stated per figure, matching HARDWARE.md §0's rule against filling an unmeasured figure with a plausible number."

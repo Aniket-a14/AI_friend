@@ -52,8 +52,8 @@ export default function PlaygroundPage() {
             >
               <span>{tab.label}</span>
               <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
-                activeTab === tab.id 
-                  ? "bg-white/20 text-white" 
+                activeTab === tab.id
+                  ? "bg-white/20 text-white"
                   : tab.tag === "Live"
                     ? "bg-emerald-100 text-emerald-800 font-semibold"
                     : "bg-amber-100 text-amber-800 font-semibold"

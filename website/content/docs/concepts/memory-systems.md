@@ -62,4 +62,3 @@ When the conversational mesh is idle, `subconscious_agent` triggers an offline c
 2. **Knowledge Graph Graph-Sync**: Updates Neo4j entity relationships.
 3. **Decay Refresh**: Recalculates ACT-R activation scores across all stored memories.
 4. **Proactive Reflection**: Generates unprompted spontaneous thoughts that can trigger proactive outreach.
-

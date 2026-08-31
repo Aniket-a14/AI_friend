@@ -181,4 +181,3 @@ export function EndocrineSimulator() {
     </div>
   )
 }
-

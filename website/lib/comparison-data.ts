@@ -100,4 +100,3 @@ export const COMPARISON_DATA: ComparisonRow[] = [
     category: "Extensibility",
   },
 ]
-

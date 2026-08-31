@@ -78,4 +78,3 @@ ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
 
 > [!NOTE]
 > Enabling cloud fallback transmits conversation transcripts to a third party. Local inference is always the zero-leak default.
-

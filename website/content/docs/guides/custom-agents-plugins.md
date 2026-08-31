@@ -46,4 +46,3 @@ if __name__ == "__main__":
    ```bash
    python backend/scripts/check_subject_wiring.py
    ```
-

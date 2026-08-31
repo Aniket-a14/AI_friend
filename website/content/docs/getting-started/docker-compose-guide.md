@@ -68,4 +68,3 @@ All backend infrastructure ports (`5432`, `7687`, `6379`, `4222`) bind exclusive
 
 * **`--profile docker-ollama`**: Runs Ollama inside Docker rather than host-natively (useful in headless CI environments).
 * **`--profile vision`**: Enables `vision_agent` with Moondream VLM screen and camera appraisal.
-
