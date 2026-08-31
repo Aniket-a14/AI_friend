@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "created_at": "2026-08-31T06:38:55.161344+00:00",
+  "created_at": "2026-08-22T14:18:28.134970+00:00",
   "measurement_id": "1.2",
   "title": "Consolidation wall-clock vs control-tier AckWait, idle and under VLM contention",
   "provenance": "live",
@@ -9,14 +9,14 @@
       "figures": {
         "consolidation_idle_s": {
           "label": "MEASURED",
-          "value": 5.726200570000401,
+          "value": 7.475874165999812,
           "unit": "seconds",
           "derivation": "",
           "reason": ""
         },
         "consolidation_with_vlm_s": {
           "label": "MEASURED",
-          "value": 3.541717162000168,
+          "value": 10.079377084000043,
           "unit": "seconds",
           "derivation": "",
           "reason": ""
@@ -39,7 +39,7 @@
       "raw": {
         "idle_events": [
           {
-            "duration_s": 5.72616502100027,
+            "duration_s": 7.47582041700025,
             "ack_wait_s": 30.0
           }
         ],
