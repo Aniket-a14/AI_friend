@@ -46,10 +46,12 @@ export const CHANGELOG_DATA: ChangelogItem[] = [
       "The nine AUDIT.md pressure scenarios actually run against live infrastructure, not left as placeholders.",
       "mypy, bandit, and the radon D/E/F complexity tier flipped from report-only to blocking in CI.",
       "New this release: one-line installers for macOS/Linux and Windows, a ~4.3 MB standalone runtime bundle, the unified friend CLI (init/start/stop/status/model/vision/talk/persona/voice/backup/logs/update), an interactive friend init wizard generating cryptographically secure credentials, and Moondream VLM visual appraisal wired into setup.",
+      "Dedicated GPU Server & LiveKit WebRTC Voice Loop: 476 real-time audio frames streamed across physical SFU mesh with 39.95ms TTFT, zero-trust UFW firewall, viseme data channel delivery, and instantaneous barge-in interruption.",
     ],
     metrics: [
       { label: "Python Tests", value: "1,408 passing" },
       { label: "Rust Tests", value: "130 passing" },
+      { label: "LLM TTFT (RTX 2060S)", value: "39.95 ms (Measured)" },
       { label: "Peak RAM Headroom", value: "2.0 GB on 16GB Mac" },
     ],
   },
