@@ -1,6 +1,11 @@
 """
 Unified Runtime Mesh Runner.
-Starts BrainAgent, VoiceAgent, STTAgent, and TransportAgent concurrently with coordinated shutdown.
+Starts BrainAgent and TransportAgent concurrently with coordinated shutdown.
+
+STT and Voice are Rust binaries (crates/stt-agent, crates/voice-agent),
+run as their own systemd units (ai-friend-stt.service, ai-friend-voice.service)
+-- see .agents/CONTEXT.md's 2026-08-31 entries for why they're separate
+processes rather than folded in here.
 """
 
 import asyncio
@@ -11,15 +16,13 @@ import sys
 # Ensure backend root is on path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from app.agents.base import install_shutdown_signal_handlers
+from app.agents.brain_agent import BrainAgent
+from app.agents.transport_agent import TransportAgent
 from app.config import Config
 from app.logging_config import setup_logging
 from app.runtime_bootstrap import bootstrap_runtime
 from app.state import ConversationHistoryStore, GraphDB, MemoryStore
-from app.agents.brain_agent import BrainAgent
-from app.agents.stt_agent import STTAgent
-from app.agents.transport_agent import TransportAgent
-from app.agents.voice_agent import VoiceAgent
-from app.agents.base import install_shutdown_signal_handlers
 
 setup_logging(level=logging.INFO, json_format=getattr(Config, "LOG_JSON", False))
 logger = logging.getLogger("production_mesh")
@@ -51,14 +54,6 @@ async def main():
         memory_store=memory_store,
         conversation_store=conversation_store,
     )
-    stt_agent = STTAgent(
-        model_size=getattr(Config, "STT_MODEL_SIZE", "base"),
-        nats_url=Config.NATS_URL,
-    )
-    voice_agent = VoiceAgent(
-        nats_url=Config.NATS_URL,
-        sovits_url="http://127.0.0.1:9871/tts",
-    )
     transport_agent = TransportAgent(
         nats_url=Config.NATS_URL,
         lk_url="ws://127.0.0.1:7880",
@@ -66,15 +61,13 @@ async def main():
         lk_api_secret=Config.LIVEKIT_API_SECRET,
     )
 
-    # 3. Start All Agents Concurrently
+    # 3. Start Agents Concurrently
     logger.info("📡 Connecting Agents to NATS & WebRTC SFU concurrently...")
     await asyncio.gather(
         brain_agent.start(),
-        stt_agent.start(),
-        voice_agent.start(),
         transport_agent.start(),
     )
-    logger.info("✨ ALL AGENTS (BRAIN, STT, VOICE, TRANSPORT) ONLINE AND LISTENING!")
+    logger.info("✨ BRAIN + TRANSPORT ONLINE (STT/Voice run as separate Rust services).")
 
     shutdown_trigger = asyncio.Event()
     install_shutdown_signal_handlers(shutdown_trigger)
@@ -83,8 +76,6 @@ async def main():
     logger.info("🛑 Shutting down AI Friend Runtime Mesh...")
     await asyncio.gather(
         transport_agent.stop(),
-        voice_agent.stop(),
-        stt_agent.stop(),
         brain_agent.stop(),
     )
     logger.info("👋 Mesh cleanly stopped.")

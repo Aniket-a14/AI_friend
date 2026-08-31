@@ -23,3 +23,9 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
 whisper-rs.workspace = true
+
+[features]
+# Off by default so CI/local dev machines without a CUDA toolkit can still
+# build and test this crate. Enable explicitly on GPU hosts:
+#   cargo build --release -p stt-agent --features stt-agent/cuda
+cuda = ["whisper-rs/cuda"]

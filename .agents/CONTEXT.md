@@ -13436,3 +13436,109 @@ Comprehensive record of full-day deployment, integration, and verification acros
 - TTS Generation Rate: **12.4x real-time** (Kokoro 82M).
 - Total Speech-to-Speech Loop: **< 950 ms** end-to-end.
 - Commits `241a426`, `67a7504`, and `1fe0a71` pushed cleanly to `main` and synced to `home-gpu`.
+
+## 2026-08-31 -- Reconciling the STT/Voice fork: Rust made canonical again on home-gpu, CUDA brought up from scratch
+
+The entry above shipped a live voice loop by writing brand-new Python `STTAgent`/`VoiceAgent`
+classes (`backend/app/agents/stt_agent.py`, `voice_agent.py`) instead of using the existing
+Rust `crates/stt-agent`/`crates/voice-agent`. That left two divergent, unreconciled STT/Voice
+stacks: `docker-compose.prod.yml` and both CI workflows still built/tested the Rust crates,
+while the systemd services on `home-gpu` actually ran the Python ones -- and CLAUDE.md's "Voice
+and STT are Rust binaries" claim was false in production. This entry reconciles it: Rust is
+canonical again, and this time it's actually verified end-to-end rather than asserted.
+
+**Why the Python detour happened, confirmed, not guessed.** Checked directly on `home-gpu`:
+`rustc`/`cargo`/`nvcc` were not installed at all. It wasn't a CUDA-linking problem as a same-day
+retrospective self-diagnosis first assumed -- nobody had brought the Rust toolchain onto that
+box yet, so the Python path was just what already existed there (PyTorch+CUDA via Ollama's own
+stack).
+
+**Toolchain bring-up on `home-gpu` (new work, not a retry of a known-broken build):**
+- `rustc`/`cargo` via rustup (1.98.0), plus `build-essential cmake clang libclang-dev
+  nvidia-cuda-toolkit` via apt (`nvcc` 12.0, matches the RTX 2060 Super's compute capability 7.5).
+- Installing `nvidia-cuda-toolkit` pulled far more than its own ~170MB (Nsight Compute/Systems,
+  a bundled JRE, `nvidia-cuda-dev`'s headers, etc.), dropping free disk from 16G to 4.3G (97%
+  used) on a box that also runs Postgres/Neo4j/Qdrant/Ollama live. Recovered to ~15G by purging
+  the Nsight/visual-profiler packages (dry-run confirmed nothing else depends on them, ~1.4G),
+  `apt-get clean` (~2.8G), and `docker builder prune -af` -- the last one's *reported* size
+  (48.55GB) is misleading: BuildKit counts cache-record sizes without deduplicating against
+  layers still backing the 8 active images on the box, so the real freed space was ~5-6G, not
+  48.55G. Recorded here so a future session doesn't re-read that number as real headroom.
+- `backend/models/whisper` didn't exist either; `stt-agent`'s own `whisper.rs::ensure_model`
+  downloads and SHA256-verifies GGML weights on first run, so no separate provisioning step was
+  needed once `STT_MODEL_DIR` pointed at a real path.
+
+**Cargo change.** `crates/stt-agent/Cargo.toml` gates CUDA behind an opt-in feature rather than
+forcing it workspace-wide:
+```toml
+[features]
+cuda = ["whisper-rs/cuda"]
+```
+Forcing it unconditionally would have broken `cargo test` on CI runners and this dev machine,
+neither of which has a CUDA toolkit. `voice-agent` needed no Cargo change at all -- it has no
+ML/CUDA dependency; it's a pure NATS/HTTP orchestrator calling the same external GPT-SoVITS
+server (`:9871`) the Python version called.
+
+**Verified, not asserted, this time:**
+- `cargo build --release -p stt-agent --features stt-agent/cuda -p voice-agent` on `home-gpu`
+  (6m02s). Offline `--transcribe-file` run against a real reference clip logged
+  `ggml_cuda_init: found 1 CUDA devices: NVIDIA GeForce RTX 2060 SUPER` and
+  `whisper_init_with_params_no_state: use gpu = 1` (the earlier CPU debug build on this session's
+  dev machine logged `use gpu = 0` for comparison), and produced an accurate transcript.
+- One real runtime bug caught before it reached production: `stt-agent`'s binary failed to start
+  at all (`error while loading shared libraries: libsherpa-onnx-c-api.so`) until
+  `LD_LIBRARY_PATH` was pointed at `target/release`, where sherpa-onnx's prebuilt shared lib
+  actually lands. Baked into the new systemd unit's `Environment=`.
+- New systemd units `ai-friend-stt.service` / `ai-friend-voice.service` (`backend/systemd/`,
+  not tracked before this) run the release binaries directly, matching this repo's own
+  description of the mesh as separate OS processes over NATS rather than folding them into the
+  Python asyncio runner. `run_production_mesh.py` shrunk back to `BrainAgent` + `TransportAgent`
+  only.
+- A real (not fabricated) live smoke test: synthetic 16kHz PCM injected onto `audio.inbound` via
+  a throwaway script (deleted after use, never committed) produced a `chat.output` publish from
+  `BrainAgent` (445ms to first chunk), which the Rust `voice-agent` picked up and called
+  GPT-SoVITS with. Two segments synthesized successfully and were published to `audio.stream`
+  (confirmed via `js.stream_info('AI_AUDIO')`: 214 messages / 2.48MB on the stream after the
+  test, up from the injected input alone). Two of the LLM's smaller streamed fragments (bare
+  action-tag stubs like `, interested *`) made GPT-SoVITS's own text preprocessor raise `Please
+  enter valid text.`, truncating that HTTP response mid-chunk; the Rust voice-agent logged the
+  error and continued rather than crashing the service. This is a pre-existing fragility in how
+  finely `BrainAgent` streams text to the synthesis step, not something introduced by moving off
+  Python -- flagged below, not fixed here.
+- Local (dev machine) verification bar: `cargo test --workspace --exclude cognitive-rust` --
+  113/113 passed (61 stt-agent + 52 voice-agent); `cognitive-rust`'s PyO3 extension-module link
+  step fails on this machine for a pre-existing reason unrelated to this change (CI already
+  marks that exact step `continue-on-error`). Backend: `pytest` 1412 passed / 0 failed / 0
+  errors (via `--junit-xml`, not the swallowed terminal summary); `ruff check .` clean after
+  fixing one import-order finding in the shrunk `run_production_mesh.py`.
+- `backend/app/agents/stt_agent.py` / `voice_agent.py` (the same-day Python stopgap) archived to
+  `_archive/python_agents/{stt,voice_agent}_stopgap_2026_08_31.py` via `git mv`, distinct from
+  the original Rust-migration archive already at `_archive/python_agents/{stt,voice}/agent.py`
+  to avoid colliding with it.
+
+**NOT done:**
+- The two GPT-SoVITS text-preprocessor failures above are unaddressed. Worth either filtering
+  degenerate/action-tag-only fragments before they reach `voice-agent`'s synthesis call, or
+  batching `BrainAgent`'s streamed chunks more coarsely -- not scoped or attempted this pass.
+- SenseVoice/`sherpa-onnx` GPU acceleration was not attempted. `STT_SENSEVOICE_DIR` was pointed
+  at the real native path (`/home/aniket/AI_friend/backend/models/sensevoice`, replacing the
+  container-only default) so the fast path can at least find the model, but whether it actually
+  engages correctly on this native (non-Docker) deployment was not verified -- it's an optional
+  fast path with an existing Whisper-only fallback, not the latency-critical path.
+- `EmotionRefSet`'s per-bucket reference clips (`REF_AUDIO_PATH_{CALM,WARM,CONCERNED,EXCITED}`)
+  were not set -- only the neutral `REF_AUDIO_PATH`/`REF_TEXT` (pointed at the same Emma clip the
+  Python version defaulted to, with the reference text verified against a fresh Whisper
+  transcription of that exact clip rather than assumed correct). All emotions currently
+  synthesize with the neutral voice reference.
+- No real microphone/browser session was tested against the new Rust services this pass -- only
+  the synthetic NATS injection above. The walkthrough-style "open a browser and talk to it"
+  verification from the previous entry was not repeated.
+- The `home-gpu` disk is still at ~87% used (~14-15G free) even after cleanup. A permanent fix
+  would need shrinking the Windows `p5` NTFS partition (270G) and extending Linux `p6` into the
+  freed space -- but `p6` sits *after* `p5` on disk, so that requires moving `p6`'s start LBA
+  backward, which cannot be done on a mounted root filesystem. That needs an offline maintenance
+  window booting from external rescue media (with physical/console access, since the box has no
+  IPMI and doing this would drop the very Tailscale SSH session used to reach it) -- explicitly
+  deferred, not attempted.
+- CLAUDE.md's "Voice and STT are Rust binaries" line was not edited -- it's true again as of this
+  entry, and is left as the ledger's job to say so rather than churning that file.

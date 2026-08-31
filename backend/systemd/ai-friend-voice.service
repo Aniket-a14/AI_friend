@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Friend Rust Voice Agent (GPT-SoVITS bridge)
+After=network.target docker.service ai-friend-backend.service
+
+[Service]
+Type=simple
+User=aniket
+WorkingDirectory=/home/aniket/AI_friend/backend
+EnvironmentFile=/home/aniket/AI_friend/backend/.env
+Environment=REF_AUDIO_PATH=output/human_emma_warm.wav
+Environment="REF_TEXT=Tom's diner seems like it would be a good karaoke song, just surely for the fact that you can't get it out of your head, so it's kind of..."
+ExecStart=/home/aniket/AI_friend/backend/target/release/voice-agent
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
