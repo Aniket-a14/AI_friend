@@ -181,7 +181,8 @@ async def _import_neo4j(staging: Path) -> dict[str, int]:
                         continue
                     rec = json.loads(line)
                     label = next(
-                        (l for l in rec["labels"] if l in ("Agent", "Entity")), None
+                        (lbl for lbl in rec["labels"] if lbl in ("Agent", "Entity")),
+                        None,
                     )
                     if label is None or not rec["props"].get("name"):
                         continue
@@ -197,11 +198,19 @@ async def _import_neo4j(staging: Path) -> dict[str, int]:
                             continue
                         rec = json.loads(line)
                         a_label = next(
-                            (l for l in rec["a_labels"] if l in ("Agent", "Entity")),
+                            (
+                                lbl
+                                for lbl in rec["a_labels"]
+                                if lbl in ("Agent", "Entity")
+                            ),
                             None,
                         )
                         b_label = next(
-                            (l for l in rec["b_labels"] if l in ("Agent", "Entity")),
+                            (
+                                lbl
+                                for lbl in rec["b_labels"]
+                                if lbl in ("Agent", "Entity")
+                            ),
                             None,
                         )
                         a_name = rec["a_props"].get("name")

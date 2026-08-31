@@ -99,22 +99,15 @@ services:
 
   # 5. LiveKit (WebRTC SFU)
   livekit:
-    image: livekit/livekit-server:${LIVEKIT_IMAGE_TAG:-v1.8.4}
+    image: livekit/livekit-server:${LIVEKIT_IMAGE_TAG:-latest}
     container_name: local_sfu
+    network_mode: host
     entrypoint: [ "/livekit-server" ]
     command: [ "--config", "/etc/livekit.yaml" ]
-    ports:
-      - "127.0.0.1:7880:7880" # HTTP API
-      - "127.0.0.1:7881:7881" # TURN/STUN TCP
-      - "127.0.0.1:7882:7882" # Additional TCP
-      - "127.0.0.1:3478:3478/udp" # STUN/TURN UDP
-      - "127.0.0.1:50100-50120:50100-50120/udp" # WebRTC media ports
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml
     environment:
       - "LIVEKIT_KEYS=${LIVEKIT_KEYS}"
-    networks:
-      - ai_mesh_network
     depends_on:
       redis:
         condition: service_healthy

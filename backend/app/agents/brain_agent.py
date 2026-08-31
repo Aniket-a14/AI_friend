@@ -600,6 +600,11 @@ class BrainAgent(BaseAgent):
             # happen on confirmed (non-speculative) interrupts -- a
             # speculative duck has not stopped anything yet.
             if not stop_msg.speculative:
+                # If this stop was emitted for a new incoming user speech turn to silence
+                # the voice agent, do NOT cancel the newly spawned generation task.
+                if stop_msg.reason == "confirmed_user_speech":
+                    return
+
                 async with self._turn_state_lock:
                     active_turn_id = getattr(self, "_active_response_turn_id", None)
                 if (

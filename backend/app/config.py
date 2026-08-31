@@ -42,15 +42,17 @@ class AppSettings(BaseSettings):
     # H3: caps how many session tokens one client IP can mint per window.
     # BACKEND_ACCESS_KEY already gates *who* can call /token; this bounds how
     # often, since a valid key doesn't imply unlimited LiveKit room creation.
-    TOKEN_RATE_LIMIT_MAX_REQUESTS: int = 5
+    TOKEN_RATE_LIMIT_MAX_REQUESTS: int = 60
     TOKEN_RATE_LIMIT_WINDOW_SECONDS: float = 60.0
     LAN_CORS_ORIGIN_REGEX: str = (
         r"^https?://("
+        r"localhost|"
         r"127\.0\.0\.1|"
         r"127(?:\.\d{1,3}){3}|"
         r"10(?:\.\d{1,3}){3}|"
         r"192\.168(?:\.\d{1,3}){2}|"
-        r"172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}"
+        r"172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}|"
+        r"100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2}"
         r")(?::\d+)?$"
     )
 
@@ -314,7 +316,7 @@ class AppSettings(BaseSettings):
     DOPAMINE_PHASIC_HALFLIFE_S: float = 90.0
     CORTISOL_PHASIC_HALFLIFE_S: float = 600.0
 
-    STT_MODEL_SIZE: str = "small"
+    STT_MODEL_SIZE: str = "base"
     STT_DEVICE: str = "cpu"
 
     SAMPLE_RATE: int = 32000

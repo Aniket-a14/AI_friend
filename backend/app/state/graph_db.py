@@ -8,6 +8,10 @@ import time
 from collections import OrderedDict
 from typing import Any
 
+from neo4j import AsyncGraphDatabase
+
+from ..config import Config
+
 # M9: hard cap on the belief cache so a session issuing many distinct
 # use_cache=True queries (different parameter sets) can't grow it without
 # bound. OrderedDict gives us cheap LRU: move a key to the end on access,
@@ -19,10 +23,6 @@ MAX_BELIEF_CACHE_ENTRIES = 500
 # inline) so tests can shrink it instead of actually waiting out a real
 # multi-second timeout.
 GRAPHDB_CLOSE_DRAIN_TIMEOUT_SECONDS = 10.0
-
-from neo4j import AsyncGraphDatabase
-
-from ..config import Config
 
 logger = logging.getLogger("graph_db")
 _CYPHER_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")

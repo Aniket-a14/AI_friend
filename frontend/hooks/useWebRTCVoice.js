@@ -1,171 +1,224 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Room, RoomEvent, createLocalAudioTrack } from 'livekit-client';
+import { Room, RoomEvent, ConnectionState, Track, createLocalAudioTrack } from 'livekit-client';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || 'ws://localhost:7880';
-// Only needed when the backend is reached from a device other than the one
-// running it (BACKEND_ACCESS_KEY on the backend); unset for same-machine use.
 const BACKEND_ACCESS_KEY = process.env.NEXT_PUBLIC_BACKEND_ACCESS_KEY || '';
 
-export function useWebRTCVoice() {
-    const [isConnected, setIsConnected] = useState(false);
-    const [isConnecting, setIsConnecting] = useState(false);
-    const [interactionState, setInteractionState] = useState('idle'); // idle | listening | speaking
-    // Phase 5.3: transport_agent bridges voice-agent's viseme stream onto
-    // this room's data channel (topic "visemes") -- 0..1, how loud the
-    // current audio chunk is. Not a mouth shape (AssistantCircle is an
-    // abstract aura, not a face); the visual equivalent is pulsing the aura
-    // with the sound rather than on a fixed animation loop.
-    const [visemeLevel, setVisemeLevel] = useState(0);
+// Persistent module-level room singleton to survive React StrictMode mount/unmount cycles
+let sharedRoom = null;
+let sharedLocalAudioTrack = null;
+let isInitializing = false;
+let disconnectTimer = null;
+const stateSubscribers = new Set();
+const remoteElements = new Set();
 
-    const roomRef = useRef(null);
-    const audioTrackRef = useRef(null);
-    const remoteAudioElementsRef = useRef(new Set());
-    const isConnectedRef = useRef(false);
-    const isConnectingRef = useRef(false);
+function notifySubscribers(stateUpdate) {
+    stateSubscribers.forEach(cb => cb(stateUpdate));
+}
+
+async function getOrInitRoom() {
+    if (disconnectTimer) {
+        clearTimeout(disconnectTimer);
+        disconnectTimer = null;
+    }
+
+    if (sharedRoom && sharedRoom.state === ConnectionState.Connected) {
+        return sharedRoom;
+    }
+
+    if (isInitializing) return null;
+    isInitializing = true;
+
+    try {
+        notifySubscribers({ isConnecting: true });
+
+        // 1. Fetch token
+        const participantId = `user_${Date.now().toString(36)}`;
+        const tokenUrl = BACKEND_ACCESS_KEY
+            ? `${BACKEND_URL}/token?key=${encodeURIComponent(BACKEND_ACCESS_KEY)}&participant=${participantId}`
+            : `${BACKEND_URL}/token?participant=${participantId}`;
+        const res = await fetch(tokenUrl);
+        if (!res.ok) throw new Error("Failed to fetch token from backend");
+        const { token, url } = await res.json();
+
+        if (sharedRoom) {
+            try {
+                await sharedRoom.disconnect();
+            } catch {
+                // Ignore disconnect errors during reinit
+            }
+            sharedRoom = null;
+        }
+
+        // 2. Instantiate Room
+        const room = new Room({
+            adaptiveStream: false,
+            dynacast: false,
+            publishDefaults: {
+                red: false,
+                dtx: true,
+            },
+            audioCaptureDefaults: {
+                autoGainControl: true,
+                echoCancellation: true,
+                noiseSuppression: true,
+            },
+        });
+
+        room
+            .on(RoomEvent.Connected, () => {
+                console.log('✅ Connected to LiveKit Room');
+                notifySubscribers({ isConnected: true, isConnecting: false, interactionState: 'listening' });
+            })
+            .on(RoomEvent.Disconnected, () => {
+                console.log('🔌 Disconnected from LiveKit Room');
+                notifySubscribers({ isConnected: false, isConnecting: false, interactionState: 'idle', visemeLevel: 0 });
+                remoteElements.forEach(el => el.remove());
+                remoteElements.clear();
+            })
+            .on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
+                if (topic !== 'visemes') return;
+                try {
+                    const viseme = JSON.parse(new TextDecoder().decode(payload));
+                    if (typeof viseme.target_level === 'number') {
+                        notifySubscribers({ visemeLevel: viseme.target_level });
+                    }
+                } catch {
+                    // Drop malformed frame
+                }
+            })
+            .on(RoomEvent.TrackSubscribed, (track) => {
+                if (track.kind === Track.Kind.Audio || track.kind === 'audio') {
+                    console.log('🔊 Subscribed to remote audio track:', track.sid);
+                    const element = track.attach();
+                    element.autoplay = true;
+                    element.playsInline = true;
+                    element.dataset.livekitRemoteAudio = 'true';
+                    element.style.display = 'none';
+                    document.body.appendChild(element);
+                    remoteElements.add(element);
+                    notifySubscribers({ interactionState: 'speaking' });
+                }
+            })
+            .on(RoomEvent.TrackUnsubscribed, (track) => {
+                track.detach().forEach((element) => {
+                    remoteElements.delete(element);
+                    element.remove();
+                });
+                notifySubscribers({ visemeLevel: 0, interactionState: 'listening' });
+            });
+
+        // 3. Connect to SFU
+        await room.connect(url || LIVEKIT_URL, token, {
+            autoSubscribe: true,
+        });
+
+        sharedRoom = room;
+
+        // 4. Create and publish local microphone track explicitly
+        try {
+            await room.startAudio();
+            if (sharedLocalAudioTrack) {
+                sharedLocalAudioTrack.stop();
+                sharedLocalAudioTrack = null;
+            }
+
+            const micTrack = await createLocalAudioTrack({
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            });
+            sharedLocalAudioTrack = micTrack;
+
+            await room.localParticipant.publishTrack(micTrack, {
+                name: 'microphone',
+                source: Track.Source.Microphone,
+                red: false,
+                dtx: true,
+            });
+
+            console.log('🎙️ Microphone track created and published successfully');
+        } catch (micErr) {
+            console.warn('Microphone activation notice:', micErr);
+        }
+
+        return room;
+    } catch (err) {
+        console.error('WebRTC Connection Error:', err);
+        notifySubscribers({ isConnected: false, isConnecting: false });
+        return null;
+    } finally {
+        isInitializing = false;
+    }
+}
+
+function scheduleRoomTeardown() {
+    if (stateSubscribers.size === 0) {
+        disconnectTimer = setTimeout(() => {
+            if (stateSubscribers.size === 0 && sharedRoom) {
+                console.log('Tearing down idle LiveKit room...');
+                if (sharedLocalAudioTrack) {
+                    sharedLocalAudioTrack.stop();
+                    sharedLocalAudioTrack = null;
+                }
+                sharedRoom.disconnect();
+                sharedRoom = null;
+            }
+        }, 1000);
+    }
+}
+
+export function useWebRTCVoice() {
+    const [isConnected, setIsConnected] = useState(sharedRoom?.state === ConnectionState.Connected);
+    const [isConnecting, setIsConnecting] = useState(isInitializing);
+    const [interactionState, setInteractionState] = useState('idle'); // idle | listening | speaking
+    const [visemeLevel, setVisemeLevel] = useState(0);
 
     const startRecording = useCallback(async () => {
         setInteractionState('listening');
+        if (sharedLocalAudioTrack && sharedLocalAudioTrack.isMuted) {
+            await sharedLocalAudioTrack.unmute();
+        }
     }, []);
 
-    const stopRecording = useCallback(() => {
+    const stopRecording = useCallback(async () => {
         setInteractionState('idle');
+        if (sharedLocalAudioTrack && !sharedLocalAudioTrack.isMuted) {
+            await sharedLocalAudioTrack.mute();
+        }
     }, []);
 
     useEffect(() => {
-        isConnectedRef.current = isConnected;
-    }, [isConnected]);
-
-    useEffect(() => {
-        isConnectingRef.current = isConnecting;
-    }, [isConnecting]);
-
-    useEffect(() => {
-        let mounted = true;
-        const remoteAudioElements = remoteAudioElementsRef.current;
-
-        const connectToRoom = async () => {
-            if (isConnectedRef.current || isConnectingRef.current) return;
-
-            setIsConnecting(true);
-            try {
-                // 1. Get Token from Backend
-                // Query param, not a custom header: a custom header forces a CORS
-                // preflight (OPTIONS) round-trip before every session start, and
-                // the key is already exposed in the client bundle either way.
-                const tokenUrl = BACKEND_ACCESS_KEY
-                    ? `${BACKEND_URL}/token?key=${encodeURIComponent(BACKEND_ACCESS_KEY)}`
-                    : `${BACKEND_URL}/token`;
-                const res = await fetch(tokenUrl);
-                if (!res.ok) throw new Error("Failed to fetch token");
-                const { token, url } = await res.json();
-
-                if (!mounted) return;
-
-                // 2. Join Room
-                const room = new Room();
-                roomRef.current = room;
-
-                room
-                    .on(RoomEvent.Connected, () => {
-                        if (mounted) {
-                            console.log('Connected to LiveKit Room');
-                            setIsConnected(true);
-                            setIsConnecting(false);
-                            setInteractionState('listening');
-                        }
-                    })
-                    .on(RoomEvent.Disconnected, () => {
-                        if (mounted) {
-                            console.log('Disconnected from LiveKit Room');
-                            setIsConnected(false);
-                            setInteractionState('idle');
-                            setVisemeLevel(0);
-                        }
-                    })
-                    .on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
-                        if (!mounted || topic !== 'visemes') return;
-                        try {
-                            const viseme = JSON.parse(new TextDecoder().decode(payload));
-                            if (typeof viseme.target_level === 'number') {
-                                setVisemeLevel(viseme.target_level);
-                            }
-                        } catch {
-                            // Best-effort animation signal -- drop a malformed frame.
-                        }
-                    })
-                    .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                        if (mounted && track.kind === 'audio') {
-                            console.log('Subscribed to audio track', track.sid);
-                            const element = track.attach();
-                            element.autoplay = true;
-                            element.playsInline = true;
-                            element.dataset.livekitRemoteAudio = 'true';
-                            element.style.display = 'none';
-                            document.body.appendChild(element);
-                            remoteAudioElements.add(element);
-                            setInteractionState('speaking');
-                        }
-                    })
-                    .on(RoomEvent.TrackUnsubscribed, (track) => {
-                        track.detach().forEach((element) => {
-                            remoteAudioElements.delete(element);
-                            element.remove();
-                        });
-                        setVisemeLevel(0);
-                    });
-
-                await room.connect(url || LIVEKIT_URL, token);
-
-                // 3. Publish Local Microphone
-                if (mounted) {
-                    try {
-                        const localTrack = await createLocalAudioTrack({
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                        });
-                        await room.localParticipant.publishTrack(localTrack);
-                        audioTrackRef.current = localTrack;
-                        console.log('Published local audio track');
-                    } catch (micErr) {
-                        console.warn('Microphone permission denied or error:', micErr);
-                    }
-                }
-
-            } catch (err) {
-                if (mounted) {
-                    console.error('WebRTC Connection Error:', err);
-                    setIsConnecting(false);
-                }
-            }
+        const handleStateUpdate = (update) => {
+            if (update.isConnected !== undefined) setIsConnected(update.isConnected);
+            if (update.isConnecting !== undefined) setIsConnecting(update.isConnecting);
+            if (update.interactionState !== undefined) setInteractionState(update.interactionState);
+            if (update.visemeLevel !== undefined) setVisemeLevel(update.visemeLevel);
         };
 
-        connectToRoom();
+        stateSubscribers.add(handleStateUpdate);
+
+        // Connect or sync state
+        if (!sharedRoom || sharedRoom.state === ConnectionState.Disconnected) {
+            getOrInitRoom();
+        } else {
+            setIsConnected(sharedRoom.state === ConnectionState.Connected);
+        }
 
         return () => {
-            mounted = false;
-            if (roomRef.current) {
-                roomRef.current.disconnect();
-            }
-            if (audioTrackRef.current) {
-                audioTrackRef.current.stop();
-                audioTrackRef.current = null;
-            }
-            remoteAudioElements.forEach((element) => element.remove());
-            remoteAudioElements.clear();
+            stateSubscribers.delete(handleStateUpdate);
+            scheduleRoomTeardown();
         };
-    }, []); // Empty dependency array ensures this runs only once on mount
+    }, []);
 
-    // Autoplay Policy Fix: Resume AudioContext on first user interaction
+    // Autoplay Policy Fix: Resume AudioContext on any user gesture
     useEffect(() => {
         const handleInteraction = async () => {
-            if (roomRef.current) {
+            if (sharedRoom && sharedRoom.canPlaybackAudio === false) {
                 try {
-                    await roomRef.current.startAudio();
-                    console.log('🔊 AudioContext resumed by user interaction');
-                    // Remove listener once successful
-                    window.removeEventListener('click', handleInteraction);
-                    window.removeEventListener('keydown', handleInteraction);
+                    await sharedRoom.startAudio();
+                    console.log('🔊 AudioContext unlocked by user gesture');
                 } catch (err) {
                     console.warn('Could not resume audio context:', err);
                 }
@@ -173,10 +226,12 @@ export function useWebRTCVoice() {
         };
 
         window.addEventListener('click', handleInteraction);
+        window.addEventListener('touchstart', handleInteraction);
         window.addEventListener('keydown', handleInteraction);
 
         return () => {
             window.removeEventListener('click', handleInteraction);
+            window.removeEventListener('touchstart', handleInteraction);
             window.removeEventListener('keydown', handleInteraction);
         };
     }, []);

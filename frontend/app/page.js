@@ -14,12 +14,6 @@ export default function Home() {
     const [visionError, setVisionError] = useState(null);
     const videoRef = useRef(null);
 
-    // Automatically start recording once we arrive at this page and socket is connected.
-    useEffect(() => {
-        if (isConnected && state === 'idle') {
-            startRecording();
-        }
-    }, [isConnected, state, startRecording]);
 
     const startWebcamPreview = useCallback(async () => {
         try {

@@ -1,4 +1,6 @@
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
+
+_TAILSCALE_NET = ip_network("100.64.0.0/10")
 
 
 def _normalize_host(host: str | None) -> str | None:
@@ -18,7 +20,7 @@ def _normalize_host(host: str | None) -> str | None:
 
 
 def is_lan_client_allowed(host: str | None) -> bool:
-    """Return true for loopback, private, and link-local clients."""
+    """Return true for loopback, private, link-local, and Tailscale mesh clients."""
     host = _normalize_host(host)
     if not host:
         return False
@@ -30,7 +32,12 @@ def is_lan_client_allowed(host: str | None) -> bool:
     except ValueError:
         return False
 
-    return addr.is_loopback or addr.is_private or addr.is_link_local
+    return (
+        addr.is_loopback
+        or addr.is_private
+        or addr.is_link_local
+        or (addr in _TAILSCALE_NET)
+    )
 
 
 def is_loopback_client(host: str | None) -> bool:

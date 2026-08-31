@@ -4,6 +4,9 @@
 
 set -Eeuo pipefail
 
+# Ensure Conda's libstdc++ with CXXABI_1.3.15 takes precedence over older system lib
+export LD_LIBRARY_PATH=/root/conda/lib:${LD_LIBRARY_PATH:-}
+
 # 1. Hardware Autodetect (Laptop vs. 2060 Super)
 echo "🧬 Detecting Hardware Profile..."
 if command -v nvidia-smi &> /dev/null && nvidia-smi -L &> /dev/null; then
