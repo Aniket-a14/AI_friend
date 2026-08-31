@@ -111,3 +111,4 @@ backend/.identity_state/
 # directory; it exists only because a profiling script was once run from
 # backend/ instead of the repo root and wrote a stray duplicate there.
 backend/scripts/results/
+scripts/remote/
