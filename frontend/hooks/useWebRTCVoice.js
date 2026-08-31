@@ -199,11 +199,9 @@ export function useWebRTCVoice() {
 
         stateSubscribers.add(handleStateUpdate);
 
-        // Connect or sync state
+        // Connect to room if not yet initiated
         if (!sharedRoom || sharedRoom.state === ConnectionState.Disconnected) {
             getOrInitRoom();
-        } else {
-            setIsConnected(sharedRoom.state === ConnectionState.Connected);
         }
 
         return () => {
