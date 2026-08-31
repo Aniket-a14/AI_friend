@@ -10,6 +10,7 @@ EnvironmentFile=/home/aniket/AI_friend/backend/.env
 Environment=STT_MODEL_DIR=/home/aniket/AI_friend/backend/models/whisper
 Environment=STT_SENSEVOICE_DIR=/home/aniket/AI_friend/backend/models/sensevoice
 Environment=LD_LIBRARY_PATH=/home/aniket/AI_friend/backend/target/release
+Environment=RUST_LOG=info
 ExecStart=/home/aniket/AI_friend/backend/target/release/stt-agent
 Restart=always
 RestartSec=3
