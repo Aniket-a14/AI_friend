@@ -3,6 +3,7 @@ import logging
 import time
 import uuid
 from typing import Any
+
 import numpy as np
 import torch
 import whisper
@@ -158,8 +159,8 @@ class STTAgent(BaseAgent):
                     self._processing_queue.task_done()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error("Error in STT transcription worker: %s", e, exc_info=True)
+            except Exception:
+                logger.exception("Error in STT transcription worker")
 
     def _transcribe_sync(self, audio: np.ndarray) -> str:
         """Run Whisper inference synchronously on the thread pool."""
@@ -186,8 +187,8 @@ class STTAgent(BaseAgent):
             if cleaned in hallucinations or len(cleaned) < 2:
                 return ""
             return cleaned
-        except Exception as e:
-            logger.error("Whisper inference error: %s", e, exc_info=True)
+        except Exception:
+            logger.exception("Whisper inference error")
             return ""
 
     async def stop(self):
