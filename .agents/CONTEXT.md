@@ -14042,3 +14042,60 @@ coincides exactly with a chunk-flush boundary. Materially rarer and milder than 
 bug. A full fix would mean holding back each chunk's last word pending confirmation the next
 fragment doesn't continue it, trading TTFT for a cosmetic edge case -- not taken, and named
 here rather than left implicit.
+
+## 2026-09-01 -- Phase 1 exit criterion met: gates green, consolidated live capture across all five buckets
+
+Closes out Phase 1 (Buckets 1-5, all fixed and committed on `fix/phase1-pipeline-defects`).
+
+**Gates.** Full backend suite 1,462/1,462, `ruff check .` clean. Rust: the CI-matching split
+invocation (`--package stt-agent --package voice-agent --package contracts`, then `--package
+cognitive-rust --lib`) green at 135 + 11 tests; bare `cargo test --workspace` still fails on the
+pre-existing, already-documented `cognitive-rust` pyo3 link error (not a regression -- confirmed
+via `git stash` against clean `main` during Bucket 4).
+
+**Consolidated live capture.** 3 varied real conversational turns sent through the mesh on
+home-gpu -- deliberately closer to natural conversation length than any single bucket's own
+narrower verification, to surface interaction effects between the five fixes that testing them
+individually could miss. Corrected numbers (see the timezone mistake below): filler fired on 0
+of 3 turns (the bug was *unconditional* firing, so zero here is the expected regression check,
+not a null result); exactly 1 degenerate text fragment occurred across all three turns' real
+generated content, caught before reaching the network and logged loudly; 41 total content
+chunks across the 3 responses ranging 6-14 words each (clause-level, not the old every-3-words
+pattern), manually scanned for the word-butchering artifact with none found; 48 audio-queue
+trace points observed with 0 dropped frames; zero errors in either agent process across the
+window.
+
+**A second instance of the same class of measurement mistake, caught before it corrupted the
+result.** Used `journalctl --since` with a UTC timestamp on a box running `Asia/Kolkata`
+(UTC+5:30) -- `--since` interprets a bare timestamp as local time, so this silently widened the
+capture window by 5.5 hours and inflated the filler count to 11 by pulling in unrelated earlier
+session history. Caught by noticing the number didn't fit 3 turns (not by the tooling), and
+fixed by switching to a relative window (`"5 minutes ago"`) instead of an absolute one --
+timezone-agnostic by construction, rather than a one-off correction. This is the same species of
+bug as the `docker logs --since` mistake during Bucket 5 (there: a bare timestamp produced a
+nonsensical count entirely; here: a timezone mismatch produced a plausible-looking but wrong
+one, which is the more dangerous version since a wrong-but-plausible number does not visibly
+announce itself). Worth a standing note: prefer relative `--since` windows (`"N minutes ago"`)
+over absolute timestamps for this kind of live capture on remote hosts, unless the host's
+timezone has just been explicitly confirmed.
+
+**Named rather than silently absorbed into "Phase 1 done": Bucket 1 (barge-in) cannot be
+measured by this capture method.** Scripted NATS publishes carry no acoustic signal, so
+confirming zero false interrupts from a cough/door/TV recording during agent speech (while a
+genuine interruption still lands) needs a real microphone and playback session this agent
+cannot produce. That check remains at the level it was left at after Bucket 1's own session:
+unit- and mutation-tested in code, not live-A/B'd acoustically.
+
+**What "before" means for this exit criterion:** no literal Phase 0 browser-mic capture was
+ever run in this project's history (prior ledger entries already note this undone). The real
+before-numbers that exist are each bucket's own live capture of the unfixed code taken
+immediately before its own fix (e.g. Bucket 5: 4 GPT-SoVITS calls for one sentence, measured
+before deploying). This exit capture is the after-side of that same comparison, run
+consolidated across all five fixes together rather than repeated per-bucket -- not an
+independent before/after against a baseline that was never captured.
+
+**NOT done:** the Phase 1 PR has not been opened -- branch `fix/phase1-pipeline-defects` now
+has 9 commits (Bucket 1 main + deferred-VAD, Bucket 2, Bucket 3, the env-merge doc entry,
+Bucket 4, Bucket 5, the word-spacing fix, this exit-criterion entry) and has not been pushed.
+Bucket 1's acoustic barge-in verification remains code-level only, as stated above. Phase 2
+(Buckets 14, 16) and Phase 3 (Buckets 6-13) have not been started.
