@@ -12,6 +12,7 @@ from ..cognitive import CognitiveService
 from ..cognitive.somatic import SomaticAppraiser
 from ..config import Config
 from ..contracts import (
+    AudioPlaybackBacklog,
     AudioPlaybackProgress,
     AudioStop,
     ChatInput,
@@ -105,6 +106,13 @@ class BrainAgent(BaseAgent):
         # progress frame of each turn (see _on_audio_playback_progress) and
         # read by _on_chat_input's barge-in grace period below.
         self._last_audio_onset_at: float | None = None
+        # Bucket 3 (VOICE_REMEDIATION_PLAN.md): last depth transport_agent
+        # reported for its outbound PCM queue (see AudioPlaybackBacklog),
+        # read by ConversationalRuntime to suppress a new filler while a
+        # previous turn's audio is still draining. Starts at 0 (no known
+        # backlog) rather than None so a cold start doesn't need a null check
+        # on the hot filler-decision path.
+        self.last_playback_backlog: int = 0
         # P2-14/M1-A14: `last_audio_progress` and `last_assistant_response`
         # are written from three independent NATS subscription tasks --
         # chat.input's turn flow, audio.playback.progress's tracker, and
@@ -173,6 +181,12 @@ class BrainAgent(BaseAgent):
             self._on_audio_stop,
             durable=f"{self.name}_audio_stop_live",
             deliver_policy="new",
+        )
+        await self.subscribe(
+            Topics.AUDIO_PLAYBACK_BACKLOG,
+            self._on_playback_backlog,
+            durable=f"{self.name}_audio_playback_backlog_live",
+            deliver_policy="last",
         )
         # Note: system.tick proactive engagement is now handled by SubconsciousAgent
 
@@ -503,7 +517,6 @@ class BrainAgent(BaseAgent):
     async def _process_chat_input_flow(
         self, chat_input: ChatInput, is_subconscious: bool, message: dict[str, Any]
     ):
-        flow_start_time = time.time()
         user_text = chat_input.text
         turn_id = chat_input.turn_id or chat_input.utterance_id or str(uuid.uuid4())
         metadata, latency_metadata = self._resolve_chat_input_metadata(
@@ -520,6 +533,17 @@ class BrainAgent(BaseAgent):
         # Pacing Conversational Turn: calculate silence duration and pause
         state_snap = self.cognitive_core.state.get_context_snapshot()
         await self._apply_conversational_pacing(metadata, state_snap)
+
+        # Bucket 3 (VOICE_REMEDIATION_PLAN.md): stamped *after* the pacing
+        # sleep, not before. A live capture (2026-09-01) showed the filler's
+        # elapsed-time check used to start its clock before this deliberate
+        # 300-900ms silence (`calculate_pacing_parameters`), so the filler's
+        # budget was already exhausted before generation even began -- e.g. a
+        # 496ms pacing sleep alone blew a 250ms threshold, and the fired-filler
+        # log line always landed within ~15ms of the pacing sleep ending, never
+        # any later. Measuring from here instead means the threshold reflects
+        # actual generation latency, the thing it was meant to mask.
+        generation_start_time = time.time()
 
         # Only update human interaction tracking if it's an actual user message
         if not is_subconscious:
@@ -573,7 +597,8 @@ class BrainAgent(BaseAgent):
             is_proactive=is_subconscious,
             incoming_metadata=metadata,
             incoming_latency_metadata=latency_metadata,
-            flow_start_time=flow_start_time,
+            generation_start_time=generation_start_time,
+            playback_backlog=self.last_playback_backlog,
         )
 
         if not is_subconscious:
@@ -624,6 +649,16 @@ class BrainAgent(BaseAgent):
             )
         except Exception as e:
             logger.error(f"Error parsing audio playback progress: {e}")
+
+    async def _on_playback_backlog(self, data: dict[str, Any]):
+        """Bucket 3 (VOICE_REMEDIATION_PLAN.md): tracks transport_agent's
+        outbound PCM queue depth so a new turn's filler can be suppressed
+        while a previous turn's audio is still draining."""
+        try:
+            backlog = AudioPlaybackBacklog.model_validate(data)
+            self.last_playback_backlog = backlog.queue_depth
+        except Exception as e:
+            logger.error(f"Error parsing audio playback backlog: {e}")
 
     async def _on_audio_stop(self, data: dict[str, Any]):
         """Handles confirmed audio stops: cancels in-flight generation for the

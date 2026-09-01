@@ -44,6 +44,7 @@ class Topics(str, Enum):
     AGENT_VOICE_MODULATION = "agent.voice.modulation"
     AUDIO_PLAYBACK_VISEMES = "audio.playback.visemes"
     AUDIO_PLAYBACK_PROGRESS = "audio.playback.progress"
+    AUDIO_PLAYBACK_BACKLOG = "audio.playback.backlog"
     AMBIENT_NOISE_TELEMETRY = "ambient.noise.telemetry"
     # "state.presence", not "session.presence": AI_MESSAGES' JetStream
     # subject pattern is state.>, and a subject outside every declared
@@ -346,6 +347,21 @@ class AudioPlaybackProgress(BaseModel):
     character_offset: int = Field(..., ge=0)
     word_index: int = Field(..., ge=0)
     completed: bool
+    timestamp: float = Field(default_factory=time.time)
+
+
+# ─── audio.playback.backlog ───────────────────────────────────
+class AudioPlaybackBacklog(BaseModel):
+    """Bucket 3 (VOICE_REMEDIATION_PLAN.md): the outbound PCM queue depth
+    `transport_agent` already tracks internally (`self.audio_queue.qsize()`,
+    the same number `MEASURE_TRACE`'s buffer2_to_3 event logs) -- surfaced
+    over the mesh so `ConversationalRuntime` can suppress a new filler while
+    a previous turn's audio is still backed up, instead of talking over it."""
+
+    model_config = {"extra": "allow"}
+
+    queue_depth: int = Field(..., ge=0)
+    capacity: int = Field(..., ge=0)
     timestamp: float = Field(default_factory=time.time)
 
 

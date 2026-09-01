@@ -424,4 +424,85 @@ async def test_audio_playback_worker_publishes_progress_after_capture_frame():
             await worker
 
     agent.audio_source.capture_frame.assert_awaited_once()
-    agent.spawn.assert_called_once()
+    # Two spawned publishes: `_on_nats_audio` firing Bucket 3's playback
+    # backlog telemetry as it enqueues the frame, and the playback worker
+    # firing playback-progress after `capture_frame` (the original P4-2
+    # behaviour this test was written for).
+    assert agent.spawn.call_count == 2
+
+
+# --------------------------------------------------------------------------
+# Bucket 3 (VOICE_REMEDIATION_PLAN.md): playback backlog telemetry
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_on_nats_audio_publishes_playback_backlog_telemetry():
+    """ConversationalRuntime needs transport_agent's outbound queue depth to
+    suppress a new filler while a previous turn's audio is still draining
+    (VOICE_FILLER_MAX_PLAYBACK_BACKLOG) -- this config existed but was wired
+    nowhere in the codebase before this bucket, so the signal never reached
+    anything that could act on it."""
+    agent = _transport_agent()
+
+    with patch("app.agents.transport_agent.AudioPlaybackBacklog") as mock_model:
+        instance = MagicMock()
+        instance.model_dump.return_value = {"fake": "backlog"}
+        mock_model.return_value = instance
+
+        await agent._on_nats_audio(b"\x00\x00" * 4, metadata={"turn_id": "turn-1"})
+
+    mock_model.assert_called_once_with(
+        queue_depth=1, capacity=agent.audio_queue.maxsize
+    )
+    agent.publish.assert_called_once()
+    topic, payload = agent.publish.call_args.args
+    assert topic == Topics.AUDIO_PLAYBACK_BACKLOG
+    assert payload == {"fake": "backlog"}
+
+
+@pytest.mark.asyncio
+async def test_on_nats_audio_throttles_backlog_telemetry_publishes():
+    """This fires on every PCM frame -- as often as every ~20ms of audio.
+    Publishing backlog telemetry at that rate would flood NATS for no
+    benefit: VOICE_FILLER_MIN_INTERVAL_SECONDS's 1.5s floor means nothing
+    downstream needs data fresher than the throttle interval already gives."""
+    agent = _transport_agent()
+
+    await agent._on_nats_audio(b"\x00\x00" * 4, metadata={"turn_id": "turn-1"})
+    await agent._on_nats_audio(b"\x00\x00" * 4, metadata={"turn_id": "turn-1"})
+
+    assert agent.publish.call_count == 1
+
+    # Simulate the throttle window having elapsed since the last publish.
+    agent._last_backlog_publish_at = 0.0
+    await agent._on_nats_audio(b"\x00\x00" * 4, metadata={"turn_id": "turn-1"})
+
+    assert agent.publish.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_on_playback_backlog_records_the_reported_queue_depth(
+    mock_llm_service, mock_graph_db, mock_memory_store
+):
+    """The consumer side of the same bucket: ConversationalRuntime reads
+    `last_playback_backlog` off the agent, not off the raw NATS message, so
+    this is what actually has to be right."""
+    agent = _agent(mock_llm_service, mock_graph_db, mock_memory_store)
+    assert agent.last_playback_backlog == 0  # cold-start default
+
+    await agent._on_playback_backlog({"queue_depth": 7, "capacity": 256})
+
+    assert agent.last_playback_backlog == 7
+
+
+@pytest.mark.asyncio
+async def test_on_playback_backlog_ignores_a_malformed_message(
+    mock_llm_service, mock_graph_db, mock_memory_store
+):
+    agent = _agent(mock_llm_service, mock_graph_db, mock_memory_store)
+    agent.last_playback_backlog = 3
+
+    await agent._on_playback_backlog({"capacity": 256})  # missing queue_depth
+
+    assert agent.last_playback_backlog == 3  # unchanged, not reset to a default

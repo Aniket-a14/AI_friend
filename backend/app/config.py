@@ -328,7 +328,17 @@ class AppSettings(BaseSettings):
     TRANSPORT_AUDIO_QUEUE_SIZE: int = 256
     VOICE_FILLER_MIN_INTERVAL_SECONDS: float = 1.5
     VOICE_FILLER_MAX_PLAYBACK_BACKLOG: int = 4
-    VOICE_FILLER_THRESHOLD: float = 0.25
+    # Bucket 3 (VOICE_REMEDIATION_PLAN.md): was 0.25 (250ms), contradicting the
+    # 400ms this value has always been described as everywhere else (this
+    # module's own docstring text, the log line, README.md, docs/ARCHITECTURE.md).
+    # A live capture (2026-09-01, phase0_baseline) also showed the *measurement*
+    # was contaminated by conversational pacing sleep (300-900ms) counted against
+    # this same budget before generation even started -- see the
+    # `generation_start_time` fix in brain_agent.py/conversational_runtime.py.
+    # With that fixed, 400ms lines up with the real overhead measured between
+    # pacing ending and the response-generation LLM call starting (~264ms of
+    # MAUT/memory/endocrine work observed, before Ollama's own TTFT).
+    VOICE_FILLER_THRESHOLD: float = 0.4
     # Bucket 1 (VOICE_REMEDIATION_PLAN.md): a genuine human reaction cannot
     # produce a final chat.input this soon after the agent's audio starts
     # playing (STT alone needs 250ms min_speech_ms + 700ms endpoint silence

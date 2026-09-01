@@ -13616,3 +13616,150 @@ session -- recorded here as a pattern to watch for, not a one-off.
   emotion, not just words. Still an optional path with a working fallback, not blocking.
 - A sustained multi-turn stress test to settle whether `transport_agent`'s severe queue-overload
   symptom (seen in Antigravity's raw log, not reproduced here) is real on this deployment.
+
+## 2026-09-01 -- VOICE_AUDIT.md turned into VOICE_REMEDIATION_PLAN.md; Phase 1 Buckets 1-3 fixed and verified live
+
+Following up on 2026-08-31's real mic session (audio confirmed working but "hazy" with
+"improper pauses," fixes deferred), a full audit (`VOICE_AUDIT.md`, gitignored) diagnosed seven
+symptoms and judged five fixable as pipeline defects without an architecture change. Turned into
+a 16-bucket, 4-phase plan (`VOICE_REMEDIATION_PLAN.md`, gitignored, working copy at repo root).
+Working agreement for this plan: edit on Mac, `rsync` to home-gpu (excluding `.git/`, `target/`,
+`.venv/`, `*.db`, `.env`, `models/`, and other host-local state), build/restart/verify there,
+commit on Mac after live verification. Branch is per-phase, not per-bucket
+(`fix/phase1-pipeline-defects`); each bucket below is its own commit on it.
+
+**Bucket 1 -- barge-in/turn-taking.** The confirmed-stop path in `brain_agent.py`'s
+`_on_chat_input` published `AudioStop` on every `chat.input` with no gate, while
+`is_speculative_stop_confirmed` (`decision.py`) already implemented the full semantic arbiter
+(connector rejection, pivot alignment, conciseness, call signs) and was never consulted on that
+path. Routed the confirmed stop through the arbiter, gated additionally on minimum word count
+and the agent actually being mid-utterance. Added whisper.cpp hallucination gating
+(`set_no_speech_thold`, `set_logprob_thold`, `set_entropy_thold`, `set_suppress_nst`, per-segment
+`no_speech_probability()` rejection, a known-hallucination-phrase denylist) -- all already
+exposed by the pinned `whisper-rs 0.16`, no new dependency. Dropped `"no"` from the speculative
+keyword list (`stt-agent/main.rs`) since it fired on ordinary agreement. Added a
+`BARGE_IN_ONSET_GRACE_S = 0.15` grace period after TTS onset (stamped in
+`_on_audio_playback_progress` on the first playback-progress frame of an utterance). Set
+`autoGainControl: false` in `useWebRTCVoice.js` (was fighting `Endpointer`'s adaptive noise
+floor). **Neural VAD (item 3) was deferred mid-implementation, then completed same day**:
+`WhisperVadParams`/`enable_vad`/`set_vad_model_path` turned out to live on `FullParams` itself,
+not only the separate `WhisperVadContext` API first found. Real GGML Silero VAD model
+downloaded from `ggml-org/whisper-vad` (an earlier guess at `ggerganov/whisper.cpp`'s own repo
+404'd), SHA256-pinned (`29940d98...`), provisioned via a new shared `ensure_ggml_file` helper.
+Caught a real bug in the same pass: the 1MB "not truncated" size floor was tuned for whisper's
+~100MB+ weights and falsely flagged the legitimately-885KB VAD file as truncated on every
+process start, forcing a full re-download every time -- caught by a live `--transcribe-file`
+run, not the unit tests, now has a regression test pinned to the real observed size. Verified
+end-to-end on home-gpu: fresh download -> SHA256 match -> correct transcript -> second run hits
+cache, same transcript. Full detail in `VOICE_REMEDIATION_PLAN.md`'s "Deferred during
+execution" section.
+
+**Bucket 2 -- audio output corruption, three independent sources, none TTS-quality.**
+(1) `transport_agent`'s `QueueFull` handler evicted the *oldest* queued frame and spliced the
+new one in -- correct for a live video stream, wrong for synthesized speech (a fixed artifact
+that must arrive intact): a hard discontinuity between non-adjacent PCM. Changed to drop-newest,
+never splice; the pre-existing test asserting the old policy
+(`test_queue_overflow_drops_the_oldest_frame_not_the_newest`, a different queue/direction than
+the one this bucket fixed) was left alone as still valid for its own subject, and a new test
+(`test_on_nats_audio_overflow_drops_the_newest_frame_not_the_oldest`) covers the outbound queue
+this bucket actually changed. (2) `ReverbFilter::process` wrote `output` (not `input`) into its
+delay line -- an unbounded feedback comb (`y[n] = x[n] + 0.5*y[n-D]`, steady-state gain 2.0)
+that was hard-clipping normalized TTS. Fixed to write `input`; added headroom scaling before
+`clamp`; added `ReverbFilter::reset()` called per-utterance (on `done`), not per-chunk, per the
+existing comment's own reasoning about not dropping the echo tail at chunk boundaries;
+centralized three hardcoded `0.1` wet-gain call sites (filler/vocalization/failure paths, which
+bypassed the distance gate) into one `reverb_wet_gain_for_distance()`. The regression test for
+this needed a redesign mid-session: the first version asserted `sample <= i16::MAX`, which is
+vacuously true since `clamp()` cannot produce an out-of-range i16 by construction -- caught by
+this same session's own mutation-testing step (the reintroduced bug still passed the test).
+Rewritten to check convergence to the known input amplitude instead, which does distinguish
+bounded echo from unbounded feedback. (3) The pseudo-OLA crossfade blended the last 15ms of an
+*already-published* previous chunk into the next chunk's head -- the listener heard those 15ms
+twice. True OLA would need holding audio back (added latency); instead `OlaCrossfadeFilter` was
+gutted to pure byte-parity buffering (handles only the odd-byte-at-chunk-boundary problem), no
+sample blending -- a clean butt-join beats replaying emitted audio.
+
+**Bucket 3 -- filler fires every turn, plus a defect the original plan text didn't anticipate.**
+Raised `VOICE_FILLER_THRESHOLD` 0.25 -> 0.4 (matching what the docstring, log line, README.md,
+and docs/ARCHITECTURE.md already claimed -- 0.25 was the outlier). Fixed the log line to
+interpolate the config value instead of a hardcoded "400ms" string, so it can't re-diverge the
+way it already had once. Wired both previously-dead rate limits:
+`VOICE_FILLER_MIN_INTERVAL_SECONDS` via an instance-scoped last-fired timestamp on
+`ConversationalRuntime`; `VOICE_FILLER_MAX_PLAYBACK_BACKLOG` required a new cross-process signal
+that didn't exist, since `ConversationalRuntime` runs in `brain_agent` and has no visibility
+into `transport_agent`'s outbound queue depth -- added `AudioPlaybackBacklog`
+(`audio.playback.backlog`, mirroring the existing `AudioPlaybackProgress` shape), published by
+`transport_agent` throttled to 5Hz, subscribed by `brain_agent`. Verified live: a real turn's
+backlog telemetry reached `queue_depth=53` of 256 while a prior turn's audio was still draining
+-- well above the threshold of 4, confirming the condition this suppression exists for is real,
+not theoretical. Fixed the double-fire: `content=f"<hesitate> {filler}<pause=200ms>"` ->
+`content=f"{filler}<pause=200ms>"` -- `<hesitate>` was triggering its own fixed "Mm..." synthesis
+in a *separate* GPT-SoVITS call from the filler word after it.
+
+**The defect the plan didn't name: the elapsed-time measurement was contaminated by
+conversational pacing.** `flow_start_time` was stamped before
+`_apply_conversational_pacing`'s deliberate 300-900ms silence, not after. A live capture
+(`phase0_baseline_2026-09-01/session_window_13-14-20...log`, from this session's own earlier
+Phase 0 instrumentation pass) showed the "TTFT exceeded" log line landing within ~15ms of the
+pacing sleep ending, every time, across two independent capture sessions -- meaning generation
+had not even started when the filler's budget was already spent. Raising the threshold alone
+could never have fixed this: a 496ms pacing sleep blows any threshold under ~500ms regardless of
+its value. Fixed by capturing a new `generation_start_time` *after* the pacing await returns,
+and renaming the `monitor_stream_and_fill` parameter to match. Verified live: post-fix, the same
+kind of turn sometimes fires no filler (fast generation) and sometimes fires exactly one (slow
+generation) -- confirming the plan's exit criterion ("fires on a minority of turns, once")
+rather than assuming it.
+
+**A sixth, orthogonal finding surfaced while verifying Bucket 3 live: two separate `.env` files
+on home-gpu independently stage config, and can silently drift out of sync with each other and
+with what a prior session's fix believed it had corrected.** `backend/.env` is loaded as real OS
+environment by `ai-friend-agents.service`'s `EnvironmentFile=`. `~/AI_friend/.env` (repo root)
+is loaded independently and directly by `pydantic_settings`'s own `env_file` resolution inside
+`config.py` (`_env_file = Path(__file__).resolve().parent.parent.parent / ".env"`, three levels
+up from `app/config.py`, landing at the repo root, not `backend/`) -- and is *also*
+docker-compose's variable-substitution file, a legitimate second consumer. Removing
+`VOICE_FILLER_THRESHOLD=0.25` from only `backend/.env` did nothing; the process kept reading
+0.25 from the repo-root file regardless. Diffing the two also surfaced that the repo-root file
+still has the stale `STT_SENSEVOICE_DIR=/app/models/sensevoice` that 2026-08-31's entry believed
+was already corrected -- it was corrected in `backend/.env`, the file that session was looking
+at; the repo-root file was never touched and this session left it as found, since silently
+"fixing" it here would misrepresent this pass as having reconciled the two files when it only
+removed the one line Bucket 3 depended on. Full write-up and the reconciliation options
+considered are in `VOICE_REMEDIATION_PLAN.md`'s "Deferred during execution" section.
+
+**Verification.** Full backend suite: 1,453 tests, 0 failures (JUnit XML, not the terminal
+summary, per this file's own documented pytest-output-swallowing gotcha). `ruff check .` clean.
+New/changed logic mutation-tested by neutering each check (barge-in gate, backlog suppression,
+min-interval suppression, hesitate-removal, reverb runaway, byte-parity math) and confirming the
+corresponding test fails, then restoring and confirming it passes again -- one such restore was
+accidentally done via `git checkout --` on an uncommitted file mid-session, which reverted all
+of that bucket's uncommitted edits, not just the mutation; caught immediately (tests dropped
+from 33 passing to the pre-Bucket-3 file), redone by hand, worth remembering: never `git
+checkout --` a file with uncommitted work still on it, even to undo your own mutation test --
+diff-and-restore or a scratch copy is the safe way. All three buckets verified live on
+home-gpu, not just compiled: real `rsync`, real `systemctl restart`, real synthetic
+`chat.input` messages published directly to NATS to force turns through the live mesh
+(`nc.publish` on core NATS, not JetStream -- confirmed brain_agent still receives it, since the
+JetStream consumer pulls from the stream regardless of which client API produced the message),
+real `journalctl`/`docker logs` output read as evidence, not assumed from local test passes.
+
+**NOT done:**
+- Phase 1 Buckets 4 (speech unintelligible) and 5 (chunked/scripted flow) -- not started. The
+  chunking symptom Bucket 5 targets is still visibly present in every live capture this session
+  produced (a single sentence response fragmenting into 25-50+ separate GPT-SoVITS calls).
+- The dual-`.env`-file reconciliation (see above) -- deliberately left as a named, deferred
+  decision rather than a mechanical fix, since it needs a choice about which file is canonical
+  and this class of bug has now recurred twice with different symptoms.
+- A live A/B specifically exercising `VOICE_FILLER_MIN_INTERVAL_SECONDS` with two real turns
+  close enough together in wall-clock time that both would otherwise fire a filler -- the two
+  live turns fired in sequence this session landed ~5s apart (comfortably past the 1.5s
+  interval) rather than inside it. The suppression logic itself is mutation-tested at the unit
+  level (neutering the check makes the corresponding test fail), and the underlying telemetry
+  channel and config values are confirmed live and correctly wired; only the specific
+  close-timing live scenario wasn't reproduced.
+- Phase 1's own exit criterion (re-running the Phase 0 capture for a full before/after on all
+  five symptoms) -- individual buckets were verified live as they landed, but the consolidated
+  before/after capture across all of Phase 1 hasn't been done, pending Buckets 4-5.
+- The Phase 1 PR -- branch `fix/phase1-pipeline-defects` has three commits (Buckets 1, 2, 3) and
+  is not yet opened as a PR, per the user's instruction that PRs are per-phase, opened once the
+  phase's buckets are all done.

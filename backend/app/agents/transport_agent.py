@@ -8,11 +8,22 @@ from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
 
 from ..config import Config
-from ..contracts import AudioPlaybackProgress, PlaybackVisemes, SessionPresence, Topics
+from ..contracts import (
+    AudioPlaybackBacklog,
+    AudioPlaybackProgress,
+    PlaybackVisemes,
+    SessionPresence,
+    Topics,
+)
 from ..measure_trace import trace as _measure_trace
 from .base import BaseAgent, install_shutdown_signal_handlers
 
 logger = logging.getLogger("transport_agent")
+
+# Bucket 3 (VOICE_REMEDIATION_PLAN.md): cadence for AudioPlaybackBacklog
+# telemetry. `VOICE_FILLER_MIN_INTERVAL_SECONDS` (1.5s) is the coarsest
+# consumer of this signal, so anything well under that is fresh enough.
+BACKLOG_TELEMETRY_INTERVAL_S = 0.2
 
 
 class TransportAgent(BaseAgent):
@@ -52,6 +63,12 @@ class TransportAgent(BaseAgent):
         )
         self.audio_worker_task = None
         self.dropped_audio_frames = 0
+        # Bucket 3 (VOICE_REMEDIATION_PLAN.md): throttle state for publishing
+        # this queue's depth so `ConversationalRuntime` can see it (see
+        # `AudioPlaybackBacklog`) without flooding NATS -- `_on_nats_audio`
+        # fires once per PCM frame, far more often than a filler decision
+        # needs fresh data for.
+        self._last_backlog_publish_at: float = 0.0
         # Set for real once `start()` publishes the initial track; needed to
         # unpublish it by sid when P1-3's flush rotates to a fresh one.
         self.audio_publication: rtc.LocalTrackPublication | None = None
@@ -383,6 +400,19 @@ class TransportAgent(BaseAgent):
                         qsize=self.audio_queue.qsize(),
                         dropped=self.dropped_audio_frames,
                     )
+
+                    now = time.time()
+                    if now - self._last_backlog_publish_at >= BACKLOG_TELEMETRY_INTERVAL_S:
+                        self._last_backlog_publish_at = now
+                        backlog = AudioPlaybackBacklog(
+                            queue_depth=self.audio_queue.qsize(),
+                            capacity=self.audio_queue.maxsize,
+                        )
+                        self.spawn(
+                            self.publish(
+                                Topics.AUDIO_PLAYBACK_BACKLOG, backlog.model_dump()
+                            )
+                        )
 
             if is_done:
                 logger.info("AI Utterance stream complete.")
