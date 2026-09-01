@@ -443,8 +443,8 @@ evidence.
 **Corrected 2026-09-01** (matching the same correction in `CLAUDE.md`'s
 Integrity constraints section): this used to claim flatly that no headline
 latency or Recall@K figure had been measured against real infrastructure.
-That is not true of every number in the repo — `hard_benchmark.py`'s Hermes 3
-8B run (61.9 ms TTFT, 46.6 tok/s, real Colab GPU) and its Recall@K figures
+That is not true of every number in the repo — `_archive/research/hard_benchmark.py`'s
+Hermes 3 8B run (61.9 ms TTFT, 46.6 tok/s, real Colab GPU) and its Recall@K figures
 were independently recomputed from raw per-sample arrays and matched
 (`.agents/CONTEXT.md`, 2026-07-18). The still-standing constraint is narrower
 but just as real: those numbers came from that benchmark's own one-off

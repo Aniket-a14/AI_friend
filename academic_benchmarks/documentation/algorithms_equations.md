@@ -406,7 +406,7 @@ The efficiency of turn-taking and physical stopping response speed is evaluated 
 
 ### 6.4 Acoustic Chunk Boundaries (Crossfade Removed)
 
-**Corrected 2026-09-01** — this section previously described a 10ms linear Overlap-Add (OLA) crossfade blended between consecutive prosody-shifted synthesis buffers. That mechanism was removed (Bucket 2, `VOICE_REMEDIATION_PLAN.md`), not merely retuned: audit showed it was blending the last 15ms of the *already-published, already-playing* previous chunk into the head of the next, which is not overlap-add (true OLA overlaps two buffers analyzed together **before** either is sent downstream) — it made the listener hear those 15ms twice, at a phase discontinuity, reported live as a "hazy"/muddy artifact. Correctly implementing true OLA would need holding back every chunk's tail until the next chunk arrives, adding one full chunk of latency to an already latency-critical path (see §8/Bucket 8's dual-loop discussion) for a benefit only relevant at chunk boundaries where prosody shifts sharply between clauses — chunking is now clause-aligned (§10.2, Bucket 5), which already reduces how often that boundary occurs. The engineering call was that a clean butt-join is strictly better than replaying already-heard audio, so the crossfade was deleted rather than reimplemented. What remains at this seam (`OlaCrossfadeFilter` in `voice-agent/src/main.rs`, kept for its original name only) is exactly the part that was never about prosody: buffering a single dangling odd byte across chunk boundaries so a 16-bit PCM sample is never split across two network chunks.
+**Corrected 2026-09-01** — this section previously described a 10ms linear Overlap-Add (OLA) crossfade blended between consecutive prosody-shifted synthesis buffers. That mechanism was removed (Bucket 2, see `.agents/CONTEXT.md`'s 2026-09-01 entries), not merely retuned: audit showed it was blending the last 15ms of the *already-published, already-playing* previous chunk into the head of the next, which is not overlap-add (true OLA overlaps two buffers analyzed together **before** either is sent downstream) — it made the listener hear those 15ms twice, at a phase discontinuity, reported live as a "hazy"/muddy artifact. Correctly implementing true OLA would need holding back every chunk's tail until the next chunk arrives, adding one full chunk of latency to an already latency-critical path (see §8/Bucket 8's dual-loop discussion) for a benefit only relevant at chunk boundaries where prosody shifts sharply between clauses — chunking is now clause-aligned (§10.2, Bucket 5), which already reduces how often that boundary occurs. The engineering call was that a clean butt-join is strictly better than replaying already-heard audio, so the crossfade was deleted rather than reimplemented. What remains at this seam (`OlaCrossfadeFilter` in `backend/crates/voice-agent/src/main.rs`, kept for its original name only) is exactly the part that was never about prosody: buffering a single dangling odd byte across chunk boundaries so a 16-bit PCM sample is never split across two network chunks.
 
 ---
 
@@ -614,7 +614,7 @@ def retrieve_episodic_memory(context_query, active_pad_vector, neo4j_driver):
 **Corrected 2026-09-01** — the pseudocode below previously modeled an immediate, microsecond-level physical mute triggered directly off RMS energy, with a crossfaded unmute on a false trigger. Neither exists: RMS crossing the noise floor (`Endpointer`, `speech_factor = 3.0`) gates *transcription*, not playback, and the actual halt/resume path runs through real STT + the semantic resolver (§9.3) before anything happens to the audio track — see §6.1's correction for the full reasoning. The crossfade referenced on the false-trigger path was removed entirely (§6.4). This version reflects the actual multi-stage pipeline, in its real message-passing shape rather than as a single tight loop with a hardware hook:
 
 ```python
-async def barge_in_gating_loop(audio_stream, transcriber, resolver, mesh):
+async def barge_in_gating_loop(audio_stream, endpointer, transcriber, resolver, mesh):
     """
     Algorithm 2: Dual-Loop System 1 / System 2 Speculative Turn Interruption
 
@@ -644,7 +644,7 @@ async def barge_in_gating_loop(audio_stream, transcriber, resolver, mesh):
             break
         else:
             # Rejected: playback was never touched, so there is nothing to
-            # restore -- just tell the mesh the duck is over.
+            # restore -- just tell the mesh the ducking is over.
             await mesh.publish("audio.resume", {"turn_id": transcript.turn_id})
 ```
 

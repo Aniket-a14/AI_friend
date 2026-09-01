@@ -111,6 +111,12 @@ evals_out/
 # reasoning as /AUDIT.md above.
 /VOICE_REMEDIATION_PLAN.md
 
+# Spec for a richer voice-recording session (2026-09-01), written in response
+# to a question about deep-clone quality vs the 64s proof-of-concept corpus.
+# Personal working note for planning a future recording session, not a
+# deliverable -- same reasoning as /AUDIT.md above.
+/VOICE_RECORDING_SPEC.md
+
 # Live agent identity state (cognitive/identity.py's default when
 # IDENTITY_BASE_PATH is unset) -- a SQLite db plus the persona's own working
 # copy of personality.json/history.json, written by any local run. Runtime
