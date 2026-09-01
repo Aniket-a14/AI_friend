@@ -179,3 +179,95 @@ async def test_comma_before_target_size_does_not_force_a_premature_flush():
     chunks = await _published_chunks(agent, words, delay_s=0.0)
 
     assert chunks == ["Well, I guess that is true."]
+
+
+# -------------------------------------------------------- sub-word continuation gluing
+
+
+async def _published_chunks_from_fragments(agent: BrainAgent, fragments: list[str]) -> list[str]:
+    """Like _published_chunks, but drives _stream_to_speech with raw
+    fragments exactly as given -- no forced trailing space -- so a
+    continuation fragment (no leading space) is distinguishable from one
+    that starts a new word, matching how Ollama's real token stream
+    actually arrives."""
+    published: list[str] = []
+
+    async def _capture(chunk_words, *_args, **_kwargs):
+        published.append(" ".join(chunk_words))
+
+    agent._publish_speech_chunk = _capture
+    agent._publish_final_chunk_payload = AsyncMockCompat()
+
+    async def _fragment_stream():
+        for frag in fragments:
+            yield {"type": "content", "data": frag}
+        yield {"type": "done", "data": ""}
+
+    await agent._stream_to_speech(
+        _fragment_stream(), turn_id="turn-glue", is_proactive=False
+    )
+    return published
+
+
+@pytest.mark.asyncio
+async def test_subword_continuation_without_a_leading_space_is_glued_not_split():
+    """A live capture (2026-09-01) showed 'Aniket' arriving as three
+    separate stream fragments ('An', 'ik', 'et') with no space between
+    them -- naive per-chunk .split() treated each as its own word,
+    producing 'An ik et' in the published text. None of Ollama's raw
+    sub-word tokens carry a space marker unless one is actually present in
+    the source text, so the fix must check the boundary itself rather than
+    assume every fragment is a whole word.
+    """
+    agent = _agent()
+    agent.coordinator = SpeechCoordinator(
+        segmenter=HybridSegmenter(target_size=7), formation_buffer_s=10.0
+    )
+
+    published = await _published_chunks_from_fragments(
+        agent, ["Hi ", "An", "ik", "et", ",", " I", " am", " your", " friend."]
+    )
+
+    assert published == ["Hi Aniket, I am your friend."]
+
+
+@pytest.mark.asyncio
+async def test_fragment_with_its_own_leading_space_is_never_glued():
+    """The other side of the same check: a fragment that DOES carry a
+    leading space marks a genuine new word and must never be glued onto
+    whatever preceded it, even though the previous fragment had no
+    trailing space of its own -- either side carrying the separator is
+    sufficient, so this guards against a fix that only checked one side.
+    """
+    agent = _agent()
+    agent.coordinator = SpeechCoordinator(
+        segmenter=HybridSegmenter(target_size=7), formation_buffer_s=10.0
+    )
+
+    published = await _published_chunks_from_fragments(agent, ["Hello", " there!"])
+
+    assert published == ["Hello there!"]
+
+
+@pytest.mark.asyncio
+async def test_glued_word_gaining_punctuation_is_rescored_for_a_split():
+    """The merge itself can introduce the punctuation that makes a word a
+    split point (e.g. a trailing comma arriving as its own fragment) --
+    the glued word must be rescored, not silently skipped just because it
+    was produced by a merge rather than the normal per-word loop.
+    """
+    agent = _agent()
+    agent.coordinator = SpeechCoordinator(
+        segmenter=HybridSegmenter(target_size=7), formation_buffer_s=10.0
+    )
+    # "college" is the 7th word; the comma arrives as its own fragment
+    # with no leading space, gluing onto "college" to form "college," --
+    # score 0.4 + 0.3 (at target_size) == 0.7, must flush right there.
+    fragments = ["Hi ", "I ", "am ", "Aniket ", "I ", "study ", "college", ",", " in Punjab."]
+
+    published = await _published_chunks_from_fragments(agent, fragments)
+
+    assert published == [
+        "Hi I am Aniket I study college,",
+        "in Punjab.",
+    ], f"expected the glued comma to trigger a split at position 7, got: {published}"

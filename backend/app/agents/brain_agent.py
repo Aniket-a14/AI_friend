@@ -832,6 +832,21 @@ class BrainAgent(BaseAgent):
         async def _handle_content_output(chunk_text: str) -> None:
             nonlocal full_response, current_chunk_words, segment_started_at
             await self.set_state("speaking")
+            # Bucket 5 follow-up (VOICE_REMEDIATION_PLAN.md): a live capture
+            # showed "Aniket" arriving as three separate stream fragments
+            # ("An", "ik", "et") with no space between them -- Ollama's raw
+            # token stream can emit a continuation sub-word with no leading
+            # space of its own, and chunk_text.split() below has no way to
+            # know that unless checked here first. Computed before the
+            # append, since this is exactly the boundary a missing space
+            # would sit at: neither this chunk's first character nor the
+            # text-so-far's last character is whitespace.
+            boundary_missing_space = bool(
+                chunk_text
+                and not chunk_text[0].isspace()
+                and full_response
+                and not full_response[-1].isspace()
+            )
             full_response += chunk_text
             if not is_proactive:
                 # P2-14/M1-A14: this fires once per streamed chunk, so
@@ -854,6 +869,24 @@ class BrainAgent(BaseAgent):
                 segment_started_at = None
 
             words = chunk_text.split()
+            if boundary_missing_space and current_chunk_words and words:
+                # The buffer still holds the word this fragment continues
+                # (it was not just flushed by the timer check above) --
+                # glue rather than let .split() invent a word-break that
+                # was never in the original text.
+                current_chunk_words[-1] += words[0]
+                words = words[1:]
+                # The merge may have added punctuation this fragment
+                # carried (e.g. "Anik" + "et," -> "Aniket,") that changes
+                # whether this word is now a split point.
+                score = self.coordinator.segmenter.score_split_point(
+                    current_chunk_words[-1], len(current_chunk_words)
+                )
+                if score >= 0.7 or len(current_chunk_words) > 12:
+                    await _publish_tracked(current_chunk_words, full_response)
+                    current_chunk_words = []
+                    segment_started_at = None
+
             for word in words:
                 if not current_chunk_words:
                     segment_started_at = time.perf_counter()

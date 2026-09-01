@@ -14003,3 +14003,42 @@ same session once flagged, so it was -- see below rather than duplicating that w
 has not been run -- each bucket continues to be verified individually as it lands. The Phase 1
 PR has still not been opened (branch now has 6 commits: Bucket 1 main + deferred-VAD, Bucket 2,
 Bucket 3, the env-merge doc entry, Bucket 4, Bucket 5).
+
+## 2026-09-01 -- Fixed a sub-word streaming artifact found (and requested) during Bucket 5's live verification
+
+Not one of the original 16 buckets. Bucket 5's own live verification captures surfaced words
+arriving mangled -- `'C ats'`, `'right ing'`, `"can 't"` -- initially recorded as an out-of-scope
+finding, then fixed in the same session once the user asked for it directly.
+
+**Root cause:** `ollama_client.py::generate_stream` yields each generation step's raw decoded
+text verbatim, and a legitimate sub-word continuation token (e.g. "ik" continuing "An" toward
+"Aniket") carries no leading space -- the tokenizer never put one there.
+`_handle_content_output`'s `chunk_text.split()` had no way to distinguish that from a genuine
+new word, so `" ".join(words)` downstream inserted a space that was never in the source text.
+
+**Fix** (`brain_agent.py::_handle_content_output`): compute `boundary_missing_space` before
+appending each fragment -- true only when *neither* the fragment's first character *nor* the
+accumulated text's last character is whitespace. When true and the buffer still holds an
+unflushed word, glue the fragment's first token onto it instead of appending a new word, then
+rescore the merged word (a fragment can introduce the punctuation that makes it a split point).
+
+**Mutation testing surfaced a real design requirement, not just confirmed the fix:** weakening
+the boundary check from two-sided to one-sided (checking only the incoming fragment's first
+character) failed 6 of the file's 8 tests -- several of the *other* tests' fixtures rely on the
+trailing-space side to correctly separate words, which is exactly why both sides must be
+checked. Disabling the glue condition outright failed the two glue-specific tests; removing the
+post-merge rescore failed exactly the one test built for it.
+
+**Verification.** Local: 1,462/1,462, `ruff check .` clean. Live on home-gpu: resent the exact
+prompt that surfaced the bug and confirmed every previously-mangled word now reconstructs
+correctly across 9 content chunks, with no stray internal spaces.
+
+**Known residual, accepted rather than engineered around:** the same live capture showed a
+chunk beginning with a stray leading comma (`", near their cheeks and lips."`) -- the comma
+continuing the prior word arrived *after* that word had already been flushed and published,
+leaving nothing in the buffer to glue onto. Inherent to publish-as-you-go streaming (an
+already-sent chunk cannot be edited retroactively); reachable only when a mid-word split
+coincides exactly with a chunk-flush boundary. Materially rarer and milder than the original
+bug. A full fix would mean holding back each chunk's last word pending confirmation the next
+fragment doesn't continue it, trading TTFT for a cosmetic edge case -- not taken, and named
+here rather than left implicit.
