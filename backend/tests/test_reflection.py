@@ -1,14 +1,92 @@
+import asyncio
 import logging
 from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
 from app.cognitive.learning import ReflectionService
+from app.config import Config
 
 
 @pytest.fixture
 def reflection_service(mock_llm_service, mock_graph_db):
     return ReflectionService(llm_service=mock_llm_service, graph_store=mock_graph_db)
+
+
+# --------------------------------------------------------------------------
+# Bucket 12 (voice remediation Phase 3): REFLECTION_MIN_INTERVAL_SECONDS
+# --------------------------------------------------------------------------
+#
+# `enforce_test_config` (conftest.py, autouse) pins this to 0 for every test
+# node so the rest of the suite stays deterministic -- these tests
+# monkeypatch it back to a real value deliberately, to exercise the one
+# piece of behaviour that constant actually gates.
+
+
+@pytest.mark.asyncio
+async def test_back_to_back_reflection_is_throttled(
+    reflection_service, mock_llm_service, monkeypatch
+):
+    """Before this, the only thing standing between one reflection pass
+    finishing and the next starting was `is_reflecting` -- a busy-flag, not
+    a cooldown. A fast-paced conversation could trigger a fresh multi-LLM-call
+    reflection pass on every single turn."""
+    monkeypatch.setattr(Config, "REFLECTION_MIN_INTERVAL_SECONDS", 30.0)
+    mock_llm_service.generate.side_effect = ["[]", "{}"] * 5
+
+    episodes = [{"content": "hello", "response": "hi"}]
+
+    first = await reflection_service.trigger_reflection(episodes)
+    assert isinstance(first, asyncio.Task)
+    await first
+
+    second = await reflection_service.trigger_reflection(episodes)
+    assert not isinstance(second, asyncio.Task), (
+        "a reflection triggered immediately after the last one finished "
+        "must be suppressed by the cooldown, not started as a new task"
+    )
+
+
+@pytest.mark.asyncio
+async def test_reflection_fires_again_once_the_interval_elapses(
+    reflection_service, mock_llm_service, monkeypatch
+):
+    monkeypatch.setattr(Config, "REFLECTION_MIN_INTERVAL_SECONDS", 30.0)
+    mock_llm_service.generate.side_effect = ["[]", "{}"] * 5
+
+    episodes = [{"content": "hello", "response": "hi"}]
+
+    first = await reflection_service.trigger_reflection(episodes)
+    await first
+
+    # Simulate the cooldown having elapsed rather than sleeping in a test.
+    reflection_service.last_reflection_started_at -= 31.0
+
+    second = await reflection_service.trigger_reflection(episodes)
+    assert isinstance(second, asyncio.Task), (
+        "once the cooldown has genuinely elapsed, a new reflection pass "
+        "must be allowed to start"
+    )
+    await second
+
+
+@pytest.mark.asyncio
+async def test_zero_interval_never_throttles(
+    reflection_service, mock_llm_service, monkeypatch
+):
+    """The test-suite default (and any deployment that explicitly opts back
+    into it): 0 means no cooldown at all, matching pre-Bucket-12 behaviour
+    exactly."""
+    monkeypatch.setattr(Config, "REFLECTION_MIN_INTERVAL_SECONDS", 0.0)
+    mock_llm_service.generate.side_effect = ["[]", "{}"] * 5
+
+    episodes = [{"content": "hello", "response": "hi"}]
+
+    first = await reflection_service.trigger_reflection(episodes)
+    await first
+    second = await reflection_service.trigger_reflection(episodes)
+    assert isinstance(second, asyncio.Task)
+    await second
 
 
 @pytest.mark.asyncio

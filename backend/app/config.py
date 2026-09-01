@@ -180,7 +180,23 @@ class AppSettings(BaseSettings):
     MEASURE_TRACE_FULL_PROMPTS: bool = False
 
     REFLECTION_ENABLED: bool = True
-    REFLECTION_MIN_INTERVAL_SECONDS: float = 0.0
+    # Bucket 12 (voice remediation Phase 3): this gated `ReflectionService.
+    # trigger_reflection` at zero, i.e. not at all -- the only thing
+    # stopping back-to-back reflection passes during a fast-paced
+    # conversation was `is_reflecting` (a busy-flag, not a cooldown), so a
+    # new multi-LLM-call reflection pass could start on the very next turn
+    # the instant the previous one finished. This is the event-triggered
+    # path from `cognitive/core.py` ("reflection_needed" after every turn,
+    # and after every proactive message) -- distinct from
+    # `subconscious_agent.py`'s separate idle-consolidation sweep, which
+    # already has its own 300s user-silence gate upstream in
+    # `_on_system_tick` and is unaffected by this constant. 30s is long
+    # enough that rapid-fire turns don't each spawn their own reflection
+    # pass, short enough that a real conversation still gets reflected on
+    # several times a minute when warranted. Tests pin this back to 0 via
+    # `conftest.py`'s `enforce_test_config` for determinism -- see that
+    # fixture's own comment.
+    REFLECTION_MIN_INTERVAL_SECONDS: float = 30.0
 
     PROACTIVE_ENABLED: bool = True
     PROACTIVE_IDLE_THRESHOLD_SECONDS: float = 7200.0
