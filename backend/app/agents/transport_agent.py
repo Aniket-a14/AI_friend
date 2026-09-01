@@ -8,11 +8,22 @@ from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
 
 from ..config import Config
-from ..contracts import AudioPlaybackProgress, PlaybackVisemes, SessionPresence, Topics
+from ..contracts import (
+    AudioPlaybackBacklog,
+    AudioPlaybackProgress,
+    PlaybackVisemes,
+    SessionPresence,
+    Topics,
+)
 from ..measure_trace import trace as _measure_trace
 from .base import BaseAgent, install_shutdown_signal_handlers
 
 logger = logging.getLogger("transport_agent")
+
+# Bucket 3 (VOICE_REMEDIATION_PLAN.md): cadence for AudioPlaybackBacklog
+# telemetry. `VOICE_FILLER_MIN_INTERVAL_SECONDS` (1.5s) is the coarsest
+# consumer of this signal, so anything well under that is fresh enough.
+BACKLOG_TELEMETRY_INTERVAL_S = 0.2
 
 
 class TransportAgent(BaseAgent):
@@ -52,6 +63,12 @@ class TransportAgent(BaseAgent):
         )
         self.audio_worker_task = None
         self.dropped_audio_frames = 0
+        # Bucket 3 (VOICE_REMEDIATION_PLAN.md): throttle state for publishing
+        # this queue's depth so `ConversationalRuntime` can see it (see
+        # `AudioPlaybackBacklog`) without flooding NATS -- `_on_nats_audio`
+        # fires once per PCM frame, far more often than a filler decision
+        # needs fresh data for.
+        self._last_backlog_publish_at: float = 0.0
         # Set for real once `start()` publishes the initial track; needed to
         # unpublish it by sid when P1-3's flush rotates to a fresh one.
         self.audio_publication: rtc.LocalTrackPublication | None = None
@@ -348,18 +365,29 @@ class TransportAgent(BaseAgent):
                     try:
                         self.audio_queue.put_nowait(queued_frame)
                     except asyncio.QueueFull:
-                        # Drop the oldest frame to keep playout near real-time.
-                        try:
-                            _ = self.audio_queue.get_nowait()
-                            self.audio_queue.task_done()
-                        except asyncio.QueueEmpty:
-                            pass
-
-                        try:
-                            self.audio_queue.put_nowait(queued_frame)
-                        except asyncio.QueueFull:
-                            pass
-
+                        # Bucket 2 (VOICE_REMEDIATION_PLAN.md): drop the NEW frame, not
+                        # the oldest one. The old policy evicted the oldest queued frame
+                        # and spliced this one in behind it -- for synthesised speech
+                        # (a fixed artifact that must arrive intact, unlike a live
+                        # stream where freshness beats completeness) that is a hard
+                        # discontinuity between non-adjacent PCM segments: an audible
+                        # click plus a hole in the speech, reported live as "grainy" /
+                        # "can't understand it."
+                        #
+                        # True backpressure (`await self.audio_queue.put(...)`) would
+                        # fix this without dropping anything, but this callback is the
+                        # direct NATS handler for audio.stream -- the comment on this
+                        # agent's `start()` ("Capture frames on a dedicated worker so
+                        # NATS callback can return fast") is the same ack-timing
+                        # constraint CLAUDE.md's finding A1 documents: `BaseAgent.subscribe`
+                        # acks only after the callback returns, so blocking here until
+                        # a real-time playback worker catches up on a 256-deep backlog
+                        # risks the same JetStream AckWait/redelivery failure mode, not
+                        # fixes it. Dropping the newest frame keeps everything already
+                        # queued in order and keeps this callback non-blocking; in
+                        # measured real sessions (2026-09-01) the queue never exceeded
+                        # 68 of 256 slots, so this path is a rare-overflow safety net,
+                        # not the common case.
                         self.dropped_audio_frames += 1
                         if self.dropped_audio_frames % 50 == 1:
                             logger.warning(
@@ -372,6 +400,8 @@ class TransportAgent(BaseAgent):
                         qsize=self.audio_queue.qsize(),
                         dropped=self.dropped_audio_frames,
                     )
+
+                    self._maybe_publish_playback_backlog()
 
             if is_done:
                 logger.info("AI Utterance stream complete.")
@@ -413,6 +443,16 @@ class TransportAgent(BaseAgent):
                     self._maybe_publish_playback_progress(
                         turn_id, character_offset, word_index
                     )
+                    # Reviewer finding: backlog telemetry used to be published
+                    # only on enqueue (_on_nats_audio). If a report reached
+                    # the brain at depth >= VOICE_FILLER_MAX_PLAYBACK_BACKLOG
+                    # and the queue then fully drained during silence (no new
+                    # PCM arriving to trigger another enqueue-side publish),
+                    # the brain's last-known depth stayed stuck high and
+                    # suppressed the next turn's filler for no live reason.
+                    # Publishing from the drain side too means an emptied
+                    # queue eventually reports its own zero depth.
+                    self._maybe_publish_playback_backlog()
                 finally:
                     self.audio_queue.task_done()
             except asyncio.CancelledError:
@@ -420,6 +460,23 @@ class TransportAgent(BaseAgent):
             except Exception as e:
                 logger.error(f"Transport playback worker error: {e}")
                 await asyncio.sleep(0.01)
+
+    def _maybe_publish_playback_backlog(self) -> None:
+        """Throttled `AudioPlaybackBacklog` publish, called from both the
+        enqueue side (`_on_nats_audio`) and the drain side
+        (`_audio_playback_worker`) so the brain's view of queue depth can
+        also fall back to zero once playback catches up, not just rise on
+        new audio. Same `BACKLOG_TELEMETRY_INTERVAL_S` throttle either way.
+        """
+        now = time.time()
+        if now - self._last_backlog_publish_at < BACKLOG_TELEMETRY_INTERVAL_S:
+            return
+        self._last_backlog_publish_at = now
+        backlog = AudioPlaybackBacklog(
+            queue_depth=self.audio_queue.qsize(),
+            capacity=self.audio_queue.maxsize,
+        )
+        self.spawn(self.publish(Topics.AUDIO_PLAYBACK_BACKLOG, backlog.model_dump()))
 
     def _maybe_publish_playback_progress(
         self, turn_id, character_offset, word_index

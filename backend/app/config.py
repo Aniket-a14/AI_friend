@@ -328,7 +328,27 @@ class AppSettings(BaseSettings):
     TRANSPORT_AUDIO_QUEUE_SIZE: int = 256
     VOICE_FILLER_MIN_INTERVAL_SECONDS: float = 1.5
     VOICE_FILLER_MAX_PLAYBACK_BACKLOG: int = 4
-    VOICE_FILLER_THRESHOLD: float = 0.25
+    # Bucket 3 (VOICE_REMEDIATION_PLAN.md): was 0.25 (250ms), contradicting the
+    # 400ms this value was described as everywhere else (this module's own
+    # docstring text, the log line, README.md, docs/ARCHITECTURE.md). A live
+    # capture (2026-09-01, phase0_baseline) also showed the *measurement* was
+    # contaminated by conversational pacing sleep (300-900ms) counted against
+    # this same budget before generation even started -- see the
+    # `generation_start_time` fix in brain_agent.py/conversational_runtime.py.
+    # ~264ms of MAUT/memory/endocrine work landed before Ollama's own TTFT --
+    # so 400ms is the *baseline* generation overhead, not a noticeable delay.
+    # Firing a filler at baseline makes it fire on essentially every turn,
+    # which is the opposite of "speculative." Raised to 1200ms (2026-09-01,
+    # user direction) so the filler only fires once TTFT is running well
+    # above normal -- an actually-perceptible pause -- rather than papering
+    # over routine overhead the user was never going to notice.
+    VOICE_FILLER_THRESHOLD: float = 1.2
+    # Bucket 1 (VOICE_REMEDIATION_PLAN.md): a genuine human reaction cannot
+    # produce a final chat.input this soon after the agent's audio starts
+    # playing (STT alone needs 250ms min_speech_ms + 700ms endpoint silence
+    # before it even emits a transcript) -- see brain_agent.py's
+    # _on_chat_input for the barge-in grace period this gates.
+    BARGE_IN_ONSET_GRACE_S: float = 0.15
 
     INTENT_THRESHOLD: float = 0.75
     INTENT_STABILITY: int = 3

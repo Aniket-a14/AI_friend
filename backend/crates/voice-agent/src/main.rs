@@ -173,14 +173,28 @@ impl ReverbFilter {
             .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<i16>>();
 
+        // Bucket 2 (VOICE_REMEDIATION_PLAN.md): headroom for the wet path. With the
+        // feedback bug below fixed, the worst case is the input and its single delayed
+        // echo both at full scale and in phase -- `1 + gain` times full scale. Scaling
+        // by its reciprocal guarantees the wet signal itself cannot clip, regardless of
+        // input content, rather than relying on `clamp` to hard-limit an already
+        // out-of-range value into audible distortion.
+        let headroom = 1.0 / (1.0 + self.gain.abs());
+
         for sample in samples.iter_mut() {
             let input = *sample as f32;
             let delayed = self.buffer[self.index];
-            let output = input + self.gain * delayed;
-            self.buffer[self.index] = output;
+            // Bucket 2: store the INPUT in the delay line, not the previous output.
+            // Writing `output` here made this `y[n] = x[n] + gain*y[n-D]` -- true
+            // feedback, whose steady-state gain is `1/(1-gain)` (2.0x at gain=0.5),
+            // which is what was driving `clamp` into a hard clipper on normalised TTS
+            // output. Writing `input` makes it a simple echo, `y[n] = x[n] + gain*x[n-D]`,
+            // whose gain is bounded (`1+gain`, 1.5x at gain=0.5) and cannot run away.
+            self.buffer[self.index] = input;
             self.index = (self.index + 1) % self.buffer.len();
 
-            let blended = (1.0 - wet_gain) * input + wet_gain * output;
+            let echoed = (input + self.gain * delayed) * headroom;
+            let blended = (1.0 - wet_gain) * input + wet_gain * echoed;
             *sample = blended.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
         }
 
@@ -190,58 +204,79 @@ impl ReverbFilter {
         }
         output_bytes
     }
+
+    /// Bucket 2 (VOICE_REMEDIATION_PLAN.md): clears the delay line and playback
+    /// position. Must be called at utterance boundaries (`event.done`), not per-chunk
+    /// (that would drop the previous chunk's echo tail at every boundary -- see the
+    /// comment where this filter is constructed) -- but it must be called *somewhere*,
+    /// since before this the filter was constructed once per process and never reset
+    /// at all, so a reverb tail could bleed from one utterance into a completely
+    /// unrelated later one for the life of the process.
+    fn reset(&mut self) {
+        self.buffer.iter_mut().for_each(|s| *s = 0.0);
+        self.index = 0;
+        // Reviewer finding: a trailing odd byte held from the previous
+        // utterance's PCM must not combine with the next utterance's first
+        // byte -- the sibling OlaCrossfadeFilter's own clear_history()
+        // already clears this same kind of state for the same reason.
+        self.pending_byte = None;
+    }
 }
 
+/// Bucket 2: the distance gate previously lived only at the one `TemporalPart::Text`
+/// call site (the main synthesis path) -- the filler/vocalization/failure paths each
+/// hardcoded `0.1` wet regardless of distance, so a reverb tail played at the start of
+/// every turn (the filler fires almost every turn -- see Bucket 3) even in normal
+/// close-range conversation, where the gate says reverb should be fully dry. Same
+/// distance -> wet_gain mapping now shared by every call site instead of duplicated.
+fn reverb_wet_gain_for_distance(distance: f64) -> f32 {
+    const REVERB_DRY_LIMIT: f64 = 2.5;
+    const REVERB_WET_LIMIT: f64 = 3.5;
+    if distance <= REVERB_DRY_LIMIT {
+        0.0
+    } else if distance >= REVERB_WET_LIMIT {
+        1.0
+    } else {
+        ((distance - REVERB_DRY_LIMIT) / (REVERB_WET_LIMIT - REVERB_DRY_LIMIT)) as f32
+    }
+}
+
+/// Bucket 2 (VOICE_REMEDIATION_PLAN.md): this used to also crossfade across prosody
+/// shifts, blending the last 15ms of the *already-published, already-playing* previous
+/// chunk into the first 15ms of the new one. That is not overlap-add -- true OLA
+/// overlaps analysis windows with complementary fades summing to unity, computed
+/// *before* either side is sent downstream. Here the "previous" side had already gone
+/// out over audio.stream and reached the listener, so blending it into the new chunk's
+/// head meant those 15ms were heard twice, at a phase discontinuity -- reported live as
+/// hazy/not crystal clear, and it fired often (on almost any prosody inequality between
+/// chunks arriving tens of ms apart).
+///
+/// True OLA would fix this correctly but needs holding back each chunk's tail until the
+/// next chunk arrives to blend with it -- one extra chunk of latency on every single
+/// emission, in a system already latency-critical enough to be its own bottleneck
+/// (Bucket 7/8). The plan's own call: a clean butt-join is strictly better than
+/// replaying emitted audio, so the crossfade is removed rather than reimplemented.
+/// What's left of this type is exactly what it was always doing correctly: buffering a
+/// dangling odd byte across chunk boundaries so 16-bit samples never get split, which
+/// has nothing to do with prosody.
 struct OlaCrossfadeFilter {
-    sample_rate: u32,
-    last_prosody: Option<contracts::Prosody>,
-    last_samples: Vec<i16>,
-    active_fade_buffer: Vec<i16>,
-    fade_in_progress: bool,
-    fade_index: usize,
     pending_byte: Option<u8>,
 }
 
 impl OlaCrossfadeFilter {
-    fn new(sample_rate: u32) -> Self {
-        Self {
-            sample_rate,
-            last_prosody: None,
-            last_samples: Vec::new(),
-            active_fade_buffer: Vec::new(),
-            fade_in_progress: false,
-            fade_index: 0,
-            pending_byte: None,
-        }
+    fn new(_sample_rate: u32) -> Self {
+        Self { pending_byte: None }
     }
 
     fn clear_history(&mut self) {
-        self.last_samples.clear();
-        self.active_fade_buffer.clear();
-        self.fade_in_progress = false;
-        self.fade_index = 0;
+        self.pending_byte = None;
     }
 
-    fn notify_new_prosody(&mut self, prosody: contracts::Prosody) {
-        let is_shift = match self.last_prosody {
-            None => false,
-            Some(last) => last != prosody,
-        };
-        self.last_prosody = Some(prosody);
-
-        if is_shift {
-            if !self.last_samples.is_empty() {
-                self.active_fade_buffer = self.last_samples.clone();
-                self.fade_in_progress = true;
-                self.fade_index = 0;
-                info!("Prosody shift detected! Initiating 15ms OLA crossfade.");
-            }
-        }
+    fn notify_new_prosody(&mut self, _prosody: contracts::Prosody) {
+        // No-op: prosody-shift tracking existed only to trigger the crossfade above.
     }
 
     fn process(&mut self, bytes: &[u8]) -> Vec<u8> {
-        let n = (self.sample_rate * 15 / 1000) as usize;
-
         let mut framed = Vec::with_capacity(bytes.len() + if self.pending_byte.is_some() { 1 } else { 0 });
         if let Some(byte) = self.pending_byte.take() {
             framed.push(byte);
@@ -250,49 +285,7 @@ impl OlaCrossfadeFilter {
         if framed.len() % 2 != 0 {
             self.pending_byte = framed.pop();
         }
-
-        let mut samples = framed
-            .chunks_exact(2)
-            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-            .collect::<Vec<i16>>();
-
-        if samples.is_empty() {
-            return Vec::new();
-        }
-
-        if self.fade_in_progress && !self.active_fade_buffer.is_empty() {
-            let fade_len = self.active_fade_buffer.len().min(n);
-            for s in samples.iter_mut() {
-                if self.fade_index < fade_len {
-                    let prev_s = self.active_fade_buffer[self.fade_index] as f32;
-                    let curr_s = *s as f32;
-                    let t = self.fade_index as f32 / fade_len as f32;
-                    let blended = (1.0 - t) * prev_s + t * curr_s;
-                    *s = blended.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-                    self.fade_index += 1;
-                } else {
-                    self.fade_in_progress = false;
-                    break;
-                }
-            }
-        }
-
-        // Maintain rolling buffer of last n samples
-        if samples.len() >= n {
-            self.last_samples = samples[samples.len() - n..].to_vec();
-        } else {
-            self.last_samples.extend_from_slice(&samples);
-            if self.last_samples.len() > n {
-                let excess = self.last_samples.len() - n;
-                self.last_samples.drain(0..excess);
-            }
-        }
-
-        let mut output_bytes = Vec::with_capacity(samples.len() * 2);
-        for sample in samples {
-            output_bytes.extend_from_slice(&sample.to_le_bytes());
-        }
-        output_bytes
+        framed
     }
 }
 
@@ -770,6 +763,10 @@ async fn main() -> Result<()> {
                     if let Ok(mut guard) = active_turn.lock() {
                         *guard = None;
                     }
+                    // Bucket 2: per-utterance boundary, not per-chunk -- see
+                    // ReverbFilter::reset's doc comment for why per-chunk would be wrong
+                    // and why never resetting (the previous behavior) was too.
+                    reverb_filter.reset();
                     continue;
                 }
 
@@ -935,6 +932,16 @@ async fn hesitation_pcm(
 
     let mut response = match result {
         Ok(response) => response,
+        // Reviewer finding: this catch-all used to also match a
+        // SynthesisRejected validation error, opening the circuit breaker
+        // for a rejected filler even though GPT-SoVITS is healthy. Mirrors
+        // the main synthesis call site's own arm: a validation rejection
+        // says nothing about whether the engine is up.
+        Err(e) if e.downcast_ref::<SynthesisRejected>().is_some() => {
+            // Already logged loudly, with the rejected text, inside
+            // synthesize_stream_with_retry.
+            return contracts::silence_pcm(duration_ms, sample_rate);
+        }
         Err(e) => {
             warn!("hesitation synthesis failed, playing silence instead: {e:#}");
             circuit_breaker.record_failure(now_ms);
@@ -1125,7 +1132,7 @@ async fn handle_chat_output(
             TemporalPart::Vocalization(name) => {
                 ola_filter.clear_history();
                 let mut pcm = load_vocalization_pcm(&name, config.sample_rate);
-                pcm = reverb_filter.process(&pcm, 0.1);
+                pcm = reverb_filter.process(&pcm, reverb_wet_gain_for_distance(distance));
 
                 let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
                 apply_attenuation(&mut pcm, current_attenuation_val, target_att);
@@ -1148,7 +1155,7 @@ async fn handle_chat_output(
                     &prosody,
                 )
                 .await;
-                pcm = reverb_filter.process(&pcm, 0.1);
+                pcm = reverb_filter.process(&pcm, reverb_wet_gain_for_distance(distance));
 
                 let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
                 apply_attenuation(&mut pcm, current_attenuation_val, target_att);
@@ -1186,6 +1193,14 @@ async fn handle_chat_output(
                             circuit_breaker.record_success();
                             Some(response)
                         }
+                        Err(e) if e.downcast_ref::<SynthesisRejected>().is_some() => {
+                            // Already logged loudly, with the rejected text,
+                            // inside synthesize_stream_with_retry. Bucket 4:
+                            // a validation rejection says nothing about
+                            // whether the engine is up, so it must not open
+                            // the circuit breaker the way a real outage does.
+                            None
+                        }
                         Err(e) => {
                             error!("synthesis failed after retries: {e:#}");
                             circuit_breaker.record_failure(now_ms);
@@ -1205,7 +1220,7 @@ async fn handle_chat_output(
                     ola_filter.clear_history();
                     let mut pcm =
                         load_vocalization_pcm("voice_engine_unavailable", config.sample_rate);
-                    pcm = reverb_filter.process(&pcm, 0.1);
+                    pcm = reverb_filter.process(&pcm, reverb_wet_gain_for_distance(distance));
 
                     let target_att = if let Ok(guard) = attenuation_factor.lock() {
                         *guard
@@ -1237,18 +1252,8 @@ async fn handle_chat_output(
                             1.0
                         };
 
-                        const REVERB_DRY_LIMIT: f64 = 2.5;
-                        const REVERB_WET_LIMIT: f64 = 3.5;
-                        let wet_gain = if distance <= REVERB_DRY_LIMIT {
-                            0.0
-                        } else if distance >= REVERB_WET_LIMIT {
-                            1.0
-                        } else {
-                            ((distance - REVERB_DRY_LIMIT) / (REVERB_WET_LIMIT - REVERB_DRY_LIMIT))
-                                as f32
-                        };
-
-                        pcm_bytes = reverb_filter.process(&pcm_bytes, wet_gain);
+                        pcm_bytes =
+                            reverb_filter.process(&pcm_bytes, reverb_wet_gain_for_distance(distance));
                         pcm_bytes = ola_filter.process(&pcm_bytes);
 
                         let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
@@ -1305,7 +1310,7 @@ fn split_temporal_parts(text: &str) -> Result<Vec<TemporalPart>> {
         push_text(&mut parts, &text[last..]);
     }
 
-    Ok(parts)
+    Ok(merge_degenerate_text_fragments(parts))
 }
 
 fn push_text(parts: &mut Vec<TemporalPart>, text: &str) {
@@ -1314,6 +1319,105 @@ fn push_text(parts: &mut Vec<TemporalPart>, text: &str) {
         parts.push(TemporalPart::Text(text.to_string()));
     }
 }
+
+/// A `TemporalPart::Text` fragment with no alphanumeric content at all --
+/// just punctuation and/or whitespace. GPT-SoVITS rejects these outright
+/// ("Please enter valid text."), so sending one as its own synthesis call
+/// either wastes a round-trip or, worse, gets mistaken for the engine being
+/// down (see `SynthesisRejected` below).
+fn is_degenerate_fragment(text: &str) -> bool {
+    !text.chars().any(|c| c.is_alphanumeric())
+}
+
+/// Bucket 4 (VOICE_REMEDIATION_PLAN.md): a leftover "...", "-", or similar
+/// shows up whenever a `<pause>`/`<hesitate>`/`<breath_fast>`/`<sigh_soft>`
+/// token isolates trailing punctuation between two real words -- by
+/// construction, that token is *why* the fragment became its own
+/// `TemporalPart::Text` instead of being part of a neighbouring clause's
+/// string in the first place, so a degenerate fragment is always separated
+/// from its nearest real text by at least one such token. Rather than send
+/// it to synthesis alone -- where GPT-SoVITS rejects it outright -- splice
+/// its characters onto the *content* of the nearest real `Text` part,
+/// previous preferred (trailing punctuation usually belongs to the clause
+/// before it), searching past intervening `Silence`/`Hesitation`/
+/// `Vocalization` entries without moving or removing any of them: the pause
+/// stays exactly where it was, only the adjacent clause's text gains a
+/// trailing (or leading) `"..."`/`"-"`, which most TTS front ends read as a
+/// legitimate trailing-off or clipped-word cue rather than as noise. A
+/// fragment with no real `Text` part anywhere in the sequence (the whole
+/// input was punctuation) has nothing to merge into and is dropped, loudly.
+fn merge_degenerate_text_fragments(mut parts: Vec<TemporalPart>) -> Vec<TemporalPart> {
+    let mut i = 0;
+    while i < parts.len() {
+        let degenerate = matches!(&parts[i], TemporalPart::Text(t) if is_degenerate_fragment(t));
+        if !degenerate {
+            i += 1;
+            continue;
+        }
+        let text = match parts.remove(i) {
+            TemporalPart::Text(t) => t,
+            _ => unreachable!("just matched TemporalPart::Text above"),
+        };
+
+        let merged_backward = parts[..i].iter_mut().rev().find_map(|p| match p {
+            TemporalPart::Text(t) => Some(t),
+            _ => None,
+        });
+        if let Some(prev) = merged_backward {
+            prev.push(' ');
+            prev.push_str(&text);
+            continue; // don't advance i -- re-examine what now sits here
+        }
+
+        let merged_forward = parts[i..].iter_mut().find_map(|p| match p {
+            TemporalPart::Text(t) => Some(t),
+            _ => None,
+        });
+        if let Some(next) = merged_forward {
+            let mut combined = text;
+            combined.push(' ');
+            combined.push_str(next);
+            *next = combined;
+            continue;
+        }
+
+        warn!(
+            fragment = %text,
+            "dropping a punctuation-only text fragment with no speakable text anywhere to merge into"
+        );
+        // Already removed via `parts.remove(i)` above; don't advance --
+        // whatever shifted into this slot needs to be examined too.
+    }
+
+    parts
+}
+
+/// GPT-SoVITS rejected the input text itself -- its own validation ("Please
+/// enter valid text.", HTTP 400) on a fragment it considers unspeakable --
+/// rather than failing to reach or process the request. Bucket 4
+/// (VOICE_REMEDIATION_PLAN.md): worth telling apart from a transient
+/// network/server failure, because retrying identical text against a
+/// deterministic validator reproduces the identical rejection every time,
+/// and because it says nothing about whether the engine itself is healthy --
+/// `synthesize_stream_with_retry` and the circuit breaker both key off this
+/// type to skip retry/failure-counting for exactly this case.
+#[derive(Debug)]
+struct SynthesisRejected {
+    status: reqwest::StatusCode,
+    body: String,
+}
+
+impl std::fmt::Display for SynthesisRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "SoVITS rejected input text (HTTP {}): {}",
+            self.status, self.body
+        )
+    }
+}
+
+impl std::error::Error for SynthesisRejected {}
 
 async fn synthesize_stream(
     config: &VoiceConfig,
@@ -1342,7 +1446,13 @@ async fn synthesize_stream(
     let url = format!("{}/tts", config.sovits_url.trim_end_matches('/'));
     let response = http.post(url).json(&payload).send().await?;
     if !response.status().is_success() {
-        anyhow::bail!("SoVITS returned HTTP {}", response.status());
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if status == reqwest::StatusCode::BAD_REQUEST && body.to_lowercase().contains("valid text")
+        {
+            return Err(SynthesisRejected { status, body }.into());
+        }
+        anyhow::bail!("SoVITS returned HTTP {status}: {body}");
     }
 
     Ok(response)
@@ -1369,6 +1479,20 @@ async fn synthesize_stream_with_retry(
     for attempt in 0..MAX_SYNTHESIS_ATTEMPTS {
         match synthesize_stream(config, http, text, ref_clip, speed, pitch, volume).await {
             Ok(response) => return Ok(response),
+            Err(e) if e.downcast_ref::<SynthesisRejected>().is_some() => {
+                // Bucket 4: a validation rejection is deterministic -- attempt
+                // 2 and 3 would fail identically, so stop here instead of
+                // burning the rest of the retry budget and its backoff
+                // delays. Logged loudly with the actual rejected text, since
+                // this is the one failure mode where the fragment is truly
+                // never going to be spoken.
+                error!(
+                    text = %text,
+                    error = %e,
+                    "synthesis rejected this text as invalid -- not retrying, this fragment will not be spoken"
+                );
+                return Err(e);
+            }
             Err(e) => {
                 warn!(
                     attempt = attempt + 1,
@@ -1602,6 +1726,51 @@ mod tests {
         assert_eq!(pcm, contracts::silence_pcm(500, 32_000));
     }
 
+    // ---------------------------------------------------------- Bucket 4: degenerate fragments
+
+    #[test]
+    fn degenerate_fragment_between_two_tokens_merges_backward_past_the_pause() {
+        // A punctuation-only fragment can only become its own
+        // TemporalPart::Text by being isolated between tokens in the first
+        // place -- here "..." sits strictly between a <pause> and a
+        // <hesitate>. It must fold into "hello"'s text (previous preferred)
+        // rather than reach synthesis alone, while the Silence entry itself
+        // stays exactly where it was -- only the neighbouring clause's
+        // *content* changes, not the pause's position or duration.
+        let parts = split_temporal_parts("hello<pause=20ms>...<hesitate>world").unwrap();
+        assert_eq!(
+            parts,
+            vec![
+                TemporalPart::Text("hello ...".to_string()),
+                TemporalPart::Silence(20),
+                TemporalPart::Hesitation(350),
+                TemporalPart::Text("world".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn degenerate_fragment_with_no_preceding_text_merges_forward() {
+        // A leading punctuation-only fragment with nothing before it (only
+        // a <hesitate> token) has no previous clause to fold into, so it
+        // must attach to the next real text instead of reaching synthesis
+        // on its own.
+        let parts = split_temporal_parts("--<hesitate>hello").unwrap();
+        assert_eq!(
+            parts,
+            vec![
+                TemporalPart::Hesitation(350),
+                TemporalPart::Text("-- hello".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn all_degenerate_input_is_dropped_with_nothing_to_merge_into() {
+        let parts = split_temporal_parts("... --").unwrap();
+        assert_eq!(parts, Vec::<TemporalPart>::new());
+    }
+
     #[test]
     fn timing_tags_become_silence_parts_not_text() {
         let parts = split_temporal_parts("hello<pause=20ms>there<hesitate>").unwrap();
@@ -1779,25 +1948,34 @@ mod tests {
 
     #[test]
     fn test_reverb_filter_processing() {
+        // Bucket 2 (VOICE_REMEDIATION_PLAN.md): rewritten for the fixed echo (not
+        // feedback) formula, y[n] = (x[n] + gain*x[n-D]) * headroom. headroom =
+        // 1/(1+gain) = 1/1.5 = 0.6667 here, applied to the wet term even before any
+        // delayed contribution exists -- see ReverbFilter::process's comment for why
+        // that conservative tradeoff is deliberate (guarantees no clipping regardless
+        // of content, at the cost of slightly attenuating single-sample-old signal).
         let mut filter = ReverbFilter::new(4, 0.5);
         let input_pcm = vec![10, 0, 20, 0, 30, 0, 40, 0, 50, 0, 60, 0];
 
         // 100% wet output
         let processed = filter.process(&input_pcm, 1.0);
 
-        // Since delay is 4 samples (8 bytes), and gain is 0.5:
-        // The first 4 samples should be unchanged (except buffer updates)
         assert_eq!(processed.len(), input_pcm.len());
         let out_samples = processed
             .chunks_exact(2)
             .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<i16>>();
 
-        // Sample 4 (5th sample, index 4): input 50, delayed sample 0 (index 0) * 0.5 = 10 * 0.5 = 5. Output: 50 + 5 = 55
-        assert_eq!(out_samples[0], 10);
-        assert_eq!(out_samples[4], 55);
+        // Sample 0: delayed=0 (buffer starts empty). echoed = (10+0.5*0)*0.6667 = 6.667 -> 6.
+        assert_eq!(out_samples[0], 6);
+        // Sample 4 (index 4, buffer wrapped once): delayed = the ORIGINAL INPUT stored
+        // at index 0 during sample 0 (10, not 55 -- storing input, not accumulated
+        // output, is exactly this bucket's fix). echoed = (50 + 0.5*10)*0.6667 = 36.667 -> 36.
+        assert_eq!(out_samples[4], 36);
 
-        // Test 0% wet (completely dry output, but state still advances)
+        // Test 0% wet (completely dry output regardless of headroom, but state still
+        // advances): the wet term's headroom scaling is multiplied by wet_gain=0, so
+        // it contributes nothing and the dry path is untouched.
         let mut filter2 = ReverbFilter::new(4, 0.5);
         let processed2 = filter2.process(&input_pcm, 0.0);
         assert_eq!(processed2, input_pcm); // Exactly matches input
@@ -1809,7 +1987,9 @@ mod tests {
 
         let first = filter.process(&[10, 0, 20], 1.0);
         assert_eq!(first.len(), 2);
-        assert_eq!(first, vec![10, 0]);
+        // Sample 0 of this filter instance: same math as test_reverb_filter_processing
+        // above -- (10+0)*0.6667 = 6.667 -> 6.
+        assert_eq!(first, 6i16.to_le_bytes());
 
         let second = filter.process(&[0, 30, 0], 1.0);
         assert_eq!(second.len(), 4);
@@ -1817,14 +1997,105 @@ mod tests {
             .chunks_exact(2)
             .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<i16>>();
-        assert_eq!(out_samples, vec![20, 30]);
+        // Samples 1 and 2 of this filter instance, delayed=0 for both (buffer
+        // positions 1 and 2 have never been written): (20+0)*0.6667=13.33->13,
+        // (30+0)*0.6667=20.0->20.
+        assert_eq!(out_samples, vec![13, 20]);
     }
 
     #[test]
-    fn test_ola_crossfade_filter() {
-        let mut filter = OlaCrossfadeFilter::new(32_000); // 480 samples for 15ms
+    fn reset_clears_the_pending_odd_byte_across_utterance_boundaries() {
+        // Reviewer finding: reset() cleared the delay buffer and index but
+        // left `pending_byte` untouched. A trailing odd byte held over from
+        // one utterance's PCM would then splice onto the very first byte of
+        // the NEXT, unrelated utterance -- the sibling OlaCrossfadeFilter's
+        // clear_history() already gets this right for the same kind of state.
+        let mut filter = ReverbFilter::new(4, 0.5);
 
-        // Initial state, no shift
+        // Leaves a dangling odd byte (value 20) after this call.
+        let _ = filter.process(&[10, 0, 20], 1.0);
+        filter.reset();
+
+        // A fresh, unrelated utterance's first two bytes are a silent
+        // sample. If the stale pending byte survived reset, it gets
+        // prepended here, shifting this 2-byte input into a stale 3-byte
+        // reassembly and producing a nonzero sample from data that belongs
+        // to the utterance that just ended.
+        let out = filter.process(&[0, 0], 1.0);
+        let sample = i16::from_le_bytes([out[0], out[1]]);
+        assert_eq!(
+            sample, 0,
+            "a byte from the previous utterance leaked across reset(): got {sample}, want 0"
+        );
+    }
+
+    #[test]
+    fn reverb_feedback_does_not_run_away_on_sustained_input() {
+        // Bucket 2: the actual bug this whole fix targets. The old code wrote
+        // `output` (not `input`) into the delay line, making it true feedback
+        // (y[n] = x[n] + gain*y[n-D]), which compounds by (1+gain) every full pass
+        // around the D-slot delay line -- at gain=0.5 that is 1.5x per cycle, so a
+        // sustained tone diverges without bound. Checking `sample <= i16::MAX` on the
+        // OUTPUT cannot catch this: `clamp` unconditionally forces every i16 into
+        // range regardless of how far the underlying signal overshot, so a badly
+        // clipped, flat-topped, harshly distorted waveform is indistinguishable from
+        // a correct one by that check alone -- every sample trivially satisfies it.
+        //
+        // What actually distinguishes the two: a bounded *echo* (this fix) converges
+        // to unity gain in steady state -- (x + gain*x)*headroom = x*(1+gain)/(1+gain)
+        // = x exactly, converging back to the ORIGINAL input amplitude. Unbounded
+        // *feedback* does not converge at all; it keeps growing every cycle. Using an
+        // input well under full scale (16000, not i16::MAX) makes that growth
+        // observable as a value clearly higher than the input, rather than being
+        // masked by clamp's ceiling before the difference is visible.
+        const INPUT_AMPLITUDE: i16 = 16_000;
+        let mut filter = ReverbFilter::new(4, 0.5);
+        let sustained_tone: Vec<u8> = (0..40) // 10 full cycles around the 4-slot delay line
+            .flat_map(|_| INPUT_AMPLITUDE.to_le_bytes())
+            .collect();
+
+        let processed = filter.process(&sustained_tone, 1.0);
+        let out_samples = processed
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<i16>>();
+
+        let steady_state = *out_samples.last().unwrap();
+        assert!(
+            (steady_state - INPUT_AMPLITUDE).abs() <= 2,
+            "expected convergence to the input amplitude ({INPUT_AMPLITUDE}) within \
+             rounding, got {steady_state} -- feedback is compounding instead of a \
+             bounded echo converging"
+        );
+    }
+
+    #[test]
+    fn reverb_reset_clears_the_delay_line() {
+        // Bucket 2: before this, ReverbFilter was constructed once per process and
+        // never reset at all, so a reverb tail could bleed from one utterance into a
+        // completely unrelated later one. reset() must actually zero the buffer, not
+        // just exist as a no-op.
+        let mut filter = ReverbFilter::new(4, 0.5);
+        filter.process(&[10, 0, 20, 0, 30, 0, 40, 0, 50, 0], 1.0);
+
+        filter.reset();
+
+        // A fresh filter and a reset one must behave identically on the same input.
+        let mut fresh = ReverbFilter::new(4, 0.5);
+        let from_reset = filter.process(&[7, 0, 9, 0], 1.0);
+        let from_fresh = fresh.process(&[7, 0, 9, 0], 1.0);
+        assert_eq!(from_reset, from_fresh);
+    }
+
+    #[test]
+    fn ola_crossfade_filter_passes_samples_through_unmodified_across_a_prosody_shift() {
+        // Bucket 2 (VOICE_REMEDIATION_PLAN.md): rewritten for the removed crossfade.
+        // The old version of this test asserted the bug -- that a prosody shift
+        // blended the previous chunk's already-published tail into the new chunk's
+        // head. The fix is a clean butt-join: a prosody shift must change nothing
+        // about how samples are passed through, on either side of the shift.
+        let mut filter = OlaCrossfadeFilter::new(32_000);
+
         let p1 = contracts::Prosody {
             rate: 1.0,
             pitch: 1.0,
@@ -1833,20 +2104,14 @@ mod tests {
         };
         filter.notify_new_prosody(p1);
 
-        let chunk1 = vec![100_i16; 600]; // 600 samples
-        let mut chunk1_bytes = Vec::new();
-        for &s in &chunk1 {
-            chunk1_bytes.extend_from_slice(&s.to_le_bytes());
-        }
-
+        let chunk1_bytes: Vec<u8> = vec![100_i16; 600]
+            .into_iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
         let out1 = filter.process(&chunk1_bytes);
-        assert_eq!(out1, chunk1_bytes); // Since there is no shift, it should be untouched
+        assert_eq!(out1, chunk1_bytes);
 
-        // Let's check that rolling buffer is updated. The rolling buffer should contain the last 480 samples (all 100).
-        assert_eq!(filter.last_samples.len(), 480);
-        assert!(filter.last_samples.iter().all(|&s| s == 100));
-
-        // Shift prosody!
+        // Shift prosody -- under the fix this changes nothing observable.
         let p2 = contracts::Prosody {
             rate: 1.2,
             pitch: 1.1,
@@ -1854,33 +2119,39 @@ mod tests {
             pause_bias: 0.4,
         };
         filter.notify_new_prosody(p2);
-        assert!(filter.fade_in_progress);
 
-        // Process new chunk with different values, say 200_i16
-        let chunk2 = vec![200_i16; 600];
-        let mut chunk2_bytes = Vec::new();
-        for &s in &chunk2 {
-            chunk2_bytes.extend_from_slice(&s.to_le_bytes());
-        }
+        let chunk2_bytes: Vec<u8> = vec![200_i16; 600]
+            .into_iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
+        let out2 = filter.process(&chunk2_bytes);
 
-        let out2_bytes = filter.process(&chunk2_bytes);
-        let out2_samples = out2_bytes
+        // The whole point: chunk2 comes through byte-for-byte identical, not blended
+        // with chunk1's tail. No sample anywhere is a value neither chunk contains.
+        assert_eq!(out2, chunk2_bytes);
+        let out2_samples = out2
             .chunks_exact(2)
             .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<i16>>();
+        assert!(out2_samples.iter().all(|&s| s == 200));
+    }
 
-        // First sample should be exactly equal to previous sample (100) because t=0
-        assert_eq!(out2_samples[0], 100);
+    #[test]
+    fn ola_crossfade_filter_still_buffers_a_dangling_odd_byte() {
+        // The one thing this type still legitimately does: an odd trailing byte from
+        // one chunk must combine with the next chunk's first byte into a whole 16-bit
+        // sample, not get silently dropped or misaligned.
+        let mut filter = OlaCrossfadeFilter::new(32_000);
 
-        // As index progresses, the value should blend towards 200.
-        // At index 240 (halfway through 480 samples of crossfade): it should be around (100 + 200) / 2 = 150.
-        assert!((out2_samples[240] - 150).abs() <= 2);
+        let first = filter.process(&[0x10]);
+        assert!(first.is_empty());
 
-        // At index 480, the crossfade has ended, so it should be exactly 200.
-        assert_eq!(out2_samples[480], 200);
-
-        // Fade in progress should now be false
-        assert!(!filter.fade_in_progress);
+        let second = filter.process(&[0x20, 0x00, 0x00]);
+        // Buffered 0x10 prepended to [0x20, 0x00, 0x00] makes 4 bytes -- already
+        // even, so nothing is held back this time: all four come through as two
+        // whole samples, the buffered byte correctly forming the low byte of the
+        // first one.
+        assert_eq!(second, vec![0x10, 0x20, 0x00, 0x00]);
     }
 
     #[test]
@@ -2268,6 +2539,76 @@ mod tests {
         // scope -- an unexpected attempt count fails the test.
     }
 
+    #[tokio::test]
+    async fn validation_rejection_is_not_retried() {
+        // Bucket 4 (VOICE_REMEDIATION_PLAN.md): GPT-SoVITS answers a
+        // degenerate fragment with 400 + "Please enter valid text." --
+        // deterministic, so retrying it is pure waste. `.expect(1)` fails
+        // the test the moment a second attempt is made.
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(
+                ResponseTemplate::new(400).set_body_string("Please enter valid text."),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let result = synthesize_stream_with_retry(
+            &config, &http, "...", &config.emotion_refs.neutral, 1.0, 1.0, 1.0,
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "a validation rejection must still surface as an error to the caller"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.downcast_ref::<SynthesisRejected>().is_some(),
+            "the error must be identifiable as a rejection, not a generic failure, \
+             so the caller can skip counting it against the circuit breaker: {err:#}"
+        );
+        // `.expect(1)` above is the real assertion: it fails when the server
+        // drops at end of scope if more than one request was ever made.
+    }
+
+    #[tokio::test]
+    async fn a_generic_server_error_is_not_mistaken_for_a_validation_rejection() {
+        // Guards the other direction of the same distinction: a 400 that
+        // does NOT carry the validation phrasing must still retry like any
+        // other failure, not be silently treated as an unspeakable fragment.
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("internal error"))
+            .expect(MAX_SYNTHESIS_ATTEMPTS as u64)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let result = synthesize_stream_with_retry(
+            &config, &http, "hello", &config.emotion_refs.neutral, 1.0, 1.0, 1.0,
+        )
+        .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.downcast_ref::<SynthesisRejected>().is_none(),
+            "a 400 without the validation phrasing must not be classified as a rejection"
+        );
+        // `.expect(N)` above proves the retry budget was actually used.
+    }
+
     // ---------------------------------------------------------- probe_synthesis
 
     #[tokio::test]
@@ -2455,6 +2796,50 @@ mod tests {
         assert!(
             cache.lock().await.get(&EmotionBucket::Neutral).is_none(),
             "a failed attempt must not be cached"
+        );
+    }
+
+    /// Reviewer finding: a rejected filler (GPT-SoVITS's deterministic
+    /// "Please enter valid text." 400) must fall back to silence WITHOUT
+    /// counting toward the shared breaker -- a validation rejection says
+    /// nothing about whether the engine is up, and the main synthesis call
+    /// site already treats it this way (see the `SynthesisRejected` arm
+    /// where the real per-chunk synthesis happens). Also must not be
+    /// retried: `.expect(1)` fails the test if more than one request went
+    /// out, matching `validation_rejection_is_not_retried` below for the
+    /// main synthesis path.
+    #[tokio::test]
+    async fn hesitation_pcm_rejection_falls_back_to_silence_without_opening_the_breaker() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("Please enter valid text."))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let breaker = CircuitBreaker::new(1, 60_000);
+        let cache = empty_hesitation_cache();
+
+        let pcm = hesitation_pcm(
+            &config, &http, &breaker, &cache, EmotionBucket::Neutral,
+            &config.emotion_refs.neutral, 350, config.sample_rate, &test_prosody(),
+        )
+        .await;
+
+        assert_eq!(pcm, contracts::silence_pcm(350, config.sample_rate));
+        assert!(
+            !breaker.is_open(now_millis()),
+            "a validation rejection is not an engine outage and must not open the breaker"
+        );
+        assert!(
+            cache.lock().await.get(&EmotionBucket::Neutral).is_none(),
+            "a rejected fragment must not be cached as if it were valid audio"
         );
     }
 

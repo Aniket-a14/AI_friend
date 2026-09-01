@@ -13,6 +13,21 @@
 requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
+# cognitive-rust's own Cargo.toml deliberately does NOT enable
+# "extension-module" by default (see its [features] section and the
+# workspace pyo3 entry in ../Cargo.toml) -- that feature must be off for
+# `cargo test`/`cargo check` to link at all, since it assumes the .so is
+# loaded into an already-running Python process, never true for a
+# standalone Rust test binary. maturin needs it for the real wheel build,
+# so it is requested here instead of via a Cargo default -- this table is
+# read from whichever pyproject.toml sits in the invoking cwd regardless of
+# --manifest-path (see the [build-system] comment above), so every existing
+# `maturin build --manifest-path crates/cognitive-rust/Cargo.toml` call
+# (four CI workflows, CLAUDE.md's documented dev command) picks this up
+# unchanged.
+[tool.maturin]
+features = ["extension-module"]
+
 [tool.mutmut]
 # Stage 6 targeted mutation gate. Keep the first enforced scope explicit so a
 # new production module cannot silently enter a very expensive mutation run.

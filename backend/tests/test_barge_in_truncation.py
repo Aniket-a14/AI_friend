@@ -7,6 +7,7 @@ it becomes what the agent believes it said.
 """
 
 import asyncio
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -165,3 +166,157 @@ def test_an_out_of_range_offset_leaves_the_reply_alone(offset):
     asyncio.run(agent._on_audio_stop(_stop()))
 
     agent.conversation_store.update_last_assistant_message.assert_not_awaited()
+
+
+def _chat_input_agent():
+    """A real BrainAgent for `_on_chat_input`'s publish-gating logic.
+
+    Unlike `_agent()` above (built via `object.__new__` for `_on_audio_stop`
+    in isolation), `_on_chat_input` reads `self.cognitive_core.state` and
+    calls `self.publish`/`self._replace_active_generation`, so it needs the
+    real constructor. `_process_chat_input_flow` is replaced with a no-op so
+    the test exercises only the gate, not a full cognitive turn.
+    """
+    agent = BrainAgent(graph_db=None, memory_store=None, conversation_store=None)
+    agent.publish = AsyncMock()
+
+    async def _noop_flow(_msg, _is_subconscious, _message):
+        return None
+
+    agent._process_chat_input_flow = _noop_flow
+    return agent
+
+
+def _chat_input(text="hello", utterance_id="utt-1"):
+    return {
+        "text": text,
+        "utterance_id": utterance_id,
+        "turn_id": "turn-1",
+        "metadata": {"source": "user"},
+    }
+
+
+def test_confirmed_stop_is_suppressed_while_a_speculative_duck_is_pending():
+    """Bucket 1: a pending speculative duck means the pipeline's own Stage 2
+    conflict resolution (pipeline.py's `_resolve_turn_conflict`) is about to
+    run the arbiter on this exact text and publish audio.stop or
+    audio.resume itself. Firing an unconditional stop here first would race
+    ahead of that verdict -- measured live on "Let's stop it.": the arbiter
+    rejected the interruption, but this publish had already cut playback
+    half a second earlier regardless of that rejection.
+    """
+    agent = _chat_input_agent()
+    agent.cognitive_core.state.last_speculative_intent = {
+        "name": "STOP",
+        "keywords": ["stop"],
+        "text": "let's stop it",
+    }
+
+    asyncio.run(agent._on_chat_input(_chat_input(text="let's stop it.")))
+
+    stop_calls = [
+        call
+        for call in agent.publish.await_args_list
+        if call.args and call.args[0] == "audio.stop"
+    ]
+    assert stop_calls == []
+
+
+def test_confirmed_stop_still_fires_with_no_speculative_duck_pending():
+    """Companion to the suppression test above: this publish's actual job
+    (silencing old audio for a genuinely new turn, with no prior duck to
+    defer to) must keep working unconditionally. Without this test, deleting
+    the whole publish would "fix" the suppression test too.
+    """
+    agent = _chat_input_agent()
+    assert agent.cognitive_core.state.last_speculative_intent is None
+
+    asyncio.run(agent._on_chat_input(_chat_input(text="hello there")))
+
+    stop_calls = [
+        call
+        for call in agent.publish.await_args_list
+        if call.args and call.args[0] == "audio.stop"
+    ]
+    assert len(stop_calls) == 1
+    assert stop_calls[0].args[1]["reason"] == "confirmed_user_speech"
+
+
+def test_confirmed_stop_is_suppressed_within_the_onset_grace_period():
+    """Bucket 1: a transcript arriving this soon after the agent's own audio
+    started playing cannot be a real human reaction to it -- STT alone needs
+    250ms min_speech_ms + 700ms endpoint silence before it emits a final
+    transcript at all. Far more likely: onset noise (a click, pop, or brief
+    echo tail) before echoCancellation has settled.
+    """
+    agent = _chat_input_agent()
+    agent._last_audio_onset_at = time.time()
+
+    asyncio.run(agent._on_chat_input(_chat_input(text="hello there")))
+
+    stop_calls = [
+        call
+        for call in agent.publish.await_args_list
+        if call.args and call.args[0] == "audio.stop"
+    ]
+    assert stop_calls == []
+
+
+def test_confirmed_stop_fires_once_the_onset_grace_period_has_elapsed():
+    """Companion to the grace-period test above: the suppression must not
+    outlive the grace window, or every turn after the first would be muted
+    for its whole duration instead of just the onset instant.
+    """
+    from app.config import Config
+
+    agent = _chat_input_agent()
+    agent._last_audio_onset_at = time.time() - (Config.BARGE_IN_ONSET_GRACE_S + 1.0)
+
+    asyncio.run(agent._on_chat_input(_chat_input(text="hello there")))
+
+    stop_calls = [
+        call
+        for call in agent.publish.await_args_list
+        if call.args and call.args[0] == "audio.stop"
+    ]
+    assert len(stop_calls) == 1
+
+
+def test_onset_grace_transcript_with_no_speculative_intent_starts_no_new_turn():
+    """Reviewer finding (coderabbitai): suppressing audio.stop within the
+    onset grace period isn't enough on its own -- `_on_chat_input` still fell
+    through unconditionally to `_replace_active_generation`, cancelling
+    whatever the agent was doing and generating a brand-new reply to what the
+    onset-grace comment itself calls "far more likely onset noise," all while
+    the prior audio kept playing uninterrupted. A transcript in this state
+    (within grace, no speculative intent flagged by STT) must be dropped
+    entirely, not just have its stop suppressed.
+    """
+    agent = _chat_input_agent()
+    agent._last_audio_onset_at = time.time()
+    agent._process_chat_input_flow = AsyncMock(return_value=None)
+    assert agent.cognitive_core.state.last_speculative_intent is None
+
+    asyncio.run(agent._on_chat_input(_chat_input(text="hello there")))
+
+    agent._process_chat_input_flow.assert_not_called()
+
+
+def test_onset_grace_transcript_with_speculative_intent_still_starts_a_new_turn():
+    """Companion to the drop test above: onset grace only suppresses noise
+    that STT itself gave no signal about. When STT's own speculative pipeline
+    already flagged this utterance as command-like, it must still reach
+    `_process_chat_input_flow` -- the grace period must not swallow a real,
+    already-corroborated interruption."""
+    agent = _chat_input_agent()
+    agent._last_audio_onset_at = time.time()
+    agent._process_chat_input_flow = AsyncMock(return_value=None)
+    agent.cognitive_core.state.last_speculative_intent = {
+        "name": "STOP",
+        "keywords": ["stop"],
+        "text": "stop",
+    }
+
+    asyncio.run(agent._on_chat_input(_chat_input(text="stop")))
+
+    agent._process_chat_input_flow.assert_called_once()

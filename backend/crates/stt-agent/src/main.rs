@@ -94,6 +94,13 @@ struct SttConfig {
     /// whole accumulated utterance. A keyword from 20 seconds ago should not still
     /// be able to interrupt the agent.
     partial_window_secs: f64,
+    /// Bucket 1 (VOICE_REMEDIATION_PLAN.md): GGML-converted Silero VAD weights,
+    /// provisioned by `whisper::ensure_vad_model`. Same on/off + directory pattern as
+    /// `sensevoice_enabled`/`sensevoice_dir` above -- `Endpointer` (audio.rs) still makes
+    /// the real-time segmentation decision; this further filters the buffer it hands over.
+    vad_model_dir: PathBuf,
+    vad_model_name: String,
+    vad_enabled: bool,
 }
 
 impl SttConfig {
@@ -124,6 +131,12 @@ impl SttConfig {
             partial_interval_ms: parse_env("STT_PARTIAL_INTERVAL_MS", 500.0),
             max_utterance_secs: parse_env("STT_MAX_UTTERANCE_SECS", 30.0),
             partial_window_secs: parse_env("STT_PARTIAL_WINDOW_SECS", 8.0),
+            vad_model_dir: PathBuf::from(env_or("STT_VAD_MODEL_DIR", "/app/models/vad")),
+            vad_model_name: env_or("STT_VAD_MODEL", "silero-v5.1.2"),
+            vad_enabled: !matches!(
+                env_or("STT_VAD", "on").to_lowercase().as_str(),
+                "off" | "false" | "0"
+            ),
         }
     }
 }
@@ -211,9 +224,10 @@ async fn run_offline_transcription(path: &Path, config: &SttConfig) -> Result<()
     let pcm_16k = decode_wav_mono_16k(path)?;
 
     let model_path = whisper::ensure_model(&config.model_dir, &config.accurate_model).await?;
+    let vad_path = resolve_vad_model(config).await;
     let language = config.language.clone();
     let transcript = tokio::task::spawn_blocking(move || -> Result<String> {
-        let model = WhisperModel::load(&model_path, "accurate", &language)?;
+        let model = WhisperModel::load(&model_path, "accurate", &language)?.with_vad_model(vad_path);
         model.transcribe(&pcm_16k)
     })
     .await
@@ -363,8 +377,11 @@ async fn main() -> Result<()> {
             );
             let accurate_path =
                 whisper::ensure_model(&config.model_dir, &config.accurate_model).await?;
-            let accurate =
-                Arc::new(WhisperModel::load(&accurate_path, "accurate", &config.language)?);
+            let accurate_vad_path = resolve_vad_model(&config).await;
+            let accurate = Arc::new(
+                WhisperModel::load(&accurate_path, "accurate", &config.language)?
+                    .with_vad_model(accurate_vad_path),
+            );
 
             let fast = Arc::new(load_fast_path(&config).await?);
             let hears_emotion = matches!(*fast, FastPath::SenseVoice(_));
@@ -587,11 +604,30 @@ async fn load_fast_path(config: &SttConfig) -> Result<FastPath> {
 
     info!(fast = %config.fast_model, "falling back to the Whisper fast path");
     let fast_path = whisper::ensure_model(&config.model_dir, &config.fast_model).await?;
-    Ok(FastPath::Whisper(Arc::new(WhisperModel::load(
-        &fast_path,
-        "fast",
-        &config.language,
-    )?)))
+    let fast_vad_path = resolve_vad_model(config).await;
+    Ok(FastPath::Whisper(Arc::new(
+        WhisperModel::load(&fast_path, "fast", &config.language)?.with_vad_model(fast_vad_path),
+    )))
+}
+
+/// Bucket 1 (VOICE_REMEDIATION_PLAN.md): resolves the Silero VAD model path for
+/// `WhisperModel::with_vad_model`, or `None` to leave VAD off -- same deliberate-but-loud,
+/// not-fatal fallback as `load_fast_path` above: barge-in and recognition must keep working
+/// on a host with no network access or a stale cache, just without VAD's extra filtering.
+async fn resolve_vad_model(config: &SttConfig) -> Option<PathBuf> {
+    if !config.vad_enabled {
+        return None;
+    }
+    match whisper::ensure_vad_model(&config.vad_model_dir, &config.vad_model_name).await {
+        Ok(path) => Some(path),
+        Err(err) => {
+            warn!(
+                model = %config.vad_model_name,
+                "Silero VAD model unavailable ({err:#}); continuing without VAD filtering"
+            );
+            None
+        }
+    }
 }
 
 fn spawn_final_worker(
@@ -1082,7 +1118,12 @@ fn build_speculative_intent(text: &str, utterance_id: &str) -> Option<Speculativ
     // a persona name hardcoded into a generic crate. Deleted regardless of
     // which arbiter survives; this list is only ever a duck hint now (see
     // `speculative_fired_for`), never the abort.
-    let keywords = ["stop", "wait", "hold", "no", "wrong", "quiet"]
+    //
+    // Bucket 1 (VOICE_REMEDIATION_PLAN.md): "no" removed -- it fires this duck
+    // hint on ordinary agreement ("no way, that's great", "no, exactly"), which
+    // is far more common in real conversation than "no" used as a command.
+    // "wrong" stays: it has no equivalent everyday-agreement use.
+    let keywords = ["stop", "wait", "hold", "wrong", "quiet"]
         .iter()
         .copied()
         .filter(|keyword| tokens.contains(keyword))
@@ -1302,6 +1343,21 @@ mod tests {
     #[test]
     fn speculative_stop_avoids_partial_keyword_matches() {
         assert!(build_speculative_intent("knowledge now", "utt-1").is_none());
+    }
+
+    #[test]
+    fn ordinary_agreement_containing_no_does_not_duck() {
+        // Bucket 1: "no" fired this duck hint on plain agreement far more often
+        // than on an actual command, so it was removed from the keyword list.
+        assert!(build_speculative_intent("no way that's great", "utt-1").is_none());
+        assert!(build_speculative_intent("no exactly", "utt-1").is_none());
+    }
+
+    #[test]
+    fn wrong_still_fires_the_duck_hint() {
+        // Companion to the test above: removing "no" must not have taken
+        // "wrong" (which has no equivalent everyday-agreement use) with it.
+        assert!(build_speculative_intent("that's wrong", "utt-1").is_some());
     }
 
     fn test_state() -> Arc<Mutex<SttState>> {

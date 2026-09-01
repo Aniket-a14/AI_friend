@@ -17,6 +17,12 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 /// Upstream ggml weights published alongside whisper.cpp.
 const MODEL_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
 
+/// Bucket 1 (VOICE_REMEDIATION_PLAN.md): GGML-converted Silero VAD weights, hosted in a
+/// separate repo from the whisper.cpp models above. Confirmed by fetching whisper.cpp's
+/// own `models/download-vad-model.sh` directly rather than guessing a URL -- an earlier
+/// attempt at `{MODEL_BASE_URL}/ggml-silero-v5.1.2.bin` 404'd, since it lives here instead.
+const VAD_MODEL_BASE_URL: &str = "https://huggingface.co/ggml-org/whisper-vad/resolve/main";
+
 /// P2-12: pinned SHA256 checksums for the ggml weights this repo actually
 /// ships defaults for, mirroring `provision_models.py`'s existing SenseVoice
 /// pin -- computed directly from a fresh download of each file, not copied
@@ -43,6 +49,21 @@ const PINNED_MODEL_SHA256: &[(&str, &str)] = &[
 
 fn expected_sha256(model_name: &str) -> Option<&'static str> {
     PINNED_MODEL_SHA256
+        .iter()
+        .find(|(name, _)| *name == model_name)
+        .map(|(_, sha)| *sha)
+}
+
+/// Same reasoning as `PINNED_MODEL_SHA256` above, computed the same way: downloaded for
+/// real from `VAD_MODEL_BASE_URL` on home-gpu (2026-09-01) and hashed with `sha256sum`,
+/// not copied from an unverified source.
+const PINNED_VAD_MODEL_SHA256: &[(&str, &str)] = &[(
+    "silero-v5.1.2",
+    "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf",
+)];
+
+fn expected_vad_sha256(model_name: &str) -> Option<&'static str> {
+    PINNED_VAD_MODEL_SHA256
         .iter()
         .find(|(name, _)| *name == model_name)
         .map(|(_, sha)| *sha)
@@ -75,6 +96,16 @@ pub struct WhisperModel {
     ctx: WhisperContext,
     label: &'static str,
     language: String,
+    /// Bucket 1 (VOICE_REMEDIATION_PLAN.md): `None` means whisper.cpp's own internal VAD
+    /// gating stays off (today's behavior, unchanged). Set via `with_vad_model` -- a
+    /// builder method rather than a `load()` parameter, so the three existing call sites
+    /// that don't need VAD are untouched. This complements, not replaces, `Endpointer` in
+    /// `audio.rs`: `Endpointer` still makes the real-time decision of when an utterance
+    /// starts/ends from the live stream; this operates on the already-buffered utterance
+    /// `Endpointer` hands over, further filtering which sub-portions of it are speech
+    /// before the expensive decode step runs -- exactly whisper.cpp's own intended use of
+    /// this feature, not a real-time streaming VAD.
+    vad_model_path: Option<PathBuf>,
 }
 
 impl WhisperModel {
@@ -88,7 +119,16 @@ impl WhisperModel {
             ctx,
             label,
             language: language.to_string(),
+            vad_model_path: None,
         })
+    }
+
+    /// Enable whisper.cpp's internal VAD gating using a GGML-converted Silero model
+    /// (see `ensure_vad_model`). Chainable so the three existing `load()` call sites that
+    /// don't pass a VAD model are unaffected.
+    pub fn with_vad_model(mut self, path: Option<PathBuf>) -> Self {
+        self.vad_model_path = path;
+        self
     }
 
     /// Transcribe mono 16 kHz f32 PCM. Returns the concatenated segment text.
@@ -115,8 +155,30 @@ impl WhisperModel {
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
+        // Decode-time suppression of non-speech tokens (e.g. the [MUSIC]/[BLANK_AUDIO]
+        // token IDs whisper.cpp's vocabulary carries), complementing rather than
+        // duplicating clean_transcript's after-the-fact bracket stripping below, which
+        // only catches tokens that already made it into the decoded text.
+        params.set_suppress_nst(true);
+        // Bucket 1 (VOICE_REMEDIATION_PLAN.md): NOT set_no_speech_thold/set_logprob_thold/
+        // set_entropy_thold here, despite that being the audit's literal suggestion --
+        // checked whisper-rs 0.16's source first. `set_no_speech_thold`'s own doc comment
+        // says "Currently (as of v1.3.0) not implemented" in the whisper.cpp version this
+        // crate binds, and `FullParams::new` already seeds logprob_thold/entropy_thold from
+        // whisper.cpp's own `whisper_full_default_params()`, so setting them to the same
+        // defaults here would be a no-op that looks like a fix without being one. The value
+        // whisper.cpp DOES compute and expose for real is the per-segment probability below.
         // Single-segment decoding keeps latency predictable for short utterances.
         params.set_n_threads(recommended_threads());
+
+        // Bucket 1: further gate on Silero VAD probability within the already-buffered
+        // utterance when a model is configured -- `Endpointer` (audio.rs) is still what
+        // decided this buffer's boundaries in real time.
+        if let Some(vad_path) = self.vad_model_path.as_ref().and_then(|p| p.to_str()) {
+            params.set_vad_model_path(Some(vad_path));
+            params.set_vad_params(whisper_rs::WhisperVadParams::new());
+            params.enable_vad(true);
+        }
 
         state
             .full(params, pcm_16k)
@@ -127,6 +189,14 @@ impl WhisperModel {
         // matters because whisper can emit partial multi-byte tokens.
         let mut text = String::new();
         for segment in state.as_iter() {
+            let no_speech_prob = segment.no_speech_probability();
+            if no_speech_prob > NO_SPEECH_PROBABILITY_THRESHOLD {
+                warn!(
+                    model = self.label,
+                    no_speech_prob, "dropping whisper segment likely hallucinated from non-speech audio"
+                );
+                continue;
+            }
             match segment.to_str_lossy() {
                 Ok(s) => text.push_str(&s),
                 Err(err) => warn!(
@@ -136,8 +206,48 @@ impl WhisperModel {
             }
         }
 
-        Ok(clean_transcript(&text))
+        let cleaned = clean_transcript(&text);
+        if is_known_hallucination(&cleaned) {
+            warn!(
+                model = self.label,
+                transcript = %cleaned,
+                "dropping transcript matching a known Whisper noise-hallucination phrase"
+            );
+            return Ok(String::new());
+        }
+
+        Ok(cleaned)
     }
+}
+
+/// whisper.cpp's own standard default for `no_speech_thold` (unused as a decode-time
+/// gate in this whisper.cpp version -- see the comment above -- but still meaningful
+/// as the threshold for the value it computes and exposes per segment).
+const NO_SPEECH_PROBABILITY_THRESHOLD: f32 = 0.6;
+
+/// Stock short phrases whisper.cpp is well known to hallucinate from silence or room
+/// noise, rather than any of the countless things a real short utterance could be.
+/// Sourced from this project's own ledger (`"And no..."`, `"Bye!"` were both recorded
+/// as observed hallucinations from a real session) plus the phrases most commonly
+/// reported across the whisper.cpp community for the same failure mode. Matched
+/// case-insensitively against the whole cleaned transcript, not as a substring --
+/// a real utterance that happens to end in "thank you" must not be discarded.
+const KNOWN_HALLUCINATION_PHRASES: &[&str] = &[
+    "and no",
+    "bye",
+    "bye!",
+    "thank you",
+    "thank you.",
+    "thanks for watching",
+    "thanks for watching!",
+];
+
+fn is_known_hallucination(transcript: &str) -> bool {
+    let normalized = transcript.trim().trim_end_matches('.').to_lowercase();
+    !normalized.is_empty()
+        && KNOWN_HALLUCINATION_PHRASES
+            .iter()
+            .any(|phrase| phrase.trim_end_matches('.') == normalized)
 }
 
 fn recommended_threads() -> std::os::raw::c_int {
@@ -172,8 +282,51 @@ pub fn clean_transcript(raw: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Whisper's smallest real weights (tiny.en) run well over 100 MB, so anything under
+/// this is unambiguously a failed/partial download, never a genuine model.
+const MIN_VALID_WHISPER_MODEL_BYTES: u64 = 1_000_000;
+
+/// Bucket 1 (VOICE_REMEDIATION_PLAN.md): the Silero VAD weights are legitimately only
+/// ~885 KB -- `MIN_VALID_WHISPER_MODEL_BYTES` was tuned for whisper's own much larger
+/// weights and flagged a correctly-downloaded, SHA256-matching VAD file as "truncated"
+/// on every single run, forcing a full re-download from HuggingFace every process start
+/// instead of ever caching. Caught by an actual live run (`--transcribe-file`), not by
+/// the unit tests -- this file's size threshold has no test coverage.
+const MIN_VALID_VAD_MODEL_BYTES: u64 = 100_000;
+
 /// Resolve a model file, downloading it into the cache directory on first use.
 pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf> {
+    ensure_ggml_file(
+        cache_dir,
+        model_name,
+        MODEL_BASE_URL,
+        expected_sha256(model_name),
+        MIN_VALID_WHISPER_MODEL_BYTES,
+    )
+    .await
+}
+
+/// Bucket 1 (VOICE_REMEDIATION_PLAN.md): same provisioning contract as `ensure_model`
+/// (cache, verify, re-download on mismatch, pin the SHA256), pointed at the separate
+/// Silero VAD repo and pin table instead. `model_name` is e.g. `"silero-v5.1.2"`.
+pub async fn ensure_vad_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf> {
+    ensure_ggml_file(
+        cache_dir,
+        model_name,
+        VAD_MODEL_BASE_URL,
+        expected_vad_sha256(model_name),
+        MIN_VALID_VAD_MODEL_BYTES,
+    )
+    .await
+}
+
+async fn ensure_ggml_file(
+    cache_dir: &Path,
+    model_name: &str,
+    base_url: &str,
+    pin: Option<&str>,
+    min_valid_size: u64,
+) -> Result<PathBuf> {
     tokio::fs::create_dir_all(cache_dir)
         .await
         .with_context(|| format!("create model cache dir {}", cache_dir.display()))?;
@@ -181,11 +334,9 @@ pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf>
     let file_name = format!("ggml-{model_name}.bin");
     let target = cache_dir.join(&file_name);
 
-    let pin = expected_sha256(model_name);
-
     if tokio::fs::try_exists(&target).await.unwrap_or(false) {
         let size = tokio::fs::metadata(&target).await.map(|m| m.len()).unwrap_or(0);
-        if size > 1_000_000 {
+        if size > min_valid_size {
             match pin {
                 None => {
                     info!(model = model_name, path = %target.display(), size, "using cached whisper model (no pinned checksum for this model name)");
@@ -220,7 +371,7 @@ pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf>
         let _ = tokio::fs::remove_file(&target).await;
     }
 
-    let url = format!("{MODEL_BASE_URL}/{file_name}");
+    let url = format!("{base_url}/{file_name}");
     info!(model = model_name, %url, "downloading whisper model (first run only)");
 
     let mut response = reqwest::Client::builder()
@@ -313,6 +464,40 @@ mod tests {
         assert_eq!(expected_sha256("not-a-real-model"), None);
     }
 
+    #[test]
+    fn expected_vad_sha256_returns_the_pin_for_the_known_model() {
+        // Downloaded for real from VAD_MODEL_BASE_URL on home-gpu (2026-09-01) and
+        // hashed with sha256sum, not copied from an unverified source -- same
+        // integrity bar as the whisper model pins above.
+        assert_eq!(
+            expected_vad_sha256("silero-v5.1.2"),
+            Some("29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf")
+        );
+    }
+
+    #[test]
+    fn vad_model_size_threshold_accepts_the_real_downloaded_file_size() {
+        // The real bug, caught by an actual `--transcribe-file` run, not by any unit
+        // test: MIN_VALID_WHISPER_MODEL_BYTES (1_000_000) was reused for the VAD file
+        // too, and the real ggml-silero-v5.1.2.bin is only 885_098 bytes -- so a
+        // correctly-downloaded, SHA256-verified VAD file was flagged "truncated" and
+        // re-downloaded from HuggingFace on every single process start.
+        const REAL_SILERO_V5_1_2_SIZE_BYTES: u64 = 885_098;
+        assert!(REAL_SILERO_V5_1_2_SIZE_BYTES > MIN_VALID_VAD_MODEL_BYTES);
+        // And the whisper threshold must stay far above the VAD one, or this test
+        // would pass for the wrong reason (both thresholds collapsing to ~0).
+        assert!(MIN_VALID_WHISPER_MODEL_BYTES > REAL_SILERO_V5_1_2_SIZE_BYTES);
+    }
+
+    #[test]
+    fn expected_vad_sha256_is_none_for_an_unpinned_model() {
+        // STT_VAD_MODEL is operator-configurable (e.g. to "silero-v6.2.0", which
+        // whisper.cpp's own download script also lists) -- an unlisted one must
+        // come back None, not panic or silently match a different model's pin.
+        assert_eq!(expected_vad_sha256("silero-v6.2.0"), None);
+        assert_eq!(expected_vad_sha256("not-a-real-model"), None);
+    }
+
     #[tokio::test]
     async fn sha256_hex_matches_a_known_digest_of_small_content() {
         let dir = std::env::temp_dir().join(format!("whisper-sha-test-{}", std::process::id()));
@@ -366,5 +551,42 @@ mod tests {
     #[test]
     fn clean_keeps_plain_speech_intact() {
         assert_eq!(clean_transcript("Turn the lights off."), "Turn the lights off.");
+    }
+
+    #[test]
+    fn known_hallucination_phrases_are_rejected_case_and_punctuation_insensitively() {
+        assert!(is_known_hallucination("Bye!"));
+        assert!(is_known_hallucination("bye"));
+        assert!(is_known_hallucination("Thank you."));
+        assert!(is_known_hallucination("THANK YOU"));
+        assert!(is_known_hallucination("And no..."));
+    }
+
+    #[test]
+    fn a_real_utterance_ending_in_a_hallucination_phrase_is_not_rejected() {
+        // The denylist matches the whole transcript, not a substring -- a real
+        // utterance that happens to end with "thank you" must survive.
+        assert!(!is_known_hallucination(
+            "I really appreciate the help, thank you"
+        ));
+        assert!(!is_known_hallucination("Could you say bye to her for me"));
+    }
+
+    #[test]
+    fn a_bare_you_is_a_legitimate_reply_not_a_hallucination() {
+        // "you" alone is a normal short answer ("who's there?" / "you") --
+        // three independent reviewers flagged this exact entry when it was in
+        // the denylist, since it silently dropped real user turns.
+        assert!(!is_known_hallucination("you"));
+        assert!(!is_known_hallucination("  You  "));
+    }
+
+    #[test]
+    fn empty_transcript_is_not_flagged_as_a_hallucination() {
+        // Empty is already "no speech" via the caller's own length guard; this
+        // function's job is distinguishing confident-but-wrong speech from
+        // genuine short utterances, not re-deciding silence.
+        assert!(!is_known_hallucination(""));
+        assert!(!is_known_hallucination("   "));
     }
 }

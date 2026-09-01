@@ -13616,3 +13616,689 @@ session -- recorded here as a pattern to watch for, not a one-off.
   emotion, not just words. Still an optional path with a working fallback, not blocking.
 - A sustained multi-turn stress test to settle whether `transport_agent`'s severe queue-overload
   symptom (seen in Antigravity's raw log, not reproduced here) is real on this deployment.
+
+## 2026-09-01 -- VOICE_AUDIT.md turned into VOICE_REMEDIATION_PLAN.md; Phase 1 Buckets 1-3 fixed and verified live
+
+Following up on 2026-08-31's real mic session (audio confirmed working but "hazy" with
+"improper pauses," fixes deferred), a full audit (`VOICE_AUDIT.md`, gitignored) diagnosed seven
+symptoms and judged five fixable as pipeline defects without an architecture change. Turned into
+a 16-bucket, 4-phase plan (`VOICE_REMEDIATION_PLAN.md`, gitignored, working copy at repo root).
+Working agreement for this plan: edit on Mac, `rsync` to home-gpu (excluding `.git/`, `target/`,
+`.venv/`, `*.db`, `.env`, `models/`, and other host-local state), build/restart/verify there,
+commit on Mac after live verification. Branch is per-phase, not per-bucket
+(`fix/phase1-pipeline-defects`); each bucket below is its own commit on it.
+
+**Bucket 1 -- barge-in/turn-taking.** The confirmed-stop path in `brain_agent.py`'s
+`_on_chat_input` published `AudioStop` on every `chat.input` with no gate, while
+`is_speculative_stop_confirmed` (`decision.py`) already implemented the full semantic arbiter
+(connector rejection, pivot alignment, conciseness, call signs) and was never consulted on that
+path. Routed the confirmed stop through the arbiter, gated additionally on minimum word count
+and the agent actually being mid-utterance. Added whisper.cpp hallucination gating
+(`set_no_speech_thold`, `set_logprob_thold`, `set_entropy_thold`, `set_suppress_nst`, per-segment
+`no_speech_probability()` rejection, a known-hallucination-phrase denylist) -- all already
+exposed by the pinned `whisper-rs 0.16`, no new dependency. Dropped `"no"` from the speculative
+keyword list (`stt-agent/main.rs`) since it fired on ordinary agreement. Added a
+`BARGE_IN_ONSET_GRACE_S = 0.15` grace period after TTS onset (stamped in
+`_on_audio_playback_progress` on the first playback-progress frame of an utterance). Set
+`autoGainControl: false` in `useWebRTCVoice.js` (was fighting `Endpointer`'s adaptive noise
+floor). **Neural VAD (item 3) was deferred mid-implementation, then completed same day**:
+`WhisperVadParams`/`enable_vad`/`set_vad_model_path` turned out to live on `FullParams` itself,
+not only the separate `WhisperVadContext` API first found. Real GGML Silero VAD model
+downloaded from `ggml-org/whisper-vad` (an earlier guess at `ggerganov/whisper.cpp`'s own repo
+404'd), SHA256-pinned (`29940d98...`), provisioned via a new shared `ensure_ggml_file` helper.
+Caught a real bug in the same pass: the 1MB "not truncated" size floor was tuned for whisper's
+~100MB+ weights and falsely flagged the legitimately-885KB VAD file as truncated on every
+process start, forcing a full re-download every time -- caught by a live `--transcribe-file`
+run, not the unit tests, now has a regression test pinned to the real observed size. Verified
+end-to-end on home-gpu: fresh download -> SHA256 match -> correct transcript -> second run hits
+cache, same transcript. Full detail in `VOICE_REMEDIATION_PLAN.md`'s "Deferred during
+execution" section.
+
+**Bucket 2 -- audio output corruption, three independent sources, none TTS-quality.**
+(1) `transport_agent`'s `QueueFull` handler evicted the *oldest* queued frame and spliced the
+new one in -- correct for a live video stream, wrong for synthesized speech (a fixed artifact
+that must arrive intact): a hard discontinuity between non-adjacent PCM. Changed to drop-newest,
+never splice; the pre-existing test asserting the old policy
+(`test_queue_overflow_drops_the_oldest_frame_not_the_newest`, a different queue/direction than
+the one this bucket fixed) was left alone as still valid for its own subject, and a new test
+(`test_on_nats_audio_overflow_drops_the_newest_frame_not_the_oldest`) covers the outbound queue
+this bucket actually changed. (2) `ReverbFilter::process` wrote `output` (not `input`) into its
+delay line -- an unbounded feedback comb (`y[n] = x[n] + 0.5*y[n-D]`, steady-state gain 2.0)
+that was hard-clipping normalized TTS. Fixed to write `input`; added headroom scaling before
+`clamp`; added `ReverbFilter::reset()` called per-utterance (on `done`), not per-chunk, per the
+existing comment's own reasoning about not dropping the echo tail at chunk boundaries;
+centralized three hardcoded `0.1` wet-gain call sites (filler/vocalization/failure paths, which
+bypassed the distance gate) into one `reverb_wet_gain_for_distance()`. The regression test for
+this needed a redesign mid-session: the first version asserted `sample <= i16::MAX`, which is
+vacuously true since `clamp()` cannot produce an out-of-range i16 by construction -- caught by
+this same session's own mutation-testing step (the reintroduced bug still passed the test).
+Rewritten to check convergence to the known input amplitude instead, which does distinguish
+bounded echo from unbounded feedback. (3) The pseudo-OLA crossfade blended the last 15ms of an
+*already-published* previous chunk into the next chunk's head -- the listener heard those 15ms
+twice. True OLA would need holding audio back (added latency); instead `OlaCrossfadeFilter` was
+gutted to pure byte-parity buffering (handles only the odd-byte-at-chunk-boundary problem), no
+sample blending -- a clean butt-join beats replaying emitted audio.
+
+**Bucket 3 -- filler fires every turn, plus a defect the original plan text didn't anticipate.**
+Raised `VOICE_FILLER_THRESHOLD` 0.25 -> 0.4 (matching what the docstring, log line, README.md,
+and docs/ARCHITECTURE.md already claimed -- 0.25 was the outlier). Fixed the log line to
+interpolate the config value instead of a hardcoded "400ms" string, so it can't re-diverge the
+way it already had once. Wired both previously-dead rate limits:
+`VOICE_FILLER_MIN_INTERVAL_SECONDS` via an instance-scoped last-fired timestamp on
+`ConversationalRuntime`; `VOICE_FILLER_MAX_PLAYBACK_BACKLOG` required a new cross-process signal
+that didn't exist, since `ConversationalRuntime` runs in `brain_agent` and has no visibility
+into `transport_agent`'s outbound queue depth -- added `AudioPlaybackBacklog`
+(`audio.playback.backlog`, mirroring the existing `AudioPlaybackProgress` shape), published by
+`transport_agent` throttled to 5Hz, subscribed by `brain_agent`. Verified live: a real turn's
+backlog telemetry reached `queue_depth=53` of 256 while a prior turn's audio was still draining
+-- well above the threshold of 4, confirming the condition this suppression exists for is real,
+not theoretical. Fixed the double-fire: `content=f"<hesitate> {filler}<pause=200ms>"` ->
+`content=f"{filler}<pause=200ms>"` -- `<hesitate>` was triggering its own fixed "Mm..." synthesis
+in a *separate* GPT-SoVITS call from the filler word after it.
+
+**The defect the plan didn't name: the elapsed-time measurement was contaminated by
+conversational pacing.** `flow_start_time` was stamped before
+`_apply_conversational_pacing`'s deliberate 300-900ms silence, not after. A live capture
+(`phase0_baseline_2026-09-01/session_window_13-14-20...log`, from this session's own earlier
+Phase 0 instrumentation pass) showed the "TTFT exceeded" log line landing within ~15ms of the
+pacing sleep ending, every time, across two independent capture sessions -- meaning generation
+had not even started when the filler's budget was already spent. Raising the threshold alone
+could never have fixed this: a 496ms pacing sleep blows any threshold under ~500ms regardless of
+its value. Fixed by capturing a new `generation_start_time` *after* the pacing await returns,
+and renaming the `monitor_stream_and_fill` parameter to match. Verified live: post-fix, the same
+kind of turn sometimes fires no filler (fast generation) and sometimes fires exactly one (slow
+generation) -- confirming the plan's exit criterion ("fires on a minority of turns, once")
+rather than assuming it.
+
+**A sixth, orthogonal finding surfaced while verifying Bucket 3 live: two separate `.env` files
+on home-gpu independently stage config, and can silently drift out of sync with each other and
+with what a prior session's fix believed it had corrected.** `backend/.env` is loaded as real OS
+environment by `ai-friend-agents.service`'s `EnvironmentFile=`. `~/AI_friend/.env` (repo root)
+is loaded independently and directly by `pydantic_settings`'s own `env_file` resolution inside
+`config.py` (`_env_file = Path(__file__).resolve().parent.parent.parent / ".env"`, three levels
+up from `app/config.py`, landing at the repo root, not `backend/`) -- and is *also*
+docker-compose's variable-substitution file, a legitimate second consumer. Removing
+`VOICE_FILLER_THRESHOLD=0.25` from only `backend/.env` did nothing; the process kept reading
+0.25 from the repo-root file regardless. Diffing the two also surfaced that the repo-root file
+still has the stale `STT_SENSEVOICE_DIR=/app/models/sensevoice` that 2026-08-31's entry believed
+was already corrected -- it was corrected in `backend/.env`, the file that session was looking
+at; the repo-root file was never touched and this session left it as found, since silently
+"fixing" it here would misrepresent this pass as having reconciled the two files when it only
+removed the one line Bucket 3 depended on. Full write-up and the reconciliation options
+considered are in `VOICE_REMEDIATION_PLAN.md`'s "Deferred during execution" section.
+
+**Verification.** Full backend suite: 1,453 tests, 0 failures (JUnit XML, not the terminal
+summary, per this file's own documented pytest-output-swallowing gotcha). `ruff check .` clean.
+New/changed logic mutation-tested by neutering each check (barge-in gate, backlog suppression,
+min-interval suppression, hesitate-removal, reverb runaway, byte-parity math) and confirming the
+corresponding test fails, then restoring and confirming it passes again -- one such restore was
+accidentally done via `git checkout --` on an uncommitted file mid-session, which reverted all
+of that bucket's uncommitted edits, not just the mutation; caught immediately (tests dropped
+from 33 passing to the pre-Bucket-3 file), redone by hand, worth remembering: never `git
+checkout --` a file with uncommitted work still on it, even to undo your own mutation test --
+diff-and-restore or a scratch copy is the safe way. All three buckets verified live on
+home-gpu, not just compiled: real `rsync`, real `systemctl restart`, real synthetic
+`chat.input` messages published directly to NATS to force turns through the live mesh
+(`nc.publish` on core NATS, not JetStream -- confirmed brain_agent still receives it, since the
+JetStream consumer pulls from the stream regardless of which client API produced the message),
+real `journalctl`/`docker logs` output read as evidence, not assumed from local test passes.
+
+**NOT done:**
+- Phase 1 Buckets 4 (speech unintelligible) and 5 (chunked/scripted flow) -- not started. The
+  chunking symptom Bucket 5 targets is still visibly present in every live capture this session
+  produced (a single sentence response fragmenting into 25-50+ separate GPT-SoVITS calls).
+- The dual-`.env`-file reconciliation (see above) -- deliberately left as a named, deferred
+  decision rather than a mechanical fix, since it needs a choice about which file is canonical
+  and this class of bug has now recurred twice with different symptoms.
+- A live A/B specifically exercising `VOICE_FILLER_MIN_INTERVAL_SECONDS` with two real turns
+  close enough together in wall-clock time that both would otherwise fire a filler -- the two
+  live turns fired in sequence this session landed ~5s apart (comfortably past the 1.5s
+  interval) rather than inside it. The suppression logic itself is mutation-tested at the unit
+  level (neutering the check makes the corresponding test fail), and the underlying telemetry
+  channel and config values are confirmed live and correctly wired; only the specific
+  close-timing live scenario wasn't reproduced.
+- Phase 1's own exit criterion (re-running the Phase 0 capture for a full before/after on all
+  five symptoms) -- individual buckets were verified live as they landed, but the consolidated
+  before/after capture across all of Phase 1 hasn't been done, pending Buckets 4-5.
+- The Phase 1 PR -- branch `fix/phase1-pipeline-defects` has three commits (Buckets 1, 2, 3) and
+  is not yet opened as a PR, per the user's instruction that PRs are per-phase, opened once the
+  phase's buckets are all done.
+
+## 2026-09-01 -- Bucket 3 revision: VOICE_FILLER_THRESHOLD raised again, 0.4 -> 1.2
+
+Same-day follow-up to the Bucket 3 entry above, on direct user instruction. That entry fixed a
+*contradiction* (code said 0.25, every doc/log said 0.4) by picking the value the majority
+already claimed. It did not question whether 0.4 was the right value. It wasn't: 0.4 was
+derived from the measured baseline generation overhead (~264ms of MAUT/memory/endocrine work
+ahead of Ollama's own TTFT) -- but a threshold pinned to the baseline fires on essentially
+every turn, since real generation is never faster than its own floor. The user's framing:
+400ms is normal, not slow; a filler should only mask a pause that is *noticeably* long, and
+1200ms was given directly as the example of what "noticeable" means.
+
+**What changed.** `VOICE_FILLER_THRESHOLD` in `config.py`: `0.4` -> `1.2`, comment rewritten to
+state the baseline-vs-noticeable distinction so a future reader doesn't re-derive 0.4 from the
+overhead measurement and reintroduce this. README.md:262 and docs/ARCHITECTURE.md:98 updated
+400ms -> 1200ms (the two tracked sources Bucket 3 reconciled at 0.4, now reconciled again at
+1.2). The log line and `monitor_stream_and_fill`'s docstring needed no edit -- both already
+interpolate `Config.VOICE_FILLER_THRESHOLD` dynamically, which is exactly the fix Bucket 3 item
+2 made for this reason. HANDOFF.md:96 was edited by mistake mid-session (it is untracked and
+Bucket 3's own write-up records a standing instruction not to touch it) -- caught immediately
+via `git status`, reverted back to 400ms by hand before it was ever committed. Recorded here as
+the same class of lesson as the `git checkout --` mistake above: a file being untracked doesn't
+mean it's fair game, and a prior entry in this same ledger is the source of truth to check
+before editing a doc, not just grep for the string.
+
+**Verification.** Full backend suite re-run: 1,453 tests, 0 failures (JUnit XML). `ruff check
+.` clean. No test asserted the literal 0.4/0.25 value -- `test_conversational_runtime.py`'s
+autouse fixture monkeypatches its own 0.05s threshold, independent of the production default.
+Synced to home-gpu, `ai-friend-agents` restarted, `Config.VOICE_FILLER_THRESHOLD` read directly
+from the running process as `1.2`. A real synthetic turn published to `chat.input` (pacing
+545.8ms + ~150ms MAUT/memory/endocrine work, well under 1200ms) produced zero "TTFT exceeded"
+log lines -- confirming the raised threshold now suppresses the filler on an ordinary turn
+instead of firing on every one, which was the entire point of the change.
+
+**NOT done:** no live capture yet of a turn slow enough to actually cross 1200ms and fire a
+filler under the new threshold (the two synthetic turns tested this session were both fast
+turns exercising suppression, not the firing path at the new value -- the firing path itself
+was already verified in the base Bucket 3 entry above, at the old 0.4 threshold, and the
+mechanism didn't change, only the constant).
+
+## 2026-09-01 -- The dual-.env drift is closed: home-gpu now has one canonical env file
+
+Resolves the deferral both Bucket 3 entries above flagged, on direct user instruction ("sync
+both env files and merge into one"). Diffed key sets rather than assuming the two files were
+symmetric: `backend/.env` (110 lines, loaded as real OS environment by all four systemd units'
+`EnvironmentFile=`) turned out to be a strict superset of `~/AI_friend/.env` (104 lines, loaded
+independently by `pydantic_settings`'s own `env_file` resolution in `config.py`, and also
+docker-compose's variable-substitution file). Every key in the repo-root file existed in
+`backend/.env`, and everywhere their *values* differed, `backend/.env`'s value was already the
+one actually in effect (real OS env vars win over the `env_file` fallback) -- so the merge
+carried no risk of silently reverting anything currently working.
+
+**One bug found inside a single file, not between them:** `backend/.env` itself declared
+`LLM_FAST_MODEL` twice (line 29 `qwen2.5:3b`, dead; line 107 `llama3.2:3b`, effective) --
+dropped the dead line while merging.
+
+**One nuance preserved rather than flattened.** `LIVEKIT_URL`, `LIVEKIT_PUBLIC_URL`, and (after
+grepping every Dockerfile/compose service and confirming it appears in none of them --
+genuinely dead) `STT_SENSEVOICE_DIR` are host-native values, correct for this box's actual
+deployment shape (brain_agent/transport_agent/stt-agent as systemd units on bare metal, not
+containerized). `docker-compose.prod.yml` defaults `LIVEKIT_URL` to the docker-network hostname
+`ws://local_sfu:7880` only when the variable is *unset* -- baking a host value into the shared
+file would silently defeat that fallback for a hypothetical future containerized brain_agent
+deployment reusing this same file. Rather than pick a value silently, a comment now sits
+directly above those keys in the merged file explaining the split, so a future containerized
+deploy attempt finds an explanation instead of a mystery two-hour debugging session.
+`BACKEND_ACCESS_KEY` was merged to the real secret (matching `frontend/.env.local`,
+independently already correct) over the repo-root file's empty value -- confirmed via
+`backend/main.py::require_session_auth` that an empty/unset key fails *closed* (503 for
+non-loopback clients), so the empty value was dead weight, not a live security hole.
+
+**Mechanism.** Canonical file lives at repo root (`~/AI_friend/.env`) -- `config.py` hardcodes
+that path three directories up from itself, and docker-compose commands run from repo root
+read `.env` from cwd by default. `backend/.env` replaced with a relative symlink
+(`backend/.env -> ../.env`) instead of deleting it and repointing the four systemd units'
+`EnvironmentFile=` -- zero unit-file edits needed, and all three consumers (systemd,
+python-dotenv, docker-compose) resolve the symlink transparently, verified rather than assumed.
+
+**Verification.** Both original files backed up (`.env.bak.premerge.<timestamp>`, both
+locations) before any edit. Merged content parsed cleanly via
+`~/AI_friend/.venv/bin/python`'s `dotenv_values()` (58 keys, correct values) and via `docker
+compose --env-file ... -f docker-compose.infra.yml config --dry-run` (`LIVEKIT_IMAGE_TAG`
+resolved to the pinned `v1.8.4`, exit 0) *before* deploying. After restarting all four systemd
+units: read `/proc/$PID/environ` directly on the running `ai-friend-agents` process for the
+real-OS-env values, and separately imported `app.config.Config` via the venv python for
+`pydantic_settings`'s independent read -- both mechanisms agreed
+(`LLM_FAST_MODEL=llama3.2:3b`, `MEASURE_TRACE=True`, `ALLOW_SQLITE_FALLBACK=True`,
+`VOICE_FILLER_THRESHOLD=1.2`, `BACKEND_ACCESS_KEY` set). A real synthetic turn published to
+`chat.input` post-restart processed end-to-end with no errors in `journalctl`. All four
+services (`ai-friend-agents`, `ai-friend-stt`, `ai-friend-voice`, `ai-friend-backend`) confirmed
+`active` throughout.
+
+**NOT done:** the running docker-compose infra containers (e.g. `local_sfu`) were not
+recreated -- the `LIVEKIT_IMAGE_TAG` pin only takes effect on the next `docker compose up`/
+recreate for that stack, which wasn't triggered here since no infra container needed restarting
+for this change. No CI/pre-flight drift check was added (one of the options the original
+deferral named) -- moot now that there is structurally one file, but worth remembering if a
+third `.env`-like file is ever introduced elsewhere in the deployment.
+
+## 2026-09-01 -- Phase 1 Bucket 4 fixed and verified live: degenerate text fragments no longer silently lost
+
+`VOICE_REMEDIATION_PLAN.md`'s Bucket 4 ("Speech unintelligible") targeted a specific failure
+mode: each `TemporalPart::Text` in `voice-agent/src/main.rs` is its own HTTP synthesis call,
+and GPT-SoVITS rejects a punctuation-only fragment outright (`ValueError: Please enter valid
+text.`) -- previously spending a full 3-attempt retry budget against a deterministic rejection,
+then either dropping the words or (after an earlier, already-shipped fix) playing a generic
+`voice_engine_unavailable` filler mid-sentence, neither of which is the actual content.
+
+Rereading the current code first (per this ledger's own standing practice) showed the plan's
+line references and severity had drifted since it was written -- a "Local ONNX synthesis was
+removed (2026-07)" comment shows the fully-silent-drop case the plan described no longer
+exists, and the `error!` log on retry exhaustion already existed. The real remaining gap was
+narrower: no pre-filtering of degenerate fragments before they reached the network, no
+distinction between a deterministic validation rejection and a transient failure, and the
+existing rejection log didn't include the text that was actually rejected.
+
+**Fix, in `backend/crates/voice-agent/src/main.rs`:**
+
+- `is_degenerate_fragment` + `merge_degenerate_text_fragments` (new, called at the end of
+  `split_temporal_parts`). A punctuation-only fragment is, by construction, always isolated by
+  a `<pause>`/`<hesitate>`/`<breath_fast>`/`<sigh_soft>` token -- that is the only way it
+  becomes its own `TemporalPart::Text` instead of part of a neighbouring clause's string. An
+  initial design that refused to merge across those boundary tokens was caught, before
+  shipping, as meaning every real fragment would just get dropped rather than actually merged
+  -- undercutting the plan's own "merge into the neighbouring clause" wording. Revised to
+  splice the punctuation onto the nearest real `Text` part's content (backward preferred,
+  forward fallback), searching past intervening boundary entries without moving or removing
+  them -- the pause's position and duration are untouched; only the adjacent clause's string
+  gains a trailing/leading `"..."`/`"-"`. Dropped, loudly, only when no real `Text` part exists
+  anywhere in the sequence.
+- `SynthesisRejected` (new error type) -- `synthesize_stream` now distinguishes GPT-SoVITS's
+  400 "valid text" rejection from any other failure. `synthesize_stream_with_retry`
+  short-circuits on it instead of burning the retry budget against a deterministic validator,
+  and logs it with the actual rejected text (the concrete hole in the pre-existing logging).
+  The main synthesis loop's call site also skips `circuit_breaker.record_failure` for this
+  error type -- a bad fragment says nothing about engine health, mirroring the existing
+  `record_success` reasoning on the good path.
+
+**New tests** (5, `wiremock`-backed for the HTTP-facing pair):
+`degenerate_fragment_between_two_tokens_merges_backward_past_the_pause`,
+`degenerate_fragment_with_no_preceding_text_merges_forward`,
+`all_degenerate_input_is_dropped_with_nothing_to_merge_into`,
+`validation_rejection_is_not_retried` (`.expect(1)` on the mock proves no retry),
+`a_generic_server_error_is_not_mistaken_for_a_validation_rejection`. All five mutation-tested
+(neutering `is_degenerate_fragment` to constant-`false` failed all three merge/drop tests;
+loosening the rejection body-match to an unmatchable string failed
+`validation_rejection_is_not_retried` specifically) using `cp`-based backup/restore, not
+`git checkout --`, per the lesson this ledger already recorded during Bucket 3.
+
+**Verification.** `cargo test --package voice-agent`: 60/60 (55 pre-bucket + 5 new), locally and
+on home-gpu after `rsync` + `cargo build --release --package voice-agent`. `cargo test
+--workspace` fails on a link error in `cognitive-rust` (a pyo3 extension module needing
+`maturin`, not plain `cargo test`, to resolve Python runtime symbols) -- verified this is
+pre-existing and unrelated by stashing this bucket's own edit and reproducing the identical
+failure on a clean, unmodified `main` HEAD before restoring; `macos-ci.yml`/`ci.yml` already
+split `cognitive-rust --lib` into its own invocation for exactly this reason. The CI-matching
+split (`--package stt-agent --package voice-agent --package contracts`, then `--package
+cognitive-rust --lib`) passes clean: 135 + 11 tests. Full Python suite (1,453 tests) and `ruff
+check .` unaffected, as expected for a Rust-only change. **Live-verified on home-gpu, and the
+new logic fired organically on the very first real turn sent through post-restart**: `WARN
+voice_agent: dropping a punctuation-only text fragment with no speakable text anywhere to merge
+into fragment=.` -- an isolated `.` produced by Bucket 5's still-unfixed chunking was caught
+and dropped before ever reaching the network, instead of being sent to GPT-SoVITS, rejected,
+and surfacing as either lost words or a spurious mid-sentence filler. No errors in either
+`ai-friend-voice` or `ai-friend-agents` logs for that turn. This also incidentally confirms
+Bucket 5's symptom is still live in production and organically produces exactly the artifact
+this bucket targets -- good evidence for prioritizing it next.
+
+**NOT done:** Bucket 5 (chunked/scripted flow) remains the next open item in Phase 1 -- the
+same live capture that validated this fix is also fresh evidence that Bucket 5's root cause is
+still active. No live case of the `SynthesisRejected` path (a fragment that reaches the network
+and gets a 400 back) was observed this session -- only the earlier, cheaper interception
+(dropped/merged before ever calling out) fired; the `SynthesisRejected` branch is covered at
+the unit/mutation level but not yet seen live, since the pre-filter is, by design, supposed to
+catch most real cases before they'd ever reach it.
+
+## 2026-09-01 -- Phase 1 Bucket 5 fixed and verified live: sentences synthesize as one clause, not fragments
+
+`VOICE_REMEDIATION_PLAN.md`'s Bucket 5 named two concrete defects in
+`_stream_to_speech`'s chunk-flush logic (`brain_agent.py`): a "formation buffer" misnamed
+`formation_buffer_ms` while actually holding 0.030 compared directly against a
+`time.perf_counter()` delta (seconds) -- an effective 30ms timer that, at any realistic LLM
+token latency, always won the race against the semantic segmenter and flushed every 3 words;
+and `HybridSegmenter.score_split_point` giving a comma exactly `0.7` (0.4 + the 0.3
+length-pressure term at production's `target_size=7`) against a strict `score > 0.7` check that
+can never be satisfied by an exact match -- the single most natural prosodic boundary could
+never fire on its own.
+
+**Fix:** renamed `formation_buffer_ms` to `formation_buffer_s` (`speech.py`) and raised it
+0.030 -> 0.300, anchored to `calculate_pacing_parameters`'s own `base_silence` (Bucket 3) rather
+than picking an arbitrary number. Changed `score > 0.7` to `score >= 0.7`
+(`brain_agent.py`) -- chosen over the plan's alternative (raising the comma weight itself)
+since that would have also touched the extreme-length-override and at-target-size cases for no
+added benefit.
+
+**The plan's third item ("aggregate to clause boundaries") turned out to be a consequence of
+fixing the first two, not a separate mechanism** -- traced through the arithmetic: reaching
+`target_size` alone scores only 0.3 (still below threshold), so a plain sentence under 12 words
+with no internal punctuation now only flushes at its own sentence-ending punctuation, which
+already is one full clause per call. Verified this reasoning live rather than trusting it on
+paper (below).
+
+**New tests** (`tests/test_brain_agent_chunking.py`, new file -- no prior coverage existed for
+`_stream_to_speech`'s flush decisions, only the narrower `test_segmentation.py` covering the
+segmenter's score in isolation): flush-timer-vs-segmenter race, timer-still-fires-as-a-stall-
+fallback, comma-at-target-size flushes, comma-before-target-size does not, and (added after
+mutation testing exposed the gap) a direct assertion on `BrainAgent.__init__`'s own production
+default -- the other four tests each construct their own `SpeechCoordinator` and none of them
+would have caught a regression in the actual shipped default. One addition to
+`test_segmentation.py` pinning the exact `0.7` boundary at production's `target_size=7`.
+**A timing-test flakiness was caught before shipping**: the first version of the race test used
+a 5x nominal margin and failed intermittently; measuring real `asyncio.sleep` overhead directly
+(7x10ms sleeps took 77ms, not 70ms) explained why, and the margin was widened to >25x.
+
+**Mutation testing** (`cp`-based, not `git checkout --`): reverting `>=`->`>` failed the comma
+test; reverting the production default to 0.030 was NOT caught by the original four tests (the
+exact gap the fifth test above closes) and is caught now; weakening the comma weight 0.4->0.3
+failed three tests across both files.
+
+**Verification.** Local: 1,459/1,459 (6 new), `ruff check .` clean. Live on home-gpu, with a
+genuine before/after: **before** deploying, sent the plan's own test sentence ("Hi, I am
+Aniket, I study at a college in Punjab") through the still-unfixed code and measured 4 separate
+GPT-SoVITS `/tts` calls via a log-count delta on `local_voice` (a `--since`-filtered count first
+gave a nonsensical 935, traced to a timestamp timezone mismatch and redone as an unambiguous
+total-count delta). **After** deploying and restarting `ai-friend-agents`, resent the identical
+sentence and subscribed directly to `chat.output` for ground truth: the whole sentence published
+as **exactly one** content chunk, down from 4. A second live test ("three short facts about
+cats") confirmed no over-correction into never splitting: 6 content chunks for 3 sentences,
+split cleanly at internal commas -- roughly one clause per chunk.
+
+**New finding, flagged and then fixed same-session (see the follow-up entry immediately
+below).** The live captures also surfaced word-spacing artifacts (`'C ats'`, `'right ing'`)
+distinct from anything Bucket 4 or 5 targets -- a sub-word LLM streaming issue, not a chunk-
+boundary issue. Initially recorded as out-of-scope; the user asked for it to be fixed in the
+same session once flagged, so it was -- see below rather than duplicating that write-up here.
+
+**NOT done:** Phase 1's consolidated before/after capture (all five symptoms together) still
+has not been run -- each bucket continues to be verified individually as it lands. The Phase 1
+PR has still not been opened (branch now has 6 commits: Bucket 1 main + deferred-VAD, Bucket 2,
+Bucket 3, the env-merge doc entry, Bucket 4, Bucket 5).
+
+## 2026-09-01 -- Fixed a sub-word streaming artifact found (and requested) during Bucket 5's live verification
+
+Not one of the original 16 buckets. Bucket 5's own live verification captures surfaced words
+arriving mangled -- `'C ats'`, `'right ing'`, `"can 't"` -- initially recorded as an out-of-scope
+finding, then fixed in the same session once the user asked for it directly.
+
+**Root cause:** `ollama_client.py::generate_stream` yields each generation step's raw decoded
+text verbatim, and a legitimate sub-word continuation token (e.g. "ik" continuing "An" toward
+"Aniket") carries no leading space -- the tokenizer never put one there.
+`_handle_content_output`'s `chunk_text.split()` had no way to distinguish that from a genuine
+new word, so `" ".join(words)` downstream inserted a space that was never in the source text.
+
+**Fix** (`brain_agent.py::_handle_content_output`): compute `boundary_missing_space` before
+appending each fragment -- true only when *neither* the fragment's first character *nor* the
+accumulated text's last character is whitespace. When true and the buffer still holds an
+unflushed word, glue the fragment's first token onto it instead of appending a new word, then
+rescore the merged word (a fragment can introduce the punctuation that makes it a split point).
+
+**Mutation testing surfaced a real design requirement, not just confirmed the fix:** weakening
+the boundary check from two-sided to one-sided (checking only the incoming fragment's first
+character) failed 6 of the file's 8 tests -- several of the *other* tests' fixtures rely on the
+trailing-space side to correctly separate words, which is exactly why both sides must be
+checked. Disabling the glue condition outright failed the two glue-specific tests; removing the
+post-merge rescore failed exactly the one test built for it.
+
+**Verification.** Local: 1,462/1,462, `ruff check .` clean. Live on home-gpu: resent the exact
+prompt that surfaced the bug and confirmed every previously-mangled word now reconstructs
+correctly across 9 content chunks, with no stray internal spaces.
+
+**Known residual, accepted rather than engineered around:** the same live capture showed a
+chunk beginning with a stray leading comma (`", near their cheeks and lips."`) -- the comma
+continuing the prior word arrived *after* that word had already been flushed and published,
+leaving nothing in the buffer to glue onto. Inherent to publish-as-you-go streaming (an
+already-sent chunk cannot be edited retroactively); reachable only when a mid-word split
+coincides exactly with a chunk-flush boundary. Materially rarer and milder than the original
+bug. A full fix would mean holding back each chunk's last word pending confirmation the next
+fragment doesn't continue it, trading TTFT for a cosmetic edge case -- not taken, and named
+here rather than left implicit.
+
+## 2026-09-01 -- Phase 1 exit criterion met: gates green, consolidated live capture across all five buckets
+
+Closes out Phase 1 (Buckets 1-5, all fixed and committed on `fix/phase1-pipeline-defects`).
+
+**Gates.** Full backend suite 1,462/1,462, `ruff check .` clean. Rust: the CI-matching split
+invocation (`--package stt-agent --package voice-agent --package contracts`, then `--package
+cognitive-rust --lib`) green at 135 + 11 tests; bare `cargo test --workspace` still fails on the
+pre-existing, already-documented `cognitive-rust` pyo3 link error (not a regression -- confirmed
+via `git stash` against clean `main` during Bucket 4).
+
+**Consolidated live capture.** 3 varied real conversational turns sent through the mesh on
+home-gpu -- deliberately closer to natural conversation length than any single bucket's own
+narrower verification, to surface interaction effects between the five fixes that testing them
+individually could miss. Corrected numbers (see the timezone mistake below): filler fired on 0
+of 3 turns (the bug was *unconditional* firing, so zero here is the expected regression check,
+not a null result); exactly 1 degenerate text fragment occurred across all three turns' real
+generated content, caught before reaching the network and logged loudly; 41 total content
+chunks across the 3 responses ranging 6-14 words each (clause-level, not the old every-3-words
+pattern), manually scanned for the word-butchering artifact with none found; 48 audio-queue
+trace points observed with 0 dropped frames; zero errors in either agent process across the
+window.
+
+**A second instance of the same class of measurement mistake, caught before it corrupted the
+result.** Used `journalctl --since` with a UTC timestamp on a box running `Asia/Kolkata`
+(UTC+5:30) -- `--since` interprets a bare timestamp as local time, so this silently widened the
+capture window by 5.5 hours and inflated the filler count to 11 by pulling in unrelated earlier
+session history. Caught by noticing the number didn't fit 3 turns (not by the tooling), and
+fixed by switching to a relative window (`"5 minutes ago"`) instead of an absolute one --
+timezone-agnostic by construction, rather than a one-off correction. This is the same species of
+bug as the `docker logs --since` mistake during Bucket 5 (there: a bare timestamp produced a
+nonsensical count entirely; here: a timezone mismatch produced a plausible-looking but wrong
+one, which is the more dangerous version since a wrong-but-plausible number does not visibly
+announce itself). Worth a standing note: prefer relative `--since` windows (`"N minutes ago"`)
+over absolute timestamps for this kind of live capture on remote hosts, unless the host's
+timezone has just been explicitly confirmed.
+
+**Named rather than silently absorbed into "Phase 1 done": Bucket 1 (barge-in) cannot be
+measured by this capture method.** Scripted NATS publishes carry no acoustic signal, so
+confirming zero false interrupts from a cough/door/TV recording during agent speech (while a
+genuine interruption still lands) needs a real microphone and playback session this agent
+cannot produce. That check remains at the level it was left at after Bucket 1's own session:
+unit- and mutation-tested in code, not live-A/B'd acoustically.
+
+**What "before" means for this exit criterion:** no literal Phase 0 browser-mic capture was
+ever run in this project's history (prior ledger entries already note this undone). The real
+before-numbers that exist are each bucket's own live capture of the unfixed code taken
+immediately before its own fix (e.g. Bucket 5: 4 GPT-SoVITS calls for one sentence, measured
+before deploying). This exit capture is the after-side of that same comparison, run
+consolidated across all five fixes together rather than repeated per-bucket -- not an
+independent before/after against a baseline that was never captured.
+
+**NOT done:** the Phase 1 PR has not been opened -- branch `fix/phase1-pipeline-defects` now
+has 9 commits (Bucket 1 main + deferred-VAD, Bucket 2, Bucket 3, the env-merge doc entry,
+Bucket 4, Bucket 5, the word-spacing fix, this exit-criterion entry) and has not been pushed.
+Bucket 1's acoustic barge-in verification remains code-level only, as stated above. Phase 2
+(Buckets 14, 16) and Phase 3 (Buckets 6-13) have not been started.
+
+## 2026-09-01 -- `cargo test --workspace` fixed at the root, not worked around
+
+Closes the last open item from both the Bucket 4 and Phase 1 exit entries above, at the user's
+direct request ("fix the cargo test then").
+
+**Root cause, found by reading the actual dependency spec rather than trusting the existing
+workaround's stated reason.** The prior CI comment attributed the failure to "a pyo3
+feature-unification interaction with the other crates' own dependency graphs" and split
+`cognitive-rust --lib` into its own invocation to avoid it (`macos-ci.yml`/`ci.yml`, added
+2026-08-23 per their own comments). The actual cause was narrower and simpler:
+`backend/Cargo.toml`'s shared `pyo3` workspace dependency hardcoded
+`features = ["extension-module", "abi3-py39"]` unconditionally, so *every* consumer --
+including a bare `cargo test` binary -- always built with `extension-module` on. That feature's
+own contract (pyo3's documented guidance) is that it must never be enabled for a standalone
+test binary: it assumes the compiled `.so` is loaded into an already-running Python process
+(true for the real wheel `maturin` builds, never true for `cargo test`), so the linker step
+skips resolving libpython symbols on that assumption -- which is exactly the
+`Py_IsInitialized`/`Py_FalseStruct`/etc. "symbol(s) not found" error this session (and the
+2026-08-23 entry before it) both hit.
+
+**Fix.** `cognitive-rust` is the only consumer of the workspace `pyo3` entry (checked, not
+assumed). Removed `extension-module` from the shared spec; added it back as an opt-in feature
+on `cognitive-rust`'s own `Cargo.toml` (`[features] extension-module = ["pyo3/extension-module"]`);
+and had `maturin` request it via `backend/pyproject.toml`'s `[tool.maturin] features` table
+instead of a crate default. That table is read from whichever `pyproject.toml` sits in the
+invoking cwd regardless of `--manifest-path` -- already established the hard way, per that
+file's own header comment about a prior incident where removing it broke five CI jobs -- so
+every existing `maturin build --manifest-path crates/cognitive-rust/Cargo.toml` call (four CI
+workflows, CLAUDE.md's documented dev command) picks up the feature unchanged, with zero
+call-site edits to the real build path.
+
+**Verification, both directions.** `cargo test --workspace` now passes in one invocation: 146
+tests (11 cognitive-rust + 6 contracts + 69 stt-agent + 60 voice-agent), the identical count the
+split previously covered piecemeal -- confirmed nothing was silently dropped. The real wheel
+build was verified, not assumed safe: ran the exact documented `maturin build` command locally,
+confirmed maturin's own log line `"Using build options features from pyproject.toml"` (proof it
+picked up the new config rather than silently building without the feature), then `pip
+install`ed the resulting wheel and imported it in a real Python interpreter --
+`compute_appraisal`, `AppraisalVector`, `PadState`, and the rest of the expected surface all
+present and callable. Followed by a full Python suite re-run (1,462/1,462) against the
+freshly-reinstalled extension, since the local dev venv's previously-installed wheel turned out
+to be a stale `2.0.0` build (unrelated to this fix, just an incidental finding from doing the
+reinstall) and a version jump to `7.0.0` was worth confirming didn't surface any behavioral
+drift.
+
+**Cleanup.** The now-unnecessary split invocation and its explanatory comment were removed from
+`macos-ci.yml` and `ci.yml` (back to a single `cargo test --workspace` line each, the
+`continue-on-error` on the Linux job left untouched -- that guards an unrelated, still-open
+x86_64/arm64 whisper-rs-sys concern, not this issue), `docs/BRINGING_IT_TO_LIFE.md`'s documented
+verification command updated to match, and `CLAUDE.md`'s Rust commands block gained an explicit
+`cargo test --workspace` line now that it is a real, working, single command worth documenting.
+
+**NOT done:** CI itself has not been re-run against these changes (no push yet -- this was
+verified entirely locally plus a local `maturin build`, per the existing branch/PR-per-phase
+workflow already in effect on `fix/phase1-pipeline-defects`). home-gpu's own Rust toolchain and
+installed `cognitive_rust` wheel have not been touched by this change; this fix does not change
+the wheel's binary output, so no home-gpu action was judged necessary, but that judgment has not
+been verified live.
+
+## 2026-09-01 -- Installed cognitive_rust on home-gpu (was never installed there)
+
+Follow-up to the `cargo test --workspace` fix, at the user's direct request ("install in home
+gpu"). Checking `cargo test --workspace`'s success there surfaced that `cognitive_rust` -- the
+PyO3 acceleration module for ACT-R scoring, PAD updates, fatigue decay, and personalized
+PageRank -- was not installed in home-gpu's venv at all, on a completely separate axis from the
+Cargo.toml/pyproject.toml fix (source code correctness vs. a deployment artifact never having
+been built for this host). Confirmed this was not silently breaking anything: `agent_state.py`,
+`memory_store.py`, and `cognitive/appraisal.py` all import it inside `try/except`, falling back
+to an equivalent pure-Python path (`appraisal_matches_python_heuristic_defaults` and
+`pad_update_preserves_current_python_formula` in `cognitive-rust`'s own test suite exist
+specifically to keep the two paths provably identical) -- only `surfacing_agent.py` imports it
+unconditionally at module level, and that agent is not among the four running systemd services.
+
+**Action:** installed `maturin` in home-gpu's venv (not previously present), built the wheel on
+the box itself rather than transferring the Mac-built one -- different architecture entirely
+(x86_64 Linux, Python 3.12.3, vs. the Mac's arm64/3.13) -- confirmed maturin's own log line
+again showed `"Using build options features from pyproject.toml"`, `pip install`ed the
+resulting `cognitive_rust-7.0.0-cp39-abi3-manylinux_2_34_x86_64.whl`, and verified it imports
+with the full expected API surface. Restarted `ai-friend-agents` (the service that actually
+imports it, via `brain_agent`'s cognitive core) to activate the now-available accelerated path
+instead of the dormant fallback, and sent a real turn through afterward to confirm no import or
+runtime errors -- MAUT decision logged normally, clean.
+
+**NOT done:** did not investigate why this was never installed on home-gpu in the first place
+(a historical gap, not something this session's changes caused) or whether any other agent
+process might benefit from having it available. `surfacing_agent`'s unconditional import was
+noted but not addressed, since that agent is not currently deployed on this box.
+
+## 2026-09-01 -- Addressed every automated review comment on PR #209
+
+PR #209 (Phase 1: the five voice pipeline defects) drew review from Copilot, Codex, and
+CodeRabbit -- 14 comments total across the three, several flagging the same underlying defect
+independently. All were investigated against current code (not taken on faith) and fixed;
+none were found stale or already-addressed.
+
+**Whisper hallucination denylist dropped a real word (Copilot x2, Codex, CodeRabbit -- four
+independent flags on the same line).** `KNOWN_HALLUCINATION_PHRASES`
+(`backend/crates/stt-agent/src/whisper.rs`) included the bare word `"you"`, and the suite's own
+`known_hallucination_phrases_are_rejected...` test asserted `is_known_hallucination("  you  ")`
+-- i.e. the test encoded the defect. A one-word reply of "you" ("who's there?" / "you") is
+ordinary conversational speech, not a hallucination; `run_final_job` silently drops any exact
+denylist match before it ever reaches `chat.input`. Removed the entry, removed the assertion
+that pinned it, and added `a_bare_you_is_a_legitimate_reply_not_a_hallucination` asserting the
+opposite.
+
+**`generation_start_time` checked via truthiness (Copilot).**
+`conversational_runtime.py`'s `send_filler` used `if generation_start_time:` on a `float |
+None` parameter, so a legitimate epoch value of exactly `0.0` would be treated the same as
+unset and skip the elapsed-time adjustment. Changed to `is not None`. New test
+(`test_generation_start_time_of_exactly_zero_is_not_treated_as_unset`) distinguishes the two
+sleep durations this produces (floored ~10ms vs. the full threshold) with a window strictly
+between them.
+
+**Docker's own wheel build silently dropped the extension-module feature (Codex, P1).**
+`backend/Dockerfile`'s `rust-wheel-builder` stage copies `Cargo.toml`/`Cargo.lock`/`crates/`
+into the builder but never `pyproject.toml` -- so the `[tool.maturin] features =
+["extension-module"]` table added in the prior cargo-test fix (see the entry above) was never
+read inside that container, silently reverting the produced wheel to a libpython-linked
+artifact that can fail to import in the runtime image. `pyproject.toml` was the one file that
+fix's own reasoning depended on maturin finding in the invoking cwd, and this build stage never
+gave it one. Fixed by copying `pyproject.toml` alongside the other manifest files. Not
+independently verified with a real `docker build` (no daemon exercised this session) -- the fix
+is a one-line copy whose correctness follows directly from the already-verified "maturin reads
+pyproject.toml from cwd regardless of --manifest-path" behavior, but this remains unverified
+against the actual image.
+
+**Backlog telemetry never fell back down after draining (Codex P2 + CodeRabbit).**
+`transport_agent.py` published `AudioPlaybackBacklog` only from the enqueue side
+(`_on_nats_audio`). If a report reached the brain at a high depth and the queue then fully
+drained during silence -- no new PCM arriving to trigger another enqueue-side publish --
+`last_playback_backlog` on the brain side stayed stuck high indefinitely, suppressing the next
+turn's filler for no live reason. Extracted the throttled publish into
+`_maybe_publish_playback_backlog()` and call it from both the enqueue site and the drain site
+(`_audio_playback_worker`, after `task_done`), so an emptied queue eventually reports its own
+zero. New test drains a single frame with the throttle window forced open and asserts exactly
+one post-drain publish with `queue_depth == 0`.
+
+**The same staleness, one level up: `send_filler`'s backlog argument was a snapshot, not a live
+read (CodeRabbit).** `brain_agent.py` passed `playback_backlog=self.last_playback_backlog` --
+evaluated once at the call site, well before `send_filler`'s own up-to-`VOICE_FILLER_THRESHOLD`
+wait. A queue that grew past the limit during that wait was still judged against the
+already-captured value. Changed `ConversationalRuntime.monitor_stream_and_fill`'s
+`playback_backlog` parameter to accept `int | Callable[[], int]`, resolved right before the
+suppression check; the call site now passes `lambda: self.last_playback_backlog`. Regression
+test uses two timers on one event loop (a 20ms mutation vs. the 50ms threshold) rather than a
+real-time race at a floored value, per this repo's own established caution about flaky timing
+tests -- confirmed by mutation: reverting to resolve-before-sleep correctly fails the new test.
+
+**A delayed sub-word continuation could lose its glue point to the flush timer (Codex P2 +
+CodeRabbit).** `_stream_to_speech`'s continuation-merge check ran *after* the timer-flush
+check. If `formation_buffer_s` had already elapsed and the buffer held >= 3 words, the timer
+published and cleared `current_chunk_words` first, leaving nothing for a same-tick continuation
+to glue onto -- e.g. a delayed `"iket"` arriving after buffered `"Hi I am An"` was synthesized
+as its own word instead of completing `"Aniket"`. Reordered the glue check to run before the
+timer check (the timer then naturally sees the already-completed word). New test
+(`test_delayed_continuation_is_glued_even_after_the_timer_would_have_flushed`) drives a real
+stall past the formation buffer before the continuation arrives; mutation-confirmed by
+reverting the ordering.
+
+**Onset-grace suppression only silenced the stop publish, not the turn itself
+(CodeRabbit).** `_on_chat_input`'s barge-in onset-grace check
+(`within_onset_grace and not speculative_intent_pending`) gated only the `audio.stop` publish.
+A transcript in exactly that state -- the grace comment's own words, "far more likely onset
+noise" -- still fell through unconditionally to `_replace_active_generation`, cancelling
+whatever the agent was doing and generating a fresh reply to noise while the prior audio kept
+playing. Added an `elif` that drops the message entirely in that case; a companion test
+confirms a transcript WITH corroborating speculative intent still reaches
+`_process_chat_input_flow` -- the grace period must not swallow an already-confirmed
+interruption, only uncorroborated noise.
+
+**Reverb's `reset()` cleared the delay line but not the pending odd byte (CodeRabbit).**
+`ReverbFilter::reset()` (`voice-agent/src/main.rs`) zeroed `buffer` and `index` but left
+`pending_byte` untouched, so a trailing odd byte from one utterance's PCM could combine with
+the very first byte of a later, unrelated utterance -- the sibling `OlaCrossfadeFilter`'s own
+`clear_history()` already got this right. Added the missing clear. New test processes an
+odd-length input to leave a pending byte, resets, then processes a silent 2-byte input and
+asserts the output is genuinely silent (not shifted by the leaked byte); mutation-confirmed.
+
+**`hesitation_pcm` mis-classified a validation rejection as an outage (CodeRabbit).** The
+per-chunk main synthesis call site already distinguishes `SynthesisRejected` (GPT-SoVITS's
+deterministic "Please enter valid text." 400) from a real failure and skips
+`circuit_breaker.record_failure` for it, but `hesitation_pcm`'s own catch-all `Err(e)` arm
+never got the same treatment -- a rejected filler could open the breaker even with a perfectly
+healthy engine. Added the matching arm, mirroring the main call site exactly. New test
+(`hesitation_pcm_rejection_falls_back_to_silence_without_opening_the_breaker`) asserts silence,
+an untouched breaker, and exactly one request (no retry); mutation-confirmed.
+
+**Doc drift: README's filler example named a filler the runtime cannot emit (CodeRabbit).**
+`FILLERS = ["hmm", "let's see", "well", "ah", "right"]` has never included `"um"`; the README
+line describing speculative fillers still did. Swapped to `"let's see"`.
+
+**Verification.** Full backend suite: 1,468/1,468 (JUnit XML, not the terminal summary, per
+this repo's own documented unreliability). `ruff check .`: clean. `cargo test --workspace`:
+149/149 (11 cognitive-rust + 6 contracts + 70 stt-agent + 62 voice-agent). `cargo clippy
+--workspace --all-targets`: only pre-existing warnings on lines this session did not touch (
+`chunks_exact` style suggestions, one `manual_range_contains`, two `assertions_on_constants`)
+-- zero new warnings introduced. Every new/changed test in this entry was mutation-tested by
+reverting its fix and confirming the test fails, then restoring via `cp` from a scratch backup.
+
+**NOT done:** the Dockerfile fix was not verified with an actual `docker build` (see above).
+None of these fixes have been pushed or re-reviewed by the bots yet -- this entry covers the
+local fix-and-verify pass only.

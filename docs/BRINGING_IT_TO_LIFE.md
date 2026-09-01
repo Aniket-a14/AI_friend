@@ -424,7 +424,7 @@ And the repo's own bar, before you consider any change done:
 cd backend
 ../.venv/bin/python -m pytest -q --junit-xml=/tmp/res.xml   # parse the XML
 ../.venv/bin/python -m ruff check .
-cargo check --workspace && cargo test --package stt-agent --package voice-agent --package contracts
+cargo check --workspace && cargo test --workspace
 ```
 
 **Parse the XML.** Pytest's terminal summary is unreliable in this repo — the final

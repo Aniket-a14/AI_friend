@@ -12,6 +12,7 @@ from ..cognitive import CognitiveService
 from ..cognitive.somatic import SomaticAppraiser
 from ..config import Config
 from ..contracts import (
+    AudioPlaybackBacklog,
     AudioPlaybackProgress,
     AudioStop,
     ChatInput,
@@ -93,7 +94,7 @@ class BrainAgent(BaseAgent):
 
         # AI Friend Segmentation Config
         self.coordinator = SpeechCoordinator(
-            segmenter=HybridSegmenter(target_size=7), formation_buffer_ms=0.030
+            segmenter=HybridSegmenter(target_size=7), formation_buffer_s=0.300
         )
         self.conversational_runtime = ConversationalRuntime(publish_cb=self.publish)
         self._active_generation_task: asyncio.Task[Any] | None = None
@@ -101,6 +102,17 @@ class BrainAgent(BaseAgent):
         self.last_audio_progress: AudioPlaybackProgress | None = None
         self.last_assistant_response: str | None = None
         self._active_response_turn_id: str | None = None
+        # Bucket 1 (VOICE_REMEDIATION_PLAN.md): stamped on the first playback
+        # progress frame of each turn (see _on_audio_playback_progress) and
+        # read by _on_chat_input's barge-in grace period below.
+        self._last_audio_onset_at: float | None = None
+        # Bucket 3 (VOICE_REMEDIATION_PLAN.md): last depth transport_agent
+        # reported for its outbound PCM queue (see AudioPlaybackBacklog),
+        # read by ConversationalRuntime to suppress a new filler while a
+        # previous turn's audio is still draining. Starts at 0 (no known
+        # backlog) rather than None so a cold start doesn't need a null check
+        # on the hot filler-decision path.
+        self.last_playback_backlog: int = 0
         # P2-14/M1-A14: `last_audio_progress` and `last_assistant_response`
         # are written from three independent NATS subscription tasks --
         # chat.input's turn flow, audio.playback.progress's tracker, and
@@ -169,6 +181,12 @@ class BrainAgent(BaseAgent):
             self._on_audio_stop,
             durable=f"{self.name}_audio_stop_live",
             deliver_policy="new",
+        )
+        await self.subscribe(
+            Topics.AUDIO_PLAYBACK_BACKLOG,
+            self._on_playback_backlog,
+            durable=f"{self.name}_audio_playback_backlog_live",
+            deliver_policy="last",
         )
         # Note: system.tick proactive engagement is now handled by SubconsciousAgent
 
@@ -381,8 +399,45 @@ class BrainAgent(BaseAgent):
             logger.exception("Unexpected error processing chat.input")
             return
 
-        # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio
-        if not is_subconscious:
+        # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio.
+        #
+        # Bucket 1 (VOICE_REMEDIATION_PLAN.md): this used to fire unconditionally, on every
+        # chat.input, with no gate at all -- bypassing decision.py's
+        # `is_speculative_stop_confirmed`, the arbiter `_resolve_turn_conflict`
+        # (pipeline.py) already calls moments later on this same final text. Measured
+        # directly in a live session (2026-09-01): on "Let's stop it.", the arbiter
+        # correctly REJECTED the interruption ("contradicts early perception"), but this
+        # unconditional publish had already cut playback half a second earlier regardless.
+        #
+        # The fix is not to duplicate the arbiter's keyword logic here -- that logic is
+        # specifically for confirming an explicit command (stop/wait/hold/...), not for
+        # deciding whether a new, keyword-free user turn should mute old audio, which is
+        # this publish's actual job and must keep working unconditionally. The real defect
+        # is only the double-fire: when STT's speculative duck already flagged this
+        # utterance as command-like (`last_speculative_intent` is set), the pipeline's own
+        # Stage 2 conflict resolution is about to run the arbiter on this exact text and
+        # will itself publish audio.stop (confirmed) or audio.resume (rejected) --
+        # skipping the immediate stop here defers entirely to that already-correct,
+        # already-gated decision instead of racing ahead of it. Audio is already ducked
+        # (not silenced) from the speculative signal, so nothing is lost by waiting the
+        # extra tens of milliseconds for the real verdict.
+        speculative_intent_pending = bool(
+            self.cognitive_core.state.last_speculative_intent
+        )
+        # Bucket 1: a barge-in grace period right after the agent's own audio
+        # actually starts playing. STT's own pipeline (250ms min_speech_ms +
+        # 700ms endpoint silence, per config.py) means a genuine human
+        # utterance cannot produce a *final* chat.input this soon after
+        # onset -- the audit's own human-baseline research (Appendix A.1)
+        # puts real reaction time at >200ms, and that clock does not even
+        # start until the listener has heard enough to react to. What
+        # arrives this fast is far more likely to be onset noise: a click,
+        # pop, or brief echo tail before echoCancellation has settled.
+        within_onset_grace = (
+            self._last_audio_onset_at is not None
+            and (time.time() - self._last_audio_onset_at) < Config.BARGE_IN_ONSET_GRACE_S
+        )
+        if not is_subconscious and not speculative_intent_pending and not within_onset_grace:
             stop_msg = AudioStop(
                 interrupt=True,
                 speculative=False,
@@ -392,6 +447,23 @@ class BrainAgent(BaseAgent):
                 utterance_id=msg.utterance_id,
             )
             await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
+        elif not is_subconscious and within_onset_grace and not speculative_intent_pending:
+            # Reviewer finding: this transcript is exactly the case the onset
+            # grace comment above describes as most likely onset noise (a
+            # click, pop, or echo tail), not real speech -- STT's own
+            # speculative pipeline did not flag it as command-like either.
+            # Suppressing only the audio.stop above still let this fall
+            # through to _replace_active_generation, cancelling whatever the
+            # agent was already doing and generating a brand-new reply to
+            # noise while its prior audio kept playing. Treat it the same as
+            # the stop we just skipped: drop it entirely rather than starting
+            # a new turn.
+            logger.debug(
+                "Dropping chat.input within barge-in onset grace with no "
+                "speculative intent (likely onset noise): %r",
+                msg.text,
+            )
+            return
 
         # Atomically replace the active generation task to prevent concurrent
         # chat inputs from both creating tasks and losing ownership.
@@ -462,7 +534,6 @@ class BrainAgent(BaseAgent):
     async def _process_chat_input_flow(
         self, chat_input: ChatInput, is_subconscious: bool, message: dict[str, Any]
     ):
-        flow_start_time = time.time()
         user_text = chat_input.text
         turn_id = chat_input.turn_id or chat_input.utterance_id or str(uuid.uuid4())
         metadata, latency_metadata = self._resolve_chat_input_metadata(
@@ -479,6 +550,17 @@ class BrainAgent(BaseAgent):
         # Pacing Conversational Turn: calculate silence duration and pause
         state_snap = self.cognitive_core.state.get_context_snapshot()
         await self._apply_conversational_pacing(metadata, state_snap)
+
+        # Bucket 3 (VOICE_REMEDIATION_PLAN.md): stamped *after* the pacing
+        # sleep, not before. A live capture (2026-09-01) showed the filler's
+        # elapsed-time check used to start its clock before this deliberate
+        # 300-900ms silence (`calculate_pacing_parameters`), so the filler's
+        # budget was already exhausted before generation even began -- e.g. a
+        # 496ms pacing sleep alone blew a 250ms threshold, and the fired-filler
+        # log line always landed within ~15ms of the pacing sleep ending, never
+        # any later. Measuring from here instead means the threshold reflects
+        # actual generation latency, the thing it was meant to mask.
+        generation_start_time = time.time()
 
         # Only update human interaction tracking if it's an actual user message
         if not is_subconscious:
@@ -532,7 +614,13 @@ class BrainAgent(BaseAgent):
             is_proactive=is_subconscious,
             incoming_metadata=metadata,
             incoming_latency_metadata=latency_metadata,
-            flow_start_time=flow_start_time,
+            generation_start_time=generation_start_time,
+            # A live provider, not a snapshot: `last_playback_backlog` can
+            # change during send_filler's own wait (see the reviewer finding
+            # on ConversationalRuntime.monitor_stream_and_fill), and this
+            # attribute is exactly the kind of thing that changes underneath
+            # a long sleep here.
+            playback_backlog=lambda: self.last_playback_backlog,
         )
 
         if not is_subconscious:
@@ -573,11 +661,26 @@ class BrainAgent(BaseAgent):
                     )
                     return
                 self.last_audio_progress = progress
+                if progress.word_index == 0 and progress.character_offset == 0:
+                    # Bucket 1: the first frame of a new utterance actually
+                    # starting to play, not just being queued -- the moment
+                    # _on_chat_input's grace period below measures from.
+                    self._last_audio_onset_at = time.time()
             logger.debug(
                 f"🔊 Audio Playback Progress | Word Index: {progress.word_index} | Offset: {progress.character_offset} | Completed: {progress.completed}"
             )
         except Exception as e:
             logger.error(f"Error parsing audio playback progress: {e}")
+
+    async def _on_playback_backlog(self, data: dict[str, Any]):
+        """Bucket 3 (VOICE_REMEDIATION_PLAN.md): tracks transport_agent's
+        outbound PCM queue depth so a new turn's filler can be suppressed
+        while a previous turn's audio is still draining."""
+        try:
+            backlog = AudioPlaybackBacklog.model_validate(data)
+            self.last_playback_backlog = backlog.queue_depth
+        except Exception as e:
+            logger.error(f"Error parsing audio playback backlog: {e}")
 
     async def _on_audio_stop(self, data: dict[str, Any]):
         """Handles confirmed audio stops: cancels in-flight generation for the
@@ -751,6 +854,21 @@ class BrainAgent(BaseAgent):
         async def _handle_content_output(chunk_text: str) -> None:
             nonlocal full_response, current_chunk_words, segment_started_at
             await self.set_state("speaking")
+            # Bucket 5 follow-up (VOICE_REMEDIATION_PLAN.md): a live capture
+            # showed "Aniket" arriving as three separate stream fragments
+            # ("An", "ik", "et") with no space between them -- Ollama's raw
+            # token stream can emit a continuation sub-word with no leading
+            # space of its own, and chunk_text.split() below has no way to
+            # know that unless checked here first. Computed before the
+            # append, since this is exactly the boundary a missing space
+            # would sit at: neither this chunk's first character nor the
+            # text-so-far's last character is whitespace.
+            boundary_missing_space = bool(
+                chunk_text
+                and not chunk_text[0].isspace()
+                and full_response
+                and not full_response[-1].isspace()
+            )
             full_response += chunk_text
             if not is_proactive:
                 # P2-14/M1-A14: this fires once per streamed chunk, so
@@ -760,19 +878,45 @@ class BrainAgent(BaseAgent):
                 async with self._turn_state_lock:
                     self.last_assistant_response = full_response
 
+            # Reviewer finding: this glue step used to run *after* the
+            # timer-flush check below. If formation_buffer_s had already
+            # elapsed and the buffer held >= 3 words, the timer published
+            # and cleared current_chunk_words first -- leaving nothing here
+            # to glue this continuation onto, so e.g. a delayed "iket"
+            # arriving after buffered "Hi I am An" got synthesized as its
+            # own separate word instead of completing "Aniket". Running the
+            # merge before the timer check means the buffer the timer later
+            # sees already has the complete word in it.
+            words = chunk_text.split()
+            if boundary_missing_space and current_chunk_words and words:
+                # The buffer still holds the word this fragment continues --
+                # glue rather than let .split() invent a word-break that was
+                # never in the original text.
+                current_chunk_words[-1] += words[0]
+                words = words[1:]
+                # The merge may have added punctuation this fragment
+                # carried (e.g. "Anik" + "et," -> "Aniket,") that changes
+                # whether this word is now a split point.
+                score = self.coordinator.segmenter.score_split_point(
+                    current_chunk_words[-1], len(current_chunk_words)
+                )
+                if score >= 0.7 or len(current_chunk_words) > 12:
+                    await _publish_tracked(current_chunk_words, full_response)
+                    current_chunk_words = []
+                    segment_started_at = None
+
             now_monotonic = time.perf_counter()
             if (
                 current_chunk_words
                 and segment_started_at is not None
                 and (now_monotonic - segment_started_at)
-                >= self.coordinator.formation_buffer_ms
+                >= self.coordinator.formation_buffer_s
                 and len(current_chunk_words) >= 3
             ):
                 await _publish_tracked(current_chunk_words, full_response)
                 current_chunk_words = []
                 segment_started_at = None
 
-            words = chunk_text.split()
             for word in words:
                 if not current_chunk_words:
                     segment_started_at = time.perf_counter()
@@ -781,7 +925,12 @@ class BrainAgent(BaseAgent):
                 score = self.coordinator.segmenter.score_split_point(
                     word, len(current_chunk_words)
                 )
-                if score > 0.7 or len(current_chunk_words) > 12:
+                # Bucket 5 (VOICE_REMEDIATION_PLAN.md): comma/colon/semicolon
+                # (0.4) plus the length-pressure term at or past target_size
+                # (0.3) sums to exactly 0.7, which a strict `>` can never
+                # satisfy -- the single most natural prosodic boundary
+                # (Goldman-Eisler juncture) could never fire on its own.
+                if score >= 0.7 or len(current_chunk_words) > 12:
                     await _publish_tracked(current_chunk_words, full_response)
                     current_chunk_words = []
                     segment_started_at = None

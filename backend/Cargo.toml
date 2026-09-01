@@ -22,7 +22,15 @@ futures-util = "0.3"
 # WAV file reading for stt-agent's offline (--transcribe-file) mode -- Phase
 # 2.3 voice enrollment needs a transcript without the full mesh running.
 hound = "3.5"
-pyo3 = { version = "0.28.3", features = ["extension-module", "abi3-py39"] }
+# "extension-module" is deliberately NOT enabled here -- pyo3's own guidance
+# is that this feature must not be on for `cargo test`/`cargo check`, since
+# it skips linking against libpython on the assumption the binary will be
+# loaded *into* an already-running Python process (true for the real .so,
+# never true for a standalone test binary). cognitive-rust opts into it
+# itself (see its Cargo.toml) only for the real extension-module build,
+# which `maturin` requests via backend/pyproject.toml's [tool.maturin]
+# `features`, not via this shared default.
+pyo3 = { version = "0.28.3", features = ["abi3-py39"] }
 regex = "1.12"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 rubato = "0.16"

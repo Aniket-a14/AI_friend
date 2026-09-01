@@ -109,14 +109,11 @@ jobs:
       #
       # So this lands observing rather than enforcing, per the rollback note
       # this roadmap uses for P1-8. Drop `continue-on-error` once a few runs
-      # have shown it green. Split into two invocations for the same reason as
-      # macos-ci.yml: a single `cargo test --workspace` breaks cognitive-rust's
-      # PyO3 extension-module link step through feature unification.
+      # have shown it green.
       continue-on-error: true
       run: |
         cd backend
-        cargo test --package stt-agent --package voice-agent --package contracts
-        cargo test --package cognitive-rust --lib
+        cargo test --workspace
     - name: Build cognitive-rust extension
       run: |
         cd backend

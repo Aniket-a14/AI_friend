@@ -374,6 +374,31 @@ async def test_on_nats_audio_queues_none_offsets_when_metadata_lacks_them():
     assert word_index is None
 
 
+@pytest.mark.asyncio
+async def test_on_nats_audio_overflow_drops_the_newest_frame_not_the_oldest():
+    """Bucket 2 (VOICE_REMEDIATION_PLAN.md): synthesised speech is a fixed artifact
+    that must arrive intact, unlike a live stream where freshness beats completeness.
+    The old policy evicted the oldest queued frame and spliced the new one in behind
+    it -- a hard discontinuity between non-adjacent PCM segments, reported live as
+    "grainy" / "can't understand it." Dropping the new frame instead keeps everything
+    already queued in its original order.
+    """
+    agent = _transport_agent()
+    agent.audio_queue = asyncio.Queue(maxsize=2)  # constructor floors below 32; override
+
+    await agent._on_nats_audio(b"first", metadata={"turn_id": "turn-1"})
+    await agent._on_nats_audio(b"second", metadata={"turn_id": "turn-1"})
+    await agent._on_nats_audio(b"third", metadata={"turn_id": "turn-1"})  # overflows
+
+    assert agent.audio_queue.qsize() == 2
+    remaining = []
+    while not agent.audio_queue.empty():
+        pcm_data, *_ = agent.audio_queue.get_nowait()
+        remaining.append(pcm_data)
+    assert remaining == [b"first", b"second"]
+    assert agent.dropped_audio_frames == 1
+
+
 # --------------------------------------------------------------------------
 # End-to-end: draining a frame with offsets triggers exactly one publish
 # --------------------------------------------------------------------------
@@ -399,4 +424,123 @@ async def test_audio_playback_worker_publishes_progress_after_capture_frame():
             await worker
 
     agent.audio_source.capture_frame.assert_awaited_once()
-    agent.spawn.assert_called_once()
+    # Two spawned publishes: `_on_nats_audio` firing Bucket 3's playback
+    # backlog telemetry as it enqueues the frame, and the playback worker
+    # firing playback-progress after `capture_frame` (the original P4-2
+    # behaviour this test was written for).
+    assert agent.spawn.call_count == 2
+
+
+# --------------------------------------------------------------------------
+# Bucket 3 (VOICE_REMEDIATION_PLAN.md): playback backlog telemetry
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_on_nats_audio_publishes_playback_backlog_telemetry():
+    """ConversationalRuntime needs transport_agent's outbound queue depth to
+    suppress a new filler while a previous turn's audio is still draining
+    (VOICE_FILLER_MAX_PLAYBACK_BACKLOG) -- this config existed but was wired
+    nowhere in the codebase before this bucket, so the signal never reached
+    anything that could act on it."""
+    agent = _transport_agent()
+
+    with patch("app.agents.transport_agent.AudioPlaybackBacklog") as mock_model:
+        instance = MagicMock()
+        instance.model_dump.return_value = {"fake": "backlog"}
+        mock_model.return_value = instance
+
+        await agent._on_nats_audio(b"\x00\x00" * 4, metadata={"turn_id": "turn-1"})
+
+    mock_model.assert_called_once_with(
+        queue_depth=1, capacity=agent.audio_queue.maxsize
+    )
+    agent.publish.assert_called_once()
+    topic, payload = agent.publish.call_args.args
+    assert topic == Topics.AUDIO_PLAYBACK_BACKLOG
+    assert payload == {"fake": "backlog"}
+
+
+@pytest.mark.asyncio
+async def test_on_nats_audio_throttles_backlog_telemetry_publishes():
+    """This fires on every PCM frame -- as often as every ~20ms of audio.
+    Publishing backlog telemetry at that rate would flood NATS for no
+    benefit: VOICE_FILLER_MIN_INTERVAL_SECONDS's 1.5s floor means nothing
+    downstream needs data fresher than the throttle interval already gives."""
+    agent = _transport_agent()
+
+    await agent._on_nats_audio(b"\x00\x00" * 4, metadata={"turn_id": "turn-1"})
+    await agent._on_nats_audio(b"\x00\x00" * 4, metadata={"turn_id": "turn-1"})
+
+    assert agent.publish.call_count == 1
+
+    # Simulate the throttle window having elapsed since the last publish.
+    agent._last_backlog_publish_at = 0.0
+    await agent._on_nats_audio(b"\x00\x00" * 4, metadata={"turn_id": "turn-1"})
+
+    assert agent.publish.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_audio_playback_worker_publishes_backlog_telemetry_after_drain():
+    """Reviewer finding: backlog telemetry used to publish only from the
+    enqueue side (`_on_nats_audio`), never from the drain side. If a report
+    reached the brain at a high depth and the queue then fully emptied
+    during silence -- no new PCM arriving to trigger another enqueue-side
+    publish -- `last_playback_backlog` on the brain stayed stuck high
+    indefinitely, suppressing the next turn's filler for no live reason.
+    Publishing from the drain side too means an emptied queue eventually
+    reports its own zero depth."""
+    agent = _transport_agent()
+    agent.audio_source = MagicMock()
+    agent.audio_source.capture_frame = AsyncMock()
+
+    await agent._on_nats_audio(b"\x00\x00" * 320, metadata={"turn_id": "turn-1"})
+    # Open the throttle window so the drain-side publish under test isn't
+    # swallowed by the enqueue-side publish that just fired microseconds
+    # earlier in the same call.
+    agent._last_backlog_publish_at = 0.0
+    agent.publish.reset_mock()
+
+    worker = asyncio.ensure_future(agent._audio_playback_worker())
+    try:
+        await asyncio.wait_for(agent.audio_queue.join(), timeout=2.0)
+    finally:
+        worker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await worker
+
+    backlog_calls = [
+        call
+        for call in agent.publish.call_args_list
+        if call.args and call.args[0] == Topics.AUDIO_PLAYBACK_BACKLOG
+    ]
+    assert len(backlog_calls) == 1
+    assert backlog_calls[0].args[1]["queue_depth"] == 0
+
+
+@pytest.mark.asyncio
+async def test_on_playback_backlog_records_the_reported_queue_depth(
+    mock_llm_service, mock_graph_db, mock_memory_store
+):
+    """The consumer side of the same bucket: ConversationalRuntime reads
+    `last_playback_backlog` off the agent, not off the raw NATS message, so
+    this is what actually has to be right."""
+    agent = _agent(mock_llm_service, mock_graph_db, mock_memory_store)
+    assert agent.last_playback_backlog == 0  # cold-start default
+
+    await agent._on_playback_backlog({"queue_depth": 7, "capacity": 256})
+
+    assert agent.last_playback_backlog == 7
+
+
+@pytest.mark.asyncio
+async def test_on_playback_backlog_ignores_a_malformed_message(
+    mock_llm_service, mock_graph_db, mock_memory_store
+):
+    agent = _agent(mock_llm_service, mock_graph_db, mock_memory_store)
+    agent.last_playback_backlog = 3
+
+    await agent._on_playback_backlog({"capacity": 256})  # missing queue_depth
+
+    assert agent.last_playback_backlog == 3  # unchanged, not reset to a default
