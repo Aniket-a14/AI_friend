@@ -159,6 +159,11 @@ class BrainAgent(BaseAgent):
             deliver_policy="last",
         )
         await self.subscribe(
+            Topics.VISION_FACIAL_REFLEX,
+            self._on_facial_reflex,
+            deliver_policy="last",
+        )
+        await self.subscribe(
             Topics.VOICE_SEGMENTATION_FEEDBACK,
             self._on_voice_feedback,
             durable=f"{self.name}_voice_segmentation_feedback_live",
@@ -232,6 +237,22 @@ class BrainAgent(BaseAgent):
         self.last_user_distance = float(distance) if distance is not None else 1.0
 
         await self._appraise_somatic(description)
+
+    async def _on_facial_reflex(self, data: dict[str, Any]):
+        """Bucket 13 (voice remediation Phase 3): a `FacialReflexEvent` from
+        the CPU-only reflex channel -- see `app/vision/reflex.py` for how a
+        raw blendshape frame becomes one of these. Applied directly to
+        affect, unlike `_on_vision_description`'s path through
+        `SomaticAppraiser`: there is no scene content to match against
+        learned vocabulary here, only an already-scored expression onset.
+        Failures are contained the same way `_appraise_somatic` contains
+        them -- a dropped reflex signal should never take down the mesh
+        subscriber.
+        """
+        try:
+            await self.cognitive_core.state.apply_facial_reflex(data)
+        except Exception:
+            logger.exception("[Brain] Facial reflex appraisal failed; ignored.")
 
     async def _appraise_somatic(self, description: str):
         """Turn a recognised comfort object into an endocrine response.

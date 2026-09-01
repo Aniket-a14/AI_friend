@@ -1240,6 +1240,74 @@ class StateService:
         )
         await self._persist_sensory_state_if_due()
 
+    async def apply_facial_reflex(self, reflex: dict[str, Any]):
+        """Continuous facial-expression affect (Bucket 13, voice remediation
+        Phase 3) -- the reflex-channel counterpart to `apply_somatic_perception`
+        above. That folds *recognised scene content* from a slow (5s),
+        turn-suspended VLM poll into affect; this folds *facial expression*,
+        sampled continuously including mid-turn, via
+        `app/vision/reflex.py::score_blendshapes` -- a smile or a flinch the
+        VLM path is architecturally too slow to ever see.
+
+        Deltas are *signed*, unlike `apply_somatic_perception`'s always-positive
+        spikes: a brow furrow genuinely pulls valence down, not up, and startle
+        raises arousal with no valence direction implied either way (see
+        `reflex.py`'s docstring for why guessing that direction would be worse
+        than not guessing).
+
+        Absence of a signal must never reach this method as an all-zero
+        reflex, for the same reason documented on `apply_sensory_perception`
+        and `apply_somatic_perception` above -- it would drag affect toward
+        neutral on every frame nothing happened, flattening the agent the
+        longer a face is simply calm. In practice `score_blendshapes` only
+        ever returns signals for a genuine threshold-crossing onset and this
+        method is only called once per returned signal, so the failure mode
+        is structurally avoided rather than merely checked for -- but the
+        check stays, matching the defensive posture of both methods above.
+        """
+        if not reflex:
+            return
+
+        valence_delta = reflex.get("valence_delta", 0.0)
+        arousal_delta = reflex.get("arousal_delta", 0.0)
+        try:
+            valence_delta = float(valence_delta)
+            arousal_delta = float(arousal_delta)
+        except (TypeError, ValueError):
+            logger.warning(
+                "[State] Ignoring facial reflex with non-numeric deltas: %r", reflex
+            )
+            return
+
+        if valence_delta == 0.0 and arousal_delta == 0.0:
+            return
+
+        dopamine_spike = reflex.get("dopamine_spike", 0.0)
+        try:
+            dopamine_spike = float(dopamine_spike)
+        except (TypeError, ValueError):
+            dopamine_spike = 0.0
+
+        async with self._state_lock:
+            before_valence = self.current_state.valence
+            self.current_state.valence = self.current_state.valence + valence_delta
+            self.current_state.arousal = self.current_state.arousal + arousal_delta
+            self._enforce_bounds()
+            # After bounds, so the burst is measured against the settled tonic --
+            # same ordering as apply_somatic_perception, same reason.
+            if dopamine_spike > 0.0:
+                self.current_state.release_dopamine(dopamine_spike)
+            after_valence = self.current_state.valence
+
+        logger.debug(
+            "[State] Facial reflex %r — valence %.3f → %.3f, arousal delta %+.3f.",
+            reflex.get("name", "?"),
+            before_valence,
+            after_valence,
+            arousal_delta,
+        )
+        await self._persist_sensory_state_if_due()
+
     async def release_cortisol(self, amount: float, *, reason: str = "") -> float:
         """Fire an acute stress response under the state lock.
 

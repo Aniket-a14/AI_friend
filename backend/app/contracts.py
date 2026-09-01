@@ -29,6 +29,7 @@ class Topics(str, Enum):
     VISION_CONTROL = "vision.control"
     VISION_FRAMES = "vision.frames"
     VISION_DESCRIPTION = "vision.description"
+    VISION_FACIAL_REFLEX = "vision.facial_reflex"
     AUDIO_PERCEPTION = "audio.perception"
     AUDIO_STOP = "audio.stop"
     AUDIO_RESUME = "audio.resume"
@@ -226,6 +227,32 @@ class VisionDescription(BaseModel):
     # predates this field (or genuinely can't tell) does not silently
     # suppress storage.
     is_novel: bool = True
+
+
+# ─── vision.facial_reflex ─────────────────────────────────────
+class FacialReflexEvent(BaseModel):
+    """Published on `vision.facial_reflex` by the CPU-only reflex channel
+    (Bucket 13, voice remediation Phase 3) -- the continuous counterpart to
+    `VisionDescription` above. That is a slow (VLM_APPRAISAL_INTERVAL, 5s),
+    suspended-during-the-turn semantic poll; this samples facial expression
+    continuously, including while the agent is speaking, and exists
+    specifically to catch what the slow poll architecturally cannot: a smile
+    or a flinch mid-sentence. See `app/vision/reflex.py::score_blendshapes`
+    for how a raw MediaPipe blendshape frame becomes one of these.
+
+    Deltas are signed and small by design -- this can fire many times in a
+    single conversation (once per refractory-gated expression onset), unlike
+    `VisionDescription`'s comfort-object recognition which is comparatively
+    rare, so each event's effect on affect must be a nudge, not a spike.
+    """
+
+    name: str  # e.g. "smile", "brow_furrow", "startle" -- see reflex.py
+    valence_delta: float = 0.0
+    arousal_delta: float = 0.0
+    dopamine_spike: float = 0.0
+    evidence: str = ""  # human-readable, e.g. "smile=0.87" -- for logs, not policy
+    timestamp: float = Field(default_factory=time.time)
+    source: str = "camera"
 
 
 # ─── state.update ────────────────────────────────────────────

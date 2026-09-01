@@ -95,6 +95,18 @@ ALLOWLIST: dict[str, str] = {
     "telemetry.reflection": "cognitive/core.py publishes duration_ms + episode count on background reflection; matches no declared stream pattern and has zero subscribers -- a strong candidate for promotion once P3-2 (telemetry) is built, not before",
     "state.subconscious": "subconscious_agent's internal-monologue thought, zero subscribers -- no consumer has a decided purpose yet (UI surface? persistence sink?); needs a product decision before it needs wiring",
     "voice.segmentation_feedback": "brain_agent subscribes with an adaptive alpha-damped tuning loop, but voice-agent's Rust source has no chunk-size/segmentation-reporting code at all to hook a publisher into -- real new Rust feature work, not a missing call",
+    # Bucket 13 (voice remediation Phase 3): brain_agent's subscriber
+    # (_on_facial_reflex, wired to StateService.apply_facial_reflex) and the
+    # scoring logic it consumes (app/vision/reflex.py::score_blendshapes)
+    # landed together, fully unit-tested. The publisher -- a live camera
+    # capture loop running MediaPipe Face Landmarker continuously and
+    # calling score_blendshapes per frame -- is deliberately not part of
+    # this change: it needs a live camera and a decision on where the
+    # physical camera actually lives in this deployment (this box? a
+    # separate device?) before it can be wired and verified, not guessed at.
+    # Remove this entry once app/vision/agent.py (or a sibling reflex-loop
+    # module) actually publishes on this subject.
+    "vision.facial_reflex": "subscriber + scoring logic built and tested; live capture-loop publisher deferred pending a camera-deployment decision",
 }
 
 PUBLISH_METHODS = {"publish", "publish_cb", "publish_with_headers", "publish_pcm"}
