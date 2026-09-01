@@ -58,6 +58,7 @@ not a character.
 import copy
 import json
 import logging
+import unicodedata
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
@@ -67,6 +68,64 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ..config import Config
 
 logger = logging.getLogger(__name__)
+
+# Bucket 7 (voice remediation Phase 3): corruption witnessed independently on
+# two live deployments (.agents/CONTEXT.md) -- the reflection model writing
+# CJK fragments into a persona authored entirely in English, and writing the
+# literal name of a language ("Hinglish") into speaking_style as if naming a
+# language were the same as describing how someone talks. Neither is a type
+# error (both are valid strings), so Pydantic's field validation never catches
+# either -- this is a content-level backstop for the one place adaptive
+# persona content is actually written (`learn_traits`, `evolve_persona`'s
+# speaking_style branch), not a language-identification model. It exists to
+# catch a weak reflection model degenerating into these two specific observed
+# failure shapes, not to validate or support arbitrary multilingual personas.
+_META_PLACEHOLDER_VALUES = frozenset(
+    {
+        "n/a",
+        "none",
+        "unknown",
+        "unspecified",
+        "tbd",
+        "re-evaluate",
+        "english",
+        "hindi",
+        "hinglish",
+        "chinese",
+        "spanish",
+        "french",
+        "japanese",
+        "korean",
+        "german",
+        "italian",
+        "portuguese",
+        "russian",
+        "arabic",
+    }
+)
+
+
+def is_plausible_persona_content(text: str) -> bool:
+    """Reject the two corruption shapes above: a bare language name standing
+    in for a real description, and a string that is mostly non-Latin script
+    landing in a persona authored (here) entirely in Latin script.
+
+    Not a complete defense -- no fixed heuristic can be, against a model that
+    can emit anything -- but it closes the two specific bypasses actually
+    observed in production, the same posture `OllamaClient`'s role-prefix
+    regex takes for a different corruption shape.
+    """
+    stripped = text.strip() if isinstance(text, str) else ""
+    if not stripped:
+        return False
+    if stripped.lower() in _META_PLACEHOLDER_VALUES:
+        return False
+
+    letters = [ch for ch in stripped if ch.isalpha()]
+    if not letters:
+        return False
+    non_latin = sum(1 for ch in letters if "LATIN" not in unicodedata.name(ch, ""))
+    return not non_latin / len(letters) > 0.3
 
 
 class Tier(str, Enum):
@@ -249,7 +308,11 @@ class PersonaProfile(BaseModel):
         """
         merged = list(self.adaptive_traits)
         for trait in new_traits or []:
-            if trait and trait not in merged:
+            if (
+                trait
+                and trait not in merged
+                and is_plausible_persona_content(trait)
+            ):
                 merged.append(trait)
         self.adaptive_traits = merged[-self.adaptive_trait_limit() :]
         return list(self.adaptive_traits)

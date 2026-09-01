@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..config import Config
-from ..persona import IMMUTABLE_CORE, PersonaProfile
+from ..persona import IMMUTABLE_CORE, PersonaProfile, is_plausible_persona_content
 from ..persona.authoring import AUTO_DISCOVER, authored_overrides, find_persona_file
 from ..state.identity_core_store import IdentityCoreStore
 
@@ -693,9 +693,22 @@ class IdentityManager:
             described = str(suggestions["speaking_style"])[
                 : PersonaProfile.MAX_STYLE_DESCRIPTION
             ]
-            style["style_description"] = described
-            self.persona.speaking_style = style
-            logger.info(f"[Identity] Adaptive style evolved: {described}")
+            # Bucket 7 (voice remediation Phase 3): truncation alone let two
+            # independently-observed corruption shapes through unchanged --
+            # CJK fragments and a bare language name ("Hinglish") standing in
+            # for an actual style description. Both are valid strings, so
+            # truncation never touched them. Reject rather than persist;
+            # keeping the previous value is safer than writing something the
+            # reflection model degenerated into.
+            if is_plausible_persona_content(described):
+                style["style_description"] = described
+                self.persona.speaking_style = style
+                logger.info(f"[Identity] Adaptive style evolved: {described}")
+            else:
+                logger.warning(
+                    "[Identity] Rejected implausible speaking_style "
+                    f"suggestion: {described!r}"
+                )
 
         if "new_traits" in suggestions:
             # The cap lives on the profile now, not restated here.
