@@ -433,12 +433,27 @@ VRAM, CPU, GPU, disk and storage growth for each.
 whether the humanoid is feasible on the hardware it is meant to live on, so it
 should probably come before the second audit.
 
-## 5.3 — Benchmark figures are still placeholders
+## 5.3 — Benchmark figures are corpus-specific, not deployment-general
 
-Documented benchmark results are **`[TBP]`** placeholders. `MOCK_LLM_TEXT=true`
-returns hardcoded strings fitted to a specific demo corpus. **No headline latency
-or Recall@K figure has been measured against real infrastructure.** State targets
-as targets until measured — this is a standing integrity constraint, not a to-do.
+Some documented benchmark results remain genuine **`[TBP]`** placeholders and
+must stay labeled that way until a real run backs them. `MOCK_LLM_TEXT=true`
+returns hardcoded strings fitted to a specific demo corpus and is never
+evidence.
+
+**Corrected 2026-09-01** (matching the same correction in `CLAUDE.md`'s
+Integrity constraints section): this used to claim flatly that no headline
+latency or Recall@K figure had been measured against real infrastructure.
+That is not true of every number in the repo — `_archive/research/hard_benchmark.py`'s
+Hermes 3 8B run (61.9 ms TTFT, 46.6 tok/s, real Colab GPU) and its Recall@K figures
+were independently recomputed from raw per-sample arrays and matched
+(`.agents/CONTEXT.md`, 2026-07-18). The still-standing constraint is narrower
+but just as real: those numbers came from that benchmark's own one-off
+corpus, and **production personas on `main` are authored per-deployment by
+design**, so there is no shared reference corpus to compute a fresh figure
+against for an arbitrary running instance. Treat a historical number as
+evidence about that specific run, never as a property of "the system" in
+general — state targets as targets until measured, and measured-but-corpus-
+specific results as exactly that.
 
 One number now exists that did not before: the eval recall gate was run against the
 Stage 6 retrieval rewrite on 2026-08-24 and found **no regression** (27/48 probes

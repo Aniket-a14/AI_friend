@@ -14302,3 +14302,278 @@ reverting its fix and confirming the test fails, then restoring via `cp` from a 
 **NOT done:** the Dockerfile fix was not verified with an actual `docker build` (see above).
 None of these fixes have been pushed or re-reviewed by the bots yet -- this entry covers the
 local fix-and-verify pass only.
+
+## 2026-09-01 -- Phase 2 Bucket 14: documentation drift, verified against current code section by section
+
+PR #209 (Phase 1) merged to `main`; this entry starts Phase 2 on a new branch
+(`phase2/docs-drift-and-voice-cloning`). `VOICE_REMEDIATION_PLAN.md`'s Bucket 14 names four
+drifts in `academic_benchmarks/documentation/algorithms_equations.md` plus a handful of
+secondary items. Every claimed drift was re-verified against current code before writing its
+correction, rather than trusted from the plan's own table -- which caught two of the plan's own
+premises being stale (see below), a direct instance of the audit's own methodological rule:
+verify against source before treating any spec statement as current behavior.
+
+**D2 (§2.3, endocrine hormones):** the doc described `cortisol`/`dopamine` as single tonic
+terms. Corrected to the real tonic+phasic split (`agent_state.py`): tonic is a pure function of
+current valence/arousal/fatigue and has no memory; a `release_cortisol`/`release_dopamine` call
+adds a phasic burst stored relative to the tonic floor, decaying with half-life 600s/90s
+respectively. Added the actual decay formula and the reasoning for why the split matters (tonic
+terms are perfectly anti-correlated by construction; only phasic lets the agent be stressed and
+rewarded at once) and why bursts are not persisted (a 90s/600s half-life value read back after
+a restart means nothing).
+
+**D4 (§5.2, memory cue boost):** the doc listed a hardcoded example cue vocabulary (*Kolkata,
+Bangalore, Priya, Rasgulla*, ...) and a flat `+1.2`/`+0.6` boost pair. Neither matches
+`memory_store.py`: cues come from the agent's own learned mental lexicon (`lexicon_store.py`),
+not a fixed list -- production personas are authored per-deployment with no shared vocabulary,
+so a fixed example set wouldn't even generalize across two installs. The real constant is
+`DIRECT_CUE_BOOST = 5.0`, and "spreading activation" is not a flat additive constant to
+connected nodes at all -- it's a HippoRAG-inspired, degree-scaled Personalized PageRank pass
+(3-iteration power method, `PPR_DAMPING` teleport factor). Documented the real formula.
+
+**D6 (§6.3, Interruption Coherence Index):** confirmed genuinely aspirational, not wrong --
+nothing computes it at runtime. Added a one-line status note rather than removing the section,
+so a future implementer has the target formula.
+
+**§6.1/§6.2 (TTS halt + resolver) -- the plan's own premise was stale.** The plan pointed at two
+sibling docs (`novelty_contributions.md`, `frameworks_infrastructure.md`) as "already corrected"
+style templates, both stating flush finding M3-R1 as unfixed ("no pause mechanism exists yet").
+Checked the code instead of copying that text: `transport_agent._on_audio_stop`/
+`_flush_downstream_audio` (a LiveKit track-rotation flush, since `capture_frame()` exposes no
+way to drain audio already handed to the client's native playout buffer) was built **2026-08-23
+-- a full week before this plan was written.** Copying the sibling docs' text into
+`algorithms_equations.md` would have propagated a stale claim into a fourth file. Fixed all
+three sibling docs plus `literature_review.md` (a fourth, not named in the plan's table at all)
+and `algorithms_equations.md` itself with the real mechanism, additionally noting it is now
+gated through the Bucket 1 resolver fix (a confirmed stop no longer fires ahead of the
+resolver's verdict). Kept the honest caveat throughout: end-to-end latency for the full path
+(RMS pre-filter -> transcription -> resolver -> track rotation -> client-observed silence) is
+still **NOT MEASURED** against live infrastructure -- the mechanism's existence and its latency
+are different claims. Also corrected §6.2's closing sentence (claimed a "graceful crossfade"
+unmute on a rejected stop; no crossfade exists on that path or anywhere else, see below) and
+§9.2's pseudocode, which modeled a fictional microsecond-level hardware mute/unmute -- rewritten
+to the real multi-stage message-passing shape.
+
+**D3 (OLA crossfade) and D5 (APRA granularity) -- doc updates following Phase 1's code fixes, as
+the plan anticipated, but wider than the plan's own file list.** Bucket 2 deleted the crossfade
+entirely (not merely fixed it) for the reason recorded in that bucket's own ledger entry. Found
+its description still present in: `algorithms_equations.md` §6.4 (rewritten to describe the
+real remaining odd-byte-buffering-only behavior), `context.md` §3 (same), `context.md` §4.2 (the
+reverb "feedback network" formula literally documented the pre-Bucket-2 bug -- a delay buffer
+accumulating its own delayed output, i.e. true feedback with unbounded gain -- corrected to the
+actual bounded echo formula plus the headroom scaling Bucket 2 added), one README architecture
+diagram label, one `context.md` section header, and `experimental_methodology.md`'s pipeline
+flowchart (two more stale mentions). For D5, added a note to `context.md` §8.2 explaining
+Bucket 5's clause-aligned chunking now lets a synthesis call span a meaningful portion of the
+60-frame prosody trajectory instead of the old ~3-word granularity that flattened it.
+
+**`context.md` §10.2 (filler threshold + chunk-size framing):** fixed a doubly-stale claim --
+"250ms" (already superseded by this session's own 1200ms change, see the Bucket 3 retune entry
+above) and a false causal link ("a 7-word chunk takes longer, so the system uses a *faster*
+threshold") that doesn't correspond to anything in the code; the segmenter and the filler timer
+are independently-tuned mechanisms. Also fixed §10.2's chunking description itself, which named
+only the 7-word/punctuation split and omitted the 300ms formation-buffer timer that Bucket 5
+actually fixed (was misnamed `formation_buffer_ms` while holding 0.030 compared against a
+seconds clock -- an effective, essentially-always-losing 30ms race against the segmenter).
+
+**The `CLAUDE.md`/`docs/FUTURE_WORK.md` "no headline figure has been measured" doc/doc
+contradiction -- investigated rather than resolved by picking a side.** Traced the 61.9ms
+TTFT/46.6 tok/s (Hermes 3 8B, real Colab GPU) and Recall@K (81.8/87.5/87.5/93.2% at K=1/3/5/10)
+figures back to the 2026-07-18 ledger entry: independently recomputed from raw per-sample arrays
+in `scripts/results/*.json`, matched the summary exactly, real HTTP calls to a local Ollama
+model with `MOCK_LLM_TEXT` not forced true. These are genuinely measured, not placeholders --
+the blanket claim in both files was simply wrong, not a stale-but-directionally-fine
+simplification. Corrected both to the narrower, still-true point: those numbers are specific to
+`hard_benchmark.py`'s own one-off benchmark corpus, not a property of "the system" that
+generalizes to an arbitrary deployment -- production personas on `main` are authored
+per-install by design, so there is no shared reference corpus to compute a fresh figure against
+for a random running instance. Added the same corpus-specificity caveat to README's own
+presentation of these figures, which stated them with no caveat at all just above a paragraph
+declaring "placeholder/unmeasured figures are marked [TBP], never presented as a result" --
+technically not a violation (these aren't unmeasured) but readable as one without the caveat.
+
+**Confirmed already resolved, no action needed:** the 250/400ms filler inconsistency across
+`README.md`/`docs/ARCHITECTURE.md` and the `backend/.env` duplicate `LLM_FAST_MODEL` line --
+both fixed earlier the same day, in this session's Bucket 3 retune and the home-gpu `.env`
+merge respectively, predating this bucket's execution.
+
+**NOT done:** `HANDOFF.md` still says 400ms -- left untouched deliberately; it is untracked,
+personal scratch notes, not part of the repo's shipped documentation set, and touching another
+work's uncommitted file is against this project's standing convention. The SOTA tables'
+comparative figures attributed to sources [5]-[7] (ERICA, HippoRAG, ACT-R/E) remain unverified
+against the cited papers themselves -- open since the 2026-07-18 audit entry, out of scope for a
+documentation-drift pass. No `docker build` was run to verify the Dockerfile fix from the prior
+entry (unrelated, carried over as still-open). Files touched: `CLAUDE.md`, `README.md`,
+`docs/FUTURE_WORK.md`, `backend/app/agents/context.md`,
+`academic_benchmarks/documentation/{algorithms_equations,novelty_contributions,
+frameworks_infrastructure,literature_review,experimental_methodology}.md`.
+
+## 2026-09-01 -- Phase 2 Bucket 16: cloned a real voice, made it the shipped default
+
+**Fine-tuned GPT-SoVITS on a 64.4s, 5-clip corpus (v2 base model).** Data prep
+(`1-get-text.py`/`2-get-hubert-wav32k.py`/`3-get-semantic.py`) required an explicit
+`PYTHONPATH="/workspace/GPT-SoVITS/GPT_SoVITS:/workspace/GPT-SoVITS"` export on home-gpu --
+those scripts do `from text.cleaner import clean_text` with no self-contained `sys.path` fix
+of their own (unlike `TTS_infer_pack/TTS.py`), and the container's default `PYTHONPATH` is
+repo-root-only. SoVITS (s2) trained 8 epochs, GPT (s1) trained 15 (`top_3_acc_epoch: 1.000` by
+the last epoch), both on the single GPU, no CUDA OOM, no errors during training itself.
+
+**Both training scripts' final-weight export is gated on `if_save_every_weights`, which the
+generated configs had set `False` for SoVITS** (an oversight in this session's own config
+generation, not a GPT-SoVITS bug) -- so no deployable `.pth` was ever written to
+`SoVITS_weights_v2/`, only the raw optimizer checkpoint. Recovered by calling
+`process_ckpt.savee()` directly against the last `G_*.pth` checkpoint's `model` state dict,
+replicating exactly what `s2_train.py` would have done with the flag on. For GPT (s1),
+`if_save_every_weights` was flipped to `True` before training started, but the export write
+itself hit a second bug: **`GPT_weights_v2/` (`half_weights_save_dir`) is never created by
+either training script** -- `my_save`'s `shutil.move` crashed with `FileNotFoundError` on the
+very last line of training, after all 15 epochs and the Lightning top-k checkpoint had already
+saved successfully. Recovered by `mkdir -p`-ing the missing directory and moving the orphaned
+tmp `.pth` (which `shutil.move` leaves in place when the destination `open()` fails) into it.
+Both weight files verified structurally sound afterward (correct `weight`/`config`/`info` keys,
+295 GPT tensors, `info: "GPT-e15"`) -- **training itself never failed; GPT-SoVITS's own export
+path has two directory-existence bugs**, worth upstreaming if this project ever forks the repo
+properly instead of vendoring it.
+
+**A GPT-SoVITS constraint the plan didn't anticipate: reference-conditioning clips must be
+3-10 seconds, hard-rejected outside that window ("Reference audio is outside the 3-10 second
+range").** All 5 recorded clips are 10.3-18.1s -- every one of them would have been rejected
+as a `REF_AUDIO_PATH_*` value as originally recorded. Fixed by `ffmpeg silencedetect` +
+trimming each clip at its nearest natural sentence-boundary silence gap to produce a
+`*_ref.wav` sibling (3.3-8.06s each), paired with a `prompt_text` that is the exact prefix of
+the original transcript covered by that trim -- prompt/audio mismatch is a real correctness
+requirement here, not a nicety, since the model aligns text to audio for conditioning.
+
+**Weight persistence across container restarts was not automatic and had to be found, not
+built.** The hot-swap API (`/set_gpt_weights`, `/set_sovits_weights`) only changes in-memory
+state; a container recreate reverts to the version's pretrained base. `sovits_bootstrap.sh`
+already has the intended mechanism for this -- `CUSTOM_GPT_PATH`/`CUSTOM_SOVITS_PATH` env vars,
+pre-loaded via the same hot-swap calls on every start -- but the prior session's investigation
+had called this "dead config" because nothing was ever placed at its default path
+(`GPT_weights/ai_friend_voice.ckpt`, `SoVITS_weights/ai_friend_voice.pth`). It was not dead,
+just unused. Copied both fine-tuned files into those exact paths (inside the *v1-named but
+actually version-agnostic* bind-mounted `models/GPT_weights`/`models/SoVITS_weights` host
+directories -- `api_v2.py` loads by literal path and reads the version from the checkpoint
+itself, so the "v1" directory naming is cosmetic) and confirmed via a full `docker compose
+restart gpt-sovits` that the bootstrap script picks them up and pre-loads them on its own, no
+manual API call needed going forward. Verified live: `Loading Text2Semantic weights from
+GPT_weights/ai_friend_voice.ckpt` / `Loading VITS weights from SoVITS_weights/ai_friend_voice.pth`
+in the container log, both `/set_*_weights` calls returning `200 OK` during bootstrap. The
+`enc_q.*` "missing keys" warning on SoVITS load is expected, not a corruption signal --
+`process_ckpt.savee()` deliberately strips the posterior encoder (training-only) from the
+exported inference weight.
+
+**A/B verified against the outgoing `human_emma_warm` reference, at the base (untrained)
+model** -- the correct baseline, since comparing a fine-tuned model's output against the base
+model's Emma output would have conflated two independent variables (model weights and
+reference clip) into one number. Sent both clips to the user directly (`ab_baseline_emma.wav`
+/ `ab_new_abhipsa.wav`); verdict: "nice abhipsa voice it is, we will use it." Immediately after
+that verdict, one of five bucket verification clips (`calm`) came back at ~9.2s for a sentence
+every other bucket rendered at ~3.3-3.5s, reproducibly across two runs. Sent that clip to the
+user separately rather than guess whether it's genuine slow/calm delivery or a rambling
+artifact; **`REF_AUDIO_PATH_CALM` was deliberately left unset in the deployed systemd unit
+pending that verdict** -- `EmotionRefSet::from_env`'s existing fallback-to-Neutral behavior
+(already covered by `unconfigured_buckets_fall_back_to_neutral`) means the calm bucket is safe
+by construction in the meantime, not silently broken.
+
+**Commercial-use consent was surfaced and confirmed explicitly, not assumed from the prior
+CC0 grant.** The prior grant was scoped to the repo/personal-project use; the user's own
+follow-up message ("abhipsa voice will be commercialised throughout as one of the voice to
+showcase and pitch... will also be shown in the website") changes the use to public/commercial
+representation of the product, which is a materially different consent scope. Asked directly
+rather than inferring; confirmed yes. `backend/assets/voice/LICENSE.md` rewritten accordingly
+-- corrects the now-false claim that the bundled clip "does not encode identity" (true of the
+old synthetic `say -v Alex` placeholder, false of a real voice clone by design), records that
+consent covers commercial/public representation, and keeps the contributor's name out of the
+file per this project's standing no-personal-names convention. `default_voice.wav`/`.txt`
+(git-tracked, ships publicly) replaced with the trimmed neutral reference clip and its matching
+transcript; `voice_engine_unavailable.wav` regenerated *through the fine-tuned model itself*
+(not just copied from another real recording) so the failure-path fallback stays same-voice
+with the new default, matching the license doc's own stated intent. `test_ensure_default_voice_
+sample.py`'s existence/non-empty assertions pass unchanged -- no test encoded the old
+placeholder's content or duration.
+
+**A second voice (a different real, named contributor) was added to the corpus mid-session**,
+with the same commercial-use consent question asked and confirmed independently rather than
+assumed to inherit the first grant. Scope explicitly limited, per the user's choice: fine-tune
+and A/B-verify only, no production wiring, no repo asset changes -- deferred as its own unit of
+work rather than folded into this one.
+
+**NOT done:** the updated `ai-friend-voice.service` systemd unit (4 of 5 buckets wired, `calm`
+pending) was staged at `/tmp/ai-friend-voice.service` on home-gpu but not installed --
+`sudo cp`/`daemon-reload`/`restart` were blocked by the auto-mode permission classifier and
+handed to the user to run. The GPT-SoVITS container's own internal warmup reference
+(`REF_AUDIO_PATH`/`REF_TEXT` in `~/AI_friend/.env`, distinct from voice-agent's copy) still
+points at a nonexistent `output/sample_en_gold.wav`, so the container skips its cache-warmup
+step on every restart -- harmless (first live request just pays the cold-start cost) but
+unfixed, same permission friction. The `calm` bucket's anomalous duration is unresolved pending
+the user's listen. The second voice's fine-tune had not yet been run as of this entry. Neither
+`cargo test --workspace` nor a live home-gpu conversation test was run this entry -- verification
+was full `pytest`/`ruff` (1468 passed, 0 failed) plus direct HTTP synthesis checks against the
+running SoVITS server, not the full per-CLAUDE.md bar. Files touched (repo-tracked):
+`CLAUDE.md` (unrelated doc-drift test fix, see below), `backend/assets/voice/{LICENSE.md,
+default_voice.txt,default_voice.wav,voice_engine_unavailable.wav}`. Home-gpu-only (not in
+git): `~/AI_friend/models/{GPT_weights,SoVITS_weights}/ai_friend_voice.{ckpt,pth}`,
+`~/AI_friend/backend/voice_samples/human_reference/abhipsa_*_ref.wav`, staged
+`/tmp/ai-friend-voice.service`.
+
+## 2026-09-01 -- Fixed a doc-drift test broken by this session's own CLAUDE.md edit
+
+`test_every_path_named_in_claude_md_exists` started failing after the Bucket 16 entry above's
+CLAUDE.md edit referenced `hard_benchmark.py` (bare basename) and `scripts/results/*.json` (a
+glob) in backticks. The test's `_resolves()` checks literal paths under `CANDIDATE_ROOTS`
+(`REPO_ROOT`, `backend/`, `backend/app/`) or, for a bare basename, an `rglob` search restricted
+to `backend/{app,crates,scripts}` -- deliberately excluding `_archive/` so a doc can't
+"resolve" to the retired twin it was supposed to stop pointing at. `hard_benchmark.py` only
+exists at `_archive/research/hard_benchmark.py`, outside every search root; `scripts/results/
+*.json` is a shell glob, and `Path.exists()` never expands it, so it always misses. Both were
+in fact this same session's own wording, introduced while correcting the surrounding paragraph's
+integrity-constraint claim in the Bucket 14 pass earlier today -- not stale prose that survived
+Bucket 14's review, but a defect in the correction itself, caught immediately by the test on the
+next full-suite run rather than sitting broken. Fixed by writing the real full path
+(`_archive/research/hard_benchmark.py`) and a real example file
+(`scripts/results/hermes3_benchmark_results.json`) instead. Full suite green afterward (1468
+passed, 0 failed, 0 errors); `ruff check .` clean.
+
+**NOT done:** nothing else touched by this fix. It is scoped to the two broken backtick tokens
+only.
+
+## 2026-09-01 -- Root-caused and fixed the `calm` bucket's anomalous duration from the Bucket 16 entry
+
+The Bucket 16 entry above left `REF_AUDIO_PATH_CALM` deliberately unset pending a listen, after
+its verification clip came back at ~9.2s for a sentence every other bucket rendered at
+~3.3-3.5s. `faster_whisper` word-level timestamps on the *full* original `abhipsa_calm.wav`
+(brought into this session's toolkit while diagnosing an unrelated issue on a second voice,
+Akshita's, added mid-session -- see that entry) found the actual defect: the original trim cut
+`abhipsa_calm_ref.wav` at 5.60s, which is the ffmpeg-`silencedetect`-measured **end of the
+silence gap that follows "slowly."** -- i.e., exactly at the *onset* of the word "Everything",
+containing zero audio of it. The paired `prompt_text` claimed the clip said "Take a deep
+breath and let it out slowly. Everything is going to be completely fine." -- two full
+sentences -- when the audio actually contained only the first one plus trailing silence. That
+audio/text mismatch, not model quality, is what the ~9.2s rambling almost certainly was:
+reference-conditioned synthesis aligns text to audio, and a text that describes ~40% more
+content than the audio contains gives the length predictor nothing correct to anchor against.
+
+**The other four buckets do not have this defect** -- checked each trimmed clip's actual
+content via `faster_whisper` transcription against its paired `prompt_text` before trusting
+any of them; all four match. `calm` was the only case where the chosen silence gap was long
+enough (0.77s+ silence, versus the shorter gaps used elsewhere) for "cut at the gap's end" to
+land past where the *intended* sentence boundary actually was, rather than past the *next*
+sentence's genuine start.
+
+Fixed by re-measuring: "fine." (the true end of both intended sentences) ends at 8.16s per the
+full clip's word timestamps -- still comfortably inside GPT-SoVITS's 3-10s reference window.
+Re-trimmed `abhipsa_calm_ref.wav` to 8.16s; `faster_whisper` re-transcription of the new clip
+now matches the paired `prompt_text` exactly. Re-verified via direct synthesis: the same probe
+sentence that came back at ~9.2s now reproduces at 5.06s (confirmed twice), and the standard
+A/B sentence ("Hey, how is your day going? I was thinking about you.") comes back at 5.32s --
+higher than the other buckets' 3.2-4.5s, consistent with a genuinely slower "calm" delivery
+style rather than a broken artifact. `REF_AUDIO_PATH_CALM`/`REF_TEXT_CALM` added to the staged
+`/tmp/ai-friend-voice.service` on home-gpu, completing all 5 buckets.
+
+**NOT done:** the systemd unit still is not installed -- `sudo cp`/`daemon-reload`/`restart`
+remain blocked by the auto-mode permission classifier in this session, same as the prior entry;
+still handed to the user to run. No live multi-turn conversation test was run against the
+now-complete 5-bucket configuration -- verification here is direct `/tts` API calls against
+the running SoVITS server, not an end-to-end voice-agent test (voice-agent itself is not
+running with the new env vars yet, pending the same systemd install).

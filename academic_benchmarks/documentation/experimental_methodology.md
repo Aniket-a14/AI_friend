@@ -39,7 +39,7 @@ graph TD
 
 The sequential diagram below traces the exact millisecond-level trajectory of an active conversational frame, showing the sub-LLM pre-processing and post-LLM prosody synthesis stages:
 
-**Not every stage below is a real, separately-measured component.** "Subconscious Threat Scan" names no agent that exists in `backend/app/agents/` (checked during Stage 3 alongside the same finding in `frameworks_infrastructure.md`); "Post-Response Prosody Modulator" and the OLA crossfader describe the Rust `voice-agent`'s DSP path, which was not exercised this pass (no CUDA/TTS on this host). Per-stage timings below are `NOT MEASURED` unless a Stage 3 measurement produced a directly comparable number, cited by ID.
+**Not every stage below is a real, separately-measured component.** "Subconscious Threat Scan" names no agent that exists in `backend/app/agents/` (checked during Stage 3 alongside the same finding in `frameworks_infrastructure.md`); "Post-Response Prosody Modulator" and the reverb/chunk-reassembly stage describe the Rust `voice-agent`'s DSP path, which was not exercised this pass (no CUDA/TTS on this host). Per-stage timings below are `NOT MEASURED` unless a Stage 3 measurement produced a directly comparable number, cited by ID.
 
 ```
 [User Audio Ingest] (NOT MEASURED)
@@ -65,7 +65,7 @@ The sequential diagram below traces the exact millisecond-level trajectory of an
 [Post-Response Prosody Modulator] (NOT MEASURED — no CUDA/TTS on this host)
         │
         ▼
-[Overlap-Add (OLA) Audio crossfader] (NOT MEASURED — no CUDA/TTS on this host)
+[Reverb DSP + Chunk-Boundary PCM Reassembly] (NOT MEASURED — no CUDA/TTS on this host; corrected 2026-09-01 — the OLA crossfade this stage used to name was removed, see backend/app/agents/context.md §3)
         │
         ▼
 [NATS Published Response: chat.output] (0.62ms mean / 0.52ms p50 / 1.00ms p95 publish-to-subscriber-callback latency, MEASURED 2026-08-22 against live NATS JetStream on loopback, n=30, using a wired subject as a stand-in — not chat.output itself, to avoid a spurious message reaching real consumers; single-host loopback, not representative of a multi-container network path)

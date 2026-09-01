@@ -106,41 +106,25 @@ All parameters are rounded to exactly **two decimal places** ($0.01$ precision) 
 
 ---
 
-## 🔊 3. Overlap-Add (OLA) Crossfade Processing
+## 🔊 3. Chunk-Boundary PCM Reassembly (OLA Crossfade Removed)
 
-To ensure seamless audio transitions, eliminate acoustic pops, and guarantee signal continuity during sudden state transitions or speculative interruptions, the playback engine applies a sample-accurate **Linear Overlap-Add (OLA) Crossfade**.
+**Corrected 2026-09-01** — this section previously described a 10ms linear Overlap-Add crossfade applied at every prosody shift between consecutive chunks. That mechanism was removed entirely (Bucket 2, see `.agents/CONTEXT.md`'s 2026-09-01 entries): it blended the last 15ms of the *already-published, already-playing* previous chunk into the head of the next, which is not overlap-add — true OLA blends two buffers analyzed together **before** either is sent downstream. Because the "previous" side here had already gone out over `audio.stream` and reached the listener, those 15ms were heard twice, at a phase discontinuity — reported live as a hazy, not-crystal-clear artifact, and it fired on almost any prosody inequality between chunks arriving tens of milliseconds apart (which, at the time, was most chunk boundaries — see §8's chunking notes below). A clean butt-join was judged strictly better than replaying already-heard audio, so the crossfade was deleted rather than corrected in place; correctly implementing true OLA would need holding back every chunk's tail until the next chunk arrives, adding a full chunk of latency to an already latency-critical path.
 
-### 3.1 Linear Fade Window Formulation
+What remains at this seam (`OlaCrossfadeFilter` in `backend/crates/voice-agent/src/main.rs`, name kept only for continuity) is exactly the part of the old type that was never about prosody:
 
-When a prosody shift is detected between consecutive audio segments, the engine computes a **10ms linear crossfade window** based on the configured sample rate (typically 32kHz):
+### 3.1 Odd-Byte PCM Buffering
 
-```math
-\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor
-```
-
-For $32,000\text{Hz}$, the crossfade window contains exactly $320$ samples.
-
-### 3.2 Signal Modulation
-
-For each sample index $i$ in the crossfade window ($0 \le i < \text{fade-len}$), the blend factor $t$ is computed as:
+16-bit PCM samples must never be split across two chunk boundaries. If a chunk's byte length is odd, the trailing byte is held and prepended to the next chunk before framing:
 
 ```math
-t = \frac{i}{\text{fade-len}}
+\text{framed} = \begin{cases} [\text{pending\_byte}] \Vert \text{bytes} & \text{if a byte is pending from the previous chunk} \\ \text{bytes} & \text{otherwise} \end{cases}
 ```
 
-The output blends the previous prosody segment buffer $x_{\text{prev}}[i]$ with the incoming segment $x_{\text{curr}}[i]$:
+If $|\text{framed}|$ is odd, its last byte becomes the new `pending_byte` and is excluded from this chunk's decoded samples. No blending, fading, or lookahead is involved — every complete pair of bytes in `framed` passes through as a plain 16-bit sample, unmodified.
 
-```math
-y[i] = (1 - t) \cdot x_{\text{prev}}[i] + t \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade-len}
-```
+### 3.2 Float-Domain PCM Round-Trip (shared with the reverb filter, §4)
 
-For $i \ge \text{fade-len}$, the signal passes through unmodified:
-
-```math
-y[i] = x_{\text{curr}}[i]
-```
-
-### 3.3 Dynamic Signal Reconstruction
+This pattern is no longer specific to a crossfade — it is the general float-domain processing round-trip the reverb filter (§4) actually performs on every chunk.
 
 1. **Quantization Recovery**: High-performance calculations are carried out in 32-bit floating point space to prevent precision loss.
 2. **Clipping Protection**: The modified floats are clipped to prevent digital overflow distortion:
@@ -173,27 +157,31 @@ Acoustic reverb gain ($\text{wet-gain}$) is scaled dynamically as a function of 
 \end{cases}
 ```
 
-### 4.2 Delay & Feedback Network
+### 4.2 Delay & Echo Network (not feedback — corrected 2026-09-01)
 
-The DSP reverb comb filter uses a **50ms circular delay line** with a $0.5$ feedback gain factor. For input samples $x[n]$ and delay buffer size $M = \lfloor 0.050 \cdot \text{SampleRate} \rfloor$ (1600 samples at 32kHz):
+**This section previously named the delay line's update as feedback** (delay buffer accumulating $x[n] + 0.5 \cdot w[n]$, i.e. the buffer's own delayed output folded back into itself). That is a real bug that shipped: because the buffer is read from and written to every sample, that update is exactly $y[n] = x[n] + \text{gain} \cdot y[n-D]$ — true feedback, whose steady-state gain is $\frac{1}{1-\text{gain}}$ ($2.0\times$ at gain $=0.5$), unbounded for a sustained tone. It was what drove the downstream `clamp` into a hard clipper on normalized TTS output, reported live as harsh/distorted audio (Bucket 2, see `.agents/CONTEXT.md`'s 2026-09-01 entries). The fix stores only the **input** in the delay line, making this a simple bounded echo, $y[n] = x[n] + \text{gain} \cdot x[n-D]$ (gain $1+\text{gain}$, $1.5\times$ at gain $=0.5$ — bounded, cannot run away), plus a headroom scale so the wet path itself cannot clip regardless of input content:
 
-1. Retrieve delayed sample:
+For input samples $x[n]$, delay buffer size $M = \lfloor 0.050 \cdot \text{SampleRate} \rfloor$ (1600 samples at 32kHz), gain $g = 0.5$, and headroom $h = \frac{1}{1+|g|}$:
+
+1. Retrieve the delayed sample, **then** overwrite the buffer with the current input only (not the delayed sample or any feedback term):
 
 ```math
-w[n] = d_{\text{buffer}}[n \pmod M]
+w[n] = d_{\text{buffer}}[n \pmod M], \qquad d_{\text{buffer}}[n \pmod M] \leftarrow x[n]
 ```
 
-2. Update delay buffer:
+2. Compute the headroom-scaled echo:
 
 ```math
-d_{\text{buffer}}[n \pmod M] = x[n] + 0.5 \cdot w[n]
+\text{echoed}[n] = (x[n] + g \cdot w[n]) \cdot h
 ```
 
 3. Blend dry and wet signals:
 
 ```math
-y[n] = (1.0 - \text{wet-gain}) \cdot x[n] + \text{wet-gain} \cdot d_{\text{buffer}}[n \pmod M]
+y[n] = (1.0 - \text{wet-gain}) \cdot x[n] + \text{wet-gain} \cdot \text{echoed}[n]
 ```
+
+The delay line and playback index are reset at utterance boundaries (`event.done`), not per-chunk — resetting per-chunk would drop the previous chunk's echo tail at every boundary — and, since 2026-09-01, a fix also clears a stray buffered odd PCM byte on reset, so it cannot splice one utterance's trailing byte onto the next, unrelated utterance's first byte.
 
 This ensures that the agent's spatial projection matches the visual distance of the user, achieving true sensory-motor loop integration.
 
@@ -301,7 +289,7 @@ To establish rigorous scientific boundaries, AI Friend is actively compared agai
 | **Memory Scaling Complexity** | N/A | N/A | N/A | N/A | N/A | $O(\log M_{\text{total}})$ | Linear search | $O(\log N)$ (ACT-R + Qdrant) | *(mode retired)*⁶ |
 | **Memory Recall (Recall@5)** | N/A | N/A | N/A | N/A | N/A | ~92.0% | ~85.0% | **87.5%**⁴ | *(mode retired)*⁶ |
 | **Theory of Mind MAE** | N/A | N/A | N/A | N/A | N/A | N/A | 0.280 MAE | **0.032 (valence) / 0.041 (arousal)**⁴ | *(mode retired)*⁶ |
-| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **Dynamic** (PAD + cortisol/dopamine coupling) | *(mode retired)*⁶ |
+| **Autonomic Somatic State** | Static Response | Static Response | Static Response | Static Response | Static Response | N/A | N/A | **Dynamic** (PAD + tonic/phasic cortisol and dopamine — see `algorithms_equations.md` §2.3) | *(mode retired)*⁶ |
 | **System Idle Memory** | High (Onboard OS) | High (Optimus FSD) | High (ROS2 Mesh) | High (Tritium Stack) | High Cloud | N/A | N/A | **1,266 MB**⁵ (8-agent mesh + DB stack) | *(mode retired)*⁶ |
 | **Active Edge Power** | High (Onboard GPU) | High (Tesla FSD Core) | Moderate | High (Onboard NUC) | High Cloud | N/A | N/A | **0.99 W**⁵ | *(mode retired)*⁶ |
 | **Structural Novelties** | End-to-End VLM | Vision-Motor NN | Local VLM Plan | Gaze-to-Speech Tritium | Attentive VAP Frame | Associative Graph | Symbolic Decays | **Live Localized Mind Mesh** | *(mode retired)*⁶ |
@@ -320,7 +308,7 @@ To establish rigorous scientific boundaries, AI Friend is actively compared agai
 
 ---
 
-## 🔊 8. Hybrid Brain Architecture (Native Speech features & Dynamic OLA Prosody)
+## 🔊 8. Hybrid Brain Architecture (Native Speech Features & Dynamic Prosody)
 
 In AI Friend, the system incorporates three specialized messaging topics on the solid-state NATS bus to bridge System 1 raw voice sensors directly with System 2 symbolic reasoning:
 
@@ -334,7 +322,7 @@ Emitted by the **STT Agent** (`backend/crates/stt-agent`) during raw PCM ingest:
 Emitted by the **Surfacing Agent** (`backend/app/agents/surfacing_agent.py`) upon receiving a `state.update` event:
 - Employs the **APRA v2** Continuous Frame-wise Prosody Engine to generate a 3.0-second trajectory consisting of 60 frames spaced at 50ms intervals.
 - Translates active Pleasure-Arousal-Dominance (PAD) and metabolic fatigue parameters into continuous Speaking Rate ($R$), Pitch ($P$), and Volume ($V_{ol}$) trajectories, enriched with organic human features such as a 6Hz micro-vibratory ripple (pitch vibrato) and start/end breathing/volumetric envelopes.
-- Employs a type-safe `List[ProsodyFrame]` payload to feed the downstream OLA DSP system.
+- Employs a type-safe `List[ProsodyFrame]` payload to feed the downstream synthesis parameter pipeline (**corrected 2026-09-01**: no OLA DSP stage exists anymore, see §3). Each *sentence-level* synthesis call now samples one point on this trajectory, chosen from the utterance's real elapsed time — a meaningful improvement over the flattening this design used to suffer when chunking cut every ~3 words (Bucket 5, see `.agents/CONTEXT.md`'s 2026-09-01 entries, prior to which the trajectory's 60 frames were being sampled at 3-word granularity regardless of the continuous curve underneath). Chunking is now clause-aligned (§10.2 below), so consecutive synthesis calls span a genuine portion of the trajectory instead of a near-constant slice of it.
 
 ### 8.3 audio.playback.visemes
 Emitted by the **Voice Agent** (`backend/crates/voice-agent`) dynamically during audio output:
@@ -391,5 +379,5 @@ ledger entry for the removal and what replaced it.
 
 ### 10.2 Quality-Latency Balanced Pacing
 To prevent fragmented or robotic speech (which occurs when chunk sizes are too small), the system implements a quality-prioritized look-ahead configuration:
-- **Speech Segmentation**: The `brain_agent` buffers words and groups them into chunks of **7 words** (or splits on clause punctuation markers like commas, semicolons, and dashes). This provides the acoustic model with sufficient semantic context to synthesize natural emotional inflections and pitch contours.
-- **Speculative Filler Invalidation**: Because a 7-word chunk takes longer to generate than a 3-word chunk, the system uses a faster **250ms speculative pause filler threshold** (configured via `Config.VOICE_FILLER_THRESHOLD`). If the LLM has not emitted the first chunk within 250ms of turn onset, an immediate vocal filler (e.g. *"Hmm"*, *"Accha"*) is injected to seize the turn, while GPT-SoVITS synthesizes the quality-priority audio chunk in the background.
+- **Speech Segmentation**: The `brain_agent` buffers words and flushes on whichever of three conditions fires first: a clause boundary (comma/colon/semicolon at or past the **7-word** target, or sentence-ending punctuation, scored by `HybridSegmenter.score_split_point`), a hard 12-word cap, or a **300ms formation-buffer timer** once at least 3 words are buffered — the timer is a latency safety net for a stalled model, not the primary segmentation signal. **Corrected 2026-09-01**: this timer used to be misnamed `formation_buffer_ms` while actually holding 0.030 compared against a seconds-based clock — an effective 30ms, so in practice it almost always won the race against the clause segmenter and flushed every 3 words regardless of where a real clause boundary was (Bucket 5, see `.agents/CONTEXT.md`'s 2026-09-01 entries). Raised to a real 300ms clause-formation window.
+- **Speculative Filler Timing**: If the LLM has not emitted the first token within **1200ms** of generation actually starting (`Config.VOICE_FILLER_THRESHOLD`, corrected 2026-09-01 from a smaller value per direct product-owner direction — 400ms was found to be baseline pipeline overhead, not a noticeable delay, so it fired on effectively every turn), a filler word (one of `hmm`, `let's see`, `well`, `ah`, `right` — see `FILLERS` in `conversational_runtime.py`) is dispatched, additionally suppressed if a previous turn's audio is still backed up in playback or a filler already fired too recently. This is unrelated to chunk size; both the clause segmenter and the filler timer were independently mistuned, not causally linked the way this section previously implied.
