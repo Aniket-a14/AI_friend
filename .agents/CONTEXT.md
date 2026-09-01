@@ -14577,3 +14577,121 @@ still handed to the user to run. No live multi-turn conversation test was run ag
 now-complete 5-bucket configuration -- verification here is direct `/tts` API calls against
 the running SoVITS server, not an end-to-end voice-agent test (voice-agent itself is not
 running with the new env vars yet, pending the same systemd install).
+
+## 2026-09-02 -- Phase 3 opened: Buckets 6.1, 7, 11, and 13's testable core
+
+Phase 2 (Buckets 14, 16) shipped and merged as PR #210. This entry covers the start of Phase 3
+(Buckets 6-13), done entirely on the Mac with home-gpu powered off overnight -- everything below
+is code-only, mutation-tested against the local suite, and **not yet live-verified against a
+running mesh or real hardware** where that distinction matters; each item says so explicitly.
+
+**Bucket 6.1 -- `num_ctx` was hardcoded to 2048, truncating the system prompt.** `OllamaClient`
+ignored what either locally-pulled model actually supports (llama3.2:3b: 131072, qwen2.5:3b:
+32768) and Ollama truncates an over-long prompt *from the front* -- exactly where persona
+identity lives. Moved to `Config.LLM_NUM_CTX`, default 8192, computed (not guessed) from the
+home-gpu KV-cache budget: at fp16 KV, both 3B models cost under 1GB of cache at 8192 tokens,
+comfortably inside the ~6.2GB free the Phase-1 audit measured. Landed alone, unbundled from any
+model swap, so a later A/B can attribute what it measures correctly. `evals/`'s own independent
+`num_ctx=8192` pin stays -- a harness run should never depend on deployment config -- but its
+doc comments describing the old hardcoded-2048 default were stale and corrected.
+
+**Bucket 7 -- authored a real persona; the template was still `"my friend"`, one trait, no
+memories.** Every Phase 3 A/B would otherwise have measured against a character that doesn't
+exist. Compiled from a detailed user-supplied description via the existing
+`app/persona/compiler.py` pipeline, written to `personal/persona.toml` /
+`personal/biography.md` (both gitignored, never shared -- see `personal-branch-policy` in
+project memory). Ran the compilation through both locally-pulled 3B models first rather than
+trusting either blind: both botched real fields -- `warmth` flattened to the "no evidence"
+neutral default despite the description containing direct evidence (specific comfort-bringing,
+remembered coffee orders), one model wrote "complex" into `relationship` (a field about the
+user, pulled out of context from the subject's separate romantic-life paragraph), the other's
+`avoid` list inverted the source's actual meaning, and biography extraction returned 0-2
+passages from a document that is almost entirely usable prose. The shipped persona was
+hand-assembled by calling the compiler's own `_infer_temperament` formulas directly with
+corrected dimension scores (each with a quoted piece of evidence), keeping full numeric
+provenance without trusting either model's raw JSON. `personal/biography.md`'s 12 passages were
+written by hand for the same reason, not run back through the compiler.
+
+Closed the validation hole the plan flagged in the same pass: `learn_traits` and
+`evolve_persona`'s `speaking_style` branch accepted anything Pydantic would type-check, which is
+exactly how two independent deployments (this Mac, home-gpu) ended up with CJK fragments and the
+literal string `"Hinglish"` (a language name, not a description) persisted into an
+English-authored persona -- neither is a type error, so field validation never caught either.
+Added `is_plausible_persona_content` (`app/persona/profile.py`: non-Latin-script character
+ratio + a small meta-placeholder denylist) as a content backstop at both write sites, scoped
+only to adaptive runtime writes -- authored seed content is untouched, including a persona that
+genuinely wants a described (not named) Hinglish style. Mutation-tested: reverting either guard
+reliably fails the corresponding new test. The Mac's own corrupted `.identity_state/` (exactly
+this defect, dated Aug 28) was moved aside and removed, confirmed stale per this ledger's own
+prior entries; home-gpu's copy is untouched, unreachable tonight.
+
+**Bucket 11 -- cortisol half-life raised from 600s to 4500s.** 600s (10 minutes) was 6-9x
+faster than measured human cortisol plasma half-life (~66-90 minutes) -- a fright stopped
+colouring behaviour within about 20 minutes. Raised the default in all three places it was
+defined (`Config.CORTISOL_PHASIC_HALFLIFE_S`, `PersonaProfile`'s field default, `AgentState`'s
+bare dataclass default, whose own comment already promised it would mirror `Config`) to 4500s
+(75 minutes, the midpoint of the human range), plus the tracked `config/persona.toml` example
+and one stale doc reference. The 7200s ceiling already permitted this; only the default moved.
+Still CONSTITUTIONAL -- Abhipsa's authored persona already sets her own value (1000s) from her
+described temperament, untouched by this change. The adrenaline channel from the same bucket
+was not started tonight (see NOT done).
+
+**Bucket 13 -- a CPU-only facial reflex channel, feeding PAD continuously instead of through a
+5s VLM poll.** A background research pass first corrected a wrong assumption in the
+remediation plan: vision does *already* reach PAD today, through `SomaticAppraiser` matching
+VLM scene-description text against learned comfort-object vocabulary
+(`apply_somatic_perception`) -- just narrowly, gated behind the VLM's 5s cadence and blind
+during the agent's own turn (`VISION_SUSPEND_DURING_TURN`), and cold-start-blind until the
+agent has learned some comfort vocabulary. The actual gap is continuous, expression-level
+signal, not "zero visual affect ever."
+
+MediaPipe's Face Landmarker runs entirely on CPU (XNNPACK) and costs zero VRAM, so unlike the
+VLM it does not need to suspend mid-turn. `app/vision/reflex.py::score_blendshapes` is a pure
+function over a plain `{blendshape_name: score}` dict -- no MediaPipe import, no camera,
+unit-testable without either -- that turns three blendshape-derived signals into small signed
+affect nudges: `smile` (positive valence + a small dopamine spike), `brow_furrow` (negative
+valence only, deliberately no reward), `startle` (arousal only, deliberately no valence
+direction, gated on eye-widen **and** jaw-open together since jaw-open alone fires constantly
+during ordinary speech). A `FacialReflexTracker` refractory-gates each signal independently
+(5s) so a multi-second held expression counts as one onset, not dozens of identical frames'
+worth. `StateService.apply_facial_reflex` mirrors `apply_somatic_perception`'s lock discipline
+and "absence must never reach this method as a zero delta" rule, except deltas are signed --
+somatic spikes are always-positive by construction and never needed to pull valence down.
+Wired to the mesh as a new `FacialReflexEvent` contract on `vision.facial_reflex`
+(`app/contracts.py`), consumed by a new `BrainAgent._on_facial_reflex` subscriber; the subject
+is already covered by the existing `vision.>` JetStream wildcard, so no stream migration is
+needed. All of the above is mutation-tested (20 new tests: refractory gating, the startle
+compound gate, the signed-delta path, the absence guard, the subscriber's failure containment).
+
+The MediaPipe integration was verified for real, not written blind, and the verification itself
+surfaced a real finding worth recording: **`mediapipe==1.0.1` crashes outright on this exact
+task on macOS arm64** -- `Check failed: service_ Service is unavailable` inside
+`TensorsToDetectionsCalculator::Open()`, a Metal-graph-service init failure in the face-detection
+subgraph that neither `delegate=BaseOptions.Delegate.CPU` nor `MEDIAPIPE_DISABLE_GPU=1`
+avoids. Downgrading to `mediapipe==0.10.30` runs the identical call cleanly against Google's own
+`face_landmarker` sample image (`storage.googleapis.com/mediapipe-assets/portrait.jpg`), with
+all needed blendshape keys present at real-world plausible values (`mouthSmileLeft`: 0.96,
+`browDownLeft`: 0.84, etc., on that sample). `requirements-ai.txt` pins `mediapipe>=0.10.30,<1.0.0`
+accordingly, with the crash documented inline so the ceiling isn't "fixed" by a routine bump
+without re-checking.
+
+**NOT done, all of Phase 3 so far:** the adrenaline channel (Bucket 11's other half) was not
+built tonight. Bucket 9's spacing effect was scoped and then deliberately not started: it needs
+an actual schema change (the current `memories` table tracks only `recall_count` and
+`last_recalled_at`, not individual recall timestamps, so spacing cannot be computed from what's
+stored today) across both Postgres and SQLite backends, and Docker was down on the Mac all
+night -- no live Postgres to verify a migration against. Bucket 8 (the dual-loop/workspace
+architecture) was reframed via Global Workspace Theory in a working research doc
+(`COGNITIVE_ARCHITECTURE_SURVEY.md`, gitignored) but not implemented. Bucket 13's live capture
+loop -- camera -> MediaPipe -> `score_blendshapes` -> publish -- is deliberately not built:
+it needs a decision on where the physical camera actually lives in this deployment before it
+can be wired and verified rather than guessed at, allowlisted in `check_subject_wiring.py`
+with that reasoning. Bucket 10 (emotion-bucket expansion) is blocked on the same voice-data
+gap as before -- Akshita re-recorded a cleaner corpus tonight (spot-checked via a plain
+numpy noise-floor estimate, no ffmpeg on this Mac: ~-61 to -68dB quiet-window floor across all
+5 clips, a large improvement) but retraining and verification are explicitly deferred to
+home-gpu, per the user's own call. No steering-vector or LoRA work was attempted -- both need
+either a non-Ollama inference seam or the GPU box, and no LLM inference of any kind was run on
+the Mac tonight per explicit instruction. Full backend suite green throughout (1496 passed, 0
+failed, 0 errors, confirmed via JUnit XML per this file's own standing caveat about the
+terminal summary); `ruff check .` clean after each change.
