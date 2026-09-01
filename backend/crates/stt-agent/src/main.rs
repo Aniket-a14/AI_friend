@@ -1082,7 +1082,12 @@ fn build_speculative_intent(text: &str, utterance_id: &str) -> Option<Speculativ
     // a persona name hardcoded into a generic crate. Deleted regardless of
     // which arbiter survives; this list is only ever a duck hint now (see
     // `speculative_fired_for`), never the abort.
-    let keywords = ["stop", "wait", "hold", "no", "wrong", "quiet"]
+    //
+    // Bucket 1 (VOICE_REMEDIATION_PLAN.md): "no" removed -- it fires this duck
+    // hint on ordinary agreement ("no way, that's great", "no, exactly"), which
+    // is far more common in real conversation than "no" used as a command.
+    // "wrong" stays: it has no equivalent everyday-agreement use.
+    let keywords = ["stop", "wait", "hold", "wrong", "quiet"]
         .iter()
         .copied()
         .filter(|keyword| tokens.contains(keyword))
@@ -1302,6 +1307,21 @@ mod tests {
     #[test]
     fn speculative_stop_avoids_partial_keyword_matches() {
         assert!(build_speculative_intent("knowledge now", "utt-1").is_none());
+    }
+
+    #[test]
+    fn ordinary_agreement_containing_no_does_not_duck() {
+        // Bucket 1: "no" fired this duck hint on plain agreement far more often
+        // than on an actual command, so it was removed from the keyword list.
+        assert!(build_speculative_intent("no way that's great", "utt-1").is_none());
+        assert!(build_speculative_intent("no exactly", "utt-1").is_none());
+    }
+
+    #[test]
+    fn wrong_still_fires_the_duck_hint() {
+        // Companion to the test above: removing "no" must not have taken
+        // "wrong" (which has no equivalent everyday-agreement use) with it.
+        assert!(build_speculative_intent("that's wrong", "utt-1").is_some());
     }
 
     fn test_state() -> Arc<Mutex<SttState>> {

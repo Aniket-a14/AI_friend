@@ -60,7 +60,15 @@ async function getOrInitRoom() {
                 dtx: true,
             },
             audioCaptureDefaults: {
-                autoGainControl: true,
+                // Bucket 1 (VOICE_REMEDIATION_PLAN.md): off, not on. The Rust
+                // Endpointer's barge-in VAD is an adaptive-RMS detector
+                // (speech_factor: 3.0 over a tracked noise floor) -- AGC
+                // continuously re-normalises quiet ambient noise upward toward
+                // a target level, compressing the exact room/speech gap that
+                // ratio depends on. echoCancellation/noiseSuppression stay on;
+                // AEC being present is why speaker-bleed self-interruption was
+                // already ruled out as a cause.
+                autoGainControl: false,
                 echoCancellation: true,
                 noiseSuppression: true,
             },
@@ -127,7 +135,10 @@ async function getOrInitRoom() {
             const micTrack = await createLocalAudioTrack({
                 echoCancellation: true,
                 noiseSuppression: true,
-                autoGainControl: true,
+                // See the matching comment on audioCaptureDefaults above --
+                // must be set here too, since this is the call that actually
+                // publishes the track.
+                autoGainControl: false,
             });
             sharedLocalAudioTrack = micTrack;
 

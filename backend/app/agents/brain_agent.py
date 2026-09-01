@@ -101,6 +101,10 @@ class BrainAgent(BaseAgent):
         self.last_audio_progress: AudioPlaybackProgress | None = None
         self.last_assistant_response: str | None = None
         self._active_response_turn_id: str | None = None
+        # Bucket 1 (VOICE_REMEDIATION_PLAN.md): stamped on the first playback
+        # progress frame of each turn (see _on_audio_playback_progress) and
+        # read by _on_chat_input's barge-in grace period below.
+        self._last_audio_onset_at: float | None = None
         # P2-14/M1-A14: `last_audio_progress` and `last_assistant_response`
         # are written from three independent NATS subscription tasks --
         # chat.input's turn flow, audio.playback.progress's tracker, and
@@ -381,8 +385,45 @@ class BrainAgent(BaseAgent):
             logger.exception("Unexpected error processing chat.input")
             return
 
-        # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio
-        if not is_subconscious:
+        # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio.
+        #
+        # Bucket 1 (VOICE_REMEDIATION_PLAN.md): this used to fire unconditionally, on every
+        # chat.input, with no gate at all -- bypassing decision.py's
+        # `is_speculative_stop_confirmed`, the arbiter `_resolve_turn_conflict`
+        # (pipeline.py) already calls moments later on this same final text. Measured
+        # directly in a live session (2026-09-01): on "Let's stop it.", the arbiter
+        # correctly REJECTED the interruption ("contradicts early perception"), but this
+        # unconditional publish had already cut playback half a second earlier regardless.
+        #
+        # The fix is not to duplicate the arbiter's keyword logic here -- that logic is
+        # specifically for confirming an explicit command (stop/wait/hold/...), not for
+        # deciding whether a new, keyword-free user turn should mute old audio, which is
+        # this publish's actual job and must keep working unconditionally. The real defect
+        # is only the double-fire: when STT's speculative duck already flagged this
+        # utterance as command-like (`last_speculative_intent` is set), the pipeline's own
+        # Stage 2 conflict resolution is about to run the arbiter on this exact text and
+        # will itself publish audio.stop (confirmed) or audio.resume (rejected) --
+        # skipping the immediate stop here defers entirely to that already-correct,
+        # already-gated decision instead of racing ahead of it. Audio is already ducked
+        # (not silenced) from the speculative signal, so nothing is lost by waiting the
+        # extra tens of milliseconds for the real verdict.
+        speculative_intent_pending = bool(
+            self.cognitive_core.state.last_speculative_intent
+        )
+        # Bucket 1: a barge-in grace period right after the agent's own audio
+        # actually starts playing. STT's own pipeline (250ms min_speech_ms +
+        # 700ms endpoint silence, per config.py) means a genuine human
+        # utterance cannot produce a *final* chat.input this soon after
+        # onset -- the audit's own human-baseline research (Appendix A.1)
+        # puts real reaction time at >200ms, and that clock does not even
+        # start until the listener has heard enough to react to. What
+        # arrives this fast is far more likely to be onset noise: a click,
+        # pop, or brief echo tail before echoCancellation has settled.
+        within_onset_grace = (
+            self._last_audio_onset_at is not None
+            and (time.time() - self._last_audio_onset_at) < Config.BARGE_IN_ONSET_GRACE_S
+        )
+        if not is_subconscious and not speculative_intent_pending and not within_onset_grace:
             stop_msg = AudioStop(
                 interrupt=True,
                 speculative=False,
@@ -573,6 +614,11 @@ class BrainAgent(BaseAgent):
                     )
                     return
                 self.last_audio_progress = progress
+                if progress.word_index == 0 and progress.character_offset == 0:
+                    # Bucket 1: the first frame of a new utterance actually
+                    # starting to play, not just being queued -- the moment
+                    # _on_chat_input's grace period below measures from.
+                    self._last_audio_onset_at = time.time()
             logger.debug(
                 f"🔊 Audio Playback Progress | Word Index: {progress.word_index} | Offset: {progress.character_offset} | Completed: {progress.completed}"
             )

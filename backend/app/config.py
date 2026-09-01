@@ -329,6 +329,12 @@ class AppSettings(BaseSettings):
     VOICE_FILLER_MIN_INTERVAL_SECONDS: float = 1.5
     VOICE_FILLER_MAX_PLAYBACK_BACKLOG: int = 4
     VOICE_FILLER_THRESHOLD: float = 0.25
+    # Bucket 1 (VOICE_REMEDIATION_PLAN.md): a genuine human reaction cannot
+    # produce a final chat.input this soon after the agent's audio starts
+    # playing (STT alone needs 250ms min_speech_ms + 700ms endpoint silence
+    # before it even emits a transcript) -- see brain_agent.py's
+    # _on_chat_input for the barge-in grace period this gates.
+    BARGE_IN_ONSET_GRACE_S: float = 0.15
 
     INTENT_THRESHOLD: float = 0.75
     INTENT_STABILITY: int = 3

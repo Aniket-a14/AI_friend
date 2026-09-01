@@ -115,6 +115,19 @@ impl WhisperModel {
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
+        // Decode-time suppression of non-speech tokens (e.g. the [MUSIC]/[BLANK_AUDIO]
+        // token IDs whisper.cpp's vocabulary carries), complementing rather than
+        // duplicating clean_transcript's after-the-fact bracket stripping below, which
+        // only catches tokens that already made it into the decoded text.
+        params.set_suppress_nst(true);
+        // Bucket 1 (VOICE_REMEDIATION_PLAN.md): NOT set_no_speech_thold/set_logprob_thold/
+        // set_entropy_thold here, despite that being the audit's literal suggestion --
+        // checked whisper-rs 0.16's source first. `set_no_speech_thold`'s own doc comment
+        // says "Currently (as of v1.3.0) not implemented" in the whisper.cpp version this
+        // crate binds, and `FullParams::new` already seeds logprob_thold/entropy_thold from
+        // whisper.cpp's own `whisper_full_default_params()`, so setting them to the same
+        // defaults here would be a no-op that looks like a fix without being one. The value
+        // whisper.cpp DOES compute and expose for real is the per-segment probability below.
         // Single-segment decoding keeps latency predictable for short utterances.
         params.set_n_threads(recommended_threads());
 
@@ -127,6 +140,14 @@ impl WhisperModel {
         // matters because whisper can emit partial multi-byte tokens.
         let mut text = String::new();
         for segment in state.as_iter() {
+            let no_speech_prob = segment.no_speech_probability();
+            if no_speech_prob > NO_SPEECH_PROBABILITY_THRESHOLD {
+                warn!(
+                    model = self.label,
+                    no_speech_prob, "dropping whisper segment likely hallucinated from non-speech audio"
+                );
+                continue;
+            }
             match segment.to_str_lossy() {
                 Ok(s) => text.push_str(&s),
                 Err(err) => warn!(
@@ -136,8 +157,49 @@ impl WhisperModel {
             }
         }
 
-        Ok(clean_transcript(&text))
+        let cleaned = clean_transcript(&text);
+        if is_known_hallucination(&cleaned) {
+            warn!(
+                model = self.label,
+                transcript = %cleaned,
+                "dropping transcript matching a known Whisper noise-hallucination phrase"
+            );
+            return Ok(String::new());
+        }
+
+        Ok(cleaned)
     }
+}
+
+/// whisper.cpp's own standard default for `no_speech_thold` (unused as a decode-time
+/// gate in this whisper.cpp version -- see the comment above -- but still meaningful
+/// as the threshold for the value it computes and exposes per segment).
+const NO_SPEECH_PROBABILITY_THRESHOLD: f32 = 0.6;
+
+/// Stock short phrases whisper.cpp is well known to hallucinate from silence or room
+/// noise, rather than any of the countless things a real short utterance could be.
+/// Sourced from this project's own ledger (`"And no..."`, `"Bye!"` were both recorded
+/// as observed hallucinations from a real session) plus the phrases most commonly
+/// reported across the whisper.cpp community for the same failure mode. Matched
+/// case-insensitively against the whole cleaned transcript, not as a substring --
+/// a real utterance that happens to end in "thank you" must not be discarded.
+const KNOWN_HALLUCINATION_PHRASES: &[&str] = &[
+    "and no",
+    "bye",
+    "bye!",
+    "thank you",
+    "thank you.",
+    "thanks for watching",
+    "thanks for watching!",
+    "you",
+];
+
+fn is_known_hallucination(transcript: &str) -> bool {
+    let normalized = transcript.trim().trim_end_matches('.').to_lowercase();
+    !normalized.is_empty()
+        && KNOWN_HALLUCINATION_PHRASES
+            .iter()
+            .any(|phrase| phrase.trim_end_matches('.') == normalized)
 }
 
 fn recommended_threads() -> std::os::raw::c_int {
@@ -366,5 +428,34 @@ mod tests {
     #[test]
     fn clean_keeps_plain_speech_intact() {
         assert_eq!(clean_transcript("Turn the lights off."), "Turn the lights off.");
+    }
+
+    #[test]
+    fn known_hallucination_phrases_are_rejected_case_and_punctuation_insensitively() {
+        assert!(is_known_hallucination("Bye!"));
+        assert!(is_known_hallucination("bye"));
+        assert!(is_known_hallucination("Thank you."));
+        assert!(is_known_hallucination("THANK YOU"));
+        assert!(is_known_hallucination("And no..."));
+        assert!(is_known_hallucination("  you  "));
+    }
+
+    #[test]
+    fn a_real_utterance_ending_in_a_hallucination_phrase_is_not_rejected() {
+        // The denylist matches the whole transcript, not a substring -- a real
+        // utterance that happens to end with "thank you" must survive.
+        assert!(!is_known_hallucination(
+            "I really appreciate the help, thank you"
+        ));
+        assert!(!is_known_hallucination("Could you say bye to her for me"));
+    }
+
+    #[test]
+    fn empty_transcript_is_not_flagged_as_a_hallucination() {
+        // Empty is already "no speech" via the caller's own length guard; this
+        // function's job is distinguishing confident-but-wrong speech from
+        // genuine short utterances, not re-deciding silence.
+        assert!(!is_known_hallucination(""));
+        assert!(!is_known_hallucination("   "));
     }
 }

@@ -99,6 +99,18 @@ evals_out/
 # a document meant to ship or be reviewed. Same reasoning as /AUDIT.md above.
 /WHATS_LEFT.md
 
+# Voice-loop root-cause audit and architecture proposal (2026-08-31), written
+# against symptoms from a live mic session. A working document whose findings
+# belong in .agents/CONTEXT.md once they land, not a deliverable to ship.
+# Same reasoning as /AUDIT.md above.
+/VOICE_AUDIT.md
+
+# Execution plan derived from VOICE_AUDIT.md (2026-09-01): 16 buckets across
+# 4 phases turning the audit's findings into ordered, verifiable work. A
+# personal tracking copy of the approved plan, not a deliverable -- same
+# reasoning as /AUDIT.md above.
+/VOICE_REMEDIATION_PLAN.md
+
 # Live agent identity state (cognitive/identity.py's default when
 # IDENTITY_BASE_PATH is unset) -- a SQLite db plus the persona's own working
 # copy of personality.json/history.json, written by any local run. Runtime
