@@ -14158,3 +14158,32 @@ workflow already in effect on `fix/phase1-pipeline-defects`). home-gpu's own Rus
 installed `cognitive_rust` wheel have not been touched by this change; this fix does not change
 the wheel's binary output, so no home-gpu action was judged necessary, but that judgment has not
 been verified live.
+
+## 2026-09-01 -- Installed cognitive_rust on home-gpu (was never installed there)
+
+Follow-up to the `cargo test --workspace` fix, at the user's direct request ("install in home
+gpu"). Checking `cargo test --workspace`'s success there surfaced that `cognitive_rust` -- the
+PyO3 acceleration module for ACT-R scoring, PAD updates, fatigue decay, and personalized
+PageRank -- was not installed in home-gpu's venv at all, on a completely separate axis from the
+Cargo.toml/pyproject.toml fix (source code correctness vs. a deployment artifact never having
+been built for this host). Confirmed this was not silently breaking anything: `agent_state.py`,
+`memory_store.py`, and `cognitive/appraisal.py` all import it inside `try/except`, falling back
+to an equivalent pure-Python path (`appraisal_matches_python_heuristic_defaults` and
+`pad_update_preserves_current_python_formula` in `cognitive-rust`'s own test suite exist
+specifically to keep the two paths provably identical) -- only `surfacing_agent.py` imports it
+unconditionally at module level, and that agent is not among the four running systemd services.
+
+**Action:** installed `maturin` in home-gpu's venv (not previously present), built the wheel on
+the box itself rather than transferring the Mac-built one -- different architecture entirely
+(x86_64 Linux, Python 3.12.3, vs. the Mac's arm64/3.13) -- confirmed maturin's own log line
+again showed `"Using build options features from pyproject.toml"`, `pip install`ed the
+resulting `cognitive_rust-7.0.0-cp39-abi3-manylinux_2_34_x86_64.whl`, and verified it imports
+with the full expected API surface. Restarted `ai-friend-agents` (the service that actually
+imports it, via `brain_agent`'s cognitive core) to activate the now-available accelerated path
+instead of the dormant fallback, and sent a real turn through afterward to confirm no import or
+runtime errors -- MAUT decision logged normally, clean.
+
+**NOT done:** did not investigate why this was never installed on home-gpu in the first place
+(a historical gap, not something this session's changes caused) or whether any other agent
+process might benefit from having it available. `surfacing_agent`'s unconditional import was
+noted but not addressed, since that agent is not currently deployed on this box.
