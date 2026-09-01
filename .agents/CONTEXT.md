@@ -13802,3 +13802,62 @@ filler under the new threshold (the two synthetic turns tested this session were
 turns exercising suppression, not the firing path at the new value -- the firing path itself
 was already verified in the base Bucket 3 entry above, at the old 0.4 threshold, and the
 mechanism didn't change, only the constant).
+
+## 2026-09-01 -- The dual-.env drift is closed: home-gpu now has one canonical env file
+
+Resolves the deferral both Bucket 3 entries above flagged, on direct user instruction ("sync
+both env files and merge into one"). Diffed key sets rather than assuming the two files were
+symmetric: `backend/.env` (110 lines, loaded as real OS environment by all four systemd units'
+`EnvironmentFile=`) turned out to be a strict superset of `~/AI_friend/.env` (104 lines, loaded
+independently by `pydantic_settings`'s own `env_file` resolution in `config.py`, and also
+docker-compose's variable-substitution file). Every key in the repo-root file existed in
+`backend/.env`, and everywhere their *values* differed, `backend/.env`'s value was already the
+one actually in effect (real OS env vars win over the `env_file` fallback) -- so the merge
+carried no risk of silently reverting anything currently working.
+
+**One bug found inside a single file, not between them:** `backend/.env` itself declared
+`LLM_FAST_MODEL` twice (line 29 `qwen2.5:3b`, dead; line 107 `llama3.2:3b`, effective) --
+dropped the dead line while merging.
+
+**One nuance preserved rather than flattened.** `LIVEKIT_URL`, `LIVEKIT_PUBLIC_URL`, and (after
+grepping every Dockerfile/compose service and confirming it appears in none of them --
+genuinely dead) `STT_SENSEVOICE_DIR` are host-native values, correct for this box's actual
+deployment shape (brain_agent/transport_agent/stt-agent as systemd units on bare metal, not
+containerized). `docker-compose.prod.yml` defaults `LIVEKIT_URL` to the docker-network hostname
+`ws://local_sfu:7880` only when the variable is *unset* -- baking a host value into the shared
+file would silently defeat that fallback for a hypothetical future containerized brain_agent
+deployment reusing this same file. Rather than pick a value silently, a comment now sits
+directly above those keys in the merged file explaining the split, so a future containerized
+deploy attempt finds an explanation instead of a mystery two-hour debugging session.
+`BACKEND_ACCESS_KEY` was merged to the real secret (matching `frontend/.env.local`,
+independently already correct) over the repo-root file's empty value -- confirmed via
+`backend/main.py::require_session_auth` that an empty/unset key fails *closed* (503 for
+non-loopback clients), so the empty value was dead weight, not a live security hole.
+
+**Mechanism.** Canonical file lives at repo root (`~/AI_friend/.env`) -- `config.py` hardcodes
+that path three directories up from itself, and docker-compose commands run from repo root
+read `.env` from cwd by default. `backend/.env` replaced with a relative symlink
+(`backend/.env -> ../.env`) instead of deleting it and repointing the four systemd units'
+`EnvironmentFile=` -- zero unit-file edits needed, and all three consumers (systemd,
+python-dotenv, docker-compose) resolve the symlink transparently, verified rather than assumed.
+
+**Verification.** Both original files backed up (`.env.bak.premerge.<timestamp>`, both
+locations) before any edit. Merged content parsed cleanly via
+`~/AI_friend/.venv/bin/python`'s `dotenv_values()` (58 keys, correct values) and via `docker
+compose --env-file ... -f docker-compose.infra.yml config --dry-run` (`LIVEKIT_IMAGE_TAG`
+resolved to the pinned `v1.8.4`, exit 0) *before* deploying. After restarting all four systemd
+units: read `/proc/$PID/environ` directly on the running `ai-friend-agents` process for the
+real-OS-env values, and separately imported `app.config.Config` via the venv python for
+`pydantic_settings`'s independent read -- both mechanisms agreed
+(`LLM_FAST_MODEL=llama3.2:3b`, `MEASURE_TRACE=True`, `ALLOW_SQLITE_FALLBACK=True`,
+`VOICE_FILLER_THRESHOLD=1.2`, `BACKEND_ACCESS_KEY` set). A real synthetic turn published to
+`chat.input` post-restart processed end-to-end with no errors in `journalctl`. All four
+services (`ai-friend-agents`, `ai-friend-stt`, `ai-friend-voice`, `ai-friend-backend`) confirmed
+`active` throughout.
+
+**NOT done:** the running docker-compose infra containers (e.g. `local_sfu`) were not
+recreated -- the `LIVEKIT_IMAGE_TAG` pin only takes effect on the next `docker compose up`/
+recreate for that stack, which wasn't triggered here since no infra container needed restarting
+for this change. No CI/pre-flight drift check was added (one of the options the original
+deferral named) -- moot now that there is structurally one file, but worth remembering if a
+third `.env`-like file is ever introduced elsewhere in the deployment.
