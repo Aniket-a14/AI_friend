@@ -94,6 +94,13 @@ struct SttConfig {
     /// whole accumulated utterance. A keyword from 20 seconds ago should not still
     /// be able to interrupt the agent.
     partial_window_secs: f64,
+    /// Bucket 1 (VOICE_REMEDIATION_PLAN.md): GGML-converted Silero VAD weights,
+    /// provisioned by `whisper::ensure_vad_model`. Same on/off + directory pattern as
+    /// `sensevoice_enabled`/`sensevoice_dir` above -- `Endpointer` (audio.rs) still makes
+    /// the real-time segmentation decision; this further filters the buffer it hands over.
+    vad_model_dir: PathBuf,
+    vad_model_name: String,
+    vad_enabled: bool,
 }
 
 impl SttConfig {
@@ -124,6 +131,12 @@ impl SttConfig {
             partial_interval_ms: parse_env("STT_PARTIAL_INTERVAL_MS", 500.0),
             max_utterance_secs: parse_env("STT_MAX_UTTERANCE_SECS", 30.0),
             partial_window_secs: parse_env("STT_PARTIAL_WINDOW_SECS", 8.0),
+            vad_model_dir: PathBuf::from(env_or("STT_VAD_MODEL_DIR", "/app/models/vad")),
+            vad_model_name: env_or("STT_VAD_MODEL", "silero-v5.1.2"),
+            vad_enabled: !matches!(
+                env_or("STT_VAD", "on").to_lowercase().as_str(),
+                "off" | "false" | "0"
+            ),
         }
     }
 }
@@ -211,9 +224,10 @@ async fn run_offline_transcription(path: &Path, config: &SttConfig) -> Result<()
     let pcm_16k = decode_wav_mono_16k(path)?;
 
     let model_path = whisper::ensure_model(&config.model_dir, &config.accurate_model).await?;
+    let vad_path = resolve_vad_model(config).await;
     let language = config.language.clone();
     let transcript = tokio::task::spawn_blocking(move || -> Result<String> {
-        let model = WhisperModel::load(&model_path, "accurate", &language)?;
+        let model = WhisperModel::load(&model_path, "accurate", &language)?.with_vad_model(vad_path);
         model.transcribe(&pcm_16k)
     })
     .await
@@ -363,8 +377,11 @@ async fn main() -> Result<()> {
             );
             let accurate_path =
                 whisper::ensure_model(&config.model_dir, &config.accurate_model).await?;
-            let accurate =
-                Arc::new(WhisperModel::load(&accurate_path, "accurate", &config.language)?);
+            let accurate_vad_path = resolve_vad_model(&config).await;
+            let accurate = Arc::new(
+                WhisperModel::load(&accurate_path, "accurate", &config.language)?
+                    .with_vad_model(accurate_vad_path),
+            );
 
             let fast = Arc::new(load_fast_path(&config).await?);
             let hears_emotion = matches!(*fast, FastPath::SenseVoice(_));
@@ -587,11 +604,30 @@ async fn load_fast_path(config: &SttConfig) -> Result<FastPath> {
 
     info!(fast = %config.fast_model, "falling back to the Whisper fast path");
     let fast_path = whisper::ensure_model(&config.model_dir, &config.fast_model).await?;
-    Ok(FastPath::Whisper(Arc::new(WhisperModel::load(
-        &fast_path,
-        "fast",
-        &config.language,
-    )?)))
+    let fast_vad_path = resolve_vad_model(config).await;
+    Ok(FastPath::Whisper(Arc::new(
+        WhisperModel::load(&fast_path, "fast", &config.language)?.with_vad_model(fast_vad_path),
+    )))
+}
+
+/// Bucket 1 (VOICE_REMEDIATION_PLAN.md): resolves the Silero VAD model path for
+/// `WhisperModel::with_vad_model`, or `None` to leave VAD off -- same deliberate-but-loud,
+/// not-fatal fallback as `load_fast_path` above: barge-in and recognition must keep working
+/// on a host with no network access or a stale cache, just without VAD's extra filtering.
+async fn resolve_vad_model(config: &SttConfig) -> Option<PathBuf> {
+    if !config.vad_enabled {
+        return None;
+    }
+    match whisper::ensure_vad_model(&config.vad_model_dir, &config.vad_model_name).await {
+        Ok(path) => Some(path),
+        Err(err) => {
+            warn!(
+                model = %config.vad_model_name,
+                "Silero VAD model unavailable ({err:#}); continuing without VAD filtering"
+            );
+            None
+        }
+    }
 }
 
 fn spawn_final_worker(

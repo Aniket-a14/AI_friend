@@ -17,6 +17,12 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 /// Upstream ggml weights published alongside whisper.cpp.
 const MODEL_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
 
+/// Bucket 1 (VOICE_REMEDIATION_PLAN.md): GGML-converted Silero VAD weights, hosted in a
+/// separate repo from the whisper.cpp models above. Confirmed by fetching whisper.cpp's
+/// own `models/download-vad-model.sh` directly rather than guessing a URL -- an earlier
+/// attempt at `{MODEL_BASE_URL}/ggml-silero-v5.1.2.bin` 404'd, since it lives here instead.
+const VAD_MODEL_BASE_URL: &str = "https://huggingface.co/ggml-org/whisper-vad/resolve/main";
+
 /// P2-12: pinned SHA256 checksums for the ggml weights this repo actually
 /// ships defaults for, mirroring `provision_models.py`'s existing SenseVoice
 /// pin -- computed directly from a fresh download of each file, not copied
@@ -43,6 +49,21 @@ const PINNED_MODEL_SHA256: &[(&str, &str)] = &[
 
 fn expected_sha256(model_name: &str) -> Option<&'static str> {
     PINNED_MODEL_SHA256
+        .iter()
+        .find(|(name, _)| *name == model_name)
+        .map(|(_, sha)| *sha)
+}
+
+/// Same reasoning as `PINNED_MODEL_SHA256` above, computed the same way: downloaded for
+/// real from `VAD_MODEL_BASE_URL` on home-gpu (2026-09-01) and hashed with `sha256sum`,
+/// not copied from an unverified source.
+const PINNED_VAD_MODEL_SHA256: &[(&str, &str)] = &[(
+    "silero-v5.1.2",
+    "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf",
+)];
+
+fn expected_vad_sha256(model_name: &str) -> Option<&'static str> {
+    PINNED_VAD_MODEL_SHA256
         .iter()
         .find(|(name, _)| *name == model_name)
         .map(|(_, sha)| *sha)
@@ -75,6 +96,16 @@ pub struct WhisperModel {
     ctx: WhisperContext,
     label: &'static str,
     language: String,
+    /// Bucket 1 (VOICE_REMEDIATION_PLAN.md): `None` means whisper.cpp's own internal VAD
+    /// gating stays off (today's behavior, unchanged). Set via `with_vad_model` -- a
+    /// builder method rather than a `load()` parameter, so the three existing call sites
+    /// that don't need VAD are untouched. This complements, not replaces, `Endpointer` in
+    /// `audio.rs`: `Endpointer` still makes the real-time decision of when an utterance
+    /// starts/ends from the live stream; this operates on the already-buffered utterance
+    /// `Endpointer` hands over, further filtering which sub-portions of it are speech
+    /// before the expensive decode step runs -- exactly whisper.cpp's own intended use of
+    /// this feature, not a real-time streaming VAD.
+    vad_model_path: Option<PathBuf>,
 }
 
 impl WhisperModel {
@@ -88,7 +119,16 @@ impl WhisperModel {
             ctx,
             label,
             language: language.to_string(),
+            vad_model_path: None,
         })
+    }
+
+    /// Enable whisper.cpp's internal VAD gating using a GGML-converted Silero model
+    /// (see `ensure_vad_model`). Chainable so the three existing `load()` call sites that
+    /// don't pass a VAD model are unaffected.
+    pub fn with_vad_model(mut self, path: Option<PathBuf>) -> Self {
+        self.vad_model_path = path;
+        self
     }
 
     /// Transcribe mono 16 kHz f32 PCM. Returns the concatenated segment text.
@@ -130,6 +170,15 @@ impl WhisperModel {
         // whisper.cpp DOES compute and expose for real is the per-segment probability below.
         // Single-segment decoding keeps latency predictable for short utterances.
         params.set_n_threads(recommended_threads());
+
+        // Bucket 1: further gate on Silero VAD probability within the already-buffered
+        // utterance when a model is configured -- `Endpointer` (audio.rs) is still what
+        // decided this buffer's boundaries in real time.
+        if let Some(vad_path) = self.vad_model_path.as_ref().and_then(|p| p.to_str()) {
+            params.set_vad_model_path(Some(vad_path));
+            params.set_vad_params(whisper_rs::WhisperVadParams::new());
+            params.enable_vad(true);
+        }
 
         state
             .full(params, pcm_16k)
@@ -234,8 +283,51 @@ pub fn clean_transcript(raw: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Whisper's smallest real weights (tiny.en) run well over 100 MB, so anything under
+/// this is unambiguously a failed/partial download, never a genuine model.
+const MIN_VALID_WHISPER_MODEL_BYTES: u64 = 1_000_000;
+
+/// Bucket 1 (VOICE_REMEDIATION_PLAN.md): the Silero VAD weights are legitimately only
+/// ~885 KB -- `MIN_VALID_WHISPER_MODEL_BYTES` was tuned for whisper's own much larger
+/// weights and flagged a correctly-downloaded, SHA256-matching VAD file as "truncated"
+/// on every single run, forcing a full re-download from HuggingFace every process start
+/// instead of ever caching. Caught by an actual live run (`--transcribe-file`), not by
+/// the unit tests -- this file's size threshold has no test coverage.
+const MIN_VALID_VAD_MODEL_BYTES: u64 = 100_000;
+
 /// Resolve a model file, downloading it into the cache directory on first use.
 pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf> {
+    ensure_ggml_file(
+        cache_dir,
+        model_name,
+        MODEL_BASE_URL,
+        expected_sha256(model_name),
+        MIN_VALID_WHISPER_MODEL_BYTES,
+    )
+    .await
+}
+
+/// Bucket 1 (VOICE_REMEDIATION_PLAN.md): same provisioning contract as `ensure_model`
+/// (cache, verify, re-download on mismatch, pin the SHA256), pointed at the separate
+/// Silero VAD repo and pin table instead. `model_name` is e.g. `"silero-v5.1.2"`.
+pub async fn ensure_vad_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf> {
+    ensure_ggml_file(
+        cache_dir,
+        model_name,
+        VAD_MODEL_BASE_URL,
+        expected_vad_sha256(model_name),
+        MIN_VALID_VAD_MODEL_BYTES,
+    )
+    .await
+}
+
+async fn ensure_ggml_file(
+    cache_dir: &Path,
+    model_name: &str,
+    base_url: &str,
+    pin: Option<&str>,
+    min_valid_size: u64,
+) -> Result<PathBuf> {
     tokio::fs::create_dir_all(cache_dir)
         .await
         .with_context(|| format!("create model cache dir {}", cache_dir.display()))?;
@@ -243,11 +335,9 @@ pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf>
     let file_name = format!("ggml-{model_name}.bin");
     let target = cache_dir.join(&file_name);
 
-    let pin = expected_sha256(model_name);
-
     if tokio::fs::try_exists(&target).await.unwrap_or(false) {
         let size = tokio::fs::metadata(&target).await.map(|m| m.len()).unwrap_or(0);
-        if size > 1_000_000 {
+        if size > min_valid_size {
             match pin {
                 None => {
                     info!(model = model_name, path = %target.display(), size, "using cached whisper model (no pinned checksum for this model name)");
@@ -282,7 +372,7 @@ pub async fn ensure_model(cache_dir: &Path, model_name: &str) -> Result<PathBuf>
         let _ = tokio::fs::remove_file(&target).await;
     }
 
-    let url = format!("{MODEL_BASE_URL}/{file_name}");
+    let url = format!("{base_url}/{file_name}");
     info!(model = model_name, %url, "downloading whisper model (first run only)");
 
     let mut response = reqwest::Client::builder()
@@ -373,6 +463,40 @@ mod tests {
         // named "unverified" warning instead of a false pass.
         assert_eq!(expected_sha256("large-v3"), None);
         assert_eq!(expected_sha256("not-a-real-model"), None);
+    }
+
+    #[test]
+    fn expected_vad_sha256_returns_the_pin_for_the_known_model() {
+        // Downloaded for real from VAD_MODEL_BASE_URL on home-gpu (2026-09-01) and
+        // hashed with sha256sum, not copied from an unverified source -- same
+        // integrity bar as the whisper model pins above.
+        assert_eq!(
+            expected_vad_sha256("silero-v5.1.2"),
+            Some("29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf")
+        );
+    }
+
+    #[test]
+    fn vad_model_size_threshold_accepts_the_real_downloaded_file_size() {
+        // The real bug, caught by an actual `--transcribe-file` run, not by any unit
+        // test: MIN_VALID_WHISPER_MODEL_BYTES (1_000_000) was reused for the VAD file
+        // too, and the real ggml-silero-v5.1.2.bin is only 885_098 bytes -- so a
+        // correctly-downloaded, SHA256-verified VAD file was flagged "truncated" and
+        // re-downloaded from HuggingFace on every single process start.
+        const REAL_SILERO_V5_1_2_SIZE_BYTES: u64 = 885_098;
+        assert!(REAL_SILERO_V5_1_2_SIZE_BYTES > MIN_VALID_VAD_MODEL_BYTES);
+        // And the whisper threshold must stay far above the VAD one, or this test
+        // would pass for the wrong reason (both thresholds collapsing to ~0).
+        assert!(MIN_VALID_WHISPER_MODEL_BYTES > REAL_SILERO_V5_1_2_SIZE_BYTES);
+    }
+
+    #[test]
+    fn expected_vad_sha256_is_none_for_an_unpinned_model() {
+        // STT_VAD_MODEL is operator-configurable (e.g. to "silero-v6.2.0", which
+        // whisper.cpp's own download script also lists) -- an unlisted one must
+        // come back None, not panic or silently match a different model's pin.
+        assert_eq!(expected_vad_sha256("silero-v6.2.0"), None);
+        assert_eq!(expected_vad_sha256("not-a-real-model"), None);
     }
 
     #[tokio::test]
