@@ -663,8 +663,8 @@ async def test_the_action_path_pins_sampling_over_the_endocrine_layer(kavya):
     override. Unpinned, the eval's sampling would be silently replaced by
     simulated hormones and every run would be free to differ -- the exact
     variance `reset_model_state` exists to remove. Worse, with no override at
-    all `generate_stream` defaults to num_predict=40 and num_ctx=2048, which
-    truncates answers mid-sentence."""
+    all `generate_stream` defaults num_predict to 40, which truncates answers
+    mid-sentence."""
     client = ScriptedStreamClient()
 
     await run_eval(client, kavya, persona_probes(kavya), path="action")

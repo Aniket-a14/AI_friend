@@ -125,6 +125,24 @@ class AppSettings(BaseSettings):
     LLM_CHAT_MODEL: str | None = None
     LLM_REFLECTION_MODEL: str | None = None
 
+    # Bucket 6.1 (voice remediation Phase 3): OllamaClient hardcoded 2048
+    # regardless of what the model actually supports, and Ollama truncates a
+    # too-long prompt *from the front* -- exactly where the system prompt and
+    # persona identity live. Both locally-pulled models comfortably exceed
+    # this: llama3.2:3b advertises a 131072 context window, qwen2.5:3b a
+    # 32768 one. 8192 is chosen, not just raised arbitrarily, from the actual
+    # KV-cache cost at the deployment ceiling (RTX 2060S, 8GB, ~6.2GB free
+    # per the remediation plan's home-gpu audit): at fp16 KV,
+    # 2*layers*kv_heads*head_dim*2 bytes/token gives ~112KB/token for
+    # llama3.2:3b (GQA, 8 kv heads) and ~36KB/token for qwen2.5:3b (GQA, 2 kv
+    # heads) -- i.e. ~0.9GB and ~0.3GB respectively at this ceiling, leaving
+    # ample headroom next to a ~2GB Q4 weight footprint. This is a computed
+    # budget, not a live measurement; the eval harness (`evals/`) already
+    # pins 8192 independently for the same reason. Configurable because the
+    # right number depends on the deployment's actual free VRAM, which this
+    # file cannot know.
+    LLM_NUM_CTX: int = 8192
+
     LLM_STREAM_MAX_SECONDS: int = 120
     LLM_INTENT_CLASSIFICATION_ENABLED: bool = True
 

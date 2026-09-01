@@ -59,8 +59,11 @@ Two consequences worth knowing before using it:
   `PinnedOptionsClient` overrides all three with the run's pinned options. So
   this path does not measure the endocrine mapping — deliberately, because
   sampling that drifts with simulated affect cannot answer "did the model
-  change". It is also what stops `generate_stream`'s own `num_predict=40` /
-  `num_ctx=2048` defaults from truncating every answer.
+  change". It is also what stops `generate_stream`'s own `num_predict=40`
+  default from truncating every answer (`num_ctx` no longer needs escaping the
+  same way since Bucket 6.1: production reads `Config.LLM_NUM_CTX`, default
+  8192, though this wrapper still pins it explicitly regardless of that
+  setting).
 - **Reports from the two paths cannot be compared.** `compare` refuses with a
   usage exit rather than diffing them. Sampling and persona differences are
   surfaced and left to the reader, because a caller may have changed one on
@@ -98,7 +101,10 @@ and neither folded into the score:
   a guess against the model's prior.
 - **`fits NO`** — the rendered context exceeded `num_ctx`. Ollama truncates
   from the *front*, which is exactly where the plant sits. `OllamaClient`
-  defaults `num_ctx` to 2048, so the harness pins it explicitly. The budget
+  now reads `Config.LLM_NUM_CTX` (default 8192, Bucket 6.1) rather than
+  hardcoding 2048, but the harness still pins it explicitly regardless of
+  deployment config, so a probe's `fits`/`fits NO` verdict never depends on
+  whatever `.env` happens to set. The budget
   counts prompt plus system plus **`num_predict`**, since generated tokens
   share the same window — leaving the reserve out yields a probe that fits on
   arrival and loses the plant partway through generation, reported as `fits

@@ -340,11 +340,13 @@ class RunOptions(BaseModel):
     seed: int = 42
     top_p: float = 1.0
     num_predict: int = 192
-    # Pinned explicitly because `OllamaClient` defaults it to 2048 and Ollama
-    # truncates an over-long prompt *from the front* without saying so. For a
-    # multi-turn recall probe the front is where the planted fact lives, so the
-    # default would silently delete the thing under test and score the model's
-    # prior instead -- a confident number measuring nothing.
+    # Pinned explicitly because Ollama truncates an over-long prompt *from
+    # the front* without saying so. For a multi-turn recall probe the front
+    # is where the planted fact lives, so an unpinned run tracking whatever
+    # `Config.LLM_NUM_CTX` a deployment sets (8192 by default since Bucket
+    # 6.1, but configurable) would silently delete the thing under test and
+    # score the model's prior instead -- a confident number measuring
+    # nothing.
     num_ctx: int = 8192
     # How many layers Ollama offloads to the GPU. Left unset, Ollama picks the
     # split at load time from whatever VRAM is free, and the split is an input
