@@ -14302,3 +14302,108 @@ reverting its fix and confirming the test fails, then restoring via `cp` from a 
 **NOT done:** the Dockerfile fix was not verified with an actual `docker build` (see above).
 None of these fixes have been pushed or re-reviewed by the bots yet -- this entry covers the
 local fix-and-verify pass only.
+
+## 2026-09-01 -- Phase 2 Bucket 14: documentation drift, verified against current code section by section
+
+PR #209 (Phase 1) merged to `main`; this entry starts Phase 2 on a new branch
+(`phase2/docs-drift-and-voice-cloning`). `VOICE_REMEDIATION_PLAN.md`'s Bucket 14 names four
+drifts in `academic_benchmarks/documentation/algorithms_equations.md` plus a handful of
+secondary items. Every claimed drift was re-verified against current code before writing its
+correction, rather than trusted from the plan's own table -- which caught two of the plan's own
+premises being stale (see below), a direct instance of the audit's own methodological rule:
+verify against source before treating any spec statement as current behavior.
+
+**D2 (§2.3, endocrine hormones):** the doc described `cortisol`/`dopamine` as single tonic
+terms. Corrected to the real tonic+phasic split (`agent_state.py`): tonic is a pure function of
+current valence/arousal/fatigue and has no memory; a `release_cortisol`/`release_dopamine` call
+adds a phasic burst stored relative to the tonic floor, decaying with half-life 600s/90s
+respectively. Added the actual decay formula and the reasoning for why the split matters (tonic
+terms are perfectly anti-correlated by construction; only phasic lets the agent be stressed and
+rewarded at once) and why bursts are not persisted (a 90s/600s half-life value read back after
+a restart means nothing).
+
+**D4 (§5.2, memory cue boost):** the doc listed a hardcoded example cue vocabulary (*Kolkata,
+Bangalore, Priya, Rasgulla*, ...) and a flat `+1.2`/`+0.6` boost pair. Neither matches
+`memory_store.py`: cues come from the agent's own learned mental lexicon (`lexicon_store.py`),
+not a fixed list -- production personas are authored per-deployment with no shared vocabulary,
+so a fixed example set wouldn't even generalize across two installs. The real constant is
+`DIRECT_CUE_BOOST = 5.0`, and "spreading activation" is not a flat additive constant to
+connected nodes at all -- it's a HippoRAG-inspired, degree-scaled Personalized PageRank pass
+(3-iteration power method, `PPR_DAMPING` teleport factor). Documented the real formula.
+
+**D6 (§6.3, Interruption Coherence Index):** confirmed genuinely aspirational, not wrong --
+nothing computes it at runtime. Added a one-line status note rather than removing the section,
+so a future implementer has the target formula.
+
+**§6.1/§6.2 (TTS halt + resolver) -- the plan's own premise was stale.** The plan pointed at two
+sibling docs (`novelty_contributions.md`, `frameworks_infrastructure.md`) as "already corrected"
+style templates, both stating flush finding M3-R1 as unfixed ("no pause mechanism exists yet").
+Checked the code instead of copying that text: `transport_agent._on_audio_stop`/
+`_flush_downstream_audio` (a LiveKit track-rotation flush, since `capture_frame()` exposes no
+way to drain audio already handed to the client's native playout buffer) was built **2026-08-23
+-- a full week before this plan was written.** Copying the sibling docs' text into
+`algorithms_equations.md` would have propagated a stale claim into a fourth file. Fixed all
+three sibling docs plus `literature_review.md` (a fourth, not named in the plan's table at all)
+and `algorithms_equations.md` itself with the real mechanism, additionally noting it is now
+gated through the Bucket 1 resolver fix (a confirmed stop no longer fires ahead of the
+resolver's verdict). Kept the honest caveat throughout: end-to-end latency for the full path
+(RMS pre-filter -> transcription -> resolver -> track rotation -> client-observed silence) is
+still **NOT MEASURED** against live infrastructure -- the mechanism's existence and its latency
+are different claims. Also corrected §6.2's closing sentence (claimed a "graceful crossfade"
+unmute on a rejected stop; no crossfade exists on that path or anywhere else, see below) and
+§9.2's pseudocode, which modeled a fictional microsecond-level hardware mute/unmute -- rewritten
+to the real multi-stage message-passing shape.
+
+**D3 (OLA crossfade) and D5 (APRA granularity) -- doc updates following Phase 1's code fixes, as
+the plan anticipated, but wider than the plan's own file list.** Bucket 2 deleted the crossfade
+entirely (not merely fixed it) for the reason recorded in that bucket's own ledger entry. Found
+its description still present in: `algorithms_equations.md` §6.4 (rewritten to describe the
+real remaining odd-byte-buffering-only behavior), `context.md` §3 (same), `context.md` §4.2 (the
+reverb "feedback network" formula literally documented the pre-Bucket-2 bug -- a delay buffer
+accumulating its own delayed output, i.e. true feedback with unbounded gain -- corrected to the
+actual bounded echo formula plus the headroom scaling Bucket 2 added), one README architecture
+diagram label, one `context.md` section header, and `experimental_methodology.md`'s pipeline
+flowchart (two more stale mentions). For D5, added a note to `context.md` §8.2 explaining
+Bucket 5's clause-aligned chunking now lets a synthesis call span a meaningful portion of the
+60-frame prosody trajectory instead of the old ~3-word granularity that flattened it.
+
+**`context.md` §10.2 (filler threshold + chunk-size framing):** fixed a doubly-stale claim --
+"250ms" (already superseded by this session's own 1200ms change, see the Bucket 3 retune entry
+above) and a false causal link ("a 7-word chunk takes longer, so the system uses a *faster*
+threshold") that doesn't correspond to anything in the code; the segmenter and the filler timer
+are independently-tuned mechanisms. Also fixed §10.2's chunking description itself, which named
+only the 7-word/punctuation split and omitted the 300ms formation-buffer timer that Bucket 5
+actually fixed (was misnamed `formation_buffer_ms` while holding 0.030 compared against a
+seconds clock -- an effective, essentially-always-losing 30ms race against the segmenter).
+
+**The `CLAUDE.md`/`docs/FUTURE_WORK.md` "no headline figure has been measured" doc/doc
+contradiction -- investigated rather than resolved by picking a side.** Traced the 61.9ms
+TTFT/46.6 tok/s (Hermes 3 8B, real Colab GPU) and Recall@K (81.8/87.5/87.5/93.2% at K=1/3/5/10)
+figures back to the 2026-07-18 ledger entry: independently recomputed from raw per-sample arrays
+in `scripts/results/*.json`, matched the summary exactly, real HTTP calls to a local Ollama
+model with `MOCK_LLM_TEXT` not forced true. These are genuinely measured, not placeholders --
+the blanket claim in both files was simply wrong, not a stale-but-directionally-fine
+simplification. Corrected both to the narrower, still-true point: those numbers are specific to
+`hard_benchmark.py`'s own one-off benchmark corpus, not a property of "the system" that
+generalizes to an arbitrary deployment -- production personas on `main` are authored
+per-install by design, so there is no shared reference corpus to compute a fresh figure against
+for a random running instance. Added the same corpus-specificity caveat to README's own
+presentation of these figures, which stated them with no caveat at all just above a paragraph
+declaring "placeholder/unmeasured figures are marked [TBP], never presented as a result" --
+technically not a violation (these aren't unmeasured) but readable as one without the caveat.
+
+**Confirmed already resolved, no action needed:** the 250/400ms filler inconsistency across
+`README.md`/`docs/ARCHITECTURE.md` and the `backend/.env` duplicate `LLM_FAST_MODEL` line --
+both fixed earlier the same day, in this session's Bucket 3 retune and the home-gpu `.env`
+merge respectively, predating this bucket's execution.
+
+**NOT done:** `HANDOFF.md` still says 400ms -- left untouched deliberately; it is untracked,
+personal scratch notes, not part of the repo's shipped documentation set, and touching another
+work's uncommitted file is against this project's standing convention. The SOTA tables'
+comparative figures attributed to sources [5]-[7] (ERICA, HippoRAG, ACT-R/E) remain unverified
+against the cited papers themselves -- open since the 2026-07-18 audit entry, out of scope for a
+documentation-drift pass. No `docker build` was run to verify the Dockerfile fix from the prior
+entry (unrelated, carried over as still-open). Files touched: `CLAUDE.md`, `README.md`,
+`docs/FUTURE_WORK.md`, `backend/app/agents/context.md`,
+`academic_benchmarks/documentation/{algorithms_equations,novelty_contributions,
+frameworks_infrastructure,literature_review,experimental_methodology}.md`.

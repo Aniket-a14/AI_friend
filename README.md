@@ -180,7 +180,7 @@ graph TD
 
     subgraph "Voice Subsystem — Rust crate: backend/crates/voice-agent"
         Prosody["Prosody — PAD → rate/pitch/volume"]
-        Playback["Playback — OLA crossfade + reverb DSP"]
+        Playback["Playback — reverb DSP + chunk reassembly"]
         Resilience["Resilience — speculative fillers"]
     end
 
@@ -337,6 +337,11 @@ claim) — you run it from source via Docker Compose.
   persona consistency (`persona.rename-resistance = 1.00`) and prompt disclosure defense,
   while **Qwen 2.5 (14B)** provides **0.750 memory retention** across 240 dialogue turns.
   An optional cloud LLM fallback (`LLM_PROVIDER=anthropic`) remains available for low-spec hosts.
+  These specific figures are from one benchmark corpus (`hard_benchmark.py`,
+  `.agents/CONTEXT.md` 2026-07-18) and describe that run, not a guarantee for
+  every deployment — production personas here are authored per-install with
+  no shared reference corpus, so a fresh figure can't be computed against an
+  arbitrary running instance.
 
 ## What's proven, what's a target
 

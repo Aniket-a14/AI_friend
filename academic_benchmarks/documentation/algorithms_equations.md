@@ -160,25 +160,39 @@ F(t) = \begin{cases}
 
 where $\Delta t$ is the elapsed time in seconds.
 
-*   **Cortisol Coupling ($C \in [0, 1]$):** Represents stress levels. Spikes under negative valence ($V < 0$) and metabolic fatigue ($F$):
+*   **Cortisol Coupling ($C \in [0, 1]$):** Represents stress levels. **Corrected 2026-09-01** — this used to be documented as a single tonic term; the shipped implementation (`backend/app/state/agent_state.py`) is tonic **plus a decaying phasic burst**, and the two are deliberately not equivalent. Tonic cortisol is a pure function of current affect and forgets the instant valence recovers:
 
 ```math
-C(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right)
+C_{\text{tonic}}(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right)
+```
+
+A `release_cortisol(amount)` call (fired on an acute stressor) adds a phasic burst on top, stored **relative to the tonic floor** at release time and decaying exponentially toward zero with half-life $\tau_C = 600\text{s}$ (10 minutes — CONSTITUTIONAL, a persona temperament dial, not a deployment setting):
+
+```math
+C_{\text{phasic}}(t) = C_{\text{peak}} \cdot 2^{-\frac{t - t_{\text{release}}}{\tau_C}}, \qquad C(t) = \text{clamp}(C_{\text{tonic}}(t) + C_{\text{phasic}}(t), 0.0, 1.0)
 ```
 
 *Hyperparameter mapping:* High cortisol reduces LLM generation temperature to enforce strict, defensive responses; low cortisol increases temperature to support warm, creative responses.
 
-*   **Dopamine Coupling ($D \in [0, 1]$):** Represents reward tracking. Mapped from positive valence ($V > 0$) combined with fatigue-modulated actual arousal:
+*   **Dopamine Coupling ($D \in [0, 1]$):** Represents reward tracking. **Corrected 2026-09-01**, same reason as cortisol above — tonic tracks current affect only, mapped from positive valence ($V > 0$) combined with fatigue-modulated actual arousal:
 
 ```math
 Ar_{\text{actual}}(t) = \text{clamp}(Ar(t) + 0.2 \cdot F(t), 0.0, 1.0)
 ```
 
 ```math
-D_{\text{dopamine}}(t) = \text{clamp}(\max(0.0, V(t)) \cdot Ar_{\text{actual}}(t), 0.0, 1.0)
+D_{\text{tonic}}(t) = \text{clamp}(\max(0.0, V(t)) \cdot Ar_{\text{actual}}(t), 0.0, 1.0)
+```
+
+A `release_dopamine(amount)` call (fired on a reward event) adds a phasic burst, stored relative to the tonic floor and decaying with half-life $\tau_D = 90\text{s}$ (markedly shorter than cortisol's — a fright lingers, a reward mostly does not):
+
+```math
+D_{\text{phasic}}(t) = D_{\text{peak}} \cdot 2^{-\frac{t - t_{\text{release}}}{\tau_D}}, \qquad D(t) = \text{clamp}(D_{\text{tonic}}(t) + D_{\text{phasic}}(t), 0.0, 1.0)
 ```
 
 *Hyperparameter mapping:* High dopamine increases LLM `top_p` to enable playful and exploratory phrasing.
+
+**Why this split matters, not just how it works:** $C_{\text{tonic}}$ and $D_{\text{tonic}}$ are both pure functions of valence and are therefore perfectly anti-correlated by construction — one rises exactly as the other falls. Only the phasic channels let the agent register being stressed and rewarded *at the same time*, a combination the tonic-only model above could never represent. Phasic bursts are deliberately **not persisted** across a restart: at a 90s/600s half-life, a value read back after a restart would no longer mean anything.
 
 ### 2.4 Idle State Decay (ALMA Decay)
 
@@ -318,18 +332,18 @@ A_i = \ln(n) - d \cdot \ln(t + 1.0) + 1.5 \cdot \text{Importance}_i + 0.15 \cdot
 
 ### 5.2 Attentional Spreading & Direct Cue Boost
 
-AI Friend extends standard ACT-R with dynamic, real-time associative spreading activation:
+AI Friend extends standard ACT-R with dynamic, real-time associative spreading activation. **Corrected 2026-09-01** — this section previously listed a fixed example cue vocabulary (*Kolkata*, *Bangalore*, *Priya*, *Rasgulla*, ...) and a flat +0.6 propagation constant. Neither matches the shipped implementation (`backend/app/state/memory_store.py`): cues are the agent's own **learned mental lexicon** (`lexicon_store.py`), built from its actual conversation history, not a hardcoded example list — production personas are authored per-deployment with no shared vocabulary, so a fixed example set would not even apply across two installs. The generic-English seed in `lexicon_seed.py` runs once at DB seeding only, never on this hot path.
 
-*   **Direct Cue Boost:** If direct cues match key terms in the query text (e.g. *Kolkata*, *Bangalore*, *Priya*, *Rasgulla*, *Cognitive Architectures*, *Affective*), matching memories receive an instantaneous boost:
+*   **Direct Cue Boost:** If a cue from the agent's learned lexicon matches a term in the query text, matching memories receive an instantaneous boost of `DIRECT_CUE_BOOST = 5.0` per matched cue (deliberately large relative to ACT-R's own activation scale, so a literal cue match dominates the ranking):
 
 ```math
-Score_i \leftarrow Score_i + 1.2
+Score_i \leftarrow Score_i + 5.0 \cdot n_{\text{matched cues}}
 ```
 
-*   **Spreading Activation:** Memories receiving a direct cue boost propagate activation $+0.6$ to related candidate nodes in the pool sharing common entities or matching cross-epoch age attributes in content:
+*   **Spreading Activation:** Not a flat additive constant to directly-connected nodes. Candidates are boosted by a **HippoRAG-inspired, degree-scaled Personalized PageRank (PPR)** pass: cue-matched memories' entities seed a 3-iteration power-method PPR over the candidate entity graph (teleport factor `PPR_DAMPING`), and each non-directly-boosted candidate receives a boost proportional to its seeded entities' PPR mass, discounted by node degree (a high-degree "hub" entity contributes less per mention than a rare, specific one):
 
 ```math
-Score_j \leftarrow Score_j + 0.6 \quad \forall j \text{ connected to } i
+Score_j \leftarrow Score_j + \sum_{e \in \text{entities}(j)} \frac{1.2 \cdot \text{PPR}(e)}{1 + \ln(\max(1, \deg(e)))}
 ```
 
 ### 5.3 Gating and Retrieval Probability
@@ -362,7 +376,7 @@ A continuous audio frame stream is processed inside a microsecond-level loop. We
 \text{RMS} = \sqrt{\frac{1}{N} \sum_{k=1}^N x[k]^2}
 ```
 
-If RMS exceeds the silence threshold, a System 1 interruption is triggered. The active Text-to-Speech (TTS) engine immediately halts physical audio playback, capturing the exact epoch of the stop event.
+If RMS exceeds the noise floor by a fixed factor (`speech_factor = 3.0`, adaptive per session), a candidate speech onset is flagged. **Corrected 2026-09-01** — RMS crossing this threshold does not itself halt playback; there is no hardware-level, microsecond-latency stop path. What actually happens: `Endpointer` (Rust, `stt-agent`) is a real-time pre-filter that gates when Whisper transcription runs, not a playback switch. Only a *confirmed* stop — one that has passed through Whisper transcription and §6.2's semantic resolver below — triggers a halt, and the halt itself is a track-rotation flush in `transport_agent` (unpublish the current LiveKit audio track, publish a fresh one) rather than an instantaneous DSP mute; `rtc.AudioSource.capture_frame()` exposes no way to drain audio already handed to the client's native playout buffer, so recreating the published track is what routes around that gap. This mechanism (`transport_agent._on_audio_stop` / `_flush_downstream_audio`) predates this document's most recent revision (shipped 2026-08-23) and is now additionally gated correctly: earlier, a non-speculative `chat.input` published this stop unconditionally on every turn, bypassing §6.2's resolver entirely; it is now routed through the resolver first (fixed 2026-09-01, see `.agents/CONTEXT.md`), so an utterance the resolver would reject no longer cuts playback before the resolver ever runs. End-to-end wall-clock latency for this full path (RMS flag → transcription → resolver → track rotation → client-observed silence) has **not been measured** against live infrastructure; do not treat this section's presence as a latency claim.
 
 ### 6.2 System 2 Speculative Conflict Resolution
 
@@ -373,7 +387,7 @@ A candidate interruption is matched against conversational keywords (e.g. *stop*
 2.  **Pivot Alignment:** The keyword must act as a turn pivot, occurring at the start (`idx == 0`) or following call signs (`hey`, `friend`). Buried keywords are rejected.
 3.  **Conciseness Confirmation:** The interruption is confirmed if the length of the early transcript is short ($\le 4$ words) or the keyword is the absolute starting word.
 
-If these filters fail, playback is unmuted gracefully with a crossfade.
+If these filters fail, an `audio.resume` signal is published and playback continues uninterrupted. **Corrected 2026-09-01**: earlier text described this as a graceful crossfade-based unmute — no crossfade is involved on the rejection path, and §6.4 below explains why the crossfade mechanism this once referred to no longer exists at all.
 
 ### 6.3 Interruption Coherence Index ($ICI$)
 
@@ -388,15 +402,11 @@ The efficiency of turn-taking and physical stopping response speed is evaluated 
 *   $t$ (stop − interject): Turn response gap (in milliseconds) between when the user physically started speaking and when the TTS stopped.
 *   $\tau = 200.0$ ms: Human turn-taking overlap baseline constant.
 
-### 6.4 Acoustic Prosody Crossfading (OLA Crossfade)
+*Status note (2026-09-01):* $ICI$ as defined here is aspirational — nothing in the codebase currently computes it at runtime, and $\tau$ is not wired to any live measurement. This is not a wrong claim, just an unbuilt one; it is named here so a future implementer has the target formula rather than needing to re-derive it.
 
-To prevent phase discontinuities or popping noises when shifting voice styles dynamically, we apply a **10 ms linear Overlap-Add (OLA) crossfade** between the previous and newly modified prosody synthesis buffers:
+### 6.4 Acoustic Chunk Boundaries (Crossfade Removed)
 
-```math
-y[i] = \left(1 - \frac{i}{\text{fade-len}}\right) \cdot x_{\text{prev}}[i] + \frac{i}{\text{fade-len}} \cdot x_{\text{curr}}[i], \quad 0 \le i < \text{fade-len}
-```
-
-where $\text{fade-len} = \lfloor 0.010 \cdot \text{SampleRate} \rfloor$ represents the blending window limit.
+**Corrected 2026-09-01** — this section previously described a 10ms linear Overlap-Add (OLA) crossfade blended between consecutive prosody-shifted synthesis buffers. That mechanism was removed (Bucket 2, `VOICE_REMEDIATION_PLAN.md`), not merely retuned: audit showed it was blending the last 15ms of the *already-published, already-playing* previous chunk into the head of the next, which is not overlap-add (true OLA overlaps two buffers analyzed together **before** either is sent downstream) — it made the listener hear those 15ms twice, at a phase discontinuity, reported live as a "hazy"/muddy artifact. Correctly implementing true OLA would need holding back every chunk's tail until the next chunk arrives, adding one full chunk of latency to an already latency-critical path (see §8/Bucket 8's dual-loop discussion) for a benefit only relevant at chunk boundaries where prosody shifts sharply between clauses — chunking is now clause-aligned (§10.2, Bucket 5), which already reduces how often that boundary occurs. The engineering call was that a clean butt-join is strictly better than replaying already-heard audio, so the crossfade was deleted rather than reimplemented. What remains at this seam (`OlaCrossfadeFilter` in `voice-agent/src/main.rs`, kept for its original name only) is exactly the part that was never about prosody: buffering a single dangling odd byte across chunk boundaries so a 16-bit PCM sample is never split across two network chunks.
 
 ---
 
@@ -601,31 +611,41 @@ def retrieve_episodic_memory(context_query, active_pad_vector, neo4j_driver):
 
 ### 9.2 Speculative Turn-Taking Gating Loop
 
-The dual-loop System 1/System 2 barge-in algorithm ensures that speech playback halts instantaneously upon sound energy detection, but speculative validation restores playback if the sound is identified as noise:
+**Corrected 2026-09-01** — the pseudocode below previously modeled an immediate, microsecond-level physical mute triggered directly off RMS energy, with a crossfaded unmute on a false trigger. Neither exists: RMS crossing the noise floor (`Endpointer`, `speech_factor = 3.0`) gates *transcription*, not playback, and the actual halt/resume path runs through real STT + the semantic resolver (§9.3) before anything happens to the audio track — see §6.1's correction for the full reasoning. The crossfade referenced on the false-trigger path was removed entirely (§6.4). This version reflects the actual multi-stage pipeline, in its real message-passing shape rather than as a single tight loop with a hardware hook:
 
 ```python
-async def barge_in_gating_loop(audio_stream, active_tts_process):
+async def barge_in_gating_loop(audio_stream, transcriber, resolver, mesh):
     """
     Algorithm 2: Dual-Loop System 1 / System 2 Speculative Turn Interruption
+
+    System 1 (Endpointer, Rust) is an RMS-relative-to-noise-floor pre-filter
+    that decides when enough speech has accumulated to hand off to Whisper --
+    it never touches playback directly. Only a transcript that survives
+    System 2's semantic resolver (is_speculative_stop_confirmed, §9.3)
+    produces a confirmed stop; transport_agent then rotates the published
+    LiveKit track to flush audio already handed to the client's native
+    playout buffer, since capture_frame() exposes no way to drain it directly.
     """
     async for frame in audio_stream:
-        # System 1: Fast-Loop DSP Audio Hook (microsecond thresholding)
-        rms = calculate_rms(frame)
-        if rms > SYSTEM1_SILENCE_THRESHOLD:
-            # Immediate physical audio halt
-            active_tts_process.mute_playback()
-            t_stop = time.time()
+        # System 1: adaptive-noise-floor pre-filter, not a playback switch.
+        if not endpointer.is_speech(frame):
+            continue
 
-            # Spawn speculative System 2 Segmenter in background
-            is_valid_interruption = await system2_speculative_scan(frame)
+        # Endpointing accumulates frames until Whisper has enough audio for
+        # a final transcript -- real transcription latency, not microseconds.
+        transcript = await transcriber.transcribe_when_endpointed(frame)
+        if transcript is None:
+            continue
 
-            if is_valid_interruption:
-                # True interruption: flush active dialogue pipelines and route user turn
-                publish_nats_event("chat.interrupted", {"t_stop": t_stop})
-                break
-            else:
-                # False trigger: restore TTS playback gracefully with 10ms OLA crossfade
-                active_tts_process.unmute_playback_crossfade(fade_ms=10)
+        if resolver.is_speculative_stop_confirmed(transcript.text, transcript.keywords):
+            # Confirmed: publish audio.stop, transport_agent flushes via
+            # track rotation (see _flush_downstream_audio).
+            await mesh.publish("audio.stop", {"turn_id": transcript.turn_id})
+            break
+        else:
+            # Rejected: playback was never touched, so there is nothing to
+            # restore -- just tell the mesh the duck is over.
+            await mesh.publish("audio.resume", {"turn_id": transcript.turn_id})
 ```
 
 ### 9.3 Hardened Speculative Barge-in Conflict Resolver
