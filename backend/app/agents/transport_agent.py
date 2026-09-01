@@ -348,18 +348,29 @@ class TransportAgent(BaseAgent):
                     try:
                         self.audio_queue.put_nowait(queued_frame)
                     except asyncio.QueueFull:
-                        # Drop the oldest frame to keep playout near real-time.
-                        try:
-                            _ = self.audio_queue.get_nowait()
-                            self.audio_queue.task_done()
-                        except asyncio.QueueEmpty:
-                            pass
-
-                        try:
-                            self.audio_queue.put_nowait(queued_frame)
-                        except asyncio.QueueFull:
-                            pass
-
+                        # Bucket 2 (VOICE_REMEDIATION_PLAN.md): drop the NEW frame, not
+                        # the oldest one. The old policy evicted the oldest queued frame
+                        # and spliced this one in behind it -- for synthesised speech
+                        # (a fixed artifact that must arrive intact, unlike a live
+                        # stream where freshness beats completeness) that is a hard
+                        # discontinuity between non-adjacent PCM segments: an audible
+                        # click plus a hole in the speech, reported live as "grainy" /
+                        # "can't understand it."
+                        #
+                        # True backpressure (`await self.audio_queue.put(...)`) would
+                        # fix this without dropping anything, but this callback is the
+                        # direct NATS handler for audio.stream -- the comment on this
+                        # agent's `start()` ("Capture frames on a dedicated worker so
+                        # NATS callback can return fast") is the same ack-timing
+                        # constraint CLAUDE.md's finding A1 documents: `BaseAgent.subscribe`
+                        # acks only after the callback returns, so blocking here until
+                        # a real-time playback worker catches up on a 256-deep backlog
+                        # risks the same JetStream AckWait/redelivery failure mode, not
+                        # fixes it. Dropping the newest frame keeps everything already
+                        # queued in order and keeps this callback non-blocking; in
+                        # measured real sessions (2026-09-01) the queue never exceeded
+                        # 68 of 256 slots, so this path is a rare-overflow safety net,
+                        # not the common case.
                         self.dropped_audio_frames += 1
                         if self.dropped_audio_frames % 50 == 1:
                             logger.warning(

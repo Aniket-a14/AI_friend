@@ -374,6 +374,31 @@ async def test_on_nats_audio_queues_none_offsets_when_metadata_lacks_them():
     assert word_index is None
 
 
+@pytest.mark.asyncio
+async def test_on_nats_audio_overflow_drops_the_newest_frame_not_the_oldest():
+    """Bucket 2 (VOICE_REMEDIATION_PLAN.md): synthesised speech is a fixed artifact
+    that must arrive intact, unlike a live stream where freshness beats completeness.
+    The old policy evicted the oldest queued frame and spliced the new one in behind
+    it -- a hard discontinuity between non-adjacent PCM segments, reported live as
+    "grainy" / "can't understand it." Dropping the new frame instead keeps everything
+    already queued in its original order.
+    """
+    agent = _transport_agent()
+    agent.audio_queue = asyncio.Queue(maxsize=2)  # constructor floors below 32; override
+
+    await agent._on_nats_audio(b"first", metadata={"turn_id": "turn-1"})
+    await agent._on_nats_audio(b"second", metadata={"turn_id": "turn-1"})
+    await agent._on_nats_audio(b"third", metadata={"turn_id": "turn-1"})  # overflows
+
+    assert agent.audio_queue.qsize() == 2
+    remaining = []
+    while not agent.audio_queue.empty():
+        pcm_data, *_ = agent.audio_queue.get_nowait()
+        remaining.append(pcm_data)
+    assert remaining == [b"first", b"second"]
+    assert agent.dropped_audio_frames == 1
+
+
 # --------------------------------------------------------------------------
 # End-to-end: draining a frame with offsets triggers exactly one publish
 # --------------------------------------------------------------------------
