@@ -215,6 +215,11 @@ impl ReverbFilter {
     fn reset(&mut self) {
         self.buffer.iter_mut().for_each(|s| *s = 0.0);
         self.index = 0;
+        // Reviewer finding: a trailing odd byte held from the previous
+        // utterance's PCM must not combine with the next utterance's first
+        // byte -- the sibling OlaCrossfadeFilter's own clear_history()
+        // already clears this same kind of state for the same reason.
+        self.pending_byte = None;
     }
 }
 
@@ -927,6 +932,16 @@ async fn hesitation_pcm(
 
     let mut response = match result {
         Ok(response) => response,
+        // Reviewer finding: this catch-all used to also match a
+        // SynthesisRejected validation error, opening the circuit breaker
+        // for a rejected filler even though GPT-SoVITS is healthy. Mirrors
+        // the main synthesis call site's own arm: a validation rejection
+        // says nothing about whether the engine is up.
+        Err(e) if e.downcast_ref::<SynthesisRejected>().is_some() => {
+            // Already logged loudly, with the rejected text, inside
+            // synthesize_stream_with_retry.
+            return contracts::silence_pcm(duration_ms, sample_rate);
+        }
         Err(e) => {
             warn!("hesitation synthesis failed, playing silence instead: {e:#}");
             circuit_breaker.record_failure(now_ms);
@@ -1989,6 +2004,32 @@ mod tests {
     }
 
     #[test]
+    fn reset_clears_the_pending_odd_byte_across_utterance_boundaries() {
+        // Reviewer finding: reset() cleared the delay buffer and index but
+        // left `pending_byte` untouched. A trailing odd byte held over from
+        // one utterance's PCM would then splice onto the very first byte of
+        // the NEXT, unrelated utterance -- the sibling OlaCrossfadeFilter's
+        // clear_history() already gets this right for the same kind of state.
+        let mut filter = ReverbFilter::new(4, 0.5);
+
+        // Leaves a dangling odd byte (value 20) after this call.
+        let _ = filter.process(&[10, 0, 20], 1.0);
+        filter.reset();
+
+        // A fresh, unrelated utterance's first two bytes are a silent
+        // sample. If the stale pending byte survived reset, it gets
+        // prepended here, shifting this 2-byte input into a stale 3-byte
+        // reassembly and producing a nonzero sample from data that belongs
+        // to the utterance that just ended.
+        let out = filter.process(&[0, 0], 1.0);
+        let sample = i16::from_le_bytes([out[0], out[1]]);
+        assert_eq!(
+            sample, 0,
+            "a byte from the previous utterance leaked across reset(): got {sample}, want 0"
+        );
+    }
+
+    #[test]
     fn reverb_feedback_does_not_run_away_on_sustained_input() {
         // Bucket 2: the actual bug this whole fix targets. The old code wrote
         // `output` (not `input`) into the delay line, making it true feedback
@@ -2755,6 +2796,50 @@ mod tests {
         assert!(
             cache.lock().await.get(&EmotionBucket::Neutral).is_none(),
             "a failed attempt must not be cached"
+        );
+    }
+
+    /// Reviewer finding: a rejected filler (GPT-SoVITS's deterministic
+    /// "Please enter valid text." 400) must fall back to silence WITHOUT
+    /// counting toward the shared breaker -- a validation rejection says
+    /// nothing about whether the engine is up, and the main synthesis call
+    /// site already treats it this way (see the `SynthesisRejected` arm
+    /// where the real per-chunk synthesis happens). Also must not be
+    /// retried: `.expect(1)` fails the test if more than one request went
+    /// out, matching `validation_rejection_is_not_retried` below for the
+    /// main synthesis path.
+    #[tokio::test]
+    async fn hesitation_pcm_rejection_falls_back_to_silence_without_opening_the_breaker() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("Please enter valid text."))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let breaker = CircuitBreaker::new(1, 60_000);
+        let cache = empty_hesitation_cache();
+
+        let pcm = hesitation_pcm(
+            &config, &http, &breaker, &cache, EmotionBucket::Neutral,
+            &config.emotion_refs.neutral, 350, config.sample_rate, &test_prosody(),
+        )
+        .await;
+
+        assert_eq!(pcm, contracts::silence_pcm(350, config.sample_rate));
+        assert!(
+            !breaker.is_open(now_millis()),
+            "a validation rejection is not an engine outage and must not open the breaker"
+        );
+        assert!(
+            cache.lock().await.get(&EmotionBucket::Neutral).is_none(),
+            "a rejected fragment must not be cached as if it were valid audio"
         );
     }
 

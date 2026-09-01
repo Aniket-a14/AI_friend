@@ -260,7 +260,7 @@ Full deep-dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
   state and passed as SoVITS's reference clip — steering delivery, not
   identity, which stays baked into the loaded model weights.
 - **Speculative fillers.** If decision latency exceeds 1200ms, an early filler
-  (hmm, um) keeps the conversation alive while the real audio renders.
+  (hmm, let's see) keeps the conversation alive while the real audio renders.
 - **Voice training.** GPT-SoVITS fine-tuning on your own recordings is heavy
   GPU work — see [`notebooks/`](notebooks/) for Colab notebooks covering
   voice training, the behavioral eval harness, and raw LLM throughput

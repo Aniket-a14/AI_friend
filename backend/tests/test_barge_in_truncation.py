@@ -280,3 +280,43 @@ def test_confirmed_stop_fires_once_the_onset_grace_period_has_elapsed():
         if call.args and call.args[0] == "audio.stop"
     ]
     assert len(stop_calls) == 1
+
+
+def test_onset_grace_transcript_with_no_speculative_intent_starts_no_new_turn():
+    """Reviewer finding (coderabbitai): suppressing audio.stop within the
+    onset grace period isn't enough on its own -- `_on_chat_input` still fell
+    through unconditionally to `_replace_active_generation`, cancelling
+    whatever the agent was doing and generating a brand-new reply to what the
+    onset-grace comment itself calls "far more likely onset noise," all while
+    the prior audio kept playing uninterrupted. A transcript in this state
+    (within grace, no speculative intent flagged by STT) must be dropped
+    entirely, not just have its stop suppressed.
+    """
+    agent = _chat_input_agent()
+    agent._last_audio_onset_at = time.time()
+    agent._process_chat_input_flow = AsyncMock(return_value=None)
+    assert agent.cognitive_core.state.last_speculative_intent is None
+
+    asyncio.run(agent._on_chat_input(_chat_input(text="hello there")))
+
+    agent._process_chat_input_flow.assert_not_called()
+
+
+def test_onset_grace_transcript_with_speculative_intent_still_starts_a_new_turn():
+    """Companion to the drop test above: onset grace only suppresses noise
+    that STT itself gave no signal about. When STT's own speculative pipeline
+    already flagged this utterance as command-like, it must still reach
+    `_process_chat_input_flow` -- the grace period must not swallow a real,
+    already-corroborated interruption."""
+    agent = _chat_input_agent()
+    agent._last_audio_onset_at = time.time()
+    agent._process_chat_input_flow = AsyncMock(return_value=None)
+    agent.cognitive_core.state.last_speculative_intent = {
+        "name": "STOP",
+        "keywords": ["stop"],
+        "text": "stop",
+    }
+
+    asyncio.run(agent._on_chat_input(_chat_input(text="stop")))
+
+    agent._process_chat_input_flow.assert_called_once()

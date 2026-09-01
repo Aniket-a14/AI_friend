@@ -20,8 +20,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install --break-system-packages maturin
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock pyproject.toml ./
 COPY crates ./crates
+# maturin reads [tool.maturin] from whichever pyproject.toml sits in the
+# invoking cwd, regardless of --manifest-path (see pyproject.toml's own
+# comment on this). Without it copied in here, this build silently drops the
+# "extension-module" feature request and produces a libpython-linked wheel
+# that can fail to import in the runtime image -- the exact defect this
+# feature config exists to avoid.
 RUN maturin build --release --manifest-path crates/cognitive-rust/Cargo.toml --out target/wheels
 
 # 2. SLIM BUILDER: Core dependencies only

@@ -240,7 +240,6 @@ const KNOWN_HALLUCINATION_PHRASES: &[&str] = &[
     "thank you.",
     "thanks for watching",
     "thanks for watching!",
-    "you",
 ];
 
 fn is_known_hallucination(transcript: &str) -> bool {
@@ -561,7 +560,6 @@ mod tests {
         assert!(is_known_hallucination("Thank you."));
         assert!(is_known_hallucination("THANK YOU"));
         assert!(is_known_hallucination("And no..."));
-        assert!(is_known_hallucination("  you  "));
     }
 
     #[test]
@@ -572,6 +570,15 @@ mod tests {
             "I really appreciate the help, thank you"
         ));
         assert!(!is_known_hallucination("Could you say bye to her for me"));
+    }
+
+    #[test]
+    fn a_bare_you_is_a_legitimate_reply_not_a_hallucination() {
+        // "you" alone is a normal short answer ("who's there?" / "you") --
+        // three independent reviewers flagged this exact entry when it was in
+        // the denylist, since it silently dropped real user turns.
+        assert!(!is_known_hallucination("you"));
+        assert!(!is_known_hallucination("  You  "));
     }
 
     #[test]

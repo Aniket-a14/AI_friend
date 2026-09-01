@@ -14187,3 +14187,118 @@ runtime errors -- MAUT decision logged normally, clean.
 (a historical gap, not something this session's changes caused) or whether any other agent
 process might benefit from having it available. `surfacing_agent`'s unconditional import was
 noted but not addressed, since that agent is not currently deployed on this box.
+
+## 2026-09-01 -- Addressed every automated review comment on PR #209
+
+PR #209 (Phase 1: the five voice pipeline defects) drew review from Copilot, Codex, and
+CodeRabbit -- 14 comments total across the three, several flagging the same underlying defect
+independently. All were investigated against current code (not taken on faith) and fixed;
+none were found stale or already-addressed.
+
+**Whisper hallucination denylist dropped a real word (Copilot x2, Codex, CodeRabbit -- four
+independent flags on the same line).** `KNOWN_HALLUCINATION_PHRASES`
+(`backend/crates/stt-agent/src/whisper.rs`) included the bare word `"you"`, and the suite's own
+`known_hallucination_phrases_are_rejected...` test asserted `is_known_hallucination("  you  ")`
+-- i.e. the test encoded the defect. A one-word reply of "you" ("who's there?" / "you") is
+ordinary conversational speech, not a hallucination; `run_final_job` silently drops any exact
+denylist match before it ever reaches `chat.input`. Removed the entry, removed the assertion
+that pinned it, and added `a_bare_you_is_a_legitimate_reply_not_a_hallucination` asserting the
+opposite.
+
+**`generation_start_time` checked via truthiness (Copilot).**
+`conversational_runtime.py`'s `send_filler` used `if generation_start_time:` on a `float |
+None` parameter, so a legitimate epoch value of exactly `0.0` would be treated the same as
+unset and skip the elapsed-time adjustment. Changed to `is not None`. New test
+(`test_generation_start_time_of_exactly_zero_is_not_treated_as_unset`) distinguishes the two
+sleep durations this produces (floored ~10ms vs. the full threshold) with a window strictly
+between them.
+
+**Docker's own wheel build silently dropped the extension-module feature (Codex, P1).**
+`backend/Dockerfile`'s `rust-wheel-builder` stage copies `Cargo.toml`/`Cargo.lock`/`crates/`
+into the builder but never `pyproject.toml` -- so the `[tool.maturin] features =
+["extension-module"]` table added in the prior cargo-test fix (see the entry above) was never
+read inside that container, silently reverting the produced wheel to a libpython-linked
+artifact that can fail to import in the runtime image. `pyproject.toml` was the one file that
+fix's own reasoning depended on maturin finding in the invoking cwd, and this build stage never
+gave it one. Fixed by copying `pyproject.toml` alongside the other manifest files. Not
+independently verified with a real `docker build` (no daemon exercised this session) -- the fix
+is a one-line copy whose correctness follows directly from the already-verified "maturin reads
+pyproject.toml from cwd regardless of --manifest-path" behavior, but this remains unverified
+against the actual image.
+
+**Backlog telemetry never fell back down after draining (Codex P2 + CodeRabbit).**
+`transport_agent.py` published `AudioPlaybackBacklog` only from the enqueue side
+(`_on_nats_audio`). If a report reached the brain at a high depth and the queue then fully
+drained during silence -- no new PCM arriving to trigger another enqueue-side publish --
+`last_playback_backlog` on the brain side stayed stuck high indefinitely, suppressing the next
+turn's filler for no live reason. Extracted the throttled publish into
+`_maybe_publish_playback_backlog()` and call it from both the enqueue site and the drain site
+(`_audio_playback_worker`, after `task_done`), so an emptied queue eventually reports its own
+zero. New test drains a single frame with the throttle window forced open and asserts exactly
+one post-drain publish with `queue_depth == 0`.
+
+**The same staleness, one level up: `send_filler`'s backlog argument was a snapshot, not a live
+read (CodeRabbit).** `brain_agent.py` passed `playback_backlog=self.last_playback_backlog` --
+evaluated once at the call site, well before `send_filler`'s own up-to-`VOICE_FILLER_THRESHOLD`
+wait. A queue that grew past the limit during that wait was still judged against the
+already-captured value. Changed `ConversationalRuntime.monitor_stream_and_fill`'s
+`playback_backlog` parameter to accept `int | Callable[[], int]`, resolved right before the
+suppression check; the call site now passes `lambda: self.last_playback_backlog`. Regression
+test uses two timers on one event loop (a 20ms mutation vs. the 50ms threshold) rather than a
+real-time race at a floored value, per this repo's own established caution about flaky timing
+tests -- confirmed by mutation: reverting to resolve-before-sleep correctly fails the new test.
+
+**A delayed sub-word continuation could lose its glue point to the flush timer (Codex P2 +
+CodeRabbit).** `_stream_to_speech`'s continuation-merge check ran *after* the timer-flush
+check. If `formation_buffer_s` had already elapsed and the buffer held >= 3 words, the timer
+published and cleared `current_chunk_words` first, leaving nothing for a same-tick continuation
+to glue onto -- e.g. a delayed `"iket"` arriving after buffered `"Hi I am An"` was synthesized
+as its own word instead of completing `"Aniket"`. Reordered the glue check to run before the
+timer check (the timer then naturally sees the already-completed word). New test
+(`test_delayed_continuation_is_glued_even_after_the_timer_would_have_flushed`) drives a real
+stall past the formation buffer before the continuation arrives; mutation-confirmed by
+reverting the ordering.
+
+**Onset-grace suppression only silenced the stop publish, not the turn itself
+(CodeRabbit).** `_on_chat_input`'s barge-in onset-grace check
+(`within_onset_grace and not speculative_intent_pending`) gated only the `audio.stop` publish.
+A transcript in exactly that state -- the grace comment's own words, "far more likely onset
+noise" -- still fell through unconditionally to `_replace_active_generation`, cancelling
+whatever the agent was doing and generating a fresh reply to noise while the prior audio kept
+playing. Added an `elif` that drops the message entirely in that case; a companion test
+confirms a transcript WITH corroborating speculative intent still reaches
+`_process_chat_input_flow` -- the grace period must not swallow an already-confirmed
+interruption, only uncorroborated noise.
+
+**Reverb's `reset()` cleared the delay line but not the pending odd byte (CodeRabbit).**
+`ReverbFilter::reset()` (`voice-agent/src/main.rs`) zeroed `buffer` and `index` but left
+`pending_byte` untouched, so a trailing odd byte from one utterance's PCM could combine with
+the very first byte of a later, unrelated utterance -- the sibling `OlaCrossfadeFilter`'s own
+`clear_history()` already got this right. Added the missing clear. New test processes an
+odd-length input to leave a pending byte, resets, then processes a silent 2-byte input and
+asserts the output is genuinely silent (not shifted by the leaked byte); mutation-confirmed.
+
+**`hesitation_pcm` mis-classified a validation rejection as an outage (CodeRabbit).** The
+per-chunk main synthesis call site already distinguishes `SynthesisRejected` (GPT-SoVITS's
+deterministic "Please enter valid text." 400) from a real failure and skips
+`circuit_breaker.record_failure` for it, but `hesitation_pcm`'s own catch-all `Err(e)` arm
+never got the same treatment -- a rejected filler could open the breaker even with a perfectly
+healthy engine. Added the matching arm, mirroring the main call site exactly. New test
+(`hesitation_pcm_rejection_falls_back_to_silence_without_opening_the_breaker`) asserts silence,
+an untouched breaker, and exactly one request (no retry); mutation-confirmed.
+
+**Doc drift: README's filler example named a filler the runtime cannot emit (CodeRabbit).**
+`FILLERS = ["hmm", "let's see", "well", "ah", "right"]` has never included `"um"`; the README
+line describing speculative fillers still did. Swapped to `"let's see"`.
+
+**Verification.** Full backend suite: 1,468/1,468 (JUnit XML, not the terminal summary, per
+this repo's own documented unreliability). `ruff check .`: clean. `cargo test --workspace`:
+149/149 (11 cognitive-rust + 6 contracts + 70 stt-agent + 62 voice-agent). `cargo clippy
+--workspace --all-targets`: only pre-existing warnings on lines this session did not touch (
+`chunks_exact` style suggestions, one `manual_range_contains`, two `assertions_on_constants`)
+-- zero new warnings introduced. Every new/changed test in this entry was mutation-tested by
+reverting its fix and confirming the test fails, then restoring via `cp` from a scratch backup.
+
+**NOT done:** the Dockerfile fix was not verified with an actual `docker build` (see above).
+None of these fixes have been pushed or re-reviewed by the bots yet -- this entry covers the
+local fix-and-verify pass only.

@@ -401,18 +401,7 @@ class TransportAgent(BaseAgent):
                         dropped=self.dropped_audio_frames,
                     )
 
-                    now = time.time()
-                    if now - self._last_backlog_publish_at >= BACKLOG_TELEMETRY_INTERVAL_S:
-                        self._last_backlog_publish_at = now
-                        backlog = AudioPlaybackBacklog(
-                            queue_depth=self.audio_queue.qsize(),
-                            capacity=self.audio_queue.maxsize,
-                        )
-                        self.spawn(
-                            self.publish(
-                                Topics.AUDIO_PLAYBACK_BACKLOG, backlog.model_dump()
-                            )
-                        )
+                    self._maybe_publish_playback_backlog()
 
             if is_done:
                 logger.info("AI Utterance stream complete.")
@@ -454,6 +443,16 @@ class TransportAgent(BaseAgent):
                     self._maybe_publish_playback_progress(
                         turn_id, character_offset, word_index
                     )
+                    # Reviewer finding: backlog telemetry used to be published
+                    # only on enqueue (_on_nats_audio). If a report reached
+                    # the brain at depth >= VOICE_FILLER_MAX_PLAYBACK_BACKLOG
+                    # and the queue then fully drained during silence (no new
+                    # PCM arriving to trigger another enqueue-side publish),
+                    # the brain's last-known depth stayed stuck high and
+                    # suppressed the next turn's filler for no live reason.
+                    # Publishing from the drain side too means an emptied
+                    # queue eventually reports its own zero depth.
+                    self._maybe_publish_playback_backlog()
                 finally:
                     self.audio_queue.task_done()
             except asyncio.CancelledError:
@@ -461,6 +460,23 @@ class TransportAgent(BaseAgent):
             except Exception as e:
                 logger.error(f"Transport playback worker error: {e}")
                 await asyncio.sleep(0.01)
+
+    def _maybe_publish_playback_backlog(self) -> None:
+        """Throttled `AudioPlaybackBacklog` publish, called from both the
+        enqueue side (`_on_nats_audio`) and the drain side
+        (`_audio_playback_worker`) so the brain's view of queue depth can
+        also fall back to zero once playback catches up, not just rise on
+        new audio. Same `BACKLOG_TELEMETRY_INTERVAL_S` throttle either way.
+        """
+        now = time.time()
+        if now - self._last_backlog_publish_at < BACKLOG_TELEMETRY_INTERVAL_S:
+            return
+        self._last_backlog_publish_at = now
+        backlog = AudioPlaybackBacklog(
+            queue_depth=self.audio_queue.qsize(),
+            capacity=self.audio_queue.maxsize,
+        )
+        self.spawn(self.publish(Topics.AUDIO_PLAYBACK_BACKLOG, backlog.model_dump()))
 
     def _maybe_publish_playback_progress(
         self, turn_id, character_offset, word_index

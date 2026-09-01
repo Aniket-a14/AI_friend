@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import random
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 from ..config import Config
@@ -37,7 +37,7 @@ class ConversationalRuntime:
         incoming_metadata: dict[str, Any] | None = None,
         incoming_latency_metadata: dict[str, Any] | None = None,
         generation_start_time: float | None = None,
-        playback_backlog: int = 0,
+        playback_backlog: int | Callable[[], int] = 0,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Monitors TTFT. If first token takes longer than VOICE_FILLER_THRESHOLD,
@@ -54,7 +54,7 @@ class ConversationalRuntime:
             import time
 
             sleep_dur = Config.VOICE_FILLER_THRESHOLD
-            if generation_start_time:
+            if generation_start_time is not None:
                 elapsed = time.time() - generation_start_time
                 sleep_dur = max(0.01, Config.VOICE_FILLER_THRESHOLD - elapsed)
 
@@ -62,10 +62,18 @@ class ConversationalRuntime:
             if first_token_received or is_proactive or not self.publish_cb:
                 return
 
-            if playback_backlog >= Config.VOICE_FILLER_MAX_PLAYBACK_BACKLOG:
+            # Reviewer finding: this used to be a plain int captured in the
+            # caller's closure at call time, well before the sleep above --
+            # so a queue that grew or drained during the wait was judged
+            # against a stale snapshot. Accepting a provider and calling it
+            # here, right before the decision, reads the live depth instead.
+            current_backlog = (
+                playback_backlog() if callable(playback_backlog) else playback_backlog
+            )
+            if current_backlog >= Config.VOICE_FILLER_MAX_PLAYBACK_BACKLOG:
                 logger.debug(
                     "Suppressing filler: playback backlog %s >= max %s.",
-                    playback_backlog,
+                    current_backlog,
                     Config.VOICE_FILLER_MAX_PLAYBACK_BACKLOG,
                 )
                 return

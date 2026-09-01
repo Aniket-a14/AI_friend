@@ -271,3 +271,53 @@ async def test_glued_word_gaining_punctuation_is_rescored_for_a_split():
         "Hi I am Aniket I study college,",
         "in Punjab.",
     ], f"expected the glued comma to trigger a split at position 7, got: {published}"
+
+
+@pytest.mark.asyncio
+async def test_delayed_continuation_is_glued_even_after_the_timer_would_have_flushed():
+    """Reviewer finding (coderabbitai/codex): the glue check used to run
+    *after* the timer-flush check. If formation_buffer_s had already
+    elapsed by the time a delayed continuation fragment arrived, the timer
+    fired first and cleared current_chunk_words -- leaving nothing left to
+    glue onto, so the continuation was published as its own separate,
+    wrong word. This reproduces exactly that timing: the buffer holds >= 3
+    words and ages past formation_buffer_s *before* the continuation
+    ("iket") arrives, which must still complete "Aniket" as one word in
+    one chunk rather than surfacing "iket" on its own.
+    """
+    agent = _agent()
+    agent.coordinator = SpeechCoordinator(
+        segmenter=HybridSegmenter(target_size=7), formation_buffer_s=0.03
+    )
+    published: list[str] = []
+
+    async def _capture(chunk_words, *_args, **_kwargs):
+        published.append(" ".join(chunk_words))
+
+    agent._publish_speech_chunk = _capture
+    agent._publish_final_chunk_payload = AsyncMockCompat()
+
+    async def _fragment_stream_with_a_stall_before_the_continuation():
+        for frag in ["Hi ", "I ", "am ", "An"]:
+            yield {"type": "content", "data": frag}
+        # Outlast formation_buffer_s (30ms) before "iket" arrives, so the
+        # timer's elapsed check is already true when this continuation is
+        # handled -- exactly the race the reviewer flagged.
+        await asyncio.sleep(0.08)
+        for frag in ["iket", " I", " am", " your", " friend."]:
+            yield {"type": "content", "data": frag}
+        yield {"type": "done", "data": ""}
+
+    await agent._stream_to_speech(
+        _fragment_stream_with_a_stall_before_the_continuation(),
+        turn_id="turn-glue-vs-timer",
+        is_proactive=False,
+    )
+
+    assert "iket" not in published, (
+        f"the continuation was published as its own fragment instead of "
+        f"completing 'Aniket': {published}"
+    )
+    assert any("Aniket" in chunk for chunk in published), (
+        f"'Aniket' never appears intact in any published chunk: {published}"
+    )

@@ -153,6 +153,52 @@ async def test_filler_still_fires_when_playback_backlog_is_below_max():
 
 
 @pytest.mark.asyncio
+async def test_playback_backlog_provider_is_read_live_not_snapshotted_at_call_time():
+    """Reviewer finding: `playback_backlog` used to be a plain int, evaluated
+    once at the call site well before this coroutine's own filler-threshold
+    wait -- brain_agent.py's `self.last_playback_backlog` could grow past the
+    limit during that wait and the filler would still fire against the stale,
+    already-captured value. Accepting a zero-arg provider and calling it right
+    before the decision means a change made *during* the wait is honored.
+
+    Uses two sleeps on the same event loop (20ms bump vs. the fixture's 50ms
+    VOICE_FILLER_THRESHOLD) rather than a real-time race at the 10ms floor --
+    the relative order of two timers scheduled on one loop is reliable even
+    though absolute wall-clock precision at a floor value is not (see the
+    Bucket 5 chunking suite's own flaky-timing lesson)."""
+    runtime = ConversationalRuntime(publish_cb=AsyncMock())
+    depth = {"value": 0}
+
+    async def _bump_backlog_mid_wait():
+        # Fires well inside send_filler's ~50ms wait (generation_start_time
+        # is "now", so its sleep is not floored), simulating the queue
+        # growing past the limit while the filler is already waiting.
+        await asyncio.sleep(0.02)
+        depth["value"] = Config.VOICE_FILLER_MAX_PLAYBACK_BACKLOG
+
+    bumper = asyncio.create_task(_bump_backlog_mid_wait())
+    consumer = asyncio.create_task(
+        _drain(
+            runtime.monitor_stream_and_fill(
+                _never_yields_content(),
+                turn_id="turn-1",
+                state_snap={},
+                generation_start_time=time.time(),
+                playback_backlog=lambda: depth["value"],
+            )
+        )
+    )
+    await asyncio.sleep(0.08)  # past both the 20ms bump and the ~50ms wait
+    consumer.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await consumer
+    with contextlib.suppress(asyncio.CancelledError):
+        await bumper
+
+    runtime.publish_cb.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_filler_is_suppressed_within_min_interval_of_a_previous_fire(
     monkeypatch,
 ):
@@ -208,3 +254,34 @@ async def test_elapsed_time_is_measured_from_generation_start_time_not_call_time
         await consumer
 
     runtime.publish_cb.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_generation_start_time_of_exactly_zero_is_not_treated_as_unset():
+    """`generation_start_time` is `float | None`; a reviewer flagged that the
+    call site used to check it via truthiness (`if generation_start_time:`),
+    which treats a legitimate epoch value of `0.0` the same as `None` --
+    skipping the elapsed-time adjustment and sleeping the full threshold
+    instead of the (already-elapsed) floored minimum. `0.0` is squarely in
+    the past, so this must behave exactly like `_long_past()`: the filler
+    fires almost immediately, not after the full `VOICE_FILLER_THRESHOLD`."""
+    runtime = ConversationalRuntime(publish_cb=AsyncMock())
+
+    consumer = asyncio.create_task(
+        _drain(
+            runtime.monitor_stream_and_fill(
+                _never_yields_content(),
+                turn_id="turn-1",
+                state_snap={},
+                generation_start_time=0.0,
+            )
+        )
+    )
+    # Strictly between the floored sleep (10ms) this fix produces and the
+    # full VOICE_FILLER_THRESHOLD (50ms) the truthiness bug would fall back to.
+    await asyncio.sleep(0.03)
+    consumer.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await consumer
+
+    runtime.publish_cb.assert_awaited_once()

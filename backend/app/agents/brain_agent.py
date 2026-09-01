@@ -447,6 +447,23 @@ class BrainAgent(BaseAgent):
                 utterance_id=msg.utterance_id,
             )
             await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
+        elif not is_subconscious and within_onset_grace and not speculative_intent_pending:
+            # Reviewer finding: this transcript is exactly the case the onset
+            # grace comment above describes as most likely onset noise (a
+            # click, pop, or echo tail), not real speech -- STT's own
+            # speculative pipeline did not flag it as command-like either.
+            # Suppressing only the audio.stop above still let this fall
+            # through to _replace_active_generation, cancelling whatever the
+            # agent was already doing and generating a brand-new reply to
+            # noise while its prior audio kept playing. Treat it the same as
+            # the stop we just skipped: drop it entirely rather than starting
+            # a new turn.
+            logger.debug(
+                "Dropping chat.input within barge-in onset grace with no "
+                "speculative intent (likely onset noise): %r",
+                msg.text,
+            )
+            return
 
         # Atomically replace the active generation task to prevent concurrent
         # chat inputs from both creating tasks and losing ownership.
@@ -598,7 +615,12 @@ class BrainAgent(BaseAgent):
             incoming_metadata=metadata,
             incoming_latency_metadata=latency_metadata,
             generation_start_time=generation_start_time,
-            playback_backlog=self.last_playback_backlog,
+            # A live provider, not a snapshot: `last_playback_backlog` can
+            # change during send_filler's own wait (see the reviewer finding
+            # on ConversationalRuntime.monitor_stream_and_fill), and this
+            # attribute is exactly the kind of thing that changes underneath
+            # a long sleep here.
+            playback_backlog=lambda: self.last_playback_backlog,
         )
 
         if not is_subconscious:
@@ -856,24 +878,20 @@ class BrainAgent(BaseAgent):
                 async with self._turn_state_lock:
                     self.last_assistant_response = full_response
 
-            now_monotonic = time.perf_counter()
-            if (
-                current_chunk_words
-                and segment_started_at is not None
-                and (now_monotonic - segment_started_at)
-                >= self.coordinator.formation_buffer_s
-                and len(current_chunk_words) >= 3
-            ):
-                await _publish_tracked(current_chunk_words, full_response)
-                current_chunk_words = []
-                segment_started_at = None
-
+            # Reviewer finding: this glue step used to run *after* the
+            # timer-flush check below. If formation_buffer_s had already
+            # elapsed and the buffer held >= 3 words, the timer published
+            # and cleared current_chunk_words first -- leaving nothing here
+            # to glue this continuation onto, so e.g. a delayed "iket"
+            # arriving after buffered "Hi I am An" got synthesized as its
+            # own separate word instead of completing "Aniket". Running the
+            # merge before the timer check means the buffer the timer later
+            # sees already has the complete word in it.
             words = chunk_text.split()
             if boundary_missing_space and current_chunk_words and words:
-                # The buffer still holds the word this fragment continues
-                # (it was not just flushed by the timer check above) --
-                # glue rather than let .split() invent a word-break that
-                # was never in the original text.
+                # The buffer still holds the word this fragment continues --
+                # glue rather than let .split() invent a word-break that was
+                # never in the original text.
                 current_chunk_words[-1] += words[0]
                 words = words[1:]
                 # The merge may have added punctuation this fragment
@@ -886,6 +904,18 @@ class BrainAgent(BaseAgent):
                     await _publish_tracked(current_chunk_words, full_response)
                     current_chunk_words = []
                     segment_started_at = None
+
+            now_monotonic = time.perf_counter()
+            if (
+                current_chunk_words
+                and segment_started_at is not None
+                and (now_monotonic - segment_started_at)
+                >= self.coordinator.formation_buffer_s
+                and len(current_chunk_words) >= 3
+            ):
+                await _publish_tracked(current_chunk_words, full_response)
+                current_chunk_words = []
+                segment_started_at = None
 
             for word in words:
                 if not current_chunk_words:

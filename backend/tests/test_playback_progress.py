@@ -482,6 +482,44 @@ async def test_on_nats_audio_throttles_backlog_telemetry_publishes():
 
 
 @pytest.mark.asyncio
+async def test_audio_playback_worker_publishes_backlog_telemetry_after_drain():
+    """Reviewer finding: backlog telemetry used to publish only from the
+    enqueue side (`_on_nats_audio`), never from the drain side. If a report
+    reached the brain at a high depth and the queue then fully emptied
+    during silence -- no new PCM arriving to trigger another enqueue-side
+    publish -- `last_playback_backlog` on the brain stayed stuck high
+    indefinitely, suppressing the next turn's filler for no live reason.
+    Publishing from the drain side too means an emptied queue eventually
+    reports its own zero depth."""
+    agent = _transport_agent()
+    agent.audio_source = MagicMock()
+    agent.audio_source.capture_frame = AsyncMock()
+
+    await agent._on_nats_audio(b"\x00\x00" * 320, metadata={"turn_id": "turn-1"})
+    # Open the throttle window so the drain-side publish under test isn't
+    # swallowed by the enqueue-side publish that just fired microseconds
+    # earlier in the same call.
+    agent._last_backlog_publish_at = 0.0
+    agent.publish.reset_mock()
+
+    worker = asyncio.ensure_future(agent._audio_playback_worker())
+    try:
+        await asyncio.wait_for(agent.audio_queue.join(), timeout=2.0)
+    finally:
+        worker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await worker
+
+    backlog_calls = [
+        call
+        for call in agent.publish.call_args_list
+        if call.args and call.args[0] == Topics.AUDIO_PLAYBACK_BACKLOG
+    ]
+    assert len(backlog_calls) == 1
+    assert backlog_calls[0].args[1]["queue_depth"] == 0
+
+
+@pytest.mark.asyncio
 async def test_on_playback_backlog_records_the_reported_queue_depth(
     mock_llm_service, mock_graph_db, mock_memory_store
 ):
