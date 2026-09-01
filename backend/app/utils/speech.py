@@ -24,9 +24,21 @@ class SpeechCoordinator:
     vector and let the single prosody mapping consume it.
     """
 
-    def __init__(self, segmenter, formation_buffer_ms: float = 0.030):
+    def __init__(self, segmenter, formation_buffer_s: float = 0.300):
+        # Bucket 5 (VOICE_REMEDIATION_PLAN.md): this used to be named
+        # `formation_buffer_ms` but held 0.030 -- compared directly against a
+        # `time.perf_counter()` delta (seconds) in brain_agent.py, so it was
+        # actually a 30ms threshold despite the name. At typical LLM token
+        # inter-arrival times, 30ms elapses before a chunk even reaches 3
+        # words, so the timer almost always won the race against the
+        # semantic segmenter below it, flushing every 3 words regardless of
+        # where a clause boundary actually was. Renamed to reflect the real
+        # unit and raised to a real clause-formation window (300ms, matching
+        # `calculate_pacing_parameters`'s own base_silence) so the segmenter
+        # -- not a timer racing against normal streaming latency -- decides
+        # where a chunk ends.
         self.segmenter = segmenter
-        self.formation_buffer_ms = formation_buffer_ms
+        self.formation_buffer_s = formation_buffer_s
 
     def create_chunk_payload(
         self,

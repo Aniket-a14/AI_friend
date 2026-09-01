@@ -94,7 +94,7 @@ class BrainAgent(BaseAgent):
 
         # AI Friend Segmentation Config
         self.coordinator = SpeechCoordinator(
-            segmenter=HybridSegmenter(target_size=7), formation_buffer_ms=0.030
+            segmenter=HybridSegmenter(target_size=7), formation_buffer_s=0.300
         )
         self.conversational_runtime = ConversationalRuntime(publish_cb=self.publish)
         self._active_generation_task: asyncio.Task[Any] | None = None
@@ -846,7 +846,7 @@ class BrainAgent(BaseAgent):
                 current_chunk_words
                 and segment_started_at is not None
                 and (now_monotonic - segment_started_at)
-                >= self.coordinator.formation_buffer_ms
+                >= self.coordinator.formation_buffer_s
                 and len(current_chunk_words) >= 3
             ):
                 await _publish_tracked(current_chunk_words, full_response)
@@ -862,7 +862,12 @@ class BrainAgent(BaseAgent):
                 score = self.coordinator.segmenter.score_split_point(
                     word, len(current_chunk_words)
                 )
-                if score > 0.7 or len(current_chunk_words) > 12:
+                # Bucket 5 (VOICE_REMEDIATION_PLAN.md): comma/colon/semicolon
+                # (0.4) plus the length-pressure term at or past target_size
+                # (0.3) sums to exactly 0.7, which a strict `>` can never
+                # satisfy -- the single most natural prosodic boundary
+                # (Goldman-Eisler juncture) could never fire on its own.
+                if score >= 0.7 or len(current_chunk_words) > 12:
                     await _publish_tracked(current_chunk_words, full_response)
                     current_chunk_words = []
                     segment_started_at = None

@@ -13938,3 +13938,68 @@ and gets a 400 back) was observed this session -- only the earlier, cheaper inte
 (dropped/merged before ever calling out) fired; the `SynthesisRejected` branch is covered at
 the unit/mutation level but not yet seen live, since the pre-filter is, by design, supposed to
 catch most real cases before they'd ever reach it.
+
+## 2026-09-01 -- Phase 1 Bucket 5 fixed and verified live: sentences synthesize as one clause, not fragments
+
+`VOICE_REMEDIATION_PLAN.md`'s Bucket 5 named two concrete defects in
+`_stream_to_speech`'s chunk-flush logic (`brain_agent.py`): a "formation buffer" misnamed
+`formation_buffer_ms` while actually holding 0.030 compared directly against a
+`time.perf_counter()` delta (seconds) -- an effective 30ms timer that, at any realistic LLM
+token latency, always won the race against the semantic segmenter and flushed every 3 words;
+and `HybridSegmenter.score_split_point` giving a comma exactly `0.7` (0.4 + the 0.3
+length-pressure term at production's `target_size=7`) against a strict `score > 0.7` check that
+can never be satisfied by an exact match -- the single most natural prosodic boundary could
+never fire on its own.
+
+**Fix:** renamed `formation_buffer_ms` to `formation_buffer_s` (`speech.py`) and raised it
+0.030 -> 0.300, anchored to `calculate_pacing_parameters`'s own `base_silence` (Bucket 3) rather
+than picking an arbitrary number. Changed `score > 0.7` to `score >= 0.7`
+(`brain_agent.py`) -- chosen over the plan's alternative (raising the comma weight itself)
+since that would have also touched the extreme-length-override and at-target-size cases for no
+added benefit.
+
+**The plan's third item ("aggregate to clause boundaries") turned out to be a consequence of
+fixing the first two, not a separate mechanism** -- traced through the arithmetic: reaching
+`target_size` alone scores only 0.3 (still below threshold), so a plain sentence under 12 words
+with no internal punctuation now only flushes at its own sentence-ending punctuation, which
+already is one full clause per call. Verified this reasoning live rather than trusting it on
+paper (below).
+
+**New tests** (`tests/test_brain_agent_chunking.py`, new file -- no prior coverage existed for
+`_stream_to_speech`'s flush decisions, only the narrower `test_segmentation.py` covering the
+segmenter's score in isolation): flush-timer-vs-segmenter race, timer-still-fires-as-a-stall-
+fallback, comma-at-target-size flushes, comma-before-target-size does not, and (added after
+mutation testing exposed the gap) a direct assertion on `BrainAgent.__init__`'s own production
+default -- the other four tests each construct their own `SpeechCoordinator` and none of them
+would have caught a regression in the actual shipped default. One addition to
+`test_segmentation.py` pinning the exact `0.7` boundary at production's `target_size=7`.
+**A timing-test flakiness was caught before shipping**: the first version of the race test used
+a 5x nominal margin and failed intermittently; measuring real `asyncio.sleep` overhead directly
+(7x10ms sleeps took 77ms, not 70ms) explained why, and the margin was widened to >25x.
+
+**Mutation testing** (`cp`-based, not `git checkout --`): reverting `>=`->`>` failed the comma
+test; reverting the production default to 0.030 was NOT caught by the original four tests (the
+exact gap the fifth test above closes) and is caught now; weakening the comma weight 0.4->0.3
+failed three tests across both files.
+
+**Verification.** Local: 1,459/1,459 (6 new), `ruff check .` clean. Live on home-gpu, with a
+genuine before/after: **before** deploying, sent the plan's own test sentence ("Hi, I am
+Aniket, I study at a college in Punjab") through the still-unfixed code and measured 4 separate
+GPT-SoVITS `/tts` calls via a log-count delta on `local_voice` (a `--since`-filtered count first
+gave a nonsensical 935, traced to a timestamp timezone mismatch and redone as an unambiguous
+total-count delta). **After** deploying and restarting `ai-friend-agents`, resent the identical
+sentence and subscribed directly to `chat.output` for ground truth: the whole sentence published
+as **exactly one** content chunk, down from 4. A second live test ("three short facts about
+cats") confirmed no over-correction into never splitting: 6 content chunks for 3 sentences,
+split cleanly at internal commas -- roughly one clause per chunk.
+
+**New finding, flagged and then fixed same-session (see the follow-up entry immediately
+below).** The live captures also surfaced word-spacing artifacts (`'C ats'`, `'right ing'`)
+distinct from anything Bucket 4 or 5 targets -- a sub-word LLM streaming issue, not a chunk-
+boundary issue. Initially recorded as out-of-scope; the user asked for it to be fixed in the
+same session once flagged, so it was -- see below rather than duplicating that write-up here.
+
+**NOT done:** Phase 1's consolidated before/after capture (all five symptoms together) still
+has not been run -- each bucket continues to be verified individually as it lands. The Phase 1
+PR has still not been opened (branch now has 6 commits: Bucket 1 main + deferred-VAD, Bucket 2,
+Bucket 3, the env-merge doc entry, Bucket 4, Bucket 5).
