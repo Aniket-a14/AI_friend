@@ -13861,3 +13861,80 @@ recreate for that stack, which wasn't triggered here since no infra container ne
 for this change. No CI/pre-flight drift check was added (one of the options the original
 deferral named) -- moot now that there is structurally one file, but worth remembering if a
 third `.env`-like file is ever introduced elsewhere in the deployment.
+
+## 2026-09-01 -- Phase 1 Bucket 4 fixed and verified live: degenerate text fragments no longer silently lost
+
+`VOICE_REMEDIATION_PLAN.md`'s Bucket 4 ("Speech unintelligible") targeted a specific failure
+mode: each `TemporalPart::Text` in `voice-agent/src/main.rs` is its own HTTP synthesis call,
+and GPT-SoVITS rejects a punctuation-only fragment outright (`ValueError: Please enter valid
+text.`) -- previously spending a full 3-attempt retry budget against a deterministic rejection,
+then either dropping the words or (after an earlier, already-shipped fix) playing a generic
+`voice_engine_unavailable` filler mid-sentence, neither of which is the actual content.
+
+Rereading the current code first (per this ledger's own standing practice) showed the plan's
+line references and severity had drifted since it was written -- a "Local ONNX synthesis was
+removed (2026-07)" comment shows the fully-silent-drop case the plan described no longer
+exists, and the `error!` log on retry exhaustion already existed. The real remaining gap was
+narrower: no pre-filtering of degenerate fragments before they reached the network, no
+distinction between a deterministic validation rejection and a transient failure, and the
+existing rejection log didn't include the text that was actually rejected.
+
+**Fix, in `backend/crates/voice-agent/src/main.rs`:**
+
+- `is_degenerate_fragment` + `merge_degenerate_text_fragments` (new, called at the end of
+  `split_temporal_parts`). A punctuation-only fragment is, by construction, always isolated by
+  a `<pause>`/`<hesitate>`/`<breath_fast>`/`<sigh_soft>` token -- that is the only way it
+  becomes its own `TemporalPart::Text` instead of part of a neighbouring clause's string. An
+  initial design that refused to merge across those boundary tokens was caught, before
+  shipping, as meaning every real fragment would just get dropped rather than actually merged
+  -- undercutting the plan's own "merge into the neighbouring clause" wording. Revised to
+  splice the punctuation onto the nearest real `Text` part's content (backward preferred,
+  forward fallback), searching past intervening boundary entries without moving or removing
+  them -- the pause's position and duration are untouched; only the adjacent clause's string
+  gains a trailing/leading `"..."`/`"-"`. Dropped, loudly, only when no real `Text` part exists
+  anywhere in the sequence.
+- `SynthesisRejected` (new error type) -- `synthesize_stream` now distinguishes GPT-SoVITS's
+  400 "valid text" rejection from any other failure. `synthesize_stream_with_retry`
+  short-circuits on it instead of burning the retry budget against a deterministic validator,
+  and logs it with the actual rejected text (the concrete hole in the pre-existing logging).
+  The main synthesis loop's call site also skips `circuit_breaker.record_failure` for this
+  error type -- a bad fragment says nothing about engine health, mirroring the existing
+  `record_success` reasoning on the good path.
+
+**New tests** (5, `wiremock`-backed for the HTTP-facing pair):
+`degenerate_fragment_between_two_tokens_merges_backward_past_the_pause`,
+`degenerate_fragment_with_no_preceding_text_merges_forward`,
+`all_degenerate_input_is_dropped_with_nothing_to_merge_into`,
+`validation_rejection_is_not_retried` (`.expect(1)` on the mock proves no retry),
+`a_generic_server_error_is_not_mistaken_for_a_validation_rejection`. All five mutation-tested
+(neutering `is_degenerate_fragment` to constant-`false` failed all three merge/drop tests;
+loosening the rejection body-match to an unmatchable string failed
+`validation_rejection_is_not_retried` specifically) using `cp`-based backup/restore, not
+`git checkout --`, per the lesson this ledger already recorded during Bucket 3.
+
+**Verification.** `cargo test --package voice-agent`: 60/60 (55 pre-bucket + 5 new), locally and
+on home-gpu after `rsync` + `cargo build --release --package voice-agent`. `cargo test
+--workspace` fails on a link error in `cognitive-rust` (a pyo3 extension module needing
+`maturin`, not plain `cargo test`, to resolve Python runtime symbols) -- verified this is
+pre-existing and unrelated by stashing this bucket's own edit and reproducing the identical
+failure on a clean, unmodified `main` HEAD before restoring; `macos-ci.yml`/`ci.yml` already
+split `cognitive-rust --lib` into its own invocation for exactly this reason. The CI-matching
+split (`--package stt-agent --package voice-agent --package contracts`, then `--package
+cognitive-rust --lib`) passes clean: 135 + 11 tests. Full Python suite (1,453 tests) and `ruff
+check .` unaffected, as expected for a Rust-only change. **Live-verified on home-gpu, and the
+new logic fired organically on the very first real turn sent through post-restart**: `WARN
+voice_agent: dropping a punctuation-only text fragment with no speakable text anywhere to merge
+into fragment=.` -- an isolated `.` produced by Bucket 5's still-unfixed chunking was caught
+and dropped before ever reaching the network, instead of being sent to GPT-SoVITS, rejected,
+and surfacing as either lost words or a spurious mid-sentence filler. No errors in either
+`ai-friend-voice` or `ai-friend-agents` logs for that turn. This also incidentally confirms
+Bucket 5's symptom is still live in production and organically produces exactly the artifact
+this bucket targets -- good evidence for prioritizing it next.
+
+**NOT done:** Bucket 5 (chunked/scripted flow) remains the next open item in Phase 1 -- the
+same live capture that validated this fix is also fresh evidence that Bucket 5's root cause is
+still active. No live case of the `SynthesisRejected` path (a fragment that reaches the network
+and gets a 400 back) was observed this session -- only the earlier, cheaper interception
+(dropped/merged before ever calling out) fired; the `SynthesisRejected` branch is covered at
+the unit/mutation level but not yet seen live, since the pre-filter is, by design, supposed to
+catch most real cases before they'd ever reach it.

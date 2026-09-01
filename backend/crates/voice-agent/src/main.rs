@@ -1178,6 +1178,14 @@ async fn handle_chat_output(
                             circuit_breaker.record_success();
                             Some(response)
                         }
+                        Err(e) if e.downcast_ref::<SynthesisRejected>().is_some() => {
+                            // Already logged loudly, with the rejected text,
+                            // inside synthesize_stream_with_retry. Bucket 4:
+                            // a validation rejection says nothing about
+                            // whether the engine is up, so it must not open
+                            // the circuit breaker the way a real outage does.
+                            None
+                        }
                         Err(e) => {
                             error!("synthesis failed after retries: {e:#}");
                             circuit_breaker.record_failure(now_ms);
@@ -1287,7 +1295,7 @@ fn split_temporal_parts(text: &str) -> Result<Vec<TemporalPart>> {
         push_text(&mut parts, &text[last..]);
     }
 
-    Ok(parts)
+    Ok(merge_degenerate_text_fragments(parts))
 }
 
 fn push_text(parts: &mut Vec<TemporalPart>, text: &str) {
@@ -1296,6 +1304,105 @@ fn push_text(parts: &mut Vec<TemporalPart>, text: &str) {
         parts.push(TemporalPart::Text(text.to_string()));
     }
 }
+
+/// A `TemporalPart::Text` fragment with no alphanumeric content at all --
+/// just punctuation and/or whitespace. GPT-SoVITS rejects these outright
+/// ("Please enter valid text."), so sending one as its own synthesis call
+/// either wastes a round-trip or, worse, gets mistaken for the engine being
+/// down (see `SynthesisRejected` below).
+fn is_degenerate_fragment(text: &str) -> bool {
+    !text.chars().any(|c| c.is_alphanumeric())
+}
+
+/// Bucket 4 (VOICE_REMEDIATION_PLAN.md): a leftover "...", "-", or similar
+/// shows up whenever a `<pause>`/`<hesitate>`/`<breath_fast>`/`<sigh_soft>`
+/// token isolates trailing punctuation between two real words -- by
+/// construction, that token is *why* the fragment became its own
+/// `TemporalPart::Text` instead of being part of a neighbouring clause's
+/// string in the first place, so a degenerate fragment is always separated
+/// from its nearest real text by at least one such token. Rather than send
+/// it to synthesis alone -- where GPT-SoVITS rejects it outright -- splice
+/// its characters onto the *content* of the nearest real `Text` part,
+/// previous preferred (trailing punctuation usually belongs to the clause
+/// before it), searching past intervening `Silence`/`Hesitation`/
+/// `Vocalization` entries without moving or removing any of them: the pause
+/// stays exactly where it was, only the adjacent clause's text gains a
+/// trailing (or leading) `"..."`/`"-"`, which most TTS front ends read as a
+/// legitimate trailing-off or clipped-word cue rather than as noise. A
+/// fragment with no real `Text` part anywhere in the sequence (the whole
+/// input was punctuation) has nothing to merge into and is dropped, loudly.
+fn merge_degenerate_text_fragments(mut parts: Vec<TemporalPart>) -> Vec<TemporalPart> {
+    let mut i = 0;
+    while i < parts.len() {
+        let degenerate = matches!(&parts[i], TemporalPart::Text(t) if is_degenerate_fragment(t));
+        if !degenerate {
+            i += 1;
+            continue;
+        }
+        let text = match parts.remove(i) {
+            TemporalPart::Text(t) => t,
+            _ => unreachable!("just matched TemporalPart::Text above"),
+        };
+
+        let merged_backward = parts[..i].iter_mut().rev().find_map(|p| match p {
+            TemporalPart::Text(t) => Some(t),
+            _ => None,
+        });
+        if let Some(prev) = merged_backward {
+            prev.push(' ');
+            prev.push_str(&text);
+            continue; // don't advance i -- re-examine what now sits here
+        }
+
+        let merged_forward = parts[i..].iter_mut().find_map(|p| match p {
+            TemporalPart::Text(t) => Some(t),
+            _ => None,
+        });
+        if let Some(next) = merged_forward {
+            let mut combined = text;
+            combined.push(' ');
+            combined.push_str(next);
+            *next = combined;
+            continue;
+        }
+
+        warn!(
+            fragment = %text,
+            "dropping a punctuation-only text fragment with no speakable text anywhere to merge into"
+        );
+        // Already removed via `parts.remove(i)` above; don't advance --
+        // whatever shifted into this slot needs to be examined too.
+    }
+
+    parts
+}
+
+/// GPT-SoVITS rejected the input text itself -- its own validation ("Please
+/// enter valid text.", HTTP 400) on a fragment it considers unspeakable --
+/// rather than failing to reach or process the request. Bucket 4
+/// (VOICE_REMEDIATION_PLAN.md): worth telling apart from a transient
+/// network/server failure, because retrying identical text against a
+/// deterministic validator reproduces the identical rejection every time,
+/// and because it says nothing about whether the engine itself is healthy --
+/// `synthesize_stream_with_retry` and the circuit breaker both key off this
+/// type to skip retry/failure-counting for exactly this case.
+#[derive(Debug)]
+struct SynthesisRejected {
+    status: reqwest::StatusCode,
+    body: String,
+}
+
+impl std::fmt::Display for SynthesisRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "SoVITS rejected input text (HTTP {}): {}",
+            self.status, self.body
+        )
+    }
+}
+
+impl std::error::Error for SynthesisRejected {}
 
 async fn synthesize_stream(
     config: &VoiceConfig,
@@ -1324,7 +1431,13 @@ async fn synthesize_stream(
     let url = format!("{}/tts", config.sovits_url.trim_end_matches('/'));
     let response = http.post(url).json(&payload).send().await?;
     if !response.status().is_success() {
-        anyhow::bail!("SoVITS returned HTTP {}", response.status());
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if status == reqwest::StatusCode::BAD_REQUEST && body.to_lowercase().contains("valid text")
+        {
+            return Err(SynthesisRejected { status, body }.into());
+        }
+        anyhow::bail!("SoVITS returned HTTP {status}: {body}");
     }
 
     Ok(response)
@@ -1351,6 +1464,20 @@ async fn synthesize_stream_with_retry(
     for attempt in 0..MAX_SYNTHESIS_ATTEMPTS {
         match synthesize_stream(config, http, text, ref_clip, speed, pitch, volume).await {
             Ok(response) => return Ok(response),
+            Err(e) if e.downcast_ref::<SynthesisRejected>().is_some() => {
+                // Bucket 4: a validation rejection is deterministic -- attempt
+                // 2 and 3 would fail identically, so stop here instead of
+                // burning the rest of the retry budget and its backoff
+                // delays. Logged loudly with the actual rejected text, since
+                // this is the one failure mode where the fragment is truly
+                // never going to be spoken.
+                error!(
+                    text = %text,
+                    error = %e,
+                    "synthesis rejected this text as invalid -- not retrying, this fragment will not be spoken"
+                );
+                return Err(e);
+            }
             Err(e) => {
                 warn!(
                     attempt = attempt + 1,
@@ -1582,6 +1709,51 @@ mod tests {
         let name = format!("definitely_missing_asset_{}", std::process::id());
         let pcm = load_vocalization_pcm(&name, 32_000);
         assert_eq!(pcm, contracts::silence_pcm(500, 32_000));
+    }
+
+    // ---------------------------------------------------------- Bucket 4: degenerate fragments
+
+    #[test]
+    fn degenerate_fragment_between_two_tokens_merges_backward_past_the_pause() {
+        // A punctuation-only fragment can only become its own
+        // TemporalPart::Text by being isolated between tokens in the first
+        // place -- here "..." sits strictly between a <pause> and a
+        // <hesitate>. It must fold into "hello"'s text (previous preferred)
+        // rather than reach synthesis alone, while the Silence entry itself
+        // stays exactly where it was -- only the neighbouring clause's
+        // *content* changes, not the pause's position or duration.
+        let parts = split_temporal_parts("hello<pause=20ms>...<hesitate>world").unwrap();
+        assert_eq!(
+            parts,
+            vec![
+                TemporalPart::Text("hello ...".to_string()),
+                TemporalPart::Silence(20),
+                TemporalPart::Hesitation(350),
+                TemporalPart::Text("world".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn degenerate_fragment_with_no_preceding_text_merges_forward() {
+        // A leading punctuation-only fragment with nothing before it (only
+        // a <hesitate> token) has no previous clause to fold into, so it
+        // must attach to the next real text instead of reaching synthesis
+        // on its own.
+        let parts = split_temporal_parts("--<hesitate>hello").unwrap();
+        assert_eq!(
+            parts,
+            vec![
+                TemporalPart::Hesitation(350),
+                TemporalPart::Text("-- hello".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn all_degenerate_input_is_dropped_with_nothing_to_merge_into() {
+        let parts = split_temporal_parts("... --").unwrap();
+        assert_eq!(parts, Vec::<TemporalPart>::new());
     }
 
     #[test]
@@ -2324,6 +2496,76 @@ mod tests {
         );
         // `.expect(N)` above is itself verified when `server` drops at end of
         // scope -- an unexpected attempt count fails the test.
+    }
+
+    #[tokio::test]
+    async fn validation_rejection_is_not_retried() {
+        // Bucket 4 (VOICE_REMEDIATION_PLAN.md): GPT-SoVITS answers a
+        // degenerate fragment with 400 + "Please enter valid text." --
+        // deterministic, so retrying it is pure waste. `.expect(1)` fails
+        // the test the moment a second attempt is made.
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(
+                ResponseTemplate::new(400).set_body_string("Please enter valid text."),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let result = synthesize_stream_with_retry(
+            &config, &http, "...", &config.emotion_refs.neutral, 1.0, 1.0, 1.0,
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "a validation rejection must still surface as an error to the caller"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.downcast_ref::<SynthesisRejected>().is_some(),
+            "the error must be identifiable as a rejection, not a generic failure, \
+             so the caller can skip counting it against the circuit breaker: {err:#}"
+        );
+        // `.expect(1)` above is the real assertion: it fails when the server
+        // drops at end of scope if more than one request was ever made.
+    }
+
+    #[tokio::test]
+    async fn a_generic_server_error_is_not_mistaken_for_a_validation_rejection() {
+        // Guards the other direction of the same distinction: a 400 that
+        // does NOT carry the validation phrasing must still retry like any
+        // other failure, not be silently treated as an unspeakable fragment.
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tts"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("internal error"))
+            .expect(MAX_SYNTHESIS_ATTEMPTS as u64)
+            .mount(&server)
+            .await;
+
+        let config = test_voice_config(server.uri());
+        let http = Client::new();
+        let result = synthesize_stream_with_retry(
+            &config, &http, "hello", &config.emotion_refs.neutral, 1.0, 1.0, 1.0,
+        )
+        .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.downcast_ref::<SynthesisRejected>().is_none(),
+            "a 400 without the validation phrasing must not be classified as a rejection"
+        );
+        // `.expect(N)` above proves the retry budget was actually used.
     }
 
     // ---------------------------------------------------------- probe_synthesis
