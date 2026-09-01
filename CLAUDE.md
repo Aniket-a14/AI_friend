@@ -40,6 +40,7 @@ Rust workspace (`backend/crates/`) and the native extension:
 ```bash
 cd backend
 cargo check --workspace
+cargo test --workspace
 maturin build --manifest-path crates/cognitive-rust/Cargo.toml --out target/wheels
 ```
 

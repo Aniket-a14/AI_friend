@@ -14099,3 +14099,62 @@ has 9 commits (Bucket 1 main + deferred-VAD, Bucket 2, Bucket 3, the env-merge d
 Bucket 4, Bucket 5, the word-spacing fix, this exit-criterion entry) and has not been pushed.
 Bucket 1's acoustic barge-in verification remains code-level only, as stated above. Phase 2
 (Buckets 14, 16) and Phase 3 (Buckets 6-13) have not been started.
+
+## 2026-09-01 -- `cargo test --workspace` fixed at the root, not worked around
+
+Closes the last open item from both the Bucket 4 and Phase 1 exit entries above, at the user's
+direct request ("fix the cargo test then").
+
+**Root cause, found by reading the actual dependency spec rather than trusting the existing
+workaround's stated reason.** The prior CI comment attributed the failure to "a pyo3
+feature-unification interaction with the other crates' own dependency graphs" and split
+`cognitive-rust --lib` into its own invocation to avoid it (`macos-ci.yml`/`ci.yml`, added
+2026-08-23 per their own comments). The actual cause was narrower and simpler:
+`backend/Cargo.toml`'s shared `pyo3` workspace dependency hardcoded
+`features = ["extension-module", "abi3-py39"]` unconditionally, so *every* consumer --
+including a bare `cargo test` binary -- always built with `extension-module` on. That feature's
+own contract (pyo3's documented guidance) is that it must never be enabled for a standalone
+test binary: it assumes the compiled `.so` is loaded into an already-running Python process
+(true for the real wheel `maturin` builds, never true for `cargo test`), so the linker step
+skips resolving libpython symbols on that assumption -- which is exactly the
+`Py_IsInitialized`/`Py_FalseStruct`/etc. "symbol(s) not found" error this session (and the
+2026-08-23 entry before it) both hit.
+
+**Fix.** `cognitive-rust` is the only consumer of the workspace `pyo3` entry (checked, not
+assumed). Removed `extension-module` from the shared spec; added it back as an opt-in feature
+on `cognitive-rust`'s own `Cargo.toml` (`[features] extension-module = ["pyo3/extension-module"]`);
+and had `maturin` request it via `backend/pyproject.toml`'s `[tool.maturin] features` table
+instead of a crate default. That table is read from whichever `pyproject.toml` sits in the
+invoking cwd regardless of `--manifest-path` -- already established the hard way, per that
+file's own header comment about a prior incident where removing it broke five CI jobs -- so
+every existing `maturin build --manifest-path crates/cognitive-rust/Cargo.toml` call (four CI
+workflows, CLAUDE.md's documented dev command) picks up the feature unchanged, with zero
+call-site edits to the real build path.
+
+**Verification, both directions.** `cargo test --workspace` now passes in one invocation: 146
+tests (11 cognitive-rust + 6 contracts + 69 stt-agent + 60 voice-agent), the identical count the
+split previously covered piecemeal -- confirmed nothing was silently dropped. The real wheel
+build was verified, not assumed safe: ran the exact documented `maturin build` command locally,
+confirmed maturin's own log line `"Using build options features from pyproject.toml"` (proof it
+picked up the new config rather than silently building without the feature), then `pip
+install`ed the resulting wheel and imported it in a real Python interpreter --
+`compute_appraisal`, `AppraisalVector`, `PadState`, and the rest of the expected surface all
+present and callable. Followed by a full Python suite re-run (1,462/1,462) against the
+freshly-reinstalled extension, since the local dev venv's previously-installed wheel turned out
+to be a stale `2.0.0` build (unrelated to this fix, just an incidental finding from doing the
+reinstall) and a version jump to `7.0.0` was worth confirming didn't surface any behavioral
+drift.
+
+**Cleanup.** The now-unnecessary split invocation and its explanatory comment were removed from
+`macos-ci.yml` and `ci.yml` (back to a single `cargo test --workspace` line each, the
+`continue-on-error` on the Linux job left untouched -- that guards an unrelated, still-open
+x86_64/arm64 whisper-rs-sys concern, not this issue), `docs/BRINGING_IT_TO_LIFE.md`'s documented
+verification command updated to match, and `CLAUDE.md`'s Rust commands block gained an explicit
+`cargo test --workspace` line now that it is a real, working, single command worth documenting.
+
+**NOT done:** CI itself has not been re-run against these changes (no push yet -- this was
+verified entirely locally plus a local `maturin build`, per the existing branch/PR-per-phase
+workflow already in effect on `fix/phase1-pipeline-defects`). home-gpu's own Rust toolchain and
+installed `cognitive_rust` wheel have not been touched by this change; this fix does not change
+the wheel's binary output, so no home-gpu action was judged necessary, but that judgment has not
+been verified live.
