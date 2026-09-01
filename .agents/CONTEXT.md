@@ -14537,3 +14537,43 @@ passed, 0 failed, 0 errors); `ruff check .` clean.
 
 **NOT done:** nothing else touched by this fix. It is scoped to the two broken backtick tokens
 only.
+
+## 2026-09-01 -- Root-caused and fixed the `calm` bucket's anomalous duration from the Bucket 16 entry
+
+The Bucket 16 entry above left `REF_AUDIO_PATH_CALM` deliberately unset pending a listen, after
+its verification clip came back at ~9.2s for a sentence every other bucket rendered at
+~3.3-3.5s. `faster_whisper` word-level timestamps on the *full* original `abhipsa_calm.wav`
+(brought into this session's toolkit while diagnosing an unrelated issue on a second voice,
+Akshita's, added mid-session -- see that entry) found the actual defect: the original trim cut
+`abhipsa_calm_ref.wav` at 5.60s, which is the ffmpeg-`silencedetect`-measured **end of the
+silence gap that follows "slowly."** -- i.e., exactly at the *onset* of the word "Everything",
+containing zero audio of it. The paired `prompt_text` claimed the clip said "Take a deep
+breath and let it out slowly. Everything is going to be completely fine." -- two full
+sentences -- when the audio actually contained only the first one plus trailing silence. That
+audio/text mismatch, not model quality, is what the ~9.2s rambling almost certainly was:
+reference-conditioned synthesis aligns text to audio, and a text that describes ~40% more
+content than the audio contains gives the length predictor nothing correct to anchor against.
+
+**The other four buckets do not have this defect** -- checked each trimmed clip's actual
+content via `faster_whisper` transcription against its paired `prompt_text` before trusting
+any of them; all four match. `calm` was the only case where the chosen silence gap was long
+enough (0.77s+ silence, versus the shorter gaps used elsewhere) for "cut at the gap's end" to
+land past where the *intended* sentence boundary actually was, rather than past the *next*
+sentence's genuine start.
+
+Fixed by re-measuring: "fine." (the true end of both intended sentences) ends at 8.16s per the
+full clip's word timestamps -- still comfortably inside GPT-SoVITS's 3-10s reference window.
+Re-trimmed `abhipsa_calm_ref.wav` to 8.16s; `faster_whisper` re-transcription of the new clip
+now matches the paired `prompt_text` exactly. Re-verified via direct synthesis: the same probe
+sentence that came back at ~9.2s now reproduces at 5.06s (confirmed twice), and the standard
+A/B sentence ("Hey, how is your day going? I was thinking about you.") comes back at 5.32s --
+higher than the other buckets' 3.2-4.5s, consistent with a genuinely slower "calm" delivery
+style rather than a broken artifact. `REF_AUDIO_PATH_CALM`/`REF_TEXT_CALM` added to the staged
+`/tmp/ai-friend-voice.service` on home-gpu, completing all 5 buckets.
+
+**NOT done:** the systemd unit still is not installed -- `sudo cp`/`daemon-reload`/`restart`
+remain blocked by the auto-mode permission classifier in this session, same as the prior entry;
+still handed to the user to run. No live multi-turn conversation test was run against the
+now-complete 5-bucket configuration -- verification here is direct `/tts` API calls against
+the running SoVITS server, not an end-to-end voice-agent test (voice-agent itself is not
+running with the new env vars yet, pending the same systemd install).
