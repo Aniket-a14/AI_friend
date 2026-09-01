@@ -324,15 +324,23 @@ class AppSettings(BaseSettings):
 
     # Half-life of a phasic hormone burst, in seconds. Real phasic bursts last
     # only hundreds of milliseconds; these are the *felt* afterglow at
-    # conversational timescale, so both are deliberately much slower than
-    # biology and much faster than the ALMA mood decay (PSYCH_LAMBDA_DECAY,
+    # conversational timescale, so both are deliberately much slower than that
+    # onset speed and much faster than the ALMA mood decay (PSYCH_LAMBDA_DECAY,
     # hours). These are now only the
     # *defaults* a PersonaProfile inherits when a persona file does not name
     # them (see app/persona/profile.py); AgentState reads the persona's values,
     # not these. Cortisol's is the longer of the two deliberately: an acute
     # stress response outlasts a reward burst.
+    #
+    # Bucket 11 (voice remediation Phase 3): cortisol's decay-once-released
+    # rate is a separate question from that onset-speed compression above,
+    # and 600s (10 minutes) was 6-9x faster than measured human cortisol
+    # plasma half-life (~66-90 minutes) -- a fright stopped colouring
+    # behaviour within about 20 minutes. Raised to 4500s (75 minutes, the
+    # midpoint of that range); the 7200s persona-profile ceiling already
+    # permitted this, only the default moved.
     DOPAMINE_PHASIC_HALFLIFE_S: float = 90.0
-    CORTISOL_PHASIC_HALFLIFE_S: float = 600.0
+    CORTISOL_PHASIC_HALFLIFE_S: float = 4500.0
 
     STT_MODEL_SIZE: str = "base"
     STT_DEVICE: str = "cpu"

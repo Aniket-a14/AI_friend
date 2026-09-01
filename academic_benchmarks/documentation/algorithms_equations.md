@@ -166,7 +166,7 @@ where $\Delta t$ is the elapsed time in seconds.
 C_{\text{tonic}}(t) = \text{clamp}\left(0.5 - \frac{V(t)}{2.0} + 0.3 \cdot F(t), 0.0, 1.0\right)
 ```
 
-A `release_cortisol(amount)` call (fired on an acute stressor) adds a phasic burst on top, stored **relative to the tonic floor** at release time and decaying exponentially toward zero with half-life $\tau_C = 600\text{s}$ (10 minutes — CONSTITUTIONAL, a persona temperament dial, not a deployment setting):
+A `release_cortisol(amount)` call (fired on an acute stressor) adds a phasic burst on top, stored **relative to the tonic floor** at release time and decaying exponentially toward zero with half-life $\tau_C$ — CONSTITUTIONAL, a persona temperament dial, not a deployment setting, defaulting to 4500s (75 minutes, the midpoint of measured human cortisol plasma half-life; raised from an earlier 600s default that was 6-9x faster than that reference point — Bucket 11, voice remediation Phase 3):
 
 ```math
 C_{\text{phasic}}(t) = C_{\text{peak}} \cdot 2^{-\frac{t - t_{\text{release}}}{\tau_C}}, \qquad C(t) = \text{clamp}(C_{\text{tonic}}(t) + C_{\text{phasic}}(t), 0.0, 1.0)

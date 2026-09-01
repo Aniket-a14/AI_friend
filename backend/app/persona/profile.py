@@ -198,7 +198,16 @@ class PersonaProfile(BaseModel):
     # conversation that caused it and colours a session it has nothing to do
     # with.
     dopamine_halflife_s: float = _constitutional(default=90.0, ge=5.0, le=1800.0)
-    cortisol_halflife_s: float = _constitutional(default=600.0, ge=5.0, le=7200.0)
+    # Bucket 11 (voice remediation Phase 3): 600s (10 minutes) was 6-9x
+    # faster than measured human cortisol plasma half-life (~66-90 minutes),
+    # so a fright stopped colouring behaviour within about 20 minutes --
+    # unrealistically fast for how a real fright lingers. Raised to 4500s
+    # (75 minutes, the midpoint of that human range). Still CONSTITUTIONAL --
+    # a deployment or an authored persona is free to dial this differently,
+    # e.g. Abhipsa's authored persona.toml sets 1000s from her own described
+    # temperament -- this only changes what an unauthored deployment starts
+    # at. The 7200s ceiling already permitted this; only the default moved.
+    cortisol_halflife_s: float = _constitutional(default=4500.0, ge=5.0, le=7200.0)
 
     # -- constitutional: narrative character --------------------------------
     # These were `IdentityManager`'s half of the persona, read straight out of

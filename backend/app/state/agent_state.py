@@ -110,9 +110,11 @@ class AgentState:
     # Half-lives are temperament, not deployment settings: how long a reward
     # glows and how long a fright lingers are among the most recognisable things
     # about a person. StateService seeds these from the PersonaProfile; the
-    # defaults reproduce the previous Config-driven behaviour exactly.
+    # defaults reproduce the current Config-driven behaviour exactly (cortisol's
+    # raised from 600.0 to 4500.0 in Bucket 11, voice remediation Phase 3 --
+    # see Config.CORTISOL_PHASIC_HALFLIFE_S).
     dopamine_halflife_s: float = 90.0
-    cortisol_halflife_s: float = 600.0
+    cortisol_halflife_s: float = 4500.0
 
     # --- Affect Split Properties ---
     @property
