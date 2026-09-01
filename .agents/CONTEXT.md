@@ -14695,3 +14695,57 @@ either a non-Ollama inference seam or the GPU box, and no LLM inference of any k
 the Mac tonight per explicit instruction. Full backend suite green throughout (1496 passed, 0
 failed, 0 errors, confirmed via JUnit XML per this file's own standing caveat about the
 terminal summary); `ruff check .` clean after each change.
+
+## 2026-09-02 -- Bucket 12: the remediation plan's "no sleep" framing was substantially wrong
+
+Before touching anything, read `subconscious_agent.py` (777 lines) in full rather than trusting
+the plan's characterization ("the system has a clock but no sleep... dreams... the only absent
+layer"). That was wrong on two separate counts, found by reading the code rather than assumed:
+
+**Dreams already exist and already work.** `_run_dream_sequence` pulls 3 random entities from
+the Neo4j graph (`apoc.coll.randomItems`, O(N) rather than `ORDER BY rand()`'s O(N log N)),
+prompts the LLM to synthesize a creative link between them, and writes the result back via
+`memory_store.add_memory` (`source="subconscious_dream"`, importance 0.6) -- offline
+recombination, no conversational trigger, nothing the user sees. It is gated behind
+`fatigue > 0.8` **and** 30s of silence, in `_continuous_monologue_loop`. The plan's proposed
+"dream guardrail learned the hard way from Bucket 7" -- that dream consolidation must write to
+memory, never to persona, without validation -- is already satisfied by construction: the
+method never touches `IdentityManager` or `PersonaProfile` at all, only `add_memory`.
+
+**The idle consolidation sweep is already rest-gated, just not on a circadian clock.**
+`_run_consolidation_pass` (fact extraction, ACT-R decay, `mark_episodes_consolidated`, expired
+visual-trace pruning) already requires 300s of user silence before `_on_system_tick` will even
+dispatch it. What is real, and what item 1 below fixes: a **second, separate** reflection path
+exists, fired from `cognitive/core.py` after every conversational turn and after every
+proactive message (the `"reflection_needed"` pipeline stage) -- event-triggered with no rest
+gate at all, exactly as the plan described, just not the same code path the plan's "dreams
+absent" framing pointed at.
+
+**1. `REFLECTION_MIN_INTERVAL_SECONDS` was 0.0 -- fixed, raised to 30s.** The only thing that
+had stood between one event-triggered reflection pass finishing and the next starting was
+`is_reflecting`, a busy-flag rather than a cooldown: a fast-paced conversation could fire a
+fresh multi-LLM-call reflection pass on every single turn. Default raised to 30s in
+`Config` -- long enough that rapid-fire turns don't each spawn their own pass, short enough that
+a real conversation still gets reflected on several times a minute when warranted. Found zero
+existing test coverage of `trigger_reflection`'s throttling at all (the one existing
+consolidation test calls `_consolidate` directly, bypassing the wrapper entirely); added three
+covering throttled / elapsed-cooldown / zero-interval behavior, mutation-tested by removing the
+guard and confirming the throttled case fails without it. `conftest.py`'s `enforce_test_config`
+continues pinning this to 0 for the rest of the suite, per the plan's own warning that a
+production-default change would not otherwise surface there.
+
+**2 and 3 (rest-phase-gated replay reactivation; dreams) are NOT done, deliberately, and not
+because they're unimportant.** What genuinely does not exist yet, after everything above:
+system-wide re-scoring of already-stored high-importance memories' importance, re-linking them
+into the graph, or general (non-visual) pruning during idle time -- `memory_store.py` has
+`apply_actr_decay` and the visual-trace-specific `prune_expired_visual_screen_traces`, and
+nothing broader. Building that tonight was rejected on the same grounds as Bucket 9's spacing
+effect a few hours earlier in this same session: it is a DB-writing feature, partially
+destructive (pruning), and Docker was down on the Mac all night -- no live Postgres to verify a
+schema-touching, data-deleting change against. A concrete design for tomorrow, so this doesn't
+restart from zero: a `is_rest_phase(now, last_user_interaction)` predicate (idle **and**
+night, or idle **and** `fatigue > 0.8` reusing the existing dream gate rather than inventing a
+second threshold) gating a new sweep that samples recent high-importance memories, re-runs
+their entity/graph linking, and prunes genuinely stale low-importance ones -- built and verified
+against a real Postgres, not blind. Full backend suite green (1499 passed, 0 failed, 0 errors);
+`ruff check .` clean.
