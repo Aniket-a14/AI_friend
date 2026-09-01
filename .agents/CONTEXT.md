@@ -13763,3 +13763,42 @@ real `journalctl`/`docker logs` output read as evidence, not assumed from local 
 - The Phase 1 PR -- branch `fix/phase1-pipeline-defects` has three commits (Buckets 1, 2, 3) and
   is not yet opened as a PR, per the user's instruction that PRs are per-phase, opened once the
   phase's buckets are all done.
+
+## 2026-09-01 -- Bucket 3 revision: VOICE_FILLER_THRESHOLD raised again, 0.4 -> 1.2
+
+Same-day follow-up to the Bucket 3 entry above, on direct user instruction. That entry fixed a
+*contradiction* (code said 0.25, every doc/log said 0.4) by picking the value the majority
+already claimed. It did not question whether 0.4 was the right value. It wasn't: 0.4 was
+derived from the measured baseline generation overhead (~264ms of MAUT/memory/endocrine work
+ahead of Ollama's own TTFT) -- but a threshold pinned to the baseline fires on essentially
+every turn, since real generation is never faster than its own floor. The user's framing:
+400ms is normal, not slow; a filler should only mask a pause that is *noticeably* long, and
+1200ms was given directly as the example of what "noticeable" means.
+
+**What changed.** `VOICE_FILLER_THRESHOLD` in `config.py`: `0.4` -> `1.2`, comment rewritten to
+state the baseline-vs-noticeable distinction so a future reader doesn't re-derive 0.4 from the
+overhead measurement and reintroduce this. README.md:262 and docs/ARCHITECTURE.md:98 updated
+400ms -> 1200ms (the two tracked sources Bucket 3 reconciled at 0.4, now reconciled again at
+1.2). The log line and `monitor_stream_and_fill`'s docstring needed no edit -- both already
+interpolate `Config.VOICE_FILLER_THRESHOLD` dynamically, which is exactly the fix Bucket 3 item
+2 made for this reason. HANDOFF.md:96 was edited by mistake mid-session (it is untracked and
+Bucket 3's own write-up records a standing instruction not to touch it) -- caught immediately
+via `git status`, reverted back to 400ms by hand before it was ever committed. Recorded here as
+the same class of lesson as the `git checkout --` mistake above: a file being untracked doesn't
+mean it's fair game, and a prior entry in this same ledger is the source of truth to check
+before editing a doc, not just grep for the string.
+
+**Verification.** Full backend suite re-run: 1,453 tests, 0 failures (JUnit XML). `ruff check
+.` clean. No test asserted the literal 0.4/0.25 value -- `test_conversational_runtime.py`'s
+autouse fixture monkeypatches its own 0.05s threshold, independent of the production default.
+Synced to home-gpu, `ai-friend-agents` restarted, `Config.VOICE_FILLER_THRESHOLD` read directly
+from the running process as `1.2`. A real synthetic turn published to `chat.input` (pacing
+545.8ms + ~150ms MAUT/memory/endocrine work, well under 1200ms) produced zero "TTFT exceeded"
+log lines -- confirming the raised threshold now suppresses the filler on an ordinary turn
+instead of firing on every one, which was the entire point of the change.
+
+**NOT done:** no live capture yet of a turn slow enough to actually cross 1200ms and fire a
+filler under the new threshold (the two synthetic turns tested this session were both fast
+turns exercising suppression, not the firing path at the new value -- the firing path itself
+was already verified in the base Bucket 3 entry above, at the old 0.4 threshold, and the
+mechanism didn't change, only the constant).
