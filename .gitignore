@@ -137,3 +137,5 @@ backend/.identity_state/
 # backend/ instead of the repo root and wrote a stray duplicate there.
 backend/scripts/results/
 scripts/remote/
+.vercel
+.env*

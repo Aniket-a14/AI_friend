@@ -1,0 +1,16 @@
+# Ignore backend code, models, venvs, and build outputs from Vercel deployment uploads
+backend/
+frontend/
+.agents/
+.benchmarks/
+.venv/
+target/
+models/
+evals_out/
+voice_samples/
+*.task
+*.onnx
+*.pt
+*.wav
+*.db
+*.sqlite
