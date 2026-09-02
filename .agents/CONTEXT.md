@@ -14999,3 +14999,50 @@ fully closed pending only the user's call on whether to actually deploy `phi4-mi
 **NOT done:** nothing further identified in scope. If per-turn latency is still a concern after
 Phase 1's pipeline fixes land, the next lever is call #1's own latency (intent classification),
 not moving work off the path -- there's no slack left to move.
+
+## 2026-09-02 -- Bucket 6 item 2 deployed: `phi4-mini` is now the production model on home-gpu, and a second stale `.env` was found verifying it
+
+Corrects the previous entry's "Recommendation, not acted on": asked, user approved switching
+the deployed default from `llama3.2:3b` to `phi4-mini` on the strength of the clean eval-gate
+pass recorded there. Executed on home-gpu: backed up `backend/.env` to
+`.env.bak-before-phi4mini-swap`, changed `LLM_CHAT_MODEL` and `LLM_FAST_MODEL` to `phi4-mini`,
+`daemon-reload` (a stale unit-file warning predated this change, unrelated), restarted
+`ai-friend-agents` and `ai-friend-backend`. Both came up active with clean startup logs.
+
+**Verifying the swap surfaced a second, independent stale-config bug, not just confirmed the
+first fix.** A first verification attempt ran `python -c "from app.config import Config;
+print(Config.LLM_CHAT_MODEL)"` over a plain SSH shell and got `llama3.2:3b` back -- looking
+like the deploy had failed. It hadn't: `config.py`'s `_env_file = Path(__file__).resolve()
+.parent.parent.parent / ".env"` resolves three parents up from `app/config.py`, landing one
+level *above* `backend/` -- so `Config` falls back to reading `~/AI_friend/.env` at the repo
+root whenever a value isn't already present as a real environment variable, and that repo-root
+file still had the old `llama3.2:3b` line. The systemd units are unaffected by this because
+their `EnvironmentFile=/home/aniket/AI_friend/backend/.env` directive injects real environment
+variables into the process before Python starts, and pydantic-settings prioritizes real env
+vars over the file it reads directly -- confirmed by reading `/proc/<agents-pid>/environ`
+directly, which showed `LLM_CHAT_MODEL=phi4-mini` and `LLM_FAST_MODEL=phi4-mini` on the actual
+running process. The plain SSH shell had neither the systemd-injected vars nor a reason to read
+`backend/.env`, so it fell through to the stale fallback file and reported the old model --
+a testing artifact, not a bad deploy.
+
+That fallback file was genuinely stale rather than merely surprising, though: anything ever
+invoked without going through systemd on this box -- a one-off debug script, a manual
+`python -c`, a future maintenance task run interactively -- would silently get `llama3.2:3b`
+with no error. Backed it up (`~/AI_friend/.env.bak-before-phi4mini-swap`) and synced it to
+`phi4-mini` too, so both files now agree; no service restart was needed for this second edit
+since the running process already had the correct values from its real environment.
+
+**Verified:** `/proc/<agents-pid>/environ` on the running `ai-friend-agents` process shows both
+`LLM_CHAT_MODEL=phi4-mini` and `LLM_FAST_MODEL=phi4-mini`; `systemctl status` for both restarted
+units shows `active` with no errors in the shown startup log lines (NATS streams created, mesh
+agents connected, LiveKit/uvicorn up). **NOT verified:** an actual end-to-end conversation
+through the live mesh producing a `phi4-mini`-generated response -- the config-read path is
+confirmed correct at the process level, but no real voice or chat turn was observed post-swap.
+If this needs closing later, the direct way is tailing `ai-friend-agents` logs (or Ollama's own
+request log, if one exists) during a real conversation, rather than another standalone `evals
+run`, which exercises its own harness path and doesn't touch the running mesh.
+
+**NOT done:** no attempt to determine whether other config values suffer the same repo-root-
+vs-`backend/`-`.env` split -- this session synced only the two `LLM_*` lines it was already
+touching. A full diff of the two files, beyond the two lines checked here, would need a
+dedicated pass before anyone should trust that they still agree in general.
