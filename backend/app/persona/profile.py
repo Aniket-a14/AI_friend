@@ -208,6 +208,15 @@ class PersonaProfile(BaseModel):
     # temperament -- this only changes what an unauthored deployment starts
     # at. The 7200s ceiling already permitted this; only the default moved.
     cortisol_halflife_s: float = _constitutional(default=4500.0, ge=5.0, le=7200.0)
+    # Bucket 11 (voice remediation Phase 3, item 2): adrenaline has no tonic
+    # term (see AgentState.adrenaline_tonic) -- it is purely reactive, firing
+    # on startle/interruption/shock rather than tracking mood continuously --
+    # so its half-life alone decides how long that reaction lingers. 120s
+    # (2 minutes) sits between dopamine's 90s and cortisol's 4500s, matching
+    # the plan's "1-3 min timescale" for this channel; bounds mirror
+    # dopamine's since both are short-timescale reactive bursts, not the
+    # hours-scale mood cortisol's ceiling has to accommodate.
+    adrenaline_halflife_s: float = _constitutional(default=120.0, ge=5.0, le=1800.0)
 
     # -- constitutional: narrative character --------------------------------
     # These were `IdentityManager`'s half of the persona, read straight out of
@@ -356,7 +365,10 @@ class PersonaProfile(BaseModel):
             "attachment_growth_rate": getattr(Config, "PSYCH_EPSILON", 0.03),
             "mood_decay_rate": getattr(Config, "PSYCH_LAMBDA_DECAY", 0.05),
             "dopamine_halflife_s": getattr(Config, "DOPAMINE_PHASIC_HALFLIFE_S", 90.0),
-            "cortisol_halflife_s": getattr(Config, "CORTISOL_PHASIC_HALFLIFE_S", 600.0),
+            "cortisol_halflife_s": getattr(Config, "CORTISOL_PHASIC_HALFLIFE_S", 4500.0),
+            "adrenaline_halflife_s": getattr(
+                Config, "ADRENALINE_PHASIC_HALFLIFE_S", 120.0
+            ),
         }
         return cls._clamped(raw, origin="Config")
 
@@ -559,6 +571,7 @@ class PersonaProfile(BaseModel):
         return {
             "dopamine_halflife_s": self.dopamine_halflife_s,
             "cortisol_halflife_s": self.cortisol_halflife_s,
+            "adrenaline_halflife_s": self.adrenaline_halflife_s,
         }
 
     def baseline_affect(self) -> dict[str, float]:

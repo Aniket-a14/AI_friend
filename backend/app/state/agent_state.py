@@ -106,6 +106,12 @@ class AgentState:
     dopamine_phasic_at: float = field(default_factory=time.time)
     cortisol_phasic_peak: float = 0.0
     cortisol_phasic_at: float = field(default_factory=time.time)
+    # Bucket 11 (voice remediation Phase 3, item 2): adrenaline, unlike the
+    # two above, has no tonic counterpart -- see `adrenaline_tonic` -- so
+    # `adrenaline_phasic_peak` alone *is* the current adrenaline level at the
+    # moment of release, not a supplement to an ambient baseline.
+    adrenaline_phasic_peak: float = 0.0
+    adrenaline_phasic_at: float = field(default_factory=time.time)
 
     # Half-lives are temperament, not deployment settings: how long a reward
     # glows and how long a fright lingers are among the most recognisable things
@@ -115,6 +121,7 @@ class AgentState:
     # see Config.CORTISOL_PHASIC_HALFLIFE_S).
     dopamine_halflife_s: float = 90.0
     cortisol_halflife_s: float = 4500.0
+    adrenaline_halflife_s: float = 120.0
 
     # --- Affect Split Properties ---
     @property
@@ -159,9 +166,20 @@ class AgentState:
 
     @property
     def arousal(self) -> float:
-        """PAD Arousal (Ar) — maps to 'energy' + fatigue-induced restlessness."""
+        """PAD Arousal (Ar) — maps to 'energy' + fatigue-induced restlessness
+        plus any outstanding adrenaline.
+
+        The adrenaline term (Bucket 11, voice remediation Phase 3, item 2) is
+        deliberately *derived* here rather than written into `energy` at
+        release time, the same pattern dopamine/cortisol already use for
+        reward and stress: a startle should read as an immediate, bounded
+        lift on top of whatever arousal already is, fading on its own over
+        `adrenaline_halflife_s` as the burst decays, not a permanent nudge to
+        the underlying baseline.
+        """
         fatigue_restlessness = 0.2 * self.fatigue
-        return max(0.0, min(1.0, self.energy + fatigue_restlessness))
+        adrenaline_lift = 0.3 * self.adrenaline
+        return max(0.0, min(1.0, self.energy + fatigue_restlessness + adrenaline_lift))
 
     @arousal.setter
     def arousal(self, value: float):
@@ -356,6 +374,63 @@ class AgentState:
         self.dopamine_phasic_at = time.time()
         return self.dopamine
 
+    @property
+    def adrenaline_tonic(self) -> float:
+        """Adrenaline has no ambient baseline, unlike dopamine/cortisol.
+
+        Real epinephrine is fundamentally reactive rather than mood-tracking:
+        it spikes on startle, a genuine interruption, or shock, and is
+        otherwise silent -- there is no equivalent of "background reward tone"
+        or "background stress tone" for it. Kept as an explicit property
+        (rather than inlining 0.0 into `adrenaline` below) so
+        `release_adrenaline` can measure its peak "relative to the tonic
+        floor" using the exact same code shape as `release_cortisol`/
+        `release_dopamine` above -- the floor here is just always zero.
+        """
+        return 0.0
+
+    @property
+    def adrenaline_phasic(self) -> float:
+        """The decaying remainder of the most recent startle/interruption/shock.
+
+        Half-life sits between dopamine's (a reward glow, ~90s) and
+        cortisol's (an acute-stress hangover, ~75min) by design -- a startle
+        response fades over minutes, not seconds or hours.
+        """
+        return self._decayed(
+            self.adrenaline_phasic_peak,
+            self.adrenaline_phasic_at,
+            self.adrenaline_halflife_s,
+        )
+
+    @property
+    def adrenaline(self) -> float:
+        """
+        Startle hormone: purely phasic, no tonic component (see
+        `adrenaline_tonic`). Range: 0.0 (nothing outstanding) to 1.0
+        (maximum startle). Consumed by `arousal` above as a short, sharp,
+        self-fading lift on top of whatever arousal already is.
+        """
+        return max(0.0, min(1.0, self.adrenaline_tonic + self.adrenaline_phasic))
+
+    def release_adrenaline(self, amount: float) -> float:
+        """Fire an acute startle/interruption/shock response.
+
+        Mirrors `release_cortisol`/`release_dopamine`'s "peak relative to the
+        tonic floor" shape exactly, even though that floor is always zero
+        here (see `adrenaline_tonic`) -- so a future change to the shared
+        release pattern only has to be reasoned about once, not separately
+        for a channel that looks superficially different.
+        """
+        amount = self._burst_amount(amount, "adrenaline")
+        if amount <= 0.0:
+            return self.adrenaline
+
+        target_total = min(1.0, self.adrenaline + amount)
+        self.adrenaline_phasic_peak = max(0.0, target_total - self.adrenaline_tonic)
+        self.adrenaline_phasic_at = time.time()
+        return self.adrenaline
+
 
 class StateService:
     """Manages Internal State continuity and Neo4j persistence."""
@@ -392,6 +467,9 @@ class StateService:
             # not just these two.
             dopamine_halflife_s=self.persona.hormone_halflives()["dopamine_halflife_s"],
             cortisol_halflife_s=self.persona.hormone_halflives()["cortisol_halflife_s"],
+            adrenaline_halflife_s=self.persona.hormone_halflives()[
+                "adrenaline_halflife_s"
+            ],
         )
         self.last_speculative_intent = None  # Transient sensory state
         # A2: serializes short-term affect mutation so the fire-and-forget
@@ -1339,6 +1417,22 @@ class StateService:
             level = self.current_state.release_dopamine(amount)
         if reason:
             logger.info("[Endocrine] Dopamine released (%s) — now %.2f.", reason, level)
+        return level
+
+    async def release_adrenaline(self, amount: float, *, reason: str = "") -> float:
+        """Fire a startle/interruption/shock burst under the state lock.
+
+        See `release_cortisol` for why the lock is mandatory: adrenaline's
+        peak is computed relative to its tonic floor exactly like the other
+        two (`AgentState.adrenaline_tonic`, always 0.0), so an unlocked
+        release racing a concurrent affect write is the same hazard.
+        """
+        async with self._state_lock:
+            level = self.current_state.release_adrenaline(amount)
+        if reason:
+            logger.info(
+                "[Endocrine] Adrenaline released (%s) — now %.2f.", reason, level
+            )
         return level
 
     async def handle_system_tick(self, tick_metadata: dict[str, Any]):

@@ -357,6 +357,13 @@ class AppSettings(BaseSettings):
     # permitted this, only the default moved.
     DOPAMINE_PHASIC_HALFLIFE_S: float = 90.0
     CORTISOL_PHASIC_HALFLIFE_S: float = 4500.0
+    # Bucket 11 (voice remediation Phase 3, item 2): adrenaline sits between
+    # dopamine's 90s and cortisol's 4500s on purpose -- it governs the most
+    # conversationally visible responses (startle, being interrupted, shock),
+    # which fade over minutes, not the ~90s of a reward glow or the ~75min
+    # hangover of an acute stress response. 120s is the low end of the plan's
+    # own "1-3 min timescale" for this channel.
+    ADRENALINE_PHASIC_HALFLIFE_S: float = 120.0
 
     STT_MODEL_SIZE: str = "base"
     STT_DEVICE: str = "cpu"
@@ -414,6 +421,7 @@ class AppSettings(BaseSettings):
     _POSITIVE_FLOAT_FIELDS = (
         "DOPAMINE_PHASIC_HALFLIFE_S",
         "CORTISOL_PHASIC_HALFLIFE_S",
+        "ADRENALINE_PHASIC_HALFLIFE_S",
         "TOKEN_RATE_LIMIT_WINDOW_SECONDS",
         "LLM_STREAM_MAX_SECONDS",
     )

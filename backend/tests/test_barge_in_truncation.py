@@ -77,6 +77,76 @@ def test_a_speculative_stop_does_not_cancel_generation():
     agent._cancel_active_generation.assert_not_awaited()
 
 
+# --------------------------------------------------------------------------
+# Bucket 11 (voice remediation Phase 3, item 2): a genuine interruption
+# releases adrenaline
+# --------------------------------------------------------------------------
+
+
+def _agent_with_endocrine_state(progress=None, response=REPLY):
+    agent = _agent(progress=progress, response=response)
+    agent.cognitive_core = SimpleNamespace(
+        state=SimpleNamespace(release_adrenaline=AsyncMock())
+    )
+    return agent
+
+
+def test_a_confirmed_stop_releases_adrenaline():
+    """This is the one branch that reaches `_cancel_active_generation` --
+    past the speculative filter and past the same-turn `confirmed_user_speech`
+    early return -- so it is the textbook definition of "a genuine
+    interruption" the plan's adrenaline channel exists to feel different
+    from a false one."""
+    agent = _agent_with_endocrine_state(progress=None)
+    agent._cancel_active_generation = AsyncMock()
+
+    asyncio.run(agent._on_audio_stop(_stop()))
+
+    agent.cognitive_core.state.release_adrenaline.assert_awaited_once()
+
+
+def test_a_speculative_stop_does_not_release_adrenaline():
+    """A duck has not actually interrupted anything yet."""
+    agent = _agent_with_endocrine_state(progress=None)
+    agent._cancel_active_generation = AsyncMock()
+
+    asyncio.run(agent._on_audio_stop(_stop(speculative=True)))
+
+    agent.cognitive_core.state.release_adrenaline.assert_not_awaited()
+
+
+def test_a_same_turn_silencing_stop_does_not_release_adrenaline():
+    """`reason="confirmed_user_speech"` returns before generation is ever
+    cancelled -- it silences playback for a *new* incoming turn, not an
+    interruption of the agent's own speech, so it must not fire the
+    "something just cut me off" response either."""
+    agent = _agent_with_endocrine_state(progress=None)
+    agent._cancel_active_generation = AsyncMock()
+
+    stop = _stop()
+    stop["reason"] = "confirmed_user_speech"
+    asyncio.run(agent._on_audio_stop(stop))
+
+    agent._cancel_active_generation.assert_not_awaited()
+    agent.cognitive_core.state.release_adrenaline.assert_not_awaited()
+
+
+def test_an_endocrine_failure_does_not_prevent_truncation():
+    """Endocrine state modulates how the agent speaks; it must never decide
+    whether truncation -- the part that keeps memory honest about what was
+    actually said -- happens. Mirrors `cognitive/pipeline.py`'s own
+    broad-except reasoning for every other hormone release site."""
+    agent = _agent_with_endocrine_state(progress=None)
+    agent._cancel_active_generation = AsyncMock()
+    agent.cognitive_core.state.release_adrenaline = AsyncMock(
+        side_effect=RuntimeError("endocrine backend down")
+    )
+
+    asyncio.run(agent._on_audio_stop(_stop()))
+
+    agent._cancel_active_generation.assert_awaited_once()
+
+
 def test_real_playback_progress_still_truncates_where_it_says():
     """The accurate path must keep working; it is the only one that knows."""
     progress = SimpleNamespace(completed=False, character_offset=26)

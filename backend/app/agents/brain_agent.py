@@ -30,6 +30,15 @@ from .base import BaseAgent, install_shutdown_signal_handlers
 
 logger = logging.getLogger(__name__)
 
+# Bucket 11 (voice remediation Phase 3, item 2): fired from `_on_audio_stop`
+# on a genuinely confirmed interruption -- see that method's docstring for
+# why this is the one place in the codebase that distinguishes a real
+# interruption from a speculative duck or a same-turn silence. Matches
+# `cognitive/pipeline.py`'s `SELF_CORRECTION_STRESS` (0.3) in scale: both are
+# a single, moderate, discrete-event burst rather than something tunable
+# per-turn.
+INTERRUPTION_ADRENALINE_SPIKE = 0.3
+
 
 def _char_offset_after_word(text: str, word_count: int) -> int:
     """P4-2: the exact character offset in `text` right after its
@@ -746,6 +755,19 @@ class BrainAgent(BaseAgent):
                     stop_msg.reason or "confirmed audio.stop"
                 )
                 await self._truncate_interrupted_reply()
+                # Bucket 11 (voice remediation Phase 3, item 2): this branch
+                # is reached only for a confirmed, non-speculative interrupt
+                # that actually cut off an in-progress turn -- not a
+                # same-turn "confirmed_user_speech" silence (returned above)
+                # and not a speculative duck (filtered above that). That is
+                # exactly the "genuine interruption" the adrenaline channel
+                # exists to feel different from a false one.
+                try:
+                    await self.cognitive_core.state.release_adrenaline(
+                        INTERRUPTION_ADRENALINE_SPIKE, reason="confirmed interruption"
+                    )
+                except Exception as e:
+                    logger.warning("[Endocrine] Interruption adrenaline release failed: %s", e)
         except Exception as e:
             logger.error(f"Error handling audio stop truncation: {e}")
 
