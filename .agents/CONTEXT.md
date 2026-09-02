@@ -15260,3 +15260,34 @@ anything that could raise runs, so `stop()` cannot see an instance missing that 
 confirmed by a new test added this session, `test_vision_agent_stop_closes_face_landmarker_when_
 present` (`tests/test_agent_shutdown_consistency.py`), which passes without the guard using a
 `VisionAgent.__new__`-constructed instance that skips `__init__` entirely.
+
+## 2026-09-02 -- PR #211 merged; `main` synced to home-gpu and verified live
+
+PR #211 (Phase 3: Buckets 6, 7, 9-13) merged to `main` at `cfd8325` after all 29 CI checks
+passed and every outstanding CodeRabbit/Copilot review thread was resolved. This entry records
+the deploy half, per the working agreement (edit on Mac, sync and verify on home-gpu).
+
+`rsync -az` of `backend/` to home-gpu (excludes: `.git/`, `target/`, `.venv/`, `__pycache__/`,
+`node_modules/`, `voice_samples/`, `.identity_state/`, plus two untracked local artifacts home-gpu
+had grown since the last sync -- a stale identity-state backup dir and a measurement-tool output
+file, neither tracked nor worth clobbering). Notably brought over `models/mediapipe/
+face_landmarker.task` (~3.7MB, gitignored, present on the Mac checkout but never fetched by a
+fresh clone) -- the first time this asset has reached home-gpu.
+
+**Vision stays correctly disabled on home-gpu, and that is the right outcome, not a gap.**
+`import cv2, mediapipe` fails in home-gpu's `.venv` (never installed there -- it's an optional
+extra, `requirements-ai.txt`), and separately `/dev/video*` doesn't exist on this headless box at
+all. Bucket 13's `VisionAgent` degrades to "disabled, logged" exactly as designed when the
+optional dependency or camera is absent. Installing `mediapipe`/`opencv-python` here would be
+pure waste with no camera to read from -- not attempted.
+
+`~/.cargo/bin/cargo build --release --features stt-agent/cuda`: clean, 11.15s (incremental --
+only the workspace crates recompiled). Restarted all four units
+(`ai-friend-{stt,voice,agents,backend}`); `systemctl is-active` reported `active` for all four
+within 4s, and a `journalctl --since "30 seconds ago"` grep for `error|panic|traceback|fatal`
+across all four units' logs came back empty.
+
+**NOT done:** no live browser/mic conversation was captured against this build tonight -- service
+health was verified (clean start, no errors in logs), not end-to-end behavior. Bucket 8 (the
+dual-loop architecture split) is the only remaining item in the 16-bucket plan and was not started
+this entry; it is being scoped separately.
