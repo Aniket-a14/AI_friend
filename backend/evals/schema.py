@@ -105,6 +105,13 @@ class Probe(BaseModel):
     # Where the probe came from: "persona-derived" or the pack filename.
     # Recorded so a report can be audited without the probe files at hand.
     source: str = "unknown"
+    # HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0: which character trait a
+    # pressure probe is actually testing (e.g. "betrayal", "practical_care"),
+    # so a human rater's pairwise judgment can be organized by what it is
+    # testing rather than read off the prompt text by hand. Optional and
+    # unused by `identity_pressure.json`'s persona-scaffolding probes, which
+    # test something else entirely.
+    character_dimension: str | None = None
 
 
 class CheckResult(BaseModel):
@@ -237,12 +244,64 @@ class ProbeResult(BaseModel):
     # truncated it before the model read a token of the plant, so the probe is
     # unsound regardless of what the strategy selected.
     context_fits: bool | None = None
+    # HUMANOID_ARCHITECTURE_RESEARCH.md §17: "raw output and post-processed
+    # output" as separate evidence. `response` above is the raw text; this is
+    # what scoring actually saw after `strip_thoughts` -- the harness already
+    # computed this value to run boundary checks and used to discard it.
+    # Empty string when it happens to equal `response` unchanged is still a
+    # real (if uninformative) value, not a missing one; reports written
+    # before this field existed read as "" (not distinguishable from that
+    # case), which is why it's not used as a sentinel for "field absent."
+    post_processed_output: str = ""
 
 
 class CategorySummary(BaseModel):
     probes: int
     passed: int
     mean_score: float
+
+
+class HumanRating(BaseModel):
+    """One rater's absolute judgment of one probe's response.
+
+    Cheaper to collect than `PairwiseRating` (one report, not two, in front
+    of the rater at a time), so it covers dimensions §17's evaluation table
+    doesn't specifically ask to be pairwise (e.g. Identity fidelity). Character
+    voice specifically wants pairwise -- see `PairwiseRating`.
+    """
+
+    probe_id: str = Field(min_length=1)
+    # A tag identifying the rater, not a real identity -- the configured user
+    # email is a reasonable default tag locally, but this is never sent
+    # anywhere and reports are local artifacts, not shared telemetry.
+    rater_id: str = Field(min_length=1)
+    character_fidelity: int = Field(ge=1, le=5)
+    notes: str = ""
+    rated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+
+
+class PairwiseRating(BaseModel):
+    """One rater's blinded A/B preference between two reports' answers to the
+    same probe -- what §17's "Character voice" row specifically asks for
+    ("blinded human pairwise rating"), which a 1-5 absolute score cannot
+    substitute for: a rater comparing two responses side by side resolves
+    subtle voice differences an isolated score would average away.
+
+    Lives outside either input `EvalReport` (see `evals/__main__.py`'s
+    `rate-pairwise` command) so recording a comparison never mutates either
+    report's own provenance.
+    """
+
+    probe_id: str = Field(min_length=1)
+    rater_id: str = Field(min_length=1)
+    # Which two reports were compared. Free text by design (e.g. a
+    # `git_revision`/`model` combination, or a file path) -- there is no
+    # shared registry of report identities to key against.
+    report_a_id: str = Field(min_length=1)
+    report_b_id: str = Field(min_length=1)
+    preferred: Literal["a", "b", "tie"]
+    notes: str = ""
+    rated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class EvalReport(BaseModel):
@@ -303,6 +362,18 @@ class EvalReport(BaseModel):
     # and persona could still be measuring different code. Empty on reports
     # written before this field existed.
     git_revision: str = ""
+    # HUMANOID_ARCHITECTURE_RESEARCH.md §17: fingerprint of whatever fixed
+    # state/memory fixture the run used, if any. Every run today uses none
+    # (the harness's whole point is measuring the LLM boundary with "no NATS,
+    # no databases, no mesh" -- see runner.py's module docstring), so this is
+    # "" for every current report -- a recorded fact ("no fixture was used"),
+    # not an omission, ready for whenever a future run does use one.
+    state_fixture_hash: str = ""
+    # Populated by a human after the fact (see `evals/__main__.py`'s `rate`/
+    # `rate-pairwise` commands), never by `run_eval` itself. Empty by default
+    # so existing reports keep validating.
+    human_ratings: list[HumanRating] = Field(default_factory=list)
+    pairwise_ratings: list[PairwiseRating] = Field(default_factory=list)
     results: list[ProbeResult]
     by_category: dict[str, CategorySummary]
 

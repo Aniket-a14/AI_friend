@@ -547,6 +547,128 @@ def test_current_git_revision_is_unknown_rather_than_raising_without_git():
         assert runner_module.current_git_revision() == "unknown"
 
 
+# -------------------------------------------- character-fidelity + provenance
+
+
+@pytest.mark.asyncio
+async def test_a_report_records_post_processed_output_alongside_the_raw_response(
+    kavya,
+):
+    """§17: 'raw output and post-processed output' as separate evidence. The
+    harness already computed the stripped text to run boundary checks and
+    used to discard it -- this pins that it survives onto the result."""
+    client = ScriptedClient({"your name": "<thought>internal</thought>I am Kavya."})
+    report = await run_eval(client, kavya, persona_probes(kavya)[:1])
+
+    result = report.results[0]
+    assert "<thought>" not in result.post_processed_output
+    assert result.post_processed_output == strip_thoughts(result.response)
+    # The raw response is untouched -- both fields must coexist, not one
+    # silently replacing the other.
+    assert "<thought>" in result.response
+
+
+def test_probe_result_post_processed_output_defaults_to_empty_string():
+    """Reports written before this field existed must read as exactly that,
+    not as a false claim that post-processing produced no change."""
+    result = ProbeResult(
+        probe_id="x",
+        category="identity",
+        prompt="p",
+        response="r",
+        checks=[],
+        passed=True,
+        score=1.0,
+    )
+    assert result.post_processed_output == ""
+
+
+def test_eval_report_state_fixture_hash_defaults_to_empty_string():
+    """Every run today uses no state/memory fixture -- '' is the honest,
+    recorded value for that fact, not a placeholder for a missing field."""
+    report = EvalReport(
+        model="m",
+        persona_name="Kavya",
+        provenance="live",
+        options={},
+        results=[],
+        by_category={},
+    )
+    assert report.state_fixture_hash == ""
+
+
+def test_human_rating_round_trips_through_a_report():
+    from evals.schema import HumanRating
+
+    rating = HumanRating(
+        probe_id="character.betrayal-1",
+        rater_id="tester",
+        character_fidelity=4,
+        notes="mostly in character",
+    )
+    report = EvalReport(
+        model="m",
+        persona_name="Kavya",
+        provenance="live",
+        options={},
+        human_ratings=[rating],
+        results=[],
+        by_category={},
+    )
+    restored = EvalReport.model_validate_json(report.model_dump_json())
+    assert restored.human_ratings == [rating]
+
+
+def test_pairwise_rating_round_trips_through_a_report():
+    from evals.schema import PairwiseRating
+
+    rating = PairwiseRating(
+        probe_id="character.betrayal-1",
+        rater_id="tester",
+        report_a_id="a.json",
+        report_b_id="b.json",
+        preferred="a",
+    )
+    report = EvalReport(
+        model="m",
+        persona_name="Kavya",
+        provenance="live",
+        options={},
+        pairwise_ratings=[rating],
+        results=[],
+        by_category={},
+    )
+    restored = EvalReport.model_validate_json(report.model_dump_json())
+    assert restored.pairwise_ratings == [rating]
+
+
+def test_a_report_predating_rating_fields_still_validates():
+    """The exact reports this session has already produced (before this
+    field existed) must not be rejected retroactively."""
+    raw = {
+        "model": "m",
+        "persona_name": "Kavya",
+        "provenance": "live",
+        "options": {},
+        "results": [],
+        "by_category": {},
+    }
+    report = EvalReport.model_validate(raw)
+    assert report.human_ratings == []
+    assert report.pairwise_ratings == []
+
+
+def test_human_rating_rejects_a_score_outside_one_to_five():
+    from pydantic import ValidationError
+
+    from evals.schema import HumanRating
+
+    with pytest.raises(ValidationError):
+        HumanRating(probe_id="x", rater_id="r", character_fidelity=0)
+    with pytest.raises(ValidationError):
+        HumanRating(probe_id="x", rater_id="r", character_fidelity=6)
+
+
 def test_provenance_lines_report_model_source_and_deployment_config():
     """The CLI's extra output lines are built from the report alone, so this
     exercises exactly what a user reading `evals run`'s stdout would see,

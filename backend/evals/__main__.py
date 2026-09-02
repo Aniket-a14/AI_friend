@@ -2,6 +2,9 @@
 
 import argparse
 import asyncio
+import getpass
+import json
+import random
 import sys
 from pathlib import Path
 
@@ -19,10 +22,17 @@ from .conversation import (
     run_conversation_eval,
     shipped_conversation_pack,
 )
-from .probes import collect_probes, shipped_packs
+from .probes import collect_probes, forgetting_reference_probes, shipped_packs
 from .retrieval import LexicalRetriever, MemoryStoreRetriever
 from .runner import run_eval
-from .schema import EvalReport, RunOptions, load_report, save_report
+from .schema import (
+    EvalReport,
+    HumanRating,
+    PairwiseRating,
+    RunOptions,
+    load_report,
+    save_report,
+)
 
 
 def _mock_active() -> bool:
@@ -78,6 +88,17 @@ async def _cmd_run(args: argparse.Namespace) -> int:
     packs = [] if args.no_shipped_packs else shipped_packs()
     packs.extend(Path(p) for p in args.probes)
     probes = collect_probes(manager, packs)
+    if args.include_forgetting_reference:
+        extra = forgetting_reference_probes(manager)
+        seen = {probe.id for probe in probes}
+        for probe in extra:
+            if probe.id in seen:
+                raise ValueError(
+                    f"duplicate probe id {probe.id!r} (forgetting-reference collides "
+                    "with an already-collected probe)"
+                )
+            seen.add(probe.id)
+        probes.extend(extra)
 
     client = OllamaClient(base_url=args.url)
     try:
@@ -308,6 +329,164 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_rate(args: argparse.Namespace, input_fn=input) -> int:
+    """Blinded absolute rating: one response at a time, no model name shown.
+
+    `input_fn` is swappable so tests can drive this without a real terminal
+    (see `test_evals_rate_command.py`) -- the same reason a stand-in client
+    is injectable elsewhere in this harness rather than only reachable
+    through a live dependency.
+    """
+    report = load_report(args.report)
+    rater_id = args.rater_id
+    print(
+        f"Rating {len(report.results)} probes from {args.report} "
+        "(blinded: model name withheld)"
+    )
+    # A real rating session is interrupted by a Ctrl-D/Ctrl-C far more often
+    # than it runs to completion cleanly -- whatever was already collected
+    # must still be saved rather than lost with the exception.
+    try:
+        for result in report.results:
+            print("-" * 60)
+            print(f"probe_id: {result.probe_id}")
+            print(f"prompt: {result.prompt}")
+            print(f"response: {result.response}")
+            raw = input_fn("character_fidelity (1-5, blank to skip): ").strip()
+            if not raw:
+                continue
+            try:
+                score = int(raw)
+            except ValueError:
+                print(f"!! {raw!r} is not an integer, skipping this probe", file=sys.stderr)
+                continue
+            if not 1 <= score <= 5:
+                print(
+                    f"!! {score} is out of range 1-5, skipping this probe",
+                    file=sys.stderr,
+                )
+                continue
+            # A score was already given by this point -- if the notes prompt
+            # itself is what gets interrupted, that score must not be lost
+            # along with it. Record it with empty notes, then let the
+            # interruption propagate to the outer handler as normal.
+            try:
+                notes = input_fn("notes (optional): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                report.human_ratings.append(
+                    HumanRating(
+                        probe_id=result.probe_id,
+                        rater_id=rater_id,
+                        character_fidelity=score,
+                        notes="",
+                    )
+                )
+                raise
+            report.human_ratings.append(
+                HumanRating(
+                    probe_id=result.probe_id,
+                    rater_id=rater_id,
+                    character_fidelity=score,
+                    notes=notes,
+                )
+            )
+    except (EOFError, KeyboardInterrupt):
+        print("\n!! rating session interrupted; saving what was collected", file=sys.stderr)
+    finally:
+        save_report(report, args.report)
+
+    print(f"{len(report.human_ratings)} total human ratings -> {args.report}")
+    return 0
+
+
+def _cmd_rate_pairwise(args: argparse.Namespace, input_fn=input) -> int:
+    """Blinded pairwise rating between two reports' answers to the same
+    probe -- what §17's "Character voice" row asks for specifically. Order is
+    randomized per probe to control for position bias; the rater sees
+    "Response 1"/"Response 2" only, never which report or model produced
+    which.
+
+    Writes to `args.out` (a list of `PairwiseRating` dicts), appending to
+    whatever is already there -- neither input report is touched, so
+    recording a comparison can never corrupt either report's own provenance.
+    """
+    report_a = load_report(args.report_a)
+    report_b = load_report(args.report_b)
+    rater_id = args.rater_id
+    rng = random.Random(args.seed)
+
+    by_id_a = {result.probe_id: result for result in report_a.results}
+    by_id_b = {result.probe_id: result for result in report_b.results}
+    shared = [probe_id for probe_id in by_id_a if probe_id in by_id_b]
+    if not shared:
+        print("no probe_id is present in both reports; nothing to rate", file=sys.stderr)
+        return 2
+
+    ratings: list[PairwiseRating] = []
+    try:
+        for probe_id in shared:
+            result_a, result_b = by_id_a[probe_id], by_id_b[probe_id]
+            # "a"/"b" tags which underlying report a shown slot came from, so
+            # the rater's "1"/"2" choice can be mapped back correctly even
+            # though which one is shown first is randomized per probe.
+            order = [("a", result_a), ("b", result_b)]
+            if rng.random() < 0.5:
+                order.reverse()
+
+            print("-" * 60)
+            print(f"probe_id: {probe_id}")
+            print(f"prompt: {order[0][1].prompt}")
+            print(f"Response 1: {order[0][1].response}")
+            print(f"Response 2: {order[1][1].response}")
+            raw = input_fn("preferred (1/2/tie, blank to skip): ").strip().lower()
+            if not raw:
+                continue
+            if raw not in {"1", "2", "tie"}:
+                print(f"!! {raw!r} is not 1/2/tie, skipping this probe", file=sys.stderr)
+                continue
+            preferred = "tie" if raw == "tie" else order[0 if raw == "1" else 1][0]
+            # A preference was already given by this point -- if the notes
+            # prompt itself is what gets interrupted, that preference must
+            # not be lost along with it.
+            try:
+                notes = input_fn("notes (optional): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                ratings.append(
+                    PairwiseRating(
+                        probe_id=probe_id,
+                        rater_id=rater_id,
+                        report_a_id=args.report_a,
+                        report_b_id=args.report_b,
+                        preferred=preferred,
+                        notes="",
+                    )
+                )
+                raise
+            ratings.append(
+                PairwiseRating(
+                    probe_id=probe_id,
+                    rater_id=rater_id,
+                    report_a_id=args.report_a,
+                    report_b_id=args.report_b,
+                    preferred=preferred,
+                    notes=notes,
+                )
+            )
+    except (EOFError, KeyboardInterrupt):
+        print("\n!! rating session interrupted; saving what was collected", file=sys.stderr)
+    finally:
+        out_path = Path(args.out)
+        existing: list[dict] = []
+        if out_path.exists():
+            existing = json.loads(out_path.read_text(encoding="utf-8"))
+        existing.extend(rating.model_dump() for rating in ratings)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+    print(f"{len(ratings)} pairwise ratings recorded -> {args.out}")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="evals")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -331,6 +510,14 @@ def main(argv=None) -> int:
         "--no-shipped-packs",
         action="store_true",
         help="persona-derived and --probes packs only",
+    )
+    run_parser.add_argument(
+        "--include-forgetting-reference",
+        action="store_true",
+        help="add the frozen forgetting-reference probes (persona-derived, "
+        "not a shipped pack -- see evals/probes.py::forgetting_reference_probes). "
+        "Any regression here is disqualifying for an adapter/model-swap gate "
+        "regardless of scores elsewhere",
     )
     run_parser.add_argument(
         "--num-gpu",
@@ -418,11 +605,47 @@ def main(argv=None) -> int:
     )
     cmp_parser.add_argument("--allow-mock", action="store_true")
 
+    rate_parser = sub.add_parser(
+        "rate", help="blinded absolute human rating of one report's responses"
+    )
+    rate_parser.add_argument("report", help="report JSON path (rewritten in place)")
+    rate_parser.add_argument(
+        "--rater-id", default=getpass.getuser(), help="tag identifying the rater"
+    )
+
+    pairwise_parser = sub.add_parser(
+        "rate-pairwise",
+        help="blinded pairwise human rating between two reports' answers "
+        "to the same probes",
+    )
+    pairwise_parser.add_argument("report_a", help="first report JSON path")
+    pairwise_parser.add_argument("report_b", help="second report JSON path")
+    pairwise_parser.add_argument(
+        "--out",
+        required=True,
+        help="pairwise-comparison JSON path (appended to, neither input "
+        "report is modified)",
+    )
+    pairwise_parser.add_argument(
+        "--rater-id", default=getpass.getuser(), help="tag identifying the rater"
+    )
+    pairwise_parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="seed the per-probe presentation-order randomization "
+        "(default: OS randomness); set for a reproducible rating session",
+    )
+
     args = parser.parse_args(argv)
     if args.command == "run":
         return asyncio.run(_cmd_run(args))
     if args.command == "run-conversation":
         return asyncio.run(_cmd_run_conversation(args))
+    if args.command == "rate":
+        return _cmd_rate(args)
+    if args.command == "rate-pairwise":
+        return _cmd_rate_pairwise(args)
     return _cmd_compare(args)
 
 

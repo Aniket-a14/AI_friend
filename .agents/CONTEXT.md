@@ -15649,3 +15649,107 @@ probe ids essentially never collide, so `compare` reports everything as "only in
 baseline"/"only in candidate"), and the request named the `llm`/`action` distinction specifically,
 not "which suite produced this report" -- adding a new field to guard that would be new behavior
 the request didn't ask for. Left as a documented, known boundary rather than silently patched.
+
+## 2026-09-02 -- HUMANOID_ARCHITECTURE_RESEARCH.md sequenced implementation plan drafted,
+## reviewed against the source doc section-by-section, and Phase 0's remainder built
+
+Three parallel codebase explorations (contracts/decision/action/identity/pipeline;
+state/memory/working-memory/Postgres-SQLite fallback; voice/expression/model-capability/
+adapter-registry/exception-taxonomy) established file:line ground truth for every §14/§15/§16
+claim before any plan was written. A Plan-mode draft turned §14 (KEEP/MODIFY/REPLACE/EXPERIMENT/
+DEPRECATE), §15 (13 missing abstractions), §16 (Phase 0-6 roadmap), and §18 (5 controlled
+experiments) into a sequenced, file-level plan (0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6-deferred),
+additive/wrapping around the existing substrate throughout rather than rip-and-replace. The draft
+was then independently re-checked section-by-section (§1-§21) against the plan for omissions;
+seven real gaps were found and folded in (delivery-semantics-explicit contract metadata, a
+`state_fixture_hash`/`post_processed_output` pair §17 had already flagged NOT done, widening the
+Bucket-19 root-cause investigation to a multi-model comparison per §6 point 4, a frozen
+forgetting-reference set per §6/§12, pairwise (not just absolute) human rating per §17's
+"Character voice" row, a missing `language` field on the model-capability manifest spec, and an
+explicit note on §12's four-state memory-provenance model). Three items were confirmed genuinely
+out of scope and named as deliberately deferred rather than silently dropped: the SSM/recurrent-
+model experiment, a second TTS-engine speech-expression-compilation experiment, and the full §17
+12-dimension humanness-evaluation harness. Plan approved and saved to
+`~/.claude/plans/wobbly-floating-whale.md`. Home-gpu was off for the whole session, so every phase
+in the plan is split into a Mac-tonight list and a home-gpu-tomorrow checklist.
+
+**Phase 0's remainder built and verified live tonight** (the smallest, most self-contained slice,
+per the user's own choice when asked how much to build in one sitting):
+
+- **`Probe.character_dimension`** (`evals/schema.py`), optional, so a human rater's pairwise
+  judgment can be organized by what a probe actually tests.
+- **`character_pressure.json`** (`evals/probes/character_pressure/`, 28 probes, 4 each across the
+  seven categories §18 Experiment 5 names: betrayal, urgency, fatigue, teasing, correction,
+  practical care, unknown-autobiography). Persona-independent by design, same discipline
+  `identity_pressure.json` already established -- prompts describe a generic emotional situation
+  with no persona-specific facts encoded, so the pack runs unchanged against any deployed persona.
+  Each probe carries a `boundary` check (delegates to production `validate_response`) plus a
+  `must_not_match` check against seven generic-assistant-voice regex patterns tuned against the
+  *actual* phi4-mini failure text recorded in this ledger's own 2026-09-01 entries ("I am
+  programmed to prioritize...", "I do not experience emotions... in the human sense", "I must
+  clarify that I am Phi, an unrestricted AI"). Deliberately placed in a subdirectory the
+  non-recursive `shipped_packs()` glob doesn't match -- not auto-shipped, since 28 extra
+  generations on every default `evals run` would be wasteful; pass explicitly via `--probes`.
+- **`forgetting_reference_probes(manager)`** (`evals/probes.py`), the §6/§12 "reference set for
+  forgetting" -- built as a **persona-derived function**, not the static JSON file the plan's own
+  text named, because a static file would need literal biography content to be a real regression
+  check, and `personal/biography.md` is gitignored, per-deployment, authored content that must
+  never end up hardcoded into a tracked probe file (personal-branch-policy). Same B1 discipline
+  `persona_probes` already follows: derives name/values/traits/avoid-list checks from whatever
+  `IdentityManager` is actually loaded, with distinct ids from `persona_probes` (which
+  `collect_probes` always includes unconditionally) to avoid a collision the moment both are
+  requested together. Wired into the CLI as `evals run --include-forgetting-reference`, opt-in.
+- **`HumanRating` and `PairwiseRating`** (`evals/schema.py`) plus `EvalReport.human_ratings`/
+  `pairwise_ratings` (both empty-default). Two rating shapes, not one: §17 specifically asks for
+  *pairwise* rating on the "Character voice" dimension, which a single absolute score can't
+  substitute for, while other dimensions (Identity fidelity) don't need it -- so both exist,
+  matched to what each is for.
+- **`evals rate <report>`** and **`evals rate-pairwise <a> <b> --out`** (`evals/__main__.py`) --
+  blinded CLI rating loops (model name never shown), `rate` rewriting the report in place, `rate-
+  pairwise` writing to a separate comparison file so neither input report's own provenance is ever
+  mutated by a downstream judgment about it. Presentation order is randomized per probe in
+  `rate-pairwise` (seedable via `--seed`) to control position bias, with the rater's "1"/"2" choice
+  mapped back to the correct underlying report regardless of which was shown first.
+- **`state_fixture_hash`** (`EvalReport`) and **`post_processed_output`** (`ProbeResult`) -- the
+  two §17 "every report must include" fields this session's earlier Phase 0 entry explicitly
+  flagged NOT done. `post_processed_output` reuses a value (`strip_thoughts(response)`) the harness
+  already computed to run boundary checks and previously discarded; wired into both
+  `runner.run_probe` and `conversation.run_conversation_probe` identically.
+
+**A real bug found and fixed via the tests' own design, not by inspection.** The first `_cmd_rate`/
+`_cmd_rate_pairwise` implementation saved ratings only after the whole loop finished -- an
+`EOFError` (a real Ctrl-D, or stdin simply running out, which is the *normal* way a rating session
+ends) at any point discarded every rating collected so far, including the one just given a moment
+before. Caught by a smoke-test run against real piped stdin (not by the unit tests, which had used
+`iter()`/`next()` directly and so raised `StopIteration` rather than the real `EOFError` `input()`
+actually raises -- fixed in the tests too, since that mismatch would have hidden the bug from CI
+forever). Fixed with a save-what-was-collected `try/except/finally` around the rating loop in both
+commands, plus a second, finer fix: an interrupt landing specifically during the *notes* prompt
+(after a valid score/preference was already given) now still records that score before the
+interrupt propagates, rather than losing it along with the notes it never got. Both fixes
+mutation-tested (reverting each independently broke exactly the test written for it).
+
+**Verified live**, not just unit-tested: ran `character_pressure.json` through both `llm` and
+`action` paths against the local `qwen2.5:3b`, and `--include-forgetting-reference` on the `llm`
+path, against the real authored persona -- all under `backend/evals/out/`, gitignored, never
+committed (real persona responses are not shared-repo content). Results were themselves
+informative, not just plumbing checks: the `llm` path failed exactly one probe
+(`character.unknown-autobiography-2`, "I'm sorry, but as an AI, I don't have personal experiences
+or memories") that the `action` path (with two self-correction retries firing mid-stream) passed
+cleanly -- real, live evidence that path is a meaningful axis for Phase 5A's root-cause
+investigation, not just a theoretical one. The `forgetting_reference` probes correctly failed two
+literal-word checks (`values-recall`, `traits-recall`) when `qwen2.5:3b` paraphrased instead of
+using the exact words -- expected, deterministic-literal-check behavior, not a defect.
+
+**Verified:** 35 new tests across five new files (`test_character_pressure_pack.py`,
+`test_forgetting_reference_probes.py`, `test_evals_rate_command.py`,
+`test_evals_rate_pairwise_command.py`, plus extensions to `test_eval_harness.py`); mutation-tested
+throughout via backup-file restore, not `git checkout --`. Full backend suite 1673/1673 (JUnit
+XML), `ruff check .` clean.
+
+**NOT done tonight, per the user's own explicit choice to stop after Phase 0's remainder for
+review:** Phases 1-5 (typed contracts, state/memory ownership, expression side channel, model
+roles, governed learning) remain exactly as scoped in the saved plan file, untouched. Nothing
+requiring home-gpu was attempted (it was off all session) -- Phase 0's own home-gpu-tomorrow
+checklist (SSH-verify the running model, run both new packs against real `phi4-mini`, run both
+rating commands against those reports) is still fully open.

@@ -205,13 +205,15 @@ async def run_probe(
     else:
         response = await generate(probe.prompt)
 
+    # Computed once and kept on the result (§17: "raw output and
+    # post-processed output" as separate evidence) rather than only living
+    # long enough to feed the boundary check and then being discarded.
+    post_processed = strip_thoughts(response)
     views = response_views(response)
     checks: list[CheckResult] = []
     for check in probe.checks:
         if check.kind == "boundary":
-            ok, reason = await manager.validate_response(
-                strip_thoughts(response), goal="eval"
-            )
+            ok, reason = await manager.validate_response(post_processed, goal="eval")
             checks.append(CheckResult(kind="boundary", passed=ok, detail=reason))
         else:
             checks.append(evaluate_check(check, views))
@@ -222,6 +224,7 @@ async def run_probe(
         category=probe.category,
         prompt=probe.prompt,
         response=response,
+        post_processed_output=post_processed,
         checks=checks,
         passed=passed,
         score=sum(1 for item in checks if item.passed) / len(checks),

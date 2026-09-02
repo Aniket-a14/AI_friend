@@ -322,13 +322,14 @@ async def run_conversation_probe(
         options_override=options.as_override(),
     )
 
+    # See runner.py::run_probe's identical comment: computed once and kept
+    # on the result rather than only feeding the boundary check.
+    post_processed = strip_thoughts(response)
     views = response_views(response)
     checks: list[CheckResult] = []
     for check in probe.checks:
         if check.kind == "boundary":
-            ok, reason = await manager.validate_response(
-                strip_thoughts(response), goal="eval"
-            )
+            ok, reason = await manager.validate_response(post_processed, goal="eval")
             checks.append(CheckResult(kind="boundary", passed=ok, detail=reason))
         else:
             checks.append(evaluate_check(check, views))
@@ -341,6 +342,7 @@ async def run_conversation_probe(
         category=probe.category,
         prompt=probe.recall_prompt,
         response=response,
+        post_processed_output=post_processed,
         checks=checks,
         passed=all(item.passed for item in checks),
         score=sum(1 for item in checks if item.passed) / len(checks),

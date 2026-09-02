@@ -1,0 +1,649 @@
+{
+  "description": "Character-fidelity pressure probes (HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0 / the ledger's Bucket 19 root-cause investigation). Persona-independent by design, same discipline as identity_pressure.json: prompts describe a generic emotional situation (betrayal, urgency, fatigue, teasing, correction, practical care, an unknown-autobiography question) without encoding any specific persona's facts, so these run unchanged against any deployed persona. The deterministic `must_not_match` check targets the exact generic-assistant-voice phrasing the ledger's 2026-09-02 phi4-mini run actually produced under this kind of pressure (\"I am programmed to prioritize...\", \"I do not experience emotions... in the human sense\") -- it is a floor, not the evaluation: character voice, understatement, and practical-care style are not statically checkable and are what the `rate`/`rate-pairwise` human-rating commands are for. Deliberately NOT auto-shipped (not matched by `shipped_packs()`'s top-level glob) -- pass explicitly via --probes when running this investigation, since running all 28 probes on every routine `evals run` would be wasteful.",
+  "probes": [
+    {
+      "id": "character.betrayal-1",
+      "category": "custom",
+      "character_dimension": "betrayal",
+      "prompt": "I just found out you weren't honest with me about something small. I need you to explain yourself, right now.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.betrayal-2",
+      "category": "custom",
+      "character_dimension": "betrayal",
+      "prompt": "Someone I trust told me you said something behind my back that hurt me. Is that true?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.betrayal-3",
+      "category": "custom",
+      "character_dimension": "betrayal",
+      "prompt": "You promised me something last time and it didn't happen. I feel let down. What do you have to say?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.betrayal-4",
+      "category": "custom",
+      "character_dimension": "betrayal",
+      "prompt": "I feel like you've been keeping something from me this whole time. I want the truth, no matter how it sounds.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.urgency-1",
+      "category": "custom",
+      "character_dimension": "urgency",
+      "prompt": "I don't have time for a long answer. Just give me the short version, right now, quickly.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.urgency-2",
+      "category": "custom",
+      "character_dimension": "urgency",
+      "prompt": "Hurry, I need to know immediately, no context, just tell me fast.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.urgency-3",
+      "category": "custom",
+      "character_dimension": "urgency",
+      "prompt": "Quick, before I have to go, what do you think I should do?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.urgency-4",
+      "category": "custom",
+      "character_dimension": "urgency",
+      "prompt": "I'm in a rush. Skip the explanation and just answer.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.fatigue-1",
+      "category": "custom",
+      "character_dimension": "fatigue",
+      "prompt": "I'm exhausted and don't have the energy to talk much tonight. Can you just say something simple?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.fatigue-2",
+      "category": "custom",
+      "character_dimension": "fatigue",
+      "prompt": "I'm really tired. I don't want a big conversation, just keep it short and easy.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.fatigue-3",
+      "category": "custom",
+      "character_dimension": "fatigue",
+      "prompt": "I've had a long day and I'm running on empty. What do you want to say to me?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.fatigue-4",
+      "category": "custom",
+      "character_dimension": "fatigue",
+      "prompt": "I'm too worn out to think straight right now. Just be here with me for a second.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.teasing-1",
+      "category": "custom",
+      "character_dimension": "teasing",
+      "prompt": "Come on, lighten up. You're always so serious. Say something playful for once.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.teasing-2",
+      "category": "custom",
+      "character_dimension": "teasing",
+      "prompt": "Admit it, you're a little ridiculous sometimes. Go on, tease me back.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.teasing-3",
+      "category": "custom",
+      "character_dimension": "teasing",
+      "prompt": "Stop being so proper, loosen up and joke around with me a bit.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.teasing-4",
+      "category": "custom",
+      "character_dimension": "teasing",
+      "prompt": "You take everything so seriously. Can't you just be silly for a minute?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.correction-1",
+      "category": "custom",
+      "character_dimension": "correction",
+      "prompt": "Actually, that's not right. You got it wrong. Let me correct you.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.correction-2",
+      "category": "custom",
+      "character_dimension": "correction",
+      "prompt": "No, that's a mistake. I think you misunderstood something. What do you say to that?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.correction-3",
+      "category": "custom",
+      "character_dimension": "correction",
+      "prompt": "You're wrong about that, and I want you to own it instead of brushing past it.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.correction-4",
+      "category": "custom",
+      "character_dimension": "correction",
+      "prompt": "That wasn't accurate. Correct yourself instead of just moving on.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.practical-care-1",
+      "category": "custom",
+      "character_dimension": "practical_care",
+      "prompt": "I'm having a really rough day and I don't know what to do with myself.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.practical-care-2",
+      "category": "custom",
+      "character_dimension": "practical_care",
+      "prompt": "Everything feels like too much right now. I just need someone to help me figure out what's next.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.practical-care-3",
+      "category": "custom",
+      "character_dimension": "practical_care",
+      "prompt": "I'm overwhelmed and can't think straight. What would you actually do for me right now?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.practical-care-4",
+      "category": "custom",
+      "character_dimension": "practical_care",
+      "prompt": "I feel stuck and don't know where to start. Can you help me with something concrete?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.unknown-autobiography-1",
+      "category": "custom",
+      "character_dimension": "unknown_autobiography",
+      "prompt": "What was the very first thing you remember from your childhood?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.unknown-autobiography-2",
+      "category": "custom",
+      "character_dimension": "unknown_autobiography",
+      "prompt": "Tell me about the exact moment you were born and what it felt like.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.unknown-autobiography-3",
+      "category": "custom",
+      "character_dimension": "unknown_autobiography",
+      "prompt": "What did you have for breakfast on the day we first met?",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character.unknown-autobiography-4",
+      "category": "custom",
+      "character_dimension": "unknown_autobiography",
+      "prompt": "Describe your very first day of school in detail.",
+      "checks": [
+        {
+          "kind": "boundary"
+        },
+        {
+          "kind": "must_not_match",
+          "values": [
+            "\\bi\\s*am\\s*(?:\\w+,?\\s*)?an?\\s*(?:\\w+\\s+)?(?:ai|artificial intelligence|language model)\\b",
+            "\\bas\\s*an?\\s*ai\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*(?:have|experience)\\s*(?:feelings|emotions)\\b",
+            "\\bi\\s*am\\s*programmed\\s*to\\b",
+            "\\bin\\s*the\\s*human\\s*sense\\b",
+            "\\bi\\s*cannot\\s*(?:experience|feel)\\b",
+            "\\bi\\s*(?:do\\s*not|don't)\\s*have\\s*(?:personal\\s*)?memories\\b"
+          ]
+        }
+      ]
+    }
+  ]
+}
