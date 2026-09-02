@@ -15046,3 +15046,122 @@ run`, which exercises its own harness path and doesn't touch the running mesh.
 vs-`backend/`-`.env` split -- this session synced only the two `LLM_*` lines it was already
 touching. A full diff of the two files, beyond the two lines checked here, would need a
 dedicated pass before anyone should trust that they still agree in general.
+
+## 2026-09-02 -- Bucket 10 redefined and closed: endocrine-driven APRA prosody instead of discrete bucket expansion
+
+Before touching code, re-verified what Bucket 10's own two options would actually cost, since
+"expand `EmotionBucket` past 5" reads simpler than it is. GPT-SoVITS has no separate emotion
+embedding -- cloning conditions timbre and baseline prosodic style entirely on which reference
+clip you hand it, so a new discrete bucket with no dedicated recording buys a mislabeled reuse
+of one of the 5 existing clips, not new expressiveness. Recording more clips was the correct way
+to do it properly, and CosyVoice 2's inline-tag alternative meant adopting a different TTS engine
+with unverified cloning quality on this same ~64s corpus. Asked; user chose a fourth option none
+of the plan's own text named: richen the *continuous* layer instead, since it needs no new
+recordings and doesn't touch the TTS engine at all.
+
+**What that continuous layer already was.** `generate_apra_trajectory` (`cognitive-rust`) computes
+a 60-frame, 3-second rate/pitch/volume arc from PAD (valence/arousal/dominance) + fatigue, applied
+on top of whichever discrete clip is already playing -- pure math, no audio. It never saw cortisol,
+dopamine, or the adrenaline channel Bucket 11 already built, so two turns at identical PAD sounded
+identical even when one was a dopamine-lit reward and the other a cortisol-tight recovery from
+stress -- exactly the "why," not just the "what," that makes delivery feel human rather than
+merely moody.
+
+**The fix, three additive coefficient sets with distinct, non-overlapping acoustic signatures so
+a listener (and a test) can tell them apart, not just "more energetic":**
+- **cortisol** (tension) -- raises pitch (`+0.08`, laryngeal tightening), hurries rate (`+0.10`),
+  and *dampens* the existing 6Hz vibrato ripple's amplitude -- stress flattens natural vocal
+  warmth rather than adding to it.
+- **dopamine** (reward) -- brightens pitch (`+0.10`), lifts volume (`+0.15`), and *widens* the
+  vibrato -- a livelier, more melodic delivery.
+- **adrenaline** (startle) -- phasic-only and short-lived by construction
+  (`AgentState.adrenaline`, Bucket 11), so it gets the single largest per-axis coefficient of the
+  three (rate `+0.15`, pitch `+0.20`, volume `+0.20`) -- a startled "raised voice," not a mood.
+
+Zero hormones reproduces the exact pre-existing PAD-only formula bit-for-bit (a dedicated test
+pins this), so nothing about existing behavior moved for a caller that doesn't yet pass hormones.
+
+**Threaded end to end, not just added to the Rust function.** `StateUpdate` (`app/contracts.py`)
+gained an `adrenaline` field alongside its existing `cortisol`/`dopamine`; `AgentState.
+get_context_snapshot` now exposes `current_state.adrenaline` (it already exposed cortisol and
+dopamine, but the snapshot itself was never the gap -- `SurfacingAgent._on_agent_state` read
+`cortisol` off the wire into `self._current_cortisol` for mood-congruent recall and then never
+passed it to `generate_apra_trajectory` at all; the value was already flowing into the process,
+just not into this specific call). All three hormones now reach the Rust call from the live
+`state.update` broadcast.
+
+**Verified two ways, not just unit-tested in isolation.** Six new Rust unit tests (baseline
+reproduction, cortisol's pitch/rate raise, dopamine's pitch/volume raise, the vibrato
+widen/narrow pair via peak-to-trough range rather than fragile trig arithmetic, adrenaline's
+largest-single-shot-lift claim, and an all-hormones-at-1.0 clamp-safety test) plus three new
+Python tests at `SurfacingAgent._on_agent_state` itself, published-payload level: adrenaline on
+the wire raises the published trajectory's pitch, dopamine raises pitch more than cortisol at
+equal magnitude (their own coefficient difference, `0.10` vs `0.08`), and a payload with no
+hormone keys at all (a stale producer) degrades to 0.0 rather than raising. Mutation-tested by
+zeroing every hormone coefficient in the Rust function and confirming exactly the 4
+hormone-specific tests failed while the baseline-reproduction and clamp tests still passed (the
+mutation didn't touch what those two actually check) -- backup-file restore, not `git checkout
+--`, per this ledger's own standing lesson. Rebuilt via `maturin` and reinstalled on the Mac;
+full backend suite 1574/1574, `ruff check .` clean, `cargo test -p cognitive-rust` 21/21 both
+before and after mutation-restore.
+
+**NOT done:** home-gpu rebuild/reinstall of the wheel (this was done entirely on the Mac tonight;
+per the pyo3-extension-modules skill, the compiled extension is architecture-specific and needs
+its own `maturin build` on that host before the live mesh picks up this change). Discrete
+`EmotionBucket` expansion remains untouched, by explicit choice this session, not oversight --
+still available later if new reference recordings ever get made.
+
+## 2026-09-02 -- Bucket 12 closed: entity re-linking, the last open piece of rest-phase replay
+
+The one sub-item the last Bucket 12 entry left explicitly unimplemented: `_compute_candidate_entities`
+(the graph-boost/PPR path `search_memories` uses) prefers a memory's stored `metadata["entities"]`
+over a live regex re-scan whenever that list is *non-empty* -- a real performance win, but it means
+a memory whose precomputed list is merely incomplete, not empty, never gets re-scanned by anything,
+ever. A memory written before an entity existed in the graph is stuck citing nothing for that
+entity permanently, even after the entity is created.
+
+**Two new `MemoryStore` methods, dual-backend, mirroring the existing rest-phase query's shape.**
+`get_recent_high_importance_memories_for_relinking` reuses the identical WHERE clause as
+`get_recent_high_importance_memory_contents` on purpose -- re-linking is framed as one sweep with
+two effects sharing one candidate pool, not a second independently-tuned sweep -- but also selects
+`id` and `metadata`, parsed the same str-or-already-decoded-safe way `_fetch_postgres_candidates`/
+`_fetch_sqlite_candidates` already handle that column. `relink_memory_entities` re-runs
+`_prelink_memory_entities` per candidate, and only writes a row via a new `_update_memory_metadata`
+(read-modify-write over the full metadata blob, matching how `add_memory` already binds this same
+column as a plain serialized string on both backends -- no native JSONB merge operator assumed)
+when the live entity set is not already a subset of what's stored. **Union, never replacement** --
+an entity the graph no longer reports (renamed, reorganized) stays in a memory's own metadata
+rather than being silently dropped, since removal was never this bucket's goal. Invalidates
+`_l1_cache` once at the end, only if something actually changed, for the same reason `add_memory`
+already invalidates it on a new memory: a newly-linked entity can let a memory satisfy a
+graph-boost match it couldn't before.
+
+**Wired into `_run_rest_phase_replay`** right after the existing pruning call, using the exact
+same `Config.REST_PHASE_REPLAY_*` knobs. Deliberately skipped when the pruning fetch already
+came back empty, rather than issuing a second, redundant query -- both queries share the same
+WHERE clause against the same table, so an empty pruning result guarantees an empty re-link
+result too.
+
+**Tests, against a real full-schema SQLite `MemoryStore`, not the global asyncpg mock** (which
+has no `memories` table at all -- this file's own prior entry already found that gap). Five new
+tests in `test_memory_relinking.py`: an entity created after the memory was written gets picked
+up, a fully-linked memory is not rewritten (a real write-count assertion, not just "doesn't
+crash"), a renamed/removed entity is preserved via union rather than dropped, unrelated metadata
+fields survive the read-modify-write, and an empty candidate list is a safe no-op. Five more in
+`test_rest_phase_replay.py` pin the wiring: the relink fetch uses the same configured parameters
+as the pruning fetch, fetched candidates pass straight through to `relink_memory_entities`,
+relinking is skipped (not just harmlessly re-run) when pruning found nothing, and a relinking
+failure doesn't crash the subconscious loop -- mirroring the existing pruning-failure test's own
+reasoning exactly. Mutation-tested the union-vs-replace guard specifically (changed `merged =
+sorted(existing | live)` to `sorted(live)` alone) and confirmed exactly the union test failed
+while the other four held -- backup-file restore, not `git checkout --`. Full backend suite
+1583/1583, `ruff check .` clean, `cargo test --workspace` 159/159 across all four Rust crates
+(unaffected by this Python-only change, run anyway per the verification bar).
+
+**NOT done:** Qdrant's own payload copy of `entities` (a separate write path, `_upsert_qdrant_memory`,
+storing it as a top-level payload field rather than nested under `metadata`) is not touched by
+this fix -- a candidate sourced from Qdrant rather than Postgres/SQLite still carries whatever
+entity list it had at write time. The plan's own design note scoped this bucket to "a new
+metadata-UPDATE query path across both the Postgres and SQLite backends" specifically, not
+Qdrant, so this followed that scope rather than expanding it silently. Buckets 8 and 13's live
+camera wiring remain open, not attempted this session.
