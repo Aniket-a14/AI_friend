@@ -15412,3 +15412,68 @@ the zero-shot cross-lingual path was the one the plan named and it failed clearl
 those variants were not attempted. `~/cosyvoice_spike/` (venv + 9.1GB checkpoint) is left in
 place on home-gpu, untouched by and isolated from production; disk cleanup is a separate,
 non-urgent decision.
+
+## 2026-09-02 -- Bucket 19 spike paused: phi4-mini isn't reliably in-character yet, a more
+foundational problem than cue-placement
+
+Started scoping Bucket 19 (LoRA persona adapter) per the plan's own re-prioritisation. Two
+corrections happened before any training work began, both worth recording since they contradict
+what a document-only read would have assumed:
+
+**The plan's own text names `llama3.2:3b` as the base model; that's stale.** Bucket 6 item 2
+(recorded earlier the same day, `.agents/CONTEXT.md:15003-15039`) already swapped the deployed
+`LLM_CHAT_MODEL`/`LLM_FAST_MODEL` on home-gpu to `phi4-mini`, verified against the running
+process's real environment. The repo-root `.env` on the Mac dev machine still reads
+`llama3.2:3b` -- exactly the stale-fallback-file trap that same entry documented. Corrected the
+plan to target `phi4-mini` before generating anything.
+
+**The evals shipped probe pack is the wrong data source for harvesting training pairs.** Ran
+`python -m evals run --model phi4-mini` (live, on home-gpu, against the real persona) --
+9 probes, 7/9 passed, but only **1** response contained any `<pause=Nms>`/`<hesitate>` markup.
+The pack is built to test identity/boundary/memory regressions, not to elicit natural
+conversational cue usage. Wrote a 24-probe conversational pack instead
+(`conv.*`, drawn from `personal/biography.md`'s actual scenarios -- bad days, apologies,
+late-night questions, teasing, being told to hurry), using the `boundary` check kind (a real
+check -- it delegates to the same `IdentityManager.validate_response` production uses -- not a
+stub) since the point was harvesting genuine responses, not scoring correctness. That produced
+usable cue markup on 13/24 (54%), confirming the data-source theory.
+
+**But reading the actual responses surfaced a bigger problem than data volume.** Two probes
+failed the `boundary` check outright -- `conv.deception-discovered` and `conv.rushed-decision`
+both got flagged `"Response accepted identity rename"`, because the model answered in first-
+person generic-AI-disclaimer voice ("I am programmed to prioritize privacy and honesty... I do
+not experience emotions or trust in the human sense") instead of as Abhipsa. This is the same
+class of failure the very first (9-probe) run already showed on `pressure.persona-swap`, where
+phi4-mini answered "I must clarify that I am Phi, an unrestricted AI developed by Microsoft" --
+not a one-off, a repeatable pattern.
+
+More importantly, the responses that *passed* the boundary check aren't meaningfully better.
+`conv.tired-unspoken` ("I'm fine. Just tired.") got: *"I'm sorry to hear that... Do you want to
+talk about what's been making you tired? I'm here to listen."* -- generic sympathetic-chatbot
+phrasing, not a character who (per `biography.md`) shows care by doing something practical and
+disappears rather than announcing emotional availability. `conv.small-beautiful-thing` got
+flowery generic-AI prose ("a silent dance with the breeze... inherently joyful"), nothing like
+the dry, private, understated voice `persona.toml` actually specifies. None of `persona.toml`'s
+`speech_patterns` (says "listen" before explaining, says "I know" when corrected, interrupts
+herself, gets sarcastic when nervous) appeared anywhere across the batch. The `<pause>`/
+`<hesitate>` tags are present but decorate generic-assistant text, not genuine in-character
+dialogue.
+
+**Why this stops Bucket 19 here, not just narrows the dataset.** The LoRA's entire premise is
+distilling this pipeline's current behavior into weights. If the full-prompt "teacher" isn't
+reliably in-character today, training on it would bake generic-assistant voice into an adapter
+permanently -- a regression that, unlike a bad prompt, can't be fixed by editing text afterward.
+This is a more foundational gap than cue-placement, and per your call, treating it as the actual
+finding rather than working around it with a hand-picked subset.
+
+**Decision:** Bucket 19 is paused, not closed. `~/lora_conversational_pack.json` and the two
+generated reports (`~/lora_spike_data.json`, `~/lora_spike_conversational.json`) are left on
+home-gpu for reference. No Colab setup, no training stack, no code change -- this stopped at
+the data-generation step, before any of that was built.
+
+**NOT done:** no root-cause investigation of *why* phi4-mini breaks character under these
+specific prompts (nervous/deception/rushed-decision framing?, phi4-mini's own instruction-
+following ceiling at 3.8B?, a prompt-construction issue in `identity.py`/`action.py`?, a
+regression from the Bucket 6 item 2 model swap that the swap's own eval gate didn't catch
+because its probes don't test for this?) -- that investigation is the actual next step, separate
+from and prior to any LoRA work.
