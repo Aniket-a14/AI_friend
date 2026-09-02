@@ -15186,8 +15186,8 @@ capture path in this file. `stop()` closes the landmarker in its own try/except.
 removing that clause broke exactly `test_capture_loop_skips_facial_reflex_in_screen_mode` and
 nothing else, confirmed via backup-file restore, not `git checkout --`. `cargo test --workspace`:
 159/159 across all four Rust crates (unaffected by this Python-only bucket, run anyway per the
-verification bar). `ruff check .`: not confirmed clean this session -- deferred behind the
-full-suite attempts below and never separately re-run once those were abandoned.
+verification bar). `ruff check .`: run independently of the full-suite attempts below, after
+abandoning those -- "All checks passed!", clean.
 
 **Two independent full-suite stalls found and only one fixed.** First: `SubjectMetrics`
 (`app/metrics.py`) starts a real daemon `threading.Thread` in `__init__` with no autouse teardown
