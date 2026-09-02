@@ -14963,5 +14963,39 @@ eval pass.
 **NOT done:** the deployment swap itself (pending a decision, see above). Qwen3:4b was never
 actually evaluated on persona fidelity -- if it matters later, the harness would need either a
 much larger `num_predict` or explicit support for Ollama's `think` request parameter, neither
-built here. Bucket 6 item 3 (six-LLM-call critical-path audit) is the remaining item in this
-bucket.
+built here.
+
+## 2026-09-02 -- Bucket 6 item 3: the "six LLM calls" critical-path audit, and why there's nothing to move
+
+Read-only audit (no code changed) tracing `pipeline.py::execute()`'s synchronous turn plus every
+service it calls into (`decision.py`, `action.py`, `appraisal.py`, `perception.py`,
+`reappraisal.py`, `identity.py`). The plan's premise -- six per-turn LLM calls, some of which
+could move to the subconscious tier -- turned out to be stale. `perception.py` and
+`reappraisal.py` accept an `llm` dependency but never call it; `identity.validate_response` is
+pure regex.
+
+**What's actually there:** two calls unconditionally on the critical path -- intent/goal/ToM
+classification (`decision.py:386`, awaited from `decide()` at `decision.py:149`, gated by
+`Config.LLM_INTENT_CLASSIFICATION_ENABLED`) feeds the BT tick and MAUT scoring the same turn, and
+primary response generation (`action.py:936`, via `_stream_primary_response` /
+`_execute_respond_chat` / `pipeline.py:497`) *is* the turn's output by definition. A third,
+self-correction retry (`action.py:1117`), is conditionally blocking: it only runs when the
+primary pass raises `MetacognitiveException` (caught at `action.py:1273`), but when it does fire
+it replaces the turn's response, so "deferrable" doesn't apply to it either. A fourth candidate --
+System-2 semantic-drift appraisal (`appraisal.py:356`) -- is **already** off the critical path:
+scheduled via `asyncio.create_task` at `pipeline.py:192`, never awaited by `execute()`, and its
+result lands later through `state.apply_semantic_appraisal` under `_state_lock`. This is exactly
+CLAUDE.md's documented "fire-and-forget System-2 appraisal task" (see the ack-model note on
+`BaseAgent.subscribe`) -- the subconscious-tier move Bucket 6 item 3 asked to check for already
+exists for this call. The three post-turn calls in `learning.py` (fact/persona/episodic
+consolidation) were confirmed already background too, scheduled off the `reflection_needed`
+mesh signal via `core.py:438`, not part of a synchronous turn at all.
+
+**Net finding: nothing to move.** Two calls are blocking by necessity (one literally is the
+response), the third is conditionally blocking and equally non-deferrable when it fires, and the
+one call shaped like a "could this be background instead" candidate already is. Bucket 6 is now
+fully closed pending only the user's call on whether to actually deploy `phi4-mini`.
+
+**NOT done:** nothing further identified in scope. If per-turn latency is still a concern after
+Phase 1's pipeline fixes land, the next lever is call #1's own latency (intent classification),
+not moving work off the path -- there's no slack left to move.
