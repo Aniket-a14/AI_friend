@@ -14749,3 +14749,122 @@ second threshold) gating a new sweep that samples recent high-importance memorie
 their entity/graph linking, and prunes genuinely stale low-importance ones -- built and verified
 against a real Postgres, not blind. Full backend suite green (1499 passed, 0 failed, 0 errors);
 `ruff check .` clean.
+
+## 2026-09-02 -- home-gpu back online: git/repo repair, then Buckets 7.3, 11.2, 9, 12.2-3
+
+Home-gpu came back on the following morning. Before any new bucket work, its state needed
+reconciling -- it had been running Phase 3's opening pass in parallel, disconnected from git.
+
+**Repo repair on home-gpu.** `git status` there showed ~30 "locally modified" files relative to
+a stale `c939738` checkout, spanning exactly the Bucket 1/2/3 fixes (drop-newest queue policy,
+reverb/OLA, filler backlog telemetry). Diffing confirmed these were a duplicate, uncommitted,
+same-day (2026-09-01, 14:04-18:00) attempt at Phase 1 -- identical bucket comments and
+reasoning to what later landed properly on `main` via PR #209/#210 at 19:47/23:18 that same
+day -- not unique work, and not something the working agreement's rsync-based sync had
+reconciled since. Verified via content hashing and grep for bucket references before touching
+anything; user confirmed before overwriting. Two genuinely dead stray files also found
+(`app/agents/stt_agent.py`/`voice_agent.py`, retired in commit `09a7b85` "make Rust STT/Voice
+canonical again") sitting on disk since before that retirement, never cleaned up. Fixed
+properly: pushed `phase3/architecture-and-research` to origin (previously local-only) so
+home-gpu could `git fetch`+`checkout` it like any other machine, rather than relying on rsync
+for git-trackable state -- rsync remains the transport only for what genuinely isn't pushed yet.
+Verified clean afterward: 1499/1499 Python, 149/149 Rust, `ruff check .` clean, on home-gpu's
+own architecture.
+
+**Bucket 7 item 3 -- home-gpu's corrupted `.identity_state/` cleared.** Moved aside (not
+deleted outright), matching the Mac's own cleanup from the prior entry. Its `personality.json`
+carried the exact corruption pattern already documented (`"name": "my friend"`, five generic
+self-help `adaptive_traits`) and `history.json` had `"relationship": "re-evaluate"`. Copied
+Abhipsa's `personal/persona.toml`/`biography.md` (gitignored, Mac-only until now) to home-gpu
+first, privately (`chmod 600`) -- `.env` already pointed `PERSONA_PROFILE_PATH` there, so
+clearing identity state without also placing the real persona file would have reseeded from
+nothing rather than from Abhipsa's authored description.
+
+**Bucket 11 item 2 -- the adrenaline phasic channel.** Copies dopamine/cortisol's phasic
+pattern exactly, but with no tonic term: `adrenaline_tonic` is hard-pinned at `0.0`, documented
+as the deliberate difference -- real epinephrine spikes on startle/interruption/shock rather
+than tracking mood continuously, so there is no "background reward tone" analogue for it to
+have. Half-life defaults to 120s (`ADRENALINE_PHASIC_HALFLIFE_S`), between dopamine's 90s and
+cortisol's 4500s, CONSTITUTIONAL-tiered and added to `compiler.py`'s `_infer_temperament`
+formula with coefficients chosen so it stays between the other two for every possible
+`emotional_lingering` score, not just the default. Feeds `arousal` as a bounded (`0.3 ×
+adrenaline`) self-fading lift rather than an LLM sampling parameter -- there's no existing
+adrenaline-shaped slot in `_compute_endocrine_options`, and "a short, sharp arousal raise" is
+literally what the plan asked for. Wired into exactly one call site tonight:
+`brain_agent._on_audio_stop`'s branch that actually cancels an in-progress turn -- the one place
+in the codebase already proven to distinguish a genuine interruption from a speculative duck or
+a same-turn silence, per the plan's own reasoning for why this pairs with Bucket 1. Bucket 13's
+facial-reflex startle signal is a second natural consumer (noted in Bucket 11's own text) but
+deliberately not touched tonight -- rewiring its already-tested, already-shipped signal contract
+wasn't this item's scope. Mutation-tested six ways (tonic-is-zero, arousal-lift weight, decay-
+to-zero-not-a-floor, the state lock, the persona ceiling bound, and both call-site gates).
+Caught one legitimate fallout: `test_persona_compiler.py` hardcoded "one inference per
+temperament field == 13"; now 14.
+
+**Bucket 9 -- the ACT-R spacing effect.** `ln(recall_count) - d·ln(hours_since+1)` cannot tell a
+memory recalled 5 times across a month from one recalled 5 times in the last ten minutes, at
+matched count and recency -- exactly the literature's spacing-effect finding this project's own
+ACT-R constants are otherwise already tuned against. The schema has no per-recall timestamp
+history, so the literal ACT-R sum-of-power-law formula isn't computable; `_spacing_hours`
+instead spreads the creation-to-last-recall span evenly across `recall_count` recalls, an
+approximation stated as exactly that. Returns `None` (not `0.0`) on fewer than 2 recalls, a
+missing creation timestamp, or a non-positive span, so `_base_activation` skips the term rather
+than guessing. Wired into all four existing `_base_activation` call sites (Qdrant, generic
+PG/SQLite row scoring, archive scoring, archive-promotion rescoring) -- each needed an
+already-computed `created_at` moved earlier in its function, since every one of them parsed it
+*after* scoring rather than before. Also ported into `cognitive_rust`'s
+`score_memories_actr_sqlite` (the accelerated SQLite-fallback kernel, which computes its score
+entirely in Rust and never calls the Python formula at all) as `actr_spacing_bonus`, extracted
+as a pure function so it has its own direct unit tests rather than only being reachable through
+the PyO3/PyDict-taking kernel. Rebuilt via `maturin` and verified end to end on **both**
+architectures separately (Mac arm64, home-gpu x86_64 Linux, per the pyo3-extension-modules
+skill's warning against copying a wheel across hosts) -- a synthetic spaced memory scored
+higher than an otherwise-identical massed one through the actual imported `cognitive_rust`
+module on each, with bit-identical scores between the two builds. Mutation-tested on both sides
+of the Python/Rust boundary.
+
+**Bucket 12 items 2-3 -- rest-phase-gated replay, and a correction to this entry's own
+predecessor.** The prior entry above claimed "`apply_actr_decay` and the visual-trace-specific
+`prune_expired_visual_screen_traces`, and nothing broader" existed for pruning. Re-reading
+`apply_actr_decay`/`_compute_actr_decay` in full before building anything (same discipline as
+the earlier Bucket 12 correction) found this understated what's there: `apply_actr_decay`
+*already* does real, general (non-visual) pruning -- graduated importance-tiered thresholds,
+archive-then-delete via `_archive_and_delete_decayed_memories`, and its own biological-timeline
+cleanup of the archive -- independently tested in `test_eriksonian_cognitive_alignment.py` and
+`test_memory_archive_cleanup.py`. What was actually missing, once that was clear, is narrower:
+`_run_consolidation_pass` only ever calls it on memories tied to that tick's own
+just-consolidated dialogue, gated on 300s silence **at any hour**, with no notion of rest at
+all. Built exactly that gap: `is_rest_phase(now, last_user_interaction, fatigue)` (idle **and**
+(night **or** `fatigue > 0.8`), reusing the dream sequence's own threshold and
+`_update_fatigue`'s own night window rather than inventing new numbers -- a pure function,
+directly testable with no clock mocking or running agent needed), a new dual-backend query
+(`get_recent_high_importance_memory_contents`, mirroring `get_recent_unconsolidated_episodes`'s
+shape) sampling a broader recent-high-importance set, and `_run_rest_phase_replay` wiring the
+two straight into `apply_actr_decay` -- reusing the tested destructive pipeline rather than
+writing a second one. Gated by its own 30-minute cooldown and busy-flag so a whole rest period
+doesn't re-score the same candidates every 5s monologue-loop tick. Re-linking (re-running
+`_prelink_memory_entities` against already-stored memories so one written before an entity it
+mentions existed can pick up that association later) is still NOT implemented -- it needs a new
+metadata-UPDATE query path across both backends that doesn't exist yet, unlike re-scoring/
+pruning, which reuses one that does.
+
+Verified against home-gpu's real Postgres, not just SQLite -- the plan's own stated bar for this
+bucket. A throwaway smoke script inserted three synthetic memories (high-importance-recent,
+low-importance-recent, high-importance-but-30-days-old) through the real `asyncpg` pool and
+confirmed `get_recent_high_importance_memory_contents` filtered exactly as designed, then
+deleted its own rows. Along the way, found and fixed a real, previously-invisible test-
+infrastructure gap: `conftest.py`'s global `sys.modules["asyncpg"]` mock (applied for the whole
+test session) backs its pool with an in-memory SQLite schema containing only
+`sessions`/`messages`/`agent_configs` -- no `memories` table. No prior test happened to
+round-trip `add_memory()` through that mocked pool, so nothing had ever caught it. Fixed in the
+new tests by using `SQLitePool(":memory:")` directly (the same full-schema pattern
+`test_eriksonian_cognitive_alignment.py` already established), not by touching the shared mock.
+
+Mutation-tested (idle-threshold guard, night-or-fatigue condition, empty-candidates early
+return, lookback-window SQL filter). Full backend suite 1568/1568 on both machines, `ruff
+check .` clean, `cargo test --workspace` 153/153 on both.
+
+**NOT done:** Bucket 12's re-linking half (see above, concrete design already written).
+Bucket 6 items 2-3 (model A/B eval, six-LLM-call critical-path audit) -- next, now that the GPU
+box and a real persona (Bucket 7) are both in place. Bucket 8/Phase 4 (workspace/GWT
+implementation, steering vectors, LoRA) untouched tonight.
