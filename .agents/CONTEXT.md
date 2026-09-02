@@ -14868,3 +14868,57 @@ check .` clean, `cargo test --workspace` 153/153 on both.
 Bucket 6 items 2-3 (model A/B eval, six-LLM-call critical-path audit) -- next, now that the GPU
 box and a real persona (Bucket 7) are both in place. Bucket 8/Phase 4 (workspace/GWT
 implementation, steering vectors, LoRA) untouched tonight.
+
+## 2026-09-02 -- a fourth bug behind Bucket 7's "DONE": the authored persona was never loading
+
+**Correction to this session's own prior entry.** Marking Bucket 7 "DONE" was accurate for the
+persona's *content* (authoring, validation, corrupted-state cleanup) but not for whether that
+content ever reached a running agent. Starting Bucket 6 item 2's model A/B on home-gpu, the
+first eval run reported `persona_name='my friend'` -- the unauthored template -- despite the
+real persona file being in place and `.identity_state/` having been cleared on both hosts.
+
+**Root cause, traced end to end rather than assumed:** `get_persona_prompt` reads from
+`PersonaProfile`, not the raw `personality.json` dict, so the trail led through
+`evals/runner.py`'s `persona_name=manager.persona.name` to `IdentityManager.__init__`'s
+`find_persona_file(Config.PERSONA_PROFILE_PATH)` call, and there to the actual defect:
+`app/persona/authoring.py:find_persona_file`'s `explicit` branch did a raw
+`Path(explicit).exists()` check against the *process's working directory*. Its own
+`explicit=None` branch was already correct -- it walks up from the module's own location for
+exactly this reason (agents launch from the repo root, `backend/`, or a container WORKDIR, and
+a relative path resolves differently in each). `Config.PERSONA_PROFILE_PATH` is the relative
+`personal/persona.toml`, and every documented command in this repo runs `cd backend` first, so
+the explicit branch silently resolved to a nonexistent `backend/personal/persona.toml` --
+while `create_friend.py` always writes the real file to the repo-root-anchored
+`personal/persona.toml`. This is not specific to home-gpu: the same bug is present on the Mac
+and would misfire on any deployment following the documented workflow. Independent of Buckets 6
+and 7's own work -- neither introduced it, both merely never happened to exercise this code path
+in a way that surfaced it, since `IdentityManager(base_path=...)` in the existing test suite is
+always invoked with an already-resolved `Path`, never the raw config string.
+
+**Fix:** made the `explicit` branch walk up from the module the same way the default does when
+the given path is relative; an absolute explicit path (which `create_friend.py` never produces
+but a user's own `.env` edit could) is still checked as-is, unaffected. Added test coverage for
+the previously-untested explicit-relative-path branch in `test_persona_authoring.py` (three new
+tests: resolves regardless of cwd, terminates in `None` when nowhere matches, absolute paths
+unaffected) -- the file's discovery section previously covered only `find_persona_file(None)`.
+Mutation-tested: reverting the fix to the prior raw-cwd check fails exactly the new
+regardless-of-cwd test and nothing else. Determined `PersonaProfile.load()`'s separate
+JSON-on-TOML mismatch in `profile.py` is not a live second bug -- `CognitiveCore.__init__`
+always constructs `StateService` with `persona=self.identity.persona` explicitly, so the
+`persona or PersonaProfile.load()` fallback in `StateService.__init__` never fires in the real
+boot sequence; it exists only for direct `StateService()` construction in scripts/tests, where
+its JSON assumption is irrelevant since nothing there points it at a `.toml` file.
+
+**Verified end to end, not just in unit tests:** re-ran the Bucket 6 baseline eval
+(`llama3.2:3b`, `evals/out/phase6_baseline_persona_fixed.json`) on home-gpu after the fix
+landed -- `persona='<the authored name>' provenance=live`, in place of the prior run's
+`'my friend'`. Full backend suite 1571/1571 on both Mac and home-gpu (up from 1568, the three
+new tests), `ruff check .` clean on both, `cargo test --workspace` 153/153 on home-gpu
+(untouched by this fix, confirmed rather than assumed since a Python-only change can still
+break Rust via the PyO3 boundary in this repo).
+
+**NOT done:** Bucket 6 items 2-3 remain the next work, now genuinely unblocked -- this was the
+last thing standing between "a real persona exists" and "the eval harness actually sees it."
+No other deployment-path bugs of this shape were searched for beyond this one; if `Config` grows
+another file-path setting later, it is worth checking whether it shares the same relative-path-
+vs-cwd hazard before assuming it doesn't.
