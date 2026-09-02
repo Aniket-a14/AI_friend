@@ -552,6 +552,37 @@ def _shutdown_leaked_subject_metrics_threads():
                 pass
 
 
+@pytest.fixture(autouse=True)
+def _shutdown_leaked_vision_agents():
+    """Ensure any FaceLandmarker or VisionAgent threads created during tests
+    are cleanly closed on test teardown to prevent unjoined XNNPACK threadpools."""
+    try:
+        from app.vision.agent import VisionAgent
+    except ImportError:
+        yield
+        return
+
+    instances: list[VisionAgent] = []
+    original_init = VisionAgent.__init__
+
+    def _tracked_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        instances.append(self)
+
+    VisionAgent.__init__ = _tracked_init
+    try:
+        yield
+    finally:
+        VisionAgent.__init__ = original_init
+        for instance in instances:
+            try:
+                landmarker = getattr(instance, "_face_landmarker", None)
+                if landmarker is not None and hasattr(landmarker, "close"):
+                    landmarker.close()
+            except Exception:
+                pass
+
+
 def pytest_sessionfinish(session, exitstatus):
     """Force exit to prevent background thread pool/connection pool hangs."""
     import os
