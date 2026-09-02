@@ -932,4 +932,9 @@ class TestVisionAgentFacialReflex:
         ):
             agent = VisionAgent()
 
-        assert agent._face_landmarker is sentinel
+        assert agent._face_landmarker is sentinel, (
+            f"DIAGNOSTIC: Config.FACIAL_REFLEX_MODEL_PATH={Config.FACIAL_REFLEX_MODEL_PATH!r} "
+            f"Config.FACIAL_REFLEX_ENABLED={Config.FACIAL_REFLEX_ENABLED!r} "
+            f"model_path={model_path!r} model_path.exists()={model_path.exists()!r} "
+            f"agent.vlm_enabled={getattr(agent, 'vlm_enabled', 'MISSING')!r}"
+        )
