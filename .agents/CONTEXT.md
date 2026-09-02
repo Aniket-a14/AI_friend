@@ -15165,3 +15165,77 @@ entity list it had at write time. The plan's own design note scoped this bucket 
 metadata-UPDATE query path across both the Postgres and SQLite backends" specifically, not
 Qdrant, so this followed that scope rather than expanding it silently. Buckets 8 and 13's live
 camera wiring remain open, not attempted this session.
+
+## 2026-09-02 -- Bucket 13's live capture loop wired; a real full-suite pass count is NOT established
+
+`VisionAgent._capture_loop` now runs MediaPipe Face Landmarker against camera frames (never
+screen-share frames -- gated on `self.source == "camera"`), off-loop via `asyncio.to_thread`
+matching the existing `detectMultiScale` pattern. Blendshape scores go through
+`FacialReflexTracker`/`score_blendshapes` (already-existing scoring logic, previously unwired to
+any real capture path) and publish `FacialReflexEvent` on `Topics.VISION_FACIAL_REFLEX`. Two new
+`Config` fields, `FACIAL_REFLEX_ENABLED` (default `True`) and `FACIAL_REFLEX_MODEL_PATH` (default
+`""`, resolving to `<repo>/backend/models/mediapipe/face_landmarker.task` via
+`Path(__file__).resolve().parents[2]` -- the same cwd-independent pattern this ledger has now
+recorded three times). Degrades to "disabled, logged" rather than failing agent construction when
+`mediapipe` (optional dependency, `requirements-ai.txt`) is absent or the ~3.7MB model asset
+(gitignored, not fetched by a fresh clone) doesn't exist on disk -- matching every other optional
+capture path in this file. `stop()` closes the landmarker in its own try/except.
+
+**Verified in isolation, not as part of a completed full run.** `tests/test_vision.py` alone:
+38/38 passing in 1.8s. The camera-only gate (`self.source == "camera"`) was mutation-tested --
+removing that clause broke exactly `test_capture_loop_skips_facial_reflex_in_screen_mode` and
+nothing else, confirmed via backup-file restore, not `git checkout --`. `cargo test --workspace`:
+159/159 across all four Rust crates (unaffected by this Python-only bucket, run anyway per the
+verification bar). `ruff check .`: not confirmed clean this session -- deferred behind the
+full-suite attempts below and never separately re-run once those were abandoned.
+
+**Two independent full-suite stalls found and only one fixed.** First: `SubjectMetrics`
+(`app/metrics.py`) starts a real daemon `threading.Thread` in `__init__` with no autouse teardown
+path anywhere in the suite; any test constructing a `BaseAgent`/`cognitive/core` service/
+`SurfacingAgent` without explicitly calling `.stop()`/`.shutdown()` leaks one. Confirmed via
+`sample`(1) on the live process: 211 live OS threads mid-suite, main thread blocked in
+`gc_collect_main -> slot_tp_finalize -> lock.acquire()` waiting on a lock held by one of these
+threads mid-`time.sleep(0.05)` -- wall-clock diverged from CPU time by 10x+ (20+ minutes elapsed,
+~2 minutes of actual CPU). Fixed: `tests/conftest.py` gained an autouse fixture
+(`_shutdown_leaked_subject_metrics_threads`) that wraps `SubjectMetrics.__init__` for the
+duration of each test, tracks every instance created, and calls the already-idempotent
+`.shutdown()` on all of them at teardown. Confirmed working: thread count 211 -> 33, a run that
+had covered ~20% of the suite in 20+ minutes covered 94% in 2.5 minutes with the fix in place.
+
+**Second stall, found but NOT fixed or root-caused to a specific test.** Even after the
+`SubjectMetrics` fix, two independent full runs stalled hard in the same alphabetical
+neighborhood (`test_vision.py` / `test_visual_episodic_memory.py` / `test_voice_agent_compose_
+wiring.py`), each stall lasting several minutes with CPU time barely moving. `sample`(1) on the
+stalled process both times showed the exact same `gc_collect_main`-finalizer-vs-lock pattern as
+the `SubjectMetrics` stall, but the live thread/fd inventory was different and worse: **three**
+separate open file descriptors on the real `face_landmarker.task` (three real MediaPipe
+`FaceLandmarker` constructions, not the mocked ones `test_vision.py`'s own tests use -- read
+directly, none of that file's four `__init__`-wiring tests fail to mock `create_from_options`),
+29 `drishti/0` threads (MediaPipe's XNNPACK CPU thread pool, one pool per real construction,
+never torn down), plus a genuinely real LiveKit RTC client -- `network_thread`/`worker_thread`/
+`signaling_thread` are libwebrtc's own internal thread names, not something a mock produces --
+alongside 10 `tokio-rt-worker` threads and one `livekit-audio` thread from LiveKit's Rust FFI
+runtime. Grepped for the obvious causes and ruled them out: no test file besides `test_vision.py`
+and `conftest.py` references `FACIAL_REFLEX_ENABLED`/`FACIAL_REFLEX_MODEL_PATH` at all, and the
+only `scope="module"` fixture in the whole suite (`test_discriminating_pack.py`) is unrelated. The
+actual trigger -- what constructs a real `FaceLandmarker` three times, and what constructs a real
+LiveKit client -- was not found this session. Both real full-suite attempts were killed rather
+than left to finish once this was found, on the judgment that chasing it further tonight had
+diminishing returns against actually landing Bucket 13.
+
+**NOT done:** a completed, clean full-suite pass was never achieved this session -- every attempt
+was either killed after finding a fixable problem (`SubjectMetrics`) or killed after finding an
+unfixed one (the real-MediaPipe/real-LiveKit stall above). Do not report "N/N passing" for the
+full suite based on this entry; the only real counts here are the isolated `test_vision.py` run,
+`cargo test --workspace`, and the two thread-count measurements. Whoever picks this up next should
+first find what actually constructs a real `FaceLandmarker`/LiveKit client outside `test_vision.py`
+-- likely candidates not yet checked: a fixture that imports `livekit.rtc` at module level
+(LiveKit's Python SDK is suspected, not confirmed, of starting its Rust FFI runtime on import
+rather than on first `Room()` construction) and whatever in `tests/integration/harness/
+mock_livekit.py` the name promises is mocked but may not fully be. The `getattr(self,
+"_face_landmarker", None)` defensive guard proposed mid-session for `VisionAgent.stop()` was
+deliberately not applied: `_face_landmarker` is unconditionally set to `None` in `__init__` before
+anything that could raise runs, so `stop()` cannot see an instance missing that attribute --
+confirmed by a new test added this session, `test_vision_agent_stop_closes_face_landmarker_when_
+present` (`tests/test_agent_shutdown_consistency.py`), which passes without the guard using a
+`VisionAgent.__new__`-constructed instance that skips `__init__` entirely.
