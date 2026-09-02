@@ -15291,3 +15291,79 @@ across all four units' logs came back empty.
 health was verified (clean start, no errors in logs), not end-to-end behavior. Bucket 8 (the
 dual-loop architecture split) is the only remaining item in the 16-bucket plan and was not started
 this entry; it is being scoped separately.
+
+## 2026-09-02 -- Bucket 17 (Bucket 8's real implementation): the facial-reflex channel now
+## competes for the workspace instead of only nudging background affect
+
+Per `VOICE_REMEDIATION_PLAN.md`'s Bucket 17 ("Name the workspace -- Bucket 8's full
+implementation"), items 1 and 2 are done; item 3 (live camera capture) already shipped in PR
+#211; item 4 (full-duplex S2S stays rejected) needed no code. Confirmed via three parallel
+codebase explorations this session that item 2 -- "the dual-loop split becomes a consequence" --
+requires **no new OS process**: every agent (`brain_agent`, `subconscious_agent`,
+`surfacing_agent`, `transport_agent`, `system_agent`, plus Rust `stt-agent`/`voice-agent`)
+already runs as its own container/process. "Reflex tier vs. deliberative tier" was therefore
+scoped as a per-subject latency/consumer-config property, mirroring the precedent
+`subconscious_agent` already set for `system.tick` (`MESH_CONTROL_ACK_WAIT_S`/
+`MESH_CONTROL_MAX_DELIVER`), not a new architecture.
+
+**The gap (item 1, "make the competition explicit"), confirmed real by reading the code, not
+assumed from the plan's prose:** `brain_agent._on_facial_reflex`
+(`backend/app/agents/brain_agent.py`) called `StateService.apply_facial_reflex` and nothing
+else -- a `startle` mid-turn only ever nudged background affect for whatever turn happened
+next; it never competed for or interrupted the turn already in flight.
+
+**The fix reuses an already-tested path instead of adding new cancellation logic.**
+`AudioStop` (`contracts.py`) already declared `intent_type: "VOICE_INTERRUPTION,
+VISION_INTERRUPTION, SYSTEM_HALT"` in its own docstring -- `VISION_INTERRUPTION` had never
+been published by any code before this. Added `DecisionService.is_facial_reflex_interruption_
+worthy(reflex_name)` (`cognitive/decision.py`, sibling to `is_speculative_stop_confirmed`,
+same "BT Actions" section) -- a pure, dependency-free function returning `True` only for
+`"startle"` (the one compound, highest-arousal reflex signal; `smile`/`brow_furrow` stay
+background-only, since an agent that stopped talking because the user smiled would be wrong,
+not attentive). `_on_facial_reflex` now checks it against whether a turn is actively
+generating (`self._active_response_turn_id`, under the existing `_turn_state_lock`) and, if
+both hold, publishes a confirmed `AudioStop(reason="facial_reflex_startle",
+intent_type="VISION_INTERRUPTION", turn_id=active_turn_id)` on the exact subject a real
+barge-in already uses. It therefore flows through `_on_audio_stop`'s existing, tested
+cancellation (`_cancel_active_generation`), truncation (`_truncate_interrupted_reply`), and
+adrenaline release with **zero duplicated logic** -- and because voice-agent/transport_agent
+already subscribe to `audio.stop`, this is a genuine, audible interruption (playback actually
+flushes/stops), not an internal flag nobody hears.
+
+**Item 2 made concrete for this one reflex signal:** added `Config.MESH_REFLEX_ACK_WAIT_S`
+(5.0s) / `MESH_REFLEX_MAX_DELIVER` (2), applied to both the `vision.facial_reflex` and
+`audio.stop` subscriptions in `brain_agent.start()` -- both handlers already return
+fast/synchronously by construction, so this is an honest budget, not a label. `system.tick`'s
+control tier keeps its own 30s/3 numbers; this is a second, distinct reflex tier, not a
+widening of the first.
+
+**Deliberately not built, per the plan's own scoping:** no synthetic reactive utterance after
+a startle-interrupt (a real human barge-in doesn't force one either -- the agent falls silent
+and waits for the next `chat.input`, same as today); no change to `smile`/`brow_furrow`
+handling; no new `tools/measure` latency harness (this bucket's verify line is a behavior
+change, not a wall-clock budget).
+
+**Tests** (`tests/test_facial_reflex.py`): 5 parametrized cases for
+`is_facial_reflex_interruption_worthy` (`startle`->True, `smile`/`brow_furrow`/unknown/empty->
+False); a startle-during-an-active-turn test asserting the exact `AudioStop` payload published
+(`reason`, `intent_type`, `turn_id`, `speculative=False`); a smile-during-an-active-turn test
+asserting no publish; a startle-with-no-active-turn test asserting no publish. `_brain_stub()`
+extended with a real (in-memory-store-backed) `DecisionService`, a real `asyncio.Lock` for
+`_turn_state_lock`, and a mocked `publish`, reproducing `BrainAgent.__init__`'s actual defaults
+by hand since `__new__` skips `__init__`. Mutation-tested both branches: reverting the
+arbiter to `return True` broke exactly the 4 tests that discriminate by reflex name (and left
+the 2 startle-only tests passing, as expected, since they don't exercise discrimination);
+removing the `active_turn_id and` guard broke exactly the no-active-turn test. Both confirmed
+via backup-file restore, not `git checkout --`.
+
+Full backend suite 1610/1610 (JUnit XML, not the terminal summary -- two earlier attempts this
+session produced misleading stale-looking results because the background command was
+accidentally launched from the repo root instead of `backend/`, silently resolving `../.venv/
+bin/python` to a nonexistent path and exiting immediately; the fix was an absolute interpreter
+path, not a retry), `ruff check .` clean, `cargo check --workspace` clean.
+
+**NOT done:** no live browser/mic verification that a real MediaPipe-detected startle actually
+interrupts a real in-progress TTS turn end-to-end -- this session's verification is at the
+`brain_agent`-unit level (the publish call and its payload), which is what the plan's own verify
+line asked for, not a hardware-in-the-loop test. Bucket 17 (and therefore Bucket 8) is otherwise
+closed: items 1 and 2 done here, item 3 already shipped in PR #211, item 4 needed no code.

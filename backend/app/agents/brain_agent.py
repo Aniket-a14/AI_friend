@@ -171,6 +171,8 @@ class BrainAgent(BaseAgent):
             Topics.VISION_FACIAL_REFLEX,
             self._on_facial_reflex,
             deliver_policy="last",
+            ack_wait=Config.MESH_REFLEX_ACK_WAIT_S,
+            max_deliver=Config.MESH_REFLEX_MAX_DELIVER,
         )
         await self.subscribe(
             Topics.VOICE_SEGMENTATION_FEEDBACK,
@@ -195,6 +197,8 @@ class BrainAgent(BaseAgent):
             self._on_audio_stop,
             durable=f"{self.name}_audio_stop_live",
             deliver_policy="new",
+            ack_wait=Config.MESH_REFLEX_ACK_WAIT_S,
+            max_deliver=Config.MESH_REFLEX_MAX_DELIVER,
         )
         await self.subscribe(
             Topics.AUDIO_PLAYBACK_BACKLOG,
@@ -257,9 +261,35 @@ class BrainAgent(BaseAgent):
         Failures are contained the same way `_appraise_somatic` contains
         them -- a dropped reflex signal should never take down the mesh
         subscriber.
+
+        Bucket 17 (voice remediation Phase 4): a `startle` arriving while a
+        turn is actively generating now competes for the workspace instead
+        of only nudging background affect for whatever turn happens next --
+        see `DecisionService.is_facial_reflex_interruption_worthy`. It
+        publishes a confirmed `AudioStop` (`intent_type=VISION_INTERRUPTION`,
+        a schema value `contracts.py` already declared but nothing ever
+        published) onto the exact subject a real barge-in uses, so it flows
+        through `_on_audio_stop`'s existing, tested cancellation/truncation/
+        adrenaline path -- no duplicated logic, and voice-agent/transport_agent
+        genuinely flush/stop playback rather than only flipping an internal flag.
         """
         try:
             await self.cognitive_core.state.apply_facial_reflex(data)
+
+            reflex_name = data.get("name")
+            async with self._turn_state_lock:
+                active_turn_id = self._active_response_turn_id
+            if active_turn_id and self.cognitive_core.decision.is_facial_reflex_interruption_worthy(
+                reflex_name
+            ):
+                stop_msg = AudioStop(
+                    interrupt=True,
+                    speculative=False,
+                    reason="facial_reflex_startle",
+                    intent_type="VISION_INTERRUPTION",
+                    turn_id=active_turn_id,
+                )
+                await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
         except Exception:
             logger.exception("[Brain] Facial reflex appraisal failed; ignored.")
 

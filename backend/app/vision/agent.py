@@ -119,11 +119,13 @@ class VisionAgent(BaseAgent):
         self._face_landmarker = None
         facial_reflex_enabled = getattr(Config, "FACIAL_REFLEX_ENABLED", True)
         if facial_reflex_enabled and mp_vision is not None:
-            raw_path = (
-                facial_reflex_model_path
-                or getattr(Config, "FACIAL_REFLEX_MODEL_PATH", "")
-                or _DEFAULT_FACE_LANDMARKER_PATH
-            )
+            if facial_reflex_model_path is not None:
+                raw_path = facial_reflex_model_path
+            else:
+                raw_path = (
+                    getattr(Config, "FACIAL_REFLEX_MODEL_PATH", "")
+                    or _DEFAULT_FACE_LANDMARKER_PATH
+                )
             model_path = Path(raw_path)
             if model_path.exists():
                 try:

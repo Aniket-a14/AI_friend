@@ -860,12 +860,11 @@ class TestVisionAgentFacialReflex:
         never fail agent construction entirely."""
         from app.config import Config
 
+        missing_path = tmp_path / "does_not_exist.task"
         monkeypatch.setattr(Config, "FACIAL_REFLEX_ENABLED", True)
-        monkeypatch.setattr(
-            Config, "FACIAL_REFLEX_MODEL_PATH", str(tmp_path / "does_not_exist.task")
-        )
+        monkeypatch.setattr(Config, "FACIAL_REFLEX_MODEL_PATH", str(missing_path))
 
-        agent = VisionAgent()
+        agent = VisionAgent(facial_reflex_model_path=missing_path)
 
         assert agent._face_landmarker is None
 
@@ -881,7 +880,7 @@ class TestVisionAgentFacialReflex:
         monkeypatch.setattr(Config, "FACIAL_REFLEX_MODEL_PATH", str(model_path))
         monkeypatch.setattr(Config, "FACIAL_REFLEX_ENABLED", False)
 
-        agent = VisionAgent()
+        agent = VisionAgent(facial_reflex_model_path=model_path)
 
         assert agent._face_landmarker is None
 
@@ -898,7 +897,7 @@ class TestVisionAgentFacialReflex:
         monkeypatch.setattr(Config, "FACIAL_REFLEX_ENABLED", True)
         monkeypatch.setattr(Config, "FACIAL_REFLEX_MODEL_PATH", str(model_path))
 
-        agent = VisionAgent()
+        agent = VisionAgent(facial_reflex_model_path=model_path)
 
         assert agent._face_landmarker is None
 

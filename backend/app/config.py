@@ -162,6 +162,15 @@ class AppSettings(BaseSettings):
     # Bounded, unlike the JetStream default. A tick that fails repeatedly is
     # a bug to surface, not a message to retry forever.
     MESH_CONTROL_MAX_DELIVER: int = 3
+
+    # Bucket 17 (voice remediation Phase 4): the reflex tier's consumer
+    # budget. `vision.facial_reflex` and `audio.stop` handlers both return
+    # fast and synchronously by design -- a short ack_wait is therefore an
+    # honest latency budget, not just a label, and a handler that actually
+    # stalls should be redelivered quickly rather than left holding a
+    # 30s+ control-tier or unbounded default ack_wait.
+    MESH_REFLEX_ACK_WAIT_S: float = 5.0
+    MESH_REFLEX_MAX_DELIVER: int = 2
     MOCK_LLM_TEXT: bool = False
 
     # Stage 3 (audit/ROADMAP.md §7): off by default. When true, transport_agent,
