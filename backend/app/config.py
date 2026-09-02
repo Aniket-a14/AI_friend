@@ -584,6 +584,13 @@ class AppSettings(BaseSettings):
             raise ValueError("EMBEDDING_BATCH_SIZE must be positive")
         return v
 
+    @field_validator("LLM_NUM_CTX")
+    @classmethod
+    def validate_llm_num_ctx(cls, v: int) -> int:
+        if v < 4:
+            raise ValueError("LLM_NUM_CTX must be at least 4")
+        return v
+
     @field_validator("VISUAL_SCREEN_TRACE_TTL_H")
     @classmethod
     def validate_visual_trace_ttl(cls, v: float) -> float:

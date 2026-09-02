@@ -1549,11 +1549,22 @@ class MemoryStore:
 
     @staticmethod
     def _parse_qdrant_created_at(created_val, current_time):
-        try:
-            if created_val:
+        """Two write paths feed this field two different shapes: `_upsert_
+        qdrant_memory` writes a numeric epoch string (`str(timestamp())`),
+        but `_build_promotion_payload` (a promoted archived row) writes
+        `created_at.isoformat()` -- an ISO-8601 string. Without the second
+        branch below, `float(created_val)` raises on every promoted memory,
+        silently falling through to `current_time`/`now()` and losing its
+        real creation timestamp -- which corrupts `_spacing_hours` for
+        exactly the memories old enough to have been promoted at all."""
+        if created_val:
+            try:
                 return datetime.fromtimestamp(float(created_val), UTC)
-        except Exception:  # nosec B110 - falls through to the current_time/now() fallback below regardless of cause
-            pass
+            except (TypeError, ValueError):
+                pass
+            parsed = MemoryStore._as_aware_utc(created_val)
+            if parsed is not None:
+                return parsed
         return current_time if current_time is not None else datetime.now(UTC)
 
     def _score_one_qdrant_candidate(

@@ -840,6 +840,9 @@ class SubconsciousAgent(BaseAgent):
         if self._current_dream_task and not self._current_dream_task.done():
             self._current_dream_task.cancel()
             tasks_to_await.append(self._current_dream_task)
+        if self._current_replay_task and not self._current_replay_task.done():
+            self._current_replay_task.cancel()
+            tasks_to_await.append(self._current_replay_task)
 
         for task in tasks_to_await:
             try:

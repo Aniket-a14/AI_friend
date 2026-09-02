@@ -192,7 +192,7 @@ D_{\text{phasic}}(t) = D_{\text{peak}} \cdot 2^{-\frac{t - t_{\text{release}}}{\
 
 *Hyperparameter mapping:* High dopamine increases LLM `top_p` to enable playful and exploratory phrasing.
 
-**Why this split matters, not just how it works:** $C_{\text{tonic}}$ and $D_{\text{tonic}}$ are both pure functions of valence and are therefore perfectly anti-correlated by construction — one rises exactly as the other falls. Only the phasic channels let the agent register being stressed and rewarded *at the same time*, a combination the tonic-only model above could never represent. Phasic bursts are deliberately **not persisted** across a restart: at a 90s/600s half-life, a value read back after a restart would no longer mean anything.
+**Why this split matters, not just how it works:** $C_{\text{tonic}}$ and $D_{\text{tonic}}$ are both pure functions of valence and are therefore perfectly anti-correlated by construction — one rises exactly as the other falls. Only the phasic channels let the agent register being stressed and rewarded *at the same time*, a combination the tonic-only model above could never represent. Phasic bursts are deliberately **not persisted** across a restart — a deliberate session-reset rule, not a claim that the burst is always negligible by then: dopamine's 90s half-life makes a stale value genuinely meaningless within minutes, but cortisol's half-life is now 4500s (75 minutes, corrected from an earlier 600s — see above), so a burst can still be materially non-zero across a restart that happens to land within that window. The reset is accepted anyway, as a deliberate choice to let stress state start clean on restart, even though the discarded value may still have been meaningful.
 
 ### 2.4 Idle State Decay (ALMA Decay)
 

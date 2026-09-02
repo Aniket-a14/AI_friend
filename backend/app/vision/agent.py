@@ -402,7 +402,18 @@ class VisionAgent(BaseAgent):
         only returns signals for a genuine threshold-crossing onset, so a
         calm face or a `no face detected` frame naturally produces nothing
         to publish rather than needing an explicit early-out here.
+
+        `cv2`/`mp` are guarded independently of each other at import time
+        (separate try/except blocks) and independently of `mp_vision`, which
+        gates whether `_face_landmarker` gets built at all -- so a landmarker
+        existing does not guarantee `cv2`/`mp` imported too (a partial
+        install could have mediapipe but not opencv). Without this check
+        that combination would still degrade safely via the broad except
+        below, just by retrying and failing the decode on every single
+        frame; checking once here avoids that repeated, pointless work.
         """
+        if cv2 is None or mp is None:
+            return
         try:
             frame_bytes = base64.b64decode(frame_b64)
             nparr = np.frombuffer(frame_bytes, np.uint8)

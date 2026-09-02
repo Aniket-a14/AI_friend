@@ -316,6 +316,25 @@ def test_an_explicit_relative_path_that_does_not_exist_anywhere_is_none(
     assert find_persona_file("definitely_not_a_real_persona_file.toml") is None
 
 
+def test_persona_file_search_is_bounded_at_the_repository_root():
+    """An unbounded `Path(__file__).resolve().parents` walk continues all
+    the way to the filesystem root, so a same-named file anywhere above the
+    repo (a user's home directory, say) would silently shadow the real one.
+    Mutation check: widening `_REPO_ROOT_DEPTH`, or reverting to the full
+    `.parents` walk, breaks the length/`/`-exclusion assertions below."""
+    from pathlib import Path
+
+    from app.persona import authoring as authoring_module
+
+    roots = authoring_module._bounded_search_roots()
+
+    assert Path("/") not in roots
+    assert len(roots) == authoring_module._REPO_ROOT_DEPTH + 1
+    repo_root = roots[-1]
+    assert (repo_root / "backend").is_dir()
+    assert (repo_root / ".git").exists()
+
+
 def test_an_explicit_absolute_path_is_checked_as_is_not_walked(tmp_path):
     """Absolute paths are unaffected by the relative-path fix.
 

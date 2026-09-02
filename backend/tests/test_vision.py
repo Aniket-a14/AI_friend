@@ -651,11 +651,20 @@ class TestVisionAgentFacialReflex:
     """
 
     @pytest.mark.asyncio
+    @patch("app.vision.agent.mp")
+    @patch("app.vision.agent.cv2")
     @patch("app.vision.agent.ScreenLink")
     @patch("app.vision.agent.CameraLink")
     async def test_publishes_a_facial_reflex_event_for_a_detected_smile(
-        self, mock_camera_cls, mock_screen_cls
+        self, mock_camera_cls, mock_screen_cls, mock_cv2, mock_mp
     ):
+        """cv2/mp are mocked here (not just the landmarker) because CI never
+        installs opencv-python/mediapipe -- requirements-ai.txt is optional
+        and only requirements-dev.txt runs in CI -- so both are genuinely
+        `None` there. Without this, `cv2.imdecode`/`mp.Image` raise inside
+        `_run_facial_reflex`'s own try/except, get silently swallowed, and
+        this test passes for the wrong reason (a caught crash) until the
+        assertion below catches the missing publish."""
         agent = VisionAgent()
         agent.source = "camera"
         agent.publish = AsyncMock()
@@ -675,10 +684,12 @@ class TestVisionAgentFacialReflex:
         assert event.source == "camera"
 
     @pytest.mark.asyncio
+    @patch("app.vision.agent.mp")
+    @patch("app.vision.agent.cv2")
     @patch("app.vision.agent.ScreenLink")
     @patch("app.vision.agent.CameraLink")
     async def test_publishes_nothing_when_no_face_is_detected(
-        self, mock_camera_cls, mock_screen_cls
+        self, mock_camera_cls, mock_screen_cls, mock_cv2, mock_mp
     ):
         agent = VisionAgent()
         agent.publish = AsyncMock()
@@ -690,10 +701,12 @@ class TestVisionAgentFacialReflex:
         agent.publish.assert_not_awaited()
 
     @pytest.mark.asyncio
+    @patch("app.vision.agent.mp")
+    @patch("app.vision.agent.cv2")
     @patch("app.vision.agent.ScreenLink")
     @patch("app.vision.agent.CameraLink")
     async def test_publishes_nothing_for_a_calm_face_below_every_threshold(
-        self, mock_camera_cls, mock_screen_cls
+        self, mock_camera_cls, mock_screen_cls, mock_cv2, mock_mp
     ):
         """A detected face with no expression crossing any of `reflex.py`'s
         thresholds must produce silence, not a zero-delta event -- the same
@@ -732,10 +745,12 @@ class TestVisionAgentFacialReflex:
         agent._face_landmarker.detect.assert_not_called()
 
     @pytest.mark.asyncio
+    @patch("app.vision.agent.mp")
+    @patch("app.vision.agent.cv2")
     @patch("app.vision.agent.ScreenLink")
     @patch("app.vision.agent.CameraLink")
     async def test_repeated_onsets_within_the_refractory_window_fire_once(
-        self, mock_camera_cls, mock_screen_cls
+        self, mock_camera_cls, mock_screen_cls, mock_cv2, mock_mp
     ):
         """The tracker is per-agent-instance state, held across calls -- a
         held smile across several capture ticks must not re-fire until
@@ -893,9 +908,14 @@ class TestVisionAgentFacialReflex:
         self, mock_camera_cls, mock_screen_cls, tmp_path, monkeypatch
     ):
         """Wiring only -- does not load a real model (slow, and the real
-        asset isn't present in CI); `FaceLandmarker.create_from_options`
-        itself is mocked so this proves the constructor path is reached with
-        the right arguments, not that mediapipe can parse the file."""
+        asset isn't present in CI). `mp_tasks`/`mp_vision` are replaced
+        wholesale, not just `create_from_options`, because CI never installs
+        mediapipe at all (it's in requirements-ai.txt, an optional extra;
+        only requirements-dev.txt runs in CI) -- both are genuinely `None`
+        there, so patching only one attribute off a `None` module would
+        itself raise `AttributeError` before the mock ever applied. This
+        proves the constructor path is reached with the right arguments,
+        not that mediapipe can parse the file."""
         from app.config import Config
 
         model_path = tmp_path / "face_landmarker.task"
@@ -904,9 +924,11 @@ class TestVisionAgentFacialReflex:
         monkeypatch.setattr(Config, "FACIAL_REFLEX_MODEL_PATH", str(model_path))
 
         sentinel = MagicMock()
-        with patch(
-            "app.vision.agent.mp_vision.FaceLandmarker.create_from_options",
-            return_value=sentinel,
+        mock_mp_vision = MagicMock()
+        mock_mp_vision.FaceLandmarker.create_from_options.return_value = sentinel
+        with (
+            patch("app.vision.agent.mp_tasks", MagicMock()),
+            patch("app.vision.agent.mp_vision", mock_mp_vision),
         ):
             agent = VisionAgent()
 

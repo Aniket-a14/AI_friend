@@ -1369,7 +1369,13 @@ class StateService:
         async with self._state_lock:
             before_valence = self.current_state.valence
             self.current_state.valence = self.current_state.valence + valence_delta
-            self.current_state.arousal = self.current_state.arousal + arousal_delta
+            # `arousal` is a derived property (`energy` + fatigue-restlessness
+            # + adrenaline-lift, see its getter above) -- reading it and
+            # writing back through its setter (which stores into `energy`
+            # alone) would permanently bake whatever fatigue/adrenaline
+            # happens to be active right now into the baseline. Apply the
+            # delta to `energy` directly instead.
+            self.current_state.energy = self.current_state.energy + arousal_delta
             self._enforce_bounds()
             # After bounds, so the burst is measured against the settled tonic --
             # same ordering as apply_somatic_perception, same reason.

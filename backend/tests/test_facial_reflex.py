@@ -272,6 +272,25 @@ def test_startle_raises_arousal_only():
     assert service.current_state.arousal == pytest.approx(0.36)
 
 
+def test_arousal_delta_moves_the_baseline_not_the_fatigue_inflated_reading():
+    """`arousal` is a derived property (`energy` + fatigue-restlessness +
+    adrenaline-lift, see its getter in agent_state.py). Reading that derived
+    value and writing back through its setter -- which stores into `energy`
+    alone -- would permanently bake whatever fatigue happens to be active
+    right now into the stored baseline. Every other test in this file leaves
+    fatigue at its zero default, so the bug is invisible there; this one
+    exists specifically to catch it."""
+    service = _state()
+    service.current_state.energy = 0.3
+    service.current_state.fatigue = 0.5  # contributes 0.2 * 0.5 = 0.10 to derived arousal
+
+    asyncio.run(
+        service.apply_facial_reflex({"name": "startle", "arousal_delta": 0.06})
+    )
+
+    assert service.current_state.energy == pytest.approx(0.36)
+
+
 # --------------------------------------------------------------------------
 # BrainAgent._on_facial_reflex -- the mesh subscriber wiring
 # --------------------------------------------------------------------------
