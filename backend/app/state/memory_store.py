@@ -125,6 +125,12 @@ ACTR_EMO_PROXIMITY_WEIGHT = 0.15  # bonus for small emotional distance
 ACTR_VALENCE_GAIN = 0.1  # similarity gain from congruent valence×arousal
 ACTR_STRESS_SUPPRESSION = 0.2  # similarity suppression under arousal×cortisol
 ACTR_EMO_DISTANCE_PENALTY = 0.5  # score penalty per unit emotional distance
+# Bucket 9 (voice remediation Phase 3): weight on ln(avg_inter_recall_hours + 1)
+# -- see `_base_activation`/`_spacing_hours`. Scaled so a memory spaced across
+# roughly a month of recalls (ln(~720)≈6.6) lands in the same ballpark as the
+# importance term's own maximum (1.5×1.0), rather than dwarfing or vanishing
+# beside the other terms already tuned to the "-3..+3" range noted above.
+ACTR_SPACING_WEIGHT = 0.15
 
 # P3-9: L1 cache key quantization. The cache key used to carry raw
 # current_valence/arousal/cortisol floats -- affect drifts continuously
@@ -702,17 +708,67 @@ class MemoryStore:
                     memory_id,
                 )
 
-    def _base_activation(self, recall_count, hours_since, importance_score, dist_emo):
-        """ACT-R base-level activation: ln(freq) - d·ln(recency) plus importance
-        and emotional-proximity terms. Shared by every retrieval-scoring path so
-        the formula stays identical across the Qdrant, SQLite and PG branches.
+    def _base_activation(
+        self,
+        recall_count,
+        hours_since,
+        importance_score,
+        dist_emo,
+        spacing_hours=None,
+    ):
+        """ACT-R base-level activation: ln(freq) - d·ln(recency) plus importance,
+        emotional-proximity, and (Bucket 9, voice remediation Phase 3) spacing
+        terms. Shared by every retrieval-scoring path so the formula stays
+        identical across the Qdrant, SQLite and PG branches.
+
+        `spacing_hours` (see `_spacing_hours`) rewards a memory whose repeat
+        recalls were spread out over time (spaced practice) over one recalled
+        the same total number of times in a burst (massed practice), even
+        when frequency (`recall_count`) and recency (`hours_since`) are
+        identical between the two -- the literature's central spacing-effect
+        finding, which the plain `ln(freq) - d·ln(recency)` formula above has
+        no way to express on its own. `None` means there is no second data
+        point to measure spacing from (fewer than 2 recalls, or no creation
+        timestamp), so the term is skipped rather than guessed at.
         """
+        spacing_bonus = (
+            ACTR_SPACING_WEIGHT * _ln(spacing_hours + 1.0)
+            if spacing_hours is not None
+            else 0.0
+        )
         return (
             _ln(recall_count)
             - self.decay_rate * _ln(hours_since + 1.0)
             + ACTR_IMPORTANCE_WEIGHT * importance_score
             + ACTR_EMO_PROXIMITY_WEIGHT * (1.0 - dist_emo)
+            + spacing_bonus
         )
+
+    @staticmethod
+    def _spacing_hours(recall_count, created_at, last_recall_dt):
+        """Approximate average gap between recalls, in hours.
+
+        The schema stores only `recall_count` and `last_recalled_at`, not a
+        timestamp per individual recall, so the true ACT-R spacing formula
+        (summing `(now - t_j)^-d` over every past presentation `t_j`) is not
+        computable from what is actually persisted. This instead spreads the
+        span from creation to the most recent recall evenly across
+        `recall_count` recalls -- an approximation, not the literal sum, but
+        one that still separates a memory recalled a handful of times across
+        weeks (spaced) from one recalled the same number of times within an
+        hour (massed), which is the effect this bucket exists to capture.
+
+        Returns `None` (deliberately, not 0.0 -- see `_base_activation`) when
+        there are fewer than two recalls to measure a gap between, either
+        timestamp is missing, or the span is non-positive (a stale or
+        fallback-to-"now" creation timestamp racing the recall clock).
+        """
+        if recall_count < 2 or created_at is None or last_recall_dt is None:
+            return None
+        span_hours = (last_recall_dt - created_at).total_seconds() / 3600.0
+        if span_hours <= 0.0:
+            return None
+        return span_hours / recall_count
 
     def _effective_similarity(
         self,
@@ -1493,11 +1549,22 @@ class MemoryStore:
 
     @staticmethod
     def _parse_qdrant_created_at(created_val, current_time):
-        try:
-            if created_val:
+        """Two write paths feed this field two different shapes: `_upsert_
+        qdrant_memory` writes a numeric epoch string (`str(timestamp())`),
+        but `_build_promotion_payload` (a promoted archived row) writes
+        `created_at.isoformat()` -- an ISO-8601 string. Without the second
+        branch below, `float(created_val)` raises on every promoted memory,
+        silently falling through to `current_time`/`now()` and losing its
+        real creation timestamp -- which corrupts `_spacing_hours` for
+        exactly the memories old enough to have been promoted at all."""
+        if created_val:
+            try:
                 return datetime.fromtimestamp(float(created_val), UTC)
-        except Exception:  # nosec B110 - falls through to the current_time/now() fallback below regardless of cause
-            pass
+            except (TypeError, ValueError):
+                pass
+            parsed = MemoryStore._as_aware_utc(created_val)
+            if parsed is not None:
+                return parsed
         return current_time if current_time is not None else datetime.now(UTC)
 
     def _score_one_qdrant_candidate(
@@ -1540,6 +1607,8 @@ class MemoryStore:
 
         last_recall_time = self._coerce_last_recall_ts(db_meta, meta, now_ts)
         hours_since = max(0.001, (now_ts - last_recall_time) / 3600.0)
+        last_recall_dt = datetime.fromtimestamp(last_recall_time, UTC)
+        created = self._parse_qdrant_created_at(meta.get("created_at"), current_time)
 
         # 2D/3D Emotional Distance matching the research simulator
         dist_emo = math.sqrt(
@@ -1547,8 +1616,9 @@ class MemoryStore:
             + (emotion_weight_row - current_arousal) ** 2
         )
 
+        spacing_hours = self._spacing_hours(recall_count, created, last_recall_dt)
         base_activation = self._base_activation(
-            recall_count, hours_since, importance_score, dist_emo
+            recall_count, hours_since, importance_score, dist_emo, spacing_hours
         )
 
         similarity = cand["score"]
@@ -1567,8 +1637,6 @@ class MemoryStore:
 
         if score <= (threshold - 2.5) and importance_score < 0.7:
             return None
-
-        created = self._parse_qdrant_created_at(meta.get("created_at"), current_time)
 
         custom_metadata = {}
         if "custom_metadata" in meta:
@@ -1595,7 +1663,7 @@ class MemoryStore:
             "relation_circles": meta.get("relation_circles"),
             "modality": meta.get("modality"),
             "similarity": similarity,
-            "last_recalled_at": datetime.fromtimestamp(last_recall_time, UTC),
+            "last_recalled_at": last_recall_dt,
         }
 
     async def _score_qdrant_candidates(
@@ -1738,10 +1806,17 @@ class MemoryStore:
         now = current_time if current_time is not None else datetime.now(UTC)
         now_ts = now.timestamp()
 
-        # Preprocess timestamps for Rust
+        # Preprocess timestamps for Rust. `_created_ts` (Bucket 9, voice
+        # remediation Phase 3) feeds the Rust kernel's spacing-effect term --
+        # `_normalize_recall_ts` is generic despite its name (any stored
+        # timestamp shape to a float epoch), so it is reused here rather than
+        # duplicated for a second field.
         for row in rows:
             row["_last_recall_ts"] = self._normalize_recall_ts(
                 row.get("last_recalled_at"), now_ts
+            )
+            row["_created_ts"] = self._normalize_recall_ts(
+                row.get("created_at"), now_ts
             )
 
         scored_indices = cognitive_rust.score_memories_actr_sqlite(
@@ -1884,6 +1959,10 @@ class MemoryStore:
 
             hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
 
+            created = row.get("created_at")
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+
             memory_valence = row.get("valence") or 0.0
             emotion_weight_row = row.get("emotional_weight") or 0.0
 
@@ -1893,11 +1972,13 @@ class MemoryStore:
                 + (emotion_weight_row - current_arousal) ** 2
             )
 
+            spacing_hours = self._spacing_hours(recall_count, created, last_recall)
             base_activation = self._base_activation(
                 recall_count,
                 hours_since,
                 row.get("importance_score") or 0.5,
                 dist_emo,
+                spacing_hours,
             )
 
             # Neuromodulatory distance mapping
@@ -1921,10 +2002,6 @@ class MemoryStore:
                 and (row.get("importance_score") or 0.5) < 0.7
             ):
                 continue
-
-            created = row.get("created_at")
-            if created and created.tzinfo is None:
-                created = created.replace(tzinfo=UTC)
 
             raw_meta = row.get("metadata")
             if isinstance(raw_meta, str):
@@ -2519,8 +2596,14 @@ class MemoryStore:
             + (emotion_weight_row - current_arousal) ** 2
         )
 
+        created = self._as_aware_utc(row.get("created_at"))
+        spacing_hours = self._spacing_hours(recall_count, created, last_recall)
         base_activation = self._base_activation(
-            recall_count, hours_since, row.get("importance_score") or 0.5, dist_emo
+            recall_count,
+            hours_since,
+            row.get("importance_score") or 0.5,
+            dist_emo,
+            spacing_hours,
         )
         effective_similarity = self._effective_similarity(
             similarity,
@@ -2784,8 +2867,13 @@ class MemoryStore:
 
         # Rescore as an active memory: recall_count was incremented on
         # promotion and last_recalled_at is now, so recency is ~0.
+        spacing_hours_active = self._spacing_hours(recall_count + 1, created, now)
         base_activation_active = self._base_activation(
-            recall_count + 1, 0.001, row.get("importance_score") or 0.5, dist_emo
+            recall_count + 1,
+            0.001,
+            row.get("importance_score") or 0.5,
+            dist_emo,
+            spacing_hours_active,
         )
         score_active = (
             base_activation_active
@@ -3525,6 +3613,190 @@ class MemoryStore:
         except Exception as e:
             logger.error(f"Failed to fetch recent episodes: {e}")
             return []
+
+    async def get_recent_high_importance_memory_contents(
+        self,
+        limit: int = 20,
+        min_importance: float = 0.5,
+        lookback_hours: int = 168,
+    ) -> list[str]:
+        """Bucket 12 (voice remediation Phase 3), items 2-3: candidates for
+        `SubconsciousAgent._run_rest_phase_replay`'s idle/night-gated sweep --
+        memories worth periodically re-scoring and re-checking for pruning
+        via `apply_actr_decay`, independent of whether they happen to be tied
+        to the current tick's just-consolidated dialogue the way
+        `_run_consolidation_pass`'s own candidates are. Mirrors
+        `get_recent_unconsolidated_episodes`'s dual-backend query shape.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    rows = await conn.fetch(
+                        "SELECT content FROM memories WHERE importance_score >= ? "
+                        "AND COALESCE(last_recalled_at, created_at) >= "
+                        "datetime('now', ? || ' hours') "
+                        "ORDER BY importance_score DESC LIMIT ?",
+                        min_importance,
+                        f"-{lookback_hours}",
+                        limit,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        "SELECT content FROM memories WHERE importance_score >= $1 "
+                        "AND COALESCE(last_recalled_at, created_at) >= "
+                        "NOW() - ($2 || ' hours')::interval "
+                        "ORDER BY importance_score DESC LIMIT $3",
+                        min_importance,
+                        str(lookback_hours),
+                        limit,
+                    )
+                return [row["content"] for row in rows if row.get("content")]
+        except Exception as e:
+            logger.error(f"Failed to fetch rest-phase replay candidates: {e}")
+            return []
+
+    async def get_recent_high_importance_memories_for_relinking(
+        self,
+        limit: int = 20,
+        min_importance: float = 0.5,
+        lookback_hours: int = 168,
+    ) -> list[dict]:
+        """Bucket 12's re-linking half of rest-phase replay: the same
+        candidate pool as `get_recent_high_importance_memory_contents`
+        (identical WHERE clause, deliberately -- re-linking is framed as
+        part of the same sweep, not a second query with its own knobs), but
+        carrying `id` and `metadata` too, since re-linking has to know which
+        row to update and what it already believes about its own entities.
+
+        `metadata` here is returned pre-parsed to a dict, following the same
+        str-vs-already-decoded normalization `_fetch_sqlite_candidates`/
+        `_fetch_postgres_candidates` already use for this same column --
+        a JSON column comes back as a string on at least one backend/driver
+        path, and a candidate with no metadata at all must not crash the
+        sweep, so both cases collapse to `{}`.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    rows = await conn.fetch(
+                        "SELECT id, content, metadata FROM memories "
+                        "WHERE importance_score >= ? "
+                        "AND COALESCE(last_recalled_at, created_at) >= "
+                        "datetime('now', ? || ' hours') "
+                        "ORDER BY importance_score DESC LIMIT ?",
+                        min_importance,
+                        f"-{lookback_hours}",
+                        limit,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        "SELECT id, content, metadata FROM memories "
+                        "WHERE importance_score >= $1 "
+                        "AND COALESCE(last_recalled_at, created_at) >= "
+                        "NOW() - ($2 || ' hours')::interval "
+                        "ORDER BY importance_score DESC LIMIT $3",
+                        min_importance,
+                        str(lookback_hours),
+                        limit,
+                    )
+                candidates = []
+                for row in rows:
+                    if not row.get("content") or not row.get("id"):
+                        continue
+                    raw_meta = row.get("metadata")
+                    if isinstance(raw_meta, str):
+                        try:
+                            raw_meta = orjson.loads(raw_meta)
+                        except Exception:
+                            raw_meta = {}
+                    candidates.append(
+                        {
+                            "id": row["id"],
+                            "content": row["content"],
+                            "metadata": raw_meta or {},
+                        }
+                    )
+                return candidates
+        except Exception as e:
+            logger.error(f"Failed to fetch re-linking candidates: {e}")
+            return []
+
+    async def _update_memory_metadata(self, memory_id: str, metadata: dict) -> bool:
+        """Write a full metadata dict back to one row.
+
+        Read-modify-write, not a native JSON merge: `add_memory` already
+        writes this column as a plain serialized string on both backends
+        (`_insert_memory_row`'s `metadata_json` parameter), so an UPDATE
+        binds identically rather than assuming a JSONB-specific merge
+        operator that would work on Postgres but not SQLite.
+        """
+        try:
+            metadata_json = orjson.dumps(metadata).decode()
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    await conn.execute(
+                        "UPDATE memories SET metadata = ? WHERE id = ?",
+                        metadata_json,
+                        memory_id,
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE memories SET metadata = $1 WHERE id = $2",
+                        metadata_json,
+                        memory_id,
+                    )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update metadata for memory {memory_id}: {e}")
+            return False
+
+    async def relink_memory_entities(self, candidates: list[dict]) -> int:
+        """Bucket 12's re-linking: pick up entity associations a memory
+        missed because the entity did not exist in the graph yet when the
+        memory was first written.
+
+        `_prelink_memory_entities` only ever runs once, at `add_memory` time
+        (`app/state/memory_store.py`), against whichever entities existed in
+        Neo4j *then*. `_compute_candidate_entities` (used by `search_memories`'
+        graph-boost/PPR scoring) prefers a memory's stored
+        `metadata["entities"]` over a live regex scan whenever that list is
+        non-empty -- a real performance win, but it means a memory whose
+        precomputed list is merely *incomplete* rather than empty never gets
+        re-scanned by anything, forever. This closes exactly that gap:
+        recompute the live entity match for each candidate and merge in
+        anything new, without dropping entities a prior run already found.
+
+        Union, never replacement -- an entity that no longer matches (renamed
+        or deleted in the graph) is left in place rather than removed, since
+        removing associations was never this bucket's stated goal and Neo4j
+        entity deletion is its own separate, deliberate act elsewhere.
+
+        Only writes a row whose entity set actually grew, so a rest-phase
+        sweep over mostly-already-linked memories does not spend a write on
+        every candidate every time it runs. A newly-linked entity can let a
+        memory satisfy a graph-boost match it couldn't before -- the same
+        reasoning `add_memory` already gives for invalidating `_l1_cache` on
+        every new memory -- so this invalidates once at the end, only if at
+        least one row actually changed.
+        """
+        relinked = 0
+        for candidate in candidates:
+            content = candidate.get("content")
+            memory_id = candidate.get("id")
+            if not content or not memory_id:
+                continue
+            metadata = candidate.get("metadata") or {}
+            existing_entities = set(metadata.get("entities") or [])
+            live_entities = set(await self._prelink_memory_entities(content))
+            if live_entities <= existing_entities:
+                continue
+            merged = sorted(existing_entities | live_entities)
+            updated_metadata = {**metadata, "entities": merged}
+            if await self._update_memory_metadata(memory_id, updated_metadata):
+                relinked += 1
+        if relinked:
+            self._invalidate_l1_cache()
+        return relinked
 
     async def mark_episodes_consolidated(self, message_ids: list[str]):
         """Marks specific dialogue messages as consolidated to avoid duplicate processing."""

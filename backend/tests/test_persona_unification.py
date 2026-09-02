@@ -140,6 +140,31 @@ def test_learning_traits_drops_the_oldest_not_the_newest(tmp_path):
     assert "Reserved" not in manager.persona.adaptive_traits
 
 
+def test_learn_traits_rejects_a_bare_language_name(tmp_path):
+    """A weak reflection model has been observed writing the literal name of
+    a language ("Hinglish") into adaptive content instead of an actual trait
+    (.agents/CONTEXT.md's Bucket 7 entry) -- a perfectly valid string, so
+    nothing at the Pydantic layer catches it. Must be filtered out rather
+    than accepted as if naming a language were the same as describing a
+    character trait.
+    """
+    manager = _identity(tmp_path, NESTED)
+    manager.persona.learn_traits(["Hinglish"])
+    assert manager.persona.adaptive_traits == ["Reserved"]
+
+
+def test_learn_traits_rejects_non_latin_content(tmp_path):
+    """A weak reflection model has been observed writing CJK fragments into
+    adaptive persona content on a persona authored entirely in English
+    (.agents/CONTEXT.md's Bucket 7 entry) -- a language leak `learn_traits`
+    must filter out rather than silently accreting into the trait list
+    forever.
+    """
+    manager = _identity(tmp_path, NESTED)
+    manager.persona.learn_traits(["更加放松"])
+    assert manager.persona.adaptive_traits == ["Reserved"]
+
+
 def test_the_cap_cannot_be_exceeded_even_by_a_direct_assignment(tmp_path):
     """`validate_assignment` is the backstop under `learn_traits`."""
     from pydantic import ValidationError

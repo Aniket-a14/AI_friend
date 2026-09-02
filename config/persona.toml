@@ -125,10 +125,12 @@ mood_decay_rate = 0.05
 # Pleasure fades.     range 5 .. 1800     (90s = about a minute and a half)
 dopamine_halflife_s = 90.0
 
-# Stress lingers.     range 5 .. 7200     (600s = ten minutes)
+# Stress lingers.     range 5 .. 7200     (4500s = seventy-five minutes,
+# the deployment default -- the midpoint of measured human cortisol plasma
+# half-life)
 # Longer than pleasure by default, because a fright has a hangover and a
 # pleasure mostly does not.
-cortisol_halflife_s = 600.0
+cortisol_halflife_s = 4500.0
 
 
 # ══ ADAPTIVE ═════════════════════════════════════════════════════════ #

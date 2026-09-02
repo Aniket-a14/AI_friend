@@ -106,13 +106,22 @@ class AgentState:
     dopamine_phasic_at: float = field(default_factory=time.time)
     cortisol_phasic_peak: float = 0.0
     cortisol_phasic_at: float = field(default_factory=time.time)
+    # Bucket 11 (voice remediation Phase 3, item 2): adrenaline, unlike the
+    # two above, has no tonic counterpart -- see `adrenaline_tonic` -- so
+    # `adrenaline_phasic_peak` alone *is* the current adrenaline level at the
+    # moment of release, not a supplement to an ambient baseline.
+    adrenaline_phasic_peak: float = 0.0
+    adrenaline_phasic_at: float = field(default_factory=time.time)
 
     # Half-lives are temperament, not deployment settings: how long a reward
     # glows and how long a fright lingers are among the most recognisable things
     # about a person. StateService seeds these from the PersonaProfile; the
-    # defaults reproduce the previous Config-driven behaviour exactly.
+    # defaults reproduce the current Config-driven behaviour exactly (cortisol's
+    # raised from 600.0 to 4500.0 in Bucket 11, voice remediation Phase 3 --
+    # see Config.CORTISOL_PHASIC_HALFLIFE_S).
     dopamine_halflife_s: float = 90.0
-    cortisol_halflife_s: float = 600.0
+    cortisol_halflife_s: float = 4500.0
+    adrenaline_halflife_s: float = 120.0
 
     # --- Affect Split Properties ---
     @property
@@ -157,9 +166,20 @@ class AgentState:
 
     @property
     def arousal(self) -> float:
-        """PAD Arousal (Ar) — maps to 'energy' + fatigue-induced restlessness."""
+        """PAD Arousal (Ar) — maps to 'energy' + fatigue-induced restlessness
+        plus any outstanding adrenaline.
+
+        The adrenaline term (Bucket 11, voice remediation Phase 3, item 2) is
+        deliberately *derived* here rather than written into `energy` at
+        release time, the same pattern dopamine/cortisol already use for
+        reward and stress: a startle should read as an immediate, bounded
+        lift on top of whatever arousal already is, fading on its own over
+        `adrenaline_halflife_s` as the burst decays, not a permanent nudge to
+        the underlying baseline.
+        """
         fatigue_restlessness = 0.2 * self.fatigue
-        return max(0.0, min(1.0, self.energy + fatigue_restlessness))
+        adrenaline_lift = 0.3 * self.adrenaline
+        return max(0.0, min(1.0, self.energy + fatigue_restlessness + adrenaline_lift))
 
     @arousal.setter
     def arousal(self, value: float):
@@ -354,6 +374,63 @@ class AgentState:
         self.dopamine_phasic_at = time.time()
         return self.dopamine
 
+    @property
+    def adrenaline_tonic(self) -> float:
+        """Adrenaline has no ambient baseline, unlike dopamine/cortisol.
+
+        Real epinephrine is fundamentally reactive rather than mood-tracking:
+        it spikes on startle, a genuine interruption, or shock, and is
+        otherwise silent -- there is no equivalent of "background reward tone"
+        or "background stress tone" for it. Kept as an explicit property
+        (rather than inlining 0.0 into `adrenaline` below) so
+        `release_adrenaline` can measure its peak "relative to the tonic
+        floor" using the exact same code shape as `release_cortisol`/
+        `release_dopamine` above -- the floor here is just always zero.
+        """
+        return 0.0
+
+    @property
+    def adrenaline_phasic(self) -> float:
+        """The decaying remainder of the most recent startle/interruption/shock.
+
+        Half-life sits between dopamine's (a reward glow, ~90s) and
+        cortisol's (an acute-stress hangover, ~75min) by design -- a startle
+        response fades over minutes, not seconds or hours.
+        """
+        return self._decayed(
+            self.adrenaline_phasic_peak,
+            self.adrenaline_phasic_at,
+            self.adrenaline_halflife_s,
+        )
+
+    @property
+    def adrenaline(self) -> float:
+        """
+        Startle hormone: purely phasic, no tonic component (see
+        `adrenaline_tonic`). Range: 0.0 (nothing outstanding) to 1.0
+        (maximum startle). Consumed by `arousal` above as a short, sharp,
+        self-fading lift on top of whatever arousal already is.
+        """
+        return max(0.0, min(1.0, self.adrenaline_tonic + self.adrenaline_phasic))
+
+    def release_adrenaline(self, amount: float) -> float:
+        """Fire an acute startle/interruption/shock response.
+
+        Mirrors `release_cortisol`/`release_dopamine`'s "peak relative to the
+        tonic floor" shape exactly, even though that floor is always zero
+        here (see `adrenaline_tonic`) -- so a future change to the shared
+        release pattern only has to be reasoned about once, not separately
+        for a channel that looks superficially different.
+        """
+        amount = self._burst_amount(amount, "adrenaline")
+        if amount <= 0.0:
+            return self.adrenaline
+
+        target_total = min(1.0, self.adrenaline + amount)
+        self.adrenaline_phasic_peak = max(0.0, target_total - self.adrenaline_tonic)
+        self.adrenaline_phasic_at = time.time()
+        return self.adrenaline
+
 
 class StateService:
     """Manages Internal State continuity and Neo4j persistence."""
@@ -390,6 +467,9 @@ class StateService:
             # not just these two.
             dopamine_halflife_s=self.persona.hormone_halflives()["dopamine_halflife_s"],
             cortisol_halflife_s=self.persona.hormone_halflives()["cortisol_halflife_s"],
+            adrenaline_halflife_s=self.persona.hormone_halflives()[
+                "adrenaline_halflife_s"
+            ],
         )
         self.last_speculative_intent = None  # Transient sensory state
         # A2: serializes short-term affect mutation so the fire-and-forget
@@ -1238,6 +1318,80 @@ class StateService:
         )
         await self._persist_sensory_state_if_due()
 
+    async def apply_facial_reflex(self, reflex: dict[str, Any]):
+        """Continuous facial-expression affect (Bucket 13, voice remediation
+        Phase 3) -- the reflex-channel counterpart to `apply_somatic_perception`
+        above. That folds *recognised scene content* from a slow (5s),
+        turn-suspended VLM poll into affect; this folds *facial expression*,
+        sampled continuously including mid-turn, via
+        `app/vision/reflex.py::score_blendshapes` -- a smile or a flinch the
+        VLM path is architecturally too slow to ever see.
+
+        Deltas are *signed*, unlike `apply_somatic_perception`'s always-positive
+        spikes: a brow furrow genuinely pulls valence down, not up, and startle
+        raises arousal with no valence direction implied either way (see
+        `reflex.py`'s docstring for why guessing that direction would be worse
+        than not guessing).
+
+        Absence of a signal must never reach this method as an all-zero
+        reflex, for the same reason documented on `apply_sensory_perception`
+        and `apply_somatic_perception` above -- it would drag affect toward
+        neutral on every frame nothing happened, flattening the agent the
+        longer a face is simply calm. In practice `score_blendshapes` only
+        ever returns signals for a genuine threshold-crossing onset and this
+        method is only called once per returned signal, so the failure mode
+        is structurally avoided rather than merely checked for -- but the
+        check stays, matching the defensive posture of both methods above.
+        """
+        if not reflex:
+            return
+
+        valence_delta = reflex.get("valence_delta", 0.0)
+        arousal_delta = reflex.get("arousal_delta", 0.0)
+        try:
+            valence_delta = float(valence_delta)
+            arousal_delta = float(arousal_delta)
+        except (TypeError, ValueError):
+            logger.warning(
+                "[State] Ignoring facial reflex with non-numeric deltas: %r", reflex
+            )
+            return
+
+        if valence_delta == 0.0 and arousal_delta == 0.0:
+            return
+
+        dopamine_spike = reflex.get("dopamine_spike", 0.0)
+        try:
+            dopamine_spike = float(dopamine_spike)
+        except (TypeError, ValueError):
+            dopamine_spike = 0.0
+
+        async with self._state_lock:
+            before_valence = self.current_state.valence
+            self.current_state.valence = self.current_state.valence + valence_delta
+            # `arousal` is a derived property (`energy` + fatigue-restlessness
+            # + adrenaline-lift, see its getter above) -- reading it and
+            # writing back through its setter (which stores into `energy`
+            # alone) would permanently bake whatever fatigue/adrenaline
+            # happens to be active right now into the baseline. Apply the
+            # delta to `energy` directly instead.
+            self.current_state.energy = self.current_state.energy + arousal_delta
+            self._enforce_bounds()
+            # After bounds, so the burst is measured against the settled tonic --
+            # same ordering as apply_somatic_perception, same reason.
+            if dopamine_spike > 0.0:
+                self.current_state.release_dopamine(dopamine_spike)
+            after_valence = self.current_state.valence
+
+        logger.debug(
+            "[State] Facial reflex %r — valence %.3f → %.3f, arousal delta %+.3f.",
+            reflex.get("name", "?"),
+            before_valence,
+            after_valence,
+            arousal_delta,
+        )
+        await self._persist_sensory_state_if_due()
+
     async def release_cortisol(self, amount: float, *, reason: str = "") -> float:
         """Fire an acute stress response under the state lock.
 
@@ -1269,6 +1423,22 @@ class StateService:
             level = self.current_state.release_dopamine(amount)
         if reason:
             logger.info("[Endocrine] Dopamine released (%s) — now %.2f.", reason, level)
+        return level
+
+    async def release_adrenaline(self, amount: float, *, reason: str = "") -> float:
+        """Fire a startle/interruption/shock burst under the state lock.
+
+        See `release_cortisol` for why the lock is mandatory: adrenaline's
+        peak is computed relative to its tonic floor exactly like the other
+        two (`AgentState.adrenaline_tonic`, always 0.0), so an unlocked
+        release racing a concurrent affect write is the same hazard.
+        """
+        async with self._state_lock:
+            level = self.current_state.release_adrenaline(amount)
+        if reason:
+            logger.info(
+                "[Endocrine] Adrenaline released (%s) — now %.2f.", reason, level
+            )
         return level
 
     async def handle_system_tick(self, tick_metadata: dict[str, Any]):
@@ -1547,6 +1717,7 @@ class StateService:
             # Endocrine hormones (Somatic Regulation)
             "cortisol": self.current_state.cortisol,
             "dopamine": self.current_state.dopamine,
+            "adrenaline": self.current_state.adrenaline,
             # Theory of Mind snapshot — dict format
             "user_mental_model": self.current_state.user_mental_model.model_dump(),
         }

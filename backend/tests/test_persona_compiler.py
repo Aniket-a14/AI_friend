@@ -239,7 +239,10 @@ async def test_compile_persona_builds_a_valid_profile():
     assert compiled.profile.relationship == "old friend"
     assert compiled.profile.baseline_valence < 0  # warmth was negative
     assert "Where she grew up" in compiled.biography_markdown
-    assert len(compiled.inferences) == 13  # one per temperament field
+    # One per temperament field -- 14 since Bucket 11 (voice remediation
+    # Phase 3, item 2) added adrenaline_halflife_s alongside dopamine's and
+    # cortisol's.
+    assert len(compiled.inferences) == 14
 
 
 @pytest.mark.asyncio

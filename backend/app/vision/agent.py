@@ -2,13 +2,15 @@ import asyncio
 import base64
 import logging
 import time
+from pathlib import Path
 
 from ..agents.base import BaseAgent, install_shutdown_signal_handlers
 from ..config import Config
-from ..contracts import Topics, VisionDescription
+from ..contracts import FacialReflexEvent, Topics, VisionDescription
 from ..llm import build_llm_client
 from .appraisal import VisualAppraisalService
 from .links import CameraLink, ScreenLink
+from .reflex import FacialReflexTracker, score_blendshapes
 
 try:
     import cv2
@@ -19,6 +21,25 @@ try:
     import numpy as np
 except ImportError:
     np = None  # type: ignore[assignment]  # optional dependency; guarded at every call site
+
+try:
+    import mediapipe as mp
+    from mediapipe.tasks import python as mp_tasks
+    from mediapipe.tasks.python import vision as mp_vision
+except ImportError:
+    mp = None
+    mp_tasks = None
+    mp_vision = None  # type: ignore[assignment]  # optional dependency; guarded at every call site
+
+# Default location for the Face Landmarker model, resolved from this
+# module's own path rather than the process cwd -- see the
+# FACIAL_REFLEX_MODEL_PATH comment in config.py for why that distinction is
+# not academic in this codebase. Three parents up from app/vision/agent.py
+# lands at backend/, matching where models/whisper and models/sensevoice
+# already live.
+_DEFAULT_FACE_LANDMARKER_PATH = (
+    Path(__file__).resolve().parents[2] / "models" / "mediapipe" / "face_landmarker.task"
+)
 
 # Distance estimation parameters
 ASSUMED_FACE_WIDTH_M = 0.15
@@ -37,7 +58,7 @@ class VisionAgent(BaseAgent):
     both raw frames and semantic descriptions to the NATS mesh.
     """
 
-    def __init__(self, fps=1.0):
+    def __init__(self, fps=1.0, facial_reflex_model_path: str | Path | None = None):
         super().__init__(name="vision_agent")
         self.screen = ScreenLink()
         self.camera = CameraLink()
@@ -87,6 +108,59 @@ class VisionAgent(BaseAgent):
                 self._face_cascade = cv2.CascadeClassifier(cascade_path)
             except Exception as e:
                 logger.warning("[Vision] Failed to load face cascade: %s", e)
+
+        # Bucket 13 (voice remediation Phase 3): the CPU-only facial reflex
+        # channel. `mediapipe` is an optional dependency (requirements-ai.txt),
+        # and the model asset is a ~3.7MB download not shipped in the repo
+        # (models/ is gitignored, same convention as Whisper's weights) -- so
+        # this degrades to "disabled, logged" rather than failing agent
+        # startup, matching every other optional-capture path in this file.
+        self._facial_reflex_tracker = FacialReflexTracker()
+        self._face_landmarker = None
+        facial_reflex_enabled = getattr(Config, "FACIAL_REFLEX_ENABLED", True)
+        if facial_reflex_enabled and mp_vision is not None:
+            raw_path = (
+                facial_reflex_model_path
+                or getattr(Config, "FACIAL_REFLEX_MODEL_PATH", "")
+                or _DEFAULT_FACE_LANDMARKER_PATH
+            )
+            model_path = Path(raw_path)
+            if model_path.exists():
+                try:
+                    if mp_tasks is not None:
+                        base_options = mp_tasks.BaseOptions(
+                            model_asset_path=str(model_path)
+                        )
+                        landmarker_options = mp_vision.FaceLandmarkerOptions(
+                            base_options=base_options,
+                            output_face_blendshapes=True,
+                            num_faces=1,
+                            running_mode=mp_vision.RunningMode.IMAGE,
+                        )
+                        self._face_landmarker = mp_vision.FaceLandmarker.create_from_options(
+                            landmarker_options
+                        )
+                        logger.info(
+                            "[Vision] Facial reflex channel active (model: %s).",
+                            model_path,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "[Vision] Could not load Face Landmarker model at %s: %s",
+                        model_path,
+                        e,
+                    )
+            else:
+                logger.info(
+                    "[Vision] Face Landmarker model not found at %s; facial "
+                    "reflex channel disabled (not fatal -- vision continues "
+                    "without it).",
+                    model_path,
+                )
+        elif facial_reflex_enabled:
+            logger.info(
+                "[Vision] mediapipe not installed; facial reflex channel disabled."
+            )
 
     def preflight(self) -> bool:
         """Probe whether this process can actually see anything.
@@ -237,6 +311,15 @@ class VisionAgent(BaseAgent):
                     if self.vlm_enabled and self.appraisal:
                         await self._run_appraisal(frame_b64)
 
+                    # 4b. Facial reflex (Bucket 13) -- deliberately NOT gated
+                    # by VISION_SUSPEND_DURING_TURN or the VLM's interval;
+                    # continuous, mid-turn sampling is the entire point (see
+                    # reflex.py's docstring). Camera-only: a screen capture
+                    # has no face to score, so this is skipped rather than
+                    # spending CPU on a detection that can never fire.
+                    if self._face_landmarker is not None and self.source == "camera":
+                        await self._run_facial_reflex(frame_b64)
+
                 # 5. Throttling
                 elapsed = time.time() - start_time
                 sleep_time = max(0, (1.0 / self.fps) - elapsed)
@@ -312,6 +395,65 @@ class VisionAgent(BaseAgent):
         except Exception as e:
             logger.error(f"[VisionAgent] VLM appraisal publish error: {e}")
 
+    async def _run_facial_reflex(self, frame_b64: str) -> None:
+        """Bucket 13 (voice remediation Phase 3): decode the frame already
+        captured this tick, score it against `reflex.py`'s three blendshape
+        signals, and publish one `FacialReflexEvent` per onset.
+
+        Unlike `_run_appraisal`, this never checks `_is_turn_in_flight()` --
+        the reflex channel's whole reason to exist is catching a smile or a
+        flinch *during* a turn, which the VLM path is architecturally too
+        slow and too GPU-contended to ever see. `score_blendshapes` itself
+        only returns signals for a genuine threshold-crossing onset, so a
+        calm face or a `no face detected` frame naturally produces nothing
+        to publish rather than needing an explicit early-out here.
+
+        `cv2`/`mp` are guarded independently of each other at import time
+        (separate try/except blocks) and independently of `mp_vision`, which
+        gates whether `_face_landmarker` gets built at all -- so a landmarker
+        existing does not guarantee `cv2`/`mp` imported too (a partial
+        install could have mediapipe but not opencv). Without this check
+        that combination would still degrade safely via the broad except
+        below, just by retrying and failing the decode on every single
+        frame; checking once here avoids that repeated, pointless work.
+        """
+        if cv2 is None or mp is None:
+            return
+        try:
+            frame_bytes = base64.b64decode(frame_b64)
+            nparr = np.frombuffer(frame_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                return
+            rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+            # Blocking C++ call, same reasoning as detectMultiScale above --
+            # keep it off the event loop.
+            result = await asyncio.to_thread(self._face_landmarker.detect, mp_image)
+            if not result.face_blendshapes:
+                return
+
+            blendshapes = {
+                category.category_name: category.score
+                for category in result.face_blendshapes[0]
+            }
+            signals = score_blendshapes(
+                blendshapes, now=time.time(), tracker=self._facial_reflex_tracker
+            )
+            for signal in signals:
+                event = FacialReflexEvent(
+                    name=signal.name,
+                    valence_delta=signal.valence_delta,
+                    arousal_delta=signal.arousal_delta,
+                    dopamine_spike=signal.dopamine_spike,
+                    evidence=signal.evidence,
+                    source=self.source,
+                )
+                await self.publish(Topics.VISION_FACIAL_REFLEX, event.model_dump())
+        except Exception as e:
+            logger.warning("[Vision] Facial reflex scoring failed: %s", e)
+
     async def stop(self):
         await self._prepare_stop()
         self.running = False
@@ -325,6 +467,12 @@ class VisionAgent(BaseAgent):
                 await self.vlm_client.close()
             except Exception as e:
                 logger.warning("[Vision] VLM client close warning: %s", e)
+        landmarker = getattr(self, "_face_landmarker", None)
+        if landmarker is not None:
+            try:
+                landmarker.close()
+            except Exception as e:
+                logger.warning("[Vision] Face Landmarker close warning: %s", e)
         await super().stop()
 
 

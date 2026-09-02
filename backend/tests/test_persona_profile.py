@@ -19,7 +19,12 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Config
-from app.persona import IMMUTABLE_CORE, PersonaProfile, Tier
+from app.persona import (
+    IMMUTABLE_CORE,
+    PersonaProfile,
+    Tier,
+    is_plausible_persona_content,
+)
 from app.state.agent_state import StateService
 
 
@@ -285,3 +290,41 @@ def test_clamping_pulls_a_too_large_value_down(monkeypatch, caplog):
 def test_persona_name_follows_ai_name_by_default(monkeypatch):
     monkeypatch.setattr(Config, "AI_NAME", "Alex", raising=False)
     assert PersonaProfile.from_config().name == "Alex"
+
+
+class TestIsPlausiblePersonaContent:
+    """Bucket 7 (voice remediation Phase 3): a content-level backstop for
+    adaptive persona writes, added after two independent deployments
+    persisted CJK fragments and a bare language name into an
+    English-authored persona's speaking_style (.agents/CONTEXT.md). Neither
+    is a type error, so Pydantic's own field validation never touched
+    either -- this function is the only thing that does.
+    """
+
+    def test_rejects_a_bare_language_name(self):
+        """The literal defect observed in production: a style descriptor
+        that just names a language instead of describing how someone talks."""
+        assert is_plausible_persona_content("Hinglish") is False
+        assert is_plausible_persona_content("english") is False
+
+    def test_rejects_mostly_non_latin_text(self):
+        """The other defect observed in production: CJK fragments landing in
+        a persona authored entirely in Latin script."""
+        assert is_plausible_persona_content("更加放松和随意") is False
+
+    def test_rejects_empty_or_blank_text(self):
+        assert is_plausible_persona_content("") is False
+        assert is_plausible_persona_content("   ") is False
+
+    def test_accepts_a_real_description(self):
+        """The thing this function must never block: an actual multi-word
+        description of style or a real trait, even one that happens to
+        mention a language by name as part of describing how someone
+        talks."""
+        assert is_plausible_persona_content("Warm and a little sarcastic") is True
+        assert (
+            is_plausible_persona_content(
+                "Casual, mixing English and Hindi words like arre and yaar"
+            )
+            is True
+        )

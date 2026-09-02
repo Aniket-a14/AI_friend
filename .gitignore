@@ -117,6 +117,13 @@ evals_out/
 # deliverable -- same reasoning as /AUDIT.md above.
 /VOICE_RECORDING_SPEC.md
 
+# Survey of brain-inspired / prompt-replacing architectures (2026-09-01),
+# written to answer whether prompting can be replaced with something more
+# brain-native, and to re-scope vision into Phase 3. A working research note;
+# whatever it decides belongs in .agents/CONTEXT.md once it lands, not here.
+# Same reasoning as /AUDIT.md above.
+/COGNITIVE_ARCHITECTURE_SURVEY.md
+
 # Live agent identity state (cognitive/identity.py's default when
 # IDENTITY_BASE_PATH is unset) -- a SQLite db plus the persona's own working
 # copy of personality.json/history.json, written by any local run. Runtime

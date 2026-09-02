@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import uuid
+from datetime import datetime
 from typing import Any
 
 from app.agents.base import BaseAgent, install_shutdown_signal_handlers
@@ -15,6 +16,33 @@ from app.state.agent_state import StateService
 from app.state.graph_db import GraphDB
 
 logger = logging.getLogger(__name__)
+
+
+def is_rest_phase(
+    now: float,
+    last_user_interaction: float,
+    fatigue: float,
+    *,
+    idle_threshold_s: float = 30.0,
+) -> bool:
+    """Bucket 12 (voice remediation Phase 3), items 2-3: idle AND (night OR
+    fatigue > 0.8) -- reusing `_continuous_monologue_loop`'s existing dream
+    gate's fatigue threshold and `_update_fatigue`'s existing night window
+    (`agent_state.py`'s `hour >= 22 or hour < 6`) rather than inventing a
+    second set of numbers for what is, biologically, the same "asleep or
+    exhausted" condition dreaming already keys off of.
+
+    A pure function of three scalars rather than a method reading live state,
+    so `_run_rest_phase_replay`'s gating logic is testable without a running
+    agent, a mocked clock, or any I/O -- the same reasoning
+    `ReflectionService`'s own cooldown check applies.
+    """
+    idle_s = now - last_user_interaction
+    if idle_s < idle_threshold_s:
+        return False
+    hour = datetime.fromtimestamp(now).hour
+    is_night = hour >= 22 or hour < 6
+    return is_night or fatigue > 0.8
 
 
 class SubconsciousAgent(BaseAgent):
@@ -52,6 +80,9 @@ class SubconsciousAgent(BaseAgent):
         self._last_monologue_time = 0.0
         self._monologue_task = None
         self._last_benchmark_time = 0.0
+        # Bucket 12 (voice remediation Phase 3), items 2-3.
+        self._current_replay_task: asyncio.Task | None = None
+        self._last_replay_time = 0.0
         # Phase 3.1: pessimistic until transport_agent's first session.presence
         # signal arrives -- a freshly started process should not assume a
         # proactive thought has anyone to reach before it actually knows.
@@ -616,6 +647,28 @@ class SubconsciousAgent(BaseAgent):
                             self._generate_monologue_thought()
                         )
                         self._last_monologue_time = now
+
+                # Bucket 12 (voice remediation Phase 3), items 2-3: memory
+                # maintenance, orthogonal to what the agent says/thinks above
+                # -- both a dream and a rest-phase replay can legitimately
+                # run the same tick, so this is a separate check rather than
+                # a third branch of the if/else above.
+                now = time.time()
+                replay_due = (
+                    now - self._last_replay_time
+                ) >= Config.REST_PHASE_REPLAY_INTERVAL_SECONDS
+                replay_busy = (
+                    self._current_replay_task and not self._current_replay_task.done()
+                )
+                if (
+                    is_rest_phase(now, last_interact, fatigue)
+                    and replay_due
+                    and not replay_busy
+                ):
+                    self._current_replay_task = asyncio.create_task(
+                        self._run_rest_phase_replay()
+                    )
+                    self._last_replay_time = now
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -712,6 +765,64 @@ class SubconsciousAgent(BaseAgent):
         except Exception as e:
             logger.error(f"[Subconscious] Error in dream sequence: {e}")
 
+    async def _run_rest_phase_replay(self) -> None:
+        """Bucket 12 (voice remediation Phase 3), items 2-3: re-score and
+        prune recent high-importance memories during idle/night, gated by
+        `is_rest_phase` rather than the 300s-silence-any-time-of-day gate
+        `_run_consolidation_pass` already has.
+
+        Deliberately reuses `apply_actr_decay` -- the existing, tested
+        archive-then-delete pipeline (`_compute_actr_decay`,
+        `_archive_and_delete_decayed_memories`) -- rather than writing a new
+        pruning path. `_run_consolidation_pass` only ever calls it on
+        memories tied to that tick's own just-consolidated dialogue; this
+        broadens the sweep to recent high-importance memories in general,
+        which is the actual gap between "consolidation exists" and "rest-
+        phase replay exists" this bucket is about.
+
+        Re-linking (re-running `_prelink_memory_entities` against each
+        candidate so a memory written before an entity it mentions existed
+        picks up that association later) reuses the exact same candidate
+        pool via `get_recent_high_importance_memories_for_relinking` --
+        deliberately the same knobs as the pruning fetch above, since this
+        is framed as one sweep with two effects, not two independent sweeps.
+        See `.agents/CONTEXT.md` for the concrete design this followed.
+        """
+        try:
+            contents = await self.memory_store.get_recent_high_importance_memory_contents(
+                limit=Config.REST_PHASE_REPLAY_LIMIT,
+                min_importance=Config.REST_PHASE_REPLAY_MIN_IMPORTANCE,
+                lookback_hours=Config.REST_PHASE_REPLAY_LOOKBACK_HOURS,
+            )
+            if not contents:
+                logger.info(
+                    "[Subconscious] Rest-phase replay: no candidates this pass."
+                )
+                return
+            await self.memory_store.apply_actr_decay(contents)
+            logger.info(
+                "[Subconscious] Rest-phase replay: re-scored/pruned %d candidate memories.",
+                len(contents),
+            )
+
+            relink_candidates = (
+                await self.memory_store.get_recent_high_importance_memories_for_relinking(
+                    limit=Config.REST_PHASE_REPLAY_LIMIT,
+                    min_importance=Config.REST_PHASE_REPLAY_MIN_IMPORTANCE,
+                    lookback_hours=Config.REST_PHASE_REPLAY_LOOKBACK_HOURS,
+                )
+            )
+            relinked = await self.memory_store.relink_memory_entities(relink_candidates)
+            logger.info(
+                "[Subconscious] Rest-phase replay: re-linked entities on %d of %d candidates.",
+                relinked,
+                len(relink_candidates),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"[Subconscious] Rest-phase replay failed: {e}")
+
     async def stop(self):
         await self._prepare_stop()
         if self._monologue_task:
@@ -729,6 +840,9 @@ class SubconsciousAgent(BaseAgent):
         if self._current_dream_task and not self._current_dream_task.done():
             self._current_dream_task.cancel()
             tasks_to_await.append(self._current_dream_task)
+        if self._current_replay_task and not self._current_replay_task.done():
+            self._current_replay_task.cancel()
+            tasks_to_await.append(self._current_replay_task)
 
         for task in tasks_to_await:
             try:

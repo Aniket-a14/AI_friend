@@ -125,6 +125,24 @@ class AppSettings(BaseSettings):
     LLM_CHAT_MODEL: str | None = None
     LLM_REFLECTION_MODEL: str | None = None
 
+    # Bucket 6.1 (voice remediation Phase 3): OllamaClient hardcoded 2048
+    # regardless of what the model actually supports, and Ollama truncates a
+    # too-long prompt *from the front* -- exactly where the system prompt and
+    # persona identity live. Both locally-pulled models comfortably exceed
+    # this: llama3.2:3b advertises a 131072 context window, qwen2.5:3b a
+    # 32768 one. 8192 is chosen, not just raised arbitrarily, from the actual
+    # KV-cache cost at the deployment ceiling (RTX 2060S, 8GB, ~6.2GB free
+    # per the remediation plan's home-gpu audit): at fp16 KV,
+    # 2*layers*kv_heads*head_dim*2 bytes/token gives ~112KB/token for
+    # llama3.2:3b (GQA, 8 kv heads) and ~36KB/token for qwen2.5:3b (GQA, 2 kv
+    # heads) -- i.e. ~0.9GB and ~0.3GB respectively at this ceiling, leaving
+    # ample headroom next to a ~2GB Q4 weight footprint. This is a computed
+    # budget, not a live measurement; the eval harness (`evals/`) already
+    # pins 8192 independently for the same reason. Configurable because the
+    # right number depends on the deployment's actual free VRAM, which this
+    # file cannot know.
+    LLM_NUM_CTX: int = 8192
+
     LLM_STREAM_MAX_SECONDS: int = 120
     LLM_INTENT_CLASSIFICATION_ENABLED: bool = True
 
@@ -162,7 +180,40 @@ class AppSettings(BaseSettings):
     MEASURE_TRACE_FULL_PROMPTS: bool = False
 
     REFLECTION_ENABLED: bool = True
-    REFLECTION_MIN_INTERVAL_SECONDS: float = 0.0
+    # Bucket 12 (voice remediation Phase 3): this gated `ReflectionService.
+    # trigger_reflection` at zero, i.e. not at all -- the only thing
+    # stopping back-to-back reflection passes during a fast-paced
+    # conversation was `is_reflecting` (a busy-flag, not a cooldown), so a
+    # new multi-LLM-call reflection pass could start on the very next turn
+    # the instant the previous one finished. This is the event-triggered
+    # path from `cognitive/core.py` ("reflection_needed" after every turn,
+    # and after every proactive message) -- distinct from
+    # `subconscious_agent.py`'s separate idle-consolidation sweep, which
+    # already has its own 300s user-silence gate upstream in
+    # `_on_system_tick` and is unaffected by this constant. 30s is long
+    # enough that rapid-fire turns don't each spawn their own reflection
+    # pass, short enough that a real conversation still gets reflected on
+    # several times a minute when warranted. Tests pin this back to 0 via
+    # `conftest.py`'s `enforce_test_config` for determinism -- see that
+    # fixture's own comment.
+    REFLECTION_MIN_INTERVAL_SECONDS: float = 30.0
+
+    # Bucket 12 (voice remediation Phase 3), items 2-3: a third, independent
+    # gate from the two above -- REFLECTION_MIN_INTERVAL_SECONDS throttles
+    # per-turn reflection, the 300s constant upstream of `_run_consolidation_
+    # pass` gates that pass on silence alone (any time of day), and this
+    # gates a *separate* sweep (`SubconsciousAgent._run_rest_phase_replay`)
+    # that only runs when `is_rest_phase` says the agent is both idle AND
+    # (night OR fatigue > 0.8) -- reusing the existing dream gate's fatigue
+    # threshold rather than inventing a second one. 1800s (30 minutes) keeps
+    # a long rest period from re-scoring the same candidates every 5s tick
+    # without meaningfully delaying a real overnight consolidation window.
+    REST_PHASE_REPLAY_INTERVAL_SECONDS: float = 1800.0
+    # How many recent high-importance memories one rest-phase sweep samples
+    # for re-scoring/pruning via the existing `apply_actr_decay` pipeline.
+    REST_PHASE_REPLAY_LIMIT: int = 20
+    REST_PHASE_REPLAY_MIN_IMPORTANCE: float = 0.5
+    REST_PHASE_REPLAY_LOOKBACK_HOURS: int = 168  # 7 days
 
     PROACTIVE_ENABLED: bool = True
     PROACTIVE_IDLE_THRESHOLD_SECONDS: float = 7200.0
@@ -244,6 +295,18 @@ class AppSettings(BaseSettings):
     # probe the real path rather than mere process liveness (see finding E1).
     VISION_HEALTH_FILE: str = "/tmp/vision_agent_healthy"  # nosec B108 - same as SQLITE_FALLBACK_HEALTH_FILE above
 
+    # Bucket 13 (voice remediation Phase 3): the CPU-only facial reflex
+    # channel (app/vision/reflex.py). Deliberately independent of
+    # VLM_ENABLED/VISION_SUSPEND_DURING_TURN -- it costs zero VRAM and is the
+    # whole point of sampling continuously, including mid-turn, so it must
+    # not inherit the VLM's contention-driven suspend policy.
+    FACIAL_REFLEX_ENABLED: bool = True
+    # Empty means "resolve relative to app/vision/agent.py's own location" --
+    # see VisionAgent.__init__ -- not the process cwd, per this project's own
+    # hard-learned lesson (the persona path-resolution bug) about relative
+    # paths resolving differently across deployment entry points.
+    FACIAL_REFLEX_MODEL_PATH: str = ""
+
     # P1-7: measured (this repo's audit/) that two resident 3B models roughly
     # halve each other's decode rate on one GPU/one Ollama endpoint -- the
     # VLM and the conversational LLM otherwise contend on every turn. Since
@@ -306,15 +369,30 @@ class AppSettings(BaseSettings):
 
     # Half-life of a phasic hormone burst, in seconds. Real phasic bursts last
     # only hundreds of milliseconds; these are the *felt* afterglow at
-    # conversational timescale, so both are deliberately much slower than
-    # biology and much faster than the ALMA mood decay (PSYCH_LAMBDA_DECAY,
+    # conversational timescale, so both are deliberately much slower than that
+    # onset speed and much faster than the ALMA mood decay (PSYCH_LAMBDA_DECAY,
     # hours). These are now only the
     # *defaults* a PersonaProfile inherits when a persona file does not name
     # them (see app/persona/profile.py); AgentState reads the persona's values,
     # not these. Cortisol's is the longer of the two deliberately: an acute
     # stress response outlasts a reward burst.
+    #
+    # Bucket 11 (voice remediation Phase 3): cortisol's decay-once-released
+    # rate is a separate question from that onset-speed compression above,
+    # and 600s (10 minutes) was 6-9x faster than measured human cortisol
+    # plasma half-life (~66-90 minutes) -- a fright stopped colouring
+    # behaviour within about 20 minutes. Raised to 4500s (75 minutes, the
+    # midpoint of that range); the 7200s persona-profile ceiling already
+    # permitted this, only the default moved.
     DOPAMINE_PHASIC_HALFLIFE_S: float = 90.0
-    CORTISOL_PHASIC_HALFLIFE_S: float = 600.0
+    CORTISOL_PHASIC_HALFLIFE_S: float = 4500.0
+    # Bucket 11 (voice remediation Phase 3, item 2): adrenaline sits between
+    # dopamine's 90s and cortisol's 4500s on purpose -- it governs the most
+    # conversationally visible responses (startle, being interrupted, shock),
+    # which fade over minutes, not the ~90s of a reward glow or the ~75min
+    # hangover of an acute stress response. 120s is the low end of the plan's
+    # own "1-3 min timescale" for this channel.
+    ADRENALINE_PHASIC_HALFLIFE_S: float = 120.0
 
     STT_MODEL_SIZE: str = "base"
     STT_DEVICE: str = "cpu"
@@ -372,6 +450,7 @@ class AppSettings(BaseSettings):
     _POSITIVE_FLOAT_FIELDS = (
         "DOPAMINE_PHASIC_HALFLIFE_S",
         "CORTISOL_PHASIC_HALFLIFE_S",
+        "ADRENALINE_PHASIC_HALFLIFE_S",
         "TOKEN_RATE_LIMIT_WINDOW_SECONDS",
         "LLM_STREAM_MAX_SECONDS",
     )
@@ -503,6 +582,13 @@ class AppSettings(BaseSettings):
     def validate_embedding_batch_size(cls, v: int) -> int:
         if v <= 0:
             raise ValueError("EMBEDDING_BATCH_SIZE must be positive")
+        return v
+
+    @field_validator("LLM_NUM_CTX")
+    @classmethod
+    def validate_llm_num_ctx(cls, v: int) -> int:
+        if v < 4:
+            raise ValueError("LLM_NUM_CTX must be at least 4")
         return v
 
     @field_validator("VISUAL_SCREEN_TRACE_TTL_H")

@@ -98,7 +98,7 @@ class OllamaClient:
             "top_p": 0.9,
             "num_predict": num_predict,
             "num_thread": 6,
-            "num_ctx": 2048,
+            "num_ctx": Config.LLM_NUM_CTX,
         }
         if options_override:
             options.update(options_override)

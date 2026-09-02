@@ -59,6 +59,52 @@ async def test_persona_evolution_adaptive(sample_personality, sample_history):
             )
 
 
+@pytest.mark.asyncio
+async def test_evolve_persona_rejects_a_bare_language_name_as_speaking_style(
+    sample_personality, sample_history
+):
+    """A weak reflection model has been observed writing the literal name of
+    a language ("Hinglish") into speaking_style instead of an actual
+    description of how someone talks (.agents/CONTEXT.md's Bucket 7 entry).
+    Persisting it would leave every future prompt describing this friend's
+    voice as a bare noun with no descriptive content -- truncation alone
+    (MAX_STYLE_DESCRIPTION) never catches this, since the string is short and
+    perfectly valid. Must be rejected, leaving the prior value in place.
+    """
+    with patch("builtins.open", mock_open()):
+        with patch("os.path.exists", return_value=True):
+            manager = IdentityManager(base_path="/fake/path", persona_file=None)
+            manager.personality = sample_personality
+            manager.history = sample_history
+            original_style = dict(manager.persona.speaking_style)
+
+            await manager.evolve_persona({"speaking_style": "Hinglish"})
+
+            assert manager.persona.speaking_style == original_style
+
+
+@pytest.mark.asyncio
+async def test_evolve_persona_rejects_non_latin_speaking_style(
+    sample_personality, sample_history
+):
+    """A weak reflection model has been observed writing CJK fragments into
+    speaking_style on a persona authored entirely in English
+    (.agents/CONTEXT.md's Bucket 7 entry) -- a language leak that truncation
+    alone never catches, since the string is perfectly valid. Must be
+    rejected rather than persisted.
+    """
+    with patch("builtins.open", mock_open()):
+        with patch("os.path.exists", return_value=True):
+            manager = IdentityManager(base_path="/fake/path", persona_file=None)
+            manager.personality = sample_personality
+            manager.history = sample_history
+            original_style = dict(manager.persona.speaking_style)
+
+            await manager.evolve_persona({"speaking_style": "更加放松和随意"})
+
+            assert manager.persona.speaking_style == original_style
+
+
 def test_persona_prompt_generation(sample_personality, sample_history):
     """The prompt must reflect the personality the manager actually loaded.
 

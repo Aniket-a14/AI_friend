@@ -201,6 +201,7 @@ class TestEndocrineOllamaIntegration:
     """Verify OllamaClient correctly merges options_override into payload."""
 
     def test_options_override_merges_with_defaults(self):
+        from app.config import Config
         from app.llm.ollama_client import OllamaClient
 
         client = OllamaClient()
@@ -219,7 +220,10 @@ class TestEndocrineOllamaIntegration:
         assert payload["options"]["top_p"] == 0.7
         # Default values should still be present
         assert payload["options"]["num_thread"] == 6
-        assert payload["options"]["num_ctx"] == 2048
+        # Bucket 6.1: num_ctx now comes from Config.LLM_NUM_CTX, not a
+        # hardcoded 2048 -- assert against the config value itself so this
+        # test doesn't silently rot if the default is retuned again later.
+        assert payload["options"]["num_ctx"] == Config.LLM_NUM_CTX
 
     def test_no_override_preserves_defaults(self):
         from app.llm.ollama_client import OllamaClient

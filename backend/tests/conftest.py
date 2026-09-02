@@ -497,16 +497,59 @@ def enforce_test_config():
     original_classifier = Config.LLM_INTENT_CLASSIFICATION_ENABLED
     original_interval = Config.REFLECTION_MIN_INTERVAL_SECONDS
     original_enabled = Config.REFLECTION_ENABLED
+    original_facial_reflex = Config.FACIAL_REFLEX_ENABLED
 
     Config.LLM_INTENT_CLASSIFICATION_ENABLED = True
     Config.REFLECTION_MIN_INTERVAL_SECONDS = 0
     Config.REFLECTION_ENABLED = True
+    # Off by default for the same reason VLM/reflection knobs are pinned
+    # here: `VisionAgent()` would otherwise load a real ~3.7MB MediaPipe
+    # model from disk on every construction across the whole suite whenever
+    # a developer machine happens to have it downloaded (models/ is
+    # gitignored, so CI never does) -- tests that actually exercise this
+    # wiring (test_vision.py::TestVisionAgentFacialReflex) monkeypatch it
+    # back on explicitly.
+    Config.FACIAL_REFLEX_ENABLED = False
 
     yield
 
     Config.LLM_INTENT_CLASSIFICATION_ENABLED = original_classifier
     Config.REFLECTION_MIN_INTERVAL_SECONDS = original_interval
     Config.REFLECTION_ENABLED = original_enabled
+    Config.FACIAL_REFLEX_ENABLED = original_facial_reflex
+
+
+@pytest.fixture(autouse=True)
+def _shutdown_leaked_subject_metrics_threads():
+    """`SubjectMetrics.__init__` (app/metrics.py) unconditionally starts a
+    real daemon `threading.Thread` and nothing joins it unless the owning
+    object's `.stop()`/`.shutdown()` is called explicitly -- easy to forget
+    in a unit test that only exercises one method. Measured mid-suite: 211
+    live OS threads in one pytest process, each waking every 50ms forever,
+    which starves the GIL/scheduler and inflates wall-clock time for every
+    other test without raising CPU time (a run showed ~20 minutes elapsed
+    against ~2 minutes of actual CPU time). `.shutdown()` is idempotent, so
+    calling it here even when a test already shut its instance down is safe.
+    """
+    from app.metrics import SubjectMetrics
+
+    instances: list[SubjectMetrics] = []
+    original_init = SubjectMetrics.__init__
+
+    def _tracked_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        instances.append(self)
+
+    SubjectMetrics.__init__ = _tracked_init
+    try:
+        yield
+    finally:
+        SubjectMetrics.__init__ = original_init
+        for instance in instances:
+            try:
+                instance.shutdown()
+            except Exception:
+                pass
 
 
 def pytest_sessionfinish(session, exitstatus):

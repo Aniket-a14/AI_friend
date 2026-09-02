@@ -193,6 +193,24 @@ begin
       + 1.5 * coalesce(m.importance_score, 0.5)
       + 0.15 * (1.0 - sqrt(power(coalesce(m.valence, 0.0) - p_current_valence, 2) + power(coalesce(m.emotional_weight, 0.0) - p_current_arousal, 2)))
 
+      -- Bucket 9 (voice remediation Phase 3) spacing effect: rewards a
+      -- memory whose repeat recalls were spread out over time (spaced
+      -- practice) over one recalled the same number of times in a burst
+      -- (massed practice). Mirrors `MemoryStore._spacing_hours`/
+      -- `_base_activation` exactly (ACTR_SPACING_WEIGHT = 0.15) -- this SQL
+      -- fast path must not silently diverge from the Python fallback path's
+      -- scoring for the same memories.
+      + case
+          when m.recall_count >= 2
+            and m.created_at is not null
+            and m.last_recalled_at is not null
+            and extract(epoch from (coalesce(m.last_recalled_at, now_ts) - m.created_at)) > 0
+          then 0.15 * ln(
+            (extract(epoch from (coalesce(m.last_recalled_at, now_ts) - m.created_at)) / 3600.0 / m.recall_count) + 1
+          )
+          else 0.0
+        end
+
       -- Spreading Activation (Similarity with neuromodulatory gating)
       -- spread_weight * similarity * (1.0 + 0.1 * valence * emotional_weight - 0.2 * current_arousal * current_cortisol)
       + p_spread_weight * (1.0 - (m.embedding <=> query_embedding)) * (
@@ -213,6 +231,16 @@ begin
         - p_decay_rate * ln(greatest(0.001, extract(epoch from (now_ts - coalesce(m.last_recalled_at, now_ts))) / 3600.0) + 1)
         + 1.5 * coalesce(m.importance_score, 0.5)
         + 0.15 * (1.0 - sqrt(power(coalesce(m.valence, 0.0) - p_current_valence, 2) + power(coalesce(m.emotional_weight, 0.0) - p_current_arousal, 2)))
+        + case
+            when m.recall_count >= 2
+              and m.created_at is not null
+              and m.last_recalled_at is not null
+              and extract(epoch from (coalesce(m.last_recalled_at, now_ts) - m.created_at)) > 0
+            then 0.15 * ln(
+              (extract(epoch from (coalesce(m.last_recalled_at, now_ts) - m.created_at)) / 3600.0 / m.recall_count) + 1
+            )
+            else 0.0
+          end
         + p_spread_weight * (1.0 - (m.embedding <=> query_embedding)) * (
           1.0
           + 0.1 * coalesce(m.valence, 0.0) * coalesce(m.emotional_weight, 0.0)

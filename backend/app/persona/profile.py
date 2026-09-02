@@ -58,6 +58,7 @@ not a character.
 import copy
 import json
 import logging
+import unicodedata
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
@@ -67,6 +68,64 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ..config import Config
 
 logger = logging.getLogger(__name__)
+
+# Bucket 7 (voice remediation Phase 3): corruption witnessed independently on
+# two live deployments (.agents/CONTEXT.md) -- the reflection model writing
+# CJK fragments into a persona authored entirely in English, and writing the
+# literal name of a language ("Hinglish") into speaking_style as if naming a
+# language were the same as describing how someone talks. Neither is a type
+# error (both are valid strings), so Pydantic's field validation never catches
+# either -- this is a content-level backstop for the one place adaptive
+# persona content is actually written (`learn_traits`, `evolve_persona`'s
+# speaking_style branch), not a language-identification model. It exists to
+# catch a weak reflection model degenerating into these two specific observed
+# failure shapes, not to validate or support arbitrary multilingual personas.
+_META_PLACEHOLDER_VALUES = frozenset(
+    {
+        "n/a",
+        "none",
+        "unknown",
+        "unspecified",
+        "tbd",
+        "re-evaluate",
+        "english",
+        "hindi",
+        "hinglish",
+        "chinese",
+        "spanish",
+        "french",
+        "japanese",
+        "korean",
+        "german",
+        "italian",
+        "portuguese",
+        "russian",
+        "arabic",
+    }
+)
+
+
+def is_plausible_persona_content(text: str) -> bool:
+    """Reject the two corruption shapes above: a bare language name standing
+    in for a real description, and a string that is mostly non-Latin script
+    landing in a persona authored (here) entirely in Latin script.
+
+    Not a complete defense -- no fixed heuristic can be, against a model that
+    can emit anything -- but it closes the two specific bypasses actually
+    observed in production, the same posture `OllamaClient`'s role-prefix
+    regex takes for a different corruption shape.
+    """
+    stripped = text.strip() if isinstance(text, str) else ""
+    if not stripped:
+        return False
+    if stripped.lower() in _META_PLACEHOLDER_VALUES:
+        return False
+
+    letters = [ch for ch in stripped if ch.isalpha()]
+    if not letters:
+        return False
+    non_latin = sum(1 for ch in letters if "LATIN" not in unicodedata.name(ch, ""))
+    return not non_latin / len(letters) > 0.3
 
 
 class Tier(str, Enum):
@@ -139,7 +198,25 @@ class PersonaProfile(BaseModel):
     # conversation that caused it and colours a session it has nothing to do
     # with.
     dopamine_halflife_s: float = _constitutional(default=90.0, ge=5.0, le=1800.0)
-    cortisol_halflife_s: float = _constitutional(default=600.0, ge=5.0, le=7200.0)
+    # Bucket 11 (voice remediation Phase 3): 600s (10 minutes) was 6-9x
+    # faster than measured human cortisol plasma half-life (~66-90 minutes),
+    # so a fright stopped colouring behaviour within about 20 minutes --
+    # unrealistically fast for how a real fright lingers. Raised to 4500s
+    # (75 minutes, the midpoint of that human range). Still CONSTITUTIONAL --
+    # a deployment or an authored persona is free to dial this differently,
+    # e.g. Abhipsa's authored persona.toml sets 1000s from her own described
+    # temperament -- this only changes what an unauthored deployment starts
+    # at. The 7200s ceiling already permitted this; only the default moved.
+    cortisol_halflife_s: float = _constitutional(default=4500.0, ge=5.0, le=7200.0)
+    # Bucket 11 (voice remediation Phase 3, item 2): adrenaline has no tonic
+    # term (see AgentState.adrenaline_tonic) -- it is purely reactive, firing
+    # on startle/interruption/shock rather than tracking mood continuously --
+    # so its half-life alone decides how long that reaction lingers. 120s
+    # (2 minutes) sits between dopamine's 90s and cortisol's 4500s, matching
+    # the plan's "1-3 min timescale" for this channel; bounds mirror
+    # dopamine's since both are short-timescale reactive bursts, not the
+    # hours-scale mood cortisol's ceiling has to accommodate.
+    adrenaline_halflife_s: float = _constitutional(default=120.0, ge=5.0, le=1800.0)
 
     # -- constitutional: narrative character --------------------------------
     # These were `IdentityManager`'s half of the persona, read straight out of
@@ -249,7 +326,11 @@ class PersonaProfile(BaseModel):
         """
         merged = list(self.adaptive_traits)
         for trait in new_traits or []:
-            if trait and trait not in merged:
+            if (
+                trait
+                and trait not in merged
+                and is_plausible_persona_content(trait)
+            ):
                 merged.append(trait)
         self.adaptive_traits = merged[-self.adaptive_trait_limit() :]
         return list(self.adaptive_traits)
@@ -284,7 +365,10 @@ class PersonaProfile(BaseModel):
             "attachment_growth_rate": getattr(Config, "PSYCH_EPSILON", 0.03),
             "mood_decay_rate": getattr(Config, "PSYCH_LAMBDA_DECAY", 0.05),
             "dopamine_halflife_s": getattr(Config, "DOPAMINE_PHASIC_HALFLIFE_S", 90.0),
-            "cortisol_halflife_s": getattr(Config, "CORTISOL_PHASIC_HALFLIFE_S", 600.0),
+            "cortisol_halflife_s": getattr(Config, "CORTISOL_PHASIC_HALFLIFE_S", 4500.0),
+            "adrenaline_halflife_s": getattr(
+                Config, "ADRENALINE_PHASIC_HALFLIFE_S", 120.0
+            ),
         }
         return cls._clamped(raw, origin="Config")
 
@@ -487,6 +571,7 @@ class PersonaProfile(BaseModel):
         return {
             "dopamine_halflife_s": self.dopamine_halflife_s,
             "cortisol_halflife_s": self.cortisol_halflife_s,
+            "adrenaline_halflife_s": self.adrenaline_halflife_s,
         }
 
     def baseline_affect(self) -> dict[str, float]:

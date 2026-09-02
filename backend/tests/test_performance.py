@@ -491,10 +491,13 @@ def test_affective_prosody_mapping_benchmark(benchmark):
         arousal = 0.8
         dominance = 0.4
         fatigue = 0.0
+        cortisol = 0.2
+        dopamine = 0.5
+        adrenaline = 0.0
 
         # Call production Rust PyO3 implementation for prosody trajectory generation
         trajectory = cognitive_rust.generate_apra_trajectory(
-            pleasure, arousal, dominance, fatigue
+            pleasure, arousal, dominance, fatigue, cortisol, dopamine, adrenaline
         )
         return trajectory
 

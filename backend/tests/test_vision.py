@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.contracts import Topics, VisionDescription
+from app.contracts import FacialReflexEvent, Topics, VisionDescription
 from app.vision.agent import VisionAgent
 from app.vision.appraisal import VisualAppraisalService
 
@@ -619,3 +619,318 @@ class TestVisionAgent:
         }
         assert policies[Topics.CHAT_INPUT] == "new"
         assert policies[Topics.CHAT_OUTPUT] == "new"
+
+
+class _FakeBlendshapeCategory:
+    def __init__(self, category_name: str, score: float):
+        self.category_name = category_name
+        self.score = score
+
+
+class _FakeFaceLandmarkerResult:
+    """Stands in for `mediapipe.tasks.python.vision.FaceLandmarkerResult` --
+    `reflex.py::score_blendshapes` only ever needs `{name: score}`, but the
+    real object nests `Category` instances one list of lists deep."""
+
+    def __init__(self, blendshapes: dict[str, float] | None):
+        if blendshapes is None:
+            self.face_blendshapes = []
+        else:
+            self.face_blendshapes = [
+                [_FakeBlendshapeCategory(name, score) for name, score in blendshapes.items()]
+            ]
+
+
+class TestVisionAgentFacialReflex:
+    """Bucket 13 (voice remediation Phase 3): the CPU-only facial reflex
+    channel's live wiring -- `reflex.py`'s scoring logic already has its own
+    dedicated unit tests (`test_facial_reflex.py`) with no MediaPipe
+    involved at all; these test the part that logic can't reach on its
+    own -- decoding a real frame, calling a (mocked) Face Landmarker, and
+    publishing the result to the mesh.
+    """
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.mp")
+    @patch("app.vision.agent.cv2")
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_publishes_a_facial_reflex_event_for_a_detected_smile(
+        self, mock_camera_cls, mock_screen_cls, mock_cv2, mock_mp
+    ):
+        """cv2/mp are mocked here (not just the landmarker) because CI never
+        installs opencv-python/mediapipe -- requirements-ai.txt is optional
+        and only requirements-dev.txt runs in CI -- so both are genuinely
+        `None` there. Without this, `cv2.imdecode`/`mp.Image` raise inside
+        `_run_facial_reflex`'s own try/except, get silently swallowed, and
+        this test passes for the wrong reason (a caught crash) until the
+        assertion below catches the missing publish."""
+        agent = VisionAgent()
+        agent.source = "camera"
+        agent.publish = AsyncMock()
+        agent._face_landmarker = MagicMock()
+        agent._face_landmarker.detect.return_value = _FakeFaceLandmarkerResult(
+            {"mouthSmileLeft": 0.9, "mouthSmileRight": 0.9}
+        )
+
+        await agent._run_facial_reflex(_real_jpeg_frame_b64())
+
+        agent.publish.assert_awaited_once()
+        topic, payload = agent.publish.await_args.args
+        assert topic == Topics.VISION_FACIAL_REFLEX
+        event = FacialReflexEvent.model_validate(payload)
+        assert event.name == "smile"
+        assert event.valence_delta > 0.0
+        assert event.source == "camera"
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.mp")
+    @patch("app.vision.agent.cv2")
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_publishes_nothing_when_no_face_is_detected(
+        self, mock_camera_cls, mock_screen_cls, mock_cv2, mock_mp
+    ):
+        agent = VisionAgent()
+        agent.publish = AsyncMock()
+        agent._face_landmarker = MagicMock()
+        agent._face_landmarker.detect.return_value = _FakeFaceLandmarkerResult(None)
+
+        await agent._run_facial_reflex(_real_jpeg_frame_b64())
+
+        agent.publish.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.mp")
+    @patch("app.vision.agent.cv2")
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_publishes_nothing_for_a_calm_face_below_every_threshold(
+        self, mock_camera_cls, mock_screen_cls, mock_cv2, mock_mp
+    ):
+        """A detected face with no expression crossing any of `reflex.py`'s
+        thresholds must produce silence, not a zero-delta event -- the same
+        absence-guard `apply_facial_reflex` itself already enforces."""
+        agent = VisionAgent()
+        agent.publish = AsyncMock()
+        agent._face_landmarker = MagicMock()
+        agent._face_landmarker.detect.return_value = _FakeFaceLandmarkerResult(
+            {"mouthSmileLeft": 0.01, "mouthSmileRight": 0.01, "jawOpen": 0.02}
+        )
+
+        await agent._run_facial_reflex(_real_jpeg_frame_b64())
+
+        agent.publish.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_an_undecodable_frame_is_handled_without_raising(
+        self, mock_camera_cls, mock_screen_cls
+    ):
+        """A corrupt or partial frame must degrade to 'nothing published',
+        the same posture every other capture-path failure in this agent
+        takes -- never propagate out of the capture loop."""
+        agent = VisionAgent()
+        agent.publish = AsyncMock()
+        agent._face_landmarker = MagicMock()
+
+        import base64
+
+        garbage_b64 = base64.b64encode(b"not a jpeg at all").decode("utf-8")
+
+        await agent._run_facial_reflex(garbage_b64)  # must not raise
+
+        agent.publish.assert_not_awaited()
+        agent._face_landmarker.detect.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.mp")
+    @patch("app.vision.agent.cv2")
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_repeated_onsets_within_the_refractory_window_fire_once(
+        self, mock_camera_cls, mock_screen_cls, mock_cv2, mock_mp
+    ):
+        """The tracker is per-agent-instance state, held across calls -- a
+        held smile across several capture ticks must not re-fire until
+        `reflex.REFRACTORY_SECONDS` has actually elapsed."""
+        agent = VisionAgent()
+        agent.source = "camera"
+        agent.publish = AsyncMock()
+        agent._face_landmarker = MagicMock()
+        agent._face_landmarker.detect.return_value = _FakeFaceLandmarkerResult(
+            {"mouthSmileLeft": 0.9, "mouthSmileRight": 0.9}
+        )
+
+        frame = _real_jpeg_frame_b64()
+        await agent._run_facial_reflex(frame)
+        await agent._run_facial_reflex(frame)
+
+        agent.publish.assert_awaited_once()
+
+    # ---------------------------------------------------------------- capture-loop gating
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_capture_loop_runs_facial_reflex_in_camera_mode(
+        self, mock_camera_cls, mock_screen_cls
+    ):
+        agent = VisionAgent(fps=1000.0)  # near-zero sleep so the test is fast
+        agent.source = "camera"
+        agent.vlm_enabled = False
+        agent.running = True
+        agent.publish = AsyncMock()
+        agent._face_landmarker = MagicMock()
+        agent._run_facial_reflex = AsyncMock()
+
+        def _one_frame_then_stop(*args, **kwargs):
+            agent.running = False
+            return b"fake-jpeg-bytes"
+
+        agent.camera.capture_frame = MagicMock(side_effect=_one_frame_then_stop)
+
+        await agent._capture_loop()
+
+        agent._run_facial_reflex.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_capture_loop_skips_facial_reflex_in_screen_mode(
+        self, mock_camera_cls, mock_screen_cls
+    ):
+        """A screen capture has no face to score -- must be skipped rather
+        than spending CPU on a detection that can never fire."""
+        agent = VisionAgent(fps=1000.0)
+        agent.source = "screen"
+        agent.vlm_enabled = False
+        agent.running = True
+        agent.publish = AsyncMock()
+        agent._face_landmarker = MagicMock()
+        agent._run_facial_reflex = AsyncMock()
+
+        def _one_frame_then_stop(*args, **kwargs):
+            agent.running = False
+            return b"fake-jpeg-bytes"
+
+        agent.screen.capture_frame = MagicMock(side_effect=_one_frame_then_stop)
+
+        await agent._capture_loop()
+
+        agent._run_facial_reflex.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    async def test_capture_loop_skips_facial_reflex_when_no_landmarker_loaded(
+        self, mock_camera_cls, mock_screen_cls
+    ):
+        """mediapipe missing, or the model file not found -- either way
+        `_face_landmarker` stays None and the capture loop must not attempt
+        to call it."""
+        agent = VisionAgent(fps=1000.0)
+        agent.source = "camera"
+        agent.vlm_enabled = False
+        agent.running = True
+        agent.publish = AsyncMock()
+        agent._face_landmarker = None
+        agent._run_facial_reflex = AsyncMock()
+
+        def _one_frame_then_stop(*args, **kwargs):
+            agent.running = False
+            return b"fake-jpeg-bytes"
+
+        agent.camera.capture_frame = MagicMock(side_effect=_one_frame_then_stop)
+
+        await agent._capture_loop()
+
+        agent._run_facial_reflex.assert_not_awaited()
+
+    # ---------------------------------------------------------------- __init__ wiring
+
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    def test_landmarker_stays_none_when_the_model_file_is_missing(
+        self, mock_camera_cls, mock_screen_cls, tmp_path, monkeypatch
+    ):
+        """The model asset (~3.7MB) is gitignored and not fetched by a
+        fresh clone -- startup must degrade to 'reflex channel disabled',
+        never fail agent construction entirely."""
+        from app.config import Config
+
+        monkeypatch.setattr(Config, "FACIAL_REFLEX_ENABLED", True)
+        monkeypatch.setattr(
+            Config, "FACIAL_REFLEX_MODEL_PATH", str(tmp_path / "does_not_exist.task")
+        )
+
+        agent = VisionAgent()
+
+        assert agent._face_landmarker is None
+
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    def test_landmarker_stays_none_when_the_feature_is_disabled(
+        self, mock_camera_cls, mock_screen_cls, tmp_path, monkeypatch
+    ):
+        from app.config import Config
+
+        model_path = tmp_path / "face_landmarker.task"
+        model_path.write_bytes(b"not a real model, just needs to exist")
+        monkeypatch.setattr(Config, "FACIAL_REFLEX_MODEL_PATH", str(model_path))
+        monkeypatch.setattr(Config, "FACIAL_REFLEX_ENABLED", False)
+
+        agent = VisionAgent()
+
+        assert agent._face_landmarker is None
+
+    @patch("app.vision.agent.mp_vision", None)
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    def test_landmarker_stays_none_when_mediapipe_is_not_installed(
+        self, mock_camera_cls, mock_screen_cls, tmp_path, monkeypatch
+    ):
+        from app.config import Config
+
+        model_path = tmp_path / "face_landmarker.task"
+        model_path.write_bytes(b"not a real model, just needs to exist")
+        monkeypatch.setattr(Config, "FACIAL_REFLEX_ENABLED", True)
+        monkeypatch.setattr(Config, "FACIAL_REFLEX_MODEL_PATH", str(model_path))
+
+        agent = VisionAgent()
+
+        assert agent._face_landmarker is None
+
+    @patch("app.vision.agent.ScreenLink")
+    @patch("app.vision.agent.CameraLink")
+    def test_landmarker_is_built_when_the_model_file_exists(
+        self, mock_camera_cls, mock_screen_cls, tmp_path, monkeypatch
+    ):
+        """Wiring only -- does not load a real model (slow, and the real
+        asset isn't present in CI). `mp_tasks`/`mp_vision` are replaced
+        wholesale, not just `create_from_options`, because CI never installs
+        mediapipe at all (it's in requirements-ai.txt, an optional extra;
+        only requirements-dev.txt runs in CI) -- both are genuinely `None`
+        there, so patching only one attribute off a `None` module would
+        itself raise `AttributeError` before the mock ever applied. This
+        proves the constructor path is reached with the right arguments,
+        not that mediapipe can parse the file."""
+        from app.config import Config
+
+        model_path = tmp_path / "face_landmarker.task"
+        model_path.write_bytes(b"not a real model, just needs to exist")
+        monkeypatch.setattr(Config, "FACIAL_REFLEX_ENABLED", True)
+        monkeypatch.setattr(Config, "FACIAL_REFLEX_MODEL_PATH", str(model_path))
+
+        sentinel = MagicMock()
+        mock_mp_vision = MagicMock()
+        mock_mp_vision.FaceLandmarker.create_from_options.return_value = sentinel
+        mock_mp_tasks = MagicMock()
+        with (
+            patch("app.vision.agent.mp_tasks", mock_mp_tasks),
+            patch("app.vision.agent.mp_vision", mock_mp_vision),
+        ):
+            agent = VisionAgent(facial_reflex_model_path=model_path)
+
+        assert agent._face_landmarker is sentinel

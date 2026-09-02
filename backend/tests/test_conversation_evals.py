@@ -373,15 +373,20 @@ class TestTheShippedPack:
 class TestTheContextWindowIsAccountedFor:
     """The quietest way this harness could produce a wrong published number.
 
-    `OllamaClient` defaults num_ctx to 2048 and Ollama truncates an over-long
-    prompt from the *front* -- which for a recall probe is exactly where the
-    planted fact sits. Without this accounting, a 240-turn probe would report a
-    clean failure that says nothing about the model's memory, because the model
-    never received the fact at all.
+    Ollama truncates an over-long prompt from the *front* -- which for a
+    recall probe is exactly where the planted fact sits. Without this
+    accounting, a 240-turn probe would report a clean failure that says
+    nothing about the model's memory, because the model never received the
+    fact at all. The harness pins `num_ctx` explicitly rather than trusting
+    `OllamaClient`'s own default (`Config.LLM_NUM_CTX`, 8192 as of Bucket
+    6.1) precisely so this accounting can't be silently invalidated by a
+    future deployment-config change.
     """
 
     def test_num_ctx_is_pinned_rather_than_inherited(self):
-        """Leaving it unset silently caps every probe at 2048 tokens."""
+        """Leaving it unset would tie every probe's fit budget to whatever
+        Config.LLM_NUM_CTX happens to be in the deployment running the
+        harness, instead of a value the report can vouch for on its own."""
         assert RunOptions().num_ctx >= 8192
         assert "num_ctx" in RunOptions().as_override()
 

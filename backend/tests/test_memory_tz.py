@@ -43,6 +43,39 @@ class TestAsAwareUtc:
         assert delta.total_seconds() == 2 * 3600
 
 
+class TestParseQdrantCreatedAt:
+    """Two write paths feed this field two different shapes:
+    `_upsert_qdrant_memory` writes a numeric epoch string, but
+    `_build_promotion_payload` (a promoted archived row) writes
+    `created_at.isoformat()` -- an ISO-8601 string. Without handling both,
+    every promoted memory's real creation time silently falls back to
+    `current_time`/`now()`, corrupting `_spacing_hours` for exactly the
+    memories old enough to have been promoted at all."""
+
+    def test_numeric_epoch_string_is_parsed(self):
+        dt = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
+        out = MemoryStore._parse_qdrant_created_at(
+            str(dt.timestamp()), current_time=None
+        )
+        assert out == dt
+
+    def test_iso_8601_string_from_the_promotion_path_is_parsed(self):
+        dt = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
+        out = MemoryStore._parse_qdrant_created_at(dt.isoformat(), current_time=None)
+        assert out == dt
+
+    def test_missing_value_falls_back_to_current_time(self):
+        current_time = datetime(2026, 6, 1, tzinfo=UTC)
+        assert (
+            MemoryStore._parse_qdrant_created_at(None, current_time) == current_time
+        )
+
+    def test_unparseable_value_falls_back_to_current_time_not_epoch_zero(self):
+        current_time = datetime(2026, 6, 1, tzinfo=UTC)
+        out = MemoryStore._parse_qdrant_created_at("not a timestamp", current_time)
+        assert out == current_time
+
+
 _SCHEMA = """
     CREATE TABLE IF NOT EXISTS memories (
         id TEXT PRIMARY KEY, content TEXT, raw_content TEXT, wing TEXT, room TEXT,

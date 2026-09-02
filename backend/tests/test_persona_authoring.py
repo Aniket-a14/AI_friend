@@ -280,6 +280,74 @@ def test_discovery_finds_the_repository_persona_file():
     assert read_persona_file(found), "the shipped file must parse"
 
 
+def test_an_explicit_relative_path_is_found_regardless_of_the_process_cwd(
+    tmp_path, monkeypatch
+):
+    """`Config.PERSONA_PROFILE_PATH` is typically relative
+    (`personal/persona.toml`), and `create_friend.py` always writes to an
+    absolute, repo-root-anchored path. If an explicit relative path were
+    resolved against the current working directory instead of walked up from
+    this module like the no-argument default is, the wizard's file would
+    silently never be found by any process that `cd`s into `backend/` first —
+    which every documented command in this repo does.
+    """
+    from pathlib import Path
+
+    marker_name = "test_explicit_relative_marker.toml"
+    real_location = Path(__file__).resolve().parents[1] / marker_name
+    real_location.write_text('name = "Findable"\n', encoding="utf-8")
+    try:
+        monkeypatch.chdir(tmp_path)
+        found = find_persona_file(marker_name)
+        assert found is not None, (
+            "an explicit relative path must resolve the same way the default "
+            "does, not against whatever directory the process happens to be in"
+        )
+        assert found.resolve() == real_location
+    finally:
+        real_location.unlink()
+
+
+def test_an_explicit_relative_path_that_does_not_exist_anywhere_is_none(
+    tmp_path, monkeypatch
+):
+    """The walk-up must still terminate in "no file", not raise or loop."""
+    monkeypatch.chdir(tmp_path)
+    assert find_persona_file("definitely_not_a_real_persona_file.toml") is None
+
+
+def test_persona_file_search_is_bounded_at_the_repository_root():
+    """An unbounded `Path(__file__).resolve().parents` walk continues all
+    the way to the filesystem root, so a same-named file anywhere above the
+    repo (a user's home directory, say) would silently shadow the real one.
+    Mutation check: widening `_REPO_ROOT_DEPTH`, or reverting to the full
+    `.parents` walk, breaks the length/`/`-exclusion assertions below."""
+    from pathlib import Path
+
+    from app.persona import authoring as authoring_module
+
+    roots = authoring_module._bounded_search_roots()
+
+    assert Path("/") not in roots
+    assert len(roots) == authoring_module._REPO_ROOT_DEPTH + 1
+    repo_root = roots[-1]
+    assert (repo_root / "backend").is_dir()
+    assert (repo_root / ".git").exists()
+
+
+def test_an_explicit_absolute_path_is_checked_as_is_not_walked(tmp_path):
+    """Absolute paths are unaffected by the relative-path fix.
+
+    `create_friend.py` already writes an absolute path, so this branch must
+    keep behaving exactly as before: no walking, just existence.
+    """
+    missing = tmp_path / "not_here.toml"
+    assert find_persona_file(str(missing)) is None
+
+    present = _write(tmp_path)
+    assert find_persona_file(str(present)) == present
+
+
 def test_the_shipped_file_only_uses_real_settings():
     """A typo in the documented example teaches the typo.
 

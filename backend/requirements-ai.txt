@@ -15,3 +15,13 @@ mss>=10.2.0,<11.0.0
 opencv-python>=5.0.0.93,<6.0.0.0
 pillow>=12.3.0,<13.0.0
 pyautogui>=0.9.54,<1.0.0
+# Bucket 13 (voice remediation Phase 3): Face Landmarker for the CPU-only
+# facial reflex channel (app/vision/reflex.py). Pinned below 1.0 deliberately,
+# not just floored: mediapipe==1.0.1 crashes outright on this task on macOS
+# arm64 (`Check failed: service_ Service is unavailable` inside
+# TensorsToDetectionsCalculator::Open(), a Metal-graph-service init failure
+# in the face-detection subgraph that neither `delegate=CPU` nor
+# `MEDIAPIPE_DISABLE_GPU=1` avoids) -- confirmed via a real detection against
+# Google's own face_landmarker sample image; 0.10.30 runs the identical call
+# cleanly. Revisit the ceiling once a newer 1.x release is confirmed fixed.
+mediapipe>=0.10.30,<1.0.0

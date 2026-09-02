@@ -45,6 +45,29 @@ DEFAULT_PERSONA_FILE = "config/persona.toml"
 # character happened to be checked out.
 AUTO_DISCOVER = object()
 
+# `authoring.py` lives at `<repo_root>/backend/app/persona/authoring.py` --
+# index 3 in `.parents` is the repo root on every real deployment that
+# reaches this relative-path branch at all. Containers never do: their
+# compose files pin `PERSONA_PROFILE_PATH` to an absolute path specifically
+# to avoid container-internal directory discovery (see docker-compose.prod.yml's
+# own comment on this), so this bound only has to hold for a real git
+# checkout invoked directly (the documented `backend/`-launch, bare-metal
+# systemd on home-gpu, or a Mac dev run) -- never for `/app` inside a build.
+_REPO_ROOT_DEPTH = 3
+
+
+def _bounded_search_roots() -> list[Path]:
+    """Every directory this module's own ancestry could plausibly be
+    launched from, stopped at the actual repository root.
+
+    An unbounded walk up `Path(__file__).resolve().parents` continues all
+    the way to the filesystem root, so a same-named file anywhere above the
+    repo (a user's home directory, say) would silently shadow the real one
+    -- the search only ever needs to look inside this repository.
+    """
+    parents = Path(__file__).resolve().parents
+    return list(parents[: _REPO_ROOT_DEPTH + 1])
+
 
 def find_persona_file(explicit: str | None = None) -> Path | None:
     """Locate the authored persona file.
@@ -53,12 +76,29 @@ def find_persona_file(explicit: str | None = None) -> Path | None:
     directory, because the agents are launched from several places (the repo
     root, `backend/`, and a container WORKDIR) and a relative path would resolve
     differently in each — the kind of bug that only appears in one deployment.
+
+    This applies equally to `explicit` (`Config.PERSONA_PROFILE_PATH`) when it
+    is a relative path — `create_friend.py` always writes to an absolute,
+    repo-root-anchored path (`REPO_ROOT / "personal" / "persona.toml"`), so a
+    relative `PERSONA_PROFILE_PATH=personal/persona.toml` in `.env` must be
+    searched for the same way the no-argument default is, not resolved
+    against whatever the process happened to `cd` into first. Confirmed the
+    hard way: every documented command in this repo runs from `backend/`, so
+    a naive `Path(explicit).exists()` here silently never finds the file the
+    wizard just wrote, on every real deployment that follows the documented
+    workflow.
     """
     if explicit:
         path = Path(explicit)
-        return path if path.exists() else None
+        if path.is_absolute():
+            return path if path.exists() else None
+        for parent in _bounded_search_roots():
+            candidate = parent / path
+            if candidate.exists():
+                return candidate
+        return None
 
-    for parent in Path(__file__).resolve().parents:
+    for parent in _bounded_search_roots():
         candidate = parent / DEFAULT_PERSONA_FILE
         if candidate.exists():
             return candidate

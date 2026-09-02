@@ -67,10 +67,14 @@ class PinnedOptionsClient:
        `generate_stream` as `options_override`. Whatever the harness pinned
        would be silently replaced.
     2. **`generate_stream`'s own defaults are unusable for evaluation.** It
-       passes `num_predict=40` and `num_ctx=2048` when nothing overrides them
-       (`ollama_client.py:91-99`, `:206`). Forty tokens truncates most probe
-       answers mid-sentence, and 2048 is the same context ceiling that
-       `RunOptions.num_ctx` is pinned to 8192 to escape.
+       passes `num_predict=40` when nothing overrides it (`ollama_client.py:91-99`,
+       `:206`) -- forty tokens truncates most probe answers mid-sentence. `num_ctx`
+       itself no longer needs escaping the same way it did before Bucket 6.1
+       (voice remediation Phase 3): production now reads `Config.LLM_NUM_CTX`
+       (default 8192) instead of a hardcoded 2048. This wrapper still pins
+       `num_ctx` explicitly regardless, both to stay correct if that config
+       default is ever retuned again and because a harness run should never
+       depend on whatever a deployment's `.env` happens to set.
 
     So this wrapper merges the run's options *over* whatever the caller passed,
     rather than under it. Delegation is explicit (only the two generate methods

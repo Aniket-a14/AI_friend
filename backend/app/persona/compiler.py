@@ -230,6 +230,16 @@ def _infer_temperament(
         "by construction, the same asymmetry every deployment default carries",
     )
     set_field(
+        "adrenaline_halflife_s",
+        round(100 + emotional_lingering * 500, 1),
+        "emotional_lingering",
+        emotional_lingering,
+        "how long a startle/interruption/shock reaction lingers, in seconds -- by "
+        "construction (100 + 500x vs dopamine's 30 + 300x and cortisol's "
+        "200 + 1000x) this sits between the other two for every possible "
+        "emotional_lingering score, not just the default one",
+    )
+    set_field(
         "initial_trust",
         round(0.2 + openness_to_trust * 0.6, 3),
         "openness_to_trust",
