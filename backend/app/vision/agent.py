@@ -58,7 +58,7 @@ class VisionAgent(BaseAgent):
     both raw frames and semantic descriptions to the NATS mesh.
     """
 
-    def __init__(self, fps=1.0):
+    def __init__(self, fps=1.0, facial_reflex_model_path: str | Path | None = None):
         super().__init__(name="vision_agent")
         self.screen = ScreenLink()
         self.camera = CameraLink()
@@ -117,28 +117,33 @@ class VisionAgent(BaseAgent):
         # startup, matching every other optional-capture path in this file.
         self._facial_reflex_tracker = FacialReflexTracker()
         self._face_landmarker = None
-        if Config.FACIAL_REFLEX_ENABLED and mp_vision is not None:
-            model_path = Path(
-                Config.FACIAL_REFLEX_MODEL_PATH or _DEFAULT_FACE_LANDMARKER_PATH
+        facial_reflex_enabled = getattr(Config, "FACIAL_REFLEX_ENABLED", True)
+        if facial_reflex_enabled and mp_vision is not None:
+            raw_path = (
+                facial_reflex_model_path
+                or getattr(Config, "FACIAL_REFLEX_MODEL_PATH", "")
+                or _DEFAULT_FACE_LANDMARKER_PATH
             )
+            model_path = Path(raw_path)
             if model_path.exists():
                 try:
-                    base_options = mp_tasks.BaseOptions(
-                        model_asset_path=str(model_path)
-                    )
-                    landmarker_options = mp_vision.FaceLandmarkerOptions(
-                        base_options=base_options,
-                        output_face_blendshapes=True,
-                        num_faces=1,
-                        running_mode=mp_vision.RunningMode.IMAGE,
-                    )
-                    self._face_landmarker = mp_vision.FaceLandmarker.create_from_options(
-                        landmarker_options
-                    )
-                    logger.info(
-                        "[Vision] Facial reflex channel active (model: %s).",
-                        model_path,
-                    )
+                    if mp_tasks is not None:
+                        base_options = mp_tasks.BaseOptions(
+                            model_asset_path=str(model_path)
+                        )
+                        landmarker_options = mp_vision.FaceLandmarkerOptions(
+                            base_options=base_options,
+                            output_face_blendshapes=True,
+                            num_faces=1,
+                            running_mode=mp_vision.RunningMode.IMAGE,
+                        )
+                        self._face_landmarker = mp_vision.FaceLandmarker.create_from_options(
+                            landmarker_options
+                        )
+                        logger.info(
+                            "[Vision] Facial reflex channel active (model: %s).",
+                            model_path,
+                        )
                 except Exception as e:
                     logger.warning(
                         "[Vision] Could not load Face Landmarker model at %s: %s",
@@ -152,7 +157,7 @@ class VisionAgent(BaseAgent):
                     "without it).",
                     model_path,
                 )
-        elif Config.FACIAL_REFLEX_ENABLED:
+        elif facial_reflex_enabled:
             logger.info(
                 "[Vision] mediapipe not installed; facial reflex channel disabled."
             )

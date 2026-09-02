@@ -926,15 +926,11 @@ class TestVisionAgentFacialReflex:
         sentinel = MagicMock()
         mock_mp_vision = MagicMock()
         mock_mp_vision.FaceLandmarker.create_from_options.return_value = sentinel
+        mock_mp_tasks = MagicMock()
         with (
-            patch("app.vision.agent.mp_tasks", MagicMock()),
+            patch("app.vision.agent.mp_tasks", mock_mp_tasks),
             patch("app.vision.agent.mp_vision", mock_mp_vision),
         ):
-            agent = VisionAgent()
+            agent = VisionAgent(facial_reflex_model_path=model_path)
 
-        assert agent._face_landmarker is sentinel, (
-            f"DIAGNOSTIC: Config.FACIAL_REFLEX_MODEL_PATH={Config.FACIAL_REFLEX_MODEL_PATH!r} "
-            f"Config.FACIAL_REFLEX_ENABLED={Config.FACIAL_REFLEX_ENABLED!r} "
-            f"model_path={model_path!r} model_path.exists()={model_path.exists()!r} "
-            f"agent.vlm_enabled={getattr(agent, 'vlm_enabled', 'MISSING')!r}"
-        )
+        assert agent._face_landmarker is sentinel
