@@ -61,6 +61,17 @@ class SubconsciousAgent(BaseAgent):
     ):
         super().__init__(name="subconscious_agent")
         self._llm = build_llm_client(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
+        provenance = Config.LLM_PROVENANCE
+        logger.info(
+            "[Subconscious] LLM config resolved from %s (exists=%s): chat=%s fast=%s "
+            "reflection=%s url=%s",
+            provenance["env_file"],
+            provenance["env_file_exists"],
+            provenance["llm_chat_model"],
+            provenance["llm_fast_model"],
+            provenance["llm_reflection_model"],
+            provenance["ollama_url"],
+        )
         self.graph_db = graph_db or GraphDB()
         self.state_service = state_service or StateService(graph_store=self.graph_db)
         self.engine = SubconsciousEngine(llm_client=self._llm)

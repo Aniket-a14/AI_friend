@@ -13,6 +13,8 @@ agent's mood, not the model's behavior.
 """
 
 import logging
+import subprocess
+from pathlib import Path
 
 import httpx
 
@@ -31,6 +33,7 @@ from .schema import (
     CheckResult,
     EvalPath,
     EvalReport,
+    ModelSource,
     Probe,
     ProbeResult,
     RunOptions,
@@ -43,6 +46,12 @@ logger = logging.getLogger("evals.runner")
 
 EVAL_MOOD_DIRECTIVE = "Calm and neutral (evaluation run)."
 
+# evals/runner.py -> evals/ -> backend/ -> repo root. Fixed, not the process
+# cwd, for the same reason `app/config.py`'s `_env_file` isn't: an eval can be
+# launched from `backend/`, a repo-root shell, or anywhere else, and "git
+# revision" must name the same repo either way.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def _provenance() -> str:
     # Read from the live instance, not the Config metaclass, so a test that
@@ -53,6 +62,53 @@ def _provenance() -> str:
     if getattr(config_module.config_instance, "MOCK_LLM_TEXT", False):
         return "mock"
     return "live"
+
+
+def current_git_revision() -> str:
+    """Short SHA of the checkout this run executed from.
+
+    "<sha>-dirty" if the working tree carried uncommitted changes at run
+    time -- a report from a dirty tree is evidence about code that no commit
+    names, which matters exactly as much as the model tag does. "unknown" if
+    git itself is unavailable (no `.git`, no `git` binary) rather than
+    raising: like `reset_model_state`'s unload/warm-up, a report missing this
+    is worse than one that tried and said so, but a probe run must never go
+    down over a call whose only job is metadata.
+    """
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=_REPO_ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        dirty = bool(
+            subprocess.check_output(
+                ["git", "status", "--porcelain"],
+                cwd=_REPO_ROOT,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+        )
+        return f"{sha}-dirty" if dirty else sha
+    except Exception:
+        return "unknown"
+
+
+def persona_version(persona) -> str:
+    """Digest of the structured `PersonaProfile` alone -- see
+    `EvalReport.persona_version` for what this answers that
+    `system_prompt_sha256` doesn't.
+
+    Best-effort like `current_git_revision`: a caller passing something that
+    isn't a real `PersonaProfile` (a stand-in in a test, a future caller that
+    doesn't yet have one loaded) must degrade to "unknown provenance", not
+    take the whole run down over a metadata field nobody asked to gate on.
+    """
+    try:
+        return fingerprint(persona.model_dump_json())
+    except Exception:
+        return ""
 
 
 async def reset_model_state(
@@ -232,13 +288,21 @@ async def run_eval(
     # that composition would keep producing a plausible digest after the
     # composition changed, which is the failure mode a digest exists to catch.
     observed = pinned.observed_system if pinned else None
+    # Reflects the parameter this function actually received, not a guess:
+    # the CLI passes `args.model` straight through, so `model is None` here
+    # means --model genuinely was not given.
+    model_source: ModelSource = "explicit_cli" if model is not None else "harness_default"
     return EvalReport(
         model=model or client.model,
         persona_name=manager.persona.name,
         provenance=_provenance(),
         path=path,
         options=options.as_override(),
+        model_source=model_source,
+        deployment_llm_provenance=dict(config_module.config_instance.LLM_PROVENANCE),
         system_prompt_sha256=fingerprint(observed or persona_prompt),
+        persona_version=persona_version(manager.persona),
+        git_revision=current_git_revision(),
         results=results,
         by_category=summarize_by_category(results),
     )

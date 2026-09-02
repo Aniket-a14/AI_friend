@@ -15477,3 +15477,175 @@ following ceiling at 3.8B?, a prompt-construction issue in `identity.py`/`action
 regression from the Bucket 6 item 2 model swap that the swap's own eval gate didn't catch
 because its probes don't test for this?) -- that investigation is the actual next step, separate
 from and prior to any LoRA work.
+
+## 2026-09-02 -- HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0: model/config provenance made explicit
+
+`HUMANOID_ARCHITECTURE_RESEARCH.md` (a new architecture audit, not itself part of the
+16-bucket plan) named six separate model/config authorities in this repo -- `app/config.py`,
+`.env.example`, a repo-root `.env`, `docker-compose.prod.yml`'s own inline fallbacks, the
+tracked systemd units' `EnvironmentFile=`, and the eval harness's own `--model`/hardcoded
+default -- and found that no report or log ever states which one actually produced a given
+number. That is exactly the class of bug two 2026-09-02 entries above this one hit by hand
+(the persona-path cwd bug, the repo-root-vs-`backend/.env` split): each cost a manual SSH/grep
+audit to diagnose. Phase 0's fix is to make that audit unnecessary, not to consolidate the
+authorities themselves (out of scope this session, and two of them live on home-gpu,
+unreachable tonight).
+
+**Inventoried on the Mac before writing any code (see the conversation's own audit for the
+full table).** Confirmed live, no shell overrides present: `Config` resolves
+`LLM_FAST_MODEL=qwen2.5:3b`, `LLM_CHAT_MODEL=llama3.2:3b`, `LLM_REFLECTION_MODEL=llama3.2:3b`
+from the repo-root `.env` (`_env_file`, three parents up from `app/config.py`) -- matching
+`HUMANOID_ARCHITECTURE_RESEARCH.md`'s own audit exactly. Production code (`brain_agent.py`,
+`subconscious_agent.py`, `appraisal.py`, `decision.py`, `learning.py`) reads this authority
+exclusively; the eval CLI reads none of it by default, falling back instead to
+`OllamaClient._DEFAULT_MODEL` ("llama3.2:1b") whenever `--model` is omitted.
+
+**`Config.LLM_PROVENANCE`** (`app/config.py`), a new `@computed_field` alongside the existing
+`OLLAMA_REQUIRED_MODELS` one (same pattern, per F4's preference for computed fields over
+`ConfigMeta.__getattr__` logic): a snapshot dict of which `.env` file was read
+(`env_file`/`env_file_exists`) and what it resolved for `LLM_CHAT_MODEL`/`LLM_FAST_MODEL`/
+`LLM_REFLECTION_MODEL`/`LLM_NUM_CTX`/`LLM_INTENT_CLASSIFICATION_ENABLED`/`OLLAMA_URL`. Adds no
+new settings -- every value already existed as its own field; this only names their source
+together, so a caller states it instead of re-deriving it.
+
+**Visible in two places, per the ask.** Runtime: `BrainAgent.__init__` logs
+`Config.LLM_PROVENANCE` once at construction (`[Brain] LLM config resolved from <path>
+(exists=<bool>): chat=... fast=... reflection=... url=...`) -- the process's own log now
+answers the question the ledger's stale-`.env` incidents needed `/proc/<pid>/environ` for.
+Evaluation: `EvalReport` (`evals/schema.py`) gained `model_source` (`"explicit_cli"` if
+`--model` was given, `"harness_default"` if the run fell back to the client's own literal,
+`"unknown"` for reports predating the field -- computed in both `runner.run_eval` and
+`conversation.run_conversation_eval` from the same `model is not None` check the CLI's
+`args.model` already produces) and `deployment_llm_provenance` (a copy of
+`Config.LLM_PROVENANCE` taken when the run started, read via
+`config_module.config_instance.LLM_PROVENANCE` rather than the `Config` metaclass, matching
+`_provenance()`'s existing discipline so a test that patches `config_instance` is seen). The
+CLI's `run`/`run-conversation` output gained two extra lines
+(`evals/__main__.py::_provenance_lines`, split out specifically so it's testable without a
+live model) stating the source and, when present, what the deployment's own config would
+resolve to -- informational, not a gate: the caller may deliberately be testing a candidate
+model different from what's deployed, and this says so rather than flagging it as wrong.
+
+**Deliberately not built:** no change to *which* file wins where (Compose's own inline
+`llama3.2:3b` fallback, the systemd `EnvironmentFile=backend/.env`-vs-repo-root split) --
+those are separate MODIFY-tier items from the research doc's roadmap and touch home-gpu
+config this session had no access to verify against. `subconscious_agent.py` was not given
+the same startup log line (it builds an `OllamaClient` from the identical
+`Config.LLM_CHAT_MODEL` call site as `brain_agent.py`, so the gap is real but lower-priority
+than the two places actually asked for); doing so is a same-shaped follow-up, not attempted
+here so as to keep this session's diff to what was requested and tested.
+
+**Verified:** all six new/changed call sites mutation-tested one at a time (`LLM_PROVENANCE`'s
+field mapping, both `model_source` computations, `_provenance_lines`' deployment-line guard,
+and `BrainAgent`'s log level) via backup-file restore, not `git checkout --`; each mutation
+broke exactly the test(s) written for it and nothing else. 17 new tests across
+`tests/test_config_validation.py`, `tests/test_eval_harness.py`, `tests/test_conversation_evals.py`,
+and a new `tests/test_brain_agent_llm_provenance.py`. Full backend suite 1624/1624 (JUnit XML,
+not the terminal summary, per this file's own standing caveat), `ruff check .` clean.
+
+(Between this entry and the next, the working tree also picked up a matching provenance log
+line in `subconscious_agent.py` and three `LLM_*` env vars added to `docker-compose.prod.yml`'s
+`subconscious-agent` service block -- the follow-up flagged as NOT done above. Not authored in
+this session; recorded here only so the ledger doesn't understate what the branch actually
+carries.)
+
+## 2026-09-02 -- HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0 continued: persona version and git
+## revision recorded on every evaluation report
+
+Closes the remaining gap the research doc's §17 evidence table names and the prior entry left
+open: `model`, `path`, `options`, and `system_prompt_sha256` (prompt digest) were already on
+`EvalReport`, and `model_source`/`deployment_llm_provenance` (config source) landed in the prior
+entry -- `persona_version` and `git_revision` were the two still missing.
+
+**`persona_version`** (`evals/schema.py`) is a digest of `manager.persona.model_dump_json()` --
+the structured `PersonaProfile` alone, not the rendered system prompt. Deliberately a second,
+separate digest from `system_prompt_sha256` rather than a rename of it: the prompt digest also
+moves when prompt-*construction code* changes (a new instruction block, a reworded guideline) or
+when the mood directive/biography text changes, even with the authored persona untouched: this
+field isolates "did the persona itself change" from all of that. Computed via a new
+`evals/runner.py::persona_version()` helper (not inline at the two call sites, so both
+`run_eval` and `run_conversation_eval` share one definition) that wraps the digest in a
+try/except returning `""` on failure -- caught a real bug before it shipped: `test_conversation_
+evals.py`'s existing `manager` fixtures are `MagicMock()`s whose `.persona.model_dump_json()`
+returns another `MagicMock`, not a string, and `fingerprint()` raised `TypeError: object
+supporting the buffer API required` on it, taking down 4 previously-passing tests the first time
+this was wired in unguarded. The fix generalizes past that one fixture: any caller without a
+real loaded persona now gets an honest empty string rather than a crash, matching the
+"metadata collection must never take an eval run down" rule `current_git_revision` already
+established below.
+
+**`git_revision`** (`evals/runner.py::current_git_revision()`) is `git rev-parse --short HEAD`
+against the repo root (computed from `Path(__file__).resolve().parents[2]`, not the process cwd,
+same reasoning as `app/config.py`'s `_env_file` and the persona-path fix two entries back --
+an eval can be launched from `backend/`, the repo root, or elsewhere), suffixed `-dirty` if `git
+status --porcelain` is non-empty, or `"unknown"` if git itself is unavailable. Best-effort by the
+same contract as `persona_version`: wrapped in try/except, never raises.
+
+**Wired into both report constructors** (`runner.run_eval`, `conversation.run_conversation_eval`)
+and surfaced in `evals/__main__.py::_provenance_lines` as an unconditional trailing line (unlike
+the deployment-config line, this one costs nothing to compute and a report should never lack it)
+-- `git_revision=<sha> persona_version=<digest>`. Confirmed against this actual dirty checkout:
+`current_git_revision()` returned `7a42c2a-dirty`, correctly.
+
+**Verified:** all five new/changed pieces (the dirty-flag branch, the `persona_version` digest
+itself, the digest actually varying with persona content, the CLI's trailing line, and the
+conversation-path wiring) mutation-tested individually via backup-file restore, not `git checkout
+--`; each broke exactly the test(s) written for it. 9 new tests across `tests/test_eval_harness.py`
+and `tests/test_conversation_evals.py`; the 5 pre-existing provenance-line tests updated for the
+new trailing line rather than left to rot. Full backend suite 1636/1636 (JUnit XML), `ruff check
+.` clean (one import-sort fixup via `ruff --fix` on the new `.runner` import in
+`conversation.py`).
+
+**NOT done:** `state/memory fixture hash` and `raw output/post-processed output` provenance
+(also named in §17's evidence table) were out of scope for this pass -- this entry closes only
+the six items the request named (model, config source, path, options, prompt digest, persona
+version, git revision), all of which are now recorded on every report.
+
+## 2026-09-02 -- HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0 continued: the `llm`/`action` path
+## label made explicit for the conversation suite, not just carried by default
+
+`runner.run_eval`'s handling of the `llm`/`action` distinction was already solid: `path` is a
+real caller-supplied argument, `compare.py::require_same_path` refuses to diff two reports on
+different paths outright (`PathMismatch`, tested), and `render_comparison` prints an explicit
+`path:` line plus an action-path explainer. The gap was one level over: `conversation.
+run_conversation_eval` -- the multi-turn recall suite -- never took a `path` parameter and never
+set the field in its own `EvalReport(...)` call, so its reports carried `path: "llm"` only
+because that happens to be `EvalReport.path`'s schema default, the same default that exists so
+*pre-field* reports read honestly. Nothing distinguished "this suite chose llm" from "this field
+was never set." `_cmd_run_conversation`'s printed summary made it worse by omitting `path=`
+entirely, unlike `_cmd_run`'s.
+
+**Fix, three pieces, no behavior change -- `run_conversation_probe` still only ever calls
+`client.generate` directly, exactly as before; there is still no `ActionService` involvement in
+this suite and none was added:**
+
+1. `run_conversation_eval` now stamps `path="llm"` explicitly in its `EvalReport(...)` call, with
+   a new docstring explaining why: no `path` parameter exists on this function at all (unlike
+   `run_eval`), so a caller cannot even ask it for `"action"` -- the guarantee is structural, not
+   a default nobody happened to override yet.
+2. `evals/schema.py`'s `EvalReport.path` field comment now says explicitly that `run_eval` treats
+   the field as a real per-call input while `run_conversation_eval` has no `action` variant and
+   stamps `"llm"` for that reason -- so a reader of the schema alone, not just the two functions,
+   sees the asymmetry.
+3. `_cmd_run_conversation`'s summary line gained `path={report.path}`, matching `_cmd_run`'s
+   existing line verbatim, so the CLI's terminal output -- not just the saved JSON -- can no
+   longer be read without seeing which path produced it.
+
+**Verified:** a new `TestThePathLabelIsExplicitNotDefaulted` in `tests/test_conversation_evals.py`
+asserts both that a real run's `report.path == "llm"` and that `run_conversation_eval`'s own
+signature (via `inspect.signature`) has no `path` parameter at all -- the second assertion is
+the one that actually rules out "someone adds `path=args.path` to the CLI later without adding
+real `action` support underneath it," which the first assertion alone would not catch. Mutation-
+tested by changing the stamped value to `"action"`: broke exactly those two new tests and nothing
+else, confirmed via backup-file restore. Full backend suite 1638/1638, `ruff check .` clean.
+
+**NOT done, and deliberately not treated as in scope:** a *third* axis of confusion exists next
+to this one and was not touched -- `run_conversation_eval`'s reports and `run_eval`'s `path=
+"llm"` reports are structurally interchangeable to `compare_reports` (both carry `path: "llm"`,
+and `ProbeResult` is one shared type for both suites), so comparing a conversation-recall report
+against a single-turn identity/boundary report raises no `PathMismatch` today. In practice this
+produces a near-empty, clearly-wrong-looking diff rather than a misleading one (the two suites'
+probe ids essentially never collide, so `compare` reports everything as "only in
+baseline"/"only in candidate"), and the request named the `llm`/`action` distinction specifically,
+not "which suite produced this report" -- adding a new field to guard that would be new behavior
+the request didn't ask for. Left as a documented, known boundary rather than silently patched.

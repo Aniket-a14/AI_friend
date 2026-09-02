@@ -33,6 +33,7 @@ import logging
 from pathlib import Path
 from typing import NamedTuple, Protocol
 
+from app import config as config_module
 from app.cognitive.identity import IdentityManager
 from app.llm.ollama_client import OllamaClient
 
@@ -42,6 +43,7 @@ from .schema import (
     CheckResult,
     ConversationProbe,
     EvalReport,
+    ModelSource,
     ProbeResult,
     RunOptions,
     fingerprint,
@@ -359,7 +361,25 @@ async def run_conversation_eval(
     model: str | None = None,
     options: RunOptions = DEFAULT_OPTIONS,
 ) -> EvalReport:
-    from .runner import _provenance, reset_model_state
+    """Probe recall of a fact planted earlier in a conversation.
+
+    Always the `"llm"` path (see `EvalReport.path`), and only ever that one:
+    `run_conversation_probe` calls `client.generate` directly, the same raw
+    boundary `runner.run_eval`'s default measures -- there is no `action`-path
+    variant of this suite (no `ActionService` involvement at all), and this
+    function takes no `path` parameter for exactly that reason, unlike
+    `run_eval`. `EvalReport.path` defaults to `"llm"` on its own, but this
+    stamps it explicitly rather than leaning on that default: a schema default
+    is not a promise about *this* function's behavior, and the two happening
+    to agree today must not be the only thing keeping this report from being
+    mistaken for one that went through `action.py`.
+    """
+    from .runner import (
+        _provenance,
+        current_git_revision,
+        persona_version,
+        reset_model_state,
+    )
 
     system = manager.get_persona_prompt(current_mood_directive=EVAL_MOOD_DIRECTIVE)
     # Whatever state the runtime was already in changes the answers; see
@@ -397,12 +417,20 @@ async def run_conversation_eval(
             )
             results.append(result)
 
+    model_source: ModelSource = "explicit_cli" if model is not None else "harness_default"
     return EvalReport(
         model=model or client.model,
         persona_name=manager.persona.name,
         provenance=_provenance(),
+        # Explicit, not the field default -- see this function's own
+        # docstring for why "llm" is the only value this suite can produce.
+        path="llm",
         options=options.as_override(),
+        model_source=model_source,
+        deployment_llm_provenance=dict(config_module.config_instance.LLM_PROVENANCE),
         system_prompt_sha256=fingerprint(system),
+        persona_version=persona_version(manager.persona),
+        git_revision=current_git_revision(),
         results=results,
         by_category=summarize_by_category(results),
     )

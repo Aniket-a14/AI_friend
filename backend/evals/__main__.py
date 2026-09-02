@@ -22,11 +22,45 @@ from .conversation import (
 from .probes import collect_probes, shipped_packs
 from .retrieval import LexicalRetriever, MemoryStoreRetriever
 from .runner import run_eval
-from .schema import RunOptions, load_report, save_report
+from .schema import EvalReport, RunOptions, load_report, save_report
 
 
 def _mock_active() -> bool:
     return bool(getattr(config_module.config_instance, "MOCK_LLM_TEXT", False))
+
+
+def _provenance_lines(report: EvalReport) -> list[str]:
+    """Lines stating where a report's model came from, for CLI output.
+
+    Split out from the print block so it can be exercised on a hand-built
+    report without a live model -- HUMANOID_ARCHITECTURE_RESEARCH.md's Phase
+    0 finding was that this took a manual audit (grepping `.env` files,
+    reading `/proc/<pid>/environ`) each time it came up; the report should
+    say it outright instead.
+    """
+    lines = [f"model_source={report.model_source}"]
+    deployment = report.deployment_llm_provenance
+    if deployment:
+        env_file = deployment.get("env_file", "?")
+        source_note = (
+            env_file
+            if deployment.get("env_file_exists", True) is not False
+            else f"{env_file} [not found, using env/defaults]"
+        )
+        lines.append(
+            "deployment config (from {source}): chat={chat} fast={fast} "
+            "reflection={reflection}".format(
+                source=source_note,
+                chat=deployment.get("llm_chat_model", "?"),
+                fast=deployment.get("llm_fast_model", "?"),
+                reflection=deployment.get("llm_reflection_model", "?"),
+            )
+        )
+    lines.append(
+        f"git_revision={report.git_revision or 'unknown'} "
+        f"persona_version={report.persona_version or 'unknown'}"
+    )
+    return lines
 
 
 async def _cmd_run(args: argparse.Namespace) -> int:
@@ -68,6 +102,8 @@ async def _cmd_run(args: argparse.Namespace) -> int:
         f"model={report.model} persona={report.persona_name!r} "
         f"provenance={report.provenance} path={report.path}"
     )
+    for line in _provenance_lines(report):
+        print(line)
     for category, summary in report.by_category.items():
         print(
             f"  {category:<10} {summary.passed}/{summary.probes} "
@@ -204,8 +240,10 @@ async def _cmd_run_conversation(args: argparse.Namespace) -> int:
 
     print(
         f"model={report.model} persona={report.persona_name!r} "
-        f"provenance={report.provenance}"
+        f"provenance={report.provenance} path={report.path}"
     )
+    for line in _provenance_lines(report):
+        print(line)
     print(
         f"{'probe':<34}{'ctx turns':>10}{'chars':>8}{'plant':>9}"
         f"{'fits':>7}{'result':>8}"

@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app import config as config_module
 from evals.conversation import (
     DEFAULT_STRATEGIES,
     FullHistory,
@@ -258,6 +259,162 @@ class TestTheRunStartsFromAKnownState:
         # discarded one must not reach the report.
         assert client.generate.await_count == 2
         assert len(report.results) == 1
+
+
+class TestModelConfigProvenance:
+    """HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0: this suite has its own
+    EvalReport construction, separate from the single-turn runner's -- the
+    provenance fields must be wired here too, not just in `run_eval`."""
+
+    @pytest.fixture
+    def manager(self):
+        manager = MagicMock()
+        manager.validate_response = AsyncMock(return_value=(True, ""))
+        manager.get_persona_prompt.return_value = "SYSTEM"
+        manager.persona.name = "Kavya"
+        return manager
+
+    def _client(self):
+        client = AsyncMock()
+        client.generate.return_value = "Wren."
+        client.model = "scripted:test"
+        # No address, so the reset skips the unload rather than reaching a
+        # real Ollama from a unit test.
+        client.base_url = None
+        return client
+
+    @pytest.mark.asyncio
+    async def test_model_source_is_explicit_when_a_model_was_passed(self, manager):
+        report = await run_conversation_eval(
+            self._client(),
+            manager,
+            [make_probe(filler_turns=4)],
+            FILLER,
+            strategies=(FullHistory(),),
+            model="phi4-mini",
+        )
+        assert report.model_source == "explicit_cli"
+        assert report.model == "phi4-mini"
+
+    @pytest.mark.asyncio
+    async def test_model_source_is_harness_default_without_a_model_flag(self, manager):
+        report = await run_conversation_eval(
+            self._client(),
+            manager,
+            [make_probe(filler_turns=4)],
+            FILLER,
+            strategies=(FullHistory(),),
+        )
+        assert report.model_source == "harness_default"
+        assert report.model == "scripted:test"
+
+    @pytest.mark.asyncio
+    async def test_report_carries_the_deployments_resolved_llm_config(
+        self, manager, monkeypatch
+    ):
+        monkeypatch.setattr(
+            config_module.config_instance, "LLM_CHAT_MODEL", "llama3.2:3b"
+        )
+        report = await run_conversation_eval(
+            self._client(),
+            manager,
+            [make_probe(filler_turns=4)],
+            FILLER,
+            strategies=(FullHistory(),),
+        )
+        assert report.deployment_llm_provenance["llm_chat_model"] == "llama3.2:3b"
+
+    @pytest.mark.asyncio
+    async def test_report_records_a_git_revision(self, manager):
+        """This suite's own EvalReport construction must carry the same
+        provenance fields as the single-turn runner's -- a recall regression
+        gate is only as trustworthy as knowing which commit produced it."""
+        from evals.runner import current_git_revision
+
+        report = await run_conversation_eval(
+            self._client(),
+            manager,
+            [make_probe(filler_turns=4)],
+            FILLER,
+            strategies=(FullHistory(),),
+        )
+        assert report.git_revision != ""
+        assert report.git_revision == current_git_revision()
+
+    @pytest.mark.asyncio
+    async def test_persona_version_degrades_to_empty_for_a_mock_persona(self, manager):
+        """The `manager` fixture here is a MagicMock, not a real
+        IdentityManager -- `persona.model_dump_json()` on it is not a string.
+        This must degrade quietly (empty string), the same "must never break
+        a run over metadata" contract `current_git_revision` follows, not
+        raise and take the whole conversation probe down with it."""
+        report = await run_conversation_eval(
+            self._client(),
+            manager,
+            [make_probe(filler_turns=4)],
+            FILLER,
+            strategies=(FullHistory(),),
+        )
+        assert report.persona_version == ""
+        assert len(report.results) == 1
+
+
+class TestThePathLabelIsExplicitNotDefaulted:
+    """This suite has no `action`-path variant -- `run_conversation_probe`
+    calls `client.generate` directly, with no `ActionService` involved at
+    all. `report.path` must say "llm" because the function stamps it, not
+    because it happens to share a value with `EvalReport`'s schema default:
+    a reader (or `compare`) must never have to assume the two coincide."""
+
+    @pytest.fixture
+    def manager(self):
+        manager = MagicMock()
+        manager.validate_response = AsyncMock(return_value=(True, ""))
+        manager.get_persona_prompt.return_value = "SYSTEM"
+        manager.persona.name = "Kavya"
+        return manager
+
+    def _client(self):
+        client = AsyncMock()
+        client.generate.return_value = "Wren."
+        client.model = "scripted:test"
+        client.base_url = None
+        return client
+
+    @pytest.mark.asyncio
+    async def test_a_conversation_report_is_explicitly_stamped_llm(self, manager):
+        report = await run_conversation_eval(
+            self._client(),
+            manager,
+            [make_probe(filler_turns=4)],
+            FILLER,
+            strategies=(FullHistory(),),
+        )
+        assert report.path == "llm"
+
+    @pytest.mark.asyncio
+    async def test_a_conversation_report_never_carries_the_action_label(
+        self, manager
+    ):
+        """`run_conversation_eval` accepts no `path` argument at all -- there
+        is no way for a caller to ask it for the `action` label, which is the
+        actual guarantee behind 'do not merge the two paths' behavior here:
+        the impossibility is structural (no parameter to mis-set), not just
+        a default that happens not to have been overridden yet."""
+        import inspect
+
+        from evals.conversation import run_conversation_eval as target
+
+        assert "path" not in inspect.signature(target).parameters
+
+        report = await run_conversation_eval(
+            self._client(),
+            manager,
+            [make_probe(filler_turns=4)],
+            FILLER,
+            strategies=(FullHistory(),),
+        )
+        assert report.path != "action"
 
 
 class TestTheShippedPack:

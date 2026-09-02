@@ -76,6 +76,21 @@ class BrainAgent(BaseAgent):
     ):
         super().__init__(name="brain_agent")
         self.ollama = build_llm_client(base_url=ollama_url, model=Config.LLM_CHAT_MODEL)
+        # HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0: state the resolved model
+        # and the file it came from in the log every time, rather than
+        # requiring someone to SSH in and re-derive it -- see the ledger's
+        # 2026-09-02 entries on stale-.env config reads.
+        provenance = Config.LLM_PROVENANCE
+        logger.info(
+            "[Brain] LLM config resolved from %s (exists=%s): chat=%s fast=%s "
+            "reflection=%s url=%s",
+            provenance["env_file"],
+            provenance["env_file_exists"],
+            provenance["llm_chat_model"],
+            provenance["llm_fast_model"],
+            provenance["llm_reflection_model"],
+            provenance["ollama_url"],
+        )
         self.graph_db = graph_db
         self.memory_store = memory_store
         self.conversation_store = conversation_store

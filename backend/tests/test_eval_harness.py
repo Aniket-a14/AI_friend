@@ -393,6 +393,240 @@ async def test_a_mock_llm_run_is_stamped_mock_not_live(kavya, monkeypatch):
     assert report.provenance == "live"
 
 
+# ------------------------------------------------- model/config provenance
+
+
+@pytest.mark.asyncio
+async def test_model_source_is_explicit_when_the_cli_flag_was_given(kavya):
+    """`run_eval`'s `model` parameter is exactly what the CLI's `--model`
+    resolves to (`args.model`, `None` if the flag was omitted). Reading the
+    source off anything else -- e.g. whether the response text differs from
+    some default -- would drift the moment that mapping changed."""
+    client = ScriptedClient({"your name": "I am Kavya."})
+    report = await run_eval(
+        client, kavya, persona_probes(kavya)[:1], model="phi4-mini"
+    )
+    assert report.model_source == "explicit_cli"
+    assert report.model == "phi4-mini"
+
+
+@pytest.mark.asyncio
+async def test_model_source_is_harness_default_when_no_model_flag_was_given(kavya):
+    """Without --model, OllamaClient falls back to its own hardcoded
+    `_DEFAULT_MODEL` ("llama3.2:1b" in production, "scripted:test" for this
+    stand-in) -- not anything read from Config. A report that didn't say so
+    would let that default pass for a considered choice."""
+    client = ScriptedClient({"your name": "I am Kavya."})
+    report = await run_eval(client, kavya, persona_probes(kavya)[:1])
+    assert report.model_source == "harness_default"
+    assert report.model == client.model
+
+
+@pytest.mark.asyncio
+async def test_a_report_carries_the_deployments_own_resolved_llm_config(
+    kavya, monkeypatch
+):
+    """HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0: a report on its own cannot
+    say whether the model it tested is the one the running deployment would
+    actually pick. Stamping Config.LLM_PROVENANCE onto every report answers
+    that without a second manual audit."""
+    monkeypatch.setattr(
+        config_module.config_instance, "LLM_CHAT_MODEL", "llama3.2:3b"
+    )
+    monkeypatch.setattr(config_module.config_instance, "LLM_FAST_MODEL", "qwen2.5:3b")
+    client = ScriptedClient({"your name": "I am Kavya."})
+
+    report = await run_eval(
+        client, kavya, persona_probes(kavya)[:1], model="phi4-mini"
+    )
+
+    assert report.deployment_llm_provenance["llm_chat_model"] == "llama3.2:3b"
+    assert report.deployment_llm_provenance["llm_fast_model"] == "qwen2.5:3b"
+    # The run tested a candidate different from what's deployed -- exactly
+    # the case this field exists to make visible rather than requiring a
+    # second lookup to notice.
+    assert report.model == "phi4-mini"
+    assert report.deployment_llm_provenance["llm_chat_model"] != report.model
+
+
+def test_model_source_defaults_to_unknown_for_reports_predating_the_field():
+    """Reports written before this field existed carry no information about
+    where their model came from. Defaulting to 'explicit_cli' or
+    'harness_default' would assert something the report never recorded;
+    'unknown' is the only value that doesn't overclaim."""
+    report = EvalReport(
+        model="llama3.2:3b",
+        persona_name="Kavya",
+        provenance="live",
+        options={},
+        results=[],
+        by_category={},
+    )
+    assert report.model_source == "unknown"
+    assert report.deployment_llm_provenance == {}
+    assert report.persona_version == ""
+    assert report.git_revision == ""
+
+
+@pytest.mark.asyncio
+async def test_a_report_records_its_persona_version_as_a_digest_of_the_profile(kavya):
+    """`persona_version` must be the structured `PersonaProfile`'s own digest,
+    not a copy of `system_prompt_sha256` under a new name -- otherwise the two
+    fields answer the same question and the doc's distinction (did the
+    authored persona change vs. did the rendered prompt change) is fiction."""
+    client = ScriptedClient({"your name": "I am Kavya."})
+    report = await run_eval(client, kavya, persona_probes(kavya)[:1])
+
+    assert report.persona_version == fingerprint(kavya.persona.model_dump_json())
+    assert report.persona_version != ""
+    # Not merely a duplicate of the prompt digest under a different name.
+    assert report.persona_version != report.system_prompt_sha256
+
+
+@pytest.mark.asyncio
+async def test_persona_version_differs_for_a_differently_named_persona(kavya, tmp_path):
+    """The digest must actually be sensitive to persona content, not a
+    constant that happens to look like one -- e.g. hashing the class name or
+    an empty default instead of the loaded profile."""
+    rhea_dir = tmp_path / "rhea"
+    rhea_dir.mkdir()
+    (rhea_dir / "personality.json").write_text(
+        json.dumps({"name": "Rhea", "core_personality": {"traits": ["Calm"]}}),
+        encoding="utf-8",
+    )
+    rhea = IdentityManager(base_path=str(rhea_dir), persona_file=None)
+    client = ScriptedClient({"your name": "I am here."})
+
+    report_kavya = await run_eval(client, kavya, persona_probes(kavya)[:1])
+    report_rhea = await run_eval(client, rhea, persona_probes(rhea)[:1])
+
+    assert report_kavya.persona_version != report_rhea.persona_version
+
+
+@pytest.mark.asyncio
+async def test_a_report_records_the_current_git_revision(kavya):
+    """Every report must name the code revision it ran under -- a passing
+    gate on one commit is not evidence about another."""
+    client = ScriptedClient({"your name": "I am Kavya."})
+    report = await run_eval(client, kavya, persona_probes(kavya)[:1])
+
+    assert report.git_revision != ""
+    assert report.git_revision == runner_module.current_git_revision()
+
+
+def test_current_git_revision_is_clean_when_the_tree_has_no_changes():
+    with mock.patch.object(
+        runner_module.subprocess,
+        "check_output",
+        side_effect=["abc1234\n", ""],
+    ):
+        assert runner_module.current_git_revision() == "abc1234"
+
+
+def test_current_git_revision_is_marked_dirty_with_uncommitted_changes():
+    """A run against uncommitted code is real evidence, but evidence about
+    code no commit names -- silently reporting it as a clean SHA would let a
+    working-tree-only fix look reproducible when it is not."""
+    with mock.patch.object(
+        runner_module.subprocess,
+        "check_output",
+        side_effect=["abc1234\n", " M evals/runner.py\n"],
+    ):
+        assert runner_module.current_git_revision() == "abc1234-dirty"
+
+
+def test_current_git_revision_is_unknown_rather_than_raising_without_git():
+    """Metadata collection must never take an eval run down. A packaged
+    install with no `.git`, or a box with no `git` binary, must degrade to an
+    honest 'unknown' rather than an unhandled exception mid-run."""
+    with mock.patch.object(
+        runner_module.subprocess,
+        "check_output",
+        side_effect=FileNotFoundError("no git"),
+    ):
+        assert runner_module.current_git_revision() == "unknown"
+
+
+def test_provenance_lines_report_model_source_and_deployment_config():
+    """The CLI's extra output lines are built from the report alone, so this
+    exercises exactly what a user reading `evals run`'s stdout would see,
+    without needing a live model to produce a report first."""
+    from evals.__main__ import _provenance_lines
+
+    report = EvalReport(
+        model="phi4-mini",
+        persona_name="Kavya",
+        provenance="live",
+        options={},
+        model_source="explicit_cli",
+        deployment_llm_provenance={
+            "env_file": "/home/aniket/AI_friend/.env",
+            "llm_chat_model": "llama3.2:3b",
+            "llm_fast_model": "qwen2.5:3b",
+            "llm_reflection_model": "llama3.2:3b",
+        },
+        persona_version="deadbeef01234567",
+        git_revision="7a42c2a",
+        results=[],
+        by_category={},
+    )
+    lines = _provenance_lines(report)
+    assert lines[0] == "model_source=explicit_cli"
+    assert "/home/aniket/AI_friend/.env" in lines[1]
+    assert "chat=llama3.2:3b" in lines[1]
+    assert "fast=qwen2.5:3b" in lines[1]
+    assert lines[2] == "git_revision=7a42c2a persona_version=deadbeef01234567"
+
+
+def test_provenance_lines_omit_the_deployment_line_when_absent():
+    """A report predating this field (deployment_llm_provenance == {}) must
+    not print a fabricated 'deployment config' line built from missing
+    data. The git/persona line is unconditional -- unlike deployment config,
+    it costs nothing to compute and a report should never lack it."""
+    from evals.__main__ import _provenance_lines
+
+    report = EvalReport(
+        model="llama3.2:3b",
+        persona_name="Kavya",
+        provenance="live",
+        options={},
+        results=[],
+        by_category={},
+    )
+    lines = _provenance_lines(report)
+    assert lines == [
+        "model_source=unknown",
+        "git_revision=unknown persona_version=unknown",
+    ]
+
+
+def test_provenance_lines_note_when_env_file_does_not_exist():
+    """When deployment_llm_provenance explicitly records that the env_file
+    did not exist on disk, the output line must make that plain rather than
+    falsely claiming the config was read 'from' a missing file."""
+    from evals.__main__ import _provenance_lines
+
+    report = EvalReport(
+        model="phi4-mini",
+        persona_name="Kavya",
+        provenance="live",
+        options={},
+        model_source="explicit_cli",
+        deployment_llm_provenance={
+            "env_file": "/app/.env",
+            "env_file_exists": False,
+            "llm_chat_model": "llama3.2:3b",
+            "llm_fast_model": "llama3.2:3b",
+            "llm_reflection_model": "llama3.2:3b",
+        },
+        results=[],
+        by_category={},
+    )
+    lines = _provenance_lines(report)
+    assert "/app/.env" in lines[1]
+    assert "[not found, using env/defaults]" in lines[1]
+
+
 # ---------------------------------------------------------------- compare
 
 

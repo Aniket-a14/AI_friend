@@ -47,6 +47,14 @@ Category = Literal["identity", "boundary", "memory", "custom"]
 # so `compare` refuses to diff them rather than warning -- see `compare.py`.
 EvalPath = Literal["llm", "action"]
 
+# How the model a report ran actually got chosen. "explicit_cli" means the
+# caller passed --model; "harness_default" means it didn't, and the run
+# fell back to OllamaClient's own hardcoded default -- which is not read
+# from Config and is not "the deployed model." "unknown" is for reports
+# written before this field existed, since asserting either of the above
+# for them would claim more than the report actually recorded.
+ModelSource = Literal["explicit_cli", "harness_default", "unknown"]
+
 CheckKind = Literal[
     "must_include",
     "must_include_any",
@@ -246,8 +254,29 @@ class EvalReport(BaseModel):
     # Which execution path produced these responses. Defaults to "llm" so that
     # reports written before this field existed read as what they actually
     # were, rather than as an unknown that `compare` would have to guess at.
+    # `runner.run_eval` treats this as a real, caller-chosen input and stamps
+    # whichever value it was given; `conversation.run_conversation_eval` has
+    # no `action`-path variant at all and stamps "llm" explicitly for that
+    # reason (see its own docstring) rather than relying on this default --
+    # the two happen to agree, but a caller must never infer "which suite"
+    # from this default coinciding with a suite's only possible value.
     path: EvalPath = "llm"
     options: dict[str, Any]
+    # HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0: which the CLI actually asked
+    # for, versus what the running deployment's Config would resolve to right
+    # now. Neither is inferable from `model` alone -- a report on its own
+    # cannot say whether --model was explicit or the harness's own unrelated
+    # default, nor whether the model under test is the one the deployment
+    # would actually pick. Both default to the "we don't know" value so a
+    # report written before this field existed reads as exactly that, not as
+    # a false claim either way.
+    model_source: ModelSource = "unknown"
+    # A copy of Config.LLM_PROVENANCE taken when the run started: which .env
+    # file Config read, and what it resolved LLM_CHAT_MODEL/LLM_FAST_MODEL/
+    # LLM_REFLECTION_MODEL to. Not necessarily what THIS run used -- the
+    # caller may have deliberately pointed --model at a candidate -- it is
+    # context for comparing the two, not a second copy of `model`.
+    deployment_llm_provenance: dict[str, Any] = Field(default_factory=dict)
     # Digest of the system prompt every probe in this run was generated under.
     # It is the largest single input to every response and the one most likely
     # to drift unnoticed between two runs: adaptive traits evolve through
@@ -256,6 +285,24 @@ class EvalReport(BaseModel):
     # and nothing in the report contradicts that reading. Empty on reports
     # written before this field existed.
     system_prompt_sha256: str = ""
+    # Digest of the structured `PersonaProfile` alone (name, traits, tone,
+    # bounds -- not the rendered prompt text). Deliberately separate from
+    # `system_prompt_sha256`: that digest also moves when prompt-construction
+    # *code* changes (a new instruction block, a reworded guideline) even if
+    # the authored persona is untouched, and moves when the mood directive or
+    # biography text changes even if the profile itself didn't. This field
+    # answers "did the authored character change" on its own, which the
+    # combined prompt digest cannot isolate. Empty on reports written before
+    # this field existed.
+    persona_version: str = ""
+    # Short git SHA of the checkout the run executed from, "<sha>-dirty" if
+    # the working tree had uncommitted changes at run time, or "unknown" if
+    # git was unavailable. A report is evidence about a specific revision of
+    # this codebase's prompt-construction and scoring logic, not just a
+    # persona and a model -- without this, two reports naming the same model
+    # and persona could still be measuring different code. Empty on reports
+    # written before this field existed.
+    git_revision: str = ""
     results: list[ProbeResult]
     by_category: dict[str, CategorySummary]
 

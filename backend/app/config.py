@@ -1,9 +1,17 @@
+import os
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_env_file = Path(__file__).resolve().parent.parent.parent / ".env"
+_discovered_parent = Path(__file__).resolve().parent.parent.parent
+if "AI_FRIEND_ENV_PATH" in os.environ:
+    _env_file = Path(os.environ["AI_FRIEND_ENV_PATH"])
+elif _discovered_parent == Path("/"):
+    _env_file = Path("/app/.env")
+else:
+    _env_file = _discovered_parent / ".env"
 
 
 class AppSettings(BaseSettings):
@@ -562,6 +570,17 @@ class AppSettings(BaseSettings):
             self.LLM_REFLECTION_MODEL = self.LLM_CHAT_MODEL
         return self
 
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def validate_debug(cls, v: object) -> bool:
+        if isinstance(v, str):
+            v_lower = v.strip().lower()
+            if v_lower in {"1", "true", "t", "yes", "y", "debug", "development", "dev"}:
+                return True
+            if v_lower in {"0", "false", "f", "no", "n", "release", "production", "prod", ""}:
+                return False
+        return bool(v)
+
     @field_validator("LIVEKIT_URL")
     @classmethod
     def normalize_livekit_scheme(cls, v: str) -> str:
@@ -647,6 +666,31 @@ class AppSettings(BaseSettings):
         if self.VLM_ENABLED:
             models.append(self.VLM_MODEL)
         return list(dict.fromkeys(models))
+
+    # HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0: the repo has three other LLM
+    # config authorities beyond this class (Compose's own inline fallbacks,
+    # `.env.example`, and per-host `EnvironmentFile=` units), and the ledger's
+    # own 2026-09-02 entries record two separate incidents where a value read
+    # from the wrong one of those was mistaken for "the deployed model." This
+    # is the one place that states what *this process* actually resolved and
+    # which file it read to get there, so a caller (a startup log line, an
+    # eval report) can say so plainly instead of that being re-derived by
+    # hand each time. Deliberately a snapshot, not a new settings surface --
+    # every value here already exists as its own field; this only names their
+    # source together.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def LLM_PROVENANCE(self) -> dict[str, Any]:
+        return {
+            "env_file": str(_env_file),
+            "env_file_exists": _env_file.exists(),
+            "llm_chat_model": self.LLM_CHAT_MODEL,
+            "llm_fast_model": self.LLM_FAST_MODEL,
+            "llm_reflection_model": self.LLM_REFLECTION_MODEL,
+            "llm_num_ctx": self.LLM_NUM_CTX,
+            "llm_intent_classification_enabled": self.LLM_INTENT_CLASSIFICATION_ENABLED,
+            "ollama_url": self.OLLAMA_URL,
+        }
 
 
 config_instance = AppSettings()

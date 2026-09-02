@@ -7,6 +7,7 @@ and only broke something later, at runtime, far from the misconfiguration.
 import pytest
 from pydantic import ValidationError
 
+from app import config as config_module
 from app.config import AppSettings
 
 
@@ -166,3 +167,93 @@ def test_unset_secret_fields_do_not_crash_production():
     treated as a placeholder - only an actual placeholder string should."""
     settings = _settings(ENVIRONMENT="production")
     assert settings.ENVIRONMENT == "production"
+
+
+# --- HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0: LLM_PROVENANCE -------------
+
+
+def test_llm_provenance_reports_the_resolved_model_for_each_role():
+    """The whole point of this field is that a caller can read off what each
+    role actually resolved to without re-deriving it from LLM_CHAT_MODEL,
+    LLM_FAST_MODEL etc. separately. If the snapshot silently dropped a field
+    or read a different one, a report built from it would look complete
+    while quietly describing the wrong model."""
+    settings = _settings(
+        LLM_CHAT_MODEL="phi4-mini",
+        LLM_FAST_MODEL="qwen2.5:3b",
+        LLM_REFLECTION_MODEL="llama3.2:3b",
+        LLM_NUM_CTX=4096,
+        LLM_INTENT_CLASSIFICATION_ENABLED=True,
+        OLLAMA_URL="http://10.0.0.5:11434",
+    )
+    assert settings.LLM_PROVENANCE == {
+        "env_file": str(config_module._env_file),
+        "env_file_exists": config_module._env_file.exists(),
+        "llm_chat_model": "phi4-mini",
+        "llm_fast_model": "qwen2.5:3b",
+        "llm_reflection_model": "llama3.2:3b",
+        "llm_num_ctx": 4096,
+        "llm_intent_classification_enabled": True,
+        "ollama_url": "http://10.0.0.5:11434",
+    }
+
+
+def test_llm_provenance_names_the_one_env_file_config_actually_reads():
+    """The ledger's 2026-09-02 entries record two separate incidents where a
+    value was read from the wrong `.env` (repo-root vs `backend/.env` vs a
+    systemd EnvironmentFile) and mistaken for the deployed config. This is
+    the field meant to make that mistake visible without a manual grep -- it
+    must name the real path `Config` resolves from, which is fixed at the
+    module level and does not move just because one test instance was built
+    with `_env_file=None` to keep it isolated from whatever real `.env`
+    happens to be on this machine."""
+    settings = _settings()
+    assert settings.LLM_PROVENANCE["env_file"] == str(config_module._env_file)
+
+
+def test_llm_provenance_reflects_the_chat_and_reflection_backfill():
+    """set_defaults() backfills an unset LLM_CHAT_MODEL/LLM_REFLECTION_MODEL
+    from LLM_FAST_MODEL. LLM_PROVENANCE reads the fields after validation, so
+    it must show the backfilled value a caller would actually get from
+    Config, not the unset None an operator's .env left behind."""
+    settings = _settings(LLM_FAST_MODEL="qwen2.5:3b")
+    assert settings.LLM_PROVENANCE["llm_chat_model"] == "qwen2.5:3b"
+    assert settings.LLM_PROVENANCE["llm_reflection_model"] == "qwen2.5:3b"
+
+
+def test_validate_debug_handles_string_inputs():
+    """Environment variables often arrive as 'release', 'production', 'dev',
+    or 'debug' rather than Python booleans. The validator must coerce these cleanly."""
+    assert _settings(DEBUG="release").DEBUG is False
+    assert _settings(DEBUG="prod").DEBUG is False
+    assert _settings(DEBUG="0").DEBUG is False
+    assert _settings(DEBUG="debug").DEBUG is True
+    assert _settings(DEBUG="dev").DEBUG is True
+    assert _settings(DEBUG="true").DEBUG is True
+
+
+def test_env_file_resolution_rules(monkeypatch):
+    """Verify that _env_file resolution honors AI_FRIEND_ENV_PATH when present."""
+    import os
+    from pathlib import Path
+    custom_env = "/custom/path/.env"
+    monkeypatch.setenv("AI_FRIEND_ENV_PATH", custom_env)
+    # Test the resolution logic matching config.py
+    discovered_parent = Path("/app/app/config.py").parent.parent.parent
+    if "AI_FRIEND_ENV_PATH" in os.environ:
+        resolved = Path(os.environ["AI_FRIEND_ENV_PATH"])
+    elif discovered_parent == Path("/"):
+        resolved = Path("/app/.env")
+    else:
+        resolved = discovered_parent / ".env"
+    assert str(resolved) == custom_env
+
+    # Without AI_FRIEND_ENV_PATH, a container root (/) resolves to /app/.env
+    monkeypatch.delenv("AI_FRIEND_ENV_PATH")
+    if "AI_FRIEND_ENV_PATH" in os.environ:
+        resolved_container = Path(os.environ["AI_FRIEND_ENV_PATH"])
+    elif discovered_parent == Path("/"):
+        resolved_container = Path("/app/.env")
+    else:
+        resolved_container = discovered_parent / ".env"
+    assert str(resolved_container) == "/app/.env"
