@@ -10,10 +10,12 @@ affect nudge.
 """
 
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.cognitive.decision import DecisionService
+from app.state.adaptive_weights_store import AdaptiveWeightsStore
 from app.state.agent_state import StateService
 from app.vision.reflex import (
     BROW_FURROW_THRESHOLD,
@@ -297,16 +299,26 @@ def test_arousal_delta_moves_the_baseline_not_the_fatigue_inflated_reading():
 
 
 def _brain_stub():
-    """The one collaborator `_on_facial_reflex` touches, nothing more --
-    mirrors `test_somatic_vision.py`'s `_brain_stub` for the sibling
-    `_on_vision_description` path."""
-    from unittest.mock import MagicMock
-
+    """The collaborators `_on_facial_reflex` touches: affect state, the
+    (real, pure) decision arbiter, and a mocked mesh `publish` -- mirrors
+    `test_somatic_vision.py`'s `_brain_stub` for the sibling
+    `_on_vision_description` path, extended for Bucket 17's competition
+    check. `_turn_state_lock`/`_active_response_turn_id` are the real
+    `BrainAgent.__init__` defaults (see brain_agent.py:113/134) reproduced
+    by hand since `__new__` skips `__init__` entirely."""
     from app.agents.brain_agent import BrainAgent
 
     agent = BrainAgent.__new__(BrainAgent)
     agent.cognitive_core = MagicMock()
     agent.cognitive_core.state = _state()
+    agent.cognitive_core.decision = DecisionService(
+        llm_service=None,
+        memory_store=None,
+        weights_store=AdaptiveWeightsStore(":memory:"),
+    )
+    agent._turn_state_lock = asyncio.Lock()
+    agent._active_response_turn_id = None
+    agent.publish = AsyncMock()
     return agent
 
 
@@ -331,3 +343,80 @@ def test_on_facial_reflex_swallows_a_failure_rather_than_raising():
 
     asyncio.run(agent._on_facial_reflex({"name": "smile", "valence_delta": 0.04}))
     # No exception means it worked; nothing else to assert.
+
+
+# --------------------------------------------------------------------------
+# Bucket 17 (voice remediation Phase 4) -- competing for the workspace
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "reflex_name,expected",
+    [
+        ("startle", True),
+        ("smile", False),
+        ("brow_furrow", False),
+        ("unknown_signal", False),
+        ("", False),
+    ],
+)
+def test_is_facial_reflex_interruption_worthy(reflex_name, expected):
+    """Only `startle` -- the compound, highest-arousal reflex -- is salient
+    enough to compete for the workspace. An agent that stopped talking
+    because the user smiled would be wrong, not attentive."""
+    decision = DecisionService(
+        llm_service=None, memory_store=None, weights_store=AdaptiveWeightsStore(":memory:")
+    )
+    assert decision.is_facial_reflex_interruption_worthy(reflex_name) is expected
+
+
+def test_a_startle_during_an_active_turn_publishes_a_confirmed_audio_stop():
+    """The plan's own verify line: a startle arriving mid-turn must
+    demonstrably compete for the workspace -- not just log the event and
+    update background affect for whatever turn comes next."""
+    agent = _brain_stub()
+    agent._active_response_turn_id = "turn-123"
+
+    asyncio.run(
+        agent._on_facial_reflex(
+            {"name": "startle", "arousal_delta": 0.2, "evidence": "startle=0.9"}
+        )
+    )
+
+    agent.publish.assert_awaited_once()
+    (subject, payload), _ = agent.publish.call_args
+    from app.contracts import Topics
+
+    assert subject == Topics.AUDIO_STOP
+    assert payload["reason"] == "facial_reflex_startle"
+    assert payload["intent_type"] == "VISION_INTERRUPTION"
+    assert payload["turn_id"] == "turn-123"
+    assert payload["speculative"] is False
+
+
+def test_a_smile_during_an_active_turn_does_not_interrupt():
+    """Arbitration must actually gate, not fire on every reflex -- affect is
+    still updated, but the workspace is not contested over a smile."""
+    agent = _brain_stub()
+    agent._active_response_turn_id = "turn-123"
+    agent.cognitive_core.state.current_state.valence = 0.1
+
+    asyncio.run(
+        agent._on_facial_reflex({"name": "smile", "valence_delta": 0.04})
+    )
+
+    agent.publish.assert_not_awaited()
+    assert agent.cognitive_core.state.current_state.valence == pytest.approx(0.14)
+
+
+def test_a_startle_with_no_active_turn_does_not_publish():
+    """Nothing to interrupt -- a startle between turns is still a real affect
+    event (handled above), just not a workspace contest."""
+    agent = _brain_stub()
+    assert agent._active_response_turn_id is None
+
+    asyncio.run(
+        agent._on_facial_reflex({"name": "startle", "arousal_delta": 0.2})
+    )
+
+    agent.publish.assert_not_awaited()

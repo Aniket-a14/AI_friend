@@ -525,6 +525,15 @@ class DecisionService:
         )
         return False
 
+    def is_facial_reflex_interruption_worthy(self, reflex_name: str) -> bool:
+        """Only `startle` -- the compound, highest-arousal reflex signal
+        (`app/vision/reflex.py`) -- is salient enough to compete for the
+        workspace and interrupt an in-flight turn. `smile`/`brow_furrow`
+        stay background-only: an agent that stopped talking because the
+        user smiled would be wrong, not attentive.
+        """
+        return reflex_name == "startle"
+
     async def _plan_social_response(self, blackboard: dict[str, Any]) -> bool:
         event = blackboard["event"]
         goal = event.metadata.get("suggested_goal", "ENGAGE")
