@@ -31,6 +31,14 @@ class OllamaClient:
 
     _DEFAULT_MODEL = "llama3.2:1b"
 
+    # A production client (brain_agent, subconscious_agent) lives for the
+    # process's whole uptime and calls generate/generate_stream on every turn
+    # forever; nothing in app/ ever reads request_provenance, only evals/ does.
+    # Bounding it keeps a long-running agent's memory flat instead of growing
+    # one dict per LLM call for the life of the process, while staying far
+    # larger than any single eval run's request count.
+    _MAX_REQUEST_PROVENANCE = 500
+
     def __init__(
         self, base_url: str = "http://127.0.0.1:11434", model: str | None = None
     ):
@@ -76,6 +84,8 @@ class OllamaClient:
                 "successful": successful,
             }
         )
+        if len(self.request_provenance) > self._MAX_REQUEST_PROVENANCE:
+            del self.request_provenance[: -self._MAX_REQUEST_PROVENANCE]
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:

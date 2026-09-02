@@ -32,3 +32,23 @@ async def test_ollama_records_successful_endpoint_model_and_full_options():
     assert request["keep_alive"] == "20m"
     assert request["prompt_sha256"]
     assert request["system_prompt_sha256"]
+
+
+def test_request_provenance_stays_bounded_on_a_long_running_client():
+    """brain_agent/subconscious_agent hold one OllamaClient for the process's
+    whole uptime and call generate on every turn forever. Without a cap this
+    list grows one dict per call for as long as the process runs -- a slow
+    memory leak that only ever benefits the eval harness, which never sees a
+    single run anywhere near this many requests."""
+    client = OllamaClient(base_url="http://ollama.test:11434")
+    cap = client._MAX_REQUEST_PROVENANCE
+
+    for i in range(cap + 50):
+        client._record_request(
+            "/api/chat", {"model": f"call-{i}", "options": {}}, successful=True
+        )
+
+    assert len(client.request_provenance) == cap
+    # Trimming drops the oldest entries, so the most recent calls survive.
+    assert client.request_provenance[-1]["model"] == f"call-{cap + 49}"
+    assert client.request_provenance[0]["model"] == "call-50"

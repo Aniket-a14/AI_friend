@@ -560,7 +560,7 @@ def main(argv=None) -> int:
         "--include-forgetting-reference",
         action="store_true",
         help="add current persona-derived forgetting-reference probes (not "
-        "not a shipped pack -- see evals/probes.py::forgetting_reference_probes). "
+        "a shipped pack -- see evals/probes.py::forgetting_reference_probes). "
         "Any regression here is disqualifying for an adapter/model-swap gate "
         "regardless of scores elsewhere",
     )
