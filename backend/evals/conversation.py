@@ -342,6 +342,8 @@ async def run_conversation_probe(
         category=probe.category,
         prompt=probe.recall_prompt,
         response=response,
+        raw_response=response,
+        prompt_sha256=fingerprint(prompt),
         post_processed_output=post_processed,
         checks=checks,
         passed=all(item.passed for item in checks),
@@ -380,7 +382,9 @@ async def run_conversation_eval(
         _provenance,
         current_git_revision,
         persona_version,
+        request_provenance,
         reset_model_state,
+        structured_fingerprint,
     )
 
     system = manager.get_persona_prompt(current_mood_directive=EVAL_MOOD_DIRECTIVE)
@@ -427,9 +431,20 @@ async def run_conversation_eval(
         # Explicit, not the field default -- see this function's own
         # docstring for why "llm" is the only value this suite can produce.
         path="llm",
+        suite="conversation",
         options=options.as_override(),
         model_source=model_source,
         deployment_llm_provenance=dict(config_module.config_instance.LLM_PROVENANCE),
+        llm_endpoint=str(getattr(client, "base_url", "") or ""),
+        request_provenance=request_provenance(client),
+        probe_set_sha256=structured_fingerprint(
+            {
+                "suite": "conversation",
+                "probes": [probe.model_dump(mode="json") for probe in probes],
+                "filler": filler,
+                "strategies": [strategy.name for strategy in strategies],
+            }
+        ),
         system_prompt_sha256=fingerprint(system),
         persona_version=persona_version(manager.persona),
         git_revision=current_git_revision(),

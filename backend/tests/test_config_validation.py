@@ -195,6 +195,15 @@ def test_llm_provenance_reports_the_resolved_model_for_each_role():
         "llm_num_ctx": 4096,
         "llm_intent_classification_enabled": True,
         "ollama_url": "http://10.0.0.5:11434",
+        "precedence": ["process_env", "env_file", "code_default"],
+        "sources": {
+            "ollama_url": "env_file",
+            "llm_fast_model": "env_file",
+            "llm_chat_model": "env_file",
+            "llm_reflection_model": "derived_from_llm_chat_model",
+            "llm_num_ctx": "code_default",
+            "llm_intent_classification_enabled": "env_file",
+        },
     }
 
 
@@ -219,6 +228,12 @@ def test_llm_provenance_reflects_the_chat_and_reflection_backfill():
     settings = _settings(LLM_FAST_MODEL="qwen2.5:3b")
     assert settings.LLM_PROVENANCE["llm_chat_model"] == "qwen2.5:3b"
     assert settings.LLM_PROVENANCE["llm_reflection_model"] == "qwen2.5:3b"
+
+
+def test_llm_provenance_identifies_process_environment_as_the_winner(monkeypatch):
+    monkeypatch.setenv("LLM_CHAT_MODEL", "from-process")
+    settings = _settings(LLM_CHAT_MODEL="constructor-value")
+    assert settings.LLM_PROVENANCE["sources"]["llm_chat_model"] == "process_env"
 
 
 def test_validate_debug_handles_string_inputs():

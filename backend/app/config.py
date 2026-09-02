@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from dotenv import dotenv_values
 from pydantic import Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -681,6 +682,48 @@ class AppSettings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def LLM_PROVENANCE(self) -> dict[str, Any]:
+        # pydantic-settings resolves sources in this order: process environment
+        # over the configured dotenv file over the field default.  Report the
+        # winner for each value instead of labelling every value with the
+        # dotenv path.  A Compose interpolation or systemd EnvironmentFile is
+        # intentionally represented as ``process_env``: by the time Python
+        # starts, that is the only source this process can prove.
+        try:
+            dotenv = {
+                key: value
+                for key, value in dotenv_values(_env_file).items()
+                if value is not None
+            }
+        except Exception:
+            dotenv = {}
+
+        source_fields = {
+            "OLLAMA_URL": "ollama_url",
+            "LLM_FAST_MODEL": "llm_fast_model",
+            "LLM_CHAT_MODEL": "llm_chat_model",
+            "LLM_REFLECTION_MODEL": "llm_reflection_model",
+            "LLM_NUM_CTX": "llm_num_ctx",
+            "LLM_INTENT_CLASSIFICATION_ENABLED": "llm_intent_classification_enabled",
+        }
+        sources: dict[str, str] = {}
+        for env_name, field_name in source_fields.items():
+            if env_name in os.environ:
+                sources[field_name] = "process_env"
+            elif env_name in dotenv:
+                sources[field_name] = "env_file"
+            else:
+                sources[field_name] = "code_default"
+
+        # These two values are filled from LLM_FAST_MODEL by set_defaults(),
+        # so an absent explicit value has a derived rather than default source.
+        if sources["llm_chat_model"] == "code_default" and self.LLM_CHAT_MODEL:
+            sources["llm_chat_model"] = "derived_from_llm_fast_model"
+        if (
+            sources["llm_reflection_model"] == "code_default"
+            and self.LLM_REFLECTION_MODEL
+        ):
+            sources["llm_reflection_model"] = "derived_from_llm_chat_model"
+
         return {
             "env_file": str(_env_file),
             "env_file_exists": _env_file.exists(),
@@ -690,6 +733,8 @@ class AppSettings(BaseSettings):
             "llm_num_ctx": self.LLM_NUM_CTX,
             "llm_intent_classification_enabled": self.LLM_INTENT_CLASSIFICATION_ENABLED,
             "ollama_url": self.OLLAMA_URL,
+            "precedence": ["process_env", "env_file", "code_default"],
+            "sources": sources,
         }
 
 

@@ -43,6 +43,39 @@ class OllamaClient:
         self.base_delay = 1.0
         self.timeout = httpx.Timeout(10.0, read=180.0, connect=5.0)
         self._client: httpx.AsyncClient | None = None
+        # Hash-only request trace consumed by the eval harness.  Keeping it on
+        # the client makes the observed endpoint/model variant authoritative,
+        # including fallback attempts, rather than reconstructed in eval code.
+        self.request_provenance: list[dict[str, Any]] = []
+
+    def _record_request(
+        self, endpoint: str, payload: dict[str, Any], *, successful: bool = False
+    ) -> None:
+        messages = payload.get("messages") or []
+        prompt_text = str(payload.get("prompt") or "\n".join(
+            str(message.get("content", "")) for message in messages
+        ))
+        system_text = next(
+            (
+                str(message.get("content", ""))
+                for message in messages
+                if message.get("role") == "system"
+            ),
+            "",
+        )
+        self.request_provenance.append(
+            {
+                "base_url": self.base_url,
+                "endpoint": endpoint,
+                "model": payload.get("model"),
+                "stream": payload.get("stream"),
+                "options": dict(payload.get("options") or {}),
+                "keep_alive": payload.get("keep_alive"),
+                "prompt_sha256": _fingerprint(prompt_text),
+                "system_prompt_sha256": _fingerprint(system_text),
+                "successful": successful,
+            }
+        )
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -218,6 +251,7 @@ class OllamaClient:
         for attempt in range(self.max_retries):
             for endpoint, payload, model_variant in payload_attempts:
                 try:
+                    self._record_request(endpoint, payload)
                     async with client.stream(
                         "POST", endpoint, json=payload
                     ) as response:
@@ -240,6 +274,7 @@ class OllamaClient:
                                     yield text
                             except json.JSONDecodeError:
                                 continue
+                        self.request_provenance[-1]["successful"] = True
                         return
                 except (TimeoutError, httpx.HTTPError) as e:
                     errors.append(f"{endpoint} ({model_variant}): {type(e).__name__}")
@@ -331,6 +366,7 @@ class OllamaClient:
         for attempt in range(self.max_retries):
             for endpoint, payload, model_variant in payload_attempts:
                 try:
+                    self._record_request(endpoint, payload)
                     response = await client.post(endpoint, json=payload)
                     if response.status_code >= 400:
                         errors.append(f"{endpoint}: HTTP {response.status_code}")
@@ -339,6 +375,7 @@ class OllamaClient:
                     result = response.json()
                     text = self._extract_response_text(result)
                     if text:
+                        self.request_provenance[-1]["successful"] = True
                         return text
                 except (TimeoutError, httpx.HTTPError) as e:
                     errors.append(f"{endpoint}: {type(e).__name__}")

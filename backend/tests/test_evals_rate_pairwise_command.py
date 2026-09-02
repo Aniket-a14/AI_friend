@@ -17,6 +17,7 @@ def _report(path, model, probe_id="p1", response="a response"):
         model=model,
         persona_name="Kavya",
         provenance="live",
+        suite="single_turn",
         options={},
         results=[
             ProbeResult(
@@ -160,10 +161,11 @@ def test_an_interrupted_session_still_saves_ratings_collected_so_far(tmp_path):
     report_b = tmp_path / "b.json"
     r1 = _report(report_a, "model-a", probe_id="p1")
     save_report(
-        EvalReport(
-            model="model-a",
-            persona_name="Kavya",
-            provenance="live",
+            EvalReport(
+                model="model-a",
+                persona_name="Kavya",
+                provenance="live",
+                suite="single_turn",
             options={},
             results=[
                 *r1.results,
@@ -184,9 +186,10 @@ def test_an_interrupted_session_still_saves_ratings_collected_so_far(tmp_path):
     r2 = _report(report_b, "model-b", probe_id="p1")
     save_report(
         EvalReport(
-            model="model-b",
-            persona_name="Kavya",
-            provenance="live",
+                model="model-b",
+                persona_name="Kavya",
+                provenance="live",
+                suite="single_turn",
             options={},
             results=[
                 *r2.results,

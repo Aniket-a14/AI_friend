@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 
 
 def fingerprint(text: str) -> str:
@@ -46,6 +46,10 @@ Category = Literal["identity", "boundary", "memory", "custom"]
 # taken*. Two reports from different paths are not two samples of one quantity,
 # so `compare` refuses to diff them rather than warning -- see `compare.py`.
 EvalPath = Literal["llm", "action"]
+
+# Which eval suite produced a report.  ``path`` alone is insufficient because
+# the conversation suite also uses the direct LLM boundary.
+EvalSuite = Literal["single_turn", "conversation", "unknown"]
 
 # How the model a report ran actually got chosen. "explicit_cli" means the
 # caller passed --model; "harness_default" means it didn't, and the run
@@ -224,7 +228,15 @@ class ProbeResult(BaseModel):
     probe_id: str
     category: Category
     prompt: str
+    # Text returned by the measured seam. For ``action`` this is the visible
+    # ActionService output; use ``raw_response`` for the provider stream.
     response: str
+    # Provider text before the execution path's post-processing.  On the
+    # direct LLM path this equals ``response``; on the action path it is the
+    # stream observed by the client before ActionService filtering/retry.
+    # Empty means an older report or a client that could not expose it.
+    raw_response: str = ""
+    prompt_sha256: str = ""
     checks: list[CheckResult]
     passed: bool
     score: float  # fraction of checks passed, in [0, 1]
@@ -320,6 +332,7 @@ class EvalReport(BaseModel):
     # the two happen to agree, but a caller must never infer "which suite"
     # from this default coinciding with a suite's only possible value.
     path: EvalPath = "llm"
+    suite: EvalSuite = "unknown"
     options: dict[str, Any]
     # HUMANOID_ARCHITECTURE_RESEARCH.md Phase 0: which the CLI actually asked
     # for, versus what the running deployment's Config would resolve to right
@@ -336,6 +349,17 @@ class EvalReport(BaseModel):
     # caller may have deliberately pointed --model at a candidate -- it is
     # context for comparing the two, not a second copy of `model`.
     deployment_llm_provenance: dict[str, Any] = Field(default_factory=dict)
+    # Endpoint used by the eval client, which may intentionally differ from
+    # the deployment's configured OLLAMA_URL.
+    llm_endpoint: str = ""
+    # Exact client-side request evidence.  This is intentionally a list: a
+    # resilient Ollama call may try both /api/chat and /api/generate, and a
+    # report must not collapse that fallback into the configured URL.
+    request_provenance: list[dict[str, Any]] = Field(default_factory=list)
+    # Canonical digest of the probes (and, for conversation reports, the
+    # transcript fixture) that were executed.  A system-prompt digest alone
+    # cannot identify a changed question pack.
+    probe_set_sha256: str = ""
     # Digest of the system prompt every probe in this run was generated under.
     # It is the largest single input to every response and the one most likely
     # to drift unnoticed between two runs: adaptive traits evolve through
@@ -363,11 +387,9 @@ class EvalReport(BaseModel):
     # written before this field existed.
     git_revision: str = ""
     # HUMANOID_ARCHITECTURE_RESEARCH.md §17: fingerprint of whatever fixed
-    # state/memory fixture the run used, if any. Every run today uses none
-    # (the harness's whole point is measuring the LLM boundary with "no NATS,
-    # no databases, no mesh" -- see runner.py's module docstring), so this is
-    # "" for every current report -- a recorded fact ("no fixture was used"),
-    # not an omission, ready for whenever a future run does use one.
+    # state/memory fixture the run used, if any. Direct single-turn runs use no
+    # fixture; retrieval-backed conversation runs may use live stores and leave
+    # this empty until a caller supplies a frozen fixture identity.
     state_fixture_hash: str = ""
     # Populated by a human after the fact (see `evals/__main__.py`'s `rate`/
     # `rate-pairwise` commands), never by `run_eval` itself. Empty by default
@@ -376,6 +398,13 @@ class EvalReport(BaseModel):
     pairwise_ratings: list[PairwiseRating] = Field(default_factory=list)
     results: list[ProbeResult]
     by_category: dict[str, CategorySummary]
+
+    @model_validator(mode="after")
+    def validate_unique_result_ids(self) -> "EvalReport":
+        ids = [result.probe_id for result in self.results]
+        if len(ids) != len(set(ids)):
+            raise ValueError("EvalReport results must have unique probe_id values")
+        return self
 
 
 class ProbeDelta(BaseModel):

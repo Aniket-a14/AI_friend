@@ -1,8 +1,10 @@
 # AI_friend — Humanoid Architecture Research and Deep Audit
 
 **Date:** 2026-09-02
-**Repository state audited:** `main` at `7a42c2a`
-**Scope:** architecture audit and research only. No speculative runtime change is proposed or implemented by this document.
+**Repository state audited:** local `research` at `c4fe1c5` (two Phase 0 commits ahead of `origin/main` at `7a42c2a`)
+**Scope:** architecture audit and research, with the evidence-driven Phase 0
+blocker repair recorded in the follow-up ledger below. Phase 1 cognitive
+contracts remain unimplemented.
 
 ## Executive summary
 
@@ -710,8 +712,10 @@ confirmed evidence. The home-GPU and spike results below are verified only as
 dated text in `.agents/CONTEXT.md`; their underlying remote runs and raw files
 were not available for independent replay in this environment.
 
-**Audit boundary:** `main` is clean at `7a42c2a` and matches `origin/main`.
-The only untracked file is this research artifact. No production code was changed.
+**Audit boundary:** local `research` is clean at `c4fe1c5`; it has no configured
+upstream, while `origin/main` remains at `7a42c2a`. The Phase 0 implementation is
+present in commits `98e150b` and `c4fe1c5`. No production code was changed during
+this re-verification.
 
 ### Evidence Audit Delta
 
@@ -745,14 +749,18 @@ The only untracked file is this research artifact. No production code was change
 - The shipped eval harness explicitly supports two different seams. Its default
   `llm` path sends the persona prompt directly to `OllamaClient.generate`; its
   optional action path exercises prompt construction, streaming sanitization,
-  and boundary validation (`backend/evals/runner.py:123-150`,
-  `backend/evals/action_path.py:1-30`). The exact path used by the historical
+  and boundary validation (`backend/evals/runner.py:199-206,234-311`,
+  `backend/evals/action_path.py:118-220`). The exact path used by the historical
   24-probe run is not recorded in this checkout.
-- The tracked eval output currently available is
-  `backend/evals/out/phase6_baseline.json`, tagged `llama3.2:3b`, path `llm`,
-  with pinned generation options and `persona_name="my friend"`. Its
-  `provenance="live"` field describes how that historical artifact was produced;
-  it is not the historical `phi4-mini` conversational result.
+- The available local eval outputs are ignored by git, not tracked evidence.
+  `character_pressure_llm_qwen.json` and `character_pressure_action_qwen.json`
+  were directly inspected: both use `qwen2.5:3b`, are stamped `provenance="live"`,
+  `model_source="explicit_cli"`, and carry the same pinned options and persona
+  version. They were created before the final `c4fe1c5` commit and record
+  `git_revision="98e150b-dirty"`, so they are evidence about that dirty working
+  tree, not a clean `c4fe1c5` replay. The older ignored
+  `phase6_baseline.json` is `llama3.2:3b`/`llm` and predates the added provenance
+  fields; it is not the historical `phi4-mini` conversational result.
 
 #### CONTRADICTS CURRENT RESEARCH
 
@@ -813,6 +821,99 @@ The only untracked file is this research artifact. No production code was change
   audit makes no claim about agent-session findings beyond tracked repository
   artifacts.
 
+#### RE-VERIFICATION FINDINGS (CLASSIFIED)
+
+- **VERIFIED — Phase 0 is partial, not complete.** The two Phase 0 commits add
+  report fields, the character-pressure pack, persona-derived forgetting probes,
+  rating commands, and a real `ActionService` evaluation seam. They do not make
+  configuration precedence single-source or observable at per-variable source
+  level; they do not verify the external home-GPU process; no human ratings were
+  collected in the available reports; and `state_fixture_hash` remains an empty
+  schema default rather than a computed fixture identity.
+- **VERIFIED — `LLM_PROVENANCE` is resolved-config metadata, not source
+  provenance.** Pydantic settings still combine process environment, the selected
+  env file, and code defaults. The property records only the selected
+  `_env_file` plus final values. A process-environment override can therefore be
+  printed by `_provenance_lines` as `deployment config (from <env_file>)` even
+  though that value came from the process environment. Compose interpolation and
+  systemd `EnvironmentFile=` values are not distinguished either.
+- **VERIFIED — the eval endpoint and complete request are not recorded.** The CLI
+  constructs `OllamaClient(base_url=args.url)`, but `EvalReport` has no eval-client
+  endpoint field; `deployment_llm_provenance["ollama_url"]` describes Config, not
+  necessarily `args.url`. Reports also contain only the pinned override subset of
+  options, not the complete serialized request (for example `num_thread`,
+  `keep_alive`, endpoint choice, model-tag fallback, runtime/server identity, or
+  thinking-token behavior).
+- **VERIFIED — the action report does not contain raw model output.**
+  `generate_through_action_service` intentionally collects only `content` chunks
+  emitted after ActionService sanitization/thought stripping and may concatenate
+  primary partial content with retry content. Consequently `ProbeResult.response`
+  is delivered/action output on that path, while `post_processed_output` is a
+  second pass over that delivered text; it is not a raw-provider versus
+  post-processed pair as §17 requires.
+- **VERIFIED — prompt identity is incomplete.** `system_prompt_sha256` identifies
+  the system string, but no report-level digest identifies the probe pack,
+  rendered per-probe user prompts, action goal/instructions, or the exact HTTP
+  request. A changed probe pack or action prompt can therefore leave the report's
+  prompt identity looking unchanged.
+- **VERIFIED — `llm` versus `action` is separated only on the single-turn path.**
+  `run_eval` and `compare_reports` correctly label and reject cross-path
+  comparisons. The conversation suite is structurally `llm` only, but its reports
+  share the same `path="llm"` as single-turn reports. `compare_reports` accepts
+  such incompatible reports; with no shared probe ids its `gate_passed` property
+  is still true. `rate-pairwise` also does not reject reports from different
+  paths. This can produce a misleading green conclusion even though the path
+  label itself is correct.
+- **VERIFIED — the forgetting reference is dynamic, not frozen.**
+  `forgetting_reference_probes(manager)` derives name, values, traits, and avoid
+  terms from the persona loaded for the current run. The tests intentionally prove
+  different personas receive different probe content. That is useful generic
+  plumbing, but it cannot by itself serve as a fixed before/after forgetting set
+  when the persona changes.
+- **VERIFIED — current test evidence is narrower than the historical ledger
+  claims.** The focused Phase 0-related run passed `175` tests. A full local run
+  passed `1665` tests but had `8` NATS-account setup errors because this environment
+  denied binding a local test port. The ledger's historical `1673/1673` claim was
+  not reproduced here. The new tests mostly exercise schema/helpers and fake
+  clients; they do not prove Compose/systemd precedence, actual HTTP payloads,
+  external deployment state, or a clean final-commit live run.
+
+#### PHASE 0 ASSESSMENT
+
+- **VERIFIED:** implementation progress is real and exceeds metadata-only work;
+  the action path, probe packs, and rating tooling execute meaningful code.
+- **VERIFIED:** provenance is still insufficient to call Phase 0's “establish
+  truth” exit criterion satisfied.
+- **LIKELY:** the next safe step is to repair provenance/fixture/path invariants
+  before using these reports as a model-swap or adapter gate.
+- **UNKNOWN:** whether the external `phi4-mini` deployment or its historical
+  conversational results would pass the new final-commit evaluation.
+
+#### FOLLOW-UP IMPLEMENTATION LEDGER — 2026-09-03
+
+- **VERIFIED — local provenance blockers repaired.** `AppSettings.LLM_PROVENANCE`
+  now records the runtime precedence order and per-field winning source;
+  `OllamaClient` records hash-only request traces with the actual endpoint,
+  model variant, merged options, and prompt digests. This identifies what the
+  local process executed, while still not proving which upstream launcher
+  injected a process environment value.
+- **VERIFIED — report identity repaired.** Reports now identify their suite,
+  eval endpoint, canonical probe-set digest, per-probe prompt digest, and raw
+  provider output separately from visible/post-processed output. Action-path
+  provider chunks are captured across primary and self-correction streams.
+- **VERIFIED — comparison gates fail closed.** Unknown/different suites,
+  different probe sets, missing/extra probe IDs, category or prompt changes,
+  and no shared probes are rejected. Pairwise rating applies the same path,
+  suite, and probe-set checks.
+- **VERIFIED — forgetting references are freezeable.** The new
+  `freeze-forgetting-reference` command writes a persona-derived snapshot, and
+  `run --forgetting-reference-pack` reuses it. The existing dynamic option is
+  still available but is not a frozen gate.
+- **VERIFIED — focused validation:** 172 tests passed, including an HTTP
+  transport test of the actual Ollama request payload. **UNKNOWN:** the full
+  suite's 8 NATS-account setup cases and the external home-GPU deployment remain
+  unverified in this environment; the other 1672 backend tests passed.
+
 #### STALE
 
 - `docker-compose.prod.yml`, `config.py`, the ignored local `.env`, and the
@@ -823,6 +924,12 @@ The only untracked file is this research artifact. No production code was change
 - The root research statement that no local configuration evidence exists is
   stale; the stronger and accurate statement is that local configuration exists
   but is not evidence of the external phi4 deployment.
+- The schema comment that every current report uses no state/memory fixture is
+  stale: `run-conversation --retrieval memory` writes and queries the real memory
+  stores, yet still leaves `state_fixture_hash` empty.
+- The phrase “tracked eval output” was stale; the available `backend/evals/out/*`
+  reports are ignored artifacts. The Phase 0 qwen artifacts are also stamped
+  against `98e150b-dirty`, not the current clean `c4fe1c5`.
 
 #### IMPLEMENTATION WARNING
 

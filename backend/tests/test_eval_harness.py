@@ -20,11 +20,20 @@ from app.persona.profile import IMMUTABLE_CORE
 from evals import runner as runner_module
 from evals.__main__ import main as evals_main
 from evals.action_path import (
+    ActionGenerationResult,
+    PinnedOptionsClient,
     build_action_service,
     build_plan,
     generate_through_action_service,
 )
-from evals.compare import PathMismatch, compare_reports, render_comparison
+from evals.compare import (
+    NoSharedProbes,
+    PathMismatch,
+    ProbeSetMismatch,
+    SuiteMismatch,
+    compare_reports,
+    render_comparison,
+)
 from evals.probes import collect_probes, load_pack, persona_probes, shipped_packs
 from evals.runner import run_eval
 from evals.schema import (
@@ -377,6 +386,21 @@ async def test_a_report_records_which_persona_prompt_produced_it(kavya):
     # A digest, not the prompt: reports are shareable and the prompt carries
     # authored persona content.
     assert "YOU ARE" not in report.system_prompt_sha256
+
+
+@pytest.mark.asyncio
+async def test_report_records_endpoint_probe_fixture_and_raw_result_identity(kavya):
+    class AddressedClient(ScriptedClient):
+        base_url = "http://ollama.test:11434"
+
+    client = AddressedClient({"your name": "I am Kavya."})
+    report = await run_eval(client, kavya, persona_probes(kavya)[:1])
+
+    assert report.llm_endpoint == "http://ollama.test:11434"
+    assert report.probe_set_sha256
+    result = report.results[0]
+    assert result.raw_response == result.response
+    assert result.prompt_sha256 == fingerprint(result.prompt)
 
 
 @pytest.mark.asyncio
@@ -770,6 +794,7 @@ def _report(model, results, provenance="live", options=None, path="llm"):
         persona_name="Kavya",
         provenance=provenance,
         path=path,
+        suite="single_turn",
         options={} if options is None else options,
         results=results,
         by_category=summarize_by_category(results),
@@ -796,15 +821,37 @@ def test_a_probe_the_baseline_passed_and_candidate_failed_fails_the_gate():
 
 
 def test_probes_missing_from_one_report_are_surfaced_not_dropped():
-    """Silently intersecting probe sets would let a candidate 'pass' by not
-    being asked the questions it fails."""
+    """A no-overlap comparison must fail closed, not return a green gate."""
     baseline = _report("base", [_result("a", "identity", True, 1.0)])
     candidate = _report("cand", [_result("z", "identity", True, 1.0)])
 
-    comparison = compare_reports(baseline, candidate)
-    assert comparison.only_in_baseline == ["a"]
-    assert comparison.only_in_candidate == ["z"]
-    assert comparison.gate_passed is True  # nothing shared regressed
+    with pytest.raises(NoSharedProbes):
+        compare_reports(baseline, candidate)
+
+
+def test_reports_from_different_llm_suites_are_not_comparable():
+    baseline = _report("base", [_result("a", "identity", True, 1.0)])
+    candidate = EvalReport(
+        model="cand",
+        persona_name="Kavya",
+        provenance="live",
+        path="llm",
+        suite="conversation",
+        options={},
+        results=[_result("a", "identity", True, 1.0)],
+        by_category={},
+    )
+    with pytest.raises(SuiteMismatch):
+        compare_reports(baseline, candidate)
+
+
+def test_reports_with_different_probe_set_digests_are_not_comparable():
+    baseline = _report("base", [_result("a", "identity", True, 1.0)])
+    candidate = _report("cand", [_result("a", "identity", True, 1.0)])
+    baseline.probe_set_sha256 = "baseline"
+    candidate.probe_set_sha256 = "candidate"
+    with pytest.raises(ProbeSetMismatch):
+        compare_reports(baseline, candidate)
 
 
 def test_a_score_dip_that_still_passes_is_a_decline_not_a_regression():
@@ -1074,11 +1121,8 @@ def test_a_cross_path_comparison_is_refused_rather_than_diffed():
     assert "'llm'" in str(excinfo.value) and "'action'" in str(excinfo.value)
 
 
-def test_reports_predating_the_path_field_compare_as_the_path_they_were_run_on():
-    """Every report written before this field existed came from the llm path.
-    Defaulting to anything else -- or to an "unknown" that refuses -- would make
-    the existing baselines uncomparable overnight, retiring evidence that is
-    still valid."""
+def test_reports_without_a_suite_are_not_comparable_as_evidence():
+    """A legacy report has no reliable way to distinguish the two llm suites."""
     old = EvalReport.model_validate_json(
         json.dumps(
             {
@@ -1093,8 +1137,9 @@ def test_reports_predating_the_path_field_compare_as_the_path_they_were_run_on()
     )
     assert old.path == "llm"
 
-    fresh = _report("m", [], path="llm")
-    assert compare_reports(old, fresh).path == "llm"
+    fresh = _report("m", [_result("a", "identity", True, 1.0)], path="llm")
+    with pytest.raises(SuiteMismatch):
+        compare_reports(old, fresh)
 
 
 def test_the_action_path_scores_speech_not_the_internal_chunks(kavya):
@@ -1120,6 +1165,34 @@ def test_the_action_path_scores_speech_not_the_internal_chunks(kavya):
     # The real service is constructed without stores, and that must stay true:
     # the harness runs wherever the model does, with no Postgres/Qdrant/Neo4j.
     assert service.memory is None and service.self_knowledge is None
+
+
+@pytest.mark.asyncio
+async def test_action_path_can_retain_provider_chunks_separately_from_visible_text():
+    class Inner:
+        model = "test-model"
+        base_url = "http://ollama.test:11434"
+
+        async def generate_stream(self, **kwargs):
+            yield "<thought>private</thought>"
+            yield "visible"
+
+    pinned = PinnedOptionsClient(Inner(), RunOptions())
+
+    class Service:
+        llm = pinned
+
+        async def execute(self, plan):
+            async for _ in pinned.generate_stream("prompt", system="system"):
+                pass
+            yield {"type": "content", "data": "visible"}
+
+    result = await generate_through_action_service(
+        Service(), build_plan("hi", "system", None), with_provenance=True
+    )
+    assert isinstance(result, ActionGenerationResult)
+    assert result.response == "visible"
+    assert result.raw_response == "<thought>private</thought>visible"
 
 
 # ---------------------------------------------------------------- CLI gates

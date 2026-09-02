@@ -15753,3 +15753,51 @@ roles, governed learning) remain exactly as scoped in the saved plan file, untou
 requiring home-gpu was attempted (it was off all session) -- Phase 0's own home-gpu-tomorrow
 checklist (SSH-verify the running model, run both new packs against real `phi4-mini`, run both
 rating commands against those reports) is still fully open.
+
+## 2026-09-03 -- local Phase 0 evidence blockers implemented before Phase 1
+
+This follow-up implements the local blockers identified by the independent final evidence audit.
+It does not claim home-GPU deployment verification and does not begin Phase 1's typed cognitive
+contracts.
+
+**VERIFIED -- configuration source is now explicit at runtime.** `AppSettings.LLM_PROVENANCE`
+retains the resolved values but also records the precedence order
+`process_env > env_file > code_default` and a source per LLM field. A value injected by Compose or
+systemd is honestly labelled `process_env`; Python cannot prove which upstream launcher supplied
+that process value. Derived chat/reflection defaults are labelled as derived. This closes the
+previous false statement that every resolved value came from the selected dotenv path.
+
+**VERIFIED -- request provenance is captured at the Ollama boundary.** `OllamaClient` now keeps a
+hash-only request trace containing base URL, endpoint, actual model tag/variant, stream mode,
+complete merged options, keep-alive, and system/user prompt digests. `EvalReport` records the eval
+endpoint, request trace, suite, and canonical probe-set digest; each `ProbeResult` records its
+prompt digest and raw provider text separately from the visible/post-processed text. This means
+an `/api/chat` success, a `/api/generate` fallback, or a `:latest` model fallback cannot be
+reconstructed later as if it were the configured model alone.
+
+**VERIFIED -- action output preserves provider evidence.** The action harness still scores the
+visible `ActionService` content, but its pinned client captures provider chunks across primary and
+self-correction streams. The internal helper remains string-compatible by default and exposes an
+`ActionGenerationResult` only when the runner requests provenance.
+
+**VERIFIED -- comparisons fail closed.** Reports now identify `single_turn` versus `conversation`
+suite. `compare_reports` rejects unknown/different suites, different probe sets, different probe
+ids, category/prompt mismatches, and no shared probes. `rate-pairwise` applies the same suite/path
+and probe-set checks. A missing candidate probe can no longer produce a green adapter gate.
+
+**VERIFIED -- forgetting references can be frozen.** The new
+`freeze-forgetting-reference --out PATH` command snapshots the currently loaded persona-derived
+checks into a normal probe pack. `run --forgetting-reference-pack PATH` reuses that exact pack;
+`--include-forgetting-reference` remains an explicitly dynamic convenience and is rejected when
+combined with a frozen pack. The report's probe-set digest then binds the forgetting questions to
+the run.
+
+**VERIFIED -- validation.** The focused eval/config/provenance suite passed 172 tests. The new
+Ollama request test uses an HTTP transport double and verifies the actual payload defaults and
+successful endpoint. The full backend suite passed 1672 tests with 8 setup errors in the NATS
+account tests because this environment denied local-port binding; no home-GPU or external
+deployment claim is made here.
+
+**NOT done:** home-GPU process/model verification, human character ratings, and a frozen runtime
+state/memory fixture remain external or future evidence tasks. Phase 1 should not consume
+historical `phi4-mini` responses as teacher data until those claims are independently reproduced.

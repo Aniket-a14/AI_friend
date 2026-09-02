@@ -31,6 +31,7 @@ harness, rather than as a hook in `action.py` that would exist only for tests.
 """
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from app.cognitive.action import ActionService
@@ -93,6 +94,15 @@ class PinnedOptionsClient:
         self._inner = inner
         self._pinned = options.as_override()
         self.observed_system: str | None = None
+        self._captured_raw_chunks: list[str] = []
+
+    def begin_capture(self) -> None:
+        """Start a per-turn capture of provider chunks, including retries."""
+        self._captured_raw_chunks = []
+
+    @property
+    def captured_raw_response(self) -> str:
+        return "".join(self._captured_raw_chunks)
 
     # The runner reads both of these off the client it was given.
     @property
@@ -148,6 +158,7 @@ class PinnedOptionsClient:
             options_override=self._pin(options_override),
             **kwargs,
         ):
+            self._captured_raw_chunks.append(str(chunk))
             yield chunk
 
 
@@ -196,10 +207,20 @@ def build_plan(prompt: str, identity_prompt: str, model: str | None) -> ActionPl
     )
 
 
+@dataclass(frozen=True)
+class ActionGenerationResult:
+    """Visible action output plus the provider stream observed underneath it."""
+
+    response: str
+    raw_response: str
+
+
 async def generate_through_action_service(
     service: ActionService,
     plan: ActionPlan,
-) -> str:
+    *,
+    with_provenance: bool = False,
+) -> str | ActionGenerationResult:
     """Stream a turn and return what the user would actually have heard.
 
     Only `content` chunks are collected. The other types are real parts of the
@@ -213,8 +234,20 @@ async def generate_through_action_service(
     user hears, and a change that starts triggering self-correction is a
     behavior change the gate should catch.
     """
+    provider = getattr(service, "llm", None)
+    if isinstance(provider, PinnedOptionsClient):
+        provider.begin_capture()
+
     parts: list[str] = []
     async for chunk in service.execute(plan):
         if chunk.get("type") == "content":
             parts.append(str(chunk.get("data", "")))
-    return "".join(parts)
+    result = ActionGenerationResult(
+        response="".join(parts),
+        raw_response=(
+            provider.captured_raw_response
+            if isinstance(provider, PinnedOptionsClient)
+            else ""
+        ),
+    )
+    return result if with_provenance else result.response

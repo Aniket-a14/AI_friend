@@ -121,9 +121,11 @@ python -m evals run-conversation --pack my_pack.json --window 10 \
     --out evals/out/recall_candidate.json
 ```
 
-Reports share the single-turn shape, so `compare` works across both suites.
-Probe ids are qualified with the strategy (`recall_name_d96@full_history`) so
-two conditions never collide inside one report.
+Reports share the serialization shape, but `compare` requires the same known
+suite and identical probe set; a conversation report cannot be compared with a
+single-turn report merely because both use the direct `llm` path. Probe ids are
+qualified with the strategy (`recall_name_d96@full_history`) so two conditions
+never collide inside one report.
 
 ### Retrieval strategies, and the control next to them
 
@@ -193,6 +195,14 @@ report records the everything else and `compare` checks it:
   prompt all-CPU and part-GPU returns different text. It defaults to unset,
   because a layer count that does not fit the next machine's VRAM is worse
   than an honest unpinned run. Pin it for any A/B whose verdict matters.
+- **Execution identity**, including suite, eval endpoint, probe-set digest,
+  per-probe prompt digest, and the client's hash-only request trace. The trace
+  records the actual endpoint/model variant and complete merged Ollama
+  options, including fallback requests.
+- **Raw versus visible output.** `raw_response` preserves provider chunks;
+  `response` and `post_processed_output` show what the evaluated seam exposed
+  and what scoring saw. This distinction is especially important on the action
+  path, where sanitization and self-correction can change the visible reply.
 
 ## Usage
 
@@ -202,6 +212,15 @@ python -m evals run --model llama3.2:1b --out evals/out/baseline.json
 # ... fine-tune, build candidate model ...
 python -m evals run --model my-friend:adapter-v1 --out evals/out/candidate.json
 python -m evals compare evals/out/baseline.json evals/out/candidate.json --fail-on-regression
+```
+
+For a forgetting gate, snapshot the persona-derived questions once and reuse
+that file for both runs:
+
+```bash
+python -m evals freeze-forgetting-reference --out evals/out/forgetting-reference.json
+python -m evals run --forgetting-reference-pack evals/out/forgetting-reference.json \
+    --model qwen2.5:3b --out evals/out/baseline.json
 ```
 
 The gate is deliberately blunt: **a regression is a probe the baseline passed

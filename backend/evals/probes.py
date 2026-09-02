@@ -184,6 +184,22 @@ def forgetting_reference_probes(manager: IdentityManager) -> list[Probe]:
     return probes
 
 
+def forgetting_reference_pack(manager: IdentityManager) -> dict:
+    """Return a serializable snapshot for a before/after forgetting gate.
+
+    The live persona is used only when creating the snapshot.  Subsequent evals
+    must load the saved pack, so changing the persona cannot silently change
+    the questions or expected facts in the comparison.
+    """
+    return {
+        "description": (
+            "Frozen forgetting-reference probes generated from the persona "
+            "at snapshot time. Keep this artifact with the evaluation record."
+        ),
+        "probes": [probe.model_dump(mode="json") for probe in forgetting_reference_probes(manager)],
+    }
+
+
 def load_pack(path: Path) -> list[Probe]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))

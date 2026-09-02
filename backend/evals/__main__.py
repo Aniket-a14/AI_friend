@@ -12,7 +12,7 @@ from app import config as config_module
 from app.cognitive.identity import IdentityManager
 from app.llm.ollama_client import OllamaClient
 
-from .compare import PathMismatch, compare_reports, render_comparison
+from .compare import ComparisonInputError, compare_reports, render_comparison
 from .conversation import (
     FullHistory,
     RecentWindow,
@@ -22,7 +22,13 @@ from .conversation import (
     run_conversation_eval,
     shipped_conversation_pack,
 )
-from .probes import collect_probes, forgetting_reference_probes, shipped_packs
+from .probes import (
+    collect_probes,
+    forgetting_reference_pack,
+    forgetting_reference_probes,
+    load_pack,
+    shipped_packs,
+)
 from .retrieval import LexicalRetriever, MemoryStoreRetriever
 from .runner import run_eval
 from .schema import (
@@ -88,6 +94,20 @@ async def _cmd_run(args: argparse.Namespace) -> int:
     packs = [] if args.no_shipped_packs else shipped_packs()
     packs.extend(Path(p) for p in args.probes)
     probes = collect_probes(manager, packs)
+    if args.forgetting_reference_pack:
+        if args.include_forgetting_reference:
+            print(
+                "choose either --include-forgetting-reference or "
+                "--forgetting-reference-pack, not both",
+                file=sys.stderr,
+            )
+            return 2
+        probes.extend(load_pack(Path(args.forgetting_reference_pack)))
+        seen = set()
+        for probe in probes:
+            if probe.id in seen:
+                raise ValueError(f"duplicate probe id {probe.id!r}")
+            seen.add(probe.id)
     if args.include_forgetting_reference:
         extra = forgetting_reference_probes(manager)
         seen = {probe.id for probe in probes}
@@ -133,6 +153,17 @@ async def _cmd_run(args: argparse.Namespace) -> int:
     print(f"{passed}/{total} probes passed -> {out}")
     if report.provenance == "mock":
         print("!! mock provenance — plumbing check only, not evidence.")
+    return 0
+
+
+def _cmd_freeze_forgetting_reference(args: argparse.Namespace) -> int:
+    manager = IdentityManager(base_path=args.base_path)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps(forgetting_reference_pack(manager), indent=2), encoding="utf-8"
+    )
+    print(f"frozen forgetting reference -> {out}")
     return 0
 
 
@@ -317,7 +348,7 @@ def _cmd_compare(args: argparse.Namespace) -> int:
 
     try:
         comparison = compare_reports(baseline, candidate)
-    except PathMismatch as exc:
+    except ComparisonInputError as exc:
         # Exit 2 like the other input errors in this CLI: the reports are
         # individually fine, the pairing is not.
         print(str(exc), file=sys.stderr)
@@ -414,6 +445,20 @@ def _cmd_rate_pairwise(args: argparse.Namespace, input_fn=input) -> int:
     report_b = load_report(args.report_b)
     rater_id = args.rater_id
     rng = random.Random(args.seed)
+
+    if report_a.path != report_b.path:
+        print("cannot rate reports from different execution paths", file=sys.stderr)
+        return 2
+    if report_a.suite != report_b.suite or report_a.suite == "unknown":
+        print("cannot rate reports from different or unknown eval suites", file=sys.stderr)
+        return 2
+    if (
+        report_a.probe_set_sha256
+        and report_b.probe_set_sha256
+        and report_a.probe_set_sha256 != report_b.probe_set_sha256
+    ):
+        print("cannot rate reports produced from different probe sets", file=sys.stderr)
+        return 2
 
     by_id_a = {result.probe_id: result for result in report_a.results}
     by_id_b = {result.probe_id: result for result in report_b.results}
@@ -514,10 +559,16 @@ def main(argv=None) -> int:
     run_parser.add_argument(
         "--include-forgetting-reference",
         action="store_true",
-        help="add the frozen forgetting-reference probes (persona-derived, "
+        help="add current persona-derived forgetting-reference probes (not "
         "not a shipped pack -- see evals/probes.py::forgetting_reference_probes). "
         "Any regression here is disqualifying for an adapter/model-swap gate "
         "regardless of scores elsewhere",
+    )
+    run_parser.add_argument(
+        "--forgetting-reference-pack",
+        default=None,
+        help="load a previously frozen forgetting-reference pack; required "
+        "for before/after gates when persona files may change",
     )
     run_parser.add_argument(
         "--num-gpu",
@@ -637,11 +688,20 @@ def main(argv=None) -> int:
         "(default: OS randomness); set for a reproducible rating session",
     )
 
+    freeze_parser = sub.add_parser(
+        "freeze-forgetting-reference",
+        help="snapshot persona-derived forgetting probes for later gates",
+    )
+    freeze_parser.add_argument("--out", required=True, help="snapshot JSON path")
+    freeze_parser.add_argument("--base-path", default=None)
+
     args = parser.parse_args(argv)
     if args.command == "run":
         return asyncio.run(_cmd_run(args))
     if args.command == "run-conversation":
         return asyncio.run(_cmd_run_conversation(args))
+    if args.command == "freeze-forgetting-reference":
+        return _cmd_freeze_forgetting_reference(args)
     if args.command == "rate":
         return _cmd_rate(args)
     if args.command == "rate-pairwise":

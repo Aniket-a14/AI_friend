@@ -15,7 +15,12 @@ import pytest
 
 from app.cognitive.identity import IdentityManager
 from app.persona.profile import IMMUTABLE_CORE
-from evals.probes import forgetting_reference_probes, persona_probes
+from evals.probes import (
+    forgetting_reference_pack,
+    forgetting_reference_probes,
+    load_pack,
+    persona_probes,
+)
 
 
 @pytest.fixture
@@ -66,6 +71,17 @@ def test_different_personas_get_different_probe_content(kavya, rhea):
         kavya_probes["forgetting.name-recall"].checks[0].values
         != rhea_probes["forgetting.name-recall"].checks[0].values
     )
+
+
+def test_snapshot_stays_frozen_when_the_live_persona_changes(kavya, tmp_path):
+    snapshot = forgetting_reference_pack(kavya)
+    path = tmp_path / "forgetting-reference.json"
+    path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+    kavya.persona.name = "Changed"
+    frozen = {probe.id: probe for probe in load_pack(path)}
+
+    assert frozen["forgetting.name-recall"].checks[0].values == ["Kavya"]
 
 
 def test_avoid_probe_only_appears_when_the_persona_has_an_avoid_list(kavya, rhea):

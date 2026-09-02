@@ -12,6 +12,7 @@ is *supposed* to change responses; an eval that let it float would measure the
 agent's mood, not the model's behavior.
 """
 
+import json
 import logging
 import subprocess
 from pathlib import Path
@@ -23,6 +24,7 @@ from app.cognitive.identity import IdentityManager
 from app.llm.ollama_client import OllamaClient
 
 from .action_path import (
+    ActionGenerationResult,
     PinnedOptionsClient,
     build_action_service,
     build_plan,
@@ -109,6 +111,27 @@ def persona_version(persona) -> str:
         return fingerprint(persona.model_dump_json())
     except Exception:
         return ""
+
+
+def structured_fingerprint(value: object) -> str:
+    """Hash canonical JSON-shaped eval inputs without retaining their text."""
+    try:
+        if hasattr(value, "model_dump"):
+            value = value.model_dump(mode="json")
+        encoded = json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        return fingerprint(encoded)
+    except Exception:
+        return ""
+
+
+def request_provenance(client: object) -> list[dict]:
+    """Return the client's observed request trace, or an explicit empty trace."""
+    trace = getattr(client, "request_provenance", None)
+    if not isinstance(trace, list):
+        return []
+    return [dict(item) for item in trace if isinstance(item, dict)]
 
 
 async def reset_model_state(
@@ -203,7 +226,16 @@ async def run_probe(
             options_override=options.as_override(),
         )
     else:
-        response = await generate(probe.prompt)
+        generated = await generate(probe.prompt)
+        if isinstance(generated, ActionGenerationResult):
+            response = generated.response
+            raw_response = generated.raw_response
+        else:
+            response = str(generated)
+            raw_response = response
+
+    if generate is None:
+        raw_response = response
 
     # Computed once and kept on the result (§17: "raw output and
     # post-processed output" as separate evidence) rather than only living
@@ -224,6 +256,8 @@ async def run_probe(
         category=probe.category,
         prompt=probe.prompt,
         response=response,
+        raw_response=raw_response,
+        prompt_sha256=fingerprint(probe.prompt),
         post_processed_output=post_processed,
         checks=checks,
         passed=passed,
@@ -258,9 +292,10 @@ async def run_eval(
         pinned = PinnedOptionsClient(client, options)
         service = build_action_service(pinned)
 
-        async def generate(prompt: str) -> str:
+        async def generate(prompt: str) -> ActionGenerationResult:
             return await generate_through_action_service(
-                service, build_plan(prompt, persona_prompt, model)
+                service, build_plan(prompt, persona_prompt, model),
+                with_provenance=True,
             )
 
     # Warm-up goes through the plain client either way: it is discarded text
@@ -300,9 +335,15 @@ async def run_eval(
         persona_name=manager.persona.name,
         provenance=_provenance(),
         path=path,
+        suite="single_turn",
         options=options.as_override(),
         model_source=model_source,
         deployment_llm_provenance=dict(config_module.config_instance.LLM_PROVENANCE),
+        llm_endpoint=str(getattr(client, "base_url", "") or ""),
+        request_provenance=request_provenance(client),
+        probe_set_sha256=structured_fingerprint(
+            {"path": path, "probes": [probe.model_dump(mode="json") for probe in probes]}
+        ),
         system_prompt_sha256=fingerprint(observed or persona_prompt),
         persona_version=persona_version(manager.persona),
         git_revision=current_git_revision(),

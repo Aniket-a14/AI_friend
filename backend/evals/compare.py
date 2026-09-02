@@ -14,7 +14,11 @@ regressions are unarguable, which is what a gate needs to be.
 from .schema import ComparisonReport, EvalReport, OptionDiff, ProbeDelta
 
 
-class PathMismatch(ValueError):
+class ComparisonInputError(ValueError):
+    """The two reports cannot be treated as one before/after experiment."""
+
+
+class PathMismatch(ComparisonInputError):
     """Raised when the two reports were produced by different execution paths.
 
     This is the one input disagreement `compare` refuses outright, and the
@@ -34,6 +38,18 @@ class PathMismatch(ValueError):
     """
 
 
+class SuiteMismatch(ComparisonInputError):
+    """Reports came from different eval suites despite sharing a path label."""
+
+
+class ProbeSetMismatch(ComparisonInputError):
+    """The reports do not identify the same executed probe fixture."""
+
+
+class NoSharedProbes(ComparisonInputError):
+    """A comparison with no common probes cannot establish a green gate."""
+
+
 def require_same_path(baseline: EvalReport, candidate: EvalReport) -> None:
     if baseline.path != candidate.path:
         raise PathMismatch(
@@ -41,6 +57,11 @@ def require_same_path(baseline: EvalReport, candidate: EvalReport) -> None:
             f"the {candidate.path!r} path. These do not measure the same "
             "thing: every probe difference between them is the harness, not "
             "the model. Re-run both on one path before comparing."
+        )
+    if baseline.suite != candidate.suite or baseline.suite == "unknown":
+        raise SuiteMismatch(
+            f"baseline suite={baseline.suite!r}, candidate suite={candidate.suite!r}; "
+            "compare reports from one known suite only"
         )
 
 
@@ -84,6 +105,27 @@ def compare_reports(baseline: EvalReport, candidate: EvalReport) -> ComparisonRe
     base_by_id = {result.probe_id: result for result in baseline.results}
     cand_by_id = {result.probe_id: result for result in candidate.results}
     shared = [pid for pid in base_by_id if pid in cand_by_id]
+    only_in_baseline = sorted(set(base_by_id) - set(cand_by_id))
+    only_in_candidate = sorted(set(cand_by_id) - set(base_by_id))
+    if not shared:
+        raise NoSharedProbes(
+            "baseline and candidate have no shared probe ids; a green gate "
+            "cannot be established"
+        )
+    if only_in_baseline or only_in_candidate:
+        raise ProbeSetMismatch(
+            "baseline and candidate did not execute the same probe ids; "
+            "regenerate both with one identical probe set"
+        )
+    if (
+        baseline.probe_set_sha256
+        and candidate.probe_set_sha256
+        and baseline.probe_set_sha256 != candidate.probe_set_sha256
+    ):
+        raise ProbeSetMismatch(
+            "baseline and candidate used different probe-set fixtures; "
+            "regenerate both with the same pack"
+        )
 
     regressions: list[ProbeDelta] = []
     improvements: list[ProbeDelta] = []
@@ -92,6 +134,15 @@ def compare_reports(baseline: EvalReport, candidate: EvalReport) -> ComparisonRe
 
     for pid in shared:
         base, cand = base_by_id[pid], cand_by_id[pid]
+        if base.category != cand.category or (
+            base.prompt_sha256
+            and cand.prompt_sha256
+            and base.prompt_sha256 != cand.prompt_sha256
+        ):
+            raise ProbeSetMismatch(
+                f"probe {pid!r} differs between reports; regenerate both "
+                "with one identical probe set"
+            )
         delta = ProbeDelta(
             probe_id=pid,
             category=base.category,
@@ -139,8 +190,8 @@ def compare_reports(baseline: EvalReport, candidate: EvalReport) -> ComparisonRe
         improvements=improvements,
         declines=declines,
         unchanged=unchanged,
-        only_in_baseline=sorted(set(base_by_id) - set(cand_by_id)),
-        only_in_candidate=sorted(set(cand_by_id) - set(base_by_id)),
+        only_in_baseline=only_in_baseline,
+        only_in_candidate=only_in_candidate,
         by_category_delta=by_category_delta,
     )
 
