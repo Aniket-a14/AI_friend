@@ -198,6 +198,23 @@ class AppSettings(BaseSettings):
     # fixture's own comment.
     REFLECTION_MIN_INTERVAL_SECONDS: float = 30.0
 
+    # Bucket 12 (voice remediation Phase 3), items 2-3: a third, independent
+    # gate from the two above -- REFLECTION_MIN_INTERVAL_SECONDS throttles
+    # per-turn reflection, the 300s constant upstream of `_run_consolidation_
+    # pass` gates that pass on silence alone (any time of day), and this
+    # gates a *separate* sweep (`SubconsciousAgent._run_rest_phase_replay`)
+    # that only runs when `is_rest_phase` says the agent is both idle AND
+    # (night OR fatigue > 0.8) -- reusing the existing dream gate's fatigue
+    # threshold rather than inventing a second one. 1800s (30 minutes) keeps
+    # a long rest period from re-scoring the same candidates every 5s tick
+    # without meaningfully delaying a real overnight consolidation window.
+    REST_PHASE_REPLAY_INTERVAL_SECONDS: float = 1800.0
+    # How many recent high-importance memories one rest-phase sweep samples
+    # for re-scoring/pruning via the existing `apply_actr_decay` pipeline.
+    REST_PHASE_REPLAY_LIMIT: int = 20
+    REST_PHASE_REPLAY_MIN_IMPORTANCE: float = 0.5
+    REST_PHASE_REPLAY_LOOKBACK_HOURS: int = 168  # 7 days
+
     PROACTIVE_ENABLED: bool = True
     PROACTIVE_IDLE_THRESHOLD_SECONDS: float = 7200.0
     PROACTIVE_COOLDOWN_SECONDS: float = 3600.0

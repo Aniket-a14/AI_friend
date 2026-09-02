@@ -3603,6 +3603,47 @@ class MemoryStore:
             logger.error(f"Failed to fetch recent episodes: {e}")
             return []
 
+    async def get_recent_high_importance_memory_contents(
+        self,
+        limit: int = 20,
+        min_importance: float = 0.5,
+        lookback_hours: int = 168,
+    ) -> list[str]:
+        """Bucket 12 (voice remediation Phase 3), items 2-3: candidates for
+        `SubconsciousAgent._run_rest_phase_replay`'s idle/night-gated sweep --
+        memories worth periodically re-scoring and re-checking for pruning
+        via `apply_actr_decay`, independent of whether they happen to be tied
+        to the current tick's just-consolidated dialogue the way
+        `_run_consolidation_pass`'s own candidates are. Mirrors
+        `get_recent_unconsolidated_episodes`'s dual-backend query shape.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    rows = await conn.fetch(
+                        "SELECT content FROM memories WHERE importance_score >= ? "
+                        "AND COALESCE(last_recalled_at, created_at) >= "
+                        "datetime('now', ? || ' hours') "
+                        "ORDER BY importance_score DESC LIMIT ?",
+                        min_importance,
+                        f"-{lookback_hours}",
+                        limit,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        "SELECT content FROM memories WHERE importance_score >= $1 "
+                        "AND COALESCE(last_recalled_at, created_at) >= "
+                        "NOW() - ($2 || ' hours')::interval "
+                        "ORDER BY importance_score DESC LIMIT $3",
+                        min_importance,
+                        str(lookback_hours),
+                        limit,
+                    )
+                return [row["content"] for row in rows if row.get("content")]
+        except Exception as e:
+            logger.error(f"Failed to fetch rest-phase replay candidates: {e}")
+            return []
+
     async def mark_episodes_consolidated(self, message_ids: list[str]):
         """Marks specific dialogue messages as consolidated to avoid duplicate processing."""
         if not message_ids:
