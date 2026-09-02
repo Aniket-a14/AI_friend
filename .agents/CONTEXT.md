@@ -15367,3 +15367,48 @@ interrupts a real in-progress TTS turn end-to-end -- this session's verification
 `brain_agent`-unit level (the publish call and its payload), which is what the plan's own verify
 line asked for, not a hardware-in-the-loop test. Bucket 17 (and therefore Bucket 8) is otherwise
 closed: items 1 and 2 done here, item 3 already shipped in PR #211, item 4 needed no code.
+
+## 2026-09-02 -- Bucket 20 (CosyVoice3 tag-conditioning spike): negative result, no swap
+
+No code changed in this repo. This was an isolated spike on home-gpu, entirely outside
+`main`'s venv, to answer one question before touching anything real: does CosyVoice3-0.5B's
+zero-shot cross-lingual inference render inline delivery tags (`[sarcastically]`, `[giggles]`,
+`[whispers]`) as actual non-verbal delivery, or does it speak them aloud the way the plan
+explicitly worried about (the documented ElevenLabs failure mode)? Answer: it speaks them
+aloud. Verdict is the user's own listening judgment on both rendered clips, not an inferred or
+scored result -- this harness has no automated tag-fidelity scorer and none was built for the
+spike.
+
+**Setup:** `~/cosyvoice_spike/` on home-gpu -- fresh venv, `FunAudioLLM/CosyVoice` clone
+(`Fun-CosyVoice3-0.5B-2512` checkpoint, ~9.1GB), isolated from the production venv and from
+GPT-SoVITS. Rendered the same Eldoria test script (user-authored, containing all three tags)
+through `inference_cross_lingual` against both consented reference clips --
+[[two-voices-available-for-cloning]] -- Abhipsa's and Akshita's, per explicit instruction to
+test both rather than defaulting to one. VRAM required stopping GPT-SoVITS and, after a
+`torch.load()`-time OOM even with `fp16=True` (the crash is before fp16 casting applies),
+stopping Ollama's phi4-mini too (`systemctl stop ollama` -- `keep_alive:0` alone did not
+release the `llama-server` subprocess's VRAM). Both services were confirmed restored to their
+normal running state before ending the spike.
+
+**Result, per direct listening comparison against the GPT-SoVITS incumbent on the same script:**
+- All three tags (`[sarcastically]`, `[giggles]`, `[whispers]`) were spoken aloud as literal
+  text rather than interpreted as delivery direction -- the exact failure mode the plan flagged
+  as a risk to check for, confirmed present.
+- Voice-clone fidelity to the reference speaker was noticeably worse than GPT-SoVITS's clone on
+  both voices.
+- Akshita's render additionally had audible stutter/grain artifacts at the start of the clip,
+  not present in her GPT-SoVITS renders.
+
+**Decision:** no swap. GPT-SoVITS remains the incumbent TTS engine. This closes Bucket 20 on a
+negative result rather than proceeding to its own next steps (formal A/B script, VRAM
+contention writeup) -- the tag-rendering failure alone is disqualifying regardless of clone
+quality, so further comparison would not change the outcome. Bucket 21/22 (which depend on
+Bucket 20 succeeding) do not proceed.
+
+**NOT done:** no automated scoring of tag fidelity (this was a human listening judgment, by
+design -- the plan never specified a scorer for this probe); did not try CosyVoice3's other
+inference modes (`inference_zero_shot` with tags in the prompt differently, or fine-tuning) --
+the zero-shot cross-lingual path was the one the plan named and it failed clearly enough that
+those variants were not attempted. `~/cosyvoice_spike/` (venv + 9.1GB checkpoint) is left in
+place on home-gpu, untouched by and isolated from production; disk cleanup is a separate,
+non-urgent decision.
