@@ -196,6 +196,24 @@ async def test_vision_agent_stop_tolerates_a_disabled_vlm_client():
     assert agent.running is False
 
 
+@pytest.mark.asyncio
+async def test_vision_agent_stop_closes_face_landmarker_when_present():
+    agent = VisionAgent.__new__(VisionAgent)
+    agent.running = True
+    agent.camera = MagicMock()
+    agent.screen = MagicMock()
+    agent.vlm_client = None
+    agent._face_landmarker = MagicMock()
+    agent.nc = None
+    agent._metrics = MagicMock()
+    agent._background_tasks = set()
+
+    await agent.stop()
+
+    assert agent.running is False
+    agent._face_landmarker.close.assert_called_once()
+
+
 def test_cognitive_service_close_shuts_down_its_own_metrics(
     mock_llm_service, mock_graph_db, mock_memory_store
 ):

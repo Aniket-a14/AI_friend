@@ -295,6 +295,18 @@ class AppSettings(BaseSettings):
     # probe the real path rather than mere process liveness (see finding E1).
     VISION_HEALTH_FILE: str = "/tmp/vision_agent_healthy"  # nosec B108 - same as SQLITE_FALLBACK_HEALTH_FILE above
 
+    # Bucket 13 (voice remediation Phase 3): the CPU-only facial reflex
+    # channel (app/vision/reflex.py). Deliberately independent of
+    # VLM_ENABLED/VISION_SUSPEND_DURING_TURN -- it costs zero VRAM and is the
+    # whole point of sampling continuously, including mid-turn, so it must
+    # not inherit the VLM's contention-driven suspend policy.
+    FACIAL_REFLEX_ENABLED: bool = True
+    # Empty means "resolve relative to app/vision/agent.py's own location" --
+    # see VisionAgent.__init__ -- not the process cwd, per this project's own
+    # hard-learned lesson (the persona path-resolution bug) about relative
+    # paths resolving differently across deployment entry points.
+    FACIAL_REFLEX_MODEL_PATH: str = ""
+
     # P1-7: measured (this repo's audit/) that two resident 3B models roughly
     # halve each other's decode rate on one GPU/one Ollama endpoint -- the
     # VLM and the conversational LLM otherwise contend on every turn. Since
