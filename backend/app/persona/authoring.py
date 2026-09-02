@@ -53,10 +53,27 @@ def find_persona_file(explicit: str | None = None) -> Path | None:
     directory, because the agents are launched from several places (the repo
     root, `backend/`, and a container WORKDIR) and a relative path would resolve
     differently in each — the kind of bug that only appears in one deployment.
+
+    This applies equally to `explicit` (`Config.PERSONA_PROFILE_PATH`) when it
+    is a relative path — `create_friend.py` always writes to an absolute,
+    repo-root-anchored path (`REPO_ROOT / "personal" / "persona.toml"`), so a
+    relative `PERSONA_PROFILE_PATH=personal/persona.toml` in `.env` must be
+    searched for the same way the no-argument default is, not resolved
+    against whatever the process happened to `cd` into first. Confirmed the
+    hard way: every documented command in this repo runs from `backend/`, so
+    a naive `Path(explicit).exists()` here silently never finds the file the
+    wizard just wrote, on every real deployment that follows the documented
+    workflow.
     """
     if explicit:
         path = Path(explicit)
-        return path if path.exists() else None
+        if path.is_absolute():
+            return path if path.exists() else None
+        for parent in Path(__file__).resolve().parents:
+            candidate = parent / path
+            if candidate.exists():
+                return candidate
+        return None
 
     for parent in Path(__file__).resolve().parents:
         candidate = parent / DEFAULT_PERSONA_FILE
