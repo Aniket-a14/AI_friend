@@ -383,6 +383,26 @@ pub fn personalized_pagerank(
     p
 }
 
+/// Bucket 9 (voice remediation Phase 3): ACT-R spacing-effect bonus.
+///
+/// Mirrors Python's `MemoryStore._spacing_hours` + the spacing term inside
+/// `_base_activation` exactly -- see those docstrings for why this spreads
+/// the creation-to-last-recall span evenly across `recall_count` recalls
+/// (an approximation, since only two timestamps are stored, not one per
+/// recall) rather than summing the literal ACT-R power-law decay. Extracted
+/// as a pure function, independent of any PyO3 types, so it can be unit
+/// tested directly instead of only through the PyDict-taking kernel below.
+fn actr_spacing_bonus(recall_count: f64, last_recall_ts: f64, created_ts: f64) -> f64 {
+    if recall_count < 2.0 {
+        return 0.0;
+    }
+    let span_hours = (last_recall_ts - created_ts) / 3600.0;
+    if span_hours <= 0.0 {
+        return 0.0;
+    }
+    0.15 * (span_hours / recall_count + 1.0).ln()
+}
+
 #[pyfunction]
 pub fn score_memories_actr_sqlite(
     query_vector: Vec<f64>,
@@ -477,6 +497,22 @@ pub fn score_memories_actr_sqlite(
             None => now_ts,
         };
 
+        // Bucket 9 (voice remediation Phase 3): mirrors `_last_recall_ts`
+        // above -- Python's `_normalize_recall_ts` preprocesses this the same
+        // way, falling back to `now_ts` on anything missing/unparseable,
+        // which makes the span below <= 0.0 and correctly suppresses the
+        // spacing bonus rather than fabricating a signal from a fallback.
+        let created_ts = match row.get_item("_created_ts")? {
+            Some(val) => {
+                if val.is_none() {
+                    now_ts
+                } else {
+                    val.extract::<f64>().unwrap_or(now_ts)
+                }
+            }
+            None => now_ts,
+        };
+
         let valence = match row.get_item("valence")? {
             Some(val) => {
                 if val.is_none() {
@@ -517,11 +553,14 @@ pub fn score_memories_actr_sqlite(
             + (emotional_weight - current_arousal).powi(2))
             .sqrt();
 
-        // ACT-R base activation: ln(recall_count) - decay_rate * ln(hours_since + 1.0) + 1.5 * importance_score + 0.15 * (1.0 - dist_emo)
+        let spacing_bonus = actr_spacing_bonus(recall_count, last_recall_ts, created_ts);
+
+        // ACT-R base activation: ln(recall_count) - decay_rate * ln(hours_since + 1.0) + 1.5 * importance_score + 0.15 * (1.0 - dist_emo) + spacing_bonus
         let base_activation = recall_count.ln()
             - decay_rate * (hours_since + 1.0).ln()
             + 1.5 * importance_score
-            + 0.15 * (1.0 - dist_emo);
+            + 0.15 * (1.0 - dist_emo)
+            + spacing_bonus;
 
         // Neuromodulatory distance mapping
         let effective_similarity = similarity
@@ -748,5 +787,35 @@ mod tests {
     fn ppr_empty_seeds_returns_zero_vector() {
         let p = personalized_pagerank(vec![vec![1], vec![0]], vec![1, 1], vec![], 0.85, 3);
         assert_eq!(p, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn spacing_bonus_is_zero_with_a_single_recall() {
+        // A creation timestamp 30 days before the one recall exists, but
+        // recall_count=1 means there is no gap between recalls to measure.
+        assert_eq!(actr_spacing_bonus(1.0, 1_000_000.0, 1_000_000.0 - 30.0 * 86400.0), 0.0);
+    }
+
+    #[test]
+    fn spacing_bonus_is_zero_when_the_span_is_non_positive() {
+        assert_eq!(actr_spacing_bonus(5.0, 1_000_000.0, 1_000_000.0), 0.0);
+        assert_eq!(actr_spacing_bonus(5.0, 1_000_000.0, 1_000_100.0), 0.0);
+    }
+
+    #[test]
+    fn a_wider_spacing_scores_a_strictly_larger_bonus() {
+        let now = 1_000_000.0;
+        let spaced = actr_spacing_bonus(5.0, now, now - 100.0 * 3600.0);
+        let massed = actr_spacing_bonus(5.0, now, now - 1.0 * 3600.0);
+        assert!(spaced > massed);
+        assert!(massed > 0.0); // still a real, if small, positive span
+    }
+
+    #[test]
+    fn spacing_bonus_matches_the_python_formula_bit_for_bit() {
+        // 0.15 * ln((span_hours / recall_count) + 1.0), span = 100h over 5 recalls.
+        let bonus = actr_spacing_bonus(5.0, 1_000_000.0, 1_000_000.0 - 100.0 * 3600.0);
+        let expected = 0.15_f64 * (100.0_f64 / 5.0 + 1.0).ln();
+        assert!((bonus - expected).abs() < 1e-12);
     }
 }

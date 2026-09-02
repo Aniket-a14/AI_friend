@@ -125,6 +125,12 @@ ACTR_EMO_PROXIMITY_WEIGHT = 0.15  # bonus for small emotional distance
 ACTR_VALENCE_GAIN = 0.1  # similarity gain from congruent valence×arousal
 ACTR_STRESS_SUPPRESSION = 0.2  # similarity suppression under arousal×cortisol
 ACTR_EMO_DISTANCE_PENALTY = 0.5  # score penalty per unit emotional distance
+# Bucket 9 (voice remediation Phase 3): weight on ln(avg_inter_recall_hours + 1)
+# -- see `_base_activation`/`_spacing_hours`. Scaled so a memory spaced across
+# roughly a month of recalls (ln(~720)≈6.6) lands in the same ballpark as the
+# importance term's own maximum (1.5×1.0), rather than dwarfing or vanishing
+# beside the other terms already tuned to the "-3..+3" range noted above.
+ACTR_SPACING_WEIGHT = 0.15
 
 # P3-9: L1 cache key quantization. The cache key used to carry raw
 # current_valence/arousal/cortisol floats -- affect drifts continuously
@@ -702,17 +708,67 @@ class MemoryStore:
                     memory_id,
                 )
 
-    def _base_activation(self, recall_count, hours_since, importance_score, dist_emo):
-        """ACT-R base-level activation: ln(freq) - d·ln(recency) plus importance
-        and emotional-proximity terms. Shared by every retrieval-scoring path so
-        the formula stays identical across the Qdrant, SQLite and PG branches.
+    def _base_activation(
+        self,
+        recall_count,
+        hours_since,
+        importance_score,
+        dist_emo,
+        spacing_hours=None,
+    ):
+        """ACT-R base-level activation: ln(freq) - d·ln(recency) plus importance,
+        emotional-proximity, and (Bucket 9, voice remediation Phase 3) spacing
+        terms. Shared by every retrieval-scoring path so the formula stays
+        identical across the Qdrant, SQLite and PG branches.
+
+        `spacing_hours` (see `_spacing_hours`) rewards a memory whose repeat
+        recalls were spread out over time (spaced practice) over one recalled
+        the same total number of times in a burst (massed practice), even
+        when frequency (`recall_count`) and recency (`hours_since`) are
+        identical between the two -- the literature's central spacing-effect
+        finding, which the plain `ln(freq) - d·ln(recency)` formula above has
+        no way to express on its own. `None` means there is no second data
+        point to measure spacing from (fewer than 2 recalls, or no creation
+        timestamp), so the term is skipped rather than guessed at.
         """
+        spacing_bonus = (
+            ACTR_SPACING_WEIGHT * _ln(spacing_hours + 1.0)
+            if spacing_hours is not None
+            else 0.0
+        )
         return (
             _ln(recall_count)
             - self.decay_rate * _ln(hours_since + 1.0)
             + ACTR_IMPORTANCE_WEIGHT * importance_score
             + ACTR_EMO_PROXIMITY_WEIGHT * (1.0 - dist_emo)
+            + spacing_bonus
         )
+
+    @staticmethod
+    def _spacing_hours(recall_count, created_at, last_recall_dt):
+        """Approximate average gap between recalls, in hours.
+
+        The schema stores only `recall_count` and `last_recalled_at`, not a
+        timestamp per individual recall, so the true ACT-R spacing formula
+        (summing `(now - t_j)^-d` over every past presentation `t_j`) is not
+        computable from what is actually persisted. This instead spreads the
+        span from creation to the most recent recall evenly across
+        `recall_count` recalls -- an approximation, not the literal sum, but
+        one that still separates a memory recalled a handful of times across
+        weeks (spaced) from one recalled the same number of times within an
+        hour (massed), which is the effect this bucket exists to capture.
+
+        Returns `None` (deliberately, not 0.0 -- see `_base_activation`) when
+        there are fewer than two recalls to measure a gap between, either
+        timestamp is missing, or the span is non-positive (a stale or
+        fallback-to-"now" creation timestamp racing the recall clock).
+        """
+        if recall_count < 2 or created_at is None or last_recall_dt is None:
+            return None
+        span_hours = (last_recall_dt - created_at).total_seconds() / 3600.0
+        if span_hours <= 0.0:
+            return None
+        return span_hours / recall_count
 
     def _effective_similarity(
         self,
@@ -1540,6 +1596,8 @@ class MemoryStore:
 
         last_recall_time = self._coerce_last_recall_ts(db_meta, meta, now_ts)
         hours_since = max(0.001, (now_ts - last_recall_time) / 3600.0)
+        last_recall_dt = datetime.fromtimestamp(last_recall_time, UTC)
+        created = self._parse_qdrant_created_at(meta.get("created_at"), current_time)
 
         # 2D/3D Emotional Distance matching the research simulator
         dist_emo = math.sqrt(
@@ -1547,8 +1605,9 @@ class MemoryStore:
             + (emotion_weight_row - current_arousal) ** 2
         )
 
+        spacing_hours = self._spacing_hours(recall_count, created, last_recall_dt)
         base_activation = self._base_activation(
-            recall_count, hours_since, importance_score, dist_emo
+            recall_count, hours_since, importance_score, dist_emo, spacing_hours
         )
 
         similarity = cand["score"]
@@ -1567,8 +1626,6 @@ class MemoryStore:
 
         if score <= (threshold - 2.5) and importance_score < 0.7:
             return None
-
-        created = self._parse_qdrant_created_at(meta.get("created_at"), current_time)
 
         custom_metadata = {}
         if "custom_metadata" in meta:
@@ -1595,7 +1652,7 @@ class MemoryStore:
             "relation_circles": meta.get("relation_circles"),
             "modality": meta.get("modality"),
             "similarity": similarity,
-            "last_recalled_at": datetime.fromtimestamp(last_recall_time, UTC),
+            "last_recalled_at": last_recall_dt,
         }
 
     async def _score_qdrant_candidates(
@@ -1738,10 +1795,17 @@ class MemoryStore:
         now = current_time if current_time is not None else datetime.now(UTC)
         now_ts = now.timestamp()
 
-        # Preprocess timestamps for Rust
+        # Preprocess timestamps for Rust. `_created_ts` (Bucket 9, voice
+        # remediation Phase 3) feeds the Rust kernel's spacing-effect term --
+        # `_normalize_recall_ts` is generic despite its name (any stored
+        # timestamp shape to a float epoch), so it is reused here rather than
+        # duplicated for a second field.
         for row in rows:
             row["_last_recall_ts"] = self._normalize_recall_ts(
                 row.get("last_recalled_at"), now_ts
+            )
+            row["_created_ts"] = self._normalize_recall_ts(
+                row.get("created_at"), now_ts
             )
 
         scored_indices = cognitive_rust.score_memories_actr_sqlite(
@@ -1884,6 +1948,10 @@ class MemoryStore:
 
             hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
 
+            created = row.get("created_at")
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+
             memory_valence = row.get("valence") or 0.0
             emotion_weight_row = row.get("emotional_weight") or 0.0
 
@@ -1893,11 +1961,13 @@ class MemoryStore:
                 + (emotion_weight_row - current_arousal) ** 2
             )
 
+            spacing_hours = self._spacing_hours(recall_count, created, last_recall)
             base_activation = self._base_activation(
                 recall_count,
                 hours_since,
                 row.get("importance_score") or 0.5,
                 dist_emo,
+                spacing_hours,
             )
 
             # Neuromodulatory distance mapping
@@ -1921,10 +1991,6 @@ class MemoryStore:
                 and (row.get("importance_score") or 0.5) < 0.7
             ):
                 continue
-
-            created = row.get("created_at")
-            if created and created.tzinfo is None:
-                created = created.replace(tzinfo=UTC)
 
             raw_meta = row.get("metadata")
             if isinstance(raw_meta, str):
@@ -2519,8 +2585,14 @@ class MemoryStore:
             + (emotion_weight_row - current_arousal) ** 2
         )
 
+        created = self._as_aware_utc(row.get("created_at"))
+        spacing_hours = self._spacing_hours(recall_count, created, last_recall)
         base_activation = self._base_activation(
-            recall_count, hours_since, row.get("importance_score") or 0.5, dist_emo
+            recall_count,
+            hours_since,
+            row.get("importance_score") or 0.5,
+            dist_emo,
+            spacing_hours,
         )
         effective_similarity = self._effective_similarity(
             similarity,
@@ -2784,8 +2856,13 @@ class MemoryStore:
 
         # Rescore as an active memory: recall_count was incremented on
         # promotion and last_recalled_at is now, so recency is ~0.
+        spacing_hours_active = self._spacing_hours(recall_count + 1, created, now)
         base_activation_active = self._base_activation(
-            recall_count + 1, 0.001, row.get("importance_score") or 0.5, dist_emo
+            recall_count + 1,
+            0.001,
+            row.get("importance_score") or 0.5,
+            dist_emo,
+            spacing_hours_active,
         )
         score_active = (
             base_activation_active
