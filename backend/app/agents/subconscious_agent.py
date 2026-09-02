@@ -782,13 +782,11 @@ class SubconsciousAgent(BaseAgent):
 
         Re-linking (re-running `_prelink_memory_entities` against each
         candidate so a memory written before an entity it mentions existed
-        picks up that association later) is NOT implemented here -- it needs
-        a new metadata-UPDATE query path across both the Postgres and SQLite
-        backends that does not exist yet, unlike re-scoring/pruning, which
-        reuses a path that does. See `.agents/CONTEXT.md` and
-        `VOICE_REMEDIATION_PLAN.md` for the concrete design left for that
-        follow-up rather than rushing new dual-backend write code into a
-        rest-phase sweep tonight.
+        picks up that association later) reuses the exact same candidate
+        pool via `get_recent_high_importance_memories_for_relinking` --
+        deliberately the same knobs as the pruning fetch above, since this
+        is framed as one sweep with two effects, not two independent sweeps.
+        See `.agents/CONTEXT.md` for the concrete design this followed.
         """
         try:
             contents = await self.memory_store.get_recent_high_importance_memory_contents(
@@ -805,6 +803,20 @@ class SubconsciousAgent(BaseAgent):
             logger.info(
                 "[Subconscious] Rest-phase replay: re-scored/pruned %d candidate memories.",
                 len(contents),
+            )
+
+            relink_candidates = (
+                await self.memory_store.get_recent_high_importance_memories_for_relinking(
+                    limit=Config.REST_PHASE_REPLAY_LIMIT,
+                    min_importance=Config.REST_PHASE_REPLAY_MIN_IMPORTANCE,
+                    lookback_hours=Config.REST_PHASE_REPLAY_LOOKBACK_HOURS,
+                )
+            )
+            relinked = await self.memory_store.relink_memory_entities(relink_candidates)
+            logger.info(
+                "[Subconscious] Rest-phase replay: re-linked entities on %d of %d candidates.",
+                relinked,
+                len(relink_candidates),
             )
         except asyncio.CancelledError:
             raise

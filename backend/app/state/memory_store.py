@@ -3644,6 +3644,149 @@ class MemoryStore:
             logger.error(f"Failed to fetch rest-phase replay candidates: {e}")
             return []
 
+    async def get_recent_high_importance_memories_for_relinking(
+        self,
+        limit: int = 20,
+        min_importance: float = 0.5,
+        lookback_hours: int = 168,
+    ) -> list[dict]:
+        """Bucket 12's re-linking half of rest-phase replay: the same
+        candidate pool as `get_recent_high_importance_memory_contents`
+        (identical WHERE clause, deliberately -- re-linking is framed as
+        part of the same sweep, not a second query with its own knobs), but
+        carrying `id` and `metadata` too, since re-linking has to know which
+        row to update and what it already believes about its own entities.
+
+        `metadata` here is returned pre-parsed to a dict, following the same
+        str-vs-already-decoded normalization `_fetch_sqlite_candidates`/
+        `_fetch_postgres_candidates` already use for this same column --
+        a JSON column comes back as a string on at least one backend/driver
+        path, and a candidate with no metadata at all must not crash the
+        sweep, so both cases collapse to `{}`.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    rows = await conn.fetch(
+                        "SELECT id, content, metadata FROM memories "
+                        "WHERE importance_score >= ? "
+                        "AND COALESCE(last_recalled_at, created_at) >= "
+                        "datetime('now', ? || ' hours') "
+                        "ORDER BY importance_score DESC LIMIT ?",
+                        min_importance,
+                        f"-{lookback_hours}",
+                        limit,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        "SELECT id, content, metadata FROM memories "
+                        "WHERE importance_score >= $1 "
+                        "AND COALESCE(last_recalled_at, created_at) >= "
+                        "NOW() - ($2 || ' hours')::interval "
+                        "ORDER BY importance_score DESC LIMIT $3",
+                        min_importance,
+                        str(lookback_hours),
+                        limit,
+                    )
+                candidates = []
+                for row in rows:
+                    if not row.get("content") or not row.get("id"):
+                        continue
+                    raw_meta = row.get("metadata")
+                    if isinstance(raw_meta, str):
+                        try:
+                            raw_meta = orjson.loads(raw_meta)
+                        except Exception:
+                            raw_meta = {}
+                    candidates.append(
+                        {
+                            "id": row["id"],
+                            "content": row["content"],
+                            "metadata": raw_meta or {},
+                        }
+                    )
+                return candidates
+        except Exception as e:
+            logger.error(f"Failed to fetch re-linking candidates: {e}")
+            return []
+
+    async def _update_memory_metadata(self, memory_id: str, metadata: dict) -> bool:
+        """Write a full metadata dict back to one row.
+
+        Read-modify-write, not a native JSON merge: `add_memory` already
+        writes this column as a plain serialized string on both backends
+        (`_insert_memory_row`'s `metadata_json` parameter), so an UPDATE
+        binds identically rather than assuming a JSONB-specific merge
+        operator that would work on Postgres but not SQLite.
+        """
+        try:
+            metadata_json = orjson.dumps(metadata).decode()
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    await conn.execute(
+                        "UPDATE memories SET metadata = ? WHERE id = ?",
+                        metadata_json,
+                        memory_id,
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE memories SET metadata = $1 WHERE id = $2",
+                        metadata_json,
+                        memory_id,
+                    )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update metadata for memory {memory_id}: {e}")
+            return False
+
+    async def relink_memory_entities(self, candidates: list[dict]) -> int:
+        """Bucket 12's re-linking: pick up entity associations a memory
+        missed because the entity did not exist in the graph yet when the
+        memory was first written.
+
+        `_prelink_memory_entities` only ever runs once, at `add_memory` time
+        (`app/state/memory_store.py`), against whichever entities existed in
+        Neo4j *then*. `_compute_candidate_entities` (used by `search_memories`'
+        graph-boost/PPR scoring) prefers a memory's stored
+        `metadata["entities"]` over a live regex scan whenever that list is
+        non-empty -- a real performance win, but it means a memory whose
+        precomputed list is merely *incomplete* rather than empty never gets
+        re-scanned by anything, forever. This closes exactly that gap:
+        recompute the live entity match for each candidate and merge in
+        anything new, without dropping entities a prior run already found.
+
+        Union, never replacement -- an entity that no longer matches (renamed
+        or deleted in the graph) is left in place rather than removed, since
+        removing associations was never this bucket's stated goal and Neo4j
+        entity deletion is its own separate, deliberate act elsewhere.
+
+        Only writes a row whose entity set actually grew, so a rest-phase
+        sweep over mostly-already-linked memories does not spend a write on
+        every candidate every time it runs. A newly-linked entity can let a
+        memory satisfy a graph-boost match it couldn't before -- the same
+        reasoning `add_memory` already gives for invalidating `_l1_cache` on
+        every new memory -- so this invalidates once at the end, only if at
+        least one row actually changed.
+        """
+        relinked = 0
+        for candidate in candidates:
+            content = candidate.get("content")
+            memory_id = candidate.get("id")
+            if not content or not memory_id:
+                continue
+            metadata = candidate.get("metadata") or {}
+            existing_entities = set(metadata.get("entities") or [])
+            live_entities = set(await self._prelink_memory_entities(content))
+            if live_entities <= existing_entities:
+                continue
+            merged = sorted(existing_entities | live_entities)
+            updated_metadata = {**metadata, "entities": merged}
+            if await self._update_memory_metadata(memory_id, updated_metadata):
+                relinked += 1
+        if relinked:
+            self._invalidate_l1_cache()
+        return relinked
+
     async def mark_episodes_consolidated(self, message_ids: list[str]):
         """Marks specific dialogue messages as consolidated to avoid duplicate processing."""
         if not message_ids:

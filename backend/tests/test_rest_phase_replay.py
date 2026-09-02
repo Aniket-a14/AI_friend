@@ -98,6 +98,10 @@ def _agent(mock_graph_db):
         return_value=[]
     )
     mock_memory_store.apply_actr_decay = AsyncMock()
+    mock_memory_store.get_recent_high_importance_memories_for_relinking = AsyncMock(
+        return_value=[]
+    )
+    mock_memory_store.relink_memory_entities = AsyncMock(return_value=0)
     agent = SubconsciousAgent(
         memory_store=mock_memory_store,
         reflection_service=MagicMock(),
@@ -176,6 +180,88 @@ async def test_a_decay_failure_does_not_crash_the_subconscious_loop(mock_graph_d
     )
     agent.memory_store.apply_actr_decay = AsyncMock(
         side_effect=RuntimeError("archive write failed")
+    )
+
+    await agent._run_rest_phase_replay()  # must not raise
+
+
+# --------------------------------------------------------------------------
+# _run_rest_phase_replay: the re-linking half, wired into the same sweep
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_replay_fetches_relink_candidates_using_the_same_configured_parameters(
+    mock_graph_db,
+):
+    """Re-linking is framed as one sweep with two effects, not two
+    independent sweeps -- it must reuse the exact same knobs as the pruning
+    fetch, not a second, independently-drifting set of parameters."""
+    from app.config import Config
+
+    agent = _agent(mock_graph_db)
+    agent.memory_store.get_recent_high_importance_memory_contents = AsyncMock(
+        return_value=["something to prune-check"]
+    )
+
+    await agent._run_rest_phase_replay()
+
+    agent.memory_store.get_recent_high_importance_memories_for_relinking.assert_awaited_once_with(
+        limit=Config.REST_PHASE_REPLAY_LIMIT,
+        min_importance=Config.REST_PHASE_REPLAY_MIN_IMPORTANCE,
+        lookback_hours=Config.REST_PHASE_REPLAY_LOOKBACK_HOURS,
+    )
+
+
+@pytest.mark.asyncio
+async def test_replay_passes_the_fetched_relink_candidates_straight_through(
+    mock_graph_db,
+):
+    agent = _agent(mock_graph_db)
+    agent.memory_store.get_recent_high_importance_memory_contents = AsyncMock(
+        return_value=["something to prune-check"]
+    )
+    relink_candidates = [{"id": "1", "content": "x", "metadata": {}}]
+    agent.memory_store.get_recent_high_importance_memories_for_relinking = AsyncMock(
+        return_value=relink_candidates
+    )
+
+    await agent._run_rest_phase_replay()
+
+    agent.memory_store.relink_memory_entities.assert_awaited_once_with(
+        relink_candidates
+    )
+
+
+@pytest.mark.asyncio
+async def test_replay_skips_relinking_when_there_are_no_pruning_candidates(
+    mock_graph_db,
+):
+    """Both queries share an identical WHERE clause against the same
+    candidate pool, so an empty pruning fetch means re-linking would find
+    nothing either -- the early return before either fetch runs is
+    intentional reuse, not a bug that happens to skip a needed sweep."""
+    agent = _agent(mock_graph_db)  # default: no pruning candidates
+
+    await agent._run_rest_phase_replay()
+
+    agent.memory_store.get_recent_high_importance_memories_for_relinking.assert_not_awaited()
+    agent.memory_store.relink_memory_entities.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_relinking_failure_does_not_crash_the_subconscious_loop(
+    mock_graph_db,
+):
+    """Mirrors the pruning failure test above -- memory maintenance failing
+    must never take down the loop that also runs dreaming and proactive
+    thought."""
+    agent = _agent(mock_graph_db)
+    agent.memory_store.get_recent_high_importance_memory_contents = AsyncMock(
+        return_value=["something"]
+    )
+    agent.memory_store.relink_memory_entities = AsyncMock(
+        side_effect=RuntimeError("metadata write failed")
     )
 
     await agent._run_rest_phase_replay()  # must not raise
