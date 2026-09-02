@@ -283,6 +283,7 @@ class StateUpdate(BaseModel):
     interaction_count: int = 0
     cortisol: float = 0.0
     dopamine: float = 0.0
+    adrenaline: float = 0.0
     fatigue: float = 0.0
     user_mental_model: dict[str, Any] | None = None
 

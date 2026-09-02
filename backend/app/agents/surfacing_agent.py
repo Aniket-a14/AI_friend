@@ -131,10 +131,17 @@ class SurfacingAgent(BaseAgent):
             arousal = self._current_arousal
             dominance = data.get("dominance", 0.5)
             fatigue = data.get("fatigue", 0.0)
+            # Bucket 10 (revised scope): the endocrine channels widen this
+            # from a PAD-only trajectory to one that also carries *why* the
+            # agent is in that state -- see generate_apra_trajectory's own
+            # comment in cognitive-rust for the per-hormone acoustic design.
+            cortisol = self._current_cortisol
+            dopamine = data.get("dopamine", 0.0)
+            adrenaline = data.get("adrenaline", 0.0)
 
             # Generate continuous trajectory using Rust PyO3
             trajectory_tuples = cognitive_rust.generate_apra_trajectory(
-                valence, arousal, dominance, fatigue
+                valence, arousal, dominance, fatigue, cortisol, dopamine, adrenaline
             )
 
             trajectory = [

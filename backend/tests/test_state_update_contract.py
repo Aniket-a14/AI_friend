@@ -36,6 +36,7 @@ def test_from_snapshot_maps_every_modelled_field():
         "interaction_count": 5,
         "cortisol": 0.2,
         "dopamine": 0.5,
+        "adrenaline": 0.05,
         "fatigue": 0.1,
         "user_mental_model": {"guess": "curious"},
     }
@@ -54,6 +55,7 @@ def test_a_missing_key_falls_back_to_the_model_default_not_a_literal():
     assert dumped["energy"] == 0.5
     assert dumped["emotion"] == "neutral"
     assert dumped["interaction_count"] == 0
+    assert dumped["adrenaline"] == 0.0
     assert dumped["user_mental_model"] is None
     assert set(dumped) == set(StateUpdate.model_fields)
 

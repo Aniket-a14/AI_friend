@@ -582,7 +582,32 @@ pub fn generate_apra_trajectory(
     arousal: f64,
     dominance: f64,
     fatigue: f64,
+    cortisol: f64,
+    dopamine: f64,
+    adrenaline: f64,
 ) -> Vec<(u32, f64, f64, f64)> {
+    // Bucket 10 (revised scope): PAD alone gives this trajectory the agent's
+    // *mood* but not *why* -- two turns at identical valence/arousal sound
+    // identical even when one is a dopamine-lit reward and the other a
+    // cortisol-tight recovery from stress. Widening the discrete
+    // EmotionBucket set (more named categories) was rejected in favor of
+    // this: GPT-SoVITS clones timbre from whichever reference clip is
+    // selected, so a bucket with no dedicated recording buys a new label on
+    // old audio, not new expressiveness. This trajectory is pure math and
+    // needs no new recordings, so it is where continuous, human-like
+    // variation actually has room to grow.
+    //
+    // Each hormone gets a distinct, non-overlapping acoustic signature so a
+    // listener (and a test) can tell them apart, not just "more energetic":
+    //   cortisol   -- tension: raises pitch (laryngeal tightening), hurries
+    //                 rate slightly, and *dampens* vibrato -- stress flattens
+    //                 natural vocal warmth rather than adding to it.
+    //   dopamine   -- reward: brightens pitch and lifts volume, *amplifies*
+    //                 vibrato -- a livelier, more melodic delivery.
+    //   adrenaline -- startle: phasic-only and short-lived by construction
+    //                 (`AgentState.adrenaline`), so it gets the sharpest
+    //                 single-shot lift across all three axes, modelling a
+    //                 startled "raised voice" rather than a mood.
     let mut trajectory = Vec::with_capacity(60);
     for step in 0..60 {
         let t_ms = step * 50;
@@ -600,16 +625,26 @@ pub fn generate_apra_trajectory(
             + 0.20 * arousal
             - 0.10 * valence
             - 0.25 * fatigue
+            + 0.10 * cortisol
+            + 0.15 * adrenaline
             + breathing_dampening)
             .clamp(0.60, 1.80);
 
-        // Sinusoidal micro-vibratory ripple to pitch (6Hz organic human vocal vibrato)
-        let vibrato_ripple = 0.02 * (2.0 * std::f64::consts::PI * 6.0 * (t_ms as f64 / 1000.0)).sin();
+        // Sinusoidal micro-vibratory ripple to pitch (6Hz organic human vocal
+        // vibrato), amplitude itself hormone-modulated: dopamine widens it,
+        // cortisol suppresses it, floored at 0 so the two can't invert the
+        // ripple's phase when both are present.
+        let vibrato_amplitude = (0.02 * (1.0 + 0.5 * dopamine - 0.6 * cortisol)).max(0.0);
+        let vibrato_ripple = vibrato_amplitude
+            * (2.0 * std::f64::consts::PI * 6.0 * (t_ms as f64 / 1000.0)).sin();
         let step_pitch = (1.0
             + 0.05 * valence
             + 0.15 * arousal
             - 0.10 * dominance
             - 0.10 * fatigue
+            + 0.08 * cortisol
+            + 0.10 * dopamine
+            + 0.20 * adrenaline
             + vibrato_ripple)
             .clamp(0.50, 2.00);
 
@@ -622,7 +657,9 @@ pub fn generate_apra_trajectory(
             1.0
         };
 
-        let step_volume = ((0.40 + 0.60 * dominance) * vol_envelope).clamp(0.10, 1.00);
+        let step_volume = ((0.40 + 0.60 * dominance + 0.15 * dopamine + 0.20 * adrenaline)
+            * vol_envelope)
+            .clamp(0.10, 1.00);
 
         trajectory.push((
             t_ms,
@@ -817,5 +854,87 @@ mod tests {
         let bonus = actr_spacing_bonus(5.0, 1_000_000.0, 1_000_000.0 - 100.0 * 3600.0);
         let expected = 0.15_f64 * (100.0_f64 / 5.0 + 1.0).ln();
         assert!((bonus - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn zero_hormones_reproduce_the_pre_bucket10_pad_only_formula() {
+        // t_ms=0: breathing_dampening = -0.15 and vibrato's sin(0) = 0
+        // regardless of amplitude, so frame 0 isolates the PAD-only additive
+        // terms from every hormone and periodic term at once.
+        let trajectory = generate_apra_trajectory(0.2, 0.6, 0.4, 0.1, 0.0, 0.0, 0.0);
+        let (t_ms, rate, pitch, _volume) = trajectory[0];
+        assert_eq!(t_ms, 0);
+        let expected_rate = ((1.0f64 + 0.20 * 0.6 - 0.10 * 0.2 - 0.25 * 0.1 - 0.15) * 100.0).round() / 100.0;
+        let expected_pitch = ((1.0f64 + 0.05 * 0.2 + 0.15 * 0.6 - 0.10 * 0.4 - 0.10 * 0.1) * 100.0).round() / 100.0;
+        assert!((rate - expected_rate).abs() < 1e-9);
+        assert!((pitch - expected_pitch).abs() < 1e-9);
+    }
+
+    #[test]
+    fn cortisol_raises_pitch_and_hurries_rate() {
+        let baseline = generate_apra_trajectory(0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0);
+        let stressed = generate_apra_trajectory(0.0, 0.5, 0.5, 0.0, 0.6, 0.0, 0.0);
+        // Frame 0 isolates the additive terms from the vibrato's sin(0) = 0.
+        assert!(stressed[0].2 > baseline[0].2, "cortisol should raise pitch (laryngeal tension)");
+        assert!(stressed[0].1 > baseline[0].1, "cortisol should hurry rate");
+    }
+
+    #[test]
+    fn dopamine_brightens_pitch_and_lifts_volume() {
+        let baseline = generate_apra_trajectory(0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0);
+        let rewarded = generate_apra_trajectory(0.0, 0.5, 0.5, 0.0, 0.0, 0.8, 0.0);
+        assert!(rewarded[0].2 > baseline[0].2, "dopamine should brighten pitch");
+        // Frame 30 sits in the flat envelope plateau (150ms-2850ms), away
+        // from the fade-in/out edges that would clamp volume to the floor
+        // regardless of dominance/dopamine/adrenaline.
+        assert!(rewarded[30].3 > baseline[30].3, "dopamine should lift volume");
+    }
+
+    #[test]
+    fn dopamine_widens_the_vibrato_ripple_and_cortisol_narrows_it() {
+        let pitch_range = |trajectory: &[(u32, f64, f64, f64)]| {
+            let pitches: Vec<f64> = trajectory.iter().map(|&(_, _, p, _)| p).collect();
+            let max = pitches.iter().cloned().fold(f64::MIN, f64::max);
+            let min = pitches.iter().cloned().fold(f64::MAX, f64::min);
+            max - min
+        };
+
+        // All PAD/fatigue inputs pinned at 0 so the only thing that varies
+        // frame-to-frame is the vibrato ripple itself -- isolates its
+        // amplitude from every constant additive term.
+        let baseline = generate_apra_trajectory(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let with_dopamine = generate_apra_trajectory(0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+        let with_cortisol = generate_apra_trajectory(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+
+        assert!(pitch_range(&with_dopamine) > pitch_range(&baseline), "reward should widen vibrato");
+        assert!(pitch_range(&with_cortisol) < pitch_range(&baseline), "stress should narrow vibrato");
+    }
+
+    #[test]
+    fn adrenaline_produces_the_sharpest_single_shot_lift() {
+        // Same 0.5 magnitude on each channel; adrenaline's own coefficients
+        // (0.15 rate, 0.20 pitch, 0.20 volume) are the largest of the three
+        // by design -- a startle response is meant to be the most acoustically
+        // abrupt of the three hormone signatures, not merely "more energetic."
+        let baseline = generate_apra_trajectory(0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0);
+        let startled = generate_apra_trajectory(0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.5);
+        let stressed = generate_apra_trajectory(0.0, 0.5, 0.5, 0.0, 0.5, 0.0, 0.0);
+        let rewarded = generate_apra_trajectory(0.0, 0.5, 0.5, 0.0, 0.0, 0.5, 0.0);
+
+        let startled_pitch_delta = startled[0].2 - baseline[0].2;
+        assert!(startled_pitch_delta > stressed[0].2 - baseline[0].2);
+        assert!(startled_pitch_delta > rewarded[0].2 - baseline[0].2);
+        assert!(startled[0].1 > baseline[0].1, "adrenaline should hurry rate");
+        assert!(startled[30].3 > baseline[30].3, "adrenaline should lift volume");
+    }
+
+    #[test]
+    fn extreme_combined_hormones_still_respect_the_existing_clamps() {
+        let trajectory = generate_apra_trajectory(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+        for (_, rate, pitch, volume) in trajectory {
+            assert!((0.60..=1.80).contains(&rate), "rate {rate} escaped its clamp");
+            assert!((0.50..=2.00).contains(&pitch), "pitch {pitch} escaped its clamp");
+            assert!((0.10..=1.00).contains(&volume), "volume {volume} escaped its clamp");
+        }
     }
 }

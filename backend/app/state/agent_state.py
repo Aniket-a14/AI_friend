@@ -1711,6 +1711,7 @@ class StateService:
             # Endocrine hormones (Somatic Regulation)
             "cortisol": self.current_state.cortisol,
             "dopamine": self.current_state.dopamine,
+            "adrenaline": self.current_state.adrenaline,
             # Theory of Mind snapshot — dict format
             "user_mental_model": self.current_state.user_mental_model.model_dump(),
         }
