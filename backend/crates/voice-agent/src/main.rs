@@ -35,26 +35,31 @@ const MAX_VOLUME: f32 = 1.0;
 /// tracks it and the audio.stop task that must respect it.
 type ActiveTurn = std::sync::Arc<std::sync::Mutex<Option<String>>>;
 
-/// Whether an `AudioStop` should act on the turn currently being spoken.
+/// Whether a turn-scoped mesh signal (`AudioStop` or, since Phase 2D,
+/// `AudioResume`) should act on the turn currently being spoken.
 ///
 /// `AudioStop.turn_id` was previously ignored entirely, so a stop that had been
 /// delayed in the mesh — or one emitted for a turn that has since finished —
 /// aborted whatever the agent had *started saying next*. The user saw the agent
 /// cut itself off mid-sentence for an interruption aimed at a reply that was
-/// already over.
+/// already over. `AudioResume` had the same gap in the other direction: a
+/// resume delayed in the mesh could restore volume for a turn that had since
+/// been genuinely stopped. Same helper both directions -- the scoping rule
+/// ("does this signal name a turn, and if so does it match what's active") is
+/// identical for either subject.
 ///
-/// A stop naming no turn stays unscoped and is always honoured: barge-in from the
-/// STT path is not always able to name the turn it is interrupting, and silently
-/// ignoring those would make interruption stop working altogether. Only an
-/// *explicit* mismatch is rejected.
-fn stop_applies_to_active_turn(active: &ActiveTurn, stop_turn: Option<&str>) -> bool {
-    let Some(stop_turn) = stop_turn else {
+/// A signal naming no turn stays unscoped and is always honoured: barge-in from
+/// the STT path is not always able to name the turn it is interrupting, and
+/// silently ignoring those would make interruption (or resume) stop working
+/// altogether. Only an *explicit* mismatch is rejected.
+fn mesh_signal_applies_to_active_turn(active: &ActiveTurn, signal_turn: Option<&str>) -> bool {
+    let Some(signal_turn) = signal_turn else {
         return true;
     };
     match active.lock() {
         // Nothing is speaking, so there is no current turn to protect; honouring
-        // the stop is harmless (a new turn clears the abort flag when it starts).
-        Ok(guard) => guard.as_deref().is_none_or(|active| active == stop_turn),
+        // the signal is harmless (a new turn clears the abort flag when it starts).
+        Ok(guard) => guard.as_deref().is_none_or(|active| active == signal_turn),
         Err(_) => true,
     }
 }
@@ -658,7 +663,7 @@ async fn main() -> Result<()> {
         while let Some(msg) = stop_sub.next().await {
             match serde_json::from_slice::<contracts::AudioStop>(&msg.payload) {
                 Ok(stop) => {
-                    if !stop_applies_to_active_turn(&active_turn_stop, stop.turn_id.as_deref()) {
+                    if !mesh_signal_applies_to_active_turn(&active_turn_stop, stop.turn_id.as_deref()) {
                         info!(
                             stop_turn = ?stop.turn_id,
                             "Ignoring AUDIO_STOP addressed to a turn that is no longer speaking."
@@ -685,14 +690,40 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Subscribe to audio.resume and restore volume (attenuation_factor = 1.0)
+    // Subscribe to audio.resume and restore volume (attenuation_factor = 1.0).
+    // Phase 2D: turn-scoped like audio.stop above -- a resume delayed in the
+    // mesh must not restore volume for a turn that has since genuinely
+    // stopped speaking.
     let attenuation_resume = attenuation_factor.clone();
+    let active_turn_resume = active_turn.clone();
     let mut resume_sub = client.subscribe(topics::AUDIO_RESUME).await?;
     tokio::spawn(async move {
-        while let Some(_msg) = resume_sub.next().await {
-            info!("Received AUDIO_RESUME - restoring voice playback volume.");
-            if let Ok(mut guard) = attenuation_resume.lock() {
-                *guard = 1.0;
+        while let Some(msg) = resume_sub.next().await {
+            match serde_json::from_slice::<contracts::AudioResume>(&msg.payload) {
+                Ok(resume) => {
+                    if !mesh_signal_applies_to_active_turn(
+                        &active_turn_resume,
+                        resume.turn_id.as_deref(),
+                    ) {
+                        info!(
+                            resume_turn = ?resume.turn_id,
+                            "Ignoring AUDIO_RESUME addressed to a turn that is no longer speaking."
+                        );
+                        continue;
+                    }
+                    info!("Received AUDIO_RESUME - restoring voice playback volume.");
+                    if let Ok(mut guard) = attenuation_resume.lock() {
+                        *guard = 1.0;
+                    }
+                }
+                Err(_) => {
+                    // Unparseable payloads carry no turn_id to check, so they
+                    // stay unscoped -- same fallback as AUDIO_STOP above.
+                    info!("Received generic AUDIO_RESUME - restoring voice playback volume.");
+                    if let Ok(mut guard) = attenuation_resume.lock() {
+                        *guard = 1.0;
+                    }
+                }
             }
         }
     });
@@ -1715,6 +1746,57 @@ fn now_seconds() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---------------------------------------------------------- Phase 2D: turn-scoped audio.resume
+
+    #[test]
+    fn mesh_signal_with_no_turn_id_is_always_applied() {
+        let active: ActiveTurn = std::sync::Arc::new(std::sync::Mutex::new(Some(
+            "turn-1".to_string(),
+        )));
+        assert!(mesh_signal_applies_to_active_turn(&active, None));
+    }
+
+    #[test]
+    fn mesh_signal_matching_the_active_turn_is_applied() {
+        let active: ActiveTurn = std::sync::Arc::new(std::sync::Mutex::new(Some(
+            "turn-1".to_string(),
+        )));
+        assert!(mesh_signal_applies_to_active_turn(&active, Some("turn-1")));
+    }
+
+    #[test]
+    fn mesh_signal_for_a_stale_turn_is_rejected() {
+        // The actual failure this guards: a resume delayed in the mesh for a
+        // turn that has since genuinely stopped must not restore volume for
+        // whatever is speaking now.
+        let active: ActiveTurn = std::sync::Arc::new(std::sync::Mutex::new(Some(
+            "turn-2".to_string(),
+        )));
+        assert!(!mesh_signal_applies_to_active_turn(&active, Some("turn-1")));
+    }
+
+    #[test]
+    fn mesh_signal_with_nothing_currently_active_is_applied() {
+        let active: ActiveTurn = std::sync::Arc::new(std::sync::Mutex::new(None));
+        assert!(mesh_signal_applies_to_active_turn(&active, Some("turn-1")));
+    }
+
+    #[test]
+    fn audio_resume_deserializes_turn_id_when_present() {
+        let resume: contracts::AudioResume =
+            serde_json::from_str(r#"{"reason": "conflict_rejected", "turn_id": "turn-9"}"#)
+                .unwrap();
+        assert_eq!(resume.turn_id.as_deref(), Some("turn-9"));
+    }
+
+    #[test]
+    fn audio_resume_defaults_turn_id_to_none_when_absent() {
+        // A publisher that predates Phase 2D omits turn_id entirely -- must
+        // still deserialize, unscoped (matching AudioStop's existing default).
+        let resume: contracts::AudioResume = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(resume.turn_id, None);
+    }
 
     /// P4-9: a missing vocalization asset used to synthesize a sine/LCG-noise
     /// buzz -- audio in neither the cloned voice nor silence. It must now

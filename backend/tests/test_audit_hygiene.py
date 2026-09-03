@@ -106,6 +106,7 @@ async def test_state_persistence_does_not_block_the_event_loop():
     service.publish_cb = None
     service.redis_client = None
     service._persist_lock = asyncio.Lock()
+    service.writer_id = ""  # Phase 2A: stamped onto current_state on persist
 
     ticks_when_write_finished = []
 
@@ -135,6 +136,8 @@ async def test_state_persistence_does_not_block_the_event_loop():
         attachment = fatigue = last_user_interaction = last_proactive_attempt = 0.0
         interaction_count = 0
         baseline_valence = baseline_arousal = baseline_dominance = 0.0
+        revision = 0  # Phase 2A
+        writer_id = ""  # Phase 2A
         user_mental_model = _Model()
 
     service.current_state = _State()
@@ -177,6 +180,7 @@ async def test_an_older_state_snapshot_cannot_land_on_top_of_a_newer_one():
     service.publish_cb = None
     service.redis_client = None
     service._persist_lock = asyncio.Lock()
+    service.writer_id = ""  # Phase 2A: stamped onto current_state on persist
 
     order = []
     delays = {0.5: 0.20, 0.9: 0.01}  # first write slow, second fast
@@ -201,6 +205,8 @@ async def test_an_older_state_snapshot_cannot_land_on_top_of_a_newer_one():
         attachment = fatigue = last_user_interaction = last_proactive_attempt = 0.0
         interaction_count = 0
         baseline_valence = baseline_arousal = baseline_dominance = 0.0
+        revision = 0  # Phase 2A
+        writer_id = ""  # Phase 2A
         user_mental_model = _Model()
 
     service.current_state = _State()

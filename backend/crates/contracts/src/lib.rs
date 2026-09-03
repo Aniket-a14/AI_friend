@@ -262,6 +262,11 @@ pub struct AudioResume {
     pub perception_text: Option<String>,
     #[serde(default)]
     pub utterance_id: Option<String>,
+    // Phase 2D (§15 item 8): mirrors `AudioStop.turn_id` above -- makes
+    // `audio.resume` turn-scoped symmetrically with `audio.stop`, which was
+    // the one gap (ground truth: `AudioStop` was already turn-scoped).
+    #[serde(default)]
+    pub turn_id: Option<String>,
 }
 
 fn default_conflict_rejected() -> String {

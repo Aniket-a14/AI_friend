@@ -73,7 +73,9 @@ class SubconsciousAgent(BaseAgent):
             provenance["ollama_url"],
         )
         self.graph_db = graph_db or GraphDB()
-        self.state_service = state_service or StateService(graph_store=self.graph_db)
+        self.state_service = state_service or StateService(
+            graph_store=self.graph_db, writer_id="subconscious_agent"
+        )
         self.engine = SubconsciousEngine(llm_client=self._llm)
         self.memory_store = memory_store
         self._owns_memory_store = memory_store is None

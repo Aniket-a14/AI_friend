@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, cast
 import redis
 
 from ..config import Config
+from ..errors import StateConflictError
 from ..persona import PersonaProfile
 from ..utils.background_tasks import spawn_background
 
@@ -122,6 +123,18 @@ class AgentState:
     dopamine_halflife_s: float = 90.0
     cortisol_halflife_s: float = 4500.0
     adrenaline_halflife_s: float = 120.0
+
+    # Phase 2A: brain_agent and subconscious_agent each own a `StateService`
+    # over the same logical agent (see `apply_external_state`'s docstring) --
+    # nothing before this let one tell a stale `state.broadcast` apart from a
+    # fresh one. `revision` increments once per `persist_state` call;
+    # `writer_id` names which process incremented it last. Not persisted
+    # across restarts (like the phasic bursts above): a process that just
+    # restarted has ended its own revision history, and a monotonically
+    # increasing counter would produce a spurious CAS rejection for the newer
+    # zero-based process it becomes.
+    revision: int = 0
+    writer_id: str = ""
 
     # --- Affect Split Properties ---
     @property
@@ -443,10 +456,16 @@ class StateService:
         redis_port=6379,
         publish_cb=None,
         persona: "PersonaProfile | None" = None,
+        writer_id: str = "",
     ):
         self.graph = graph_store
         self.db_path = db_path
         self.publish_cb = publish_cb
+        # Phase 2A: stamped onto `current_state.writer_id` on every
+        # `persist_state` call -- identifies which OS process (brain vs
+        # subconscious) last wrote this revision. Empty string is a valid,
+        # deliberate default for callers (tests, scripts) that don't care.
+        self.writer_id = writer_id
         # Temperament has to exist before the state it initialises.
         self.persona = persona or PersonaProfile.load()
         self.current_state = AgentState(
@@ -798,6 +817,41 @@ class StateService:
         source of the same shape, not a new one.
         """
         async with self._state_lock:
+            # Phase 2A: compare-and-swap guard. A broadcast is "stale" when it
+            # carries a revision older than what this process already has --
+            # expected under normal operation (mesh delivery has no ordering
+            # guarantee across subjects), not an error, so this logs and
+            # returns rather than raising `StateConflictError`.
+            incoming_revision = data.get("revision")
+            if incoming_revision is not None:
+                incoming_revision = int(incoming_revision)
+                if incoming_revision < self.current_state.revision:
+                    logger.debug(
+                        "[State] %s: stale state.broadcast rejected "
+                        "(incoming revision %d < current %d, writer=%r)",
+                        StateConflictError.__name__,
+                        incoming_revision,
+                        self.current_state.revision,
+                        data.get("writer_id", ""),
+                    )
+                    return
+                if (
+                    incoming_revision == self.current_state.revision
+                    and data.get("writer_id", "") != self.current_state.writer_id
+                    and self.current_state.writer_id != ""
+                ):
+                    # Two writers produced the same revision number -- a
+                    # design hazard §18 Experiment 3 measures, not resolved
+                    # here. Applied anyway (rejecting would be just as
+                    # arbitrary), but logged distinctly so it's visible.
+                    logger.warning(
+                        "[State] Equal-revision write conflict: incoming "
+                        "writer=%r, current writer=%r, revision=%d",
+                        data.get("writer_id", ""),
+                        self.current_state.writer_id,
+                        incoming_revision,
+                    )
+
             self.current_state.mood = float(data.get("mood", self.current_state.mood))
             self.current_state.energy = float(
                 data.get("energy", self.current_state.energy)
@@ -861,6 +915,11 @@ class StateService:
             self.current_state.baseline_dominance = float(
                 data.get("baseline_dominance", self.current_state.baseline_dominance)
             )
+            if incoming_revision is not None:
+                self.current_state.revision = incoming_revision
+                self.current_state.writer_id = data.get(
+                    "writer_id", self.current_state.writer_id
+                )
 
     async def persist_state(self, agent_name: str = "my friend"):
         """Save state to Redis and the local SQLite cache, then broadcast.
@@ -879,11 +938,18 @@ class StateService:
         ordering*, not the state fields.
         """
         async with self._persist_lock:
+            # Phase 2A: one increment per persist call, inside the same lock
+            # that already serializes write ordering -- the revision ordering
+            # matches the write ordering for free, no second lock needed.
+            self.current_state.revision += 1
+            self.current_state.writer_id = self.writer_id
             # One snapshot, taken once, used by both stores. Previously the
             # Redis mapping was built before its await and the SQL parameters
             # after it, so a single call could write two different states to the
             # two backends.
             snapshot = {
+                "revision": self.current_state.revision,
+                "writer_id": self.current_state.writer_id,
                 "mood": self.current_state.mood,
                 "energy": self.current_state.energy,
                 "dominance": self.current_state.dominance,
@@ -1700,6 +1766,12 @@ class StateService:
     def get_context_snapshot(self) -> dict[str, Any]:
         return {
             "emotion": self.get_emotion_label(),
+            # Phase 2A: surfaced so `StateUpdate.from_snapshot` (contracts.py)
+            # can carry revision/writer_id on the `state.update` wire too --
+            # currently informational there (the CAS guard itself lives on
+            # `state.broadcast`'s raw dict, applied in `apply_external_state`).
+            "revision": self.current_state.revision,
+            "writer_id": self.current_state.writer_id,
             "mood": self.current_state.mood,
             "energy": self.current_state.energy,
             "dominance": self.current_state.dominance,

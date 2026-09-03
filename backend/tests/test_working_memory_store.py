@@ -77,6 +77,29 @@ def test_state_var_roundtrip_via_sqlite_fallback(tmp_path):
     assert result == {"valence": 0.4}
 
 
+def test_state_var_roundtrip_for_session_state_shape(tmp_path):
+    """Phase 2B: `SessionState.to_dict()`'s shape is exactly what
+    `persist_session_state`/`load_session_state` round-trip through
+    `set_state_var`/`get_state_var` -- this store's first real production
+    caller. Written directly against the dict shape (not importing
+    `SessionState`) so this file stays a `WorkingMemoryStore`-only test."""
+    store = _make_store(str(tmp_path / "working.db"))
+    session_state_dict = {
+        "turn_id": "t1",
+        "utterance_id": "u1",
+        "speculative": True,
+        "active_interruption": "stop",
+        "started_at": 123.0,
+    }
+
+    async def run():
+        await store.set_state_var("session_state", session_state_dict)
+        return await store.get_state_var("session_state")
+
+    result = asyncio.run(run())
+    assert result == session_state_dict
+
+
 def test_clear_turns_empties_the_store(tmp_path):
     store = _make_store(str(tmp_path / "working.db"))
 

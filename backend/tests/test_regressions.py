@@ -105,6 +105,9 @@ def test_cognitive_resume_recovery_accepts_type_key():
             "reason": "conflict_rejected",
             "perception_text": "stop please",
             "utterance_id": "utt-1",
+            # Phase 2D: turn-scoped like audio.stop; None here since this
+            # event carries no "metadata"/"turn_id" of its own.
+            "turn_id": None,
         },
     )
     service.state.hydrate_state.assert_not_awaited()

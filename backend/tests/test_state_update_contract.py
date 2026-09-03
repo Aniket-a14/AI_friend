@@ -39,6 +39,8 @@ def test_from_snapshot_maps_every_modelled_field():
         "adrenaline": 0.05,
         "fatigue": 0.1,
         "user_mental_model": {"guess": "curious"},
+        "revision": 7,
+        "writer_id": "brain_agent",
     }
     dumped = StateUpdate.from_snapshot(snapshot).model_dump()
     assert dumped == snapshot
@@ -57,6 +59,8 @@ def test_a_missing_key_falls_back_to_the_model_default_not_a_literal():
     assert dumped["interaction_count"] == 0
     assert dumped["adrenaline"] == 0.0
     assert dumped["user_mental_model"] is None
+    assert dumped["revision"] == 0
+    assert dumped["writer_id"] == ""
     assert set(dumped) == set(StateUpdate.model_fields)
 
 

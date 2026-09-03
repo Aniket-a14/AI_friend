@@ -233,6 +233,10 @@ class AudioResume(BaseModel):
     reason: str = "conflict_rejected"
     perception_text: str | None = None
     utterance_id: str | None = None
+    # Phase 2D (§15 item 8): mirrors AudioStop.turn_id above -- makes resume
+    # turn-scoped symmetrically with stop (ground truth: AudioStop was
+    # already turn-scoped, AudioResume was the one gap).
+    turn_id: str | None = None
 
 
 # ─── memory.surfaced ─────────────────────────────────────────
@@ -343,6 +347,13 @@ class StateUpdate(BaseModel):
     adrenaline: float = 0.0
     fatigue: float = 0.0
     user_mental_model: dict[str, Any] | None = None
+    # Phase 2A (§15 item 2): informational here -- the actual compare-and-
+    # swap guard runs on `state.broadcast`'s raw dict in
+    # `AgentState.apply_external_state`, not on this model. Carried on this
+    # wire too so a future `state.update` consumer isn't blind to which
+    # revision/process it's looking at.
+    revision: int = 0
+    writer_id: str = ""
 
     @classmethod
     def from_snapshot(cls, snapshot: dict[str, Any]) -> StateUpdate:

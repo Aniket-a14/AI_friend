@@ -24,6 +24,7 @@ from ..persona.biography import (
 from ..persona.history_migration import migrate_history_memories
 from ..state import StateService
 from ..state.self_knowledge_store import SelfKnowledgeStore
+from ..state.working_memory_store import WorkingMemoryStore
 from .action import ActionService
 from .appraisal import AppraisalEngine, AppraisalVector
 from .decision import DecisionService
@@ -69,6 +70,7 @@ class CognitiveService:
             graph_store=graph_db,
             publish_cb=self.publish,
             persona=self.identity.persona,
+            writer_id="brain_agent",
         )
         self.decision = DecisionService(
             llm_service=llm_service, memory_store=memory_store
@@ -92,6 +94,10 @@ class CognitiveService:
             pg_vector=memory_store,
             identity_manager=self.identity,
         )
+        # Phase 2B: gives `WorkingMemoryStore` (built with a real Redis+
+        # SQLite-fallback API but no production caller before this) an
+        # actual producer -- per-turn `SessionState`.
+        self.session_store = WorkingMemoryStore()
         self.pipeline = CognitivePipeline(
             perception=self.perception,
             appraisal=self.appraisal,
@@ -102,6 +108,7 @@ class CognitiveService:
             identity=self.identity,
             llm_service=llm_service,
             reappraisal=self.reappraisal,
+            session_store=self.session_store,
         )
         self.action.publish_cb = self.publish
         self.surfaced_memories = []

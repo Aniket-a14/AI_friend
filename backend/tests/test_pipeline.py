@@ -382,3 +382,85 @@ async def test_pipeline_interruption_confirmed(pipeline, mock_components):
 
     # Ensure rest of pipeline didn't run
     mock_components["perception"].perceive.assert_not_awaited()
+
+
+# ---------------------------------------------------------------- Phase 2B
+
+
+@pytest.mark.asyncio
+async def test_confirmed_interruption_persists_session_state_with_stop(
+    mock_components,
+):
+    """`session_state.active_interruption` must be "stop" on a confirmed
+    interrupt, and that must actually reach the session store -- the whole
+    point of threading `SessionState` through stage 2 rather than just
+    constructing one nobody reads."""
+    session_store = MagicMock()
+    session_store.set_state_var = AsyncMock()
+    pipeline = CognitivePipeline(**mock_components, session_store=session_store)
+
+    mock_components["state"].last_speculative_intent = {
+        "text": "stop",
+        "keywords": ["stop"],
+        "utterance_id": "utt-1",
+    }
+    mock_components["decision"].is_speculative_stop_confirmed.return_value = True
+
+    async for _ in pipeline.execute({"type": "USER_MESSAGE", "content": "stop!"}):
+        pass
+
+    session_store.set_state_var.assert_awaited_once()
+    args, _ = session_store.set_state_var.await_args
+    assert args[0] == "session_state"
+    assert args[1]["active_interruption"] == "stop"
+
+
+@pytest.mark.asyncio
+async def test_normal_turn_persists_session_state_with_no_interruption(
+    pipeline, mock_components
+):
+    """The common case: no pending speculative intent, turn runs to
+    completion, `active_interruption` stays "none"."""
+    session_store = MagicMock()
+    session_store.set_state_var = AsyncMock()
+    pipeline = CognitivePipeline(**mock_components, session_store=session_store)
+
+    mock_components["state"].last_speculative_intent = None
+    mock_components["perception"].perceive.return_value = MagicMock(
+        event_type="USER_MESSAGE",
+        raw_content="hello",
+        intent="CHAT",
+        event_id="evt-1",
+        metadata={},
+    )
+    mock_components["appraisal"].appraise.return_value = AppraisalVector(
+        relevance=1.0,
+        novelty=0.5,
+        goal_congruence=0.2,
+        agency=0.8,
+        norm_alignment=1.0,
+        relationship_impact=0.1,
+    )
+    mock_components["state"].get_context_snapshot.return_value = {"mood": 0.0}
+    mock_components["state"].get_behavioral_directive.return_value = "be friendly"
+    mock_components["decision"].decide.return_value = ActionPlan(
+        action_type="RESPOND_CHAT", goal="GREET", payload={"message": "hi"}
+    )
+
+    async def mock_execute(plan):
+        yield {"type": "content", "data": "Hi there!"}
+        yield {"type": "done", "data": ""}
+
+    mock_components["action"].execute.side_effect = mock_execute
+    mock_components["identity"].validate_response.return_value = (True, "")
+    mock_components["identity"].get_persona_prompt.return_value = "System prompt"
+
+    async for _ in pipeline.execute({"type": "USER_MESSAGE", "content": "hello"}):
+        pass
+
+    # Persisted at least once (stage 2, before perception even runs) with
+    # active_interruption still "none" -- the normal-turn baseline.
+    assert session_store.set_state_var.await_count >= 1
+    first_call_args = session_store.set_state_var.await_args_list[0].args
+    assert first_call_args[1]["active_interruption"] == "none"
+    assert first_call_args[1]["turn_id"]

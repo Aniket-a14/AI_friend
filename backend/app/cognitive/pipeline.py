@@ -6,6 +6,7 @@ from typing import Any
 
 from ..contracts import StateUpdate
 from ..persona.policy import PersonaPolicy
+from ..state.session_state import SessionState, persist_session_state
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ class CognitivePipeline:
         identity,
         llm_service=None,
         reappraisal=None,
+        session_store=None,
     ):
         self.perception = perception
         self.appraisal = appraisal
@@ -72,6 +74,11 @@ class CognitivePipeline:
         self.llm = llm_service
         self.reappraisal = reappraisal
         self._system2_task = None
+        # Phase 2B: a `WorkingMemoryStore` for per-turn `SessionState`.
+        # Optional, like `reappraisal` above -- a pipeline built without one
+        # (most unit tests) just skips session persistence, same reasoning as
+        # `if self.reappraisal:` elsewhere in this class.
+        self.session_store = session_store
 
     async def _resolve_turn_conflict(
         self,
@@ -80,6 +87,7 @@ class CognitivePipeline:
         event_metadata: dict[str, Any],
         stage_times: dict[str, Any],
         result: dict[str, Any],
+        session_state: "SessionState | None" = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stage 2: turn-taking conflict resolution against a pending
         speculative intent. Yields the resume/stop mesh_signal, if any.
@@ -88,6 +96,14 @@ class CognitivePipeline:
         whole pipeline must stop here -- an async generator can't both yield
         chunks and return a value (see `_stream_action_pass`), so the
         stop signal goes through this mutable dict instead.
+
+        Phase 2B: `session_state.active_interruption` is set to "stop" on a
+        confirmed interrupt -- `SessionState`'s first real downstream
+        consumer, not just a value carried through unread. Left at its
+        default "none" on rejection (playback resumes; nothing was actually
+        interrupted). `session_state=None` (a caller that predates this
+        parameter) skips the write, same optional-service pattern as
+        `self.session_store`.
         """
         import time
 
@@ -118,11 +134,17 @@ class CognitivePipeline:
                             "reason": "conflict_rejected",
                             "perception_text": speculative_intent.get("text", ""),
                             "utterance_id": speculative_intent.get("utterance_id"),
+                            # Phase 2D (§15 item 8): mirrors audio.stop's
+                            # existing turn_id stamp below -- makes resume
+                            # turn-scoped symmetrically with stop.
+                            "turn_id": event_metadata.get("turn_id"),
                         },
                     }
                     return
                 else:
                     logger.info("[Pipeline] Interruption CONFIRMED. Stopping playback.")
+                    if session_state is not None:
+                        session_state.active_interruption = "stop"
                     stage_times["stage_2_conflict_resolution_ms"] = (
                         time.perf_counter() - t_start
                     ) * 1000.0
@@ -385,6 +407,18 @@ class CognitivePipeline:
         event_metadata = raw_event.get("metadata", {})
         if not isinstance(event_metadata, dict):
             event_metadata = {}
+        # Phase 2B: one SessionState per turn, threaded through
+        # event_metadata for any stage that wants it. Speculative starts
+        # False here and is flipped in place below if VAP pre-generation
+        # fires -- keeping event_metadata["speculative"] (still the field
+        # today's behavior actually reads) and session_state.speculative in
+        # sync rather than picking one as authoritative.
+        session_state = SessionState.start_turn(
+            turn_id=event_metadata.get("turn_id"),
+            utterance_id=raw_event.get("utterance_id")
+            or event_metadata.get("utterance_id"),
+        )
+        event_metadata["session_state"] = session_state
         stage_times["stage_1_extraction_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # VAP Turn Planning / Speculative Pre-Generation
@@ -405,6 +439,7 @@ class CognitivePipeline:
                     f"[Pipeline] VAP threshold met ({vap_prob:.2f} >= 0.7). Triggering speculative pre-generation."
                 )
                 event_metadata["speculative"] = True
+                session_state.speculative = True
                 yield {
                     "type": "mesh_signal",
                     "subject": "audio.pre_generate",
@@ -418,20 +453,28 @@ class CognitivePipeline:
         # 2. Conflict Resolution (Turn-Taking Stability)
         conflict_result: dict[str, Any] = {}
         async for chunk in self._resolve_turn_conflict(
-            raw_event, raw_event_type, event_metadata, stage_times, conflict_result
+            raw_event,
+            raw_event_type,
+            event_metadata,
+            stage_times,
+            conflict_result,
+            session_state,
         ):
             yield chunk
         if conflict_result["stop"]:
+            await persist_session_state(self.session_store, session_state)
             yield {"type": "pipeline_telemetry", "data": stage_times}
             return
+        await persist_session_state(self.session_store, session_state)
 
         # 3. Sequential Perception
         t_start = time.perf_counter()
         event = await self.perception.perceive(raw_event)
         stage_times["stage_3_perception_ms"] = (time.perf_counter() - t_start) * 1000.0
+        if event.metadata is None:
+            event.metadata = {}
+        event.metadata["session_state"] = session_state
         if event_metadata.get("speculative"):
-            if event.metadata is None:
-                event.metadata = {}
             event.metadata["speculative"] = True
 
         # 4. Appraisal (§1 — OCC/Lazarus/EMA)
