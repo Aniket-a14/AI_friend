@@ -15870,3 +15870,23 @@ attempted. `evals/out/phase0_action_phi4mini.json` and `evals/out/phase0_llm_phi
 ready for `python -m evals rate` / `rate-pairwise` whenever a human rater is available. Postgres
 schema migration verification and live `audio.resume` turn-scoping (both Phase 2, not Phase 0)
 remain untouched -- out of this entry's scope.
+
+**Decision (user call, 2026-09-03): the blinded human-rating pass is not worth running.** A quick
+scan of the `action`-path report's 28 character-pressure responses found 13/28 (46%) contain an
+obvious therapy-speak/customer-support marker ("I appreciate...", "let's delve into...", "I'm here
+to...", "address your concerns") *despite passing every deterministic check* -- the checks only
+catch a specific banned-phrase blacklist, never generic-assistant register. That is sufficient
+evidence on its own that `phi4-mini`'s current outputs fail the actual bar (sounding human), so a
+formal blind rating session would only quantify a verdict already established, not change it. Phase
+0's teacher-quality gate is therefore closed as **FAIL** for `phi4-mini` as currently deployed --
+its outputs should not be used as adapter/distillation teacher data without a fix first.
+
+This sharpens Phase 5A's root-cause question rather than closing it: since `action` scored
+equal-or-better than `llm` throughout today's run (see the entry above), the register problem is
+not primarily `action.py`'s prompt assembly (cause C in the doc's A/B/C/D classification) --
+it's the model reaching for its default assistant register under social pressure regardless of how
+the prompt is built (cause A or B). That makes Phase 1's typed-realization experiment (§18
+Experiment 1 -- swap prose instructions for a bounded structured contract) the more informative
+next test: it directly probes whether structure beats prose against this specific failure, rather
+than re-testing an assembly path this evidence already cleared. Not started yet -- next action is
+the user's call.
