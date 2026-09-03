@@ -367,6 +367,13 @@ class AppSettings(BaseSettings):
     VOICE_WEIGHT_LOAD_RETRIES: int = 3
     VOICE_FILLER_HYDRATE_ON_STARTUP: bool = True
     VOICE_TTS_MOCK: bool = False
+    # Phase 3B (§18 Experiment 4): ships True -- `_prepended_affect_tag`/
+    # `_emit_validated`'s inline `<pause=Nms>`/`<hesitate>`/`<breath_fast>`
+    # tag injection keeps running exactly as today. `ChatOutput.expression`
+    # is additive (Optional, defaults to None) alongside the tags, not a
+    # replacement yet; flipping this to False to stop emitting inline tags
+    # is a future step, once the structured channel is trusted, not this one.
+    SPEECH_EXPRESSION_LEGACY_TAGS: bool = True
 
     # Vision / VLM Configuration
     VLM_MODEL: str = "moondream"

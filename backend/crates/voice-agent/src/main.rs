@@ -446,7 +446,23 @@ fn warn_if_reference_clip_missing(env_var: &str, clip: &RefClip) {
 /// These thresholds are a first-pass default, not a validated mapping — no
 /// published study covers GPT-SoVITS multi-clip identity drift by affect
 /// distance. Retune by listening once real emotion-tagged clips exist.
-fn select_emotion_bucket(affect: Option<&contracts::ChatOutputAffect>) -> EmotionBucket {
+///
+/// Phase 3C (§18 Experiment 4): `expression` is an additive, higher-priority
+/// lookup on top of this -- a Phase 3A producer that already named the
+/// register (`affect_label`/`style`) shouldn't be second-guessed by
+/// re-deriving it from raw valence/arousal, the same "one computation, not
+/// two disagreeing ones" reasoning `derive_speech_expression` itself
+/// documents. `None` (true for every producer today, since 3A hasn't
+/// shipped) falls straight through to the existing threshold logic
+/// unchanged.
+fn select_emotion_bucket(
+    affect: Option<&contracts::ChatOutputAffect>,
+    expression: Option<&contracts::SpeechExpressionWire>,
+) -> EmotionBucket {
+    if let Some(bucket) = expression.and_then(emotion_bucket_from_expression) {
+        return bucket;
+    }
+
     const VALENCE_DEADBAND: f64 = 0.15;
     const CALM_AROUSAL_CEILING: f64 = 0.40;
     const EXCITED_AROUSAL_FLOOR: f64 = 0.60;
@@ -468,6 +484,32 @@ fn select_emotion_bucket(affect: Option<&contracts::ChatOutputAffect>) -> Emotio
         EmotionBucket::Calm
     } else {
         EmotionBucket::Neutral
+    }
+}
+
+/// Matches `expression.affect_label` against this module's own
+/// `EmotionBucket` variant names, case-insensitively.
+///
+/// Deliberately does *not* also fall back to `expression.style`, even
+/// though both are named in the Phase 3 plan as inputs here: `style`
+/// defaults to `"neutral"` on the Python/Rust wire types (not `Optional`),
+/// so an unpopulated `SpeechExpressionWire` -- indistinguishable on the
+/// wire from a genuinely-computed "neutral" style -- would otherwise force
+/// `EmotionBucket::Neutral` and mask a real valence/arousal read whenever
+/// `affect_label` is absent but `style` carries its default. `affect_label`
+/// has no such default (`None` means "not set", unambiguously); it alone
+/// is a safe short-circuit today. Revisit if Phase 3A gives `style` its own
+/// `Option` so "unset" and "computed neutral" become distinguishable.
+fn emotion_bucket_from_expression(
+    expression: &contracts::SpeechExpressionWire,
+) -> Option<EmotionBucket> {
+    match expression.affect_label.as_deref()?.to_ascii_lowercase().as_str() {
+        "calm" => Some(EmotionBucket::Calm),
+        "warm" => Some(EmotionBucket::Warm),
+        "concerned" => Some(EmotionBucket::Concerned),
+        "excited" => Some(EmotionBucket::Excited),
+        "neutral" => Some(EmotionBucket::Neutral),
+        _ => None,
     }
 }
 
@@ -1126,7 +1168,7 @@ async fn handle_chat_output(
     // Computed once per event, like prosody above: the delivery register does
     // not change mid-utterance, only which reference clip carries it. `bucket`
     // doubles as the hesitation cache key below.
-    let bucket = select_emotion_bucket(event.affect.as_ref());
+    let bucket = select_emotion_bucket(event.affect.as_ref(), event.expression.as_ref());
     let ref_clip = config.emotion_refs.resolve(bucket).clone();
 
     let distance = event
@@ -1141,7 +1183,11 @@ async fn handle_chat_output(
             }
         });
 
-    for part in split_temporal_parts(content)? {
+    let parts = match event.expression.as_ref() {
+        Some(expression) => temporal_parts_from_expression(content, expression),
+        None => split_temporal_parts(content)?,
+    };
+    for part in parts {
         if abort_flag.load(std::sync::atomic::Ordering::SeqCst) {
             info!("Aborting playback due to AUDIO_STOP event.");
             break;
@@ -1307,6 +1353,51 @@ enum TemporalPart {
     Silence(u32),
     Vocalization(String),
     Hesitation(u32),
+}
+
+/// Phase 3C (§18 Experiment 4): `expression`'s continuous `breath`/
+/// `hesitation` values replace `split_temporal_parts`'s inline-tag regex as
+/// the source of temporal structure once a producer populates them -- a
+/// presence check on `ChatOutput.expression`, since this side can't read
+/// Python's `Config.SPEECH_EXPRESSION_LEGACY_TAGS` flag directly. `content`
+/// itself is treated as one plain-text part, not re-scanned for
+/// `<pause=Nms>`/`<hesitate>`/`<breath_fast>` tags: the structured channel
+/// already carries what those tags encoded, so a literal tag surviving in
+/// `content` alongside a populated `expression` would otherwise double-apply.
+///
+/// Thresholds mirror the legacy tags' all-or-nothing behavior at a
+/// continuous value -- `<hesitate>` was a fixed 350ms pause and
+/// `<breath_fast>` a fixed vocalization, both firing only past
+/// `_emit_validated`'s dominance threshold rather than scaling from zero.
+/// Past the floor, duration scales linearly from `BASE_MS` (roughly the
+/// legacy fixed value, at just-past-floor intensity) up to `MAX_MS` (at
+/// `hesitation == 1.0`) rather than staying pinned at the old flat value --
+/// a first-pass mapping, not a validated one, same as `select_emotion_bucket`
+/// above: retune once real `SpeechExpression` values exist to listen to.
+const EXPRESSION_HESITATION_FLOOR: f64 = 0.35;
+const EXPRESSION_BREATH_FLOOR: f64 = 0.35;
+const EXPRESSION_HESITATION_BASE_MS: f64 = 350.0;
+const EXPRESSION_HESITATION_MAX_MS: u32 = 900;
+
+fn temporal_parts_from_expression(
+    content: &str,
+    expression: &contracts::SpeechExpressionWire,
+) -> Vec<TemporalPart> {
+    let mut parts = Vec::new();
+
+    if expression.hesitation >= EXPRESSION_HESITATION_FLOOR {
+        let span = EXPRESSION_HESITATION_MAX_MS as f64 - EXPRESSION_HESITATION_BASE_MS;
+        let ms = EXPRESSION_HESITATION_BASE_MS + span * expression.hesitation.min(1.0);
+        parts.push(TemporalPart::Hesitation(
+            (ms as u32).min(EXPRESSION_HESITATION_MAX_MS),
+        ));
+    }
+    if expression.breath >= EXPRESSION_BREATH_FLOOR {
+        parts.push(TemporalPart::Vocalization("breath_fast".to_string()));
+    }
+
+    push_text(&mut parts, content);
+    parts
 }
 
 fn split_temporal_parts(text: &str) -> Result<Vec<TemporalPart>> {
@@ -2303,25 +2394,25 @@ mod tests {
 
     #[test]
     fn no_affect_selects_neutral() {
-        assert_eq!(select_emotion_bucket(None), EmotionBucket::Neutral);
+        assert_eq!(select_emotion_bucket(None, None), EmotionBucket::Neutral);
     }
 
     #[test]
     fn high_valence_high_arousal_is_excited() {
         let a = affect(0.5, 0.8);
-        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Excited);
+        assert_eq!(select_emotion_bucket(Some(&a), None), EmotionBucket::Excited);
     }
 
     #[test]
     fn high_valence_low_arousal_is_warm_not_excited() {
         let a = affect(0.5, 0.3);
-        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Warm);
+        assert_eq!(select_emotion_bucket(Some(&a), None), EmotionBucket::Warm);
     }
 
     #[test]
     fn low_valence_high_arousal_is_concerned() {
         let a = affect(-0.5, 0.7);
-        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Concerned);
+        assert_eq!(select_emotion_bucket(Some(&a), None), EmotionBucket::Concerned);
     }
 
     #[test]
@@ -2329,13 +2420,13 @@ mod tests {
         // Negative but not aroused reads as flat, not distressed -- concern
         // needs both the valence and the arousal signal, not valence alone.
         let a = affect(-0.5, 0.2);
-        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Neutral);
+        assert_eq!(select_emotion_bucket(Some(&a), None), EmotionBucket::Neutral);
     }
 
     #[test]
     fn near_zero_valence_low_arousal_is_calm() {
         let a = affect(0.0, 0.1);
-        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Calm);
+        assert_eq!(select_emotion_bucket(Some(&a), None), EmotionBucket::Calm);
     }
 
     #[test]
@@ -2343,7 +2434,7 @@ mod tests {
         // Aroused-but-neither-good-nor-bad (e.g. startled, alert) must not
         // read as the same settled register as truly low-arousal calm.
         let a = affect(0.0, 0.9);
-        assert_eq!(select_emotion_bucket(Some(&a)), EmotionBucket::Neutral);
+        assert_eq!(select_emotion_bucket(Some(&a), None), EmotionBucket::Neutral);
     }
 
     #[test]
@@ -2354,7 +2445,116 @@ mod tests {
         // to `>=`, since it would still fall through to Calm either way --
         // this specifically exercises the branch the boundary guards.
         let at_edge = affect(0.15, 0.65);
-        assert_eq!(select_emotion_bucket(Some(&at_edge)), EmotionBucket::Neutral);
+        assert_eq!(select_emotion_bucket(Some(&at_edge), None), EmotionBucket::Neutral);
+    }
+
+    // ---------------------------------------------- select_emotion_bucket (expression, Phase 3C)
+
+    fn expression(affect_label: &str) -> contracts::SpeechExpressionWire {
+        contracts::SpeechExpressionWire {
+            affect_label: Some(affect_label.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn expression_affect_label_overrides_disagreeing_affect() {
+        // Affect alone reads Excited (valence 0.5, arousal 0.8); a Phase 3A
+        // producer naming the register directly must win over re-deriving
+        // it from the raw PAD values -- the additive-lookup contract.
+        let a = affect(0.5, 0.8);
+        let e = expression("calm");
+        assert_eq!(select_emotion_bucket(Some(&a), Some(&e)), EmotionBucket::Calm);
+    }
+
+    #[test]
+    fn expression_affect_label_is_case_insensitive() {
+        let e = expression("WARM");
+        assert_eq!(select_emotion_bucket(None, Some(&e)), EmotionBucket::Warm);
+    }
+
+    #[test]
+    fn expression_with_unrecognized_affect_label_falls_back_to_affect() {
+        let a = affect(0.5, 0.8);
+        let e = expression("bittersweet");
+        assert_eq!(
+            select_emotion_bucket(Some(&a), Some(&e)),
+            EmotionBucket::Excited
+        );
+    }
+
+    #[test]
+    fn expression_present_but_affect_label_unset_falls_back_to_affect() {
+        // A `SpeechExpressionWire` at its wire defaults (`affect_label:
+        // None`, `style: "neutral"`) must not force Neutral over a real
+        // affect-based read -- see `emotion_bucket_from_expression`'s own
+        // doc comment on why `style`'s default is not consulted here.
+        let a = affect(0.5, 0.8);
+        let e = contracts::SpeechExpressionWire::default();
+        assert_eq!(
+            select_emotion_bucket(Some(&a), Some(&e)),
+            EmotionBucket::Excited
+        );
+    }
+
+    // ---------------------------------------------- temporal_parts_from_expression (Phase 3C)
+
+    #[test]
+    fn expression_below_both_floors_yields_plain_text() {
+        let e = contracts::SpeechExpressionWire {
+            hesitation: 0.1,
+            breath: 0.1,
+            ..Default::default()
+        };
+        assert_eq!(
+            temporal_parts_from_expression("hello friend", &e),
+            vec![TemporalPart::Text("hello friend".to_string())]
+        );
+    }
+
+    #[test]
+    fn expression_hesitation_above_floor_prepends_hesitation() {
+        let e = contracts::SpeechExpressionWire {
+            hesitation: 1.0,
+            breath: 0.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            temporal_parts_from_expression("hello friend", &e),
+            vec![
+                TemporalPart::Hesitation(EXPRESSION_HESITATION_MAX_MS),
+                TemporalPart::Text("hello friend".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn expression_breath_above_floor_prepends_breath_vocalization() {
+        let e = contracts::SpeechExpressionWire {
+            hesitation: 0.0,
+            breath: 0.5,
+            ..Default::default()
+        };
+        assert_eq!(
+            temporal_parts_from_expression("hello friend", &e),
+            vec![
+                TemporalPart::Vocalization("breath_fast".to_string()),
+                TemporalPart::Text("hello friend".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn expression_does_not_reparse_legacy_tags_in_content() {
+        // A literal `<hesitate>` surviving in `content` alongside a
+        // populated `expression` must not be re-parsed as a second,
+        // duplicate hesitation -- the structured channel is authoritative
+        // once present, and `content` is plain text on this path.
+        let e = contracts::SpeechExpressionWire::default();
+        assert_eq!(
+            temporal_parts_from_expression("hello<hesitate>friend", &e),
+            vec![TemporalPart::Text("hello<hesitate>friend".to_string())]
+        );
     }
 
     // ---------------------------------------------------------- EmotionRefSet
@@ -2973,6 +3173,7 @@ mod tests {
             done: false,
             turn_id: Some("p2-2-test".to_string()),
             affect: None,
+            expression: None,
             timestamp: 0.0,
             full_response: None,
             generation_error: None,
