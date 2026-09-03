@@ -3,11 +3,12 @@ from unittest.mock import patch
 
 import pytest
 
+import app.config as config_module
 from app.state.conversation_store import ConversationHistoryStore
 
 
 @pytest.mark.asyncio
-async def test_postgres_failure_sets_fallback_flag_and_logs_critical(caplog, tmp_path):
+async def test_lenient_storage_mode_preserves_sqlite_fallback(caplog, monkeypatch):
     """H5: a PostgreSQL outage used to fail over to local SQLite with only a
     `logger.warning` and no queryable signal - a prior conversation's history
     (in Postgres) goes silently unreachable, and nothing distinguishes that
@@ -17,6 +18,9 @@ async def test_postgres_failure_sets_fallback_flag_and_logs_critical(caplog, tmp
     """
     store = ConversationHistoryStore()
     store.dsn = "postgresql://user:pass@nonexistent-host:5432/db"
+    monkeypatch.setattr(
+        config_module.config_instance, "ORGANISM_MODE_STRICT_STORAGE", False
+    )
 
     with (
         patch(
@@ -42,6 +46,28 @@ async def test_postgres_failure_sets_fallback_flag_and_logs_critical(caplog, tmp
         record.levelno >= logging.CRITICAL and "PostgreSQL" in record.message
         for record in caplog.records
     )
+
+
+@pytest.mark.asyncio
+async def test_strict_storage_mode_raises_instead_of_using_sqlite(monkeypatch):
+    monkeypatch.setattr(
+        config_module.config_instance, "ORGANISM_MODE_STRICT_STORAGE", True
+    )
+    store = ConversationHistoryStore()
+    store.dsn = "postgresql://user:pass@nonexistent-host:5432/db"
+
+    with (
+        patch(
+            "asyncpg.create_pool", side_effect=ConnectionError("database unavailable")
+        ),
+        patch("app.state.sqlite_fallback.SQLitePool") as sqlite_pool,
+        pytest.raises(RuntimeError, match="Strict storage mode forbids falling back"),
+    ):
+        await store.initialize()
+
+    assert store.used_fallback_storage is True
+    assert store.pool is None
+    sqlite_pool.assert_not_called()
 
 
 class _NullAcquire:
