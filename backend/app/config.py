@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from dotenv import dotenv_values
 from pydantic import (
@@ -218,6 +218,7 @@ class AppSettings(BaseSettings):
 
     LLM_STREAM_MAX_SECONDS: int = 120
     LLM_INTENT_CLASSIFICATION_ENABLED: bool = True
+    INTENT_CLASSIFIER_BACKEND: Literal["llm", "heuristic"] = "llm"
     # Phase 1 experiment: ask the realization model for a bounded envelope.
     # False preserves the existing streaming text contract.
     LLM_TYPED_REALIZATION_ENABLED: bool = False

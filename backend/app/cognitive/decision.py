@@ -17,6 +17,7 @@ from ..config import Config
 from ..state.adaptive_weights_store import AdaptiveWeightsStore
 from .behavior_contracts import BehaviorDecision, CommunicativeIntent
 from .bt import Action, Condition, NodeStatus, Selector, Sequence
+from .intent_classifier import get_intent_classifier
 from .json_extract import extract_first_json_value
 from .perception import CognitiveEvent
 
@@ -130,6 +131,7 @@ class DecisionService:
         self.shift_threshold = Config.CONTEXT_SHIFT_THRESHOLD  # θ_shift
         self._previous_goal: str | None = None
         self._goal_scores: dict[str, float] = {g: 0.0 for g in GOALS}
+        self.intent_classifier = get_intent_classifier(self)
 
     async def hydrate(self) -> None:
         """Restore previously-learned goal utilities, if this agent has any.
@@ -199,10 +201,7 @@ class DecisionService:
             event.metadata["suggested_goal"] = "ENGAGE"
             event.metadata["preferred_model"] = Config.LLM_FAST_MODEL
         elif event.event_type == "USER_MESSAGE":
-            self._apply_heuristic_intent_and_goal(event)
-            event.metadata["heuristic_intent"] = event.intent
-            if Config.LLM_INTENT_CLASSIFICATION_ENABLED:
-                await self._classify_intent_and_goal(event, state_snapshot)
+            await self.intent_classifier.classify(event, state_snapshot)
 
         # 2. MAUT Goal Scoring (§3.1) — replaces raw keyword goal
         appraisal = event.metadata.get("appraisal", {})
