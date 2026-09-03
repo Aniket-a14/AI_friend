@@ -12,6 +12,7 @@ crate's `mod tests` -- this file covers the Python-side wire contract and
 the pipeline publisher that stamps `turn_id` onto the `audio.resume` signal.
 """
 
+import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -132,12 +133,21 @@ async def test_rejected_interruption_stamps_turn_id_on_audio_resume(
 
 
 @pytest.mark.asyncio
-async def test_rejected_interruption_with_no_turn_id_stamps_none(
-    pipeline, mock_components
+async def test_rejected_interruption_with_no_turn_id_stamps_generated_session_turn_id(
+    pipeline, mock_components, monkeypatch
 ):
     """An event carrying no `metadata.turn_id` (e.g. STT paths that can't
-    always name the turn they're interrupting) must still publish, unscoped
-    -- `None` on the wire, which the Rust side treats as "always applies"."""
+    always name the turn they're interrupting) must NOT publish `None` --
+    `SessionState.start_turn` always generates a real turn id for this turn,
+    and the publisher must stamp that generated id rather than falling back
+    to the absent `event_metadata["turn_id"]`. Publishing `None` here would
+    make the Rust side treat the resume as "always applies" instead of
+    scoping it to the turn that's actually in flight."""
+    fixed_turn_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    monkeypatch.setattr(
+        "app.state.session_state.uuid.uuid4", lambda: fixed_turn_id
+    )
+
     mock_components["state"].last_speculative_intent = {
         "text": "stop please",
         "keywords": ["stop"],
@@ -182,4 +192,4 @@ async def test_rejected_interruption_with_no_turn_id_stamps_none(
 
     resume_signals = [r for r in results if r.get("subject") == "audio.resume"]
     assert len(resume_signals) == 1
-    assert resume_signals[0]["data"]["turn_id"] is None
+    assert resume_signals[0]["data"]["turn_id"] == fixed_turn_id.hex

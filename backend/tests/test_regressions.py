@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -36,7 +37,10 @@ def test_get_last_session_time_without_current_session_builds_valid_query():
     assert "WHERE ended_at IS NOT NULL" in query
 
 
-def test_cognitive_resume_recovery_accepts_type_key():
+def test_cognitive_resume_recovery_accepts_type_key(monkeypatch):
+    fixed_turn_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    monkeypatch.setattr("app.state.session_state.uuid.uuid4", lambda: fixed_turn_id)
+
     service = CognitiveService(llm_service=None, memory_store=None, graph_db=None)
     service.agent = SimpleNamespace(publish=AsyncMock())
     service.state.last_speculative_intent = {
@@ -105,15 +109,22 @@ def test_cognitive_resume_recovery_accepts_type_key():
             "reason": "conflict_rejected",
             "perception_text": "stop please",
             "utterance_id": "utt-1",
-            # Phase 2D: turn-scoped like audio.stop; None here since this
-            # event carries no "metadata"/"turn_id" of its own.
-            "turn_id": None,
+            # Phase 2D: turn-scoped like audio.stop. This event carries no
+            # "metadata"/"turn_id" of its own, but `SessionState.start_turn`
+            # (Phase 2B) always generates one, and the publisher prefers that
+            # over the absent raw metadata -- publishing `None` here would
+            # make the signal unscoped on the common path, defeating the
+            # point of Phase 2D.
+            "turn_id": fixed_turn_id.hex,
         },
     )
     service.state.hydrate_state.assert_not_awaited()
 
 
-def test_cognitive_confirmed_stop_escalates_to_final_audio_stop():
+def test_cognitive_confirmed_stop_escalates_to_final_audio_stop(monkeypatch):
+    fixed_turn_id = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    monkeypatch.setattr("app.state.session_state.uuid.uuid4", lambda: fixed_turn_id)
+
     service = CognitiveService(llm_service=None, memory_store=None, graph_db=None)
     service.agent = SimpleNamespace(publish=AsyncMock())
     service.state.last_speculative_intent = {
@@ -148,7 +159,7 @@ def test_cognitive_confirmed_stop_escalates_to_final_audio_stop():
             "command_text": "stop right now",
             "keywords": ["stop"],
             "utterance_id": "utt-2",
-            "turn_id": None,
+            "turn_id": fixed_turn_id.hex,
         },
     )
     service.decision.decide.assert_not_awaited()

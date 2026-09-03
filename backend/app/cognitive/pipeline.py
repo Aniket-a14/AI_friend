@@ -119,6 +119,17 @@ class CognitivePipeline:
                     speculative_intent.get("keywords"),
                 )
                 self.state.last_speculative_intent = None
+                # `session_state.turn_id` is always populated (`SessionState.
+                # start_turn` generates one when nothing upstream supplies
+                # it); `event_metadata["turn_id"]` usually isn't set at all,
+                # so preferring it here would silently publish `None` on the
+                # common path. Fall back to the raw metadata only for the
+                # pre-2B caller shape (`session_state=None`).
+                turn_id = (
+                    session_state.turn_id
+                    if session_state is not None
+                    else event_metadata.get("turn_id")
+                )
 
                 if not confirmed:
                     logger.info(
@@ -137,7 +148,7 @@ class CognitivePipeline:
                             # Phase 2D (§15 item 8): mirrors audio.stop's
                             # existing turn_id stamp below -- makes resume
                             # turn-scoped symmetrically with stop.
-                            "turn_id": event_metadata.get("turn_id"),
+                            "turn_id": turn_id,
                         },
                     }
                     return
@@ -158,7 +169,7 @@ class CognitivePipeline:
                             "command_text": final_text,
                             "keywords": speculative_intent.get("keywords", []),
                             "utterance_id": speculative_intent.get("utterance_id"),
-                            "turn_id": event_metadata.get("turn_id"),
+                            "turn_id": turn_id,
                         },
                     }
                     result["stop"] = True
