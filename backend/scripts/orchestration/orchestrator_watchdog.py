@@ -167,8 +167,8 @@ def main():
                 run_worktree_checks(CODEX_WT, "Codex")
                 codex_last_head = x_head
 
-            # 4. Check if both completed Phase 3
-            both_ready = c_head != "6f03c3b" and x_head != "6f03c3b" and not c_dirty and not x_dirty
+            # 4. Check if both completed Phase 4
+            both_ready = c_head != "41b2019" and x_head != "41b2019" and not c_dirty and not x_dirty
 
             # 5. Write status snapshot
             status = {
