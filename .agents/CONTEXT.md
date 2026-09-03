@@ -16002,3 +16002,9 @@ but converts what used to be an immediate raise into a silent hang instead of a 
 strict-mode check that raises instead of actually falling back, so the flag reads "used fallback
 storage" on the exact path that refused to -- `test_phase2_strict_storage.py` asserts this as
 correct rather than catching it. Posted to `personal/HANDOFF.md`.
+
+### 2026-09-03 18:44 IST — Orchestrator (Antigravity) — Phase 3 (SpeechExpression & Voice-Agent Adapter) Merged
+- Phase 3A (Codex): Created `backend/app/cognitive/expression.py` (`SpeechExpression` model + `derive_speech_expression` unifying affect labels, breath scaling, dominance < 0.4 hesitation, and APRA trajectory generation) and unit tests in `backend/tests/test_speech_expression.py`.
+- Phase 3B/3C (Claude): Added `SpeechExpressionWire` (`extra="allow"`) to `backend/app/contracts.py` and `backend/crates/contracts/src/lib.rs`. Wired `brain_agent.py` to call `derive_speech_expression`. Added `temporal_parts_from_expression` in `crates/voice-agent/src/main.rs` with discrete breath vocalization bands (`[0.25, 0.75)` -> `sigh_soft`, `[0.75, 1.0]` -> `breath_fast`) and additive affect lookup in `select_emotion_bucket`.
+- Peer Review & Reciprocal Fixes: Both agents identified trajectory 4-tuple frame type mismatch (`list[tuple[int, float, float, float]]` vs `list[float]`), resolved in `b9718cc`.
+- Verification: 17/17 Phase 3 Python tests passed, Rust `voice-agent` 78/78 tests passed, `contracts` 10/10 tests passed, Ruff clean. Merged into `research` (`ec3a1df`), pushed to origin, and deployed live to `home-gpu` with CUDA release binaries and running systemd units.
