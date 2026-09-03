@@ -18,6 +18,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.llm.adapter_registry import AdapterRecord
+
 REPORT_SCHEMA_VERSION = 2
 
 
@@ -457,6 +459,7 @@ class ComparisonReport(BaseModel):
     # gate and an "llm" gate answer different questions and a reader of the
     # report months later has no other way to tell them apart.
     path: EvalPath = "llm"
+    adapter_record: AdapterRecord | None = None
     # Sampling options the two runs disagreed on. Greedy decoding reproduces
     # only for a fixed load configuration, so a diff here means the comparison
     # is measuring the configuration as much as the model. Surfaced and gate-
