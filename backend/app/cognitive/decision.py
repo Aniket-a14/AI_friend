@@ -17,6 +17,7 @@ from ..config import Config
 from ..state.adaptive_weights_store import AdaptiveWeightsStore
 from .behavior_contracts import BehaviorDecision, CommunicativeIntent
 from .bt import Action, Condition, NodeStatus, Selector, Sequence
+from .deterministic_responses import evaluate_deterministic_response
 from .json_extract import extract_first_json_value
 from .perception import CognitiveEvent
 
@@ -26,6 +27,9 @@ logger = logging.getLogger(__name__)
 GOALS = ["ENGAGE", "COMFORT", "INFORM", "TEASE", "PROTECT"]
 
 _WEIGHT_KEY = "goal_utilities"
+
+# 4C fix: category -> event.intent for a short-circuited deterministic plan.
+_DETERMINISTIC_PLAN_INTENTS = {"backchannel": "ACKNOWLEDGE", "refusal": "REFUSE"}
 
 
 @dataclass
@@ -103,9 +107,13 @@ class DecisionService:
         memory_store=None,
         agent_name: str = "my friend",
         weights_store: AdaptiveWeightsStore | None = None,
+        identity_manager=None,
     ):
         self.llm = llm_service
         self.memory = memory_store
+        # 4C: live reference, not a snapshot -- immutable_core can be
+        # rebuilt by IdentityManager._refresh_immutable_core after this.
+        self._identity_manager = identity_manager
         self.root = self._build_bt()
 
         # MAUT Weights (§3.1)
@@ -183,16 +191,63 @@ class DecisionService:
                         Condition(
                             "IsChatIntent", lambda b: b["event"].intent == "CHAT"
                         ),
-                        Action("DetermineGoalAndResponse", self._plan_social_response),
+                        Selector(
+                            "ResponseStrategy",
+                            [
+                                Sequence(
+                                    "DeterministicResponse",
+                                    [
+                                        Condition(
+                                            "HasDeterministicResponse",
+                                            self._check_deterministic_response,
+                                        ),
+                                        Action(
+                                            "RespondDeterministic",
+                                            self._apply_deterministic_response,
+                                        ),
+                                    ],
+                                ),
+                                Action(
+                                    "DetermineGoalAndResponse",
+                                    self._plan_social_response,
+                                ),
+                            ],
+                        ),
                     ],
                 ),
             ],
         )
 
+    def _immutable_core(self) -> dict[str, Any]:
+        return getattr(self._identity_manager, "immutable_core", {}) or {}
+
+    def _check_deterministic_response(self, blackboard: dict[str, Any]) -> bool:
+        """4C: evaluate once, cache on the blackboard for the Action sibling."""
+        plan = evaluate_deterministic_response(
+            blackboard["event"], blackboard["state"], self._immutable_core()
+        )
+        blackboard["_deterministic_plan"] = plan
+        return plan is not None
+
+    def _apply_deterministic_response(self, blackboard: dict[str, Any]) -> bool:
+        blackboard["plan"] = blackboard.pop("_deterministic_plan")
+        return True
+
     async def decide(
         self, event: CognitiveEvent, state_snapshot: dict[str, Any]
     ) -> ActionPlan:
         """Main decision loop with MAUT scoring and intent persistence."""
+        # 0. Deterministic short-circuit -- zero LLM calls, before classification.
+        if event.event_type == "USER_MESSAGE":
+            deterministic_plan = evaluate_deterministic_response(
+                event, state_snapshot, self._immutable_core()
+            )
+            if deterministic_plan is not None:
+                event.intent = _DETERMINISTIC_PLAN_INTENTS.get(
+                    deterministic_plan.payload.get("category"), "ACKNOWLEDGE"
+                )
+                return deterministic_plan
+
         # 1. Hybrid Routing: Fast Path for Greetings
         if self._is_simple_greeting(event.raw_content):
             event.intent = "CHAT"
