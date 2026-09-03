@@ -181,10 +181,19 @@ def compare_reports(baseline: EvalReport, candidate: EvalReport) -> ComparisonRe
         candidate_provenance=candidate.provenance,
         path=baseline.path,
         option_diffs=diff_options(baseline, candidate),
-        persona_prompt_differs=bool(
-            baseline.system_prompt_sha256
-            and candidate.system_prompt_sha256
-            and baseline.system_prompt_sha256 != candidate.system_prompt_sha256
+        persona_prompt_differs=(
+            baseline.system_prompt_sha256 != candidate.system_prompt_sha256
+            if baseline.system_prompt_sha256 or candidate.system_prompt_sha256
+            else baseline.persona_version != candidate.persona_version
+        ),
+        deployment_config_differs=(
+            baseline.deployment_llm_provenance
+            != candidate.deployment_llm_provenance
+        ),
+        endpoint_differs=(baseline.llm_endpoint != candidate.llm_endpoint),
+        request_provenance_incomplete=bool(
+            baseline.request_provenance_dropped
+            or candidate.request_provenance_dropped
         ),
         regressions=regressions,
         improvements=improvements,
@@ -237,9 +246,31 @@ def render_comparison(comparison: ComparisonReport) -> str:
                 f"{item.describe('candidate')}"
             )
         lines += [
-            "!! Every delta below is attributable to the option change as well",
-            "!! as to the model. Re-run both under one configuration before",
-            "!! reading a probe flip as a behavior change.",
+            "!! Controlled gate blocked. Re-run both under one configuration",
+            "!! before reading a probe flip as a behavior change.",
+            "",
+        ]
+
+    if comparison.deployment_config_differs:
+        lines += [
+            "!! DEPLOYMENT CONFIGURATION DIFFERS between these runs.",
+            "!! Controlled gate blocked until the deployment configuration is",
+            "!! identical or the comparison is explicitly re-scoped.",
+            "",
+        ]
+
+    if comparison.endpoint_differs:
+        lines += [
+            "!! EVAL ENDPOINT DIFFERS between these runs.",
+            "!! Controlled gate blocked: the runtime endpoint is part of the",
+            "!! measured system.",
+            "",
+        ]
+
+    if comparison.request_provenance_incomplete:
+        lines += [
+            "!! REQUEST PROVENANCE IS INCOMPLETE (the client trace was capped).",
+            "!! Controlled gate blocked until both runs retain their full trace.",
             "",
         ]
 

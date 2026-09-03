@@ -55,6 +55,11 @@ class OllamaClient:
         # the client makes the observed endpoint/model variant authoritative,
         # including fallback attempts, rather than reconstructed in eval code.
         self.request_provenance: list[dict[str, Any]] = []
+        self.request_provenance_dropped = 0
+        # The eval harness sets this around each generation so a request trace
+        # can be joined back to the scored probe. Production callers leave it
+        # unset; no conversation content is stored here.
+        self.request_context: str | None = None
 
     def _record_request(
         self, endpoint: str, payload: dict[str, Any], *, successful: bool = False
@@ -81,11 +86,14 @@ class OllamaClient:
                 "keep_alive": payload.get("keep_alive"),
                 "prompt_sha256": _fingerprint(prompt_text),
                 "system_prompt_sha256": _fingerprint(system_text),
+                "request_context": self.request_context,
                 "successful": successful,
             }
         )
         if len(self.request_provenance) > self._MAX_REQUEST_PROVENANCE:
-            del self.request_provenance[: -self._MAX_REQUEST_PROVENANCE]
+            dropped = len(self.request_provenance) - self._MAX_REQUEST_PROVENANCE
+            del self.request_provenance[:dropped]
+            self.request_provenance_dropped += dropped
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -99,6 +107,46 @@ class OllamaClient:
     async def close(self):
         if self._client and not self._client.is_closed:
             await self._client.aclose()
+
+    async def get_model_provenance(self, model: str | None = None) -> dict[str, Any]:
+        """Return the installed Ollama identity for an eval target.
+
+        The request trace records the tag sent to inference, but a tag alone
+        is not a model identity: aliases such as ``phi4-mini`` can resolve to
+        an installed ``phi4-mini:latest`` with a particular digest. This
+        best-effort metadata call is kept separate from generation so an
+        unavailable tags endpoint does not turn a usable eval into a crash.
+        """
+        target = model or self.model
+        result: dict[str, Any] = {"requested_model": target}
+        try:
+            client = await self._get_client()
+            response = await client.get("/api/tags")
+            if response.status_code >= 400:
+                result["error"] = f"HTTP {response.status_code}"
+                return result
+            payload = response.json()
+            models = payload.get("models", [])
+            variants = set(self._build_model_variants(target))
+            match = next(
+                (item for item in models if item.get("name") in variants), None
+            )
+            if not isinstance(match, dict):
+                result["installed"] = False
+                return result
+            result.update(
+                {
+                    "installed": True,
+                    "name": match.get("name"),
+                    "digest": match.get("digest"),
+                    "size": match.get("size"),
+                    "modified_at": match.get("modified_at"),
+                    "details": match.get("details", {}),
+                }
+            )
+        except Exception as exc:
+            result["error"] = type(exc).__name__
+        return result
 
     def _build_generate_prompt(self, prompt: str, system: str | None = None) -> str:
         """Flatten prompt+system into the single string /api/generate expects.

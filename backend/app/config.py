@@ -3,7 +3,13 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import dotenv_values
-from pydantic import Field, computed_field, field_validator, model_validator
+from pydantic import (
+    Field,
+    PrivateAttr,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _discovered_parent = Path(__file__).resolve().parent.parent.parent
@@ -14,11 +20,66 @@ elif _discovered_parent == Path("/"):
 else:
     _env_file = _discovered_parent / ".env"
 
+_LLM_SOURCE_FIELDS = {
+    "OLLAMA_URL": "ollama_url",
+    "LLM_FAST_MODEL": "llm_fast_model",
+    "LLM_CHAT_MODEL": "llm_chat_model",
+    "LLM_REFLECTION_MODEL": "llm_reflection_model",
+    "LLM_NUM_CTX": "llm_num_ctx",
+    "LLM_INTENT_CLASSIFICATION_ENABLED": "llm_intent_classification_enabled",
+}
+
 
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(_env_file), env_file_encoding="utf-8", extra="ignore"
     )
+
+    # Captured during construction, rather than reconstructed from global
+    # environment state whenever the computed field is read.  That distinction
+    # matters for tests and for callers that construct an isolated settings
+    # object with `_env_file=None` or explicit constructor overrides.
+    _llm_env_files: list[Path] = PrivateAttr(default_factory=list)
+    _llm_sources: dict[str, str] = PrivateAttr(default_factory=dict)
+
+    def __init__(self, **values: Any):
+        explicit = {
+            name
+            for name in set(values) & set(_LLM_SOURCE_FIELDS)
+            if values.get(name) not in (None, "")
+        }
+        requested_env_file = values.get("_env_file", _env_file)
+        if requested_env_file is None:
+            env_files: list[Path] = []
+        elif isinstance(requested_env_file, (list, tuple)):
+            env_files = [Path(item) for item in requested_env_file if item]
+        else:
+            env_files = [Path(requested_env_file)]
+
+        super().__init__(**values)
+        self._llm_env_files = env_files
+        dotenv_fields: set[str] = set()
+        for env_file in env_files:
+            try:
+                dotenv_fields.update(
+                    key
+                    for key, value in dotenv_values(env_file).items()
+                    if value is not None
+                )
+            except (OSError, UnicodeError):
+                continue
+        self._llm_sources = {
+            field_name: (
+                "constructor"
+                if env_name in explicit
+                else "process_env"
+                if env_name in os.environ
+                else "env_file"
+                if env_name in dotenv_fields
+                else "code_default"
+            )
+            for env_name, field_name in _LLM_SOURCE_FIELDS.items()
+        }
 
     DEBUG: bool = False
     # #162: the one signal `validate_no_placeholder_secrets_in_production`
@@ -682,37 +743,13 @@ class AppSettings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def LLM_PROVENANCE(self) -> dict[str, Any]:
-        # pydantic-settings resolves sources in this order: process environment
-        # over the configured dotenv file over the field default.  Report the
-        # winner for each value instead of labelling every value with the
-        # dotenv path.  A Compose interpolation or systemd EnvironmentFile is
+        # pydantic-settings resolves constructor values before process
+        # environment, the configured dotenv file, and field defaults. Report
+        # the winner for each value instead of labelling every value with the
+        # dotenv path. A Compose interpolation or systemd EnvironmentFile is
         # intentionally represented as ``process_env``: by the time Python
         # starts, that is the only source this process can prove.
-        try:
-            dotenv = {
-                key: value
-                for key, value in dotenv_values(_env_file).items()
-                if value is not None
-            }
-        except Exception:
-            dotenv = {}
-
-        source_fields = {
-            "OLLAMA_URL": "ollama_url",
-            "LLM_FAST_MODEL": "llm_fast_model",
-            "LLM_CHAT_MODEL": "llm_chat_model",
-            "LLM_REFLECTION_MODEL": "llm_reflection_model",
-            "LLM_NUM_CTX": "llm_num_ctx",
-            "LLM_INTENT_CLASSIFICATION_ENABLED": "llm_intent_classification_enabled",
-        }
-        sources: dict[str, str] = {}
-        for env_name, field_name in source_fields.items():
-            if env_name in os.environ:
-                sources[field_name] = "process_env"
-            elif env_name in dotenv:
-                sources[field_name] = "env_file"
-            else:
-                sources[field_name] = "code_default"
+        sources = dict(self._llm_sources)
 
         # These two values are filled from LLM_FAST_MODEL by set_defaults(),
         # so an absent explicit value has a derived rather than default source.
@@ -725,15 +762,23 @@ class AppSettings(BaseSettings):
             sources["llm_reflection_model"] = "derived_from_llm_chat_model"
 
         return {
-            "env_file": str(_env_file),
-            "env_file_exists": _env_file.exists(),
+            "env_file": (
+                str(self._llm_env_files[-1]) if self._llm_env_files else None
+            ),
+            "env_file_exists": bool(self._llm_env_files)
+            and all(env_file.exists() for env_file in self._llm_env_files),
             "llm_chat_model": self.LLM_CHAT_MODEL,
             "llm_fast_model": self.LLM_FAST_MODEL,
             "llm_reflection_model": self.LLM_REFLECTION_MODEL,
             "llm_num_ctx": self.LLM_NUM_CTX,
             "llm_intent_classification_enabled": self.LLM_INTENT_CLASSIFICATION_ENABLED,
             "ollama_url": self.OLLAMA_URL,
-            "precedence": ["process_env", "env_file", "code_default"],
+            "precedence": [
+                "constructor",
+                "process_env",
+                "env_file",
+                "code_default",
+            ],
             "sources": sources,
         }
 

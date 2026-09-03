@@ -446,26 +446,31 @@ def _cmd_rate_pairwise(args: argparse.Namespace, input_fn=input) -> int:
     rater_id = args.rater_id
     rng = random.Random(args.seed)
 
-    if report_a.path != report_b.path:
-        print("cannot rate reports from different execution paths", file=sys.stderr)
-        return 2
-    if report_a.suite != report_b.suite or report_a.suite == "unknown":
-        print("cannot rate reports from different or unknown eval suites", file=sys.stderr)
-        return 2
-    if (
-        report_a.probe_set_sha256
-        and report_b.probe_set_sha256
-        and report_a.probe_set_sha256 != report_b.probe_set_sha256
-    ):
-        print("cannot rate reports produced from different probe sets", file=sys.stderr)
-        return 2
-
     by_id_a = {result.probe_id: result for result in report_a.results}
     by_id_b = {result.probe_id: result for result in report_b.results}
-    shared = [probe_id for probe_id in by_id_a if probe_id in by_id_b]
-    if not shared:
-        print("no probe_id is present in both reports; nothing to rate", file=sys.stderr)
+    try:
+        comparison = compare_reports(report_a, report_b)
+    except ComparisonInputError as exc:
+        print(f"cannot rate these reports: {exc}", file=sys.stderr)
         return 2
+    if (
+        comparison.option_diffs
+        or comparison.persona_prompt_differs
+        or comparison.deployment_config_differs
+        or comparison.endpoint_differs
+        or comparison.request_provenance_incomplete
+    ):
+        print(
+            "cannot rate reports from an uncontrolled comparison: align "
+            "options, persona, deployment config, endpoint, and request trace",
+            file=sys.stderr,
+        )
+        return 2
+
+    # `compare_reports` already rejects missing/extra ids. Keeping the local
+    # mapping makes the presentation loop simple while preserving that exact
+    # same-probe invariant for the human-rating path.
+    shared = list(by_id_a)
 
     ratings: list[PairwiseRating] = []
     try:

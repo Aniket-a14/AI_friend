@@ -15,6 +15,7 @@ agent's mood, not the model's behavior.
 import json
 import logging
 import subprocess
+from copy import deepcopy
 from pathlib import Path
 
 import httpx
@@ -132,6 +133,28 @@ def request_provenance(client: object) -> list[dict]:
     if not isinstance(trace, list):
         return []
     return [dict(item) for item in trace if isinstance(item, dict)]
+
+
+def request_provenance_dropped(client: object) -> int:
+    value = getattr(client, "request_provenance_dropped", 0)
+    return value if isinstance(value, int) and value >= 0 else 0
+
+
+def set_request_context(client: object, context: str) -> None:
+    """Label subsequent provider requests when the client supports tracing."""
+    if hasattr(client, "request_context"):
+        client.request_context = context
+
+
+async def model_runtime_provenance(client: object, model: str | None) -> dict:
+    getter = getattr(client, "get_model_provenance", None)
+    if not callable(getter):
+        return {}
+    try:
+        value = await getter(model)
+    except Exception as exc:
+        return {"requested_model": model or getattr(client, "model", ""), "error": type(exc).__name__}
+    return dict(value) if isinstance(value, dict) else {}
 
 
 async def reset_model_state(
@@ -302,12 +325,16 @@ async def run_eval(
     # whose only job is to leave the runtime in a named state, and routing it
     # through ActionService would add a turn's worth of failure modes to a call
     # nobody scores.
+    deployment_llm_provenance = deepcopy(config_module.config_instance.LLM_PROVENANCE)
+    runtime_model_provenance = await model_runtime_provenance(client, model)
+    set_request_context(client, "warmup")
     await reset_model_state(client, persona_prompt, model, options)
 
     results: list[ProbeResult] = []
     # Sequential on purpose: one local model, and concurrent generations on a
     # CPU-only box would contend for the same cores and skew nothing useful.
     for probe in probes:
+        set_request_context(client, f"probe:{probe.id}")
         result = await run_probe(
             client, manager, probe, persona_prompt, model, options, generate
         )
@@ -338,9 +365,11 @@ async def run_eval(
         suite="single_turn",
         options=options.as_override(),
         model_source=model_source,
-        deployment_llm_provenance=dict(config_module.config_instance.LLM_PROVENANCE),
+        deployment_llm_provenance=deployment_llm_provenance,
         llm_endpoint=str(getattr(client, "base_url", "") or ""),
+        model_runtime_provenance=runtime_model_provenance,
         request_provenance=request_provenance(client),
+        request_provenance_dropped=request_provenance_dropped(client),
         probe_set_sha256=structured_fingerprint(
             {"path": path, "probes": [probe.model_dump(mode="json") for probe in probes]}
         ),

@@ -381,15 +381,21 @@ async def run_conversation_eval(
     from .runner import (
         _provenance,
         current_git_revision,
+        model_runtime_provenance,
         persona_version,
         request_provenance,
+        request_provenance_dropped,
         reset_model_state,
+        set_request_context,
         structured_fingerprint,
     )
 
     system = manager.get_persona_prompt(current_mood_directive=EVAL_MOOD_DIRECTIVE)
     # Whatever state the runtime was already in changes the answers; see
     # `reset_model_state`. This suite is where that was measured, twice.
+    deployment_llm_provenance = config_module.config_instance.LLM_PROVENANCE.copy()
+    runtime_model_provenance = await model_runtime_provenance(client, model)
+    set_request_context(client, "warmup")
     await reset_model_state(client, system, model, options)
 
     results: list[ProbeResult] = []
@@ -402,6 +408,7 @@ async def run_conversation_eval(
     # database once instead of once per strategy.
     for probe in probes:
         for strategy in strategies:
+            set_request_context(client, f"probe:{probe.id}@{strategy.name}")
             result = await run_conversation_probe(
                 client,
                 manager,
@@ -434,9 +441,11 @@ async def run_conversation_eval(
         suite="conversation",
         options=options.as_override(),
         model_source=model_source,
-        deployment_llm_provenance=dict(config_module.config_instance.LLM_PROVENANCE),
+        deployment_llm_provenance=deployment_llm_provenance,
         llm_endpoint=str(getattr(client, "base_url", "") or ""),
+        model_runtime_provenance=runtime_model_provenance,
         request_provenance=request_provenance(client),
+        request_provenance_dropped=request_provenance_dropped(client),
         probe_set_sha256=structured_fingerprint(
             {
                 "suite": "conversation",

@@ -13,6 +13,7 @@ async def test_ollama_records_successful_endpoint_model_and_full_options():
         return httpx.Response(200, json={"message": {"content": "ok"}})
 
     client = OllamaClient(base_url="http://ollama.test:11434", model="phi4-mini")
+    client.request_context = "probe:identity.name"
     client._client = httpx.AsyncClient(
         base_url=client.base_url, transport=httpx.MockTransport(handler)
     )
@@ -32,6 +33,42 @@ async def test_ollama_records_successful_endpoint_model_and_full_options():
     assert request["keep_alive"] == "20m"
     assert request["prompt_sha256"]
     assert request["system_prompt_sha256"]
+    assert request["request_context"] == "probe:identity.name"
+
+
+@pytest.mark.asyncio
+async def test_ollama_records_installed_model_digest_when_tags_exposes_one():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/api/tags"
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {
+                        "name": "phi4-mini:latest",
+                        "digest": "sha256:model-digest",
+                        "size": 123,
+                        "modified_at": "2026-09-03T00:00:00Z",
+                        "details": {"quantization_level": "Q4_K_M"},
+                    }
+                ]
+            },
+        )
+
+    client = OllamaClient(base_url="http://ollama.test:11434", model="phi4-mini")
+    client._client = httpx.AsyncClient(
+        base_url=client.base_url, transport=httpx.MockTransport(handler)
+    )
+    try:
+        provenance = await client.get_model_provenance()
+    finally:
+        await client.close()
+
+    assert provenance["requested_model"] == "phi4-mini"
+    assert provenance["name"] == "phi4-mini:latest"
+    assert provenance["digest"] == "sha256:model-digest"
+    assert provenance["details"]["quantization_level"] == "Q4_K_M"
 
 
 def test_request_provenance_stays_bounded_on_a_long_running_client():
@@ -49,6 +86,7 @@ def test_request_provenance_stays_bounded_on_a_long_running_client():
         )
 
     assert len(client.request_provenance) == cap
+    assert client.request_provenance_dropped == 50
     # Trimming drops the oldest entries, so the most recent calls survive.
     assert client.request_provenance[-1]["model"] == f"call-{cap + 49}"
     assert client.request_provenance[0]["model"] == "call-50"

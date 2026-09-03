@@ -236,11 +236,15 @@ class ScriptedClient:
         self.seen_systems = []
         self.seen_options = []
         self.seen_prompts = []
+        self.request_context = None
+        self.request_provenance = []
+        self.request_provenance_dropped = 0
 
     async def generate(self, prompt, system=None, model=None, options_override=None):
         self.seen_systems.append(system)
         self.seen_options.append(options_override)
         self.seen_prompts.append(prompt)
+        self.request_provenance.append({"request_context": self.request_context})
         for needle, response in self.script.items():
             if needle in prompt:
                 return response
@@ -306,6 +310,10 @@ async def test_no_probe_is_scored_against_an_unspecified_runtime_state(kavya):
     assert len(client.seen_prompts) == len(probes) + 1
     # The discarded generation must not reach the report as a result.
     assert len(report.results) == len(probes)
+    assert [item["request_context"] for item in report.request_provenance] == [
+        "warmup",
+        *(f"probe:{probe.id}" for probe in probes),
+    ]
 
 
 @pytest.mark.asyncio
@@ -891,9 +899,25 @@ def test_two_runs_sampled_differently_are_flagged_as_incomparable():
     assert [(d.name, d.baseline, d.candidate) for d in comparison.option_diffs] == [
         ("temperature", 0.0, 0.7)
     ]
+    assert comparison.gate_passed is False
     rendered = render_comparison(comparison)
     assert "SAMPLING OPTIONS DIFFER" in rendered
     assert "temperature" in rendered
+
+
+def test_controlled_gate_blocks_runtime_identity_differences():
+    baseline = _report("base", [_result("a", "identity", True, 1.0)])
+    candidate = _report("cand", [_result("a", "identity", True, 1.0)])
+    baseline.llm_endpoint = "http://ollama-a:11434"
+    candidate.llm_endpoint = "http://ollama-b:11434"
+    baseline.deployment_llm_provenance = {"llm_chat_model": "base"}
+    candidate.deployment_llm_provenance = {"llm_chat_model": "candidate"}
+
+    comparison = compare_reports(baseline, candidate)
+
+    assert comparison.endpoint_differs is True
+    assert comparison.deployment_config_differs is True
+    assert comparison.gate_passed is False
 
 
 def test_an_absent_option_is_distinguished_from_one_explicitly_null():
@@ -955,21 +979,25 @@ def test_a_comparison_spanning_a_persona_edit_says_so():
     comparison = compare_reports(baseline, candidate)
 
     assert comparison.persona_prompt_differs is True
+    assert comparison.gate_passed is False
     assert "PERSONA PROMPT DIFFERS" in render_comparison(comparison)
 
 
-def test_a_report_predating_the_fingerprint_does_not_raise_a_false_persona_alarm():
-    """Reports written before the field exists carry an empty digest. Reading
-    that as a difference would fire the warning on every comparison against
-    older evidence, and a warning that always fires is one nobody reads."""
+def test_a_missing_fingerprint_blocks_a_controlled_comparison():
+    """A missing identity digest must not be treated as proof of equality.
+
+    Older reports remain loadable, but a controlled model comparison needs an
+    explicit identity on both sides before its green gate means anything.
+    """
     baseline = _report("m", [_result("a", "identity", True, 1.0)])
     candidate = _report("m", [_result("a", "identity", True, 1.0)])
     candidate.system_prompt_sha256 = "bbbbbbbbbbbbbbbb"
 
     comparison = compare_reports(baseline, candidate)
 
-    assert comparison.persona_prompt_differs is False
-    assert "PERSONA PROMPT DIFFERS" not in render_comparison(comparison)
+    assert comparison.persona_prompt_differs is True
+    assert comparison.gate_passed is False
+    assert "PERSONA PROMPT DIFFERS" in render_comparison(comparison)
 
 
 def test_an_unpinned_num_gpu_is_omitted_rather_than_sent_as_null():

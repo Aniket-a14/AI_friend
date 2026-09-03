@@ -116,6 +116,26 @@ class PinnedOptionsClient:
         # an address, rather than by raising from inside one.
         return getattr(self._inner, "base_url", None)
 
+    @property
+    def request_context(self) -> str | None:
+        return getattr(self._inner, "request_context", None)
+
+    @request_context.setter
+    def request_context(self, value: str | None) -> None:
+        if hasattr(self._inner, "request_context"):
+            self._inner.request_context = value
+
+    @property
+    def request_provenance_dropped(self) -> int:
+        value = getattr(self._inner, "request_provenance_dropped", 0)
+        return value if isinstance(value, int) else 0
+
+    async def get_model_provenance(self, model: str | None = None) -> dict[str, Any]:
+        getter = getattr(self._inner, "get_model_provenance", None)
+        if getter is None:
+            return {}
+        return await getter(model)
+
     def _pin(self, options_override: dict[str, Any] | None) -> dict[str, Any]:
         merged = dict(options_override or {})
         merged.update(self._pinned)

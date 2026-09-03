@@ -352,10 +352,18 @@ class EvalReport(BaseModel):
     # Endpoint used by the eval client, which may intentionally differ from
     # the deployment's configured OLLAMA_URL.
     llm_endpoint: str = ""
+    # Installed model identity observed from the runtime, when the provider
+    # exposes one. The inference trace's requested tag remains authoritative
+    # for what was sent; this field binds that tag to an installed digest.
+    model_runtime_provenance: dict[str, Any] = Field(default_factory=dict)
     # Exact client-side request evidence.  This is intentionally a list: a
     # resilient Ollama call may try both /api/chat and /api/generate, and a
     # report must not collapse that fallback into the configured URL.
     request_provenance: list[dict[str, Any]] = Field(default_factory=list)
+    # Number of older request records evicted from a long-lived client while
+    # this report was being collected. A non-zero value means the trace is not
+    # complete evidence, even though the report itself remains readable.
+    request_provenance_dropped: int = Field(default=0, ge=0)
     # Canonical digest of the probes (and, for conversation reports, the
     # transcript fixture) that were executed.  A system-prompt digest alone
     # cannot identify a changed question pack.
@@ -451,15 +459,17 @@ class ComparisonReport(BaseModel):
     path: EvalPath = "llm"
     # Sampling options the two runs disagreed on. Greedy decoding reproduces
     # only for a fixed load configuration, so a diff here means the comparison
-    # is measuring the configuration as much as the model. Surfaced, never
-    # gated on: the caller may have changed an option on purpose, and a gate
-    # that blocks a deliberate change would just get bypassed.
+    # is measuring the configuration as much as the model. Surfaced and gate-
+    # blocking: a controlled model comparison must not silently accept this.
     option_diffs: list[OptionDiff] = Field(default_factory=list)
     # True when both reports fingerprinted their system prompt and the two
     # differ: the persona itself changed, so every delta below describes a
     # different agent as much as a different model. False when either report
     # predates the field, because "unknown" must not read as "verified same".
     persona_prompt_differs: bool = False
+    deployment_config_differs: bool = False
+    endpoint_differs: bool = False
+    request_provenance_incomplete: bool = False
     # A regression is a probe the baseline passed and the candidate failed —
     # the hard gate. Score dips that stay above passing land in `declines`.
     regressions: list[ProbeDelta]
@@ -472,7 +482,14 @@ class ComparisonReport(BaseModel):
 
     @property
     def gate_passed(self) -> bool:
-        return not self.regressions
+        return not (
+            self.regressions
+            or self.option_diffs
+            or self.persona_prompt_differs
+            or self.deployment_config_differs
+            or self.endpoint_differs
+            or self.request_provenance_incomplete
+        )
 
 
 class RunOptions(BaseModel):

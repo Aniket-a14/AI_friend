@@ -914,6 +914,46 @@ this re-verification.
   suite's 8 NATS-account setup cases and the external home-GPU deployment remain
   unverified in this environment; the other 1672 backend tests passed.
 
+#### CURRENT PHASE 0 REVIEW — 2026-09-03
+
+- **VERIFIED — the follow-up implementation is substantive, not metadata-only.**
+  The current reports are schema-valid `single_turn` runs for both `llm` and
+  `action`; the action report contains provider-stream text distinct from the
+  visible self-corrected response, and both reports contain request traces,
+  prompt digests/config provenance, options, endpoint, persona version, and git
+  revision.
+- **VERIFIED — Phase 0 remains PARTIAL.** The two current reports have zero
+  human or pairwise ratings, and `state_fixture_hash` is empty. The reports
+  therefore support deterministic model/path plumbing evidence, not the full
+  subjective character-fidelity or stateful-runtime claims required by §16-17.
+- **VERIFIED — configuration source reporting still has an instance-integrity
+  gap.** `LLM_PROVENANCE` derives source labels from module-global environment
+  and dotenv state rather than the `AppSettings` instance. An instance built
+  with `_env_file=None` and explicit constructor values can report those values
+  as `env_file`-sourced. The default process instance is less exposed, but the
+  source labels are not generally trustworthy for every settings object.
+- **VERIFIED — comparison is fail-closed for path/suite/probe identity but not
+  for all experiment inputs.** `compare_reports` rejects cross-path, unknown or
+  different suites, probe-set/id/category/prompt mismatches, while options and
+  persona differences remain warnings and `gate_passed` can still be true.
+  `rate-pairwise` rates only shared ids when hashes are absent or incomplete.
+  Automated model/adaptor gates must not treat those green outcomes as
+  controlled same-input experiments.
+- **UNKNOWN — home-GPU execution is independently reproducible here.** The
+  copied reports and ledger record `phi4-mini`, localhost Ollama, and the exact
+  code revision used for the run; localhost and a copied JSON artifact alone do
+  not prove which host executed it, and the live process environment was not
+  readable. Treat this as dated external evidence, not a local replay.
+- **VERIFIED — the prior 2026-09-02 audit subsection is stale where it says
+  endpoint capture, action raw output, suite/path rejection, and frozen
+  forgetting references are absent.** Those claims describe the pre-
+  `3e98795`/`79d3b73` implementation and must not be read as the current state.
+- **VERIFIED — validation in this checkout:** Ruff passed; the focused Phase 0
+  suite passed 116 tests; the full backend run passed 1,673 tests with 8
+  sandbox loopback-binding errors; rerunning those eight NATS tests with socket
+  permission passed 8/8. The worktree was otherwise unchanged before this
+  documentation addendum.
+
 #### STALE
 
 - `docker-compose.prod.yml`, `config.py`, the ignored local `.env`, and the

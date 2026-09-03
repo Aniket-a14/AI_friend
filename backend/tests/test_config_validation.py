@@ -187,27 +187,32 @@ def test_llm_provenance_reports_the_resolved_model_for_each_role():
         OLLAMA_URL="http://10.0.0.5:11434",
     )
     assert settings.LLM_PROVENANCE == {
-        "env_file": str(config_module._env_file),
-        "env_file_exists": config_module._env_file.exists(),
+        "env_file": None,
+        "env_file_exists": False,
         "llm_chat_model": "phi4-mini",
         "llm_fast_model": "qwen2.5:3b",
         "llm_reflection_model": "llama3.2:3b",
         "llm_num_ctx": 4096,
         "llm_intent_classification_enabled": True,
         "ollama_url": "http://10.0.0.5:11434",
-        "precedence": ["process_env", "env_file", "code_default"],
+        "precedence": [
+            "constructor",
+            "process_env",
+            "env_file",
+            "code_default",
+        ],
         "sources": {
-            "ollama_url": "env_file",
-            "llm_fast_model": "env_file",
-            "llm_chat_model": "env_file",
-            "llm_reflection_model": "derived_from_llm_chat_model",
-            "llm_num_ctx": "code_default",
-            "llm_intent_classification_enabled": "env_file",
+            "ollama_url": "constructor",
+            "llm_fast_model": "constructor",
+            "llm_chat_model": "constructor",
+            "llm_reflection_model": "constructor",
+            "llm_num_ctx": "constructor",
+            "llm_intent_classification_enabled": "constructor",
         },
     }
 
 
-def test_llm_provenance_names_the_one_env_file_config_actually_reads():
+def test_llm_provenance_names_the_env_file_this_instance_actually_reads():
     """The ledger's 2026-09-02 entries record two separate incidents where a
     value was read from the wrong `.env` (repo-root vs `backend/.env` vs a
     systemd EnvironmentFile) and mistaken for the deployed config. This is
@@ -215,8 +220,15 @@ def test_llm_provenance_names_the_one_env_file_config_actually_reads():
     must name the real path `Config` resolves from, which is fixed at the
     module level and does not move just because one test instance was built
     with `_env_file=None` to keep it isolated from whatever real `.env`
-    happens to be on this machine."""
+    happens to be on this machine. An isolated instance with `_env_file=None`
+    must therefore report no dotenv source."""
     settings = _settings()
+    assert settings.LLM_PROVENANCE["env_file"] is None
+    assert settings.LLM_PROVENANCE["env_file_exists"] is False
+
+
+def test_default_settings_provenance_names_its_configured_env_file():
+    settings = config_module.config_instance
     assert settings.LLM_PROVENANCE["env_file"] == str(config_module._env_file)
 
 
@@ -233,7 +245,14 @@ def test_llm_provenance_reflects_the_chat_and_reflection_backfill():
 def test_llm_provenance_identifies_process_environment_as_the_winner(monkeypatch):
     monkeypatch.setenv("LLM_CHAT_MODEL", "from-process")
     settings = _settings(LLM_CHAT_MODEL="constructor-value")
-    assert settings.LLM_PROVENANCE["sources"]["llm_chat_model"] == "process_env"
+    assert settings.LLM_PROVENANCE["sources"]["llm_chat_model"] == "constructor"
+
+
+def test_llm_provenance_sources_are_snapshotted_at_construction(monkeypatch):
+    settings = _settings(LLM_CHAT_MODEL="constructor-value")
+    monkeypatch.setenv("LLM_CHAT_MODEL", "added-after-construction")
+    assert settings.LLM_CHAT_MODEL == "constructor-value"
+    assert settings.LLM_PROVENANCE["sources"]["llm_chat_model"] == "constructor"
 
 
 def test_validate_debug_handles_string_inputs():
