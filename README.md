@@ -197,7 +197,7 @@ graph TD
     end
 ```
 
-Full deep-dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Full deep-dive: see the Architecture section in [`CLAUDE.md`](CLAUDE.md).
 
 ### Agents
 

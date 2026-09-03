@@ -56,7 +56,7 @@ We critically evaluate our seeding architecture compared to biological cognitive
 
 ## 3. Active Implementation: Resolved Critique Gaps
 
-All three identified literature gaps are now **fully resolved** in the codebase of [generate_seeding_corpus.py](../../_archive/research/generate_seeding_corpus.py) — moved to `_archive/research/` during the 2026-08-29 docs de-fabrication pass, since the corpus it generates is exactly the corpus-fitted evidence pattern `CLAUDE.md`'s finding B1 warns against using as a benchmark result. The math/design critique below is still accurate reading; the code just isn't live production tooling anymore.
+All three identified literature gaps are now **fully resolved** in the codebase of `generate_seeding_corpus.py` (archived) — moved during the 2026-08-29 docs de-fabrication pass, since the corpus it generates is exactly the corpus-fitted evidence pattern `CLAUDE.md`'s finding B1 warns against using as a benchmark result. The math/design critique below is still accurate reading; the code just isn't live production tooling anymore.
 
 The generated dataset is saved locally at `flooded_seeding_corpus.json`, fully prepared for academic database seeding and physical performance benchmarks.
 

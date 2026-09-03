@@ -118,9 +118,7 @@ zero-shot approximation.
    already present, so re-running after a forced "Restart Session" popup —
    normal after the CUDA/torch reinstall — won't re-download anything), and
    launches the Gradio WebUI with a public link.
-6. **Open the Gradio link** and follow
-   [`../docs/COLAB_PATHS_CHEATSHEET.md`](../docs/COLAB_PATHS_CHEATSHEET.md)
-   tab by tab:
+6. **Open the Gradio link** and follow the workflow steps tab by tab:
    - **Phase 2**: slice your recordings and run ASR (transcription) on the
      slices.
    - **Phase 3**: format the dataset under the experiment name
