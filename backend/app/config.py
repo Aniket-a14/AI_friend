@@ -146,6 +146,9 @@ class AppSettings(BaseSettings):
 
     # Memory & Personality
     DATABASE_URL: str | None = None
+    # Refuse to hide a Postgres outage behind process-local SQLite state.
+    # Default remains lenient for development and existing no-Postgres tests.
+    ORGANISM_MODE_STRICT_STORAGE: bool = False
     PERSONALITY_SEED_PATH: str | None = None
     HISTORY_SEED_PATH: str | None = None
     # A user-authored persona (see app/persona/profile.py). Unset means "use the

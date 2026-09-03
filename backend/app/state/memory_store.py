@@ -377,6 +377,11 @@ _SURFACE_ACTR_FROM_JOIN = """
 _SURFACE_ACTR_SQL_ERIKSONIAN = (
     _SURFACE_ACTR_SELECT_HEAD
     + """,
+        m.speaker,
+        m.record_type,
+        m.valid_from,
+        m.valid_until,
+        m.contradicts_id,
         m.lifespan_stage,
         m.crisis,
         m.virtue,
@@ -396,8 +401,9 @@ _SURFACE_ACTR_SQL_LEGACY = _SURFACE_ACTR_SELECT_HEAD + _SURFACE_ACTR_FROM_JOIN
 _PROMOTE_INSERT_SQLITE = """INSERT INTO memories (
         id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
         valence, certainty, source, recall_count, last_recalled_at, created_at,
-        metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        metadata, speaker, record_type, valid_from, valid_until, contradicts_id,
+        lifespan_stage, crisis, virtue, relations, relation_circles, modality
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
         recall_count = excluded.recall_count,
         last_recalled_at = excluded.last_recalled_at,
@@ -407,8 +413,9 @@ _PROMOTE_INSERT_SQLITE = """INSERT INTO memories (
 _PROMOTE_INSERT_PG = """INSERT INTO memories (
         id, content, raw_content, wing, room, embedding, importance_score, emotional_weight,
         valence, certainty, source, recall_count, last_recalled_at, created_at,
-        metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        metadata, speaker, record_type, valid_from, valid_until, contradicts_id,
+        lifespan_stage, crisis, virtue, relations, relation_circles, modality
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
     ON CONFLICT(id) DO UPDATE SET
         recall_count = EXCLUDED.recall_count,
         last_recalled_at = EXCLUDED.last_recalled_at,
@@ -880,6 +887,13 @@ class MemoryStore:
         "relation_circles",
         "modality",
     )
+    _MEMORY_PROVENANCE_COLUMNS = (
+        "speaker",
+        "record_type",
+        "valid_from",
+        "valid_until",
+        "contradicts_id",
+    )
 
     async def _insert_memory_row(
         self,
@@ -904,6 +918,11 @@ class MemoryStore:
         relation_circles,
         modality,
         current_time,
+        speaker=None,
+        record_type="episode",
+        valid_from=None,
+        valid_until=None,
+        contradicts_id=None,
     ):
         """Insert a memory row from a single column/placeholder builder.
 
@@ -928,6 +947,13 @@ class MemoryStore:
             source,
             metadata_json,
         ]
+        provenance_vals = [
+            speaker,
+            record_type,
+            valid_from,
+            valid_until,
+            contradicts_id,
+        ]
         erik_vals = [
             lifespan_stage,
             crisis,
@@ -937,9 +963,12 @@ class MemoryStore:
             modality,
         ]
 
-        async def _insert(include_eriksonian: bool):
+        async def _insert(include_eriksonian: bool, include_provenance: bool):
             cols = list(self._MEMORY_BASE_COLUMNS)
             vals = list(base_vals)
+            if include_provenance:
+                cols += list(self._MEMORY_PROVENANCE_COLUMNS)
+                vals += provenance_vals
             if include_eriksonian:
                 cols += list(self._MEMORY_ERIKSONIAN_COLUMNS)
                 vals += erik_vals
@@ -971,19 +1000,40 @@ class MemoryStore:
             )
             await conn.execute(sql, *params)
 
-        try:
-            await _insert(include_eriksonian=True)
-        except Exception as e:
-            # Only an un-migrated schema justifies dropping the Eriksonian
-            # columns. Retrying on *any* failure meant a constraint violation,
-            # a serialization conflict, or a transient outage would silently
-            # re-insert the row with its developmental metadata stripped.
-            if not self._is_missing_column_error(e):
-                raise
-            logger.warning(
-                f"Eriksonian insert failed, falling back to legacy schema: {e}"
-            )
-            await _insert(include_eriksonian=False)
+        variants = [(True, True)]
+        compatibility_index = 0
+        while variants:
+            include_eriksonian, include_provenance = variants.pop(0)
+            try:
+                await _insert(include_eriksonian, include_provenance)
+                if compatibility_index:
+                    logger.warning(
+                        "Memory insert used compatibility schema variant %d",
+                        compatibility_index,
+                    )
+                return
+            except Exception as e:
+                # Only an un-migrated schema justifies dropping columns. Do not
+                # turn a constraint violation, serialization conflict, or
+                # transient outage into a metadata-stripping retry.
+                if not self._is_missing_column_error(e):
+                    raise
+                if not variants:
+                    message = str(e).lower()
+                    provenance_missing = any(
+                        column in message for column in self._MEMORY_PROVENANCE_COLUMNS
+                    )
+                    eriksonian_missing = any(
+                        column in message for column in self._MEMORY_ERIKSONIAN_COLUMNS
+                    )
+                    if provenance_missing and not eriksonian_missing:
+                        variants = [(True, False), (False, False)]
+                    elif eriksonian_missing and not provenance_missing:
+                        variants = [(False, True), (False, False)]
+                    else:
+                        # PostgreSQL's SQLSTATE may omit the column name.
+                        variants = [(False, True), (True, False), (False, False)]
+                compatibility_index += 1
 
     async def get_embedding(self, text: str):
         """Generates vector embedding for text using local Ollama."""
@@ -1152,6 +1202,11 @@ class MemoryStore:
         valence,
         certainty,
         source,
+        speaker,
+        record_type,
+        valid_from,
+        valid_until,
+        contradicts_id,
         lifespan_stage,
         crisis,
         virtue,
@@ -1177,6 +1232,15 @@ class MemoryStore:
             "valence": valence,
             "certainty": certainty,
             "source": source,
+            "speaker": speaker,
+            "record_type": record_type,
+            "valid_from": (
+                valid_from.isoformat() if isinstance(valid_from, datetime) else valid_from
+            ),
+            "valid_until": (
+                valid_until.isoformat() if isinstance(valid_until, datetime) else valid_until
+            ),
+            "contradicts_id": contradicts_id,
             "recall_count": 1,
             "last_recalled_at": qdrant_ts,
             "created_at": qdrant_ts,
@@ -1203,6 +1267,108 @@ class MemoryStore:
             metadata=metadata_qdrant,
         )
 
+    @staticmethod
+    def _content_polarity(content: str) -> int:
+        """Return a small deterministic polarity signal for contradiction checks."""
+        positive = re.search(
+            r"\b(?:like|likes|liked|love|loves|loved|enjoy|enjoys|enjoyed|prefer|prefers|preferred|want|wants|wanted)\b",
+            content,
+            re.IGNORECASE,
+        )
+        negative = re.search(
+            r"\b(?:hate|hates|hated|dislike|dislikes|disliked|avoid|avoids|avoided|never|can't|cannot|no longer)\b",
+            content,
+            re.IGNORECASE,
+        )
+        if positive and not negative:
+            return 1
+        if negative and not positive:
+            return -1
+        return 0
+
+    async def find_contradiction(
+        self, content: str, subject: str, valence: float | None = None
+    ) -> dict[str, Any] | None:
+        """Find the newest same-subject memory with opposing evidence.
+
+        The method only identifies and returns a prior record. The caller owns
+        the write and records its id in ``contradicts_id``; the old record is
+        never overwritten. Exact entity metadata is preferred, with a bounded
+        content fallback for legacy rows that predate entity linking.
+        """
+        if not content or not subject:
+            return None
+
+        try:
+            async with self.pool.acquire() as conn:
+                if self.is_sqlite:
+                    rows = await conn.fetch(
+                        "SELECT * FROM memories WHERE content <> ? "
+                        "AND (lower(content) LIKE lower(?) OR lower(metadata) LIKE lower(?)) "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        content,
+                        f"%{subject}%",
+                        f"%{subject}%",
+                        100,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        "SELECT * FROM memories WHERE content <> $1 "
+                        "AND (content ILIKE $2 OR metadata::text ILIKE $2) "
+                        "ORDER BY created_at DESC LIMIT 100",
+                        content,
+                        f"%{subject}%",
+                    )
+        except Exception as exc:
+            logger.debug("Contradiction lookup failed: %s", exc)
+            return None
+
+        subject_key = str(subject).casefold()
+        current_polarity = self._content_polarity(content)
+        try:
+            current_valence = float(valence) if valence is not None else None
+        except (TypeError, ValueError):
+            current_valence = None
+
+        for row in rows:
+            raw_metadata = row.get("metadata") or {}
+            if isinstance(raw_metadata, str):
+                try:
+                    raw_metadata = orjson.loads(raw_metadata)
+                except Exception:
+                    raw_metadata = {}
+            entities = raw_metadata.get("entities", [])
+            if not isinstance(entities, list):
+                entities = []
+            same_entity = any(str(entity).casefold() == subject_key for entity in entities)
+            if not same_entity:
+                same_entity = subject_key in str(row.get("content", "")).casefold()
+            if not same_entity:
+                continue
+
+            prior_polarity = self._content_polarity(str(row.get("content", "")))
+            try:
+                prior_valence = float(row.get("valence"))
+            except (TypeError, ValueError):
+                prior_valence = None
+            polarity_conflict = (
+                current_polarity != 0
+                and prior_polarity != 0
+                and current_polarity != prior_polarity
+            )
+            valence_conflict = (
+                current_valence is not None
+                and prior_valence is not None
+                and abs(current_valence) >= 0.2
+                and abs(prior_valence) >= 0.2
+                and (current_valence > 0) != (prior_valence > 0)
+            )
+            if polarity_conflict or valence_conflict:
+                result = dict(row)
+                result["metadata"] = raw_metadata
+                return result
+        return None
+
     async def add_memory(
         self,
         content,
@@ -1223,6 +1389,12 @@ class MemoryStore:
         modality=None,
         current_time=None,
         embedding=None,
+        speaker=None,
+        record_type="episode",
+        valid_from=None,
+        valid_until=None,
+        contradicts_id=None,
+        raw_event=None,
     ):
         """Adds a new memory with ACT-R metadata and hierarchical scope.
 
@@ -1260,12 +1432,27 @@ class MemoryStore:
                     )
                     return True
 
+            # Provenance defaults to the actual event speaker when a caller has
+            # one. Explicit `speaker` remains authoritative for consolidated or
+            # imported records that do not have a raw event envelope.
+            if speaker is None and isinstance(raw_event, dict):
+                speaker = raw_event.get("user_id")
+
             # Pre-link entities from graph to metadata
             present_entities = await self._prelink_memory_entities(content)
 
             if metadata is None:
                 metadata = {}
             metadata["entities"] = present_entities
+
+            if contradicts_id is None:
+                for entity in present_entities:
+                    contradiction = await self.find_contradiction(
+                        content, entity, valence=valence
+                    )
+                    if contradiction:
+                        contradicts_id = contradiction.get("id")
+                        break
 
             vector = (
                 embedding
@@ -1290,6 +1477,11 @@ class MemoryStore:
                     valence=valence,
                     certainty=certainty,
                     source=source,
+                    speaker=speaker,
+                    record_type=record_type,
+                    valid_from=valid_from,
+                    valid_until=valid_until,
+                    contradicts_id=contradicts_id,
                     metadata_json=orjson.dumps(metadata or {}).decode(),
                     lifespan_stage=lifespan_stage,
                     crisis=crisis,
@@ -1311,6 +1503,11 @@ class MemoryStore:
                 valence=valence,
                 certainty=certainty,
                 source=source,
+                speaker=speaker,
+                record_type=record_type,
+                valid_from=valid_from,
+                valid_until=valid_until,
+                contradicts_id=contradicts_id,
                 lifespan_stage=lifespan_stage,
                 crisis=crisis,
                 virtue=virtue,
@@ -1656,6 +1853,11 @@ class MemoryStore:
             "created_at": created,
             "recall_count": recall_count,
             "metadata": custom_metadata,
+            "speaker": meta.get("speaker"),
+            "record_type": meta.get("record_type") or "episode",
+            "valid_from": meta.get("valid_from"),
+            "valid_until": meta.get("valid_until"),
+            "contradicts_id": meta.get("contradicts_id"),
             "lifespan_stage": meta.get("lifespan_stage"),
             "crisis": meta.get("crisis"),
             "virtue": meta.get("virtue"),
@@ -1874,6 +2076,11 @@ class MemoryStore:
                     "created_at": created,
                     "recall_count": max(1, row.get("recall_count") or 1),
                     "metadata": raw_meta or {},
+                    "speaker": row.get("speaker"),
+                    "record_type": row.get("record_type") or "episode",
+                    "valid_from": row.get("valid_from"),
+                    "valid_until": row.get("valid_until"),
+                    "contradicts_id": row.get("contradicts_id"),
                     "lifespan_stage": row.get("lifespan_stage"),
                     "crisis": row.get("crisis"),
                     "virtue": row.get("virtue"),
@@ -2022,6 +2229,11 @@ class MemoryStore:
                     "created_at": created,
                     "recall_count": recall_count,
                     "metadata": raw_meta or {},
+                    "speaker": row.get("speaker"),
+                    "record_type": row.get("record_type") or "episode",
+                    "valid_from": row.get("valid_from"),
+                    "valid_until": row.get("valid_until"),
+                    "contradicts_id": row.get("contradicts_id"),
                     "lifespan_stage": row.get("lifespan_stage"),
                     "crisis": row.get("crisis"),
                     "virtue": row.get("virtue"),
@@ -2709,6 +2921,11 @@ class MemoryStore:
             now,
             row.get("created_at"),
             json.dumps(sql_meta),
+            row.get("speaker"),
+            row.get("record_type") or "episode",
+            row.get("valid_from"),
+            row.get("valid_until"),
+            row.get("contradicts_id"),
             row.get("lifespan_stage"),
             row.get("crisis"),
             row.get("virtue"),
@@ -2780,6 +2997,19 @@ class MemoryStore:
             "valence": row.get("valence"),
             "certainty": row.get("certainty"),
             "source": row.get("source"),
+            "speaker": row.get("speaker"),
+            "record_type": row.get("record_type") or "episode",
+            "valid_from": (
+                row.get("valid_from").isoformat()
+                if isinstance(row.get("valid_from"), datetime)
+                else row.get("valid_from")
+            ),
+            "valid_until": (
+                row.get("valid_until").isoformat()
+                if isinstance(row.get("valid_until"), datetime)
+                else row.get("valid_until")
+            ),
+            "contradicts_id": row.get("contradicts_id"),
             "created_at": created_at.isoformat() if created_at else None,
             "lifespan_stage": row.get("lifespan_stage") or "",
             "crisis": row.get("crisis") or "",
@@ -3911,9 +4141,26 @@ class MemoryStore:
         active table (and Qdrant), for whichever backend `conn` is."""
         if self.is_sqlite:
             placeholders = ",".join("?" for _ in to_delete)
-            # Copy to archived_memories
-            await conn.execute(
-                """
+            archive_sql = f"""
+                INSERT INTO archived_memories (
+                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                    metadata, speaker, record_type, valid_from, valid_until, contradicts_id,
+                    lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                )
+                SELECT
+                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                    metadata, speaker, record_type, valid_from, valid_until, contradicts_id,
+                    lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                FROM memories
+                WHERE id IN ({placeholders})
+                ON CONFLICT(id) DO UPDATE SET
+                    recall_count = excluded.recall_count,
+                    last_recalled_at = excluded.last_recalled_at,
+                    importance_score = excluded.importance_score
+                """  # nosec B608 - placeholders contains only generated '?' markers
+            legacy_archive_sql = """
                 INSERT INTO archived_memories (
                     id, content, raw_content, wing, room, importance_score, emotional_weight,
                     valence, certainty, source, recall_count, last_recalled_at, created_at,
@@ -3924,25 +4171,45 @@ class MemoryStore:
                     valence, certainty, source, recall_count, last_recalled_at, created_at,
                     metadata, lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
                 FROM memories
-                WHERE id IN ("""
-                f"{placeholders}"  # nosec B608 - placeholders is only comma-separated "?" marks, ids bound via *to_delete
-                """)
+                WHERE id IN (""" + placeholders + """)
                 ON CONFLICT(id) DO UPDATE SET
                     recall_count = excluded.recall_count,
                     last_recalled_at = excluded.last_recalled_at,
                     importance_score = excluded.importance_score
-                """,
-                *to_delete,
-            )
+                """
+            try:
+                await conn.execute(archive_sql, *to_delete)
+            except Exception as exc:
+                if not self._is_missing_column_error(exc):
+                    raise
+                logger.warning("Archive used compatibility schema: %s", exc)
+                await conn.execute(legacy_archive_sql, *to_delete)
             # Delete from memories
             await conn.execute(
                 f"DELETE FROM memories WHERE id IN ({placeholders})",  # nosec B608 - placeholders is only comma-separated "?" marks, ids bound via *to_delete
                 *to_delete,
             )
         else:
-            # Copy to archived_memories
-            await conn.execute(
+            archive_sql = """
+                INSERT INTO archived_memories (
+                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                    metadata, speaker, record_type, valid_from, valid_until, contradicts_id,
+                    lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding
+                )
+                SELECT
+                    id, content, raw_content, wing, room, importance_score, emotional_weight,
+                    valence, certainty, source, recall_count, last_recalled_at, created_at,
+                    metadata, speaker, record_type, valid_from, valid_until, contradicts_id,
+                    lifespan_stage, crisis, virtue, relations, relation_circles, modality, embedding::halfvec
+                FROM memories
+                WHERE id = ANY($1)
+                ON CONFLICT(id) DO UPDATE SET
+                    recall_count = EXCLUDED.recall_count,
+                    last_recalled_at = EXCLUDED.last_recalled_at,
+                    importance_score = EXCLUDED.importance_score
                 """
+            legacy_archive_sql = """
                 INSERT INTO archived_memories (
                     id, content, raw_content, wing, room, importance_score, emotional_weight,
                     valence, certainty, source, recall_count, last_recalled_at, created_at,
@@ -3958,9 +4225,14 @@ class MemoryStore:
                     recall_count = EXCLUDED.recall_count,
                     last_recalled_at = EXCLUDED.last_recalled_at,
                     importance_score = EXCLUDED.importance_score
-                """,
-                to_delete,
-            )
+                """
+            try:
+                await conn.execute(archive_sql, to_delete)
+            except Exception as exc:
+                if not self._is_missing_column_error(exc):
+                    raise
+                logger.warning("Archive used compatibility schema: %s", exc)
+                await conn.execute(legacy_archive_sql, to_delete)
             # Delete from memories
             await conn.execute("DELETE FROM memories WHERE id = ANY($1)", to_delete)
 

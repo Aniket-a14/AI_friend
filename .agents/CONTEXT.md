@@ -15933,3 +15933,12 @@ canonical Phase 1B). Added the opt-in `LLM_TYPED_REALIZATION_ENABLED` flag, boun
 parser, deterministic raw-text fallback, and focused stream tests. Claude owns 1A/1B/1D/1E;
 the earlier `cf83c9b` full-slice commit is overlap history and is not this branch's merge unit.
 No home-GPU run was performed.
+
+## 2026-09-03 -- Codex Phase 2C/2E
+
+Codex implemented memory provenance (`speaker`, `record_type`, validity window,
+contradiction link) across Postgres/SQLite, contradiction linking without overwrite,
+archive/promotion round-trip, idempotent SQLite migration, and strict storage mode that
+raises instead of silently falling back to SQLite. Verification: 39 focused regression
+tests plus provenance/strict-storage tests passed; Ruff and diff checks passed. Live
+Postgres migration and home-GPU validation remain pending; Claude owns 2A/2B/2D.

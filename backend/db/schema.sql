@@ -19,6 +19,11 @@ create table if not exists memories (
   last_recalled_at timestamptz default now(),
   created_at timestamptz default now(),
   metadata jsonb default '{}'::jsonb,
+  speaker text,
+  record_type text not null default 'episode',
+  valid_from timestamptz,
+  valid_until timestamptz,
+  contradicts_id uuid references memories(id) on delete set null,
   lifespan_stage varchar(100),
   crisis varchar(100),
   virtue varchar(100),
@@ -43,6 +48,11 @@ create table if not exists archived_memories (
   last_recalled_at timestamptz default now(),
   created_at timestamptz default now(),
   metadata jsonb default '{}'::jsonb,
+  speaker text,
+  record_type text not null default 'episode',
+  valid_from timestamptz,
+  valid_until timestamptz,
+  contradicts_id uuid,
   lifespan_stage varchar(100),
   crisis varchar(100),
   virtue varchar(100),
@@ -59,6 +69,23 @@ alter table memories add column if not exists virtue varchar(100);
 alter table memories add column if not exists relations varchar(255);
 alter table memories add column if not exists relation_circles varchar(255);
 alter table memories add column if not exists modality varchar(255);
+alter table memories add column if not exists speaker text;
+alter table memories add column if not exists record_type text not null default 'episode';
+alter table memories add column if not exists valid_from timestamptz;
+alter table memories add column if not exists valid_until timestamptz;
+alter table memories add column if not exists contradicts_id uuid;
+alter table archived_memories add column if not exists speaker text;
+alter table archived_memories add column if not exists record_type text not null default 'episode';
+alter table archived_memories add column if not exists valid_from timestamptz;
+alter table archived_memories add column if not exists valid_until timestamptz;
+alter table archived_memories add column if not exists contradicts_id uuid;
+
+alter table memories drop constraint if exists memories_contradicts_id_fkey;
+alter table memories
+  add constraint memories_contradicts_id_fkey
+  foreign key (contradicts_id) references memories(id) on delete set null;
+
+create index if not exists memories_contradicts_id_idx on memories (contradicts_id);
 
 create index if not exists memories_embedding_idx
   on memories using hnsw (embedding vector_cosine_ops);

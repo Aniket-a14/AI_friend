@@ -105,6 +105,11 @@ class ConversationHistoryStore:
                     "SQLite database - conversation history stored in "
                     "PostgreSQL is now unreachable from this session."
                 )
+                if getattr(Config, "ORGANISM_MODE_STRICT_STORAGE", False):
+                    raise RuntimeError(
+                        "Strict storage mode forbids falling back to SQLite after "
+                        "a PostgreSQL connection failure"
+                    ) from e
                 try:
                     from .sqlite_fallback import SQLitePool
 
