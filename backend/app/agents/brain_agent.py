@@ -856,23 +856,25 @@ class BrainAgent(BaseAgent):
         self, state_snap: dict[str, Any] | None
     ) -> SpeechExpressionWire | None:
         """Phase 3B: attach the Phase 3A `SpeechExpression` alongside
-        `affect` on `chat.output`, once a producer exists.
+        `affect` on `chat.output`.
 
-        `cognitive.expression.derive_speech_expression` (Codex's Phase 3A)
-        has not landed as of this commit -- caught defensively so this
-        stays today's documented no-op (`None`, an unchanged wire shape)
-        rather than an ImportError on every publish. No affect->parameter
-        formula lives here: the single computation stays in
-        `derive_speech_expression` itself, the same reasoning that keeps
-        the removed `ChatOutput.prosody` mistake (two disagreeing
-        implementations of one number) from recurring here.
+        Stage 3: `cognitive.expression` (Codex's Phase 3A, `b1096f5`) now
+        exists, so this calls the real `derive_speech_expression` rather
+        than degrading to `None` -- the `ImportError` guard stays as a
+        defensive fallback for a stale checkout, not the expected path
+        anymore. No affect->parameter formula lives here: the single
+        computation stays in `derive_speech_expression` itself, the same
+        reasoning that keeps the removed `ChatOutput.prosody` mistake (two
+        disagreeing implementations of one number) from recurring here.
 
-        `intent` is passed as `None` because a typed `CommunicativeIntent`
+        `intent` is still passed as `None`: a typed `CommunicativeIntent`
         (built from `plan.behavior_decision`, several layers up in
         `cognitive/decision.py`) does not currently reach this publish
-        boundary -- only `state_snap` does. Threading that through is
-        Stage 3 reconciliation work once 3A's real signature is known, not
-        guessed here.
+        boundary -- only `state_snap` does. `derive_speech_expression`
+        accepts `None` here by design (`intent` is deliberately unused in
+        this first contract slice, per its own docstring), so this is not
+        a placeholder waiting on a signature change -- threading a real
+        intent through is a future enhancement, not a currently-broken path.
         """
         try:
             from ..cognitive.expression import derive_speech_expression

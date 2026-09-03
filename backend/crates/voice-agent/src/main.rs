@@ -1375,9 +1375,22 @@ enum TemporalPart {
 /// a first-pass mapping, not a validated one, same as `select_emotion_bucket`
 /// above: retune once real `SpeechExpression` values exist to listen to.
 const EXPRESSION_HESITATION_FLOOR: f64 = 0.35;
-const EXPRESSION_BREATH_FLOOR: f64 = 0.35;
 const EXPRESSION_HESITATION_BASE_MS: f64 = 350.0;
 const EXPRESSION_HESITATION_MAX_MS: u32 = 900;
+
+/// Stage 3 (Blocker 2, Codex's Stage 2 review): `breath` is not a single
+/// on/off signal -- Codex 3A's `_breath_level` (`cognitive/expression.py`)
+/// encodes two distinct legacy tags at two distinct levels: the low-arousal,
+/// negative-valence `<sigh_soft>` case at `0.5`, and the high-arousal,
+/// negative-valence `<breath_fast>` case at `1.0`. A single `>= floor` check
+/// collapsed both into `breath_fast`, silently turning a soft sigh into a
+/// fast, distressed breath. Two bands preserve both: `[SOFT_FLOOR, FAST_FLOOR)`
+/// is `sigh_soft`, `[FAST_FLOOR, 1.0]` is `breath_fast` -- `0.75` sits
+/// strictly between the two known legacy values (0.5, 1.0), same reasoning
+/// as `EXPRESSION_HESITATION_FLOOR` sitting strictly between "no signal" and
+/// a real one.
+const EXPRESSION_BREATH_SOFT_FLOOR: f64 = 0.25;
+const EXPRESSION_BREATH_FAST_FLOOR: f64 = 0.75;
 
 fn temporal_parts_from_expression(
     content: &str,
@@ -1392,8 +1405,10 @@ fn temporal_parts_from_expression(
             (ms as u32).min(EXPRESSION_HESITATION_MAX_MS),
         ));
     }
-    if expression.breath >= EXPRESSION_BREATH_FLOOR {
+    if expression.breath >= EXPRESSION_BREATH_FAST_FLOOR {
         parts.push(TemporalPart::Vocalization("breath_fast".to_string()));
+    } else if expression.breath >= EXPRESSION_BREATH_SOFT_FLOOR {
+        parts.push(TemporalPart::Vocalization("sigh_soft".to_string()));
     }
 
     push_text(&mut parts, content);
@@ -2528,8 +2543,13 @@ mod tests {
         );
     }
 
+    // Stage 3 (Blocker 2): Codex 3A's `_breath_level` encodes the legacy
+    // `<sigh_soft>` case (low arousal, negative valence) at `breath == 0.5`
+    // and the legacy `<breath_fast>` case (high arousal, negative valence)
+    // at `breath == 1.0` -- these two must land on different vocalizations,
+    // not collapse to the same one.
     #[test]
-    fn expression_breath_above_floor_prepends_breath_vocalization() {
+    fn expression_breath_at_legacy_sigh_soft_level_prepends_sigh_soft() {
         let e = contracts::SpeechExpressionWire {
             hesitation: 0.0,
             breath: 0.5,
@@ -2538,9 +2558,75 @@ mod tests {
         assert_eq!(
             temporal_parts_from_expression("hello friend", &e),
             vec![
+                TemporalPart::Vocalization("sigh_soft".to_string()),
+                TemporalPart::Text("hello friend".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn expression_breath_at_legacy_breath_fast_level_prepends_breath_fast() {
+        let e = contracts::SpeechExpressionWire {
+            hesitation: 0.0,
+            breath: 1.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            temporal_parts_from_expression("hello friend", &e),
+            vec![
                 TemporalPart::Vocalization("breath_fast".to_string()),
                 TemporalPart::Text("hello friend".to_string()),
             ]
+        );
+    }
+
+    #[test]
+    fn expression_breath_band_boundaries_are_inclusive_low_exclusive_high() {
+        // 0.25: enters the sigh_soft band. Just below 0.75: still sigh_soft,
+        // not breath_fast. 0.75 exactly: crosses into breath_fast. A `>`
+        // regressing to `>=` (or vice versa) on either boundary would pass
+        // some of these but not all four.
+        let sigh_at_floor = contracts::SpeechExpressionWire {
+            breath: 0.25,
+            ..Default::default()
+        };
+        let sigh_just_under_fast = contracts::SpeechExpressionWire {
+            breath: 0.749,
+            ..Default::default()
+        };
+        let fast_at_floor = contracts::SpeechExpressionWire {
+            breath: 0.75,
+            ..Default::default()
+        };
+        let below_soft_floor = contracts::SpeechExpressionWire {
+            breath: 0.249,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            temporal_parts_from_expression("x", &sigh_at_floor),
+            vec![
+                TemporalPart::Vocalization("sigh_soft".to_string()),
+                TemporalPart::Text("x".to_string())
+            ]
+        );
+        assert_eq!(
+            temporal_parts_from_expression("x", &sigh_just_under_fast),
+            vec![
+                TemporalPart::Vocalization("sigh_soft".to_string()),
+                TemporalPart::Text("x".to_string())
+            ]
+        );
+        assert_eq!(
+            temporal_parts_from_expression("x", &fast_at_floor),
+            vec![
+                TemporalPart::Vocalization("breath_fast".to_string()),
+                TemporalPart::Text("x".to_string())
+            ]
+        );
+        assert_eq!(
+            temporal_parts_from_expression("x", &below_soft_floor),
+            vec![TemporalPart::Text("x".to_string())]
         );
     }
 

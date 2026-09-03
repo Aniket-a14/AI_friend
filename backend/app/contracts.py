@@ -163,7 +163,13 @@ class SpeechExpressionWire(BaseModel):
     breath: float = 0.0
     hesitation: float = 0.0
     style: str = "neutral"
-    trajectory: list[float] = Field(default_factory=list)
+    # Stage 3 fix: was `list[float]` -- couldn't hold Codex's Phase 3A
+    # `SpeechExpression.trajectory`, which preserves `generate_apra_trajectory`'s
+    # native `(time_offset_ms, rate, pitch, volume)` frame tuples verbatim (the
+    # identity check `derive_speech_expression`'s own tests assert on). A flat
+    # float list rejected every frame on `.model_validate()` with `Input should
+    # be a valid number` -- confirmed reproducible in Stage 2 review.
+    trajectory: list[tuple[int, float, float, float]] = Field(default_factory=list)
 
 
 class ChatOutput(BaseModel):

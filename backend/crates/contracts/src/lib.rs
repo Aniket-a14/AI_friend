@@ -145,8 +145,14 @@ pub struct SpeechExpressionWire {
     pub hesitation: f64,
     #[serde(default = "default_neutral")]
     pub style: String,
+    // Stage 3 fix: was `Vec<f64>` -- couldn't deserialize Codex's Phase 3A
+    // `SpeechExpression.trajectory`, which preserves `generate_apra_trajectory`'s
+    // native `(time_offset_ms, rate, pitch, volume)` frame tuples verbatim.
+    // serde maps a Python tuple/JSON array of 4 elements straight onto this
+    // Rust tuple, matching `ProsodyFrame`'s field shape (see below) without
+    // introducing a second named struct for the same four values.
     #[serde(default)]
-    pub trajectory: Vec<f64>,
+    pub trajectory: Vec<(i64, f64, f64, f64)>,
 }
 
 impl Default for SpeechExpressionWire {
@@ -467,13 +473,42 @@ mod tests {
             breath: 0.4,
             hesitation: 0.6,
             style: "soft".to_string(),
-            trajectory: vec![0.1, 0.2, 0.3],
+            trajectory: vec![(0, 0.95, 1.1, 0.1), (17, 0.96, 1.1, 0.11)],
         });
 
         let serialized = serde_json::to_value(&parsed).unwrap();
         let round_tripped: ChatOutput = serde_json::from_value(serialized).unwrap();
 
         assert_eq!(round_tripped.expression, parsed.expression);
+    }
+
+    // Stage 3 (Blocker 1): the actual shape crossing the Python/Rust wire once
+    // a producer exists -- a JSON array of 4-tuples, exactly what Codex's
+    // `cognitive_rust.generate_apra_trajectory` / `SpeechExpression.trajectory`
+    // produces (`(time_offset_ms, rate, pitch, volume)`, 60 frames at 50ms
+    // spacing in production). This is the cross-boundary regression Codex's
+    // Stage 2 review asked for: a payload shaped like the real producer's
+    // output, not just a same-language struct literal.
+    #[test]
+    fn speech_expression_trajectory_deserializes_apra_frame_json() {
+        let json = r#"{
+            "affect_label": "calm",
+            "breath": 0.0,
+            "hesitation": 0.0,
+            "style": "natural",
+            "trajectory": [[0, 0.95, 1.1, 0.1], [50, 0.96, 1.08, 0.12], [100, 0.97, 1.05, 0.13]]
+        }"#;
+
+        let parsed: SpeechExpressionWire = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            parsed.trajectory,
+            vec![(0, 0.95, 1.1, 0.1), (50, 0.96, 1.08, 0.12), (100, 0.97, 1.05, 0.13)]
+        );
+
+        let round_tripped: SpeechExpressionWire =
+            serde_json::from_value(serde_json::to_value(&parsed).unwrap()).unwrap();
+        assert_eq!(round_tripped, parsed);
     }
 
     #[test]

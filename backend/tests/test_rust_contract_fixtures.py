@@ -83,7 +83,10 @@ def test_chat_output_expression_round_trips_when_present():
         "breath": 0.4,
         "hesitation": 0.6,
         "style": "soft",
-        "trajectory": [0.1, 0.2, 0.3],
+        # Stage 3 (Blocker 1): a JSON array of 4-element arrays, the actual
+        # shape `generate_apra_trajectory`/`SpeechExpression.trajectory`
+        # produce -- not a flat float list.
+        "trajectory": [[0, 0.95, 1.1, 0.1], [17, 0.96, 1.1, 0.11]],
     }
 
     parsed = ChatOutput.model_validate(payload)
@@ -93,7 +96,42 @@ def test_chat_output_expression_round_trips_when_present():
     assert parsed.expression.breath == 0.4
     assert parsed.expression.hesitation == 0.6
     assert parsed.expression.style == "soft"
-    assert parsed.expression.trajectory == [0.1, 0.2, 0.3]
+    assert parsed.expression.trajectory == [(0, 0.95, 1.1, 0.1), (17, 0.96, 1.1, 0.11)]
+
+
+def test_chat_output_expression_trajectory_accepts_real_apra_frame_shape():
+    """Stage 3 (Blocker 1, cross-boundary regression Codex's Stage 2 review
+    asked for): validates against the *actual* Phase 3A producer output --
+    `cognitive.expression.derive_speech_expression`'s `SpeechExpression.
+    trajectory`, itself `cognitive_rust.generate_apra_trajectory`'s native
+    frame tuples -- not just a same-shaped literal. `SpeechExpressionWire.
+    trajectory: list[float]` rejected every frame here with `Input should be
+    a valid number`; `list[tuple[int, float, float, float]]` must accept it
+    and round-trip it unchanged.
+    """
+    from app.cognitive.expression import derive_speech_expression
+
+    expression = derive_speech_expression(
+        {
+            "valence": 0.2,
+            "arousal": 0.6,
+            "dominance": 0.4,
+            "fatigue": 0.1,
+            "cortisol": 0.2,
+            "dopamine": 0.3,
+            "adrenaline": 0.0,
+        }
+    )
+
+    wire = SpeechExpressionWire.model_validate(expression.model_dump())
+
+    assert wire.trajectory == expression.trajectory
+    assert len(wire.trajectory) == 60
+
+    round_tripped = SpeechExpressionWire.model_validate(
+        json.loads(json.dumps(wire.model_dump()))
+    )
+    assert round_tripped.trajectory == wire.trajectory
 
 
 def test_rust_chat_input_fixture_matches_current_pydantic_contract():
