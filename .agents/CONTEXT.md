@@ -16019,3 +16019,10 @@ correct rather than catching it. Posted to `personal/HANDOFF.md`.
 - Phase 5B (Codex): Created `backend/app/llm/adapter_registry.py` (`AdapterRecord` model and JSON-backed persistence) and added non-breaking `adapter_record` parameter to `evals/compare.py`.
 - Phase 5C (Claude): Created `backend/app/cognitive/learning_review.py` (`LearningProposal` model and `LearningReviewQueue`). Gated persona evolution behind `Config.LEARNING_REVIEW_REQUIRED: bool = False`. Wired contradiction checks via `MemoryStore.find_contradiction` (`contradicts_id`) and durably persisted `evolved_learnings` before persona snapshot save.
 - Verification: 13/13 Phase 5 unit tests passed, full suite 1,834/1,834 passed, Ruff clean. Merged to `research` (`da15515`), pushed to origin, and deployed live to `home-gpu` with active systemd units.
+
+### 2026-09-03 19:45 IST — Orchestrator (Antigravity) — Phase 5A Root-Cause Investigation Completed on home-gpu
+- Benchmarked `phi4-mini:latest` (38/42 passed, 90.5%) vs `llama3.2:3b` (37/42 passed, 88.1%) on RTX 2060 SUPER GPU through `action` path.
+- `phi4-mini`: Resisted prompt disclosure (1.00) and preserved core values (1.00), but showed corporate assistant register leak ("how can i help you") and fabricated ungrounded biography.
+- `llama3.2:3b`: Regressed on prompt disclosure (0.00 - leaked system prompt under pressure), failed core values recall (0.00), and emitted 12 markdown/JSON formatting anomalies into spoken text.
+- Comparative Gate: FAIL (llama3.2 regressed on 2 baseline passes).
+- Architectural Verdict: Persona collapse in 3B models is dual-factored (Cause A: model register ceiling + Cause B: prompt vulnerability). This definitively validates Architecture B: small models must act strictly as typed text generators bounded by deterministic cognitive code (`ClaimLedger`, `PersonaPolicy`, `deterministic_responses`, `intent_classifier`), rather than owning state, memory, or policy.
