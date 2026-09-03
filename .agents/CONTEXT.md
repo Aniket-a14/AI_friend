@@ -16014,3 +16014,8 @@ correct rather than catching it. Posted to `personal/HANDOFF.md`.
 - Phase 4B (Codex): Created `backend/app/cognitive/intent_classifier.py` (`IntentClassifier` protocol, `LLMIntentClassifier`, `HeuristicIntentClassifier`) and `Config.INTENT_CLASSIFIER_BACKEND`.
 - Phase 4C (Claude): Created `backend/app/cognitive/deterministic_responses.py` (canned backchannels and boundary refusals derived from `immutable_core["boundaries"]`). Short-circuited `decide()` before greeting fast-path and LLM classification, ensuring zero LLM calls on deterministic turns.
 - Verification: 33/33 Phase 4 unit tests passed, full suite 1,815/1,815 passed, Ruff clean. Merged to `research` (`9476c71`), pushed to origin, and deployed live to `home-gpu` with running systemd services.
+
+### 2026-09-03 19:40 IST — Orchestrator (Antigravity) — Phase 5 (Governed Learning & Review Queue) Merged
+- Phase 5B (Codex): Created `backend/app/llm/adapter_registry.py` (`AdapterRecord` model and JSON-backed persistence) and added non-breaking `adapter_record` parameter to `evals/compare.py`.
+- Phase 5C (Claude): Created `backend/app/cognitive/learning_review.py` (`LearningProposal` model and `LearningReviewQueue`). Gated persona evolution behind `Config.LEARNING_REVIEW_REQUIRED: bool = False`. Wired contradiction checks via `MemoryStore.find_contradiction` (`contradicts_id`) and durably persisted `evolved_learnings` before persona snapshot save.
+- Verification: 13/13 Phase 5 unit tests passed, full suite 1,834/1,834 passed, Ruff clean. Merged to `research` (`da15515`), pushed to origin, and deployed live to `home-gpu` with active systemd units.
