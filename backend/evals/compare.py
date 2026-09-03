@@ -11,6 +11,8 @@ that is tolerable would be a tuning knob nobody has measured yet. Pass/fail
 regressions are unarguable, which is what a gate needs to be.
 """
 
+from app.llm.adapter_registry import AdapterRecord
+
 from .schema import ComparisonReport, EvalReport, OptionDiff, ProbeDelta
 
 
@@ -99,7 +101,11 @@ def diff_options(baseline: EvalReport, candidate: EvalReport) -> list[OptionDiff
     return diffs
 
 
-def compare_reports(baseline: EvalReport, candidate: EvalReport) -> ComparisonReport:
+def compare_reports(
+    baseline: EvalReport,
+    candidate: EvalReport,
+    adapter_record: AdapterRecord | None = None,
+) -> ComparisonReport:
     require_same_path(baseline, candidate)
 
     base_by_id = {result.probe_id: result for result in baseline.results}
@@ -180,6 +186,7 @@ def compare_reports(baseline: EvalReport, candidate: EvalReport) -> ComparisonRe
         baseline_provenance=baseline.provenance,
         candidate_provenance=candidate.provenance,
         path=baseline.path,
+        adapter_record=adapter_record,
         option_diffs=diff_options(baseline, candidate),
         persona_prompt_differs=(
             baseline.system_prompt_sha256 != candidate.system_prompt_sha256
