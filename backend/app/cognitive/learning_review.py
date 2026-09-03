@@ -77,11 +77,11 @@ class LearningReviewQueue:
         proposal = self._pop(proposal_id)
         if proposal is None:
             return None
-        await identity_manager.evolve_persona(proposal.suggestions)
-        # The producer `evolved_learnings` was missing (identity.py docstring).
+        # Stamped before evolve_persona() so its own save()/persist_to_config_store() carries it.
         identity_manager.history["evolved_learnings"] = (
             f"{proposal.created_at}: {proposal.suggestions}"
         )
+        await identity_manager.evolve_persona(proposal.suggestions)
         return proposal
 
     def reject(self, proposal_id: str) -> LearningProposal | None:

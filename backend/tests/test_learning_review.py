@@ -48,6 +48,27 @@ async def test_approve_applies_via_identity_manager_and_stamps_evolved_learnings
 
 
 @pytest.mark.asyncio
+async def test_approve_persists_evolved_learnings_before_evolve_persona_saves():
+    """Codex Stage 2 blocker: stamping evolved_learnings AFTER evolve_persona()
+    already saved/persisted lost the marker on restart. evolve_persona() must
+    see the stamp already in history when it runs its own save."""
+    queue = LearningReviewQueue()
+    proposal = queue.submit({"relationship": "Trusted Friend"})
+    identity = MagicMock()
+    identity.history = {}
+    seen = {}
+
+    async def _evolve_persona(_suggestions):
+        seen["evolved_learnings"] = identity.history.get("evolved_learnings")
+
+    identity.evolve_persona = AsyncMock(side_effect=_evolve_persona)
+
+    await queue.approve(proposal.id, identity)
+
+    assert seen["evolved_learnings"] is not None
+
+
+@pytest.mark.asyncio
 async def test_approve_unknown_id_does_not_apply_anything():
     queue = LearningReviewQueue()
     identity = MagicMock()
@@ -155,3 +176,6 @@ async def test_review_required_flags_a_contradicting_proposal(
     flagged = reflection_service.review_queue.contradictions()
     assert len(flagged) == 1
     assert flagged[0].contradicts_id == "mem-999"
+    reflection_service.vector.find_contradiction.assert_called_once_with(
+        "Stranger", "my friend"
+    )
