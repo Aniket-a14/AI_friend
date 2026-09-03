@@ -1286,6 +1286,53 @@ class MemoryStore:
             return -1
         return 0
 
+    def _check_row_contradiction(
+        self,
+        row: dict[str, Any],
+        subject_key: str,
+        current_polarity: int,
+        current_valence: float | None,
+    ) -> dict[str, Any] | None:
+        """Check if a memory row matches the entity and represents a contradiction."""
+        raw_metadata = row.get("metadata") or {}
+        if isinstance(raw_metadata, str):
+            try:
+                raw_metadata = orjson.loads(raw_metadata)
+            except Exception:
+                raw_metadata = {}
+        entities = raw_metadata.get("entities", [])
+        if not isinstance(entities, list):
+            entities = []
+        same_entity = any(str(entity).casefold() == subject_key for entity in entities)
+        if not same_entity:
+            same_entity = subject_key in str(row.get("content", "")).casefold()
+        if not same_entity:
+            return None
+
+        prior_polarity = self._content_polarity(str(row.get("content", "")))
+        try:
+            raw_valence = row.get("valence")
+            prior_valence = float(raw_valence) if raw_valence is not None else None
+        except (TypeError, ValueError):
+            prior_valence = None
+        polarity_conflict = (
+            current_polarity != 0
+            and prior_polarity != 0
+            and current_polarity != prior_polarity
+        )
+        valence_conflict = (
+            current_valence is not None
+            and prior_valence is not None
+            and abs(current_valence) >= 0.2
+            and abs(prior_valence) >= 0.2
+            and (current_valence > 0) != (prior_valence > 0)
+        )
+        if polarity_conflict or valence_conflict:
+            result = dict(row)
+            result["metadata"] = raw_metadata
+            return result
+        return None
+
     async def find_contradiction(
         self, content: str, subject: str, valence: float | None = None
     ) -> dict[str, Any] | None:
@@ -1331,42 +1378,11 @@ class MemoryStore:
             current_valence = None
 
         for row in rows:
-            raw_metadata = row.get("metadata") or {}
-            if isinstance(raw_metadata, str):
-                try:
-                    raw_metadata = orjson.loads(raw_metadata)
-                except Exception:
-                    raw_metadata = {}
-            entities = raw_metadata.get("entities", [])
-            if not isinstance(entities, list):
-                entities = []
-            same_entity = any(str(entity).casefold() == subject_key for entity in entities)
-            if not same_entity:
-                same_entity = subject_key in str(row.get("content", "")).casefold()
-            if not same_entity:
-                continue
-
-            prior_polarity = self._content_polarity(str(row.get("content", "")))
-            try:
-                prior_valence = float(row.get("valence"))
-            except (TypeError, ValueError):
-                prior_valence = None
-            polarity_conflict = (
-                current_polarity != 0
-                and prior_polarity != 0
-                and current_polarity != prior_polarity
+            match = self._check_row_contradiction(
+                row, subject_key, current_polarity, current_valence
             )
-            valence_conflict = (
-                current_valence is not None
-                and prior_valence is not None
-                and abs(current_valence) >= 0.2
-                and abs(prior_valence) >= 0.2
-                and (current_valence > 0) != (prior_valence > 0)
-            )
-            if polarity_conflict or valence_conflict:
-                result = dict(row)
-                result["metadata"] = raw_metadata
-                return result
+            if match is not None:
+                return match
         return None
 
     async def add_memory(
@@ -2115,6 +2131,98 @@ class MemoryStore:
                     return now_ts
         return now_ts
 
+    def _build_candidate_from_row(
+        self,
+        row: dict[str, Any],
+        now: datetime,
+        current_valence: float,
+        current_arousal: float,
+        current_cortisol: float,
+        threshold: float,
+    ) -> dict[str, Any] | None:
+        """Compute ACT-R score and return candidate dictionary if above threshold."""
+        similarity = row.get("similarity") or 0.0
+        recall_count = max(1, row.get("recall_count") or 1)
+
+        last_recall = row.get("last_recalled_at")
+        last_recall = self._as_aware_utc(last_recall) or now
+        hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
+
+        created = row.get("created_at")
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+
+        memory_valence = row.get("valence") or 0.0
+        emotion_weight_row = row.get("emotional_weight") or 0.0
+
+        dist_emo = math.sqrt(
+            (memory_valence - current_valence) ** 2
+            + (emotion_weight_row - current_arousal) ** 2
+        )
+
+        spacing_hours = self._spacing_hours(recall_count, created, last_recall)
+        base_activation = self._base_activation(
+            recall_count,
+            hours_since,
+            row.get("importance_score") or 0.5,
+            dist_emo,
+            spacing_hours,
+        )
+
+        effective_similarity = self._effective_similarity(
+            similarity,
+            memory_valence,
+            emotion_weight_row,
+            current_arousal,
+            current_cortisol,
+        )
+
+        spread_activation = self.spread_weight * effective_similarity
+        score = (
+            base_activation
+            + spread_activation
+            - ACTR_EMO_DISTANCE_PENALTY * dist_emo
+        )
+
+        if (
+            score <= (threshold - 2.5)
+            and (row.get("importance_score") or 0.5) < 0.7
+        ):
+            return None
+
+        raw_meta = row.get("metadata")
+        if isinstance(raw_meta, str):
+            try:
+                raw_meta = orjson.loads(raw_meta)
+            except Exception:
+                raw_meta = {}
+
+        return {
+            "id": row.get("id"),
+            "content": row["content"],
+            "raw_content": row.get("raw_content") or row["content"],
+            "wing": row.get("wing", "personal"),
+            "room": row.get("room"),
+            "score": score,
+            "valence": row.get("valence") or 0.0,
+            "created_at": created,
+            "recall_count": recall_count,
+            "metadata": raw_meta or {},
+            "speaker": row.get("speaker"),
+            "record_type": row.get("record_type") or "episode",
+            "valid_from": row.get("valid_from"),
+            "valid_until": row.get("valid_until"),
+            "contradicts_id": row.get("contradicts_id"),
+            "lifespan_stage": row.get("lifespan_stage"),
+            "crisis": row.get("crisis"),
+            "virtue": row.get("virtue"),
+            "relations": row.get("relations"),
+            "relation_circles": row.get("relation_circles"),
+            "modality": row.get("modality"),
+            "similarity": similarity,
+            "last_recalled_at": last_recall,
+        }
+
     async def _fetch_postgres_candidates(
         self,
         conn,
@@ -2145,105 +2253,24 @@ class MemoryStore:
         )
 
         raw_candidates = []
+        now = (
+            self._as_aware_utc(current_time)
+            if current_time is not None
+            else datetime.now(UTC)
+        )
         for row in rows:
             if row["content"] in excluded:
                 continue
-
-            similarity = row.get("similarity") or 0.0
-            recall_count = max(1, row.get("recall_count") or 1)
-
-            # Recalculate score with neuromodulatory gating
-            last_recall = row.get("last_recalled_at")
-            now = (
-                self._as_aware_utc(current_time)
-                if current_time is not None
-                else datetime.now(UTC)
-            )
-            # `or now` covers both a missing timestamp and one _as_aware_utc
-            # could not parse; either way the row is treated as just-recalled
-            # rather than raising and discarding the whole result set.
-            last_recall = self._as_aware_utc(last_recall) or now
-
-            hours_since = max(0.001, (now - last_recall).total_seconds() / 3600.0)
-
-            created = row.get("created_at")
-            if created and created.tzinfo is None:
-                created = created.replace(tzinfo=UTC)
-
-            memory_valence = row.get("valence") or 0.0
-            emotion_weight_row = row.get("emotional_weight") or 0.0
-
-            # 2D/3D Emotional Distance matching the research simulator
-            dist_emo = math.sqrt(
-                (memory_valence - current_valence) ** 2
-                + (emotion_weight_row - current_arousal) ** 2
-            )
-
-            spacing_hours = self._spacing_hours(recall_count, created, last_recall)
-            base_activation = self._base_activation(
-                recall_count,
-                hours_since,
-                row.get("importance_score") or 0.5,
-                dist_emo,
-                spacing_hours,
-            )
-
-            # Neuromodulatory distance mapping
-            effective_similarity = self._effective_similarity(
-                similarity,
-                memory_valence,
-                emotion_weight_row,
+            cand = self._build_candidate_from_row(
+                row,
+                now,
+                current_valence,
                 current_arousal,
                 current_cortisol,
+                threshold,
             )
-
-            spread_activation = self.spread_weight * effective_similarity
-            score = (
-                base_activation
-                + spread_activation
-                - ACTR_EMO_DISTANCE_PENALTY * dist_emo
-            )
-
-            if (
-                score <= (threshold - 2.5)
-                and (row.get("importance_score") or 0.5) < 0.7
-            ):
-                continue
-
-            raw_meta = row.get("metadata")
-            if isinstance(raw_meta, str):
-                try:
-                    raw_meta = orjson.loads(raw_meta)
-                except Exception:
-                    raw_meta = {}
-
-            raw_candidates.append(
-                {
-                    "id": row.get("id"),
-                    "content": row["content"],
-                    "raw_content": row.get("raw_content") or row["content"],
-                    "wing": row.get("wing", "personal"),
-                    "room": row.get("room"),
-                    "score": score,
-                    "valence": row.get("valence") or 0.0,
-                    "created_at": created,
-                    "recall_count": recall_count,
-                    "metadata": raw_meta or {},
-                    "speaker": row.get("speaker"),
-                    "record_type": row.get("record_type") or "episode",
-                    "valid_from": row.get("valid_from"),
-                    "valid_until": row.get("valid_until"),
-                    "contradicts_id": row.get("contradicts_id"),
-                    "lifespan_stage": row.get("lifespan_stage"),
-                    "crisis": row.get("crisis"),
-                    "virtue": row.get("virtue"),
-                    "relations": row.get("relations"),
-                    "relation_circles": row.get("relation_circles"),
-                    "modality": row.get("modality"),
-                    "similarity": similarity,
-                    "last_recalled_at": last_recall,
-                }
-            )
+            if cand is not None:
+                raw_candidates.append(cand)
         return raw_candidates
 
     async def _fetch_surface_actr_rows(

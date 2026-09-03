@@ -399,6 +399,43 @@ class CognitivePipeline:
             "response": full_response,
         }
 
+    def _check_vap_pregeneration(
+        self,
+        raw_event: dict[str, Any],
+        raw_event_type: str | None,
+        event_metadata: dict[str, Any],
+        session_state: Any,
+    ) -> tuple[bool, dict[str, Any] | None]:
+        """Evaluate VAP / partial input and return (should_abort, pregen_signal)."""
+        is_partial = raw_event.get("is_partial", False)
+        vap_prob = raw_event.get(
+            "vap_probability", event_metadata.get("vap_probability", 0.0)
+        )
+        if not (is_partial or raw_event_type == "VAP_SIGNAL"):
+            return (False, None)
+
+        if vap_prob < 0.7:
+            logger.debug(
+                f"[Pipeline] Partial input/VAP but probability {vap_prob:.2f} < 0.7. Skipping speculative pre-generation."
+            )
+            return (True, None)
+
+        logger.info(
+            f"[Pipeline] VAP threshold met ({vap_prob:.2f} >= 0.7). Triggering speculative pre-generation."
+        )
+        event_metadata["speculative"] = True
+        session_state.speculative = True
+        signal = {
+            "type": "mesh_signal",
+            "subject": "audio.pre_generate",
+            "data": {
+                "speculative": True,
+                "partial_content": raw_event.get("content", ""),
+                "vap_probability": vap_prob,
+            },
+        }
+        return (False, signal)
+
     async def execute(
         self,
         raw_event: dict[str, Any],
@@ -433,33 +470,13 @@ class CognitivePipeline:
         stage_times["stage_1_extraction_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # VAP Turn Planning / Speculative Pre-Generation
-        is_partial = raw_event.get("is_partial", False)
-        vap_prob = raw_event.get(
-            "vap_probability", event_metadata.get("vap_probability", 0.0)
+        should_abort, vap_signal = self._check_vap_pregeneration(
+            raw_event, raw_event_type, event_metadata, session_state
         )
-        is_vap_event = raw_event_type == "VAP_SIGNAL"
-
-        if is_partial or is_vap_event:
-            if vap_prob < 0.7:
-                logger.debug(
-                    f"[Pipeline] Partial input/VAP but probability {vap_prob:.2f} < 0.7. Skipping speculative pre-generation."
-                )
-                return
-            else:
-                logger.info(
-                    f"[Pipeline] VAP threshold met ({vap_prob:.2f} >= 0.7). Triggering speculative pre-generation."
-                )
-                event_metadata["speculative"] = True
-                session_state.speculative = True
-                yield {
-                    "type": "mesh_signal",
-                    "subject": "audio.pre_generate",
-                    "data": {
-                        "speculative": True,
-                        "partial_content": raw_event.get("content", ""),
-                        "vap_probability": vap_prob,
-                    },
-                }
+        if should_abort:
+            return
+        if vap_signal is not None:
+            yield vap_signal
 
         # 2. Conflict Resolution (Turn-Taking Stability)
         conflict_result: dict[str, Any] = {}
