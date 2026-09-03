@@ -16,7 +16,7 @@ async def test_strict_storage_raises_instead_of_falling_back(monkeypatch):
     store.dsn = "postgresql://user:pass@unavailable/db"
 
     with patch(
-        "asyncpg.create_pool",
+        "app.state.conversation_store.asyncpg.create_pool",
         side_effect=ConnectionError("database unavailable"),
     ):
         with pytest.raises(

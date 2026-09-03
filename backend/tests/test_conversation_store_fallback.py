@@ -24,7 +24,7 @@ async def test_lenient_storage_mode_preserves_sqlite_fallback(caplog, monkeypatc
 
     with (
         patch(
-            "asyncpg.create_pool",
+            "app.state.conversation_store.asyncpg.create_pool",
             side_effect=ConnectionError("could not connect to server"),
         ),
         patch(
@@ -58,7 +58,8 @@ async def test_strict_storage_mode_raises_instead_of_using_sqlite(monkeypatch):
 
     with (
         patch(
-            "asyncpg.create_pool", side_effect=ConnectionError("database unavailable")
+            "app.state.conversation_store.asyncpg.create_pool",
+            side_effect=ConnectionError("database unavailable"),
         ),
         patch("app.state.sqlite_fallback.SQLitePool") as sqlite_pool,
         pytest.raises(RuntimeError, match="Strict storage mode forbids falling back"),

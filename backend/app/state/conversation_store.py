@@ -6,7 +6,7 @@ from pathlib import Path
 
 import asyncpg
 
-from ..config import Config
+from ..config import Config, config_instance
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,10 @@ class ConversationHistoryStore:
 
         except Exception as e:
             if self.dsn and not self.dsn.startswith("sqlite"):
-                if getattr(Config, "ORGANISM_MODE_STRICT_STORAGE", False):
+                strict_storage = getattr(
+                    config_instance, "ORGANISM_MODE_STRICT_STORAGE", False
+                ) or getattr(Config, "ORGANISM_MODE_STRICT_STORAGE", False)
+                if strict_storage:
                     # Checked before touching `used_fallback_storage`/logging
                     # "falling back": no fallback happens on this path, so
                     # nothing here should claim it did. `used_fallback_storage`
