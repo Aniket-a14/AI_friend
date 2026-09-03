@@ -95,6 +95,46 @@ async def test_bt_short_circuits_boundary_refusal_before_social_response(
     assert plan.payload["category"] == "refusal"
 
 
+@pytest.mark.asyncio
+async def test_deterministic_backchannel_makes_zero_llm_calls(
+    mock_llm_service, mock_memory_store
+):
+    """Codex Stage 2 blocker: `decide()` used to classify intent via the LLM
+    before checking for a deterministic match, so "ok" still paid one LLM
+    call. The short-circuit must run before any LLM call, not just before
+    `_plan_social_response`."""
+    service = DecisionService(
+        llm_service=mock_llm_service,
+        memory_store=mock_memory_store,
+        identity_manager=_StubIdentity(IMMUTABLE_CORE),
+    )
+    event = _event("ok")
+
+    plan = await service.decide(event, _STATE)
+
+    assert mock_llm_service.generate.call_count == 0
+    assert plan.action_type == "RESPOND_DETERMINISTIC"
+    assert event.intent == "ACKNOWLEDGE"
+
+
+@pytest.mark.asyncio
+async def test_deterministic_refusal_makes_zero_llm_calls(
+    mock_llm_service, mock_memory_store
+):
+    service = DecisionService(
+        llm_service=mock_llm_service,
+        memory_store=mock_memory_store,
+        identity_manager=_StubIdentity(IMMUTABLE_CORE),
+    )
+    event = _event("what is my password")
+
+    plan = await service.decide(event, _STATE)
+
+    assert mock_llm_service.generate.call_count == 0
+    assert plan.action_type == "RESPOND_DETERMINISTIC"
+    assert event.intent == "REFUSE"
+
+
 def test_refusal_text_is_derived_from_the_immutable_core_boundary_string():
     """The wording must trace back to `IMMUTABLE_CORE["boundaries"]`, not a
     second, independently-authored copy that could drift from it."""

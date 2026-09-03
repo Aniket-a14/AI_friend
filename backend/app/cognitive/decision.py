@@ -28,6 +28,9 @@ GOALS = ["ENGAGE", "COMFORT", "INFORM", "TEASE", "PROTECT"]
 
 _WEIGHT_KEY = "goal_utilities"
 
+# 4C fix: category -> event.intent for a short-circuited deterministic plan.
+_DETERMINISTIC_PLAN_INTENTS = {"backchannel": "ACKNOWLEDGE", "refusal": "REFUSE"}
+
 
 @dataclass
 class ActionPlan:
@@ -215,11 +218,13 @@ class DecisionService:
             ],
         )
 
+    def _immutable_core(self) -> dict[str, Any]:
+        return getattr(self._identity_manager, "immutable_core", {}) or {}
+
     def _check_deterministic_response(self, blackboard: dict[str, Any]) -> bool:
         """4C: evaluate once, cache on the blackboard for the Action sibling."""
-        immutable_core = getattr(self._identity_manager, "immutable_core", {}) or {}
         plan = evaluate_deterministic_response(
-            blackboard["event"], blackboard["state"], immutable_core
+            blackboard["event"], blackboard["state"], self._immutable_core()
         )
         blackboard["_deterministic_plan"] = plan
         return plan is not None
@@ -232,6 +237,17 @@ class DecisionService:
         self, event: CognitiveEvent, state_snapshot: dict[str, Any]
     ) -> ActionPlan:
         """Main decision loop with MAUT scoring and intent persistence."""
+        # 0. Deterministic short-circuit -- zero LLM calls, before classification.
+        if event.event_type == "USER_MESSAGE":
+            deterministic_plan = evaluate_deterministic_response(
+                event, state_snapshot, self._immutable_core()
+            )
+            if deterministic_plan is not None:
+                event.intent = _DETERMINISTIC_PLAN_INTENTS.get(
+                    deterministic_plan.payload.get("category"), "ACKNOWLEDGE"
+                )
+                return deterministic_plan
+
         # 1. Hybrid Routing: Fast Path for Greetings
         if self._is_simple_greeting(event.raw_content):
             event.intent = "CHAT"
