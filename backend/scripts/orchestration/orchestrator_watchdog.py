@@ -18,8 +18,8 @@ from pathlib import Path
 
 BASE_REPO = Path("/Users/aniketsaha/Projects/AI_friend")
 HANDOFF_PATH = BASE_REPO / "personal" / "HANDOFF.md"
-CLAUDE_WT = Path("/Users/aniketsaha/Projects/AI_friend-claude-phase1")
-CODEX_WT = Path("/Users/aniketsaha/Projects/AI_friend-codex-phase2c2e")
+CLAUDE_WT = Path("/Users/aniketsaha/Projects/AI_friend-claude")
+CODEX_WT = Path("/Users/aniketsaha/Projects/AI_friend-codex")
 STATUS_JSON = Path("/tmp/orchestrator_status.json")
 LOG_PATH = Path("/tmp/orchestrator_watchdog.log")
 PYTHON_BIN = BASE_REPO / ".venv" / "bin" / "python"
@@ -167,8 +167,8 @@ def main():
                 run_worktree_checks(CODEX_WT, "Codex")
                 codex_last_head = x_head
 
-            # 4. Check if both completed Phase 2
-            both_ready = c_head != "d16c808" and x_head != "d16c808" and not c_dirty and not x_dirty
+            # 4. Check if both completed Phase 3
+            both_ready = c_head != "6f03c3b" and x_head != "6f03c3b" and not c_dirty and not x_dirty
 
             # 5. Write status snapshot
             status = {
