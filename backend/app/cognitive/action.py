@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from ..config import Config
+from ..errors import AgentError
 from ..persona.biography import BIOGRAPHY_SOURCE
 from .decision import ActionPlan
 from .identity import _HOSTILE_TO_USER, _match_views
@@ -348,7 +349,7 @@ def reorder_for_long_context(memories):
     return reordered
 
 
-class MetacognitiveException(Exception):
+class MetacognitiveException(AgentError, Exception):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason

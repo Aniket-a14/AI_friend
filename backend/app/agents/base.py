@@ -11,13 +11,14 @@ from typing import Any
 import nats
 import orjson
 
+from ..errors import AgentError
 from ..metrics import SubjectMetrics
 from ..utils.background_tasks import spawn_background
 
 logger = logging.getLogger(__name__)
 
 
-class JetStreamPublishFailed(RuntimeError):
+class JetStreamPublishFailed(RuntimeError, AgentError):
     """Raised by `BaseAgent.publish(..., allow_core_fallback=False)` when the
     JetStream publish itself failed. Distinguished from a generic publish
     failure so it can be let through the outer `except Exception` in
