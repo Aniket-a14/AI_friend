@@ -15801,3 +15801,72 @@ deployment claim is made here.
 **NOT done:** home-GPU process/model verification, human character ratings, and a frozen runtime
 state/memory fixture remain external or future evidence tasks. Phase 1 should not consume
 historical `phi4-mini` responses as teacher data until those claims are independently reproduced.
+
+## 2026-09-03 -- Phase 0's home-gpu checklist executed against real phi4-mini
+
+Home-gpu came back online and closes the two blockers the previous entry flagged as external:
+the running-model claim and a real `action`-path run against the actual deployment.
+
+**Repo reconciliation on home-gpu, done with explicit user sign-off.** home-gpu's checkout
+(`phase3/architecture-and-research`) carried 18 tracked-file uncommitted diffs (`config.py`,
+`agent_state.py`, `memory_store.py`, `cognitive-rust/lib.rs`, etc.) that existed nowhere else --
+not on that branch's own HEAD, not on `origin/main`. Diffed one (`config.py`) to confirm it was
+real content (a `FACIAL_REFLEX_ENABLED`/`FACIAL_REFLEX_MODEL_PATH` addition), not noise, then
+asked before touching it rather than assuming. The user confirmed it was disposable. `git checkout
+--` discarded the 18 diffs; four pre-existing untracked artifacts (`.identity_state.stale-*`, two
+test files later restored as tracked by the same content on `main`, a measurement output file)
+were left alone. `git checkout main && git pull --ff-only` brought home-gpu to a clean `7a42c2a`.
+`backend/` was then rsynced from this Mac's `research` checkout (excluding `.git/`, `target/`,
+`.venv/`, `__pycache__/`, `.identity_state/`, `tools/measure/out/`, `evals/out/` -- the same
+exclude set the repo's own prior Mac-to-home-gpu deploy entries already establish), landing Phase
+0's evals code there. Independently of this rsync, home-gpu's `.git` ended up checked out on
+`research` at `79d3b73` matching `origin/research` exactly -- most likely the user acting in
+parallel on the same box; `git status` came back clean either way, so no reconciliation was needed
+beyond confirming it.
+
+**VERIFIED -- running model matches the ledger's own claim.** `~/AI_friend/backend/.env` on
+home-gpu: `LLM_CHAT_MODEL=phi4-mini`, `LLM_FAST_MODEL=phi4-mini`, `OLLAMA_URL=http://127.0.0.1:11434`.
+`ollama list` shows `phi4-mini:latest` (`78fad5d1`, pulled ~25h prior) alongside `qwen3:4b`,
+`gemma3:4b`, `qwen2.5:3b`, `llama3.2:3b`, `nomic-embed-text`. All four systemd units
+(`ai-friend-{agents,backend,voice,stt}`) reported `active` both before and after the eval runs
+below -- reading `/proc/<pid>/environ` for the live `brain_agent` process itself was denied by
+permissions, so this is `.env`-plus-`ollama list` evidence, not a direct process-environment read.
+
+**VERIFIED -- real `action`-path and `llm`-path runs against `phi4-mini`, natively on home-gpu**
+(not tunneled from the Mac -- `llm_endpoint` on both reports reads `http://127.0.0.1:11434`,
+confirming local execution). `freeze-forgetting-reference` produced a 5-probe frozen pack,
+byte-identical whether generated on the Mac or on home-gpu (same persona, same function, as
+designed). Ran `evals run --model phi4-mini --probes character_pressure.json
+--forgetting-reference-pack <frozen> --path {action,llm}`:
+
+- `action` path: 38/42 (identity 5/6, boundary 6/6, memory 0/2, custom/character-pressure 27/28,
+  mean 0.98). 27.7s wall.
+- `llm` path: 36/42 (identity 5/6, boundary 6/6, memory 0/2, custom 25/28, mean 0.91). 30.6s wall.
+
+Both `memory` probes (recall-pack probes, not this session's new packs) failed on both paths --
+consistent with the ledger's already-paused Bucket 19 finding, not a new regression. The two
+paths' identical identity/boundary/memory scores but diverging custom (character-pressure) scores
+(27/28 vs 25/28) is exactly the path-isolation signal Phase 5A needs: on this run, `action.py`'s
+prompt construction did not cost character fidelity relative to the raw `llm` path -- if anything
+it scored two points higher, opposite of what would indict `action.py`'s assembly as the failure
+cause. One `action`-path result (`pressure.values-override`) is confirmed real evidence of exactly
+the generic-AI-voice pattern the pack is designed to catch: raw provider text included "I am
+programmed to provide accurate information," caught and reworded by self-correction in the visible
+response -- the `raw_response`/`response` split (this session's own earlier fix) is what makes that
+distinction visible at all instead of collapsing into one string.
+
+**VERIFIED -- report provenance is real, not placeholder.** Both reports carry `git_revision=79d3b73`,
+matching the exact commit executing them; `persona_version=7662bf491433d9e0`; `probe_set_sha256`
+set; `request_provenance` populated (47 entries on the action-path report, well under the
+just-added 500-entry cap, confirming the cap doesn't interfere with a normal eval run);
+`model_source=explicit_cli`. Reports and the frozen pack copied back to this Mac's (gitignored)
+`evals/out/`.
+
+**NOT done, still open:** the actual `rate`/`rate-pairwise` blinded human-rating sessions. Those
+need a human comparing responses without knowing which model/report produced which -- filling them
+in as the agent doing this work would be exactly the LLM-judge anti-pattern this harness's own
+"scoring is deterministic, never an LLM judge" rule exists to prevent, so this was deliberately not
+attempted. `evals/out/phase0_action_phi4mini.json` and `evals/out/phase0_llm_phi4mini.json` are
+ready for `python -m evals rate` / `rate-pairwise` whenever a human rater is available. Postgres
+schema migration verification and live `audio.resume` turn-scoping (both Phase 2, not Phase 0)
+remain untouched -- out of this entry's scope.
