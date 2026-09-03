@@ -676,7 +676,14 @@ class ActionService:
         visual = payload.get("visual_context")
         if not visual or visual == "No visual data available.":
             return ""
-        return f"\nWHAT YOU CURRENTLY SEE:\n{_wrap_retrieved(visual)}"
+        evidence = payload.get("visual_evidence")
+        if evidence is not None:
+            age_s = max(0.0, time.time() - evidence.timestamp)
+            recency = "novel observation" if evidence.confidence >= 1.0 else "previously seen"
+            heading = f"WHAT YOU CURRENTLY SEE (as of {age_s:.0f}s ago, {recency})"
+        else:
+            heading = "WHAT YOU CURRENTLY SEE"
+        return f"\n{heading}:\n{_wrap_retrieved(visual)}"
 
     @staticmethod
     def _build_tom_context(user_tom) -> str:

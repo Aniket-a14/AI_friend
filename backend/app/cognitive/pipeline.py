@@ -303,6 +303,9 @@ class CognitivePipeline:
         plan.payload["visual_context"] = (
             event.metadata.get("visuals") if event.metadata else None
         )
+        plan.payload["visual_evidence"] = (
+            event.metadata.get("visual_evidence") if event.metadata else None
+        )
 
     @staticmethod
     def _compute_pre_llm_telemetry(stage_times: dict[str, Any], event) -> None:

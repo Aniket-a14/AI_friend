@@ -507,6 +507,50 @@ class TestRetrievedContentIsDelimited:
             == ""
         )
 
+    def test_visual_context_renders_evidence_recency_when_present(self):
+        from app.cognitive.evidence import Evidence
+
+        evidence = Evidence(
+            content="ignored",
+            source="camera",
+            modality="vision",
+            confidence=1.0,
+        )
+        block = ActionService._build_visual_context(
+            {
+                "visual_context": "The user is smiling.",
+                "visual_evidence": evidence,
+            }
+        )
+        assert "novel observation" in block
+        assert "ago" in block
+
+    def test_visual_context_marks_stale_evidence_as_previously_seen(self):
+        from app.cognitive.evidence import Evidence
+
+        evidence = Evidence(
+            content="ignored", source="camera", modality="vision", confidence=0.5
+        )
+        block = ActionService._build_visual_context(
+            {
+                "visual_context": "The user is smiling.",
+                "visual_evidence": evidence,
+            }
+        )
+        assert "previously seen" in block
+
+    def test_visual_context_falls_back_when_evidence_absent(self):
+        """A producer that predates 1A (or the proactive-turn path, which
+        this phase deliberately doesn't touch) has no visual_evidence key --
+        rendering must not break, and must match the pre-1A heading exactly."""
+        block = ActionService._build_visual_context(
+            {"visual_context": "The user is smiling."}
+        )
+        assert block == (
+            "\nWHAT YOU CURRENTLY SEE:\n"
+            "[RETRIEVED-CONTENT]The user is smiling.[/RETRIEVED-CONTENT]"
+        )
+
     def test_the_guideline_tells_the_model_the_markers_are_data(self):
         from app.cognitive.action import _CHAT_GUIDELINE
 

@@ -144,6 +144,62 @@ async def test_pipeline_carries_visual_context_into_the_plan_payload(
 
 
 @pytest.mark.asyncio
+async def test_pipeline_carries_visual_evidence_into_the_plan_payload(
+    pipeline, mock_components
+):
+    """1A's typed sibling of visual_context must survive the same
+    perception -> decision -> action-prep handoff, or _build_visual_context
+    has no evidence to render epistemic framing from."""
+    from app.cognitive.evidence import Evidence
+
+    evidence = Evidence(content="a mug", source="camera", modality="vision")
+
+    mock_components["state"].last_speculative_intent = None
+    mock_components["perception"].perceive.return_value = MagicMock(
+        event_type="USER_MESSAGE",
+        raw_content="what am I holding?",
+        intent="CHAT",
+        event_id="evt-3",
+        metadata={
+            "visuals": "I am seeing the user's camera.",
+            "visual_evidence": evidence,
+        },
+    )
+    mock_components["appraisal"].appraise.return_value = AppraisalVector(
+        relevance=1.0,
+        novelty=0.5,
+        goal_congruence=0.2,
+        agency=0.8,
+        norm_alignment=1.0,
+        relationship_impact=0.1,
+    )
+    mock_components["state"].get_context_snapshot.return_value = {"mood": 0.0}
+    mock_components["state"].get_behavioral_directive.return_value = "be friendly"
+    mock_components["decision"].decide.return_value = ActionPlan(
+        action_type="RESPOND_CHAT", goal="ANSWER", payload={"message": "hi"}
+    )
+    mock_components["identity"].validate_response.return_value = (True, "")
+    mock_components["identity"].get_persona_prompt.return_value = "System prompt"
+
+    seen_payloads = []
+
+    async def mock_execute(plan):
+        seen_payloads.append(plan.payload)
+        yield {"type": "content", "data": "You're holding a mug."}
+        yield {"type": "done", "data": ""}
+
+    mock_components["action"].execute.side_effect = mock_execute
+
+    async for _ in pipeline.execute(
+        {"type": "USER_MESSAGE", "content": "what am I holding?"}
+    ):
+        pass
+
+    assert seen_payloads, "action.execute was never called"
+    assert seen_payloads[0]["visual_evidence"] is evidence
+
+
+@pytest.mark.asyncio
 async def test_pipeline_sources_appraisal_boundaries_from_immutable_core(
     pipeline, mock_components
 ):

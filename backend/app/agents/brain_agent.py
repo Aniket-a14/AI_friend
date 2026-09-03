@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..cognitive import CognitiveService
+from ..cognitive.evidence import Evidence
 from ..cognitive.somatic import SomaticAppraiser
 from ..config import Config
 from ..contracts import (
@@ -113,6 +114,11 @@ class BrainAgent(BaseAgent):
 
         self.last_interaction_time = datetime.now()
         self.last_visual_context = "No visual data available."
+        # 1A: typed sibling of last_visual_context, built from the same
+        # VisionDescription payload. Additive -- last_visual_context stays
+        # the source every existing reader uses; this carries the
+        # confidence/timestamp/provenance those readers don't have access to.
+        self.last_visual_evidence: Evidence | None = None
         self.last_user_distance = 1.0
         self.last_user_voice_properties: UserVoiceProperties | None = None
 
@@ -263,6 +269,18 @@ class BrainAgent(BaseAgent):
             self.last_visual_context = f"I am seeing the user's {source}."
         distance = data.get("user_distance")
         self.last_user_distance = float(distance) if distance is not None else 1.0
+
+        # is_novel mirrors VisionDescription's own field: a frame that cleared
+        # habituation is a fresh observation (confidence 1.0); a cached
+        # repeat is worth less (0.5) without discarding it entirely.
+        self.last_visual_evidence = Evidence(
+            content=description or f"I am seeing the user's {source}.",
+            source=source,
+            modality="vision",
+            timestamp=float(data.get("timestamp", time.time())),
+            confidence=1.0 if data.get("is_novel", True) else 0.5,
+            provenance="vision_agent",
+        )
 
         await self._appraise_somatic(description)
 
@@ -658,6 +676,7 @@ class BrainAgent(BaseAgent):
             "metadata": {
                 **metadata,
                 "visuals": self.last_visual_context,
+                "visual_evidence": self.last_visual_evidence,
                 "turn_id": turn_id,
                 "utterance_id": utterance_id,
             },
