@@ -8,6 +8,7 @@ from ..measure_trace import trace as _measure_trace
 from ..state.graph_db import GraphDB
 from .identity import IdentityManager
 from .json_extract import extract_first_json_value
+from .learning_review import LearningReviewQueue
 
 logger = logging.getLogger("reflection")
 
@@ -33,6 +34,8 @@ class ReflectionService:
         self.identity = identity_manager or IdentityManager(persona_file=None)
         self.is_reflecting = False
         self.last_reflection_started_at = 0.0
+        # Phase 5C: proposals wait here when Config.LEARNING_REVIEW_REQUIRED.
+        self.review_queue = LearningReviewQueue()
 
         # AI Friend: Explicit completion signaling for deterministic mesh verification
         self.reflection_done = asyncio.Event()
@@ -267,13 +270,31 @@ class ReflectionService:
                 suggestions = {}
 
             if suggestions and suggestions.get("confidence", 0.0) >= 0.8:
-                await self.identity.evolve_persona(suggestions)
+                if getattr(Config, "LEARNING_REVIEW_REQUIRED", False):
+                    contradicts_id = await self._find_persona_contradiction(
+                        suggestions
+                    )
+                    self.review_queue.submit(suggestions, contradicts_id=contradicts_id)
+                else:
+                    await self.identity.evolve_persona(suggestions)
             else:
                 logger.debug(
                     "Persona evolution REJECTED: Low confidence or no growth detected."
                 )
         except Exception as e:
             logger.error(f"Identity evolution failure: {e}")
+
+    async def _find_persona_contradiction(
+        self, suggestions: dict[str, Any]
+    ) -> str | None:
+        """Phase 2C lookup: does this suggestion conflict with a confirmed memory?"""
+        relationship = suggestions.get("relationship")
+        if not (self.vector and relationship):
+            return None
+        contradiction = await self.vector.find_contradiction(
+            str(relationship), self.identity.persona.name
+        )
+        return contradiction.get("id") if contradiction else None
 
     async def _consolidate_episodic_memory(
         self, episodes: list[dict[str, Any]], summary_text: str

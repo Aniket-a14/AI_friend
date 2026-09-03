@@ -295,6 +295,9 @@ class AppSettings(BaseSettings):
     # a long rest period from re-scoring the same candidates every 5s tick
     # without meaningfully delaying a real overnight consolidation window.
     REST_PHASE_REPLAY_INTERVAL_SECONDS: float = 1800.0
+
+    # Phase 5C (§14 MODIFY): False preserves today's tested auto-apply.
+    LEARNING_REVIEW_REQUIRED: bool = False
     # How many recent high-importance memories one rest-phase sweep samples
     # for re-scoring/pruning via the existing `apply_actr_decay` pipeline.
     REST_PHASE_REPLAY_LIMIT: int = 20
