@@ -99,17 +99,30 @@ class ConversationHistoryStore:
 
         except Exception as e:
             if self.dsn and not self.dsn.startswith("sqlite"):
+                if getattr(Config, "ORGANISM_MODE_STRICT_STORAGE", False):
+                    # Checked before touching `used_fallback_storage`/logging
+                    # "falling back": no fallback happens on this path, so
+                    # nothing here should claim it did. `used_fallback_storage`
+                    # exists so a health check can catch silent SQLite
+                    # degradation (see its own docstring) -- strict mode's
+                    # entire point is refusing to degrade silently, so the
+                    # flag must not read "using fallback storage" for a
+                    # session that never got one.
+                    logger.critical(
+                        f"PostgreSQL connection failed: {e}. Strict storage "
+                        "mode forbids falling back to SQLite; refusing to "
+                        "start rather than silently losing Postgres history."
+                    )
+                    raise RuntimeError(
+                        "Strict storage mode forbids falling back to SQLite after "
+                        "a PostgreSQL connection failure"
+                    ) from e
                 self.used_fallback_storage = True
                 logger.critical(
                     f"PostgreSQL connection failed: {e}. Falling back to local "
                     "SQLite database - conversation history stored in "
                     "PostgreSQL is now unreachable from this session."
                 )
-                if getattr(Config, "ORGANISM_MODE_STRICT_STORAGE", False):
-                    raise RuntimeError(
-                        "Strict storage mode forbids falling back to SQLite after "
-                        "a PostgreSQL connection failure"
-                    ) from e
                 try:
                     from .sqlite_fallback import SQLitePool
 

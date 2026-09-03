@@ -65,7 +65,10 @@ async def test_strict_storage_mode_raises_instead_of_using_sqlite(monkeypatch):
     ):
         await store.initialize()
 
-    assert store.used_fallback_storage is True
+    # No fallback happened -- strict mode raised instead -- so the flag a
+    # health check reads to detect silent SQLite degradation must not claim
+    # one occurred (regression guard: it did, before this fix).
+    assert store.used_fallback_storage is False
     assert store.pool is None
     sqlite_pool.assert_not_called()
 
