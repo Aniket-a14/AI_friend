@@ -15925,3 +15925,11 @@ distillation data. The single-turn reports also have no `state_fixture_hash`. Th
 and provenance gates are complete, but the research document's literal Phase 0 status remains
 **PARTIAL**. Phase 1's typed-realization experiment is the next valid step; do not redesign it based
 on these results, and do not claim stateful-runtime or subjective character-fidelity closure.
+
+## 2026-09-03 -- Codex Phase 1C (unmerged)
+
+Codex owns only the typed realization envelope experiment on clean base `a238fdd` (Claude's
+canonical Phase 1B). Added the opt-in `LLM_TYPED_REALIZATION_ENABLED` flag, bounded envelope
+parser, deterministic raw-text fallback, and focused stream tests. Claude owns 1A/1B/1D/1E;
+the earlier `cf83c9b` full-slice commit is overlap history and is not this branch's merge unit.
+No home-GPU run was performed.

@@ -215,6 +215,9 @@ class AppSettings(BaseSettings):
 
     LLM_STREAM_MAX_SECONDS: int = 120
     LLM_INTENT_CLASSIFICATION_ENABLED: bool = True
+    # Phase 1 experiment: ask the realization model for a bounded envelope.
+    # False preserves the existing streaming text contract.
+    LLM_TYPED_REALIZATION_ENABLED: bool = False
 
     # P1-1: the control tier's JetStream consumer settings (system.tick).
     # Both were previously implicit -- a 30s server-default ack_wait and
