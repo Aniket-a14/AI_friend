@@ -104,7 +104,7 @@ def run_worktree_checks(worktree: Path, name: str) -> bool:
             capture_output=True,
             text=True,
             check=False,
-            timeout=60,
+            timeout=120,
         )
         summary = res.stdout.strip().splitlines()[-1] if res.stdout.strip() else ""
         if res.returncode == 0:
