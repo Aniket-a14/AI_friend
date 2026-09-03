@@ -73,7 +73,9 @@ class CognitiveService:
             writer_id="brain_agent",
         )
         self.decision = DecisionService(
-            llm_service=llm_service, memory_store=memory_store
+            llm_service=llm_service,
+            memory_store=memory_store,
+            identity_manager=self.identity,
         )
         # The agent's own name is seeded explicitly: a biography written in the
         # third person ("she talks calmly…") never contains it, so without this

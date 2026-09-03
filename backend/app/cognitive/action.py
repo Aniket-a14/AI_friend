@@ -1417,6 +1417,11 @@ class ActionService:
             yield {"type": "error", "data": str(e)}
             yield {"type": "done", "data": ""}
 
+    async def _execute_respond_deterministic(self, plan: ActionPlan):
+        """4C: canned text, realization-bypass -- same chunk shape as `_stream_primary_response`."""
+        yield {"type": "content", "data": plan.payload.get("message", "")}
+        yield {"type": "done", "data": "finished"}
+
     async def _execute_store_memory(self, plan: ActionPlan):
         """Commit an explicitly requested memory."""
         content = plan.payload.get("content", "")
@@ -1460,6 +1465,10 @@ class ActionService:
 
         if plan.action_type == "RESPOND_CHAT":
             async for out in self._execute_respond_chat(plan):
+                yield out
+
+        elif plan.action_type == "RESPOND_DETERMINISTIC":
+            async for out in self._execute_respond_deterministic(plan):
                 yield out
 
         elif plan.action_type == "STORE_MEMORY":
