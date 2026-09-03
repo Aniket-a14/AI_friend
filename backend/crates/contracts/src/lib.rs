@@ -129,6 +129,44 @@ impl Default for ChatOutputAffect {
     }
 }
 
+// Phase 3B/3C (§18 Experiment 4): wire mirror of Python's
+// `contracts.SpeechExpressionWire`, itself a mirror of the in-process
+// `cognitive.expression.SpeechExpression` (Phase 3A). `#[serde(default)]`
+// on every field, no `deny_unknown_fields`, matching every other wire type
+// here -- a message from a producer that hasn't shipped this yet (true of
+// every producer today) deserializes to `Default::default()`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpeechExpressionWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub affect_label: Option<String>,
+    #[serde(default)]
+    pub breath: f64,
+    #[serde(default)]
+    pub hesitation: f64,
+    #[serde(default = "default_neutral")]
+    pub style: String,
+    // Stage 3 fix: was `Vec<f64>` -- couldn't deserialize Codex's Phase 3A
+    // `SpeechExpression.trajectory`, which preserves `generate_apra_trajectory`'s
+    // native `(time_offset_ms, rate, pitch, volume)` frame tuples verbatim.
+    // serde maps a Python tuple/JSON array of 4 elements straight onto this
+    // Rust tuple, matching `ProsodyFrame`'s field shape (see below) without
+    // introducing a second named struct for the same four values.
+    #[serde(default)]
+    pub trajectory: Vec<(i64, f64, f64, f64)>,
+}
+
+impl Default for SpeechExpressionWire {
+    fn default() -> Self {
+        Self {
+            affect_label: None,
+            breath: 0.0,
+            hesitation: 0.0,
+            style: default_neutral(),
+            trajectory: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatOutput {
     #[serde(default)]
@@ -139,6 +177,13 @@ pub struct ChatOutput {
     pub turn_id: Option<String>,
     #[serde(default)]
     pub affect: Option<ChatOutputAffect>,
+    // Optional and skipped when absent (`skip_serializing_if`) so the
+    // existing `chat_output_round_trips_current_contract_shape` fixture
+    // test, which asserts byte-for-byte round-trip equality against a
+    // fixture with no `expression` key, keeps passing unchanged -- the
+    // same pattern `user_distance` above already uses for the same reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expression: Option<SpeechExpressionWire>,
     // The deprecated prosody block (confidence, intensity, speaking_rate,
     // pause_bias, paralinguistic_tags) was removed. Prosody has one source:
     // `vad_to_prosody` derives it from `affect` above. Nothing read these, and
@@ -404,6 +449,78 @@ mod tests {
         let serialized = serde_json::to_value(parsed).unwrap();
         let expected: serde_json::Value = serde_json::from_str(fixture).unwrap();
         assert_eq!(serialized, expected);
+    }
+
+    // Phase 3B/3C: the shared fixture has no `expression` key at all (no
+    // producer ships it yet), so this is the actual regression this test
+    // guards -- a required field here would break every existing producer
+    // on the old shape, which the field being `Option`-with-`#[serde(default)]`
+    // is supposed to prevent.
+    #[test]
+    fn chat_output_expression_defaults_to_none_when_absent() {
+        let fixture = include_str!("../fixtures/chat_output_chunk.json");
+        let parsed: ChatOutput = serde_json::from_str(fixture).unwrap();
+
+        assert!(parsed.expression.is_none());
+    }
+
+    #[test]
+    fn chat_output_expression_round_trips_when_present() {
+        let mut parsed: ChatOutput =
+            serde_json::from_str(include_str!("../fixtures/chat_output_chunk.json")).unwrap();
+        parsed.expression = Some(SpeechExpressionWire {
+            affect_label: Some("warm".to_string()),
+            breath: 0.4,
+            hesitation: 0.6,
+            style: "soft".to_string(),
+            trajectory: vec![(0, 0.95, 1.1, 0.1), (17, 0.96, 1.1, 0.11)],
+        });
+
+        let serialized = serde_json::to_value(&parsed).unwrap();
+        let round_tripped: ChatOutput = serde_json::from_value(serialized).unwrap();
+
+        assert_eq!(round_tripped.expression, parsed.expression);
+    }
+
+    // Stage 3 (Blocker 1): the actual shape crossing the Python/Rust wire once
+    // a producer exists -- a JSON array of 4-tuples, exactly what Codex's
+    // `cognitive_rust.generate_apra_trajectory` / `SpeechExpression.trajectory`
+    // produces (`(time_offset_ms, rate, pitch, volume)`, 60 frames at 50ms
+    // spacing in production). This is the cross-boundary regression Codex's
+    // Stage 2 review asked for: a payload shaped like the real producer's
+    // output, not just a same-language struct literal.
+    #[test]
+    fn speech_expression_trajectory_deserializes_apra_frame_json() {
+        let json = r#"{
+            "affect_label": "calm",
+            "breath": 0.0,
+            "hesitation": 0.0,
+            "style": "natural",
+            "trajectory": [[0, 0.95, 1.1, 0.1], [50, 0.96, 1.08, 0.12], [100, 0.97, 1.05, 0.13]]
+        }"#;
+
+        let parsed: SpeechExpressionWire = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            parsed.trajectory,
+            vec![(0, 0.95, 1.1, 0.1), (50, 0.96, 1.08, 0.12), (100, 0.97, 1.05, 0.13)]
+        );
+
+        let round_tripped: SpeechExpressionWire =
+            serde_json::from_value(serde_json::to_value(&parsed).unwrap()).unwrap();
+        assert_eq!(round_tripped, parsed);
+    }
+
+    #[test]
+    fn speech_expression_wire_defaults_match_python_contract() {
+        // Mirrors `contracts.SpeechExpressionWire`'s Python-side defaults
+        // (affect_label=None, breath=0.0, hesitation=0.0, style="neutral",
+        // trajectory=[]) exactly, so a message missing every field still
+        // deserializes to the same shape either side would construct.
+        let parsed: SpeechExpressionWire = serde_json::from_str("{}").unwrap();
+        assert_eq!(parsed, SpeechExpressionWire::default());
+        assert_eq!(parsed.style, "neutral");
+        assert!(parsed.trajectory.is_empty());
     }
 
     #[test]

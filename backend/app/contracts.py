@@ -148,6 +148,30 @@ class ChatOutputAffect(BaseModel):
     user_distance: float | None = None
 
 
+class SpeechExpressionWire(BaseModel):
+    """Phase 3B wire mirror of `cognitive.expression.SpeechExpression`
+    (Phase 3A, Codex) -- kept distinct from that in-process type the same
+    way `StateUpdate` is distinct from `AgentState`. `extra: "allow"` so a
+    producer ahead of a consumer on this field doesn't break validation in
+    either direction. Optional on `ChatOutput` below: absent means "no
+    producer yet" (true today) or "legacy tag path", not an error.
+    """
+
+    model_config = {"extra": "allow"}
+
+    affect_label: str | None = None
+    breath: float = 0.0
+    hesitation: float = 0.0
+    style: str = "neutral"
+    # Stage 3 fix: was `list[float]` -- couldn't hold Codex's Phase 3A
+    # `SpeechExpression.trajectory`, which preserves `generate_apra_trajectory`'s
+    # native `(time_offset_ms, rate, pitch, volume)` frame tuples verbatim (the
+    # identity check `derive_speech_expression`'s own tests assert on). A flat
+    # float list rejected every frame on `.model_validate()` with `Input should
+    # be a valid number` -- confirmed reproducible in Stage 2 review.
+    trajectory: list[tuple[int, float, float, float]] = Field(default_factory=list)
+
+
 class ChatOutput(BaseModel):
     """Published by BrainAgent on `chat.output` for each speech chunk or done signal."""
 
@@ -157,6 +181,7 @@ class ChatOutput(BaseModel):
     done: bool = False
     turn_id: str | None = None
     affect: ChatOutputAffect | None = None
+    expression: SpeechExpressionWire | None = None
 
     # The deprecated prosody block (confidence, intensity, speaking_rate,
     # pause_bias, paralinguistic_tags) was removed here. Prosody has a single

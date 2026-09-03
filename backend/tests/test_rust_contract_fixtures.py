@@ -1,7 +1,13 @@
 import json
 from pathlib import Path
 
-from app.contracts import AudioPerception, AudioStop, ChatInput, ChatOutput
+from app.contracts import (
+    AudioPerception,
+    AudioStop,
+    ChatInput,
+    ChatOutput,
+    SpeechExpressionWire,
+)
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "crates" / "contracts" / "fixtures"
 
@@ -27,6 +33,12 @@ def test_rust_chat_output_fixture_matches_current_pydantic_contract():
     assert parsed.full_response is None
     assert parsed.generation_error is None
     assert parsed.proactive is False
+    # Phase 3B: the shared fixture predates `expression` and has no producer
+    # for it yet -- absent must parse as None, not raise, matching the Rust
+    # struct's own `#[serde(default)]` on the same field (see
+    # `chat_output_expression_defaults_to_none_when_absent` in
+    # crates/contracts/src/lib.rs, same fixture).
+    assert parsed.expression is None
 
 
 def test_rust_audio_stop_fixture_matches_current_pydantic_contract():
@@ -58,6 +70,68 @@ def test_rust_audio_perception_fixture_matches_current_pydantic_contract():
     assert parsed.speculative_intent.name == "SPECULATIVE_STOP"
     assert parsed.speculative_intent.utterance_id == "utt-1"
     assert parsed.metadata["text"] == "stop"
+
+
+def test_chat_output_expression_round_trips_when_present():
+    """`expression` is optional and `extra: "allow"` on both sides -- a
+    populated value (once a Phase 3A producer exists) must still validate
+    and round-trip, not just the absent case the fixture-based test above
+    covers."""
+    payload = _load_fixture("chat_output_chunk.json")
+    payload["expression"] = {
+        "affect_label": "warm",
+        "breath": 0.4,
+        "hesitation": 0.6,
+        "style": "soft",
+        # Stage 3 (Blocker 1): a JSON array of 4-element arrays, the actual
+        # shape `generate_apra_trajectory`/`SpeechExpression.trajectory`
+        # produce -- not a flat float list.
+        "trajectory": [[0, 0.95, 1.1, 0.1], [17, 0.96, 1.1, 0.11]],
+    }
+
+    parsed = ChatOutput.model_validate(payload)
+
+    assert isinstance(parsed.expression, SpeechExpressionWire)
+    assert parsed.expression.affect_label == "warm"
+    assert parsed.expression.breath == 0.4
+    assert parsed.expression.hesitation == 0.6
+    assert parsed.expression.style == "soft"
+    assert parsed.expression.trajectory == [(0, 0.95, 1.1, 0.1), (17, 0.96, 1.1, 0.11)]
+
+
+def test_chat_output_expression_trajectory_accepts_real_apra_frame_shape():
+    """Stage 3 (Blocker 1, cross-boundary regression Codex's Stage 2 review
+    asked for): validates against the *actual* Phase 3A producer output --
+    `cognitive.expression.derive_speech_expression`'s `SpeechExpression.
+    trajectory`, itself `cognitive_rust.generate_apra_trajectory`'s native
+    frame tuples -- not just a same-shaped literal. `SpeechExpressionWire.
+    trajectory: list[float]` rejected every frame here with `Input should be
+    a valid number`; `list[tuple[int, float, float, float]]` must accept it
+    and round-trip it unchanged.
+    """
+    from app.cognitive.expression import derive_speech_expression
+
+    expression = derive_speech_expression(
+        {
+            "valence": 0.2,
+            "arousal": 0.6,
+            "dominance": 0.4,
+            "fatigue": 0.1,
+            "cortisol": 0.2,
+            "dopamine": 0.3,
+            "adrenaline": 0.0,
+        }
+    )
+
+    wire = SpeechExpressionWire.model_validate(expression.model_dump())
+
+    assert wire.trajectory == expression.trajectory
+    assert len(wire.trajectory) == 60
+
+    round_tripped = SpeechExpressionWire.model_validate(
+        json.loads(json.dumps(wire.model_dump()))
+    )
+    assert round_tripped.trajectory == wire.trajectory
 
 
 def test_rust_chat_input_fixture_matches_current_pydantic_contract():

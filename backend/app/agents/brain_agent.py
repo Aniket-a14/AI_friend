@@ -17,6 +17,7 @@ from ..contracts import (
     AudioPlaybackProgress,
     AudioStop,
     ChatInput,
+    SpeechExpressionWire,
     Topics,
     UserVoiceProperties,
 )
@@ -851,6 +852,41 @@ class BrainAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Error parsing user voice properties: {e}")
 
+    def _derive_expression_wire(
+        self, state_snap: dict[str, Any] | None
+    ) -> SpeechExpressionWire | None:
+        """Phase 3B: attach the Phase 3A `SpeechExpression` alongside
+        `affect` on `chat.output`.
+
+        Stage 3: `cognitive.expression` (Codex's Phase 3A, `b1096f5`) now
+        exists, so this calls the real `derive_speech_expression` rather
+        than degrading to `None` -- the `ImportError` guard stays as a
+        defensive fallback for a stale checkout, not the expected path
+        anymore. No affect->parameter formula lives here: the single
+        computation stays in `derive_speech_expression` itself, the same
+        reasoning that keeps the removed `ChatOutput.prosody` mistake (two
+        disagreeing implementations of one number) from recurring here.
+
+        `intent` is still passed as `None`: a typed `CommunicativeIntent`
+        (built from `plan.behavior_decision`, several layers up in
+        `cognitive/decision.py`) does not currently reach this publish
+        boundary -- only `state_snap` does. `derive_speech_expression`
+        accepts `None` here by design (`intent` is deliberately unused in
+        this first contract slice, per its own docstring), so this is not
+        a placeholder waiting on a signature change -- threading a real
+        intent through is a future enhancement, not a currently-broken path.
+        """
+        try:
+            from ..cognitive.expression import derive_speech_expression
+        except ImportError:
+            return None
+        try:
+            expression = derive_speech_expression(state_snap, None)
+        except Exception as e:
+            logger.debug("SpeechExpression derivation skipped this chunk: %s", e)
+            return None
+        return SpeechExpressionWire.model_validate(expression.model_dump())
+
     async def _publish_final_chunk_payload(
         self,
         *,
@@ -876,6 +912,7 @@ class BrainAgent(BaseAgent):
             proactive=is_proactive,
             user_distance=self.last_user_distance,
         )
+        output_msg.expression = self._derive_expression_wire(state_snap)
         output_msg.metadata = incoming_metadata
         output_msg.latency_metadata = incoming_latency_metadata
         await self.publish(Topics.CHAT_OUTPUT, output_msg.model_dump())
@@ -1125,12 +1162,14 @@ class BrainAgent(BaseAgent):
         # to one silently produced streams whose chunks disagreed with their own
         # `done` message. Exactly the drift that put prosody in this state to
         # begin with, one layer up.
+        state_snap = self.cognitive_core.state.get_context_snapshot()
         payload = self.coordinator.create_chunk_payload(
             words=words,
-            state_snap=self.cognitive_core.state.get_context_snapshot(),
+            state_snap=state_snap,
             turn_id=turn_id,
             user_distance=self.last_user_distance,
         )
+        payload.expression = self._derive_expression_wire(state_snap)
         # P4-2: non-destructive merge -- `incoming_metadata` originates from
         # the user's own chat.input and must reach voice/transport unchanged;
         # this only adds two keys alongside it. voice-agent passes them
