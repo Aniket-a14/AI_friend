@@ -6,11 +6,44 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from ..config import Config
+from ..errors import AgentError
 from ..persona.biography import BIOGRAPHY_SOURCE
 from .decision import ActionPlan
 from .identity import _HOSTILE_TO_USER, _match_views
+from .json_extract import extract_first_json_value
 
 logger = logging.getLogger(__name__)
+
+_TYPED_REALIZATION_GUIDANCE = (
+    "Return a JSON object with spoken_text (string), "
+    "realization_confidence (number from 0 to 1), "
+    "unanswered_questions (array), and claim_ids_used (array)."
+)
+
+
+def _parse_typed_realization(raw: str) -> dict[str, Any] | None:
+    """Validate the optional realization envelope; ``None`` means fallback."""
+    value = extract_first_json_value(raw or "", brackets="{")
+    if not isinstance(value, dict):
+        return None
+    spoken_text = value.get("spoken_text")
+    confidence = value.get("realization_confidence")
+    if not isinstance(spoken_text, str) or not spoken_text.strip():
+        return None
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        return None
+    if not 0.0 <= float(confidence) <= 1.0:
+        return None
+    if not isinstance(value.get("unanswered_questions", []), list):
+        return None
+    if not isinstance(value.get("claim_ids_used", []), list):
+        return None
+    return {
+        "spoken_text": spoken_text,
+        "realization_confidence": float(confidence),
+        "unanswered_questions": value.get("unanswered_questions", []),
+        "claim_ids_used": value.get("claim_ids_used", []),
+    }
 
 # Phrases where the assistant attributes a fact to the shared past or the user's
 # prior statements ("you told me…", "remember when we…"). Such a phrase asserts a
@@ -348,7 +381,7 @@ def reorder_for_long_context(memories):
     return reordered
 
 
-class MetacognitiveException(Exception):
+class MetacognitiveException(AgentError, Exception):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason
@@ -676,7 +709,41 @@ class ActionService:
         visual = payload.get("visual_context")
         if not visual or visual == "No visual data available.":
             return ""
-        return f"\nWHAT YOU CURRENTLY SEE:\n{_wrap_retrieved(visual)}"
+        evidence = payload.get("visual_evidence")
+        if evidence is not None:
+            age_s = max(0.0, time.time() - evidence.timestamp)
+            recency = "novel observation" if evidence.confidence >= 1.0 else "previously seen"
+            heading = f"WHAT YOU CURRENTLY SEE (as of {age_s:.0f}s ago, {recency})"
+        else:
+            heading = "WHAT YOU CURRENTLY SEE"
+        return f"\n{heading}:\n{_wrap_retrieved(visual)}"
+
+    @staticmethod
+    def _build_realization_contract(plan: ActionPlan, emotion: str) -> str:
+        """Consolidate goal/emotion plus, when stage 6 attached one,
+        `plan.behavior_decision`'s relational stance/urgency/claim boundaries
+        into the single "Current Context" block -- one assembled place
+        instead of the goal line and any future addition each being bolted
+        on independently. Falls back to exactly today's two-line block when
+        no `behavior_decision` is present (the eval harness's action-path
+        plans, and any other plan built outside decision.py's BT, don't set
+        one)."""
+        lines = [f"- Goal: {plan.goal}", f"- Current Emotion: {emotion}"]
+        decision = plan.behavior_decision
+        if decision is not None:
+            intent = decision.intent
+            lines.append(f"- Relational stance: {intent.relational_stance}")
+            lines.append(f"- Urgency: {intent.urgency:.2f}")
+            if decision.allowed_claims:
+                lines.append(
+                    f"- You may claim: {', '.join(decision.allowed_claims)}"
+                )
+            if decision.forbidden_claims:
+                lines.append(
+                    "- You must NOT claim or imply: "
+                    + ", ".join(decision.forbidden_claims)
+                )
+        return "\n".join(lines)
 
     @staticmethod
     def _build_tom_context(user_tom) -> str:
@@ -940,6 +1007,8 @@ class ActionService:
             options_override=endocrine_options,
         ).__aiter__()
         deadline = time.monotonic() + stream_budget
+        typed_mode = bool(getattr(Config, "LLM_TYPED_REALIZATION_ENABLED", False))
+        typed_parts: list[str] = []
 
         while True:
             remaining = deadline - time.monotonic()
@@ -959,15 +1028,31 @@ class ActionService:
 
             # CoT strip check
             for segment in self._visible_segments(clean_chunk, state):
-                async for out in self._emit_validated(segment, state, plan.goal):
-                    yield out
+                if typed_mode:
+                    typed_parts.append(segment)
+                else:
+                    async for out in self._emit_validated(segment, state, plan.goal):
+                        yield out
 
         # Flush whatever the markup sanitizer was still holding back.
         for segment in self._visible_trailing(sanitizer.flush(), state):
-            async for out in self._emit_validated(
-                segment, state, plan.goal, allow_hesitation=False
-            ):
-                yield out
+            if typed_mode:
+                typed_parts.append(segment)
+            else:
+                async for out in self._emit_validated(
+                    segment, state, plan.goal, allow_hesitation=False
+                ):
+                    yield out
+
+        if typed_mode:
+            raw_typed = "".join(typed_parts)
+            envelope = _parse_typed_realization(raw_typed)
+            realization = envelope["spoken_text"] if envelope else raw_typed
+            if realization:
+                async for out in self._emit_validated(
+                    realization, state, plan.goal, allow_hesitation=False
+                ):
+                    yield out
 
         # Post-generation grounding gate: the whole utterance is now known, so
         # check it for fabricated shared-memory claims and route any hit
@@ -1231,6 +1316,8 @@ class ActionService:
 
         # Static System Prompt (cached by inference engines like Ollama/vLLM)
         system_instruction = f"{identity_prompt}\n\n{_CHAT_GUIDELINE}"
+        if getattr(Config, "LLM_TYPED_REALIZATION_ENABLED", False):
+            system_instruction += f"\n\n{_TYPED_REALIZATION_GUIDANCE}"
 
         # Dynamic User Prompt. Ordering fights "lost in the middle": the factual
         # grounding (SHARED HISTORY) is placed LAST before the user's query so it
@@ -1238,7 +1325,8 @@ class ActionService:
         # answer. The more abstract, lower-cost-to-lose context (goal, emotion,
         # Theory-of-Mind) goes earlier. Within the history block itself, memories
         # are already edge-loaded by reorder_for_long_context().
-        user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{tom_context}{wondering}{visual_context}{shared_history}\n\nUser: {msg}\nAssistant:"
+        realization_contract = self._build_realization_contract(plan, emotion)
+        user_prompt = f"Current Context:\n{realization_contract}\n{tom_context}{wondering}{visual_context}{shared_history}\n\nUser: {msg}\nAssistant:"
 
         valence = plan.payload.get("valence", 0.0)
         arousal = plan.payload.get("arousal", 0.5)

@@ -45,6 +45,7 @@ import re
 from typing import Any
 
 from ..config import Config
+from ..errors import AgentError
 from ..llm import LLMClient, build_llm_client
 from .profile import PersonaProfile
 
@@ -73,7 +74,7 @@ _PRONOUNS_NOT_NAMES = {
 }
 
 
-class PersonaCompilationError(Exception):
+class PersonaCompilationError(AgentError, Exception):
     """The LLM's output could not be turned into a persona.
 
     Raised rather than silently falling back to defaults: unlike booting an

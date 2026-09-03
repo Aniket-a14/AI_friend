@@ -144,6 +144,167 @@ async def test_pipeline_carries_visual_context_into_the_plan_payload(
 
 
 @pytest.mark.asyncio
+async def test_pipeline_carries_visual_evidence_into_the_plan_payload(
+    pipeline, mock_components
+):
+    """1A's typed sibling of visual_context must survive the same
+    perception -> decision -> action-prep handoff, or _build_visual_context
+    has no evidence to render epistemic framing from."""
+    from app.cognitive.evidence import Evidence
+
+    evidence = Evidence(content="a mug", source="camera", modality="vision")
+
+    mock_components["state"].last_speculative_intent = None
+    mock_components["perception"].perceive.return_value = MagicMock(
+        event_type="USER_MESSAGE",
+        raw_content="what am I holding?",
+        intent="CHAT",
+        event_id="evt-3",
+        metadata={
+            "visuals": "I am seeing the user's camera.",
+            "visual_evidence": evidence,
+        },
+    )
+    mock_components["appraisal"].appraise.return_value = AppraisalVector(
+        relevance=1.0,
+        novelty=0.5,
+        goal_congruence=0.2,
+        agency=0.8,
+        norm_alignment=1.0,
+        relationship_impact=0.1,
+    )
+    mock_components["state"].get_context_snapshot.return_value = {"mood": 0.0}
+    mock_components["state"].get_behavioral_directive.return_value = "be friendly"
+    mock_components["decision"].decide.return_value = ActionPlan(
+        action_type="RESPOND_CHAT", goal="ANSWER", payload={"message": "hi"}
+    )
+    mock_components["identity"].validate_response.return_value = (True, "")
+    mock_components["identity"].get_persona_prompt.return_value = "System prompt"
+
+    seen_payloads = []
+
+    async def mock_execute(plan):
+        seen_payloads.append(plan.payload)
+        yield {"type": "content", "data": "You're holding a mug."}
+        yield {"type": "done", "data": ""}
+
+    mock_components["action"].execute.side_effect = mock_execute
+
+    async for _ in pipeline.execute(
+        {"type": "USER_MESSAGE", "content": "what am I holding?"}
+    ):
+        pass
+
+    assert seen_payloads, "action.execute was never called"
+    assert seen_payloads[0]["visual_evidence"] is evidence
+
+
+@pytest.mark.asyncio
+async def test_stage_7_calls_persona_policy_precheck_exactly_once(
+    pipeline, mock_components
+):
+    """1B: PersonaPolicy.precheck must run exactly once per turn on a plan
+    carrying a behavior_decision -- a future duplicate call (e.g. one added
+    alongside a new stage) would silently double-apply the stance clamp."""
+    from unittest.mock import patch
+
+    from app.cognitive.behavior_contracts import BehaviorDecision, CommunicativeIntent
+    from app.persona.policy import PersonaPolicy
+
+    mock_components["state"].last_speculative_intent = None
+    mock_components["identity"].immutable_core = {"boundaries": []}
+    mock_components["perception"].perceive.return_value = MagicMock(
+        event_type="USER_MESSAGE",
+        raw_content="hello",
+        intent="CHAT",
+        event_id="evt-precheck",
+        metadata={},
+    )
+    mock_components["appraisal"].appraise.return_value = AppraisalVector(
+        relevance=1.0,
+        novelty=0.5,
+        goal_congruence=0.2,
+        agency=0.8,
+        norm_alignment=1.0,
+        relationship_impact=0.1,
+    )
+    mock_components["state"].get_context_snapshot.return_value = {"mood": 0.0}
+    mock_components["state"].get_behavioral_directive.return_value = "be friendly"
+    behavior_decision = BehaviorDecision(
+        intent=CommunicativeIntent(act="CHAT", goal="ENGAGE")
+    )
+    mock_components["decision"].decide.return_value = ActionPlan(
+        action_type="RESPOND_CHAT",
+        goal="ENGAGE",
+        payload={"message": "hi"},
+        behavior_decision=behavior_decision,
+    )
+    mock_components["identity"].validate_response.return_value = (True, "")
+    mock_components["identity"].get_persona_prompt.return_value = "System prompt"
+
+    async def mock_execute(plan):
+        yield {"type": "content", "data": "hi"}
+        yield {"type": "done", "data": ""}
+
+    mock_components["action"].execute.side_effect = mock_execute
+
+    with patch(
+        "app.cognitive.pipeline.PersonaPolicy.precheck",
+        wraps=PersonaPolicy.precheck,
+    ) as spy:
+        async for _ in pipeline.execute({"type": "USER_MESSAGE", "content": "hello"}):
+            pass
+
+    spy.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_stage_7_skips_precheck_when_no_behavior_decision(
+    pipeline, mock_components
+):
+    """A plan built outside decision.py's BT (or an older call site) has no
+    behavior_decision -- precheck must not be called, and must not raise
+    reaching into a None."""
+    from unittest.mock import patch
+
+    mock_components["state"].last_speculative_intent = None
+    mock_components["perception"].perceive.return_value = MagicMock(
+        event_type="USER_MESSAGE",
+        raw_content="hello",
+        intent="CHAT",
+        event_id="evt-no-precheck",
+        metadata={},
+    )
+    mock_components["appraisal"].appraise.return_value = AppraisalVector(
+        relevance=1.0,
+        novelty=0.5,
+        goal_congruence=0.2,
+        agency=0.8,
+        norm_alignment=1.0,
+        relationship_impact=0.1,
+    )
+    mock_components["state"].get_context_snapshot.return_value = {"mood": 0.0}
+    mock_components["state"].get_behavioral_directive.return_value = "be friendly"
+    mock_components["decision"].decide.return_value = ActionPlan(
+        action_type="RESPOND_CHAT", goal="ENGAGE", payload={"message": "hi"}
+    )
+    mock_components["identity"].validate_response.return_value = (True, "")
+    mock_components["identity"].get_persona_prompt.return_value = "System prompt"
+
+    async def mock_execute(plan):
+        yield {"type": "content", "data": "hi"}
+        yield {"type": "done", "data": ""}
+
+    mock_components["action"].execute.side_effect = mock_execute
+
+    with patch("app.cognitive.pipeline.PersonaPolicy.precheck") as spy:
+        async for _ in pipeline.execute({"type": "USER_MESSAGE", "content": "hello"}):
+            pass
+
+    spy.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_pipeline_sources_appraisal_boundaries_from_immutable_core(
     pipeline, mock_components
 ):

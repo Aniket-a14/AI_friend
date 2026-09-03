@@ -8,10 +8,12 @@ import nats
 from nats.errors import NoRespondersError
 from nats.js.errors import BadRequestError, ServiceUnavailableError
 
+from .errors import AgentError
+
 logger = logging.getLogger("nats_streams")
 
 
-class StreamReconciliationError(RuntimeError):
+class StreamReconciliationError(RuntimeError, AgentError):
     """Raised when concurrent stream writers prevent convergence."""
 
 

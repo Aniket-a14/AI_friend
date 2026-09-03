@@ -375,6 +375,44 @@ def test_somatic_failure_does_not_lose_the_visual_context():
     assert "chai" in agent.last_visual_context
 
 
+def test_novel_observation_gets_full_confidence_evidence():
+    agent = _brain_stub([{"name": "chai", "confidence": 1.0}])
+
+    asyncio.run(
+        agent._on_vision_description(
+            {
+                "description": "A cup of chai.",
+                "source": "camera",
+                "is_novel": True,
+            }
+        )
+    )
+
+    assert agent.last_visual_evidence.modality == "vision"
+    assert agent.last_visual_evidence.confidence == 1.0
+    assert agent.last_visual_evidence.source == "camera"
+
+
+def test_cached_repeat_gets_lower_confidence_evidence():
+    """is_novel=False (a repeat frame under habituation) must not be
+    reported with the same confidence as a fresh observation -- that's
+    exactly the distinction _build_visual_context's recency framing
+    depends on."""
+    agent = _brain_stub([{"name": "chai", "confidence": 1.0}])
+
+    asyncio.run(
+        agent._on_vision_description(
+            {
+                "description": "A cup of chai.",
+                "source": "camera",
+                "is_novel": False,
+            }
+        )
+    )
+
+    assert agent.last_visual_evidence.confidence < 1.0
+
+
 # --------------------------------------------------------------------------
 # capture capability probe
 # --------------------------------------------------------------------------

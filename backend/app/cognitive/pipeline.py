@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from ..contracts import StateUpdate
+from ..persona.policy import PersonaPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -303,6 +304,13 @@ class CognitivePipeline:
         plan.payload["visual_context"] = (
             event.metadata.get("visuals") if event.metadata else None
         )
+        plan.payload["visual_evidence"] = (
+            event.metadata.get("visual_evidence") if event.metadata else None
+        )
+        if plan.behavior_decision is not None:
+            plan.behavior_decision = PersonaPolicy.precheck(
+                plan.behavior_decision, self.identity.immutable_core
+            )
 
     @staticmethod
     def _compute_pre_llm_telemetry(stage_times: dict[str, Any], event) -> None:
