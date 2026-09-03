@@ -15890,3 +15890,38 @@ Experiment 1 -- swap prose instructions for a bounded structured contract) the m
 next test: it directly probes whether structure beats prose against this specific failure, rather
 than re-testing an assembly path this evidence already cleared. Not started yet -- next action is
 the user's call.
+
+## 2026-09-03 -- Phase 0 evidence gates completed; teacher gate remains failed
+
+The Phase 0 implementation blockers were completed in local commit `9767426` (`fix(evals): close
+Phase 0 evidence gates`). `AppSettings.LLM_PROVENANCE` now snapshots constructor/process-env/.env/
+code-default sources per settings instance; reports include resolved deployment configuration,
+runtime Ollama model metadata, generation options, prompt/probe identity, request context, and a
+dropped-request count; and comparison plus pairwise-rating gates reject uncontrolled differences
+in path, suite, probe identity, prompt/category, options, persona prompt, deployment config,
+endpoint, or incomplete request trace. The home-GPU checkout contains the same implementation in
+remote commit `a7bdcb4` (the local commit additionally includes the research-document addendum).
+
+**VERIFIED -- final home-GPU evidence.** On `aniket-B450M-DS3H-V2`, from clean revision `a7bdcb4`,
+Ollama served `phi4-mini:latest` digest
+`78fad5d182a7c33065e153a5f8ba210754207ba9d91973f57dffa7f487363753` at
+`http://127.0.0.1:11434`. The native `llm` report scored 36/42 with 43 request records; the
+native `action` report scored 38/42 with 47 records due to ActionService retries/self-correction.
+Both reports have zero dropped request records, explicit CLI model provenance, clean git revision,
+resolved `.env` configuration, exact options, prompt/probe digests, and raw-versus-visible action
+output. Cross-path `compare` rejected the pair with exit status 2, so their score difference is
+not treated as a model comparison.
+
+**VERIFIED -- local validation.** Ruff passed; the focused Phase 0 suite passed 153 tests; the
+full backend suite passed 1,676 tests with 8 NATS-account setup errors caused by this sandbox's
+loopback port-binding restriction. Those same eight NATS tests had previously passed with socket
+permission. The final reports and frozen reference pack remain ignored evidence artifacts under
+`backend/evals/out/`, not tracked source.
+
+**NOT done / explicit boundary.** Formal blinded human ratings were skipped per the user's decision.
+The action character-pressure scan found 13/28 generic customer-service/therapy-register responses,
+so the teacher-quality gate is **FAIL** for `phi4-mini`; no output from it is approved as teacher or
+distillation data. The single-turn reports also have no `state_fixture_hash`. Thus the engineering
+and provenance gates are complete, but the research document's literal Phase 0 status remains
+**PARTIAL**. Phase 1's typed-realization experiment is the next valid step; do not redesign it based
+on these results, and do not claim stateful-runtime or subjective character-fidelity closure.

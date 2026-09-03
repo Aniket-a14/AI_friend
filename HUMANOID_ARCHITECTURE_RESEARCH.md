@@ -926,24 +926,22 @@ this re-verification.
   human or pairwise ratings, and `state_fixture_hash` is empty. The reports
   therefore support deterministic model/path plumbing evidence, not the full
   subjective character-fidelity or stateful-runtime claims required by §16-17.
-- **VERIFIED — configuration source reporting still has an instance-integrity
-  gap.** `LLM_PROVENANCE` derives source labels from module-global environment
-  and dotenv state rather than the `AppSettings` instance. An instance built
-  with `_env_file=None` and explicit constructor values can report those values
-  as `env_file`-sourced. The default process instance is less exposed, but the
-  source labels are not generally trustworthy for every settings object.
-- **VERIFIED — comparison is fail-closed for path/suite/probe identity but not
-  for all experiment inputs.** `compare_reports` rejects cross-path, unknown or
-  different suites, probe-set/id/category/prompt mismatches, while options and
-  persona differences remain warnings and `gate_passed` can still be true.
-  `rate-pairwise` rates only shared ids when hashes are absent or incomplete.
-  Automated model/adaptor gates must not treat those green outcomes as
-  controlled same-input experiments.
-- **UNKNOWN — home-GPU execution is independently reproducible here.** The
-  copied reports and ledger record `phi4-mini`, localhost Ollama, and the exact
-  code revision used for the run; localhost and a copied JSON artifact alone do
-  not prove which host executed it, and the live process environment was not
-  readable. Treat this as dated external evidence, not a local replay.
+- **SUPERSEDED by the 2026-09-03 implementation:** configuration source
+  reporting now snapshots the `AppSettings` instance's constructor,
+  process-environment, dotenv, and code-default inputs. An `_env_file=None`
+  instance no longer inherits the module-global dotenv label.
+- **SUPERSEDED by the 2026-09-03 implementation:** comparison and pairwise
+  rating now fail closed on path, suite, probe identity, prompt/category,
+  generation options, persona prompt, deployment config, endpoint, and dropped
+  request provenance. Cross-path comparison is rejected rather than rendered
+  as a model conclusion.
+- **SUPERSEDED by the 2026-09-03 home-GPU run:** the final reports were
+  generated natively on `aniket-B450M-DS3H-V2` from clean remote revision
+  `a7bdcb4`, with localhost Ollama serving the exact installed
+  `phi4-mini:latest` digest recorded in each report. Direct live-process
+  environment inspection remains permission-denied, so the evidence is the
+  host-local eval endpoint plus `.env`, Ollama API metadata, service status,
+  and clean revision—not a `/proc` environment dump.
 - **VERIFIED — the prior 2026-09-02 audit subsection is stale where it says
   endpoint capture, action raw output, suite/path rejection, and frozen
   forgetting references are absent.** Those claims describe the pre-
@@ -953,6 +951,42 @@ this re-verification.
   sandbox loopback-binding errors; rerunning those eight NATS tests with socket
   permission passed 8/8. The worktree was otherwise unchanged before this
   documentation addendum.
+
+#### FINAL EVIDENCE UPDATE — 2026-09-03
+
+- **VERIFIED — the implementation blockers are closed.** The final clean
+  home-GPU `llm` report scored 36/42 and the final clean `action` report scored
+  38/42. Both are schema-valid and record `model_source=explicit_cli`,
+  `git_revision=a7bdcb4`, the same full Ollama digest
+  `78fad5d182a7c33065e153a5f8ba210754207ba9d91973f57dffa7f487363753`,
+  deployment config sources, prompt/probe digests, generation options, and
+  `request_provenance_dropped=0`.
+- **VERIFIED — request provenance identifies what executed.** The `llm` run
+  contains 43 request records (one warmup plus 42 probes); the `action` run
+  contains 47 records because the real ActionService exercised retries and
+  self-correction. Every request has a warmup or probe context, endpoint,
+  model, options, prompt digests, and success state. The action report's raw
+  provider output remains distinguishable from the visible post-processed
+  response.
+- **VERIFIED — the two evaluation paths remain semantically distinct.** The
+  final reports have different paths and system-prompt hashes, and invoking
+  `compare` across them is rejected with exit status 2. Their scores are
+  evidence about separate seams, not a controlled model comparison.
+- **VERIFIED — local validation after the implementation:** the focused
+  Phase 0 suite passed 153 tests and Ruff passed. The full backend suite passed
+  1,676 tests with 8 NATS-account setup errors caused by this sandbox denying
+  loopback port binding; the same eight NATS tests had previously passed with
+  socket permission. These errors are environment evidence, not a claimed
+  full-suite pass.
+- **VERIFIED — overall Phase 0 is still PARTIAL under the research document's
+  literal acceptance criteria.** Formal blinded human character-fidelity
+  ratings were deliberately skipped by the user's decision after the
+  character-pressure scan found 13/28 generic customer-service/therapy-register
+  responses in the action report. `state_fixture_hash` is also empty in these
+  single-turn reports. Therefore the engineering/evidence gates are complete,
+  but the teacher-quality gate is FAIL for `phi4-mini`; its outputs must not be
+  used as teacher or distillation data. Phase 1's typed-realization experiment
+  is the next valid step, subject to preserving this boundary.
 
 #### STALE
 
