@@ -592,16 +592,15 @@ class IdentityManager:
             self._seed_relationship_from_profile()
             self._stamp_seed_marker()
 
-            # `evolved_learnings` is currently a hollow field: it has a column in
-            # both schemas, loads here and saves in `persist_to_config_store`,
-            # but **nothing anywhere writes content into it** -- there is no
-            # producer, so it is always "". The round trip is kept because the
-            # column exists on both backends and a loader without a saver (or
-            # the reverse) is a worse asymmetry than an unused pair. It was also
+            # `evolved_learnings` was a hollow field: a column in both schemas,
+            # loaded here and saved in `persist_to_config_store`, but nothing
+            # wrote content into it. Phase 5C gives it a producer:
+            # `LearningReviewQueue.approve` stamps this key when a reviewed
+            # proposal is applied (only reachable when
+            # `Config.LEARNING_REVIEW_REQUIRED` is True -- the default-off
+            # auto-apply path still bypasses it, same as before). It was also
             # a term in `_detect_first_boot`, where a permanently-empty value
             # meant a condition that could never fire; that has been removed.
-            # Implementing the producer, or dropping the columns via migration,
-            # is a decision rather than cleanup.
             evolved = config.get("evolved_learnings")
             if evolved:
                 self.history["evolved_learnings"] = evolved
