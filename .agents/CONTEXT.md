@@ -15934,6 +15934,15 @@ parser, deterministic raw-text fallback, and focused stream tests. Claude owns 1
 the earlier `cf83c9b` full-slice commit is overlap history and is not this branch's merge unit.
 No home-GPU run was performed.
 
+## 2026-09-03 -- Codex Phase 2C/2E
+
+Codex implemented memory provenance (`speaker`, `record_type`, validity window,
+contradiction link) across Postgres/SQLite, contradiction linking without overwrite,
+archive/promotion round-trip, idempotent SQLite migration, and strict storage mode that
+raises instead of silently falling back to SQLite. Verification: 39 focused regression
+tests plus provenance/strict-storage tests passed; Ruff and diff checks passed. Live
+Postgres migration and home-GPU validation remain pending; Claude owns 2A/2B/2D.
+
 ## 2026-09-03 -- Phase 2A/2B/2D blockers closed: turn-scoped audio publisher, §18 Experiment 3
 
 Codex's reciprocal review of `f368eb9` found two real blockers before merge, both closed here.

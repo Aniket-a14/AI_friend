@@ -95,6 +95,11 @@ class SQLiteConnection:
                 last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 metadata TEXT DEFAULT '{}',
+                speaker TEXT,
+                record_type TEXT NOT NULL DEFAULT 'episode',
+                valid_from TEXT,
+                valid_until TEXT,
+                contradicts_id TEXT,
                 lifespan_stage TEXT,
                 crisis TEXT,
                 virtue TEXT,
@@ -122,6 +127,11 @@ class SQLiteConnection:
                 last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 metadata TEXT DEFAULT '{}',
+                speaker TEXT,
+                record_type TEXT NOT NULL DEFAULT 'episode',
+                valid_from TEXT,
+                valid_until TEXT,
+                contradicts_id TEXT,
                 lifespan_stage TEXT,
                 crisis TEXT,
                 virtue TEXT,
@@ -202,6 +212,11 @@ class SQLiteConnection:
         cursor.execute("PRAGMA table_info(memories)")
         existing_mem_cols = {row[1] for row in cursor.fetchall()}
         for col in [
+            "speaker",
+            "record_type",
+            "valid_from",
+            "valid_until",
+            "contradicts_id",
             "lifespan_stage",
             "crisis",
             "virtue",
@@ -211,11 +226,19 @@ class SQLiteConnection:
         ]:
             if col not in existing_mem_cols:
                 cursor.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT")
+        cursor.execute(
+            "UPDATE memories SET record_type = 'episode' WHERE record_type IS NULL"
+        )
 
         # Migration for existing archived_memories table to add developmental stage columns
         cursor.execute("PRAGMA table_info(archived_memories)")
         existing_arch_cols = {row[1] for row in cursor.fetchall()}
         for col in [
+            "speaker",
+            "record_type",
+            "valid_from",
+            "valid_until",
+            "contradicts_id",
             "lifespan_stage",
             "crisis",
             "virtue",
@@ -225,6 +248,10 @@ class SQLiteConnection:
         ]:
             if col not in existing_arch_cols:
                 cursor.execute(f"ALTER TABLE archived_memories ADD COLUMN {col} TEXT")
+        cursor.execute(
+            "UPDATE archived_memories SET record_type = 'episode' "
+            "WHERE record_type IS NULL"
+        )
 
         # Migration for memories.id column type: ensure it's TEXT for UUID compatibility
         cursor.execute("PRAGMA table_info(memories)")
@@ -251,6 +278,11 @@ class SQLiteConnection:
                     last_recalled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     metadata TEXT DEFAULT '{}',
+                    speaker TEXT,
+                    record_type TEXT NOT NULL DEFAULT 'episode',
+                    valid_from TEXT,
+                    valid_until TEXT,
+                    contradicts_id TEXT,
                     lifespan_stage TEXT,
                     crisis TEXT,
                     virtue TEXT,
@@ -280,6 +312,11 @@ class SQLiteConnection:
                 "last_recalled_at": "CURRENT_TIMESTAMP",
                 "created_at": "CURRENT_TIMESTAMP",
                 "metadata": "'{}'",
+                "speaker": "NULL",
+                "record_type": "'episode'",
+                "valid_from": "NULL",
+                "valid_until": "NULL",
+                "contradicts_id": "NULL",
                 "lifespan_stage": "NULL",
                 "crisis": "NULL",
                 "virtue": "NULL",
