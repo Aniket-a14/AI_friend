@@ -10,8 +10,40 @@ from ..errors import AgentError
 from ..persona.biography import BIOGRAPHY_SOURCE
 from .decision import ActionPlan
 from .identity import _HOSTILE_TO_USER, _match_views
+from .json_extract import extract_first_json_value
 
 logger = logging.getLogger(__name__)
+
+_TYPED_REALIZATION_GUIDANCE = (
+    "Return a JSON object with spoken_text (string), "
+    "realization_confidence (number from 0 to 1), "
+    "unanswered_questions (array), and claim_ids_used (array)."
+)
+
+
+def _parse_typed_realization(raw: str) -> dict[str, Any] | None:
+    """Validate the optional realization envelope; ``None`` means fallback."""
+    value = extract_first_json_value(raw or "", brackets="{")
+    if not isinstance(value, dict):
+        return None
+    spoken_text = value.get("spoken_text")
+    confidence = value.get("realization_confidence")
+    if not isinstance(spoken_text, str) or not spoken_text.strip():
+        return None
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        return None
+    if not 0.0 <= float(confidence) <= 1.0:
+        return None
+    if not isinstance(value.get("unanswered_questions", []), list):
+        return None
+    if not isinstance(value.get("claim_ids_used", []), list):
+        return None
+    return {
+        "spoken_text": spoken_text,
+        "realization_confidence": float(confidence),
+        "unanswered_questions": value.get("unanswered_questions", []),
+        "claim_ids_used": value.get("claim_ids_used", []),
+    }
 
 # Phrases where the assistant attributes a fact to the shared past or the user's
 # prior statements ("you told me…", "remember when we…"). Such a phrase asserts a
@@ -975,6 +1007,8 @@ class ActionService:
             options_override=endocrine_options,
         ).__aiter__()
         deadline = time.monotonic() + stream_budget
+        typed_mode = bool(getattr(Config, "LLM_TYPED_REALIZATION_ENABLED", False))
+        typed_parts: list[str] = []
 
         while True:
             remaining = deadline - time.monotonic()
@@ -994,15 +1028,31 @@ class ActionService:
 
             # CoT strip check
             for segment in self._visible_segments(clean_chunk, state):
-                async for out in self._emit_validated(segment, state, plan.goal):
-                    yield out
+                if typed_mode:
+                    typed_parts.append(segment)
+                else:
+                    async for out in self._emit_validated(segment, state, plan.goal):
+                        yield out
 
         # Flush whatever the markup sanitizer was still holding back.
         for segment in self._visible_trailing(sanitizer.flush(), state):
-            async for out in self._emit_validated(
-                segment, state, plan.goal, allow_hesitation=False
-            ):
-                yield out
+            if typed_mode:
+                typed_parts.append(segment)
+            else:
+                async for out in self._emit_validated(
+                    segment, state, plan.goal, allow_hesitation=False
+                ):
+                    yield out
+
+        if typed_mode:
+            raw_typed = "".join(typed_parts)
+            envelope = _parse_typed_realization(raw_typed)
+            realization = envelope["spoken_text"] if envelope else raw_typed
+            if realization:
+                async for out in self._emit_validated(
+                    realization, state, plan.goal, allow_hesitation=False
+                ):
+                    yield out
 
         # Post-generation grounding gate: the whole utterance is now known, so
         # check it for fabricated shared-memory claims and route any hit
@@ -1266,6 +1316,8 @@ class ActionService:
 
         # Static System Prompt (cached by inference engines like Ollama/vLLM)
         system_instruction = f"{identity_prompt}\n\n{_CHAT_GUIDELINE}"
+        if getattr(Config, "LLM_TYPED_REALIZATION_ENABLED", False):
+            system_instruction += f"\n\n{_TYPED_REALIZATION_GUIDANCE}"
 
         # Dynamic User Prompt. Ordering fights "lost in the middle": the factual
         # grounding (SHARED HISTORY) is placed LAST before the user's query so it
